@@ -7,6 +7,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import type { MobileAuthSession } from '../auth/authSession';
+import { mobileAuthScope } from '../auth/mobileAuthIdentity';
 import type { ChatAttachmentInput } from './socialApi';
 import { EncryptedMessageSchema } from '../../gen/proto/domain/chat/friend_chat_pb';
 import { ChatEncryptedMessagePayloadSchema, GroupMessageAttachmentSchema, type ChatEncryptedMessagePayload } from '../../gen/proto/domain/chat/group_chat_pb';
@@ -17,7 +18,7 @@ const FRIEND_MESSAGE_ENVELOPE_KIND = 'FRIEND_CHAT_MESSAGE';
 const FRIEND_MESSAGE_ENVELOPE_VERSION = 1;
 
 interface FriendMessageSealedEnvelope {
-  recipientDid: string;
+  recipientPtid: string;
   deviceId: string;
   ikPub: string;
   payloadB64: string;
@@ -33,13 +34,13 @@ interface FriendMessageEnvelope {
 export async function encryptFriendChatPayload(
   session: MobileAuthSession,
   sessionUlid: string,
-  peerDid: string,
+  peerPtid: string,
   payload: ChatEncryptedMessagePayload,
 ): Promise<Uint8Array> {
   const plaintextBytes = toBinary(ChatEncryptedMessagePayloadSchema, payload);
-  const currentDid = actorDidForSession(session);
+  const currentPtid = actorPtidForSession(session);
   await ensureMobileKeyBundlePublished(session);
-  const envelopes = await sealPayloadForAudience(session, sessionUlid, plaintextBytes, [currentDid, peerDid]);
+  const envelopes = await sealPayloadForAudience(session, sessionUlid, plaintextBytes, [currentPtid, peerPtid]);
   if (!envelopes.length) throw new Error('mobile.friend.e2eeMissingKeyBundle');
   const envelopeBytes = new TextEncoder().encode(JSON.stringify({
     version: FRIEND_MESSAGE_ENVELOPE_VERSION,
@@ -58,18 +59,18 @@ export async function decryptFriendChatPayload(
   session: MobileAuthSession,
   input: {
     sessionUlid: string;
-    senderDid: string;
-    currentUserDid: string;
+    senderPtid: string;
+    currentUserPtid: string;
     encryptedPayload: Uint8Array;
   },
 ): Promise<ChatEncryptedMessagePayload | null> {
   const envelope = parseFriendMessageEnvelope(friendEnvelopeBytes(input.encryptedPayload));
   if (!envelope || envelope.kind !== FRIEND_MESSAGE_ENVELOPE_KIND || envelope.sessionUlid !== input.sessionUlid) return null;
 
-  const sealedCandidates = envelope.envelopes.filter((item) => item.recipientDid === input.currentUserDid);
+  const sealedCandidates = envelope.envelopes.filter((item) => item.recipientPtid === input.currentUserPtid);
   for (const candidate of sealedCandidates) {
     const plaintextBytes = await openSignalingEnvelopeFromSender(session, {
-      senderDid: input.senderDid,
+      senderPtid: input.senderPtid,
       sessionUlid: friendEnvelopeSession(input.sessionUlid),
       kind: FRIEND_MESSAGE_ENVELOPE_KIND,
       sealedBytes: base64ToBytes(candidate.payloadB64),
@@ -102,12 +103,12 @@ async function sealPayloadForAudience(
   session: MobileAuthSession,
   sessionUlid: string,
   plaintextBytes: Uint8Array,
-  recipientDids: string[],
+  recipientPtids: string[],
 ): Promise<FriendMessageSealedEnvelope[]> {
   const envelopes: FriendMessageSealedEnvelope[] = [];
-  const uniqueDids = Array.from(new Set(recipientDids.map((did) => did.trim()).filter(Boolean)));
-  for (const recipientDid of uniqueDids) {
-    const bundles = await fetchKeyBundles(session, recipientDid).catch(() => []);
+  const uniquePtids = Array.from(new Set(recipientPtids.map((ptid) => ptid.trim()).filter(Boolean)));
+  for (const recipientPtid of uniquePtids) {
+    const bundles = await fetchKeyBundles(session, recipientPtid).catch(() => []);
     for (const bundle of bundles) {
       const ikPub = String(bundle.ikPub || (bundle as Record<string, unknown>).ik_pub || '').trim();
       if (!ikPub) continue;
@@ -118,7 +119,7 @@ async function sealPayloadForAudience(
         plaintextBytes,
       });
       envelopes.push({
-        recipientDid,
+        recipientPtid,
         deviceId: String(bundle.deviceId || (bundle as Record<string, unknown>).device_id || ikPub),
         ikPub,
         payloadB64: bytesToBase64(sealedBytes),
@@ -171,11 +172,11 @@ function parseFriendMessageEnvelope(bytes: Uint8Array): FriendMessageEnvelope | 
       kind: record.kind as typeof FRIEND_MESSAGE_ENVELOPE_KIND,
       sessionUlid: String(record.sessionUlid ?? ''),
       envelopes: record.envelopes.map((item) => ({
-        recipientDid: String(item.recipientDid ?? ''),
+        recipientPtid: String(item.recipientPtid ?? ''),
         deviceId: String(item.deviceId ?? ''),
         ikPub: String(item.ikPub ?? ''),
         payloadB64: String(item.payloadB64 ?? ''),
-      })).filter((item) => item.recipientDid && item.payloadB64),
+      })).filter((item) => item.recipientPtid && item.payloadB64),
     };
   } catch {
     return null;
@@ -196,10 +197,8 @@ function friendEnvelopeSession(sessionUlid: string): string {
   return `friend-message:${sessionUlid}`;
 }
 
-function actorDidForSession(session: MobileAuthSession): string {
-  const actorDid = String(session.actor?.id || session.actor?.actorId || session.actor?.actor_id || '').trim();
-  if (!actorDid) throw new Error('mobile.friend.e2eeMissingActor');
-  return actorDid;
+function actorPtidForSession(session: MobileAuthSession): string {
+  return mobileAuthScope(session).ptid;
 }
 
 function positiveBigInt(value: unknown): bigint {

@@ -6,6 +6,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import type { MobileAuthSession } from '../auth/authSession';
+import { mobileAuthScope } from '../auth/mobileAuthIdentity';
 import type { ChatAttachmentInput } from '../social/socialApi';
 import { createSocialApiClient } from '../social/socialApi';
 import { readableErrorMessage } from '../social/socialTypes';
@@ -19,10 +20,10 @@ import type { GroupState } from './groupStore';
 const GROUP_E2EE_REPAIR_INTERVAL_MS = 5000;
 
 export interface GroupE2eeRuntimeController {
-  consumeSkdmControlMessage: (senderDid: string, skdmBytes: Uint8Array) => Promise<boolean>;
+  consumeSkdmControlMessage: (senderPtid: string, skdmBytes: Uint8Array) => Promise<boolean>;
   canEncryptGroup: (groupUlid: string) => Promise<boolean>;
   repairEncryptedMessages: () => Promise<void>;
-  rotateAfterMembershipChange: (groupUlid: string, affectedActorDid: string) => Promise<boolean>;
+  rotateAfterMembershipChange: (groupUlid: string, affectedActorPtid: string) => Promise<boolean>;
   sendEncryptedMessage: (groupUlid: string, plaintext: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<boolean>;
   editEncryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>;
   teardown: () => void;
@@ -74,26 +75,26 @@ export function startGroupE2eeRuntime(
   }, GROUP_E2EE_REPAIR_INTERVAL_MS);
 
   return {
-    consumeSkdmControlMessage: async (senderDid, skdmBytes) => {
-      if (cancelled || !senderDid || !skdmBytes.byteLength) return false;
+    consumeSkdmControlMessage: async (senderPtid, skdmBytes) => {
+      if (cancelled || !senderPtid || !skdmBytes.byteLength) return false;
       try {
-        const skdmPlaintext = await openSkdmEnvelopeFromSender(session, senderDid, skdmBytes);
+        const skdmPlaintext = await openSkdmEnvelopeFromSender(session, senderPtid, skdmBytes);
         if (!skdmPlaintext?.byteLength) {
-          throw new Error(`missing-authenticated-skdm-envelope:${senderDid}`);
+          throw new Error(`missing-authenticated-skdm-envelope:${senderPtid}`);
         }
-        await consumeGroupSkdm(session, senderDid, skdmPlaintext);
-        getStore().setE2eeError(skdmErrorKey(senderDid), null);
+        await consumeGroupSkdm(session, senderPtid, skdmPlaintext);
+        getStore().setE2eeError(skdmErrorKey(senderPtid), null);
         await repairEncryptedMessages();
         return true;
       } catch (error) {
-        getStore().setE2eeError(skdmErrorKey(senderDid), errorMessage(error));
+        getStore().setE2eeError(skdmErrorKey(senderPtid), errorMessage(error));
         return false;
       }
     },
     canEncryptGroup,
     repairEncryptedMessages,
-    rotateAfterMembershipChange: async (groupUlid, affectedActorDid) => {
-      if (cancelled || !groupUlid || affectedActorDid === actorDidForSession(session)) return false;
+    rotateAfterMembershipChange: async (groupUlid, affectedActorPtid) => {
+      if (cancelled || !groupUlid || affectedActorPtid === actorPtidForSession(session)) return false;
       try {
         await rotateGroupSenderKey(session, groupUlid);
         await ledger.clearGroup(groupUlid);
@@ -169,36 +170,36 @@ async function distributeSenderKey(
   groupUlid: string,
   members: GroupMember[],
 ) {
-  const selfDid = actorDidForSession(session);
-  const peerDids = members
+  const selfPtid = actorPtidForSession(session);
+  const peerPtids = members
     .map((member) => member.ptid)
-    .filter((did): did is string => Boolean(did && did !== selfDid));
-  if (!peerDids.length) return;
+    .filter((ptid): ptid is string => Boolean(ptid && ptid !== selfPtid));
+  if (!peerPtids.length) return;
 
   const skdmBytes = await emitGroupSkdm(session, groupUlid);
-  for (const peerDid of peerDids) {
-    const bundles = await fetchKeyBundles(session, peerDid).catch(() => []);
+  for (const peerPtid of peerPtids) {
+    const bundles = await fetchKeyBundles(session, peerPtid).catch(() => []);
     const targets = bundles
       .map((bundle) => {
         const ikPub = String(bundle.ikPub || (bundle as Record<string, unknown>).ik_pub || '').trim();
         if (!ikPub) return null;
         const deviceKey = String(bundle.deviceId || (bundle as Record<string, unknown>).device_id || ikPub);
-        return { ikPub, target: skdmLedgerTarget(groupUlid, peerDid, deviceKey) };
+        return { ikPub, target: skdmLedgerTarget(groupUlid, peerPtid, deviceKey) };
       })
       .filter((target): target is { ikPub: string; target: SkdmLedgerTarget } => Boolean(target));
-    if (!targets.length) throw new Error(`missing-key-bundle:${peerDid}`);
+    if (!targets.length) throw new Error(`missing-key-bundle:${peerPtid}`);
 
     for (const { ikPub, target } of targets) {
       if (await ledger.isSent(target)) continue;
 
       await ledger.markPending(target);
       try {
-        const sealedB64 = await sealSkdmEnvelopeForPeer(session, peerDid, ikPub, skdmBytes);
+        const sealedB64 = await sealSkdmEnvelopeForPeer(session, peerPtid, ikPub, skdmBytes);
         const carrier = base64ToBytes(sealedB64);
-        const friendSession = await socialApi.createSession(peerDid);
+        const friendSession = await socialApi.createSession(peerPtid);
         const sessionUlid = friendSession.session?.ulid;
-        if (!sessionUlid) throw new Error(`missing-friend-session:${peerDid}`);
-        await socialApi.sendSenderKeyDistribution(sessionUlid, peerDid, carrier);
+        if (!sessionUlid) throw new Error(`missing-friend-session:${peerPtid}`);
+        await socialApi.sendSenderKeyDistribution(sessionUlid, peerPtid, carrier);
         await ledger.markSent(target);
       } catch (error) {
         await ledger.markFailed(target, errorMessage(error));
@@ -307,12 +308,12 @@ function shouldRepairMessage(message: GroupMessage): message is GroupMessage & {
   return Boolean(message.ulid && !message.recalled && !message.content && message.encryptedPayload?.byteLength);
 }
 
-function actorDidForSession(session: MobileAuthSession): string {
-  return String(session.actor?.id || session.actor?.actorId || session.actor?.actor_id || '').trim();
+function actorPtidForSession(session: MobileAuthSession): string {
+  return mobileAuthScope(session).ptid;
 }
 
 function identityErrorKey(session: MobileAuthSession): string {
-  return `identity:${actorDidForSession(session) || session.sessionId}`;
+  return `identity:${session.stationPeerId}:${actorPtidForSession(session)}`;
 }
 
 function sendErrorKey(groupUlid: string): string {
@@ -323,12 +324,12 @@ function editErrorKey(groupUlid: string): string {
   return `edit:${groupUlid}`;
 }
 
-function skdmLedgerTarget(groupUlid: string, peerDid: string, deviceKey: string): SkdmLedgerTarget {
-  return { groupUlid, peerDid, deviceKey };
+function skdmLedgerTarget(groupUlid: string, peerPtid: string, deviceKey: string): SkdmLedgerTarget {
+  return { groupUlid, peerPtid, deviceKey };
 }
 
-function skdmErrorKey(senderDid: string): string {
-  return `skdm:${senderDid}`;
+function skdmErrorKey(senderPtid: string): string {
+  return `skdm:${senderPtid}`;
 }
 
 function rotationErrorKey(groupUlid: string): string {

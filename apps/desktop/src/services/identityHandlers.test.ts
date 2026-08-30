@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IdentityChangePayload } from './identityPipeline';
 
 const mocks = vi.hoisted(() => ({
-  currentActorId: 'ptid:peer:alice' as string | null,
+  currentActorPtid: 'ptid:peer:alice' as string | null,
   handlers: new Map<string, (payload: IdentityChangePayload) => Promise<void>>(),
   sessionReset: vi.fn(),
   socialReset: vi.fn(),
@@ -31,8 +31,8 @@ vi.mock('./desktop_api', () => ({
 vi.mock('../store/session', () => ({
   useSessionStore: {
     getState: () => ({
-      currentUser: mocks.currentActorId
-        ? { actorId: mocks.currentActorId }
+      currentUser: mocks.currentActorPtid
+        ? { actorPtid: mocks.currentActorPtid }
         : null,
       reset: mocks.sessionReset,
       restoreSession: mocks.restoreSession,
@@ -89,7 +89,7 @@ await import('./identityHandlers');
 describe('identity handler actor-scoped projection cleanup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.currentActorId = 'ptid:peer:alice';
+    mocks.currentActorPtid = 'ptid:peer:alice';
   });
 
   it('clears actor-scoped stores before switching accounts', async () => {
@@ -98,7 +98,7 @@ describe('identity handler actor-scoped projection cleanup', () => {
 
     await handler?.({
       reason: 'switch',
-      actorId: 'ptid:peer:bob',
+      actorPtid: 'ptid:peer:bob',
       loginMethod: 'password',
     });
 
@@ -114,7 +114,7 @@ describe('identity handler actor-scoped projection cleanup', () => {
 
     await handler?.({
       reason: 'unlock',
-      actorId: 'ptid:peer:alice',
+      actorPtid: 'ptid:peer:alice',
       loginMethod: 'password',
     });
 
@@ -130,7 +130,7 @@ describe('identity handler actor-scoped projection cleanup', () => {
 
     await handler?.({
       reason: 'switch',
-      actorId: 'ptid:peer:bob',
+      actorPtid: 'ptid:peer:bob',
       loginMethod: 'password',
     });
 

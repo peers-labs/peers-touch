@@ -9,6 +9,8 @@ from tooling.acceptance.core import (
 
 from .home_station import HomeStationProvisioner
 from .local_desktop_gateway import LocalDesktopGatewayProvisioner
+from .mobile_native import MobileNativeProvisioner
+from .mobile_simulator import MobileSimulatorProvisioner
 from .native_desktop_linux import NativeDesktopLinuxProvisioner
 from .native_tauri_embedded_webdriver import (
     NativeTauriEmbeddedWebDriverProvisioner,
@@ -18,6 +20,8 @@ from .native_tauri_embedded_webdriver import (
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     HomeStationProvisioner.environment_id: HomeStationProvisioner,
     LocalDesktopGatewayProvisioner.environment_id: LocalDesktopGatewayProvisioner,
+    MobileNativeProvisioner.environment_id: MobileNativeProvisioner,
+    MobileSimulatorProvisioner.environment_id: MobileSimulatorProvisioner,
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
 }
 
@@ -53,6 +57,8 @@ def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
 __all__ = [
     "HomeStationProvisioner",
     "LocalDesktopGatewayProvisioner",
+    "MobileNativeProvisioner",
+    "MobileSimulatorProvisioner",
     "NativeTauriEmbeddedWebDriverProvisioner",
     "get_provisioner",
     "get_runtime_cell_lifecycle",

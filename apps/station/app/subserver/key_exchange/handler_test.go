@@ -33,7 +33,7 @@ func TestFetchFederatedKeyBundleUsesRelayAndPeerJWT(t *testing.T) {
 		}
 		resp, err := protojson.Marshal(&kemodel.FetchKeyBundleResponse{
 			Bundles: []*kemodel.KeyBundle{{
-				Did:               "bob",
+				Ptid:              "bob",
 				DeviceId:          "bob-device-1",
 				IkPub:             "aWstcHVi",
 				SpkPub:            "c3BrLXB1Yg==",
@@ -57,14 +57,14 @@ func TestFetchFederatedKeyBundleUsesRelayAndPeerJWT(t *testing.T) {
 		keyCache:       authfed.NewKeyCache(authfed.NewInMemoryKeyStore(), authfed.WithRecheckTTL(0)),
 	}
 	resp, err := sub.fetchFederatedKeyBundle(context.Background(), "station-b", &kemodel.FetchKeyBundleRequest{
-		Did:               "bob",
+		Ptid:              "bob",
 		DeviceId:          "bob-device-1",
 		HomeStationPeerId: "station-b",
 	})
 	if err != nil {
 		t.Fatalf("fetchFederatedKeyBundle: %v", err)
 	}
-	if len(resp.GetBundles()) != 1 || resp.GetBundles()[0].GetDid() != "bob" {
+	if len(resp.GetBundles()) != 1 || resp.GetBundles()[0].GetPtid() != "bob" {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 	if sawPath != "/relay/forward/station-b/key-exchange/keys/bundle/federated-fetch" {
@@ -76,7 +76,7 @@ func TestFetchFederatedKeyBundleUsesRelayAndPeerJWT(t *testing.T) {
 	if !strings.HasPrefix(sawPeerAuth, "Bearer ") {
 		t.Fatalf("expected forwarded peer auth header, got %q", sawPeerAuth)
 	}
-	if sawRequest.GetDid() != "bob" || sawRequest.GetDeviceId() != "bob-device-1" || sawRequest.GetHomeStationPeerId() != "" {
+	if sawRequest.GetPtid() != "bob" || sawRequest.GetDeviceId() != "bob-device-1" || sawRequest.GetHomeStationPeerId() != "" {
 		t.Fatalf("unexpected forwarded request: %+v", &sawRequest)
 	}
 }

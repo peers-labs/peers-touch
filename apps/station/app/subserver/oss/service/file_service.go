@@ -29,7 +29,7 @@ import (
 //     existing row without re-saving. Two *different* actors
 //     uploading the same bytes get two metadata rows over a single
 //     shared blob on disk; uniqueness is enforced via the composite
-//     `(owner_actor_id, key)` index.
+//     `(owner_ptid, key)` index.
 //
 // The strategy is per-server (set via `Options.KeyStrategy`); it is
 // not switchable per request because that would create unbounded
@@ -46,10 +46,10 @@ const (
 
 // UploadAttribution is the WHO + WHERE + WHO-CAN-SEE envelope every
 // upload-path call must carry. The service layer rejects any upload
-// missing `ActorID`; there is no anonymous-upload code path.
+// missing `ActorPTID`; there is no anonymous-upload code path.
 //
 // Resolution rules applied by the service:
-//   - `ActorID`: required. Empty → ErrActorRequired.
+//   - `ActorPTID`: required. Empty → ErrActorRequired.
 //   - `BucketName`: optional. Empty → defaults to system bucket
 //     `chat`. Names matching a `SystemBucketSpec` are auto-created
 //     via `BucketRepository.EnsureSystem` on first use; other names
@@ -60,7 +60,7 @@ const (
 //   - `ChatSessionID`: required iff resolved `Visibility == "chat"`.
 //     Empty in any other case.
 type UploadAttribution struct {
-	ActorID       string
+	ActorPTID     string
 	BucketName    string
 	Visibility    string
 	ChatSessionID string
@@ -125,7 +125,7 @@ type FileService interface {
 	// the current state without re-debiting. The caller is
 	// responsible for verifying the subject owns the row before
 	// calling.
-	DeleteFile(ctx context.Context, ownerActorID, key string) (*DeleteResult, error)
+	DeleteFile(ctx context.Context, ownerPTID, key string) (*DeleteResult, error)
 
 	// RestoreFile reverses a soft delete that occurred within
 	// `graceWindow`. Outside the window, returns
@@ -135,7 +135,7 @@ type FileService interface {
 	//     quota restore returns ErrQuotaExceeded and rolls back;
 	//   - blob refcount and bucket usage are rolled back if the
 	//     `Restore` UPDATE fails after them.
-	RestoreFile(ctx context.Context, ownerActorID, key string, graceWindow time.Duration) (*RestoreResult, error)
+	RestoreFile(ctx context.Context, ownerPTID, key string, graceWindow time.Duration) (*RestoreResult, error)
 
 	// PatchFile applies an owner-only partial mutate. Each field
 	// in `req` is optional; nil pointer = leave alone. The service
@@ -144,7 +144,7 @@ type FileService interface {
 	// target with quota check, rollback on failure), and bumps
 	// `oss_meta(capability_version)` whenever the visibility is
 	// tightened (`public→chat|private`, `chat→private`).
-	PatchFile(ctx context.Context, ownerActorID, key string, req PatchRequest) (*PatchResult, error)
+	PatchFile(ctx context.Context, ownerPTID, key string, req PatchRequest) (*PatchResult, error)
 
 	// ListMyFiles returns a paginated, owner-scoped listing.
 	//
@@ -168,7 +168,7 @@ type FileService interface {
 	// No audit row is written: reading own metadata is by
 	// definition allowed and the row's own `updated_at` is the
 	// only signal the dashboard needs.
-	ListMyFiles(ctx context.Context, ownerActorID string, req ListMyFilesRequest) (*ListMyFilesResult, error)
+	ListMyFiles(ctx context.Context, ownerPTID string, req ListMyFilesRequest) (*ListMyFilesResult, error)
 }
 
 // DeleteResult is what the handler echoes back on a successful
@@ -408,7 +408,7 @@ type resolved struct {
 // session requirement is checked. Every method in this file calls
 // it exactly once before touching the backend.
 func (s *fileService) resolveAttribution(ctx context.Context, attr UploadAttribution) (*resolved, error) {
-	actor := strings.TrimSpace(attr.ActorID)
+	actor := strings.TrimSpace(attr.ActorPTID)
 	if actor == "" {
 		return nil, ErrActorRequired
 	}
@@ -498,7 +498,7 @@ func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, re
 		Backend:       s.backendName,
 		Path:          fullPath,
 		BucketID:      res.bucket.ID,
-		OwnerActorID:  attr.ActorID,
+		OwnerPTID:     attr.ActorPTID,
 		Visibility:    res.visibility,
 		ChatSessionID: chatSessionForVisibility(attr.ChatSessionID, res.visibility),
 		ExpiresAt:     defaultExpiresAt(now, res.bucket),
@@ -558,14 +558,14 @@ func (s *fileService) saveCAS(ctx context.Context, attr UploadAttribution, res *
 
 	// Step 1: live CAS dedup — cheapest path. The bytes are already
 	// counted under this actor's previous claim, so no usage debit.
-	if existing, err := s.repo.FindByOwnerKey(ctx, attr.ActorID, key); err == nil && existing != nil && existing.Key == key {
+	if existing, err := s.repo.FindByOwnerKey(ctx, attr.ActorPTID, key); err == nil && existing != nil && existing.Key == key {
 		return existing, nil
 	}
 
 	// Step 2: revivable soft-deleted row? `IncludeDeleted` returns
 	// the row regardless of DeletedAt; we branch on the column to
 	// pick the revival path vs the fresh-upload path.
-	if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorID, key); err == nil && maybeDeleted != nil && maybeDeleted.Key == key && maybeDeleted.DeletedAt != nil {
+	if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorPTID, key); err == nil && maybeDeleted != nil && maybeDeleted.Key == key && maybeDeleted.DeletedAt != nil {
 		return s.reviveCASRow(ctx, res, attr, maybeDeleted)
 	}
 
@@ -607,7 +607,7 @@ func (s *fileService) saveCAS(ctx context.Context, attr UploadAttribution, res *
 		Path:          fullPath,
 		Sha256:        sum,
 		BucketID:      res.bucket.ID,
-		OwnerActorID:  attr.ActorID,
+		OwnerPTID:     attr.ActorPTID,
 		Visibility:    res.visibility,
 		ChatSessionID: chatSessionForVisibility(attr.ChatSessionID, res.visibility),
 		ExpiresAt:     defaultExpiresAt(now, res.bucket),
@@ -615,12 +615,12 @@ func (s *fileService) saveCAS(ctx context.Context, attr UploadAttribution, res *
 	}
 
 	if err := s.repo.Create(ctx, meta); err != nil {
-		// Most likely a (owner_actor_id, key) unique-index collision
+		// Most likely a (owner_ptid, key) unique-index collision
 		// from a concurrent upload by the same actor of the same
 		// bytes. Roll back the usage debit + blob refcount and
 		// return the winner.
 		s.compensateAfterCreateFail(ctx, res.bucket.ID, key, header.Size)
-		if existing, err2 := s.repo.FindByOwnerKey(ctx, attr.ActorID, key); err2 == nil && existing != nil && existing.Key == key {
+		if existing, err2 := s.repo.FindByOwnerKey(ctx, attr.ActorPTID, key); err2 == nil && existing != nil && existing.Key == key {
 			return existing, nil
 		}
 		return nil, err
@@ -663,7 +663,7 @@ func (s *fileService) reviveCASRow(ctx context.Context, res *resolved, attr Uplo
 		return nil, err
 	}
 	// Re-read so the caller sees the post-restore row state.
-	out, err := s.repo.FindByOwnerKey(ctx, attr.ActorID, row.Key)
+	out, err := s.repo.FindByOwnerKey(ctx, attr.ActorPTID, row.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -779,7 +779,7 @@ func (s *fileService) PrepareUpload(ctx context.Context, presigner storage.Presi
 			return PrepareUploadResult{}, errors.New("oss: cas strategy requires sha256 (64-char hex) on presigned upload")
 		}
 		key = casKey(req.Sha256, ext)
-		if existing, err := s.repo.FindByOwnerKey(ctx, attr.ActorID, key); err == nil && existing != nil && existing.Key == key {
+		if existing, err := s.repo.FindByOwnerKey(ctx, attr.ActorPTID, key); err == nil && existing != nil && existing.Key == key {
 			return PrepareUploadResult{
 				Meta:            existing,
 				AlreadyUploaded: true,
@@ -789,7 +789,7 @@ func (s *fileService) PrepareUpload(ctx context.Context, presigner storage.Presi
 		// own SHA-256 against a soft-deleted row is by construction
 		// safe — the bytes hash to the same key. We revive without
 		// requiring the client to re-PUT.
-		if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorID, key); err == nil && maybeDeleted != nil && maybeDeleted.Key == key && maybeDeleted.DeletedAt != nil {
+		if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorPTID, key); err == nil && maybeDeleted != nil && maybeDeleted.Key == key && maybeDeleted.DeletedAt != nil {
 			revived, rerr := s.reviveCASRow(ctx, res, attr, maybeDeleted)
 			if rerr != nil {
 				return PrepareUploadResult{}, rerr
@@ -816,7 +816,7 @@ func (s *fileService) PrepareUpload(ctx context.Context, presigner storage.Presi
 			Backend:       s.backendName,
 			Sha256:        req.Sha256,
 			BucketID:      res.bucket.ID,
-			OwnerActorID:  attr.ActorID,
+			OwnerPTID:     attr.ActorPTID,
 			Visibility:    res.visibility,
 			ChatSessionID: chatSessionForVisibility(attr.ChatSessionID, res.visibility),
 		},
@@ -829,7 +829,7 @@ func (s *fileService) PrepareUpload(ctx context.Context, presigner storage.Presi
 }
 
 // CompleteUpload registers a successful presigned upload as a
-// `FileMeta` row owned by `attr.ActorID`. The caller must already
+// `FileMeta` row owned by `attr.ActorPTID`. The caller must already
 // have PUT the bytes to the presigned URL. We `HeadObject` to
 // confirm the bytes landed and the claimed size is honest, then
 // debit the bucket and `Create`. Idempotent for the same (actor,
@@ -847,14 +847,14 @@ func (s *fileService) CompleteUpload(ctx context.Context, presigner storage.Pres
 		return nil, err
 	}
 
-	if existing, err := s.repo.FindByOwnerKey(ctx, attr.ActorID, req.Key); err == nil && existing != nil && existing.Key == req.Key {
+	if existing, err := s.repo.FindByOwnerKey(ctx, attr.ActorPTID, req.Key); err == nil && existing != nil && existing.Key == req.Key {
 		return existing, nil
 	}
 	// Tiny-race revival: a Delete may have raced between Prepare
 	// and Complete and soft-deleted the row we'd otherwise return.
 	// The bytes are still on disk, so revive symmetrically with
 	// the multipart `saveCAS` path.
-	if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorID, req.Key); err == nil && maybeDeleted != nil && maybeDeleted.Key == req.Key && maybeDeleted.DeletedAt != nil {
+	if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorPTID, req.Key); err == nil && maybeDeleted != nil && maybeDeleted.Key == req.Key && maybeDeleted.DeletedAt != nil {
 		return s.reviveCASRow(ctx, res, attr, maybeDeleted)
 	}
 
@@ -909,7 +909,7 @@ func (s *fileService) CompleteUpload(ctx context.Context, presigner storage.Pres
 		Path:          "", // S3 has no filesystem path; key is authoritative.
 		Sha256:        req.Sha256,
 		BucketID:      res.bucket.ID,
-		OwnerActorID:  attr.ActorID,
+		OwnerPTID:     attr.ActorPTID,
 		Visibility:    res.visibility,
 		ChatSessionID: chatSessionForVisibility(attr.ChatSessionID, res.visibility),
 		ExpiresAt:     defaultExpiresAt(now, res.bucket),
@@ -920,7 +920,7 @@ func (s *fileService) CompleteUpload(ctx context.Context, presigner storage.Pres
 		// row and roll back the usage we just debited + the blob
 		// refcount we bumped.
 		s.compensateAfterCreateFail(ctx, res.bucket.ID, req.Key, head.Size)
-		if existing, err2 := s.repo.FindByOwnerKey(ctx, attr.ActorID, req.Key); err2 == nil && existing != nil && existing.Key == req.Key {
+		if existing, err2 := s.repo.FindByOwnerKey(ctx, attr.ActorPTID, req.Key); err2 == nil && existing != nil && existing.Key == req.Key {
 			return existing, nil
 		}
 		return nil, err
@@ -943,8 +943,8 @@ func (s *fileService) GetFileMeta(ctx context.Context, key string) (*ossmodel.Fi
 //     reconciler / blob GC corrects drift on the next pass. We
 //     would rather be eventually-consistent than risk leaving the
 //     row half-deleted from the user's POV.
-func (s *fileService) DeleteFile(ctx context.Context, ownerActorID, key string) (*DeleteResult, error) {
-	owner := strings.TrimSpace(ownerActorID)
+func (s *fileService) DeleteFile(ctx context.Context, ownerPTID, key string) (*DeleteResult, error) {
+	owner := strings.TrimSpace(ownerPTID)
 	if owner == "" {
 		return nil, ErrActorRequired
 	}
@@ -1005,8 +1005,8 @@ func (s *fileService) DeleteFile(ctx context.Context, ownerActorID, key string) 
 // Restoring a never-deleted row returns ErrFileAlreadyLive — the
 // handler maps to 409 Conflict so a client UI knows nothing happened
 // (vs. 200 which would imply we touched the row).
-func (s *fileService) RestoreFile(ctx context.Context, ownerActorID, key string, graceWindow time.Duration) (*RestoreResult, error) {
-	owner := strings.TrimSpace(ownerActorID)
+func (s *fileService) RestoreFile(ctx context.Context, ownerPTID, key string, graceWindow time.Duration) (*RestoreResult, error) {
+	owner := strings.TrimSpace(ownerPTID)
 	if owner == "" {
 		return nil, ErrActorRequired
 	}
@@ -1084,7 +1084,7 @@ func (s *fileService) RestoreFile(ctx context.Context, ownerActorID, key string,
 //     chat_session_id is unconditionally cleared so audits and
 //     subsequent reads stay unambiguous.
 //  3. Bucket moves are *same-actor only*: the destination bucket
-//     must be owned by `ownerActorID`. Quota is checked atomically
+//     must be owned by `ownerPTID`. Quota is checked atomically
 //     on the destination, the source is debited, and any failure
 //     rolls back fully.
 //  4. ExpiresAt may be set, cleared, or extended; we do not enforce
@@ -1096,8 +1096,8 @@ func (s *fileService) RestoreFile(ctx context.Context, ownerActorID, key string,
 //
 // All-or-nothing: any validation or move failure leaves the row,
 // blob refcount, and bucket usage untouched.
-func (s *fileService) PatchFile(ctx context.Context, ownerActorID, key string, req PatchRequest) (*PatchResult, error) {
-	owner := strings.TrimSpace(ownerActorID)
+func (s *fileService) PatchFile(ctx context.Context, ownerPTID, key string, req PatchRequest) (*PatchResult, error) {
+	owner := strings.TrimSpace(ownerPTID)
 	if owner == "" {
 		return nil, ErrActorRequired
 	}
@@ -1264,7 +1264,7 @@ func (s *fileService) PatchFile(ctx context.Context, ownerActorID, key string, r
 //
 // Behaviour notes:
 //
-//   - Empty `ownerActorID` → ErrActorRequired (the handler 401s).
+//   - Empty `ownerPTID` → ErrActorRequired (the handler 401s).
 //   - Unknown `BucketName` → empty result with `Total=0`. We
 //     deliberately do NOT return ErrBucketUnknown because the
 //     intent ("list my files in bucket X") is consistent regardless
@@ -1275,8 +1275,8 @@ func (s *fileService) PatchFile(ctx context.Context, ownerActorID, key string, r
 //   - `Visibility` non-empty must validate; otherwise
 //     ErrInvalidVisibility (handler 400). Empty disables the filter.
 //   - Pagination is silently clamped (Page≥1, 1≤PageSize≤200).
-func (s *fileService) ListMyFiles(ctx context.Context, ownerActorID string, req ListMyFilesRequest) (*ListMyFilesResult, error) {
-	owner := strings.TrimSpace(ownerActorID)
+func (s *fileService) ListMyFiles(ctx context.Context, ownerPTID string, req ListMyFilesRequest) (*ListMyFilesResult, error) {
+	owner := strings.TrimSpace(ownerPTID)
 	if owner == "" {
 		return nil, ErrActorRequired
 	}
@@ -1376,7 +1376,7 @@ func (s *fileService) resolveBucketForOwner(ctx context.Context, owner, name str
 	if err != nil {
 		return nil, ErrBucketUnknown
 	}
-	if b.OwnerActorID != owner {
+	if b.OwnerPTID != owner {
 		return nil, ErrCrossActorBucket
 	}
 	return b, nil

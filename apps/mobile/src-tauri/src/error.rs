@@ -36,6 +36,20 @@ impl MobileError {
             message: message.into(),
         }
     }
+
+    pub fn station_identity(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_STATION_IDENTITY",
+            message: message.into(),
+        }
+    }
+
+    pub fn oauth(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_OAUTH",
+            message: message.into(),
+        }
+    }
 }
 
 impl std::fmt::Display for MobileError {

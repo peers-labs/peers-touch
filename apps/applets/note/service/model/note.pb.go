@@ -25,7 +25,7 @@ const (
 type Note struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NoteId        string                 `protobuf:"bytes,1,opt,name=note_id,json=noteId,proto3" json:"note_id,omitempty"`
-	OwnerId       string                 `protobuf:"bytes,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	OwnerPtid     string                 `protobuf:"bytes,2,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
 	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
 	Content       string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -72,9 +72,9 @@ func (x *Note) GetNoteId() string {
 	return ""
 }
 
-func (x *Note) GetOwnerId() string {
+func (x *Note) GetOwnerPtid() string {
 	if x != nil {
-		return x.OwnerId
+		return x.OwnerPtid
 	}
 	return ""
 }
@@ -830,10 +830,11 @@ var File_domain_note_v1_note_proto protoreflect.FileDescriptor
 
 const file_domain_note_v1_note_proto_rawDesc = "" +
 	"\n" +
-	"\x19domain/note/v1/note.proto\x12\x19peers_touch.model.note.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9b\x02\n" +
+	"\x19domain/note/v1/note.proto\x12\x19peers_touch.model.note.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa9\x02\n" +
 	"\x04Note\x12\x17\n" +
-	"\anote_id\x18\x01 \x01(\tR\x06noteId\x12\x19\n" +
-	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x14\n" +
+	"\anote_id\x18\x01 \x01(\tR\x06noteId\x12\x1d\n" +
+	"\n" +
+	"owner_ptid\x18\x02 \x01(\tR\townerPtid\x12\x14\n" +
 	"\x05title\x18\x03 \x01(\tR\x05title\x12\x18\n" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x129\n" +
 	"\n" +
@@ -841,7 +842,7 @@ const file_domain_note_v1_note_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x129\n" +
 	"\n" +
-	"deleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAt\"\x92\x01\n" +
+	"deleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAtR\bowner_id\"\x92\x01\n" +
 	"\x10ListNotesRequest\x12\x1b\n" +
 	"\tpage_size\x18\x01 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +

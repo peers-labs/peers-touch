@@ -65,7 +65,7 @@ if [[ "$diff_range" == "HEAD" ]]; then
 else
   changed="$(printf '%s\n' "$changed_for_skill" | sed '/^$/d' | sort -u)"
 fi
-if rg -q '^(tooling/skills/pt-github-review/|tooling/review-fixtures/|tooling/scripts/review/|docs/global/code-review-framework.md|AGENTS.md|docs/architecture/|docs/client/|docs/station/|docs/global/coding-guide/|docs/knowledge/)' <<< "$changed"; then
+if rg -q '^(tooling/skills/|tooling/review-fixtures/|tooling/scripts/review/|docs/global/code-review-framework.md|AGENTS.md|docs/architecture/|docs/client/|docs/station/|docs/global/coding-guide/|docs/knowledge/)' <<< "$changed"; then
   echo
   echo "== Review skill freshness =="
   tooling/scripts/review/skill-check.sh

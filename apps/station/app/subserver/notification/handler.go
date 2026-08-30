@@ -145,7 +145,7 @@ func (s *subServer) handleGetPreferences(ctx context.Context, _ *pb.GetNotificat
 	protoPrefs := make([]*pb.NotificationPreference, 0, len(prefs))
 	for _, p := range prefs {
 		protoPrefs = append(protoPrefs, &pb.NotificationPreference{
-			ActorId:      p.ActorID,
+			ActorPtid:    p.ActorPTID,
 			Category:     pb.NotificationCategory(p.Category),
 			Enabled:      p.Enabled,
 			PushEnabled:  p.PushEnabled,
@@ -166,7 +166,7 @@ func (s *subServer) handleUpdatePreference(ctx context.Context, req *pb.UpdateNo
 	}
 
 	pref, err := s.service.UpsertPreference(domain.NotificationPreference{
-		ActorID:      subject.ID,
+		ActorPTID:    subject.ID,
 		Category:     int32(req.Category),
 		Enabled:      req.Enabled,
 		PushEnabled:  req.PushEnabled,
@@ -177,7 +177,7 @@ func (s *subServer) handleUpdatePreference(ctx context.Context, req *pb.UpdateNo
 	}
 	return &pb.UpdateNotificationPreferenceResponse{
 		Preference: &pb.NotificationPreference{
-			ActorId:      pref.ActorID,
+			ActorPtid:    pref.ActorPTID,
 			Category:     pb.NotificationCategory(pref.Category),
 			Enabled:      pref.Enabled,
 			PushEnabled:  pref.PushEnabled,
@@ -193,19 +193,19 @@ func (s *subServer) handleUpdatePreference(ctx context.Context, req *pb.UpdateNo
 
 func notifToProto(n domain.Notification) *pb.Notification {
 	p := &pb.Notification{
-		Id:          n.ID,
-		RecipientId: n.RecipientID,
-		ActorId:     n.ActorID,
-		Type:        pb.NotificationType(n.Type),
-		Category:    pb.NotificationCategory(n.Category),
-		Status:      pb.NotificationStatus(n.Status),
-		TargetType:  n.TargetType,
-		TargetId:    n.TargetID,
-		Title:       n.Title,
-		Body:        n.Body,
-		GroupKey:    n.GroupKey,
-		Metadata:    n.Metadata,
-		CreatedAt:   timestamppb.New(n.CreatedAt),
+		Id:            n.ID,
+		RecipientPtid: n.RecipientPTID,
+		ActorPtid:     n.ActorPTID,
+		Type:          pb.NotificationType(n.Type),
+		Category:      pb.NotificationCategory(n.Category),
+		Status:        pb.NotificationStatus(n.Status),
+		TargetType:    n.TargetType,
+		TargetId:      n.TargetID,
+		Title:         n.Title,
+		Body:          n.Body,
+		GroupKey:      n.GroupKey,
+		Metadata:      n.Metadata,
+		CreatedAt:     timestamppb.New(n.CreatedAt),
 	}
 	if n.ReadAt != nil {
 		p.ReadAt = timestamppb.New(*n.ReadAt)

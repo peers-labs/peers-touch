@@ -355,6 +355,35 @@ class EnvironmentProvisioner(ABC):
         return blocked
 
     def _ready(self, manifest: RuntimeManifest) -> RuntimeManifest:
+        for service_id, requirement in self.contract.services.items():
+            if not requirement.required:
+                continue
+            attestation = manifest.services.get(service_id)
+            if attestation is None:
+                raise BlockedError(
+                    reason=(
+                        f"Required service {service_id!r} has no runtime attestation"
+                    ),
+                    resource=f"service-attestation:{service_id}",
+                )
+            if attestation.service_kind != requirement.kind:
+                raise BlockedError(
+                    reason=(
+                        f"Service {service_id!r} kind {attestation.service_kind!r} "
+                        f"does not match contract kind {requirement.kind!r}"
+                    ),
+                    resource=f"service-attestation:{service_id}",
+                )
+            if (
+                requirement.runtime_identity_required
+                and not attestation.runtime_identity
+            ):
+                raise BlockedError(
+                    reason=(
+                        f"Service {service_id!r} has no stable runtime identity"
+                    ),
+                    resource=f"service-identity:{service_id}",
+                )
         ready = dataclasses.replace(
             manifest,
             state=ProvisioningState.FIXTURE_READY,

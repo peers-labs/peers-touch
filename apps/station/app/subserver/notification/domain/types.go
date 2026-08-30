@@ -3,20 +3,20 @@ package domain
 import "time"
 
 type Notification struct {
-	ID          string
-	RecipientID string
-	ActorID     string
-	Type        int32
-	Category    int32
-	Status      int32
-	TargetType  string
-	TargetID    string
-	Title       string
-	Body        string
-	Metadata    map[string]string
-	GroupKey    string
-	CreatedAt   time.Time
-	ReadAt      *time.Time
+	ID            string
+	RecipientPTID string
+	ActorPTID     string
+	Type          int32
+	Category      int32
+	Status        int32
+	TargetType    string
+	TargetID      string
+	Title         string
+	Body          string
+	Metadata      map[string]string
+	GroupKey      string
+	CreatedAt     time.Time
+	ReadAt        *time.Time
 }
 
 type NotificationGroup struct {
@@ -28,13 +28,13 @@ type NotificationGroup struct {
 	Title      string
 	Body       string
 	Count      int32
-	ActorIDs   []string
+	ActorPTIDs []string
 	Latest     *Notification
 	UpdatedAt  time.Time
 }
 
 type NotificationPreference struct {
-	ActorID      string
+	ActorPTID    string
 	Category     int32
 	Enabled      bool
 	PushEnabled  bool

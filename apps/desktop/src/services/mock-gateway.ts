@@ -125,7 +125,7 @@ export function mockInvoke(cmd: string, _args?: Record<string, unknown>): unknow
       return { ok: true, data: MOCK_I18N_RESOURCES };
 
     case 'auth_restore_session':
-      return { ok: true, data: { command: cmd, status: '', actor_id: 'mock-user-1', name: 'Demo User', email: 'demo@peers.touch', login_method: 'password' } };
+      return { ok: true, data: { command: cmd, status: '', actor_ptid: 'mock-user-1', name: 'Demo User', email: 'demo@peers.touch', login_method: 'password' } };
     case 'auth_validate_token':
     case 'ensure_station_session':
       return { ok: true, data: { command: cmd, status: '' } };

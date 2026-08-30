@@ -27,8 +27,8 @@ fn token_from_state(
     Ok(token)
 }
 
-fn actor_id_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Option<String> {
-    session_resolver::actor_id_for_window(state.inner(), window)
+fn actor_ptid_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Option<String> {
+    session_resolver::ptid_for_window(state.inner(), window)
 }
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -44,7 +44,7 @@ pub fn key_exchange_upload_bundle(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_id = match actor_id_from_state(&state, &window) {
+    let actor_ptid = match actor_ptid_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -58,7 +58,7 @@ pub fn key_exchange_upload_bundle(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let device_id = match device_install::get_or_create_device_id(actor_id.as_str()) {
+    let device_id = match device_install::get_or_create_device_id(actor_ptid.as_str()) {
         Ok(s) => s,
         Err(e) => {
             return AppResult::fail(ErrorCode::InternalError, format!("device_id: {e}"), None);
@@ -100,11 +100,11 @@ pub fn key_exchange_fetch_bundle(
         Ok(t) => t,
         Err(e) => return e,
     };
-    if input.did.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "did is required", None);
+    if input.ptid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "ptid is required", None);
     }
     let req = kemodel::FetchKeyBundleRequest {
-        did: input.did,
+        ptid: input.ptid,
         device_id: input.device_id.unwrap_or_default(),
         home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
     };
@@ -126,7 +126,7 @@ pub fn key_exchange_fetch_bundle(
         .iter()
         .map(|b| {
             json!({
-                "did": b.did,
+                "ptid": b.ptid,
                 "device_id": b.device_id,
                 "ik_pub": b.ik_pub,
                 "fingerprint": wire::identity_fingerprint_hex(&b.ik_pub),

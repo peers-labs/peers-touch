@@ -14,22 +14,22 @@ import { useActiveRelationshipsSlice } from './useActiveMomentsStore';
 // Self-target case:
 //   - The store has no concept of "is this me", so the parent must
 //     not render this button when the target is the viewer. We
-//     defensively early-return on `targetActorId === viewerActorId`
+//     defensively early-return on `targetActorPtid === viewerActorPtid`
 //     so a misuse renders nothing instead of an actionable button
 //     that would 4xx on click.
 
 interface FollowButtonProps {
-  targetActorId: string;
+  targetActorPtid: string;
   /** Optional viewer id; when matches target, the button hides itself. */
-  viewerActorId?: string;
+  viewerActorPtid?: string;
   /** When `compact`, drop the icon and use the button-text-only form. */
   compact?: boolean;
 }
 
-export function FollowButton({ targetActorId, viewerActorId, compact }: FollowButtonProps) {
+export function FollowButton({ targetActorPtid, viewerActorPtid, compact }: FollowButtonProps) {
   const { t } = useTranslation('moments');
   const { relation, loadingMap, loadRelationship, follow, unfollow } = useActiveRelationshipsSlice((s) => ({
-    relation: s.relations[targetActorId],
+    relation: s.relations[targetActorPtid],
     loadingMap: s.loading,
     loadRelationship: s.loadRelationship,
     follow: s.follow,
@@ -40,25 +40,25 @@ export function FollowButton({ targetActorId, viewerActorId, compact }: FollowBu
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!targetActorId || relation || loadingMap[targetActorId]) return;
-    loadRelationship(targetActorId).catch(() => {
+    if (!targetActorPtid || relation || loadingMap[targetActorPtid]) return;
+    loadRelationship(targetActorPtid).catch(() => {
       // Silent — the relationship cell is best-effort. UI will show
       // the "+Follow" default state.
     });
-  }, [targetActorId, relation, loadingMap, loadRelationship]);
+  }, [targetActorPtid, relation, loadingMap, loadRelationship]);
 
-  if (viewerActorId && viewerActorId === targetActorId) return null;
+  if (viewerActorPtid && viewerActorPtid === targetActorPtid) return null;
 
   const following = !!relation?.following;
-  const loading = !relation && !!loadingMap[targetActorId];
+  const loading = !relation && !!loadingMap[targetActorPtid];
 
   const handleClick = async () => {
     setSubmitting(true);
     try {
       if (following) {
-        await unfollow(targetActorId);
+        await unfollow(targetActorPtid);
       } else {
-        await follow(targetActorId);
+        await follow(targetActorPtid);
       }
     } catch (err) {
       message.error(String(err));

@@ -36,7 +36,7 @@ func newStubFileRepo() *stubFileRepo {
 }
 
 func (s *stubFileRepo) put(meta *ossmodel.FileMeta) {
-	s.byOwnerKey[meta.OwnerActorID+"|"+meta.Key] = meta
+	s.byOwnerKey[meta.OwnerPTID+"|"+meta.Key] = meta
 	if _, ok := s.byKey[meta.Key]; !ok {
 		s.byKey[meta.Key] = meta
 	}
@@ -211,12 +211,12 @@ func TestHandleFederationToken_NotFound(t *testing.T) {
 func TestHandleFederationToken_ForbiddenByVisibility(t *testing.T) {
 	files := newStubFileRepo()
 	files.put(&ossmodel.FileMeta{
-		ID:           "f-1",
-		OwnerActorID: "did:test:bob",
-		Key:          "cas/aa/bobs-private",
-		Visibility:   ossmodel.VisibilityPrivate,
-		BucketID:     "bucket-1",
-		Size:         42,
+		ID:         "f-1",
+		OwnerPTID:  "did:test:bob",
+		Key:        "cas/aa/bobs-private",
+		Visibility: ossmodel.VisibilityPrivate,
+		BucketID:   "bucket-1",
+		Size:       42,
 	})
 	audits := &stubAuditRepo{}
 	s := newFederationHandlerServer(files, audits)
@@ -248,12 +248,12 @@ func TestHandleFederationToken_ForbiddenByVisibility(t *testing.T) {
 func TestHandleFederationToken_HappyPath_PublicFile(t *testing.T) {
 	files := newStubFileRepo()
 	files.put(&ossmodel.FileMeta{
-		ID:           "f-2",
-		OwnerActorID: "did:test:alice",
-		Key:          "cas/aa/alices-public",
-		Visibility:   ossmodel.VisibilityPublic,
-		BucketID:     "bucket-1",
-		Size:         128,
+		ID:         "f-2",
+		OwnerPTID:  "did:test:alice",
+		Key:        "cas/aa/alices-public",
+		Visibility: ossmodel.VisibilityPublic,
+		BucketID:   "bucket-1",
+		Size:       128,
 	})
 	audits := &stubAuditRepo{}
 	s := newFederationHandlerServer(files, audits)
@@ -300,8 +300,8 @@ func TestHandleFederationToken_HappyPath_PublicFile(t *testing.T) {
 	if aud.PeerStationID == "" {
 		t.Errorf("audit missing peer_station_id")
 	}
-	if aud.ActorID != "did:test:alice" {
-		t.Errorf("audit actor_id = %q, want did:test:alice", aud.ActorID)
+	if aud.ActorPTID != "did:test:alice" {
+		t.Errorf("audit actor_ptid = %q, want did:test:alice", aud.ActorPTID)
 	}
 }
 

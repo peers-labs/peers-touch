@@ -23,14 +23,14 @@ import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
 
 interface MomentDetailViewProps {
   postId: string;
-  viewerActorId?: string;
+  viewerActorPtid?: string;
   onBack: () => void;
-  onAuthorClick: (actorId: string) => void;
+  onAuthorClick: (actorPtid: string) => void;
 }
 
 export function MomentDetailView({
   postId,
-  viewerActorId,
+  viewerActorPtid,
   onBack,
   onAuthorClick,
 }: MomentDetailViewProps) {
@@ -96,7 +96,7 @@ export function MomentDetailView({
             post={post}
             reactions={reactions}
             explanation={explanation}
-            viewerActorId={viewerActorId}
+            viewerActorPtid={viewerActorPtid}
             embedded
             onAuthorClick={onAuthorClick}
             onReact={handleReact}
@@ -109,7 +109,7 @@ export function MomentDetailView({
               comments={comments}
               loading={commentsLoading}
               hasMore={commentsHasMore}
-              viewerActorId={viewerActorId}
+              viewerActorPtid={viewerActorPtid}
               onLoadMore={() => loadComments(postId).catch(() => {})}
               onSubmit={async (content, replyToCommentId) => {
                 try {

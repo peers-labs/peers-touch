@@ -1,0 +1,14 @@
+{
+  "id": "mobile-chat-contacts-groups",
+  "status": "active",
+  "product_area": "mobile",
+  "owners": ["apps/mobile/src/features/social/**", "apps/mobile/src/features/group/**", "apps/mobile/src/pages/ChatPage.tsx", "apps/mobile/src/pages/ContactsPage.tsx"],
+  "truth_sources": ["Station conversation and relationship domains", "shared Mobile Social projection ingress"],
+  "visible_surfaces": [{"type": "mobile", "route": "chat"}, {"type": "mobile", "route": "contacts"}],
+  "required_gates": ["mobile-native-social-convergence-e2e", "mobile-native-chat-contacts-e2e"],
+  "acceptance": {
+    "product_assertions": ["MS-PA06", "MS-PA09", "MS-PA10", "MS-PA18", "MS-PA19"],
+    "visible": ["two actors can complete Chat, contact, and group journeys with authoritative readback"]
+  },
+  "negative": ["group runtime must not open a second Station event stream", "empty state must not hide an error state"]
+}

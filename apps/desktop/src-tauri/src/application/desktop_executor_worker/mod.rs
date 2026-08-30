@@ -23,7 +23,7 @@ const WORKER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
 struct WorkerSession {
-    actor_id: String,
+    actor_ptid: String,
     token: String,
 }
 
@@ -72,18 +72,8 @@ fn run_loop(state: Arc<AppState>) {
 fn active_sessions(state: &AppState) -> Vec<WorkerSession> {
     let mut sessions = Vec::new();
     let mut seen = HashSet::new();
-    if let Ok(guard) = state.session.lock() {
-        if let (Some(actor_id), Some(token)) = (guard.actor_id.clone(), guard.token.clone()) {
-            push_session(&mut sessions, &mut seen, actor_id, token);
-        }
-    }
     for session in state.sessions.snapshot_all() {
-        push_session(
-            &mut sessions,
-            &mut seen,
-            session.actor.actor_id,
-            session.jwt,
-        );
+        push_session(&mut sessions, &mut seen, session.actor.ptid, session.jwt);
     }
     sessions
 }
@@ -91,19 +81,23 @@ fn active_sessions(state: &AppState) -> Vec<WorkerSession> {
 fn push_session(
     sessions: &mut Vec<WorkerSession>,
     seen: &mut HashSet<String>,
-    actor_id: String,
+    actor_ptid: String,
     token: String,
 ) {
-    let actor_id = actor_id.trim().to_string();
+    let actor_ptid = actor_ptid.trim().to_string();
     let token = token.trim().to_string();
-    if actor_id.is_empty() || token.is_empty() || !seen.insert(actor_id.clone()) {
+    if actor_ptid.is_empty() || token.is_empty() || !seen.insert(actor_ptid.clone()) {
         return;
     }
-    sessions.push(WorkerSession { actor_id, token });
+    sessions.push(WorkerSession { actor_ptid, token });
 }
 
 fn claim_and_execute(session: &WorkerSession) -> Result<(), String> {
-    let executor_id = format!("desktop-worker-{}-{}", session.actor_id, std::process::id());
+    let executor_id = format!(
+        "desktop-worker-{}-{}",
+        session.actor_ptid,
+        std::process::id()
+    );
     let claim = app_orchestration::agent_collaboration_claim_executor_task(
         AgentCollaborationClaimExecutorInput {
             executor_id: executor_id.clone(),
@@ -156,7 +150,7 @@ fn claim_and_execute(session: &WorkerSession) -> Result<(), String> {
             return Ok(());
         }
     };
-    let agent = local_agent_json(&session.actor_id, &local_agent_id)?;
+    let agent = local_agent_json(&session.actor_ptid, &local_agent_id)?;
     let cli_command = value_string(&agent, &["cliCommand", "cli_command"]);
     if cli_command.is_empty() {
         let summary = format!("Local agent {local_agent_id} has no CLI command.");
@@ -207,7 +201,7 @@ fn claim_and_execute(session: &WorkerSession) -> Result<(), String> {
             memory_disabled: None,
         },
         &session.token,
-        &session.actor_id,
+        &session.actor_ptid,
     );
     stop_heartbeat.store(true, Ordering::SeqCst);
     let _ = heartbeat_handle.join();
@@ -329,16 +323,16 @@ fn submit_worker_result(
     Ok(())
 }
 
-fn local_agent_json(actor_id: &str, agent_id: &str) -> Result<Value, String> {
+fn local_agent_json(actor_ptid: &str, agent_id: &str) -> Result<Value, String> {
     let result = payload_json(app_agents::agents_get(
-        actor_id,
+        actor_ptid,
         AgentIdInput {
             id: agent_id.to_string(),
         },
     ));
     match result {
         Ok(value) => Ok(value),
-        Err(error) if !actor_id.trim().is_empty() => payload_json(app_agents::agents_get(
+        Err(error) if !actor_ptid.trim().is_empty() => payload_json(app_agents::agents_get(
             "",
             AgentIdInput {
                 id: agent_id.to_string(),

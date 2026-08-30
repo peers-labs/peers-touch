@@ -25,26 +25,26 @@ func (s *AgentService) ListAgents(ctx context.Context, options domain.AgentListO
 	if err != nil {
 		return nil, 0, err
 	}
-	actorID := strings.TrimSpace(options.ActorID)
-	if actorID == "" {
-		return nil, 0, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID := strings.TrimSpace(options.ActorPTID)
+	if actorPTID == "" {
+		return nil, 0, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	page, pageSize := normalizePage(options.Page, options.PageSize)
 	query := db.WithContext(ctx).Model(&persistence.Agent{}).
-		Where("owner_actor_id = ? OR visibility = ?", actorID, string(domain.AgentVisibilityWorkspace))
+		Where("owner_actor_ptid = ? OR visibility = ?", actorPTID, string(domain.AgentVisibilityWorkspace))
 	if options.Visibility != "" {
 		query = query.Where("visibility = ?", string(normalizeAgentVisibility(options.Visibility)))
 	}
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		logger.Errorf(ctx, "failed to count agents: actor_id=%s err=%v", actorID, err)
+		logger.Errorf(ctx, "failed to count agents: actor_ptid=%s err=%v", actorPTID, err)
 		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to count agents", err)
 	}
 
 	var records []persistence.Agent
 	if err := query.Order("updated_at DESC").Limit(pageSize).Offset((page - 1) * pageSize).Find(&records).Error; err != nil {
-		logger.Errorf(ctx, "failed to list agents: actor_id=%s err=%v", actorID, err)
+		logger.Errorf(ctx, "failed to list agents: actor_ptid=%s err=%v", actorPTID, err)
 		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to list agents", err)
 	}
 	agents := make([]domain.Agent, 0, len(records))
@@ -54,8 +54,8 @@ func (s *AgentService) ListAgents(ctx context.Context, options domain.AgentListO
 	return agents, total, nil
 }
 
-func (s *AgentService) GetAgent(ctx context.Context, actorID, agentID string) (*domain.Agent, error) {
-	record, err := s.getVisibleAgent(ctx, actorID, agentID)
+func (s *AgentService) GetAgent(ctx context.Context, actorPTID, agentID string) (*domain.Agent, error) {
+	record, err := s.getVisibleAgent(ctx, actorPTID, agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -68,9 +68,9 @@ func (s *AgentService) CreateAgent(ctx context.Context, options domain.AgentUpse
 	if err != nil {
 		return nil, err
 	}
-	actorID := strings.TrimSpace(options.ActorID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID := strings.TrimSpace(options.ActorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	name := strings.TrimSpace(options.Name)
 	if name == "" {
@@ -78,21 +78,21 @@ func (s *AgentService) CreateAgent(ctx context.Context, options domain.AgentUpse
 	}
 	now := time.Now()
 	record := persistence.Agent{
-		ID:           generateID("agent"),
-		Name:         name,
-		Title:        strings.TrimSpace(options.Title),
-		Description:  strings.TrimSpace(options.Description),
-		ProviderID:   strings.TrimSpace(options.ProviderID),
-		ModelName:    strings.TrimSpace(options.ModelName),
-		Effort:       strings.TrimSpace(options.Effort),
-		Visibility:   string(normalizeAgentVisibility(options.Visibility)),
-		OwnerActorID: actorID,
-		ConfigJSON:   options.ConfigJSON,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:             generateID("agent"),
+		Name:           name,
+		Title:          strings.TrimSpace(options.Title),
+		Description:    strings.TrimSpace(options.Description),
+		ProviderID:     strings.TrimSpace(options.ProviderID),
+		ModelName:      strings.TrimSpace(options.ModelName),
+		Effort:         strings.TrimSpace(options.Effort),
+		Visibility:     string(normalizeAgentVisibility(options.Visibility)),
+		OwnerActorPTID: actorPTID,
+		ConfigJSON:     options.ConfigJSON,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := db.WithContext(ctx).Create(&record).Error; err != nil {
-		logger.Errorf(ctx, "failed to create agent: actor_id=%s err=%v", actorID, err)
+		logger.Errorf(ctx, "failed to create agent: actor_ptid=%s err=%v", actorPTID, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create agent", err)
 	}
 	agent := persistenceAgentToDomain(&record)
@@ -104,7 +104,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 	if err != nil {
 		return nil, err
 	}
-	record, err := s.getOwnedAgent(ctx, options.ActorID, options.AgentID)
+	record, err := s.getOwnedAgent(ctx, options.ActorPTID, options.AgentID)
 	if err != nil {
 		return nil, err
 	}
@@ -120,62 +120,62 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 	record.ConfigJSON = options.ConfigJSON
 	record.UpdatedAt = time.Now()
 	if err := db.WithContext(ctx).Save(record).Error; err != nil {
-		logger.Errorf(ctx, "failed to update agent: actor_id=%s agent_id=%s err=%v", options.ActorID, options.AgentID, err)
+		logger.Errorf(ctx, "failed to update agent: actor_ptid=%s agent_id=%s err=%v", options.ActorPTID, options.AgentID, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to update agent", err)
 	}
 	agent := persistenceAgentToDomain(record)
 	return &agent, nil
 }
 
-func (s *AgentService) DeleteAgent(ctx context.Context, actorID, agentID string) error {
+func (s *AgentService) DeleteAgent(ctx context.Context, actorPTID, agentID string) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
 	}
-	record, err := s.getOwnedAgent(ctx, actorID, agentID)
+	record, err := s.getOwnedAgent(ctx, actorPTID, agentID)
 	if err != nil {
 		return err
 	}
 	if err := db.WithContext(ctx).Delete(record).Error; err != nil {
-		logger.Errorf(ctx, "failed to delete agent: actor_id=%s agent_id=%s err=%v", actorID, agentID, err)
+		logger.Errorf(ctx, "failed to delete agent: actor_ptid=%s agent_id=%s err=%v", actorPTID, agentID, err)
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to delete agent", err)
 	}
 	return nil
 }
 
-func (s *AgentService) getVisibleAgent(ctx context.Context, actorID, agentID string) (*persistence.Agent, error) {
+func (s *AgentService) getVisibleAgent(ctx context.Context, actorPTID, agentID string) (*persistence.Agent, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	actorID = strings.TrimSpace(actorID)
+	actorPTID = strings.TrimSpace(actorPTID)
 	agentID = strings.TrimSpace(agentID)
-	if actorID == "" || agentID == "" {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id and agent_id are required", nil)
+	if actorPTID == "" || agentID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_ptid and agent_id are required", nil)
 	}
 	var record persistence.Agent
 	err = db.WithContext(ctx).
-		Where("id = ? AND (owner_actor_id = ? OR visibility = ?)", agentID, actorID, string(domain.AgentVisibilityWorkspace)).
+		Where("id = ? AND (owner_actor_ptid = ? OR visibility = ?)", agentID, actorPTID, string(domain.AgentVisibilityWorkspace)).
 		First(&record).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "agent not found", err)
 	}
 	if err != nil {
-		logger.Errorf(ctx, "failed to get visible agent: actor_id=%s agent_id=%s err=%v", actorID, agentID, err)
+		logger.Errorf(ctx, "failed to get visible agent: actor_ptid=%s agent_id=%s err=%v", actorPTID, agentID, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to get agent", err)
 	}
 	return &record, nil
 }
 
-func (s *AgentService) getOwnedAgent(ctx context.Context, actorID, agentID string) (*persistence.Agent, error) {
+func (s *AgentService) getOwnedAgent(ctx context.Context, actorPTID, agentID string) (*persistence.Agent, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	actorID = strings.TrimSpace(actorID)
+	actorPTID = strings.TrimSpace(actorPTID)
 	agentID = strings.TrimSpace(agentID)
-	if actorID == "" || agentID == "" {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id and agent_id are required", nil)
+	if actorPTID == "" || agentID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_ptid and agent_id are required", nil)
 	}
 	var record persistence.Agent
 	err = db.WithContext(ctx).Where("id = ?", agentID).First(&record).Error
@@ -183,10 +183,10 @@ func (s *AgentService) getOwnedAgent(ctx context.Context, actorID, agentID strin
 		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "agent not found", err)
 	}
 	if err != nil {
-		logger.Errorf(ctx, "failed to get owned agent: actor_id=%s agent_id=%s err=%v", actorID, agentID, err)
+		logger.Errorf(ctx, "failed to get owned agent: actor_ptid=%s agent_id=%s err=%v", actorPTID, agentID, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to get agent", err)
 	}
-	if record.OwnerActorID != actorID {
+	if record.OwnerActorPTID != actorPTID {
 		return nil, errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden, "agent mutation requires owner", nil)
 	}
 	return &record, nil
@@ -222,17 +222,17 @@ func normalizeAgentVisibility(visibility domain.AgentVisibility) domain.AgentVis
 
 func persistenceAgentToDomain(record *persistence.Agent) domain.Agent {
 	return domain.Agent{
-		AgentID:      record.ID,
-		Name:         record.Name,
-		Title:        record.Title,
-		Description:  record.Description,
-		ProviderID:   record.ProviderID,
-		ModelName:    record.ModelName,
-		Effort:       record.Effort,
-		Visibility:   domain.AgentVisibility(record.Visibility),
-		OwnerActorID: record.OwnerActorID,
-		ConfigJSON:   record.ConfigJSON,
-		CreatedAt:    record.CreatedAt,
-		UpdatedAt:    record.UpdatedAt,
+		AgentID:        record.ID,
+		Name:           record.Name,
+		Title:          record.Title,
+		Description:    record.Description,
+		ProviderID:     record.ProviderID,
+		ModelName:      record.ModelName,
+		Effort:         record.Effort,
+		Visibility:     domain.AgentVisibility(record.Visibility),
+		OwnerActorPTID: record.OwnerActorPTID,
+		ConfigJSON:     record.ConfigJSON,
+		CreatedAt:      record.CreatedAt,
+		UpdatedAt:      record.UpdatedAt,
 	}
 }

@@ -27,7 +27,7 @@ type DashboardAdmin struct {
 	DisplayName  string         `gorm:"size:100" json:"display_name"`
 	Role         AdminRole      `gorm:"size:20;not null;default:'admin'" json:"role"`
 	IsSuperUser  bool           `gorm:"default:false" json:"is_super_user"`
-	DID          string         `gorm:"size:255;index" json:"did,omitempty"`
+	PTID         string         `gorm:"column:ptid;size:255;index" json:"ptid,omitempty"`
 	Disabled     bool           `gorm:"default:false" json:"disabled"`
 	LastLoginAt  *time.Time     `json:"last_login_at,omitempty"`
 	LastLoginIP  string         `gorm:"size:50" json:"last_login_ip,omitempty"`

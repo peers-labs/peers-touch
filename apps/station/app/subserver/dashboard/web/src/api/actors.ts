@@ -5,8 +5,7 @@
 import client from './client';
 
 export interface ActorDetail {
-  id: number;
-  did: string;
+  ptid: string;
   preferred_username: string;
   name: string;
   email: string;
@@ -46,23 +45,23 @@ export async function listActors(page = 1, pageSize = 20, search = ''): Promise<
 }
 
 /** Get detailed information for a specific actor. */
-export async function getActorDetail(id: number): Promise<ActorDetail> {
-  const { data } = await client.get<ActorDetail>(`/actors/${id}`);
+export async function getActorDetail(ptid: string): Promise<ActorDetail> {
+  const { data } = await client.get<ActorDetail>(`/actors/${encodeURIComponent(ptid)}`);
   return data;
 }
 
 /** List all sessions belonging to a specific actor. */
-export async function getActorSessions(id: number): Promise<ActorSession[]> {
-  const { data } = await client.get(`/actors/${id}/sessions`);
+export async function getActorSessions(ptid: string): Promise<ActorSession[]> {
+  const { data } = await client.get(`/actors/${encodeURIComponent(ptid)}/sessions`);
   return data.items;
 }
 
 /** Reset an actor's password (admin action). */
-export async function resetActorPassword(id: number, newPassword: string): Promise<void> {
-  await client.post(`/actors/${id}/reset-password`, { new_password: newPassword });
+export async function resetActorPassword(ptid: string, newPassword: string): Promise<void> {
+  await client.post(`/actors/${encodeURIComponent(ptid)}/reset-password`, { new_password: newPassword });
 }
 
 /** Revoke a specific session for an actor. */
-export async function revokeActorSession(actorId: number, sessionId: string): Promise<void> {
-  await client.post(`/actors/${actorId}/sessions/${sessionId}/revoke`);
+export async function revokeActorSession(actorPTID: string, sessionId: string): Promise<void> {
+  await client.post(`/actors/${encodeURIComponent(actorPTID)}/sessions/${encodeURIComponent(sessionId)}/revoke`);
 }

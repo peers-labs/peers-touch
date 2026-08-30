@@ -10,9 +10,12 @@ freshness_file="tooling/skills/pt-github-review/FRESHNESS.md"
 fixtures_dir="tooling/review-fixtures"
 pr_template=".github/PULL_REQUEST_TEMPLATE.md"
 submit_pipeline="tooling/scripts/review/submit-pipeline.sh"
+review_runner="tooling/scripts/review/run.sh"
 gap_skill="tooling/skills/pt-acceptance-gap-detector/SKILL.md"
 gap_procedures="tooling/skills/pt-acceptance-gap-detector/PROCEDURES.md"
 gap_detector="tooling/scripts/acceptance-gap-detect.py"
+plan_skill="tooling/skills/pt-plan-and-document/SKILL.md"
+english_workflow_skill="tooling/skills/pt-ew/SKILL.md"
 
 failures=0
 
@@ -30,9 +33,12 @@ require_file "$pr_skill_file"
 require_file "$freshness_file"
 require_file "$pr_template"
 require_file "$submit_pipeline"
+require_file "$review_runner"
 require_file "$gap_skill"
 require_file "$gap_procedures"
 require_file "$gap_detector"
+require_file "$plan_skill"
+require_file "$english_workflow_skill"
 
 required_sections=(
   "Review Philosophy"
@@ -124,6 +130,37 @@ for marker in "make quality-evidence" "run.sh --range" "--strict-knowledge" "mak
     fail "$submit_pipeline missing required command marker: $marker"
   fi
 done
+
+if grep -Fq 'Every tracked execution plan must include exactly one `## Context Anchor`' "$plan_skill"; then
+  fail "$plan_skill must not require Context Anchor sections in execution plans"
+fi
+if ! grep -Fq 'Execution plans MUST NOT contain a `## Context Anchor` section.' "$plan_skill"; then
+  fail "$plan_skill missing the canonical Context Anchor ownership boundary"
+fi
+
+english_workflow_markers=(
+  "Chinese input: translate the complete intent"
+  "English input: preserve the original sentence"
+  "Mixed Chinese and English: produce one complete natural English version"
+  "Default response language: English."
+  "Chinese input does not deactivate the skill"
+)
+
+for marker in "${english_workflow_markers[@]}"; do
+  if ! grep -Fq "$marker" "$english_workflow_skill"; then
+    fail "$english_workflow_skill missing required language behavior: $marker"
+  fi
+done
+
+if grep -Fq "User writes only Chinese | Skip English check" "$english_workflow_skill"; then
+  fail "$english_workflow_skill must translate Chinese input instead of disabling coaching"
+fi
+if grep -Fq "User can deactivate by switching to Chinese" "$english_workflow_skill"; then
+  fail "$english_workflow_skill must require explicit English-mode deactivation"
+fi
+if ! grep -Fq "^(tooling/skills/|" "$review_runner"; then
+  fail "$review_runner must run skill-check for every canonical project skill change"
+fi
 
 covered_docs=()
 while IFS= read -r doc; do

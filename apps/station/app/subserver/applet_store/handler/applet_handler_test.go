@@ -254,9 +254,9 @@ func TestAppletStoreInstallRevokeRollbackAndAudit(t *testing.T) {
 	appletID := seedStoreApplet(t, db)
 
 	catalog, err := h.HandleListAppletCatalog(ctx, &model.ListAppletCatalogRequest{
-		ActorId:  "test_user",
-		DeviceId: "device-a",
-		Channel:  model.AppletReleaseChannel_APPLET_RELEASE_CHANNEL_STABLE,
+		ActorPtid: "ptid:v1:actor:peers:p:test_user:test",
+		DeviceId:  "device-a",
+		Channel:   model.AppletReleaseChannel_APPLET_RELEASE_CHANNEL_STABLE,
 	})
 	if err != nil {
 		t.Fatalf("catalog: %v", err)
@@ -266,11 +266,11 @@ func TestAppletStoreInstallRevokeRollbackAndAudit(t *testing.T) {
 	}
 
 	install, err := h.HandleInstallApplet(ctx, &model.InstallAppletRequest{
-		ActorId:  "test_user",
-		DeviceId: "device-a",
-		AppletId: appletID,
-		Channel:  model.AppletReleaseChannel_APPLET_RELEASE_CHANNEL_STABLE,
-		Config:   map[string]string{"locale": "en"},
+		ActorPtid: "ptid:v1:actor:peers:p:test_user:test",
+		DeviceId:  "device-a",
+		AppletId:  appletID,
+		Channel:   model.AppletReleaseChannel_APPLET_RELEASE_CHANNEL_STABLE,
+		Config:    map[string]string{"locale": "en"},
 	})
 	if err != nil {
 		t.Fatalf("install: %v", err)
@@ -280,8 +280,8 @@ func TestAppletStoreInstallRevokeRollbackAndAudit(t *testing.T) {
 	}
 
 	installed, err := h.HandleListInstalledApplets(ctx, &model.ListInstalledAppletsRequest{
-		ActorId:  "test_user",
-		DeviceId: "device-a",
+		ActorPtid: "ptid:v1:actor:peers:p:test_user:test",
+		DeviceId:  "device-a",
 	})
 	if err != nil {
 		t.Fatalf("list installed: %v", err)
@@ -307,7 +307,7 @@ func TestAppletStoreInstallRevokeRollbackAndAudit(t *testing.T) {
 	audit, err := h.HandleIngestAppletAudit(ctx, &model.IngestAppletAuditRequest{
 		Records: []*model.AppletAuditRecord{{
 			AuditId:    "audit-1",
-			ActorId:    "test_user",
+			ActorPtid:  "ptid:v1:actor:peers:p:test_user:test",
 			DeviceId:   "device-a",
 			AppletId:   appletID,
 			Version:    "1.0.0",
@@ -356,9 +356,9 @@ func TestAppletStoreTypedPublishAndBundleServing(t *testing.T) {
 	published := publishStoreAppletFixture(t, svc, "published.applet")
 
 	catalog, err := h.HandleListAppletCatalog(ctx, &model.ListAppletCatalogRequest{
-		ActorId:  "test_user",
-		DeviceId: "device-a",
-		Channel:  model.AppletReleaseChannel_APPLET_RELEASE_CHANNEL_DEV,
+		ActorPtid: "ptid:v1:actor:peers:p:test_user:test",
+		DeviceId:  "device-a",
+		Channel:   model.AppletReleaseChannel_APPLET_RELEASE_CHANNEL_DEV,
 	})
 	if err != nil {
 		t.Fatalf("catalog: %v", err)

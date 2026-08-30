@@ -28,7 +28,7 @@ import (
 //
 // `chat`/`private` require an authenticated subject; the actual
 // audience check happens in the OSS handler against the friend_chat
-// session table (for `chat`) or against `OwnerActorID` (for `private`).
+// session table (for `chat`) or against `OwnerPTID` (for `private`).
 //
 // `public` skips the audience check but the operator-managed
 // `sign-secret` HMAC gate still applies if it is configured.
@@ -78,15 +78,15 @@ const (
 //
 // Lookup keys:
 //   - by ID (ULID, `idx_bucket_id_pk`)
-//   - by (OwnerActorID, Name) (`idx_bucket_owner_name`, unique)
+//   - by (OwnerPTID, Name) (`idx_bucket_owner_ptid_name`, unique)
 //
 // The unique index on the (owner, name) pair is what makes
 // `Bootstrap` idempotent — repeated runs will collide on the index
 // and we treat the collision as success.
 type Bucket struct {
 	ID                string `json:"id"             gorm:"primaryKey;type:varchar(64)"`
-	Name              string `json:"name"           gorm:"uniqueIndex:idx_bucket_owner_name;type:varchar(120)"`
-	OwnerActorID      string `json:"owner_actor_id" gorm:"uniqueIndex:idx_bucket_owner_name;index;type:varchar(255)"`
+	Name              string `json:"name"       gorm:"uniqueIndex:idx_bucket_owner_ptid_name;type:varchar(120)"`
+	OwnerPTID         string `json:"owner_ptid" gorm:"column:owner_ptid;uniqueIndex:idx_bucket_owner_ptid_name;index;type:varchar(255)"`
 	Kind              string `json:"kind"           gorm:"type:varchar(16);index"`
 	SystemKey         string `json:"system_key"     gorm:"type:varchar(32);index"`
 	DefaultVisibility string `json:"default_visibility" gorm:"type:varchar(16)"`
@@ -125,7 +125,7 @@ type Bucket struct {
 	// delete path uses `Unscoped()` for either hard delete or list-
 	// including-deleted views.
 	//
-	// Note: the unique index on (owner_actor_id, name) is *not*
+	// Note: the unique index on (owner_ptid, name) is *not*
 	// scoped by deleted_at, so the operator must hard-delete (or
 	// rename) before recreating a bucket with the same name. This
 	// is an explicit operator-friction trade for keeping the index

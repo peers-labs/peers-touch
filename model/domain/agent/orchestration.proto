@@ -89,12 +89,14 @@ enum CircuitBreakerState {
 }
 
 message CollaborationTask {
+  reserved "goal_owner_id";
+
   string task_id = 1;
   string title = 2;
   string description = 3;
   CollaborationEngineType engine_type = 4;
   CollaborationTaskStatus status = 5;
-  string goal_owner_id = 6;
+  string goal_owner_ptid = 6;
   string workspace_id = 7;
   double budget_tokens = 8;
   double budget_money = 9;
@@ -214,7 +216,7 @@ message TaskRun {
   string description = 3;
   TaskSurface surface = 4;
   CollaborationTaskStatus status = 5;
-  string owner_actor_id = 6;
+  string owner_actor_ptid = 6;
   string workspace_id = 7;
   string root_turn_id = 8;
   string current_checkpoint_id = 9;
@@ -520,10 +522,12 @@ message CircuitBreakerStatus {
 }
 
 message CreateCollaborationTaskRequest {
+  reserved "goal_owner_id";
+
   string title = 1;
   string description = 2;
   CollaborationEngineType engine_type = 3;
-  string goal_owner_id = 4;
+  string goal_owner_ptid = 4;
   optional string workspace_id = 5;
   double budget_tokens = 6;
   double budget_money = 7;
@@ -546,7 +550,9 @@ message GetCollaborationTaskResponse {
 }
 
 message ListCollaborationTasksRequest {
-  string owner_id = 1;
+  reserved "owner_id";
+
+  string owner_ptid = 1;
   CollaborationTaskStatus status = 2;
   int32 page = 3;
   int32 page_size = 4;

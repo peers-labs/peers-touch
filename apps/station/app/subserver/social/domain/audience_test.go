@@ -17,16 +17,24 @@ func setU64(ids ...uint64) map[uint64]struct{} {
 	return s
 }
 
+func setStrings(ids ...string) map[string]struct{} {
+	s := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		s[id] = struct{}{}
+	}
+	return s
+}
+
 func anon() Viewer {
 	return Viewer{}
 }
 
-func viewer(id uint64, did string) Viewer {
-	return Viewer{ActorID: id, ActorDID: did}
+func viewer(_ uint64, ptid string) Viewer {
+	return Viewer{ActorPTID: ptid}
 }
 
-func (v Viewer) following(authorIDs ...uint64) Viewer {
-	v.Following = setU64(authorIDs...)
+func (v Viewer) following(authorPTIDs ...string) Viewer {
+	v.Following = setStrings(authorPTIDs...)
 	return v
 }
 
@@ -40,7 +48,7 @@ func (v Viewer) inGroups(ids ...uint64) Viewer {
 	return v
 }
 
-const authorID uint64 = 100
+const authorID = "did:peers:author"
 
 // ---------------------------------------------------------------------------
 // CanRead: PUBLIC
@@ -54,7 +62,7 @@ func TestCanRead_Public_AllowsEveryone(t *testing.T) {
 	}{
 		{"anonymous", anon()},
 		{"random user", viewer(7, "did:peers:bob")},
-		{"author themself", viewer(authorID, "did:peers:author")},
+		{"author themself", viewer(100, authorID)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -100,7 +108,7 @@ func TestCanRead_Followers(t *testing.T) {
 	})
 
 	t.Run("author allowed (short-circuit)", func(t *testing.T) {
-		v := viewer(authorID, "did:peers:author")
+		v := viewer(100, authorID)
 		ok, _ := CanRead(v, authorID, a, false)
 		if !ok {
 			t.Fatal("author always allowed")
@@ -146,7 +154,7 @@ func TestCanRead_Circle(t *testing.T) {
 	})
 
 	t.Run("author allowed even without circle membership", func(t *testing.T) {
-		v := viewer(authorID, "did:peers:author")
+		v := viewer(100, authorID)
 		ok, _ := CanRead(v, authorID, a, false)
 		if !ok {
 			t.Fatal("author always allowed")
@@ -197,7 +205,7 @@ func TestCanRead_Self(t *testing.T) {
 	a := &model.Audience{Kind: model.Audience_SELF}
 
 	t.Run("author allowed", func(t *testing.T) {
-		v := viewer(authorID, "did:peers:author")
+		v := viewer(100, authorID)
 		ok, _ := CanRead(v, authorID, a, false)
 		if !ok {
 			t.Fatal("author must be able to read own SELF post")
@@ -220,36 +228,36 @@ func TestCanRead_Self(t *testing.T) {
 
 func TestCanRead_CustomAllow(t *testing.T) {
 	a := &model.Audience{
-		Kind:      model.Audience_CUSTOM_ALLOW,
-		ActorDids: []string{"did:peers:alice", "did:peers:bob"},
+		Kind:       model.Audience_CUSTOM_ALLOW,
+		ActorPtids: []string{"did:peers:alice", "did:peers:bob"},
 	}
 
-	t.Run("listed DID allowed", func(t *testing.T) {
+	t.Run("listed PTID allowed", func(t *testing.T) {
 		v := viewer(7, "did:peers:alice")
 		ok, _ := CanRead(v, authorID, a, false)
 		if !ok {
-			t.Fatal("listed DID must be allowed")
+			t.Fatal("listed PTID must be allowed")
 		}
 	})
 
-	t.Run("unlisted DID denied", func(t *testing.T) {
+	t.Run("unlisted PTID denied", func(t *testing.T) {
 		v := viewer(7, "did:peers:eve")
 		ok, _ := CanRead(v, authorID, a, false)
 		if ok {
-			t.Fatal("unlisted DID must be denied")
+			t.Fatal("unlisted PTID must be denied")
 		}
 	})
 
-	t.Run("anonymous (empty DID) denied even if list contains empty", func(t *testing.T) {
+	t.Run("anonymous (empty PTID) denied even if list contains empty", func(t *testing.T) {
 		// Defensive: even if the deny list pathologically contains "", an
-		// anonymous viewer with empty DID must NOT match.
+		// anonymous viewer with empty PTID must NOT match.
 		a2 := &model.Audience{
-			Kind:      model.Audience_CUSTOM_ALLOW,
-			ActorDids: []string{""},
+			Kind:       model.Audience_CUSTOM_ALLOW,
+			ActorPtids: []string{""},
 		}
 		ok, _ := CanRead(anon(), authorID, a2, false)
 		if ok {
-			t.Fatal("anonymous viewer must not match CUSTOM_ALLOW empty DID")
+			t.Fatal("anonymous viewer must not match CUSTOM_ALLOW empty PTID")
 		}
 	})
 }
@@ -260,24 +268,24 @@ func TestCanRead_CustomAllow(t *testing.T) {
 
 func TestCanRead_CustomDeny_BasePublic(t *testing.T) {
 	a := &model.Audience{
-		Kind:      model.Audience_CUSTOM_DENY,
-		BaseKind:  model.Audience_PUBLIC,
-		ActorDids: []string{"did:peers:eve"},
+		Kind:       model.Audience_CUSTOM_DENY,
+		BaseKind:   model.Audience_PUBLIC,
+		ActorPtids: []string{"did:peers:eve"},
 	}
 
-	t.Run("listed DID denied", func(t *testing.T) {
+	t.Run("listed PTID denied", func(t *testing.T) {
 		v := viewer(7, "did:peers:eve")
 		ok, _ := CanRead(v, authorID, a, false)
 		if ok {
-			t.Fatal("CUSTOM_DENY listed DID must be denied")
+			t.Fatal("CUSTOM_DENY listed PTID must be denied")
 		}
 	})
 
-	t.Run("unlisted DID falls through to PUBLIC", func(t *testing.T) {
+	t.Run("unlisted PTID falls through to PUBLIC", func(t *testing.T) {
 		v := viewer(7, "did:peers:alice")
 		ok, _ := CanRead(v, authorID, a, false)
 		if !ok {
-			t.Fatal("unlisted DID must inherit base_kind PUBLIC visibility")
+			t.Fatal("unlisted PTID must inherit base_kind PUBLIC visibility")
 		}
 	})
 
@@ -291,12 +299,12 @@ func TestCanRead_CustomDeny_BasePublic(t *testing.T) {
 
 func TestCanRead_CustomDeny_BaseFollowers(t *testing.T) {
 	a := &model.Audience{
-		Kind:      model.Audience_CUSTOM_DENY,
-		BaseKind:  model.Audience_FOLLOWERS,
-		ActorDids: []string{"did:peers:eve"},
+		Kind:       model.Audience_CUSTOM_DENY,
+		BaseKind:   model.Audience_FOLLOWERS,
+		ActorPtids: []string{"did:peers:eve"},
 	}
 
-	t.Run("listed DID denied even if follower", func(t *testing.T) {
+	t.Run("listed PTID denied even if follower", func(t *testing.T) {
 		v := viewer(9, "did:peers:eve").following(authorID)
 		ok, _ := CanRead(v, authorID, a, false)
 		if ok {
@@ -336,9 +344,9 @@ func TestCanRead_CustomDeny_InvalidBase(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			a := &model.Audience{
-				Kind:      model.Audience_CUSTOM_DENY,
-				BaseKind:  tc.base,
-				ActorDids: []string{"did:peers:eve"},
+				Kind:       model.Audience_CUSTOM_DENY,
+				BaseKind:   tc.base,
+				ActorPtids: []string{"did:peers:eve"},
 			}
 			v := viewer(7, "did:peers:alice")
 			ok, reason := CanRead(v, authorID, a, false)
@@ -363,8 +371,8 @@ func TestCanRead_DeletedAlwaysInvisible(t *testing.T) {
 		v    Viewer
 	}{
 		{"public", &model.Audience{Kind: model.Audience_PUBLIC}, viewer(7, "did:peers:bob")},
-		{"author of a deleted self post", &model.Audience{Kind: model.Audience_SELF}, viewer(authorID, "did:peers:author")},
-		{"nil audience", nil, viewer(authorID, "did:peers:author")},
+		{"author of a deleted self post", &model.Audience{Kind: model.Audience_SELF}, viewer(100, authorID)},
+		{"nil audience", nil, viewer(100, authorID)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -400,11 +408,10 @@ func TestCanRead_UnknownKind(t *testing.T) {
 	}
 }
 
-// Anonymous viewer (ActorID=0) must NEVER match author by accident even
-// if authorID also happens to be 0 (e.g. malformed test data).
+// An anonymous viewer must never match an author by accident.
 func TestCanRead_AnonymousNeverMatchesZeroAuthor(t *testing.T) {
 	a := &model.Audience{Kind: model.Audience_FOLLOWERS}
-	ok, _ := CanRead(anon(), 0, a, false)
+	ok, _ := CanRead(anon(), "", a, false)
 	if ok {
 		t.Fatal("anonymous must not be treated as author of an authorless post")
 	}
@@ -425,10 +432,10 @@ func TestIsPublic(t *testing.T) {
 		{"followers", &model.Audience{Kind: model.Audience_FOLLOWERS}, false},
 		{"circle", &model.Audience{Kind: model.Audience_CIRCLE, TargetId: 1}, false},
 		{"self", &model.Audience{Kind: model.Audience_SELF}, false},
-		{"custom_allow", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorDids: []string{"x"}}, false},
+		{"custom_allow", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorPtids: []string{"x"}}, false},
 		{
 			"custom_deny base public",
-			&model.Audience{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC, ActorDids: []string{"x"}},
+			&model.Audience{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC, ActorPtids: []string{"x"}},
 			false,
 		},
 	}
@@ -457,22 +464,22 @@ func TestValidateAudience_HappyPaths(t *testing.T) {
 		{"group", &model.Audience{Kind: model.Audience_GROUP, TargetId: 1}},
 		{
 			"custom_allow",
-			&model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorDids: []string{"did:peers:a"}},
+			&model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorPtids: []string{"did:peers:a"}},
 		},
 		{
 			"custom_deny base public",
 			&model.Audience{
-				Kind:      model.Audience_CUSTOM_DENY,
-				BaseKind:  model.Audience_PUBLIC,
-				ActorDids: []string{"did:peers:a"},
+				Kind:       model.Audience_CUSTOM_DENY,
+				BaseKind:   model.Audience_PUBLIC,
+				ActorPtids: []string{"did:peers:a"},
 			},
 		},
 		{
 			"custom_deny base followers",
 			&model.Audience{
-				Kind:      model.Audience_CUSTOM_DENY,
-				BaseKind:  model.Audience_FOLLOWERS,
-				ActorDids: []string{"did:peers:a"},
+				Kind:       model.Audience_CUSTOM_DENY,
+				BaseKind:   model.Audience_FOLLOWERS,
+				ActorPtids: []string{"did:peers:a"},
 			},
 		},
 	}
@@ -504,9 +511,9 @@ func TestValidateAudience_Errors(t *testing.T) {
 			"target_id",
 		},
 		{
-			"public with actor_dids",
-			&model.Audience{Kind: model.Audience_PUBLIC, ActorDids: []string{"did:x"}},
-			"actor_dids",
+			"public with actor_ptids",
+			&model.Audience{Kind: model.Audience_PUBLIC, ActorPtids: []string{"did:x"}},
+			"actor_ptids",
 		},
 		{
 			"public with base_kind",
@@ -515,9 +522,9 @@ func TestValidateAudience_Errors(t *testing.T) {
 		},
 		{"circle missing target", &model.Audience{Kind: model.Audience_CIRCLE}, "target_id"},
 		{
-			"circle with actor_dids",
-			&model.Audience{Kind: model.Audience_CIRCLE, TargetId: 1, ActorDids: []string{"x"}},
-			"actor_dids",
+			"circle with actor_ptids",
+			&model.Audience{Kind: model.Audience_CIRCLE, TargetId: 1, ActorPtids: []string{"x"}},
+			"actor_ptids",
 		},
 		{
 			"circle with base_kind",
@@ -528,51 +535,51 @@ func TestValidateAudience_Errors(t *testing.T) {
 		{
 			"custom_allow empty list",
 			&model.Audience{Kind: model.Audience_CUSTOM_ALLOW},
-			"actor_dids",
+			"actor_ptids",
 		},
 		{
 			"custom_allow with target_id",
-			&model.Audience{Kind: model.Audience_CUSTOM_ALLOW, TargetId: 1, ActorDids: []string{"x"}},
+			&model.Audience{Kind: model.Audience_CUSTOM_ALLOW, TargetId: 1, ActorPtids: []string{"x"}},
 			"target_id",
 		},
 		{
 			"custom_allow with base_kind",
 			&model.Audience{
-				Kind:      model.Audience_CUSTOM_ALLOW,
-				BaseKind:  model.Audience_PUBLIC,
-				ActorDids: []string{"x"},
+				Kind:       model.Audience_CUSTOM_ALLOW,
+				BaseKind:   model.Audience_PUBLIC,
+				ActorPtids: []string{"x"},
 			},
 			"base_kind",
 		},
 		{
 			"custom_deny empty list",
 			&model.Audience{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC},
-			"actor_dids",
+			"actor_ptids",
 		},
 		{
 			"custom_deny with target_id",
 			&model.Audience{
-				Kind:      model.Audience_CUSTOM_DENY,
-				TargetId:  1,
-				BaseKind:  model.Audience_PUBLIC,
-				ActorDids: []string{"x"},
+				Kind:       model.Audience_CUSTOM_DENY,
+				TargetId:   1,
+				BaseKind:   model.Audience_PUBLIC,
+				ActorPtids: []string{"x"},
 			},
 			"target_id",
 		},
 		{
 			"custom_deny base unspecified",
 			&model.Audience{
-				Kind:      model.Audience_CUSTOM_DENY,
-				ActorDids: []string{"x"},
+				Kind:       model.Audience_CUSTOM_DENY,
+				ActorPtids: []string{"x"},
 			},
 			"base_kind",
 		},
 		{
 			"custom_deny base circle",
 			&model.Audience{
-				Kind:      model.Audience_CUSTOM_DENY,
-				BaseKind:  model.Audience_CIRCLE,
-				ActorDids: []string{"x"},
+				Kind:       model.Audience_CUSTOM_DENY,
+				BaseKind:   model.Audience_CIRCLE,
+				ActorPtids: []string{"x"},
 			},
 			"base_kind",
 		},
@@ -607,7 +614,7 @@ func TestValidateCircle(t *testing.T) {
 	})
 
 	t.Run("valid", func(t *testing.T) {
-		c := &Circle{ID: 1, OwnerID: 100, Name: "Family"}
+		c := &Circle{ID: 1, OwnerPTID: authorID, Name: "Family"}
 		if err := ValidateCircle(c); err != nil {
 			t.Fatalf("expected nil, got %v", err)
 		}
@@ -621,21 +628,21 @@ func TestValidateCircle(t *testing.T) {
 	})
 
 	t.Run("blank name", func(t *testing.T) {
-		c := &Circle{OwnerID: 100, Name: "   "}
+		c := &Circle{OwnerPTID: authorID, Name: "   "}
 		if err := ValidateCircle(c); err == nil {
 			t.Fatal("blank name must be rejected")
 		}
 	})
 
 	t.Run("name too long", func(t *testing.T) {
-		c := &Circle{OwnerID: 100, Name: strings.Repeat("a", CircleNameMax+1)}
+		c := &Circle{OwnerPTID: authorID, Name: strings.Repeat("a", CircleNameMax+1)}
 		if err := ValidateCircle(c); err == nil {
 			t.Fatal("over-long name must be rejected")
 		}
 	})
 
 	t.Run("description too long", func(t *testing.T) {
-		c := &Circle{OwnerID: 100, Name: "OK", Description: strings.Repeat("d", CircleDescMax+1)}
+		c := &Circle{OwnerPTID: authorID, Name: "OK", Description: strings.Repeat("d", CircleDescMax+1)}
 		if err := ValidateCircle(c); err == nil {
 			t.Fatal("over-long description must be rejected")
 		}
@@ -669,7 +676,7 @@ func TestValidateForAuthor_DelegatesShape(t *testing.T) {
 }
 
 func TestValidateForAuthor_AuthorSelfInclusion(t *testing.T) {
-	const authorDID = "did:peers:alice"
+	const authorPTID = "did:peers:alice"
 	cases := []struct {
 		name string
 		a    *model.Audience
@@ -678,41 +685,41 @@ func TestValidateForAuthor_AuthorSelfInclusion(t *testing.T) {
 		{
 			"custom_allow excludes author",
 			&model.Audience{
-				Kind:      model.Audience_CUSTOM_ALLOW,
-				ActorDids: []string{"did:peers:bob", "did:peers:carol"},
+				Kind:       model.Audience_CUSTOM_ALLOW,
+				ActorPtids: []string{"did:peers:bob", "did:peers:carol"},
 			},
 			true,
 		},
 		{
 			"custom_allow includes author",
 			&model.Audience{
-				Kind:      model.Audience_CUSTOM_ALLOW,
-				ActorDids: []string{"did:peers:bob", authorDID},
+				Kind:       model.Audience_CUSTOM_ALLOW,
+				ActorPtids: []string{"did:peers:bob", authorPTID},
 			},
 			false,
 		},
 		{
 			"custom_deny excludes author",
 			&model.Audience{
-				Kind:      model.Audience_CUSTOM_DENY,
-				BaseKind:  model.Audience_PUBLIC,
-				ActorDids: []string{"did:peers:bob"},
+				Kind:       model.Audience_CUSTOM_DENY,
+				BaseKind:   model.Audience_PUBLIC,
+				ActorPtids: []string{"did:peers:bob"},
 			},
 			true,
 		},
 		{
 			"custom_deny includes author",
 			&model.Audience{
-				Kind:      model.Audience_CUSTOM_DENY,
-				BaseKind:  model.Audience_FOLLOWERS,
-				ActorDids: []string{authorDID, "did:peers:bob"},
+				Kind:       model.Audience_CUSTOM_DENY,
+				BaseKind:   model.Audience_FOLLOWERS,
+				ActorPtids: []string{authorPTID, "did:peers:bob"},
 			},
 			false,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateForAuthor(authorDID, tc.a)
+			err := ValidateForAuthor(authorPTID, tc.a)
 			if tc.want && err != nil {
 				t.Fatalf("expected allow, got %v", err)
 			}
@@ -725,20 +732,20 @@ func TestValidateForAuthor_AuthorSelfInclusion(t *testing.T) {
 
 func TestValidateForAuthor_RequiresAuthorDIDForCustom(t *testing.T) {
 	cases := []*model.Audience{
-		{Kind: model.Audience_CUSTOM_ALLOW, ActorDids: []string{"did:peers:bob"}},
-		{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC, ActorDids: []string{"did:peers:bob"}},
+		{Kind: model.Audience_CUSTOM_ALLOW, ActorPtids: []string{"did:peers:bob"}},
+		{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC, ActorPtids: []string{"did:peers:bob"}},
 	}
 	for _, a := range cases {
 		t.Run(a.Kind.String(), func(t *testing.T) {
 			if err := ValidateForAuthor("", a); err == nil {
-				t.Fatal("empty author DID must be rejected for CUSTOM_*")
+				t.Fatal("empty author PTID must be rejected for CUSTOM_*")
 			}
 		})
 	}
 }
 
 func TestValidateForAuthor_PublicFollowersSelfNoAuthorRequired(t *testing.T) {
-	// PUBLIC / FOLLOWERS / SELF do not need the author DID.
+	// PUBLIC / FOLLOWERS / SELF do not need the author PTID.
 	cases := []model.Audience_Kind{
 		model.Audience_PUBLIC,
 		model.Audience_FOLLOWERS,

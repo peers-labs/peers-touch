@@ -57,13 +57,13 @@ func (s *EcosystemService) DeleteAgentGroup(ctx context.Context, id string) erro
 	return db.WithContext(ctx).Delete(&persistence.EcosystemAgentGroup{}, "id = ?", id).Error
 }
 
-func (s *EcosystemService) ListAgentGroups(ctx context.Context, ownerActorID string) ([]persistence.EcosystemAgentGroup, error) {
+func (s *EcosystemService) ListAgentGroups(ctx context.Context, ownerActorPTID string) ([]persistence.EcosystemAgentGroup, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var groups []persistence.EcosystemAgentGroup
-	if err := db.WithContext(ctx).Where("owner_actor_id = ?", ownerActorID).Order("created_at DESC").Find(&groups).Error; err != nil {
+	if err := db.WithContext(ctx).Where("owner_actor_ptid = ?", ownerActorPTID).Order("created_at DESC").Find(&groups).Error; err != nil {
 		return nil, err
 	}
 	return groups, nil
@@ -135,13 +135,13 @@ func (s *EcosystemService) DeleteEvalDataset(ctx context.Context, id string) err
 	return db.WithContext(ctx).Delete(&persistence.EcosystemEvalDataset{}, "id = ?", id).Error
 }
 
-func (s *EcosystemService) ListEvalDatasets(ctx context.Context, ownerActorID string) ([]persistence.EcosystemEvalDataset, error) {
+func (s *EcosystemService) ListEvalDatasets(ctx context.Context, ownerActorPTID string) ([]persistence.EcosystemEvalDataset, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var datasets []persistence.EcosystemEvalDataset
-	if err := db.WithContext(ctx).Where("owner_actor_id = ?", ownerActorID).Order("created_at DESC").Find(&datasets).Error; err != nil {
+	if err := db.WithContext(ctx).Where("owner_actor_ptid = ?", ownerActorPTID).Order("created_at DESC").Find(&datasets).Error; err != nil {
 		return nil, err
 	}
 	return datasets, nil
@@ -185,13 +185,13 @@ func (s *EcosystemService) DeleteCustomPlugin(ctx context.Context, id string) er
 	return db.WithContext(ctx).Delete(&persistence.EcosystemCustomPlugin{}, "id = ?", id).Error
 }
 
-func (s *EcosystemService) ListCustomPlugins(ctx context.Context, ownerActorID string) ([]persistence.EcosystemCustomPlugin, error) {
+func (s *EcosystemService) ListCustomPlugins(ctx context.Context, ownerActorPTID string) ([]persistence.EcosystemCustomPlugin, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var plugins []persistence.EcosystemCustomPlugin
-	if err := db.WithContext(ctx).Where("owner_actor_id = ?", ownerActorID).Order("created_at DESC").Find(&plugins).Error; err != nil {
+	if err := db.WithContext(ctx).Where("owner_actor_ptid = ?", ownerActorPTID).Order("created_at DESC").Find(&plugins).Error; err != nil {
 		return nil, err
 	}
 	return plugins, nil

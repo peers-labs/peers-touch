@@ -24,7 +24,7 @@ interface GlobalContextState {
   runPipeline: (name: PipelineName, payload?: PipelinePayload) => Promise<void>
   /** Clear identity/session/oauth slices (identity pipeline). Preserves runtime/network/workspace chrome. */
   reset: () => void
-  hydrate: (actorId: string) => Promise<void>
+  hydrate: (actorPtid: string) => Promise<void>
 }
 
 function now() {
@@ -36,7 +36,7 @@ function createInitialSnapshot(): GlobalContextSnapshot {
   const nowTs = now()
   return {
     identity: {
-      userId: null,
+      actorPtid: null,
       displayName: null,
       provider: null,
       email: null,
@@ -100,7 +100,7 @@ function mapSnapshotFromStores(snapshot: GlobalContextSnapshot): GlobalContextSn
   const cu = sessionState.currentUser
   const identity = cu
     ? {
-        userId: cu.actorId,
+        actorPtid: cu.actorPtid,
         displayName: cu.name || null,
         provider: cu.loginProvider || null,
         email: cu.email || null,
@@ -110,7 +110,7 @@ function mapSnapshotFromStores(snapshot: GlobalContextSnapshot): GlobalContextSn
         lastLoginAt: null,
       }
     : {
-        userId: null,
+        actorPtid: null,
         displayName: null,
         provider: null,
         email: null,
@@ -136,7 +136,7 @@ function mapSnapshotFromStores(snapshot: GlobalContextSnapshot): GlobalContextSn
     session: {
       loginStatus: sessionState.authenticated ? 'authenticated' : 'unauthenticated',
       authenticated: sessionState.authenticated,
-      activeAccountId: cu?.actorId || null,
+      activeAccountId: cu?.actorPtid || null,
       lastAuthAt: null,
     },
     oauth: {
@@ -402,7 +402,7 @@ export const useGlobalContextStore = create<GlobalContextState>((set, get) => ({
     publishUpdate('identity/session')
   },
 
-  hydrate: async (_actorId: string) => {
+  hydrate: async (_actorPtid: string) => {
     await get().refreshFromSources()
   },
 

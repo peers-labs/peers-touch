@@ -277,7 +277,7 @@ func (s *subServer) publishMemberSettingsChanged(
 			ConversationSettingsChanged: &realtime.ConversationSettingsChanged{
 				ContainerUlid:   conversation.ConversationID,
 				Kind:            kind,
-				ActorId:         ptid,
+				ActorPtid:       ptid,
 				ChangedTsUnixMs: time.Now().UnixMilli(),
 			},
 		},

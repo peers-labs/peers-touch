@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-07-02 | **Updated**: 2026-07-11
+> **Created**: 2026-07-02 | **Updated**: 2026-08-27
 > **Owner**: Client Platform Team
 > **Module**: `docs/client/common/ui-identity/`, `docs/client/desktop/`, `apps/desktop/src/`
 
@@ -22,6 +22,10 @@ docs/client/common/ui-identity/frontend-component-tree-registry.md
 
 docs/client/desktop/runtime-projections.md
   implements: Desktop PageDescriptor, RuntimeDescriptor, BootPipeline
+
+docs/architecture/mobile/
+  implements: Mobile NavigationHost, dependency-aware RuntimeDescriptor,
+              InteractionAdmission adapter, native lifecycle evidence
 
 apps/desktop/src/kernel/
   implements: PageHost, Runtime registry, scheduling, profiler, SectionHost
@@ -79,7 +83,33 @@ Required updates:
 - `AppletContainerShell` 应成为 applet 容器能力 owner。
 - Applet registry row 需要记录 `embedded / immersive / standalone` 三种模式 evidence。
 
-## 5. 与现有卡顿实现的关系
+## 5. 与 Mobile Shell 的关系
+
+Mobile Shell refines this cross-client architecture without creating a second
+scheduler or admission model:
+
+- `MobilePageDescriptor` is the Mobile platform form of `RuntimeSurface`; its
+  lifetime values use the shared alive taxonomy.
+- Mobile `RuntimeDescriptor.dependsOn` adds hard readiness order;
+  `RuntimeDescriptor.uses` declares degradable capabilities. This is a
+  platform-specific extension of `RuntimeProjection`, not a competing runtime
+  abstraction.
+- `commandRuntime` implements `InteractionAdmission` for Mobile writes. The
+  frontend contract still owns work class, cancellation, idempotency,
+  backpressure, QoS, and evidence semantics.
+- The Rust encrypted ledger is Mobile persistence infrastructure behind
+  `commandRuntime`; it does not create a second business retry policy.
+- Mobile runtime bootstrap uses the existing 5-second network budget. OAuth
+  user waiting is governed by the Station attempt expiry and is not counted as
+  runtime bootstrap.
+- Mobile event control/data queues implement the same bounded admission and
+  payload-class separation required by D-16.
+
+The canonical Mobile refinement lives in `docs/architecture/mobile/`. Changes
+to shared admission semantics must update this architecture first; Mobile may
+only specialize storage, host events, and platform lifecycle.
+
+## 6. 与现有卡顿实现的关系
 
 当前实现只能按证据声明其局部作用，不视为最终架构闭环：
 
@@ -91,7 +121,7 @@ Required updates:
 | InvokeThrottler | Interaction boundary | 记录/调度部分 invoke | IPC 是已确认唯一根因 |
 | Applet standalone/fullscreen UI | AppletContainerShell | 容器交互语义 | native runtime 性能闭环 |
 
-## 6. Native evidence ledger
+## 7. Native evidence ledger
 
 | Claim | Class | Evidence | Confidence | Missing proof |
 |-------|-------|----------|------------|---------------|
@@ -111,7 +141,7 @@ Evidence status:
 - A transport or execution-pool ADR may be proposed only after raw evidence
   links input/paint, React/store, bridge/handler/event, and native thread samples.
 
-## 7. Target integration conditions
+## 8. Target integration conditions
 
 The target architecture requires these relationships, independent of delivery
 order:
@@ -134,7 +164,7 @@ No compatibility or cutover strategy is defined here. Those choices belong to
 an execution plan generated after D-15/D-16 and the final transport ADR are
 accepted.
 
-## 8. 验收映射
+## 9. 验收映射
 
 | 验收项 | 证据 |
 |--------|------|

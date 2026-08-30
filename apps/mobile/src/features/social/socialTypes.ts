@@ -21,10 +21,8 @@ export interface SocialTimestamp {
 export interface FriendRequest {
   id?: string;
   requestId: string;
-  senderId?: string;
-  senderDid: string;
-  receiverId?: string;
-  receiverDid: string;
+  senderPtid: string;
+  receiverPtid: string;
   status: number;
   message: string;
   createdAt?: SocialTimestamp;
@@ -38,8 +36,8 @@ export interface FriendRequest {
 
 export interface FriendChatSession {
   ulid: string;
-  participantADid: string;
-  participantBDid: string;
+  participantAPtid: string;
+  participantBPtid: string;
   lastMessageUlid: string;
   lastMessageAt?: SocialTimestamp;
   unreadCountA: number;
@@ -58,8 +56,8 @@ export interface FriendChatSession {
 export interface FriendChatMessage {
   ulid: string;
   sessionUlid: string;
-  senderDid: string;
-  receiverDid: string;
+  senderPtid: string;
+  receiverPtid: string;
   type: number;
   content: string;
   status: number;
@@ -96,7 +94,7 @@ export interface FriendMessageAttachment {
 export interface SocialNotification {
   id: string;
   recipientId: string;
-  actorId: string;
+  actorPtid: string;
   type: number;
   category: number;
   status: number;
@@ -117,7 +115,7 @@ export interface UnreadCounts {
 
 export interface SocialConversation {
   session: FriendChatSession;
-  peerDid: string;
+  peerPtid: string;
   peerName: string;
   peerAvatar: string;
   peerOnline: boolean;
@@ -126,7 +124,7 @@ export interface SocialConversation {
 }
 
 export interface FriendshipStatus {
-  targetDid: string;
+  targetPtid: string;
   blocked: boolean;
 }
 
@@ -137,7 +135,7 @@ export interface TypingEntry {
 
 export interface ActorSearchResult {
   id: string;
-  actorId: string;
+  ptid: string;
   username: string;
   displayName: string;
   avatar: string;
@@ -192,9 +190,7 @@ export interface FederationResolveView {
   locatorSeq?: number | string;
   locator_seq?: number | string;
   profile?: {
-    id?: string;
-    actorId?: string | number;
-    actor_id?: string | number;
+    ptid?: string;
     username?: string;
     preferredUsername?: string;
     preferred_username?: string;

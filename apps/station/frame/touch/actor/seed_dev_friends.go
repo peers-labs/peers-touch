@@ -15,11 +15,11 @@ import (
 )
 
 type devFriendSession struct {
-	ULID            string    `gorm:"column:ulid;primaryKey"`
-	ParticipantADID string    `gorm:"column:participant_a_did"`
-	ParticipantBDID string    `gorm:"column:participant_b_did"`
-	CreatedAt       time.Time `gorm:"column:created_at"`
-	UpdatedAt       time.Time `gorm:"column:updated_at"`
+	ULID             string    `gorm:"column:ulid;primaryKey"`
+	ParticipantAPtid string    `gorm:"column:participant_a_ptid"`
+	ParticipantBPtid string    `gorm:"column:participant_b_ptid"`
+	CreatedAt        time.Time `gorm:"column:created_at"`
+	UpdatedAt        time.Time `gorm:"column:updated_at"`
 }
 
 func (devFriendSession) TableName() string { return "friend_chat_sessions" }
@@ -82,23 +82,23 @@ func seedDevFriendshipsWithDB(ctx context.Context, rds *gorm.DB, friendUsernames
 			if !hasLegacySessions {
 				continue
 			}
-			aDID := fmt.Sprintf("%d", aID)
-			bDID := fmt.Sprintf("%d", bID)
+			aPtid := fmt.Sprintf("%d", aID)
+			bPtid := fmt.Sprintf("%d", bID)
 			var count int64
 			rds.Table("friend_chat_sessions").
-				Where("(participant_a_did = ? AND participant_b_did = ?) OR (participant_a_did = ? AND participant_b_did = ?)",
-					aDID, bDID, bDID, aDID).
+				Where("(participant_a_ptid = ? AND participant_b_ptid = ?) OR (participant_a_ptid = ? AND participant_b_ptid = ?)",
+					aPtid, bPtid, bPtid, aPtid).
 				Count(&count)
 			if count > 0 {
 				continue
 			}
 
 			session := devFriendSession{
-				ULID:            ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String(),
-				ParticipantADID: aDID,
-				ParticipantBDID: bDID,
-				CreatedAt:       time.Now(),
-				UpdatedAt:       time.Now(),
+				ULID:             ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String(),
+				ParticipantAPtid: aPtid,
+				ParticipantBPtid: bPtid,
+				CreatedAt:        time.Now(),
+				UpdatedAt:        time.Now(),
 			}
 			if err := rds.Create(&session).Error; err != nil {
 				log.Warnf(ctx, "[seed] friendship %s↔%s failed: %v", friendUsernames[i], friendUsernames[j], err)

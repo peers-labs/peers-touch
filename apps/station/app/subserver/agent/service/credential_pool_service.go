@@ -42,7 +42,7 @@ func NewCredentialPoolService() *CredentialPoolService {
 
 func (s *CredentialPoolService) Lease(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	provider string,
 	strategy domain.RotationStrategy,
 ) (*domain.CredentialEntry, error) {
@@ -57,9 +57,9 @@ func (s *CredentialPoolService) Lease(
 
 	var rows []persistence.Credential
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND provider = ?", actorID, provider).
+		Where("actor_ptid = ? AND provider = ?", actorPTID, provider).
 		Find(&rows).Error; err != nil {
-		logger.Errorf(ctx, "credential pool query failed: actor=%s, provider=%s, err=%v", actorID, provider, err)
+		logger.Errorf(ctx, "credential pool query failed: actor_ptid=%s, provider=%s, err=%v", actorPTID, provider, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to query credential pool", err)
 	}
@@ -227,7 +227,7 @@ func (s *CredentialPoolService) RecoverCooledDown(ctx context.Context) (int, err
 
 func (s *CredentialPoolService) ListByProvider(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	provider string,
 ) ([]domain.CredentialEntry, error) {
 
@@ -238,10 +238,10 @@ func (s *CredentialPoolService) ListByProvider(
 
 	var rows []persistence.Credential
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND provider = ?", actorID, provider).
+		Where("actor_ptid = ? AND provider = ?", actorPTID, provider).
 		Order("priority ASC, created_at ASC").
 		Find(&rows).Error; err != nil {
-		logger.Errorf(ctx, "credential list query failed: actor=%s, provider=%s, err=%v", actorID, provider, err)
+		logger.Errorf(ctx, "credential list query failed: actor_ptid=%s, provider=%s, err=%v", actorPTID, provider, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to list credentials", err)
 	}

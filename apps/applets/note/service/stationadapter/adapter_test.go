@@ -27,7 +27,7 @@ func TestMountedBundleServesStationAppletPath(t *testing.T) {
 
 	createReq := httptest.NewRequest(http.MethodPost, "/applets/note/v1/notes", bytes.NewBufferString(`{"title":"Gateway","content":"real path"}`))
 	createReq.Header.Set("Content-Type", "application/json")
-	createReq.Header.Set(transport.OwnerHeader, "actor-note")
+	createReq.Header.Set(transport.OwnerPTIDHeader, "actor-note")
 	createResp := httptest.NewRecorder()
 
 	handler.ServeHTTP(createResp, createReq)
@@ -36,7 +36,7 @@ func TestMountedBundleServesStationAppletPath(t *testing.T) {
 	}
 
 	searchReq := httptest.NewRequest(http.MethodGet, "/applets/note/v1/notes:search?q=Gateway", nil)
-	searchReq.Header.Set(transport.OwnerHeader, "actor-note")
+	searchReq.Header.Set(transport.OwnerPTIDHeader, "actor-note")
 	searchResp := httptest.NewRecorder()
 
 	handler.ServeHTTP(searchResp, searchReq)

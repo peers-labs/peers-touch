@@ -12,13 +12,13 @@ const alice = 'ptid:alice';
 const bob = 'ptid:bob';
 
 const session = {
-  participantADid: alice,
+  participantAPtid: alice,
   participantADisplayName: 'Alice session',
   participantAAvatar: 'https://session/alice.png',
-  participantBDid: bob,
+  participantBPtid: bob,
   participantBDisplayName: 'Bob session',
   participantBAvatar: 'https://session/bob.png',
-} as FriendChatSession;
+} as unknown as FriendChatSession;
 
 const bobStationProfile = {
   id: '2',
@@ -31,7 +31,7 @@ describe('social profile projection', () => {
   it('uses exact self identity without username substring inference', () => {
     expect(resolveActorIdentity({
       ptid: alice,
-      currentUserDid: alice,
+      currentUserPtid: alice,
       currentUserProfile: {
         displayName: 'Alice',
         username: 'alice',
@@ -49,7 +49,7 @@ describe('social profile projection', () => {
 
     expect(resolveActorIdentity({
       ptid: 'ptid:alice-other',
-      currentUserDid: alice,
+      currentUserPtid: alice,
       currentUserProfile: {
         displayName: 'Alice',
         username: 'alice',
@@ -63,7 +63,7 @@ describe('social profile projection', () => {
   it('preserves the Station origin in avatar resource identity', () => {
     const identity = resolveActorIdentity({
       ptid: bob,
-      currentUserDid: alice,
+      currentUserPtid: alice,
       currentUserProfile: null,
       peerProfiles: {
         [bob]: {
@@ -81,7 +81,7 @@ describe('social profile projection', () => {
   it('prefers Station profile over stale session metadata', () => {
     expect(resolveActorIdentity({
       ptid: bob,
-      currentUserDid: alice,
+      currentUserPtid: alice,
       currentUserProfile: null,
       peerProfiles: { [bob]: bobStationProfile },
       sessions: [session],
@@ -95,7 +95,7 @@ describe('social profile projection', () => {
   it('never assigns a session participant to an unrelated PTID', () => {
     expect(resolveActorIdentity({
       ptid: 'ptid:carol',
-      currentUserDid: alice,
+      currentUserPtid: alice,
       currentUserProfile: null,
       peerProfiles: {},
       sessions: [session],
@@ -111,7 +111,7 @@ describe('social profile projection', () => {
   it('uses group nickname only for the label, not the canonical avatar', () => {
     expect(resolveActorIdentity({
       ptid: bob,
-      currentUserDid: alice,
+      currentUserPtid: alice,
       currentUserProfile: null,
       peerProfiles: { [bob]: bobStationProfile },
       sessions: [session],
@@ -130,7 +130,7 @@ describe('social profile projection', () => {
     const profiles = {
       [alice]: resolveActorIdentity({
         ptid: alice,
-        currentUserDid: alice,
+        currentUserPtid: alice,
         currentUserProfile: {
           displayName: 'Alice',
           username: 'alice',
@@ -141,7 +141,7 @@ describe('social profile projection', () => {
       }),
       [bob]: resolveActorIdentity({
         ptid: bob,
-        currentUserDid: alice,
+        currentUserPtid: alice,
         currentUserProfile: null,
         peerProfiles: { [bob]: bobStationProfile },
         sessions: [session],

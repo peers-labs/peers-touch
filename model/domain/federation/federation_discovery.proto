@@ -30,7 +30,7 @@ message FederationCatalogSearchResponse {
 }
 
 message FederationCatalogEntry {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string federated_handle = 2;
   string display_name = 3;
   string avatar_url = 4;

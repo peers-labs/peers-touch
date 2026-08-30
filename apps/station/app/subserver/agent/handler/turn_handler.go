@@ -48,11 +48,11 @@ func (h *TurnHandlers) beginChatTaskStep(ctx context.Context, req *model.Execute
 	if h.chatTaskService == nil {
 		return "", ""
 	}
-	actorID := subjectActorID(ctx)
-	if actorID == "" {
+	actorPTID := subjectActorPTID(ctx)
+	if actorPTID == "" {
 		return "", ""
 	}
-	taskID, err := h.chatTaskService.EnsureChatTask(ctx, actorID, req.GetAgentId(), req.GetConversationId(), req.GetUserInput())
+	taskID, err := h.chatTaskService.EnsureChatTask(ctx, actorPTID, req.GetAgentId(), req.GetConversationId(), req.GetUserInput())
 	if err != nil {
 		return "", ""
 	}
@@ -70,8 +70,8 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 	}
 
 	if strings.TrimSpace(req.GetConversationId()) == "" && h.convService != nil {
-		userID := subjectActorID(ctx)
-		conv, err := h.convService.CreateConversation(ctx, req.GetAgentId(), userID, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
+		actorPTID := subjectActorPTID(ctx)
+		conv, err := h.convService.CreateConversation(ctx, req.GetAgentId(), actorPTID, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
 		if err != nil {
 			return nil, toHandlerError(err)
 		}
@@ -163,8 +163,8 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 	}
 
 	if strings.TrimSpace(input.GetConversationId()) == "" && h.convService != nil {
-		userID := subjectActorID(ctx)
-		conv, err := h.convService.CreateConversation(ctx, input.GetAgentId(), userID, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
+		actorPTID := subjectActorPTID(ctx)
+		conv, err := h.convService.CreateConversation(ctx, input.GetAgentId(), actorPTID, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
 		if err != nil {
 			_ = writeTurnStreamEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
 			return nil
@@ -175,10 +175,10 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 			"conversation_id": conv.ConversationID,
 		})
 	} else if h.convService != nil {
-		userID := subjectActorID(ctx)
+		actorPTID := subjectActorPTID(ctx)
 		existing, getErr := h.convService.GetConversation(ctx, input.GetConversationId())
 		if getErr != nil || existing == nil {
-			conv, err := h.convService.CreateConversationWithID(ctx, input.GetConversationId(), input.GetAgentId(), userID, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
+			conv, err := h.convService.CreateConversationWithID(ctx, input.GetConversationId(), input.GetAgentId(), actorPTID, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
 			if err != nil {
 				_ = writeTurnStreamEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
 				return nil
@@ -339,11 +339,11 @@ func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.Exe
 		maxRetries = 3
 	}
 
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 
 	return &service.TurnConfig{
 		AgentID:            req.GetAgentId(),
-		ActorID:            actorID,
+		ActorPTID:          actorPTID,
 		ConversationID:     req.GetConversationId(),
 		Identity:           req.GetIdentity(),
 		AgentConfigPrompt:  req.GetAgentConfigPrompt(),

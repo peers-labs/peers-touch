@@ -145,7 +145,7 @@ message AppletCatalogItem {
 }
 
 message AppletInstallState {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string device_id = 2;
   string applet_id = 3;
   string version = 4;
@@ -159,7 +159,7 @@ message AppletInstallState {
 
 message AppletAuditRecord {
   string audit_id = 1;
-  string actor_id = 2;
+  string actor_ptid = 2;
   string device_id = 3;
   string applet_id = 4;
   string version = 5;
@@ -177,7 +177,7 @@ message ListAppletsRequest {
   int32 limit = 1;
   int32 offset = 2;
   string search_keyword = 3; // Optional
-  string actor_id = 4;
+  string actor_ptid = 4;
   string device_id = 5;
   string target_platform = 6;
   AppletReleaseChannel channel = 7;
@@ -227,7 +227,7 @@ message PublishAppletResponse {
 }
 
 message ListAppletCatalogRequest {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string device_id = 2;
   string target_platform = 3;
   AppletReleaseChannel channel = 4;
@@ -253,7 +253,7 @@ message GetAppletVersionResponse {
 }
 
 message InstallAppletRequest {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string device_id = 2;
   string applet_id = 3;
   string version = 4;
@@ -266,7 +266,7 @@ message InstallAppletResponse {
 }
 
 message UninstallAppletRequest {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string device_id = 2;
   string applet_id = 3;
 }
@@ -276,7 +276,7 @@ message UninstallAppletResponse {
 }
 
 message ListInstalledAppletsRequest {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string device_id = 2;
   bool include_disabled = 3;
 }
@@ -318,7 +318,7 @@ message IngestAppletAuditResponse {
 }
 
 message QueryAppletAuditRequest {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string device_id = 2;
   string applet_id = 3;
   string session_id = 4;

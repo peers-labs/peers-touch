@@ -51,7 +51,7 @@ export interface MessageActionTarget {
 }
 
 interface ChatMessageActionOverlayProps {
-  currentUserDid: string | null;
+  currentUserPtid: string | null;
   hostElement: HTMLElement | null;
   onDelete: (message: ChatMessage) => void;
   onDismiss: () => void;
@@ -85,7 +85,7 @@ function isVisibleWithin(rect: DOMRect, viewportRect: DOMRect): boolean {
 }
 
 export function ChatMessageActionOverlay({
-  currentUserDid,
+  currentUserPtid,
   hostElement,
   onDelete,
   onDismiss,
@@ -110,7 +110,7 @@ export function ChatMessageActionOverlay({
   const [geometry, setGeometry] = useState<MessageActionGeometryResult | null>(null);
 
   const message = target?.message;
-  const isOwn = message ? isOwnMessage(message, currentUserDid) : false;
+  const isOwn = message ? isOwnMessage(message, currentUserPtid) : false;
   const isRecalled = message ? isRecalledMessage(message) : false;
   const sentAtMs = message ? messageTimestampMs(message) : 0;
   const withinMutationWindow = Boolean(

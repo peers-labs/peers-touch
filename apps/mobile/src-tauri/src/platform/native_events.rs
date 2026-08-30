@@ -1,8 +1,11 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
 
+use crate::runtime::oauth::OAuthPublicProjection;
+
 pub const MOBILE_PUSH_EVENT: &str = "mobile:push";
 pub const MOBILE_DEEP_LINK_EVENT: &str = "mobile:deep-link";
+pub const MOBILE_OAUTH_PROJECTION_EVENT: &str = "mobile:oauth-projection";
 pub const MOBILE_NOTIFICATION_TAP_EVENT: &str = "mobile:notification-tap";
 pub const MOBILE_RESUME_EVENT: &str = "mobile:resume";
 pub const MOBILE_NATIVE_EVENT_ERROR: &str = "mobile:native-event-error";
@@ -29,8 +32,14 @@ struct NativeRuntimeEventError<'a> {
     message: &'a str,
 }
 
-pub fn emit_resume<R: Runtime>(app: &AppHandle<R>, reason: impl Into<String>) -> Result<(), tauri::Error> {
-    app.emit(MOBILE_RESUME_EVENT, NativeRuntimeEventPayload::resume(reason))
+pub fn emit_resume<R: Runtime>(
+    app: &AppHandle<R>,
+    reason: impl Into<String>,
+) -> Result<(), tauri::Error> {
+    app.emit(
+        MOBILE_RESUME_EVENT,
+        NativeRuntimeEventPayload::resume(reason),
+    )
 }
 
 pub fn emit_push<R: Runtime>(
@@ -46,7 +55,17 @@ pub fn emit_push<R: Runtime>(
 }
 
 pub fn emit_deep_link<R: Runtime>(app: &AppHandle<R>, url: String) -> Result<(), tauri::Error> {
-    app.emit(MOBILE_DEEP_LINK_EVENT, NativeRuntimeEventPayload::deep_link(url))
+    app.emit(
+        MOBILE_DEEP_LINK_EVENT,
+        NativeRuntimeEventPayload::deep_link(url),
+    )
+}
+
+pub fn emit_oauth_projection<R: Runtime>(
+    app: &AppHandle<R>,
+    projection: OAuthPublicProjection,
+) -> Result<(), tauri::Error> {
+    app.emit(MOBILE_OAUTH_PROJECTION_EVENT, projection)
 }
 
 pub fn emit_notification_tap<R: Runtime>(
@@ -68,10 +87,7 @@ pub fn emit_native_event_error<R: Runtime>(
 ) -> Result<(), tauri::Error> {
     app.emit(
         MOBILE_NATIVE_EVENT_ERROR,
-        NativeRuntimeEventError {
-            operation,
-            message,
-        },
+        NativeRuntimeEventError { operation, message },
     )
 }
 

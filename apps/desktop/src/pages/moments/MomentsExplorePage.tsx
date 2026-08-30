@@ -21,12 +21,12 @@ const { Text } = Typography;
 //     and the server falls back to recent if it doesn't recognise it.
 
 interface MomentsExploreViewProps {
-  viewerActorId?: string;
+  viewerActorPtid?: string;
   onOpenPost: (postId: string) => void;
-  onAuthorClick: (actorId: string) => void;
+  onAuthorClick: (actorPtid: string) => void;
 }
 
-export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, onAuthorClick }: MomentsExploreViewProps) {
+export function MomentsExploreView({ viewerActorPtid: _viewerActorPtid, onOpenPost, onAuthorClick }: MomentsExploreViewProps) {
   const { t } = useTranslation('moments');
   const {
     feed,
@@ -109,7 +109,7 @@ export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, 
           reactions={reactions[p.id]}
           explanation={feedExplanations[p.id]}
           commentPreview={comments[p.id]}
-          viewerActorId={_viewerActorId}
+          viewerActorPtid={_viewerActorPtid}
           surface="federated"
           onOpen={onOpenPost}
           onOpenComments={onOpenPost}

@@ -4,6 +4,7 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { ActorRef } from "./actor_pb";
 import { file_domain_actor_actor } from "./actor_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -11,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/actor/actor_status.proto.
  */
 export const file_domain_actor_actor_status: GenFile = /*@__PURE__*/
-  fileDesc("Ch9kb21haW4vYWN0b3IvYWN0b3Jfc3RhdHVzLnByb3RvEhpwZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MSJPChRPbmxpbmVBY3RvcnNSZXNwb25zZRI3CgZhY3RvcnMYASADKAsyJy5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5PbmxpbmVBY3RvciJ/CgtPbmxpbmVBY3RvchIKCgJpZBgBIAEoBBIMCgRuYW1lGAIgASgJEhoKEnByZWZlcnJlZF91c2VybmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEg4KBnN0YXR1cxgFIAEoBRIWCg5sYXN0X2hlYXJ0YmVhdBgGIAEoCSISChBIZWFydGJlYXRSZXF1ZXN0IhMKEUhlYXJ0YmVhdFJlc3BvbnNlQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM", [file_domain_actor_actor]);
+  fileDesc("Ch9kb21haW4vYWN0b3IvYWN0b3Jfc3RhdHVzLnByb3RvEhpwZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MSJPChRPbmxpbmVBY3RvcnNSZXNwb25zZRI3CgZhY3RvcnMYASADKAsyJy5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5PbmxpbmVBY3RvciKwAQoLT25saW5lQWN0b3ISDAoEbmFtZRgCIAEoCRIaChJwcmVmZXJyZWRfdXNlcm5hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIOCgZzdGF0dXMYBSABKAUSFgoObGFzdF9oZWFydGJlYXQYBiABKAkSMQoDcmVmGAcgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWZKBAgBEAJSAmlkIhIKEEhlYXJ0YmVhdFJlcXVlc3QiEwoRSGVhcnRiZWF0UmVzcG9uc2VCQ1pBZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_domain_actor_actor]);
 
 /**
  * @generated from message peers_touch.model.actor.v1.OnlineActorsResponse
@@ -34,11 +35,6 @@ export const OnlineActorsResponseSchema: GenMessage<OnlineActorsResponse> = /*@_
  * @generated from message peers_touch.model.actor.v1.OnlineActor
  */
 export type OnlineActor = Message<"peers_touch.model.actor.v1.OnlineActor"> & {
-  /**
-   * @generated from field: uint64 id = 1;
-   */
-  id: bigint;
-
   /**
    * @generated from field: string name = 2;
    */
@@ -63,6 +59,11 @@ export type OnlineActor = Message<"peers_touch.model.actor.v1.OnlineActor"> & {
    * @generated from field: string last_heartbeat = 6;
    */
   lastHeartbeat: string;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef ref = 7;
+   */
+  ref?: ActorRef | undefined;
 };
 
 /**

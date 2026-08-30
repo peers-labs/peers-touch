@@ -14,7 +14,7 @@ type Message struct {
 	ULID       string      `gorm:"column:ulid;uniqueIndex;size:32;not null"`
 	ConvPK     uint64      `gorm:"column:conv_pk;index;not null"`
 	ConvID     string      `gorm:"column:conv_id;index;size:64;not null"`
-	SenderDID  string      `gorm:"column:sender_did;size:128;index"`
+	SenderPtid string      `gorm:"column:sender_ptid;size:128;index"`
 	TS         int64       `gorm:"column:ts;index"`
 	Type       MessageType `gorm:"column:type;size:16;index"`
 	ParentID   string      `gorm:"column:parent_id;size:32"`

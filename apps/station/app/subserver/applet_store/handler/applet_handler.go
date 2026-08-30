@@ -105,7 +105,7 @@ func (h *AppletHandlers) HandleGetAppletDetails(ctx context.Context, req *model.
 func (h *AppletHandlers) HandleListAppletCatalog(ctx context.Context, req *model.ListAppletCatalogRequest) (*model.ListAppletCatalogResponse, error) {
 	response, err := h.service.ListCatalog(req)
 	if err != nil {
-		logger.Error(ctx, "Failed to list applet catalog", "error", err, "actor_id", req.GetActorId())
+		logger.Error(ctx, "Failed to list applet catalog", "error", err, "actor_ptid", req.GetActorPtid())
 		return nil, err
 	}
 	return response, nil
@@ -132,7 +132,7 @@ func (h *AppletHandlers) HandlePublishAppletVersion(ctx context.Context, req *mo
 func (h *AppletHandlers) HandleInstallApplet(ctx context.Context, req *model.InstallAppletRequest) (*model.InstallAppletResponse, error) {
 	response, err := h.service.InstallApplet(req)
 	if err != nil {
-		logger.Error(ctx, "Failed to install applet", "error", err, "actor_id", req.GetActorId(), "applet_id", req.GetAppletId())
+		logger.Error(ctx, "Failed to install applet", "error", err, "actor_ptid", req.GetActorPtid(), "applet_id", req.GetAppletId())
 		return nil, err
 	}
 	return response, nil
@@ -141,7 +141,7 @@ func (h *AppletHandlers) HandleInstallApplet(ctx context.Context, req *model.Ins
 func (h *AppletHandlers) HandleUninstallApplet(ctx context.Context, req *model.UninstallAppletRequest) (*model.UninstallAppletResponse, error) {
 	response, err := h.service.UninstallApplet(req)
 	if err != nil {
-		logger.Error(ctx, "Failed to uninstall applet", "error", err, "actor_id", req.GetActorId(), "applet_id", req.GetAppletId())
+		logger.Error(ctx, "Failed to uninstall applet", "error", err, "actor_ptid", req.GetActorPtid(), "applet_id", req.GetAppletId())
 		return nil, err
 	}
 	return response, nil
@@ -150,7 +150,7 @@ func (h *AppletHandlers) HandleUninstallApplet(ctx context.Context, req *model.U
 func (h *AppletHandlers) HandleListInstalledApplets(ctx context.Context, req *model.ListInstalledAppletsRequest) (*model.ListInstalledAppletsResponse, error) {
 	response, err := h.service.ListInstalledApplets(req)
 	if err != nil {
-		logger.Error(ctx, "Failed to list installed applets", "error", err, "actor_id", req.GetActorId())
+		logger.Error(ctx, "Failed to list installed applets", "error", err, "actor_ptid", req.GetActorPtid())
 		return nil, err
 	}
 	return response, nil

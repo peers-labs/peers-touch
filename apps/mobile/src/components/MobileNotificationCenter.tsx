@@ -47,7 +47,7 @@ export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenCont
     return friendRequests.reduce<Record<string, { name: string; avatar: string }>>((next, request) => {
       const name = request.senderDisplayName || request.receiverDisplayName;
       const avatar = request.senderAvatar || request.receiverAvatar;
-      [request.requestId, request.id, request.senderDid, request.senderId].filter(Boolean).forEach((key) => {
+      [request.requestId, request.id, request.senderPtid].filter(Boolean).forEach((key) => {
         next[String(key)] = { name, avatar };
       });
       return next;
@@ -138,7 +138,7 @@ function NotificationItem({
   onDelete: (notificationId: string) => Promise<void>;
   onMarkRead: (notificationId: string) => Promise<void>;
   onOpen: (notification: SocialNotification) => Promise<void>;
-  onResolveActor: (peerDid: string) => Promise<void>;
+  onResolveActor: (peerPtid: string) => Promise<void>;
   peerProfiles: ReturnType<typeof useSocialStore.getState>['peerProfiles'];
   friendRequestNames: Record<string, { name: string; avatar: string }>;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -249,13 +249,11 @@ function notificationBody(notification: SocialNotification, t: (key: string) => 
 }
 
 function notificationActorKey(notification: SocialNotification): string {
-  return notification.metadata.actor_did
-    || notification.metadata.actorDid
-    || notification.metadata.sender_did
-    || notification.metadata.senderDid
-    || notification.metadata.sender_id
-    || notification.metadata.senderId
-    || notification.actorId
+  return notification.metadata.actor_ptid
+    || notification.metadata.actorPtid
+    || notification.metadata.sender_ptid
+    || notification.metadata.senderPtid
+    || notification.actorPtid
     || '';
 }
 
@@ -267,9 +265,9 @@ function notificationRequestDisplay(
     notification.targetId,
     notification.metadata.request_id,
     notification.metadata.requestId,
-    notification.metadata.sender_did,
-    notification.metadata.senderDid,
-    notification.actorId,
+    notification.metadata.sender_ptid,
+    notification.metadata.senderPtid,
+    notification.actorPtid,
   ];
   for (const key of keys) {
     const display = key ? friendRequestNames[key] : null;

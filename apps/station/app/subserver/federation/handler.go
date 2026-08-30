@@ -26,13 +26,13 @@ func (s *subServer) handleListFederations(ctx context.Context, _ *ListFederation
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	actorID := subject.ID
+	actorPTID := subject.ID
 	stationPeerID := localStationPeerID()
 	if stationPeerID == "" {
 		return nil, server.InternalError("local Station peer identity unavailable")
 	}
 
-	return s.projectionSvc.ListFederations(ctx, stationPeerID, actorID)
+	return s.projectionSvc.ListFederations(ctx, stationPeerID, actorPTID)
 }
 
 func (s *subServer) handleCreateFederation(ctx context.Context, req *pb.CreateFederationRequest) (*pb.CreateFederationResponse, error) {
@@ -40,7 +40,7 @@ func (s *subServer) handleCreateFederation(ctx context.Context, req *pb.CreateFe
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	actorID := subject.ID
+	actorPTID := subject.ID
 	stationPeerID := localStationPeerID()
 	if stationPeerID == "" {
 		return nil, server.InternalError("local Station peer identity unavailable")
@@ -59,14 +59,14 @@ func (s *subServer) handleCreateFederation(ctx context.Context, req *pb.CreateFe
 	}
 
 	fed, err := s.federationSvc.CreateFederation(ctx, &application.CreateFederationInput{
-		Name:          req.Name,
-		Description:   req.Description,
-		PolicyType:    policyType,
-		ActorID:       actorID,
-		ActorHandle:   subject.ID,
-		StationPeerID: stationPeerID,
-		StationName:   node.GetService().Name(),
-		StationURL:    localStationURL(),
+		Name:                 req.Name,
+		Description:          req.Description,
+		PolicyType:           policyType,
+		ActorPTID:            actorPTID,
+		ActorFederatedHandle: subject.ID,
+		StationPeerID:        stationPeerID,
+		StationName:          node.GetService().Name(),
+		StationURL:           localStationURL(),
 	})
 	if err != nil {
 		return nil, err
@@ -104,15 +104,15 @@ func (s *subServer) handleJoinFederation(ctx context.Context, req *pb.JoinFedera
 		return nil, errors.New("federation_id is required")
 	}
 
-	actorID := subject.ID
+	actorPTID := subject.ID
 	stationPeerID := localStationPeerID()
 	if stationPeerID == "" {
 		return nil, server.InternalError("local Station peer identity unavailable")
 	}
 
-	_, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, actorID)
+	_, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, actorPTID)
 	if err != nil {
-		actorPriv, err = s.actorKeySvc.GetPrivateKey(ctx, actorID)
+		actorPriv, err = s.actorKeySvc.GetPrivateKey(ctx, actorPTID)
 		if err != nil {
 			return nil, err
 		}
@@ -123,15 +123,15 @@ func (s *subServer) handleJoinFederation(ctx context.Context, req *pb.JoinFedera
 
 	if isLocalSequencer {
 		membership, err := s.federationSvc.ApproveJoin(ctx, &application.ApproveJoinInput{
-			FederationID:          req.FederationId,
-			JoiningStationPeerID:  stationPeerID,
-			JoiningStationName:    node.GetService().Name(),
-			JoiningStationURL:     localStationURL(),
-			ApproverActorID:       actorID,
-			ApproverActorHandle:   actorID,
-			ApproverStationPeerID: stationPeerID,
-			ActorPrivateKey:       actorPriv,
-			StationPrivateKey:     actorPriv,
+			FederationID:                 req.FederationId,
+			JoiningStationPeerID:         stationPeerID,
+			JoiningStationName:           node.GetService().Name(),
+			JoiningStationURL:            localStationURL(),
+			ApproverActorPTID:            actorPTID,
+			ApproverActorFederatedHandle: actorPTID,
+			ApproverStationPeerID:        stationPeerID,
+			ActorPrivateKey:              actorPriv,
+			StationPrivateKey:            actorPriv,
 		})
 		if err != nil {
 			return nil, err
@@ -155,8 +155,8 @@ func (s *subServer) handleJoinFederation(ctx context.Context, req *pb.JoinFedera
 	proposalReq := &pb.SubmitProposalRequest{
 		FederationId:         req.FederationId,
 		ProposedEventType:    pb.EventType_STATION_JOIN_APPROVED,
-		ActorId:              actorID,
-		ActorFederatedHandle: actorID,
+		ActorPtid:            actorPTID,
+		ActorFederatedHandle: actorPTID,
 		StationPeerId:        stationPeerID,
 		JoiningStationUrl:    localStationURL(),
 		JoiningStationName:   node.GetService().Name(),
@@ -175,7 +175,7 @@ func (s *subServer) handleJoinFederation(ctx context.Context, req *pb.JoinFedera
 			ctx,
 			&application.BootstrapFederationReplicaInput{
 				FederationID:       req.FederationId,
-				LocalActorID:       actorID,
+				LocalActorPTID:     actorPTID,
 				LocalStationPeerID: stationPeerID,
 				Events:             resp.BootstrapEvents,
 			},
@@ -200,28 +200,28 @@ func (s *subServer) handleLeaveFederation(ctx context.Context, req *pb.LeaveFede
 		return nil, errors.New("federation_id is required")
 	}
 
-	actorID := subject.ID
+	actorPTID := subject.ID
 	stationPeerID := localStationPeerID()
 	if stationPeerID == "" {
 		return nil, server.InternalError("local Station peer identity unavailable")
 	}
 
-	_, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, actorID)
+	_, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, actorPTID)
 	if err != nil {
-		actorPriv, err = s.actorKeySvc.GetPrivateKey(ctx, actorID)
+		actorPriv, err = s.actorKeySvc.GetPrivateKey(ctx, actorPTID)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	err = s.federationSvc.LeaveFederation(ctx, &application.LeaveFederationInput{
-		FederationID:      req.FederationId,
-		ActorID:           actorID,
-		ActorHandle:       actorID,
-		StationPeerID:     stationPeerID,
-		Reason:            req.Reason,
-		ActorPrivateKey:   actorPriv,
-		StationPrivateKey: actorPriv,
+		FederationID:         req.FederationId,
+		ActorPTID:            actorPTID,
+		ActorFederatedHandle: actorPTID,
+		StationPeerID:        stationPeerID,
+		Reason:               req.Reason,
+		ActorPrivateKey:      actorPriv,
+		StationPrivateKey:    actorPriv,
 	})
 	if err != nil {
 		return nil, err
@@ -239,7 +239,7 @@ func (s *subServer) handleDeleteFederation(ctx context.Context, req *pb.DeleteFe
 		return nil, errors.New("federation_id is required")
 	}
 
-	actorID := subject.ID
+	actorPTID := subject.ID
 	stationPeerID := localStationPeerID()
 	if stationPeerID == "" {
 		return nil, server.InternalError("local Station peer identity unavailable")
@@ -255,25 +255,25 @@ func (s *subServer) handleDeleteFederation(ctx context.Context, req *pb.DeleteFe
 	if fed.SequencerStationPeerID != stationPeerID {
 		return nil, errors.New("only the sequencer station can delete a federation")
 	}
-	if fed.CreatedByActorID != actorID {
+	if fed.CreatedByActorPTID != actorPTID {
 		return nil, errors.New("only the federation owner can delete it")
 	}
 
-	_, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, actorID)
+	_, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, actorPTID)
 	if err != nil {
-		actorPriv, err = s.actorKeySvc.GetPrivateKey(ctx, actorID)
+		actorPriv, err = s.actorKeySvc.GetPrivateKey(ctx, actorPTID)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	err = s.federationSvc.DeleteFederation(ctx, &application.DeleteFederationInput{
-		FederationID:      req.FederationId,
-		ActorID:           actorID,
-		ActorHandle:       actorID,
-		StationPeerID:     stationPeerID,
-		ActorPrivateKey:   actorPriv,
-		StationPrivateKey: actorPriv,
+		FederationID:         req.FederationId,
+		ActorPTID:            actorPTID,
+		ActorFederatedHandle: actorPTID,
+		StationPeerID:        stationPeerID,
+		ActorPrivateKey:      actorPriv,
+		StationPrivateKey:    actorPriv,
 	})
 	if err != nil {
 		return nil, err

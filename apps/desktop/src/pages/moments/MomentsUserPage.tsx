@@ -12,22 +12,22 @@ import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
 // Author info hydration:
 //   - The simplest available source for the actor's display
 //     metadata is whatever post in `postsById` carries
-//     `author_id === actorId`. We pick the first match — the wire
+//     `author_ptid === actorPtid`. We pick the first match — the wire
 //     `PostAuthor` shape is the same regardless of which post
 //     surfaces it.
 //   - `momentsRuntime` owns the author feed + relationship projection
 //     refresh before this pushed view is shown.
 
 interface MomentsUserViewProps {
-  actorId: string;
-  viewerActorId?: string;
+  actorPtid: string;
+  viewerActorPtid?: string;
   onBack: () => void;
   onOpenPost: (postId: string) => void;
 }
 
 export function MomentsUserView({
-  actorId,
-  viewerActorId,
+  actorPtid,
+  viewerActorPtid,
   onBack,
   onOpenPost,
 }: MomentsUserViewProps) {
@@ -41,7 +41,7 @@ export function MomentsUserView({
     reactToPost,
     unreactToPost,
   } = useActiveMomentsSlice((s) => ({
-    feed: s.userFeeds[actorId],
+    feed: s.userFeeds[actorPtid],
     postsById: s.postsById,
     reactions: s.reactions,
     feedExplanations: s.feedExplanations,
@@ -51,12 +51,12 @@ export function MomentsUserView({
   }));
 
   const { followers, following } = useActiveRelationshipsSlice((s) => ({
-    followers: s.followersByActor[actorId],
-    following: s.followingByActor[actorId],
+    followers: s.followersByActor[actorPtid],
+    following: s.followingByActor[actorPtid],
   }));
 
   const posts = (feed?.postIds ?? []).map((id) => postsById[id]).filter(Boolean);
-  const author = posts.find((p) => p.author?.id === actorId)?.author;
+  const author = posts.find((p) => p.author?.id === actorPtid)?.author;
 
   const handleReact = async (id: string, k: ReactionKind) => {
     await reactToPost(id, k);
@@ -78,7 +78,7 @@ export function MomentsUserView({
 
       <UserProfileHeader
         actor={author ?? null}
-        viewerActorId={viewerActorId}
+        viewerActorPtid={viewerActorPtid}
         followerCount={followers?.total}
         followingCount={following?.total}
         postCount={posts.length}
@@ -98,7 +98,7 @@ export function MomentsUserView({
             post={p}
             reactions={reactions[p.id]}
             explanation={feedExplanations[p.id]}
-            viewerActorId={viewerActorId}
+            viewerActorPtid={viewerActorPtid}
             surface="profile"
             onOpen={onOpenPost}
             onOpenComments={onOpenPost}
@@ -113,7 +113,7 @@ export function MomentsUserView({
           emptyText={t('moments.placeholder.userEmpty')}
           loadMoreText={t('moments.action.loadMore')}
           hasMore={feed?.hasMore}
-          onLoadMore={() => loadUserFeed(actorId).catch(() => {})}
+          onLoadMore={() => loadUserFeed(actorPtid).catch(() => {})}
         />
       </div>
     </div>

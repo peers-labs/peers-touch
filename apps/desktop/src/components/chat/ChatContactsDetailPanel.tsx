@@ -50,16 +50,16 @@ export function ChatContactsDetailPanel({
     ? findContactConversation(selectedContact, getIMConversations())
     : undefined;
   const isGroup = selectedContact?.kind === 'group';
-  const peerDid = selectedContact?.kind === 'friend' ? selectedContact.peerDid : '';
-  const cachedPeer = peerDid ? peerProfiles[peerDid] : undefined;
+  const peerPtid = selectedContact?.kind === 'friend' ? selectedContact.peerPtid : '';
+  const cachedPeer = peerPtid ? peerProfiles[peerPtid] : undefined;
 
   // Lazy peer profile load. The cache is single-owner (socialChat store);
   // running this effect here is the *view trigger*, not the projection.
   useEffect(() => {
-    if (peerDid) {
-      void loadPeerProfile(peerDid);
+    if (peerPtid) {
+      void loadPeerProfile(peerPtid);
     }
-  }, [peerDid, loadPeerProfile]);
+  }, [peerPtid, loadPeerProfile]);
 
   const profile = useMemo<PublicProfileModel | null>(() => {
     if (selectedContact?.kind === 'group') {
@@ -81,13 +81,13 @@ export function ChatContactsDetailPanel({
     const sessionFallback: PublicProfileModel = {
       displayName: selectedContact.displayName,
       avatar: selectedContact.avatar || '',
-      did: peerDid,
+      did: peerPtid,
       relationLabel: t('chat.social.contacts.friendLabel'),
       relationTone: 'success',
     };
     if (!cachedPeer) return sessionFallback;
     return mergePeerProfile(sessionFallback, cachedPeer, t);
-  }, [activeConversation, cachedPeer, peerDid, selectedContact, t]);
+  }, [activeConversation, cachedPeer, peerPtid, selectedContact, t]);
 
   if (!selectedContact) {
     return (
@@ -115,7 +115,7 @@ export function ChatContactsDetailPanel({
       return;
     }
 
-    const peerDid = selectedContact.peerDid;
+    const peerPtid = selectedContact.peerPtid;
     const existing = findContactConversation(selectedContact, getIMConversations());
 
     if (existing) {
@@ -129,8 +129,8 @@ export function ChatContactsDetailPanel({
     onMessage();
 
     try {
-      log.info('chatContactsDetail', 'creating direct conversation', { peerDid });
-      const conversation = await imServiceV1.messaging.createDirect(peerDid);
+      log.info('chatContactsDetail', 'creating direct conversation', { peerPtid });
+      const conversation = await imServiceV1.messaging.createDirect(peerPtid);
       selectSession(conversation.conversationId);
       restoreConversation('friend', conversation.conversationId);
       log.info('chatContactsDetail', 'direct conversation created', { id: conversation.conversationId });

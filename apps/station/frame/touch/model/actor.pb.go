@@ -261,7 +261,6 @@ func (ActorSigningKeyVerificationSource) EnumDescriptor() ([]byte, []int) {
 
 type ActorRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       uint64                 `protobuf:"varint,1,opt,name=actor_id,proto3" json:"actor_id,omitempty"`
 	Ptid          string                 `protobuf:"bytes,2,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	Acct          string                 `protobuf:"bytes,3,opt,name=acct,proto3" json:"acct,omitempty"`
 	Kind          ActorKind              `protobuf:"varint,4,opt,name=kind,proto3,enum=peers_touch.model.actor.v1.ActorKind" json:"kind,omitempty"`
@@ -299,13 +298,6 @@ func (*ActorRef) Descriptor() ([]byte, []int) {
 	return file_domain_actor_actor_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *ActorRef) GetActorId() uint64 {
-	if x != nil {
-		return x.ActorId
-	}
-	return 0
-}
-
 func (x *ActorRef) GetPtid() string {
 	if x != nil {
 		return x.Ptid
@@ -329,7 +321,6 @@ func (x *ActorRef) GetKind() ActorKind {
 
 type Actor struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
-	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Username    string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
 	DisplayName string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Email       string                 `protobuf:"bytes,4,opt,name=email,proto3" json:"email,omitempty"`
@@ -337,7 +328,6 @@ type Actor struct {
 	Outbox      string                 `protobuf:"bytes,6,opt,name=outbox,proto3" json:"outbox,omitempty"`
 	Endpoints   map[string]string      `protobuf:"bytes,7,rep,name=endpoints,proto3" json:"endpoints,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	IsFollowing bool                   `protobuf:"varint,8,opt,name=is_following,proto3" json:"is_following,omitempty"`
-	ActorId     uint64                 `protobuf:"varint,9,opt,name=actor_id,proto3" json:"actor_id,omitempty"`
 	Avatar      string                 `protobuf:"bytes,10,opt,name=avatar,proto3" json:"avatar,omitempty"`
 	Kind        ActorKind              `protobuf:"varint,11,opt,name=kind,proto3,enum=peers_touch.model.actor.v1.ActorKind" json:"kind,omitempty"`
 	// Federation extension fields. Populated for every actor row regardless of
@@ -351,7 +341,8 @@ type Actor struct {
 	Origin            ActorOrigin     `protobuf:"varint,16,opt,name=origin,proto3,enum=peers_touch.model.actor.v1.ActorOrigin" json:"origin,omitempty"`
 	// Ed25519 public key for actor-initiated governance signing.
 	// Generated at account creation; used to verify actor_signature on ledger events.
-	SigningPublicKey []byte `protobuf:"bytes,17,opt,name=signing_public_key,proto3" json:"signing_public_key,omitempty"`
+	SigningPublicKey []byte    `protobuf:"bytes,17,opt,name=signing_public_key,proto3" json:"signing_public_key,omitempty"`
+	Ref              *ActorRef `protobuf:"bytes,18,opt,name=ref,proto3" json:"ref,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -384,13 +375,6 @@ func (x *Actor) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Actor.ProtoReflect.Descriptor instead.
 func (*Actor) Descriptor() ([]byte, []int) {
 	return file_domain_actor_actor_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *Actor) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
 }
 
 func (x *Actor) GetUsername() string {
@@ -440,13 +424,6 @@ func (x *Actor) GetIsFollowing() bool {
 		return x.IsFollowing
 	}
 	return false
-}
-
-func (x *Actor) GetActorId() uint64 {
-	if x != nil {
-		return x.ActorId
-	}
-	return 0
 }
 
 func (x *Actor) GetAvatar() string {
@@ -501,6 +478,13 @@ func (x *Actor) GetOrigin() ActorOrigin {
 func (x *Actor) GetSigningPublicKey() []byte {
 	if x != nil {
 		return x.SigningPublicKey
+	}
+	return nil
+}
+
+func (x *Actor) GetRef() *ActorRef {
+	if x != nil {
+		return x.Ref
 	}
 	return nil
 }
@@ -1242,22 +1226,19 @@ var File_domain_actor_actor_proto protoreflect.FileDescriptor
 
 const file_domain_actor_actor_proto_rawDesc = "" +
 	"\n" +
-	"\x18domain/actor/actor.proto\x12\x1apeers_touch.model.actor.v1\"\x89\x01\n" +
-	"\bActorRef\x12\x1a\n" +
-	"\bactor_id\x18\x01 \x01(\x04R\bactor_id\x12\x12\n" +
+	"\x18domain/actor/actor.proto\x12\x1apeers_touch.model.actor.v1\"}\n" +
+	"\bActorRef\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x12\n" +
 	"\x04acct\x18\x03 \x01(\tR\x04acct\x129\n" +
-	"\x04kind\x18\x04 \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kind\"\x8b\x06\n" +
-	"\x05Actor\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\x04kind\x18\x04 \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kindJ\x04\b\x01\x10\x02R\bactor_id\"\xb1\x06\n" +
+	"\x05Actor\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x14\n" +
 	"\x05email\x18\x04 \x01(\tR\x05email\x12\x14\n" +
 	"\x05inbox\x18\x05 \x01(\tR\x05inbox\x12\x16\n" +
 	"\x06outbox\x18\x06 \x01(\tR\x06outbox\x12N\n" +
 	"\tendpoints\x18\a \x03(\v20.peers_touch.model.actor.v1.Actor.EndpointsEntryR\tendpoints\x12\"\n" +
-	"\fis_following\x18\b \x01(\bR\fis_following\x12\x1a\n" +
-	"\bactor_id\x18\t \x01(\x04R\bactor_id\x12\x16\n" +
+	"\fis_following\x18\b \x01(\bR\fis_following\x12\x16\n" +
 	"\x06avatar\x18\n" +
 	" \x01(\tR\x06avatar\x129\n" +
 	"\x04kind\x18\v \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kind\x12*\n" +
@@ -1268,10 +1249,12 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"visibility\x18\x0f \x01(\x0e2+.peers_touch.model.actor.v1.ActorVisibilityR\n" +
 	"visibility\x12?\n" +
 	"\x06origin\x18\x10 \x01(\x0e2'.peers_touch.model.actor.v1.ActorOriginR\x06origin\x12.\n" +
-	"\x12signing_public_key\x18\x11 \x01(\fR\x12signing_public_key\x1a<\n" +
+	"\x12signing_public_key\x18\x11 \x01(\fR\x12signing_public_key\x126\n" +
+	"\x03ref\x18\x12 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x03ref\x1a<\n" +
 	"\x0eEndpointsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xde\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x01\x10\x02J\x04\b\t\x10\n" +
+	"R\x02idR\bactor_id\"\xde\x03\n" +
 	"\x1dVerifiedActorDeviceSigningKey\x12\x1d\n" +
 	"\n" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12&\n" +
@@ -1412,17 +1395,18 @@ var file_domain_actor_actor_proto_depIdxs = []int32{
 	0,  // 2: peers_touch.model.actor.v1.Actor.kind:type_name -> peers_touch.model.actor.v1.ActorKind
 	2,  // 3: peers_touch.model.actor.v1.Actor.visibility:type_name -> peers_touch.model.actor.v1.ActorVisibility
 	1,  // 4: peers_touch.model.actor.v1.Actor.origin:type_name -> peers_touch.model.actor.v1.ActorOrigin
-	3,  // 5: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey.verification_source:type_name -> peers_touch.model.actor.v1.ActorSigningKeyVerificationSource
-	7,  // 6: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
-	8,  // 7: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
-	4,  // 8: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
-	7,  // 9: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
-	5,  // 10: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	4,  // 5: peers_touch.model.actor.v1.Actor.ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	3,  // 6: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey.verification_source:type_name -> peers_touch.model.actor.v1.ActorSigningKeyVerificationSource
+	7,  // 7: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
+	8,  // 8: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
+	4,  // 9: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	7,  // 10: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
+	5,  // 11: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_proto_init() }

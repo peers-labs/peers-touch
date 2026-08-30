@@ -5,7 +5,7 @@
 //! state and renews the Station presence lease:
 //!
 //!   1. `POST /presence/heartbeat`
-//!   2. Tauri event `presence.synced { actor_id, count, sessions }`
+//!   2. Tauri event `presence.synced { actor_ptid, count, sessions }`
 //!
 //! Durable message reconciliation belongs to the Envelope runtime and
 //! `/envelope/resume`; Presence does not own a second message queue.
@@ -77,14 +77,14 @@ impl PresenceSupervisor {
         }
     }
 
-    /// Snapshot the current state for `actor_id`. Returns `Offline` for
+    /// Snapshot the current state for `actor_ptid`. Returns `Offline` for
     /// unknown actors.
-    pub fn state_of(&self, actor_id: &str) -> PresenceState {
+    pub fn state_of(&self, actor_ptid: &str) -> PresenceState {
         let map = self
             .actors
             .lock()
             .expect("PresenceSupervisor lock poisoned");
-        map.get(actor_id)
+        map.get(actor_ptid)
             .map(|a| a.state)
             .unwrap_or(PresenceState::Offline)
     }
@@ -97,19 +97,19 @@ impl PresenceSupervisor {
     /// thread, and the caller (a Tauri command) can return immediately.
     pub fn notify(
         self: &Arc<Self>,
-        actor_id: &str,
+        actor_ptid: &str,
         token: &str,
         trigger: PresenceTrigger,
         app: AppHandle,
     ) -> Option<std::thread::JoinHandle<()>> {
-        if actor_id.is_empty() {
-            tracing::debug!(?trigger, "presence.notify ignored: empty actor_id");
+        if actor_ptid.is_empty() {
+            tracing::debug!(?trigger, "presence.notify ignored: empty actor_ptid");
             return None;
         }
         if token.is_empty() {
             tracing::debug!(
                 ?trigger,
-                actor = actor_id,
+                actor = actor_ptid,
                 "presence.notify ignored: empty token"
             );
             return None;
@@ -123,13 +123,13 @@ impl PresenceSupervisor {
                 .actors
                 .lock()
                 .expect("PresenceSupervisor lock poisoned");
-            let entry = map.entry(actor_id.to_string()).or_default();
+            let entry = map.entry(actor_ptid.to_string()).or_default();
             let from = entry.state;
 
             // Already in-flight: collapse this trigger.
             if entry.in_flight {
                 tracing::debug!(
-                    actor = actor_id,
+                    actor = actor_ptid,
                     ?trigger,
                     "presence: collapsing trigger (in-flight)"
                 );
@@ -144,7 +144,7 @@ impl PresenceSupervisor {
                 if let Some(last) = entry.last_reconcile_at {
                     if last.elapsed() < COOLDOWN {
                         tracing::debug!(
-                            actor = actor_id,
+                            actor = actor_ptid,
                             ?trigger,
                             "presence: absorbing trigger (cooldown)"
                         );
@@ -163,17 +163,17 @@ impl PresenceSupervisor {
 
         // --- Spawn reconcile -------------------------------------------
         let supervisor = Arc::clone(self);
-        let actor_id_owned = actor_id.to_string();
+        let actor_ptid_owned = actor_ptid.to_string();
         let token_owned = token.to_string();
         let app_for_thread = app.clone();
         let handle = std::thread::Builder::new()
             .name(format!(
                 "presence-{}",
-                &actor_id_owned[..actor_id_owned.len().min(8)]
+                &actor_ptid_owned[..actor_ptid_owned.len().min(8)]
             ))
             .spawn(move || {
                 let outcome = supervisor.run_reconcile(
-                    &actor_id_owned,
+                    &actor_ptid_owned,
                     &token_owned,
                     trigger,
                     target,
@@ -185,7 +185,7 @@ impl PresenceSupervisor {
                     .actors
                     .lock()
                     .expect("PresenceSupervisor lock poisoned");
-                let entry = map.entry(actor_id_owned.clone()).or_default();
+                let entry = map.entry(actor_ptid_owned.clone()).or_default();
                 entry.in_flight = false;
                 if outcome.success {
                     entry.state = target;
@@ -202,7 +202,7 @@ impl PresenceSupervisor {
                 }
 
                 let transition = PresenceTransition {
-                    actor_id: actor_id_owned,
+                    actor_ptid: actor_ptid_owned,
                     from: from_state,
                     to: entry.state,
                     trigger,
@@ -221,28 +221,28 @@ impl PresenceSupervisor {
     /// caller can update the per-actor state machine accordingly.
     fn run_reconcile(
         &self,
-        actor_id: &str,
+        actor_ptid: &str,
         token: &str,
         trigger: PresenceTrigger,
         target: PresenceState,
         _app: &AppHandle,
     ) -> ReconcileOutcome {
         match target {
-            PresenceState::Offline => self.run_offline(actor_id, token, trigger),
-            PresenceState::Online => self.run_online(actor_id, token, trigger),
+            PresenceState::Offline => self.run_offline(actor_ptid, token, trigger),
+            PresenceState::Online => self.run_online(actor_ptid, token, trigger),
         }
     }
 
     fn run_offline(
         &self,
-        actor_id: &str,
+        actor_ptid: &str,
         token: &str,
         trigger: PresenceTrigger,
     ) -> ReconcileOutcome {
         let result = match chat_storage::presence_offline(token, trigger.as_wire()) {
             Ok(_) => {
                 tracing::info!(
-                    actor = actor_id,
+                    actor = actor_ptid,
                     ?trigger,
                     "presence: marked offline at station"
                 );
@@ -250,7 +250,7 @@ impl PresenceSupervisor {
             }
             Err(e) => {
                 // /presence/offline is best-effort; the lease TTL is the authoritative safety net.
-                tracing::warn!(actor = actor_id, ?trigger, error = %e, "presence: /presence/offline failed");
+                tracing::warn!(actor = actor_ptid, ?trigger, error = %e, "presence: /presence/offline failed");
                 ReconcileOutcome::ok(0, Vec::new())
             }
         };
@@ -266,7 +266,7 @@ impl PresenceSupervisor {
             let report = oss_cache::gc_with_default_budget();
             if report.evicted > 0 {
                 tracing::info!(
-                    actor = actor_id,
+                    actor = actor_ptid,
                     evicted = report.evicted,
                     bytes_before = report.bytes_before,
                     bytes_after = report.bytes_after,
@@ -280,14 +280,14 @@ impl PresenceSupervisor {
 
     fn run_online(
         &self,
-        actor_id: &str,
+        actor_ptid: &str,
         token: &str,
         trigger: PresenceTrigger,
     ) -> ReconcileOutcome {
         // Renew the actor presence lease. Durable message recovery is owned by
         // the Envelope runtime, which resumes its actor-device inbox separately.
         if let Err(e) = chat_storage::presence_heartbeat(token, trigger.as_wire()) {
-            tracing::warn!(actor = actor_id, ?trigger, error = %e, "presence: /presence/heartbeat failed");
+            tracing::warn!(actor = actor_ptid, ?trigger, error = %e, "presence: /presence/heartbeat failed");
             return ReconcileOutcome::failed();
         }
         ReconcileOutcome::ok(0, Vec::new())

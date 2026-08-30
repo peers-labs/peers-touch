@@ -50,7 +50,7 @@ func NewCliExecutor(workspaceMgr *WorkspaceManager) *CliExecutor {
 	}
 }
 
-func (e *CliExecutor) Execute(ctx context.Context, req *CliTurnRequest, actorID string, sink EventSink) error {
+func (e *CliExecutor) Execute(ctx context.Context, req *CliTurnRequest, actorPTID string, sink EventSink) error {
 	cmd, err := NormalizeCommand(req.CliCommand)
 	if err != nil {
 		return fmt.Errorf("normalize cli command: %w", err)
@@ -61,12 +61,12 @@ func (e *CliExecutor) Execute(ctx context.Context, req *CliTurnRequest, actorID 
 	}
 
 	sessionID := e.WorkspaceMgr.SessionID()
-	workDir, err := e.WorkspaceMgr.Create(actorID, sessionID)
+	workDir, err := e.WorkspaceMgr.Create(actorPTID, sessionID)
 	if err != nil {
 		return fmt.Errorf("create workspace: %w", err)
 	}
 	defer func() {
-		go e.WorkspaceMgr.Cleanup(actorID, sessionID)
+		go e.WorkspaceMgr.Cleanup(actorPTID, sessionID)
 	}()
 
 	prompt := BuildCliPrompt(req.Identity, req.AgentConfigPrompt, req.UserInput)

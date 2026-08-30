@@ -160,7 +160,7 @@ export default function OverviewPage() {
             <Table
               dataSource={recentActors}
               columns={recentActorColumns}
-              rowKey="id"
+              rowKey="ptid"
               size="small"
               pagination={false}
               locale={{ emptyText: 'No recent actors' }}

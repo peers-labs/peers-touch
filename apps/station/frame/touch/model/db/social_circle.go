@@ -38,13 +38,13 @@ func (c *SocialCircle) BeforeCreate(tx *gorm.DB) error {
 }
 
 // SocialCircleMember enumerates the members of a circle. Members are
-// referenced by DID (not local actor_id) so the same circle can target
-// remote actors after federation lands (P5+); local DID resolution is the
+// referenced by PTID (not local actor_id) so the same circle can target
+// remote actors after federation lands; local PTID resolution is the
 // ActorResolver contract's job.
 type SocialCircleMember struct {
-	CircleID uint64    `gorm:"column:circle_id;primaryKey;autoIncrement:false"`
-	ActorDID string    `gorm:"column:actor_did;primaryKey;size:128"`
-	AddedAt  time.Time `gorm:"column:added_at;index"`
+	CircleID  uint64    `gorm:"column:circle_id;primaryKey;autoIncrement:false"`
+	ActorPtid string    `gorm:"column:actor_ptid;primaryKey;size:128"`
+	AddedAt   time.Time `gorm:"column:added_at;index"`
 }
 
 func (SocialCircleMember) TableName() string { return "social_circle_members" }

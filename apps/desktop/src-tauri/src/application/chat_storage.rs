@@ -77,7 +77,7 @@ fn json_to_optional_timestamp(v: &Value, keys: &[&str]) -> Option<prost_types::T
 
 fn presence_update_response_to_value(resp: &model::presence::PresenceUpdateResponse) -> Value {
     json!({
-        "actorId": resp.actor_id,
+        "actorPtid": resp.actor_ptid,
         "sessionId": resp.session_id,
         "state": resp.state,
         "leaseExpiresAt": ts_millis(&resp.lease_expires_at),
@@ -108,13 +108,13 @@ fn group_message_to_json(m: &model::chat::GroupMessage) -> Value {
     json!({
         "ulid": m.ulid,
         "groupUlid": m.group_ulid,
-        "senderDid": m.sender_did,
+        "senderPtid": m.sender_ptid,
         "type": m.r#type,
         "content": m.content,
         "attachments": m.attachments.iter().map(group_attachment_to_json).collect::<Vec<_>>(),
         "replyToUlid": m.reply_to_ulid,
         "threadRootUlid": m.thread_root_ulid,
-        "mentionedDids": m.mentioned_dids,
+        "mentionedPtids": m.mentioned_ptids,
         "mentionAll": m.mention_all,
         "sentAt": ts_millis(&m.sent_at),
         "createdAt": ts_millis(&m.created_at),
@@ -123,7 +123,7 @@ fn group_message_to_json(m: &model::chat::GroupMessage) -> Value {
         "editedAt": ts_millis(&m.edited_at),
         "encryptedPayload": bytes_to_b64(&m.encrypted_payload),
         "group_ulid": m.group_ulid,
-        "sender_did": m.sender_did,
+        "sender_ptid": m.sender_ptid,
         "reply_to_ulid": m.reply_to_ulid,
         "thread_root_ulid": m.thread_root_ulid,
         "sent_at": sent_ms,
@@ -137,7 +137,7 @@ fn group_to_json(g: &model::chat::Group) -> Value {
         "name": g.name,
         "description": g.description,
         "avatarCid": g.avatar_cid,
-        "ownerDid": g.owner_did,
+        "ownerPtid": g.owner_ptid,
         "type": g.r#type,
         "visibility": g.visibility,
         "memberCount": g.member_count,
@@ -152,7 +152,7 @@ fn group_to_json(g: &model::chat::Group) -> Value {
 fn group_member_to_json(m: &model::chat::GroupMember) -> Value {
     json!({
         "groupUlid": m.group_ulid,
-        "actorDid": m.ptid,
+        "actorPtid": m.ptid,
         "role": m.role,
         "nickname": m.nickname,
         "muted": m.muted,
@@ -166,8 +166,8 @@ fn group_invitation_to_json(i: &model::chat::GroupInvitation) -> Value {
     json!({
         "ulid": i.ulid,
         "groupUlid": i.group_ulid,
-        "inviterDid": i.inviter_did,
-        "inviteeDid": i.invitee_did,
+        "inviterPtid": i.inviter_ptid,
+        "inviteePtid": i.invitee_ptid,
         "status": i.status,
         "expireAt": ts_millis(&i.expire_at),
         "createdAt": ts_millis(&i.created_at),
@@ -178,7 +178,7 @@ fn group_offline_message_to_json(m: &model::chat::GroupOfflineMessage) -> Value 
     json!({
         "ulid": m.ulid,
         "groupUlid": m.group_ulid,
-        "receiverDid": m.receiver_did,
+        "receiverPtid": m.receiver_ptid,
         "messageUlid": m.message_ulid,
         "status": m.status,
         "expireAt": ts_millis(&m.expire_at),
@@ -324,13 +324,13 @@ fn sync_message_item_from_value(
     let session_ulid = json_str(v, &["sessionUlid", "session_ulid"])
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| default_session_ulid.to_string());
-    let receiver_did = json_str(v, &["receiverDid", "receiver_did"]).unwrap_or_default();
+    let receiver_ptid = json_str(v, &["receiverPtid", "receiver_ptid"]).unwrap_or_default();
     let content = json_str(v, &["content"]).unwrap_or_default();
     let r#type = json_i32(v, &["type"]).unwrap_or(1);
     Ok(model::chat::SyncMessageItem {
         ulid,
         session_ulid,
-        receiver_did,
+        receiver_ptid,
         r#type,
         content,
         sent_at: json_to_optional_timestamp(v, &["sentAt", "sent_at"]),
@@ -586,7 +586,7 @@ pub fn send_group_message(
     content: &str,
     msg_type: i32,
     reply_to_ulid: &str,
-    mentioned_dids: &[String],
+    mentioned_ptids: &[String],
     mention_all: bool,
 ) -> StationResult<Value> {
     let req = model::chat::SendGroupMessageRequest {
@@ -596,7 +596,7 @@ pub fn send_group_message(
         attachments: Vec::new(),
         reply_to_ulid: reply_to_ulid.to_string(),
         thread_root_ulid: String::new(),
-        mentioned_dids: mentioned_dids.to_vec(),
+        mentioned_ptids: mentioned_ptids.to_vec(),
         mention_all,
         encrypted_payload: Vec::new(),
         observed_membership_epoch: 0,
@@ -730,22 +730,22 @@ pub fn create_group(
     token: &str,
     name: &str,
     description: &str,
-    member_dids: &[String],
+    member_ptids: &[String],
 ) -> StationResult<Value> {
-    create_group_with_federated_members(token, name, description, member_dids, &[])
+    create_group_with_federated_members(token, name, description, member_ptids, &[])
 }
 
 pub fn create_group_with_federated_members(
     token: &str,
     name: &str,
     description: &str,
-    member_dids: &[String],
+    member_ptids: &[String],
     initial_federated_members: &[model::chat::FederatedActorRef],
 ) -> StationResult<Value> {
     let req = model::chat::CreateGroupRequest {
         name: name.to_string(),
         description: description.to_string(),
-        initial_member_dids: member_dids.to_vec(),
+        initial_member_ptids: member_ptids.to_vec(),
         initial_federated_members: initial_federated_members.to_vec(),
         ..Default::default()
     };
@@ -789,10 +789,14 @@ pub fn update_group(
     Ok(update_group_response_to_value(&resp))
 }
 
-pub fn group_invite(token: &str, group_ulid: &str, member_dids: &[String]) -> StationResult<Value> {
+pub fn group_invite(
+    token: &str,
+    group_ulid: &str,
+    member_ptids: &[String],
+) -> StationResult<Value> {
     let req = model::chat::InviteToGroupRequest {
         group_ulid: group_ulid.to_string(),
-        invitee_dids: member_dids.to_vec(),
+        invitee_ptids: member_ptids.to_vec(),
     };
     let resp = station_client::request_proto::<
         model::chat::InviteToGroupRequest,
@@ -839,11 +843,11 @@ pub fn group_members(token: &str, group_ulid: &str) -> StationResult<Value> {
 pub fn group_remove_member(
     token: &str,
     group_ulid: &str,
-    member_did: &str,
+    member_ptid: &str,
 ) -> StationResult<Value> {
     let req = model::chat::RemoveMemberRequest {
         group_ulid: group_ulid.to_string(),
-        ptid: member_did.to_string(),
+        ptid: member_ptid.to_string(),
     };
     let resp = station_client::request_proto::<
         model::chat::RemoveMemberRequest,

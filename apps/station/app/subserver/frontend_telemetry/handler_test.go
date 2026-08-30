@@ -24,6 +24,36 @@ func newTestSubServer(t *testing.T) *subServer {
 	return &subServer{store: store}
 }
 
+func TestRenameTelemetryPTIDColumnIsIdempotent(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:frontend-telemetry-ptid-migration?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, table := range []string{"frontend_telemetry_events", "frontend_telemetry_rollups"} {
+		if err := db.Exec("CREATE TABLE " + table + " (id INTEGER PRIMARY KEY, actor_id TEXT NOT NULL)").Error; err != nil {
+			t.Fatalf("create legacy table %s: %v", table, err)
+		}
+		if err := db.Exec("INSERT INTO "+table+" (id, actor_id) VALUES (?, ?)", 1, "ptid-telemetry").Error; err != nil {
+			t.Fatalf("seed legacy table %s: %v", table, err)
+		}
+		for run := 1; run <= 2; run++ {
+			if err := renameTelemetryPTIDColumn(db, table); err != nil {
+				t.Fatalf("migrate %s run %d: %v", table, run, err)
+			}
+		}
+		if db.Migrator().HasColumn(table, "actor_id") || !db.Migrator().HasColumn(table, "actor_ptid") {
+			t.Fatalf("%s PTID columns not cut over", table)
+		}
+		var actorPTID string
+		if err := db.Table(table).Select("actor_ptid").Where("id = ?", 1).Scan(&actorPTID).Error; err != nil {
+			t.Fatalf("read migrated row from %s: %v", table, err)
+		}
+		if actorPTID != "ptid-telemetry" {
+			t.Fatalf("%s migrated PTID = %q, want ptid-telemetry", table, actorPTID)
+		}
+	}
+}
+
 func testContext() context.Context {
 	return coreauth.WithSubject(context.Background(), &coreauth.Subject{
 		ID:        "actor-test",
@@ -172,7 +202,7 @@ func TestPersistBatchRebuildsLargeRollupSetInBatches(t *testing.T) {
 	var rollupCount int64
 	if err := s.store.db.WithContext(ctx).
 		Model(&rollupModel{}).
-		Where("actor_id = ? AND runtime = ?", actorID, "prod-preview").
+		Where("actor_ptid = ? AND runtime = ?", actorID, "prod-preview").
 		Count(&rollupCount).Error; err != nil {
 		t.Fatalf("count rollups: %v", err)
 	}

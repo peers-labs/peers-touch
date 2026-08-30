@@ -161,7 +161,7 @@ func (x *PresenceOfflineRequest) GetReason() string {
 
 type PresenceUpdateResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	ActorId        string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid      string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	SessionId      string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	State          PresenceState          `protobuf:"varint,3,opt,name=state,proto3,enum=peers_touch.model.presence.v1.PresenceState" json:"state,omitempty"`
 	LeaseExpiresAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=lease_expires_at,json=leaseExpiresAt,proto3" json:"lease_expires_at,omitempty"`
@@ -199,9 +199,9 @@ func (*PresenceUpdateResponse) Descriptor() ([]byte, []int) {
 	return file_domain_presence_presence_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *PresenceUpdateResponse) GetActorId() string {
+func (x *PresenceUpdateResponse) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -229,7 +229,7 @@ func (x *PresenceUpdateResponse) GetLeaseExpiresAt() *timestamppb.Timestamp {
 
 type PresenceQueryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorIds      []string               `protobuf:"bytes,1,rep,name=actor_ids,json=actorIds,proto3" json:"actor_ids,omitempty"`
+	ActorPtids    []string               `protobuf:"bytes,1,rep,name=actor_ptids,json=actorPtids,proto3" json:"actor_ptids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -264,16 +264,16 @@ func (*PresenceQueryRequest) Descriptor() ([]byte, []int) {
 	return file_domain_presence_presence_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *PresenceQueryRequest) GetActorIds() []string {
+func (x *PresenceQueryRequest) GetActorPtids() []string {
 	if x != nil {
-		return x.ActorIds
+		return x.ActorPtids
 	}
 	return nil
 }
 
 type PresenceStatus struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	ActorId        string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid      string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	State          PresenceState          `protobuf:"varint,2,opt,name=state,proto3,enum=peers_touch.model.presence.v1.PresenceState" json:"state,omitempty"`
 	LastSeenAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
 	LeaseExpiresAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=lease_expires_at,json=leaseExpiresAt,proto3" json:"lease_expires_at,omitempty"`
@@ -311,9 +311,9 @@ func (*PresenceStatus) Descriptor() ([]byte, []int) {
 	return file_domain_presence_presence_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *PresenceStatus) GetActorId() string {
+func (x *PresenceStatus) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -391,17 +391,20 @@ const file_domain_presence_presence_proto_rawDesc = "" +
 	"\x18PresenceHeartbeatRequest\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\"0\n" +
 	"\x16PresenceOfflineRequest\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\"\xdc\x01\n" +
-	"\x16PresenceUpdateResponse\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1d\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"\xe0\x01\n" +
+	"\x16PresenceUpdateResponse\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12B\n" +
 	"\x05state\x18\x03 \x01(\x0e2,.peers_touch.model.presence.v1.PresenceStateR\x05state\x12D\n" +
-	"\x10lease_expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"3\n" +
-	"\x14PresenceQueryRequest\x12\x1b\n" +
-	"\tactor_ids\x18\x01 \x03(\tR\bactorIds\"\xf3\x01\n" +
-	"\x0ePresenceStatus\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12B\n" +
+	"\x10lease_expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"7\n" +
+	"\x14PresenceQueryRequest\x12\x1f\n" +
+	"\vactor_ptids\x18\x01 \x03(\tR\n" +
+	"actorPtids\"\xf7\x01\n" +
+	"\x0ePresenceStatus\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12B\n" +
 	"\x05state\x18\x02 \x01(\x0e2,.peers_touch.model.presence.v1.PresenceStateR\x05state\x12<\n" +
 	"\flast_seen_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"lastSeenAt\x12D\n" +

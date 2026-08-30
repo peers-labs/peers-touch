@@ -10,7 +10,10 @@
 
 - `touch/auth` 当前仅保留账号体系相关能力（见 `auth.go`）
 - OAuth provider 配置与对外路由在 `app/subserver/oauth` 承接
-- 目标链路是：配置解析 provider -> 触发 GitHub/Google OAuth2 -> 回调后并入 account/session
+- OAuth actor resolution is side-effect-free: it may bind an identity but must
+  not issue a session before the Station Access Gate returns `GRANTED`
+- 目标链路是：配置解析 provider -> 触发 GitHub/Google OAuth2 -> 回调后生成
+  inactive session candidate -> Access Gate 复核 -> 最终授权后激活 session
 
 ## 边界约束
 

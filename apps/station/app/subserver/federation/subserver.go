@@ -80,6 +80,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return err
 	}
+	if err := infrastructure.MigrateIdentityColumns(rds); err != nil {
+		return fmt.Errorf("migrate federation identity columns: %w", err)
+	}
 
 	repos := infrastructure.NewRepos(rds)
 

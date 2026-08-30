@@ -13,6 +13,7 @@ import (
 	"context"
 	"time"
 
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	pb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -22,11 +23,13 @@ import (
 // services a gatekeeper depends on are captured by the concrete gatekeeper at
 // construction time, keeping this struct free of cross-package wiring.
 type EvalContext struct {
-	AttemptID    string
-	Actor        *pb.AccessGateActorRef
-	ExpiresAt    time.Time
-	InviteCode   string
-	InvitePassed bool
+	AttemptID     string
+	Actor         *actormodel.ActorRef
+	ActorUsername string
+	ActorEmail    string
+	ExpiresAt     time.Time
+	InviteCode    string
+	InvitePassed  bool
 }
 
 // Gatekeeper is a single access gate. Evaluate must be side-effect free with
@@ -45,7 +48,7 @@ type Gatekeeper interface {
 }
 
 // GrantIDFunc mints the access grant identifier once every gate has passed.
-type GrantIDFunc func(attemptID string, actor *pb.AccessGateActorRef) string
+type GrantIDFunc func(attemptID string, actor *actormodel.ActorRef) string
 
 // Registry holds the registered gatekeepers keyed by gate type. It is the
 // single place that maps a Station's enabled-gate order onto concrete plugins.

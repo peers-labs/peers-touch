@@ -2,6 +2,8 @@
 
 > Mobile platform source for Android / iOS native capability ownership under the Tauri Mobile mainline.
 > This document supersedes the former "native dual-platform UI mainline" interpretation. Compose / SwiftUI are no longer the Mobile main UI path.
+> The command-ledger ownership refinement was accepted with the Mobile
+> PRODUCT/DESIGN package on 2026-08-27.
 
 ---
 
@@ -99,7 +101,8 @@ Presentation -> Client Runtime -> Rust Kernel -> Native Plugin -> OS
 ### 4.2 Client Runtime
 
 - 位于 `packages/client-runtime` 或 `apps/mobile/src/runtimes`。
-- 负责 session、sync、projection、outbox、event consumption。
+- 负责 session、sync、projection、event consumption，并把 durable writes
+  交给 Frontend Runtime `InteractionAdmission` 的 Mobile adapter。
 - 消费 Rust kernel 或 Station event 产生的事件。
 
 ### 4.3 Rust Capability Kernel
@@ -124,7 +127,7 @@ Presentation -> Client Runtime -> Rust Kernel -> Native Plugin -> OS
 | Secure Storage | Android Keystore | Keychain | token 不得明文落盘 |
 | Push | FCM | APNs | push 只触发提示、stale 标记或 sync |
 | Deep Link | Intent filter | URL scheme / Universal Link | 用于 OAuth callback、通知路由 |
-| Background Sync | WorkManager | BGTaskScheduler | 只做低频补齐和 outbox flush |
+| Background Sync | WorkManager | BGTaskScheduler | 只发 wakeup；Rust command ledger/reconcile 保持唯一执行 owner |
 | Camera / Photo | Photo Picker / CameraX | PhotosUI / AVFoundation | 需权限治理 |
 | Share | Android Sharesheet | UIActivityViewController | 只承载系统分享 |
 | Biometric | BiometricPrompt | LocalAuthentication | 解锁本地敏感操作 |
@@ -178,7 +181,9 @@ Mobile 迁移到 Tauri 后，生成链应跟随真实消费端重新收敛：
 
 - Mobile 只能通过 Station 暴露的协议与服务交互。
 - 认证、共享业务规则、跨设备一致性由 Station 持有真源。
-- Mobile 可以做本地缓存、outbox 和体验优化，但不能把缓存升级为业务真源。
+- Mobile 可以做本地缓存、device-local draft 和可靠性 ledger，但不能把它们
+  升级为业务真源。Social outbox 是 ledger 的可见 projection，不是第二
+  持久化或 replay owner。
 
 ### 8.2 与 Desktop 的关系
 

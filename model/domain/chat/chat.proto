@@ -8,9 +8,11 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 
 // 聊天会话
 message ChatSession {
+  reserved "participant_ids";
+
   string id = 1;
   string topic = 2;
-  repeated string participant_ids = 3;
+  repeated string participant_ptids = 3;
   google.protobuf.Timestamp last_message_at = 4;
   string last_message_snippet = 5;
   SessionType type = 6;
@@ -25,9 +27,11 @@ message ChatSession {
 
 // 聊天消息
 message ChatMessage {
+  reserved "sender_id", "mentioned_ids";
+
   string id = 1;
   string session_id = 2;
-  string sender_id = 3;
+  string sender_ptid = 3;
   string content = 4;
   google.protobuf.Timestamp sent_at = 5;
   MessageType type = 6;
@@ -36,7 +40,7 @@ message ChatMessage {
   repeated MessageAttachment attachments = 9;
   map<string, string> metadata = 10;
   string reply_to_id = 11;                // Thread 回复的消息ID
-  repeated string mentioned_ids = 12;     // @的用户ID列表
+  repeated string mentioned_ptids = 12;   // @的用户PTID列表
   bool mention_all = 13;                  // @所有人
   bool is_deleted = 14;                   // 是否已删除/撤回
   google.protobuf.Timestamp deleted_at = 15; // 删除时间
@@ -55,7 +59,7 @@ message MessageAttachment {
 
 // 好友关系
 message Friend {
-  string actor_id = 1;
+  string actor_ptid = 1;
   FriendshipStatus status = 2;
   google.protobuf.Timestamp friendship_created_at = 3;
   string public_key = 4;  // 用于端到端加密
@@ -64,9 +68,11 @@ message Friend {
 
 // 好友请求
 message FriendRequest {
+  reserved "sender_id", "receiver_id";
+
   string id = 1;
-  string sender_id = 2;
-  string receiver_id = 3;
+  string sender_ptid = 2;
+  string receiver_ptid = 3;
   string message = 4;
   FriendRequestStatus status = 5;
   google.protobuf.Timestamp created_at = 6;

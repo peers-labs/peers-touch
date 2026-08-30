@@ -20,7 +20,7 @@ import "time"
 type OSSBucketSummary struct {
 	ID                string    `json:"id"`
 	Name              string    `json:"name"`
-	OwnerActorID      string    `json:"owner_actor_id"`
+	OwnerPTID         string    `json:"owner_ptid" gorm:"column:owner_ptid"`
 	Kind              string    `json:"kind"`
 	SystemKey         string    `json:"system_key,omitempty"`
 	DefaultVisibility string    `json:"default_visibility"`
@@ -51,7 +51,7 @@ type OSSBucketListResponse struct {
 // "no TTL" for TTLDays); DefaultVisibility falls back to `private`
 // at the service layer when omitted.
 type OSSBucketCreateRequest struct {
-	OwnerActorID      string `json:"owner_actor_id"`
+	OwnerPTID         string `json:"owner_ptid"`
 	Name              string `json:"name"`
 	DefaultVisibility string `json:"default_visibility"`
 	QuotaBytes        int64  `json:"quota_bytes"`
@@ -63,7 +63,7 @@ type OSSBucketCreateRequest struct {
 // `PATCH /dashboard/api/oss/buckets/:id`. Each pointer field is
 // explicitly nil-vs-set so the dashboard can clear `description`
 // (set to "") without having to re-send every other field. Name
-// and OwnerActorID are *not* updatable — mutating either would
+// and OwnerPTID are *not* updatable — mutating either would
 // break the unique (owner, name) index and is best handled by
 // recreating the bucket.
 type OSSBucketUpdateRequest struct {
@@ -88,7 +88,7 @@ type OSSObjectSummary struct {
 	Mime          string    `json:"mime"`
 	Backend       string    `json:"backend"`
 	BucketID      string    `json:"bucket_id"`
-	OwnerActorID  string    `json:"owner_actor_id"`
+	OwnerPTID     string    `json:"owner_ptid" gorm:"column:owner_ptid"`
 	Visibility    string    `json:"visibility"`
 	ChatSessionID string    `json:"chat_session_id,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -115,7 +115,7 @@ type OSSObjectAdminDetail struct {
 	Mime          string     `json:"mime"`
 	Backend       string     `json:"backend"`
 	BucketID      string     `json:"bucket_id"`
-	OwnerActorID  string     `json:"owner_actor_id"`
+	OwnerPTID     string     `json:"owner_ptid" gorm:"column:owner_ptid"`
 	Visibility    string     `json:"visibility"`
 	ChatSessionID string     `json:"chat_session_id,omitempty"`
 	Sha256        string     `json:"sha256,omitempty"`
@@ -160,7 +160,7 @@ type OSSAuditEvent struct {
 	Action        string    `json:"action"`
 	FileKey       string    `json:"file_key"`
 	BucketID      string    `json:"bucket_id"`
-	ActorID       string    `json:"actor_id"`
+	ActorPTID     string    `json:"actor_ptid" gorm:"column:actor_ptid"`
 	PeerStationID string    `json:"peer_station_id,omitempty"`
 	SizeBytes     int64     `json:"size_bytes"`
 	Outcome       string    `json:"outcome"`
@@ -190,9 +190,9 @@ type OSSUsageSummary struct {
 
 // OSSOwnerUsage is one row in TopOwners — descending by Bytes.
 type OSSOwnerUsage struct {
-	OwnerActorID string `json:"owner_actor_id"`
-	Bytes        int64  `json:"bytes"`
-	Files        int64  `json:"files"`
+	OwnerPTID string `json:"owner_ptid" gorm:"column:owner_ptid"`
+	Bytes     int64  `json:"bytes"`
+	Files     int64  `json:"files"`
 }
 
 // OSSVisibilityCount is one row in VisibilityMix — used for the

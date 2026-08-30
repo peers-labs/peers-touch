@@ -62,7 +62,6 @@ func (*VerifySessionRequest) Descriptor() ([]byte, []int) {
 type VerifySessionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Valid         bool                   `protobuf:"varint,1,opt,name=valid,proto3" json:"valid,omitempty"`
-	SubjectId     string                 `protobuf:"bytes,2,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
 	Attributes    map[string]string      `protobuf:"bytes,3,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	ActorRef      *model.ActorRef        `protobuf:"bytes,5,opt,name=actor_ref,proto3" json:"actor_ref,omitempty"`
@@ -107,13 +106,6 @@ func (x *VerifySessionResponse) GetValid() bool {
 	return false
 }
 
-func (x *VerifySessionResponse) GetSubjectId() string {
-	if x != nil {
-		return x.SubjectId
-	}
-	return ""
-}
-
 func (x *VerifySessionResponse) GetAttributes() map[string]string {
 	if x != nil {
 		return x.Attributes
@@ -140,11 +132,9 @@ var File_domain_actor_session_api_proto protoreflect.FileDescriptor
 const file_domain_actor_session_api_proto_rawDesc = "" +
 	"\n" +
 	"\x1edomain/actor/session_api.proto\x12\vpeers.actor\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\"\x16\n" +
-	"\x14VerifySessionRequest\"\xde\x02\n" +
+	"\x14VerifySessionRequest\"\xd1\x02\n" +
 	"\x15VerifySessionResponse\x12\x14\n" +
-	"\x05valid\x18\x01 \x01(\bR\x05valid\x12\x1d\n" +
-	"\n" +
-	"subject_id\x18\x02 \x01(\tR\tsubjectId\x12R\n" +
+	"\x05valid\x18\x01 \x01(\bR\x05valid\x12R\n" +
 	"\n" +
 	"attributes\x18\x03 \x03(\v22.peers.actor.VerifySessionResponse.AttributesEntryR\n" +
 	"attributes\x129\n" +
@@ -153,7 +143,8 @@ const file_domain_actor_session_api_proto_rawDesc = "" +
 	"\tactor_ref\x18\x05 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\tactor_ref\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01BIZGgithub.com/peers-labs/peers-touch/station/frame/touch/model/actor;actorb\x06proto3"
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x02\x10\x03R\n" +
+	"subject_idBIZGgithub.com/peers-labs/peers-touch/station/frame/touch/model/actor;actorb\x06proto3"
 
 var (
 	file_domain_actor_session_api_proto_rawDescOnce sync.Once

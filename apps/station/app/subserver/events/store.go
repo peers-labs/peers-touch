@@ -14,8 +14,8 @@ import (
 // source after process restart, ring eviction, and disconnected clients.
 type realtimeEventModel struct {
 	ID        uint      `gorm:"column:id;primaryKey"`
-	ActorID   string    `gorm:"column:actor_id;size:255;uniqueIndex:idx_realtime_actor_event,priority:1;index"`
-	EventID   string    `gorm:"column:event_id;size:64;uniqueIndex:idx_realtime_actor_event,priority:2;index"`
+	ActorPTID string    `gorm:"column:actor_ptid;size:255;uniqueIndex:idx_realtime_actor_ptid_event,priority:1;index"`
+	EventID   string    `gorm:"column:event_id;size:64;uniqueIndex:idx_realtime_actor_ptid_event,priority:2;index"`
 	KindBytes []byte    `gorm:"column:kind_bytes;type:bytea"`
 	CreatedAt time.Time `gorm:"column:created_at;index"`
 }
@@ -23,9 +23,9 @@ type realtimeEventModel struct {
 func (realtimeEventModel) TableName() string { return "realtime_events" }
 
 type durableEventStore interface {
-	Persist(actorID string, ev *realtime.StreamEvent) error
-	ReplayAfter(actorID, cursor string, limit int) ([]*realtime.StreamEvent, error)
-	NewestEventID(actorID string) (string, bool, error)
+	Persist(actorPTID string, ev *realtime.StreamEvent) error
+	ReplayAfter(actorPTID, cursor string, limit int) ([]*realtime.StreamEvent, error)
+	NewestEventID(actorPTID string) (string, bool, error)
 }
 
 type gormEventStore struct {
@@ -37,12 +37,15 @@ func newGormEventStore(db *gorm.DB) *gormEventStore {
 }
 
 func (s *gormEventStore) AutoMigrate() error {
+	if err := renamePTIDColumn(s.db, realtimeEventModel{}.TableName(), "actor_id", "actor_ptid"); err != nil {
+		return fmt.Errorf("migrate realtime event actor PTID column: %w", err)
+	}
 	return s.db.AutoMigrate(&realtimeEventModel{})
 }
 
-func (s *gormEventStore) Persist(actorID string, ev *realtime.StreamEvent) error {
-	if actorID == "" {
-		return fmt.Errorf("events: empty actorID")
+func (s *gormEventStore) Persist(actorPTID string, ev *realtime.StreamEvent) error {
+	if actorPTID == "" {
+		return fmt.Errorf("events: empty actorPTID")
 	}
 	if ev == nil || ev.GetEventId() == "" {
 		return fmt.Errorf("events: event must be stamped before persist")
@@ -56,7 +59,7 @@ func (s *gormEventStore) Persist(actorID string, ev *realtime.StreamEvent) error
 		now = time.Now().UTC()
 	}
 	item := realtimeEventModel{
-		ActorID:   actorID,
+		ActorPTID: actorPTID,
 		EventID:   ev.GetEventId(),
 		KindBytes: payload,
 		CreatedAt: now,
@@ -67,13 +70,13 @@ func (s *gormEventStore) Persist(actorID string, ev *realtime.StreamEvent) error
 	return nil
 }
 
-func (s *gormEventStore) ReplayAfter(actorID, cursor string, limit int) ([]*realtime.StreamEvent, error) {
-	if actorID == "" || cursor == "" {
+func (s *gormEventStore) ReplayAfter(actorPTID, cursor string, limit int) ([]*realtime.StreamEvent, error) {
+	if actorPTID == "" || cursor == "" {
 		return nil, nil
 	}
 	var rows []realtimeEventModel
 	query := s.db.
-		Where("actor_id = ? AND event_id > ?", actorID, cursor).
+		Where("actor_ptid = ? AND event_id > ?", actorPTID, cursor).
 		Order("event_id ASC")
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -92,10 +95,10 @@ func (s *gormEventStore) ReplayAfter(actorID, cursor string, limit int) ([]*real
 	return events, nil
 }
 
-func (s *gormEventStore) NewestEventID(actorID string) (string, bool, error) {
+func (s *gormEventStore) NewestEventID(actorPTID string) (string, bool, error) {
 	var row realtimeEventModel
 	err := s.db.
-		Where("actor_id = ?", actorID).
+		Where("actor_ptid = ?", actorPTID).
 		Order("event_id DESC").
 		Limit(1).
 		Find(&row).Error
@@ -106,4 +109,14 @@ func (s *gormEventStore) NewestEventID(actorID string) (string, bool, error) {
 		return "", false, nil
 	}
 	return row.EventID, true, nil
+}
+
+func renamePTIDColumn(db *gorm.DB, table, legacy, canonical string) error {
+	if !db.Migrator().HasTable(table) || !db.Migrator().HasColumn(table, legacy) {
+		return nil
+	}
+	if db.Migrator().HasColumn(table, canonical) {
+		return fmt.Errorf("%s contains both %s and %s", table, legacy, canonical)
+	}
+	return db.Migrator().RenameColumn(table, legacy, canonical)
 }

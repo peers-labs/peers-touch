@@ -30,7 +30,7 @@ interface CommentListProps {
   loading?: boolean;
   hasMore?: boolean;
   /** id of the viewer used to gate the delete button. */
-  viewerActorId?: string;
+  viewerActorPtid?: string;
   onLoadMore: () => void;
   onSubmit: (content: string, replyToCommentId?: string) => Promise<void>;
   onDelete?: (commentId: string) => Promise<void>;
@@ -41,7 +41,7 @@ export function CommentList({
   comments,
   loading,
   hasMore,
-  viewerActorId,
+  viewerActorPtid,
   onLoadMore,
   onSubmit,
   onDelete,
@@ -85,7 +85,7 @@ export function CommentList({
       )}
 
       {comments.map((c) => {
-        const isMine = !!viewerActorId && c.authorId === viewerActorId;
+        const isMine = !!viewerActorPtid && c.authorPtid === viewerActorPtid;
         const authorName = c.author?.displayName || c.author?.username || t('moments.author.unknown');
         return (
           <div key={c.id} style={{ display: 'flex', gap: 10, padding: '2px 0' }}>

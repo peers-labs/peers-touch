@@ -79,8 +79,8 @@ export function startSocialRuntime(
     },
     onTyping: store.applyTypingState,
     onPresence: store.setPeerOnline,
-    onGroupMembership: (groupUlid, actorDid, kind) => {
-      void routeGroupMembershipChange(groupStore, groupE2eeRuntime, groupUlid, actorDid, kind);
+    onGroupMembership: (groupUlid, actorPtid, kind) => {
+      void routeGroupMembershipChange(groupStore, groupE2eeRuntime, groupUlid, actorPtid, kind);
     },
     onSettingsChanged: (conversationKind, containerUlid) => {
       if (conversationKind === 'friend') {
@@ -199,16 +199,16 @@ async function routeSkdmControlMessage(
   groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
   message: FriendChatMessage,
 ) {
-  if (!groupE2eeRuntime || message.senderDid === store.currentUserDid) return;
+  if (!groupE2eeRuntime || message.senderPtid === store.currentUserPtid) return;
   const skdmBytes = skdmPayloadBytes(message);
-  await groupE2eeRuntime.consumeSkdmControlMessage(message.senderDid, skdmBytes);
+  await groupE2eeRuntime.consumeSkdmControlMessage(message.senderPtid, skdmBytes);
 }
 
 async function routeGroupMembershipChange(
   groupStore: GroupState | undefined,
   groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
   groupUlid: string,
-  actorDid: string,
+  actorPtid: string,
   kind: GroupMembershipKind,
 ) {
   try {
@@ -218,7 +218,7 @@ async function routeGroupMembershipChange(
     }
     if (kind !== 'DISSOLVED' && groupStore?.activeGroupUlid === groupUlid) await groupStore.loadMembers(groupUlid);
     if (kind === 'REMOVED' || kind === 'LEFT' || kind === 'TRANSFERRED') {
-      await groupE2eeRuntime?.rotateAfterMembershipChange(groupUlid, actorDid);
+      await groupE2eeRuntime?.rotateAfterMembershipChange(groupUlid, actorPtid);
     }
   } catch {
     // Group store and E2EE runtime persist their own domain errors.

@@ -129,7 +129,7 @@ export async function deriveSafetyNumber(
 export function buildSafetyQrPayload(
   localDid: string,
   localFingerprintHex: string,
-  peerDid: string,
+  peerPtid: string,
   peerFingerprintHex: string,
 ): string {
   // Encoding peer DID + peer fp lets the *peer* (when they scan
@@ -139,7 +139,7 @@ export function buildSafetyQrPayload(
   const params = new URLSearchParams({
     l_did: localDid,
     l_fp: (localFingerprintHex || '').toLowerCase(),
-    p_did: peerDid,
+    p_did: peerPtid,
     p_fp: (peerFingerprintHex || '').toLowerCase(),
   });
   return `peers-touch:safety/v1?${params.toString()}`;

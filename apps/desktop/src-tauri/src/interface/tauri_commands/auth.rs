@@ -8,8 +8,8 @@ use crate::infrastructure::session_revocation::SESSION_KICKED_EVENT;
 use crate::infrastructure::window_session_registry::{
     ExclusiveBindingCommit, WindowSessionRegistry,
 };
-use crate::state::{AppState, SessionState};
-use std::sync::{Arc, Mutex};
+use crate::state::AppState;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State, Window};
 
 use crate::application::auth::service as auth_service;
@@ -42,7 +42,7 @@ pub(crate) fn commit_tauri_session_with_identity_state(
     let activation = match auth_service::prepare_messaging_profile_activation(
         state,
         &prepared.account_id,
-        &prepared.actor_id,
+        &prepared.actor_ptid,
         &prepared.token,
     ) {
         Ok(activation) => activation,
@@ -58,28 +58,14 @@ pub(crate) fn commit_tauri_session_with_identity_state(
         }
     };
     let active_session = prepared.active_session(window.label());
-    let next_mirror = SessionState {
-        actor_id: Some(prepared.actor_id.clone()),
-        token: Some(prepared.token.clone()),
-        account_id: Some(prepared.account_id.clone()),
-    };
-    let kicked = match commit_runtime_binding(
-        &state.sessions,
-        &state.session,
-        active_session,
-        next_mirror,
+    let kicked = match commit_runtime_binding(&state.sessions, active_session, || {
         prepared
-            .revoked_previous_actor_sessions
-            .then_some(prepared.actor_id.as_str()),
-        || {
-            prepared
-                .identity_state
-                .as_ref()
-                .map(crate::infrastructure::auth_identity::write_state)
-                .transpose()
-                .map(|_| ())
-        },
-    ) {
+            .identity_state
+            .as_ref()
+            .map(crate::infrastructure::auth_identity::write_state)
+            .transpose()
+            .map(|_| ())
+    }) {
         Ok(kicked) => kicked,
         Err(error) => {
             let rollback_error =
@@ -105,21 +91,13 @@ pub(crate) fn commit_tauri_session_with_identity_state(
     if let Err(error) =
         auth_service::commit_messaging_profile_activation(state, &activation, &prepared.token)
     {
-        let binding_rollback = rollback_runtime_binding(
-            &state.sessions,
-            &state.session,
-            kicked,
-            prepared
-                .revoked_previous_actor_sessions
-                .then_some(prepared.actor_id.as_str()),
-            || {
-                previous_identity_state
-                    .as_ref()
-                    .map(crate::infrastructure::auth_identity::write_state)
-                    .transpose()
-                    .map(|_| ())
-            },
-        )
+        let binding_rollback = rollback_runtime_binding(&state.sessions, kicked, || {
+            previous_identity_state
+                .as_ref()
+                .map(crate::infrastructure::auth_identity::write_state)
+                .transpose()
+                .map(|_| ())
+        })
         .err();
         let preparation_rollback =
             auth_service::rollback_messaging_profile_preparation(state, activation).err();
@@ -144,11 +122,11 @@ pub(crate) fn commit_tauri_session_with_identity_state(
             })),
         );
     }
-    let kicked = kicked.binding.into_kicked();
+    let kicked = kicked.into_kicked();
     for session in kicked {
         let payload = serde_json::json!({
             "reason": "takeover",
-            "actor_id": session.actor.actor_id,
+            "actor_ptid": session.actor.ptid,
         });
         if let Err(error) = app.emit_to(&session.window_label, SESSION_KICKED_EVENT, &payload) {
             tracing::warn!(window = %session.window_label, error = %error, "auth: failed to emit local session kick");
@@ -157,78 +135,32 @@ pub(crate) fn commit_tauri_session_with_identity_state(
     AppResult::success(prepared.payload)
 }
 
-struct RuntimeBindingCommit {
-    binding: ExclusiveBindingCommit,
-    previous_mirror: SessionState,
-}
-
 fn commit_runtime_binding(
     sessions: &WindowSessionRegistry,
-    mirror: &Mutex<SessionState>,
     active_session: crate::domain::identity::ActiveSession,
-    next_mirror: SessionState,
-    revoked_actor_id: Option<&str>,
     persist: impl FnOnce() -> Result<(), String>,
-) -> Result<RuntimeBindingCommit, String> {
-    let mut mirror_guard = mirror
-        .lock()
-        .map_err(|_| "legacy session mirror lock poisoned".to_string())?;
-    let previous_mirror = mirror_guard.clone();
+) -> Result<ExclusiveBindingCommit, String> {
     let binding = sessions.try_bind_exclusive(active_session)?;
-    *mirror_guard = next_mirror;
     if let Err(error) = persist() {
-        drop(mirror_guard);
-        let rollback_error = rollback_runtime_binding(
-            sessions,
-            mirror,
-            RuntimeBindingCommit {
-                binding,
-                previous_mirror,
-            },
-            revoked_actor_id,
-            || Ok(()),
-        )
-        .err();
+        let rollback_error = sessions.rollback_exclusive(binding).err();
         return Err(rollback_error.map_or(error.clone(), |rollback| {
             format!("{error}; runtime rollback failed: {rollback}")
         }));
     }
-    Ok(RuntimeBindingCommit {
-        binding,
-        previous_mirror,
-    })
+    Ok(binding)
 }
 
 fn rollback_runtime_binding(
     sessions: &WindowSessionRegistry,
-    mirror: &Mutex<SessionState>,
-    commit: RuntimeBindingCommit,
-    revoked_actor_id: Option<&str>,
+    commit: ExclusiveBindingCommit,
     rollback_persist: impl FnOnce() -> Result<(), String>,
 ) -> Result<(), String> {
     let mut failures = Vec::new();
     if let Err(error) = rollback_persist() {
         failures.push(format!("durable identity rollback failed: {error}"));
     }
-    if let Err(error) = sessions.rollback_exclusive(commit.binding) {
+    if let Err(error) = sessions.rollback_exclusive(commit) {
         failures.push(format!("window rollback failed: {error}"));
-    }
-    if let Some(actor_id) = revoked_actor_id {
-        if let Err(error) = sessions.try_unbind_actor(actor_id) {
-            failures.push(format!("revoked actor cleanup failed: {error}"));
-        }
-    }
-    match mirror.lock() {
-        Ok(mut mirror) => {
-            *mirror = if revoked_actor_id.is_some_and(|actor_id| {
-                commit.previous_mirror.actor_id.as_deref() == Some(actor_id)
-            }) {
-                SessionState::default()
-            } else {
-                commit.previous_mirror
-            };
-        }
-        Err(_) => failures.push("legacy session mirror lock poisoned".to_string()),
     }
     if failures.is_empty() {
         Ok(())
@@ -253,7 +185,7 @@ fn broadcast_identity(
         app,
         IdentityChangedPayload {
             reason,
-            actor_id: data.actor_id.clone(),
+            actor_ptid: data.actor_ptid.clone(),
             login_method: data.login_method.clone(),
         },
     );
@@ -266,15 +198,11 @@ fn unbind_after(state: &Arc<AppState>, window: &Window, result: &AppResult<AuthS
     state.sessions.unbind(window.label());
 }
 
-fn committed_window_session(state: &Arc<AppState>, window: &Window) -> Option<SessionState> {
-    state
-        .sessions
-        .get(window.label())
-        .map(|session| SessionState {
-            actor_id: Some(session.actor.actor_id),
-            token: Some(session.jwt),
-            account_id: Some(session.account_id),
-        })
+fn committed_window_session(
+    state: &Arc<AppState>,
+    window: &Window,
+) -> Option<crate::domain::identity::ActiveSession> {
+    state.sessions.get(window.label())
 }
 
 fn missing_window_session(command: &str) -> AppResult<AuthSessionPayload> {
@@ -418,7 +346,7 @@ pub fn auth_restore_session(
 
 #[tauri::command]
 pub fn auth_validate_token(
-    input: AuthValidateTokenInput,
+    mut input: AuthValidateTokenInput,
     state: State<'_, Arc<AppState>>,
     app: AppHandle,
     window: Window,
@@ -453,8 +381,7 @@ pub fn auth_validate_token(
     result
 }
 
-/// Load a Station JWT (persisted during OAuth callback) into AppState
-/// so the BFF session becomes immediately active.
+/// Load a PTID-scoped Station JWT persisted during OAuth callback.
 #[tauri::command]
 pub fn ensure_station_session(
     input: OAuthLoopbackPollInput,
@@ -472,7 +399,7 @@ pub fn ensure_station_session(
             )
         }
     };
-    let (account_id, actor_id) =
+    let (account_id, actor_ptid) =
         match application_oauth2::completed_loopback_identity(input.session_id.trim()) {
             Ok(identity) => identity,
             Err(error) => {
@@ -490,7 +417,7 @@ pub fn ensure_station_session(
         state.inner(),
         &transition,
         &account_id,
-        Some(&actor_id),
+        Some(&actor_ptid),
     ) {
         Ok(prepared) => commit_tauri_session(state.inner(), &app, &window, prepared),
         Err(error) => error,
@@ -506,9 +433,7 @@ mod tests {
     use crate::contracts::AuthSessionPayload;
     use crate::domain::identity::{ActiveSession, ActorRef};
     use crate::infrastructure::window_session_registry::WindowSessionRegistry;
-    use crate::state::SessionState;
     use std::cell::RefCell;
-    use std::sync::Mutex;
 
     #[test]
     fn prepared_session_constructs_window_binding_from_one_tuple() {
@@ -516,8 +441,8 @@ mod tests {
             payload: AuthSessionPayload {
                 command: "auth_restore_session".to_string(),
                 status: "restored".to_string(),
-                actor_id: Some("actor-b".to_string()),
-                ptid: Some("ptid:v1:actor:b".to_string()),
+                actor_ptid: Some("ptid:v1:actor:b".to_string()),
+                session_token: Some("token-b".to_string()),
                 name: None,
                 email: None,
                 avatar_url: None,
@@ -525,7 +450,7 @@ mod tests {
                 login_method: Some("password".to_string()),
             },
             account_id: "station:account-b".to_string(),
-            actor_id: "actor-b".to_string(),
+            actor_ptid: "ptid:v1:actor:b".to_string(),
             token: "token-b".to_string(),
             revoked_previous_actor_sessions: false,
             identity_state: None,
@@ -534,7 +459,6 @@ mod tests {
         let active = prepared.active_session("window-b");
         assert_eq!(active.window_label, "window-b");
         assert_eq!(active.account_id, "station:account-b");
-        assert_eq!(active.actor.actor_id, "actor-b");
         assert_eq!(active.actor.ptid, "ptid:v1:actor:b");
         assert_eq!(active.jwt, "token-b");
     }
@@ -545,83 +469,51 @@ mod tests {
         sessions.bind(ActiveSession::new(
             "main",
             "station:account-old",
-            ActorRef::new_person("actor-old"),
+            ActorRef::new_person("ptid:v1:actor:old"),
             "token-old",
         ));
-        let mirror = Mutex::new(SessionState {
-            actor_id: Some("actor-old".to_string()),
-            token: Some("token-old".to_string()),
-            account_id: Some("station:account-old".to_string()),
-        });
-        let durable_active = RefCell::new("station:account-old".to_string());
 
         let result = commit_runtime_binding(
             &sessions,
-            &mirror,
             ActiveSession::new(
                 "main",
                 "station:account-new",
-                ActorRef::new_person("actor-new"),
+                ActorRef::new_person("ptid:v1:actor:new"),
                 "token-new",
             ),
-            SessionState {
-                actor_id: Some("actor-new".to_string()),
-                token: Some("token-new".to_string()),
-                account_id: Some("station:account-new".to_string()),
-            },
-            Some("actor-new"),
             || Err("injected durable active account write failure".to_string()),
         );
 
         assert!(result.is_err());
-        assert_eq!(&*durable_active.borrow(), "station:account-old");
         let restored = sessions.get("main").expect("old window session restored");
         assert_eq!(restored.account_id, "station:account-old");
-        assert_eq!(
-            mirror.lock().expect("mirror").account_id.as_deref(),
-            Some("station:account-old")
-        );
     }
 
     #[test]
-    fn commit_failure_unbinds_actor_when_takeover_revoked_old_token() {
+    fn commit_failure_restores_previous_same_actor_binding() {
         let sessions = WindowSessionRegistry::new();
         sessions.bind(ActiveSession::new(
             "main",
             "station:account-old",
-            ActorRef::new_person("actor-shared"),
+            ActorRef::new_person("ptid:v1:actor:shared"),
             "token-old",
         ));
-        let mirror = Mutex::new(SessionState {
-            actor_id: Some("actor-shared".to_string()),
-            token: Some("token-old".to_string()),
-            account_id: Some("station:account-old".to_string()),
-        });
 
         let result = commit_runtime_binding(
             &sessions,
-            &mirror,
             ActiveSession::new(
                 "main",
                 "station:account-new",
-                ActorRef::new_person("actor-shared"),
+                ActorRef::new_person("ptid:v1:actor:shared"),
                 "token-new",
             ),
-            SessionState {
-                actor_id: Some("actor-shared".to_string()),
-                token: Some("token-new".to_string()),
-                account_id: Some("station:account-new".to_string()),
-            },
-            Some("actor-shared"),
             || Err("injected durable active account write failure".to_string()),
         );
 
         assert!(result.is_err());
-        assert!(sessions.get("main").is_none());
-        let cleared = mirror.lock().expect("mirror");
-        assert!(cleared.actor_id.is_none());
-        assert!(cleared.token.is_none());
-        assert!(cleared.account_id.is_none());
+        let restored = sessions.get("main").expect("old window session restored");
+        assert_eq!(restored.account_id, "station:account-old");
+        assert_eq!(restored.actor.ptid, "ptid:v1:actor:shared");
     }
 
     #[test]
@@ -630,31 +522,19 @@ mod tests {
         sessions.bind(ActiveSession::new(
             "main",
             "station:account-old",
-            ActorRef::new_person("actor-old"),
+            ActorRef::new_person("ptid:v1:actor:old"),
             "token-old",
         ));
-        let mirror = Mutex::new(SessionState {
-            actor_id: Some("actor-old".to_string()),
-            token: Some("token-old".to_string()),
-            account_id: Some("station:account-old".to_string()),
-        });
         let durable_active = RefCell::new("station:account-old".to_string());
 
         let commit = commit_runtime_binding(
             &sessions,
-            &mirror,
             ActiveSession::new(
                 "main",
                 "station:account-new",
-                ActorRef::new_person("actor-new"),
+                ActorRef::new_person("ptid:v1:actor:new"),
                 "token-new",
             ),
-            SessionState {
-                actor_id: Some("actor-new".to_string()),
-                token: Some("token-new".to_string()),
-                account_id: Some("station:account-new".to_string()),
-            },
-            Some("actor-new"),
             || {
                 durable_active.replace("station:account-new".to_string());
                 Ok(())
@@ -662,7 +542,7 @@ mod tests {
         )
         .expect("identity commit should succeed before worker activation");
 
-        rollback_runtime_binding(&sessions, &mirror, commit, Some("actor-new"), || {
+        rollback_runtime_binding(&sessions, commit, || {
             durable_active.replace("station:account-old".to_string());
             Ok(())
         })
@@ -670,10 +550,7 @@ mod tests {
 
         assert_eq!(&*durable_active.borrow(), "station:account-old");
         let restored = sessions.get("main").expect("old window session restored");
-        assert_eq!(restored.actor.actor_id, "actor-old");
+        assert_eq!(restored.actor.ptid, "ptid:v1:actor:old");
         assert_eq!(restored.jwt, "token-old");
-        let restored_mirror = mirror.lock().expect("mirror");
-        assert_eq!(restored_mirror.actor_id.as_deref(), Some("actor-old"));
-        assert_eq!(restored_mirror.token.as_deref(), Some("token-old"));
     }
 }

@@ -24,22 +24,22 @@ func newRelationshipFixture(t *testing.T) *relationshipFixture {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := gdb.AutoMigrate(&db.Follow{}); err != nil {
+	if err := gdb.AutoMigrate(&db.Actor{}, &db.Follow{}); err != nil {
 		t.Fatalf("migrate follows: %v", err)
 	}
 	if err := gdb.Exec(`
 CREATE TABLE friend_chat_friendships (
 	id integer primary key autoincrement,
-	actor_did text,
-	peer_did text,
+	actor_ptid text,
+	peer_ptid text,
 	status integer,
 	created_at datetime,
 	updated_at datetime
 )`).Error; err != nil {
 		t.Fatalf("migrate friendships: %v", err)
 	}
-	resolver := NewNoopActorResolver()
-	repos := infrastructure.NewRepos(gdb, resolver.ResolveID)
+	seedFixtureActors(t, gdb)
+	repos := infrastructure.NewRepos(gdb)
 	return &relationshipFixture{
 		gdb:     gdb,
 		repos:   repos,
@@ -47,22 +47,22 @@ CREATE TABLE friend_chat_friendships (
 	}
 }
 
-func (f *relationshipFixture) seedBlock(t *testing.T, actorID, peerID uint64) {
+func (f *relationshipFixture) seedBlock(t *testing.T, actorPTID, peerPTID string) {
 	t.Helper()
 	if err := f.gdb.Exec(
-		"INSERT INTO friend_chat_friendships (actor_did, peer_did, status) VALUES (?, ?, 3)",
-		fmt.Sprintf("%d", actorID),
-		fmt.Sprintf("%d", peerID),
+		"INSERT INTO friend_chat_friendships (actor_ptid, peer_ptid, status) VALUES (?, ?, 3)",
+		actorPTID,
+		peerPTID,
 	).Error; err != nil {
-		t.Fatalf("seed block %d->%d: %v", actorID, peerID, err)
+		t.Fatalf("seed block %s->%s: %v", actorPTID, peerPTID, err)
 	}
 }
 
 func TestRelationshipFollowDeniedWhenBlocked(t *testing.T) {
 	f := newRelationshipFixture(t)
-	f.seedBlock(t, 1, 2)
+	f.seedBlock(t, "ptid:v1:actor:peers:p:user-1:fingerprint-1", "ptid:v1:actor:peers:p:user-2:fingerprint-2")
 
-	if _, err := f.service.Follow(context.Background(), 1, "2"); err == nil {
+	if _, err := f.service.Follow(context.Background(), "ptid:v1:actor:peers:p:user-1:fingerprint-1", "ptid:v1:actor:peers:p:user-2:fingerprint-2"); err == nil {
 		t.Fatal("expected follow to be denied when pair is blocked")
 	}
 }
@@ -70,15 +70,15 @@ func TestRelationshipFollowDeniedWhenBlocked(t *testing.T) {
 func TestRelationshipStatusSuppressesBlockedEdges(t *testing.T) {
 	f := newRelationshipFixture(t)
 	ctx := context.Background()
-	if err := f.repos.Follows.Follow(ctx, 1, 2); err != nil {
+	if err := f.repos.Follows.Follow(ctx, "ptid:v1:actor:peers:p:user-1:fingerprint-1", "ptid:v1:actor:peers:p:user-2:fingerprint-2"); err != nil {
 		t.Fatalf("seed follow 1->2: %v", err)
 	}
-	if err := f.repos.Follows.Follow(ctx, 2, 1); err != nil {
+	if err := f.repos.Follows.Follow(ctx, "ptid:v1:actor:peers:p:user-2:fingerprint-2", "ptid:v1:actor:peers:p:user-1:fingerprint-1"); err != nil {
 		t.Fatalf("seed follow 2->1: %v", err)
 	}
-	f.seedBlock(t, 2, 1)
+	f.seedBlock(t, "ptid:v1:actor:peers:p:user-2:fingerprint-2", "ptid:v1:actor:peers:p:user-1:fingerprint-1")
 
-	relationship, err := f.service.GetRelationship(ctx, 1, "2")
+	relationship, err := f.service.GetRelationship(ctx, "ptid:v1:actor:peers:p:user-1:fingerprint-1", "ptid:v1:actor:peers:p:user-2:fingerprint-2")
 	if err != nil {
 		t.Fatalf("get relationship: %v", err)
 	}
@@ -90,15 +90,15 @@ func TestRelationshipStatusSuppressesBlockedEdges(t *testing.T) {
 func TestRelationshipListsFilterBlockedEdges(t *testing.T) {
 	f := newRelationshipFixture(t)
 	ctx := context.Background()
-	if err := f.repos.Follows.Follow(ctx, 1, 2); err != nil {
+	if err := f.repos.Follows.Follow(ctx, "ptid:v1:actor:peers:p:user-1:fingerprint-1", "ptid:v1:actor:peers:p:user-2:fingerprint-2"); err != nil {
 		t.Fatalf("seed follow 1->2: %v", err)
 	}
-	if err := f.repos.Follows.Follow(ctx, 2, 1); err != nil {
+	if err := f.repos.Follows.Follow(ctx, "ptid:v1:actor:peers:p:user-2:fingerprint-2", "ptid:v1:actor:peers:p:user-1:fingerprint-1"); err != nil {
 		t.Fatalf("seed follow 2->1: %v", err)
 	}
-	f.seedBlock(t, 1, 2)
+	f.seedBlock(t, "ptid:v1:actor:peers:p:user-1:fingerprint-1", "ptid:v1:actor:peers:p:user-2:fingerprint-2")
 
-	followers, _, _, err := f.service.GetFollowers(ctx, 1, "", 20)
+	followers, _, _, err := f.service.GetFollowers(ctx, "ptid:v1:actor:peers:p:user-1:fingerprint-1", "", 20)
 	if err != nil {
 		t.Fatalf("get followers: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestRelationshipListsFilterBlockedEdges(t *testing.T) {
 		t.Fatalf("blocked follower must be filtered, got %d", len(followers))
 	}
 
-	following, _, _, err := f.service.GetFollowing(ctx, 1, "", 20)
+	following, _, _, err := f.service.GetFollowing(ctx, "ptid:v1:actor:peers:p:user-1:fingerprint-1", "", 20)
 	if err != nil {
 		t.Fatalf("get following: %v", err)
 	}

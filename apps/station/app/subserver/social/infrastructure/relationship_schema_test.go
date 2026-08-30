@@ -30,7 +30,7 @@ func TestMigrateRelationshipSchemaCreatesOwnedTables(t *testing.T) {
 	repository := NewFriendRequestRepository(db)
 	requests, total, err := repository.ListFriendRequests(
 		context.Background(),
-		1,
+		"ptid:test:actor",
 		0,
 		50,
 		0,

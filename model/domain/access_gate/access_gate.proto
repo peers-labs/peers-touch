@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.access_gate.v1;
 
 import "google/protobuf/timestamp.proto";
+import "domain/actor/actor.proto";
 import "domain/auth/auth.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate;accessgate";
@@ -17,6 +18,7 @@ enum AccessGateType {
   ACCESS_GATE_TYPE_DEVICE_TRUST = 6;
   ACCESS_GATE_TYPE_MAINTENANCE = 7;
   ACCESS_GATE_TYPE_TERMS_ACCEPTANCE = 8;
+  ACCESS_GATE_TYPE_AUTH_OAUTH = 9;
   ACCESS_GATE_TYPE_CUSTOM = 100;
 }
 
@@ -54,11 +56,13 @@ message AccessGateClientInfo {
   string locale = 4;
 }
 
-message AccessGateActorRef {
-  string id = 1;
-  int64 actor_id = 2;
-  string username = 3;
-  string email = 4;
+// AccessGateAction is one credential action accepted by its parent gate.
+// AUTH_LOGIN remains the ordered credential-stage gate; OAuth is advertised as
+// an alternative action rather than inserted as another mandatory gate.
+message AccessGateAction {
+  string action_id = 1;
+  AccessGateType type = 2;
+  string submit_action = 3;
 }
 
 message AccessGate {
@@ -70,6 +74,10 @@ message AccessGate {
   string blocking_reason = 6;
   string submit_action = 7;
   string input_schema_json = 8;
+  // AUTH_LOGIN gates list both the login and AUTH_OAUTH credential actions
+  // here. These actions are choices within one gate, not additional gate-chain
+  // stages.
+  repeated AccessGateAction alternative_actions = 9;
 }
 
 message AccessDecision {
@@ -77,7 +85,7 @@ message AccessDecision {
   string attempt_id = 2;
   string current_gate_id = 3;
   repeated AccessGate gates = 4;
-  AccessGateActorRef actor = 5;
+  peers_touch.model.actor.v1.ActorRef actor = 5;
   string access_grant_id = 6;
   google.protobuf.Timestamp expires_at = 7;
   string message = 8;
@@ -87,6 +95,7 @@ message StartAccessAttemptRequest {
   string station_url = 1;
   AccessGateClientInfo client = 2;
   string session_id = 3;
+  string station_peer_id = 4;
 }
 
 message StartAccessAttemptResponse {
@@ -127,7 +136,7 @@ message AccessPolicy {
   AccessPolicyMode mode = 1;
   repeated string allowed_emails = 2;
   repeated string allowed_usernames = 3;
-  repeated int64 allowed_actor_ids = 4;
+  repeated string allowed_actor_ptids = 4;
   google.protobuf.Timestamp updated_at = 5;
   string updated_by = 6;
   // Ordered set of gate types the Station evaluates for an attempt. Empty means

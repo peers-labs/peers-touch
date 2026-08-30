@@ -64,7 +64,7 @@ message GetMembersRequest {
 }
 
 message ConvMember {
-  string did = 1;
+  string ptid = 1;
   string role = 2;
   google.protobuf.Timestamp joined_at = 3;
 }
@@ -81,7 +81,7 @@ message KeyRotateRequest {
 }
 
 message KeyPackage {
-  string did = 1;
+  string ptid = 1;
   bytes package = 2;
 }
 
@@ -99,7 +99,7 @@ message AppendMessageRequest {
 message Message {
   uint64 id = 1;
   string conv_id = 2;
-  string sender_did = 3;
+  string sender_ptid = 3;
   bytes encrypted_content = 4;
   uint32 epoch = 5;
   google.protobuf.Timestamp timestamp = 6;
@@ -146,7 +146,7 @@ message GetReceiptsRequest {
 }
 
 message Receipt {
-  string did = 1;
+  string ptid = 1;
   string type = 2;
   google.protobuf.Timestamp timestamp = 3;
 }

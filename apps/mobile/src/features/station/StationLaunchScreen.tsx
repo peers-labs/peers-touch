@@ -5,7 +5,7 @@ import logo from '../../assets/logo.png';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import { StationNetworkIntro } from '../../components/StationNetworkIntro';
 import { StationSelector } from './StationSelector';
-import type { StationProtocol, StoredStationRegistry } from './stationRegistry';
+import { activeStationEntry, type StationProtocol, type StoredStationRegistry } from './stationRegistry';
 
 const { Text, Title } = Typography;
 
@@ -35,13 +35,13 @@ export function StationLaunchScreen({
   checking: boolean;
   verifyingUrls: string[];
   onAddStation: (protocol: StationProtocol, address: string) => boolean | Promise<boolean>;
-  onSelectStation: (url: string) => void | Promise<void>;
-  onRemoveStation: (url: string) => void;
+  onSelectStation: (stationPeerId: string) => void | Promise<void>;
+  onRemoveStation: (stationPeerId: string) => void;
   onContinue: () => void | Promise<void>;
 }) {
   const { t } = useMobileI18n();
-  const activeStation = registry.entries.find((entry) => entry.url === registry.activeUrl);
-  const activeStationLabel = stationDisplayName(activeStation?.label, registry.activeUrl);
+  const activeStation = activeStationEntry(registry);
+  const activeStationLabel = stationDisplayName(activeStation?.label, activeStation?.url);
   const networkIntroLabels = {
     title: t('auth.network.title'),
     personal: t('auth.network.personal'),
@@ -90,7 +90,7 @@ export function StationLaunchScreen({
           </div>
 
           <StationSelector
-            activeUrl={registry.activeUrl}
+            activeStationPeerId={registry.activeStationPeerId}
             entries={registry.entries}
             error={error}
             checking={checking}
@@ -109,7 +109,7 @@ export function StationLaunchScreen({
                 </Text>
               </div>
             ) : null}
-            <Button block size="large" type="primary" loading={checking} disabled={!registry.activeUrl} onClick={onContinue}>
+            <Button block size="large" type="primary" loading={checking} disabled={!activeStation} onClick={onContinue}>
               {t('mobile.launch.enterStation')}
             </Button>
           </div>

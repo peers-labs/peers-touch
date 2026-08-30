@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-03 | **Updated**: 2026-06-06
+> **Created**: 2026-06-03 | **Updated**: 2026-08-27
 > **Owner**: Client Architecture Team
 > **Module**: `apps/desktop/src/runtimes/socialRuntime.ts`, `apps/mobile/src/features/social/`
 
@@ -19,6 +19,7 @@
 | D-05 | protobuf 使用 generated contract，禁止手写 wire decoder | accepted |
 | D-06 | Group chat 独立 projection domain，不挂靠 friend chat | accepted |
 | D-07 | Offline queue 和 E2EE 作为 projection domain 接入 runtime | accepted |
+| D-08 | Durable command persistence belongs to platform InteractionAdmission | accepted |
 
 ---
 
@@ -185,7 +186,10 @@ Desktop 已有 group chat、group membership、sender keys 等能力。Mobile �
 
 ### Decision
 
-Group chat 必须作为独立 projection domain 接入 social runtime，与 friend chat 共享 runtime supervisor，但不共享 message schema/state bucket。
+Group chat 必须作为独立 projection domain 接入 social runtime，与 friend
+chat 共享 event ingress/supervisor。Mobile 可以把它注册为独立
+`groupRuntime` descriptor，但该 descriptor 是 supervisor 下的 projection
+owner，不得建立第二条 event stream 或第二套 host adapter。
 
 ### Rationale
 
@@ -213,13 +217,14 @@ Offline queue 和 E2EE 都涉及本地状态、Station 协作和跨端一致性�
 
 ### Decision
 
-Offline queue 和 E2EE 作为独立 projection domain 接入 social runtime。Host secure storage 只保存必要 secret，不成为业务 truth。
+Offline command UI state 和 E2EE 作为独立 projection domain 接入 social
+runtime。Host secure storage 只保存必要 secret，不成为业务 truth。
 
 Shared projection primitives live in `packages/client-chat-core`:
 
 - `ChatE2eeProjection` tracks readiness/error as pure projection state.
-- `ChatOutboxItem` and outbox reducers track queued/sending/failed retry state.
-- Platform runtimes drain/reconcile these projections; renderers only display projected status.
+- `ChatOutboxItem` and outbox reducers track queued/sending/failed/unknown
+  projection state.
 
 ### Rationale
 
@@ -233,6 +238,58 @@ Shared projection primitives live in `packages/client-chat-core`:
 
 ### Consequences
 
-- Desktop/Mobile E2EE and offline queue must consume shared projection semantics even when host crypto/storage adapters differ.
+- Desktop/Mobile E2EE and offline commands consume shared projection semantics
+  even when host crypto/storage adapters differ.
 - Desktop 现有 E2EE/group sender key 能力需要拆清 runtime owner 后再迁移到统一抽象。
-- Mobile group E2EE runtime already owns SKDM ledger, repair queue, rotation, and readiness projection; further end-to-end scenarios remain runtime/domain verification, not UI patch work.
+- Mobile group E2EE runtime already owns SKDM ledger, repair queue, rotation,
+  and readiness projection; further end-to-end scenarios remain runtime/domain
+  verification, not UI patch work.
+
+---
+
+## D-08: Durable command persistence belongs to platform InteractionAdmission
+
+**Status**: accepted
+**Date**: 2026-08-27
+
+### Context
+
+D-07 establishes shared visible projection semantics but does not assign
+durable persistence, ordering, or unknown-outcome convergence. Mobile Shell
+requires exactly one owner and must not create a Social outbox beside a generic
+command ledger.
+
+### Decision
+
+- Frontend Runtime `InteractionAdmission` owns cross-domain admission,
+  ordering, fairness, idempotency, and unknown-outcome semantics.
+- Mobile implements it through `commandRuntime` plus one Rust encrypted ledger.
+- `ChatOutboxItem` is a derived visible projection; it does not persist, drain,
+  or replay a second outbox.
+- Social/group runtimes provide authoritative domain readback only.
+
+### Rationale
+
+The split keeps business projection state in Social Runtime while giving
+cross-domain reliability one bounded platform owner.
+
+### Alternatives Considered
+
+- Social-owned durable outbox: rejected because settings/Moments and future
+  domains would each need another persistence policy.
+- Native Room/SwiftData queues: rejected because they duplicate Rust state and
+  diverge across platforms.
+
+### Consequences
+
+- Existing shared reducers remain reusable but no longer imply persistence
+  ownership.
+- Platform command runtimes must expose typed projection updates to social
+  reducers.
+- The amendment was accepted with the Mobile PRODUCT/DESIGN package on
+  2026-08-27.
+
+### Reversal Trigger
+
+Review if all durable writes move to a Model-owned client runtime with identical
+native lifecycle and secure-storage guarantees.

@@ -9,7 +9,7 @@ import {
 const EXPECTED_RUNTIME = (
   process.env.PT_PERFORMANCE_RUNTIME ?? 'tauri-webview-dev'
 ) as PerformanceRuntime;
-const EXPECTED_ACTOR = process.env.PT_PERFORMANCE_ACTOR_ID ?? '';
+const EXPECTED_ACTOR = process.env.PT_PERFORMANCE_ACTOR_PTID ?? '';
 
 test.describe('P0c3 unified performance harness', () => {
   test('runs every interaction-linked scenario against one runtime adapter', async ({ tauriPage }) => {
@@ -20,7 +20,7 @@ test.describe('P0c3 unified performance harness', () => {
       EXPECTED_ACTOR,
     );
     expect(preflight.runtime).toBe(EXPECTED_RUNTIME);
-    expect(preflight.actualActorId).toBe(EXPECTED_ACTOR);
+    expect(preflight.actualActorPtid).toBe(EXPECTED_ACTOR);
 
     for (const [scenario, sample] of Object.entries(SCENARIO_SAMPLERS)) {
       const result = await sample(tauriPage);

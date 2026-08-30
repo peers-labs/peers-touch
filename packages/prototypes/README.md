@@ -105,7 +105,7 @@ Prototype Portal 内部提供 `desktop` / `mobile` / `dashboard` 站点切换。
 | desktop | `applet-lifecycle` | `packages/prototypes/desktop/features/applet-lifecycle/` | Applet Box 极简 launcher 与安装包导入生命周期原型 |
 | desktop | `call` | `packages/prototypes/desktop/features/call/` | Desktop Chat/通话能力原型 |
 | desktop | `social-chat` | `packages/prototypes/desktop/features/social-chat/` | Desktop Chat 能力原型 |
-| mobile | `mobile-chat` | `packages/prototypes/mobile/chat/` | Mobile Shell 基准原型：对齐 `apps/mobile` 的 Access Gate、Chat、Moments、Contacts、Settings、Friend / Group flows |
+| mobile | `mobile-chat` | `packages/prototypes/mobile/chat/` | Mobile Shell 产品原型：Station trust、OAuth、Chat、Moments、Contacts、Me 与恢复状态 |
 | dashboard | `station-dashboard` | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard 运维台体验基准原型 |
 
 ---

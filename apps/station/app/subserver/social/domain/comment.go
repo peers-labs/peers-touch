@@ -31,7 +31,7 @@ type Comment struct {
 	PostID    uint64
 	PostClass PostClass
 
-	AuthorID uint64
+	AuthorPTID string
 
 	// ParentCommentID == 0 means top-level. Stored as plain uint64 here
 	// (rather than *uint64 like the DB struct) for ergonomics; converters

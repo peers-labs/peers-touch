@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +22,6 @@ import (
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
-	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	gate "github.com/peers-labs/peers-touch/station/frame/touch/accessgate"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
@@ -52,13 +50,6 @@ func GetActorHandlers() []ActorHandlerInfo {
 	commonWrapper := CommonAccessControlWrapper(model.RouteNameActor)
 
 	return []ActorHandlerInfo{
-		{
-			RouterURL: RouterURLOAuthLogin,
-			Handler:   OAuthLogin,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{actorWrapper},
-		},
-
 		// Actor Management Endpoints (Client API)
 		{
 			RouterURL: RouterURLActorSignUP,
@@ -395,37 +386,26 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	// Update user status
-	if userID, ok := result.User["id"].(uint64); ok {
-		_ = actor.UpdateActorStatus(c, userID, db.ActorStatusOnline, userAgent)
-	}
+	actorID := result.Actor.ID
+	_ = actor.UpdateActorStatus(c, actorID, db.ActorStatusOnline, userAgent)
 
 	// Set session cookie
 	ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", "", protocol.CookieSameSiteDisabled, false, true)
 
-	// Extract numeric actor ID for P2P signaling
-	var actorIdNum uint64
-	if id, ok := result.User["id"].(uint64); ok {
-		actorIdNum = id
-	} else if idStr, ok := result.User["id"].(string); ok {
-		if parsed, err := strconv.ParseUint(idStr, 10, 64); err == nil {
-			actorIdNum = parsed
-		}
-	}
-
-	if allowed, reason := gate.CheckActorAllowed(c, accessActorRefFromSessionResult(result, actorIdNum)); !allowed {
+	actorRef := actor.ProtoActorRef(result.Actor, baseURLFrom(ctx))
+	if allowed, reason := gate.CheckActorAllowed(
+		c,
+		actorRef,
+		result.Actor.PreferredUsername,
+		result.Actor.Email,
+	); !allowed {
 		_ = auth.LogoutSession(c, result.SessionID)
-		log.Warnf(c, "Login blocked by access gate policy: actor_id=%d reason=%s", actorIdNum, reason)
+		log.Warnf(c, "Login blocked by access gate policy: ptid=%s reason=%s", actorRef.GetPtid(), reason)
 		FailedResponse(c, ctx, errors.New(reason))
 		return
 	}
 
-	loginResp := loginResponseFromSessionResult(result, actorIdNum)
-	if actorIdNum > 0 {
-		if act, err := actor.GetActorByID(c, actorIdNum); err == nil && act != nil {
-			loginResp.ActorRef = actor.ProtoActorRef(act, baseURLFrom(ctx))
-		}
-	}
+	loginResp := loginResponseFromSessionResult(result, actorRef)
 	SuccessResponse(c, ctx, "Login successful", loginResp)
 }
 
@@ -436,8 +416,8 @@ func ActorSessionTakeover(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	userID, err := strconv.ParseUint(subject.ID, 10, 64)
-	if err != nil {
+	user, err := actor.GetActorByPTID(c, subject.ID)
+	if err != nil || user == nil {
 		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid user identity"})
 		return
 	}
@@ -450,32 +430,14 @@ func ActorSessionTakeover(c context.Context, ctx *app.RequestContext) {
 		req.DeviceType = "desktop"
 	}
 
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Warnf(c, "Session takeover failed to get store: %v", err)
-		FailedResponse(c, ctx, err)
-		return
-	}
-
-	var user db.Actor
-	if err := rds.WithContext(c).Where("id = ?", userID).First(&user).Error; err != nil {
-		log.Warnf(c, "Session takeover failed to load actor: %v", err)
-		FailedResponse(c, ctx, auth.ErrUserNotFound)
-		return
-	}
-
-	if allowed, reason := gate.CheckActorAllowed(c, &gatepb.AccessGateActorRef{
-		Id:       strconv.FormatUint(uint64(user.ID), 10),
-		ActorId:  int64(user.ID),
-		Username: user.PreferredUsername,
-		Email:    user.Email,
-	}); !allowed {
-		log.Warnf(c, "Session takeover blocked by access gate policy: actor_id=%d reason=%s", user.ID, reason)
+	actorRef := actor.ProtoActorRef(user, baseURLFrom(ctx))
+	if allowed, reason := gate.CheckActorAllowed(c, actorRef, user.PreferredUsername, user.Email); !allowed {
+		log.Warnf(c, "Session takeover blocked by access gate policy: ptid=%s reason=%s", actorRef.GetPtid(), reason)
 		FailedResponse(c, ctx, errors.New(reason))
 		return
 	}
 
-	result, err := auth.IssueTokenAndSession(c, &user, ctx.ClientIP(), string(ctx.GetHeader("User-Agent")), req.DeviceType, map[string]interface{}{
+	result, err := auth.IssueTokenAndSession(c, user, ctx.ClientIP(), string(ctx.GetHeader("User-Agent")), req.DeviceType, map[string]interface{}{
 		"auth_method": "session_takeover",
 	})
 	if err != nil {
@@ -484,17 +446,14 @@ func ActorSessionTakeover(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	_ = actor.UpdateActorStatus(c, userID, db.ActorStatusOnline, string(ctx.GetHeader("User-Agent")))
+	_ = actor.UpdateActorStatus(c, user.ID, db.ActorStatusOnline, string(ctx.GetHeader("User-Agent")))
 	ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", "", protocol.CookieSameSiteDisabled, false, true)
 
-	loginResp := loginResponseFromSessionResult(result, userID)
-	if act, err := actor.GetActorByID(c, userID); err == nil && act != nil {
-		loginResp.ActorRef = actor.ProtoActorRef(act, baseURLFrom(ctx))
-	}
+	loginResp := loginResponseFromSessionResult(result, actorRef)
 	SuccessResponse(c, ctx, "Session takeover successful", loginResp)
 }
 
-func loginResponseFromSessionResult(result *auth.SessionLoginResult, actorIDNum uint64) *model.LoginResponse {
+func loginResponseFromSessionResult(result *auth.SessionLoginResult, actorRef *model.ActorRef) *model.LoginResponse {
 	expiresAt := result.ExpiresAt.Format(time.RFC3339)
 	return &model.LoginResponse{
 		Tokens: &model.AuthTokens{
@@ -505,13 +464,7 @@ func loginResponseFromSessionResult(result *auth.SessionLoginResult, actorIDNum 
 			ExpiresAt:    expiresAt,
 		},
 		SessionId: result.SessionID,
-		Actor: &model.AuthActorInfo{
-			Id:          toString(result.User["id"]),
-			ActorId:     int64(actorIDNum),
-			Username:    toString(result.User["name"]),
-			DisplayName: toString(result.User["display_name"]),
-			Email:       toString(result.User["email"]),
-		},
+		ActorRef:  actorRef,
 	}
 }
 
@@ -548,8 +501,15 @@ func submitAccessLogin(c context.Context, ctx *app.RequestContext, req *gatepb.S
 		return
 	}
 
-	actorIDNum := actorIDFromSessionResult(result)
-	decision, err := gate.CompleteLogin(c, req.GetAttemptId(), accessActorRefFromSessionResult(result, actorIDNum), result.SessionID)
+	actorRef := actor.ProtoActorRef(result.Actor, baseURLFrom(ctx))
+	decision, err := gate.CompleteLogin(
+		c,
+		req.GetAttemptId(),
+		actorRef,
+		result.Actor.PreferredUsername,
+		result.Actor.Email,
+		result.SessionID,
+	)
 	if err != nil {
 		_ = auth.LogoutSession(c, result.SessionID)
 		log.Warnf(c, "Access login completion failed: %v", err)
@@ -563,15 +523,10 @@ func submitAccessLogin(c context.Context, ctx *app.RequestContext, req *gatepb.S
 		return
 	}
 
-	_ = actor.UpdateActorStatus(c, actorIDNum, db.ActorStatusOnline, string(ctx.GetHeader("User-Agent")))
+	_ = actor.UpdateActorStatus(c, result.Actor.ID, db.ActorStatusOnline, string(ctx.GetHeader("User-Agent")))
 	ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", "", protocol.CookieSameSiteDisabled, false, true)
 
-	loginResp := loginResponseFromSessionResult(result, actorIDNum)
-	if actorIDNum > 0 {
-		if act, err := actor.GetActorByID(c, actorIDNum); err == nil && act != nil {
-			loginResp.ActorRef = actor.ProtoActorRef(act, baseURLFrom(ctx))
-		}
-	}
+	loginResp := loginResponseFromSessionResult(result, actorRef)
 
 	SuccessResponse(c, ctx, "Access granted", &gatepb.SubmitAccessGateResponse{
 		Decision:      decision,
@@ -625,27 +580,6 @@ func CancelAccessAttempt(c context.Context, ctx *app.RequestContext) {
 	SuccessResponse(c, ctx, "Access attempt cancelled", &gatepb.CancelAccessAttemptResponse{Cancelled: cancelled})
 }
 
-func actorIDFromSessionResult(result *auth.SessionLoginResult) uint64 {
-	if id, ok := result.User["id"].(uint64); ok {
-		return id
-	}
-	if idStr, ok := result.User["id"].(string); ok {
-		if parsed, err := strconv.ParseUint(idStr, 10, 64); err == nil {
-			return parsed
-		}
-	}
-	return 0
-}
-
-func accessActorRefFromSessionResult(result *auth.SessionLoginResult, actorIDNum uint64) *gatepb.AccessGateActorRef {
-	return &gatepb.AccessGateActorRef{
-		Id:       toString(result.User["id"]),
-		ActorId:  int64(actorIDNum),
-		Username: toString(result.User["username"]),
-		Email:    toString(result.User["email"]),
-	}
-}
-
 func ActorLogout(c context.Context, ctx *app.RequestContext) {
 	// 1. Try to get session_id from cookie or request body
 	sessionID := string(ctx.Cookie("session_id"))
@@ -665,8 +599,8 @@ func ActorLogout(c context.Context, ctx *app.RequestContext) {
 	// 3. Update user status to offline
 	subject := coreauth.GetSubject(c)
 	if subject != nil {
-		if userID, err := strconv.ParseUint(subject.ID, 10, 64); err == nil {
-			_ = actor.UpdateActorStatus(c, userID, db.ActorStatusOffline, "")
+		if currentActor, err := actor.GetActorByPTID(c, subject.ID); err == nil && currentActor != nil {
+			_ = actor.UpdateActorStatus(c, currentActor.ID, db.ActorStatusOffline, "")
 		}
 	}
 
@@ -683,8 +617,8 @@ func ActorChangePassword(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	userID, err := strconv.ParseUint(subject.ID, 10, 64)
-	if err != nil {
+	currentActor, err := actor.GetActorByPTID(c, subject.ID)
+	if err != nil || currentActor == nil {
 		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid user identity"})
 		return
 	}
@@ -706,7 +640,7 @@ func ActorChangePassword(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	if err := auth.ChangePassword(c, userID, req.OldPassword, req.NewPassword); err != nil {
+	if err := auth.ChangePassword(c, currentActor.ID, req.OldPassword, req.NewPassword); err != nil {
 		if err == auth.ErrInvalidCredentials {
 			ctx.JSON(http.StatusForbidden, map[string]string{"error": "old password is incorrect"})
 			return
@@ -736,7 +670,7 @@ func GetActorProfile(c context.Context, ctx *app.RequestContext) {
 }
 
 // GetActorPublicProfileByID returns the rich public profile of any actor by
-// numeric actor ID. Used by chat detail / contacts detail to render peer
+// PTID. Used by chat detail / contacts detail to render peer
 // profile cards that mirror the structure of the user's own profile view.
 //
 // Returned `ActorProfile` carries only fields intended for public exposure;
@@ -750,19 +684,11 @@ func GetActorPublicProfileByID(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	baseURL := baseURLFrom(ctx)
-	var resp *actor.ProfileResponse
-	var err error
-	if strings.HasPrefix(idStr, "ptid:") {
-		resp, err = actor.GetWebProfileByPTID(c, idStr, baseURL)
-	} else {
-		actorID, parseErr := strconv.ParseUint(idStr, 10, 64)
-		if parseErr != nil {
-			ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid actor id"})
-			return
-		}
-		resp, err = actor.GetWebProfileByID(c, actorID, baseURL)
+	if _, err := actor.ResolveSubjectPTID(c, idStr); err != nil {
+		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid actor PTID"})
+		return
 	}
+	resp, err := actor.GetWebProfileByPTID(c, idStr, baseURLFrom(ctx))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, map[string]string{"error": "actor not found"})
@@ -801,11 +727,11 @@ func PublicProfile(c context.Context, ctx *app.RequestContext) {
 // ActorBasicInfoResponse contains only non-sensitive public info for an actor.
 // Used by Avatar component to resolve unknown actor's avatar/name.
 type ActorBasicInfoResponse struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
-	Username    string `json:"username"`
-	AvatarURL   string `json:"avatar_url"`
-	CoverURL    string `json:"cover_url"`
+	Actor       *model.ActorRef `json:"actor"`
+	DisplayName string          `json:"display_name"`
+	Username    string          `json:"username"`
+	AvatarURL   string          `json:"avatar_url"`
+	CoverURL    string          `json:"cover_url"`
 }
 
 // GetActorBasicInfo returns public basic info (displayName, avatarUrl, coverUrl) for an actor by ID.
@@ -817,14 +743,18 @@ func GetActorBasicInfo(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	actorID, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, "Invalid actor ID format")
+	if _, err := actor.ResolveSubjectPTID(c, idStr); err != nil {
+		ctx.JSON(http.StatusBadRequest, "Invalid actor PTID format")
 		return
 	}
 
 	baseURL := baseURLFrom(ctx)
-	resp, err := actor.GetWebProfileByID(c, actorID, baseURL)
+	record, err := actor.GetActorByPTID(c, idStr)
+	if err != nil || record == nil {
+		ctx.JSON(http.StatusNotFound, "Actor not found")
+		return
+	}
+	resp, err := actor.GetWebProfileByPTID(c, idStr, baseURL)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, "Actor not found")
@@ -837,7 +767,7 @@ func GetActorBasicInfo(c context.Context, ctx *app.RequestContext) {
 
 	// Return only non-sensitive public info
 	basicInfo := ActorBasicInfoResponse{
-		ID:          resp.ID,
+		Actor:       actor.ProtoActorRef(record, baseURL),
 		DisplayName: resp.DisplayName,
 		Username:    resp.Username,
 		AvatarURL:   resp.Avatar,
@@ -884,8 +814,8 @@ func ListActors(c context.Context, ctx *app.RequestContext) {
 	// Get current user ID from context (if authenticated)
 	var currentActorID uint64
 	if subject := coreauth.GetSubject(c); subject != nil {
-		if actorID, err := strconv.ParseUint(subject.ID, 10, 64); err == nil {
-			currentActorID = actorID
+		if currentActor, err := actor.GetActorByPTID(c, subject.ID); err == nil && currentActor != nil {
+			currentActorID = currentActor.ID
 			log.Infof(c, "[ListActors] Current user actor ID: %d", currentActorID)
 		}
 	}
@@ -906,14 +836,13 @@ func ListActors(c context.Context, ctx *app.RequestContext) {
 		}
 
 		items = append(items, &model.Actor{
-			Id:          strconv.FormatUint(a.ID, 10),
 			Username:    a.PreferredUsername,
 			DisplayName: a.Name,
 			Email:       a.Email,
 			Inbox:       a.Inbox,
 			Outbox:      a.Outbox,
 			Endpoints:   nil,
-			ActorId:     a.ID,
+			Ref:         actor.ProtoActorRef(a, baseURLFrom(ctx)),
 			IsFollowing: isFollowing,
 		})
 	}
@@ -931,8 +860,8 @@ func SearchActors(c context.Context, ctx *app.RequestContext) {
 	// Get current user ID from context (if authenticated)
 	var excludeActorID uint64
 	if subject := coreauth.GetSubject(c); subject != nil {
-		if actorID, err := strconv.ParseUint(subject.ID, 10, 64); err == nil {
-			excludeActorID = actorID
+		if currentActor, err := actor.GetActorByPTID(c, subject.ID); err == nil && currentActor != nil {
+			excludeActorID = currentActor.ID
 			log.Infof(c, "[SearchActors] Excluding current user with actor ID: %d", excludeActorID)
 		}
 	}
@@ -948,13 +877,13 @@ func SearchActors(c context.Context, ctx *app.RequestContext) {
 	items := make([]*model.Actor, 0, len(actors))
 	for _, a := range actors {
 		items = append(items, &model.Actor{
-			Id:          a.ID,
 			Username:    a.Username,
 			DisplayName: a.DisplayName,
 			Email:       a.Email,
 			Inbox:       a.Inbox,
 			Outbox:      a.Outbox,
 			Endpoints:   a.Endpoints,
+			Ref:         a.Ref,
 		})
 	}
 	SuccessResponse(c, ctx, "Search results", &model.ActorList{Items: items, Total: int64(len(items))})
@@ -964,20 +893,8 @@ func SearchActors(c context.Context, ctx *app.RequestContext) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// toString converts an interface value to its string representation.
-func toString(v interface{}) string {
-	if v == nil {
-		return ""
-	}
-	switch t := v.(type) {
-	case string:
-		return t
-	default:
-		return fmt.Sprintf("%v", t)
-	}
-}
-
-// resolveActorID extracts the authenticated actor's numeric ID from the JWT bearer token.
+// resolveActorID translates the authenticated PTID to the Station-local
+// persistence key at the repository boundary.
 func resolveActorID(c context.Context, ctx *app.RequestContext) (uint64, error) {
 	authHeader := string(ctx.GetHeader("Authorization"))
 	if !strings.HasPrefix(authHeader, "Bearer ") {
@@ -989,8 +906,14 @@ func resolveActorID(c context.Context, ctx *app.RequestContext) (uint64, error) 
 	if err != nil {
 		return 0, err
 	}
-	id, _ := strconv.ParseUint(subj.ID, 10, 64)
-	return id, nil
+	record, err := actor.GetActorByPTID(c, subj.ID)
+	if err != nil {
+		return 0, err
+	}
+	if record == nil {
+		return 0, errors.New("authenticated actor PTID not found")
+	}
+	return record.ID, nil
 }
 
 func baseURLFrom(ctx *app.RequestContext) string {

@@ -118,7 +118,7 @@ type OAuthAuthCode struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CodeHash      string                 `protobuf:"bytes,1,opt,name=code_hash,json=codeHash,proto3" json:"code_hash,omitempty"`
 	ClientId      string                 `protobuf:"bytes,2,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,3,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Scopes        string                 `protobuf:"bytes,4,opt,name=scopes,proto3" json:"scopes,omitempty"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	Used          bool                   `protobuf:"varint,6,opt,name=used,proto3" json:"used,omitempty"`
@@ -170,9 +170,9 @@ func (x *OAuthAuthCode) GetClientId() string {
 	return ""
 }
 
-func (x *OAuthAuthCode) GetUserId() string {
+func (x *OAuthAuthCode) GetActorPtid() string {
 	if x != nil {
-		return x.UserId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -204,7 +204,7 @@ type OAuthToken struct {
 	RefreshTokenHash string                 `protobuf:"bytes,2,opt,name=refresh_token_hash,json=refreshTokenHash,proto3" json:"refresh_token_hash,omitempty"`
 	TokenType        string                 `protobuf:"bytes,3,opt,name=token_type,json=tokenType,proto3" json:"token_type,omitempty"` // Bearer
 	Scope            string                 `protobuf:"bytes,4,opt,name=scope,proto3" json:"scope,omitempty"`
-	UserId           string                 `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	ActorPtid        string                 `protobuf:"bytes,5,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	ClientId         string                 `protobuf:"bytes,6,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	ExpiresAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
@@ -270,9 +270,9 @@ func (x *OAuthToken) GetScope() string {
 	return ""
 }
 
-func (x *OAuthToken) GetUserId() string {
+func (x *OAuthToken) GetActorPtid() string {
 	if x != nil {
-		return x.UserId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -407,11 +407,6 @@ type OAuthBridgeResponse struct {
 	RefreshToken  string                 `protobuf:"bytes,3,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
 	TokenType     string                 `protobuf:"bytes,4,opt,name=token_type,json=tokenType,proto3" json:"token_type,omitempty"`
 	ExpiresAt     string                 `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	ActorId       string                 `protobuf:"bytes,6,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	ActorIdNum    int64                  `protobuf:"varint,7,opt,name=actor_id_num,json=actorIdNum,proto3" json:"actor_id_num,omitempty"`
-	Username      string                 `protobuf:"bytes,8,opt,name=username,proto3" json:"username,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,9,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	Email         string                 `protobuf:"bytes,10,opt,name=email,proto3" json:"email,omitempty"`
 	ActorRef      *ActorRef              `protobuf:"bytes,11,opt,name=actor_ref,proto3" json:"actor_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -482,41 +477,6 @@ func (x *OAuthBridgeResponse) GetExpiresAt() string {
 	return ""
 }
 
-func (x *OAuthBridgeResponse) GetActorId() string {
-	if x != nil {
-		return x.ActorId
-	}
-	return ""
-}
-
-func (x *OAuthBridgeResponse) GetActorIdNum() int64 {
-	if x != nil {
-		return x.ActorIdNum
-	}
-	return 0
-}
-
-func (x *OAuthBridgeResponse) GetUsername() string {
-	if x != nil {
-		return x.Username
-	}
-	return ""
-}
-
-func (x *OAuthBridgeResponse) GetDisplayName() string {
-	if x != nil {
-		return x.DisplayName
-	}
-	return ""
-}
-
-func (x *OAuthBridgeResponse) GetEmail() string {
-	if x != nil {
-		return x.Email
-	}
-	return ""
-}
-
 func (x *OAuthBridgeResponse) GetActorRef() *ActorRef {
 	if x != nil {
 		return x.ActorRef
@@ -537,23 +497,25 @@ const file_domain_oauth_oauth_proto_rawDesc = "" +
 	"\fredirect_uri\x18\x05 \x01(\tR\vredirectUri\x12\x16\n" +
 	"\x06scopes\x18\x06 \x01(\tR\x06scopes\x129\n" +
 	"\n" +
-	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xc9\x01\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xcf\x01\n" +
 	"\rOAuthAuthCode\x12\x1b\n" +
 	"\tcode_hash\x18\x01 \x01(\tR\bcodeHash\x12\x1b\n" +
-	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12\x17\n" +
-	"\auser_id\x18\x03 \x01(\tR\x06userId\x12\x16\n" +
+	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x03 \x01(\tR\tactorPtid\x12\x16\n" +
 	"\x06scopes\x18\x04 \x01(\tR\x06scopes\x129\n" +
 	"\n" +
 	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x12\n" +
-	"\x04used\x18\x06 \x01(\bR\x04used\"\xc7\x02\n" +
+	"\x04used\x18\x06 \x01(\bR\x04used\"\xcd\x02\n" +
 	"\n" +
 	"OAuthToken\x12*\n" +
 	"\x11access_token_hash\x18\x01 \x01(\tR\x0faccessTokenHash\x12,\n" +
 	"\x12refresh_token_hash\x18\x02 \x01(\tR\x10refreshTokenHash\x12\x1d\n" +
 	"\n" +
 	"token_type\x18\x03 \x01(\tR\ttokenType\x12\x14\n" +
-	"\x05scope\x18\x04 \x01(\tR\x05scope\x12\x17\n" +
-	"\auser_id\x18\x05 \x01(\tR\x06userId\x12\x1b\n" +
+	"\x05scope\x18\x04 \x01(\tR\x05scope\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x05 \x01(\tR\tactorPtid\x12\x1b\n" +
 	"\tclient_id\x18\x06 \x01(\tR\bclientId\x129\n" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
@@ -568,7 +530,7 @@ const file_domain_oauth_oauth_proto_rawDesc = "" +
 	"\n" +
 	"avatar_url\x18\x06 \x01(\tR\tavatarUrl\x12\x0e\n" +
 	"\x02ts\x18\a \x01(\tR\x02ts\x12\x10\n" +
-	"\x03sig\x18\b \x01(\tR\x03sig\"\x90\x03\n" +
+	"\x03sig\x18\b \x01(\tR\x03sig\"\xd3\x02\n" +
 	"\x13OAuthBridgeResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12!\n" +
@@ -577,15 +539,10 @@ const file_domain_oauth_oauth_proto_rawDesc = "" +
 	"\n" +
 	"token_type\x18\x04 \x01(\tR\ttokenType\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\x05 \x01(\tR\texpiresAt\x12\x19\n" +
-	"\bactor_id\x18\x06 \x01(\tR\aactorId\x12 \n" +
-	"\factor_id_num\x18\a \x01(\x03R\n" +
-	"actorIdNum\x12\x1a\n" +
-	"\busername\x18\b \x01(\tR\busername\x12!\n" +
-	"\fdisplay_name\x18\t \x01(\tR\vdisplayName\x12\x14\n" +
-	"\x05email\x18\n" +
-	" \x01(\tR\x05email\x12B\n" +
-	"\tactor_ref\x18\v \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\tactor_refBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"expires_at\x18\x05 \x01(\tR\texpiresAt\x12B\n" +
+	"\tactor_ref\x18\v \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\tactor_refJ\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
+	"J\x04\b\n" +
+	"\x10\vR\bactor_idR\factor_id_numR\busernameR\fdisplay_nameR\x05emailBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_oauth_oauth_proto_rawDescOnce sync.Once

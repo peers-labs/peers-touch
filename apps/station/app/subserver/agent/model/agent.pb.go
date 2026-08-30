@@ -1332,7 +1332,7 @@ type Conversation struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	AgentId        string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	UserId         string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	ActorPtid      string                 `protobuf:"bytes,3,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Title          string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
 	Description    string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
 	ProviderId     string                 `protobuf:"bytes,6,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
@@ -1391,9 +1391,9 @@ func (x *Conversation) GetAgentId() string {
 	return ""
 }
 
-func (x *Conversation) GetUserId() string {
+func (x *Conversation) GetActorPtid() string {
 	if x != nil {
-		return x.UserId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -1469,21 +1469,21 @@ func (x *Conversation) GetUpdatedAt() *timestamppb.Timestamp {
 }
 
 type Agent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
-	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	ProviderId    string                 `protobuf:"bytes,5,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
-	ModelName     string                 `protobuf:"bytes,6,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
-	Effort        string                 `protobuf:"bytes,7,opt,name=effort,proto3" json:"effort,omitempty"`
-	Visibility    AgentVisibility        `protobuf:"varint,8,opt,name=visibility,proto3,enum=peers_touch.model.agent.v1.AgentVisibility" json:"visibility,omitempty"`
-	OwnerActorId  string                 `protobuf:"bytes,9,opt,name=owner_actor_id,json=ownerActorId,proto3" json:"owner_actor_id,omitempty"`
-	ConfigJson    string                 `protobuf:"bytes,10,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	AgentId        string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Title          string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	Description    string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	ProviderId     string                 `protobuf:"bytes,5,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ModelName      string                 `protobuf:"bytes,6,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
+	Effort         string                 `protobuf:"bytes,7,opt,name=effort,proto3" json:"effort,omitempty"`
+	Visibility     AgentVisibility        `protobuf:"varint,8,opt,name=visibility,proto3,enum=peers_touch.model.agent.v1.AgentVisibility" json:"visibility,omitempty"`
+	OwnerActorPtid string                 `protobuf:"bytes,9,opt,name=owner_actor_ptid,json=ownerActorPtid,proto3" json:"owner_actor_ptid,omitempty"`
+	ConfigJson     string                 `protobuf:"bytes,10,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Agent) Reset() {
@@ -1572,9 +1572,9 @@ func (x *Agent) GetVisibility() AgentVisibility {
 	return AgentVisibility_AGENT_VISIBILITY_UNSPECIFIED
 }
 
-func (x *Agent) GetOwnerActorId() string {
+func (x *Agent) GetOwnerActorPtid() string {
 	if x != nil {
-		return x.OwnerActorId
+		return x.OwnerActorPtid
 	}
 	return ""
 }
@@ -5072,11 +5072,12 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x0ftool_iterations\x18\a \x01(\x05R\x0etoolIterations\x129\n" +
 	"\n" +
 	"started_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
-	"\bended_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xb0\x04\n" +
+	"\bended_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xb6\x04\n" +
 	"\fConversation\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
-	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x17\n" +
-	"\auser_id\x18\x03 \x01(\tR\x06userId\x12\x14\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x03 \x01(\tR\tactorPtid\x12\x14\n" +
 	"\x05title\x18\x04 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x1f\n" +
 	"\vprovider_id\x18\x06 \x01(\tR\n" +
@@ -5095,7 +5096,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x1a7\n" +
 	"\tMetaEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd0\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd4\x03\n" +
 	"\x05Agent\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -5108,8 +5109,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x06effort\x18\a \x01(\tR\x06effort\x12K\n" +
 	"\n" +
 	"visibility\x18\b \x01(\x0e2+.peers_touch.model.agent.v1.AgentVisibilityR\n" +
-	"visibility\x12$\n" +
-	"\x0eowner_actor_id\x18\t \x01(\tR\fownerActorId\x12\x1f\n" +
+	"visibility\x12(\n" +
+	"\x10owner_actor_ptid\x18\t \x01(\tR\x0eownerActorPtid\x12\x1f\n" +
 	"\vconfig_json\x18\n" +
 	" \x01(\tR\n" +
 	"configJson\x129\n" +

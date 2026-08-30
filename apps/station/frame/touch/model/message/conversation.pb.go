@@ -586,7 +586,7 @@ func (x *GetMembersRequest) GetConvId() string {
 
 type ConvMember struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Did           string                 `protobuf:"bytes,1,opt,name=did,proto3" json:"did,omitempty"`
+	Ptid          string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	Role          string                 `protobuf:"bytes,2,opt,name=role,proto3" json:"role,omitempty"`
 	JoinedAt      *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -623,9 +623,9 @@ func (*ConvMember) Descriptor() ([]byte, []int) {
 	return file_domain_message_conversation_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *ConvMember) GetDid() string {
+func (x *ConvMember) GetPtid() string {
 	if x != nil {
-		return x.Did
+		return x.Ptid
 	}
 	return ""
 }
@@ -751,7 +751,7 @@ func (x *KeyRotateRequest) GetPackages() []*KeyPackage {
 
 type KeyPackage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Did           string                 `protobuf:"bytes,1,opt,name=did,proto3" json:"did,omitempty"`
+	Ptid          string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	Package       []byte                 `protobuf:"bytes,2,opt,name=package,proto3" json:"package,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -787,9 +787,9 @@ func (*KeyPackage) Descriptor() ([]byte, []int) {
 	return file_domain_message_conversation_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *KeyPackage) GetDid() string {
+func (x *KeyPackage) GetPtid() string {
 	if x != nil {
-		return x.Did
+		return x.Ptid
 	}
 	return ""
 }
@@ -910,7 +910,7 @@ type Message struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Id               uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	ConvId           string                 `protobuf:"bytes,2,opt,name=conv_id,json=convId,proto3" json:"conv_id,omitempty"`
-	SenderDid        string                 `protobuf:"bytes,3,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
+	SenderPtid       string                 `protobuf:"bytes,3,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
 	EncryptedContent []byte                 `protobuf:"bytes,4,opt,name=encrypted_content,json=encryptedContent,proto3" json:"encrypted_content,omitempty"`
 	Epoch            uint32                 `protobuf:"varint,5,opt,name=epoch,proto3" json:"epoch,omitempty"`
 	Timestamp        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
@@ -962,9 +962,9 @@ func (x *Message) GetConvId() string {
 	return ""
 }
 
-func (x *Message) GetSenderDid() string {
+func (x *Message) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderDid
+		return x.SenderPtid
 	}
 	return ""
 }
@@ -1401,7 +1401,7 @@ func (x *GetReceiptsRequest) GetMessageId() uint64 {
 
 type Receipt struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Did           string                 `protobuf:"bytes,1,opt,name=did,proto3" json:"did,omitempty"`
+	Ptid          string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1438,9 +1438,9 @@ func (*Receipt) Descriptor() ([]byte, []int) {
 	return file_domain_message_conversation_proto_rawDescGZIP(), []int{25}
 }
 
-func (x *Receipt) GetDid() string {
+func (x *Receipt) GetPtid() string {
 	if x != nil {
-		return x.Did
+		return x.Ptid
 	}
 	return ""
 }
@@ -2197,10 +2197,10 @@ const file_domain_message_conversation_proto_rawDesc = "" +
 	"\x15UpdateMembersResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\",\n" +
 	"\x11GetMembersRequest\x12\x17\n" +
-	"\aconv_id\x18\x01 \x01(\tR\x06convId\"k\n" +
+	"\aconv_id\x18\x01 \x01(\tR\x06convId\"m\n" +
 	"\n" +
-	"ConvMember\x12\x10\n" +
-	"\x03did\x18\x01 \x01(\tR\x03did\x12\x12\n" +
+	"ConvMember\x12\x12\n" +
+	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12\x12\n" +
 	"\x04role\x18\x02 \x01(\tR\x04role\x127\n" +
 	"\tjoined_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\"X\n" +
 	"\x12GetMembersResponse\x12B\n" +
@@ -2208,22 +2208,22 @@ const file_domain_message_conversation_proto_rawDesc = "" +
 	"\x10KeyRotateRequest\x12\x17\n" +
 	"\aconv_id\x18\x01 \x01(\tR\x06convId\x12\x14\n" +
 	"\x05epoch\x18\x02 \x01(\rR\x05epoch\x12D\n" +
-	"\bpackages\x18\x03 \x03(\v2(.peers_touch.model.message.v1.KeyPackageR\bpackages\"8\n" +
+	"\bpackages\x18\x03 \x03(\v2(.peers_touch.model.message.v1.KeyPackageR\bpackages\":\n" +
 	"\n" +
-	"KeyPackage\x12\x10\n" +
-	"\x03did\x18\x01 \x01(\tR\x03did\x12\x18\n" +
+	"KeyPackage\x12\x12\n" +
+	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12\x18\n" +
 	"\apackage\x18\x02 \x01(\fR\apackage\"-\n" +
 	"\x11KeyRotateResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\"z\n" +
 	"\x14AppendMessageRequest\x12\x17\n" +
 	"\aconv_id\x18\x01 \x01(\tR\x06convId\x12+\n" +
 	"\x11encrypted_content\x18\x02 \x01(\fR\x10encryptedContent\x12\x1c\n" +
-	"\ttimestamp\x18\x03 \x01(\tR\ttimestamp\"\xce\x01\n" +
+	"\ttimestamp\x18\x03 \x01(\tR\ttimestamp\"\xd0\x01\n" +
 	"\aMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x17\n" +
-	"\aconv_id\x18\x02 \x01(\tR\x06convId\x12\x1d\n" +
-	"\n" +
-	"sender_did\x18\x03 \x01(\tR\tsenderDid\x12+\n" +
+	"\aconv_id\x18\x02 \x01(\tR\x06convId\x12\x1f\n" +
+	"\vsender_ptid\x18\x03 \x01(\tR\n" +
+	"senderPtid\x12+\n" +
 	"\x11encrypted_content\x18\x04 \x01(\fR\x10encryptedContent\x12\x14\n" +
 	"\x05epoch\x18\x05 \x01(\rR\x05epoch\x128\n" +
 	"\ttimestamp\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"X\n" +
@@ -2251,9 +2251,9 @@ const file_domain_message_conversation_proto_rawDesc = "" +
 	"\x12GetReceiptsRequest\x12\x17\n" +
 	"\aconv_id\x18\x01 \x01(\tR\x06convId\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x02 \x01(\x04R\tmessageId\"i\n" +
-	"\aReceipt\x12\x10\n" +
-	"\x03did\x18\x01 \x01(\tR\x03did\x12\x12\n" +
+	"message_id\x18\x02 \x01(\x04R\tmessageId\"k\n" +
+	"\aReceipt\x12\x12\n" +
+	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x128\n" +
 	"\ttimestamp\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"X\n" +
 	"\x13GetReceiptsResponse\x12A\n" +

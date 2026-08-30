@@ -23,9 +23,8 @@ pub fn agent_collaboration_create(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_orchestration::agent_collaboration_create(input, &token, &actor_id)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_agent_orchestration::agent_collaboration_create(input, &token, &actor_ptid)
 }
 
 #[tauri::command]

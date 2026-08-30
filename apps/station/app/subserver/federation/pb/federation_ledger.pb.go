@@ -170,7 +170,7 @@ type LedgerEvent struct {
 	EventType              EventType              `protobuf:"varint,6,opt,name=event_type,json=eventType,proto3,enum=peers_touch.model.federation.v1.EventType" json:"event_type,omitempty"`
 	PayloadBytes           []byte                 `protobuf:"bytes,7,opt,name=payload_bytes,json=payloadBytes,proto3" json:"payload_bytes,omitempty"`
 	PayloadHash            []byte                 `protobuf:"bytes,8,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
-	ActorId                string                 `protobuf:"bytes,9,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid              string                 `protobuf:"bytes,9,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	ActorFederatedHandle   string                 `protobuf:"bytes,10,opt,name=actor_federated_handle,json=actorFederatedHandle,proto3" json:"actor_federated_handle,omitempty"`
 	StationPeerId          string                 `protobuf:"bytes,11,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
 	SequencerStationPeerId string                 `protobuf:"bytes,12,opt,name=sequencer_station_peer_id,json=sequencerStationPeerId,proto3" json:"sequencer_station_peer_id,omitempty"`
@@ -268,9 +268,9 @@ func (x *LedgerEvent) GetPayloadHash() []byte {
 	return nil
 }
 
-func (x *LedgerEvent) GetActorId() string {
+func (x *LedgerEvent) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -406,7 +406,7 @@ func (x *EventHashInput) GetPayloadHash() []byte {
 type ActorSignatureInput struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	FederationId         string                 `protobuf:"bytes,1,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
-	ActorId              string                 `protobuf:"bytes,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid            string                 `protobuf:"bytes,2,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	ActorFederatedHandle string                 `protobuf:"bytes,3,opt,name=actor_federated_handle,json=actorFederatedHandle,proto3" json:"actor_federated_handle,omitempty"`
 	EventTypeName        string                 `protobuf:"bytes,4,opt,name=event_type_name,json=eventTypeName,proto3" json:"event_type_name,omitempty"`
 	PayloadHash          []byte                 `protobuf:"bytes,5,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
@@ -452,9 +452,9 @@ func (x *ActorSignatureInput) GetFederationId() string {
 	return ""
 }
 
-func (x *ActorSignatureInput) GetActorId() string {
+func (x *ActorSignatureInput) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -648,7 +648,7 @@ type FederationCreatedPayload struct {
 	Description                  string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	PolicyType                   string                 `protobuf:"bytes,4,opt,name=policy_type,json=policyType,proto3" json:"policy_type,omitempty"`
 	SequencerStationPeerId       string                 `protobuf:"bytes,5,opt,name=sequencer_station_peer_id,json=sequencerStationPeerId,proto3" json:"sequencer_station_peer_id,omitempty"`
-	CreatorActorId               string                 `protobuf:"bytes,6,opt,name=creator_actor_id,json=creatorActorId,proto3" json:"creator_actor_id,omitempty"`
+	CreatorActorPtid             string                 `protobuf:"bytes,6,opt,name=creator_actor_ptid,json=creatorActorPtid,proto3" json:"creator_actor_ptid,omitempty"`
 	CreatorActorFederatedHandle  string                 `protobuf:"bytes,7,opt,name=creator_actor_federated_handle,json=creatorActorFederatedHandle,proto3" json:"creator_actor_federated_handle,omitempty"`
 	CreatorStationPeerId         string                 `protobuf:"bytes,8,opt,name=creator_station_peer_id,json=creatorStationPeerId,proto3" json:"creator_station_peer_id,omitempty"`
 	CreatorStationPublicKey      []byte                 `protobuf:"bytes,9,opt,name=creator_station_public_key,json=creatorStationPublicKey,proto3" json:"creator_station_public_key,omitempty"`
@@ -724,9 +724,9 @@ func (x *FederationCreatedPayload) GetSequencerStationPeerId() string {
 	return ""
 }
 
-func (x *FederationCreatedPayload) GetCreatorActorId() string {
+func (x *FederationCreatedPayload) GetCreatorActorPtid() string {
 	if x != nil {
-		return x.CreatorActorId
+		return x.CreatorActorPtid
 	}
 	return ""
 }
@@ -778,7 +778,7 @@ type StationInvitedPayload struct {
 	TargetStationPeerId           string                 `protobuf:"bytes,1,opt,name=target_station_peer_id,json=targetStationPeerId,proto3" json:"target_station_peer_id,omitempty"`
 	TargetStationName             string                 `protobuf:"bytes,2,opt,name=target_station_name,json=targetStationName,proto3" json:"target_station_name,omitempty"`
 	TargetStationUrl              string                 `protobuf:"bytes,3,opt,name=target_station_url,json=targetStationUrl,proto3" json:"target_station_url,omitempty"`
-	InvitedByActorId              string                 `protobuf:"bytes,4,opt,name=invited_by_actor_id,json=invitedByActorId,proto3" json:"invited_by_actor_id,omitempty"`
+	InvitedByActorPtid            string                 `protobuf:"bytes,4,opt,name=invited_by_actor_ptid,json=invitedByActorPtid,proto3" json:"invited_by_actor_ptid,omitempty"`
 	InvitedByActorFederatedHandle string                 `protobuf:"bytes,5,opt,name=invited_by_actor_federated_handle,json=invitedByActorFederatedHandle,proto3" json:"invited_by_actor_federated_handle,omitempty"`
 	Message                       string                 `protobuf:"bytes,6,opt,name=message,proto3" json:"message,omitempty"`
 	ExpiresAtUnixMs               int64                  `protobuf:"varint,7,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
@@ -837,9 +837,9 @@ func (x *StationInvitedPayload) GetTargetStationUrl() string {
 	return ""
 }
 
-func (x *StationInvitedPayload) GetInvitedByActorId() string {
+func (x *StationInvitedPayload) GetInvitedByActorPtid() string {
 	if x != nil {
-		return x.InvitedByActorId
+		return x.InvitedByActorPtid
 	}
 	return ""
 }
@@ -871,7 +871,7 @@ type StationJoinRequestedPayload struct {
 	RequestingStationName          string                 `protobuf:"bytes,2,opt,name=requesting_station_name,json=requestingStationName,proto3" json:"requesting_station_name,omitempty"`
 	RequestingStationUrl           string                 `protobuf:"bytes,3,opt,name=requesting_station_url,json=requestingStationUrl,proto3" json:"requesting_station_url,omitempty"`
 	RequestingStationPublicKey     []byte                 `protobuf:"bytes,4,opt,name=requesting_station_public_key,json=requestingStationPublicKey,proto3" json:"requesting_station_public_key,omitempty"`
-	RequestingActorId              string                 `protobuf:"bytes,5,opt,name=requesting_actor_id,json=requestingActorId,proto3" json:"requesting_actor_id,omitempty"`
+	RequestingActorPtid            string                 `protobuf:"bytes,5,opt,name=requesting_actor_ptid,json=requestingActorPtid,proto3" json:"requesting_actor_ptid,omitempty"`
 	RequestingActorFederatedHandle string                 `protobuf:"bytes,6,opt,name=requesting_actor_federated_handle,json=requestingActorFederatedHandle,proto3" json:"requesting_actor_federated_handle,omitempty"`
 	Message                        string                 `protobuf:"bytes,7,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields                  protoimpl.UnknownFields
@@ -936,9 +936,9 @@ func (x *StationJoinRequestedPayload) GetRequestingStationPublicKey() []byte {
 	return nil
 }
 
-func (x *StationJoinRequestedPayload) GetRequestingActorId() string {
+func (x *StationJoinRequestedPayload) GetRequestingActorPtid() string {
 	if x != nil {
-		return x.RequestingActorId
+		return x.RequestingActorPtid
 	}
 	return ""
 }
@@ -960,7 +960,7 @@ func (x *StationJoinRequestedPayload) GetMessage() string {
 type StationJoinApprovedPayload struct {
 	state                          protoimpl.MessageState `protogen:"open.v1"`
 	ApprovedStationPeerId          string                 `protobuf:"bytes,1,opt,name=approved_station_peer_id,json=approvedStationPeerId,proto3" json:"approved_station_peer_id,omitempty"`
-	ApprovedByActorId              string                 `protobuf:"bytes,2,opt,name=approved_by_actor_id,json=approvedByActorId,proto3" json:"approved_by_actor_id,omitempty"`
+	ApprovedByActorPtid            string                 `protobuf:"bytes,2,opt,name=approved_by_actor_ptid,json=approvedByActorPtid,proto3" json:"approved_by_actor_ptid,omitempty"`
 	ApprovedByActorFederatedHandle string                 `protobuf:"bytes,3,opt,name=approved_by_actor_federated_handle,json=approvedByActorFederatedHandle,proto3" json:"approved_by_actor_federated_handle,omitempty"`
 	Role                           string                 `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
 	ApprovedStationUrl             string                 `protobuf:"bytes,5,opt,name=approved_station_url,json=approvedStationUrl,proto3" json:"approved_station_url,omitempty"`
@@ -1006,9 +1006,9 @@ func (x *StationJoinApprovedPayload) GetApprovedStationPeerId() string {
 	return ""
 }
 
-func (x *StationJoinApprovedPayload) GetApprovedByActorId() string {
+func (x *StationJoinApprovedPayload) GetApprovedByActorPtid() string {
 	if x != nil {
-		return x.ApprovedByActorId
+		return x.ApprovedByActorPtid
 	}
 	return ""
 }
@@ -1044,7 +1044,7 @@ func (x *StationJoinApprovedPayload) GetApprovedStationName() string {
 type StationLeftPayload struct {
 	state                       protoimpl.MessageState `protogen:"open.v1"`
 	LeavingStationPeerId        string                 `protobuf:"bytes,1,opt,name=leaving_station_peer_id,json=leavingStationPeerId,proto3" json:"leaving_station_peer_id,omitempty"`
-	LeavingActorId              string                 `protobuf:"bytes,2,opt,name=leaving_actor_id,json=leavingActorId,proto3" json:"leaving_actor_id,omitempty"`
+	LeavingActorPtid            string                 `protobuf:"bytes,2,opt,name=leaving_actor_ptid,json=leavingActorPtid,proto3" json:"leaving_actor_ptid,omitempty"`
 	LeavingActorFederatedHandle string                 `protobuf:"bytes,3,opt,name=leaving_actor_federated_handle,json=leavingActorFederatedHandle,proto3" json:"leaving_actor_federated_handle,omitempty"`
 	Reason                      string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields               protoimpl.UnknownFields
@@ -1088,9 +1088,9 @@ func (x *StationLeftPayload) GetLeavingStationPeerId() string {
 	return ""
 }
 
-func (x *StationLeftPayload) GetLeavingActorId() string {
+func (x *StationLeftPayload) GetLeavingActorPtid() string {
 	if x != nil {
-		return x.LeavingActorId
+		return x.LeavingActorPtid
 	}
 	return ""
 }
@@ -1112,7 +1112,7 @@ func (x *StationLeftPayload) GetReason() string {
 type StationSuspendedPayload struct {
 	state                           protoimpl.MessageState `protogen:"open.v1"`
 	TargetStationPeerId             string                 `protobuf:"bytes,1,opt,name=target_station_peer_id,json=targetStationPeerId,proto3" json:"target_station_peer_id,omitempty"`
-	SuspendedByActorId              string                 `protobuf:"bytes,2,opt,name=suspended_by_actor_id,json=suspendedByActorId,proto3" json:"suspended_by_actor_id,omitempty"`
+	SuspendedByActorPtid            string                 `protobuf:"bytes,2,opt,name=suspended_by_actor_ptid,json=suspendedByActorPtid,proto3" json:"suspended_by_actor_ptid,omitempty"`
 	SuspendedByActorFederatedHandle string                 `protobuf:"bytes,3,opt,name=suspended_by_actor_federated_handle,json=suspendedByActorFederatedHandle,proto3" json:"suspended_by_actor_federated_handle,omitempty"`
 	Reason                          string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields                   protoimpl.UnknownFields
@@ -1156,9 +1156,9 @@ func (x *StationSuspendedPayload) GetTargetStationPeerId() string {
 	return ""
 }
 
-func (x *StationSuspendedPayload) GetSuspendedByActorId() string {
+func (x *StationSuspendedPayload) GetSuspendedByActorPtid() string {
 	if x != nil {
-		return x.SuspendedByActorId
+		return x.SuspendedByActorPtid
 	}
 	return ""
 }
@@ -1180,7 +1180,7 @@ func (x *StationSuspendedPayload) GetReason() string {
 type StationRemovedPayload struct {
 	state                         protoimpl.MessageState `protogen:"open.v1"`
 	TargetStationPeerId           string                 `protobuf:"bytes,1,opt,name=target_station_peer_id,json=targetStationPeerId,proto3" json:"target_station_peer_id,omitempty"`
-	RemovedByActorId              string                 `protobuf:"bytes,2,opt,name=removed_by_actor_id,json=removedByActorId,proto3" json:"removed_by_actor_id,omitempty"`
+	RemovedByActorPtid            string                 `protobuf:"bytes,2,opt,name=removed_by_actor_ptid,json=removedByActorPtid,proto3" json:"removed_by_actor_ptid,omitempty"`
 	RemovedByActorFederatedHandle string                 `protobuf:"bytes,3,opt,name=removed_by_actor_federated_handle,json=removedByActorFederatedHandle,proto3" json:"removed_by_actor_federated_handle,omitempty"`
 	Reason                        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields                 protoimpl.UnknownFields
@@ -1224,9 +1224,9 @@ func (x *StationRemovedPayload) GetTargetStationPeerId() string {
 	return ""
 }
 
-func (x *StationRemovedPayload) GetRemovedByActorId() string {
+func (x *StationRemovedPayload) GetRemovedByActorPtid() string {
 	if x != nil {
-		return x.RemovedByActorId
+		return x.RemovedByActorPtid
 	}
 	return ""
 }
@@ -1247,11 +1247,11 @@ func (x *StationRemovedPayload) GetReason() string {
 
 type AdminGrantedPayload struct {
 	state                         protoimpl.MessageState `protogen:"open.v1"`
-	TargetActorId                 string                 `protobuf:"bytes,1,opt,name=target_actor_id,json=targetActorId,proto3" json:"target_actor_id,omitempty"`
+	TargetActorPtid               string                 `protobuf:"bytes,1,opt,name=target_actor_ptid,json=targetActorPtid,proto3" json:"target_actor_ptid,omitempty"`
 	TargetActorFederatedHandle    string                 `protobuf:"bytes,2,opt,name=target_actor_federated_handle,json=targetActorFederatedHandle,proto3" json:"target_actor_federated_handle,omitempty"`
 	TargetStationPeerId           string                 `protobuf:"bytes,3,opt,name=target_station_peer_id,json=targetStationPeerId,proto3" json:"target_station_peer_id,omitempty"`
 	Role                          string                 `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
-	GrantedByActorId              string                 `protobuf:"bytes,5,opt,name=granted_by_actor_id,json=grantedByActorId,proto3" json:"granted_by_actor_id,omitempty"`
+	GrantedByActorPtid            string                 `protobuf:"bytes,5,opt,name=granted_by_actor_ptid,json=grantedByActorPtid,proto3" json:"granted_by_actor_ptid,omitempty"`
 	GrantedByActorFederatedHandle string                 `protobuf:"bytes,6,opt,name=granted_by_actor_federated_handle,json=grantedByActorFederatedHandle,proto3" json:"granted_by_actor_federated_handle,omitempty"`
 	unknownFields                 protoimpl.UnknownFields
 	sizeCache                     protoimpl.SizeCache
@@ -1287,9 +1287,9 @@ func (*AdminGrantedPayload) Descriptor() ([]byte, []int) {
 	return file_domain_federation_federation_ledger_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *AdminGrantedPayload) GetTargetActorId() string {
+func (x *AdminGrantedPayload) GetTargetActorPtid() string {
 	if x != nil {
-		return x.TargetActorId
+		return x.TargetActorPtid
 	}
 	return ""
 }
@@ -1315,9 +1315,9 @@ func (x *AdminGrantedPayload) GetRole() string {
 	return ""
 }
 
-func (x *AdminGrantedPayload) GetGrantedByActorId() string {
+func (x *AdminGrantedPayload) GetGrantedByActorPtid() string {
 	if x != nil {
-		return x.GrantedByActorId
+		return x.GrantedByActorPtid
 	}
 	return ""
 }
@@ -1331,11 +1331,11 @@ func (x *AdminGrantedPayload) GetGrantedByActorFederatedHandle() string {
 
 type AdminRevokedPayload struct {
 	state                         protoimpl.MessageState `protogen:"open.v1"`
-	TargetActorId                 string                 `protobuf:"bytes,1,opt,name=target_actor_id,json=targetActorId,proto3" json:"target_actor_id,omitempty"`
+	TargetActorPtid               string                 `protobuf:"bytes,1,opt,name=target_actor_ptid,json=targetActorPtid,proto3" json:"target_actor_ptid,omitempty"`
 	TargetActorFederatedHandle    string                 `protobuf:"bytes,2,opt,name=target_actor_federated_handle,json=targetActorFederatedHandle,proto3" json:"target_actor_federated_handle,omitempty"`
 	TargetStationPeerId           string                 `protobuf:"bytes,3,opt,name=target_station_peer_id,json=targetStationPeerId,proto3" json:"target_station_peer_id,omitempty"`
 	RevokedRole                   string                 `protobuf:"bytes,4,opt,name=revoked_role,json=revokedRole,proto3" json:"revoked_role,omitempty"`
-	RevokedByActorId              string                 `protobuf:"bytes,5,opt,name=revoked_by_actor_id,json=revokedByActorId,proto3" json:"revoked_by_actor_id,omitempty"`
+	RevokedByActorPtid            string                 `protobuf:"bytes,5,opt,name=revoked_by_actor_ptid,json=revokedByActorPtid,proto3" json:"revoked_by_actor_ptid,omitempty"`
 	RevokedByActorFederatedHandle string                 `protobuf:"bytes,6,opt,name=revoked_by_actor_federated_handle,json=revokedByActorFederatedHandle,proto3" json:"revoked_by_actor_federated_handle,omitempty"`
 	Reason                        string                 `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields                 protoimpl.UnknownFields
@@ -1372,9 +1372,9 @@ func (*AdminRevokedPayload) Descriptor() ([]byte, []int) {
 	return file_domain_federation_federation_ledger_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *AdminRevokedPayload) GetTargetActorId() string {
+func (x *AdminRevokedPayload) GetTargetActorPtid() string {
 	if x != nil {
-		return x.TargetActorId
+		return x.TargetActorPtid
 	}
 	return ""
 }
@@ -1400,9 +1400,9 @@ func (x *AdminRevokedPayload) GetRevokedRole() string {
 	return ""
 }
 
-func (x *AdminRevokedPayload) GetRevokedByActorId() string {
+func (x *AdminRevokedPayload) GetRevokedByActorPtid() string {
 	if x != nil {
-		return x.RevokedByActorId
+		return x.RevokedByActorPtid
 	}
 	return ""
 }
@@ -1426,7 +1426,7 @@ type PolicyUpdatedPayload struct {
 	OldPolicyType                 string                 `protobuf:"bytes,1,opt,name=old_policy_type,json=oldPolicyType,proto3" json:"old_policy_type,omitempty"`
 	NewPolicyType                 string                 `protobuf:"bytes,2,opt,name=new_policy_type,json=newPolicyType,proto3" json:"new_policy_type,omitempty"`
 	PolicyParamsBytes             []byte                 `protobuf:"bytes,3,opt,name=policy_params_bytes,json=policyParamsBytes,proto3" json:"policy_params_bytes,omitempty"`
-	UpdatedByActorId              string                 `protobuf:"bytes,4,opt,name=updated_by_actor_id,json=updatedByActorId,proto3" json:"updated_by_actor_id,omitempty"`
+	UpdatedByActorPtid            string                 `protobuf:"bytes,4,opt,name=updated_by_actor_ptid,json=updatedByActorPtid,proto3" json:"updated_by_actor_ptid,omitempty"`
 	UpdatedByActorFederatedHandle string                 `protobuf:"bytes,5,opt,name=updated_by_actor_federated_handle,json=updatedByActorFederatedHandle,proto3" json:"updated_by_actor_federated_handle,omitempty"`
 	unknownFields                 protoimpl.UnknownFields
 	sizeCache                     protoimpl.SizeCache
@@ -1483,9 +1483,9 @@ func (x *PolicyUpdatedPayload) GetPolicyParamsBytes() []byte {
 	return nil
 }
 
-func (x *PolicyUpdatedPayload) GetUpdatedByActorId() string {
+func (x *PolicyUpdatedPayload) GetUpdatedByActorPtid() string {
 	if x != nil {
-		return x.UpdatedByActorId
+		return x.UpdatedByActorPtid
 	}
 	return ""
 }
@@ -1502,7 +1502,7 @@ type SequencerChangedPayload struct {
 	OldSequencerStationPeerId       string                 `protobuf:"bytes,1,opt,name=old_sequencer_station_peer_id,json=oldSequencerStationPeerId,proto3" json:"old_sequencer_station_peer_id,omitempty"`
 	NewSequencerStationPeerId       string                 `protobuf:"bytes,2,opt,name=new_sequencer_station_peer_id,json=newSequencerStationPeerId,proto3" json:"new_sequencer_station_peer_id,omitempty"`
 	Reason                          string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
-	InitiatedByActorId              string                 `protobuf:"bytes,4,opt,name=initiated_by_actor_id,json=initiatedByActorId,proto3" json:"initiated_by_actor_id,omitempty"`
+	InitiatedByActorPtid            string                 `protobuf:"bytes,4,opt,name=initiated_by_actor_ptid,json=initiatedByActorPtid,proto3" json:"initiated_by_actor_ptid,omitempty"`
 	InitiatedByActorFederatedHandle string                 `protobuf:"bytes,5,opt,name=initiated_by_actor_federated_handle,json=initiatedByActorFederatedHandle,proto3" json:"initiated_by_actor_federated_handle,omitempty"`
 	unknownFields                   protoimpl.UnknownFields
 	sizeCache                       protoimpl.SizeCache
@@ -1559,9 +1559,9 @@ func (x *SequencerChangedPayload) GetReason() string {
 	return ""
 }
 
-func (x *SequencerChangedPayload) GetInitiatedByActorId() string {
+func (x *SequencerChangedPayload) GetInitiatedByActorPtid() string {
 	if x != nil {
-		return x.InitiatedByActorId
+		return x.InitiatedByActorPtid
 	}
 	return ""
 }
@@ -1643,7 +1643,7 @@ func (x *StationKeyRotatedPayload) GetNewKeyValidFromSeq() uint64 {
 
 type FederationArchivedPayload struct {
 	state                          protoimpl.MessageState `protogen:"open.v1"`
-	ArchivedByActorId              string                 `protobuf:"bytes,1,opt,name=archived_by_actor_id,json=archivedByActorId,proto3" json:"archived_by_actor_id,omitempty"`
+	ArchivedByActorPtid            string                 `protobuf:"bytes,1,opt,name=archived_by_actor_ptid,json=archivedByActorPtid,proto3" json:"archived_by_actor_ptid,omitempty"`
 	ArchivedByActorFederatedHandle string                 `protobuf:"bytes,2,opt,name=archived_by_actor_federated_handle,json=archivedByActorFederatedHandle,proto3" json:"archived_by_actor_federated_handle,omitempty"`
 	Reason                         string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields                  protoimpl.UnknownFields
@@ -1680,9 +1680,9 @@ func (*FederationArchivedPayload) Descriptor() ([]byte, []int) {
 	return file_domain_federation_federation_ledger_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *FederationArchivedPayload) GetArchivedByActorId() string {
+func (x *FederationArchivedPayload) GetArchivedByActorPtid() string {
 	if x != nil {
-		return x.ArchivedByActorId
+		return x.ArchivedByActorPtid
 	}
 	return ""
 }
@@ -1708,7 +1708,7 @@ type LedgerProposal struct {
 	ProposedEventType    EventType              `protobuf:"varint,3,opt,name=proposed_event_type,json=proposedEventType,proto3,enum=peers_touch.model.federation.v1.EventType" json:"proposed_event_type,omitempty"`
 	PayloadBytes         []byte                 `protobuf:"bytes,4,opt,name=payload_bytes,json=payloadBytes,proto3" json:"payload_bytes,omitempty"`
 	PayloadHash          []byte                 `protobuf:"bytes,5,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
-	ActorId              string                 `protobuf:"bytes,6,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid            string                 `protobuf:"bytes,6,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	ActorFederatedHandle string                 `protobuf:"bytes,7,opt,name=actor_federated_handle,json=actorFederatedHandle,proto3" json:"actor_federated_handle,omitempty"`
 	StationPeerId        string                 `protobuf:"bytes,8,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
 	ActorSignature       []byte                 `protobuf:"bytes,9,opt,name=actor_signature,json=actorSignature,proto3" json:"actor_signature,omitempty"`
@@ -1787,9 +1787,9 @@ func (x *LedgerProposal) GetPayloadHash() []byte {
 	return nil
 }
 
-func (x *LedgerProposal) GetActorId() string {
+func (x *LedgerProposal) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -1861,7 +1861,7 @@ var File_domain_federation_federation_ledger_proto protoreflect.FileDescriptor
 
 const file_domain_federation_federation_ledger_proto_rawDesc = "" +
 	"\n" +
-	")domain/federation/federation_ledger.proto\x12\x1fpeers_touch.model.federation.v1\"\x96\x05\n" +
+	")domain/federation/federation_ledger.proto\x12\x1fpeers_touch.model.federation.v1\"\x9a\x05\n" +
 	"\vLedgerEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12#\n" +
 	"\rfederation_id\x18\x02 \x01(\tR\ffederationId\x12\x10\n" +
@@ -1872,8 +1872,9 @@ const file_domain_federation_federation_ledger_proto_rawDesc = "" +
 	"\n" +
 	"event_type\x18\x06 \x01(\x0e2*.peers_touch.model.federation.v1.EventTypeR\teventType\x12#\n" +
 	"\rpayload_bytes\x18\a \x01(\fR\fpayloadBytes\x12!\n" +
-	"\fpayload_hash\x18\b \x01(\fR\vpayloadHash\x12\x19\n" +
-	"\bactor_id\x18\t \x01(\tR\aactorId\x124\n" +
+	"\fpayload_hash\x18\b \x01(\fR\vpayloadHash\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\t \x01(\tR\tactorPtid\x124\n" +
 	"\x16actor_federated_handle\x18\n" +
 	" \x01(\tR\x14actorFederatedHandle\x12&\n" +
 	"\x0fstation_peer_id\x18\v \x01(\tR\rstationPeerId\x129\n" +
@@ -1887,10 +1888,11 @@ const file_domain_federation_federation_ledger_proto_rawDesc = "" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x1b\n" +
 	"\tprev_hash\x18\x03 \x01(\fR\bprevHash\x12&\n" +
 	"\x0fevent_type_name\x18\x04 \x01(\tR\reventTypeName\x12!\n" +
-	"\fpayload_hash\x18\x05 \x01(\fR\vpayloadHash\"\x82\x02\n" +
+	"\fpayload_hash\x18\x05 \x01(\fR\vpayloadHash\"\x86\x02\n" +
 	"\x13ActorSignatureInput\x12#\n" +
-	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12\x19\n" +
-	"\bactor_id\x18\x02 \x01(\tR\aactorId\x124\n" +
+	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x02 \x01(\tR\tactorPtid\x124\n" +
 	"\x16actor_federated_handle\x18\x03 \x01(\tR\x14actorFederatedHandle\x12&\n" +
 	"\x0fevent_type_name\x18\x04 \x01(\tR\reventTypeName\x12!\n" +
 	"\fpayload_hash\x18\x05 \x01(\fR\vpayloadHash\x12*\n" +
@@ -1908,104 +1910,105 @@ const file_domain_federation_federation_ledger_proto_rawDesc = "" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x1d\n" +
 	"\n" +
-	"event_hash\x18\x03 \x01(\fR\teventHash\"\xde\x04\n" +
+	"event_hash\x18\x03 \x01(\fR\teventHash\"\xe2\x04\n" +
 	"\x18FederationCreatedPayload\x12#\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1f\n" +
 	"\vpolicy_type\x18\x04 \x01(\tR\n" +
 	"policyType\x129\n" +
-	"\x19sequencer_station_peer_id\x18\x05 \x01(\tR\x16sequencerStationPeerId\x12(\n" +
-	"\x10creator_actor_id\x18\x06 \x01(\tR\x0ecreatorActorId\x12C\n" +
+	"\x19sequencer_station_peer_id\x18\x05 \x01(\tR\x16sequencerStationPeerId\x12,\n" +
+	"\x12creator_actor_ptid\x18\x06 \x01(\tR\x10creatorActorPtid\x12C\n" +
 	"\x1ecreator_actor_federated_handle\x18\a \x01(\tR\x1bcreatorActorFederatedHandle\x125\n" +
 	"\x17creator_station_peer_id\x18\b \x01(\tR\x14creatorStationPeerId\x12;\n" +
 	"\x1acreator_station_public_key\x18\t \x01(\fR\x17creatorStationPublicKey\x120\n" +
 	"\x14creator_station_name\x18\n" +
 	" \x01(\tR\x12creatorStationName\x12.\n" +
 	"\x13creator_station_url\x18\v \x01(\tR\x11creatorStationUrl\x12F\n" +
-	" creator_actor_signing_public_key\x18\f \x01(\fR\x1ccreatorActorSigningPublicKey\"\xea\x02\n" +
+	" creator_actor_signing_public_key\x18\f \x01(\fR\x1ccreatorActorSigningPublicKey\"\xee\x02\n" +
 	"\x15StationInvitedPayload\x123\n" +
 	"\x16target_station_peer_id\x18\x01 \x01(\tR\x13targetStationPeerId\x12.\n" +
 	"\x13target_station_name\x18\x02 \x01(\tR\x11targetStationName\x12,\n" +
-	"\x12target_station_url\x18\x03 \x01(\tR\x10targetStationUrl\x12-\n" +
-	"\x13invited_by_actor_id\x18\x04 \x01(\tR\x10invitedByActorId\x12H\n" +
+	"\x12target_station_url\x18\x03 \x01(\tR\x10targetStationUrl\x121\n" +
+	"\x15invited_by_actor_ptid\x18\x04 \x01(\tR\x12invitedByActorPtid\x12H\n" +
 	"!invited_by_actor_federated_handle\x18\x05 \x01(\tR\x1dinvitedByActorFederatedHandle\x12\x18\n" +
 	"\amessage\x18\x06 \x01(\tR\amessage\x12+\n" +
-	"\x12expires_at_unix_ms\x18\a \x01(\x03R\x0fexpiresAtUnixMs\"\xa0\x03\n" +
+	"\x12expires_at_unix_ms\x18\a \x01(\x03R\x0fexpiresAtUnixMs\"\xa4\x03\n" +
 	"\x1bStationJoinRequestedPayload\x12;\n" +
 	"\x1arequesting_station_peer_id\x18\x01 \x01(\tR\x17requestingStationPeerId\x126\n" +
 	"\x17requesting_station_name\x18\x02 \x01(\tR\x15requestingStationName\x124\n" +
 	"\x16requesting_station_url\x18\x03 \x01(\tR\x14requestingStationUrl\x12A\n" +
-	"\x1drequesting_station_public_key\x18\x04 \x01(\fR\x1arequestingStationPublicKey\x12.\n" +
-	"\x13requesting_actor_id\x18\x05 \x01(\tR\x11requestingActorId\x12I\n" +
+	"\x1drequesting_station_public_key\x18\x04 \x01(\fR\x1arequestingStationPublicKey\x122\n" +
+	"\x15requesting_actor_ptid\x18\x05 \x01(\tR\x13requestingActorPtid\x12I\n" +
 	"!requesting_actor_federated_handle\x18\x06 \x01(\tR\x1erequestingActorFederatedHandle\x12\x18\n" +
-	"\amessage\x18\a \x01(\tR\amessage\"\xcc\x02\n" +
+	"\amessage\x18\a \x01(\tR\amessage\"\xd0\x02\n" +
 	"\x1aStationJoinApprovedPayload\x127\n" +
-	"\x18approved_station_peer_id\x18\x01 \x01(\tR\x15approvedStationPeerId\x12/\n" +
-	"\x14approved_by_actor_id\x18\x02 \x01(\tR\x11approvedByActorId\x12J\n" +
+	"\x18approved_station_peer_id\x18\x01 \x01(\tR\x15approvedStationPeerId\x123\n" +
+	"\x16approved_by_actor_ptid\x18\x02 \x01(\tR\x13approvedByActorPtid\x12J\n" +
 	"\"approved_by_actor_federated_handle\x18\x03 \x01(\tR\x1eapprovedByActorFederatedHandle\x12\x12\n" +
 	"\x04role\x18\x04 \x01(\tR\x04role\x120\n" +
 	"\x14approved_station_url\x18\x05 \x01(\tR\x12approvedStationUrl\x122\n" +
-	"\x15approved_station_name\x18\x06 \x01(\tR\x13approvedStationName\"\xd2\x01\n" +
+	"\x15approved_station_name\x18\x06 \x01(\tR\x13approvedStationName\"\xd6\x01\n" +
 	"\x12StationLeftPayload\x125\n" +
-	"\x17leaving_station_peer_id\x18\x01 \x01(\tR\x14leavingStationPeerId\x12(\n" +
-	"\x10leaving_actor_id\x18\x02 \x01(\tR\x0eleavingActorId\x12C\n" +
+	"\x17leaving_station_peer_id\x18\x01 \x01(\tR\x14leavingStationPeerId\x12,\n" +
+	"\x12leaving_actor_ptid\x18\x02 \x01(\tR\x10leavingActorPtid\x12C\n" +
 	"\x1eleaving_actor_federated_handle\x18\x03 \x01(\tR\x1bleavingActorFederatedHandle\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xe7\x01\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xeb\x01\n" +
 	"\x17StationSuspendedPayload\x123\n" +
-	"\x16target_station_peer_id\x18\x01 \x01(\tR\x13targetStationPeerId\x121\n" +
-	"\x15suspended_by_actor_id\x18\x02 \x01(\tR\x12suspendedByActorId\x12L\n" +
+	"\x16target_station_peer_id\x18\x01 \x01(\tR\x13targetStationPeerId\x125\n" +
+	"\x17suspended_by_actor_ptid\x18\x02 \x01(\tR\x14suspendedByActorPtid\x12L\n" +
 	"#suspended_by_actor_federated_handle\x18\x03 \x01(\tR\x1fsuspendedByActorFederatedHandle\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xdd\x01\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xe1\x01\n" +
 	"\x15StationRemovedPayload\x123\n" +
-	"\x16target_station_peer_id\x18\x01 \x01(\tR\x13targetStationPeerId\x12-\n" +
-	"\x13removed_by_actor_id\x18\x02 \x01(\tR\x10removedByActorId\x12H\n" +
+	"\x16target_station_peer_id\x18\x01 \x01(\tR\x13targetStationPeerId\x121\n" +
+	"\x15removed_by_actor_ptid\x18\x02 \x01(\tR\x12removedByActorPtid\x12H\n" +
 	"!removed_by_actor_federated_handle\x18\x03 \x01(\tR\x1dremovedByActorFederatedHandle\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xc2\x02\n" +
-	"\x13AdminGrantedPayload\x12&\n" +
-	"\x0ftarget_actor_id\x18\x01 \x01(\tR\rtargetActorId\x12A\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xca\x02\n" +
+	"\x13AdminGrantedPayload\x12*\n" +
+	"\x11target_actor_ptid\x18\x01 \x01(\tR\x0ftargetActorPtid\x12A\n" +
 	"\x1dtarget_actor_federated_handle\x18\x02 \x01(\tR\x1atargetActorFederatedHandle\x123\n" +
 	"\x16target_station_peer_id\x18\x03 \x01(\tR\x13targetStationPeerId\x12\x12\n" +
-	"\x04role\x18\x04 \x01(\tR\x04role\x12-\n" +
-	"\x13granted_by_actor_id\x18\x05 \x01(\tR\x10grantedByActorId\x12H\n" +
-	"!granted_by_actor_federated_handle\x18\x06 \x01(\tR\x1dgrantedByActorFederatedHandle\"\xe9\x02\n" +
-	"\x13AdminRevokedPayload\x12&\n" +
-	"\x0ftarget_actor_id\x18\x01 \x01(\tR\rtargetActorId\x12A\n" +
+	"\x04role\x18\x04 \x01(\tR\x04role\x121\n" +
+	"\x15granted_by_actor_ptid\x18\x05 \x01(\tR\x12grantedByActorPtid\x12H\n" +
+	"!granted_by_actor_federated_handle\x18\x06 \x01(\tR\x1dgrantedByActorFederatedHandle\"\xf1\x02\n" +
+	"\x13AdminRevokedPayload\x12*\n" +
+	"\x11target_actor_ptid\x18\x01 \x01(\tR\x0ftargetActorPtid\x12A\n" +
 	"\x1dtarget_actor_federated_handle\x18\x02 \x01(\tR\x1atargetActorFederatedHandle\x123\n" +
 	"\x16target_station_peer_id\x18\x03 \x01(\tR\x13targetStationPeerId\x12!\n" +
-	"\frevoked_role\x18\x04 \x01(\tR\vrevokedRole\x12-\n" +
-	"\x13revoked_by_actor_id\x18\x05 \x01(\tR\x10revokedByActorId\x12H\n" +
+	"\frevoked_role\x18\x04 \x01(\tR\vrevokedRole\x121\n" +
+	"\x15revoked_by_actor_ptid\x18\x05 \x01(\tR\x12revokedByActorPtid\x12H\n" +
 	"!revoked_by_actor_federated_handle\x18\x06 \x01(\tR\x1drevokedByActorFederatedHandle\x12\x16\n" +
-	"\x06reason\x18\a \x01(\tR\x06reason\"\x8f\x02\n" +
+	"\x06reason\x18\a \x01(\tR\x06reason\"\x93\x02\n" +
 	"\x14PolicyUpdatedPayload\x12&\n" +
 	"\x0fold_policy_type\x18\x01 \x01(\tR\roldPolicyType\x12&\n" +
 	"\x0fnew_policy_type\x18\x02 \x01(\tR\rnewPolicyType\x12.\n" +
-	"\x13policy_params_bytes\x18\x03 \x01(\fR\x11policyParamsBytes\x12-\n" +
-	"\x13updated_by_actor_id\x18\x04 \x01(\tR\x10updatedByActorId\x12H\n" +
-	"!updated_by_actor_federated_handle\x18\x05 \x01(\tR\x1dupdatedByActorFederatedHandle\"\xb6\x02\n" +
+	"\x13policy_params_bytes\x18\x03 \x01(\fR\x11policyParamsBytes\x121\n" +
+	"\x15updated_by_actor_ptid\x18\x04 \x01(\tR\x12updatedByActorPtid\x12H\n" +
+	"!updated_by_actor_federated_handle\x18\x05 \x01(\tR\x1dupdatedByActorFederatedHandle\"\xba\x02\n" +
 	"\x17SequencerChangedPayload\x12@\n" +
 	"\x1dold_sequencer_station_peer_id\x18\x01 \x01(\tR\x19oldSequencerStationPeerId\x12@\n" +
 	"\x1dnew_sequencer_station_peer_id\x18\x02 \x01(\tR\x19newSequencerStationPeerId\x12\x16\n" +
-	"\x06reason\x18\x03 \x01(\tR\x06reason\x121\n" +
-	"\x15initiated_by_actor_id\x18\x04 \x01(\tR\x12initiatedByActorId\x12L\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\x125\n" +
+	"\x17initiated_by_actor_ptid\x18\x04 \x01(\tR\x14initiatedByActorPtid\x12L\n" +
 	"#initiated_by_actor_federated_handle\x18\x05 \x01(\tR\x1finitiatedByActorFederatedHandle\"\xc2\x01\n" +
 	"\x18StationKeyRotatedPayload\x12&\n" +
 	"\x0fstation_peer_id\x18\x01 \x01(\tR\rstationPeerId\x12$\n" +
 	"\x0eold_public_key\x18\x02 \x01(\fR\foldPublicKey\x12$\n" +
 	"\x0enew_public_key\x18\x03 \x01(\fR\fnewPublicKey\x122\n" +
-	"\x16new_key_valid_from_seq\x18\x04 \x01(\x04R\x12newKeyValidFromSeq\"\xb0\x01\n" +
-	"\x19FederationArchivedPayload\x12/\n" +
-	"\x14archived_by_actor_id\x18\x01 \x01(\tR\x11archivedByActorId\x12J\n" +
+	"\x16new_key_valid_from_seq\x18\x04 \x01(\x04R\x12newKeyValidFromSeq\"\xb4\x01\n" +
+	"\x19FederationArchivedPayload\x123\n" +
+	"\x16archived_by_actor_ptid\x18\x01 \x01(\tR\x13archivedByActorPtid\x12J\n" +
 	"\"archived_by_actor_federated_handle\x18\x02 \x01(\tR\x1earchivedByActorFederatedHandle\x12\x16\n" +
-	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xc5\x05\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xc9\x05\n" +
 	"\x0eLedgerProposal\x12\x1f\n" +
 	"\vproposal_id\x18\x01 \x01(\tR\n" +
 	"proposalId\x12#\n" +
 	"\rfederation_id\x18\x02 \x01(\tR\ffederationId\x12Z\n" +
 	"\x13proposed_event_type\x18\x03 \x01(\x0e2*.peers_touch.model.federation.v1.EventTypeR\x11proposedEventType\x12#\n" +
 	"\rpayload_bytes\x18\x04 \x01(\fR\fpayloadBytes\x12!\n" +
-	"\fpayload_hash\x18\x05 \x01(\fR\vpayloadHash\x12\x19\n" +
-	"\bactor_id\x18\x06 \x01(\tR\aactorId\x124\n" +
+	"\fpayload_hash\x18\x05 \x01(\fR\vpayloadHash\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x06 \x01(\tR\tactorPtid\x124\n" +
 	"\x16actor_federated_handle\x18\a \x01(\tR\x14actorFederatedHandle\x12&\n" +
 	"\x0fstation_peer_id\x18\b \x01(\tR\rstationPeerId\x12'\n" +
 	"\x0factor_signature\x18\t \x01(\fR\x0eactorSignature\x12+\n" +

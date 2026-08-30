@@ -24,15 +24,15 @@ func NewCircleService(repos *infrastructure.Repos) *CircleService {
 	return &CircleService{repos: repos, conv: domain.NewPostConverter()}
 }
 
-func (s *CircleService) Create(ctx context.Context, req *model.CreateCircleRequest, ownerID uint64) (*model.Circle, error) {
-	if ownerID == 0 {
+func (s *CircleService) Create(ctx context.Context, req *model.CreateCircleRequest, ownerPTID string) (*model.Circle, error) {
+	if ownerPTID == "" {
 		return nil, fmt.Errorf("authentication required")
 	}
 	if req == nil {
 		return nil, fmt.Errorf("CreateCircleRequest is nil")
 	}
 	c := &domain.Circle{
-		OwnerID:     ownerID,
+		OwnerPTID:   ownerPTID,
 		Name:        req.Name,
 		Description: req.Description,
 	}
@@ -42,23 +42,23 @@ func (s *CircleService) Create(ctx context.Context, req *model.CreateCircleReque
 	if err := s.repos.Circles.Create(ctx, c); err != nil {
 		return nil, fmt.Errorf("create circle: %w", err)
 	}
-	if len(req.MemberDids) > 0 {
-		added, total, err := s.repos.Circles.AddMembers(ctx, c.ID, req.MemberDids)
+	if len(req.MemberPtids) > 0 {
+		added, total, err := s.repos.Circles.AddMembers(ctx, c.ID, req.MemberPtids)
 		if err != nil {
 			logger.Warn(ctx, "circle.create: initial member add partial", "circle_id", c.ID, "error", err)
 		}
 		c.MemberCount = total
 		_ = added
 	}
-	logger.Info(ctx, "circle.created", "circle_id", c.ID, "owner_id", ownerID)
+	logger.Info(ctx, "circle.created", "circle_id", c.ID, "owner_ptid", ownerPTID)
 	return s.conv.CircleToProto(c), nil
 }
 
-func (s *CircleService) Rename(ctx context.Context, req *model.RenameCircleRequest, ownerID uint64) (*model.Circle, error) {
-	if ownerID == 0 {
+func (s *CircleService) Rename(ctx context.Context, req *model.RenameCircleRequest, ownerPTID string) (*model.Circle, error) {
+	if ownerPTID == "" {
 		return nil, fmt.Errorf("authentication required")
 	}
-	c, err := s.assertOwner(ctx, req.CircleId, ownerID)
+	c, err := s.assertOwner(ctx, req.CircleId, ownerPTID)
 	if err != nil {
 		return nil, err
 	}
@@ -75,42 +75,42 @@ func (s *CircleService) Rename(ctx context.Context, req *model.RenameCircleReque
 	return s.conv.CircleToProto(c), nil
 }
 
-func (s *CircleService) Delete(ctx context.Context, circleID, ownerID uint64) error {
-	if ownerID == 0 {
+func (s *CircleService) Delete(ctx context.Context, circleID uint64, ownerPTID string) error {
+	if ownerPTID == "" {
 		return fmt.Errorf("authentication required")
 	}
-	if _, err := s.assertOwner(ctx, circleID, ownerID); err != nil {
+	if _, err := s.assertOwner(ctx, circleID, ownerPTID); err != nil {
 		return err
 	}
-	if err := s.repos.Circles.Delete(ctx, circleID, ownerID); err != nil {
+	if err := s.repos.Circles.Delete(ctx, circleID, ownerPTID); err != nil {
 		return err
 	}
-	logger.Info(ctx, "circle.deleted", "circle_id", circleID, "owner_id", ownerID)
+	logger.Info(ctx, "circle.deleted", "circle_id", circleID, "owner_ptid", ownerPTID)
 	return nil
 }
 
-func (s *CircleService) AddMembers(ctx context.Context, req *model.AddCircleMemberRequest, ownerID uint64) (added int32, total int64, err error) {
-	if ownerID == 0 {
+func (s *CircleService) AddMembers(ctx context.Context, req *model.AddCircleMemberRequest, ownerPTID string) (added int32, total int64, err error) {
+	if ownerPTID == "" {
 		return 0, 0, fmt.Errorf("authentication required")
 	}
-	if _, err = s.assertOwner(ctx, req.CircleId, ownerID); err != nil {
+	if _, err = s.assertOwner(ctx, req.CircleId, ownerPTID); err != nil {
 		return 0, 0, err
 	}
-	return s.repos.Circles.AddMembers(ctx, req.CircleId, req.MemberDids)
+	return s.repos.Circles.AddMembers(ctx, req.CircleId, req.MemberPtids)
 }
 
-func (s *CircleService) RemoveMembers(ctx context.Context, req *model.RemoveCircleMemberRequest, ownerID uint64) (removed int32, total int64, err error) {
-	if ownerID == 0 {
+func (s *CircleService) RemoveMembers(ctx context.Context, req *model.RemoveCircleMemberRequest, ownerPTID string) (removed int32, total int64, err error) {
+	if ownerPTID == "" {
 		return 0, 0, fmt.Errorf("authentication required")
 	}
-	if _, err = s.assertOwner(ctx, req.CircleId, ownerID); err != nil {
+	if _, err = s.assertOwner(ctx, req.CircleId, ownerPTID); err != nil {
 		return 0, 0, err
 	}
-	return s.repos.Circles.RemoveMembers(ctx, req.CircleId, req.MemberDids)
+	return s.repos.Circles.RemoveMembers(ctx, req.CircleId, req.MemberPtids)
 }
 
-func (s *CircleService) ListMine(ctx context.Context, ownerID uint64, cursor string, limit int) (*model.ListMyCirclesResponse, error) {
-	if ownerID == 0 {
+func (s *CircleService) ListMine(ctx context.Context, ownerPTID string, cursor string, limit int) (*model.ListMyCirclesResponse, error) {
+	if ownerPTID == "" {
 		return nil, fmt.Errorf("authentication required")
 	}
 	c, err := domain.DecodeCursor(cursor)
@@ -120,7 +120,7 @@ func (s *CircleService) ListMine(ctx context.Context, ownerID uint64, cursor str
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	rows, err := s.repos.Circles.ListByOwner(ctx, ownerID, c, limit+1)
+	rows, err := s.repos.Circles.ListByOwner(ctx, ownerPTID, c, limit+1)
 	if err != nil {
 		return nil, err
 	}
@@ -140,11 +140,11 @@ func (s *CircleService) ListMine(ctx context.Context, ownerID uint64, cursor str
 	return &model.ListMyCirclesResponse{Circles: out, NextCursor: nextCursor, HasMore: hasMore}, nil
 }
 
-func (s *CircleService) ListMembers(ctx context.Context, req *model.ListCircleMembersRequest, ownerID uint64) (*model.ListCircleMembersResponse, error) {
-	if ownerID == 0 {
+func (s *CircleService) ListMembers(ctx context.Context, req *model.ListCircleMembersRequest, ownerPTID string) (*model.ListCircleMembersResponse, error) {
+	if ownerPTID == "" {
 		return nil, fmt.Errorf("authentication required")
 	}
-	if _, err := s.assertOwner(ctx, req.CircleId, ownerID); err != nil {
+	if _, err := s.assertOwner(ctx, req.CircleId, ownerPTID); err != nil {
 		return nil, err
 	}
 	c, err := domain.DecodeCursor(req.Cursor)
@@ -175,7 +175,7 @@ func (s *CircleService) ListMembers(ctx context.Context, req *model.ListCircleMe
 	return &model.ListCircleMembersResponse{Members: out, NextCursor: nextCursor, HasMore: hasMore}, nil
 }
 
-func (s *CircleService) assertOwner(ctx context.Context, circleID, ownerID uint64) (*domain.Circle, error) {
+func (s *CircleService) assertOwner(ctx context.Context, circleID uint64, ownerPTID string) (*domain.Circle, error) {
 	c, err := s.repos.Circles.GetByID(ctx, circleID)
 	if err != nil {
 		return nil, err
@@ -183,7 +183,7 @@ func (s *CircleService) assertOwner(ctx context.Context, circleID, ownerID uint6
 	if c == nil {
 		return nil, fmt.Errorf("circle %d not found", circleID)
 	}
-	if c.OwnerID != ownerID {
+	if c.OwnerPTID != ownerPTID {
 		return nil, fmt.Errorf("circle %d is not owned by caller", circleID)
 	}
 	return c, nil

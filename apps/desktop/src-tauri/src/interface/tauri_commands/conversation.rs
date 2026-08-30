@@ -755,7 +755,7 @@ pub fn keypackage_count(state: State<'_, Arc<AppState>>, window: Window) -> AppR
 }
 
 fn user_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> String {
-    session_resolver::actor_id_for_window(state.inner(), window).unwrap_or_default()
+    session_resolver::ptid_for_window(state.inner(), window).unwrap_or_default()
 }
 
 // --- Device commands ---
@@ -865,11 +865,11 @@ pub fn dkx_send(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let actor_id = user_scope_from_state(&state, &window);
-    if actor_id.trim().is_empty() {
+    let actor_ptid = user_scope_from_state(&state, &window);
+    if actor_ptid.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let sender_device_id = match device_install::get_or_create_device_id(&actor_id) {
+    let sender_device_id = match device_install::get_or_create_device_id(&actor_ptid) {
         Ok(device_id) => device_id,
         Err(error) => {
             return AppResult::fail(

@@ -29,7 +29,7 @@ import { GroupMessageSchema, type GroupMessage } from '../gen/proto/domain/chat/
 import { NotificationType } from '../gen/proto/domain/notification/notification_pb';
 import { useNotificationStore } from '../store/notification';
 import { useNavigationBadgeStore } from '../store/navigationBadges';
-import { currentAuthenticatedActorId, useSessionStore } from '../store/session';
+import { currentAuthenticatedActorPtid, useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
 import { conversationKey, conversationSuppressesAlerts } from '../store/socialProjection';
 import { log } from '../utils/logger';
@@ -47,12 +47,12 @@ let teardownBridge: (() => void) | null = null;
 let typingSweepTimer: number | null = null;
 let socialReconcileTimer: number | null = null;
 let externalHostReconcileTimer: number | null = null;
-let bootstrappedActorId: string | null = null;
+let bootstrappedActorPtid: string | null = null;
 let bootstrapSequence = 0;
-let realtimeStreamActorId: string | null = null;
+let realtimeStreamActorPtid: string | null = null;
 let realtimeStreamTransition: Promise<void> = Promise.resolve();
 let socialRefreshInFlight: {
-  actorId: string;
+  actorPtid: string;
   promise: Promise<void>;
 } | null = null;
 let coldResyncInFlight = false;
@@ -104,14 +104,14 @@ function rememberBounded(set: Set<string>, key: string, maxSize: number): boolea
  * trigger a refresh from view-mount effects.
  */
 export async function refreshSocialProjection(label: string, includeNotifications = false): Promise<void> {
-  const actorId = currentAuthenticatedActorId();
-  if (!actorId) return;
+  const actorPtid = currentAuthenticatedActorPtid();
+  if (!actorPtid) return;
   if (socialRefreshInFlight) {
-    if (socialRefreshInFlight.actorId === actorId) {
+    if (socialRefreshInFlight.actorPtid === actorPtid) {
       return socialRefreshInFlight.promise;
     }
     await socialRefreshInFlight.promise;
-    if (currentAuthenticatedActorId() !== actorId) return;
+    if (currentAuthenticatedActorPtid() !== actorPtid) return;
     return refreshSocialProjection(label, includeNotifications);
   }
 
@@ -121,7 +121,7 @@ export async function refreshSocialProjection(label: string, includeNotification
     const chat = useSocialChatStore.getState();
     const notifications = useNotificationStore.getState();
     await Promise.allSettled([chat.loadCurrentUserProfile()]);
-    if (currentAuthenticatedActorId() !== actorId) return;
+    if (currentAuthenticatedActorPtid() !== actorPtid) return;
 
     await Promise.allSettled([
       chat.loadFriendRequests(),
@@ -129,7 +129,7 @@ export async function refreshSocialProjection(label: string, includeNotification
       notifications.refreshUnreadCounts(),
       includeNotifications ? notifications.loadNotifications() : Promise.resolve(),
     ]);
-    if (currentAuthenticatedActorId() !== actorId) return;
+    if (currentAuthenticatedActorPtid() !== actorPtid) return;
 
     const refreshed = useSocialChatStore.getState();
     const peerPtids = Array.from(new Set(
@@ -139,21 +139,21 @@ export async function refreshSocialProjection(label: string, includeNotification
       ]
         .flat()
         .map((member) => member.ptid)
-        .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserDid),
+        .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserPtid),
     ));
     await Promise.allSettled([
       ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
       refreshed.loadGroupUnreadCounts(),
       refreshed.loadConversationPreviews(),
     ]);
-    if (currentAuthenticatedActorId() !== actorId) return;
+    if (currentAuthenticatedActorPtid() !== actorPtid) return;
 
     useNavigationBadgeStore.getState().reconcileChatBadge();
 
     log.info('socialRealtime', 'social projection refresh completed', { label });
   })();
   socialRefreshInFlight = {
-    actorId,
+    actorPtid,
     promise: refreshPromise,
   };
 
@@ -167,7 +167,7 @@ export async function refreshSocialProjection(label: string, includeNotification
 }
 
 export function dispatchSocialRuntimeHostEvent(event: SocialHostEvent): void {
-  if (!currentAuthenticatedActorId()) return;
+  if (!currentAuthenticatedActorPtid()) return;
 
   const sessionUlid = event.sessionUlid;
   if (sessionUlid) {
@@ -199,8 +199,8 @@ export function dispatchSocialRuntimeHostEvent(event: SocialHostEvent): void {
   }, EXTERNAL_HOST_RECONCILE_DEBOUNCE_MS);
 }
 
-async function bootstrapSocialProjection(actorId: string, sequence: number): Promise<void> {
-  log.info('socialRealtime', 'social projection bootstrap started', { actorId });
+async function bootstrapSocialProjection(actorPtid: string, sequence: number): Promise<void> {
+  log.info('socialRealtime', 'social projection bootstrap started', { actorPtid });
 
   await refreshSocialProjection('authenticated bootstrap', true);
 
@@ -209,49 +209,49 @@ async function bootstrapSocialProjection(actorId: string, sequence: number): Pro
   const refreshed = useSocialChatStore.getState();
   useMediaRuntimeStore.getState().prewarmMessages(refreshed.messages);
 
-  log.info('socialRealtime', 'social projection bootstrap completed', { actorId });
+  log.info('socialRealtime', 'social projection bootstrap completed', { actorPtid });
 }
 
 async function stopRealtimeStreamSupervisor(): Promise<void> {
-  if (!realtimeStreamActorId) return;
+  if (!realtimeStreamActorPtid) return;
   await stopEventStream();
-  realtimeStreamActorId = null;
+  realtimeStreamActorPtid = null;
 }
 
-async function startRealtimeStreamSupervisor(actorId: string): Promise<void> {
-  if (realtimeStreamActorId === actorId) return;
-  if (realtimeStreamActorId) {
+async function startRealtimeStreamSupervisor(actorPtid: string): Promise<void> {
+  if (realtimeStreamActorPtid === actorPtid) return;
+  if (realtimeStreamActorPtid) {
     await stopRealtimeStreamSupervisor();
   }
   await installEventStreamBridge();
   await startEventStream();
-  realtimeStreamActorId = actorId;
+  realtimeStreamActorPtid = actorPtid;
 }
 
 function reconcileAuthenticatedRuntime(): void {
-  const actorId = currentAuthenticatedActorId();
+  const actorPtid = currentAuthenticatedActorPtid();
 
-  if (!actorId) {
+  if (!actorPtid) {
     stopSocialReconcile();
     realtimeStreamTransition = realtimeStreamTransition.then(stopRealtimeStreamSupervisor).catch((error) => {
       log.warn('socialRealtime', 'realtime stream stop failed', error);
     });
-    if (bootstrappedActorId) {
-      bootstrappedActorId = null;
+    if (bootstrappedActorPtid) {
+      bootstrappedActorPtid = null;
       bootstrapSequence += 1;
     }
     return;
   }
 
-  realtimeStreamTransition = realtimeStreamTransition.then(() => startRealtimeStreamSupervisor(actorId)).catch((error) => {
+  realtimeStreamTransition = realtimeStreamTransition.then(() => startRealtimeStreamSupervisor(actorPtid)).catch((error) => {
     log.warn('socialRealtime', 'realtime stream start failed', error);
   });
   startSocialReconcile();
 
-  if (bootstrappedActorId === actorId) return;
-  bootstrappedActorId = actorId;
+  if (bootstrappedActorPtid === actorPtid) return;
+  bootstrappedActorPtid = actorPtid;
   const sequence = ++bootstrapSequence;
-  runDetached('social projection bootstrap', () => bootstrapSocialProjection(actorId, sequence));
+  runDetached('social projection bootstrap', () => bootstrapSocialProjection(actorPtid, sequence));
 }
 
 function isVisibleConversation(
@@ -313,7 +313,7 @@ function decodeRealtimeMessage(
 
   try {
     const friendMessage = fromBinary(FriendChatMessageSchema, payload.ciphertext);
-    if (friendMessage.receiverDid) {
+    if (friendMessage.receiverPtid) {
       return { kind: 'friend', message: friendMessage };
     }
   } catch (error) {
@@ -357,7 +357,7 @@ function onMessageReceived(payload: RealtimeMessageReceivedPayload): void {
   const store = useSocialChatStore.getState();
   const isKnownGroup = store.groups.some((group) => group.ulid === payload.sessionUlid);
   const decodedMessage = decodeRealtimeMessage(payload, isKnownGroup);
-  const isSelfEcho = Boolean(store.currentUserDid && payload.senderActorId === store.currentUserDid);
+  const isSelfEcho = Boolean(store.currentUserPtid && payload.senderActorPtid === store.currentUserPtid);
   const isActiveConversation = isVisibleConversation(store, payload.sessionUlid, isKnownGroup);
 
   const notificationSuppressed = conversationSuppressesAlerts(
@@ -390,11 +390,11 @@ function onMessageReceipt(payload: RealtimeMessageReceiptPayload): void {
 }
 
 function onTypingState(payload: RealtimeTypingStatePayload): void {
-  if (!payload.sessionUlid || !payload.fromActorId) return;
+  if (!payload.sessionUlid || !payload.fromActorPtid) return;
 
   const store = useSocialChatStore.getState();
-  if (store.currentUserDid && payload.fromActorId === store.currentUserDid) return;
-  store.applyTypingState(payload.sessionUlid, payload.fromActorId, payload.typing);
+  if (store.currentUserPtid && payload.fromActorPtid === store.currentUserPtid) return;
+  store.applyTypingState(payload.sessionUlid, payload.fromActorPtid, payload.typing);
 }
 
 function onMessageMutation(payload: RealtimeMessageMutationPayload): void {
@@ -415,14 +415,14 @@ function onGroupMembershipChange(payload: RealtimeGroupMembershipChangePayload):
 
   runDetached('group membership refresh', async () => {
     const store = useSocialChatStore.getState();
-    const did = store.currentUserDid;
+    const did = store.currentUserPtid;
 
     if (payload.kind === 'DISSOLVED') {
       if (store.activeGroupUlid === payload.groupUlid) {
         store.selectGroup('');
       }
     } else if (payload.kind === 'REMOVED' || payload.kind === 'LEFT') {
-      if (did && payload.actorDid === did) {
+      if (did && payload.actorPtid === did) {
         store.selectGroup('');
       }
     }
@@ -455,9 +455,9 @@ function onNotificationProjectionChanged(): void {
 }
 
 function onPresenceFlip(payload: RealtimePresenceFlipPayload): void {
-  if (!payload.actorId) return;
+  if (!payload.actorPtid) return;
   const store = useSocialChatStore.getState();
-  store.setPeerOnline(payload.actorId, payload.online);
+  store.setPeerOnline(payload.actorPtid, payload.online);
 }
 
 function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
@@ -621,7 +621,7 @@ function stopTypingSweep(): void {
 function startSocialReconcile(): void {
   if (socialReconcileTimer) return;
   socialReconcileTimer = window.setInterval(() => {
-    if (!currentAuthenticatedActorId()) return;
+    if (!currentAuthenticatedActorPtid()) return;
     runDetached('periodic social projection refresh', () => (
       refreshSocialProjection('periodic reconcile', true)
     ));

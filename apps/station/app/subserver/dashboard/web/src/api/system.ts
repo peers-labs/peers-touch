@@ -24,7 +24,7 @@ export interface AuditLog {
 
 export interface PeersSession {
   session_id: string;
-  user_id: number;
+  actor_ptid: string;
   preferred_username: string;
   email: string;
   device_type: string;
@@ -77,8 +77,8 @@ export async function getActivePeersSessions(): Promise<{ count: number; items: 
 }
 
 /** Revoke a specific Peers user session. */
-export async function revokePeersSession(sessionId: string): Promise<void> {
-  await client.post(`/sessions/${sessionId}/revoke`);
+export async function revokePeersSession(actorPTID: string, sessionId: string): Promise<void> {
+  await client.post(`/sessions/${encodeURIComponent(actorPTID)}/${encodeURIComponent(sessionId)}/revoke`);
 }
 
 /** Fetch all active dashboard admin sessions. */

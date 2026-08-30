@@ -316,7 +316,7 @@ type ChatSession struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Topic              string                 `protobuf:"bytes,2,opt,name=topic,proto3" json:"topic,omitempty"`
-	ParticipantIds     []string               `protobuf:"bytes,3,rep,name=participant_ids,json=participantIds,proto3" json:"participant_ids,omitempty"`
+	ParticipantPtids   []string               `protobuf:"bytes,3,rep,name=participant_ptids,json=participantPtids,proto3" json:"participant_ptids,omitempty"`
 	LastMessageAt      *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=last_message_at,json=lastMessageAt,proto3" json:"last_message_at,omitempty"`
 	LastMessageSnippet string                 `protobuf:"bytes,5,opt,name=last_message_snippet,json=lastMessageSnippet,proto3" json:"last_message_snippet,omitempty"`
 	Type               SessionType            `protobuf:"varint,6,opt,name=type,proto3,enum=peers_touch.model.chat.v1.SessionType" json:"type,omitempty"`
@@ -375,9 +375,9 @@ func (x *ChatSession) GetTopic() string {
 	return ""
 }
 
-func (x *ChatSession) GetParticipantIds() []string {
+func (x *ChatSession) GetParticipantPtids() []string {
 	if x != nil {
-		return x.ParticipantIds
+		return x.ParticipantPtids
 	}
 	return nil
 }
@@ -457,7 +457,7 @@ type ChatMessage struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	SessionId        string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	SenderId         string                 `protobuf:"bytes,3,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
+	SenderPtid       string                 `protobuf:"bytes,3,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
 	Content          string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
 	SentAt           *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
 	Type             MessageType            `protobuf:"varint,6,opt,name=type,proto3,enum=peers_touch.model.chat.v1.MessageType" json:"type,omitempty"`
@@ -465,11 +465,11 @@ type ChatMessage struct {
 	EncryptedContent string                 `protobuf:"bytes,8,opt,name=encrypted_content,json=encryptedContent,proto3" json:"encrypted_content,omitempty"` // 加密内容
 	Attachments      []*MessageAttachment   `protobuf:"bytes,9,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	Metadata         map[string]string      `protobuf:"bytes,10,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	ReplyToId        string                 `protobuf:"bytes,11,opt,name=reply_to_id,json=replyToId,proto3" json:"reply_to_id,omitempty"`        // Thread 回复的消息ID
-	MentionedIds     []string               `protobuf:"bytes,12,rep,name=mentioned_ids,json=mentionedIds,proto3" json:"mentioned_ids,omitempty"` // @的用户ID列表
-	MentionAll       bool                   `protobuf:"varint,13,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`      // @所有人
-	IsDeleted        bool                   `protobuf:"varint,14,opt,name=is_deleted,json=isDeleted,proto3" json:"is_deleted,omitempty"`         // 是否已删除/撤回
-	DeletedAt        *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`          // 删除时间
+	ReplyToId        string                 `protobuf:"bytes,11,opt,name=reply_to_id,json=replyToId,proto3" json:"reply_to_id,omitempty"`              // Thread 回复的消息ID
+	MentionedPtids   []string               `protobuf:"bytes,12,rep,name=mentioned_ptids,json=mentionedPtids,proto3" json:"mentioned_ptids,omitempty"` // @的用户PTID列表
+	MentionAll       bool                   `protobuf:"varint,13,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`            // @所有人
+	IsDeleted        bool                   `protobuf:"varint,14,opt,name=is_deleted,json=isDeleted,proto3" json:"is_deleted,omitempty"`               // 是否已删除/撤回
+	DeletedAt        *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`                // 删除时间
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -518,9 +518,9 @@ func (x *ChatMessage) GetSessionId() string {
 	return ""
 }
 
-func (x *ChatMessage) GetSenderId() string {
+func (x *ChatMessage) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderId
+		return x.SenderPtid
 	}
 	return ""
 }
@@ -581,9 +581,9 @@ func (x *ChatMessage) GetReplyToId() string {
 	return ""
 }
 
-func (x *ChatMessage) GetMentionedIds() []string {
+func (x *ChatMessage) GetMentionedPtids() []string {
 	if x != nil {
-		return x.MentionedIds
+		return x.MentionedPtids
 	}
 	return nil
 }
@@ -705,7 +705,7 @@ func (x *MessageAttachment) GetMetadata() map[string]string {
 // 好友关系
 type Friend struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
-	ActorId             string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid           string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Status              FriendshipStatus       `protobuf:"varint,2,opt,name=status,proto3,enum=peers_touch.model.chat.v1.FriendshipStatus" json:"status,omitempty"`
 	FriendshipCreatedAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=friendship_created_at,json=friendshipCreatedAt,proto3" json:"friendship_created_at,omitempty"`
 	PublicKey           string                 `protobuf:"bytes,4,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"` // 用于端到端加密
@@ -744,9 +744,9 @@ func (*Friend) Descriptor() ([]byte, []int) {
 	return file_domain_chat_chat_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *Friend) GetActorId() string {
+func (x *Friend) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -781,14 +781,14 @@ func (x *Friend) GetMetadata() map[string]string {
 
 // 好友请求
 type FriendRequest struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	SenderId    string                 `protobuf:"bytes,2,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
-	ReceiverId  string                 `protobuf:"bytes,3,opt,name=receiver_id,json=receiverId,proto3" json:"receiver_id,omitempty"`
-	Message     string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
-	Status      FriendRequestStatus    `protobuf:"varint,5,opt,name=status,proto3,enum=peers_touch.model.chat.v1.FriendRequestStatus" json:"status,omitempty"`
-	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	RespondedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=responded_at,json=respondedAt,proto3" json:"responded_at,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Id           string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SenderPtid   string                 `protobuf:"bytes,2,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
+	ReceiverPtid string                 `protobuf:"bytes,3,opt,name=receiver_ptid,json=receiverPtid,proto3" json:"receiver_ptid,omitempty"`
+	Message      string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	Status       FriendRequestStatus    `protobuf:"varint,5,opt,name=status,proto3,enum=peers_touch.model.chat.v1.FriendRequestStatus" json:"status,omitempty"`
+	CreatedAt    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	RespondedAt  *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=responded_at,json=respondedAt,proto3" json:"responded_at,omitempty"`
 	// Enriched participant profile (populated at query time)
 	SenderDisplayName   string `protobuf:"bytes,8,opt,name=sender_display_name,json=senderDisplayName,proto3" json:"sender_display_name,omitempty"`
 	SenderAvatar        string `protobuf:"bytes,9,opt,name=sender_avatar,json=senderAvatar,proto3" json:"sender_avatar,omitempty"`
@@ -835,16 +835,16 @@ func (x *FriendRequest) GetId() string {
 	return ""
 }
 
-func (x *FriendRequest) GetSenderId() string {
+func (x *FriendRequest) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderId
+		return x.SenderPtid
 	}
 	return ""
 }
 
-func (x *FriendRequest) GetReceiverId() string {
+func (x *FriendRequest) GetReceiverPtid() string {
 	if x != nil {
-		return x.ReceiverId
+		return x.ReceiverPtid
 	}
 	return ""
 }
@@ -909,11 +909,11 @@ var File_domain_chat_chat_proto protoreflect.FileDescriptor
 
 const file_domain_chat_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x16domain/chat/chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x88\x05\n" +
+	"\x16domain/chat/chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9d\x05\n" +
 	"\vChatSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
-	"\x05topic\x18\x02 \x01(\tR\x05topic\x12'\n" +
-	"\x0fparticipant_ids\x18\x03 \x03(\tR\x0eparticipantIds\x12B\n" +
+	"\x05topic\x18\x02 \x01(\tR\x05topic\x12+\n" +
+	"\x11participant_ptids\x18\x03 \x03(\tR\x10participantPtids\x12B\n" +
 	"\x0flast_message_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\rlastMessageAt\x120\n" +
 	"\x14last_message_snippet\x18\x05 \x01(\tR\x12lastMessageSnippet\x12:\n" +
 	"\x04type\x18\x06 \x01(\x0e2&.peers_touch.model.chat.v1.SessionTypeR\x04type\x12\x1b\n" +
@@ -928,12 +928,13 @@ const file_domain_chat_chat_proto_rawDesc = "" +
 	"avatar_url\x18\r \x01(\tR\tavatarUrl\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf2\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01R\x0fparticipant_ids\"\x94\x06\n" +
 	"\vChatMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x1b\n" +
-	"\tsender_id\x18\x03 \x01(\tR\bsenderId\x12\x18\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x1f\n" +
+	"\vsender_ptid\x18\x03 \x01(\tR\n" +
+	"senderPtid\x12\x18\n" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x123\n" +
 	"\asent_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x12:\n" +
 	"\x04type\x18\x06 \x01(\x0e2&.peers_touch.model.chat.v1.MessageTypeR\x04type\x12@\n" +
@@ -942,8 +943,8 @@ const file_domain_chat_chat_proto_rawDesc = "" +
 	"\vattachments\x18\t \x03(\v2,.peers_touch.model.chat.v1.MessageAttachmentR\vattachments\x12P\n" +
 	"\bmetadata\x18\n" +
 	" \x03(\v24.peers_touch.model.chat.v1.ChatMessage.MetadataEntryR\bmetadata\x12\x1e\n" +
-	"\vreply_to_id\x18\v \x01(\tR\treplyToId\x12#\n" +
-	"\rmentioned_ids\x18\f \x03(\tR\fmentionedIds\x12\x1f\n" +
+	"\vreply_to_id\x18\v \x01(\tR\treplyToId\x12'\n" +
+	"\x0fmentioned_ptids\x18\f \x03(\tR\x0ementionedPtids\x12\x1f\n" +
 	"\vmention_all\x18\r \x01(\bR\n" +
 	"mentionAll\x12\x1d\n" +
 	"\n" +
@@ -952,7 +953,7 @@ const file_domain_chat_chat_proto_rawDesc = "" +
 	"deleted_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAt\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xab\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01R\tsender_idR\rmentioned_ids\"\xab\x02\n" +
 	"\x11MessageAttachment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -963,9 +964,10 @@ const file_domain_chat_chat_proto_rawDesc = "" +
 	"\bmetadata\x18\a \x03(\v2:.peers_touch.model.chat.v1.MessageAttachment.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe1\x02\n" +
-	"\x06Friend\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12C\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe5\x02\n" +
+	"\x06Friend\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12C\n" +
 	"\x06status\x18\x02 \x01(\x0e2+.peers_touch.model.chat.v1.FriendshipStatusR\x06status\x12N\n" +
 	"\x15friendship_created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x13friendshipCreatedAt\x12\x1d\n" +
 	"\n" +
@@ -973,12 +975,12 @@ const file_domain_chat_chat_proto_rawDesc = "" +
 	"\bmetadata\x18\x05 \x03(\v2/.peers_touch.model.chat.v1.Friend.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xeb\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8b\x04\n" +
 	"\rFriendRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
-	"\tsender_id\x18\x02 \x01(\tR\bsenderId\x12\x1f\n" +
-	"\vreceiver_id\x18\x03 \x01(\tR\n" +
-	"receiverId\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
+	"\vsender_ptid\x18\x02 \x01(\tR\n" +
+	"senderPtid\x12#\n" +
+	"\rreceiver_ptid\x18\x03 \x01(\tR\freceiverPtid\x12\x18\n" +
 	"\amessage\x18\x04 \x01(\tR\amessage\x12F\n" +
 	"\x06status\x18\x05 \x01(\x0e2..peers_touch.model.chat.v1.FriendRequestStatusR\x06status\x129\n" +
 	"\n" +
@@ -988,7 +990,7 @@ const file_domain_chat_chat_proto_rawDesc = "" +
 	"\rsender_avatar\x18\t \x01(\tR\fsenderAvatar\x122\n" +
 	"\x15receiver_display_name\x18\n" +
 	" \x01(\tR\x13receiverDisplayName\x12'\n" +
-	"\x0freceiver_avatar\x18\v \x01(\tR\x0ereceiverAvatar*\\\n" +
+	"\x0freceiver_avatar\x18\v \x01(\tR\x0ereceiverAvatarR\tsender_idR\vreceiver_id*\\\n" +
 	"\vSessionType\x12\x1c\n" +
 	"\x18SESSION_TYPE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13SESSION_TYPE_DIRECT\x10\x01\x12\x16\n" +

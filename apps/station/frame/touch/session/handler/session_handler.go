@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"strconv"
+	"fmt"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -19,19 +19,26 @@ func HandleVerifySession(ctx context.Context, req *pb.VerifySessionRequest) (*pb
 		}, nil
 	}
 
-	logger.Debug(ctx, "session verified successfully", "subject_id", subject.ID)
-
-	resp := &pb.VerifySessionResponse{
-		Valid:      true,
-		SubjectId:  subject.ID,
-		Attributes: subject.Attributes,
+	ptid, err := touchactor.ResolveSubjectPTID(ctx, subject.ID)
+	if err != nil {
+		logger.Debug(ctx, "session verification failed: subject is not a PTID")
+		return &pb.VerifySessionResponse{Valid: false}, nil
 	}
+
+	record, err := touchactor.GetActorByPTID(ctx, ptid)
+	if err != nil {
+		return nil, fmt.Errorf("verify session actor lookup failed: %w", err)
+	}
+	if record == nil {
+		logger.Debug(ctx, "session verification failed: actor not found")
+		return &pb.VerifySessionResponse{Valid: false}, nil
+	}
+
+	logger.Debug(ctx, "session verified successfully")
 	// TODO: pass a public base URL into session verify so acct can be user@host when not using edge headers.
-	if id, err := strconv.ParseUint(subject.ID, 10, 64); err == nil && id > 0 {
-		if act, err := touchactor.GetActorByID(ctx, id); err == nil && act != nil {
-			resp.ActorRef = touchactor.ProtoActorRef(act, "")
-		}
-	}
-
-	return resp, nil
+	return &pb.VerifySessionResponse{
+		Valid:      true,
+		Attributes: subject.Attributes,
+		ActorRef:   touchactor.ProtoActorRef(record, ""),
+	}, nil
 }

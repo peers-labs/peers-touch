@@ -9,8 +9,7 @@ package model
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	_ "google.golang.org/protobuf/types/known/anypb"
-	_ "google.golang.org/protobuf/types/known/timestamppb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -159,88 +158,10 @@ func (x *AuthTokens) GetExpiresAt() string {
 	return ""
 }
 
-// Actor identity returned in login/oauth-bridge responses.
-type AuthActorInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ActorId       int64                  `protobuf:"varint,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	Username      string                 `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	Email         string                 `protobuf:"bytes,5,opt,name=email,proto3" json:"email,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AuthActorInfo) Reset() {
-	*x = AuthActorInfo{}
-	mi := &file_domain_auth_auth_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AuthActorInfo) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AuthActorInfo) ProtoMessage() {}
-
-func (x *AuthActorInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_auth_auth_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AuthActorInfo.ProtoReflect.Descriptor instead.
-func (*AuthActorInfo) Descriptor() ([]byte, []int) {
-	return file_domain_auth_auth_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *AuthActorInfo) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *AuthActorInfo) GetActorId() int64 {
-	if x != nil {
-		return x.ActorId
-	}
-	return 0
-}
-
-func (x *AuthActorInfo) GetUsername() string {
-	if x != nil {
-		return x.Username
-	}
-	return ""
-}
-
-func (x *AuthActorInfo) GetDisplayName() string {
-	if x != nil {
-		return x.DisplayName
-	}
-	return ""
-}
-
-func (x *AuthActorInfo) GetEmail() string {
-	if x != nil {
-		return x.Email
-	}
-	return ""
-}
-
 type LoginResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Tokens        *AuthTokens            `protobuf:"bytes,1,opt,name=tokens,proto3" json:"tokens,omitempty"`
 	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Actor         *AuthActorInfo         `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
 	ActorRef      *ActorRef              `protobuf:"bytes,4,opt,name=actor_ref,proto3" json:"actor_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -248,7 +169,7 @@ type LoginResponse struct {
 
 func (x *LoginResponse) Reset() {
 	*x = LoginResponse{}
-	mi := &file_domain_auth_auth_proto_msgTypes[3]
+	mi := &file_domain_auth_auth_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -260,7 +181,7 @@ func (x *LoginResponse) String() string {
 func (*LoginResponse) ProtoMessage() {}
 
 func (x *LoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_auth_auth_proto_msgTypes[3]
+	mi := &file_domain_auth_auth_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -273,7 +194,7 @@ func (x *LoginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginResponse.ProtoReflect.Descriptor instead.
 func (*LoginResponse) Descriptor() ([]byte, []int) {
-	return file_domain_auth_auth_proto_rawDescGZIP(), []int{3}
+	return file_domain_auth_auth_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *LoginResponse) GetTokens() *AuthTokens {
@@ -290,13 +211,6 @@ func (x *LoginResponse) GetSessionId() string {
 	return ""
 }
 
-func (x *LoginResponse) GetActor() *AuthActorInfo {
-	if x != nil {
-		return x.Actor
-	}
-	return nil
-}
-
 func (x *LoginResponse) GetActorRef() *ActorRef {
 	if x != nil {
 		return x.ActorRef
@@ -304,11 +218,130 @@ func (x *LoginResponse) GetActorRef() *ActorRef {
 	return nil
 }
 
+// AuthSessionCandidate is an inactive pre-session result. It carries no token
+// material and cannot authorize business APIs. Station activates it only after
+// the bound Access Gate attempt reaches GRANTED.
+type AuthSessionCandidate struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	CandidateId         string                 `protobuf:"bytes,1,opt,name=candidate_id,json=candidateId,proto3" json:"candidate_id,omitempty"`
+	ActorRef            *ActorRef              `protobuf:"bytes,2,opt,name=actor_ref,proto3" json:"actor_ref,omitempty"`
+	OauthAttemptId      string                 `protobuf:"bytes,3,opt,name=oauth_attempt_id,json=oauthAttemptId,proto3" json:"oauth_attempt_id,omitempty"`
+	AccessAttemptId     string                 `protobuf:"bytes,4,opt,name=access_attempt_id,json=accessAttemptId,proto3" json:"access_attempt_id,omitempty"`
+	StationPeerId       string                 `protobuf:"bytes,5,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
+	IssuedAt            *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt           *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	DeviceId            string                 `protobuf:"bytes,8,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	LifecycleGeneration uint64                 `protobuf:"varint,9,opt,name=lifecycle_generation,json=lifecycleGeneration,proto3" json:"lifecycle_generation,omitempty"`
+	DecisionRevision    uint64                 `protobuf:"varint,10,opt,name=decision_revision,json=decisionRevision,proto3" json:"decision_revision,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *AuthSessionCandidate) Reset() {
+	*x = AuthSessionCandidate{}
+	mi := &file_domain_auth_auth_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthSessionCandidate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthSessionCandidate) ProtoMessage() {}
+
+func (x *AuthSessionCandidate) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_auth_auth_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthSessionCandidate.ProtoReflect.Descriptor instead.
+func (*AuthSessionCandidate) Descriptor() ([]byte, []int) {
+	return file_domain_auth_auth_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *AuthSessionCandidate) GetCandidateId() string {
+	if x != nil {
+		return x.CandidateId
+	}
+	return ""
+}
+
+func (x *AuthSessionCandidate) GetActorRef() *ActorRef {
+	if x != nil {
+		return x.ActorRef
+	}
+	return nil
+}
+
+func (x *AuthSessionCandidate) GetOauthAttemptId() string {
+	if x != nil {
+		return x.OauthAttemptId
+	}
+	return ""
+}
+
+func (x *AuthSessionCandidate) GetAccessAttemptId() string {
+	if x != nil {
+		return x.AccessAttemptId
+	}
+	return ""
+}
+
+func (x *AuthSessionCandidate) GetStationPeerId() string {
+	if x != nil {
+		return x.StationPeerId
+	}
+	return ""
+}
+
+func (x *AuthSessionCandidate) GetIssuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.IssuedAt
+	}
+	return nil
+}
+
+func (x *AuthSessionCandidate) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *AuthSessionCandidate) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *AuthSessionCandidate) GetLifecycleGeneration() uint64 {
+	if x != nil {
+		return x.LifecycleGeneration
+	}
+	return 0
+}
+
+func (x *AuthSessionCandidate) GetDecisionRevision() uint64 {
+	if x != nil {
+		return x.DecisionRevision
+	}
+	return 0
+}
+
 var File_domain_auth_auth_proto protoreflect.FileDescriptor
 
 const file_domain_auth_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x16domain/auth/auth.proto\x12\x19peers_touch.model.auth.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x19google/protobuf/any.proto\x1a\x18domain/actor/actor.proto\"a\n" +
+	"\x16domain/auth/auth.proto\x12\x19peers_touch.model.auth.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\"a\n" +
 	"\fLoginRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1f\n" +
@@ -322,19 +355,25 @@ const file_domain_auth_auth_proto_rawDesc = "" +
 	"\n" +
 	"token_type\x18\x04 \x01(\tR\ttokenType\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\x05 \x01(\tR\texpiresAt\"\x8f\x01\n" +
-	"\rAuthActorInfo\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
-	"\bactor_id\x18\x02 \x01(\x03R\aactorId\x12\x1a\n" +
-	"\busername\x18\x03 \x01(\tR\busername\x12!\n" +
-	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\x12\x14\n" +
-	"\x05email\x18\x05 \x01(\tR\x05email\"\xf1\x01\n" +
+	"expires_at\x18\x05 \x01(\tR\texpiresAt\"\xbe\x01\n" +
 	"\rLoginResponse\x12=\n" +
 	"\x06tokens\x18\x01 \x01(\v2%.peers_touch.model.auth.v1.AuthTokensR\x06tokens\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\x12>\n" +
-	"\x05actor\x18\x03 \x01(\v2(.peers_touch.model.auth.v1.AuthActorInfoR\x05actor\x12B\n" +
-	"\tactor_ref\x18\x04 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\tactor_refBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12B\n" +
+	"\tactor_ref\x18\x04 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\tactor_refJ\x04\b\x03\x10\x04R\x05actor\"\xec\x03\n" +
+	"\x14AuthSessionCandidate\x12!\n" +
+	"\fcandidate_id\x18\x01 \x01(\tR\vcandidateId\x12B\n" +
+	"\tactor_ref\x18\x02 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\tactor_ref\x12(\n" +
+	"\x10oauth_attempt_id\x18\x03 \x01(\tR\x0eoauthAttemptId\x12*\n" +
+	"\x11access_attempt_id\x18\x04 \x01(\tR\x0faccessAttemptId\x12&\n" +
+	"\x0fstation_peer_id\x18\x05 \x01(\tR\rstationPeerId\x127\n" +
+	"\tissued_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1b\n" +
+	"\tdevice_id\x18\b \x01(\tR\bdeviceId\x121\n" +
+	"\x14lifecycle_generation\x18\t \x01(\x04R\x13lifecycleGeneration\x12+\n" +
+	"\x11decision_revision\x18\n" +
+	" \x01(\x04R\x10decisionRevisionBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_auth_auth_proto_rawDescOnce sync.Once
@@ -350,21 +389,24 @@ func file_domain_auth_auth_proto_rawDescGZIP() []byte {
 
 var file_domain_auth_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_domain_auth_auth_proto_goTypes = []any{
-	(*LoginRequest)(nil),  // 0: peers_touch.model.auth.v1.LoginRequest
-	(*AuthTokens)(nil),    // 1: peers_touch.model.auth.v1.AuthTokens
-	(*AuthActorInfo)(nil), // 2: peers_touch.model.auth.v1.AuthActorInfo
-	(*LoginResponse)(nil), // 3: peers_touch.model.auth.v1.LoginResponse
-	(*ActorRef)(nil),      // 4: peers_touch.model.actor.v1.ActorRef
+	(*LoginRequest)(nil),          // 0: peers_touch.model.auth.v1.LoginRequest
+	(*AuthTokens)(nil),            // 1: peers_touch.model.auth.v1.AuthTokens
+	(*LoginResponse)(nil),         // 2: peers_touch.model.auth.v1.LoginResponse
+	(*AuthSessionCandidate)(nil),  // 3: peers_touch.model.auth.v1.AuthSessionCandidate
+	(*ActorRef)(nil),              // 4: peers_touch.model.actor.v1.ActorRef
+	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
 }
 var file_domain_auth_auth_proto_depIdxs = []int32{
 	1, // 0: peers_touch.model.auth.v1.LoginResponse.tokens:type_name -> peers_touch.model.auth.v1.AuthTokens
-	2, // 1: peers_touch.model.auth.v1.LoginResponse.actor:type_name -> peers_touch.model.auth.v1.AuthActorInfo
-	4, // 2: peers_touch.model.auth.v1.LoginResponse.actor_ref:type_name -> peers_touch.model.actor.v1.ActorRef
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 1: peers_touch.model.auth.v1.LoginResponse.actor_ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	4, // 2: peers_touch.model.auth.v1.AuthSessionCandidate.actor_ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	5, // 3: peers_touch.model.auth.v1.AuthSessionCandidate.issued_at:type_name -> google.protobuf.Timestamp
+	5, // 4: peers_touch.model.auth.v1.AuthSessionCandidate.expires_at:type_name -> google.protobuf.Timestamp
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_domain_auth_auth_proto_init() }

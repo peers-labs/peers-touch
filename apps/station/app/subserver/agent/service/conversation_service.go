@@ -26,7 +26,7 @@ func (s *ConversationService) getDB(ctx context.Context) (*gorm.DB, error) {
 	return store.GetRDS(ctx, store.WithRDSDBName("agent"))
 }
 
-func (s *ConversationService) ListConversations(ctx context.Context, agentID, userID, statusFilter string, page, pageSize int) ([]*domain.Conversation, int64, error) {
+func (s *ConversationService) ListConversations(ctx context.Context, agentID, actorPTID, statusFilter string, page, pageSize int) ([]*domain.Conversation, int64, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -46,8 +46,8 @@ func (s *ConversationService) ListConversations(ctx context.Context, agentID, us
 	}
 
 	query := db.WithContext(ctx).Model(&persistence.Conversation{}).Where("agent_id = ?", agentID)
-	if userID != "" {
-		query = query.Where("user_id = ?", userID)
+	if actorPTID != "" {
+		query = query.Where("actor_ptid = ?", actorPTID)
 	}
 	status := strings.TrimSpace(statusFilter)
 	if status != "" {
@@ -95,7 +95,7 @@ func (s *ConversationService) GetConversation(ctx context.Context, conversationI
 	return persistenceConversationToDomain(&row), nil
 }
 
-func (s *ConversationService) CreateConversation(ctx context.Context, agentID, userID, title, description, modelName, providerID string) (*domain.Conversation, error) {
+func (s *ConversationService) CreateConversation(ctx context.Context, agentID, actorPTID, title, description, modelName, providerID string) (*domain.Conversation, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -113,7 +113,7 @@ func (s *ConversationService) CreateConversation(ctx context.Context, agentID, u
 	row := &persistence.Conversation{
 		ID:         generateID("conv"),
 		AgentID:    agentID,
-		UserID:     strings.TrimSpace(userID),
+		ActorPTID:  strings.TrimSpace(actorPTID),
 		Title:      title,
 		ProviderID: firstNonEmpty(providerID, ""),
 		Status:     string(domain.ConversationStatusActive),
@@ -129,11 +129,11 @@ func (s *ConversationService) CreateConversation(ctx context.Context, agentID, u
 	if err := db.WithContext(ctx).Create(row).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create conversation", err)
 	}
-	logger.Infof(ctx, "conversation created: conv_id=%s agent_id=%s user_id=%s", row.ID, agentID, userID)
+	logger.Infof(ctx, "conversation created: conv_id=%s agent_id=%s actor_ptid=%s", row.ID, agentID, actorPTID)
 	return persistenceConversationToDomain(row), nil
 }
 
-func (s *ConversationService) CreateConversationWithID(ctx context.Context, conversationID, agentID, userID, title, description, modelName, providerID string) (*domain.Conversation, error) {
+func (s *ConversationService) CreateConversationWithID(ctx context.Context, conversationID, agentID, actorPTID, title, description, modelName, providerID string) (*domain.Conversation, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -141,7 +141,7 @@ func (s *ConversationService) CreateConversationWithID(ctx context.Context, conv
 	conversationID = strings.TrimSpace(conversationID)
 	agentID = strings.TrimSpace(agentID)
 	if conversationID == "" {
-		return s.CreateConversation(ctx, agentID, userID, title, description, modelName, providerID)
+		return s.CreateConversation(ctx, agentID, actorPTID, title, description, modelName, providerID)
 	}
 	if agentID == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "agent_id is required", nil)
@@ -154,7 +154,7 @@ func (s *ConversationService) CreateConversationWithID(ctx context.Context, conv
 	row := &persistence.Conversation{
 		ID:         conversationID,
 		AgentID:    agentID,
-		UserID:     strings.TrimSpace(userID),
+		ActorPTID:  strings.TrimSpace(actorPTID),
 		Title:      title,
 		ProviderID: firstNonEmpty(providerID, ""),
 		Status:     string(domain.ConversationStatusActive),
@@ -170,7 +170,7 @@ func (s *ConversationService) CreateConversationWithID(ctx context.Context, conv
 	if err := db.WithContext(ctx).Create(row).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create conversation", err)
 	}
-	logger.Infof(ctx, "conversation created with id: conv_id=%s agent_id=%s user_id=%s", row.ID, agentID, userID)
+	logger.Infof(ctx, "conversation created with id: conv_id=%s agent_id=%s actor_ptid=%s", row.ID, agentID, actorPTID)
 	return persistenceConversationToDomain(row), nil
 }
 
@@ -396,7 +396,7 @@ func persistenceConversationToDomain(row *persistence.Conversation) *domain.Conv
 	c := &domain.Conversation{
 		ConversationID: row.ID,
 		AgentID:        row.AgentID,
-		UserID:         row.UserID,
+		ActorPTID:      row.ActorPTID,
 		Title:          row.Title,
 		ProviderID:     row.ProviderID,
 		Status:         domain.ConversationStatus(row.Status),

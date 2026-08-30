@@ -15,14 +15,14 @@ type ReceiptService struct {
 func NewReceiptService() *ReceiptService { return &ReceiptService{rcptRepo: repo.NewReceiptRepo()} }
 
 type PostReceiptReq struct {
-	MsgULID   string
-	MemberDID string
-	Delivered bool
-	Read      bool
+	MsgULID    string
+	MemberPTID string
+	Delivered  bool
+	Read       bool
 }
 
 func (s *ReceiptService) Post(ctx context.Context, req *PostReceiptReq) (*m.Receipt, error) {
-	r := &m.Receipt{MsgULID: req.MsgULID, MemberDID: req.MemberDID}
+	r := &m.Receipt{MsgULID: req.MsgULID, MemberPTID: req.MemberPTID}
 	if req.Delivered {
 		r.DeliveredAt = time.Now()
 	}

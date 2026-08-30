@@ -34,8 +34,8 @@ export function normalizeFriendRequest(raw: Partial<FriendRequest>): FriendReque
   return {
     ...raw,
     requestId: String(raw.requestId ?? raw.id ?? record.request_id ?? ''),
-    senderDid: String(raw.senderDid ?? raw.senderId ?? record.sender_did ?? record.sender_id ?? ''),
-    receiverDid: String(raw.receiverDid ?? raw.receiverId ?? record.receiver_did ?? record.receiver_id ?? ''),
+    senderPtid: String(record.sender_ptid ?? raw.senderPtid ?? ''),
+    receiverPtid: String(record.receiver_ptid ?? raw.receiverPtid ?? ''),
     status: normalizeFriendRequestStatus(raw.status),
     message: String(raw.message ?? ''),
     senderDisplayName: String(raw.senderDisplayName ?? record.sender_display_name ?? ''),
@@ -50,8 +50,8 @@ export function normalizeSession(raw: Partial<FriendChatSession>): FriendChatSes
   return {
     ...raw,
     ulid: String(raw.ulid ?? ''),
-    participantADid: String(raw.participantADid ?? record.participant_a_did ?? ''),
-    participantBDid: String(raw.participantBDid ?? record.participant_b_did ?? ''),
+    participantAPtid: String(raw.participantAPtid ?? record.participant_a_ptid ?? ''),
+    participantBPtid: String(raw.participantBPtid ?? record.participant_b_ptid ?? ''),
     lastMessageUlid: String(raw.lastMessageUlid ?? record.last_message_ulid ?? ''),
     unreadCountA: Number(raw.unreadCountA ?? record.unread_count_a ?? 0),
     unreadCountB: Number(raw.unreadCountB ?? record.unread_count_b ?? 0),
@@ -75,8 +75,8 @@ export function normalizeMessage(raw: Partial<FriendChatMessage>): FriendChatMes
     ...raw,
     ulid: String(raw.ulid ?? ''),
     sessionUlid: String(raw.sessionUlid ?? record.session_ulid ?? ''),
-    senderDid: String(raw.senderDid ?? record.sender_did ?? ''),
-    receiverDid: String(raw.receiverDid ?? record.receiver_did ?? ''),
+    senderPtid: String(raw.senderPtid ?? record.sender_ptid ?? ''),
+    receiverPtid: String(raw.receiverPtid ?? record.receiver_ptid ?? ''),
     type: Number(raw.type ?? 0),
     content: String(raw.content ?? ''),
     status: Number(raw.status ?? 0),
@@ -118,7 +118,7 @@ export function normalizeNotification(raw: Partial<SocialNotification>): SocialN
     ...raw,
     id: String(raw.id ?? ''),
     recipientId: String(raw.recipientId ?? record.recipient_id ?? ''),
-    actorId: String(raw.actorId ?? record.actor_id ?? ''),
+    actorPtid: String(raw.actorPtid ?? record.actor_ptid ?? ''),
     type: normalizeNotificationType(raw.type),
     category: normalizeNumberEnum(raw.category),
     status: normalizeNotificationStatus(raw.status),
@@ -141,10 +141,10 @@ export function normalizeUnreadCounts(raw: UnreadCounts): UnreadCounts {
 
 export function normalizeActorSearchResult(raw: Partial<ActorSearchResult>): ActorSearchResult {
   const record = raw as Record<string, unknown>;
-  const stableId = String(raw.id ?? raw.actorId ?? record.actor_id ?? '');
+  const ptid = String(raw.ptid ?? record.actor_ptid ?? '');
   return {
-    id: stableId,
-    actorId: stableId,
+    id: ptid,
+    ptid,
     username: String(raw.username ?? ''),
     displayName: String(raw.displayName ?? record.display_name ?? ''),
     avatar: String(raw.avatar ?? ''),
@@ -155,14 +155,14 @@ export function federationViewToResult(view: FederationResolveView): ActorSearch
   const profile = view.profile;
   if (!profile) return null;
   const record = profile as Record<string, unknown>;
-  const id = String(profile.id ?? profile.actorId ?? profile.actor_id ?? '');
+  const id = String(profile.ptid ?? '');
   const username = String(profile.username ?? profile.preferredUsername ?? profile.preferred_username ?? '');
   const displayName = String(profile.displayName ?? profile.display_name ?? username);
   const avatar = String(profile.avatar ?? '');
   const federationRecord = view as Record<string, unknown>;
   return {
     id,
-    actorId: id,
+    ptid: id,
     username,
     displayName,
     avatar,

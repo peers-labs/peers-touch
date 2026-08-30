@@ -83,7 +83,7 @@ func (s *eventsSubServer) handleStream(ctx context.Context, c *app.RequestContex
 		c.JSON(401, map[string]string{"error": "unauthorized"})
 		return
 	}
-	actorID := subject.ID
+	actorPTID := subject.ID
 
 	bus := GetBus()
 	if bus == nil {
@@ -109,9 +109,9 @@ func (s *eventsSubServer) handleStream(ctx context.Context, c *app.RequestContex
 	connCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sub, unsub, err := bus.Subscribe(connCtx, actorID, deviceID, cursor)
+	sub, unsub, err := bus.Subscribe(connCtx, actorPTID, deviceID, cursor)
 	if err != nil {
-		logger.DefaultHelper.Warnf("events: subscribe failed actor=%s err=%v", actorID, err)
+		logger.DefaultHelper.Warnf("events: subscribe failed actor_ptid=%s err=%v", actorPTID, err)
 		// Best-effort write; if it fails the connection is already gone.
 		_, _ = c.Write([]byte(fmt.Sprintf(": error %s\n\n", err.Error())))
 		_ = c.Flush()
@@ -119,7 +119,7 @@ func (s *eventsSubServer) handleStream(ctx context.Context, c *app.RequestContex
 	}
 	defer unsub()
 
-	logger.DefaultHelper.Infof("events: subscriber connected actor=%s device=%s cursor=%q", actorID, deviceID, cursor)
+	logger.DefaultHelper.Infof("events: subscriber connected actor_ptid=%s device=%s cursor=%q", actorPTID, deviceID, cursor)
 
 	// Emit a comment frame so intermediaries flush the response head.
 	if _, err := c.Write([]byte(": connected\n\n")); err != nil {
@@ -146,18 +146,18 @@ func (s *eventsSubServer) handleStream(ctx context.Context, c *app.RequestContex
 
 		case ev, ok := <-sub.Events:
 			if !ok {
-				logger.DefaultHelper.Infof("events: subscription closed actor=%s device=%s", actorID, deviceID)
+				logger.DefaultHelper.Infof("events: subscription closed actor_ptid=%s device=%s", actorPTID, deviceID)
 				return
 			}
 			if err := writeFrame(c, ev); err != nil {
-				logger.DefaultHelper.Warnf("events: write failed actor=%s err=%v", actorID, err)
+				logger.DefaultHelper.Warnf("events: write failed actor_ptid=%s err=%v", actorPTID, err)
 				return
 			}
 			floorID = ev.GetEventId()
 
 		case <-heartbeat.C:
 			if valid, reason := coreauth.CheckSubjectSessionValid(ctx, subject); !valid {
-				logger.DefaultHelper.Infof("events: closing revoked stream actor=%s session=%s reason=%s", actorID, subject.SessionID, reason)
+				logger.DefaultHelper.Infof("events: closing revoked stream actor_ptid=%s session=%s reason=%s", actorPTID, subject.SessionID, reason)
 				return
 			}
 
@@ -208,10 +208,10 @@ func writeFrame(c *app.RequestContext, ev *realtime.StreamEvent) error {
 // client per contract §2.7.2. Station treats it as opaque bytes —
 // it never decodes / decrypts / parses the JSON inside.
 type signalIngressRequest struct {
-	RecipientActorID string `json:"recipient_actor_id"`
-	SessionULID      string `json:"session_ulid"`
-	Kind             string `json:"kind"`
-	PayloadB64       string `json:"payload_b64"`
+	RecipientPTID string `json:"recipient_ptid"`
+	SessionULID   string `json:"session_ulid"`
+	Kind          string `json:"kind"`
+	PayloadB64    string `json:"payload_b64"`
 }
 
 // handlePostSignal ingests a single WebRTC signaling event from the
@@ -224,7 +224,7 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 		c.JSON(401, map[string]string{"error": "unauthorized"})
 		return
 	}
-	senderActorID := subject.ID
+	senderPTID := subject.ID
 
 	var req signalIngressRequest
 	if err := json.Unmarshal(c.Request.Body(), &req); err != nil {
@@ -232,8 +232,8 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 		return
 	}
 
-	if req.RecipientActorID == "" || req.SessionULID == "" || req.Kind == "" {
-		c.JSON(400, map[string]string{"error": "recipient_actor_id, session_ulid, kind are required"})
+	if req.RecipientPTID == "" || req.SessionULID == "" || req.Kind == "" {
+		c.JSON(400, map[string]string{"error": "recipient_ptid, session_ulid, kind are required"})
 		return
 	}
 
@@ -249,16 +249,16 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 	// allowed. The authorizer is owned by friend_chat and registered
 	// during its boot; a missing authorizer is fail-closed because
 	// signaling has no other security layer behind it.
-	if senderActorID != req.RecipientActorID {
+	if senderPTID != req.RecipientPTID {
 		authorizer := getSignalAuthorizer()
 		if authorizer == nil {
-			logger.DefaultHelper.Warnf("events: signal authorizer not registered, rejecting signal sender=%s", senderActorID)
+			logger.DefaultHelper.Warnf("events: signal authorizer not registered, rejecting signal sender_ptid=%s", senderPTID)
 			c.JSON(503, map[string]string{"error": "signal authorization unavailable"})
 			return
 		}
-		allowed, err := authorizer.CanSignal(senderActorID, req.RecipientActorID)
+		allowed, err := authorizer.CanSignal(senderPTID, req.RecipientPTID)
 		if err != nil {
-			logger.DefaultHelper.Warnf("events: signal authorization check failed sender=%s recipient=%s: %v", senderActorID, req.RecipientActorID, err)
+			logger.DefaultHelper.Warnf("events: signal authorization check failed sender_ptid=%s recipient_ptid=%s: %v", senderPTID, req.RecipientPTID, err)
 			c.JSON(500, map[string]string{"error": "authorization check failed"})
 			return
 		}
@@ -296,18 +296,18 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 	ev := &realtime.StreamEvent{
 		Kind: &realtime.StreamEvent_Signaling{
 			Signaling: &realtime.CallSignal{
-				SessionUlid: req.SessionULID,
-				FromActorId: senderActorID,
-				Kind:        kind,
-				Payload:     payload,
+				SessionUlid:   req.SessionULID,
+				FromActorPtid: senderPTID,
+				Kind:          kind,
+				Payload:       payload,
 			},
 		},
 	}
 
-	if _, err := bus.Publish(req.RecipientActorID, ev); err != nil {
+	if _, err := bus.Publish(req.RecipientPTID, ev); err != nil {
 		// Publish errors are operational, not policy. Log and bail
 		// with 502 so the caller knows the routing failed.
-		logger.DefaultHelper.Warnf("events: signal publish to recipient failed actor=%s: %v", req.RecipientActorID, err)
+		logger.DefaultHelper.Warnf("events: signal publish to recipient failed actor_ptid=%s: %v", req.RecipientPTID, err)
 		c.JSON(502, map[string]string{"error": "publish failed: " + err.Error()})
 		return
 	}
@@ -317,12 +317,12 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 	// initiated. When sender == recipient (self-call, which is
 	// nonsense for voice/video but legal for protocol completeness),
 	// we skip the echo to avoid a duplicate frame.
-	if senderActorID != req.RecipientActorID {
-		if _, err := bus.Publish(senderActorID, ev); err != nil {
+	if senderPTID != req.RecipientPTID {
+		if _, err := bus.Publish(senderPTID, ev); err != nil {
 			// Sender echo is best-effort — the caller's primary
 			// device already knows it sent the signal because it
 			// got a 204 from us. Don't fail the request.
-			logger.DefaultHelper.Warnf("events: signal echo to sender failed actor=%s: %v", senderActorID, err)
+			logger.DefaultHelper.Warnf("events: signal echo to sender failed actor_ptid=%s: %v", senderPTID, err)
 		}
 	}
 

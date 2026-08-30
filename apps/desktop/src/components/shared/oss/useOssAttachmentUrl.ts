@@ -95,7 +95,7 @@ export function useDecryptedOssAttachmentUrl(
     readonly mimeType?: string;
     readonly mime_type?: string;
     readonly audience?: Audience | null;
-    readonly authorDid?: string | null;
+    readonly authorPtid?: string | null;
   } & Parameters<typeof clientMediaEncryptionDescriptorFromAttachment>[0],
 ): string | null {
   const sourceUrl = useOssAttachmentUrl(attachment.cid);
@@ -119,7 +119,7 @@ export function useDecryptedOssAttachmentUrl(
         await openMomentMediaKeyFromAudience({
           cid: attachment.cid ?? '',
           audience: attachment.audience,
-          authorDid: attachment.authorDid,
+          authorPtid: attachment.authorPtid,
         }) ?? undefined,
       );
       if (!mediaDescriptor) {

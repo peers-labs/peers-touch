@@ -637,10 +637,10 @@ func (Audience_Kind) EnumDescriptor() ([]byte, []int) {
 }
 
 type Post struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	AuthorId string                 `protobuf:"bytes,2,opt,name=author_id,json=authorId,proto3" json:"author_id,omitempty"`
-	Type     PostType               `protobuf:"varint,3,opt,name=type,proto3,enum=peers_touch.model.social.v1.PostType" json:"type,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	AuthorPtid string                 `protobuf:"bytes,2,opt,name=author_ptid,json=authorPtid,proto3" json:"author_ptid,omitempty"`
+	Type       PostType               `protobuf:"varint,3,opt,name=type,proto3,enum=peers_touch.model.social.v1.PostType" json:"type,omitempty"`
 	// Deprecated: kept for backward compatibility with existing service /
 	// DB code. New publishing flow should populate `audience` (field 50)
 	// and let P1+ application layer translate into `visibility` for
@@ -718,9 +718,9 @@ func (x *Post) GetId() string {
 	return ""
 }
 
-func (x *Post) GetAuthorId() string {
+func (x *Post) GetAuthorPtid() string {
 	if x != nil {
-		return x.AuthorId
+		return x.AuthorPtid
 	}
 	return ""
 }
@@ -3157,7 +3157,7 @@ func (x *ListPostsResponse) GetExplanations() []*FeedObjectExplanation {
 
 type PostFilter struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	AuthorId       string                 `protobuf:"bytes,1,opt,name=author_id,json=authorId,proto3" json:"author_id,omitempty"`
+	AuthorPtid     string                 `protobuf:"bytes,1,opt,name=author_ptid,json=authorPtid,proto3" json:"author_ptid,omitempty"`
 	Visibility     []PostVisibility       `protobuf:"varint,2,rep,packed,name=visibility,proto3,enum=peers_touch.model.social.v1.PostVisibility" json:"visibility,omitempty"`
 	ExcludeReplies bool                   `protobuf:"varint,3,opt,name=exclude_replies,json=excludeReplies,proto3" json:"exclude_replies,omitempty"`
 	ExcludeReposts bool                   `protobuf:"varint,4,opt,name=exclude_reposts,json=excludeReposts,proto3" json:"exclude_reposts,omitempty"`
@@ -3195,9 +3195,9 @@ func (*PostFilter) Descriptor() ([]byte, []int) {
 	return file_domain_social_post_proto_rawDescGZIP(), []int{33}
 }
 
-func (x *PostFilter) GetAuthorId() string {
+func (x *PostFilter) GetAuthorPtid() string {
 	if x != nil {
-		return x.AuthorId
+		return x.AuthorPtid
 	}
 	return ""
 }
@@ -3224,11 +3224,11 @@ func (x *PostFilter) GetExcludeReposts() bool {
 }
 
 type GetTimelineRequest struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	Type   TimelineType           `protobuf:"varint,1,opt,name=type,proto3,enum=peers_touch.model.social.v1.TimelineType" json:"type,omitempty"`
-	Cursor string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
-	Limit  int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	UserId string                 `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Type      TimelineType           `protobuf:"varint,1,opt,name=type,proto3,enum=peers_touch.model.social.v1.TimelineType" json:"type,omitempty"`
+	Cursor    string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Limit     int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	ActorPtid string                 `protobuf:"bytes,4,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	// Optional sort strategy. Currently only meaningful for
 	// TIMELINE_PUBLIC; all other timelines fix RECENT order.
 	Sort          TimelineSort `protobuf:"varint,5,opt,name=sort,proto3,enum=peers_touch.model.social.v1.TimelineSort" json:"sort,omitempty"`
@@ -3287,9 +3287,9 @@ func (x *GetTimelineRequest) GetLimit() int32 {
 	return 0
 }
 
-func (x *GetTimelineRequest) GetUserId() string {
+func (x *GetTimelineRequest) GetActorPtid() string {
 	if x != nil {
-		return x.UserId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -3513,7 +3513,7 @@ func (x *ActivitySource) GetStationPeerId() string {
 type RelationshipReason struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	Kind          RelationshipReason_Kind `protobuf:"varint,1,opt,name=kind,proto3,enum=peers_touch.model.social.v1.RelationshipReason_Kind" json:"kind,omitempty"`
-	ActorId       string                  `protobuf:"bytes,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                  `protobuf:"bytes,2,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	CircleId      string                  `protobuf:"bytes,3,opt,name=circle_id,json=circleId,proto3" json:"circle_id,omitempty"`
 	StationDomain string                  `protobuf:"bytes,4,opt,name=station_domain,json=stationDomain,proto3" json:"station_domain,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -3557,9 +3557,9 @@ func (x *RelationshipReason) GetKind() RelationshipReason_Kind {
 	return RelationshipReason_RELATIONSHIP_REASON_UNSPECIFIED
 }
 
-func (x *RelationshipReason) GetActorId() string {
+func (x *RelationshipReason) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -3657,7 +3657,7 @@ func (x *AudienceExplanation) GetPolicyFiltered() bool {
 type BlockExplanation struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Kind          BlockExplanation_Kind  `protobuf:"varint,1,opt,name=kind,proto3,enum=peers_touch.model.social.v1.BlockExplanation_Kind" json:"kind,omitempty"`
-	ActorId       string                 `protobuf:"bytes,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,2,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	StationDomain string                 `protobuf:"bytes,3,opt,name=station_domain,json=stationDomain,proto3" json:"station_domain,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3700,9 +3700,9 @@ func (x *BlockExplanation) GetKind() BlockExplanation_Kind {
 	return BlockExplanation_BLOCK_STATE_UNSPECIFIED
 }
 
-func (x *BlockExplanation) GetActorId() string {
+func (x *BlockExplanation) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -3715,16 +3715,16 @@ func (x *BlockExplanation) GetStationDomain() string {
 }
 
 type StationModerationPolicy struct {
-	state            protoimpl.MessageState       `protogen:"open.v1"`
-	StationDomain    string                       `protobuf:"bytes,1,opt,name=station_domain,json=stationDomain,proto3" json:"station_domain,omitempty"`
-	StationPeerId    string                       `protobuf:"bytes,2,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
-	Kind             StationModerationPolicy_Kind `protobuf:"varint,3,opt,name=kind,proto3,enum=peers_touch.model.social.v1.StationModerationPolicy_Kind" json:"kind,omitempty"`
-	Reason           string                       `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
-	CreatedByActorId string                       `protobuf:"bytes,5,opt,name=created_by_actor_id,json=createdByActorId,proto3" json:"created_by_actor_id,omitempty"`
-	CreatedAt        *timestamppb.Timestamp       `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt        *timestamppb.Timestamp       `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state              protoimpl.MessageState       `protogen:"open.v1"`
+	StationDomain      string                       `protobuf:"bytes,1,opt,name=station_domain,json=stationDomain,proto3" json:"station_domain,omitempty"`
+	StationPeerId      string                       `protobuf:"bytes,2,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
+	Kind               StationModerationPolicy_Kind `protobuf:"varint,3,opt,name=kind,proto3,enum=peers_touch.model.social.v1.StationModerationPolicy_Kind" json:"kind,omitempty"`
+	Reason             string                       `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	CreatedByActorPtid string                       `protobuf:"bytes,5,opt,name=created_by_actor_ptid,json=createdByActorPtid,proto3" json:"created_by_actor_ptid,omitempty"`
+	CreatedAt          *timestamppb.Timestamp       `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt          *timestamppb.Timestamp       `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *StationModerationPolicy) Reset() {
@@ -3785,9 +3785,9 @@ func (x *StationModerationPolicy) GetReason() string {
 	return ""
 }
 
-func (x *StationModerationPolicy) GetCreatedByActorId() string {
+func (x *StationModerationPolicy) GetCreatedByActorPtid() string {
 	if x != nil {
-		return x.CreatedByActorId
+		return x.CreatedByActorPtid
 	}
 	return ""
 }
@@ -4126,7 +4126,7 @@ type MomentDelivery struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	ViewerId      string                 `protobuf:"bytes,2,opt,name=viewer_id,json=viewerId,proto3" json:"viewer_id,omitempty"`
 	PostId        string                 `protobuf:"bytes,3,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
-	AuthorId      string                 `protobuf:"bytes,4,opt,name=author_id,json=authorId,proto3" json:"author_id,omitempty"`
+	AuthorPtid    string                 `protobuf:"bytes,4,opt,name=author_ptid,json=authorPtid,proto3" json:"author_ptid,omitempty"`
 	AudienceKind  Audience_Kind          `protobuf:"varint,5,opt,name=audience_kind,json=audienceKind,proto3,enum=peers_touch.model.social.v1.Audience_Kind" json:"audience_kind,omitempty"`
 	DeliveredAt   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=delivered_at,json=deliveredAt,proto3" json:"delivered_at,omitempty"`
 	RevokedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
@@ -4185,9 +4185,9 @@ func (x *MomentDelivery) GetPostId() string {
 	return ""
 }
 
-func (x *MomentDelivery) GetAuthorId() string {
+func (x *MomentDelivery) GetAuthorPtid() string {
 	if x != nil {
-		return x.AuthorId
+		return x.AuthorPtid
 	}
 	return ""
 }
@@ -4620,24 +4620,24 @@ func (x *RepostResponse) GetRepost() *Post {
 // Field semantics by Kind:
 //
 //	PUBLIC         — visible to anyone (federated when ActivityPub lands).
-//	                 target_id / actor_dids / base_kind: unused.
+//	                 target_id / actor_ptids / base_kind: unused.
 //	FOLLOWERS      — visible to author's followers + author. unused: as PUBLIC.
 //	CIRCLE         — visible to members of `target_id` circle (publisher-owned).
 //	                 target_id required.
 //	GROUP          — visible to members of `target_id` chat.Group.
 //	                 target_id required.
 //	SELF           — author-only (private note). all others unused.
-//	CUSTOM_ALLOW   — visible only to `actor_dids`. allow_list, length>=1.
+//	CUSTOM_ALLOW   — visible only to `actor_ptids`. allow_list, length>=1.
 //	                 base_kind: unused (the list IS the rule).
-//	CUSTOM_DENY    — visible per `base_kind` MINUS `actor_dids`. base_kind
-//	                 MUST be PUBLIC or FOLLOWERS, actor_dids MUST be non-empty.
+//	CUSTOM_DENY    — visible per `base_kind` MINUS `actor_ptids`. base_kind
+//	                 MUST be PUBLIC or FOLLOWERS, actor_ptids MUST be non-empty.
 type Audience struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Kind  Audience_Kind          `protobuf:"varint,1,opt,name=kind,proto3,enum=peers_touch.model.social.v1.Audience_Kind" json:"kind,omitempty"`
 	// Required iff kind == CIRCLE or GROUP.
 	TargetId uint64 `protobuf:"varint,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
 	// Required iff kind == CUSTOM_ALLOW or CUSTOM_DENY.
-	ActorDids []string `protobuf:"bytes,3,rep,name=actor_dids,json=actorDids,proto3" json:"actor_dids,omitempty"`
+	ActorPtids []string `protobuf:"bytes,3,rep,name=actor_ptids,json=actorPtids,proto3" json:"actor_ptids,omitempty"`
 	// ONLY meaningful when kind == CUSTOM_DENY: the base set the deny list
 	// is subtracted from. MUST be PUBLIC or FOLLOWERS. For all other Kinds
 	// this field is silently ignored.
@@ -4694,9 +4694,9 @@ func (x *Audience) GetTargetId() uint64 {
 	return 0
 }
 
-func (x *Audience) GetActorDids() []string {
+func (x *Audience) GetActorPtids() []string {
 	if x != nil {
-		return x.ActorDids
+		return x.ActorPtids
 	}
 	return nil
 }
@@ -4782,7 +4782,7 @@ func (x *ReactionSummary) GetReactedByViewer() bool {
 // re-parsing. `display` is the rendered handle (no leading `@`).
 type Mention struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Offset        int32                  `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
 	Length        int32                  `protobuf:"varint,3,opt,name=length,proto3" json:"length,omitempty"`
 	Display       string                 `protobuf:"bytes,4,opt,name=display,proto3" json:"display,omitempty"`
@@ -4820,9 +4820,9 @@ func (*Mention) Descriptor() ([]byte, []int) {
 	return file_domain_social_post_proto_rawDescGZIP(), []int{57}
 }
 
-func (x *Mention) GetActorId() string {
+func (x *Mention) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -5251,11 +5251,12 @@ var File_domain_social_post_proto protoreflect.FileDescriptor
 
 const file_domain_social_post_proto_rawDesc = "" +
 	"\n" +
-	"\x18domain/social/post.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1edomain/activity/activity.proto\x1a\x1adomain/common/common.proto\x1a\x19domain/social/media.proto\"\xb1\n" +
+	"\x18domain/social/post.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1edomain/activity/activity.proto\x1a\x1adomain/common/common.proto\x1a\x19domain/social/media.proto\"\xc0\n" +
 	"\n" +
 	"\x04Post\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
-	"\tauthor_id\x18\x02 \x01(\tR\bauthorId\x129\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
+	"\vauthor_ptid\x18\x02 \x01(\tR\n" +
+	"authorPtid\x129\n" +
 	"\x04type\x18\x03 \x01(\x0e2%.peers_touch.model.social.v1.PostTypeR\x04type\x12K\n" +
 	"\n" +
 	"visibility\x18\x04 \x01(\x0e2+.peers_touch.model.social.v1.PostVisibilityR\n" +
@@ -5284,7 +5285,7 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\baudience\x182 \x01(\v2%.peers_touch.model.social.v1.AudienceR\baudience\x12J\n" +
 	"\treactions\x183 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\x12K\n" +
 	"\x0etyped_mentions\x184 \x03(\v2$.peers_touch.model.social.v1.MentionR\rtypedMentionsB\t\n" +
-	"\acontent\"\x99\x01\n" +
+	"\acontentR\tauthor_id\"\x99\x01\n" +
 	"\tPostStats\x12\x1f\n" +
 	"\vlikes_count\x18\x01 \x01(\x03R\n" +
 	"likesCount\x12%\n" +
@@ -5459,20 +5460,22 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x19\n" +
 	"\bhas_more\x18\x03 \x01(\bR\ahasMore\x12V\n" +
-	"\fexplanations\x18\x04 \x03(\v22.peers_touch.model.social.v1.FeedObjectExplanationR\fexplanations\"\xc8\x01\n" +
+	"\fexplanations\x18\x04 \x03(\v22.peers_touch.model.social.v1.FeedObjectExplanationR\fexplanations\"\xd7\x01\n" +
 	"\n" +
-	"PostFilter\x12\x1b\n" +
-	"\tauthor_id\x18\x01 \x01(\tR\bauthorId\x12K\n" +
+	"PostFilter\x12\x1f\n" +
+	"\vauthor_ptid\x18\x01 \x01(\tR\n" +
+	"authorPtid\x12K\n" +
 	"\n" +
 	"visibility\x18\x02 \x03(\x0e2+.peers_touch.model.social.v1.PostVisibilityR\n" +
 	"visibility\x12'\n" +
 	"\x0fexclude_replies\x18\x03 \x01(\bR\x0eexcludeReplies\x12'\n" +
-	"\x0fexclude_reposts\x18\x04 \x01(\bR\x0eexcludeReposts\"\xd9\x01\n" +
+	"\x0fexclude_reposts\x18\x04 \x01(\bR\x0eexcludeRepostsR\tauthor_id\"\xdf\x01\n" +
 	"\x12GetTimelineRequest\x12=\n" +
 	"\x04type\x18\x01 \x01(\x0e2).peers_touch.model.social.v1.TimelineTypeR\x04type\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x17\n" +
-	"\auser_id\x18\x04 \x01(\tR\x06userId\x12=\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x04 \x01(\tR\tactorPtid\x12=\n" +
 	"\x04sort\x18\x05 \x01(\x0e2).peers_touch.model.social.v1.TimelineSortR\x04sort\"\xe2\x01\n" +
 	"\x13GetTimelineResponse\x127\n" +
 	"\x05posts\x18\x01 \x03(\v2!.peers_touch.model.social.v1.PostR\x05posts\x12\x1f\n" +
@@ -5494,10 +5497,11 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\x1bACTIVITY_SOURCE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15ACTIVITY_SOURCE_LOCAL\x10\x01\x12\x1a\n" +
 	"\x16ACTIVITY_SOURCE_REMOTE\x10\x02\x12\x1e\n" +
-	"\x1aACTIVITY_SOURCE_UNRESOLVED\x10\x03\"\xa2\x04\n" +
+	"\x1aACTIVITY_SOURCE_UNRESOLVED\x10\x03\"\xa6\x04\n" +
 	"\x12RelationshipReason\x12H\n" +
-	"\x04kind\x18\x01 \x01(\x0e24.peers_touch.model.social.v1.RelationshipReason.KindR\x04kind\x12\x19\n" +
-	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1b\n" +
+	"\x04kind\x18\x01 \x01(\x0e24.peers_touch.model.social.v1.RelationshipReason.KindR\x04kind\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x02 \x01(\tR\tactorPtid\x12\x1b\n" +
 	"\tcircle_id\x18\x03 \x01(\tR\bcircleId\x12%\n" +
 	"\x0estation_domain\x18\x04 \x01(\tR\rstationDomain\"\xe2\x02\n" +
 	"\x04Kind\x12#\n" +
@@ -5516,23 +5520,24 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\ttarget_id\x18\x02 \x01(\tR\btargetId\x12(\n" +
 	"\x10viewer_is_author\x18\x03 \x01(\bR\x0eviewerIsAuthor\x12(\n" +
 	"\x10viewer_is_member\x18\x04 \x01(\bR\x0eviewerIsMember\x12'\n" +
-	"\x0fpolicy_filtered\x18\x05 \x01(\bR\x0epolicyFiltered\"\xce\x02\n" +
+	"\x0fpolicy_filtered\x18\x05 \x01(\bR\x0epolicyFiltered\"\xd2\x02\n" +
 	"\x10BlockExplanation\x12F\n" +
-	"\x04kind\x18\x01 \x01(\x0e22.peers_touch.model.social.v1.BlockExplanation.KindR\x04kind\x12\x19\n" +
-	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12%\n" +
+	"\x04kind\x18\x01 \x01(\x0e22.peers_touch.model.social.v1.BlockExplanation.KindR\x04kind\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x02 \x01(\tR\tactorPtid\x12%\n" +
 	"\x0estation_domain\x18\x03 \x01(\tR\rstationDomain\"\xaf\x01\n" +
 	"\x04Kind\x12\x1b\n" +
 	"\x17BLOCK_STATE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17BLOCK_STATE_NOT_BLOCKED\x10\x01\x12%\n" +
 	"!BLOCK_STATE_VIEWER_BLOCKED_AUTHOR\x10\x02\x12%\n" +
 	"!BLOCK_STATE_AUTHOR_BLOCKED_VIEWER\x10\x03\x12\x1f\n" +
-	"\x1bBLOCK_STATE_STATION_BLOCKED\x10\x04\"\xcc\x03\n" +
+	"\x1bBLOCK_STATE_STATION_BLOCKED\x10\x04\"\xd0\x03\n" +
 	"\x17StationModerationPolicy\x12%\n" +
 	"\x0estation_domain\x18\x01 \x01(\tR\rstationDomain\x12&\n" +
 	"\x0fstation_peer_id\x18\x02 \x01(\tR\rstationPeerId\x12M\n" +
 	"\x04kind\x18\x03 \x01(\x0e29.peers_touch.model.social.v1.StationModerationPolicy.KindR\x04kind\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\x12-\n" +
-	"\x13created_by_actor_id\x18\x05 \x01(\tR\x10createdByActorId\x129\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x121\n" +
+	"\x15created_by_actor_ptid\x18\x05 \x01(\tR\x12createdByActorPtid\x129\n" +
 	"\n" +
 	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
@@ -5558,16 +5563,17 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\bpolicies\x18\x01 \x03(\v24.peers_touch.model.social.v1.StationModerationPolicyR\bpolicies\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x19\n" +
-	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"\xbe\x02\n" +
+	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"\xcd\x02\n" +
 	"\x0eMomentDelivery\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tviewer_id\x18\x02 \x01(\tR\bviewerId\x12\x17\n" +
-	"\apost_id\x18\x03 \x01(\tR\x06postId\x12\x1b\n" +
-	"\tauthor_id\x18\x04 \x01(\tR\bauthorId\x12O\n" +
+	"\apost_id\x18\x03 \x01(\tR\x06postId\x12\x1f\n" +
+	"\vauthor_ptid\x18\x04 \x01(\tR\n" +
+	"authorPtid\x12O\n" +
 	"\raudience_kind\x18\x05 \x01(\x0e2*.peers_touch.model.social.v1.Audience.KindR\faudienceKind\x12=\n" +
 	"\fdelivered_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vdeliveredAt\x129\n" +
 	"\n" +
-	"revoked_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\"\xde\x01\n" +
+	"revoked_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAtR\tauthor_id\"\xde\x01\n" +
 	"\x1cSyncMomentsProjectionRequest\x12\x1f\n" +
 	"\vhome_cursor\x18\x01 \x01(\tR\n" +
 	"homeCursor\x12#\n" +
@@ -5599,12 +5605,12 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\n" +
 	"\b_comment\"K\n" +
 	"\x0eRepostResponse\x129\n" +
-	"\x06repost\x18\x01 \x01(\v2!.peers_touch.model.social.v1.PostR\x06repost\"\xa3\x03\n" +
+	"\x06repost\x18\x01 \x01(\v2!.peers_touch.model.social.v1.PostR\x06repost\"\xa5\x03\n" +
 	"\bAudience\x12>\n" +
 	"\x04kind\x18\x01 \x01(\x0e2*.peers_touch.model.social.v1.Audience.KindR\x04kind\x12\x1b\n" +
-	"\ttarget_id\x18\x02 \x01(\x04R\btargetId\x12\x1d\n" +
-	"\n" +
-	"actor_dids\x18\x03 \x03(\tR\tactorDids\x12G\n" +
+	"\ttarget_id\x18\x02 \x01(\x04R\btargetId\x12\x1f\n" +
+	"\vactor_ptids\x18\x03 \x03(\tR\n" +
+	"actorPtids\x12G\n" +
 	"\tbase_kind\x18\x04 \x01(\x0e2*.peers_touch.model.social.v1.Audience.KindR\bbaseKind\x12U\n" +
 	"\rkey_envelopes\x18\x05 \x03(\v20.peers_touch.model.social.v1.AudienceKeyEnvelopeR\fkeyEnvelopes\"{\n" +
 	"\x04Kind\x12\x14\n" +
@@ -5621,9 +5627,10 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\x0fReactionSummary\x12=\n" +
 	"\x04kind\x18\x01 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x03R\x05count\x12*\n" +
-	"\x11reacted_by_viewer\x18\x03 \x01(\bR\x0freactedByViewer\"n\n" +
-	"\aMention\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x16\n" +
+	"\x11reacted_by_viewer\x18\x03 \x01(\bR\x0freactedByViewer\"r\n" +
+	"\aMention\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x05R\x06offset\x12\x16\n" +
 	"\x06length\x18\x03 \x01(\x05R\x06length\x12\x18\n" +
 	"\adisplay\x18\x04 \x01(\tR\adisplay\"l\n" +

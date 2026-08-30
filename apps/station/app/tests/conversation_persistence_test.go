@@ -35,7 +35,7 @@ func TestConversationPersistence_SQLite(t *testing.T) {
 	conv := &persistence.Conversation{
 		ID:         "conv-test-1",
 		AgentID:    "test-agent",
-		UserID:     "1001",
+		ActorPTID:  "ptid:test:1001",
 		Title:      "Test Conversation",
 		Status:     "active",
 		ProviderID: "test-provider",

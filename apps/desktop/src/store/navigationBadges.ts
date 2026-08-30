@@ -93,7 +93,7 @@ export const useNavigationBadgeStore = createDesktopStore<NavigationBadgeState>(
 
   reconcileChatBadge: () => {
     const socialState = useSocialChatStore.getState();
-    const viewerDid = socialState.currentUserDid;
+    const viewerDid = socialState.currentUserPtid;
 
     // Sum friend session unread counts
     let friendTotal = 0;

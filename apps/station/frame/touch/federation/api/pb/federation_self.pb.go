@@ -7,6 +7,7 @@
 package pb
 
 import (
+	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -95,16 +96,8 @@ func (FederationVisibility) EnumDescriptor() ([]byte, []int) {
 // federation identity. Returned by GET /actor/federation/me and the
 // post-mutation reply of PUT /actor/federation/visibility, so a UI
 // can render the new state without a follow-up GET.
-//
-// `actor_id` is a string (decimal) because uint64 is not safely
-// representable in JavaScript number. The companion `actor_id_uint`
-// field carries the raw uint64 for proto consumers (Rust station
-// gateway, future mobile clients) that prefer not to re-parse the
-// decimal — both are populated identically and never disagree.
 type FederationSelfView struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	ActorId     string                 `protobuf:"bytes,1,opt,name=actor_id,proto3" json:"actor_id,omitempty"`
-	ActorIdUint uint64                 `protobuf:"varint,2,opt,name=actor_id_uint,proto3" json:"actor_id_uint,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
 	// Local handle without the "@user@host" suffix.
 	PreferredUsername string `protobuf:"bytes,3,opt,name=preferred_username,proto3" json:"preferred_username,omitempty"`
 	// Canonical "@user@host" (host = home station HTTP origin, no scheme).
@@ -136,6 +129,7 @@ type FederationSelfView struct {
 	// Federations this actor's home station has joined.
 	// Populated from the governance subserver's materialized state.
 	JoinedFederations []*JoinedFederationRef `protobuf:"bytes,12,rep,name=joined_federations,proto3" json:"joined_federations,omitempty"`
+	ActorRef          *model.ActorRef        `protobuf:"bytes,13,opt,name=actor_ref,proto3" json:"actor_ref,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -168,20 +162,6 @@ func (x *FederationSelfView) ProtoReflect() protoreflect.Message {
 // Deprecated: Use FederationSelfView.ProtoReflect.Descriptor instead.
 func (*FederationSelfView) Descriptor() ([]byte, []int) {
 	return file_domain_federation_federation_self_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *FederationSelfView) GetActorId() string {
-	if x != nil {
-		return x.ActorId
-	}
-	return ""
-}
-
-func (x *FederationSelfView) GetActorIdUint() uint64 {
-	if x != nil {
-		return x.ActorIdUint
-	}
-	return 0
 }
 
 func (x *FederationSelfView) GetPreferredUsername() string {
@@ -250,6 +230,13 @@ func (x *FederationSelfView) GetInboxRelayMounts() []string {
 func (x *FederationSelfView) GetJoinedFederations() []*JoinedFederationRef {
 	if x != nil {
 		return x.JoinedFederations
+	}
+	return nil
+}
+
+func (x *FederationSelfView) GetActorRef() *model.ActorRef {
+	if x != nil {
+		return x.ActorRef
 	}
 	return nil
 }
@@ -376,10 +363,8 @@ var File_domain_federation_federation_self_proto protoreflect.FileDescriptor
 
 const file_domain_federation_federation_self_proto_rawDesc = "" +
 	"\n" +
-	"'domain/federation/federation_self.proto\x12\x1fpeers_touch.model.federation.v1\"\xeb\x04\n" +
-	"\x12FederationSelfView\x12\x1a\n" +
-	"\bactor_id\x18\x01 \x01(\tR\bactor_id\x12$\n" +
-	"\ractor_id_uint\x18\x02 \x01(\x04R\ractor_id_uint\x12.\n" +
+	"'domain/federation/federation_self.proto\x12\x1fpeers_touch.model.federation.v1\x1a\x18domain/actor/actor.proto\"\x92\x05\n" +
+	"\x12FederationSelfView\x12.\n" +
 	"\x12preferred_username\x18\x03 \x01(\tR\x12preferred_username\x12*\n" +
 	"\x10federated_handle\x18\x04 \x01(\tR\x10federated_handle\x122\n" +
 	"\x14home_station_peer_id\x18\x05 \x01(\tR\x14home_station_peer_id\x120\n" +
@@ -392,7 +377,8 @@ const file_domain_federation_federation_self_proto_rawDesc = "" +
 	"\x06origin\x18\n" +
 	" \x01(\tR\x06origin\x12.\n" +
 	"\x12inbox_relay_mounts\x18\v \x03(\tR\x12inbox_relay_mounts\x12d\n" +
-	"\x12joined_federations\x18\f \x03(\v24.peers_touch.model.federation.v1.JoinedFederationRefR\x12joined_federations\"\x97\x01\n" +
+	"\x12joined_federations\x18\f \x03(\v24.peers_touch.model.federation.v1.JoinedFederationRefR\x12joined_federations\x12B\n" +
+	"\tactor_ref\x18\r \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\tactor_refJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\bactor_idR\ractor_id_uint\"\x97\x01\n" +
 	"\x13JoinedFederationRef\x12$\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\rfederation_id\x12(\n" +
 	"\x0ffederation_name\x18\x02 \x01(\tR\x0ffederation_name\x12\x18\n" +
@@ -427,15 +413,17 @@ var file_domain_federation_federation_self_proto_goTypes = []any{
 	(*FederationSelfView)(nil),          // 1: peers_touch.model.federation.v1.FederationSelfView
 	(*JoinedFederationRef)(nil),         // 2: peers_touch.model.federation.v1.JoinedFederationRef
 	(*FederationVisibilityRequest)(nil), // 3: peers_touch.model.federation.v1.FederationVisibilityRequest
+	(*model.ActorRef)(nil),              // 4: peers_touch.model.actor.v1.ActorRef
 }
 var file_domain_federation_federation_self_proto_depIdxs = []int32{
 	0, // 0: peers_touch.model.federation.v1.FederationSelfView.visibility:type_name -> peers_touch.model.federation.v1.FederationVisibility
 	2, // 1: peers_touch.model.federation.v1.FederationSelfView.joined_federations:type_name -> peers_touch.model.federation.v1.JoinedFederationRef
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	4, // 2: peers_touch.model.federation.v1.FederationSelfView.actor_ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_domain_federation_federation_self_proto_init() }

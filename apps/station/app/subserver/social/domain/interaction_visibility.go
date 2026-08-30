@@ -11,25 +11,25 @@ package domain
 // reactions stay visible to every readable viewer because they are part
 // of the publisher-authored conversation.
 type InteractionVisibility struct {
-	ViewerID       uint64
-	PostAuthorID   uint64
-	MutualActorIDs map[uint64]struct{}
+	ViewerPTID       string
+	PostAuthorPTID   string
+	MutualActorPTIDs map[string]struct{}
 }
 
-func (v InteractionVisibility) CanSeeActor(actorID uint64) bool {
-	if actorID == 0 {
+func (v InteractionVisibility) CanSeeActor(actorPTID string) bool {
+	if actorPTID == "" {
 		return false
 	}
-	if v.ViewerID != 0 && v.ViewerID == v.PostAuthorID {
+	if v.ViewerPTID != "" && v.ViewerPTID == v.PostAuthorPTID {
 		return true
 	}
-	if v.ViewerID != 0 && actorID == v.ViewerID {
+	if v.ViewerPTID != "" && actorPTID == v.ViewerPTID {
 		return true
 	}
-	if actorID == v.PostAuthorID {
+	if actorPTID == v.PostAuthorPTID {
 		return true
 	}
-	if _, ok := v.MutualActorIDs[actorID]; ok {
+	if _, ok := v.MutualActorPTIDs[actorPTID]; ok {
 		return true
 	}
 	return false

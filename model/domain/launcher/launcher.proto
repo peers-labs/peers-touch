@@ -5,7 +5,7 @@ package peers_touch.domain.launcher;
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/launcher/model;model";
 
 message GetFeedRequest {
-  string user_id = 1;
+  string actor_ptid = 1;
   int32 limit = 2;
 }
 

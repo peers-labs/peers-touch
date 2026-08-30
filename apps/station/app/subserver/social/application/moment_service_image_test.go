@@ -33,21 +33,21 @@ func newImageFixture(t *testing.T) *fixture {
 // seedOssKey inserts a minimal FileMeta row so the resolver's
 // `key IN (...)` lookup succeeds. The non-key fields are set to
 // realistic-but-arbitrary values that satisfy the post-2026-04 OSS
-// schema's NOT NULL columns (BucketID / OwnerActorID / Visibility).
+// schema's NOT NULL columns (BucketID / OwnerPTID / Visibility).
 // Nothing else exercises them — the resolver only consults `key`.
 func seedOssKey(t *testing.T, f *fixture, key string) {
 	t.Helper()
 	row := &ossmodel.FileMeta{
-		ID:           "test-" + key,
-		Key:          key,
-		Name:         "img.png",
-		Size:         1024,
-		Mime:         "image/png",
-		Backend:      "local",
-		Path:         "/tmp/" + key,
-		BucketID:     "test-bucket",
-		OwnerActorID: "did:test:author",
-		Visibility:   "public",
+		ID:         "test-" + key,
+		Key:        key,
+		Name:       "img.png",
+		Size:       1024,
+		Mime:       "image/png",
+		Backend:    "local",
+		Path:       "/tmp/" + key,
+		BucketID:   "test-bucket",
+		OwnerPTID:  "ptid:v1:actor:peers:p:test-author",
+		Visibility: "public",
 	}
 	if err := f.gdb.Create(row).Error; err != nil {
 		t.Fatalf("seed oss_files key=%q: %v", key, err)
@@ -87,7 +87,7 @@ func TestImagePost_AcceptsLocalCIDs(t *testing.T) {
 				ImageIds: cids,
 			},
 		},
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create IMAGE: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestImagePost_RejectsForeignOriginCID(t *testing.T) {
 				ImageIds: []string{"oss://attacker.example/leak.png"},
 			},
 		},
-	}, 200)
+	}, fixturePTID(200))
 	if err == nil {
 		t.Fatal("expected error for foreign-origin cid, got nil")
 	}
@@ -143,7 +143,7 @@ func TestImagePost_RejectsEmptyImageList(t *testing.T) {
 				ImageIds: nil,
 			},
 		},
-	}, 300)
+	}, fixturePTID(300))
 	if err == nil {
 		t.Fatal("expected error for empty image_ids, got nil")
 	}
@@ -178,7 +178,7 @@ func TestImagePost_RejectsOverCap(t *testing.T) {
 				ImageIds: cids,
 			},
 		},
-	}, 400)
+	}, fixturePTID(400))
 	if err == nil {
 		t.Fatal("expected error for >9 images, got nil")
 	}
@@ -217,7 +217,7 @@ func TestImagePost_RejectsMalformedCID(t *testing.T) {
 						ImageIds: []string{tc.cid},
 					},
 				},
-			}, 500)
+			}, fixturePTID(500))
 			if err == nil {
 				t.Fatalf("cid %q: expected error, got nil", tc.cid)
 			}
@@ -258,7 +258,7 @@ func TestImagePost_RejectsPartialUnknownSet(t *testing.T) {
 				ImageIds: cids,
 			},
 		},
-	}, 600)
+	}, fixturePTID(600))
 	if err == nil {
 		t.Fatal("expected error when one of the cids is unknown, got nil")
 	}
@@ -291,7 +291,7 @@ func TestImagePost_RejectsMixedLegacyAndTypedImages(t *testing.T) {
 				}},
 			},
 		},
-	}, 700)
+	}, fixturePTID(700))
 	if err == nil {
 		t.Fatal("expected mixed image_ids/images rejection, got nil")
 	}
@@ -313,11 +313,11 @@ func TestImagePost_PrivatePersistsAudienceKeyEnvelopes(t *testing.T) {
 		Audience: &model.Audience{
 			Kind: model.Audience_SELF,
 			KeyEnvelopes: []*model.AudienceKeyEnvelope{{
-				RecipientDid: "101",
-				DeviceId:     "device-a",
-				KeyId:        cid,
-				EncryptedKey: []byte("sealed-key"),
-				Suite:        "signaling-envelope-x3dh-aes256gcm/media-key-v1",
+				RecipientPtid: fixturePTID(101),
+				DeviceId:      "device-a",
+				KeyId:         cid,
+				EncryptedKey:  []byte("sealed-key"),
+				Suite:         "signaling-envelope-x3dh-aes256gcm/media-key-v1",
 			}},
 		},
 		Content: &model.CreatePostRequest_Image{
@@ -335,7 +335,7 @@ func TestImagePost_PrivatePersistsAudienceKeyEnvelopes(t *testing.T) {
 				}},
 			},
 		},
-	}, 101)
+	}, fixturePTID(101))
 	if err != nil {
 		t.Fatalf("create private IMAGE: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestImagePost_PrivateRejectsInlineMediaKeyMaterial(t *testing.T) {
 		Audience: &model.Audience{
 			Kind: model.Audience_SELF,
 			KeyEnvelopes: []*model.AudienceKeyEnvelope{{
-				RecipientDid: "101", DeviceId: "device-a", KeyId: cid, EncryptedKey: []byte("sealed-key"), Suite: "suite",
+				RecipientPtid: fixturePTID(101), DeviceId: "device-a", KeyId: cid, EncryptedKey: []byte("sealed-key"), Suite: "suite",
 			}},
 		},
 		Content: &model.CreatePostRequest_Image{
@@ -372,7 +372,7 @@ func TestImagePost_PrivateRejectsInlineMediaKeyMaterial(t *testing.T) {
 				}},
 			},
 		},
-	}, 101)
+	}, fixturePTID(101))
 	if err == nil {
 		t.Fatal("expected inline key material rejection, got nil")
 	}

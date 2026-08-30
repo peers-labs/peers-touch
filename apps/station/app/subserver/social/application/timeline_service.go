@@ -42,7 +42,7 @@ func NewTimelineService(repos *infrastructure.Repos, moments *MomentService, res
 }
 
 // GetTimeline dispatches per `req.Type`.
-func (s *TimelineService) GetTimeline(ctx context.Context, req *model.GetTimelineRequest, viewerID uint64) (*model.GetTimelineResponse, error) {
+func (s *TimelineService) GetTimeline(ctx context.Context, req *model.GetTimelineRequest, viewerPTID string) (*model.GetTimelineResponse, error) {
 	limit := int(req.Limit)
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -50,15 +50,14 @@ func (s *TimelineService) GetTimeline(ctx context.Context, req *model.GetTimelin
 	switch req.Type {
 	case model.TimelineType_TIMELINE_PUBLIC:
 		if req.Sort == model.TimelineSort_TIMELINE_SORT_HOT {
-			return s.getPublicHotTimeline(ctx, req.Cursor, limit, viewerID)
+			return s.getPublicHotTimeline(ctx, req.Cursor, limit, viewerPTID)
 		}
-		return s.getPublicTimeline(ctx, req.Cursor, limit, viewerID)
+		return s.getPublicTimeline(ctx, req.Cursor, limit, viewerPTID)
 	case model.TimelineType_TIMELINE_USER:
-		userID := domain.ParseID(req.UserId)
-		if userID == 0 {
-			return nil, fmt.Errorf("invalid user_id")
+		if req.ActorPtid == "" {
+			return nil, fmt.Errorf("invalid actor_ptid")
 		}
-		posts, nextCursor, hasMore, err := s.moments.ListByAuthor(ctx, userID, viewerID, req.Cursor, limit)
+		posts, nextCursor, hasMore, err := s.moments.ListByAuthor(ctx, req.ActorPtid, viewerPTID, req.Cursor, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +72,7 @@ func (s *TimelineService) GetTimeline(ctx context.Context, req *model.GetTimelin
 			Explanations: buildFeedObjectExplanations(posts, nil, model.RelationshipReason_RELATIONSHIP_REASON_PROFILE_VIEW),
 		}, nil
 	case model.TimelineType_TIMELINE_HOME:
-		return s.getHomeTimeline(ctx, req.Cursor, limit, viewerID)
+		return s.getHomeTimeline(ctx, req.Cursor, limit, viewerPTID)
 	default:
 		return nil, fmt.Errorf("unsupported timeline type %s", req.Type)
 	}
@@ -82,7 +81,7 @@ func (s *TimelineService) GetTimeline(ctx context.Context, req *model.GetTimelin
 // getPublicTimeline returns the global public-only feed. Uses a
 // single-source cursor — no merge necessary because only the public
 // table is involved.
-func (s *TimelineService) getPublicTimeline(ctx context.Context, cursor string, limit int, viewerID uint64) (*model.GetTimelineResponse, error) {
+func (s *TimelineService) getPublicTimeline(ctx context.Context, cursor string, limit int, viewerPTID string) (*model.GetTimelineResponse, error) {
 	c, err := domain.DecodeCursor(cursor)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cursor: %w", err)
@@ -96,19 +95,19 @@ func (s *TimelineService) getPublicTimeline(ctx context.Context, cursor string, 
 		rows = rows[:limit]
 	}
 	scannedRows := append([]*domain.Post(nil), rows...)
-	viewer, err := buildViewerForAuthors(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups, postAuthorIDs(rows))
+	viewer, err := buildViewerForAuthors(ctx, viewerPTID, s.repos, s.groups, postAuthorPTIDs(rows))
 	if err != nil {
 		return nil, fmt.Errorf("build viewer: %w", err)
 	}
 	readable := rows[:0]
 	for _, p := range rows {
-		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
+		if ok, _ := domain.CanRead(viewer, p.AuthorPTID, p.Audience, p.IsDeleted()); !ok {
 			continue
 		}
 		readable = append(readable, p)
 	}
 	rows = readable
-	posts := s.moments.hydratePosts(ctx, rows, viewerID)
+	posts := s.moments.hydratePosts(ctx, rows, viewerPTID)
 	posts, err = s.applyStationModeration(ctx, posts)
 	if err != nil {
 		return nil, err
@@ -129,7 +128,7 @@ func (s *TimelineService) getPublicTimeline(ctx context.Context, cursor string, 
 // getPublicHotTimeline returns the trending public feed. Repo
 // computes the score in SQL and orders by it; we only need to encode
 // the next cursor from the last row of the page.
-func (s *TimelineService) getPublicHotTimeline(ctx context.Context, cursor string, limit int, viewerID uint64) (*model.GetTimelineResponse, error) {
+func (s *TimelineService) getPublicHotTimeline(ctx context.Context, cursor string, limit int, viewerPTID string) (*model.GetTimelineResponse, error) {
 	c, err := domain.DecodeHotCursor(cursor)
 	if err != nil {
 		return nil, fmt.Errorf("invalid hot cursor: %w", err)
@@ -143,19 +142,19 @@ func (s *TimelineService) getPublicHotTimeline(ctx context.Context, cursor strin
 		rows = rows[:limit]
 	}
 	scannedRows := append([]*domain.Post(nil), rows...)
-	viewer, err := buildViewerForAuthors(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups, postAuthorIDs(rows))
+	viewer, err := buildViewerForAuthors(ctx, viewerPTID, s.repos, s.groups, postAuthorPTIDs(rows))
 	if err != nil {
 		return nil, fmt.Errorf("build viewer: %w", err)
 	}
 	readable := rows[:0]
 	for _, p := range rows {
-		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
+		if ok, _ := domain.CanRead(viewer, p.AuthorPTID, p.Audience, p.IsDeleted()); !ok {
 			continue
 		}
 		readable = append(readable, p)
 	}
 	rows = readable
-	posts := s.moments.hydratePosts(ctx, rows, viewerID)
+	posts := s.moments.hydratePosts(ctx, rows, viewerPTID)
 	posts, err = s.applyStationModeration(ctx, posts)
 	if err != nil {
 		return nil, err
@@ -182,15 +181,15 @@ func (s *TimelineService) getPublicHotTimeline(ctx context.Context, cursor strin
 // "home" is meaningless without an identity. Plan callers should
 // dispatch them to the public timeline instead; we keep the empty
 // behaviour here so a misrouted call doesn't 500.
-func (s *TimelineService) getHomeTimeline(ctx context.Context, cursor string, limit int, viewerID uint64) (*model.GetTimelineResponse, error) {
+func (s *TimelineService) getHomeTimeline(ctx context.Context, cursor string, limit int, viewerPTID string) (*model.GetTimelineResponse, error) {
 	if s.repos.Deliveries == nil {
-		return s.getLegacyHomeTimeline(ctx, cursor, limit, viewerID)
+		return s.getLegacyHomeTimeline(ctx, cursor, limit, viewerPTID)
 	}
-	return s.getDeliveryHomeTimeline(ctx, cursor, limit, viewerID)
+	return s.getDeliveryHomeTimeline(ctx, cursor, limit, viewerPTID)
 }
 
-func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor string, limit int, viewerID uint64) (*model.GetTimelineResponse, error) {
-	if viewerID == 0 {
+func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor string, limit int, viewerPTID string) (*model.GetTimelineResponse, error) {
+	if viewerPTID == "" {
 		return &model.GetTimelineResponse{}, nil
 	}
 
@@ -205,34 +204,34 @@ func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor st
 		mc.SetSource("followed_public", &single)
 	}
 
-	viewer, err := buildViewer(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups)
+	viewer, err := buildViewer(ctx, viewerPTID, s.repos, s.groups)
 	if err != nil {
 		return nil, fmt.Errorf("build viewer: %w", err)
 	}
-	followingIDs := make([]uint64, 0, len(viewer.Following))
-	for id := range viewer.Following {
-		followingIDs = append(followingIDs, id)
+	followingPTIDs := make([]string, 0, len(viewer.Following))
+	for ptid := range viewer.Following {
+		followingPTIDs = append(followingPTIDs, ptid)
 	}
 
 	pageBudget := limit + 1
-	deliveries, err := s.repos.Deliveries.ListInbox(ctx, viewerID, mc.Source("delivery"), pageBudget)
+	deliveries, err := s.repos.Deliveries.ListInbox(ctx, viewerPTID, mc.Source("delivery"), pageBudget)
 	if err != nil {
 		return nil, err
 	}
-	selfPublic, _ := s.repos.PublicPosts.ListByAuthor(ctx, viewerID, mc.Source("self_public"), pageBudget)
-	followedPublic, _ := s.repos.PublicPosts.ListPublicByAuthors(ctx, followingIDs, mc.Source("followed_public"), pageBudget)
+	selfPublic, _ := s.repos.PublicPosts.ListByAuthor(ctx, viewerPTID, mc.Source("self_public"), pageBudget)
+	followedPublic, _ := s.repos.PublicPosts.ListPublicByAuthors(ctx, followingPTIDs, mc.Source("followed_public"), pageBudget)
 
 	items := make([]timelineItem, 0, len(deliveries)+len(selfPublic)+len(followedPublic))
 	for i := range deliveries {
 		d := deliveries[i]
-		post, err := s.moments.GetMoment(ctx, fmt.Sprintf("%d", d.PostID), viewerID)
+		post, err := s.moments.GetMoment(ctx, fmt.Sprintf("%d", d.PostID), viewerPTID)
 		if err != nil {
 			return nil, err
 		}
 		if post == nil {
 			continue
 		}
-		domainPost := &domain.Post{ID: d.PostID, AuthorID: d.AuthorID, CreatedAt: d.DeliveredAt}
+		domainPost := &domain.Post{ID: d.PostID, AuthorPTID: d.AuthorPTID, CreatedAt: d.DeliveredAt}
 		items = append(items, timelineItem{source: "delivery", delivery: &d, post: domainPost, wire: post})
 	}
 	for _, p := range selfPublic {
@@ -259,7 +258,7 @@ func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor st
 		if item.wire != nil {
 			wirePost = item.wire
 		} else if item.post != nil {
-			got := s.moments.hydratePosts(ctx, []*domain.Post{item.post}, viewerID)
+			got := s.moments.hydratePosts(ctx, []*domain.Post{item.post}, viewerPTID)
 			if len(got) > 0 {
 				wirePost = got[0]
 			}
@@ -305,8 +304,8 @@ func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor st
 	}, nil
 }
 
-func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor string, limit int, viewerID uint64) (*model.GetTimelineResponse, error) {
-	if viewerID == 0 {
+func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor string, limit int, viewerPTID string) (*model.GetTimelineResponse, error) {
+	if viewerPTID == "" {
 		return &model.GetTimelineResponse{}, nil
 	}
 
@@ -327,14 +326,14 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 		mc.SetSource("groups", &single)
 	}
 
-	viewer, err := buildViewer(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups)
+	viewer, err := buildViewer(ctx, viewerPTID, s.repos, s.groups)
 	if err != nil {
 		return nil, fmt.Errorf("build viewer: %w", err)
 	}
 
-	followingIDs := make([]uint64, 0, len(viewer.Following))
-	for id := range viewer.Following {
-		followingIDs = append(followingIDs, id)
+	followingPTIDs := make([]string, 0, len(viewer.Following))
+	for ptid := range viewer.Following {
+		followingPTIDs = append(followingPTIDs, ptid)
 	}
 	circleIDs := make([]uint64, 0, len(viewer.MemberOfCircles))
 	for id := range viewer.MemberOfCircles {
@@ -347,12 +346,12 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 
 	pageBudget := limit + 1
 
-	srcSelfPublic, _ := s.repos.PublicPosts.ListByAuthor(ctx, viewerID, mc.Source("self_public"), pageBudget)
-	srcSelfPrivate, _ := s.repos.PrivatePosts.ListByAuthorVisibleTo(ctx, viewerID, viewerID, mc.Source("self_private"), pageBudget)
-	srcFollowedPublic, _ := s.repos.PublicPosts.ListPublicByAuthors(ctx, followingIDs, mc.Source("followed_public"), pageBudget)
-	srcFollowedFollowers, _ := s.repos.PrivatePosts.ListByFollowingForViewer(ctx, viewerID, followingIDs, mc.Source("followed_followers"), pageBudget)
-	srcCircles, _ := s.repos.PrivatePosts.ListByCirclesForViewer(ctx, viewerID, circleIDs, mc.Source("circles"), pageBudget)
-	srcGroups, _ := s.repos.PrivatePosts.ListByGroupsForViewer(ctx, viewerID, groupIDs, mc.Source("groups"), pageBudget)
+	srcSelfPublic, _ := s.repos.PublicPosts.ListByAuthor(ctx, viewerPTID, mc.Source("self_public"), pageBudget)
+	srcSelfPrivate, _ := s.repos.PrivatePosts.ListByAuthorVisibleTo(ctx, viewerPTID, viewerPTID, mc.Source("self_private"), pageBudget)
+	srcFollowedPublic, _ := s.repos.PublicPosts.ListPublicByAuthors(ctx, followingPTIDs, mc.Source("followed_public"), pageBudget)
+	srcFollowedFollowers, _ := s.repos.PrivatePosts.ListByFollowingForViewer(ctx, viewerPTID, followingPTIDs, mc.Source("followed_followers"), pageBudget)
+	srcCircles, _ := s.repos.PrivatePosts.ListByCirclesForViewer(ctx, viewerPTID, circleIDs, mc.Source("circles"), pageBudget)
+	srcGroups, _ := s.repos.PrivatePosts.ListByGroupsForViewer(ctx, viewerPTID, groupIDs, mc.Source("groups"), pageBudget)
 
 	type src struct {
 		name  string
@@ -383,7 +382,7 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 	if hasMore {
 		merged = merged[:limit]
 	}
-	if err := markBlockedAuthors(ctx, &viewer, s.repos, postAuthorIDs(merged)); err != nil {
+	if err := markBlockedAuthors(ctx, &viewer, s.repos, postAuthorPTIDs(merged)); err != nil {
 		return nil, fmt.Errorf("mark blocked authors: %w", err)
 	}
 
@@ -393,12 +392,12 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 	}
 	readable := make([]*domain.Post, 0, len(merged))
 	for _, p := range merged {
-		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
+		if ok, _ := domain.CanRead(viewer, p.AuthorPTID, p.Audience, p.IsDeleted()); !ok {
 			continue
 		}
 		readable = append(readable, p)
 	}
-	posts := s.moments.hydratePosts(ctx, readable, viewerID)
+	posts := s.moments.hydratePosts(ctx, readable, viewerPTID)
 	posts, err = s.applyStationModeration(ctx, posts)
 	if err != nil {
 		return nil, err

@@ -19,7 +19,7 @@ interface ImageLightboxProps {
   cids: string[];
   images?: ImageAttachment[];
   audience?: Audience | null;
-  authorDid?: string | null;
+  authorPtid?: string | null;
   alts?: string[];
   startIndex: number;
   onClose: () => void;
@@ -29,7 +29,7 @@ export function ImageLightbox({
   cids,
   images,
   audience,
-  authorDid,
+  authorPtid,
   alts,
   startIndex,
   onClose,
@@ -48,9 +48,9 @@ export function ImageLightbox({
       mimeType: 'image/*',
       mediaEncryption: attachment?.mediaEncryption,
       audience,
-      authorDid,
+      authorPtid,
     }),
-    [attachment?.mediaEncryption, audience, authorDid, cid, isHttp],
+    [attachment?.mediaEncryption, audience, authorPtid, cid, isHttp],
   );
   const decryptedSrc = useDecryptedOssAttachmentUrl(encryptedAttachment);
   const plainSrc = useOssAttachmentUrl(isHttp || attachment?.mediaEncryption ? null : cid);

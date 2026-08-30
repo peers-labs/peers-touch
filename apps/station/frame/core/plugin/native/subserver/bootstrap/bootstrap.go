@@ -388,6 +388,12 @@ func (s *SubServer) Handlers() []server.Handler {
 			s.info,
 			server.WithMethod(server.GET),
 		),
+		server.NewTypedHandler(
+			"bootstrap-station-identity",
+			"/sub-bootstrap/station-identity",
+			server.POST,
+			s.stationIdentity,
+		),
 		// Phase B: federation locator diagnostic endpoints. These are
 		// intentionally on the bootstrap subserver (not /touch/...)
 		// because they manipulate the federation DHT directly and have

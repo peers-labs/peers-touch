@@ -7,7 +7,7 @@ import (
 )
 
 // Reaction is one typed reaction by one actor on one post. The composite
-// natural key `(PostID, ActorID, Kind)` enforces "at most one of each
+// natural key `(PostID, ActorPTID, Kind)` enforces "at most one of each
 // kind per (actor, post)" — the same actor can LIKE *and* LOVE the same
 // post but cannot LIKE it twice. Toggling a reaction on/off is therefore
 // a clean Insert/Delete on the same key.
@@ -19,7 +19,7 @@ type Reaction struct {
 	PostID    uint64
 	PostClass PostClass
 
-	ActorID uint64
+	ActorPTID string
 
 	// Kind matches the `model.ReactionKind` proto enum. Stored on the DB
 	// side as `varchar(16)` containing the proto enum's String() form

@@ -12,20 +12,18 @@ import (
 // DB / network) so it can be unit-tested with handcrafted relationship
 // graphs.
 //
-// All set-typed fields use `map[uint64]struct{}` for O(1) membership.
-// An anonymous viewer (no auth) is represented by zero-valued ActorID
+// Actor set fields use PTID keys for O(1) membership.
+// An anonymous viewer (no auth) is represented by an empty ActorPTID
 // and empty maps; in that case only PUBLIC posts are visible.
 type Viewer struct {
-	// Internal actor ID of the viewer (0 = anonymous).
-	ActorID uint64
-	// Globally unique DID of the viewer (empty = anonymous).
-	ActorDID string
-	// Set of actor IDs the viewer follows.
-	Following map[uint64]struct{}
-	// Set of actor IDs that are blocked in either direction with this viewer.
+	// Globally unique PTID of the viewer (empty = anonymous).
+	ActorPTID string
+	// Set of actor PTIDs the viewer follows.
+	Following map[string]struct{}
+	// Set of actor PTIDs that are blocked in either direction with this viewer.
 	// Block is a cross-social privacy boundary: it suppresses follow-derived
 	// visibility and prevents audience selectors from becoming a bypass.
-	BlockedActors map[uint64]struct{}
+	BlockedActors map[string]struct{}
 	// Set of circle IDs the viewer is a member of (looked up via the
 	// circle owner's perspective — circles are publisher-owned but
 	// here we enumerate from the viewer's side).
@@ -51,32 +49,32 @@ type Viewer struct {
 //
 // The returned `reason` is human-readable and intended for log lines /
 // 403 explanations; do NOT pattern-match on it.
-func CanRead(viewer Viewer, authorID uint64, audience *model.Audience, deleted bool) (bool, string) {
+func CanRead(viewer Viewer, authorPTID string, audience *model.Audience, deleted bool) (bool, string) {
 	if deleted {
 		return false, "post is deleted"
 	}
-	if viewer.ActorID != 0 && viewer.ActorID == authorID {
+	if viewer.ActorPTID != "" && viewer.ActorPTID == authorPTID {
 		return true, "author"
 	}
-	if _, blocked := viewer.BlockedActors[authorID]; blocked {
+	if _, blocked := viewer.BlockedActors[authorPTID]; blocked {
 		return false, "blocked relationship"
 	}
 	if audience == nil {
 		return true, "no audience (legacy public)"
 	}
-	return canReadKind(viewer, authorID, audience, audience.Kind)
+	return canReadKind(viewer, authorPTID, audience, audience.Kind)
 }
 
-func canReadKind(viewer Viewer, authorID uint64, audience *model.Audience, kind model.Audience_Kind) (bool, string) {
+func canReadKind(viewer Viewer, authorPTID string, audience *model.Audience, kind model.Audience_Kind) (bool, string) {
 	switch kind {
 	case model.Audience_PUBLIC:
 		return true, "public"
 
 	case model.Audience_FOLLOWERS:
-		if viewer.ActorID == 0 {
+		if viewer.ActorPTID == "" {
 			return false, "anonymous viewer cannot read FOLLOWERS audience"
 		}
-		if _, ok := viewer.Following[authorID]; ok {
+		if _, ok := viewer.Following[authorPTID]; ok {
 			return true, "follower of author"
 		}
 		return false, "not a follower"
@@ -105,11 +103,11 @@ func canReadKind(viewer Viewer, authorID uint64, audience *model.Audience, kind 
 		return false, "self-only audience"
 
 	case model.Audience_CUSTOM_ALLOW:
-		if viewer.ActorDID == "" {
+		if viewer.ActorPTID == "" {
 			return false, "anonymous viewer cannot match CUSTOM_ALLOW"
 		}
-		for _, did := range audience.ActorDids {
-			if did == viewer.ActorDID {
+		for _, ptid := range audience.ActorPtids {
+			if ptid == viewer.ActorPTID {
 				return true, "in custom allow list"
 			}
 		}
@@ -117,9 +115,9 @@ func canReadKind(viewer Viewer, authorID uint64, audience *model.Audience, kind 
 
 	case model.Audience_CUSTOM_DENY:
 		// Hard-deny first.
-		if viewer.ActorDID != "" {
-			for _, did := range audience.ActorDids {
-				if did == viewer.ActorDID {
+		if viewer.ActorPTID != "" {
+			for _, ptid := range audience.ActorPtids {
+				if ptid == viewer.ActorPTID {
 					return false, "in custom deny list"
 				}
 			}
@@ -129,7 +127,7 @@ func canReadKind(viewer Viewer, authorID uint64, audience *model.Audience, kind 
 		if base != model.Audience_PUBLIC && base != model.Audience_FOLLOWERS {
 			return false, "CUSTOM_DENY base_kind must be PUBLIC or FOLLOWERS"
 		}
-		return canReadKind(viewer, authorID, audience, base)
+		return canReadKind(viewer, authorPTID, audience, base)
 
 	default:
 		return false, fmt.Sprintf("unknown audience kind: %s", kind)
@@ -166,8 +164,8 @@ func ValidateAudience(a *model.Audience) error {
 		if a.TargetId != 0 {
 			return fmt.Errorf("%s audience must not set target_id", a.Kind)
 		}
-		if len(a.ActorDids) > 0 {
-			return fmt.Errorf("%s audience must not set actor_dids", a.Kind)
+		if len(a.ActorPtids) > 0 {
+			return fmt.Errorf("%s audience must not set actor_ptids", a.Kind)
 		}
 		if a.BaseKind != model.Audience_KIND_UNSPECIFIED {
 			return fmt.Errorf("%s audience must not set base_kind", a.Kind)
@@ -177,16 +175,16 @@ func ValidateAudience(a *model.Audience) error {
 		if a.TargetId == 0 {
 			return fmt.Errorf("%s audience requires target_id", a.Kind)
 		}
-		if len(a.ActorDids) > 0 {
-			return fmt.Errorf("%s audience must not set actor_dids", a.Kind)
+		if len(a.ActorPtids) > 0 {
+			return fmt.Errorf("%s audience must not set actor_ptids", a.Kind)
 		}
 		if a.BaseKind != model.Audience_KIND_UNSPECIFIED {
 			return fmt.Errorf("%s audience must not set base_kind", a.Kind)
 		}
 
 	case model.Audience_CUSTOM_ALLOW:
-		if len(a.ActorDids) == 0 {
-			return fmt.Errorf("CUSTOM_ALLOW audience requires non-empty actor_dids")
+		if len(a.ActorPtids) == 0 {
+			return fmt.Errorf("CUSTOM_ALLOW audience requires non-empty actor_ptids")
 		}
 		if a.TargetId != 0 {
 			return fmt.Errorf("CUSTOM_ALLOW audience must not set target_id")
@@ -196,8 +194,8 @@ func ValidateAudience(a *model.Audience) error {
 		}
 
 	case model.Audience_CUSTOM_DENY:
-		if len(a.ActorDids) == 0 {
-			return fmt.Errorf("CUSTOM_DENY audience requires non-empty actor_dids")
+		if len(a.ActorPtids) == 0 {
+			return fmt.Errorf("CUSTOM_DENY audience requires non-empty actor_ptids")
 		}
 		if a.TargetId != 0 {
 			return fmt.Errorf("CUSTOM_DENY audience must not set target_id")
@@ -221,7 +219,7 @@ func ValidateAudience(a *model.Audience) error {
 //
 //   - CIRCLE/GROUP target_id is non-zero (already enforced by
 //     ValidateAudience but re-asserted here for defensive depth).
-//   - For CUSTOM_ALLOW / CUSTOM_DENY, the author's own DID must NOT
+//   - For CUSTOM_ALLOW / CUSTOM_DENY, the author's own PTID must NOT
 //     appear in the actor list. Including yourself in your own allow
 //     list is meaningless (you can always read your own posts) and
 //     including yourself in your own deny list would be silently
@@ -236,14 +234,14 @@ func ValidateAudience(a *model.Audience) error {
 //     author — that needs a CircleRepository call (MomentService does it).
 //   - Whether the author is a member of a GROUP target — that needs a
 //     GroupMembershipChecker call (MomentService does it).
-//   - Whether each DID in CUSTOM_* resolves to a known local actor —
+//   - Whether each PTID in CUSTOM_* resolves to a known local actor —
 //     that's an ActorResolver concern, optional in P1 (no-op default).
 //
 // Splitting "shape" (ValidateAudience), "author-bound" (this function),
 // and "cross-subserver" (MomentService) keeps the domain layer testable
 // without DB / chat dependencies while still covering the predicate
 // "would creating this Post violate any audience invariant".
-func ValidateForAuthor(authorDID string, a *model.Audience) error {
+func ValidateForAuthor(authorPTID string, a *model.Audience) error {
 	if err := ValidateAudience(a); err != nil {
 		return err
 	}
@@ -256,14 +254,14 @@ func ValidateForAuthor(authorDID string, a *model.Audience) error {
 		}
 
 	case model.Audience_CUSTOM_ALLOW, model.Audience_CUSTOM_DENY:
-		if authorDID == "" {
-			// Without a DID we cannot enforce "author not in own list";
+		if authorPTID == "" {
+			// Without a PTID we cannot enforce "author not in own list";
 			// fail closed. In practice the application layer always has
-			// the author's DID at hand.
-			return fmt.Errorf("%s audience requires non-empty author DID for self-inclusion check", a.Kind)
+			// the author's PTID at hand.
+			return fmt.Errorf("%s audience requires non-empty author PTID for self-inclusion check", a.Kind)
 		}
-		for _, did := range a.ActorDids {
-			if did == authorDID {
+		for _, ptid := range a.ActorPtids {
+			if ptid == authorPTID {
 				return fmt.Errorf("%s audience must not include the author themselves", a.Kind)
 			}
 		}

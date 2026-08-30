@@ -30,12 +30,12 @@ type SuperUserConfig struct {
 type DashboardConfig struct {
 	Peers struct {
 		Dashboard struct {
-			Enable      bool            `pconf:"enable" json:"enable" yaml:"enable"`
-			SuperUser   SuperUserConfig `pconf:"super_user" json:"super_user" yaml:"super_user"`
-			AllowedDIDs []string        `pconf:"allowed_dids" json:"allowed_dids" yaml:"allowed_dids"`
-			JWTSecret   string          `pconf:"jwt_secret" json:"jwt_secret" yaml:"jwt_secret"`
-			SessionTTL  string          `pconf:"session_ttl" json:"session_ttl" yaml:"session_ttl"`
-			LocalOnly   bool            `pconf:"local_only" json:"local_only" yaml:"local_only"`
+			Enable       bool            `pconf:"enable" json:"enable" yaml:"enable"`
+			SuperUser    SuperUserConfig `pconf:"super_user" json:"super_user" yaml:"super_user"`
+			AllowedPTIDs []string        `pconf:"allowed_ptids" json:"allowed_ptids" yaml:"allowed_ptids"`
+			JWTSecret    string          `pconf:"jwt_secret" json:"jwt_secret" yaml:"jwt_secret"`
+			SessionTTL   string          `pconf:"session_ttl" json:"session_ttl" yaml:"session_ttl"`
+			LocalOnly    bool            `pconf:"local_only" json:"local_only" yaml:"local_only"`
 		} `pconf:"dashboard" json:"dashboard" yaml:"dashboard"`
 	} `pconf:"peers" json:"peers" yaml:"peers"`
 }

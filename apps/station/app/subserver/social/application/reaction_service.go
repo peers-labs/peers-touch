@@ -10,7 +10,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
 
@@ -43,15 +42,15 @@ func NewReactionService(gdb *gorm.DB, repos *infrastructure.Repos, publishers ..
 // Visibility is implicitly enforced because the parent post must be
 // readable to land here — the handler calls MomentService.GetMoment
 // first; if that returns nil the reaction is rejected upstream.
-func (s *ReactionService) React(ctx context.Context, postIDStr string, viewerID uint64, kind model.ReactionKind) ([]*model.ReactionSummary, error) {
-	postID, postAuthorID, postClass, err := s.resolvePostMeta(ctx, postIDStr)
+func (s *ReactionService) React(ctx context.Context, postIDStr, viewerPTID string, kind model.ReactionKind) ([]*model.ReactionSummary, error) {
+	postID, postAuthorPTID, postClass, err := s.resolvePostMeta(ctx, postIDStr, viewerPTID)
 	if err != nil {
 		return nil, err
 	}
 	if postID == 0 {
 		return nil, fmt.Errorf("post %s not found", postIDStr)
 	}
-	if viewerID == 0 {
+	if viewerPTID == "" {
 		return nil, fmt.Errorf("authentication required to react")
 	}
 	if kind == model.ReactionKind_REACTION_UNSPECIFIED {
@@ -61,7 +60,7 @@ func (s *ReactionService) React(ctx context.Context, postIDStr string, viewerID 
 	if err := s.repos.Reactions.Add(ctx, &domain.Reaction{
 		PostID:    postID,
 		PostClass: postClass,
-		ActorID:   viewerID,
+		ActorPTID: viewerPTID,
 		Kind:      kind,
 	}); err != nil {
 		return nil, fmt.Errorf("add reaction: %w", err)
@@ -71,31 +70,31 @@ func (s *ReactionService) React(ctx context.Context, postIDStr string, viewerID 
 		logger.Warn(ctx, "react: snapshot refresh failed", "post_id", postID, "error", err)
 	}
 
-	summaries, err := s.Aggregate(ctx, postID, postAuthorID, viewerID)
+	summaries, err := s.Aggregate(ctx, postID, postAuthorPTID, viewerPTID)
 	if err != nil {
 		return nil, err
 	}
 	if s.publisher != nil {
-		s.publisher.PublishReacted(ctx, postID, viewerID, kind, false)
+		s.publisher.PublishReacted(ctx, postID, viewerPTID, kind, false)
 	}
 	return s.toProtoSummaries(summaries), nil
 }
 
 // Unreact removes `(post, viewer, kind)` and refreshes the snapshot.
 // No-op if the row doesn't exist.
-func (s *ReactionService) Unreact(ctx context.Context, postIDStr string, viewerID uint64, kind model.ReactionKind) ([]*model.ReactionSummary, error) {
-	postID, postAuthorID, postClass, err := s.resolvePostMeta(ctx, postIDStr)
+func (s *ReactionService) Unreact(ctx context.Context, postIDStr, viewerPTID string, kind model.ReactionKind) ([]*model.ReactionSummary, error) {
+	postID, postAuthorPTID, postClass, err := s.resolvePostMeta(ctx, postIDStr, viewerPTID)
 	if err != nil {
 		return nil, err
 	}
 	if postID == 0 {
 		return nil, fmt.Errorf("post %s not found", postIDStr)
 	}
-	if viewerID == 0 {
+	if viewerPTID == "" {
 		return nil, fmt.Errorf("authentication required to unreact")
 	}
 
-	if err := s.repos.Reactions.Remove(ctx, postID, viewerID, kind.String()); err != nil {
+	if err := s.repos.Reactions.Remove(ctx, postID, viewerPTID, kind.String()); err != nil {
 		return nil, fmt.Errorf("remove reaction: %w", err)
 	}
 
@@ -103,12 +102,12 @@ func (s *ReactionService) Unreact(ctx context.Context, postIDStr string, viewerI
 		logger.Warn(ctx, "unreact: snapshot refresh failed", "post_id", postID, "error", err)
 	}
 
-	summaries, err := s.Aggregate(ctx, postID, postAuthorID, viewerID)
+	summaries, err := s.Aggregate(ctx, postID, postAuthorPTID, viewerPTID)
 	if err != nil {
 		return nil, err
 	}
 	if s.publisher != nil {
-		s.publisher.PublishReacted(ctx, postID, viewerID, kind, true)
+		s.publisher.PublishReacted(ctx, postID, viewerPTID, kind, true)
 	}
 	return s.toProtoSummaries(summaries), nil
 }
@@ -116,23 +115,23 @@ func (s *ReactionService) Unreact(ctx context.Context, postIDStr string, viewerI
 // Aggregate returns the reaction summaries for a post, with the
 // viewer-bound `reacted_by_viewer` flag populated. Callers that don't
 // need the viewer-bound flag may pass viewerID = 0.
-func (s *ReactionService) Aggregate(ctx context.Context, postID, postAuthorID, viewerID uint64) ([]domain.ReactionSummary, error) {
+func (s *ReactionService) Aggregate(ctx context.Context, postID uint64, postAuthorPTID, viewerPTID string) ([]domain.ReactionSummary, error) {
 	reactions, err := s.repos.Reactions.ListByPost(ctx, postID)
 	if err != nil {
 		return nil, err
 	}
-	visibility, err := buildInteractionVisibility(ctx, s.repos, viewerID, postAuthorID)
+	visibility, err := buildInteractionVisibility(ctx, s.repos, viewerPTID, postAuthorPTID)
 	if err != nil {
 		return nil, err
 	}
 	counts := make(map[model.ReactionKind]int64)
 	reacted := make(map[model.ReactionKind]bool)
 	for _, reaction := range reactions {
-		if !visibility.CanSeeActor(reaction.ActorID) {
+		if !visibility.CanSeeActor(reaction.ActorPTID) {
 			continue
 		}
 		counts[reaction.Kind] += 1
-		if viewerID != 0 && reaction.ActorID == viewerID {
+		if viewerPTID != "" && reaction.ActorPTID == viewerPTID {
 			reacted[reaction.Kind] = true
 		}
 	}
@@ -160,31 +159,27 @@ func (s *ReactionService) Aggregate(ctx context.Context, postID, postAuthorID, v
 // React/Unreact). We therefore query the underlying tables directly
 // rather than going through `PrivatePosts.GetByID` whose viewer-bound
 // filter would strip SELF posts when called with `viewerID == 0`.
-func (s *ReactionService) resolvePostMeta(ctx context.Context, postIDStr string) (uint64, uint64, domain.PostClass, error) {
+func (s *ReactionService) resolvePostMeta(ctx context.Context, postIDStr, viewerPTID string) (uint64, string, domain.PostClass, error) {
 	postID := domain.ParseID(postIDStr)
 	if postID == 0 {
-		return 0, 0, "", fmt.Errorf("invalid post_id %q", postIDStr)
+		return 0, "", "", fmt.Errorf("invalid post_id %q", postIDStr)
 	}
 
-	var pub db.SocialPublicPost
-	if err := s.gdb.WithContext(ctx).
-		Where("id = ? AND deleted_at IS NULL", postID).
-		First(&pub).Error; err != nil && err != gorm.ErrRecordNotFound {
-		return 0, 0, "", err
+	pub, err := s.repos.PublicPosts.GetByID(ctx, postID)
+	if err != nil {
+		return 0, "", "", err
 	}
-	if pub.ID != 0 {
-		return postID, pub.AuthorID, domain.PostClassPublic, nil
+	if pub != nil {
+		return postID, pub.AuthorPTID, domain.PostClassPublic, nil
 	}
-	var priv db.SocialPrivatePost
-	if err := s.gdb.WithContext(ctx).
-		Where("id = ? AND deleted_at IS NULL", postID).
-		First(&priv).Error; err != nil && err != gorm.ErrRecordNotFound {
-		return 0, 0, "", err
+	priv, err := s.repos.PrivatePosts.GetByID(ctx, postID, viewerPTID)
+	if err != nil {
+		return 0, "", "", err
 	}
-	if priv.ID != 0 {
-		return postID, priv.AuthorID, domain.PostClassPrivate, nil
+	if priv != nil {
+		return postID, priv.AuthorPTID, domain.PostClassPrivate, nil
 	}
-	return 0, 0, "", nil
+	return 0, "", "", nil
 }
 
 func (s *ReactionService) refreshSnapshot(ctx context.Context, postID uint64, class domain.PostClass) error {

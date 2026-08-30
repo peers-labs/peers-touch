@@ -24,7 +24,7 @@ const (
 
 type ActorSessionSnapshot struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Handle        string                 `protobuf:"bytes,2,opt,name=handle,proto3" json:"handle,omitempty"`
 	Protocol      string                 `protobuf:"bytes,3,opt,name=protocol,proto3" json:"protocol,omitempty"`
 	BaseUrl       string                 `protobuf:"bytes,4,opt,name=base_url,json=baseUrl,proto3" json:"base_url,omitempty"`
@@ -66,9 +66,9 @@ func (*ActorSessionSnapshot) Descriptor() ([]byte, []int) {
 	return file_domain_actor_session_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *ActorSessionSnapshot) GetActorId() string {
+func (x *ActorSessionSnapshot) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -126,9 +126,10 @@ var File_domain_actor_session_proto protoreflect.FileDescriptor
 
 const file_domain_actor_session_proto_rawDesc = "" +
 	"\n" +
-	"\x1adomain/actor/session.proto\x12\vpeers.actor\x1a\x1fgoogle/protobuf/timestamp.proto\"\x99\x02\n" +
-	"\x14ActorSessionSnapshot\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x16\n" +
+	"\x1adomain/actor/session.proto\x12\vpeers.actor\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9d\x02\n" +
+	"\x14ActorSessionSnapshot\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x16\n" +
 	"\x06handle\x18\x02 \x01(\tR\x06handle\x12\x1a\n" +
 	"\bprotocol\x18\x03 \x01(\tR\bprotocol\x12\x19\n" +
 	"\bbase_url\x18\x04 \x01(\tR\abaseUrl\x12!\n" +

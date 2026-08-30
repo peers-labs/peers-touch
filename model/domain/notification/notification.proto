@@ -13,11 +13,13 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 // Notification represents a single notification entity.
 // title and body carry server-generated fallback text for push previews.
 // Rich clients render locale-aware display text from the structured
-// references (type + target_type + target_id + actor_id).
+// references (type + target_type + target_id + actor_ptid).
 message Notification {
+  reserved "recipient_id";
+
   string id = 1;
-  string recipient_id = 2;
-  string actor_id = 3;
+  string recipient_ptid = 2;
+  string actor_ptid = 3;
   NotificationType type = 4;
   NotificationCategory category = 5;
   NotificationStatus status = 6;
@@ -41,7 +43,7 @@ message NotificationGroup {
   string title = 6;
   string body = 7;
   int32 count = 8;
-  repeated string actor_ids = 9;
+  repeated string actor_ptids = 9;
   Notification latest = 10;
   google.protobuf.Timestamp updated_at = 11;
 }
@@ -102,7 +104,7 @@ enum NotificationStatus {
 // NotificationPreference controls notification behavior per category.
 // The type field is reserved for future per-type control granularity.
 message NotificationPreference {
-  string actor_id = 1;
+  string actor_ptid = 1;
   NotificationCategory category = 2;
   bool enabled = 3;
   bool push_enabled = 4;

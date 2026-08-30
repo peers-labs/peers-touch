@@ -13,7 +13,6 @@ import (
 	"time"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
-	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -59,14 +58,38 @@ func VerifyBridgeSignature(req *model.OAuthBridgeRequest) error {
 	return nil
 }
 
-// OAuthBridgeLogin performs the find-or-register + bind + issue-token flow.
-func OAuthBridgeLogin(ctx context.Context, req *model.OAuthBridgeRequest, baseURL, clientIP, userAgent string) (*SessionLoginResult, error) {
+// ResolveOAuthBridgeActor resolves the provider identity without creating a
+// session. OAuth attempt flows use this boundary so later Access Gates can run
+// before any business credential exists.
+func ResolveOAuthBridgeActor(ctx context.Context, req *model.OAuthBridgeRequest, baseURL string) (*db.Actor, error) {
+	identity := &coreauth.OAuth2Identity{
+		ProviderID:     coreauth.OAuth2ProviderID(req.GetProvider()),
+		ProviderUserID: req.GetProviderUserId(),
+		Username:       req.GetUsername(),
+		DisplayName:    req.GetDisplayName(),
+		AvatarURL:      req.GetAvatarUrl(),
+		Email:          req.GetEmail(),
+	}
+	return ResolveOAuthIdentityActor(ctx, identity, baseURL)
+}
+
+// ResolveOAuthIdentityActor performs find-or-register and provider binding
+// without issuing a token or creating a session.
+func ResolveOAuthIdentityActor(
+	ctx context.Context,
+	identity *coreauth.OAuth2Identity,
+	baseURL string,
+) (*db.Actor, error) {
+	if identity == nil || identity.ProviderID == "" || identity.ProviderUserID == "" || identity.Email == "" {
+		return nil, fmt.Errorf("OAuth identity provider, provider user ID, and email are required")
+	}
+
 	identityStore := GetOAuth2IdentityStore()
 
 	_, actorID, err := identityStore.GetByProviderUser(
 		ctx,
-		coreauth.OAuth2ProviderID(req.GetProvider()),
-		req.GetProviderUserId(),
+		identity.ProviderID,
+		identity.ProviderUserID,
 	)
 
 	var actorRow *db.Actor
@@ -76,29 +99,29 @@ func OAuthBridgeLogin(ctx context.Context, req *model.OAuthBridgeRequest, baseUR
 		if err != nil {
 			return nil, fmt.Errorf("load bound actor: %w", err)
 		}
-		log.Infof(ctx, "[OAuth] existing binding provider=%s actor=%d", req.GetProvider(), actorID)
 	} else if errors.Is(err, gorm.ErrRecordNotFound) {
-		actorRow, err = findOrRegisterActor(ctx, req, baseURL)
+		actorRow, err = findOrRegisterOAuthActor(ctx, identity, baseURL)
 		if err != nil {
 			return nil, fmt.Errorf("find-or-register actor: %w", err)
 		}
-		log.Infof(ctx, "[OAuth] new actor registered id=%d username=%s", actorRow.ID, actorRow.PreferredUsername)
 	} else {
 		return nil, fmt.Errorf("identity lookup: %w", err)
 	}
 
 	isPrimary := actorID == 0
-	if err := identityStore.BindActor(ctx, uint64(actorRow.ID), &coreauth.OAuth2Identity{
-		ProviderID:     coreauth.OAuth2ProviderID(req.GetProvider()),
-		ProviderUserID: req.GetProviderUserId(),
-		Username:       req.GetUsername(),
-		DisplayName:    req.GetDisplayName(),
-		AvatarURL:      req.GetAvatarUrl(),
-		Email:          req.GetEmail(),
-	}, isPrimary); err != nil {
-		log.Warnf(ctx, "[OAuth] bind warning: %v (non-fatal)", err)
+	if err := identityStore.BindActor(ctx, uint64(actorRow.ID), identity, isPrimary); err != nil {
+		return nil, fmt.Errorf("bind OAuth identity: %w", err)
 	}
+	return actorRow, nil
+}
 
+// OAuthBridgeLogin preserves the external bridge flow while sharing the
+// side-effect-free actor resolution used by native OAuth attempts.
+func OAuthBridgeLogin(ctx context.Context, req *model.OAuthBridgeRequest, baseURL, clientIP, userAgent string) (*SessionLoginResult, error) {
+	actorRow, err := ResolveOAuthBridgeActor(ctx, req, baseURL)
+	if err != nil {
+		return nil, err
+	}
 	return IssueTokenAndSession(ctx, actorRow, clientIP, userAgent, "desktop",
 		map[string]interface{}{"auth_method": "oauth", "provider": req.GetProvider()})
 }
@@ -115,22 +138,22 @@ func loadActor(ctx context.Context, actorID uint64) (*db.Actor, error) {
 	return &row, nil
 }
 
-func findOrRegisterActor(ctx context.Context, req *model.OAuthBridgeRequest, baseURL string) (*db.Actor, error) {
-	if req.GetEmail() != "" {
-		existing, err := actor.GetActorByEmail(ctx, req.GetEmail())
+func findOrRegisterOAuthActor(ctx context.Context, identity *coreauth.OAuth2Identity, baseURL string) (*db.Actor, error) {
+	if identity.Email != "" {
+		existing, err := actor.GetActorByEmail(ctx, identity.Email)
 		if err == nil && existing != nil {
 			return existing, nil
 		}
 	}
 
-	username, err := ensureUniqueUsername(ctx, req.GetUsername())
+	username, err := ensureUniqueUsername(ctx, identity.Username)
 	if err != nil {
 		return nil, fmt.Errorf("ensure unique username: %w", err)
 	}
 
 	password := generateRandomHex(32)
 
-	email := req.GetEmail()
+	email := identity.Email
 	if email == "" {
 		email = fmt.Sprintf("%s@oauth.local", username)
 	}

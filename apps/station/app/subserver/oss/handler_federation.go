@@ -213,7 +213,7 @@ func (s *ossSubServer) writeFederationMintError(r *http.Request, w http.Response
 // federation mint attempt. Failures are logged-not-returned —
 // auditing must never fail a successful mint or convert a
 // 403 into a 500.
-func (s *ossSubServer) recordFederationAudit(r *http.Request, meta *ossdb.FileMeta, actorID, peerStationID, outcome, reason string) {
+func (s *ossSubServer) recordFederationAudit(r *http.Request, meta *ossdb.FileMeta, actorPTID, peerStationID, outcome, reason string) {
 	if s.auditRepo == nil || meta == nil {
 		return
 	}
@@ -222,7 +222,7 @@ func (s *ossSubServer) recordFederationAudit(r *http.Request, meta *ossdb.FileMe
 		FileKey:       meta.Key,
 		FileID:        meta.ID,
 		BucketID:      meta.BucketID,
-		ActorID:       actorID,
+		ActorPTID:     actorPTID,
 		PeerStationID: peerStationID,
 		SizeBytes:     meta.Size,
 		Outcome:       outcome,

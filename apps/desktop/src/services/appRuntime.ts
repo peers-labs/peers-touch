@@ -78,14 +78,14 @@ export function installAppRuntime(): void {
   log.info('appRuntime', 'early runtime installed');
 }
 
-export function installDeferredAppRuntimeProjections(actorId: string): Promise<void> {
+export function installDeferredAppRuntimeProjections(actorPtid: string): Promise<void> {
   if (deferredInstalled) return Promise.resolve();
   if (deferredInstallInFlight) return deferredInstallInFlight;
 
   installAppRuntime();
 
   deferredInstallInFlight = (async () => {
-    await bootstrapRuntime(socialRuntime.id, actorId);
+    await bootstrapRuntime(socialRuntime.id, actorPtid);
 
     const installedRuntimes: string[] = [];
     for (const runtimeId of DEFERRED_APP_RUNTIME_IDS) {

@@ -23,10 +23,10 @@ const (
 )
 
 type FollowRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TargetActorId string                 `protobuf:"bytes,1,opt,name=target_actor_id,json=targetActorId,proto3" json:"target_actor_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TargetActorPtid string                 `protobuf:"bytes,1,opt,name=target_actor_ptid,json=targetActorPtid,proto3" json:"target_actor_ptid,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *FollowRequest) Reset() {
@@ -59,9 +59,9 @@ func (*FollowRequest) Descriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *FollowRequest) GetTargetActorId() string {
+func (x *FollowRequest) GetTargetActorPtid() string {
 	if x != nil {
-		return x.TargetActorId
+		return x.TargetActorPtid
 	}
 	return ""
 }
@@ -119,10 +119,10 @@ func (x *FollowResponse) GetRelationship() *Relationship {
 }
 
 type UnfollowRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TargetActorId string                 `protobuf:"bytes,1,opt,name=target_actor_id,json=targetActorId,proto3" json:"target_actor_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TargetActorPtid string                 `protobuf:"bytes,1,opt,name=target_actor_ptid,json=targetActorPtid,proto3" json:"target_actor_ptid,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *UnfollowRequest) Reset() {
@@ -155,9 +155,9 @@ func (*UnfollowRequest) Descriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *UnfollowRequest) GetTargetActorId() string {
+func (x *UnfollowRequest) GetTargetActorPtid() string {
 	if x != nil {
-		return x.TargetActorId
+		return x.TargetActorPtid
 	}
 	return ""
 }
@@ -207,10 +207,10 @@ func (x *UnfollowResponse) GetSuccess() bool {
 }
 
 type GetRelationshipRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TargetActorId string                 `protobuf:"bytes,1,opt,name=target_actor_id,json=targetActorId,proto3" json:"target_actor_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TargetActorPtid string                 `protobuf:"bytes,1,opt,name=target_actor_ptid,json=targetActorPtid,proto3" json:"target_actor_ptid,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GetRelationshipRequest) Reset() {
@@ -243,9 +243,9 @@ func (*GetRelationshipRequest) Descriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *GetRelationshipRequest) GetTargetActorId() string {
+func (x *GetRelationshipRequest) GetTargetActorPtid() string {
 	if x != nil {
-		return x.TargetActorId
+		return x.TargetActorPtid
 	}
 	return ""
 }
@@ -295,10 +295,10 @@ func (x *GetRelationshipResponse) GetRelationship() *Relationship {
 }
 
 type GetRelationshipsRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	TargetActorIds []string               `protobuf:"bytes,1,rep,name=target_actor_ids,json=targetActorIds,proto3" json:"target_actor_ids,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TargetActorPtids []string               `protobuf:"bytes,1,rep,name=target_actor_ptids,json=targetActorPtids,proto3" json:"target_actor_ptids,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetRelationshipsRequest) Reset() {
@@ -331,9 +331,9 @@ func (*GetRelationshipsRequest) Descriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *GetRelationshipsRequest) GetTargetActorIds() []string {
+func (x *GetRelationshipsRequest) GetTargetActorPtids() []string {
 	if x != nil {
-		return x.TargetActorIds
+		return x.TargetActorPtids
 	}
 	return nil
 }
@@ -383,14 +383,14 @@ func (x *GetRelationshipsResponse) GetRelationships() []*Relationship {
 }
 
 type Relationship struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	TargetActorId string                 `protobuf:"bytes,2,opt,name=target_actor_id,json=targetActorId,proto3" json:"target_actor_id,omitempty"`
-	Following     bool                   `protobuf:"varint,3,opt,name=following,proto3" json:"following,omitempty"`
-	FollowedBy    bool                   `protobuf:"varint,4,opt,name=followed_by,json=followedBy,proto3" json:"followed_by,omitempty"`
-	FollowedAt    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=followed_at,json=followedAt,proto3" json:"followed_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TargetActorPtid string                 `protobuf:"bytes,2,opt,name=target_actor_ptid,json=targetActorPtid,proto3" json:"target_actor_ptid,omitempty"`
+	Following       bool                   `protobuf:"varint,3,opt,name=following,proto3" json:"following,omitempty"`
+	FollowedBy      bool                   `protobuf:"varint,4,opt,name=followed_by,json=followedBy,proto3" json:"followed_by,omitempty"`
+	FollowedAt      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=followed_at,json=followedAt,proto3" json:"followed_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Relationship) Reset() {
@@ -430,9 +430,9 @@ func (x *Relationship) GetId() string {
 	return ""
 }
 
-func (x *Relationship) GetTargetActorId() string {
+func (x *Relationship) GetTargetActorPtid() string {
 	if x != nil {
-		return x.TargetActorId
+		return x.TargetActorPtid
 	}
 	return ""
 }
@@ -460,7 +460,7 @@ func (x *Relationship) GetFollowedAt() *timestamppb.Timestamp {
 
 type GetFollowersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Cursor        string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -497,9 +497,9 @@ func (*GetFollowersRequest) Descriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *GetFollowersRequest) GetActorId() string {
+func (x *GetFollowersRequest) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -580,7 +580,7 @@ func (x *GetFollowersResponse) GetTotal() int32 {
 
 type GetFollowingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Cursor        string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -617,9 +617,9 @@ func (*GetFollowingRequest) Descriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *GetFollowingRequest) GetActorId() string {
+func (x *GetFollowingRequest) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -700,7 +700,7 @@ func (x *GetFollowingResponse) GetTotal() int32 {
 
 type Follower struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
-	ActorId     string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid   string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Username    string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
 	DisplayName string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	AvatarUrl   string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
@@ -744,9 +744,9 @@ func (*Follower) Descriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *Follower) GetActorId() string {
+func (x *Follower) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -795,7 +795,7 @@ func (x *Follower) GetHomeStationDomain() string {
 
 type Following struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
-	ActorId     string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid   string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Username    string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
 	DisplayName string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	AvatarUrl   string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
@@ -838,9 +838,9 @@ func (*Following) Descriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{14}
 }
 
-func (x *Following) GetActorId() string {
+func (x *Following) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -891,52 +891,55 @@ var File_domain_social_relationship_proto protoreflect.FileDescriptor
 
 const file_domain_social_relationship_proto_rawDesc = "" +
 	"\n" +
-	" domain/social/relationship.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"7\n" +
-	"\rFollowRequest\x12&\n" +
-	"\x0ftarget_actor_id\x18\x01 \x01(\tR\rtargetActorId\"y\n" +
+	" domain/social/relationship.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\";\n" +
+	"\rFollowRequest\x12*\n" +
+	"\x11target_actor_ptid\x18\x01 \x01(\tR\x0ftargetActorPtid\"y\n" +
 	"\x0eFollowResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12M\n" +
-	"\frelationship\x18\x02 \x01(\v2).peers_touch.model.social.v1.RelationshipR\frelationship\"9\n" +
-	"\x0fUnfollowRequest\x12&\n" +
-	"\x0ftarget_actor_id\x18\x01 \x01(\tR\rtargetActorId\",\n" +
+	"\frelationship\x18\x02 \x01(\v2).peers_touch.model.social.v1.RelationshipR\frelationship\"=\n" +
+	"\x0fUnfollowRequest\x12*\n" +
+	"\x11target_actor_ptid\x18\x01 \x01(\tR\x0ftargetActorPtid\",\n" +
 	"\x10UnfollowResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"@\n" +
-	"\x16GetRelationshipRequest\x12&\n" +
-	"\x0ftarget_actor_id\x18\x01 \x01(\tR\rtargetActorId\"h\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"D\n" +
+	"\x16GetRelationshipRequest\x12*\n" +
+	"\x11target_actor_ptid\x18\x01 \x01(\tR\x0ftargetActorPtid\"h\n" +
 	"\x17GetRelationshipResponse\x12M\n" +
-	"\frelationship\x18\x01 \x01(\v2).peers_touch.model.social.v1.RelationshipR\frelationship\"C\n" +
-	"\x17GetRelationshipsRequest\x12(\n" +
-	"\x10target_actor_ids\x18\x01 \x03(\tR\x0etargetActorIds\"k\n" +
+	"\frelationship\x18\x01 \x01(\v2).peers_touch.model.social.v1.RelationshipR\frelationship\"G\n" +
+	"\x17GetRelationshipsRequest\x12,\n" +
+	"\x12target_actor_ptids\x18\x01 \x03(\tR\x10targetActorPtids\"k\n" +
 	"\x18GetRelationshipsResponse\x12O\n" +
-	"\rrelationships\x18\x01 \x03(\v2).peers_touch.model.social.v1.RelationshipR\rrelationships\"\xc2\x01\n" +
+	"\rrelationships\x18\x01 \x03(\v2).peers_touch.model.social.v1.RelationshipR\rrelationships\"\xc6\x01\n" +
 	"\fRelationship\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12&\n" +
-	"\x0ftarget_actor_id\x18\x02 \x01(\tR\rtargetActorId\x12\x1c\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12*\n" +
+	"\x11target_actor_ptid\x18\x02 \x01(\tR\x0ftargetActorPtid\x12\x1c\n" +
 	"\tfollowing\x18\x03 \x01(\bR\tfollowing\x12\x1f\n" +
 	"\vfollowed_by\x18\x04 \x01(\bR\n" +
 	"followedBy\x12;\n" +
 	"\vfollowed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"followedAt\"^\n" +
-	"\x13GetFollowersRequest\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x16\n" +
+	"followedAt\"b\n" +
+	"\x13GetFollowersRequest\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"\x92\x01\n" +
 	"\x14GetFollowersResponse\x12C\n" +
 	"\tfollowers\x18\x01 \x03(\v2%.peers_touch.model.social.v1.FollowerR\tfollowers\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x14\n" +
-	"\x05total\x18\x03 \x01(\x05R\x05total\"^\n" +
-	"\x13GetFollowingRequest\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x16\n" +
+	"\x05total\x18\x03 \x01(\x05R\x05total\"b\n" +
+	"\x13GetFollowingRequest\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"\x93\x01\n" +
 	"\x14GetFollowingResponse\x12D\n" +
 	"\tfollowing\x18\x01 \x03(\v2&.peers_touch.model.social.v1.FollowingR\tfollowing\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x14\n" +
-	"\x05total\x18\x03 \x01(\x05R\x05total\"\x9e\x02\n" +
-	"\bFollower\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1a\n" +
+	"\x05total\x18\x03 \x01(\x05R\x05total\"\xa2\x02\n" +
+	"\bFollower\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x1d\n" +
 	"\n" +
@@ -944,9 +947,10 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\vfollowed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"followedAt\x12*\n" +
 	"\x10federated_handle\x18\x06 \x01(\tR\x10federated_handle\x120\n" +
-	"\x13home_station_domain\x18\a \x01(\tR\x13home_station_domain\"\x9f\x02\n" +
-	"\tFollowing\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1a\n" +
+	"\x13home_station_domain\x18\a \x01(\tR\x13home_station_domain\"\xa3\x02\n" +
+	"\tFollowing\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x1d\n" +
 	"\n" +

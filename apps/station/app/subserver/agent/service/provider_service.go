@@ -78,7 +78,7 @@ type ProviderCallRequest struct {
 	Model        string
 	SystemPrompt string
 	Messages     []domain.Message
-	UserID       string
+	ActorPTID    string
 	ProviderType string // "ollama", "openai", "anthropic", or empty for auto-detect
 	Effort       string // reasoning effort: "low" | "medium" | "high"
 	DeltaSink    ProviderDeltaSink

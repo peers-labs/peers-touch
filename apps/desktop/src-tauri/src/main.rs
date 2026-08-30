@@ -428,9 +428,6 @@ fn main() {
                     tracing::error!(error = %e, "Failed to resolve attachment cache dir at startup");
                 }
             }
-            if let Err(e) = infrastructure::session_store::migrate_legacy() {
-                tracing::warn!(error = %e, "session_store: migrate_legacy failed (continuing boot)");
-            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -946,11 +943,11 @@ fn main() {
                 );
                 let mut handles = Vec::new();
                 for session in sessions {
-                    if session.actor.actor_id.is_empty() || session.jwt.trim().is_empty() {
+                    if session.actor.ptid.is_empty() || session.jwt.trim().is_empty() {
                         continue;
                     }
                     if let Some(h) = supervisor.notify(
-                        &session.actor.actor_id,
+                        &session.actor.ptid,
                         &session.jwt,
                         domain::presence::PresenceTrigger::AppShutdown,
                         app.clone(),

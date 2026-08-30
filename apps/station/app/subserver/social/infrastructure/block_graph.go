@@ -2,7 +2,6 @@ package infrastructure
 
 import (
 	"context"
-	"strconv"
 
 	"gorm.io/gorm"
 )
@@ -10,89 +9,114 @@ import (
 const friendshipStatusBlocked = 3
 
 type BlockGraphRepository interface {
-	IsBlockedBetween(ctx context.Context, actorID, peerID uint64) (bool, error)
+	IsBlockedBetween(ctx context.Context, actorPTID, peerPTID string) (bool, error)
+	BlockedActorPTIDs(ctx context.Context, actorPTID string, peerPTIDs []string) (map[string]bool, error)
 	BlockedActorIDs(ctx context.Context, actorID uint64, peerIDs []uint64) (map[uint64]bool, error)
 }
 
 type blockGraphRepository struct {
-	db *gorm.DB
+	db       *gorm.DB
+	identity *ActorIdentity
 }
 
 func NewBlockGraphRepository(gdb *gorm.DB) BlockGraphRepository {
-	return &blockGraphRepository{db: gdb}
+	return &blockGraphRepository{db: gdb, identity: NewActorIdentity(gdb)}
 }
 
-func (r *blockGraphRepository) IsBlockedBetween(ctx context.Context, actorID, peerID uint64) (bool, error) {
-	if actorID == 0 || peerID == 0 {
+func (r *blockGraphRepository) IsBlockedBetween(ctx context.Context, actorPTID, peerPTID string) (bool, error) {
+	if actorPTID == "" || peerPTID == "" {
 		return false, nil
 	}
 	var found int
 	err := r.db.WithContext(ctx).
 		Table("friend_chat_friendships").
 		Select("1").
-		Where("status = ? AND ((actor_did = ? AND peer_did = ?) OR (actor_did = ? AND peer_did = ?))",
+		Where("status = ? AND ((actor_ptid = ? AND peer_ptid = ?) OR (actor_ptid = ? AND peer_ptid = ?))",
 			friendshipStatusBlocked,
-			strconv.FormatUint(actorID, 10),
-			strconv.FormatUint(peerID, 10),
-			strconv.FormatUint(peerID, 10),
-			strconv.FormatUint(actorID, 10),
+			actorPTID,
+			peerPTID,
+			peerPTID,
+			actorPTID,
 		).
 		Limit(1).
 		Scan(&found).Error
 	return found == 1, err
 }
 
-func (r *blockGraphRepository) BlockedActorIDs(ctx context.Context, actorID uint64, peerIDs []uint64) (map[uint64]bool, error) {
-	out := make(map[uint64]bool)
-	if actorID == 0 || len(peerIDs) == 0 {
+func (r *blockGraphRepository) BlockedActorPTIDs(ctx context.Context, actorPTID string, peerPTIDs []string) (map[string]bool, error) {
+	out := make(map[string]bool)
+	if actorPTID == "" || len(peerPTIDs) == 0 {
 		return out, nil
 	}
-	peerSet := make(map[string]struct{}, len(peerIDs))
-	peerValues := make([]string, 0, len(peerIDs))
-	for _, peerID := range peerIDs {
-		if peerID == 0 {
+	peerSet := make(map[string]struct{}, len(peerPTIDs))
+	peerValues := make([]string, 0, len(peerPTIDs))
+	for _, peerPTID := range peerPTIDs {
+		if peerPTID == "" {
 			continue
 		}
-		value := strconv.FormatUint(peerID, 10)
-		if _, ok := peerSet[value]; ok {
+		if _, ok := peerSet[peerPTID]; ok {
 			continue
 		}
-		peerSet[value] = struct{}{}
-		peerValues = append(peerValues, value)
+		peerSet[peerPTID] = struct{}{}
+		peerValues = append(peerValues, peerPTID)
 	}
 	if len(peerValues) == 0 {
 		return out, nil
 	}
-	actorValue := strconv.FormatUint(actorID, 10)
 	var rows []struct {
-		ActorDID string `gorm:"column:actor_did"`
-		PeerDID  string `gorm:"column:peer_did"`
+		ActorPtid string `gorm:"column:actor_ptid"`
+		PeerPtid  string `gorm:"column:peer_ptid"`
 	}
 	if err := r.db.WithContext(ctx).
 		Table("friend_chat_friendships").
-		Select("actor_did, peer_did").
-		Where("status = ? AND ((actor_did = ? AND peer_did IN ?) OR (peer_did = ? AND actor_did IN ?))",
+		Select("actor_ptid, peer_ptid").
+		Where("status = ? AND ((actor_ptid = ? AND peer_ptid IN ?) OR (peer_ptid = ? AND actor_ptid IN ?))",
 			friendshipStatusBlocked,
-			actorValue,
+			actorPTID,
 			peerValues,
-			actorValue,
+			actorPTID,
 			peerValues,
 		).
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
-		peer := row.PeerDID
-		if row.PeerDID == actorValue {
-			peer = row.ActorDID
+		peer := row.PeerPtid
+		if row.PeerPtid == actorPTID {
+			peer = row.ActorPtid
 		}
 		if _, ok := peerSet[peer]; !ok {
 			continue
 		}
-		peerID, err := strconv.ParseUint(peer, 10, 64)
-		if err == nil {
-			out[peerID] = true
-		}
+		out[peer] = true
 	}
 	return out, nil
+}
+
+func (r *blockGraphRepository) BlockedActorIDs(ctx context.Context, actorID uint64, peerIDs []uint64) (map[uint64]bool, error) {
+	actorPTID, err := r.identity.ResolveID(ctx, actorID)
+	if err != nil || actorPTID == "" {
+		return map[uint64]bool{}, err
+	}
+	peerPTIDs := make([]string, 0, len(peerIDs))
+	idByPTID := make(map[string]uint64, len(peerIDs))
+	for _, peerID := range peerIDs {
+		peerPTID, resolveErr := r.identity.ResolveID(ctx, peerID)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		if peerPTID != "" {
+			peerPTIDs = append(peerPTIDs, peerPTID)
+			idByPTID[peerPTID] = peerID
+		}
+	}
+	blockedPTIDs, err := r.BlockedActorPTIDs(ctx, actorPTID, peerPTIDs)
+	if err != nil {
+		return nil, err
+	}
+	blockedIDs := make(map[uint64]bool, len(blockedPTIDs))
+	for peerPTID, blocked := range blockedPTIDs {
+		blockedIDs[idByPTID[peerPTID]] = blocked
+	}
+	return blockedIDs, nil
 }

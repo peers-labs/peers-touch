@@ -411,7 +411,7 @@ fn enforce_session_quota(
             "applets_invoke",
             Some(applet_id),
             capability,
-            context.actor_id.as_deref(),
+            context.actor_ptid.as_deref(),
             "quota_exceeded",
         );
         return Err(applet_fail(
@@ -457,7 +457,7 @@ fn ensure_allowed(
         command,
         applet_id,
         capability,
-        context.actor_id.as_deref(),
+        context.actor_ptid.as_deref(),
         "forbidden",
     );
     Err(AppResult::fail(
@@ -498,7 +498,7 @@ fn ensure_manifest_authorized(
             "applets_invoke",
             Some(applet_id),
             normalized_capability,
-            context.actor_id.as_deref(),
+            context.actor_ptid.as_deref(),
             "manifest_mismatch",
         );
         return Err(AppResult::fail(
@@ -516,7 +516,7 @@ fn ensure_manifest_authorized(
                 "applets_invoke",
                 Some(applet_id),
                 normalized_capability,
-                context.actor_id.as_deref(),
+                context.actor_ptid.as_deref(),
                 "manifest_mismatch",
             );
             return Err(AppResult::fail(
@@ -547,7 +547,7 @@ fn ensure_manifest_authorized(
                 "applets_invoke",
                 Some(applet_id),
                 normalized_capability,
-                context.actor_id.as_deref(),
+                context.actor_ptid.as_deref(),
                 if is_manifest_error {
                     "manifest_mismatch"
                 } else {
@@ -594,7 +594,7 @@ fn ensure_manifest_authorized(
             "applets_invoke",
             Some(applet_id),
             &method,
-            context.actor_id.as_deref(),
+            context.actor_ptid.as_deref(),
             "permission_denied",
         );
         return Err(AppResult::fail(
@@ -720,7 +720,7 @@ fn invoke_gateway(
                 command,
                 applet_id,
                 &normalized_capability,
-                context.actor_id.as_deref(),
+                context.actor_ptid.as_deref(),
                 "not_implemented",
             );
             return AppResult::fail(
@@ -736,7 +736,7 @@ fn invoke_gateway(
         command,
         applet_id,
         &normalized_capability,
-        context.actor_id.as_deref(),
+        context.actor_ptid.as_deref(),
         "ok",
     );
     success_payload(command, response)
@@ -859,7 +859,7 @@ pub fn applets_create_session(
             "applets_create_session",
             Some(&applet_id),
             "applets.create_session",
-            context.actor_id.as_deref(),
+            context.actor_ptid.as_deref(),
             "manifest_mismatch",
         );
         return AppResult::fail(
@@ -886,7 +886,7 @@ pub fn applets_create_session(
                 "applets_create_session",
                 Some(&applet_id),
                 "applets.create_session",
-                context.actor_id.as_deref(),
+                context.actor_ptid.as_deref(),
                 "manifest_mismatch",
             );
             return AppResult::fail(
@@ -908,7 +908,7 @@ pub fn applets_create_session(
                 "applets_create_session",
                 Some(&applet_id),
                 "applets.create_session",
-                context.actor_id.as_deref(),
+                context.actor_ptid.as_deref(),
                 "ok",
             );
             success_payload(
@@ -923,7 +923,7 @@ pub fn applets_create_session(
                 "applets_create_session",
                 Some(&applet_id),
                 "applets.create_session",
-                context.actor_id.as_deref(),
+                context.actor_ptid.as_deref(),
                 if is_manifest_error {
                     "manifest_mismatch"
                 } else {
@@ -989,7 +989,7 @@ pub fn applets_invoke(
                     "applets_invoke",
                     Some(&applet_id),
                     &method,
-                    context.actor_id.as_deref(),
+                    context.actor_ptid.as_deref(),
                     "ok",
                 );
                 return success_payload("applets_invoke", json!({ "ok": true }));
@@ -1053,7 +1053,7 @@ pub fn applets_invoke(
                 "applets_invoke",
                 Some(&applet_id),
                 &normalized_capability,
-                context.actor_id.as_deref(),
+                context.actor_ptid.as_deref(),
                 "ok",
             );
             success_payload("applets_invoke", response)
@@ -1064,7 +1064,7 @@ pub fn applets_invoke(
                 "applets_invoke",
                 Some(&applet_id),
                 &normalized_capability,
-                context.actor_id.as_deref(),
+                context.actor_ptid.as_deref(),
                 "error",
             );
             let (applet_code, rust_code) = map_capability_error(&error_msg);
@@ -5709,7 +5709,7 @@ mod tests {
 
     fn context() -> AccessContext {
         AccessContext {
-            actor_id: Some("actor-test".to_string()),
+            actor_ptid: Some("actor-test".to_string()),
             token: "token-test".to_string(),
         }
     }
@@ -5934,7 +5934,7 @@ mod tests {
         std::env::set_var("PEERS_APPLET_SERVICE_NOTE", &base_url);
 
         let gateway_context = AccessContext {
-            actor_id: Some("note-real-product-gate-actor".to_string()),
+            actor_ptid: Some("note-real-product-gate-actor".to_string()),
             token,
         };
         let data_dir = temp_data_dir("note-real-product-gate");
@@ -6184,7 +6184,7 @@ mod tests {
         std::env::set_var("PEERS_STATION_URL", &base_url);
 
         let gateway_context = AccessContext {
-            actor_id: Some("atelier-real-product-gate-actor".to_string()),
+            actor_ptid: Some("atelier-real-product-gate-actor".to_string()),
             token: token.clone(),
         };
         let data_dir = temp_data_dir("atelier-real-product-gate");

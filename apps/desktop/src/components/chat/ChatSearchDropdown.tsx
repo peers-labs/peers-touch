@@ -130,7 +130,7 @@ function ResultRow({
       data-chat-search-result
       data-chat-search-result-id={conversation.id}
       data-chat-search-result-kind={conversation.kind}
-      data-chat-search-result-peer-did={conversation.peerDid || ''}
+      data-chat-search-result-peer-ptid={conversation.peerPtid || ''}
       onClick={() => onSelect(conversation)}
       style={{
         display: 'flex',

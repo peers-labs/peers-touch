@@ -16,7 +16,7 @@ pub struct LocalChatRecord {
     pub scope: String,
     pub conversation_id: String,
     pub message_id: String,
-    pub sender_did: String,
+    pub sender_ptid: String,
     pub content: String,
     pub reply_to_ulid: String,
     pub thread_root_ulid: String,
@@ -34,7 +34,7 @@ pub struct CryptoOutboxEntry {
 #[derive(Clone, Debug)]
 struct CryptoSessionState {
     session_id: String,
-    peer_did: String,
+    peer_ptid: String,
     send_chain_key: [u8; 32],
     send_counter: u32,
     recv_chain_key: [u8; 32],
@@ -172,7 +172,7 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             scope TEXT NOT NULL,
             conversation_id TEXT NOT NULL,
             message_id TEXT NOT NULL PRIMARY KEY,
-            sender_did TEXT NOT NULL,
+            sender_ptid TEXT NOT NULL,
             content TEXT NOT NULL,
             reply_to_ulid TEXT NOT NULL DEFAULT '',
             thread_root_ulid TEXT NOT NULL DEFAULT '',
@@ -189,12 +189,12 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             message_id UNINDEXED,
             scope UNINDEXED,
             conversation_id UNINDEXED,
-            sender_did UNINDEXED,
+            sender_ptid UNINDEXED,
             content
         );
         CREATE TABLE IF NOT EXISTS crypto_sessions (
             session_id TEXT NOT NULL PRIMARY KEY,
-            peer_did TEXT NOT NULL,
+            peer_ptid TEXT NOT NULL,
             send_chain_key BLOB NOT NULL,
             send_counter INTEGER NOT NULL DEFAULT 0,
             recv_chain_key BLOB NOT NULL,
@@ -350,7 +350,7 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS group_messages (
             ulid               TEXT    NOT NULL PRIMARY KEY,
             group_ulid         TEXT    NOT NULL DEFAULT '',
-            sender_did         TEXT    NOT NULL DEFAULT '',
+            sender_ptid         TEXT    NOT NULL DEFAULT '',
             content            TEXT    NOT NULL DEFAULT '',
             encrypted_payload  BLOB,
             reply_to_ulid      TEXT    NOT NULL DEFAULT '',
@@ -442,12 +442,12 @@ fn apply_add_double_ratchet_columns_v1(conn: &Connection) -> Result<(), String> 
 
 fn upsert_record(conn: &Connection, item: &LocalChatRecord) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO chat_messages(scope, conversation_id, message_id, sender_did, content, reply_to_ulid, thread_root_ulid, sent_at)
+        "INSERT INTO chat_messages(scope, conversation_id, message_id, sender_ptid, content, reply_to_ulid, thread_root_ulid, sent_at)
          VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(message_id) DO UPDATE SET
            scope=excluded.scope,
            conversation_id=excluded.conversation_id,
-           sender_did=excluded.sender_did,
+           sender_ptid=excluded.sender_ptid,
            content=excluded.content,
            reply_to_ulid=excluded.reply_to_ulid,
            thread_root_ulid=excluded.thread_root_ulid,
@@ -456,7 +456,7 @@ fn upsert_record(conn: &Connection, item: &LocalChatRecord) -> Result<(), String
             item.scope,
             item.conversation_id,
             item.message_id,
-            item.sender_did,
+            item.sender_ptid,
             item.content,
             item.reply_to_ulid,
             item.thread_root_ulid,
@@ -470,13 +470,13 @@ fn upsert_record(conn: &Connection, item: &LocalChatRecord) -> Result<(), String
     )
     .map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO chat_messages_fts(message_id, scope, conversation_id, sender_did, content)
+        "INSERT INTO chat_messages_fts(message_id, scope, conversation_id, sender_ptid, content)
          VALUES(?1, ?2, ?3, ?4, ?5)",
         params![
             item.message_id,
             item.scope,
             item.conversation_id,
-            item.sender_did,
+            item.sender_ptid,
             item.content
         ],
     )
@@ -618,7 +618,7 @@ pub fn ingest_friend_payload(user_scope: &str, payload: &Value) -> Result<(), St
                 scope: "friend".to_string(),
                 conversation_id: json_string(m, &["session_ulid", "sessionUlid"]),
                 message_id: json_string(m, &["ulid"]),
-                sender_did: json_string(m, &["sender_did", "senderDid"]),
+                sender_ptid: json_string(m, &["sender_ptid", "senderPtid"]),
                 content: json_string(m, &["content"]),
                 reply_to_ulid: json_string(m, &["reply_to_ulid", "replyToUlid"]),
                 thread_root_ulid: json_string(m, &["thread_root_ulid", "threadRootUlid"]),
@@ -635,7 +635,7 @@ pub fn ingest_friend_payload(user_scope: &str, payload: &Value) -> Result<(), St
             scope: "friend".to_string(),
             conversation_id: json_string(&message_value, &["session_ulid", "sessionUlid"]),
             message_id: json_string(&message_value, &["ulid"]),
-            sender_did: json_string(&message_value, &["sender_did", "senderDid"]),
+            sender_ptid: json_string(&message_value, &["sender_ptid", "senderPtid"]),
             content: json_string(&message_value, &["content"]),
             reply_to_ulid: json_string(&message_value, &["reply_to_ulid", "replyToUlid"]),
             thread_root_ulid: json_string(&message_value, &["thread_root_ulid", "threadRootUlid"]),
@@ -657,7 +657,7 @@ pub fn ingest_group_payload(user_scope: &str, payload: &Value) -> Result<(), Str
                 scope: "group".to_string(),
                 conversation_id: json_string(m, &["group_ulid", "groupUlid"]),
                 message_id: json_string(m, &["ulid"]),
-                sender_did: json_string(m, &["sender_did", "senderDid"]),
+                sender_ptid: json_string(m, &["sender_ptid", "senderPtid"]),
                 content: json_string(m, &["content"]),
                 reply_to_ulid: json_string(m, &["reply_to_ulid", "replyToUlid"]),
                 thread_root_ulid: json_string(m, &["thread_root_ulid", "threadRootUlid"]),
@@ -674,7 +674,7 @@ pub fn ingest_group_payload(user_scope: &str, payload: &Value) -> Result<(), Str
             scope: "group".to_string(),
             conversation_id: json_string(&message_value, &["group_ulid", "groupUlid"]),
             message_id: json_string(&message_value, &["ulid"]),
-            sender_did: json_string(&message_value, &["sender_did", "senderDid"]),
+            sender_ptid: json_string(&message_value, &["sender_ptid", "senderPtid"]),
             content: json_string(&message_value, &["content"]),
             reply_to_ulid: json_string(&message_value, &["reply_to_ulid", "replyToUlid"]),
             thread_root_ulid: json_string(&message_value, &["thread_root_ulid", "threadRootUlid"]),
@@ -731,7 +731,7 @@ fn search_local_single(
     if let Some(fts) = fts_query.as_deref() {
         let mut stmt = conn
             .prepare(
-                "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.reply_to_ulid, m.thread_root_ulid, m.sent_at
+                "SELECT m.scope, m.conversation_id, m.message_id, m.sender_ptid, m.content, m.reply_to_ulid, m.thread_root_ulid, m.sent_at
                  FROM chat_messages_fts f
                  JOIN chat_messages m ON m.message_id = f.message_id
                  WHERE f.scope = ?1
@@ -751,7 +751,7 @@ fn search_local_single(
                     scope: row.get(0)?,
                     conversation_id: row.get(1)?,
                     message_id: row.get(2)?,
-                    sender_did: row.get(3)?,
+                    sender_ptid: row.get(3)?,
                     content: row.get(4)?,
                     reply_to_ulid: row.get(5)?,
                     thread_root_ulid: row.get(6)?,
@@ -768,7 +768,7 @@ fn search_local_single(
 
     let mut stmt = conn
         .prepare(
-            "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.reply_to_ulid, m.thread_root_ulid, m.sent_at
+            "SELECT m.scope, m.conversation_id, m.message_id, m.sender_ptid, m.content, m.reply_to_ulid, m.thread_root_ulid, m.sent_at
              FROM chat_messages m
              WHERE m.scope = ?1
                AND (?2 = '' OR m.conversation_id = ?2)
@@ -787,7 +787,7 @@ fn search_local_single(
                 scope: row.get(0)?,
                 conversation_id: row.get(1)?,
                 message_id: row.get(2)?,
-                sender_did: row.get(3)?,
+                sender_ptid: row.get(3)?,
                 content: row.get(4)?,
                 reply_to_ulid: row.get(5)?,
                 thread_root_ulid: row.get(6)?,
@@ -1112,11 +1112,11 @@ fn save_crypto_session(user_scope: &str, session: &CryptoSessionState) -> Result
         .unwrap_or(now);
     conn.execute(
         "INSERT INTO crypto_sessions(
-            session_id, peer_did, send_chain_key, send_counter, recv_chain_key, recv_counter,
+            session_id, peer_ptid, send_chain_key, send_counter, recv_chain_key, recv_counter,
             established, is_initiator, pending_ephemeral, created_at, updated_at
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
         ON CONFLICT(session_id) DO UPDATE SET
-            peer_did=excluded.peer_did,
+            peer_ptid=excluded.peer_ptid,
             send_chain_key=excluded.send_chain_key,
             send_counter=excluded.send_counter,
             recv_chain_key=excluded.recv_chain_key,
@@ -1127,7 +1127,7 @@ fn save_crypto_session(user_scope: &str, session: &CryptoSessionState) -> Result
             updated_at=excluded.updated_at",
         params![
             session.session_id,
-            session.peer_did,
+            session.peer_ptid,
             session.send_chain_key.as_ref(),
             session.send_counter as i64,
             session.recv_chain_key.as_ref(),
@@ -1990,7 +1990,7 @@ fn load_crypto_session(
     let conn = conn.lock();
     let mut stmt = conn
         .prepare(
-            "SELECT peer_did, send_chain_key, send_counter, recv_chain_key, recv_counter,
+            "SELECT peer_ptid, send_chain_key, send_counter, recv_chain_key, recv_counter,
                     established, is_initiator, pending_ephemeral
              FROM crypto_sessions WHERE session_id = ?1",
         )
@@ -2014,7 +2014,7 @@ fn load_crypto_session(
         .optional()
         .map_err(|e| e.to_string())?;
     let Some((
-        peer_did,
+        peer_ptid,
         send_blob,
         send_counter,
         recv_blob,
@@ -2044,7 +2044,7 @@ fn load_crypto_session(
     });
     Ok(Some(CryptoSessionState {
         session_id: session_id.to_string(),
-        peer_did,
+        peer_ptid,
         send_chain_key,
         send_counter,
         recv_chain_key,
@@ -2463,7 +2463,7 @@ mod search_tests {
             scope: "group".to_string(),
             conversation_id: "group-1".to_string(),
             message_id: message_id.to_string(),
-            sender_did: "did:peers:alice".to_string(),
+            sender_ptid: "did:peers:alice".to_string(),
             content: content.to_string(),
             reply_to_ulid: String::new(),
             thread_root_ulid: String::new(),
@@ -2664,7 +2664,7 @@ mod dr_persistence_tests {
 
         let base_i = CryptoSessionState {
             session_id: sid.clone(),
-            peer_did: "did:peers:bob".to_string(),
+            peer_ptid: "did:peers:bob".to_string(),
             send_chain_key: placeholder_chain(),
             send_counter: 0,
             recv_chain_key: placeholder_chain(),
@@ -2694,7 +2694,7 @@ mod dr_persistence_tests {
 
         let base_r = CryptoSessionState {
             session_id: sid.clone(),
-            peer_did: "did:peers:alice".to_string(),
+            peer_ptid: "did:peers:alice".to_string(),
             send_chain_key: placeholder_chain(),
             send_counter: 0,
             recv_chain_key: placeholder_chain(),

@@ -25,7 +25,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +36,7 @@ import (
 	apipb "github.com/peers-labs/peers-touch/station/frame/touch/federation/api/pb"
 	"github.com/peers-labs/peers-touch/station/frame/touch/federation/resolver"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"github.com/peers-labs/peers-touch/station/frame/touch/util"
 	"gorm.io/gorm"
 )
@@ -177,18 +177,17 @@ func FederationResolve(c context.Context, ctx *app.RequestContext) {
 
 // ── projections (snapshot/resolved → wire proto) ───────────────────
 
-// selfViewFromSnapshot projects an actor's snapshot into the wire
-// proto. ActorID is rendered as a string because uint64 is not safely
-// representable in JavaScript number; ActorIdUint carries the raw
-// uint64 for proto-savvy consumers (Rust station gateway). The two
-// MUST always agree.
+// selfViewFromSnapshot projects an actor's PTID identity into the wire proto.
 func selfViewFromSnapshot(s *actor.FederationSelfSnapshot) *apipb.FederationSelfView {
 	if s == nil {
 		return &apipb.FederationSelfView{}
 	}
 	return &apipb.FederationSelfView{
-		ActorId:           strconv.FormatUint(s.ActorID, 10),
-		ActorIdUint:       s.ActorID,
+		ActorRef: &modelpb.ActorRef{
+			Ptid: s.ActorPTID,
+			Acct: strings.TrimPrefix(s.FederatedHandle, "@"),
+			Kind: db.ActorKindFromShorthand(s.ActorKind),
+		},
 		PreferredUsername: s.PreferredUsername,
 		FederatedHandle:   s.FederatedHandle,
 		HomeStationPeerId: s.HomeStationPeerID,

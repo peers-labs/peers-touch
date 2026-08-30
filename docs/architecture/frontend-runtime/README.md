@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-07-02 | **Updated**: 2026-07-11
+> **Created**: 2026-07-02 | **Updated**: 2026-08-27
 > **Owner**: Client Platform Team
 > **Module**: `apps/desktop/src/kernel/`, `apps/desktop/src/runtimes/`, `docs/client/common/ui-identity/`
 
@@ -74,4 +74,6 @@ Native 卡顿的技术拓扑仍处于 evidence gate：在 packaged/native 交互
 - `docs/client/common/ui-identity/frontend-component-tree.md`：组件树和 alive 标准。
 - `docs/client/common/ui-identity/frontend-component-tree-registry.md`：页面/section/容器生命周期登记。
 - `docs/client/desktop/runtime-projections.md`：Desktop Page/Runtime/Boot 内核契约。
+- `docs/architecture/mobile/`：Mobile NavigationHost、runtime dependency graph、
+  native lifecycle 与 `InteractionAdmission` 平台实现。
 - `docs/architecture/applet-runtime/README.md`：Applet/Lynx 运行时与小程序容器契约。

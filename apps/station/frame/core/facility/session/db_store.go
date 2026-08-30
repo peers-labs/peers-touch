@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DeviceType represents the type of client device
@@ -18,20 +19,27 @@ const (
 
 // SessionRecord is the database model for persistent sessions
 type SessionRecord struct {
-	ID            uint64     `gorm:"primaryKey;autoIncrement"`
-	SessionID     string     `gorm:"uniqueIndex;size:100;not null"`
-	UserID        uint64     `gorm:"index;not null"`
-	Email         string     `gorm:"size:255"`
-	DeviceType    DeviceType `gorm:"size:20;not null;index:idx_user_device"`
-	TokenHash     string     `gorm:"size:100"` // Hash of the JWT token for verification
-	IPAddress     string     `gorm:"size:50"`
-	UserAgent     string     `gorm:"size:500"`
-	CreatedAt     time.Time  `gorm:"not null"`
-	ExpiresAt     time.Time  `gorm:"not null"`
-	LastActiveAt  time.Time  `gorm:"not null"`
-	Revoked       bool       `gorm:"default:false;index:idx_user_device"`
-	RevokedAt     *time.Time
-	RevokedReason string `gorm:"size:50"` // "kicked" | "logout" | "expired"
+	ID                     uint64     `gorm:"primaryKey;autoIncrement"`
+	SessionID              string     `gorm:"uniqueIndex;size:100;not null"`
+	UserID                 uint64     `gorm:"index;not null"`
+	Email                  string     `gorm:"size:255"`
+	DeviceType             DeviceType `gorm:"size:20;not null;index:idx_user_device"`
+	TokenHash              string     `gorm:"size:100"` // Hash of the JWT token for verification
+	IPAddress              string     `gorm:"size:50"`
+	UserAgent              string     `gorm:"size:500"`
+	OAuthCandidateID       string     `gorm:"column:oauth_candidate_id;size:64;uniqueIndex:uidx_actor_sessions_oauth_candidate,where:oauth_candidate_id <> ''"`
+	AccessAttemptID        string     `gorm:"column:access_attempt_id;size:64;index"`
+	StationPeerID          string     `gorm:"column:station_peer_id;size:255;index"`
+	AccessDecisionRevision uint64     `gorm:"column:access_decision_revision;not null;default:0"`
+	DeviceID               string     `gorm:"column:device_id;size:128"`
+	LifecycleGeneration    uint64     `gorm:"column:lifecycle_generation;not null;default:0"`
+	AuthMethod             string     `gorm:"column:auth_method;size:32"`
+	CreatedAt              time.Time  `gorm:"not null"`
+	ExpiresAt              time.Time  `gorm:"not null"`
+	LastActiveAt           time.Time  `gorm:"not null"`
+	Revoked                bool       `gorm:"default:false;index:idx_user_device"`
+	RevokedAt              *time.Time
+	RevokedReason          string `gorm:"size:50"` // "kicked" | "logout" | "expired"
 }
 
 func (SessionRecord) TableName() string {
@@ -50,9 +58,16 @@ func (r *SessionRecord) ToSession() *Session {
 		IPAddress: r.IPAddress,
 		UserAgent: r.UserAgent,
 		Data: map[string]interface{}{
-			"device_type":    string(r.DeviceType),
-			"revoked":        r.Revoked,
-			"revoked_reason": r.RevokedReason,
+			"device_type":              string(r.DeviceType),
+			"oauth_candidate_id":       r.OAuthCandidateID,
+			"access_attempt_id":        r.AccessAttemptID,
+			"station_peer_id":          r.StationPeerID,
+			"access_decision_revision": r.AccessDecisionRevision,
+			"device_id":                r.DeviceID,
+			"lifecycle_generation":     r.LifecycleGeneration,
+			"auth_method":              r.AuthMethod,
+			"revoked":                  r.Revoked,
+			"revoked_reason":           r.RevokedReason,
 		},
 	}
 }
@@ -89,28 +104,103 @@ func (s *DBStore) Set(ctx context.Context, sessionID string, sess *Session) erro
 
 	record := newSessionRecord(sessionID, sess)
 
-	// Use upsert logic
-	return db.WithContext(ctx).Save(record).Error
+	return db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "session_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"user_id",
+			"email",
+			"device_type",
+			"token_hash",
+			"ip_address",
+			"user_agent",
+			"oauth_candidate_id",
+			"access_attempt_id",
+			"station_peer_id",
+			"access_decision_revision",
+			"device_id",
+			"lifecycle_generation",
+			"auth_method",
+			"created_at",
+			"expires_at",
+			"last_active_at",
+			"revoked",
+			"revoked_at",
+			"revoked_reason",
+		}),
+	}).Create(record).Error
 }
 
 func newSessionRecord(sessionID string, sess *Session) *SessionRecord {
 	deviceType := DeviceTypeDesktop
-	if dt, ok := sess.Data["device_type"].(string); ok {
+	if dt, ok := sessionDataString(sess.Data, "device_type"); ok {
 		deviceType = DeviceType(dt)
 	}
 
 	return &SessionRecord{
-		SessionID:    sessionID,
-		UserID:       sess.UserID,
-		Email:        sess.Email,
-		DeviceType:   deviceType,
-		IPAddress:    sess.IPAddress,
-		UserAgent:    sess.UserAgent,
-		CreatedAt:    sess.CreatedAt,
-		ExpiresAt:    sess.ExpiresAt,
-		LastActiveAt: sess.LastSeen,
-		Revoked:      false,
+		SessionID:              sessionID,
+		UserID:                 sess.UserID,
+		Email:                  sess.Email,
+		DeviceType:             deviceType,
+		IPAddress:              sess.IPAddress,
+		UserAgent:              sess.UserAgent,
+		OAuthCandidateID:       sessionDataStringOrZero(sess.Data, "oauth_candidate_id"),
+		AccessAttemptID:        sessionDataStringOrZero(sess.Data, "access_attempt_id"),
+		StationPeerID:          sessionDataStringOrZero(sess.Data, "station_peer_id"),
+		AccessDecisionRevision: sessionDataUint64OrZero(sess.Data, "access_decision_revision"),
+		DeviceID:               sessionDataStringOrZero(sess.Data, "device_id"),
+		LifecycleGeneration:    sessionDataUint64OrZero(sess.Data, "lifecycle_generation"),
+		AuthMethod:             sessionDataStringOrZero(sess.Data, "auth_method"),
+		CreatedAt:              sess.CreatedAt,
+		ExpiresAt:              sess.ExpiresAt,
+		LastActiveAt:           sess.LastSeen,
+		Revoked:                false,
 	}
+}
+
+func sessionDataString(data map[string]interface{}, key string) (string, bool) {
+	if data == nil {
+		return "", false
+	}
+	value, ok := data[key].(string)
+	return value, ok
+}
+
+func sessionDataStringOrZero(data map[string]interface{}, key string) string {
+	value, _ := sessionDataString(data, key)
+	return value
+}
+
+func sessionDataUint64OrZero(data map[string]interface{}, key string) uint64 {
+	if data == nil {
+		return 0
+	}
+
+	switch value := data[key].(type) {
+	case uint64:
+		return value
+	case uint:
+		return uint64(value)
+	case uint32:
+		return uint64(value)
+	case int:
+		if value >= 0 {
+			return uint64(value)
+		}
+	case int64:
+		if value >= 0 {
+			return uint64(value)
+		}
+	case int32:
+		if value >= 0 {
+			return uint64(value)
+		}
+	case float64:
+		if value >= 0 && value == float64(uint64(value)) {
+			return uint64(value)
+		}
+	}
+
+	return 0
 }
 
 // Get retrieves a session by ID

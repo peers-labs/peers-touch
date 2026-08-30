@@ -67,12 +67,12 @@ func (x *OnlineActorsResponse) GetActors() []*OnlineActor {
 
 type OnlineActor struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	Id                uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name              string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	PreferredUsername string                 `protobuf:"bytes,3,opt,name=preferred_username,json=preferredUsername,proto3" json:"preferred_username,omitempty"`
 	AvatarUrl         string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
 	Status            int32                  `protobuf:"varint,5,opt,name=status,proto3" json:"status,omitempty"`
 	LastHeartbeat     string                 `protobuf:"bytes,6,opt,name=last_heartbeat,json=lastHeartbeat,proto3" json:"last_heartbeat,omitempty"`
+	Ref               *ActorRef              `protobuf:"bytes,7,opt,name=ref,proto3" json:"ref,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -105,13 +105,6 @@ func (x *OnlineActor) ProtoReflect() protoreflect.Message {
 // Deprecated: Use OnlineActor.ProtoReflect.Descriptor instead.
 func (*OnlineActor) Descriptor() ([]byte, []int) {
 	return file_domain_actor_actor_status_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *OnlineActor) GetId() uint64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
 }
 
 func (x *OnlineActor) GetName() string {
@@ -147,6 +140,13 @@ func (x *OnlineActor) GetLastHeartbeat() string {
 		return x.LastHeartbeat
 	}
 	return ""
+}
+
+func (x *OnlineActor) GetRef() *ActorRef {
+	if x != nil {
+		return x.Ref
+	}
+	return nil
 }
 
 type HeartbeatRequest struct {
@@ -227,15 +227,15 @@ const file_domain_actor_actor_status_proto_rawDesc = "" +
 	"\n" +
 	"\x1fdomain/actor/actor_status.proto\x12\x1apeers_touch.model.actor.v1\x1a\x18domain/actor/actor.proto\"W\n" +
 	"\x14OnlineActorsResponse\x12?\n" +
-	"\x06actors\x18\x01 \x03(\v2'.peers_touch.model.actor.v1.OnlineActorR\x06actors\"\xbe\x01\n" +
-	"\vOnlineActor\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x12\n" +
+	"\x06actors\x18\x01 \x03(\v2'.peers_touch.model.actor.v1.OnlineActorR\x06actors\"\xf0\x01\n" +
+	"\vOnlineActor\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12-\n" +
 	"\x12preferred_username\x18\x03 \x01(\tR\x11preferredUsername\x12\x1d\n" +
 	"\n" +
 	"avatar_url\x18\x04 \x01(\tR\tavatarUrl\x12\x16\n" +
 	"\x06status\x18\x05 \x01(\x05R\x06status\x12%\n" +
-	"\x0elast_heartbeat\x18\x06 \x01(\tR\rlastHeartbeat\"\x12\n" +
+	"\x0elast_heartbeat\x18\x06 \x01(\tR\rlastHeartbeat\x126\n" +
+	"\x03ref\x18\a \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x03refJ\x04\b\x01\x10\x02R\x02id\"\x12\n" +
 	"\x10HeartbeatRequest\"\x13\n" +
 	"\x11HeartbeatResponseBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
@@ -257,14 +257,16 @@ var file_domain_actor_actor_status_proto_goTypes = []any{
 	(*OnlineActor)(nil),          // 1: peers_touch.model.actor.v1.OnlineActor
 	(*HeartbeatRequest)(nil),     // 2: peers_touch.model.actor.v1.HeartbeatRequest
 	(*HeartbeatResponse)(nil),    // 3: peers_touch.model.actor.v1.HeartbeatResponse
+	(*ActorRef)(nil),             // 4: peers_touch.model.actor.v1.ActorRef
 }
 var file_domain_actor_actor_status_proto_depIdxs = []int32{
 	1, // 0: peers_touch.model.actor.v1.OnlineActorsResponse.actors:type_name -> peers_touch.model.actor.v1.OnlineActor
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	4, // 1: peers_touch.model.actor.v1.OnlineActor.ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_status_proto_init() }

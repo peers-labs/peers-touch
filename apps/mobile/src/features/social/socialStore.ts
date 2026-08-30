@@ -3,6 +3,7 @@ import { clearChatUnreadForParticipant } from '@peers-touch/client-chat-core';
 import type { DomainCacheRepository } from '@peers-touch/client-storage';
 
 import type { MobileAuthSession } from '../auth/authSession';
+import { mobileAuthScope, mobileAuthScopeKey } from '../auth/mobileAuthIdentity';
 import {
   createMobileClientStorageRuntime,
   type MobileClientStorageRuntime,
@@ -33,7 +34,7 @@ import {
   mergeMessages,
   mergeNotifications,
   type MessageMutationKind,
-  peerDidFromSession,
+  peerPtidFromSession,
   projectConversations,
   projectOutgoingRequests,
   projectPendingInboundRequests,
@@ -78,7 +79,7 @@ interface ParsedHandle {
 export interface SocialState {
   sessionKey: string | null;
   authSession: MobileAuthSession | null;
-  currentUserDid: string | null;
+  currentUserPtid: string | null;
   api: SocialApiClient | null;
   storage: MobileClientStorageRuntime | null;
   sessions: FriendChatSession[];
@@ -110,9 +111,9 @@ export interface SocialState {
   refreshFriendRequests: () => Promise<void>;
   refreshSessions: () => Promise<void>;
   refreshBlockedUsers: () => Promise<void>;
-  loadFriendshipStatus: (targetDid: string) => Promise<void>;
-  blockUser: (targetDid: string) => Promise<void>;
-  unblockUser: (targetDid: string) => Promise<void>;
+  loadFriendshipStatus: (targetPtid: string) => Promise<void>;
+  blockUser: (targetPtid: string) => Promise<void>;
+  unblockUser: (targetPtid: string) => Promise<void>;
   refreshConversationSettings: () => Promise<void>;
   loadConversationSettings: (sessionUlid: string) => Promise<void>;
   updateConversationSettings: (sessionUlid: string, input: UpdateFriendConversationSettingsInput) => Promise<void>;
@@ -124,16 +125,16 @@ export interface SocialState {
   deleteNotification: (notificationId: string) => Promise<void>;
   acceptFriendRequest: (requestId: string) => Promise<void>;
   rejectFriendRequest: (requestId: string) => Promise<void>;
-  sendFriendRequest: (receiverDid: string, message?: string) => Promise<void>;
+  sendFriendRequest: (receiverPtid: string, message?: string) => Promise<void>;
   selectSession: (sessionUlid: string | null) => Promise<void>;
   loadMessages: (sessionUlid: string) => Promise<void>;
   loadCurrentUserProfile: (force?: boolean) => Promise<void>;
-  loadPeerProfile: (peerDid: string, force?: boolean) => Promise<void>;
+  loadPeerProfile: (peerPtid: string, force?: boolean) => Promise<void>;
   sendMessage: (sessionUlid: string, content: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<void>;
   editMessage: (sessionUlid: string, messageUlid: string, content: string) => Promise<void>;
   recallMessage: (sessionUlid: string, messageUlid: string) => Promise<void>;
   deleteMessage: (sessionUlid: string, messageUlid: string) => Promise<void>;
-  setPeerOnline: (did: string, online: boolean) => void;
+  setPeerOnline: (ptid: string, online: boolean) => void;
   ingestRealtimeMessage: (sessionUlid: string, message: FriendChatMessage) => Promise<void>;
   applyMessageReceipt: (sessionUlid: string, messageUlid: string, kind: number | string) => void;
   applyMessageMutation: (
@@ -142,7 +143,7 @@ export interface SocialState {
     kind: MessageMutationKind,
     payload: { newContent?: string; newCiphertext?: Uint8Array; mutatedTsUnixMs?: number },
   ) => void;
-  applyTypingState: (sessionUlid: string, fromActorId: string, typing: boolean) => void;
+  applyTypingState: (sessionUlid: string, fromActorPtid: string, typing: boolean) => void;
   sweepTypingPeers: (staleBefore: number) => void;
   sendTypingState: (sessionUlid: string, typing: boolean) => Promise<void>;
   searchPeople: (query: string) => Promise<void>;
@@ -155,7 +156,7 @@ const emptyUnreadCounts: UnreadCounts = { total: 0, byCategory: {} };
 export const useSocialStore = create<SocialState>((set, get) => ({
   sessionKey: null,
   authSession: null,
-  currentUserDid: null,
+  currentUserPtid: null,
   api: null,
   storage: null,
   sessions: [],
@@ -187,7 +188,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       set({
         sessionKey: null,
         authSession: null,
-        currentUserDid: null,
+        currentUserPtid: null,
         api: null,
         storage: null,
         sessions: [],
@@ -217,13 +218,13 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       return;
     }
 
-    const sessionKey = `${session.stationUrl}|${session.sessionId}`;
+    const sessionKey = mobileAuthScopeKey(session);
     if (get().sessionKey === sessionKey) return;
 
     set({
       sessionKey,
       authSession: session,
-      currentUserDid: resolveActorDid(session),
+      currentUserPtid: resolveActorPtid(session),
       api: createSocialApiClient(session),
       storage: createMobileClientStorageRuntime(session),
       sessions: [],
@@ -251,7 +252,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       lastReconcileAt: null,
     });
 
-    void hydrateCurrentUserProfileFromCache(sessionKey, resolveActorDid(session), get, set);
+    void hydrateCurrentUserProfileFromCache(sessionKey, resolveActorPtid(session), get, set);
   },
 
   reconcile: async () => {
@@ -284,11 +285,11 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     const api = requireApi(get());
     const payload = await api.listSessions();
     const activeSessionUlid = get().activeSessionUlid;
-    const currentUserDid = get().currentUserDid;
+    const currentUserPtid = get().currentUserPtid;
     const sessions = (payload.sessions ?? []).map(normalizeSession);
     set((state) => ({
-      sessions: activeSessionUlid && currentUserDid
-        ? clearSessionUnreadForActor(sessions, activeSessionUlid, currentUserDid)
+      sessions: activeSessionUlid && currentUserPtid
+        ? clearSessionUnreadForActor(sessions, activeSessionUlid, currentUserPtid)
         : sessions,
     }));
     await Promise.allSettled(sessions.slice(0, 20).map(async (session) => {
@@ -315,22 +316,22 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     set((state) => {
       const nextStatus = { ...state.friendshipStatus };
       blockedUsers.forEach((item) => {
-        if (item.targetDid) nextStatus[item.targetDid] = item;
+        if (item.targetPtid) nextStatus[item.targetPtid] = item;
       });
       return { blockedUsers, friendshipStatus: nextStatus };
     });
   },
 
-  loadFriendshipStatus: async (targetDid) => {
-    const did = targetDid.trim();
-    if (!did) return;
+  loadFriendshipStatus: async (targetPtid) => {
+    const ptid = targetPtid.trim();
+    if (!ptid) return;
     const api = requireApi(get());
     try {
-      const status = await api.getFriendshipStatus(did);
+      const status = await api.getFriendshipStatus(ptid);
       set((state) => ({
         friendshipStatus: {
           ...state.friendshipStatus,
-          [did]: { ...status, targetDid: did },
+          [ptid]: { ...status, targetPtid: ptid },
         },
       }));
     } catch (error) {
@@ -339,16 +340,16 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }
   },
 
-  blockUser: async (targetDid) => {
-    const did = targetDid.trim();
-    if (!did) return;
+  blockUser: async (targetPtid) => {
+    const ptid = targetPtid.trim();
+    if (!ptid) return;
     const api = requireApi(get());
     try {
-      await api.blockUser(did);
+      await api.blockUser(ptid);
       set((state) => ({
-        friendshipStatus: { ...state.friendshipStatus, [did]: { targetDid: did, blocked: true } },
-        blockedUsers: upsertFriendshipStatus(state.blockedUsers, { targetDid: did, blocked: true }),
-        activeSessionUlid: state.sessions.some((session) => session.ulid === state.activeSessionUlid && peerDidFromSession(session, state.currentUserDid) === did)
+        friendshipStatus: { ...state.friendshipStatus, [ptid]: { targetPtid: ptid, blocked: true } },
+        blockedUsers: upsertFriendshipStatus(state.blockedUsers, { targetPtid: ptid, blocked: true }),
+        activeSessionUlid: state.sessions.some((session) => session.ulid === state.activeSessionUlid && peerPtidFromSession(session, state.currentUserPtid) === ptid)
           ? null
           : state.activeSessionUlid,
       }));
@@ -359,15 +360,15 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }
   },
 
-  unblockUser: async (targetDid) => {
-    const did = targetDid.trim();
-    if (!did) return;
+  unblockUser: async (targetPtid) => {
+    const ptid = targetPtid.trim();
+    if (!ptid) return;
     const api = requireApi(get());
     try {
-      await api.unblockUser(did);
+      await api.unblockUser(ptid);
       set((state) => ({
-        friendshipStatus: { ...state.friendshipStatus, [did]: { targetDid: did, blocked: false } },
-        blockedUsers: state.blockedUsers.filter((item) => item.targetDid !== did),
+        friendshipStatus: { ...state.friendshipStatus, [ptid]: { targetPtid: ptid, blocked: false } },
+        blockedUsers: state.blockedUsers.filter((item) => item.targetPtid !== ptid),
       }));
       await Promise.allSettled([get().refreshSessions(), get().refreshFriendRequests(), get().refreshBlockedUsers()]);
     } catch (error) {
@@ -416,16 +417,16 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   markActiveSessionRead: async (sessionUlid, upToUlid) => {
-    const { api, currentUserDid } = get();
-    if (!api || !currentUserDid || get().activeSessionUlid !== sessionUlid) return;
+    const { api, currentUserPtid } = get();
+    if (!api || !currentUserPtid || get().activeSessionUlid !== sessionUlid) return;
 
     set((state) => ({
-      sessions: clearSessionUnreadForActor(state.sessions, sessionUlid, currentUserDid),
+      sessions: clearSessionUnreadForActor(state.sessions, sessionUlid, currentUserPtid),
     }));
 
     const messages = get().messages[sessionUlid] ?? [];
     const unreadUlids = messages
-      .filter((message) => message.senderDid !== currentUserDid && message.status !== FRIEND_MESSAGE_STATUS_READ)
+      .filter((message) => message.senderPtid !== currentUserPtid && message.status !== FRIEND_MESSAGE_STATUS_READ)
       .map((message) => message.ulid)
       .filter(Boolean);
 
@@ -516,10 +517,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }
   },
 
-  sendFriendRequest: async (receiverDid, message) => {
+  sendFriendRequest: async (receiverPtid, message) => {
     const api = requireApi(get());
     try {
-      await api.sendFriendRequest(receiverDid, message);
+      await api.sendFriendRequest(receiverPtid, message);
       await get().refreshFriendRequests();
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -558,16 +559,16 @@ export const useSocialStore = create<SocialState>((set, get) => ({
 
   loadCurrentUserProfile: async (force = false) => {
     const state = get();
-    const did = state.currentUserDid?.trim() ?? '';
-    if (!did) return;
+    const ptid = state.currentUserPtid?.trim() ?? '';
+    if (!ptid) return;
     if (!force && state.currentUserProfile) return;
 
     if (!force && state.storage) {
-      const cached = await readCachedPeerProfile(state.storage.repositories.peerProfiles, did);
+      const cached = await readCachedPeerProfile(state.storage.repositories.peerProfiles, ptid);
       if (cached?.profile) {
         set((prev) => ({
           currentUserProfile: cached.profile,
-          peerProfiles: { ...prev.peerProfiles, [did]: cached.profile },
+          peerProfiles: { ...prev.peerProfiles, [ptid]: cached.profile },
         }));
         if (!cached.stale) return;
       }
@@ -575,50 +576,50 @@ export const useSocialStore = create<SocialState>((set, get) => ({
 
     const api = requireApi(state);
     try {
-      const profile = normalizePeerProfile(await api.getPeerProfile(did));
-      await state.storage?.repositories.peerProfiles.write(did, profile).catch(() => undefined);
+      const profile = normalizePeerProfile(await api.getPeerProfile(ptid));
+      await state.storage?.repositories.peerProfiles.write(ptid, profile).catch(() => undefined);
       set((prev) => ({
         currentUserProfile: profile,
-        peerProfiles: { ...prev.peerProfiles, [did]: profile },
+        peerProfiles: { ...prev.peerProfiles, [ptid]: profile },
       }));
     } catch (error) {
       set({ error: normalizeError(error) });
     }
   },
 
-  loadPeerProfile: async (peerDid, force = false) => {
-    const did = peerDid.trim();
-    if (!did || did === get().currentUserDid) return;
+  loadPeerProfile: async (peerPtid, force = false) => {
+    const ptid = peerPtid.trim();
+    if (!ptid || ptid === get().currentUserPtid) return;
     const state = get();
-    if (!force && did in state.peerProfiles) return;
-    if (state.peerProfileLoading[did]) return;
+    if (!force && ptid in state.peerProfiles) return;
+    if (state.peerProfileLoading[ptid]) return;
 
     if (!force && state.storage) {
-      const cached = await readCachedPeerProfile(state.storage.repositories.peerProfiles, did);
+      const cached = await readCachedPeerProfile(state.storage.repositories.peerProfiles, ptid);
       if (cached?.profile) {
-        set((prev) => ({ peerProfiles: { ...prev.peerProfiles, [did]: cached.profile } }));
+        set((prev) => ({ peerProfiles: { ...prev.peerProfiles, [ptid]: cached.profile } }));
         if (!cached.stale) return;
       }
     }
 
     const api = requireApi(state);
     set((prev) => ({
-      peerProfileLoading: { ...prev.peerProfileLoading, [did]: true },
-      peerProfileErrors: { ...prev.peerProfileErrors, [did]: null },
+      peerProfileLoading: { ...prev.peerProfileLoading, [ptid]: true },
+      peerProfileErrors: { ...prev.peerProfileErrors, [ptid]: null },
     }));
 
     try {
-      const profile = normalizePeerProfile(await api.getPeerProfile(did));
-      await state.storage?.repositories.peerProfiles.write(did, profile).catch(() => undefined);
+      const profile = normalizePeerProfile(await api.getPeerProfile(ptid));
+      await state.storage?.repositories.peerProfiles.write(ptid, profile).catch(() => undefined);
       set((prev) => ({
-        peerProfiles: { ...prev.peerProfiles, [did]: profile },
-        peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
+        peerProfiles: { ...prev.peerProfiles, [ptid]: profile },
+        peerProfileLoading: { ...prev.peerProfileLoading, [ptid]: false },
       }));
     } catch (error) {
       set((prev) => ({
-        peerProfiles: { ...prev.peerProfiles, [did]: null },
-        peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
-        peerProfileErrors: { ...prev.peerProfileErrors, [did]: normalizeError(error) },
+        peerProfiles: { ...prev.peerProfiles, [ptid]: null },
+        peerProfileLoading: { ...prev.peerProfileLoading, [ptid]: false },
+        peerProfileErrors: { ...prev.peerProfileErrors, [ptid]: normalizeError(error) },
       }));
     }
   },
@@ -631,8 +632,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     if (!trimmed && !attachments?.length) return;
 
     const session = state.sessions.find((item) => item.ulid === sessionUlid);
-    const receiverDid = session ? peerDidFromSession(session, state.currentUserDid) : '';
-    if (!receiverDid) return;
+    const receiverPtid = session ? peerPtidFromSession(session, state.currentUserPtid) : '';
+    if (!receiverPtid) return;
 
     try {
       const encryptedPlaintext = createFriendEncryptedChatPayload({
@@ -640,8 +641,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         attachments: attachments ?? [],
         messageType,
       });
-      const encryptedPayload = await encryptFriendChatPayload(authSession, sessionUlid, receiverDid, encryptedPlaintext);
-      const payload = await api.sendEncryptedMessage(sessionUlid, receiverDid, encryptedPayload, encryptedPlaintext.messageType);
+      const encryptedPayload = await encryptFriendChatPayload(authSession, sessionUlid, receiverPtid, encryptedPlaintext);
+      const payload = await api.sendEncryptedMessage(sessionUlid, receiverPtid, encryptedPayload, encryptedPlaintext.messageType);
       if (payload.message) {
         const message = applyFriendEncryptedPayloadToMessage(normalizeMessage(payload.message), encryptedPlaintext);
         set((state) => ({
@@ -663,12 +664,12 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     if (!trimmed) return;
 
     const session = state.sessions.find((item) => item.ulid === sessionUlid);
-    const receiverDid = session ? peerDidFromSession(session, state.currentUserDid) : '';
-    if (!receiverDid) return;
+    const receiverPtid = session ? peerPtidFromSession(session, state.currentUserPtid) : '';
+    if (!receiverPtid) return;
 
     try {
       const encryptedPlaintext = createFriendEncryptedChatPayload({ text: trimmed });
-      const encryptedPayload = await encryptFriendChatPayload(authSession, sessionUlid, receiverDid, encryptedPlaintext);
+      const encryptedPayload = await encryptFriendChatPayload(authSession, sessionUlid, receiverPtid, encryptedPlaintext);
       await api.editMessage(sessionUlid, messageUlid, encryptedPayload);
       get().applyMessageMutation(sessionUlid, messageUlid, 'EDIT', {
         newContent: trimmed,
@@ -705,9 +706,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }
   },
 
-  setPeerOnline: (did, online) =>
+  setPeerOnline: (ptid, online) =>
     set((state) => {
-      const next = applyPresenceToMap(state.peerOnline, did, online);
+      const next = applyPresenceToMap(state.peerOnline, ptid, online);
       return next ? { peerOnline: next } : state;
     }),
 
@@ -720,8 +721,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       },
     }));
 
-    const { api, currentUserDid, activeSessionUlid } = get();
-    if (api && currentUserDid && normalized.senderDid !== currentUserDid) {
+    const { api, currentUserPtid, activeSessionUlid } = get();
+    if (api && currentUserPtid && normalized.senderPtid !== currentUserPtid) {
       if (activeSessionUlid === sessionUlid) {
         await get().markActiveSessionRead(sessionUlid, normalized.ulid);
       } else {
@@ -747,10 +748,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       return nextMessages ? { messages: { ...state.messages, [sessionUlid]: nextMessages } } : state;
     }),
 
-  applyTypingState: (sessionUlid, fromActorId, typing) => {
-    if (!sessionUlid || !fromActorId) return;
+  applyTypingState: (sessionUlid, fromActorPtid, typing) => {
+    if (!sessionUlid || !fromActorPtid) return;
     set((state) => {
-      const next = applyTypingStateToMap(state.typingPeers, sessionUlid, fromActorId, typing);
+      const next = applyTypingStateToMap(state.typingPeers, sessionUlid, fromActorPtid, typing);
       return next ? { typingPeers: next } : state;
     });
   },
@@ -787,7 +788,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       }
       const payload = await api.searchActors(parsed.localPart || trimmed);
       set({
-        peopleSearchResults: (payload.items ?? []).map(normalizeActorSearchResult).filter((item) => item.actorId || item.id),
+        peopleSearchResults: (payload.items ?? []).map(normalizeActorSearchResult).filter((item) => item.ptid),
         peopleSearchLoading: false,
       });
     } catch (error) {
@@ -805,11 +806,11 @@ export function selectConversations(state: SocialState): SocialConversation[] {
 }
 
 export function pendingInboundRequests(state: SocialState): FriendRequest[] {
-  return projectPendingInboundRequests(state.friendRequests, state.currentUserDid);
+  return projectPendingInboundRequests(state.friendRequests, state.currentUserPtid);
 }
 
 export function outgoingRequests(state: SocialState): FriendRequest[] {
-  return projectOutgoingRequests(state.friendRequests, state.currentUserDid);
+  return projectOutgoingRequests(state.friendRequests, state.currentUserPtid);
 }
 
 export function unreadNotifications(state: SocialState): SocialNotification[] {
@@ -829,27 +830,27 @@ type SocialSetState = (partial: Partial<SocialState> | ((state: SocialState) => 
 
 async function hydrateCurrentUserProfileFromCache(
   expectedSessionKey: string,
-  did: string | null,
+  ptid: string | null,
   getState: () => SocialState,
   setState: SocialSetState,
 ) {
   const storage = getState().storage;
-  if (!storage || !did) return;
+  if (!storage || !ptid) return;
 
-  const cached = await readCachedPeerProfile(storage.repositories.peerProfiles, did);
+  const cached = await readCachedPeerProfile(storage.repositories.peerProfiles, ptid);
   if (!cached?.profile || getState().sessionKey !== expectedSessionKey) return;
 
   setState((state) => ({
     currentUserProfile: state.currentUserProfile ?? cached.profile,
-    peerProfiles: did in state.peerProfiles ? state.peerProfiles : { ...state.peerProfiles, [did]: cached.profile },
+    peerProfiles: ptid in state.peerProfiles ? state.peerProfiles : { ...state.peerProfiles, [ptid]: cached.profile },
   }));
 }
 
 async function readCachedPeerProfile(
   repository: DomainCacheRepository<unknown>,
-  did: string,
+  ptid: string,
 ): Promise<{ profile: PeerProfile; stale: boolean } | null> {
-  const cached = await repository.read(did);
+  const cached = await repository.read(ptid);
   if (!cached.envelope) return null;
   return { profile: cached.envelope.value as PeerProfile, stale: cached.stale };
 }
@@ -882,11 +883,11 @@ async function decryptMessage(
   sessionUlid: string,
   message: FriendChatMessage,
 ): Promise<FriendChatMessage> {
-  if (!state.authSession || !state.currentUserDid || !message.encryptedPayload?.byteLength) return message;
+  if (!state.authSession || !state.currentUserPtid || !message.encryptedPayload?.byteLength) return message;
   const payload = await decryptFriendChatPayload(state.authSession, {
     sessionUlid,
-    senderDid: message.senderDid,
-    currentUserDid: state.currentUserDid,
+    senderPtid: message.senderPtid,
+    currentUserPtid: state.currentUserPtid,
     encryptedPayload: message.encryptedPayload,
   }).catch(() => null);
   return payload ? applyFriendEncryptedPayloadToMessage(message, payload) : message;
@@ -897,10 +898,8 @@ function normalizeError(error: unknown): SocialApiError {
   return new SocialApiError({ method: 'GET', path: '/social', message: readableErrorMessage(error) });
 }
 
-function resolveActorDid(session: MobileAuthSession): string | null {
-  const actor = session.actor;
-  const id = actor?.id || (actor?.actorId ? String(actor.actorId) : '');
-  return id || null;
+function resolveActorPtid(session: MobileAuthSession): string | null {
+  return mobileAuthScope(session).ptid;
 }
 
 function parseHandleInput(raw: string): ParsedHandle {
@@ -926,16 +925,16 @@ function requestKey(request: FriendRequest): string {
 }
 
 function upsertFriendshipStatus(items: FriendshipStatus[], nextItem: FriendshipStatus): FriendshipStatus[] {
-  const exists = items.some((item) => item.targetDid === nextItem.targetDid);
+  const exists = items.some((item) => item.targetPtid === nextItem.targetPtid);
   return exists
-    ? items.map((item) => (item.targetDid === nextItem.targetDid ? nextItem : item))
+    ? items.map((item) => (item.targetPtid === nextItem.targetPtid ? nextItem : item))
     : [nextItem, ...items];
 }
 
 function clearSessionUnreadForActor(
   sessions: FriendChatSession[],
   sessionUlid: string,
-  currentUserDid: string,
+  currentUserPtid: string,
 ): FriendChatSession[] {
-  return clearChatUnreadForParticipant(sessions, sessionUlid, currentUserDid);
+  return clearChatUnreadForParticipant(sessions, sessionUlid, currentUserPtid);
 }
