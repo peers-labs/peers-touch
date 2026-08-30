@@ -136,10 +136,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 "commit": "commit-a",
                 "workspaceDigest": "clean",
             },
-            "station": {
-                "liveCommit": "commit-a",
-                "workspaceDigest": "clean",
-                "protoDigest": "f" * 64,
+            "services": {
+                "station": {
+                    "kind": "station",
+                    "endpoint": "http://station",
+                    "liveCommit": "commit-a",
+                    "workspaceDigest": "clean",
+                    "protocolDigest": "f" * 64,
+                },
             },
         }
         gate.runtime_binding = runtime_binding
@@ -188,6 +192,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                     "source_build_runtime_identity",
                 ):
                     gate.source_identity()
+
+    def test_source_identity_rejects_malformed_station_protocol_digest(self) -> None:
+        binding = SyntheticLinuxRuntimeBinding()
+        gate = self.source_identity_gate(binding)
+        gate.manifest["services"]["station"]["protocolDigest"] = "not-a-digest"
+
+        with self.assertRaisesRegex(
+            GateError,
+            "source_build_runtime_identity",
+        ):
+            gate.source_identity()
 
     def test_native_click_reveal_leaves_visible_target_unchanged(self) -> None:
         element = object()

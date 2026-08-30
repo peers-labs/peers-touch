@@ -1448,6 +1448,16 @@ declare Station as the environment's endpoint-backed required service, restore
 generated output, and rerun all 18 Gates. Product semantics and the Linux-only
 claim remain unchanged.
 
+Aggregate `20260830T114602576010Z-63749f7758dd30288b3fa9e3c4349697`
+passed the corrected local structural Gates but remained `BLOCKED/UNPROVEN`
+before Native product execution. Its first shared boundary failure showed that
+the disposable Chat Fixture still inserted removed `sender_did` /
+`receiver_did` columns instead of canonical actor PTIDs. The same hard cut left
+the Federation gateway smoke reading removed `RuntimeManifest.station` data.
+The next mechanical correction updates the Fixture and every affected Gate
+consumer to the accepted PTID and `services.station` contracts, then reruns the
+same source-bound 18-Gate closure.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

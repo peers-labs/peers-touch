@@ -37,6 +37,7 @@ from tooling.acceptance.gates.chat.native_support import (
     native_runtime_source_identity,
     read_station_version,
     reset_fixture,
+    runtime_station_service,
     selected_native_runtime,
     start_authenticated_client,
     stop_client,
@@ -112,10 +113,8 @@ class ContactMessageResilienceGate(AcceptanceGate):
         self.client_specs: dict[str, dict[str, Any]] = {}
         self.actor_specs: dict[str, dict[str, Any]] = {}
         if self.runtime_binding is not None:
-            station = self.manifest.get("station")
-            self.station_url = str(
-                station.get("url") if isinstance(station, dict) else ""
-            ).rstrip("/")
+            station = runtime_station_service(self.manifest)
+            self.station_url = str(station.get("endpoint") or "").rstrip("/")
             self.client_specs = {
                 str(client.get("actor")): client
                 for client in self.manifest.get("clients", [])

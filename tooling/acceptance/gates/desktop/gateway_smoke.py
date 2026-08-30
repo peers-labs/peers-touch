@@ -11,8 +11,13 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
-from tooling.acceptance.core import AcceptanceGate, GateError  # noqa: E402
-from tooling.acceptance.core.provisioning import load_runtime_manifest  # noqa: E402
+from tooling.acceptance.core import (  # noqa: E402
+    AcceptanceGate,
+    GateError,
+    ProvisioningError,
+    load_runtime_manifest,
+    require_runtime_service,
+)
 from tooling.acceptance.drivers.chrome import ChromeDriver  # noqa: E402
 from tooling.acceptance.drivers.station import StationDriver  # noqa: E402
 
@@ -32,8 +37,11 @@ def runtime_endpoints(manifest: dict[str, Any]) -> tuple[str, str, str]:
     if not isinstance(renderer_port, int) or renderer_port <= 0:
         raise GateError("runtime manifest Desktop renderer port is invalid")
 
-    station = manifest.get("station")
-    station_url = station.get("url") if isinstance(station, dict) else None
+    try:
+        station = require_runtime_service(manifest, "station", "station")
+    except ProvisioningError as error:
+        raise GateError(str(error)) from error
+    station_url = station.get("endpoint")
     if not isinstance(station_url, str) or not station_url.strip():
         raise GateError("runtime manifest Station URL is required")
     return (

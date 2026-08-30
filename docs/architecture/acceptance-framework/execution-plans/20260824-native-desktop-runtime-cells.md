@@ -1186,6 +1186,17 @@ only endpoint-backed required service, and restores generated output before
 rerunning one 18-Gate aggregate. No product assertion, runtime-cell ownership,
 or platform scope changes.
 
+Aggregate `20260830T114602576010Z-63749f7758dd30288b3fa9e3c4349697`
+then passed all local structural Gates but remained `BLOCKED/UNPROVEN` before
+Native product execution. The PTID migration also left the disposable Chat
+Fixture writing removed `sender_did` / `receiver_did` columns, and the
+Federation gateway smoke still consumed the removed singular
+`RuntimeManifest.station` field. The dependency-ready correction is to seed
+friend requests with canonical actor PTIDs and migrate all affected Gate
+consumers to the accepted `services.station` manifest contract, with focused
+failure-path tests. This remains an atomic compatibility completion under
+NDR-W7; it does not alter the runtime-cell or product contract.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

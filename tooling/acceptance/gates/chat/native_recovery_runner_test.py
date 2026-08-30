@@ -80,10 +80,14 @@ class NativeRecoveryRuntimeBindingTests(unittest.TestCase):
                 "commit": "commit-a",
                 "workspaceDigest": "clean",
             },
-            "station": {
-                "liveCommit": "commit-a",
-                "workspaceDigest": "clean",
-                "protoDigest": "c" * 64,
+            "services": {
+                "station": {
+                    "kind": "station",
+                    "endpoint": "http://station",
+                    "liveCommit": "commit-a",
+                    "workspaceDigest": "clean",
+                    "protocolDigest": "c" * 64,
+                },
             },
         }
         gate.tested_commit = "commit-a"

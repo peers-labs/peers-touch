@@ -279,6 +279,23 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         self.assertIn("updated_count <> 3", sql)
         self.assertIn("mutual_follow_count <> 6", sql)
         self.assertIn("INSERT INTO friend_chat_friend_requests", sql)
+        self.assertIn("sender_ptid", sql)
+        self.assertIn("receiver_ptid", sql)
+        self.assertNotIn("sender_did", sql)
+        self.assertNotIn("receiver_did", sql)
+        for actor in ("alice", "bob", "carol"):
+            self.assertIn(
+                f"SELECT id, ptid INTO STRICT {actor}_actor_id, {actor}_actor_ptid",
+                sql,
+            )
+            self.assertIn(
+                f"coalesce({actor}_actor_ptid, '') ~ '^ptid:.+$'",
+                sql,
+            )
+        self.assertIn("native Chat preset actor PTIDs are invalid", sql)
+        self.assertNotIn("_actor_id::text", sql)
+        self.assertEqual(sql.count("LEAST("), 3)
+        self.assertEqual(sql.count("GREATEST("), 3)
         self.assertIn("'acceptance-alice-bob'", sql)
         self.assertIn("'acceptance-alice-carol'", sql)
         self.assertIn("'acceptance-bob-carol'", sql)

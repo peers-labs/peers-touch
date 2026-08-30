@@ -19,6 +19,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     REQUIRED_ASSERTIONS,
     commits_match,
 )
+from tooling.acceptance.gates.chat.native_support import runtime_station_service
 
 
 GATE_ID = "chat-native-two-client-e2e"
@@ -118,7 +119,7 @@ def validate_report(
         and station.get("workspaceDigest") == "clean"
         and re.fullmatch(
             r"[0-9a-f]{64}",
-            str(station.get("protoDigest") or ""),
+            str(station.get("protocolDigest") or ""),
         )
         is not None,
         "Station attestation must match the clean source and proto",
@@ -200,12 +201,13 @@ def validate_report(
         "environment manifest must belong to the current Gate run",
     )
     environment_manifest = store.read_json(manifest_ref)
+    manifest_station = runtime_station_service(environment_manifest)
     require(
         isinstance(manifest, dict)
         and manifest == environment_manifest
         and manifest.get("gateId") == GATE_ID
         and manifest.get("source") == orchestrator
-        and manifest.get("station") == station,
+        and manifest_station == station,
         "embedded environment manifest does not match source identity",
     )
 
