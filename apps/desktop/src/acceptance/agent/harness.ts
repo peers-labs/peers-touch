@@ -8,6 +8,7 @@ import {
 } from '../../services/appRuntime';
 import {
   api,
+  AuthCommandException,
   classifyAgentTurnTerminalEvent,
   streamAgentTurn,
   streamAgentTurnReplay,
@@ -641,6 +642,27 @@ function observedErrorCode(error: unknown): string {
     return 'CONTEXT_ATTACHMENT_REJECTED';
   }
   return message;
+}
+
+function redactedAuthError(error: unknown): Record<string, string | null> {
+  if (!(error instanceof AuthCommandException)) {
+    return {
+      code: observedErrorCode(error),
+      detailCode: null,
+      reason: null,
+      deviceType: null,
+    };
+  }
+  const details = error.details;
+  return {
+    code: error.code,
+    detailCode: typeof details?.code === 'string' ? details.code : null,
+    reason: typeof details?.reason === 'string' ? details.reason : null,
+    deviceType:
+      typeof details?.device_type === 'string'
+        ? details.device_type
+        : null,
+  };
 }
 
 async function observeFoundationActiveDependency(
@@ -2390,6 +2412,7 @@ async function runFoundationF06Prepare(input: {
   } catch (error) {
     const activeTurnId = useAgentTurnRecoveryStore.getState()
       .active[conversation.conversation_id]?.turnId ?? '';
+    const authDiagnostic = redactedAuthError(error);
     try {
       await cleanupFoundationF06Scenario({
         scenarioKey: input.scenarioKey,
@@ -2401,9 +2424,12 @@ async function runFoundationF06Prepare(input: {
       const cleanup = cleanupError instanceof Error
         ? cleanupError.message
         : String(cleanupError);
-      throw new Error(`CLEANUP_FAILED:${primary}; cleanup=${cleanup}`);
+      throw new Error(
+        `CLEANUP_FAILED:${primary}; auth=${JSON.stringify(authDiagnostic)}; cleanup=${cleanup}`,
+      );
     }
-    throw error;
+    const primary = error instanceof Error ? error.message : String(error);
+    throw new Error(`${primary}; auth=${JSON.stringify(authDiagnostic)}`);
   }
 }
 

@@ -3531,6 +3531,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   tests, and `git diff --check` pass. AS-F06 and G-F remain
   `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source
   verification.
+- Checkpoint `c79d7bfefeba625f3f8ab348824bc1f74d2f043b` was deployed
+  exact-source to profile `two`. Run
+  `20260830T004212942923Z-2a5ae4c14b42e949b9adc8c60468aff2`
+  stopped at the previously proven Browser AS-F02 readiness path; source
+  matching, cleanup, and redaction passed. Unchanged-source runs
+  `20260830T004712382259Z-9afc68376433bd92aa89686b4af0d1e8`
+  and `20260830T010702996955Z-c2fd54d35b49025e933047c1a138e1b5`
+  both reached Browser AS-F06 preparation after about sixteen minutes and
+  failed with `session revoked`; source matching, cleanup, and redaction again
+  passed. The current error bridge omitted the typed revocation reason and
+  device type. The local diagnostic now reports only
+  `code/detailCode/reason/deviceType`, excluding token, actor, account, and raw
+  response data, so the next source-matched run can distinguish expiry from
+  same-device takeover without guessing. Replay recording and terminal
+  projection corrections remain locally verified but runtime-unproven because
+  neither `c79d7bfef` run reached the complete AS-F06 oracle. AS-F06 and G-F
+  remain `PARTIAL / UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
