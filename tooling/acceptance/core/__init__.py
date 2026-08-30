@@ -47,7 +47,7 @@ from .provisioning import (
     ProvisioningState,
     CredentialRef,
     EnvironmentContract,
-    StationAttestation,
+    ServiceAttestation,
     ActorIdentity,
     ActorManifest,
     GapArtifact,
@@ -57,6 +57,7 @@ from .provisioning import (
     blocked_manifest,
     load_json_artifact,
     load_runtime_manifest,
+    require_runtime_service,
 )
 from .provisioner import EnvironmentProvisioner
 
@@ -93,7 +94,7 @@ __all__ = [
     "ProvisioningState",
     "CredentialRef",
     "EnvironmentContract",
-    "StationAttestation",
+    "ServiceAttestation",
     "ActorIdentity",
     "ActorManifest",
     "GapArtifact",
@@ -103,6 +104,7 @@ __all__ = [
     "blocked_manifest",
     "load_json_artifact",
     "load_runtime_manifest",
+    "require_runtime_service",
     "EnvironmentProvisioner",
     "ARTIFACT_ROOT_ENV",
     "RUN_GATE_ENV",

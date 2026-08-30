@@ -1,42 +1,20 @@
 use reqwest::Method;
-use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::infrastructure::station_client::{self, StationClientError};
 
-fn deserialize_proto_i64<'de, D>(deserializer: D) -> Result<i64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum ProtoI64 {
-        Number(i64),
-        String(String),
-    }
-
-    match ProtoI64::deserialize(deserializer)? {
-        ProtoI64::Number(value) => Ok(value),
-        ProtoI64::String(value) => value.parse().map_err(D::Error::custom),
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StationProvider {
     pub id: String,
-    #[serde(default)]
     pub actor_ptid: String,
     pub name: String,
-    #[serde(default)]
     pub display_name: String,
-    #[serde(default)]
     pub base_url: String,
-    #[serde(default)]
     pub protocol: String,
-    #[serde(default)]
     pub runtime_kind: String,
+    pub cli_command: String,
     pub enabled: bool,
-    #[serde(default, deserialize_with = "deserialize_proto_i64")]
     pub version: i64,
     #[serde(default)]
     pub config: Option<Value>,
@@ -45,13 +23,11 @@ pub struct StationProvider {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StationModel {
     pub id: String,
-    #[serde(default)]
     pub actor_ptid: String,
     pub provider_id: String,
     pub model_id: String,
     pub display_name: String,
     pub enabled: bool,
-    #[serde(default, deserialize_with = "deserialize_proto_i64")]
     pub version: i64,
 }
 
@@ -60,7 +36,6 @@ pub struct CredentialStatus {
     pub provider_id: String,
     pub configured: bool,
     pub status: String,
-    #[serde(default, deserialize_with = "deserialize_proto_i64")]
     pub version: i64,
 }
 
@@ -114,12 +89,14 @@ pub fn get_providers(token: &str, _scope: &str) -> Result<Vec<StationProvider>, 
         Some(&json!({})),
     )?;
 
-    serde_json::from_value(
+    let providers: Vec<StationProvider> = serde_json::from_value(
         resp.get("providers")
             .cloned()
             .unwrap_or(Value::Array(vec![])),
     )
-    .map_err(|e| StationApiError::Internal(format!("decode providers: {}", e)))
+    .unwrap_or_default();
+
+    Ok(providers)
 }
 
 pub fn get_provider(token: &str, provider_id: &str) -> Result<Value, StationApiError> {
@@ -163,7 +140,11 @@ pub fn update_provider_full(
         }
     }
     if let Some(kv) = key_vaults {
-        body["key_vaults"] = json!(kv);
+        if let Ok(parsed) = serde_json::from_str::<Value>(kv) {
+            body["key_vaults"] = parsed;
+        } else {
+            body["key_vaults"] = json!(kv);
+        }
     }
 
     Ok(station_client::request_json_auth(

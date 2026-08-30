@@ -16,11 +16,12 @@ from tooling.acceptance.core import (
     EnvironmentProvisioner,
     ProvisioningError,
     ProvisioningState,
-    StationAttestation,
+    ServiceAttestation,
 )
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR
 from tooling.acceptance.provisioners import (
     HomeStationProvisioner,
+    MobileNativeProvisioner,
     get_provisioner,
 )
 
@@ -42,6 +43,15 @@ class ProvisionerBaseClassTests(unittest.TestCase):
         with self.assertRaisesRegex(ProvisioningError, "no provisioner registered"):
             get_provisioner(EnvironmentContract(id="nonexistent-env"))
 
+    def test_mobile_native_provisioner_is_registered(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "mobile-native.yaml"
+        )
+        self.assertIsInstance(
+            get_provisioner(contract),
+            MobileNativeProvisioner,
+        )
+
     def test_cleanup_runs_in_reverse_order(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
@@ -52,6 +62,19 @@ class ProvisionerBaseClassTests(unittest.TestCase):
         completed = provisioner.cleanup()
         self.assertEqual(order, ["second", "first"])
         self.assertEqual(completed, ("second", "first"))
+
+    def test_ready_requires_every_required_service_attestation(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract.from_yaml(
+                ENVIRONMENTS_DIR / "home-station.yaml"
+            )
+        )
+        manifest = provisioner._new_base_manifest("test-gate")
+        with self.assertRaisesRegex(
+            BlockedError,
+            "has no runtime attestation",
+        ):
+            provisioner._ready(manifest)
 
 
 class ProfileResolutionTests(unittest.TestCase):
@@ -285,12 +308,15 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (active_dir / "peers-oss.env").symlink_to(profile)
-            attestation = StationAttestation(
+            attestation = ServiceAttestation(
+                service_id="station",
+                service_kind="station",
                 environment_id="home-station",
-                url="http://station.example:18080",
+                deployment_environment="station-three",
+                endpoint="http://station.example:18080",
                 live_commit="abc1234",
                 workspace_digest="clean",
-                proto_digest="proto-digest",
+                protocol_digest="proto-digest",
                 artifact_ref={
                     "artifactKind": "acceptance-artifact-ref",
                     "workspaceId": "0" * 16,
@@ -301,6 +327,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
                     "mediaType": "application/json",
                 },
                 produced_at="2026-08-16T00:00:00+00:00",
+                producer="station-deployment",
             )
             with patch(
                 "tooling.acceptance.core.provisioner.REPO_ROOT",

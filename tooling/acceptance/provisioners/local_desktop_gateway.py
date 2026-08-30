@@ -12,6 +12,7 @@ import urllib.request
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import (
     commits_match,
+    persist_service_attestation,
     produce_station_attestation,
     source_proto_digest,
 )
@@ -23,6 +24,8 @@ from tooling.acceptance.core.provisioning import (
     EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
+    ServiceAttestation,
+    utc_now,
 )
 
 
@@ -188,6 +191,7 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
             attestation = produce_station_attestation(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
+                service_id="station",
                 station_url=station_url,
                 profile_env=profile_env,
             )
@@ -199,18 +203,36 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                     ),
                     resource="source-identity:commit",
                 )
-            if attestation.proto_digest != source_proto_digest(REPO_ROOT):
+            if attestation.protocol_digest != source_proto_digest(REPO_ROOT):
                 raise BlockedError(
                     reason="Station and client proto digests do not match",
                     resource="source-identity:proto",
                 )
             if not self._gateway_ready(gateway_url):
                 self._start_gateway(gateway_url, manifest.run_id)
+            gateway_attestation = persist_service_attestation(
+                ServiceAttestation(
+                    service_id="desktop-gateway",
+                    service_kind="desktop-gateway",
+                    environment_id=self.environment_id,
+                    deployment_environment=profile_name,
+                    endpoint=gateway_url,
+                    live_commit=manifest.source_commit,
+                    workspace_digest=manifest.workspace_digest,
+                    protocol_digest=source_proto_digest(REPO_ROOT),
+                    artifact_ref={},
+                    produced_at=utc_now(),
+                    producer="desktop-deployment",
+                )
+            )
 
             manifest = dataclasses.replace(
                 manifest,
                 state=ProvisioningState.PROVISIONED,
-                station=attestation,
+                services={
+                    attestation.service_id: attestation,
+                    gateway_attestation.service_id: gateway_attestation,
+                },
                 clients=(
                     ClientRuntime(
                         actor="desktop-gateway",

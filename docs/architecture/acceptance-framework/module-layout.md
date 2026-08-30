@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-08-15 | **Updated**: 2026-08-17
+> **Created**: 2026-08-15 | **Updated**: 2026-08-27
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -110,7 +110,7 @@ tooling/acceptance/
 | `core/errors.py` | GateError 统一异常，其他通用异常类型 |
 | `core/redaction.py` | 敏感字段、Bearer token、private key 和文本证据统一脱敏 |
 | `core/harness.py` | async_harness 通用 JS 桥接，支持命名空间调用 |
-| `core/provisioning.py` | 定义 EnvironmentProvisioner 生命周期、Runtime Resource Manifest、blocked artifact 和 cleanup result |
+| `core/provisioning.py` | 定义 EnvironmentProvisioner 生命周期、typed service topology、Runtime Resource Manifest、blocked artifact 和 cleanup result |
 | `core/provisioner.py` | 解析并验证 worktree Profile、管理 Provisioner 状态和 reverse-order cleanup |
 | `core/attestation.py` | 从 live Station 和 deployment worktree 生产 commit/workspace/proto attestation |
 | `core/drivers/base.py` | BaseDriver 定义生命周期；DomDriver 定义 DOM/JS/截图能力 |
@@ -151,6 +151,8 @@ fixtures/*.py → core/fixtures/base.py
 - fixtures/ 不得调用 Gate 或修改 Gate 成功条件
 - provisioners/ 不得包含产品断言、DOM selector 或消息内容判断
 - attestation 不得由消费它的 Gate 或 validator 生产
+- Runtime Manifest 只允许 `services[service-id]` 表达服务拓扑；禁止 singular
+  `station`、dual-write 和按 map 顺序推断 primary service
 - `core/_paths.py`不得定义runtime report/evidence/manifest目录
 - 除`core/evidence_store.py`外不得解析`PT_ACCEPTANCE_ARTIFACT_ROOT`或platform default
 - runtime writers不得写repository、`tooling/`、`docs/`或`.git/`

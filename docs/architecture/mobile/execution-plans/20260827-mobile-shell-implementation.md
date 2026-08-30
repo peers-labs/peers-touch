@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-27
+> **Created**: 2026-08-27 | **Updated**: 2026-08-29
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -23,7 +23,7 @@ The completed system must:
   prior-generation data;
 - pass every `MS-PA01..MS-PA27` assertion through `MS-AG01..MS-AG11`.
 
-Owner acceptance of PRODUCT, Prototype, architecture, `MS-D01..MS-D10`,
+Owner acceptance of PRODUCT, Prototype, architecture, `MS-D01..MS-D11`,
 Frontend Runtime `D-17`, and Social Runtime `D-08` was recorded on 2026-08-27.
 
 ## 2. Accepted Sources
@@ -222,7 +222,7 @@ Stable Acceptance IDs:
 
 | Capability ID | Feature ID | Product assertions | Required Gate IDs |
 |---|---|---|---|
-| `mobile-station-access` | `mobile-station-trust` | MS-PA01, MS-PA16, MS-PA25 | `mobile-contract-static`, `mobile-native-access-e2e` |
+| `mobile-station-access` | `mobile-station-trust` | MS-PA01, MS-PA16, MS-PA25 | `mobile-contract-static`, `mobile-identity-contract`, `mobile-native-access-e2e` |
 | `mobile-station-access` | `mobile-access-gate-oauth` | MS-PA02, MS-PA03, MS-PA17, MS-PA25 | `mobile-contract-static`, `mobile-native-access-e2e` |
 | `mobile-runtime-lifecycle` | `mobile-session-lifecycle` | MS-PA04, MS-PA05, MS-PA13, MS-PA14 | `mobile-contract-static`, `mobile-native-lifecycle-e2e` |
 | `mobile-command-recovery` | `mobile-command-draft-recovery` | MS-PA07, MS-PA08, MS-PA23, MS-PA26 | `mobile-contract-static`, `mobile-native-recovery-e2e` |
@@ -248,18 +248,21 @@ profile:
   identity_match: true
 services:
   station-primary:
+    kind: station
     mode: remote
     deploy_environment: station-two
     health_action: station-check
     status_action: station-status
     attestation_producer: station-deployment
   station-secondary:
+    kind: station
     mode: remote
     deploy_environment: station-three
     health_action: station-check
     status_action: station-status
     attestation_producer: station-deployment
   relay:
+    kind: relay
     required: true
     deploy_environment: relay-1
     health_action: relay-check
@@ -282,14 +285,14 @@ clients:
   - id: alice-android
     actor: alice
     runtime: tauri-android
-    destination_ref: env:PT_MOBILE_ANDROID_AVD
+    destination_ref: env:PT_MOBILE_ANDROID_PHYSICAL_DESTINATION
     profile: mobile-shell-alice-android
     ports: dynamically allocated and recorded before launch
     storage_root: <runtime-home>/acceptance/mobile-shell/<run-id>/alice-android
   - id: bob-android
     actor: bob
     runtime: tauri-android
-    destination_ref: env:PT_MOBILE_ANDROID_AVD
+    destination_ref: env:PT_MOBILE_ANDROID_PHYSICAL_DESTINATION
     profile: mobile-shell-bob-android
     ports: dynamically allocated and recorded before launch
     storage_root: <runtime-home>/acceptance/mobile-shell/<run-id>/bob-android
@@ -328,8 +331,14 @@ cleanup:
 
 Resource rules:
 
-- `PT_MOBILE_IOS_DESTINATION` and `PT_MOBILE_ANDROID_AVD` are required; no
-  simulator/emulator fallback may be chosen silently.
+- The block above is the Environment Provisioning requirement. The immutable
+  runtime output is the canonical `RuntimeManifest.services` map defined by
+  Acceptance Framework D-13; each required role carries source-bound live
+  attestation fields.
+- `PT_MOBILE_IOS_DESTINATION` and
+  `PT_MOBILE_ANDROID_PHYSICAL_DESTINATION` are required; actual devices are
+  resolved from four fenced physical-device leases, and no simulator/emulator
+  fallback may be chosen silently.
 - Dynamic ports are allocated by binding port zero, then persisted in the run
   manifest before process launch.
 - OAuth account variables are presence-checked and never printed or persisted.
@@ -355,7 +364,9 @@ Deliverables:
   `MS-PA01..MS-PA27`.
 - Add deterministic fixtures for two actors, two devices, two Stations,
   disconnect points, revocation, overflow, and long content.
-- Capture baseline interaction and resource metrics on pinned iOS/Android cells.
+- Register the baseline interaction/resource evidence schema in W0. Capture
+  pinned iOS/Android measurements in W9 after W7 provides both native runtime
+  cells; W0 must not fabricate an early native baseline.
 
 Gate:
 
@@ -443,7 +454,7 @@ Gate:
 (cd apps/station && go test ./...)
 (cd apps/desktop && pnpm run check && pnpm run test)
 pnpm mobile:check
-python3 tooling/acceptance/gates/mobile/identity_contract.py
+python3 tooling/scripts/acceptance-run.py --gate mobile-identity-contract
 ```
 
 - MS-AG01 and MS-AG02, including ten Station/actor switches and peer mismatch.
@@ -486,6 +497,88 @@ Failure closure:
 
 - Cancel, expiry, replay, duplicate consume, provider mismatch, Station
   mismatch, stale generation, and later-gate denial all fail closed.
+
+Accepted amendment execution order:
+
+1. **W2-A Security stop-the-line**
+   - remove Authorization header values from logs;
+   - derive legacy authorization actor identity from authenticated consent;
+   - atomically consume legacy authorization codes.
+2. **W2-B Model and Station finalizer**
+   - add first-class `auth.oauth` gate semantics;
+   - bind device ID, lifecycle generation, attempt-secret hash, and credential
+     delivery public key;
+   - atomically finalize granted Access Attempt, candidate, candidate-keyed
+     session, and encrypted credential envelope;
+   - make status idempotently return the same envelope until acknowledgement.
+3. **W2-C Rust-owned OAuth**
+   - **W2-C1** generate Rust OAuth/Auth/AccessGate bindings and implement
+     Station-compatible credential-envelope decryption with cross-language test
+     vectors;
+   - **W2-C2** move callback parsing and Station
+     start/complete/status/cancel/ack transport into Mobile Rust;
+   - **W2-C2** persist the active attempt index, attempt secret, and delivery
+     private key in secure storage for cold-start recovery;
+   - **W2-C2** expose only public projection state to Mobile Web and delete the
+     old Web transport/secret-return path.
+4. **W2-D Native adapters**
+   - integrate approved `tauri-plugin-deep-link = 2.4.9` and
+     `tauri-plugin-opener = 2.5.4`;
+   - register iOS and Android callback schemes and cover warm/cold launch;
+   - delete ad hoc iOS browser FFI and Android unsupported fallbacks.
+5. **W2-E Native Acceptance**
+   - **W2-E1 Simulator evidence** declares a separate `mobile-simulator`
+     environment that owns iOS Simulator and Android emulator discovery, boot,
+     Acceptance build deployment, Appium sessions, deterministic callback
+     routing, source-bound evidence, and cleanup;
+   - W2-E1 pins and verifies Appium `2.19.0`, XCUITest `9.10.5`, and
+     UiAutomator2 `4.2.9` before session creation; Android WebView automation
+     additionally requires an exact browser-major Chromedriver artifact with
+     declared source, host/ABI compatibility, SHA-256, and external cache;
+   - W2-E1 is supplemental evidence only and MUST NOT satisfy the
+     physical-device MS-AG03 cell;
+   - **W2-E2 Physical proof** keeps the existing `mobile-native` environment
+     restricted to physical devices and approved provider credentials;
+   - implement the acceptance-only typed registry and Appium XCUITest /
+     UiAutomator2 drivers;
+   - prove deterministic simulator/emulator failure paths;
+   - prove real GitHub/Google completion on physical iOS and Android devices;
+   - emit source-bound Station, DOM/AX, screenshot, lifecycle, and cleanup
+     evidence.
+
+Dependency order:
+
+```text
+W2-A -> W2-B -> W2-C --+
+                 \      +-> W2-E
+                  -> W2-D --+
+```
+
+W2-B contract generation may run in parallel with W2-A implementation after
+field numbers are allocated. W2-C and W2-D may proceed in parallel after W2-B.
+Native environment provisioning may run in parallel with W2-B/W2-C/W2-D, but
+no native proof starts before both W2-C and W2-D and the credential/account
+preflight pass.
+
+Execution status:
+
+- W2-A through W2-D: done for their planned implementation scope.
+- W2-E1 Simulator evidence: done. The canonical external Evidence Store
+  `latest` run passed both iPhone 15 Pro / iOS 17.4 and
+  `peers_touch_applet_l3_e2e` runtime cells, including warm/cold invalid
+  callback routing, WebView restart, fail-closed projections,
+  DOM/AX/screenshots, runtime identity, and cleanup.
+- W2-E2 source closure: `PLAN_ACCEPTED / EXECUTE_READY`. The accepted
+  architecture at `docs/architecture/mobile/native-oauth-proof/` defines the trusted
+  negative-Fixture authority, authoritative Station proof, four-client
+  provider-browser lease lifecycle, and physical-app build provenance.
+  The Owner accepted MOP-D01..MOP-D04 on 2026-08-29. The focused execution plan
+  is `docs/architecture/mobile/execution-plans/20260829-mobile-native-oauth-proof.md`;
+  its independent review returned `0 P0 / 0 P1`. E2-0 through E2-4 are
+  complete; the dependency-ready frontier is W2-E2-D / E2-5.
+- W2-E2 Physical proof: blocked pending approved provider accounts, two
+  physical iOS devices, two physical Android devices, and the ten remaining
+  source-backed negative fixtures. MS-AG03 remains `UNPROVEN`.
 
 Gate:
 
@@ -779,8 +872,8 @@ evidence.
 |---|---|---|---|
 | W-1 | `git fetch origin master`; merge-base/status/path-allowlist checks from W-1 | `tmp/evidence/mobile-shell/<run-id>/W-1/` | Clean latest-master implementation worktree; no product claim |
 | W0 | `make acceptance-validate DOMAIN=mobile`; `make acceptance-coverage-report`; `make acceptance-plan ACCEPTANCE_RANGE=origin/master...HEAD`; `python3 tooling/scripts/acceptance-run.py --gate mobile-contract-static` | Acceptance plan/validation roles plus `W0/coverage-gap-matrix.md` | Full Domain trace resolves; native rows remain UNPROVEN |
-| W1 | `./model/build.sh`; `./tooling/scripts/proto-gen-mobile.sh`; `(cd apps/station && go test ./...)`; `(cd apps/desktop && pnpm run check && pnpm run test)`; `pnpm mobile:check`; `python3 tooling/acceptance/gates/mobile/identity_contract.py` | `W1/` generated-contract, scan, and switch evidence | All consumers compile PTID-only; no session/Station behavior claim beyond tested cells |
-| W2 | `(cd apps/station && go test ./app/subserver/oauth/... ./frame/touch/accessgate/...)`; `pnpm mobile:check`; `python3 tooling/scripts/acceptance-run.py --gate mobile-native-access-e2e` | Acceptance Gate run plus `W2/` attempt/readback evidence | AS-02/AS-03 pass on both platforms; other business domains not claimed |
+| W1 | `./model/build.sh`; `./tooling/scripts/proto-gen-mobile.sh`; `(cd apps/station && go test ./...)`; `(cd apps/desktop && pnpm run check && pnpm run test)`; `pnpm mobile:check`; `python3 tooling/scripts/acceptance-run.py --gate mobile-identity-contract` | `W1/` generated-contract, scan, and switch evidence | All consumers compile PTID-only; no session/Station behavior claim beyond tested cells |
+| W2 | `(cd apps/station && go test ./app/subserver/oauth/... ./frame/touch/accessgate/...)`; `pnpm mobile:check`; `python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-access-e2e`; `python3 tooling/scripts/acceptance-run.py --gate mobile-native-access-e2e` | Simulator evidence plus physical Acceptance Gate run and `W2/` attempt/readback evidence | W2-E1 simulator cells pass without claiming provider success; AS-02/AS-03 pass on both physical platforms before MS-AG03 is proven; other business domains not claimed |
 | W3 | `pnpm --dir apps/mobile run check:lifecycle-runtime`; `python3 tooling/scripts/acceptance-run.py --gate mobile-native-lifecycle-e2e` | `W3/` transition, generation, resource, focus, and navigation evidence | Lifecycle/navigation state graph passes; draft durability remains W4 |
 | W4 | `(cd apps/mobile/src-tauri && cargo test --offline)`; `pnpm --dir apps/mobile run check:command-runtime`; `python3 tooling/scripts/acceptance-run.py --gate mobile-native-recovery-e2e` | `W4/` ledger/draft/fault-matrix evidence | Ordering, fairness, restart, capacity, readback, and draft scope pass; domain UI remains W6A-W6D |
 | W5 | `pnpm --dir apps/mobile run check:social-wire`; `pnpm --dir apps/mobile run check:social-runtime-boundaries`; `pnpm mobile:check`; `python3 tooling/scripts/acceptance-run.py --gate mobile-native-social-convergence-e2e` | `W5/` ingress/cursor/readback and zero-duplicate-stream evidence | Generated gateways and one ingress converge; product completeness remains W6A-W6D |
@@ -997,9 +1090,9 @@ Closure-level negative coverage:
 | Workstream | Status | Completion evidence |
 |---|---|---|
 | W-1 Latest-master and worktree isolation preflight | done | `tmp/evidence/mobile-shell/20260827/W-1/source-baseline.md` |
-| W0 Mobile Acceptance Domain onboarding and baseline | in progress | Acceptance scope inventory and stable IDs defined in this plan |
-| W1 Unified ActorRef identity and Station trust | pending | — |
-| W2 Access Gate and OAuth | pending | — |
+| W0 Mobile Acceptance Domain onboarding and baseline | done | `tmp/evidence/mobile-shell/20260827/W0/coverage-gap-matrix.md`; D-13 hard cut; structural validation and static Gate PASS; native proof remains UNPROVEN |
+| W1 Unified ActorRef identity and Station trust | done | `tmp/evidence/mobile-shell/20260827/W1/progress.md`; PTID-only Proto/API cutover, signed Station verification, atomic schema migrations, scoped Station tests, Desktop/Mobile checks, and identity Gate PASS; MS-AG02 native runtime proof remains explicitly UNPROVEN until the integrated native runtime cell |
+| W2 Access Gate and OAuth | blocked | `tmp/evidence/mobile-shell/20260827/W2/progress.md`; W2-A through W2-D and W2-E1 Simulator evidence are done; W2-E2 source closures E2-0 through E2-4 are done and E2-5 is dependency-ready but not started, while physical iOS/Android provider proof and ten negative cells remain `UNPROVEN` |
 | W3 Lifecycle, runtime graph, and navigation | pending | — |
 | W4 InteractionAdmission, command ledger, and draft store | pending | — |
 | W5 Generated gateway and Social projection convergence | pending | — |

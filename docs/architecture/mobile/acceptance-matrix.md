@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-27
+> **Created**: 2026-08-27 | **Updated**: 2026-08-29
 > **Owner**: Mobile Product Team
 
 ---
@@ -45,17 +45,17 @@ before runtime gates run.
 
 | Gate | Command | Runtime cell and sample policy | Pass threshold | Evidence |
 |---|---|---|---|---|
-| MS-AG01 Static/contracts | `pnpm mobile:check`, `pnpm --dir apps/mobile run check:mobile-shell-contracts`, and `./tooling/scripts/proto-gen-mobile.sh` | CI; one clean run | exit 0; PTID/manual-domain scans have zero violations | `tmp/evidence/mobile-shell/<run-id>/static/` |
-| MS-AG02 Lifecycle/isolation | `make acceptance PLAN=tooling/acceptance/plans/mobile-shell.json` | iOS simulator + Android emulator; every lifecycle edge, 10 Station/actor switches, saved URL returning a different peer ID | transitions pass; zero old-generation reads; peer-ID mismatch blocks credentials/cache reuse | `tmp/evidence/mobile-shell/<run-id>/lifecycle/` |
-| MS-AG03 OAuth security | same Acceptance command | iOS + Android physical device; GitHub/Google success, following-gate, cancel, expiry, replay, provider/Station mismatch | valid flows preserve access-attempt binding; session activates only after final grant; replay/mismatch fails closed | `tmp/evidence/mobile-shell/<run-id>/oauth/` |
-| MS-AG04 Unknown outcome | same Acceptance command | two actors/two devices; disconnect at pre-dispatch, post-dispatch, post-commit; 10 trials each plus cold restart | exactly one Station commit; every command converges or remains visibly unresolved after restart | `tmp/evidence/mobile-shell/<run-id>/commands/` |
-| MS-AG05 Resume/teardown | same Acceptance command | iOS + Android physical device; 20 background/resume, 10 Station/actor switches, unreachable Station during logout, secure-delete failure | no cross-generation data; writes wait for reconcile; secure-delete failure blocks; remote-revoke failure yields local completion + unconfirmed audit; resources return to baseline | `tmp/evidence/mobile-shell/<run-id>/resume/` |
-| MS-AG06 Projection freshness | same Acceptance command | two actors/two devices; event path and forced event-loss reconcile path per required domain | realtime convergence <= 5 s; forced reconcile convergence <= 30 s; Station readback matches both clients | `tmp/evidence/mobile-shell/<run-id>/freshness/` |
-| MS-AG07 Interaction performance | same Acceptance command | release profile on plan-pinned lower/current-tier iOS + Android physical devices with exact model/OS recorded; 100 conversations, 200 messages/thread, 100 Moments, 500 contacts; 5 warmups + 30 runs/route | P50/P95/P99 reported; P95 <= 100 ms; P99 <= 150 ms; zero unwaived main-thread task > 50 ms | `tmp/evidence/mobile-shell/<run-id>/performance/` |
-| MS-AG08 Layout | same Acceptance command | smallest/largest supported viewport, keyboard open/closed, portrait/landscape | no overlap/clipping; one safe-area/keyboard occlusion model | `tmp/evidence/mobile-shell/<run-id>/layout/` |
-| MS-AG09 Admission/overload | same Acceptance command | 50 intents/5 s across 8 ordering keys; Station delay 10 s; fill ledger limits; flood 2,000 data events plus revocation | command bounds/fairness hold; overflow is typed; data overflow reconciles; revocation closes writes; zero silent drop/duplicate | `tmp/evidence/mobile-shell/<run-id>/overload/` |
-| MS-AG10 Payload/storage | same Acceptance command | payload at 256 KiB and +1 byte; media at Station-advertised maximum and +1 byte; process kill during ledger/draft transition | boundaries hold; media bytes stay external; command/draft stores recover atomically; disk scan finds no token, secret, or plaintext content | `tmp/evidence/mobile-shell/<run-id>/storage/` |
-| MS-AG11 Accessibility/i18n | same Acceptance command | VoiceOver + TalkBack; maximum supported text size; reduced motion; longest supported locale; keyboard/focus traversal | semantic order and labels complete; focus restored; no clipped/overlapping text; motion preference honored | `tmp/evidence/mobile-shell/<run-id>/accessibility/` |
+| MS-AG01 Static/contracts | `pnpm mobile:check`, `pnpm --dir apps/mobile run check:mobile-shell-contracts`, and `./tooling/scripts/proto-gen-mobile.sh` | CI; one clean run | exit 0; PTID/manual-domain scans have zero violations | Evidence Store `ArtifactRef`s from the selected static Gates |
+| MS-AG02 Lifecycle/isolation | `make acceptance PLAN=tooling/acceptance/plans/mobile-shell.json` | iOS simulator + Android emulator; every lifecycle edge, 10 Station/actor switches, saved URL returning a different peer ID | transitions pass; zero old-generation reads; peer-ID mismatch blocks credentials/cache reuse | Evidence Store latest for `mobile-native-lifecycle-e2e` |
+| MS-AG03 OAuth security | same Acceptance command | iOS + Android physical device; GitHub/Google success, following-gate, cancel, expiry, replay, provider/Station mismatch | valid flows preserve access-attempt binding; session activates only after final grant; replay/mismatch fails closed | Evidence Store latest for `mobile-native-access-e2e`, including Mobile and Station proof `ArtifactRef`s |
+| MS-AG04 Unknown outcome | same Acceptance command | two actors/two devices; disconnect at pre-dispatch, post-dispatch, post-commit; 10 trials each plus cold restart | exactly one Station commit; every command converges or remains visibly unresolved after restart | Evidence Store latest for `mobile-native-recovery-e2e` |
+| MS-AG05 Resume/teardown | same Acceptance command | iOS + Android physical device; 20 background/resume, 10 Station/actor switches, unreachable Station during logout, secure-delete failure | no cross-generation data; writes wait for reconcile; secure-delete failure blocks; remote-revoke failure yields local completion + unconfirmed audit; resources return to baseline | Evidence Store latest for `mobile-native-lifecycle-e2e` and cleanup roles |
+| MS-AG06 Projection freshness | same Acceptance command | two actors/two devices; event path and forced event-loss reconcile path per required domain | realtime convergence <= 5 s; forced reconcile convergence <= 30 s; Station readback matches both clients | Evidence Store latest for `mobile-native-social-convergence-e2e` |
+| MS-AG07 Interaction performance | same Acceptance command | release profile on plan-pinned lower/current-tier iOS + Android physical devices with exact model/OS recorded; 100 conversations, 200 messages/thread, 100 Moments, 500 contacts; 5 warmups + 30 runs/route | P50/P95/P99 reported; P95 <= 100 ms; P99 <= 150 ms; zero unwaived main-thread task > 50 ms | Evidence Store timing and attribution `ArtifactRef`s |
+| MS-AG08 Layout | same Acceptance command | smallest/largest supported viewport, keyboard open/closed, portrait/landscape | no overlap/clipping; one safe-area/keyboard occlusion model | Evidence Store screenshot, DOM and AX `ArtifactRef`s |
+| MS-AG09 Admission/overload | same Acceptance command | 50 intents/5 s across 8 ordering keys; Station delay 10 s; fill ledger limits; flood 2,000 data events plus revocation | command bounds/fairness hold; overflow is typed; data overflow reconciles; revocation closes writes; zero silent drop/duplicate | Evidence Store admission and reconcile `ArtifactRef`s |
+| MS-AG10 Payload/storage | same Acceptance command | payload at 256 KiB and +1 byte; media at Station-advertised maximum and +1 byte; process kill during ledger/draft transition | boundaries hold; media bytes stay external; command/draft stores recover atomically; disk scan finds no token, secret, or plaintext content | Evidence Store payload, recovery and redaction `ArtifactRef`s |
+| MS-AG11 Accessibility/i18n | same Acceptance command | VoiceOver + TalkBack; maximum supported text size; reduced motion; longest supported locale; keyboard/focus traversal | semantic order and labels complete; focus restored; no clipped/overlapping text; motion preference honored | Evidence Store accessibility tree, focus trace and screenshot `ArtifactRef`s |
 
 Missing native evidence remains `UNPROVEN`.
 MS-AG07 records the pre-cutover baseline on the same pinned devices and workload;
@@ -117,12 +117,11 @@ pnpm --dir apps/mobile run check:mobile-shell-contracts
 make acceptance PLAN=tooling/acceptance/plans/mobile-shell.json
 ```
 
-`check:mobile-shell-contracts` does not exist in the current package and is a
-required implementation deliverable. It must fail on numeric/aliased actor
-identity outside generated compatibility ingress, manual domain types outside
-the gateway, imports of retired JSON adapters, invalid runtime dependency
-graphs/budgets, URL-keyed session/command scopes, or a second durable-command
-persistence owner.
+`check:mobile-shell-contracts` is registered in `apps/mobile/package.json` and
+must continue to fail on numeric/aliased actor identity outside generated
+compatibility ingress, manual domain types outside the gateway, imports of
+retired JSON adapters, invalid runtime dependency graphs/budgets, URL-keyed
+session/command scopes, or a second durable-command persistence owner.
 
 The Acceptance artifact must index every `MS-PAxx` row and its mapped
 `MS-AGxx` evidence. Each runtime gate records lifecycle generation, Station/PTID

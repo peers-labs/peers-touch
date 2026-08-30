@@ -108,20 +108,28 @@ on 2026-08-27. Model/Station protocol work remains an implementation
 requirement.
 
 `PT_STATION_URL` and user-entered URLs are connection hints, not Station
-identity. Before auth, a client sends a fresh challenge and receives a signed
-handshake containing:
+identity. Before auth, a client sends a cryptographically random 32-byte
+challenge and receives:
 
-- stable `station_peer_id`;
-- canonical origin;
-- protocol and capability set;
-- response expiry;
-- the original challenge.
+- deterministic protobuf bytes for a statement containing the exact challenge,
+  stable `station_peer_id`, normalized canonical origin, UTF-8-byte-sorted
+  capability IDs, issue time, and expiry;
+- the marshalled libp2p Ed25519 host public key;
+- a host-key signature over
+  `"peers-touch/station-identity/v1\0" || deterministic_protobuf(statement)`.
+
+The client derives the PeerID from the public key, verifies equality with the
+signed `station_peer_id`, verifies the signature, requires a signed lifetime no
+longer than 60 seconds, and permits at most 30 seconds of clock skew. Required
+capabilities use subset matching; unknown capabilities are ignored.
 
 The explicit first-add action pins the verified peer ID to the local Station
 registry. OAuth attempts, sessions, caches, cursors, and durable commands are
 scoped by `station_peer_id`, never by URL alone. A known URL returning another
-peer ID fails closed and requires explicit Station replacement. Redirects may
-change the connection hint but cannot change the pinned identity.
+peer ID fails closed and requires explicit Station replacement. Handshake HTTP
+redirects are rejected. Host-key rotation changes the PeerID and also requires
+explicit Station replacement; no URL alias or unrelated signing key proves
+continuity.
 
 The handshake contract is Proto-first. Development-only HTTP profiles may use
 the same signature proof, but production credentials and OAuth callbacks require

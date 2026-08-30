@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-23
+> **Created**: 2026-06-03 | **Updated**: 2026-08-27
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -66,7 +66,7 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | 文档 | 说明 |
 |------|------|
 | [design.md](./design.md) | 架构原则、分层模型、核心契约、Core Runtime 抽象和执行闭环 |
-| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-12） |
+| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-13） |
 | [data-model.md](./data-model.md) | Provisioning、Evidence Store、ArtifactRef、Run Manifest 与状态机 |
 | [module-layout.md](./module-layout.md) | Core Runtime 与 Environment Provisioning 的目标目录、职责和禁止依赖 |
 | [integration.md](./integration.md) | 现有变量/Profile/Fixture/Gate 到 runtime manifest 的映射与影响面 |
@@ -85,10 +85,6 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 - immutable run manifests与atomic `latest.json` pointer；
 - writer/readers/validators/cleanup共享唯一resolver；
 - source tree只保留code、schemas、templates和intentional fixtures。
-
-当前 Agent V2 runtime matrix 的跨-runtime role applicability 由 accepted `D-13`
-定义；Foundation candidate producer 必须按 row-scoped role policy 运行，不得为
-contract-only 或 guard rows 伪造 DOM/Turn evidence。
 
 ---
 
