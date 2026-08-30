@@ -506,6 +506,9 @@ DECLARE
   alice_actor_id bigint;
   bob_actor_id bigint;
   carol_actor_id bigint;
+  alice_actor_ptid text;
+  bob_actor_ptid text;
+  carol_actor_ptid text;
   mutual_follow_count integer;
 BEGIN
   SELECT password_hash INTO STRICT preset_hash
@@ -520,15 +523,23 @@ BEGIN
     RAISE EXCEPTION 'native Chat preset actor set is incomplete';
   END IF;
 
-  SELECT id INTO STRICT alice_actor_id
+  SELECT id, ptid INTO STRICT alice_actor_id, alice_actor_ptid
   FROM touch_actor
   WHERE email = 'alice@p.t';
-  SELECT id INTO STRICT bob_actor_id
+  SELECT id, ptid INTO STRICT bob_actor_id, bob_actor_ptid
   FROM touch_actor
   WHERE email = 'bob@p.t';
-  SELECT id INTO STRICT carol_actor_id
+  SELECT id, ptid INTO STRICT carol_actor_id, carol_actor_ptid
   FROM touch_actor
   WHERE email = 'carol@p.t';
+
+  IF NOT (
+    coalesce(alice_actor_ptid, '') ~ '^ptid:.+$'
+    AND coalesce(bob_actor_ptid, '') ~ '^ptid:.+$'
+    AND coalesce(carol_actor_ptid, '') ~ '^ptid:.+$'
+  ) THEN
+    RAISE EXCEPTION 'native Chat preset actor PTIDs are invalid';
+  END IF;
 
   SELECT count(*) INTO mutual_follow_count
   FROM follows
@@ -547,8 +558,8 @@ BEGIN
   INSERT INTO friend_chat_friend_requests (
     request_id,
     pair_key,
-    sender_did,
-    receiver_did,
+    sender_ptid,
+    receiver_ptid,
     status,
     message,
     created_at,
@@ -556,10 +567,10 @@ BEGIN
   ) VALUES
     (
       'acceptance-alice-bob',
-      LEAST(alice_actor_id::text, bob_actor_id::text) || '|' ||
-        GREATEST(alice_actor_id::text, bob_actor_id::text),
-      alice_actor_id::text,
-      bob_actor_id::text,
+      LEAST(alice_actor_ptid, bob_actor_ptid) || '|' ||
+        GREATEST(alice_actor_ptid, bob_actor_ptid),
+      alice_actor_ptid,
+      bob_actor_ptid,
       2,
       '',
       clock_timestamp(),
@@ -567,10 +578,10 @@ BEGIN
     ),
     (
       'acceptance-alice-carol',
-      LEAST(alice_actor_id::text, carol_actor_id::text) || '|' ||
-        GREATEST(alice_actor_id::text, carol_actor_id::text),
-      alice_actor_id::text,
-      carol_actor_id::text,
+      LEAST(alice_actor_ptid, carol_actor_ptid) || '|' ||
+        GREATEST(alice_actor_ptid, carol_actor_ptid),
+      alice_actor_ptid,
+      carol_actor_ptid,
       2,
       '',
       clock_timestamp(),
@@ -578,10 +589,10 @@ BEGIN
     ),
     (
       'acceptance-bob-carol',
-      LEAST(bob_actor_id::text, carol_actor_id::text) || '|' ||
-        GREATEST(bob_actor_id::text, carol_actor_id::text),
-      bob_actor_id::text,
-      carol_actor_id::text,
+      LEAST(bob_actor_ptid, carol_actor_ptid) || '|' ||
+        GREATEST(bob_actor_ptid, carol_actor_ptid),
+      bob_actor_ptid,
+      carol_actor_ptid,
       2,
       '',
       clock_timestamp(),

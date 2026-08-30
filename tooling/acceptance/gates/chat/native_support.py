@@ -19,8 +19,10 @@ from tooling.acceptance.core import (
     ArtifactRef,
     EvidenceStore,
     GateError,
+    ProvisioningError,
     REPO_ROOT,
     call_async_harness,
+    require_runtime_service,
 )
 from tooling.acceptance.core.provisioning import load_runtime_manifest
 from tooling.acceptance.drivers.native import (
@@ -49,6 +51,13 @@ ACCOUNTS = {
     "bob": "bob@p.t",
     "charlie": "carol@p.t",
 }
+
+
+def runtime_station_service(manifest: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return require_runtime_service(manifest, "station", "station")
+    except ProvisioningError as error:
+        raise GateError(str(error)) from error
 
 
 @dataclass(frozen=True)
@@ -145,7 +154,7 @@ def native_runtime_source_identity(
     station_live: dict[str, Any],
 ) -> dict[str, Any]:
     source = manifest.get("source")
-    station = manifest.get("station")
+    station = runtime_station_service(manifest)
     runtime_cell = runtime_binding.runtime_identity()
     binary = runtime_binding.binary_identity()
     cell_source = (
@@ -215,7 +224,7 @@ def native_runtime_source_identity(
         and station_commit == source_commit
         and re.fullmatch(
             r"[0-9a-f]{64}",
-            str(station.get("protoDigest") or ""),
+            str(station.get("protocolDigest") or ""),
         )
         is not None
         and commits_match(

@@ -31,6 +31,7 @@ from tooling.acceptance.gates.chat.native_support import (
     native_runtime_source_identity,
     read_station_version,
     reset_fixture,
+    runtime_station_service,
     selected_native_runtime,
     start_authenticated_client,
     stop_client,
@@ -129,11 +130,9 @@ class NativeGroupMlsGate(AcceptanceGate):
         self.actor_manifest = actor_manifest
         self.runtime_binding = runtime_binding
         if manifest is not None:
-            station = manifest.get("station")
+            station = runtime_station_service(manifest)
             source = manifest.get("source")
-            self.station_url = str(
-                station.get("url") if isinstance(station, dict) else ""
-            ).rstrip("/")
+            self.station_url = str(station.get("endpoint") or "").rstrip("/")
             self.tested_commit = str(
                 source.get("commit") if isinstance(source, dict) else ""
             )
