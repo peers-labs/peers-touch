@@ -289,6 +289,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn("afterCursor: replayAfterCursor", completion[station_readback:])
 
+    def test_revision_retry_cancels_after_durable_provider_start(self) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationF07Scenario",
+        )
+        scenario_end = self.source.index(
+            "interface DirectCellAssertionContext",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("event.event !== 'progress'", scenario)
+        self.assertIn(
+            "event.data.stage !== 'provider_call_started'",
+            scenario,
+        )
+        self.assertNotIn("event.event !== 'text'", scenario)
+
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)
 

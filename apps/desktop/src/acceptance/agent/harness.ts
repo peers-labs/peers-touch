@@ -3532,7 +3532,13 @@ async function runFoundationF07Scenario(input: {
     thinkingMode: 'disabled',
     clientCapabilitySessionId: input.capabilitySessionId,
     onEvent: (event, events) => {
-      if (cancellationRequested || event.event !== 'text') return;
+      if (
+        cancellationRequested
+        || event.event !== 'progress'
+        || event.data.stage !== 'provider_call_started'
+      ) {
+        return;
+      }
       const turnId = observedTurnId(events);
       if (!turnId) return;
       cancellationRequested = true;

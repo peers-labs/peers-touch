@@ -47,13 +47,23 @@
   3092 ms.
 - The immutable Gate log then failed at `agent_retry_turn failed`; no
   `retry-finished` checkpoint was emitted.
+- Exact-source rerun
+  `20260830T105006501570Z-9ea71a2d66bc221db156d1ea3dc3c69d`
+  passed AS-F05 and AS-F06, entered Browser AS-F07, and emitted only
+  `scenario-started` before `agent.acceptance.turnSubmissionTimeout`.
+  No `retry-source-cancel-requested` event was emitted.
 
 ## Verification Conclusion
-- Hypothesis A is rejected: the source emitted cancellable text.
+- Hypothesis A is confirmed as nondeterministic: one run emitted cancellable
+  text in 2361 ms, while the next source-matched run emitted no text within
+  120 seconds.
 - Hypothesis B is rejected: cancellation reached a terminal `cancelled` event.
 - Hypothesis C is not reached.
 - Hypothesis D is confirmed at the first retry command, but its owning
   Station/transport error is not yet identified.
 - Hypothesis E is not reached.
-- Next instrumentation records the existing pre-retry evidence state and the
-  typed `agent_retry_turn` error without adding waits or changing behavior.
+- The fixture must not use external provider first-token latency as the
+  cancellation boundary. The next implementation cancels on the durable
+  `provider_call_started` progress event, which is emitted after source user
+  message persistence, while preserving the real provider, cancellation, and
+  retry paths. Typed retry error instrumentation remains active.

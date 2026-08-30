@@ -3878,6 +3878,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   justify a product or Gate change. The next action is one unchanged
   source-matched rerun; only a repeated AS-F05 failure with runtime evidence
   can become the next implementation owner.
+- The unchanged-source rerun on `9dddb3dbbe4d98f3657627533cc122ec349d0219`,
+  `20260830T105006501570Z-9ea71a2d66bc221db156d1ea3dc3c69d`,
+  passed AS-F05 and all four AS-F06 tuples, verifying the recovery-cursor
+  evidence correction. Browser AS-F07 then timed out after `scenario-started`
+  without reaching `retry-source-cancel-requested`; cleanup and exact-source
+  attestation passed. The retry fixture currently waits for the external
+  provider's first text token before requesting cancellation, although the
+  accepted retry contract requires only a durable failed/cancelled source.
+  The producer will instead cancel at the production
+  `provider_call_started` progress event, which occurs after the source user
+  message is durable and before external first-token latency, while retaining
+  the real Turn, cancellation, retry, and Station readback paths.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
