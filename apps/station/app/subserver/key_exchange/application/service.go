@@ -10,11 +10,11 @@ import (
 
 type Repository interface {
 	AutoMigrate() error
-	UpsertIdentityKey(actorDID, deviceID string, ikPub []byte, fingerprint string, publishedAtUnixMs int64, supportedVersions []uint32) error
-	UpsertSignedPreKey(actorDID, deviceID string, spk domain.SignedPreKey) error
-	UploadOneTimePreKeys(actorDID, deviceID string, keys []domain.OneTimePreKey) error
-	FetchKeyBundles(actorDID, filterDeviceID string) ([]domain.KeyBundle, error)
-	CountAvailableOPKs(actorDID, deviceID string) (int64, error)
+	UpsertIdentityKey(actorPTID, deviceID string, ikPub []byte, fingerprint string, publishedAtUnixMs int64, supportedVersions []uint32) error
+	UpsertSignedPreKey(actorPTID, deviceID string, spk domain.SignedPreKey) error
+	UploadOneTimePreKeys(actorPTID, deviceID string, keys []domain.OneTimePreKey) error
+	FetchKeyBundles(actorPTID, filterDeviceID string) ([]domain.KeyBundle, error)
+	CountAvailableOPKs(actorPTID, deviceID string) (int64, error)
 }
 
 type Service struct {
@@ -25,18 +25,18 @@ func NewService(repo Repository) *Service {
 	return &Service{repo: repo}
 }
 
-func (s *Service) UploadKeyBundle(actorDID, deviceID string, ikPub []byte, spkID int32, spkPub, spkSig []byte, opks []domain.OneTimePreKey, supportedVersions []uint32) error {
+func (s *Service) UploadKeyBundle(actorPTID, deviceID string, ikPub []byte, spkID int32, spkPub, spkSig []byte, opks []domain.OneTimePreKey, supportedVersions []uint32) error {
 	fingerprint := computeFingerprint(ikPub)
 	publishedAt := time.Now().UnixMilli()
-	if err := s.repo.UpsertIdentityKey(actorDID, deviceID, ikPub, fingerprint, publishedAt, normalizeSupportedVersions(supportedVersions)); err != nil {
+	if err := s.repo.UpsertIdentityKey(actorPTID, deviceID, ikPub, fingerprint, publishedAt, normalizeSupportedVersions(supportedVersions)); err != nil {
 		return err
 	}
 	spk := domain.SignedPreKey{ID: spkID, PublicKey: spkPub, Signature: spkSig}
-	if err := s.repo.UpsertSignedPreKey(actorDID, deviceID, spk); err != nil {
+	if err := s.repo.UpsertSignedPreKey(actorPTID, deviceID, spk); err != nil {
 		return err
 	}
 	if len(opks) > 0 {
-		return s.repo.UploadOneTimePreKeys(actorDID, deviceID, opks)
+		return s.repo.UploadOneTimePreKeys(actorPTID, deviceID, opks)
 	}
 	return nil
 }
@@ -63,16 +63,16 @@ func normalizeSupportedVersions(input []uint32) []uint32 {
 	return out
 }
 
-func (s *Service) FetchKeyBundles(actorDID, filterDeviceID string) ([]domain.KeyBundle, error) {
-	return s.repo.FetchKeyBundles(actorDID, filterDeviceID)
+func (s *Service) FetchKeyBundles(actorPTID, filterDeviceID string) ([]domain.KeyBundle, error) {
+	return s.repo.FetchKeyBundles(actorPTID, filterDeviceID)
 }
 
-func (s *Service) ReplenishOPKs(actorDID, deviceID string, keys []domain.OneTimePreKey) error {
-	return s.repo.UploadOneTimePreKeys(actorDID, deviceID, keys)
+func (s *Service) ReplenishOPKs(actorPTID, deviceID string, keys []domain.OneTimePreKey) error {
+	return s.repo.UploadOneTimePreKeys(actorPTID, deviceID, keys)
 }
 
-func (s *Service) CountOPKs(actorDID, deviceID string) (int64, error) {
-	return s.repo.CountAvailableOPKs(actorDID, deviceID)
+func (s *Service) CountOPKs(actorPTID, deviceID string) (int64, error) {
+	return s.repo.CountAvailableOPKs(actorPTID, deviceID)
 }
 
 func computeFingerprint(ikPub []byte) string {

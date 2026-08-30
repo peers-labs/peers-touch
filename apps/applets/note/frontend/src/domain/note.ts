@@ -1,6 +1,6 @@
 export interface Note {
   noteId: string;
-  ownerId: string;
+  ownerPtid: string;
   title: string;
   content: string;
   createdAt?: string;

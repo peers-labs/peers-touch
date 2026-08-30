@@ -34,9 +34,9 @@ pub struct LocalKeyBundle {
 pub fn ensure_identity(
     storage: &SecureStorage,
     user_scope: &str,
-    actor_did: &str,
+    actor_ptid: &str,
 ) -> MobileResult<IdentityKeyPair> {
-    let key = identity_key(user_scope, actor_did);
+    let key = identity_key(user_scope, actor_ptid);
     if let Some(stored) = storage.get(&key)? {
         return identity_from_seed_b64(&stored);
     }
@@ -53,12 +53,12 @@ pub fn ensure_identity(
 pub fn ensure_key_bundle(
     storage: &SecureStorage,
     user_scope: &str,
-    actor_did: &str,
+    actor_ptid: &str,
 ) -> MobileResult<LocalKeyBundle> {
-    let identity = ensure_identity(storage, user_scope, actor_did)?;
-    let device_id = ensure_device_id(storage, user_scope, actor_did)?;
+    let identity = ensure_identity(storage, user_scope, actor_ptid)?;
+    let device_id = ensure_device_id(storage, user_scope, actor_ptid)?;
 
-    let spk_key = signed_prekey_key(user_scope, actor_did);
+    let spk_key = signed_prekey_key(user_scope, actor_ptid);
     let spk_secret = if let Some(stored) = storage.get(&spk_key)? {
         static_secret_from_b64(&stored, "signed prekey")?
     } else {
@@ -82,9 +82,9 @@ pub fn ensure_key_bundle(
 pub fn local_identity_x25519(
     storage: &SecureStorage,
     user_scope: &str,
-    actor_did: &str,
+    actor_ptid: &str,
 ) -> MobileResult<X25519KeyPair> {
-    let identity = ensure_identity(storage, user_scope, actor_did)?;
+    let identity = ensure_identity(storage, user_scope, actor_ptid)?;
     let seed = identity.signing_key.to_bytes();
     let private = StaticSecret::from(seed);
     let public = PublicKey::from(&private);
@@ -128,9 +128,9 @@ pub fn identity_fingerprint_hex(ik_pub_b64: &str) -> String {
 fn ensure_device_id(
     storage: &SecureStorage,
     user_scope: &str,
-    actor_did: &str,
+    actor_ptid: &str,
 ) -> MobileResult<String> {
-    let key = device_id_key(user_scope, actor_did);
+    let key = device_id_key(user_scope, actor_ptid);
     if let Some(stored) = storage.get(&key)? {
         let value = stored.trim().to_string();
         if !value.is_empty() {
@@ -195,32 +195,32 @@ fn ed25519_verifying_to_x25519_public(verifying_key: &VerifyingKey) -> Result<Pu
     Ok(PublicKey::from(edwards.to_montgomery().to_bytes()))
 }
 
-fn identity_key(user_scope: &str, actor_did: &str) -> String {
+fn identity_key(user_scope: &str, actor_ptid: &str) -> String {
     format!(
         "{KEY_PREFIX}.v{STORE_VERSION}.identity.{}",
-        scoped_hash(user_scope, actor_did)
+        scoped_hash(user_scope, actor_ptid)
     )
 }
 
-fn signed_prekey_key(user_scope: &str, actor_did: &str) -> String {
+fn signed_prekey_key(user_scope: &str, actor_ptid: &str) -> String {
     format!(
         "{KEY_PREFIX}.v{STORE_VERSION}.spk.{}",
-        scoped_hash(user_scope, actor_did)
+        scoped_hash(user_scope, actor_ptid)
     )
 }
 
-fn device_id_key(user_scope: &str, actor_did: &str) -> String {
+fn device_id_key(user_scope: &str, actor_ptid: &str) -> String {
     format!(
         "{KEY_PREFIX}.v{STORE_VERSION}.device.{}",
-        scoped_hash(user_scope, actor_did)
+        scoped_hash(user_scope, actor_ptid)
     )
 }
 
-fn scoped_hash(user_scope: &str, actor_did: &str) -> String {
+fn scoped_hash(user_scope: &str, actor_ptid: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(user_scope.as_bytes());
     hasher.update([0x1f]);
-    hasher.update(actor_did.as_bytes());
+    hasher.update(actor_ptid.as_bytes());
     let digest = hasher.finalize();
     digest[..16]
         .iter()

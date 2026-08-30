@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -31,35 +30,30 @@ func NewRelationshipService(
 	return &RelationshipService{followRepo: followRepo, blockRepo: blockRepo, moderationRepo: moderationRepo}
 }
 
-func (s *RelationshipService) Follow(ctx context.Context, followerID uint64, targetActorID string) (*model.Relationship, error) {
-	followingID, err := strconv.ParseUint(targetActorID, 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid target actor ID: %w", err)
-	}
-
-	if followerID == followingID {
+func (s *RelationshipService) Follow(ctx context.Context, followerPTID, targetActorPTID string) (*model.Relationship, error) {
+	if followerPTID == targetActorPTID {
 		return nil, fmt.Errorf("cannot follow yourself")
 	}
-	if blocked, err := s.isBlockedBetween(ctx, followerID, followingID); err != nil {
+	if blocked, err := s.isBlockedBetween(ctx, followerPTID, targetActorPTID); err != nil {
 		return nil, err
 	} else if blocked {
 		return nil, fmt.Errorf("relationship is blocked")
 	}
-	if blocked, err := actorStationModerated(ctx, s.moderationRepo, followingID); err != nil {
+	if blocked, err := actorStationModerated(ctx, s.moderationRepo, targetActorPTID); err != nil {
 		return nil, err
 	} else if blocked {
 		return nil, fmt.Errorf("target actor station is blocked")
 	}
 
-	logger.Info(ctx, "Follow", "followerID", followerID, "followingID", followingID)
+	logger.Info(ctx, "Follow", "follower_ptid", followerPTID, "following_ptid", targetActorPTID)
 
-	err = s.followRepo.Follow(ctx, followerID, followingID)
+	err := s.followRepo.Follow(ctx, followerPTID, targetActorPTID)
 	if err != nil {
 		logger.Error(ctx, "failed to follow", "error", err)
 		return nil, err
 	}
 
-	relationship, err := s.GetRelationship(ctx, followerID, targetActorID)
+	relationship, err := s.GetRelationship(ctx, followerPTID, targetActorPTID)
 	if err != nil {
 		logger.Error(ctx, "failed to get relationship after follow", "error", err)
 		return nil, err
@@ -68,15 +62,10 @@ func (s *RelationshipService) Follow(ctx context.Context, followerID uint64, tar
 	return relationship, nil
 }
 
-func (s *RelationshipService) Unfollow(ctx context.Context, followerID uint64, targetActorID string) error {
-	followingID, err := strconv.ParseUint(targetActorID, 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid target actor ID: %w", err)
-	}
+func (s *RelationshipService) Unfollow(ctx context.Context, followerPTID, targetActorPTID string) error {
+	logger.Info(ctx, "Unfollow", "follower_ptid", followerPTID, "following_ptid", targetActorPTID)
 
-	logger.Info(ctx, "Unfollow", "followerID", followerID, "followingID", followingID)
-
-	err = s.followRepo.Unfollow(ctx, followerID, followingID)
+	err := s.followRepo.Unfollow(ctx, followerPTID, targetActorPTID)
 	if err != nil {
 		logger.Error(ctx, "failed to unfollow", "error", err)
 		return err
@@ -85,22 +74,17 @@ func (s *RelationshipService) Unfollow(ctx context.Context, followerID uint64, t
 	return nil
 }
 
-func (s *RelationshipService) GetRelationship(ctx context.Context, followerID uint64, targetActorID string) (*model.Relationship, error) {
-	followingID, err := strconv.ParseUint(targetActorID, 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid target actor ID: %w", err)
-	}
-
-	following, err := s.followRepo.IsFollowing(ctx, followerID, followingID)
+func (s *RelationshipService) GetRelationship(ctx context.Context, followerPTID, targetActorPTID string) (*model.Relationship, error) {
+	following, err := s.followRepo.IsFollowing(ctx, followerPTID, targetActorPTID)
 	if err != nil {
 		return nil, err
 	}
 
-	followedBy, err := s.followRepo.IsFollowing(ctx, followingID, followerID)
+	followedBy, err := s.followRepo.IsFollowing(ctx, targetActorPTID, followerPTID)
 	if err != nil {
 		return nil, err
 	}
-	if blocked, err := s.isBlockedBetween(ctx, followerID, followingID); err != nil {
+	if blocked, err := s.isBlockedBetween(ctx, followerPTID, targetActorPTID); err != nil {
 		return nil, err
 	} else if blocked {
 		following = false
@@ -108,14 +92,14 @@ func (s *RelationshipService) GetRelationship(ctx context.Context, followerID ui
 	}
 
 	relationship := &model.Relationship{
-		Id:            fmt.Sprintf("%d", followingID),
-		TargetActorId: targetActorID,
-		Following:     following,
-		FollowedBy:    followedBy,
+		Id:              targetActorPTID,
+		TargetActorPtid: targetActorPTID,
+		Following:       following,
+		FollowedBy:      followedBy,
 	}
 
 	if following {
-		follow, err := s.followRepo.GetRelationship(ctx, followerID, followingID)
+		follow, err := s.followRepo.GetRelationship(ctx, followerPTID, targetActorPTID)
 		if err == nil && follow != nil {
 			relationship.FollowedAt = timestamppb.New(follow.CreatedAt)
 		}
@@ -124,52 +108,38 @@ func (s *RelationshipService) GetRelationship(ctx context.Context, followerID ui
 	return relationship, nil
 }
 
-func (s *RelationshipService) GetRelationships(ctx context.Context, followerID uint64, targetActorIDs []string) ([]*model.Relationship, error) {
-	if len(targetActorIDs) == 0 {
+func (s *RelationshipService) GetRelationships(ctx context.Context, followerPTID string, targetActorPTIDs []string) ([]*model.Relationship, error) {
+	if len(targetActorPTIDs) == 0 {
 		return []*model.Relationship{}, nil
 	}
-
-	targetIDs := make([]uint64, 0, len(targetActorIDs))
-	idMap := make(map[uint64]string)
-
-	for _, idStr := range targetActorIDs {
-		id, err := strconv.ParseUint(idStr, 10, 64)
-		if err != nil {
-			logger.Warn(ctx, "invalid actor ID in batch", "id", idStr)
-			continue
-		}
-		targetIDs = append(targetIDs, id)
-		idMap[id] = idStr
-	}
-
-	followMap, err := s.followRepo.GetRelationships(ctx, followerID, targetIDs)
+	followMap, err := s.followRepo.GetRelationships(ctx, followerPTID, targetActorPTIDs)
 	if err != nil {
 		return nil, err
 	}
-	followedByMap, err := s.followRepo.GetReverseRelationships(ctx, followerID, targetIDs)
+	followedByMap, err := s.followRepo.GetReverseRelationships(ctx, followerPTID, targetActorPTIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	blockedMap, err := s.blockedActorIDs(ctx, followerID, targetIDs)
+	blockedMap, err := s.blockedActorPTIDs(ctx, followerPTID, targetActorPTIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	relationships := make([]*model.Relationship, 0, len(targetIDs))
-	for _, targetID := range targetIDs {
-		follow := followMap[targetID]
-		followedBy := followedByMap[targetID]
-		if blockedMap[targetID] {
+	relationships := make([]*model.Relationship, 0, len(targetActorPTIDs))
+	for _, targetActorPTID := range targetActorPTIDs {
+		follow := followMap[targetActorPTID]
+		followedBy := followedByMap[targetActorPTID]
+		if blockedMap[targetActorPTID] {
 			follow = nil
 			followedBy = false
 		}
 
 		relationship := &model.Relationship{
-			Id:            fmt.Sprintf("%d", targetID),
-			TargetActorId: idMap[targetID],
-			Following:     follow != nil,
-			FollowedBy:    followedBy,
+			Id:              targetActorPTID,
+			TargetActorPtid: targetActorPTID,
+			Following:       follow != nil,
+			FollowedBy:      followedBy,
 		}
 
 		if follow != nil {
@@ -182,7 +152,7 @@ func (s *RelationshipService) GetRelationships(ctx context.Context, followerID u
 	return relationships, nil
 }
 
-func (s *RelationshipService) GetFollowers(ctx context.Context, actorID uint64, cursor string, limit int) ([]*model.Follower, string, int32, error) {
+func (s *RelationshipService) GetFollowers(ctx context.Context, actorPTID string, cursor string, limit int) ([]*model.Follower, string, int32, error) {
 	var repoCursor infrastructure.Cursor
 	if cursor != "" {
 		if err := infrastructure.DecodeCursor(cursor, &repoCursor); err != nil {
@@ -194,7 +164,7 @@ func (s *RelationshipService) GetFollowers(ctx context.Context, actorID uint64, 
 		limit = 20
 	}
 
-	follows, err := s.followRepo.GetFollowers(ctx, actorID, repoCursor, limit+1)
+	follows, err := s.followRepo.GetFollowers(ctx, actorPTID, repoCursor, limit+1)
 	if err != nil {
 		return nil, "", 0, err
 	}
@@ -204,13 +174,13 @@ func (s *RelationshipService) GetFollowers(ctx context.Context, actorID uint64, 
 		follows = follows[:limit]
 	}
 
-	followerIDs := make([]uint64, 0, len(follows))
+	followerPTIDs := make([]string, 0, len(follows))
 	for _, follow := range follows {
 		if follow.Follower != nil {
-			followerIDs = append(followerIDs, follow.Follower.ID)
+			followerPTIDs = append(followerPTIDs, follow.Follower.PTID)
 		}
 	}
-	blockedMap, err := s.blockedActorIDs(ctx, actorID, followerIDs)
+	blockedMap, err := s.blockedActorPTIDs(ctx, actorPTID, followerPTIDs)
 	if err != nil {
 		return nil, "", 0, err
 	}
@@ -220,12 +190,12 @@ func (s *RelationshipService) GetFollowers(ctx context.Context, actorID uint64, 
 		if follow.Follower == nil {
 			continue
 		}
-		if blockedMap[follow.Follower.ID] {
+		if blockedMap[follow.Follower.PTID] {
 			continue
 		}
 
 		follower := &model.Follower{
-			ActorId:           fmt.Sprintf("%d", follow.Follower.ID),
+			ActorPtid:         follow.Follower.PTID,
 			Username:          follow.Follower.PreferredUsername,
 			DisplayName:       follow.Follower.Name,
 			AvatarUrl:         getAvatarURL(follow.Follower),
@@ -245,7 +215,7 @@ func (s *RelationshipService) GetFollowers(ctx context.Context, actorID uint64, 
 		})
 	}
 
-	total, err := s.followRepo.GetFollowerCount(ctx, actorID)
+	total, err := s.followRepo.GetFollowerCount(ctx, actorPTID)
 	if err != nil {
 		logger.Warn(ctx, "failed to get follower count", "error", err)
 		total = 0
@@ -254,7 +224,7 @@ func (s *RelationshipService) GetFollowers(ctx context.Context, actorID uint64, 
 	return followers, nextCursor, int32(total), nil
 }
 
-func (s *RelationshipService) GetFollowing(ctx context.Context, actorID uint64, cursor string, limit int) ([]*model.Following, string, int32, error) {
+func (s *RelationshipService) GetFollowing(ctx context.Context, actorPTID string, cursor string, limit int) ([]*model.Following, string, int32, error) {
 	var repoCursor infrastructure.Cursor
 	if cursor != "" {
 		if err := infrastructure.DecodeCursor(cursor, &repoCursor); err != nil {
@@ -266,7 +236,7 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorID uint64, 
 		limit = 20
 	}
 
-	follows, err := s.followRepo.GetFollowing(ctx, actorID, repoCursor, limit+1)
+	follows, err := s.followRepo.GetFollowing(ctx, actorPTID, repoCursor, limit+1)
 	if err != nil {
 		return nil, "", 0, err
 	}
@@ -276,13 +246,13 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorID uint64, 
 		follows = follows[:limit]
 	}
 
-	followingIDs := make([]uint64, 0, len(follows))
+	followingPTIDs := make([]string, 0, len(follows))
 	for _, follow := range follows {
 		if follow.Following != nil {
-			followingIDs = append(followingIDs, follow.Following.ID)
+			followingPTIDs = append(followingPTIDs, follow.Following.PTID)
 		}
 	}
-	blockedMap, err := s.blockedActorIDs(ctx, actorID, followingIDs)
+	blockedMap, err := s.blockedActorPTIDs(ctx, actorPTID, followingPTIDs)
 	if err != nil {
 		return nil, "", 0, err
 	}
@@ -292,12 +262,12 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorID uint64, 
 		if follow.Following == nil {
 			continue
 		}
-		if blockedMap[follow.Following.ID] {
+		if blockedMap[follow.Following.PTID] {
 			continue
 		}
 
 		f := &model.Following{
-			ActorId:           fmt.Sprintf("%d", follow.Following.ID),
+			ActorPtid:         follow.Following.PTID,
 			Username:          follow.Following.PreferredUsername,
 			DisplayName:       follow.Following.Name,
 			AvatarUrl:         getAvatarURL(follow.Following),
@@ -305,7 +275,7 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorID uint64, 
 			FederatedHandle:   federatedHandleOf(follow.Following),
 			HomeStationDomain: homeStationDomainOf(follow.Following),
 		}
-		logger.Info(ctx, "Following user", "actorId", f.ActorId, "username", f.Username, "displayName", f.DisplayName, "displayNameBytes", []byte(f.DisplayName))
+		logger.Info(ctx, "Following user", "actorPtid", f.ActorPtid, "username", f.Username, "displayName", f.DisplayName, "displayNameBytes", []byte(f.DisplayName))
 		following = append(following, f)
 	}
 
@@ -318,7 +288,7 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorID uint64, 
 		})
 	}
 
-	total, err := s.followRepo.GetFollowingCount(ctx, actorID)
+	total, err := s.followRepo.GetFollowingCount(ctx, actorPTID)
 	if err != nil {
 		logger.Warn(ctx, "failed to get following count", "error", err)
 		total = 0
@@ -327,18 +297,18 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorID uint64, 
 	return following, nextCursor, int32(total), nil
 }
 
-func (s *RelationshipService) isBlockedBetween(ctx context.Context, actorID, peerID uint64) (bool, error) {
+func (s *RelationshipService) isBlockedBetween(ctx context.Context, actorPTID, peerPTID string) (bool, error) {
 	if s.blockRepo == nil {
 		return false, nil
 	}
-	return s.blockRepo.IsBlockedBetween(ctx, actorID, peerID)
+	return s.blockRepo.IsBlockedBetween(ctx, actorPTID, peerPTID)
 }
 
-func (s *RelationshipService) blockedActorIDs(ctx context.Context, actorID uint64, peerIDs []uint64) (map[uint64]bool, error) {
+func (s *RelationshipService) blockedActorPTIDs(ctx context.Context, actorPTID string, peerPTIDs []string) (map[string]bool, error) {
 	if s.blockRepo == nil {
-		return map[uint64]bool{}, nil
+		return map[string]bool{}, nil
 	}
-	return s.blockRepo.BlockedActorIDs(ctx, actorID, peerIDs)
+	return s.blockRepo.BlockedActorPTIDs(ctx, actorPTID, peerPTIDs)
 }
 
 func getAvatarURL(actor *db.Actor) string {

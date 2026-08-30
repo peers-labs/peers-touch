@@ -12,16 +12,16 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/social/relationship.proto.
  */
 export const file_domain_social_relationship: GenFile = /*@__PURE__*/
-  fileDesc("CiBkb21haW4vc29jaWFsL3JlbGF0aW9uc2hpcC5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxIigKDUZvbGxvd1JlcXVlc3QSFwoPdGFyZ2V0X2FjdG9yX2lkGAEgASgJImIKDkZvbGxvd1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgSPwoMcmVsYXRpb25zaGlwGAIgASgLMikucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlJlbGF0aW9uc2hpcCIqCg9VbmZvbGxvd1JlcXVlc3QSFwoPdGFyZ2V0X2FjdG9yX2lkGAEgASgJIiMKEFVuZm9sbG93UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIxChZHZXRSZWxhdGlvbnNoaXBSZXF1ZXN0EhcKD3RhcmdldF9hY3Rvcl9pZBgBIAEoCSJaChdHZXRSZWxhdGlvbnNoaXBSZXNwb25zZRI/CgxyZWxhdGlvbnNoaXAYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIjMKF0dldFJlbGF0aW9uc2hpcHNSZXF1ZXN0EhgKEHRhcmdldF9hY3Rvcl9pZHMYASADKAkiXAoYR2V0UmVsYXRpb25zaGlwc1Jlc3BvbnNlEkAKDXJlbGF0aW9uc2hpcHMYASADKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIowBCgxSZWxhdGlvbnNoaXASCgoCaWQYASABKAkSFwoPdGFyZ2V0X2FjdG9yX2lkGAIgASgJEhEKCWZvbGxvd2luZxgDIAEoCBITCgtmb2xsb3dlZF9ieRgEIAEoCBIvCgtmb2xsb3dlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiRgoTR2V0Rm9sbG93ZXJzUmVxdWVzdBIQCghhY3Rvcl9pZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUidAoUR2V0Rm9sbG93ZXJzUmVzcG9uc2USOAoJZm9sbG93ZXJzGAEgAygLMiUucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZvbGxvd2VyEhMKC25leHRfY3Vyc29yGAIgASgJEg0KBXRvdGFsGAMgASgFIkYKE0dldEZvbGxvd2luZ1JlcXVlc3QSEAoIYWN0b3JfaWQYASABKAkSDgoGY3Vyc29yGAIgASgJEg0KBWxpbWl0GAMgASgFInUKFEdldEZvbGxvd2luZ1Jlc3BvbnNlEjkKCWZvbGxvd2luZxgBIAMoCzImLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5Gb2xsb3dpbmcSEwoLbmV4dF9jdXJzb3IYAiABKAkSDQoFdG90YWwYAyABKAUi5wEKCEZvbGxvd2VyEhAKCGFjdG9yX2lkGAEgASgJEhAKCHVzZXJuYW1lGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEi8KC2ZvbGxvd2VkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIqChBmZWRlcmF0ZWRfaGFuZGxlGAYgASgJUhBmZWRlcmF0ZWRfaGFuZGxlEjAKE2hvbWVfc3RhdGlvbl9kb21haW4YByABKAlSE2hvbWVfc3RhdGlvbl9kb21haW4i6AEKCUZvbGxvd2luZxIQCghhY3Rvcl9pZBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIvCgtmb2xsb3dlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKgoQZmVkZXJhdGVkX2hhbmRsZRgGIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIwChNob21lX3N0YXRpb25fZG9tYWluGAcgASgJUhNob21lX3N0YXRpb25fZG9tYWluQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("CiBkb21haW4vc29jaWFsL3JlbGF0aW9uc2hpcC5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxIioKDUZvbGxvd1JlcXVlc3QSGQoRdGFyZ2V0X2FjdG9yX3B0aWQYASABKAkiYgoORm9sbG93UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBI/CgxyZWxhdGlvbnNoaXAYAiABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIiwKD1VuZm9sbG93UmVxdWVzdBIZChF0YXJnZXRfYWN0b3JfcHRpZBgBIAEoCSIjChBVbmZvbGxvd1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiMwoWR2V0UmVsYXRpb25zaGlwUmVxdWVzdBIZChF0YXJnZXRfYWN0b3JfcHRpZBgBIAEoCSJaChdHZXRSZWxhdGlvbnNoaXBSZXNwb25zZRI/CgxyZWxhdGlvbnNoaXAYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIjUKF0dldFJlbGF0aW9uc2hpcHNSZXF1ZXN0EhoKEnRhcmdldF9hY3Rvcl9wdGlkcxgBIAMoCSJcChhHZXRSZWxhdGlvbnNoaXBzUmVzcG9uc2USQAoNcmVsYXRpb25zaGlwcxgBIAMoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5SZWxhdGlvbnNoaXAijgEKDFJlbGF0aW9uc2hpcBIKCgJpZBgBIAEoCRIZChF0YXJnZXRfYWN0b3JfcHRpZBgCIAEoCRIRCglmb2xsb3dpbmcYAyABKAgSEwoLZm9sbG93ZWRfYnkYBCABKAgSLwoLZm9sbG93ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkgKE0dldEZvbGxvd2Vyc1JlcXVlc3QSEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUidAoUR2V0Rm9sbG93ZXJzUmVzcG9uc2USOAoJZm9sbG93ZXJzGAEgAygLMiUucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZvbGxvd2VyEhMKC25leHRfY3Vyc29yGAIgASgJEg0KBXRvdGFsGAMgASgFIkgKE0dldEZvbGxvd2luZ1JlcXVlc3QSEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUidQoUR2V0Rm9sbG93aW5nUmVzcG9uc2USOQoJZm9sbG93aW5nGAEgAygLMiYucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZvbGxvd2luZxITCgtuZXh0X2N1cnNvchgCIAEoCRINCgV0b3RhbBgDIAEoBSLpAQoIRm9sbG93ZXISEgoKYWN0b3JfcHRpZBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIvCgtmb2xsb3dlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKgoQZmVkZXJhdGVkX2hhbmRsZRgGIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIwChNob21lX3N0YXRpb25fZG9tYWluGAcgASgJUhNob21lX3N0YXRpb25fZG9tYWluIuoBCglGb2xsb3dpbmcSEgoKYWN0b3JfcHRpZBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIvCgtmb2xsb3dlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKgoQZmVkZXJhdGVkX2hhbmRsZRgGIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIwChNob21lX3N0YXRpb25fZG9tYWluGAcgASgJUhNob21lX3N0YXRpb25fZG9tYWluQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.social.v1.FollowRequest
  */
 export type FollowRequest = Message<"peers_touch.model.social.v1.FollowRequest"> & {
   /**
-   * @generated from field: string target_actor_id = 1;
+   * @generated from field: string target_actor_ptid = 1;
    */
-  targetActorId: string;
+  targetActorPtid: string;
 };
 
 /**
@@ -58,9 +58,9 @@ export const FollowResponseSchema: GenMessage<FollowResponse> = /*@__PURE__*/
  */
 export type UnfollowRequest = Message<"peers_touch.model.social.v1.UnfollowRequest"> & {
   /**
-   * @generated from field: string target_actor_id = 1;
+   * @generated from field: string target_actor_ptid = 1;
    */
-  targetActorId: string;
+  targetActorPtid: string;
 };
 
 /**
@@ -92,9 +92,9 @@ export const UnfollowResponseSchema: GenMessage<UnfollowResponse> = /*@__PURE__*
  */
 export type GetRelationshipRequest = Message<"peers_touch.model.social.v1.GetRelationshipRequest"> & {
   /**
-   * @generated from field: string target_actor_id = 1;
+   * @generated from field: string target_actor_ptid = 1;
    */
-  targetActorId: string;
+  targetActorPtid: string;
 };
 
 /**
@@ -126,9 +126,9 @@ export const GetRelationshipResponseSchema: GenMessage<GetRelationshipResponse> 
  */
 export type GetRelationshipsRequest = Message<"peers_touch.model.social.v1.GetRelationshipsRequest"> & {
   /**
-   * @generated from field: repeated string target_actor_ids = 1;
+   * @generated from field: repeated string target_actor_ptids = 1;
    */
-  targetActorIds: string[];
+  targetActorPtids: string[];
 };
 
 /**
@@ -165,9 +165,9 @@ export type Relationship = Message<"peers_touch.model.social.v1.Relationship"> &
   id: string;
 
   /**
-   * @generated from field: string target_actor_id = 2;
+   * @generated from field: string target_actor_ptid = 2;
    */
-  targetActorId: string;
+  targetActorPtid: string;
 
   /**
    * @generated from field: bool following = 3;
@@ -197,9 +197,9 @@ export const RelationshipSchema: GenMessage<Relationship> = /*@__PURE__*/
  */
 export type GetFollowersRequest = Message<"peers_touch.model.social.v1.GetFollowersRequest"> & {
   /**
-   * @generated from field: string actor_id = 1;
+   * @generated from field: string actor_ptid = 1;
    */
-  actorId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string cursor = 2;
@@ -251,9 +251,9 @@ export const GetFollowersResponseSchema: GenMessage<GetFollowersResponse> = /*@_
  */
 export type GetFollowingRequest = Message<"peers_touch.model.social.v1.GetFollowingRequest"> & {
   /**
-   * @generated from field: string actor_id = 1;
+   * @generated from field: string actor_ptid = 1;
    */
-  actorId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string cursor = 2;
@@ -305,9 +305,9 @@ export const GetFollowingResponseSchema: GenMessage<GetFollowingResponse> = /*@_
  */
 export type Follower = Message<"peers_touch.model.social.v1.Follower"> & {
   /**
-   * @generated from field: string actor_id = 1;
+   * @generated from field: string actor_ptid = 1;
    */
-  actorId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string username = 2;
@@ -356,9 +356,9 @@ export const FollowerSchema: GenMessage<Follower> = /*@__PURE__*/
  */
 export type Following = Message<"peers_touch.model.social.v1.Following"> & {
   /**
-   * @generated from field: string actor_id = 1;
+   * @generated from field: string actor_ptid = 1;
    */
-  actorId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string username = 2;

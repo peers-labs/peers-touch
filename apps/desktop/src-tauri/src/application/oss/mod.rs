@@ -336,7 +336,7 @@ pub fn upload_attachment_with_mime(
 ///       → local flow (existing capabilities + bound-station fetch)
 ///
 ///   uri.origin != bound_station
-///       AND home token + actor DID supplied
+///       AND home token + actor PTID supplied
 ///       → federation flow:
 ///           1. mint peer JWT at bound station
 ///           2. GET bytes from foreign station with that JWT
@@ -350,13 +350,13 @@ pub fn upload_attachment_with_mime(
 /// ```
 ///
 /// `home_token` is the desktop user's HS256 session JWT for the
-/// bound station; `home_actor_did` is the same caller's DID. Both
+/// bound station; `home_actor_ptid` is the same caller's PTID. Both
 /// are required for federation; either being empty downgrades the
 /// resolve to a no-token best-effort.
 pub fn oss_resolve_url(
     input: &str,
     home_token: &str,
-    home_actor_did: &str,
+    home_actor_ptid: &str,
 ) -> AppResult<StubPayload> {
     let uri = match OssUri::parse(input) {
         Ok(u) => u,
@@ -417,8 +417,8 @@ pub fn oss_resolve_url(
                 None
             }
         }
-    } else if !home_token.trim().is_empty() && !home_actor_did.trim().is_empty() {
-        match oss_cache::attachment_ensure_federated(&uri, home_token, home_actor_did) {
+    } else if !home_token.trim().is_empty() && !home_actor_ptid.trim().is_empty() {
+        match oss_cache::attachment_ensure_federated(&uri, home_token, home_actor_ptid) {
             Ok(p) => Some(p.to_string_lossy().to_string()),
             Err(err) => {
                 tracing::warn!(error = %err, uri = %input, "OSS attachment cache miss (federated)");

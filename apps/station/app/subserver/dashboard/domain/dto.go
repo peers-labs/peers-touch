@@ -35,7 +35,7 @@ type CreateAdminRequest struct {
 	Username    string `json:"username"`
 	Password    string `json:"password"`
 	DisplayName string `json:"display_name"`
-	DID         string `json:"did,omitempty"`
+	PTID        string `json:"ptid,omitempty"`
 }
 
 // DashboardSessionInfo is a safe representation of an admin session.
@@ -58,8 +58,7 @@ type DashboardSessionInfo struct {
 // It intentionally excludes sensitive fields such as PasswordHash, PrivateKey,
 // PublicKey, and ActivityPub endpoint URIs that must never leave the server.
 type ActorSummary struct {
-	ID                uint64    `json:"id"`
-	DID               string    `json:"did"`
+	PTID              string    `json:"ptid"`
 	PreferredUsername string    `json:"preferred_username"`
 	Name              string    `json:"name"`
 	Email             string    `json:"email"`
@@ -85,8 +84,7 @@ type ActorListResult struct {
 
 // ActorDetail contains enriched information about a single actor.
 type ActorDetail struct {
-	ID                uint64     `json:"id"`
-	DID               string     `json:"did"`
+	PTID              string     `json:"ptid"`
 	PreferredUsername string     `json:"preferred_username"`
 	Name              string     `json:"name"`
 	Email             string     `json:"email"`
@@ -120,7 +118,7 @@ type ActorSessionInfo struct {
 // (admin) and ActorSessionInfo (per-actor drilldown view).
 type PeersSessionInfo struct {
 	SessionID         string    `json:"session_id"`
-	UserID            uint64    `json:"user_id"`
+	ActorPTID         string    `json:"actor_ptid"`
 	PreferredUsername string    `json:"preferred_username"`
 	Email             string    `json:"email"`
 	DeviceType        string    `json:"device_type"`
@@ -291,7 +289,7 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
-// ResetPasswordRequest is the request body for POST /actors/:id/reset-password.
+// ResetPasswordRequest is the request body for POST /actors/:ptid/reset-password.
 type ResetPasswordRequest struct {
 	NewPassword string `json:"new_password"`
 }

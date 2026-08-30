@@ -47,9 +47,9 @@ fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayl
 fn resolve_station_agent_ids(
     agent_ids: &[String],
     token: &str,
-    local_actor_id: &str,
+    local_actor_ptid: &str,
 ) -> Result<Vec<String>, AppResult<StubPayload>> {
-    let local_agents = local_agents_by_id(local_actor_id);
+    let local_agents = local_agents_by_id(local_actor_ptid);
     let mut station_agents = match list_station_agents(token) {
         Ok(agents) => agents,
         Err(error) => return Err(error.into_app_result("Failed to list Station Agents")),
@@ -88,8 +88,8 @@ fn resolve_station_agent_ids(
     Ok(resolved)
 }
 
-fn local_agents_by_id(local_actor_id: &str) -> HashMap<String, Value> {
-    let result = application_agents::agents_list(local_actor_id);
+fn local_agents_by_id(local_actor_ptid: &str) -> HashMap<String, Value> {
+    let result = application_agents::agents_list(local_actor_ptid);
     let Some(payload) = result.data else {
         return HashMap::new();
     };
@@ -207,7 +207,7 @@ fn value_string(value: &Value, keys: &[&str]) -> Option<String> {
 pub fn agent_collaboration_create(
     input: AgentCollaborationCreateInput,
     token: &str,
-    local_actor_id: &str,
+    local_actor_ptid: &str,
 ) -> AppResult<StubPayload> {
     if input.title.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "title is required", None);
@@ -215,11 +215,11 @@ pub fn agent_collaboration_create(
     if input.agent_ids.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "agent_ids is required", None);
     }
-    let station_agent_ids = match resolve_station_agent_ids(&input.agent_ids, token, local_actor_id)
-    {
-        Ok(ids) => ids,
-        Err(result) => return result,
-    };
+    let station_agent_ids =
+        match resolve_station_agent_ids(&input.agent_ids, token, local_actor_ptid) {
+            Ok(ids) => ids,
+            Err(result) => return result,
+        };
     let station_judge_agent_id = input
         .judge_agent_id
         .as_deref()
@@ -232,7 +232,7 @@ pub fn agent_collaboration_create(
                 .position(|id| id.trim() == judge_id)
                 .and_then(|index| station_agent_ids.get(index).cloned())
                 .or_else(|| {
-                    resolve_station_agent_ids(&[judge_id.to_string()], token, local_actor_id)
+                    resolve_station_agent_ids(&[judge_id.to_string()], token, local_actor_ptid)
                         .ok()
                         .and_then(|ids| ids.into_iter().next())
                 })

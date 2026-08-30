@@ -16,7 +16,7 @@ type FederationRecord struct {
 	GenesisHash            []byte
 	HeadHash               []byte
 	HeadSeq                uint64
-	CreatedByActorID       string
+	CreatedByActorPTID     string
 	CreatedByStationPeerID string
 }
 
@@ -33,7 +33,7 @@ type MembershipRecord struct {
 
 type ActorRoleRecord struct {
 	FederationID         string
-	ActorID              string
+	ActorPTID            string
 	ActorFederatedHandle string
 	StationPeerID        string
 	Role                 string
@@ -74,9 +74,9 @@ type MembershipRepository interface {
 
 type ActorRoleRepository interface {
 	Upsert(ctx context.Context, record *ActorRoleRecord) error
-	GetByActor(ctx context.Context, federationID, actorID string) (*ActorRoleRecord, error)
+	GetByActor(ctx context.Context, federationID, actorPTID string) (*ActorRoleRecord, error)
 	ListByFederation(ctx context.Context, federationID string) ([]*ActorRoleRecord, error)
-	Revoke(ctx context.Context, federationID, actorID string) error
+	Revoke(ctx context.Context, federationID, actorPTID string) error
 }
 
 type SyncCursorRepository interface {

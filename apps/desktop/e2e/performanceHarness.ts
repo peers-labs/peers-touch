@@ -145,8 +145,8 @@ async function setTextInput(page: PerformancePage, value: string): Promise<void>
 export async function runtimePreflight(
   page: PerformancePage,
   expectedRuntime: PerformanceRuntime,
-  expectedActorId: string,
-): Promise<{ actualActorId: string; runtime: string }> {
+  expectedActorPtid: string,
+): Promise<{ actualActorPtid: string; runtime: string }> {
   await page.waitForFunction(
     `document.querySelectorAll('${READY_SHELL}').length > 0`,
     30_000,
@@ -155,11 +155,11 @@ export async function runtimePreflight(
     "typeof window.__PT_ACCEPTANCE__?.getRealtimeDevice === 'function'",
     10_000,
   );
-  const observed = await page.evaluate<{ actualActorId: string; runtime: string }>(`
+  const observed = await page.evaluate<{ actualActorPtid: string; runtime: string }>(`
     (async () => {
       const identity = await window.__PT_ACCEPTANCE__.getRealtimeDevice();
       return {
-        actualActorId: identity.actorId ?? '',
+        actualActorPtid: identity.actorPtid ?? '',
         runtime: window.__PT_FRONTEND_TELEMETRY__?.snapshot?.().runtime ?? 'unknown',
       };
     })()
@@ -167,8 +167,8 @@ export async function runtimePreflight(
   if (observed.runtime !== expectedRuntime) {
     throw new Error(`runtime mismatch got=${observed.runtime} want=${expectedRuntime}`);
   }
-  if (observed.actualActorId !== expectedActorId) {
-    throw new Error(`actual actor mismatch got=${observed.actualActorId} want=${expectedActorId}`);
+  if (observed.actualActorPtid !== expectedActorPtid) {
+    throw new Error(`actual actor mismatch got=${observed.actualActorPtid} want=${expectedActorPtid}`);
   }
   return observed;
 }

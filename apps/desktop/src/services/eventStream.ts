@@ -201,8 +201,8 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         eventId,
         sessionUlid: m.sessionUlid,
         messageUlid: m.ulid,
-        senderActorId: m.senderActorId,
-        recipientActorId: m.recipientActorId,
+        senderActorPtid: m.senderActorPtid,
+        recipientActorPtid: m.recipientActorPtid,
         ciphertext: m.ciphertext,
         sentTsUnixMs: Number(m.sentTsUnixMs),
       });
@@ -211,7 +211,7 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
     case 'presence': {
       const p = kind.value;
       eventBus.publish(EVENT.REALTIME_PRESENCE_FLIP, {
-        actorId: p.actorId,
+        actorPtid: p.actorPtid,
         online: Boolean(p.online),
       });
       return;
@@ -239,7 +239,7 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       eventBus.publish(EVENT.REALTIME_CALL_SIGNAL, {
         eventId,
         sessionUlid: s.sessionUlid,
-        fromActorId: s.fromActorId,
+        fromActorPtid: s.fromActorPtid,
         kind: kindStr,
         payload: s.payload,
       });
@@ -258,7 +258,7 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         eventId,
         sessionUlid: r.sessionUlid,
         messageUlid: r.ulid,
-        fromActorId: r.fromActorId,
+        fromActorPtid: r.fromActorPtid,
         kind: kindStr,
       });
       return;
@@ -268,7 +268,7 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       eventBus.publish(EVENT.REALTIME_TYPING_STATE, {
         eventId,
         sessionUlid: t.sessionUlid,
-        fromActorId: t.fromActorId,
+        fromActorPtid: t.fromActorPtid,
         typing: Boolean(t.typing),
       });
       return;
@@ -287,7 +287,7 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         eventId,
         sessionUlid: m.sessionUlid,
         messageUlid: m.ulid,
-        fromActorId: m.fromActorId,
+        fromActorPtid: m.fromActorPtid,
         kind: kindStr,
         newContent: m.newContent ?? '',
         newCiphertext: m.newCiphertext ?? new Uint8Array(),
@@ -306,7 +306,7 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         eventId,
         changeEventId: g.eventId ?? '',
         groupUlid: g.groupUlid,
-        actorDid: g.actorDid,
+        actorPtid: g.actorPtid,
         kind: memberKind,
         changedTsUnixMs: Number(g.changedTsUnixMs),
       });
@@ -333,7 +333,7 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         messageUlid: g.messageUlid,
         membershipEpoch: Number(g.membershipEpoch),
         committedTsUnixMs: Number(g.committedTsUnixMs),
-        actorDid: g.actorDid,
+        actorPtid: g.actorPtid,
       });
       return;
     }
@@ -366,7 +366,7 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         eventId,
         conversationKind,
         containerUlid: c.containerUlid,
-        actorId: c.actorId,
+        actorPtid: c.actorPtid,
         changedTsUnixMs: Number(c.changedTsUnixMs),
       });
       return;
@@ -378,8 +378,8 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       eventBus.publish(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, {
         eventId,
         kind: kindStr,
-        actorDid: s.actorDid,
-        targetDid: s.targetDid,
+        actorPtid: s.actorPtid,
+        targetPtid: s.targetPtid,
         requestId: s.requestId,
         conversationId: s.conversationId,
         actorDisplayName: s.actorDisplayName,
@@ -403,7 +403,7 @@ function dispatchMomentEvent(eventId: string, event: MomentEvent): void {
   const base = {
     eventId,
     postId: event.postId,
-    authorActorId: event.authorActorId || undefined,
+    authorActorPtid: event.authorActorPtid || undefined,
     occurredAtUnixMs,
   };
 
@@ -417,20 +417,20 @@ function dispatchMomentEvent(eventId: string, event: MomentEvent): void {
     case MomentEvent_Kind.DELETED:
       eventBus.publish(EVENT.MOMENT_DELETED, {
         ...base,
-        deletedByActorId: event.actorId || undefined,
+        deletedByActorPtid: event.actorPtid || undefined,
       });
       return;
     case MomentEvent_Kind.COMMENTED:
       eventBus.publish(EVENT.MOMENT_COMMENTED, {
         ...base,
         commentId: event.commentId,
-        commentAuthorActorId: event.actorId || undefined,
+        commentAuthorActorPtid: event.actorPtid || undefined,
       });
       return;
     case MomentEvent_Kind.REACTED:
       eventBus.publish(EVENT.MOMENT_REACTED, {
         ...base,
-        reactionActorId: event.actorId || undefined,
+        reactionActorPtid: event.actorPtid || undefined,
         kind: event.reactionKind || undefined,
         removed: Boolean(event.removed),
       });

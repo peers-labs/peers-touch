@@ -7,33 +7,37 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
+type providerEnvironmentConfig struct {
+	ID           string `pconf:"id"`
+	Name         string `pconf:"name"`
+	AuthorizeURL string `pconf:"authorize-url"`
+	TokenURL     string `pconf:"token-url"`
+	UserinfoURL  string `pconf:"userinfo-url"`
+	Default      bool   `pconf:"default"`
+}
+
+type providerConfig struct {
+	ID             string                      `pconf:"id"`
+	Name           string                      `pconf:"name"`
+	Description    string                      `pconf:"description"`
+	Icon           string                      `pconf:"icon"`
+	Color          string                      `pconf:"color"`
+	Category       string                      `pconf:"category"`
+	Enabled        bool                        `pconf:"enabled"`
+	Status         string                      `pconf:"status"`
+	HasCredentials bool                        `pconf:"has-credentials"`
+	CallbackURL    string                      `pconf:"callback-url"`
+	Environments   []providerEnvironmentConfig `pconf:"environments"`
+}
+
 var oauthOptions struct {
 	Peers struct {
 		Node struct {
 			Server struct {
 				Subserver struct {
 					OAuth struct {
-						Enabled   bool `pconf:"enabled"`
-						Providers []struct {
-							ID             string `pconf:"id"`
-							Name           string `pconf:"name"`
-							Description    string `pconf:"description"`
-							Icon           string `pconf:"icon"`
-							Color          string `pconf:"color"`
-							Category       string `pconf:"category"`
-							Enabled        bool   `pconf:"enabled"`
-							Status         string `pconf:"status"`
-							HasCredentials bool   `pconf:"has-credentials"`
-							CallbackURL    string `pconf:"callback-url"`
-							Environments   []struct {
-								ID           string `pconf:"id"`
-								Name         string `pconf:"name"`
-								AuthorizeURL string `pconf:"authorize-url"`
-								TokenURL     string `pconf:"token-url"`
-								UserinfoURL  string `pconf:"userinfo-url"`
-								Default      bool   `pconf:"default"`
-							} `pconf:"environments"`
-						} `pconf:"providers"`
+						Enabled   bool             `pconf:"enabled"`
+						Providers []providerConfig `pconf:"providers"`
 					} `pconf:"oauth"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`

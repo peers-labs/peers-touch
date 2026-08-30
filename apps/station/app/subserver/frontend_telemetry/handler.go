@@ -20,7 +20,7 @@ type frontendTelemetryEvent struct {
 	Source        string         `json:"source"`
 	Module        string         `json:"module"`
 	Runtime       string         `json:"runtime"`
-	ActorID       string         `json:"actorId,omitempty"`
+	ActorPTID     string         `json:"actorPtid,omitempty"`
 	DeviceID      string         `json:"deviceId,omitempty"`
 	SessionID     string         `json:"sessionId,omitempty"`
 	Owner         string         `json:"owner,omitempty"`
@@ -80,7 +80,7 @@ type rollupResponse struct {
 }
 
 type rollupDTO struct {
-	ActorID           string   `json:"actorId"`
+	ActorPTID         string   `json:"actorPtid"`
 	Runtime           string   `json:"runtime"`
 	Module            string   `json:"module"`
 	Kind              string   `json:"kind"`
@@ -157,7 +157,7 @@ func (s *subServer) handleRollupQuery(ctx context.Context, req *rollupQueryReque
 	return &rollupResponse{Rollups: rollups, Count: len(rollups)}, nil
 }
 
-func (event frontendTelemetryEvent) toRawEventModel(actorID, sessionID string, receivedAt time.Time) (rawEventModel, string) {
+func (event frontendTelemetryEvent) toRawEventModel(actorPTID, sessionID string, receivedAt time.Time) (rawEventModel, string) {
 	if strings.TrimSpace(event.ID) == "" {
 		return rawEventModel{}, "id is required"
 	}
@@ -181,7 +181,7 @@ func (event frontendTelemetryEvent) toRawEventModel(actorID, sessionID string, r
 		ts = float64(receivedAt.UnixMilli())
 	}
 	return rawEventModel{
-		ActorID:       actorID,
+		ActorPTID:     actorPTID,
 		EventID:       event.ID,
 		SchemaVersion: event.SchemaVersion,
 		TS:            ts,
@@ -214,7 +214,7 @@ func (row rawEventModel) toDTO() frontendTelemetryEvent {
 		Source:        row.Source,
 		Module:        row.Module,
 		Runtime:       row.Runtime,
-		ActorID:       row.ActorID,
+		ActorPTID:     row.ActorPTID,
 		DeviceID:      row.DeviceID,
 		SessionID:     row.SessionID,
 		Owner:         row.Owner,
@@ -231,7 +231,7 @@ func (row rawEventModel) toDTO() frontendTelemetryEvent {
 
 func (row rollupModel) toDTO() rollupDTO {
 	return rollupDTO{
-		ActorID:           row.ActorID,
+		ActorPTID:         row.ActorPTID,
 		Runtime:           row.Runtime,
 		Module:            row.Module,
 		Kind:              row.Kind,

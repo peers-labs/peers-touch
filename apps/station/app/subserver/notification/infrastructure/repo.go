@@ -16,40 +16,40 @@ import (
 // ============================================================================
 
 type NotificationModel struct {
-	ID          uint   `gorm:"primaryKey"`
-	NotifID     string `gorm:"column:notif_id;size:64;uniqueIndex"`
-	RecipientID string `gorm:"size:255;index:idx_recipient_created"`
-	ActorID     string `gorm:"size:255;index"`
-	Type        int32  `gorm:"index"`
-	Category    int32  `gorm:"index"`
-	Status      int32  `gorm:"index"`
-	TargetType  string `gorm:"size:64"`
-	TargetID    string `gorm:"size:255"`
-	Title       string `gorm:"size:512"`
-	Body        string `gorm:"type:text"`
-	Metadata    string `gorm:"type:text"`
-	GroupKey    string `gorm:"size:255;index"`
-	ReadAt      *time.Time
-	CreatedAt   time.Time `gorm:"index:idx_recipient_created"`
-	UpdatedAt   time.Time
+	ID            uint   `gorm:"primaryKey"`
+	NotifID       string `gorm:"column:notif_id;size:64;uniqueIndex"`
+	RecipientPTID string `gorm:"column:recipient_ptid;size:255;index:idx_recipient_ptid_created"`
+	ActorPTID     string `gorm:"column:actor_ptid;size:255;index"`
+	Type          int32  `gorm:"index"`
+	Category      int32  `gorm:"index"`
+	Status        int32  `gorm:"index"`
+	TargetType    string `gorm:"size:64"`
+	TargetID      string `gorm:"size:255"`
+	Title         string `gorm:"size:512"`
+	Body          string `gorm:"type:text"`
+	Metadata      string `gorm:"type:text"`
+	GroupKey      string `gorm:"size:255;index"`
+	ReadAt        *time.Time
+	CreatedAt     time.Time `gorm:"index:idx_recipient_ptid_created"`
+	UpdatedAt     time.Time
 }
 
 func (NotificationModel) TableName() string { return "notifications" }
 
 type UnreadCountModel struct {
-	ID          uint   `gorm:"primaryKey"`
-	RecipientID string `gorm:"size:255;uniqueIndex:idx_recipient_category"`
-	Category    int32  `gorm:"uniqueIndex:idx_recipient_category"`
-	Count       int32
-	UpdatedAt   time.Time
+	ID            uint   `gorm:"primaryKey"`
+	RecipientPTID string `gorm:"column:recipient_ptid;size:255;uniqueIndex:idx_recipient_ptid_category"`
+	Category      int32  `gorm:"uniqueIndex:idx_recipient_ptid_category"`
+	Count         int32
+	UpdatedAt     time.Time
 }
 
 func (UnreadCountModel) TableName() string { return "notification_unread_counts" }
 
 type PreferenceModel struct {
 	ID           uint   `gorm:"primaryKey"`
-	ActorID      string `gorm:"size:255;uniqueIndex:idx_actor_category"`
-	Category     int32  `gorm:"uniqueIndex:idx_actor_category"`
+	ActorPTID    string `gorm:"column:actor_ptid;size:255;uniqueIndex:idx_actor_ptid_category"`
+	Category     int32  `gorm:"uniqueIndex:idx_actor_ptid_category"`
 	Enabled      bool   `gorm:"default:true"`
 	PushEnabled  bool   `gorm:"default:true"`
 	SoundEnabled bool   `gorm:"default:true"`
@@ -71,6 +71,9 @@ func NewGormRepo(db *gorm.DB) *GormRepo {
 }
 
 func (r *GormRepo) AutoMigrate() error {
+	if err := migrateNotificationPTIDColumns(r.db); err != nil {
+		return err
+	}
 	return r.db.AutoMigrate(&NotificationModel{}, &UnreadCountModel{}, &PreferenceModel{})
 }
 
@@ -86,20 +89,20 @@ func (r *GormRepo) Create(n domain.Notification) (domain.Notification, error) {
 		metaJSON = string(b)
 	}
 	record := NotificationModel{
-		NotifID:     fmt.Sprintf("ntf-%d", now.UnixNano()),
-		RecipientID: n.RecipientID,
-		ActorID:     n.ActorID,
-		Type:        n.Type,
-		Category:    n.Category,
-		Status:      domain.StatusUnread,
-		TargetType:  n.TargetType,
-		TargetID:    n.TargetID,
-		Title:       n.Title,
-		Body:        n.Body,
-		Metadata:    metaJSON,
-		GroupKey:    n.GroupKey,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		NotifID:       fmt.Sprintf("ntf-%d", now.UnixNano()),
+		RecipientPTID: n.RecipientPTID,
+		ActorPTID:     n.ActorPTID,
+		Type:          n.Type,
+		Category:      n.Category,
+		Status:        domain.StatusUnread,
+		TargetType:    n.TargetType,
+		TargetID:      n.TargetID,
+		Title:         n.Title,
+		Body:          n.Body,
+		Metadata:      metaJSON,
+		GroupKey:      n.GroupKey,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 
 	err := r.db.Transaction(func(tx *gorm.DB) error {
@@ -108,11 +111,11 @@ func (r *GormRepo) Create(n domain.Notification) (domain.Notification, error) {
 		}
 		// Atomic counter increment in the same transaction
 		return tx.Exec(`
-			INSERT INTO notification_unread_counts (recipient_id, category, count, updated_at)
+			INSERT INTO notification_unread_counts (recipient_ptid, category, count, updated_at)
 			VALUES (?, ?, 1, ?)
-			ON CONFLICT (recipient_id, category) DO UPDATE
+			ON CONFLICT (recipient_ptid, category) DO UPDATE
 			SET count = notification_unread_counts.count + 1, updated_at = ?
-		`, n.RecipientID, n.Category, now, now).Error
+		`, n.RecipientPTID, n.Category, now, now).Error
 	})
 	if err != nil {
 		return domain.Notification{}, err
@@ -120,8 +123,8 @@ func (r *GormRepo) Create(n domain.Notification) (domain.Notification, error) {
 	return toDomain(record), nil
 }
 
-func (r *GormRepo) List(recipientID string, category, status int32, cursor string, limit int) ([]domain.Notification, error) {
-	query := r.db.Where("recipient_id = ?", recipientID)
+func (r *GormRepo) List(recipientPTID string, category, status int32, cursor string, limit int) ([]domain.Notification, error) {
+	query := r.db.Where("recipient_ptid = ?", recipientPTID)
 	if category > 0 {
 		query = query.Where("category = ?", category)
 	}
@@ -142,8 +145,8 @@ func (r *GormRepo) List(recipientID string, category, status int32, cursor strin
 	return out, nil
 }
 
-func (r *GormRepo) CountByRecipient(recipientID string, category, status int32) (int, error) {
-	query := r.db.Model(&NotificationModel{}).Where("recipient_id = ?", recipientID)
+func (r *GormRepo) CountByRecipient(recipientPTID string, category, status int32) (int, error) {
+	query := r.db.Model(&NotificationModel{}).Where("recipient_ptid = ?", recipientPTID)
 	if category > 0 {
 		query = query.Where("category = ?", category)
 	}
@@ -157,12 +160,12 @@ func (r *GormRepo) CountByRecipient(recipientID string, category, status int32) 
 	return int(count), nil
 }
 
-func (r *GormRepo) MarkRead(recipientID string, notifIDs []string) (int, error) {
+func (r *GormRepo) MarkRead(recipientPTID string, notifIDs []string) (int, error) {
 	now := time.Now()
 	var updated int64
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&NotificationModel{}).
-			Where("notif_id IN ? AND recipient_id = ? AND status = ?", notifIDs, recipientID, domain.StatusUnread).
+			Where("notif_id IN ? AND recipient_ptid = ? AND status = ?", notifIDs, recipientPTID, domain.StatusUnread).
 			Updates(map[string]interface{}{
 				"status":     domain.StatusRead,
 				"read_at":    now,
@@ -192,8 +195,8 @@ func (r *GormRepo) MarkRead(recipientID string, notifIDs []string) (int, error) 
 				tx.Exec(`
 					UPDATE notification_unread_counts
 					SET count = GREATEST(count - ?, 0), updated_at = ?
-					WHERE recipient_id = ? AND category = ?
-				`, catCount, now, recipientID, cat)
+					WHERE recipient_ptid = ? AND category = ?
+				`, catCount, now, recipientPTID, cat)
 			}
 		}
 		return nil
@@ -201,12 +204,12 @@ func (r *GormRepo) MarkRead(recipientID string, notifIDs []string) (int, error) 
 	return int(updated), err
 }
 
-func (r *GormRepo) MarkAllRead(recipientID string, category int32) (int, error) {
+func (r *GormRepo) MarkAllRead(recipientPTID string, category int32) (int, error) {
 	now := time.Now()
 	var updated int64
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		query := tx.Model(&NotificationModel{}).
-			Where("recipient_id = ? AND status = ?", recipientID, domain.StatusUnread)
+			Where("recipient_ptid = ? AND status = ?", recipientPTID, domain.StatusUnread)
 		if category > 0 {
 			query = query.Where("category = ?", category)
 		}
@@ -223,7 +226,7 @@ func (r *GormRepo) MarkAllRead(recipientID string, category int32) (int, error) 
 			return nil
 		}
 
-		counterQuery := tx.Model(&UnreadCountModel{}).Where("recipient_id = ?", recipientID)
+		counterQuery := tx.Model(&UnreadCountModel{}).Where("recipient_ptid = ?", recipientPTID)
 		if category > 0 {
 			counterQuery = counterQuery.Where("category = ?", category)
 		}
@@ -235,7 +238,7 @@ func (r *GormRepo) MarkAllRead(recipientID string, category int32) (int, error) 
 	return int(updated), err
 }
 
-func (r *GormRepo) Delete(recipientID string, notifIDs []string) (int, error) {
+func (r *GormRepo) Delete(recipientPTID string, notifIDs []string) (int, error) {
 	now := time.Now()
 	var deleted int64
 	err := r.db.Transaction(func(tx *gorm.DB) error {
@@ -247,11 +250,11 @@ func (r *GormRepo) Delete(recipientID string, notifIDs []string) (int, error) {
 		var counts []catCount
 		tx.Model(&NotificationModel{}).
 			Select("category, count(*) as count").
-			Where("notif_id IN ? AND recipient_id = ? AND status = ?", notifIDs, recipientID, domain.StatusUnread).
+			Where("notif_id IN ? AND recipient_ptid = ? AND status = ?", notifIDs, recipientPTID, domain.StatusUnread).
 			Group("category").
 			Scan(&counts)
 
-		result := tx.Where("notif_id IN ? AND recipient_id = ?", notifIDs, recipientID).Delete(&NotificationModel{})
+		result := tx.Where("notif_id IN ? AND recipient_ptid = ?", notifIDs, recipientPTID).Delete(&NotificationModel{})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -261,17 +264,17 @@ func (r *GormRepo) Delete(recipientID string, notifIDs []string) (int, error) {
 			tx.Exec(`
 				UPDATE notification_unread_counts
 				SET count = GREATEST(count - ?, 0), updated_at = ?
-				WHERE recipient_id = ? AND category = ?
-			`, cc.Count, now, recipientID, cc.Category)
+				WHERE recipient_ptid = ? AND category = ?
+			`, cc.Count, now, recipientPTID, cc.Category)
 		}
 		return nil
 	})
 	return int(deleted), err
 }
 
-func (r *GormRepo) GetUnreadCounts(recipientID string) (domain.UnreadCounts, error) {
+func (r *GormRepo) GetUnreadCounts(recipientPTID string) (domain.UnreadCounts, error) {
 	var items []UnreadCountModel
-	if err := r.db.Where("recipient_id = ?", recipientID).Find(&items).Error; err != nil {
+	if err := r.db.Where("recipient_ptid = ?", recipientPTID).Find(&items).Error; err != nil {
 		return domain.UnreadCounts{}, err
 	}
 	result := domain.UnreadCounts{
@@ -288,15 +291,15 @@ func (r *GormRepo) GetUnreadCounts(recipientID string) (domain.UnreadCounts, err
 // Preferences
 // ============================================================================
 
-func (r *GormRepo) GetPreferences(actorID string) ([]domain.NotificationPreference, error) {
+func (r *GormRepo) GetPreferences(actorPTID string) ([]domain.NotificationPreference, error) {
 	var items []PreferenceModel
-	if err := r.db.Where("actor_id = ?", actorID).Find(&items).Error; err != nil {
+	if err := r.db.Where("actor_ptid = ?", actorPTID).Find(&items).Error; err != nil {
 		return nil, err
 	}
 	out := make([]domain.NotificationPreference, 0, len(items))
 	for _, item := range items {
 		out = append(out, domain.NotificationPreference{
-			ActorID:      item.ActorID,
+			ActorPTID:    item.ActorPTID,
 			Category:     item.Category,
 			Enabled:      item.Enabled,
 			PushEnabled:  item.PushEnabled,
@@ -307,9 +310,9 @@ func (r *GormRepo) GetPreferences(actorID string) ([]domain.NotificationPreferen
 	return out, nil
 }
 
-func (r *GormRepo) GetPreference(actorID string, category int32) (*domain.NotificationPreference, error) {
+func (r *GormRepo) GetPreference(actorPTID string, category int32) (*domain.NotificationPreference, error) {
 	var item PreferenceModel
-	err := r.db.Where("actor_id = ? AND category = ?", actorID, category).First(&item).Error
+	err := r.db.Where("actor_ptid = ? AND category = ?", actorPTID, category).First(&item).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -317,7 +320,7 @@ func (r *GormRepo) GetPreference(actorID string, category int32) (*domain.Notifi
 		return nil, err
 	}
 	p := domain.NotificationPreference{
-		ActorID:      item.ActorID,
+		ActorPTID:    item.ActorPTID,
 		Category:     item.Category,
 		Enabled:      item.Enabled,
 		PushEnabled:  item.PushEnabled,
@@ -330,11 +333,11 @@ func (r *GormRepo) GetPreference(actorID string, category int32) (*domain.Notifi
 func (r *GormRepo) UpsertPreference(pref domain.NotificationPreference) (domain.NotificationPreference, error) {
 	now := time.Now()
 	err := r.db.Exec(`
-		INSERT INTO notification_preferences (actor_id, category, enabled, push_enabled, sound_enabled, updated_at)
+		INSERT INTO notification_preferences (actor_ptid, category, enabled, push_enabled, sound_enabled, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT (actor_id, category) DO UPDATE
+		ON CONFLICT (actor_ptid, category) DO UPDATE
 		SET enabled = ?, push_enabled = ?, sound_enabled = ?, updated_at = ?
-	`, pref.ActorID, pref.Category, pref.Enabled, pref.PushEnabled, pref.SoundEnabled, now,
+	`, pref.ActorPTID, pref.Category, pref.Enabled, pref.PushEnabled, pref.SoundEnabled, now,
 		pref.Enabled, pref.PushEnabled, pref.SoundEnabled, now).Error
 	if err != nil {
 		return domain.NotificationPreference{}, err
@@ -362,21 +365,83 @@ func toDomain(m NotificationModel) domain.Notification {
 		_ = json.Unmarshal([]byte(m.Metadata), &metadata)
 	}
 	n := domain.Notification{
-		ID:          m.NotifID,
-		RecipientID: m.RecipientID,
-		ActorID:     m.ActorID,
-		Type:        m.Type,
-		Category:    m.Category,
-		Status:      m.Status,
-		TargetType:  m.TargetType,
-		TargetID:    m.TargetID,
-		Title:       m.Title,
-		Body:        m.Body,
-		Metadata:    metadata,
-		GroupKey:    m.GroupKey,
-		CreatedAt:   m.CreatedAt,
-		ReadAt:      m.ReadAt,
+		ID:            m.NotifID,
+		RecipientPTID: m.RecipientPTID,
+		ActorPTID:     m.ActorPTID,
+		Type:          m.Type,
+		Category:      m.Category,
+		Status:        m.Status,
+		TargetType:    m.TargetType,
+		TargetID:      m.TargetID,
+		Title:         m.Title,
+		Body:          m.Body,
+		Metadata:      metadata,
+		GroupKey:      m.GroupKey,
+		CreatedAt:     m.CreatedAt,
+		ReadAt:        m.ReadAt,
 	}
 	_ = strings.TrimSpace(n.ID)
 	return n
+}
+
+type notificationPTIDColumnMigration struct {
+	table         string
+	legacy        string
+	canonical     string
+	legacyIndexes []string
+}
+
+var notificationPTIDColumnMigrations = []notificationPTIDColumnMigration{
+	{table: "notifications", legacy: "actor_id", canonical: "actor_ptid", legacyIndexes: []string{"idx_notifications_actor_id"}},
+	{table: "notification_preferences", legacy: "actor_id", canonical: "actor_ptid", legacyIndexes: []string{"idx_actor_category"}},
+	{table: "notifications", legacy: "recipient_id", canonical: "recipient_ptid", legacyIndexes: []string{"idx_recipient_created"}},
+	{table: "notification_unread_counts", legacy: "recipient_id", canonical: "recipient_ptid", legacyIndexes: []string{"idx_recipient_category"}},
+}
+
+func migrateNotificationPTIDColumns(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("notification PTID migration requires database")
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, migration := range notificationPTIDColumnMigrations {
+			if !tx.Migrator().HasTable(migration.table) {
+				continue
+			}
+			if tx.Migrator().HasColumn(migration.table, migration.legacy) &&
+				tx.Migrator().HasColumn(migration.table, migration.canonical) {
+				return fmt.Errorf(
+					"notification: %s contains both %s and %s",
+					migration.table,
+					migration.legacy,
+					migration.canonical,
+				)
+			}
+		}
+
+		for _, migration := range notificationPTIDColumnMigrations {
+			if !tx.Migrator().HasTable(migration.table) {
+				continue
+			}
+			hasLegacy := tx.Migrator().HasColumn(migration.table, migration.legacy)
+			if hasLegacy {
+				if err := tx.Migrator().RenameColumn(migration.table, migration.legacy, migration.canonical); err != nil {
+					return fmt.Errorf(
+						"notification: rename %s.%s to %s: %w",
+						migration.table,
+						migration.legacy,
+						migration.canonical,
+						err,
+					)
+				}
+			}
+			for _, legacyIndex := range migration.legacyIndexes {
+				if tx.Migrator().HasIndex(migration.table, legacyIndex) {
+					if err := tx.Migrator().DropIndex(migration.table, legacyIndex); err != nil {
+						return fmt.Errorf("notification: drop legacy index %s on %s: %w", legacyIndex, migration.table, err)
+					}
+				}
+			}
+		}
+		return nil
+	})
 }

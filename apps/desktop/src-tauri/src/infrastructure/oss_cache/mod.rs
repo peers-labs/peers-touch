@@ -501,12 +501,12 @@ pub fn attachment_ensure(
 ///      hit `attachment_lookup` and skip the round-trip.
 ///
 /// `home_token` is the desktop user's HS256 JWT for the bound
-/// station; `home_actor_did` is the same caller's DID, embedded in
+/// station; `home_actor_ptid` is the same caller's PTID, embedded in
 /// the foreign GET as `&owner=…`. Both are required.
 pub fn attachment_ensure_federated(
     uri: &OssUri,
     home_token: &str,
-    home_actor_did: &str,
+    home_actor_ptid: &str,
 ) -> Result<PathBuf, OssCacheError> {
     if home_token.trim().is_empty() {
         return Err(OssCacheError::FederationAuthRequired);
@@ -577,7 +577,7 @@ pub fn attachment_ensure_federated(
         foreign_caps.host.trim_end_matches('/'),
         file_endpoint,
         urlencode(&uri.key),
-        urlencode(home_actor_did),
+        urlencode(home_actor_ptid),
     );
     let bytes = http_get_bytes(&url, Some(token.as_str()))?;
 

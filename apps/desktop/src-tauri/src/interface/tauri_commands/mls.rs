@@ -45,6 +45,15 @@ pub struct MlsListLeaveIntentsInput {
     pub conversation_id: String,
 }
 
+fn user_scope_for_window(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<String, AppResult<Value>> {
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), window)
+        .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
+    Ok(crate::infrastructure::local_scope::user_scope_for_actor_ptid(&actor_ptid))
+}
+
 #[tauri::command]
 pub fn mls_init_identity(
     mut input: MlsInitIdentityInput,
@@ -53,7 +62,6 @@ pub fn mls_init_identity(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
     let token = match session_resolver::token_for_window(state.inner(), &window) {
         Some(token) => token,
         None => return AppResult::fail(ErrorCode::Unauthorized, "auth required", None),
@@ -76,7 +84,10 @@ pub fn mls_init_identity(
         );
     }
     input.ptid = identity.ptid;
-    let scope = crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+    let scope = match user_scope_for_window(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     mls_init_identity_for_scope(input, actor_identity.inner(), mls.inner(), &scope)
 }
 
@@ -287,8 +298,10 @@ pub fn mls_generate_key_package(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
-    let scope = crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+    let scope = match user_scope_for_window(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     mls_generate_key_package_for_scope(mls.inner(), &scope)
 }
 
@@ -326,9 +339,10 @@ pub fn mls_group_create(
 ) -> AppResult<Value> {
     match mls.create_group(&input.conversation_id, &input.members) {
         Ok(result) => {
-            let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
-            let scope =
-                crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+            let scope = match user_scope_for_window(&state, &window) {
+                Ok(scope) => scope,
+                Err(error) => return error,
+            };
             let blob = match mls.export_pending_transition(&input.conversation_id) {
                 Ok(blob) => blob,
                 Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
@@ -363,8 +377,10 @@ pub fn mls_group_join(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
-    let scope = crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+    let scope = match user_scope_for_window(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     mls_group_join_for_scope(input, mls.inner(), &scope)
 }
 
@@ -426,8 +442,10 @@ pub fn mls_group_encrypt(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
-    let user_scope = crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+    let user_scope = match user_scope_for_window(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     mls_group_encrypt_for_scope(input, mls.inner(), &user_scope)
 }
 
@@ -525,9 +543,10 @@ pub fn mls_group_add_member(
 ) -> AppResult<Value> {
     match mls.add_member(&input.conversation_id, &input.member) {
         Ok(prepared) => {
-            let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
-            let scope =
-                crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+            let scope = match user_scope_for_window(&state, &window) {
+                Ok(scope) => scope,
+                Err(error) => return error,
+            };
             let blob = match mls.export_pending_transition(&input.conversation_id) {
                 Ok(blob) => blob,
                 Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
@@ -564,9 +583,10 @@ pub fn mls_group_remove_member(
 ) -> AppResult<Value> {
     match mls.remove_member(&input.conversation_id, &input.member_ptid) {
         Ok(prepared) => {
-            let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
-            let scope =
-                crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+            let scope = match user_scope_for_window(&state, &window) {
+                Ok(scope) => scope,
+                Err(error) => return error,
+            };
             let blob = match mls.export_pending_transition(&input.conversation_id) {
                 Ok(blob) => blob,
                 Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
@@ -604,9 +624,10 @@ pub fn mls_group_remove_device(
 ) -> AppResult<Value> {
     match mls.remove_device(&input.conversation_id, &input.member_ptid, &input.device_id) {
         Ok(prepared) => {
-            let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
-            let scope =
-                crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+            let scope = match user_scope_for_window(&state, &window) {
+                Ok(scope) => scope,
+                Err(error) => return error,
+            };
             let blob = match mls.export_pending_transition(&input.conversation_id) {
                 Ok(blob) => blob,
                 Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
@@ -641,8 +662,10 @@ pub fn mls_group_accept_pending(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
-    let scope = crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+    let scope = match user_scope_for_window(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     mls_group_accept_pending_for_scope(input, mls.inner(), &scope)
 }
 
@@ -698,8 +721,10 @@ pub fn mls_group_discard_pending(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
-    let scope = crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+    let scope = match user_scope_for_window(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     if let Err(e) =
         local_chat_store::crypto_delete_mls_pending_transition(&scope, &input.conversation_id)
     {
@@ -747,12 +772,11 @@ pub fn mls_recipient_record_authority_event(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    if actor_id.is_empty() {
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    if actor_ptid.is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let scope = crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id.as_str()));
+    let scope = crate::infrastructure::local_scope::user_scope_for_actor_ptid(actor_ptid.as_str());
     let recipient_ptid = match canonical_mls_identity_ptid(&scope) {
         Ok(ptid) => ptid,
         Err(error) => return AppResult::fail(ErrorCode::Conflict, &error, None),
@@ -836,12 +860,11 @@ pub fn mls_recipient_apply_delivery(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    if actor_id.is_empty() {
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    if actor_ptid.is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let scope = crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id.as_str()));
+    let scope = crate::infrastructure::local_scope::user_scope_for_actor_ptid(actor_ptid.as_str());
     let recipient_ptid = match canonical_mls_identity_ptid(&scope) {
         Ok(ptid) => ptid,
         Err(error) => return AppResult::fail(ErrorCode::Conflict, &error, None),
@@ -1260,12 +1283,12 @@ pub fn mls_recipient_status(
     window: Window,
 ) -> AppResult<Value> {
     let recipient_ptid =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+        session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
     if recipient_ptid.is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     let scope =
-        crate::infrastructure::local_scope::user_scope_for_actor(Some(recipient_ptid.as_str()));
+        crate::infrastructure::local_scope::user_scope_for_actor_ptid(recipient_ptid.as_str());
     mls_recipient_status_for_scope(input, mls.inner(), &scope)
 }
 
@@ -1350,8 +1373,10 @@ pub fn mls_group_save(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
-    let user_scope = crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+    let user_scope = match user_scope_for_window(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     mls_group_save_for_scope(input, mls.inner(), &user_scope)
 }
 
@@ -1382,8 +1407,10 @@ pub fn mls_group_load(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
-    let user_scope = crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+    let user_scope = match user_scope_for_window(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     mls_group_load_for_scope(input, mls.inner(), &user_scope)
 }
 

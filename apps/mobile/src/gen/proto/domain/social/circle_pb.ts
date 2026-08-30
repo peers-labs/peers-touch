@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/social/circle.proto.
  */
 export const file_domain_social_circle: GenFile = /*@__PURE__*/
-  fileDesc("Chpkb21haW4vc29jaWFsL2NpcmNsZS5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxIr8BCgZDaXJjbGUSCgoCaWQYASABKAQSEAoIb3duZXJfaWQYAiABKAQSDAoEbmFtZRgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxtZW1iZXJfY291bnQYByABKAMiYgoMQ2lyY2xlTWVtYmVyEhEKCWNpcmNsZV9pZBgBIAEoBBIRCglhY3Rvcl9kaWQYAiABKAkSLAoIYWRkZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KE0NyZWF0ZUNpcmNsZVJlcXVlc3QSDAoEbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRITCgttZW1iZXJfZGlkcxgDIAMoCSJLChRDcmVhdGVDaXJjbGVSZXNwb25zZRIzCgZjaXJjbGUYASABKAsyIy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuQ2lyY2xlImAKE1JlbmFtZUNpcmNsZVJlcXVlc3QSEQoJY2lyY2xlX2lkGAEgASgEEgwKBG5hbWUYAiABKAkSGAoLZGVzY3JpcHRpb24YAyABKAlIAIgBAUIOCgxfZGVzY3JpcHRpb24iSwoUUmVuYW1lQ2lyY2xlUmVzcG9uc2USMwoGY2lyY2xlGAEgASgLMiMucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkNpcmNsZSIoChNEZWxldGVDaXJjbGVSZXF1ZXN0EhEKCWNpcmNsZV9pZBgBIAEoBCInChREZWxldGVDaXJjbGVSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIkAKFkFkZENpcmNsZU1lbWJlclJlcXVlc3QSEQoJY2lyY2xlX2lkGAEgASgEEhMKC21lbWJlcl9kaWRzGAIgAygJIkQKF0FkZENpcmNsZU1lbWJlclJlc3BvbnNlEhMKC2FkZGVkX2NvdW50GAEgASgFEhQKDG1lbWJlcl9jb3VudBgCIAEoAyJDChlSZW1vdmVDaXJjbGVNZW1iZXJSZXF1ZXN0EhEKCWNpcmNsZV9pZBgBIAEoBBITCgttZW1iZXJfZGlkcxgCIAMoCSJJChpSZW1vdmVDaXJjbGVNZW1iZXJSZXNwb25zZRIVCg1yZW1vdmVkX2NvdW50GAEgASgFEhQKDG1lbWJlcl9jb3VudBgCIAEoAyI1ChRMaXN0TXlDaXJjbGVzUmVxdWVzdBIOCgZjdXJzb3IYASABKAkSDQoFbGltaXQYAiABKAUidAoVTGlzdE15Q2lyY2xlc1Jlc3BvbnNlEjQKB2NpcmNsZXMYASADKAsyIy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuQ2lyY2xlEhMKC25leHRfY3Vyc29yGAIgASgJEhAKCGhhc19tb3JlGAMgASgIIkwKGExpc3RDaXJjbGVNZW1iZXJzUmVxdWVzdBIRCgljaXJjbGVfaWQYASABKAQSDgoGY3Vyc29yGAIgASgJEg0KBWxpbWl0GAMgASgFIn4KGUxpc3RDaXJjbGVNZW1iZXJzUmVzcG9uc2USOgoHbWVtYmVycxgBIAMoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5DaXJjbGVNZW1iZXISEwoLbmV4dF9jdXJzb3IYAiABKAkSEAoIaGFzX21vcmUYAyABKAhCQ1pBZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("Chpkb21haW4vc29jaWFsL2NpcmNsZS5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxItEBCgZDaXJjbGUSCgoCaWQYASABKAQSDAoEbmFtZRgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxtZW1iZXJfY291bnQYByABKAMSEgoKb3duZXJfcHRpZBgIIAEoCUoECAIQA1IIb3duZXJfaWQiYwoMQ2lyY2xlTWVtYmVyEhEKCWNpcmNsZV9pZBgBIAEoBBISCgphY3Rvcl9wdGlkGAIgASgJEiwKCGFkZGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJOChNDcmVhdGVDaXJjbGVSZXF1ZXN0EgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSFAoMbWVtYmVyX3B0aWRzGAMgAygJIksKFENyZWF0ZUNpcmNsZVJlc3BvbnNlEjMKBmNpcmNsZRgBIAEoCzIjLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5DaXJjbGUiYAoTUmVuYW1lQ2lyY2xlUmVxdWVzdBIRCgljaXJjbGVfaWQYASABKAQSDAoEbmFtZRgCIAEoCRIYCgtkZXNjcmlwdGlvbhgDIAEoCUgAiAEBQg4KDF9kZXNjcmlwdGlvbiJLChRSZW5hbWVDaXJjbGVSZXNwb25zZRIzCgZjaXJjbGUYASABKAsyIy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuQ2lyY2xlIigKE0RlbGV0ZUNpcmNsZVJlcXVlc3QSEQoJY2lyY2xlX2lkGAEgASgEIicKFERlbGV0ZUNpcmNsZVJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiQQoWQWRkQ2lyY2xlTWVtYmVyUmVxdWVzdBIRCgljaXJjbGVfaWQYASABKAQSFAoMbWVtYmVyX3B0aWRzGAIgAygJIkQKF0FkZENpcmNsZU1lbWJlclJlc3BvbnNlEhMKC2FkZGVkX2NvdW50GAEgASgFEhQKDG1lbWJlcl9jb3VudBgCIAEoAyJEChlSZW1vdmVDaXJjbGVNZW1iZXJSZXF1ZXN0EhEKCWNpcmNsZV9pZBgBIAEoBBIUCgxtZW1iZXJfcHRpZHMYAiADKAkiSQoaUmVtb3ZlQ2lyY2xlTWVtYmVyUmVzcG9uc2USFQoNcmVtb3ZlZF9jb3VudBgBIAEoBRIUCgxtZW1iZXJfY291bnQYAiABKAMiNQoUTGlzdE15Q2lyY2xlc1JlcXVlc3QSDgoGY3Vyc29yGAEgASgJEg0KBWxpbWl0GAIgASgFInQKFUxpc3RNeUNpcmNsZXNSZXNwb25zZRI0CgdjaXJjbGVzGAEgAygLMiMucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkNpcmNsZRITCgtuZXh0X2N1cnNvchgCIAEoCRIQCghoYXNfbW9yZRgDIAEoCCJMChhMaXN0Q2lyY2xlTWVtYmVyc1JlcXVlc3QSEQoJY2lyY2xlX2lkGAEgASgEEg4KBmN1cnNvchgCIAEoCRINCgVsaW1pdBgDIAEoBSJ+ChlMaXN0Q2lyY2xlTWVtYmVyc1Jlc3BvbnNlEjoKB21lbWJlcnMYASADKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuQ2lyY2xlTWVtYmVyEhMKC25leHRfY3Vyc29yGAIgASgJEhAKCGhhc19tb3JlGAMgASgIQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.social.v1.Circle
@@ -22,11 +22,6 @@ export type Circle = Message<"peers_touch.model.social.v1.Circle"> & {
    * @generated from field: uint64 id = 1;
    */
   id: bigint;
-
-  /**
-   * @generated from field: uint64 owner_id = 2;
-   */
-  ownerId: bigint;
 
   /**
    * @generated from field: string name = 3;
@@ -52,6 +47,11 @@ export type Circle = Message<"peers_touch.model.social.v1.Circle"> & {
    * @generated from field: int64 member_count = 7;
    */
   memberCount: bigint;
+
+  /**
+   * @generated from field: string owner_ptid = 8;
+   */
+  ownerPtid: string;
 };
 
 /**
@@ -71,13 +71,13 @@ export type CircleMember = Message<"peers_touch.model.social.v1.CircleMember"> &
   circleId: bigint;
 
   /**
-   * Actor identity. Stored as DID (string) rather than internal uint64
+   * Actor identity. Stored as PTID (string) rather than internal uint64
    * so cross-Station members can be added in future (still local-only
    * for v1).
    *
-   * @generated from field: string actor_did = 2;
+   * @generated from field: string actor_ptid = 2;
    */
-  actorDid: string;
+  actorPtid: string;
 
   /**
    * @generated from field: google.protobuf.Timestamp added_at = 3;
@@ -107,11 +107,11 @@ export type CreateCircleRequest = Message<"peers_touch.model.social.v1.CreateCir
   description: string;
 
   /**
-   * Optional initial members (DIDs). Empty allowed.
+   * Optional initial members (PTIDs). Empty allowed.
    *
-   * @generated from field: repeated string member_dids = 3;
+   * @generated from field: repeated string member_ptids = 3;
    */
-  memberDids: string[];
+  memberPtids: string[];
 };
 
 /**
@@ -228,9 +228,9 @@ export type AddCircleMemberRequest = Message<"peers_touch.model.social.v1.AddCir
   /**
    * Bulk add allowed; deduplicated server-side.
    *
-   * @generated from field: repeated string member_dids = 2;
+   * @generated from field: repeated string member_ptids = 2;
    */
-  memberDids: string[];
+  memberPtids: string[];
 };
 
 /**
@@ -274,9 +274,9 @@ export type RemoveCircleMemberRequest = Message<"peers_touch.model.social.v1.Rem
   circleId: bigint;
 
   /**
-   * @generated from field: repeated string member_dids = 2;
+   * @generated from field: repeated string member_ptids = 2;
    */
-  memberDids: string[];
+  memberPtids: string[];
 };
 
 /**

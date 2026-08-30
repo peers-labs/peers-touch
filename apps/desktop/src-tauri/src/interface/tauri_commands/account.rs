@@ -59,7 +59,7 @@ pub fn account_get_device_id(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_id = match session_resolver::actor_id_for_window(state.inner(), &window) {
+    let actor_ptid = match session_resolver::ptid_for_window(state.inner(), &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -69,7 +69,7 @@ pub fn account_get_device_id(
             );
         }
     };
-    match device_install::get_or_create_device_id(actor_id.as_str()) {
+    match device_install::get_or_create_device_id(actor_ptid.as_str()) {
         Ok(device_id) => {
             crate::infrastructure::station_client::set_device_id(device_id.clone());
             AppResult::success(StubPayload {
@@ -143,7 +143,10 @@ pub fn account_switch(
             &app,
             IdentityChangedPayload {
                 reason: IdentityChangeReason::Switch,
-                actor_id: result.data.as_ref().and_then(|data| data.actor_id.clone()),
+                actor_ptid: result
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.actor_ptid.clone()),
                 login_method: result
                     .data
                     .as_ref()
@@ -231,13 +234,13 @@ pub fn account_unlock(
                 value.get("token")?.as_str()?.to_string(),
                 value.get("account_id")?.as_str()?.to_string(),
                 value
-                    .get("actor_id")
+                    .get("actor_ptid")
                     .and_then(|actor| actor.as_str())
                     .map(str::to_string),
             ))
         });
 
-    let (token, persisted_account_id, persisted_actor_id) = match unlocked {
+    let (token, persisted_account_id, persisted_actor_ptid) = match unlocked {
         Some(unlocked) => unlocked,
         None => {
             return AppResult::fail(
@@ -250,7 +253,7 @@ pub fn account_unlock(
     let initial_session = match auth_service::validate_pin_session_token(
         &account_id_clone,
         &persisted_account_id,
-        persisted_actor_id.as_deref(),
+        persisted_actor_ptid.as_deref(),
         &token,
     ) {
         Ok(session) => session,
@@ -336,7 +339,7 @@ pub fn account_unlock(
     };
     if let Err(error) = auth_service::invalidate_revoked_actor_runtime(
         state.inner(),
-        &initial_session.actor_id,
+        &initial_session.actor_ptid,
         &account_id_clone,
     ) {
         return AppResult::fail(
@@ -352,7 +355,7 @@ pub fn account_unlock(
     let session = match auth_service::validate_pin_session_token(
         &account_id_clone,
         &persisted_account_id,
-        Some(&initial_session.actor_id),
+        Some(&initial_session.actor_ptid),
         &token,
     ) {
         Ok(session) => session,
@@ -373,7 +376,8 @@ pub fn account_unlock(
         );
     }
 
-    let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
+    let profile =
+        crate::infrastructure::auth_identity::find_profile_by_actor_ptid(&session.actor_ptid);
     let (p_name, p_email, p_avatar, p_local_avatar, p_method) = match &profile {
         Some(p) => (
             Some(p.name.clone()).filter(|v| !v.is_empty()),
@@ -385,14 +389,12 @@ pub fn account_unlock(
         None => (None, None, None, None, None),
     };
 
-    let canonical_ptid = auth_service::canonical_ptid_for_token(&token);
-    let actor_id = session.actor_id;
     let prepared = auth_service::PreparedAuthSession {
         payload: AuthSessionPayload {
             command: "account_unlock".to_string(),
             status: "authenticated".to_string(),
-            actor_id: Some(actor_id.clone()),
-            ptid: canonical_ptid,
+            actor_ptid: Some(session.actor_ptid.clone()),
+            session_token: Some(token.clone()),
             name: p_name,
             email: p_email,
             avatar_url: p_avatar,
@@ -400,7 +402,7 @@ pub fn account_unlock(
             login_method: p_method.clone(),
         },
         account_id: account_id_clone.clone(),
-        actor_id: actor_id.clone(),
+        actor_ptid: session.actor_ptid.clone(),
         token,
         revoked_previous_actor_sessions: true,
         identity_state: None,
@@ -428,7 +430,7 @@ pub fn account_unlock(
         &app,
         IdentityChangedPayload {
             reason: IdentityChangeReason::Unlock,
-            actor_id: Some(actor_id),
+            actor_ptid: Some(session.actor_ptid),
             login_method: p_method,
         },
     );

@@ -28,7 +28,7 @@ func NewProjectionService(
 	}
 }
 
-func (s *ProjectionService) ListFederations(ctx context.Context, stationPeerID, actorID string) (*pb.ListFederationsResponse, error) {
+func (s *ProjectionService) ListFederations(ctx context.Context, stationPeerID, actorPTID string) (*pb.ListFederationsResponse, error) {
 	feds, err := s.federationRepo.ListByStation(ctx, stationPeerID)
 	if err != nil {
 		return nil, err
@@ -40,7 +40,7 @@ func (s *ProjectionService) ListFederations(ctx context.Context, stationPeerID, 
 		if err != nil {
 			return nil, err
 		}
-		role, err := s.actorRoleRepo.GetByActor(ctx, fed.FederationID, actorID)
+		role, err := s.actorRoleRepo.GetByActor(ctx, fed.FederationID, actorPTID)
 		if err != nil {
 			return nil, err
 		}

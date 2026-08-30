@@ -2,6 +2,8 @@
 
 > Mobile platform-level source for the current Mobile mainline, target architecture, shared constraints, and responsibility boundaries.
 > Since 2026-05-31, the Mobile mainline is **Tauri v2 Mobile + Shared Web UI + Rust Capability Kernel + Native Plugins**.
+> The `InteractionAdmission` and Rust durable-command ownership refinement was
+> accepted with the Mobile PRODUCT/DESIGN package on 2026-08-27.
 
 ---
 
@@ -53,6 +55,7 @@
   - `apps/mobile/`
   - `apps/mobile/src/`
   - `apps/mobile/src-tauri/`
+- `apps/mobile/src-tauri/gen/android/`
   - `apps/mobile/src-tauri/gen/apple/`
 
 Mobile 当前已明确成立的事实：
@@ -184,9 +187,13 @@ Mobile 不负责：
 目标方向是：
 
 - `packages/client-ui` 承载 tokens、基础组件、响应式规则
-- `packages/client-runtime` 承载 session、sync、projection、outbox
+- `packages/client-runtime` 承载跨端 session/sync/projection 与
+  `InteractionAdmission` 纯语义；不直接拥有平台持久化
 - `packages/client-api` 承载 Station API 与 proto contract glue
 - `packages/client-platform` 承载平台能力抽象
+- `apps/mobile/src/runtimes` 承载 Mobile descriptor adapters；
+  `mobile-rust` encrypted command ledger 是 Mobile durable-command 唯一
+  持久化 owner，social outbox 只做可见 projection
 
 ### 7.3 Native Plugin Layer
 
@@ -248,7 +255,8 @@ apps/mobile/
 ├── src/          # mobile-web UI
 ├── src-tauri/    # Rust capability kernel
 │   └── gen/
-│       └── apple/ # Tauri generated iOS project
+│       ├── android/ # Tauri generated Android project
+│       └── apple/   # Tauri generated iOS project
 ├── android/      # legacy/native plugin source during migration
 └── ios/          # legacy/native plugin source during migration
 ```

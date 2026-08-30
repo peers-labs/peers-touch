@@ -20,12 +20,12 @@ func setGlobalService(service *application.Service) {
 // IsActorOnline exposes the global actor presence projection to business subservers.
 // Callers must treat false as "not currently reachable"; the presence subserver
 // remains the only owner of how that answer is derived.
-func IsActorOnline(actorID string) bool {
+func IsActorOnline(actorPTID string) bool {
 	serviceMu.RLock()
 	service := globalService
 	serviceMu.RUnlock()
 	if service == nil {
 		return false
 	}
-	return service.IsOnline(actorID)
+	return service.IsOnline(actorPTID)
 }

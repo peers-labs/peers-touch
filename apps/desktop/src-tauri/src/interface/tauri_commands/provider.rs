@@ -14,7 +14,7 @@ fn resolve_auth(
     state: &State<'_, Arc<AppState>>,
     window: &Window,
 ) -> Result<(String, String), AppResult<StubPayload>> {
-    let scope = session_resolver::actor_id_for_window(state.inner(), window).unwrap_or_default();
+    let scope = session_resolver::ptid_for_window(state.inner(), window).unwrap_or_default();
     let scope = scope.trim().to_string();
     if scope.is_empty() {
         return Err(AppResult::fail(

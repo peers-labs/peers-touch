@@ -151,8 +151,8 @@ describe('moments store: loadFeed', () => {
     enqueue('social_get_timeline',
       bytesOk(GetTimelineResponseSchema, {
         posts: [
-          { id: 'p1', authorId: 'a', type: PostType.TEXT },
-          { id: 'p2', authorId: 'a', type: PostType.TEXT },
+          { id: 'p1', authorPtid: 'a', type: PostType.TEXT },
+          { id: 'p2', authorPtid: 'a', type: PostType.TEXT },
         ],
         explanations: [
           {
@@ -171,8 +171,8 @@ describe('moments store: loadFeed', () => {
         // Server returned p2 again (race with new insert) plus p3.
         // The store must not emit p2 a second time.
         posts: [
-          { id: 'p2', authorId: 'a', type: PostType.TEXT },
-          { id: 'p3', authorId: 'a', type: PostType.TEXT },
+          { id: 'p2', authorPtid: 'a', type: PostType.TEXT },
+          { id: 'p3', authorPtid: 'a', type: PostType.TEXT },
         ],
         nextCursor: 'cur2',
         hasMore: false,
@@ -193,14 +193,14 @@ describe('moments store: loadFeed', () => {
   it('replaces (not appends) when refresh=true', async () => {
     enqueue('social_get_timeline',
       bytesOk(GetTimelineResponseSchema, {
-        posts: [{ id: 'p1', authorId: 'a', type: PostType.TEXT }],
+        posts: [{ id: 'p1', authorPtid: 'a', type: PostType.TEXT }],
         nextCursor: '',
         hasMore: false,
       }),
     );
     enqueue('social_get_timeline',
       bytesOk(GetTimelineResponseSchema, {
-        posts: [{ id: 'p9', authorId: 'a', type: PostType.TEXT }],
+        posts: [{ id: 'p9', authorPtid: 'a', type: PostType.TEXT }],
         nextCursor: '',
         hasMore: false,
       }),
@@ -218,7 +218,7 @@ describe('moments store: syncProjection', () => {
     enqueue('social_sync_moments_projection',
       bytesOk(SyncMomentsProjectionResponseSchema, {
         homeTimeline: {
-          posts: [{ id: 'home-new', authorId: 'a', type: PostType.TEXT }],
+          posts: [{ id: 'home-new', authorPtid: 'a', type: PostType.TEXT }],
           explanations: [
             {
               objectId: 'home-new',
@@ -231,7 +231,7 @@ describe('moments store: syncProjection', () => {
           hasMore: true,
         },
         publicTimeline: {
-          posts: [{ id: 'pub-new', authorId: 'b', type: PostType.TEXT }],
+          posts: [{ id: 'pub-new', authorPtid: 'b', type: PostType.TEXT }],
           nextCursor: 'pub-cur',
           hasMore: false,
         },
@@ -259,7 +259,7 @@ describe('moments store: createPost / deletePost', () => {
   it('createPost prepends id to HOME and stores the post', async () => {
     enqueue('social_create_moment',
       bytesOk(CreatePostResponseSchema, {
-        post: { id: 'pNEW', authorId: 'a', type: PostType.TEXT },
+        post: { id: 'pNEW', authorPtid: 'a', type: PostType.TEXT },
       }),
     );
 
@@ -279,7 +279,7 @@ describe('moments store: createPost / deletePost', () => {
     // ingests as IMAGE so the renderer picks the image branch.
     enqueue('social_create_moment',
       bytesOk(CreatePostResponseSchema, {
-        post: { id: 'pIMG', authorId: 'a', type: PostType.IMAGE },
+        post: { id: 'pIMG', authorPtid: 'a', type: PostType.IMAGE },
       }),
     );
 
@@ -300,7 +300,7 @@ describe('moments store: createPost / deletePost', () => {
   });
 
   it('createPost(private image) seals audience keys, strips inline media keys, and reopens the key for display', async () => {
-    const authorDid = 'did:peers:author';
+    const authorPtid = 'did:peers:author';
     const authorIk = 'author-ik-b64';
     const mediaCid = 'oss://station.local/private/family.png';
     const mediaKeyB64 = 'bWVkaWEta2V5LTEyMzQ1Njc4OTA=';
@@ -309,7 +309,7 @@ describe('moments store: createPost / deletePost', () => {
     useSessionStore.setState({
       authenticated: true,
       currentUser: {
-        actorId: authorDid,
+        actorPtid: authorPtid,
         name: 'author',
         email: '',
         loginMethod: 'password',
@@ -317,7 +317,7 @@ describe('moments store: createPost / deletePost', () => {
     });
 
     enqueue('key_exchange_fetch_bundle', statusOk({
-      bundles: [{ did: authorDid, device_id: 'device-author', ik_pub: authorIk }],
+      bundles: [{ did: authorPtid, device_id: 'device-author', ik_pub: authorIk }],
     }));
     enqueueMatch((cmd, args) => {
       if (cmd !== 'signaling_envelope_seal') return false;
@@ -345,7 +345,7 @@ describe('moments store: createPost / deletePost', () => {
       sealedImageSuite = image?.mediaEncryption?.suite;
       return true;
     }, bytesOk(CreatePostResponseSchema, {
-      post: { id: 'pPRIVATE', authorId: authorDid, type: PostType.IMAGE },
+      post: { id: 'pPRIVATE', authorPtid, type: PostType.IMAGE },
     }));
 
     const id = await useMomentsStore.getState().createPost({
@@ -395,15 +395,15 @@ describe('moments store: createPost / deletePost', () => {
     enqueue('account_get_device_id', statusOk({ device_id: 'device-author' }));
     enqueue('key_exchange_fetch_bundle', statusOk({
       bundles: [
-        { did: authorDid, device_id: 'stale-device', ik_pub: 'stale-author-ik' },
-        { did: authorDid, device_id: 'device-author', ik_pub: authorIk },
+        { did: authorPtid, device_id: 'stale-device', ik_pub: 'stale-author-ik' },
+        { did: authorPtid, device_id: 'device-author', ik_pub: authorIk },
       ],
     }));
     enqueue('signaling_envelope_open', statusOk({ plaintext: sealedPayloads[0] }));
 
     const openedKey = await openMomentMediaKeyFromAudience({
       cid: mediaCid,
-      authorDid,
+      authorPtid,
       audience: sealedAudience,
     });
 
@@ -413,7 +413,7 @@ describe('moments store: createPost / deletePost', () => {
   it('deletePost scrubs the id from every feed', async () => {
     enqueue('social_get_timeline',
       bytesOk(GetTimelineResponseSchema, {
-        posts: [{ id: 'p1', authorId: 'a' }, { id: 'p2', authorId: 'a' }],
+        posts: [{ id: 'p1', authorPtid: 'a' }, { id: 'p2', authorPtid: 'a' }],
         explanations: [
           {
             objectId: 'p2',
@@ -428,7 +428,7 @@ describe('moments store: createPost / deletePost', () => {
     );
     enqueue('social_list_by_author',
       bytesOk(ListPostsResponseSchema, {
-        posts: [{ id: 'p2', authorId: 'a' }, { id: 'p3', authorId: 'a' }],
+        posts: [{ id: 'p2', authorPtid: 'a' }, { id: 'p3', authorPtid: 'a' }],
         nextCursor: '',
         hasMore: false,
       }),
@@ -491,7 +491,7 @@ describe('moments store: comments', () => {
         posts: [
           {
             id: 'p1',
-            authorId: 'a',
+            authorPtid: 'a',
             type: PostType.TEXT,
             stats: { commentsCount: 0n, likesCount: 0n, repostsCount: 0n, viewsCount: 0n },
           },
@@ -542,7 +542,7 @@ describe('relationships store: optimistic follow', () => {
         success: true,
         relationship: {
           id: 'r1',
-          targetActorId: 'u2',
+          targetActorPtid: 'u2',
           following: true,
           followedBy: false,
         },
@@ -556,7 +556,7 @@ describe('relationships store: optimistic follow', () => {
     expect(useRelationshipsStore.getState().relations['u2']?.following).toBe(true);
     expect(useRelationshipsStore.getState().relations['u2']?.id).toBe('r1');
     expect(publishSpy).toHaveBeenCalledWith(EVENT.RELATIONSHIP_CHANGED, {
-      targetActorId: 'u2',
+      targetActorPtid: 'u2',
       action: 'follow',
     });
     publishSpy.mockRestore();
@@ -619,7 +619,7 @@ describe('moments runtime: realtime recovery', () => {
     useSessionStore.setState({
       authenticated: true,
       currentUser: {
-        actorId: 'viewer',
+        actorPtid: 'viewer',
         name: 'Viewer',
         email: '',
         loginMethod: 'password',
@@ -635,7 +635,7 @@ describe('moments runtime: realtime recovery', () => {
     enqueue('social_sync_moments_projection',
       bytesOk(SyncMomentsProjectionResponseSchema, {
         homeTimeline: {
-          posts: [{ id: 'bootstrap-post', authorId: 'viewer', type: PostType.TEXT }],
+          posts: [{ id: 'bootstrap-post', authorPtid: 'viewer', type: PostType.TEXT }],
           nextCursor: '',
           hasMore: false,
         },
@@ -657,7 +657,7 @@ describe('moments runtime: realtime recovery', () => {
     enqueue('social_sync_moments_projection',
       bytesOk(SyncMomentsProjectionResponseSchema, {
         homeTimeline: {
-          posts: [{ id: 'reconnected-post', authorId: 'remote', type: PostType.TEXT }],
+          posts: [{ id: 'reconnected-post', authorPtid: 'remote', type: PostType.TEXT }],
           explanations: [
             {
               objectId: 'reconnected-post',
