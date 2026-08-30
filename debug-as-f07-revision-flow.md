@@ -60,6 +60,16 @@
   `RustCommandException / INTERNAL_ERROR` in 113 ms. Station logs show the
   retry transaction completed and `turn started` was emitted before the HTTP
   handler returned 500.
+- Exact-source run
+  `20260830T114748280303Z-4519f9380180cb5ed5ba6536ddcf714c`
+  reproduced the same cancellation and 113 ms retry failure. The Station error
+  body was generic and contained no typed code/message.
+- `ExecuteTurn` registers ownership before `createOrReopenTurnRecord`. Retry
+  supplies only `ExistingTurnID`, so the current implementation generates and
+  registers a different `TurnID`, then replaces it with the existing Turn ID.
+  The first `emitTurnEvent` consequently fails the ownership fence as
+  superseded. The existing early-retry test supplied both IDs and masked this
+  production shape.
 
 ## Verification Conclusion
 - Hypothesis A is confirmed as nondeterministic: one run emitted cancellable
@@ -79,3 +89,7 @@
   now narrowed to the early retry execution path after atomic admission and
   before provider invocation. The next instrumentation extracts only the
   typed Station error code/message from the existing HTTP error body.
+- Hypothesis D is confirmed: retry execution ownership is registered against
+  the wrong Turn ID. The fix must bind ownership to the precreated/existing
+  admission ID before execution starts; instrumentation remains for post-fix
+  comparison.

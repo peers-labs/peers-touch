@@ -711,7 +711,6 @@ func TestExistingRetryAdmissionSettlesEarlyExecutionFailure(t *testing.T) {
 	svc := TurnService{convService: NewConversationService()}
 	_, err := svc.ExecuteTurn(context.Background(), &TurnConfig{
 		ExistingTurnID: "turn_retry_early_failure",
-		TurnID:         "turn_retry_early_failure",
 		AttemptID:      "attempt_retry_early_failure",
 		AgentID:        "agent_1",
 		ActorID:        "ptid:person:owner",

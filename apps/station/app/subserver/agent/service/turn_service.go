@@ -1087,7 +1087,14 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		)
 	}
 	if strings.TrimSpace(config.TurnID) == "" {
-		config.TurnID = NewTurnID()
+		switch {
+		case strings.TrimSpace(config.PrecreatedTurnID) != "":
+			config.TurnID = strings.TrimSpace(config.PrecreatedTurnID)
+		case strings.TrimSpace(config.ExistingTurnID) != "":
+			config.TurnID = strings.TrimSpace(config.ExistingTurnID)
+		default:
+			config.TurnID = NewTurnID()
+		}
 	}
 	if config.ExecutionContext != nil {
 		ctx = config.ExecutionContext

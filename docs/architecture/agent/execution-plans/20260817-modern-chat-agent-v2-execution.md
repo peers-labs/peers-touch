@@ -3902,6 +3902,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   diagnostic checkpoint extracts the typed Station error code/message already
   present in the HTTP response body; no retry behavior changes are authorized
   until that evidence identifies the failing owner.
+- Exact-source run
+  `20260830T114748280303Z-4519f9380180cb5ed5ba6536ddcf714c`
+  on checkpoint `c96e634e61c1e85027e701e410b4245e05c1634d`
+  reproduced the same AS-F07 sequence: durable cancellation completed, retry
+  admission committed, `turn started` was reached, and the first persisted
+  retry event failed with HTTP 500; cleanup passed. The response body is a
+  generic internal envelope and cannot expose the cause. Source inspection
+  identifies the ownership mismatch: retry config supplies `ExistingTurnID`
+  but `ExecuteTurn` registers execution ownership against a newly generated
+  `TurnID` before `createOrReopenTurnRecord` restores the existing Turn ID.
+  The first owned event is therefore fenced as superseded. The existing early
+  retry regression masked this by supplying both IDs. The Station fix must
+  resolve the registration ID from precreated/existing admission before
+  registration and remove the artificial `TurnID` from that regression.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
