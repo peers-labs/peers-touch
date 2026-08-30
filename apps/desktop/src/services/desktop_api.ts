@@ -6555,9 +6555,10 @@ export function streamAgentTurnReplay(
     globalThis.clearTimeout(catchupDeadline);
   };
   const deliverReplayEvent = (event: StreamEvent) => {
+    const terminalStatus = classifyAgentTurnTerminalEvent(event);
     if (
       event.event === 'catchup_done'
-      || classifyAgentTurnTerminalEvent(event) !== null
+      || (event.event === 'snapshot' && terminalStatus !== null)
     ) {
       catchupEstablished = true;
       clearCatchupDeadline();
@@ -6706,6 +6707,7 @@ export function streamAgentTurnReplay(
     let unlisten: (() => void) | undefined;
     let replayStarted = false;
     let cancellationSent = false;
+    let liveTailEstablished = false;
     const cleanup = () => {
       unlisten?.();
       unlisten = undefined;
@@ -6743,9 +6745,15 @@ export function streamAgentTurnReplay(
                   input.turn_id,
                 ),
           };
+          const terminalStatus = classifyAgentTurnTerminalEvent(event);
+          const closesReplay = terminalStatus !== null
+            && (liveTailEstablished || event.event === 'snapshot');
+          if (event.event === 'catchup_done') {
+            liveTailEstablished = true;
+          }
           deliverReplayEvent(event);
           if (
-            classifyAgentTurnTerminalEvent(event) !== null
+            closesReplay
             || event.event === 'recovery_failed'
           ) {
             cleanup();

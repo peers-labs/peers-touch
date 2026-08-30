@@ -3653,6 +3653,32 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Station response parsing, Rust `emit_to`, renderer event receipt, and Harness
   completion without changing runtime behavior. AS-F06 and G-F remain
   `PARTIAL / UNPROVEN`.
+- Instrumentation checkpoint
+  `d9d3e20715a2a0421fbe959aebc0d5ce2ca39faf` was deployed
+  exact-source to profile `two`. Run
+  `20260830T041506584113Z-c92a4e5e551c6733eab5ec808d79f70f`
+  reproduced the Native `foundationF06DurableReload` timeout. Correlated debug
+  events prove the exact ordering: the Native renderer received
+  `reconnecting`, `replaying`, then persisted terminal `error` sequence `119`;
+  Station returned HTTP 200, and Rust successfully emitted `connected`,
+  authoritative `snapshot`, and `reconciling` to window `main`, but the
+  renderer received none of those later events and never completed the reload.
+  The Native replay listener unregistered itself on the persisted terminal
+  event before the authoritative snapshot arrived. Station response parsing,
+  target window identity, Rust event emission, and WebDriver event-loop
+  liveness are therefore excluded. All runtime ports were released; candidate
+  cleanup remained `FAILED` because Native logout used the already-unresponsive
+  WebDriver control channel. The product correction now aligns the Native
+  listener with the existing Browser and Rust replay semantics: a persisted
+  terminal row during catch-up no longer closes the listener or clears the
+  snapshot deadline; only `catchup_done`, a terminal snapshot, or a terminal
+  live-tail event establishes the closing boundary. A focused Native transport
+  regression proves `error -> snapshot` delivery without early unsubscribe.
+  Desktop typecheck, 401 Desktop tests with one unrelated skip, 106 focused
+  Foundation tests, the focused Rust replay-order test, Rust binary check,
+  Agent Acceptance validation, and `git diff --check` pass. Post-fix
+  instrumentation remains active for one exact-source comparison run. AS-F06
+  and G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

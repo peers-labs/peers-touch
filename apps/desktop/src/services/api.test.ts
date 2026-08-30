@@ -626,6 +626,85 @@ describe('api.startAgentTurnReplayStream', () => {
       })
     })
   })
+
+  it('keeps the native listener through a catch-up terminal until the snapshot', async () => {
+    type NativeReplayEvent = {
+      payload: {
+        streamId: string
+        ptid: string
+        event: string
+        data: Record<string, unknown>
+      }
+    }
+    let listener: ((event: NativeReplayEvent) => void) | undefined
+    let startedStreamId = ''
+    const unlisten = vi.fn()
+    mockListen.mockImplementation(async (_event, callback) => {
+      listener = callback as (event: NativeReplayEvent) => void
+      return unlisten
+    })
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command !== 'agent_replay_turn_stream') {
+        return Promise.reject(new Error(`unexpected command: ${command}`))
+      }
+      startedStreamId = String((args as { input: { stream_id: string } }).input.stream_id)
+      return Promise.resolve({
+        ok: true,
+        data: {
+          command,
+          status: JSON.stringify({ stream_id: startedStreamId }),
+        },
+      })
+    })
+    const onEvent = vi.fn()
+
+    streamAgentTurnReplay(
+      {
+        conversation_id: 'conversation-1',
+        turn_id: 'turn-1',
+        after_seq: 4,
+      },
+      onEvent,
+      vi.fn(),
+      'ptid:person:owner',
+    )
+    await vi.waitFor(() => expect(listener).toBeTypeOf('function'))
+
+    listener?.({
+      payload: {
+        streamId: startedStreamId,
+        ptid: 'ptid:person:owner',
+        event: 'error',
+        data: {
+          turnId: 'turn-1',
+          conversationId: 'conversation-1',
+          seq: 5,
+          error: 'station_restart_interrupted',
+        },
+      },
+    })
+    expect(unlisten).not.toHaveBeenCalled()
+
+    listener?.({
+      payload: {
+        streamId: startedStreamId,
+        ptid: 'ptid:person:owner',
+        event: 'snapshot',
+        data: {
+          turnId: 'turn-1',
+          conversationId: 'conversation-1',
+          seq: 5,
+          status: 'interrupted',
+        },
+      },
+    })
+
+    expect(onEvent.mock.calls.map(([event]) => event.event)).toEqual([
+      'error',
+      'snapshot',
+    ])
+    expect(unlisten).toHaveBeenCalledOnce()
+  })
 })
 
 describe('api.listAgentConversations', () => {

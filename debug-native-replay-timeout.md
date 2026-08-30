@@ -12,11 +12,12 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | A long-running WebDriver async script prevents the Native renderer from delivering the replay completion | High | Medium | Pending: compare Rust emit and renderer receipt events |
-| B | Rust emits the snapshot to a stale or missing Tauri window label | Medium | Low | Pending: Rust emit result and window label |
-| C | Cancellation of the prior recovery subscription races registration of the explicit reload stream | Medium | Medium | Pending: stream IDs and cancellation ordering |
-| D | Station responds but Rust does not parse or emit the snapshot frame | Medium | Low | Station HTTP response is confirmed; Rust response/emit milestones pending |
+| A | A long-running WebDriver async script prevents the Native renderer from delivering the replay completion | High | Medium | Rejected: renderer received replay events while the async Harness call was pending |
+| B | Rust emits the snapshot to a stale or missing Tauri window label | Medium | Low | Rejected: `emit_to(main)` returned success for snapshot and control events |
+| C | Cancellation of the prior recovery subscription races registration of the explicit reload stream | Medium | Medium | Rejected as primary: the explicit listener received reconnecting, replaying, and terminal error |
+| D | Station responds but Rust does not parse or emit the snapshot frame | Medium | Low | Rejected: Station returned 200 and Rust emitted snapshot successfully |
 | E | Selenium transport timeout ratcheting amplifies teardown after the primary hang | High | Low | Confirmed by 120-second primary timeout and cleanup timeout |
+| F | Native replay listener unsubscribes on a persisted terminal event before the authoritative snapshot arrives | High | Low | Confirmed: renderer received terminal `error(119)`, then Rust emitted snapshot successfully with no renderer receipt |
 
 ## Log Evidence
 - Pre-fix run `20260830T032243491098Z-a82a32290139d61b284621d525d3e9d2`: `native-tauri harness foundationF06DurableReload` timed out on WebDriver port `4445`.
@@ -24,6 +25,15 @@
 - Candidate cleanup `20260830T032249225036Z-1e39427660f5b7348beedab77dfebcec`: Native logout timed out; all runtime ports and storage were released.
 - Instrumentation points report Native replay start, renderer event receipt, completion, Station response acceptance, and Tauri `emit_to` success.
 - Instrumentation compile checks: Desktop TypeScript PASS, Rust binary check PASS, 106 Foundation tests PASS.
+- Instrumented run `20260830T041506584113Z-c92a4e5e551c6733eab5ec808d79f70f`: `.dbg/trae-debug-log-native-replay-timeout.ndjson` lines 46-55 show Native reload start, renderer receipt through terminal `error(119)`, Station 200, and successful Rust emission of `snapshot`; the renderer has no snapshot receipt or completion after it unsubscribes on the earlier terminal row.
 
 ## Verification Conclusion
-Pre-fix instrumentation is ready. A source-matched reproduction is pending.
+Confirmed root cause: the Native `streamAgentTurnReplay` listener treats every
+terminal replay row as stream completion. During catch-up it receives a
+persisted terminal `error` before Station's authoritative `snapshot`, removes
+the listener, and leaves `loadAuthoritativeTurnSnapshot` unresolved.
+
+The fix keeps the Native listener through catch-up terminal rows and closes it
+only for a terminal snapshot or a terminal event after `catchup_done`. The
+shared catch-up deadline also remains active until `catchup_done` or a terminal
+snapshot. Post-fix runtime verification is pending.
