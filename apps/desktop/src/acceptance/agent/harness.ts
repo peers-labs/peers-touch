@@ -3422,6 +3422,27 @@ async function foundationRevisionMessageFact(
   };
 }
 
+// #region debug-point A-E:as-f07-revision-stage
+function reportFoundationF07Debug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): void {
+  void fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'as-f07-revision-flow',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationF07Scenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 function foundationTurnAttemptFacts(value: unknown): Record<string, unknown>[] {
   const evidence = evidenceRecord(value, 'foundationF07TurnEvidence');
   const diagnostics = evidenceRecord(
@@ -3463,7 +3484,12 @@ async function runFoundationF07Scenario(input: {
   };
   facts: Record<string, unknown>;
 }> {
+  const scenarioStartedAt = performance.now();
   const agentId = input.agent.id || input.agent.name;
+  reportFoundationF07Debug('A-E', 'scenario-started', {
+    platform: input.platform,
+    sampleId: input.sampleId,
+  });
   const retryConversation = await api.createAgentConversation({
     agent_id: agentId,
     title: `Foundation retry ${input.sampleId}`,
@@ -3498,6 +3524,10 @@ async function runFoundationF07Scenario(input: {
       const turnId = observedTurnId(events);
       if (!turnId) return;
       cancellationRequested = true;
+      reportFoundationF07Debug('A', 'retry-source-cancel-requested', {
+        elapsedMs: performance.now() - scenarioStartedAt,
+        sequence: Number(event.data.seq ?? 0),
+      });
       resolveCancellation({
         turnId,
         result: api.cancelAgentTurn(turnId),
@@ -3518,6 +3548,13 @@ async function runFoundationF07Scenario(input: {
     classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
     throw new Error('agent.acceptance.foundationRevisionRetrySourceNotCancelled');
   }
+  reportFoundationF07Debug('A-B', 'retry-source-finished', {
+    elapsedMs: performance.now() - scenarioStartedAt,
+    terminalEvent: [...retrySourceResult.events]
+      .reverse()
+      .find((event) => classifyAgentTurnTerminalEvent(event) !== null)?.event
+      ?? null,
+  });
   const retryEvidenceBefore = await foundationTurnEvidence(
     retryConversation.conversation_id,
     cancellationAttempt.turnId,
@@ -3538,6 +3575,11 @@ async function runFoundationF07Scenario(input: {
     retryConversation.conversation_id,
     cancellationAttempt.turnId,
   );
+  reportFoundationF07Debug('D', 'retry-finished', {
+    elapsedMs: performance.now() - scenarioStartedAt,
+    attemptCountBefore: foundationTurnAttemptFacts(retryEvidenceBefore).length,
+    attemptCountAfter: foundationTurnAttemptFacts(retryEvidenceAfter).length,
+  });
 
   const conversation = await api.createAgentConversation({
     agent_id: agentId,
@@ -3571,6 +3613,11 @@ async function runFoundationF07Scenario(input: {
   if (!sourceTurnId || !runtimeEvent) {
     throw new Error('agent.acceptance.foundationRevisionSourceEvidenceMissing');
   }
+  reportFoundationF07Debug('C', 'baseline-finished', {
+    elapsedMs: performance.now() - scenarioStartedAt,
+    terminalEvent: runtimeEvent.event,
+    sequence: Number(runtimeEvent.data.seq ?? 0),
+  });
 
   const sourceReadback = await foundationConversationReadback(
     conversation.conversation_id,
@@ -3631,6 +3678,11 @@ async function runFoundationF07Scenario(input: {
   const afterSecondRegenerate = await api.getAgentConversation(
     conversation.conversation_id,
   );
+  reportFoundationF07Debug('D', 'regenerations-finished', {
+    elapsedMs: performance.now() - scenarioStartedAt,
+    firstMessagePresent: Boolean(firstRegenerateMessage.messageId),
+    secondMessagePresent: Boolean(secondRegenerateMessage.messageId),
+  });
 
   const revisedContent = `Revised foundation message ${input.sampleId}`;
   const editResponse = evidenceRecord(
@@ -3680,6 +3732,11 @@ async function runFoundationF07Scenario(input: {
     editedAssistant,
     'foundationF07EditedAssistantMessage',
   );
+  reportFoundationF07Debug('D', 'edit-and-stale-check-finished', {
+    elapsedMs: performance.now() - scenarioStartedAt,
+    editMessagePresent: Boolean(editedUserMessage.messageId),
+    staleErrorCode: staleBranchError,
+  });
 
   const originalBranch = evidenceRecord(
     await api.selectAgentActiveBranch({
@@ -3751,6 +3808,15 @@ async function runFoundationF07Scenario(input: {
   const renderedMessageIds = Array.from(
     document.querySelectorAll<HTMLElement>('[data-pt-agent-message-id]'),
   ).map((element) => element.dataset.ptAgentMessageId ?? '');
+  reportFoundationF07Debug('E', 'branch-projection-finished', {
+    elapsedMs: performance.now() - scenarioStartedAt,
+    selectedMessagePresent: selectedMessageIds.includes(
+      String(firstRegenerateMessage.messageId),
+    ),
+    renderedMessagePresent: renderedMessageIds.includes(
+      String(firstRegenerateMessage.messageId),
+    ),
+  });
 
   const originalBefore = {
     user: await foundationRevisionMessageFact(
