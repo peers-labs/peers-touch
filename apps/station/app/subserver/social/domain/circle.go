@@ -7,7 +7,7 @@ import (
 )
 
 // Circle is a publisher-private audience label — a NAMED LIST of actor
-// DIDs owned by a single actor. Members do not know they are in a circle
+// PTIDs owned by a single actor. Members do not know they are in a circle
 // (no notification on add/remove). Compare with chat.Group, which is a
 // shared bidirectional space.
 //
@@ -17,7 +17,7 @@ import (
 // and MUST NOT federate over ActivityPub.
 type Circle struct {
 	ID          uint64
-	OwnerID     uint64
+	OwnerPTID   string
 	Name        string
 	Description string
 	CreatedAt   time.Time
@@ -25,13 +25,13 @@ type Circle struct {
 	MemberCount int64
 }
 
-// CircleMember is a (Circle × ActorDID) tuple. Membership uses DID rather
+// CircleMember is a (Circle x ActorPTID) tuple. Membership uses PTID rather
 // than internal uint64 so future cross-Station members can be added
 // (still local-only for v1).
 type CircleMember struct {
-	CircleID uint64
-	ActorDID string
-	AddedAt  time.Time
+	CircleID  uint64
+	ActorPTID string
+	AddedAt   time.Time
 }
 
 // Length bounds for Circle invariants. UTF-8 rune counts (not bytes) so
@@ -49,8 +49,8 @@ func ValidateCircle(c *Circle) error {
 	if c == nil {
 		return fmt.Errorf("circle is nil")
 	}
-	if c.OwnerID == 0 {
-		return fmt.Errorf("circle owner_id must be set")
+	if c.OwnerPTID == "" {
+		return fmt.Errorf("circle owner_ptid must be set")
 	}
 	name := strings.TrimSpace(c.Name)
 	if name == "" {

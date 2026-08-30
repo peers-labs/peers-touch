@@ -6,7 +6,6 @@
 //! only in `auth_identity.encrypted_session` and requires PIN verification.
 
 use crate::infrastructure::auth_identity::{self, AccountIdentity};
-use crate::infrastructure::local_scope;
 use crate::infrastructure::session_store::{
     self, PersistedSession, SessionSource, SessionStoreError,
 };
@@ -15,7 +14,7 @@ use crate::infrastructure::session_store::{
 pub enum SessionVaultError {
     PinRequired {
         account_id: String,
-        actor_id: String,
+        actor_ptid: String,
     },
     Store(SessionStoreError),
 }
@@ -39,8 +38,14 @@ impl From<SessionStoreError> for SessionVaultError {
     }
 }
 
-pub fn actor_id_from_account_id(account_id: &str) -> String {
-    local_scope::actor_id_from_account_id(account_id)
+pub fn actor_ptid_for_account(account_id: &str) -> Option<String> {
+    auth_identity::read_state()
+        .ok()?
+        .accounts
+        .into_iter()
+        .find(|account| account.id == account_id)
+        .map(|account| account.actor_ptid)
+        .filter(|ptid| ptid.starts_with("ptid:"))
 }
 
 pub fn active_account_id() -> Option<String> {
@@ -83,12 +88,13 @@ pub fn account_has_restorable_session(account: &AccountIdentity) -> bool {
 }
 
 pub fn purge_raw_session_for_account(account_id: &str) {
-    let _ = session_store::delete(account_id);
+    if let Some(actor_ptid) = actor_ptid_for_account(account_id) {
+        let _ = session_store::delete(&actor_ptid);
+    }
 }
 
-pub fn purge_raw_session_for_actor(actor_id: &str) {
-    let account_id = local_scope::account_id_for_password_actor(actor_id);
-    let _ = session_store::delete(&account_id);
+pub fn purge_raw_session_for_actor_ptid(actor_ptid: &str) {
+    let _ = session_store::delete(actor_ptid);
 }
 
 pub fn purge_raw_sessions_for_pin_accounts(accounts: &[AccountIdentity]) {
@@ -101,7 +107,7 @@ pub fn purge_raw_sessions_for_pin_accounts(accounts: &[AccountIdentity]) {
 
 pub fn persist_raw_session_for_account(
     account_id: &str,
-    actor_id: &str,
+    actor_ptid: &str,
     token: &str,
     source: SessionSource,
 ) -> Result<(), SessionVaultError> {
@@ -110,22 +116,27 @@ pub fn persist_raw_session_for_account(
         return Ok(());
     }
 
-    session_store::save(account_id, actor_id, token, source).map_err(SessionVaultError::from)
+    session_store::save(actor_ptid, token, source).map_err(SessionVaultError::from)
 }
 
 pub fn load_raw_session_for_account(
     account_id: &str,
     expected_source: Option<SessionSource>,
 ) -> Result<Option<PersistedSession>, SessionVaultError> {
+    let actor_ptid = actor_ptid_for_account(account_id).ok_or_else(|| {
+        SessionVaultError::Store(SessionStoreError::Serde(
+            "account has no canonical actor PTID".to_string(),
+        ))
+    })?;
     if account_requires_pin(account_id) {
         purge_raw_session_for_account(account_id);
         return Err(SessionVaultError::PinRequired {
             account_id: account_id.to_string(),
-            actor_id: actor_id_from_account_id(account_id),
+            actor_ptid,
         });
     }
 
-    let Some(blob) = session_store::load(account_id) else {
+    let Some(blob) = session_store::load(&actor_ptid) else {
         return Ok(None);
     };
     if let Some(source) = expected_source {

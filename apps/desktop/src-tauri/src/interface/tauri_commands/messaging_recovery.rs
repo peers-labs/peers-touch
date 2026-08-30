@@ -34,7 +34,7 @@ pub struct MessagingRecoveryCreateInput {
 
 struct RecoverySession {
     account_id: String,
-    actor_id: String,
+    actor_ptid: String,
     ptid: String,
     token: String,
 }
@@ -46,7 +46,7 @@ fn require_session(
     let account_id = session_vault::active_account_id()
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), window)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), window)
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
     let ptid = session_resolver::ptid_for_window(state.inner(), window).ok_or_else(|| {
@@ -61,14 +61,14 @@ fn require_session(
         .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
     Ok(RecoverySession {
         account_id,
-        actor_id,
+        actor_ptid,
         ptid,
         token,
     })
 }
 
-fn identity_key_ref(actor_id: &str) -> String {
-    crate::infrastructure::local_scope::LocalScope::from_actor(actor_id).identity_key_ref()
+fn identity_key_ref(actor_ptid: &str) -> String {
+    crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid).identity_key_ref()
 }
 
 fn timestamp_ms(timestamp: Option<&prost_types::Timestamp>) -> i64 {
@@ -291,7 +291,7 @@ pub fn messaging_recovery_restore_latest(
         }
     };
 
-    let key_ref = identity_key_ref(&session.actor_id);
+    let key_ref = identity_key_ref(&session.ptid);
     let previous_seed = match crypto::load_identity_key(&key_ref) {
         Ok(identity) => identity.map(|value| value.seed_bytes()),
         Err(error) => {

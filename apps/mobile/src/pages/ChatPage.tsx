@@ -7,7 +7,6 @@ import {
   canSubmitChatComposerDraft,
   canEditChatMessage,
   chatMessageDisplayKind,
-  chatMessageSenderDids,
   chatMediaKindForAttachment,
   chatMessageTypeForAttachments,
   chatVisualCssVars,
@@ -15,7 +14,6 @@ import {
   filterChatMessagesAfterClearedAt,
   filterChatMessagesBySearchText,
   formatChatAttachmentSize,
-  isOwnChatMessage,
   isRecalledChatMessage,
   shouldSendComposerEnter,
   type ChatConversationPreferenceLike,
@@ -113,7 +111,7 @@ export function ChatPage() {
   const activeConversationId = activeGroupUlid || activeSessionUlid || '';
   const authSession = useAuthStore((state) => state.session);
   const messages = useSocialStore((state) => (activeSessionUlid ? state.messages[activeSessionUlid] ?? EMPTY_MESSAGES : EMPTY_MESSAGES));
-  const currentUserDid = useSocialStore((state) => state.currentUserDid);
+  const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
   const typingPeers = useSocialStore((state) => (activeConversationId ? state.typingPeers[activeConversationId] ?? EMPTY_TYPING_PEERS : EMPTY_TYPING_PEERS));
   const loading = useSocialStore((state) => state.loading);
   const error = useSocialStore((state) => state.error);
@@ -170,8 +168,8 @@ export function ChatPage() {
   const groupMessagesByUlid = useGroupStore((state) => state.messages);
   const groupUnreadCounts = useGroupStore((state) => state.unreadCounts);
   const conversations = useMemo(
-    () => projectConversations({ sessions, messages: sessionMessages, currentUserDid, peerOnline }),
-    [currentUserDid, peerOnline, sessionMessages, sessions],
+    () => projectConversations({ sessions, messages: sessionMessages, currentUserPtid, peerOnline }),
+    [currentUserPtid, peerOnline, sessionMessages, sessions],
   );
   const groupConversations = useMemo(
     () => projectGroupConversations({ groups, messages: groupMessagesByUlid, unreadCounts: groupUnreadCounts }),
@@ -213,23 +211,23 @@ export function ChatPage() {
   const activeConversationKey = activeGroupUlid ? `group:${activeGroupUlid}` : activeSessionUlid ? `friend:${activeSessionUlid}` : '';
   activeConversationKeyRef.current = activeConversationKey;
   const peerTyping = activeConversation
-    ? Boolean(typingPeers[activeConversation.peerDid]?.typing)
-    : Object.entries(typingPeers).some(([ptid, entry]) => ptid !== currentUserDid && entry.typing);
-  const groupMemberDids = useMemo(() => new Set(groupMembers.map((member) => member.ptid).filter(Boolean)), [groupMembers]);
-  const groupMemberByDid = useMemo(
+    ? Boolean(typingPeers[activeConversation.peerPtid]?.typing)
+    : Object.entries(typingPeers).some(([ptid, entry]) => ptid !== currentUserPtid && entry.typing);
+  const groupMemberPtids = useMemo(() => new Set(groupMembers.map((member) => member.ptid).filter(Boolean)), [groupMembers]);
+  const groupMemberByPtid = useMemo(
     () => new Map(groupMembers.map((member) => [member.ptid, member])),
     [groupMembers],
   );
   const groupInviteCandidates = useMemo(
     () => conversations.filter((conversation) =>
-      conversation.peerDid &&
-      !groupMemberDids.has(conversation.peerDid) &&
-      !friendshipStatus[conversation.peerDid]?.blocked,
+      conversation.peerPtid &&
+      !groupMemberPtids.has(conversation.peerPtid) &&
+      !friendshipStatus[conversation.peerPtid]?.blocked,
     ),
-    [conversations, friendshipStatus, groupMemberDids],
+    [conversations, friendshipStatus, groupMemberPtids],
   );
-  const myGroupMember = groupMembers.find((member) => member.ptid === currentUserDid);
-  const myGroupRole = activeGroupConversation?.group.ownerDid === currentUserDid
+  const myGroupMember = groupMembers.find((member) => member.ptid === currentUserPtid);
+  const myGroupRole = activeGroupConversation?.group.ownerPtid === currentUserPtid
     ? GroupRole.OWNER
     : Number(myGroupMember?.role ?? 0);
   const canManageGroupMembers = myGroupRole >= GroupRole.ADMIN;
@@ -250,36 +248,40 @@ export function ChatPage() {
   }, [activeGroupUlid, activeSessionUlid]);
 
   useEffect(() => {
+    if (!authSession) {
+      setChatActionStates({});
+      return;
+    }
     let active = true;
-    void loadChatActionStates(currentUserDid).then((states) => {
+    void loadChatActionStates(authSession).then((states) => {
       if (active) setChatActionStates(states);
     });
     return () => {
       active = false;
     };
-  }, [currentUserDid]);
+  }, [authSession]);
 
   useEffect(() => {
     void loadCurrentUserProfile();
   }, [loadCurrentUserProfile]);
 
   useEffect(() => {
-    const dids = new Set<string>();
-    if (activeConversation?.peerDid) dids.add(activeConversation.peerDid);
+    const ptids = new Set<string>();
+    if (activeConversation?.peerPtid) ptids.add(activeConversation.peerPtid);
     groupMembers.forEach((member) => {
-      if (member.ptid && member.ptid !== currentUserDid) dids.add(member.ptid);
+      if (member.ptid && member.ptid !== currentUserPtid) ptids.add(member.ptid);
     });
-    chatMessageSenderDids(activeGroupConversation ? groupMessages : messages, currentUserDid).forEach((did) => dids.add(did));
-    dids.forEach((did) => {
-      if (did && !(did in peerProfiles)) void loadPeerProfile(did);
+    chatMessageSenderPtids(activeGroupConversation ? groupMessages : messages, currentUserPtid).forEach((ptid) => ptids.add(ptid));
+    ptids.forEach((ptid) => {
+      if (ptid && !(ptid in peerProfiles)) void loadPeerProfile(ptid);
     });
-  }, [activeConversation?.peerDid, activeGroupConversation, currentUserDid, groupMembers, groupMessages, loadPeerProfile, messages, peerProfiles]);
+  }, [activeConversation?.peerPtid, activeGroupConversation, currentUserPtid, groupMembers, groupMessages, loadPeerProfile, messages, peerProfiles]);
 
   useEffect(() => {
-    if (activeConversation?.peerDid) {
-      void loadFriendshipStatus(activeConversation.peerDid).catch(() => undefined);
+    if (activeConversation?.peerPtid) {
+      void loadFriendshipStatus(activeConversation.peerPtid).catch(() => undefined);
     }
-  }, [activeConversation?.peerDid, loadFriendshipStatus]);
+  }, [activeConversation?.peerPtid, loadFriendshipStatus]);
 
   useEffect(() => {
     if (!activeGroupConversation) return;
@@ -358,7 +360,7 @@ export function ChatPage() {
     }
 
     if (!activeConversation) return;
-    if (friendshipStatus[activeConversation.peerDid]?.blocked) {
+    if (friendshipStatus[activeConversation.peerPtid]?.blocked) {
       throw new Error(t('mobile.chat.blockedComposer'));
     }
     await emitTypingState(false);
@@ -485,19 +487,19 @@ export function ChatPage() {
     await deleteGroupMessage(activeGroupUlid, message.ulid);
   };
 
-  const inviteFriendToGroup = async (peerDid: string) => {
+  const inviteFriendToGroup = async (peerPtid: string) => {
     if (!activeGroupUlid) return;
-    await inviteGroupMembers(activeGroupUlid, [peerDid]);
+    await inviteGroupMembers(activeGroupUlid, [peerPtid]);
   };
 
-  const removeMemberFromGroup = async (actorDid: string) => {
+  const removeMemberFromGroup = async (actorPtid: string) => {
     if (!activeGroupUlid) return;
-    await removeGroupMember(activeGroupUlid, actorDid);
+    await removeGroupMember(activeGroupUlid, actorPtid);
   };
 
-  const updateMemberInGroup = async (actorDid: string, input: { role?: number; muted?: boolean }) => {
+  const updateMemberInGroup = async (actorPtid: string, input: { role?: number; muted?: boolean }) => {
     if (!activeGroupUlid) return;
-    await updateGroupMember(activeGroupUlid, actorDid, input);
+    await updateGroupMember(activeGroupUlid, actorPtid, input);
   };
 
   const confirmTransferGroupOwnership = (member: GroupMember) => {
@@ -579,7 +581,7 @@ export function ChatPage() {
       cancelText: t('common.action.cancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
-        await blockUser(activeConversation.peerDid);
+        await blockUser(activeConversation.peerPtid);
         setActionSheetOpen(false);
       },
     });
@@ -593,7 +595,7 @@ export function ChatPage() {
       okText: t('mobile.contacts.unblock'),
       cancelText: t('common.action.cancel'),
       onOk: async () => {
-        await unblockUser(activeConversation.peerDid);
+        await unblockUser(activeConversation.peerPtid);
       },
     });
   };
@@ -623,7 +625,8 @@ export function ChatPage() {
       },
     };
     setChatActionStates(next);
-    await saveChatActionStates(currentUserDid, next);
+    if (!authSession) throw new Error('mobile.auth.missingIdentityScope');
+    await saveChatActionStates(authSession, next);
   };
 
   const scrollToMessage = (messageUlid: string) => {
@@ -643,9 +646,9 @@ export function ChatPage() {
       ? groupSettingsToActionState(groupSettings, chatActionStates[activeKey])
       : friendSettingsToActionState(activeSessionUlid ? friendConversationSettings[activeSessionUlid] : undefined, chatActionStates[activeKey]);
     const ownAvatar = currentUserProfile?.avatar || '';
-    const ownName = authSession?.actor?.displayName || authSession?.actor?.display_name || authSession?.actor?.username || currentUserDid || '';
-    const peerProfile = activeConversation ? peerProfiles[activeConversation.peerDid] : null;
-    const activePeerBlocked = activeConversation ? Boolean(friendshipStatus[activeConversation.peerDid]?.blocked) : false;
+    const ownName = authSession?.actorRef.acct || currentUserPtid || '';
+    const peerProfile = activeConversation ? peerProfiles[activeConversation.peerPtid] : null;
+    const activePeerBlocked = activeConversation ? Boolean(friendshipStatus[activeConversation.peerPtid]?.blocked) : false;
     const peerMessageAvatar = activeGroupConversation ? '' : (peerProfile?.avatar || activeConversation?.peerAvatar);
     const stationName = stationHostFromUrl(authSession?.stationUrl);
     const subtitle = activeGroupConversation
@@ -779,7 +782,7 @@ export function ChatPage() {
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.chat.emptyThread')} />
           ) : (
             threadMessages.map((message) => {
-              const mine = isOwnChatMessage(message, currentUserDid);
+              const mine = isOwnChatMessage(message, currentUserPtid);
               const recalled = isRecalledChatMessage(message);
               const groupDisplay = isGroupThread ? projectGroupMessageDisplay(message as GroupMessage) : null;
               const content = groupDisplay
@@ -802,7 +805,7 @@ export function ChatPage() {
                   {!mine ? (
                     <MessageAvatar
                       src={messageAvatarUrl(message, peerProfiles, peerMessageAvatar)}
-                      fallback={messageSenderFallback(message, groupMemberByDid, activeConversation?.peerName || title)}
+                      fallback={messageSenderFallback(message, groupMemberByPtid, activeConversation?.peerName || title)}
                     />
                   ) : null}
                   <div className="message-bubble">
@@ -1057,7 +1060,7 @@ export function ChatPage() {
                     const memberRole = Number(member.role ?? GroupRole.MEMBER);
                     const memberControls = getMobileGroupMemberControlState({
                       canManageGroupMembers,
-                      isSelf: member.ptid === currentUserDid,
+                      isSelf: member.ptid === currentUserPtid,
                       myGroupRole,
                       targetRole: memberRole,
                     });
@@ -1127,7 +1130,7 @@ export function ChatPage() {
                   renderItem={(candidate) => (
                     <List.Item
                       actions={[
-                        <Button key="invite" size="small" type="primary" onClick={() => inviteFriendToGroup(candidate.peerDid)}>
+                        <Button key="invite" size="small" type="primary" onClick={() => inviteFriendToGroup(candidate.peerPtid)}>
                           {t('mobile.group.invite')}
                         </Button>,
                       ]}
@@ -1135,7 +1138,7 @@ export function ChatPage() {
                       <List.Item.Meta
                         avatar={<MobileAvatar src={candidate.peerAvatar}>{candidate.peerName.slice(0, 1)}</MobileAvatar>}
                         title={<Text strong>{candidate.peerName}</Text>}
-                        description={<Text type="secondary" copyable>{candidate.peerDid}</Text>}
+                        description={<Text type="secondary" copyable>{candidate.peerPtid}</Text>}
                       />
                     </List.Item>
                   )}
@@ -1547,7 +1550,7 @@ function conversationUpdatedAt(conversation: MobileConversation): number {
 
 function conversationSearchText(conversation: MobileConversation): string {
   if (conversation.kind === 'friend') {
-    return `${conversation.conversation.peerName} ${conversation.conversation.peerDid} ${conversation.conversation.lastMessage?.content ?? ''} ${attachmentSearchText(conversation.conversation.lastMessage)}`;
+    return `${conversation.conversation.peerName} ${conversation.conversation.peerPtid} ${conversation.conversation.lastMessage?.content ?? ''} ${attachmentSearchText(conversation.conversation.lastMessage)}`;
   }
   return `${conversation.conversation.group.name} ${conversation.conversation.group.ulid} ${conversation.conversation.lastMessage?.content ?? ''} ${attachmentSearchText(conversation.conversation.lastMessage)}`;
 }
@@ -1800,11 +1803,29 @@ function groupRoleLabel(role: number, t: (key: string) => string): string {
 
 function messageSenderFallback(
   message: FriendChatMessage | GroupMessage,
-  groupMemberByDid: Map<string, GroupMember>,
+  groupMemberByPtid: Map<string, GroupMember>,
   peerName: string,
 ): string {
-  const member = groupMemberByDid.get(message.senderDid);
-  return (member?.nickname || peerName || message.senderDid || '').slice(0, 1).toUpperCase();
+  const member = groupMemberByPtid.get(message.senderPtid);
+  return (member?.nickname || peerName || message.senderPtid || '').slice(0, 1).toUpperCase();
+}
+
+function chatMessageSenderPtids(
+  messages: Array<FriendChatMessage | GroupMessage>,
+  currentUserPtid: string | null,
+): string[] {
+  return Array.from(new Set(
+    messages
+      .map((message) => message.senderPtid)
+      .filter((ptid) => Boolean(ptid && ptid !== currentUserPtid)),
+  ));
+}
+
+function isOwnChatMessage(
+  message: FriendChatMessage | GroupMessage,
+  currentUserPtid: string | null,
+): boolean {
+  return Boolean(currentUserPtid && message.senderPtid === currentUserPtid);
 }
 
 function messageAvatarUrl(
@@ -1812,7 +1833,7 @@ function messageAvatarUrl(
   peerProfiles: Record<string, PeerProfile | null>,
   fallbackAvatar: string | undefined,
 ): string {
-  return peerProfiles[message.senderDid]?.avatar || fallbackAvatar || '';
+  return peerProfiles[message.senderPtid]?.avatar || fallbackAvatar || '';
 }
 
 function stationHostFromUrl(stationUrl: string | undefined): string {

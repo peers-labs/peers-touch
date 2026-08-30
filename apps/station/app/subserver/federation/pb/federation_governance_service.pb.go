@@ -79,7 +79,7 @@ type SubmitProposalRequest struct {
 	ProposedEventType    EventType              `protobuf:"varint,2,opt,name=proposed_event_type,json=proposedEventType,proto3,enum=peers_touch.model.federation.v1.EventType" json:"proposed_event_type,omitempty"`
 	PayloadBytes         []byte                 `protobuf:"bytes,3,opt,name=payload_bytes,json=payloadBytes,proto3" json:"payload_bytes,omitempty"`
 	PayloadHash          []byte                 `protobuf:"bytes,4,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
-	ActorId              string                 `protobuf:"bytes,5,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid            string                 `protobuf:"bytes,5,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	ActorFederatedHandle string                 `protobuf:"bytes,6,opt,name=actor_federated_handle,json=actorFederatedHandle,proto3" json:"actor_federated_handle,omitempty"`
 	StationPeerId        string                 `protobuf:"bytes,7,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
 	ActorSignature       []byte                 `protobuf:"bytes,8,opt,name=actor_signature,json=actorSignature,proto3" json:"actor_signature,omitempty"`
@@ -149,9 +149,9 @@ func (x *SubmitProposalRequest) GetPayloadHash() []byte {
 	return nil
 }
 
-func (x *SubmitProposalRequest) GetActorId() string {
+func (x *SubmitProposalRequest) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -525,13 +525,14 @@ var File_domain_federation_federation_governance_service_proto protoreflect.File
 
 const file_domain_federation_federation_governance_service_proto_rawDesc = "" +
 	"\n" +
-	"5domain/federation/federation_governance_service.proto\x12\x1fpeers_touch.model.federation.v1\x1a)domain/federation/federation_ledger.proto\"\xc0\x04\n" +
+	"5domain/federation/federation_governance_service.proto\x12\x1fpeers_touch.model.federation.v1\x1a)domain/federation/federation_ledger.proto\"\xc4\x04\n" +
 	"\x15SubmitProposalRequest\x12#\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12Z\n" +
 	"\x13proposed_event_type\x18\x02 \x01(\x0e2*.peers_touch.model.federation.v1.EventTypeR\x11proposedEventType\x12#\n" +
 	"\rpayload_bytes\x18\x03 \x01(\fR\fpayloadBytes\x12!\n" +
-	"\fpayload_hash\x18\x04 \x01(\fR\vpayloadHash\x12\x19\n" +
-	"\bactor_id\x18\x05 \x01(\tR\aactorId\x124\n" +
+	"\fpayload_hash\x18\x04 \x01(\fR\vpayloadHash\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x05 \x01(\tR\tactorPtid\x124\n" +
 	"\x16actor_federated_handle\x18\x06 \x01(\tR\x14actorFederatedHandle\x12&\n" +
 	"\x0fstation_peer_id\x18\a \x01(\tR\rstationPeerId\x12'\n" +
 	"\x0factor_signature\x18\b \x01(\fR\x0eactorSignature\x12+\n" +

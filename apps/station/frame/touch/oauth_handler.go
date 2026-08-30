@@ -3,9 +3,7 @@ package touch
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -16,7 +14,6 @@ import (
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	touchauth "github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	gatepb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 )
 
 // OAuthLogin handles external OAuth gateway callback.
@@ -51,23 +48,15 @@ func OAuthLogin(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	var actorIDNum int64
-	if id, ok := result.User["id"].(uint64); ok {
-		actorIDNum = int64(id)
-	} else if idStr, ok := result.User["id"].(string); ok {
-		if u, err := strconv.ParseUint(idStr, 10, 64); err == nil {
-			actorIDNum = int64(u)
-		}
-	}
-
-	if allowed, reason := gate.CheckActorAllowed(c, &gatepb.AccessGateActorRef{
-		Id:       touchString(result.User["id"]),
-		ActorId:  actorIDNum,
-		Username: touchString(result.User["username"]),
-		Email:    touchString(result.User["email"]),
-	}); !allowed {
+	actorRef := touchactor.ProtoActorRef(result.Actor, baseURLFrom(ctx))
+	if allowed, reason := gate.CheckActorAllowed(
+		c,
+		actorRef,
+		result.Actor.PreferredUsername,
+		result.Actor.Email,
+	); !allowed {
 		_ = touchauth.LogoutSession(c, result.SessionID)
-		log.Warnf(c, "[OAuth] login blocked by access gate policy: actor_id=%d reason=%s", actorIDNum, reason)
+		log.Warnf(c, "[OAuth] login blocked by access gate policy: ptid=%s reason=%s", actorRef.GetPtid(), reason)
 		FailedResponse(c, ctx, errors.New(reason))
 		return
 	}
@@ -81,29 +70,8 @@ func OAuthLogin(c context.Context, ctx *app.RequestContext) {
 		RefreshToken: result.RefreshToken,
 		TokenType:    result.TokenType,
 		ExpiresAt:    result.ExpiresAt.Format(time.RFC3339),
-		ActorId:      touchString(result.User["id"]),
-		ActorIdNum:   actorIDNum,
-		Username:     touchString(result.User["username"]),
-		DisplayName:  touchString(result.User["display_name"]),
-		Email:        touchString(result.User["email"]),
-	}
-	if actorIDNum > 0 {
-		if act, err := touchactor.GetActorByID(c, uint64(actorIDNum)); err == nil && act != nil {
-			response.ActorRef = touchactor.ProtoActorRef(act, baseURLFrom(ctx))
-		}
+		ActorRef:     actorRef,
 	}
 
 	SuccessResponse(c, ctx, "OAuth login successful", response)
-}
-
-func touchString(v interface{}) string {
-	if v == nil {
-		return ""
-	}
-	switch t := v.(type) {
-	case string:
-		return t
-	default:
-		return fmt.Sprintf("%v", t)
-	}
 }

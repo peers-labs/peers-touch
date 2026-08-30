@@ -20,14 +20,14 @@ import (
 // (password reset, session revocation).
 type ActorQueryRepository interface {
 	ListActors(ctx context.Context, query domain.ActorListQuery) ([]touchdb.Actor, int64, error)
-	FindActorByID(ctx context.Context, id uint64) (*touchdb.Actor, error)
-	GetActorStatus(ctx context.Context, actorID uint64) (touchdb.ActorStatus, error)
-	CountPostsByAuthor(ctx context.Context, authorID uint64) (int64, error)
-	CountFollowers(ctx context.Context, actorID uint64) (int64, error)
-	CountFollowing(ctx context.Context, actorID uint64) (int64, error)
-	ResetPassword(ctx context.Context, actorID uint64, passwordHash string) error
-	ListActorSessions(ctx context.Context, actorID uint64) ([]domain.ActorSessionInfo, error)
-	RevokeActorSession(ctx context.Context, sessionID string) error
+	FindActorByPTID(ctx context.Context, actorPTID string) (*touchdb.Actor, error)
+	GetActorStatus(ctx context.Context, actorPTID string) (touchdb.ActorStatus, error)
+	CountPostsByAuthor(ctx context.Context, actorPTID string) (int64, error)
+	CountFollowers(ctx context.Context, actorPTID string) (int64, error)
+	CountFollowing(ctx context.Context, actorPTID string) (int64, error)
+	ResetPassword(ctx context.Context, actorPTID, passwordHash string) error
+	ListActorSessions(ctx context.Context, actorPTID string) ([]domain.ActorSessionInfo, error)
+	RevokeActorSession(ctx context.Context, actorPTID, sessionID string) error
 
 	// Overview queries
 	CountActors(ctx context.Context) (int64, error)
@@ -47,8 +47,8 @@ type ActorQueryRepository interface {
 	ListActivePeersSessions(ctx context.Context, limit int) ([]domain.PeersSessionInfo, error)
 
 	// Per-actor session counters used to enrich ActorDetail.
-	CountActiveSessionsByActor(ctx context.Context, actorID uint64) (int64, error)
-	LastLoginAtByActor(ctx context.Context, actorID uint64) (*time.Time, error)
+	CountActiveSessionsByActor(ctx context.Context, actorPTID string) (int64, error)
+	LastLoginAtByActor(ctx context.Context, actorPTID string) (*time.Time, error)
 }
 
 // actorQueryRepository is the GORM-backed implementation.
@@ -70,7 +70,7 @@ func (r *actorQueryRepository) ListActors(ctx context.Context, query domain.Acto
 
 	if query.Search != "" {
 		pattern := "%" + query.Search + "%"
-		db = db.Where("preferred_username LIKE ? OR name LIKE ? OR email LIKE ?", pattern, pattern, pattern)
+		db = db.Where("ptid LIKE ? OR preferred_username LIKE ? OR name LIKE ? OR email LIKE ?", pattern, pattern, pattern, pattern)
 	}
 
 	var total int64
@@ -84,46 +84,80 @@ func (r *actorQueryRepository) ListActors(ctx context.Context, query domain.Acto
 	return actors, total, err
 }
 
-func (r *actorQueryRepository) FindActorByID(ctx context.Context, id uint64) (*touchdb.Actor, error) {
+func (r *actorQueryRepository) FindActorByPTID(ctx context.Context, actorPTID string) (*touchdb.Actor, error) {
 	var actor touchdb.Actor
-	err := r.db.WithContext(ctx).Where("id = ?", id).First(&actor).Error
+	err := r.db.WithContext(ctx).Where("ptid = ?", actorPTID).First(&actor).Error
 	if err != nil {
 		return nil, err
 	}
 	return &actor, nil
 }
 
-func (r *actorQueryRepository) GetActorStatus(ctx context.Context, actorID uint64) (touchdb.ActorStatus, error) {
+func (r *actorQueryRepository) resolveActorID(ctx context.Context, actorPTID string) (uint64, error) {
+	var actor struct {
+		ID uint64 `gorm:"column:id"`
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&touchdb.Actor{}).
+		Select("id").
+		Where("ptid = ?", actorPTID).
+		First(&actor).Error; err != nil {
+		return 0, err
+	}
+	return actor.ID, nil
+}
+
+func (r *actorQueryRepository) GetActorStatus(ctx context.Context, actorPTID string) (touchdb.ActorStatus, error) {
+	actorID, err := r.resolveActorID(ctx, actorPTID)
+	if err != nil {
+		return touchdb.ActorStatus{}, err
+	}
 	var status touchdb.ActorStatus
-	err := r.db.WithContext(ctx).Where("actor_id = ?", actorID).First(&status).Error
+	err = r.db.WithContext(ctx).Where("actor_id = ?", actorID).First(&status).Error
 	return status, err
 }
 
-func (r *actorQueryRepository) CountPostsByAuthor(ctx context.Context, authorID uint64) (int64, error) {
-	// Public + private posts are physically separated (D1.A); sum them.
-	var pub, priv int64
-	if err := r.db.WithContext(ctx).Model(&touchdb.SocialPublicPost{}).Where("author_id = ?", authorID).Count(&pub).Error; err != nil {
+func (r *actorQueryRepository) CountPostsByAuthor(ctx context.Context, actorPTID string) (int64, error) {
+	actorID, err := r.resolveActorID(ctx, actorPTID)
+	if err != nil {
 		return 0, err
 	}
-	if err := r.db.WithContext(ctx).Model(&touchdb.SocialPrivatePost{}).Where("author_id = ?", authorID).Count(&priv).Error; err != nil {
+	// Public + private posts are physically separated (D1.A); sum them.
+	var pub, priv int64
+	if err := r.db.WithContext(ctx).Model(&touchdb.SocialPublicPost{}).Where("author_id = ?", actorID).Count(&pub).Error; err != nil {
+		return 0, err
+	}
+	if err := r.db.WithContext(ctx).Model(&touchdb.SocialPrivatePost{}).Where("author_id = ?", actorID).Count(&priv).Error; err != nil {
 		return 0, err
 	}
 	return pub + priv, nil
 }
 
-func (r *actorQueryRepository) CountFollowers(ctx context.Context, actorID uint64) (int64, error) {
+func (r *actorQueryRepository) CountFollowers(ctx context.Context, actorPTID string) (int64, error) {
+	actorID, err := r.resolveActorID(ctx, actorPTID)
+	if err != nil {
+		return 0, err
+	}
 	var count int64
-	err := r.db.WithContext(ctx).Model(&touchdb.Follow{}).Where("following_id = ?", actorID).Count(&count).Error
+	err = r.db.WithContext(ctx).Model(&touchdb.Follow{}).Where("following_id = ?", actorID).Count(&count).Error
 	return count, err
 }
 
-func (r *actorQueryRepository) CountFollowing(ctx context.Context, actorID uint64) (int64, error) {
+func (r *actorQueryRepository) CountFollowing(ctx context.Context, actorPTID string) (int64, error) {
+	actorID, err := r.resolveActorID(ctx, actorPTID)
+	if err != nil {
+		return 0, err
+	}
 	var count int64
-	err := r.db.WithContext(ctx).Model(&touchdb.Follow{}).Where("follower_id = ?", actorID).Count(&count).Error
+	err = r.db.WithContext(ctx).Model(&touchdb.Follow{}).Where("follower_id = ?", actorID).Count(&count).Error
 	return count, err
 }
 
-func (r *actorQueryRepository) ResetPassword(ctx context.Context, actorID uint64, passwordHash string) error {
+func (r *actorQueryRepository) ResetPassword(ctx context.Context, actorPTID, passwordHash string) error {
+	actorID, err := r.resolveActorID(ctx, actorPTID)
+	if err != nil {
+		return err
+	}
 	result := r.db.WithContext(ctx).Model(&touchdb.Actor{}).Where("id = ?", actorID).Update("password_hash", passwordHash)
 	if result.Error != nil {
 		return result.Error
@@ -134,7 +168,11 @@ func (r *actorQueryRepository) ResetPassword(ctx context.Context, actorID uint64
 	return nil
 }
 
-func (r *actorQueryRepository) ListActorSessions(ctx context.Context, actorID uint64) ([]domain.ActorSessionInfo, error) {
+func (r *actorQueryRepository) ListActorSessions(ctx context.Context, actorPTID string) ([]domain.ActorSessionInfo, error) {
+	actorID, err := r.resolveActorID(ctx, actorPTID)
+	if err != nil {
+		return nil, err
+	}
 	var sessions []struct {
 		SessionID     string    `gorm:"column:session_id"`
 		DeviceType    string    `gorm:"column:device_type"`
@@ -147,7 +185,7 @@ func (r *actorQueryRepository) ListActorSessions(ctx context.Context, actorID ui
 		RevokedReason string    `gorm:"column:revoked_reason"`
 	}
 
-	err := r.db.WithContext(ctx).Table("actor_sessions").
+	err = r.db.WithContext(ctx).Table("actor_sessions").
 		Where("user_id = ?", actorID).
 		Order("created_at DESC").
 		Limit(50).
@@ -174,12 +212,23 @@ func (r *actorQueryRepository) ListActorSessions(ctx context.Context, actorID ui
 	return result, nil
 }
 
-func (r *actorQueryRepository) RevokeActorSession(ctx context.Context, sessionID string) error {
+func (r *actorQueryRepository) RevokeActorSession(ctx context.Context, actorPTID, sessionID string) error {
+	actorID, err := r.resolveActorID(ctx, actorPTID)
+	if err != nil {
+		return err
+	}
 	now := time.Now()
-	return r.db.WithContext(ctx).Exec(
-		"UPDATE actor_sessions SET revoked = ?, revoked_at = ?, revoked_reason = ? WHERE session_id = ? AND revoked = ?",
-		true, now, "revoked_by_admin", sessionID, false,
-	).Error
+	result := r.db.WithContext(ctx).Exec(
+		"UPDATE actor_sessions SET revoked = ?, revoked_at = ?, revoked_reason = ? WHERE session_id = ? AND user_id = ? AND revoked = ?",
+		true, now, "revoked_by_admin", sessionID, actorID, false,
+	)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +312,7 @@ func (r *actorQueryRepository) CountPostsSince(ctx context.Context, since time.T
 func (r *actorQueryRepository) ListActivePeersSessions(ctx context.Context, limit int) ([]domain.PeersSessionInfo, error) {
 	type row struct {
 		SessionID         string    `gorm:"column:session_id"`
-		UserID            uint64    `gorm:"column:user_id"`
+		ActorPTID         string    `gorm:"column:actor_ptid"`
 		PreferredUsername string    `gorm:"column:preferred_username"`
 		Email             string    `gorm:"column:email"`
 		DeviceType        string    `gorm:"column:device_type"`
@@ -282,7 +331,7 @@ func (r *actorQueryRepository) ListActivePeersSessions(ctx context.Context, limi
 	now := time.Now()
 	err := r.db.WithContext(ctx).
 		Table("actor_sessions AS s").
-		Select(`s.session_id, s.user_id, s.device_type, s.ip_address, s.user_agent,
+		Select(`s.session_id, a.ptid AS actor_ptid, s.device_type, s.ip_address, s.user_agent,
 		         s.created_at, s.expires_at, s.last_active_at,
 		         a.preferred_username, COALESCE(s.email, a.email) AS email`).
 		Joins("LEFT JOIN touch_actor a ON a.id = s.user_id").
@@ -298,7 +347,7 @@ func (r *actorQueryRepository) ListActivePeersSessions(ctx context.Context, limi
 	for _, r := range rows {
 		out = append(out, domain.PeersSessionInfo{
 			SessionID:         r.SessionID,
-			UserID:            r.UserID,
+			ActorPTID:         r.ActorPTID,
 			PreferredUsername: r.PreferredUsername,
 			Email:             r.Email,
 			DeviceType:        r.DeviceType,
@@ -314,10 +363,14 @@ func (r *actorQueryRepository) ListActivePeersSessions(ctx context.Context, limi
 
 // CountActiveSessionsByActor returns the number of non-revoked, unexpired
 // sessions for a single actor.
-func (r *actorQueryRepository) CountActiveSessionsByActor(ctx context.Context, actorID uint64) (int64, error) {
+func (r *actorQueryRepository) CountActiveSessionsByActor(ctx context.Context, actorPTID string) (int64, error) {
+	actorID, err := r.resolveActorID(ctx, actorPTID)
+	if err != nil {
+		return 0, err
+	}
 	var c int64
 	now := time.Now()
-	err := r.db.WithContext(ctx).
+	err = r.db.WithContext(ctx).
 		Table("actor_sessions").
 		Where("user_id = ? AND revoked = ? AND expires_at > ?", actorID, false, now).
 		Count(&c).Error
@@ -327,11 +380,15 @@ func (r *actorQueryRepository) CountActiveSessionsByActor(ctx context.Context, a
 // LastLoginAtByActor returns the timestamp of the most recently created
 // session for the given actor (best available proxy for "last login").
 // Returns nil if the actor has never logged in.
-func (r *actorQueryRepository) LastLoginAtByActor(ctx context.Context, actorID uint64) (*time.Time, error) {
+func (r *actorQueryRepository) LastLoginAtByActor(ctx context.Context, actorPTID string) (*time.Time, error) {
+	actorID, err := r.resolveActorID(ctx, actorPTID)
+	if err != nil {
+		return nil, err
+	}
 	var row struct {
 		CreatedAt *time.Time `gorm:"column:created_at"`
 	}
-	err := r.db.WithContext(ctx).
+	err = r.db.WithContext(ctx).
 		Table("actor_sessions").
 		Select("MAX(created_at) AS created_at").
 		Where("user_id = ?", actorID).

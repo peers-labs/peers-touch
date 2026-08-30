@@ -79,7 +79,7 @@ export default function AccessGatesPage() {
         enabled_gates: policy.enabled_gates ?? [],
         allowed_emails: (policy.allowed_emails ?? []).join('\n'),
         allowed_usernames: (policy.allowed_usernames ?? []).join('\n'),
-        allowed_actor_ids: (policy.allowed_actor_ids ?? []).join('\n'),
+        allowed_actor_ptids: (policy.allowed_actor_ptids ?? []).join('\n'),
       });
     } catch (err) {
       log.error('access-gates', 'Failed to load access policy');
@@ -112,9 +112,7 @@ export default function AccessGatesPage() {
         enabled_gates: values.enabled_gates ?? [],
         allowed_emails: parseList(values.allowed_emails || ''),
         allowed_usernames: parseList(values.allowed_usernames || ''),
-        allowed_actor_ids: parseList(values.allowed_actor_ids || '')
-          .map((s) => Number(s))
-          .filter((n) => Number.isFinite(n)),
+        allowed_actor_ptids: parseList(values.allowed_actor_ptids || ''),
       });
       message.success('Access policy updated');
       loadPolicy();
@@ -260,8 +258,8 @@ export default function AccessGatesPage() {
         <Input.TextArea rows={3} placeholder="alice" />
       </Form.Item>
 
-      <Form.Item name="allowed_actor_ids" label="Allowed actor IDs" tooltip="One numeric ID per line.">
-        <Input.TextArea rows={3} placeholder="1001" />
+      <Form.Item name="allowed_actor_ptids" label="Allowed actor PTIDs" tooltip="One PTID per line.">
+        <Input.TextArea rows={3} placeholder="p1..." />
       </Form.Item>
 
       <Button type="primary" icon={<Save size={14} />} loading={savingPolicy} onClick={handleSavePolicy}>

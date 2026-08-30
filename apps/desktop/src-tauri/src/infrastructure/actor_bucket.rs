@@ -1,15 +1,9 @@
-//! Resolve `actor_id` to per-actor in-memory store bucket keys.
+//! Validate PTID keys for per-actor in-memory stores.
 
-const DEFAULT_ACTOR_BUCKET: &str = "__default__";
-
-/// Map empty `actor_id` to a dedicated bucket (legacy + tests). Logs at info.
-pub fn actor_bucket_id(actor_id: &str) -> String {
-    if actor_id.is_empty() {
-        tracing::info!(
-            target: "actor_bucket",
-            "empty actor_id; using __default__ in-memory store bucket (legacy or tests)"
-        );
-        return DEFAULT_ACTOR_BUCKET.to_string();
+pub fn actor_bucket_id(actor_ptid: &str) -> Result<String, &'static str> {
+    let actor_ptid = actor_ptid.trim();
+    if !actor_ptid.starts_with("ptid:") {
+        return Err("canonical actor PTID is required");
     }
-    actor_id.to_string()
+    Ok(actor_ptid.to_string())
 }

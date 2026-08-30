@@ -26,11 +26,12 @@ func (s *subServer) handleHeartbeat(ctx context.Context, _ *model.PresenceHeartb
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	status, err := s.service.Heartbeat(subject.ID, subject.SessionID)
+	actorPTID := subject.ID
+	status, err := s.service.Heartbeat(actorPTID, subject.SessionID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to update presence heartbeat", err)
 	}
-	return updateResponse(subject.ID, subject.SessionID, status), nil
+	return updateResponse(actorPTID, subject.SessionID, status), nil
 }
 
 func (s *subServer) handleOffline(ctx context.Context, _ *model.PresenceOfflineRequest) (*model.PresenceUpdateResponse, error) {
@@ -38,18 +39,19 @@ func (s *subServer) handleOffline(ctx context.Context, _ *model.PresenceOfflineR
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	status, err := s.service.Offline(subject.ID, subject.SessionID)
+	actorPTID := subject.ID
+	status, err := s.service.Offline(actorPTID, subject.SessionID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to mark presence offline", err)
 	}
-	return updateResponse(subject.ID, subject.SessionID, status), nil
+	return updateResponse(actorPTID, subject.SessionID, status), nil
 }
 
 func (s *subServer) handleQuery(ctx context.Context, req *model.PresenceQueryRequest) (*model.PresenceQueryResponse, error) {
 	if auth.GetSubject(ctx) == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	statuses, err := s.service.Query(req.ActorIds)
+	statuses, err := s.service.Query(req.ActorPtids)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to query presence", err)
 	}
@@ -60,9 +62,9 @@ func (s *subServer) handleQuery(ctx context.Context, req *model.PresenceQueryReq
 	return &model.PresenceQueryResponse{Statuses: out}, nil
 }
 
-func updateResponse(actorID, sessionID string, status domain.Status) *model.PresenceUpdateResponse {
+func updateResponse(actorPTID, sessionID string, status domain.Status) *model.PresenceUpdateResponse {
 	return &model.PresenceUpdateResponse{
-		ActorId:        actorID,
+		ActorPtid:      actorPTID,
 		SessionId:      sessionID,
 		State:          model.PresenceState(status.State),
 		LeaseExpiresAt: timestampOrNil(status.LeaseExpiresAt),
@@ -71,7 +73,7 @@ func updateResponse(actorID, sessionID string, status domain.Status) *model.Pres
 
 func statusResponse(status domain.Status) *model.PresenceStatus {
 	return &model.PresenceStatus{
-		ActorId:        status.ActorID,
+		ActorPtid:      status.ActorPTID,
 		State:          model.PresenceState(status.State),
 		LastSeenAt:     timestampOrNil(status.LastSeenAt),
 		LeaseExpiresAt: timestampOrNil(status.LeaseExpiresAt),

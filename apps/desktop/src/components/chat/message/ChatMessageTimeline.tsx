@@ -30,11 +30,11 @@ interface ChatThreadStats {
 interface ChatMessageTimelineProps {
   activeConversationId: string;
   activeKind: ChatSurfaceKind;
-  currentUserDid: string | null;
+  currentUserPtid: string | null;
   getSenderProfile: (
     kind: ChatSurfaceKind,
     conversationUlid: string,
-    senderDid: string,
+    senderPtid: string,
   ) => DesktopIMSenderProfileProjection;
   highlightedMessageUlid: string | null;
   isPinned: (message: ChatMessage) => boolean;
@@ -52,7 +52,7 @@ interface ChatMessageTimelineProps {
     emoji: string;
     phase: 'pending' | 'awaiting-projection' | 'error';
   } | undefined;
-  resolveReactions: (message: ChatMessage) => { actorId: string; emoji: string }[];
+  resolveReactions: (message: ChatMessage) => { actorPtid: string; emoji: string }[];
   resolveThreadStats: (message: ChatMessage) => ChatThreadStats;
   actionOverlayHostRef: React.RefObject<HTMLDivElement | null>;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -106,7 +106,7 @@ const ESTIMATED_ROW_HEIGHT = 72;
 export function ChatMessageTimeline({
   activeConversationId,
   activeKind,
-  currentUserDid,
+  currentUserPtid,
   getSenderProfile,
   highlightedMessageUlid,
   isPinned,
@@ -213,7 +213,7 @@ export function ChatMessageTimeline({
       <ChatMessageRowInteractionStyle />
       <ChatMessageActionOverlay
         key={actionTarget?.message.ulid ?? 'no-message-action'}
-        currentUserDid={currentUserDid}
+        currentUserPtid={currentUserPtid}
         hostElement={actionOverlayHostRef.current}
         onDelete={onDelete}
         onDismiss={dismissActions}
@@ -264,7 +264,7 @@ export function ChatMessageTimeline({
               <ChatMessageRow
                 activeConversationId={activeConversationId}
                 activeKind={activeKind}
-                currentUserDid={currentUserDid}
+                currentUserPtid={currentUserPtid}
                 getSenderProfile={getSenderProfile}
                 highlighted={highlightedMessageUlid === message.ulid}
                 message={message}

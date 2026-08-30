@@ -19,11 +19,11 @@
     },
     {
       "id": "mobile",
-      "status": "planned",
-      "profile": "",
-      "capabilities": "",
-      "coverage": "not_onboarded",
-      "notes": "Needs mobile-web, Tauri mobile runtime, native plugin, and device/simulator acceptance boundaries."
+      "status": "active",
+      "profile": "tooling/acceptance/domains/mobile.yaml",
+      "capabilities": "tooling/acceptance/capabilities/mobile.yaml",
+      "coverage": "managed_domain",
+      "notes": "Structurally onboarded managed domain. Native iOS/Android product journeys remain UNPROVEN until the mobile-native environment Gates pass."
     },
     {
       "id": "applet",

@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package peers_touch.model.peer.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/peer;peer";
+
+// StationIdentityRequest is sent before authentication. Challenge must contain
+// exactly 32 cryptographically random bytes.
+message StationIdentityRequest {
+  bytes challenge = 1;
+}
+
+// StationIdentityStatement is the deterministic payload signed by the
+// Station's libp2p Ed25519 host key. Capabilities are sorted by UTF-8 bytes.
+message StationIdentityStatement {
+  bytes challenge = 1;
+  string station_peer_id = 2;
+  string canonical_origin = 3;
+  repeated string capabilities = 4;
+  int64 issued_at_unix_ms = 5;
+  int64 expires_at_unix_ms = 6;
+}
+
+message StationIdentityResponse {
+  bytes statement_bytes = 1;
+  bytes host_public_key = 2;
+  bytes signature = 3;
+}

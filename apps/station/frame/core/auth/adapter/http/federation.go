@@ -118,7 +118,7 @@ func RequireFederationToken(
 
 			audience, err := audResolver(r)
 			if err != nil {
-				logger.Errorf(ctx, "[FederationToken] audience resolver: %v", err)
+				logger.Error(ctx, "[FederationToken] audience resolution failed")
 				writeAuthError(w, "internal_error", 500, "audience resolution failed")
 				return
 			}
@@ -133,11 +133,12 @@ func RequireFederationToken(
 					writeAuthError(w, "token_invalid", 401, "federation token required")
 					return
 				}
-				logger.Warnf(ctx, "[FederationToken] verify: %v", err)
+				logger.Warn(ctx, "[FederationToken] credentials rejected: validation failed")
 				writeAuthError(w, "token_invalid", 401, "token validation failed")
 				return
 			}
 
+			logger.Debug(ctx, "[FederationToken] authentication succeeded")
 			next.ServeHTTP(w, r.WithContext(withVerifiedClaims(r.Context(), claims)))
 		})
 	}

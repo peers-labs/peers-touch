@@ -37,6 +37,7 @@ ALLOWED_GATE_ENVIRONMENTS = {
     "fedp5",
     "home-station",
     "local-desktop-gateway",
+    "mobile-native",
     "native-tauri-embedded-webdriver",
 }
 

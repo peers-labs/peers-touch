@@ -152,7 +152,7 @@ func TestTTLSweeper_Integration_SoftDeletesExpiredAndDebits(t *testing.T) {
 	pastExpiry := now.Add(-time.Hour)
 
 	bucket := ossmodel.Bucket{
-		ID: "b-1", Name: "chat", OwnerActorID: "actor-a",
+		ID: "b-1", Name: "chat", OwnerPTID: "actor-a",
 		Kind: "system", SystemKey: "chat", DefaultVisibility: "chat",
 		QuotaBytes: 100, UsedBytes: 80, ObjectCount: 2,
 		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
@@ -163,12 +163,12 @@ func TestTTLSweeper_Integration_SoftDeletesExpiredAndDebits(t *testing.T) {
 
 	expired := ossmodel.FileMeta{
 		ID: "f-expired", Key: "cas/aa/expired", Name: "n", BucketID: "b-1",
-		OwnerActorID: "actor-a", Visibility: "chat", Backend: "local",
+		OwnerPTID: "actor-a", Visibility: "chat", Backend: "local",
 		Size: 30, ExpiresAt: &pastExpiry, CreatedAt: now.Add(-time.Hour),
 	}
 	live := ossmodel.FileMeta{
 		ID: "f-live", Key: "cas/bb/live", Name: "n", BucketID: "b-1",
-		OwnerActorID: "actor-a", Visibility: "chat", Backend: "local",
+		OwnerPTID: "actor-a", Visibility: "chat", Backend: "local",
 		Size: 50, CreatedAt: now.Add(-time.Hour),
 	}
 	if err := db.Create(&expired).Error; err != nil {
@@ -356,7 +356,7 @@ func TestBucketReconciler_Integration_CorrectsCountAndByteDrift(t *testing.T) {
 	// Bucket claims 999 bytes / 99 objects but the actual file
 	// rows below sum to 30 bytes / 1 row (one is soft-deleted).
 	bucket := ossmodel.Bucket{
-		ID: "b-drift", Name: "drifted", OwnerActorID: "actor-a", Kind: "user",
+		ID: "b-drift", Name: "drifted", OwnerPTID: "actor-a", Kind: "user",
 		DefaultVisibility: "private", QuotaBytes: 1 << 30,
 		UsedBytes: 999, ObjectCount: 99,
 		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
@@ -367,9 +367,9 @@ func TestBucketReconciler_Integration_CorrectsCountAndByteDrift(t *testing.T) {
 
 	deletedTS := now.Add(-time.Minute)
 	files := []ossmodel.FileMeta{
-		{ID: "f-1", Key: "k1", Name: "n", BucketID: "b-drift", OwnerActorID: "actor-a",
+		{ID: "f-1", Key: "k1", Name: "n", BucketID: "b-drift", OwnerPTID: "actor-a",
 			Visibility: "private", Backend: "local", Size: 30, CreatedAt: now.Add(-time.Hour)},
-		{ID: "f-2", Key: "k2", Name: "n", BucketID: "b-drift", OwnerActorID: "actor-a",
+		{ID: "f-2", Key: "k2", Name: "n", BucketID: "b-drift", OwnerPTID: "actor-a",
 			Visibility: "private", Backend: "local", Size: 1000,
 			DeletedAt: &deletedTS, CreatedAt: now.Add(-time.Hour)},
 	}

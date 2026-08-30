@@ -3,26 +3,17 @@ package actor
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
+
+	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
 )
 
 func ResolveSubjectPTID(ctx context.Context, subjectID string) (string, error) {
+	_ = ctx
 	subjectID = strings.TrimSpace(subjectID)
-	if strings.HasPrefix(subjectID, "ptid:") {
-		return subjectID, nil
-	}
-	actorID, err := strconv.ParseUint(subjectID, 10, 64)
+	ptid, err := identity.Parse(subjectID)
 	if err != nil {
-		return "", fmt.Errorf("subject %q is neither a PTID nor a numeric actor id", subjectID)
+		return "", fmt.Errorf("subject is not a valid PTID: %w", err)
 	}
-	record, err := GetActorByID(ctx, actorID)
-	if err != nil {
-		return "", err
-	}
-	ptid := strings.TrimSpace(record.PTID)
-	if ptid == "" {
-		return "", fmt.Errorf("actor %d has no canonical PTID", actorID)
-	}
-	return ptid, nil
+	return ptid.String(), nil
 }

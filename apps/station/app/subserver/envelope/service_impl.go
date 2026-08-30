@@ -98,12 +98,12 @@ func (s *DefaultService) Deliver(ctx context.Context, env *chat.StationEnvelope,
 	return err
 }
 
-func (s *DefaultService) Ack(ctx context.Context, recipientDID, deviceID, inboxItemID string) error {
+func (s *DefaultService) Ack(ctx context.Context, recipientPTID, deviceID, inboxItemID string) error {
 	return s.repo.MarkInboxAcked(ctx, inboxItemID)
 }
 
-func (s *DefaultService) Resume(ctx context.Context, recipientDID, deviceID string, afterCursor string) ([]*chat.DeviceInboxItem, error) {
-	return s.repo.UnackedInboxItems(ctx, recipientDID, deviceID, afterCursor, 500)
+func (s *DefaultService) Resume(ctx context.Context, recipientPTID, deviceID string, afterCursor string) ([]*chat.DeviceInboxItem, error) {
+	return s.repo.UnackedInboxItems(ctx, recipientPTID, deviceID, afterCursor, 500)
 }
 
 func (s *DefaultService) isLocalRecipient(env *chat.StationEnvelope) bool {
@@ -195,7 +195,7 @@ func (s *DefaultService) validateFederationClaims(env *chat.StationEnvelope, cla
 		return fmt.Errorf("audience mismatch: want %s got %s", localID, claims.AudienceStationPeerID)
 	}
 	if claims.SenderPtid != env.SenderPtid {
-		return fmt.Errorf("sender DID mismatch")
+		return fmt.Errorf("sender PTID mismatch")
 	}
 	if claims.ConversationID != "" && claims.ConversationID != env.ConversationId {
 		return fmt.Errorf("conversation_id mismatch")

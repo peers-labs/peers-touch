@@ -6,7 +6,7 @@ import { useMobileI18n } from '../app/mobileI18n';
 import logo from '../assets/logo.png';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useSocialStore } from '../features/social/socialStore';
-import type { StoredStationRegistry } from '../features/station/stationRegistry';
+import { activeStationEntry, type StoredStationRegistry } from '../features/station/stationRegistry';
 
 const { Text } = Typography;
 
@@ -23,8 +23,8 @@ export function SettingsPage({
 }) {
   const { t } = useMobileI18n();
   const [blockedOpen, setBlockedOpen] = useState(false);
-  const activeStation = stationRegistry.entries.find((entry) => entry.url === stationRegistry.activeUrl);
-  const displayName = authSession?.actor?.displayName || authSession?.actor?.username || authSession?.actor?.email;
+  const activeStation = activeStationEntry(stationRegistry);
+  const displayName = authSession?.actorRef.acct;
   const blockedUsers = useSocialStore((state) => state.blockedUsers);
   const refreshBlockedUsers = useSocialStore((state) => state.refreshBlockedUsers);
   const unblockUser = useSocialStore((state) => state.unblockUser);
@@ -57,7 +57,7 @@ export function SettingsPage({
           <div className="settings-station-copy">
             <Text strong>{activeStation?.label || t('mobile.launch.station')}</Text>
             <Text type="secondary" ellipsis>
-              {stationRegistry.activeUrl || t('mobile.settings.stationNotSelected')}
+              {activeStation?.url || t('mobile.settings.stationNotSelected')}
             </Text>
           </div>
           <Tag color={activeStation?.online ? 'green' : 'default'}>
@@ -95,14 +95,14 @@ export function SettingsPage({
                     key="unblock"
                     size="small"
                     icon={<RotateCcw size={13} />}
-                    onClick={() => unblockUser(item.targetDid)}
+                    onClick={() => unblockUser(item.targetPtid)}
                   >
                     {t('mobile.contacts.unblock')}
                   </Button>,
                 ]}
               >
                 <List.Item.Meta
-                  title={<Text copyable>{item.targetDid}</Text>}
+                  title={<Text copyable>{item.targetPtid}</Text>}
                   description={<Tag color="error">{t('mobile.contacts.blocked')}</Tag>}
                 />
               </List.Item>

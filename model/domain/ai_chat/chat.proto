@@ -8,7 +8,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/ai_
 
 message ChatSession {
   string id = 1;
-  string user_id = 2;
+  string actor_ptid = 2;
   string agent_id = 3;
   string title = 4;
   string description = 5;

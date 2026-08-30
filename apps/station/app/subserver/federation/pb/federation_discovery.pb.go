@@ -177,7 +177,7 @@ func (x *FederationCatalogSearchResponse) GetTotalCount() uint32 {
 
 type FederationCatalogEntry struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	ActorId           string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid         string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	FederatedHandle   string                 `protobuf:"bytes,2,opt,name=federated_handle,json=federatedHandle,proto3" json:"federated_handle,omitempty"`
 	DisplayName       string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	AvatarUrl         string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
@@ -218,9 +218,9 @@ func (*FederationCatalogEntry) Descriptor() ([]byte, []int) {
 	return file_domain_federation_federation_discovery_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *FederationCatalogEntry) GetActorId() string {
+func (x *FederationCatalogEntry) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -452,9 +452,10 @@ const file_domain_federation_federation_discovery_proto_rawDesc = "" +
 	"\aentries\x18\x01 \x03(\v27.peers_touch.model.federation.v1.FederationCatalogEntryR\aentries\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\rR\n" +
-	"totalCount\"\x9d\x02\n" +
-	"\x16FederationCatalogEntry\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12)\n" +
+	"totalCount\"\xa1\x02\n" +
+	"\x16FederationCatalogEntry\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12)\n" +
 	"\x10federated_handle\x18\x02 \x01(\tR\x0ffederatedHandle\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x1d\n" +
 	"\n" +

@@ -1211,7 +1211,7 @@ func (x *AppletCatalogItem) GetChannels() []*AppletVersionChannel {
 
 type AppletInstallState struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	AppletId      string                 `protobuf:"bytes,3,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
 	Version       string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
@@ -1255,9 +1255,9 @@ func (*AppletInstallState) Descriptor() ([]byte, []int) {
 	return file_domain_applet_applet_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *AppletInstallState) GetActorId() string {
+func (x *AppletInstallState) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -1328,7 +1328,7 @@ func (x *AppletInstallState) GetStatusReason() string {
 type AppletAuditRecord struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AuditId       string                 `protobuf:"bytes,1,opt,name=audit_id,json=auditId,proto3" json:"audit_id,omitempty"`
-	ActorId       string                 `protobuf:"bytes,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,2,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	DeviceId      string                 `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	AppletId      string                 `protobuf:"bytes,4,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
 	Version       string                 `protobuf:"bytes,5,opt,name=version,proto3" json:"version,omitempty"`
@@ -1380,9 +1380,9 @@ func (x *AppletAuditRecord) GetAuditId() string {
 	return ""
 }
 
-func (x *AppletAuditRecord) GetActorId() string {
+func (x *AppletAuditRecord) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -1463,7 +1463,7 @@ type ListAppletsRequest struct {
 	Limit                 int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
 	Offset                int32                  `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
 	SearchKeyword         string                 `protobuf:"bytes,3,opt,name=search_keyword,json=searchKeyword,proto3" json:"search_keyword,omitempty"` // Optional
-	ActorId               string                 `protobuf:"bytes,4,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid             string                 `protobuf:"bytes,4,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	DeviceId              string                 `protobuf:"bytes,5,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	TargetPlatform        string                 `protobuf:"bytes,6,opt,name=target_platform,json=targetPlatform,proto3" json:"target_platform,omitempty"`
 	Channel               AppletReleaseChannel   `protobuf:"varint,7,opt,name=channel,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channel,omitempty"`
@@ -1523,9 +1523,9 @@ func (x *ListAppletsRequest) GetSearchKeyword() string {
 	return ""
 }
 
-func (x *ListAppletsRequest) GetActorId() string {
+func (x *ListAppletsRequest) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -1921,7 +1921,7 @@ func (x *PublishAppletResponse) GetVersion() *AppletVersionInfo {
 
 type ListAppletCatalogRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	ActorId        string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid      string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	DeviceId       string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	TargetPlatform string                 `protobuf:"bytes,3,opt,name=target_platform,json=targetPlatform,proto3" json:"target_platform,omitempty"`
 	Channel        AppletReleaseChannel   `protobuf:"varint,4,opt,name=channel,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channel,omitempty"`
@@ -1962,9 +1962,9 @@ func (*ListAppletCatalogRequest) Descriptor() ([]byte, []int) {
 	return file_domain_applet_applet_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *ListAppletCatalogRequest) GetActorId() string {
+func (x *ListAppletCatalogRequest) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -2177,7 +2177,7 @@ func (x *GetAppletVersionResponse) GetPolicy() *AppletPolicySet {
 
 type InstallAppletRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	AppletId      string                 `protobuf:"bytes,3,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
 	Version       string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
@@ -2217,9 +2217,9 @@ func (*InstallAppletRequest) Descriptor() ([]byte, []int) {
 	return file_domain_applet_applet_proto_rawDescGZIP(), []int{22}
 }
 
-func (x *InstallAppletRequest) GetActorId() string {
+func (x *InstallAppletRequest) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -2305,7 +2305,7 @@ func (x *InstallAppletResponse) GetState() *AppletInstallState {
 
 type UninstallAppletRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	AppletId      string                 `protobuf:"bytes,3,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -2342,9 +2342,9 @@ func (*UninstallAppletRequest) Descriptor() ([]byte, []int) {
 	return file_domain_applet_applet_proto_rawDescGZIP(), []int{24}
 }
 
-func (x *UninstallAppletRequest) GetActorId() string {
+func (x *UninstallAppletRequest) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -2409,7 +2409,7 @@ func (x *UninstallAppletResponse) GetState() *AppletInstallState {
 
 type ListInstalledAppletsRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	ActorId         string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid       string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	DeviceId        string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	IncludeDisabled bool                   `protobuf:"varint,3,opt,name=include_disabled,json=includeDisabled,proto3" json:"include_disabled,omitempty"`
 	unknownFields   protoimpl.UnknownFields
@@ -2446,9 +2446,9 @@ func (*ListInstalledAppletsRequest) Descriptor() ([]byte, []int) {
 	return file_domain_applet_applet_proto_rawDescGZIP(), []int{26}
 }
 
-func (x *ListInstalledAppletsRequest) GetActorId() string {
+func (x *ListInstalledAppletsRequest) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -2841,7 +2841,7 @@ func (x *IngestAppletAuditResponse) GetRejectedAuditIds() []string {
 
 type QueryAppletAuditRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	AppletId      string                 `protobuf:"bytes,3,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
 	SessionId     string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -2883,9 +2883,9 @@ func (*QueryAppletAuditRequest) Descriptor() ([]byte, []int) {
 	return file_domain_applet_applet_proto_rawDescGZIP(), []int{34}
 }
 
-func (x *QueryAppletAuditRequest) GetActorId() string {
+func (x *QueryAppletAuditRequest) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -3094,9 +3094,10 @@ const file_domain_applet_applet_proto_rawDesc = "" +
 	"\x04info\x18\x01 \x01(\v2%.peers_touch.domain.applet.AppletInfoR\x04info\x12F\n" +
 	"\aversion\x18\x02 \x01(\v2,.peers_touch.domain.applet.AppletVersionInfoR\aversion\x12R\n" +
 	"\rinstall_state\x18\x03 \x01(\v2-.peers_touch.domain.applet.AppletInstallStateR\finstallState\x12K\n" +
-	"\bchannels\x18\x04 \x03(\v2/.peers_touch.domain.applet.AppletVersionChannelR\bchannels\"\x8b\x04\n" +
-	"\x12AppletInstallState\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\bchannels\x18\x04 \x03(\v2/.peers_touch.domain.applet.AppletVersionChannelR\bchannels\"\x8f\x04\n" +
+	"\x12AppletInstallState\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1b\n" +
 	"\tapplet_id\x18\x03 \x01(\tR\bappletId\x12\x18\n" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12I\n" +
@@ -3110,10 +3111,11 @@ const file_domain_applet_applet_proto_rawDesc = "" +
 	" \x01(\tR\fstatusReason\x1a9\n" +
 	"\vConfigEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8e\x04\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x92\x04\n" +
 	"\x11AppletAuditRecord\x12\x19\n" +
-	"\baudit_id\x18\x01 \x01(\tR\aauditId\x12\x19\n" +
-	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1b\n" +
+	"\baudit_id\x18\x01 \x01(\tR\aauditId\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x02 \x01(\tR\tactorPtid\x12\x1b\n" +
 	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12\x1b\n" +
 	"\tapplet_id\x18\x04 \x01(\tR\bappletId\x12\x18\n" +
 	"\aversion\x18\x05 \x01(\tR\aversion\x12\x1d\n" +
@@ -3131,12 +3133,13 @@ const file_domain_applet_applet_proto_rawDesc = "" +
 	"recordedAt\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcd\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd1\x02\n" +
 	"\x12ListAppletsRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x05R\x06offset\x12%\n" +
-	"\x0esearch_keyword\x18\x03 \x01(\tR\rsearchKeyword\x12\x19\n" +
-	"\bactor_id\x18\x04 \x01(\tR\aactorId\x12\x1b\n" +
+	"\x0esearch_keyword\x18\x03 \x01(\tR\rsearchKeyword\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x04 \x01(\tR\tactorPtid\x12\x1b\n" +
 	"\tdevice_id\x18\x05 \x01(\tR\bdeviceId\x12'\n" +
 	"\x0ftarget_platform\x18\x06 \x01(\tR\x0etargetPlatform\x12I\n" +
 	"\achannel\x18\a \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\x126\n" +
@@ -3170,9 +3173,10 @@ const file_domain_applet_applet_proto_rawDesc = "" +
 	"\n" +
 	"version_id\x18\x02 \x01(\tR\tversionId\x12\"\n" +
 	"\ris_new_applet\x18\x03 \x01(\bR\visNewApplet\x12F\n" +
-	"\aversion\x18\x04 \x01(\v2,.peers_touch.domain.applet.AppletVersionInfoR\aversion\"\x9b\x02\n" +
-	"\x18ListAppletCatalogRequest\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\aversion\x18\x04 \x01(\v2,.peers_touch.domain.applet.AppletVersionInfoR\aversion\"\x9f\x02\n" +
+	"\x18ListAppletCatalogRequest\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12'\n" +
 	"\x0ftarget_platform\x18\x03 \x01(\tR\x0etargetPlatform\x12I\n" +
 	"\achannel\x18\x04 \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\x12%\n" +
@@ -3189,9 +3193,10 @@ const file_domain_applet_applet_proto_rawDesc = "" +
 	"\achannel\x18\x03 \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\"\xa6\x01\n" +
 	"\x18GetAppletVersionResponse\x12F\n" +
 	"\aversion\x18\x01 \x01(\v2,.peers_touch.domain.applet.AppletVersionInfoR\aversion\x12B\n" +
-	"\x06policy\x18\x02 \x01(\v2*.peers_touch.domain.applet.AppletPolicySetR\x06policy\"\xe0\x02\n" +
-	"\x14InstallAppletRequest\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\x06policy\x18\x02 \x01(\v2*.peers_touch.domain.applet.AppletPolicySetR\x06policy\"\xe4\x02\n" +
+	"\x14InstallAppletRequest\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1b\n" +
 	"\tapplet_id\x18\x03 \x01(\tR\bappletId\x12\x18\n" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12I\n" +
@@ -3201,15 +3206,17 @@ const file_domain_applet_applet_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\\\n" +
 	"\x15InstallAppletResponse\x12C\n" +
-	"\x05state\x18\x01 \x01(\v2-.peers_touch.domain.applet.AppletInstallStateR\x05state\"m\n" +
-	"\x16UninstallAppletRequest\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\x05state\x18\x01 \x01(\v2-.peers_touch.domain.applet.AppletInstallStateR\x05state\"q\n" +
+	"\x16UninstallAppletRequest\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1b\n" +
 	"\tapplet_id\x18\x03 \x01(\tR\bappletId\"^\n" +
 	"\x17UninstallAppletResponse\x12C\n" +
-	"\x05state\x18\x01 \x01(\v2-.peers_touch.domain.applet.AppletInstallStateR\x05state\"\x80\x01\n" +
-	"\x1bListInstalledAppletsRequest\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\x05state\x18\x01 \x01(\v2-.peers_touch.domain.applet.AppletInstallStateR\x05state\"\x84\x01\n" +
+	"\x1bListInstalledAppletsRequest\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12)\n" +
 	"\x10include_disabled\x18\x03 \x01(\bR\x0fincludeDisabled\"e\n" +
 	"\x1cListInstalledAppletsResponse\x12E\n" +
@@ -3235,9 +3242,10 @@ const file_domain_applet_applet_proto_rawDesc = "" +
 	"\arecords\x18\x01 \x03(\v2,.peers_touch.domain.applet.AppletAuditRecordR\arecords\"p\n" +
 	"\x19IngestAppletAuditResponse\x12%\n" +
 	"\x0eaccepted_count\x18\x01 \x01(\x05R\racceptedCount\x12,\n" +
-	"\x12rejected_audit_ids\x18\x02 \x03(\tR\x10rejectedAuditIds\"\xf5\x01\n" +
-	"\x17QueryAppletAuditRequest\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\x12rejected_audit_ids\x18\x02 \x03(\tR\x10rejectedAuditIds\"\xf9\x01\n" +
+	"\x17QueryAppletAuditRequest\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1b\n" +
 	"\tapplet_id\x18\x03 \x01(\tR\bappletId\x12\x1d\n" +
 	"\n" +

@@ -1,5 +1,9 @@
 # Peers Touch 多端同步协议设计
 
+> Durable-command ledger、unknown-outcome readback 与 platform
+> `InteractionAdmission` ownership 已随 Mobile PRODUCT/DESIGN package 于
+> 2026-08-27 接受。
+
 ## 1. 文档目标
 
 ### 1.1 目标
@@ -68,7 +72,7 @@
 | Station 为真源 | 所有跨端可见状态的权威版本由 Station 持有，端侧仅缓存与编排 |
 | 最终一致性 | 网络抖动或离线期间端侧可暂时不一致，重连后收敛到 Station 状态 |
 | 端侧缓存为加速 | 端侧缓存存在的目的是减少延迟与流量，不作为业务决策依据 |
-| 幂等操作 | 所有写操作均设计为幂等（重复提交不产生副作用），安全支持重试与重放 |
+| 明确写语义 | 每个写操作声明幂等性；只有具备稳定 command ID、Station 去重和结果 readback 的操作才能自动重放 |
 | 增量优先 | 优先增量同步，全量同步仅用于首次加载或极端不一致恢复 |
 | Mobile 仅走 Relay | Mobile 端不参与 P2P 网络，所有通信经由 Station 中继 |
 | Mobile 生命周期感知 | 前台使用事件流，后台依赖 push 与系统任务，恢复前台必须 delta sync |
@@ -200,7 +204,8 @@
 
 **实时通道**：
 - Station SSE 推送 `chat.message.appended`、`chat.message.delivered`、`chat.message.read` 事件。
-- 事件 Payload 携带 `convId`、`msgId`、`senderId`、`content`（摘要）、`timestamp`。
+- 事件 Payload 通过 generated Proto 携带 conversation/message IDs、
+  `sender_ptid`、content 摘要与 timestamp。
 
 **离线补齐**：
 - 客户端启动后调用 `GET /friend-chat/message/pending` 拉取离线期间的待投递消息。
@@ -517,7 +522,8 @@
 **状态定义**：
 - `ONLINE`：SSE 连接正常，实时推送可用。
 - `DEGRADED`：SSE 断开但 HTTP API 可达，退化为轮询模式。
-- `OFFLINE`：网络完全不可用，所有写操作进入离线队列。
+- `OFFLINE`：网络完全不可用；只有具备已批准 durable-command contract 的
+  写操作进入队列，其他写操作保持草稿或显式不可用。
 
 **检测机制**：
 - Android：`ConnectivityManager` 监听网络变化 + SSE 连接状态。
@@ -543,34 +549,41 @@
 ### 6.3 离线操作队列
 
 **设计原则**：
-- 写操作在离线时不丢弃，进入本地队列等待重连后重放。
-- 队列按操作提交时间排序，FIFO 执行。
-- 每个操作携带幂等 Key（由端侧生成的临时 ULID），防止重复执行。
+- Frontend Runtime `InteractionAdmission` owns shared work semantics；Mobile
+  `commandRuntime` is its platform implementation.
+- 每个可排队操作携带稳定 command ID，并要求 Station 去重与结果 readback。
+- 同一 `ordering_key` 串行，跨 key 公平调度；不使用跨域全局 FIFO。
+- 响应可能丢失的写进入 `unknown-outcome`，readback 前禁止自动重放。
+- 容量耗尽返回 typed overload，不丢弃或覆盖未完成操作。
 
 **队列存储**：
-- Android：Room 数据库中的 `offline_operations` 表。
-- iOS：SwiftData 中的 `OfflineOperation` 模型。
+- 单一持久化 owner：`mobile-rust` encrypted transactional command ledger。
+- mobile-web 只通过 typed Tauri commands 访问，不直接持久化命令。
+- Android/iOS native plugins 不维护第二份 Room/SwiftData outbox。
 
 **队列操作结构**：
 
 ```text
-OfflineOperation {
-    id: String (ULID)
-    module: String ("chat" | "ai_chat" | "settings" | ...)
-    action: String ("send_message" | "mark_read" | "update_settings" | ...)
-    payload: Bytes (Proto 序列化的请求体)
-    created_at: Timestamp
-    retry_count: Int
-    max_retries: Int (默认 3)
-    status: Enum (PENDING | EXECUTING | FAILED | SUCCEEDED)
+MobileDurableCommand {
+    schema_revision
+    command_id
+    station_peer_id
+    actor_ptid
+    ordering_key
+    command_kind
+    oneof typed_payload
+    created_at
+    attempt_count
+    state
+    last_error_code
 }
 ```
 
 **支持离线排队的操作**：
-- Chat：发送消息、标记已读
-- AI Chat：创建会话、发送消息
-- Settings：更新偏好
-- Timeline：点赞、评论
+- Chat、Settings、Timeline 等操作只有在各自 Station command
+  idempotency/readback contract 完成后才启用。
+- 大媒体字节不进入 ledger；记录仅引用已加密 blob。
+- 未具备 contract 的操作保留用户草稿并解释不可用原因。
 
 ### 6.4 重连后同步重放流程
 
@@ -585,11 +598,11 @@ OfflineOperation {
 │     └── SSE 重连后 Station 自动推送断连期间的事件               │
 │     └── 若 Last-Event-ID 过期，退化为增量拉取                  │
 │                                                                │
-│  3. 回放离线操作队列                                           │
-│     └── 按 FIFO 顺序逐条执行                                  │
-│     └── 每条操作执行成功后从队列删除                            │
-│     └── 失败时 retry_count++，超过 max_retries 标记 FAILED     │
-│     └── FAILED 操作提示用户手动处理                             │
+│  3. 收敛 durable command ledger                               │
+│     └── 校验 station_peer_id + actor_ptid                      │
+│     └── unknown-outcome 先查 command result / authoritative readback │
+│     └── 仅重放已证明未提交且允许同 command ID 幂等重试的操作    │
+│     └── 按 ordering key 串行、跨 key 公平调度                  │
 │                                                                │
 │  4. 增量拉取关键数据                                           │
 │     └── Chat：拉取离线消息 + 更新未读计数                       │
@@ -604,7 +617,8 @@ OfflineOperation {
 
 ### 6.5 冲突检测与提示
 - 离线队列回放时，若 Station 返回 `409 Conflict` 或版本不匹配错误：
-  - 消息发送冲突：极少发生（ULID 全局唯一），若发生则重新生成 ULID 重试。
+  - 消息发送冲突：保留原 command ID 并查询 authoritative result；禁止换 ID
+    盲重试。
   - 设置冲突：以 Station 返回值覆盖本地（LWW），提示用户"设置已被其他设备更新"。
   - 已读状态冲突：不提示，静默以 Station 值为准。
 
@@ -665,20 +679,23 @@ OfflineOperation {
 ```
 
 **平台实现**：
-- Android：`EventRouter` 作为 Singleton，注入到 Hilt DI 容器。各模块 Handler 通过 `@Inject` 注册。
-- iOS：`EventRouter` 作为 Environment Object，各模块 Handler 通过协议注册。
+- `mobile-web` shared event ingress 负责 Proto decode、dedup、cursor/gap 和
+  runtime routing。
+- `mobile-rust` 与 Android/iOS native plugins 只负责连接、push、resume 和
+  network wakeup，不直接注册业务 Handler 或修改 projection。
 
 ### 7.3 事件消息格式
 
-Station 推送的 SSE 事件遵循以下 JSON Envelope 格式：
+Station 推送事件使用 `model/domain/realtime/event.proto` 生成契约。下列仅为
+字段语义示意，不是可独立实现的 JSON 真源：
 
 ```json
 {
   "eventId": "20260331T120000.123456789",
   "version": 1,
   "type": "chat.message.appended",
-  "actorId": "did:peers:alice",
-  "targetId": "did:peers:bob",
+  "actor_ptid": "p:alice",
+  "target_ptid": "p:bob",
   "objectId": "01JQXYZ...",
   "scope": "actor",
   "seq": 42,
@@ -686,7 +703,7 @@ Station 推送的 SSE 事件遵循以下 JSON Envelope 格式：
   "payload": {
     "convId": "01JQABC...",
     "msgId": "01JQXYZ...",
-    "senderId": "did:peers:alice",
+    "sender_ptid": "p:alice",
     "content": "Hello!",
     "msgType": "text",
     "timestamp": 1743422400123
@@ -698,8 +715,8 @@ Station 推送的 SSE 事件遵循以下 JSON Envelope 格式：
 - `eventId`：事件唯一标识，用于去重与 ACK。
 - `version`：事件 Schema 版本，用于兼容性检查。
 - `type`：事件类型，决定路由到哪个 Handler。
-- `actorId`：事件发起者。
-- `targetId`：事件接收者。
+- `actor_ptid`：事件发起者的 canonical PTID。
+- `target_ptid`：事件接收者的 canonical PTID。
 - `objectId`：关联的业务对象 ID。
 - `scope`：投递范围（`actor` / `conv` / `content`）。
 - `seq`：每个 target 维度的递增序列号，用于检测事件丢失。
@@ -794,7 +811,7 @@ Station 推送的 SSE 事件遵循以下 JSON Envelope 格式：
 | F-04 | 已读状态同步 | 一端标记已读后，其他端 5 秒内更新已读状态 |
 | F-05 | AI Chat 流式响应 | Mobile 端收到 AI 流式响应延迟不超过 Desktop 端 500ms |
 | F-06 | 设置跨端同步 | 在一端修改账户级设置，其他端 10 秒内生效 |
-| F-07 | 离线操作队列 | 离线发送的消息在重连后自动发送，用户无需手动重试 |
+| F-07 | 离线操作队列 | 已批准的幂等命令自动恢复；unknown outcome 先 readback，未证明未提交时不重放 |
 | F-08 | Applet 版本同步 | Applet 更新后，各端在下次启动该 Applet 时自动更新 Bundle |
 
 ### 9.2 性能验收

@@ -1,7 +1,7 @@
 use messaging_core::contracts::{
     ActorReadReceiveCommit, ConversationProjection, ConversationStateReceiveCommit,
-    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit,
-    InteractionReceiveCommit, PublicEventReceiveCommit, ReceiveCommitResult,
+    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit, InteractionReceiveCommit,
+    PublicEventReceiveCommit, ReceiveCommitResult,
 };
 use messaging_core::crypto::double_ratchet::DrSkippedMessageKey;
 use messaging_core::crypto::session::DirectSession;
@@ -71,10 +71,7 @@ impl MessagingRepository for MobileMessagingStore {
         Err("Mobile adapter not yet implemented".into())
     }
 
-    fn commit_actor_read_cursor(
-        &self,
-        _commit: &ActorReadReceiveCommit,
-    ) -> Result<(), String> {
+    fn commit_actor_read_cursor(&self, _commit: &ActorReadReceiveCommit) -> Result<(), String> {
         Err("Mobile adapter not yet implemented".into())
     }
 

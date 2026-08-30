@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/oauth/oauth.proto.
  */
 export const file_domain_oauth_oauth: GenFile = /*@__PURE__*/
-  fileDesc("Chhkb21haW4vb2F1dGgvb2F1dGgucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLm9hdXRoLnYxIqwBCgtPQXV0aENsaWVudBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCWNsaWVudF9pZBgDIAEoCRIaChJjbGllbnRfc2VjcmV0X2hhc2gYBCABKAkSFAoMcmVkaXJlY3RfdXJpGAUgASgJEg4KBnNjb3BlcxgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKUAQoNT0F1dGhBdXRoQ29kZRIRCgljb2RlX2hhc2gYASABKAkSEQoJY2xpZW50X2lkGAIgASgJEg8KB3VzZXJfaWQYAyABKAkSDgoGc2NvcGVzGAQgASgJEi4KCmV4cGlyZXNfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEgwKBHVzZWQYBiABKAgi6gEKCk9BdXRoVG9rZW4SGQoRYWNjZXNzX3Rva2VuX2hhc2gYASABKAkSGgoScmVmcmVzaF90b2tlbl9oYXNoGAIgASgJEhIKCnRva2VuX3R5cGUYAyABKAkSDQoFc2NvcGUYBCABKAkSDwoHdXNlcl9pZBgFIAEoCRIRCgljbGllbnRfaWQYBiABKAkSLgoKY3JlYXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAipAEKEk9BdXRoQnJpZGdlUmVxdWVzdBIQCghwcm92aWRlchgBIAEoCRIYChBwcm92aWRlcl91c2VyX2lkGAIgASgJEg0KBWVtYWlsGAMgASgJEhAKCHVzZXJuYW1lGAQgASgJEhQKDGRpc3BsYXlfbmFtZRgFIAEoCRISCgphdmF0YXJfdXJsGAYgASgJEgoKAnRzGAcgASgJEgsKA3NpZxgIIAEoCSKhAgoTT0F1dGhCcmlkZ2VSZXNwb25zZRISCgpzZXNzaW9uX2lkGAEgASgJEhQKDGFjY2Vzc190b2tlbhgCIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAMgASgJEhIKCnRva2VuX3R5cGUYBCABKAkSEgoKZXhwaXJlc19hdBgFIAEoCRIQCghhY3Rvcl9pZBgGIAEoCRIUCgxhY3Rvcl9pZF9udW0YByABKAMSEAoIdXNlcm5hbWUYCCABKAkSFAoMZGlzcGxheV9uYW1lGAkgASgJEg0KBWVtYWlsGAogASgJEkIKCWFjdG9yX3JlZhgLIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmUglhY3Rvcl9yZWZCQ1pBZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_google_protobuf_timestamp, file_domain_actor_actor]);
+  fileDesc("Chhkb21haW4vb2F1dGgvb2F1dGgucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLm9hdXRoLnYxIqwBCgtPQXV0aENsaWVudBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCWNsaWVudF9pZBgDIAEoCRIaChJjbGllbnRfc2VjcmV0X2hhc2gYBCABKAkSFAoMcmVkaXJlY3RfdXJpGAUgASgJEg4KBnNjb3BlcxgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKXAQoNT0F1dGhBdXRoQ29kZRIRCgljb2RlX2hhc2gYASABKAkSEQoJY2xpZW50X2lkGAIgASgJEhIKCmFjdG9yX3B0aWQYAyABKAkSDgoGc2NvcGVzGAQgASgJEi4KCmV4cGlyZXNfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEgwKBHVzZWQYBiABKAgi7QEKCk9BdXRoVG9rZW4SGQoRYWNjZXNzX3Rva2VuX2hhc2gYASABKAkSGgoScmVmcmVzaF90b2tlbl9oYXNoGAIgASgJEhIKCnRva2VuX3R5cGUYAyABKAkSDQoFc2NvcGUYBCABKAkSEgoKYWN0b3JfcHRpZBgFIAEoCRIRCgljbGllbnRfaWQYBiABKAkSLgoKY3JlYXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAipAEKEk9BdXRoQnJpZGdlUmVxdWVzdBIQCghwcm92aWRlchgBIAEoCRIYChBwcm92aWRlcl91c2VyX2lkGAIgASgJEg0KBWVtYWlsGAMgASgJEhAKCHVzZXJuYW1lGAQgASgJEhQKDGRpc3BsYXlfbmFtZRgFIAEoCRISCgphdmF0YXJfdXJsGAYgASgJEgoKAnRzGAcgASgJEgsKA3NpZxgIIAEoCSKXAgoTT0F1dGhCcmlkZ2VSZXNwb25zZRISCgpzZXNzaW9uX2lkGAEgASgJEhQKDGFjY2Vzc190b2tlbhgCIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAMgASgJEhIKCnRva2VuX3R5cGUYBCABKAkSEgoKZXhwaXJlc19hdBgFIAEoCRJCCglhY3Rvcl9yZWYYCyABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZlIJYWN0b3JfcmVmSgQIBhAHSgQIBxAISgQICBAJSgQICRAKSgQIChALUghhY3Rvcl9pZFIMYWN0b3JfaWRfbnVtUgh1c2VybmFtZVIMZGlzcGxheV9uYW1lUgVlbWFpbEJDWkFnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_google_protobuf_timestamp, file_domain_actor_actor]);
 
 /**
  * @generated from message peers_touch.model.oauth.v1.OAuthClient
@@ -80,9 +80,9 @@ export type OAuthAuthCode = Message<"peers_touch.model.oauth.v1.OAuthAuthCode"> 
   clientId: string;
 
   /**
-   * @generated from field: string user_id = 3;
+   * @generated from field: string actor_ptid = 3;
    */
-  userId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string scopes = 4;
@@ -134,9 +134,9 @@ export type OAuthToken = Message<"peers_touch.model.oauth.v1.OAuthToken"> & {
   scope: string;
 
   /**
-   * @generated from field: string user_id = 5;
+   * @generated from field: string actor_ptid = 5;
    */
-  userId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string client_id = 6;
@@ -248,31 +248,6 @@ export type OAuthBridgeResponse = Message<"peers_touch.model.oauth.v1.OAuthBridg
    * @generated from field: string expires_at = 5;
    */
   expiresAt: string;
-
-  /**
-   * @generated from field: string actor_id = 6;
-   */
-  actorId: string;
-
-  /**
-   * @generated from field: int64 actor_id_num = 7;
-   */
-  actorIdNum: bigint;
-
-  /**
-   * @generated from field: string username = 8;
-   */
-  username: string;
-
-  /**
-   * @generated from field: string display_name = 9;
-   */
-  displayName: string;
-
-  /**
-   * @generated from field: string email = 10;
-   */
-  email: string;
 
   /**
    * @generated from field: peers_touch.model.actor.v1.ActorRef actor_ref = 11 [json_name = "actor_ref"];

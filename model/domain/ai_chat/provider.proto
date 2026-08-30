@@ -22,7 +22,7 @@ enum ProviderType {
 message Provider {
   string id = 1;                      // 唯一ID
   string name = 2;                    // 显示名称
-  string peers_user_id = 3;           // 关联的用户ID
+  string actor_ptid = 3;           // 关联的用户ID
   int32 sort = 4;                     // 排序
   bool enabled = 5;                   // 是否启用
   string check_model = 6;             // 用于连接检查的模型

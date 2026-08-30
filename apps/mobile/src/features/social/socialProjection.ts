@@ -43,12 +43,12 @@ export interface MessageMutationProjection extends ChatMessageMutationInput {}
 export function projectConversations(input: {
   sessions: FriendChatSession[];
   messages: Record<string, FriendChatMessage[]>;
-  currentUserDid: string | null;
+  currentUserPtid: string | null;
   peerOnline: Record<string, boolean>;
 }): SocialConversation[] {
   return input.sessions
     .map((session) => {
-      const peerDid = peerDidFromSession(session, input.currentUserDid);
+      const peerPtid = peerPtidFromSession(session, input.currentUserPtid);
       const loadedLastMessage = input.messages[session.ulid]?.at(-1);
       const sessionLastMessage = session.lastMessage && isVisibleFriendMessage(session.lastMessage)
         ? session.lastMessage
@@ -56,32 +56,32 @@ export function projectConversations(input: {
       const lastMessage = loadedLastMessage ?? sessionLastMessage;
       return {
         session,
-        peerDid,
-        peerName: peerNameFromSession(session, input.currentUserDid),
-        peerAvatar: peerAvatarFromSession(session, input.currentUserDid),
-        peerOnline: input.peerOnline[peerDid] ?? false,
-        unread: unreadFromSession(session, input.currentUserDid),
+        peerPtid,
+        peerName: peerNameFromSession(session, input.currentUserPtid),
+        peerAvatar: peerAvatarFromSession(session, input.currentUserPtid),
+        peerOnline: input.peerOnline[peerPtid] ?? false,
+        unread: unreadFromSession(session, input.currentUserPtid),
         lastMessage,
       };
     })
     .sort((a, b) => timestampMillis(b.session.lastMessageAt) - timestampMillis(a.session.lastMessageAt));
 }
 
-export function projectPendingInboundRequests(friendRequests: FriendRequest[], currentUserDid: string | null): FriendRequest[] {
+export function projectPendingInboundRequests(friendRequests: FriendRequest[], currentUserPtid: string | null): FriendRequest[] {
   return friendRequests.filter(
     (request) =>
       request.status === FRIEND_REQUEST_STATUS_PENDING &&
-      request.receiverDid === currentUserDid &&
-      request.senderDid !== currentUserDid,
+      request.receiverPtid === currentUserPtid &&
+      request.senderPtid !== currentUserPtid,
   );
 }
 
-export function projectOutgoingRequests(friendRequests: FriendRequest[], currentUserDid: string | null): FriendRequest[] {
+export function projectOutgoingRequests(friendRequests: FriendRequest[], currentUserPtid: string | null): FriendRequest[] {
   return friendRequests.filter(
     (request) =>
       request.status === FRIEND_REQUEST_STATUS_PENDING &&
-      request.senderDid === currentUserDid &&
-      request.receiverDid !== currentUserDid,
+      request.senderPtid === currentUserPtid &&
+      request.receiverPtid !== currentUserPtid,
   );
 }
 
@@ -104,7 +104,7 @@ export function projectMobileSocialIMConversation(conversation: SocialConversati
   return projectIMConversation({
     kind: 'friend',
     id: conversation.session.ulid,
-    title: conversation.peerName || conversation.peerDid || 'Friend',
+    title: conversation.peerName || conversation.peerPtid || 'Friend',
     avatar: conversation.peerAvatar,
     lastActivityMs: timestampMillis(conversation.session.lastMessageAt),
     unread: conversation.unread,
@@ -112,7 +112,7 @@ export function projectMobileSocialIMConversation(conversation: SocialConversati
       ? {
         content: conversation.lastMessage.content || conversation.lastMessage.attachments?.[0]?.filename || '',
         type: Number(conversation.lastMessage.type ?? 1),
-        senderId: conversation.lastMessage.senderDid ?? '',
+        senderPtid: conversation.lastMessage.senderPtid ?? '',
       }
       : undefined,
   });
@@ -126,7 +126,7 @@ export function projectMobileSocialIMMessage(
     id: message.ulid ?? '',
     conversationKind: 'friend',
     conversationId,
-    senderId: message.senderDid ?? '',
+    senderPtid: message.senderPtid ?? '',
     type: Number(message.type ?? 1),
     content: message.content,
     attachments: message.attachments ?? [],
@@ -207,24 +207,24 @@ export function applyMessageMutationToList(
 
 export function applyPresenceToMap(
   presence: Record<string, boolean>,
-  actorId: string,
+  ptid: string,
   online: boolean,
 ): Record<string, boolean> | null {
-  return applyChatPresenceToMap(presence, actorId, online);
+  return applyChatPresenceToMap(presence, ptid, online);
 }
 
-export function peerDidFromSession(session: FriendChatSession, currentUserDid: string | null): string {
-  if (session.participantADid === currentUserDid) return session.participantBDid;
-  return session.participantADid;
+export function peerPtidFromSession(session: FriendChatSession, currentUserPtid: string | null): string {
+  if (session.participantAPtid === currentUserPtid) return session.participantBPtid;
+  return session.participantAPtid;
 }
 
 export function applyTypingStateToMap(
   typingPeers: Record<string, Record<string, TypingEntry>>,
   sessionUlid: string,
-  fromActorId: string,
+  fromActorPtid: string,
   typing: boolean,
 ): Record<string, Record<string, TypingEntry>> | null {
-  return applyChatTypingStateToMap(typingPeers, sessionUlid, fromActorId, typing);
+  return applyChatTypingStateToMap(typingPeers, sessionUlid, fromActorPtid, typing);
 }
 
 export function pruneTypingPeers(
@@ -234,18 +234,18 @@ export function pruneTypingPeers(
   return pruneChatTypingPeers(typingPeers, staleBefore);
 }
 
-function peerNameFromSession(session: FriendChatSession, currentUserDid: string | null): string {
-  if (session.participantADid === currentUserDid) return session.participantBDisplayName || session.participantBDid;
-  return session.participantADisplayName || session.participantADid;
+function peerNameFromSession(session: FriendChatSession, currentUserPtid: string | null): string {
+  if (session.participantAPtid === currentUserPtid) return session.participantBDisplayName || session.participantBPtid;
+  return session.participantADisplayName || session.participantAPtid;
 }
 
-function peerAvatarFromSession(session: FriendChatSession, currentUserDid: string | null): string {
-  if (session.participantADid === currentUserDid) return session.participantBAvatar;
+function peerAvatarFromSession(session: FriendChatSession, currentUserPtid: string | null): string {
+  if (session.participantAPtid === currentUserPtid) return session.participantBAvatar;
   return session.participantAAvatar;
 }
 
-function unreadFromSession(session: FriendChatSession, currentUserDid: string | null): number {
-  if (session.participantADid === currentUserDid) return session.unreadCountA;
+function unreadFromSession(session: FriendChatSession, currentUserPtid: string | null): number {
+  if (session.participantAPtid === currentUserPtid) return session.unreadCountA;
   return session.unreadCountB;
 }
 

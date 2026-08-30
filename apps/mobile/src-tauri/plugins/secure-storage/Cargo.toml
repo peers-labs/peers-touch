@@ -1,0 +1,17 @@
+[package]
+name = "tauri-plugin-peers-secure-storage"
+version = "0.1.0"
+edition = "2021"
+links = "tauri-plugin-peers-secure-storage"
+build = "build.rs"
+
+[lib]
+name = "tauri_plugin_peers_secure_storage"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2.0.1", default-features = false }
+
+[build-dependencies]
+tauri-plugin = { version = "=2.5.4", features = ["build"] }

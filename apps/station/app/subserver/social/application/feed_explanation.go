@@ -53,7 +53,7 @@ func BuildFeedObjectExplanation(post *model.Post, reason model.RelationshipReaso
 		},
 		RelationshipReason: &model.RelationshipReason{
 			Kind:          reason,
-			ActorId:       actorID,
+			ActorPtid:     actorID,
 			StationDomain: stationDomain,
 		},
 		AudienceExplanation: &model.AudienceExplanation{
