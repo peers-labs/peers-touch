@@ -3221,7 +3221,7 @@ async function runFoundationF06Complete(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'browser-terminal-projection',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId: 'A-D',
       location: 'harness.ts:runFoundationF06Complete',
       msg: '[DEBUG] final terminal projection sampled',

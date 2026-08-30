@@ -16,10 +16,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | Final capture prefers a stale failed operation over the authoritative interrupted message | High | Low | Pending |
-| B | Snapshot reduction does not replace the prior assistant content | High | Medium | Pending |
-| C | Conversation reconciliation reintroduces stale local terminal content after snapshot | Medium | Medium | Pending |
-| D | Browser replay records the snapshot but does not apply it to the owning chat store | Low | Medium | Pending |
+| A | Final capture prefers a stale failed operation over the authoritative interrupted message | High | Low | Secondary: the failed sample had both stale operation and message state |
+| B | Snapshot reduction does not replace the prior assistant content | High | Medium | Rejected at the pre-restart boundary |
+| C | Conversation reconciliation reintroduces stale local terminal content after snapshot | Medium | Medium | Confirmed across the restart boundary |
+| D | Browser replay records the snapshot but does not apply it to the owning chat store | Low | Medium | Rejected at the pre-restart boundary |
 
 ## Log Evidence
 - Exact-source run `20260830T053507185569Z-beae2d48d453d4fb6921bc125303e699`
@@ -30,6 +30,12 @@
   `e19e95e4d531ca39a171b3900306e1015fbd1a60b693acd770a4fd373c7ca846`.
 - Station status/hash: `interrupted` /
   `21f98f1c3b3c5a596b9e9e67c61289115f1fbdbf2f357b74847cc8722eff7cbd`.
+- Instrumented exact-source run
+  `20260830T060656514138Z-212276ef2af0c31e4726da2ea4b68aff`
+  observed the failing tuple as `interrupted` with content length `576`
+  immediately after snapshot reconciliation, then as `failed` with content
+  length `163` after client restart. Station remained `interrupted` with
+  content length `576`.
 
 ## Instrumentation
 - `chatRuntime.ts:reloadAgentTurnSnapshot.reconciled` records snapshot status
@@ -42,4 +48,21 @@
   authorization values.
 
 ## Verification Conclusion
-Pending source and runtime ownership audit. No product change has been made.
+The authoritative snapshot reaches and updates the owning store before restart.
+The stale projection is restored during restart synchronization because the
+cache accepts an older same-sequence message and the generic UI merge carries
+old terminal fields over an authoritative terminal message. The correction
+must make equal-sequence cache merges revision-aware and preserve authoritative
+snapshot terminal fields and content.
+
+## Fix
+- Equal-sequence cached messages now resolve by `updatedAt`, so an older
+  Station list response cannot overwrite the later source-bound snapshot.
+- Authoritative snapshots may supersede same-sequence terminal events.
+- Snapshot text is replaced by field presence, including an authoritative
+  empty string.
+- Generic message reconciliation no longer restores stale terminal fields over
+  an authoritative terminal message, and explicit recovery reconciliation
+  reapplies the supplied terminal snapshot after merging.
+
+Post-fix exact-source runtime verification is pending.

@@ -109,6 +109,36 @@ describe('mergeServerMessages', () => {
     },
   );
 
+  it('keeps the authoritative server terminal over a stale local terminal', () => {
+    const current = [
+      msg('assistant-1', 'assistant', 'stale partial response', {
+        turnId: 'turn-1',
+        loading: false,
+        terminalStatus: 'failed',
+        error: 'provider failed',
+        errorDetail: 'provider failed',
+      }),
+    ];
+    const server = [
+      msg('assistant-1', 'assistant', '', {
+        turnId: 'turn-1',
+        loading: false,
+        terminalStatus: 'interrupted',
+      }),
+    ];
+
+    const [merged] = mergeServerMessages(current, server);
+
+    expect(merged).toMatchObject({
+      content: '',
+      loading: false,
+      terminalStatus: 'interrupted',
+    });
+    expect(merged.cancelled).not.toBe(true);
+    expect(merged.error).toBeUndefined();
+    expect(merged.errorDetail).toBeUndefined();
+  });
+
   it('carries a recovered cancelled terminal fact to a persisted message with the same turn', () => {
     const current = [
       msg('recovered-turn-1', 'assistant', 'partial answer', {

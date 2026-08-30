@@ -205,6 +205,64 @@ describe('Agent turn event identity projection', () => {
     },
   );
 
+  it('lets an authoritative snapshot supersede a same-sequence terminal error', () => {
+    const terminalError = {
+      event: 'error' as const,
+      data: {
+        seq: 5,
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        streamGeneration: 10,
+        error: 'station_restart_interrupted',
+      },
+    };
+    const snapshot = {
+      event: 'snapshot' as const,
+      data: {
+        seq: 5,
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        streamGeneration: 10,
+        status: 'interrupted',
+        terminal_reason: 'station_restart_interrupted',
+        text: '',
+      },
+    };
+    const failedOperation = applyOperationEventIdentity(
+      { 'conversation-1': { ...operation(), turnId: 'turn-1' } },
+      'conversation-1',
+      terminalError,
+    );
+    const reconciledOperation = applyOperationEventIdentity(
+      failedOperation.operations,
+      'conversation-1',
+      snapshot,
+    );
+    const failedMessage = reduceStreamEvent(
+      {
+        id: 'message-1',
+        role: 'assistant',
+        content: 'stale partial response',
+        loading: true,
+        timestamp: 1,
+      },
+      terminalError,
+    );
+    const reconciledMessage = reduceStreamEvent(failedMessage, snapshot);
+
+    expect(reconciledOperation.accepted).toBe(true);
+    expect(reconciledOperation.operations['conversation-1']).toMatchObject({
+      status: 'interrupted',
+      runState: 'interrupted',
+      lastEventSeq: 5,
+    });
+    expect(reconciledMessage).toMatchObject({
+      content: '',
+      terminalStatus: 'interrupted',
+      loading: false,
+    });
+  });
+
   it('projects queued admission with position and settles the live stream', () => {
     const message: ChatMessage = {
       id: 'message-1',

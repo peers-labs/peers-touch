@@ -301,6 +301,7 @@ function isInFlightMessage(message: ChatMessage): boolean {
 }
 
 function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): ChatMessage {
+  const targetOwnsTerminal = Boolean(target.terminalStatus);
   const hasCot = source.toolCalls
     || source.thinking
     || source.thinkingDone != null
@@ -325,11 +326,13 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     operation: target.operation ?? source.operation,
     replacementOf: target.replacementOf ?? source.replacementOf,
     replacedBy: target.replacedBy ?? source.replacedBy,
-    error: target.error ?? source.error,
-    errorDetail: target.errorDetail ?? source.errorDetail,
-    resolution: target.resolution ?? source.resolution,
+    error: targetOwnsTerminal ? target.error : target.error ?? source.error,
+    errorDetail:
+      targetOwnsTerminal ? target.errorDetail : target.errorDetail ?? source.errorDetail,
+    resolution:
+      targetOwnsTerminal ? target.resolution : target.resolution ?? source.resolution,
   } : target;
-  if (!source.terminalStatus) return merged;
+  if (!source.terminalStatus || targetOwnsTerminal) return merged;
   return {
     ...merged,
     loading: false,
@@ -758,6 +761,10 @@ export function applyOperationEventIdentity(
     && (operation.lastEventSeq || 0) >= seq
     && streamGeneration === currentGeneration
     && !recoveryControlEvent
+    && !(
+      event.event === 'snapshot'
+      && (operation.lastEventSeq || 0) === seq
+    )
   ) {
     return { operations, accepted: false };
   }
@@ -1160,17 +1167,37 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const operation = get().operations[conversationId];
     if (operation?.turnId !== turnId) return;
     const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
+    const reconcileMessages = (messages: ChatMessage[]) => {
+      const merged = mergeServerMessages(messages, serverMessages);
+      if (!terminal) return merged;
+      return merged.map((message) => {
+        if (message.role !== 'assistant' || message.turnId !== turnId) {
+          return message;
+        }
+        return applyProjectedStreamEvent(message, {
+          event: 'snapshot',
+          data: {
+            conversationId,
+            turnId,
+            status: terminal.status,
+            terminal_reason: terminal.reason,
+            ...(terminal.content !== undefined
+              ? { text: terminal.content }
+              : {}),
+          },
+        });
+      });
+    };
     set((state) => {
       const current = state.operations[conversationId];
       if (current?.turnId !== turnId) return state;
       const isCurrent = state.currentSessionKey === conversationId;
-      const reconciledBuffer = mergeServerMessages(
+      const reconciledBuffer = reconcileMessages(
         state.sessionBuffers[conversationId] || [],
-        serverMessages,
       );
       return {
         messages: isCurrent
-          ? mergeServerMessages(state.messages, serverMessages)
+          ? reconcileMessages(state.messages)
           : state.messages,
         operations: terminal
           ? {

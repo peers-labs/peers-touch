@@ -235,13 +235,25 @@ function reconcileMessage(
   current: CachedAgentMessage,
   incoming: CachedAgentMessage,
 ): CachedAgentMessage {
-  const higherSeq = incoming.seq >= current.seq ? incoming : current;
+  const currentUpdatedAt = Date.parse(current.updatedAt);
+  const incomingUpdatedAt = Date.parse(incoming.updatedAt);
+  const incomingIsNewer = incoming.seq > current.seq
+    || (
+      incoming.seq === current.seq
+      && (
+        !Number.isFinite(currentUpdatedAt)
+        || !Number.isFinite(incomingUpdatedAt)
+        || incomingUpdatedAt >= currentUpdatedAt
+      )
+    );
+  const authoritative = incomingIsNewer ? incoming : current;
+  const fallback = incomingIsNewer ? current : incoming;
   return {
-    ...current,
-    ...higherSeq,
-    content: incoming.content || current.content,
-    reasoningJson: incoming.reasoningJson ?? current.reasoningJson,
-    toolCallsJson: incoming.toolCallsJson ?? current.toolCallsJson,
+    ...fallback,
+    ...authoritative,
+    content: authoritative.content,
+    reasoningJson: authoritative.reasoningJson ?? fallback.reasoningJson,
+    toolCallsJson: authoritative.toolCallsJson ?? fallback.toolCallsJson,
   };
 }
 

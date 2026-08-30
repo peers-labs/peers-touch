@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import {
   createAgentChatCache,
+  mergeAgentMessages,
   projectIMConversations,
   projectIMMessages,
 } from '../dist/index.js';
@@ -95,6 +96,47 @@ const cache = createAgentChatCache({
 const reconciled = await cache.listConversations('agent-1');
 assert.deepEqual(reconciled.map((conversation) => conversation.conversationId), ['current']);
 assert.deepEqual(Object.keys(await conversationRepo.readValue('agent-1')), ['current']);
+
+const interruptedSnapshot = {
+  messageId: 'assistant-1',
+  conversationId: 'conversation-1',
+  turnId: 'turn-1',
+  role: 'assistant',
+  status: 'interrupted',
+  content: '',
+  seq: 5,
+  createdAt: '2026-08-30T00:00:00Z',
+  updatedAt: '2026-08-30T00:00:02Z',
+};
+const staleTerminalMessage = {
+  ...interruptedSnapshot,
+  status: 'failed',
+  content: 'stale partial response',
+  updatedAt: '2026-08-30T00:00:01Z',
+};
+
+const retainedSnapshot = mergeAgentMessages(
+  [staleTerminalMessage],
+  [interruptedSnapshot],
+)[0];
+assert.equal(retainedSnapshot.status, 'interrupted');
+assert.equal(retainedSnapshot.content, '');
+assert.equal(retainedSnapshot.updatedAt, interruptedSnapshot.updatedAt);
+
+const acceptedSnapshot = mergeAgentMessages(
+  [interruptedSnapshot],
+  [staleTerminalMessage],
+)[0];
+assert.equal(acceptedSnapshot.status, 'interrupted');
+assert.equal(acceptedSnapshot.content, '');
+assert.equal(acceptedSnapshot.updatedAt, interruptedSnapshot.updatedAt);
+const acceptedNewerMessage = mergeAgentMessages(
+  [{ ...staleTerminalMessage, updatedAt: '2026-08-30T00:00:03Z' }],
+  [interruptedSnapshot],
+)[0];
+assert.equal(acceptedNewerMessage.status, 'failed');
+assert.equal(acceptedNewerMessage.content, 'stale partial response');
+assert.equal(acceptedNewerMessage.updatedAt, '2026-08-30T00:00:03Z');
 
 const messages = projectIMMessages([
   {

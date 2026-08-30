@@ -130,12 +130,13 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
     case 'snapshot': {
       const status = s(d.status).toLowerCase();
       const terminalReason = s(d.terminal_reason || d.terminalReason);
+      const hasSnapshotText = typeof d.text === 'string';
       const terminalStatus = ['completed', 'failed', 'cancelled', 'interrupted'].includes(status)
         ? status as NonNullable<ChatMessage['terminalStatus']>
         : msg.terminalStatus;
       return {
         ...msg,
-        content: s(d.text) || msg.content,
+        content: hasSnapshotText ? d.text as string : msg.content,
         cancelled: status === 'cancelled',
         error:
           status === 'failed' || status === 'interrupted'

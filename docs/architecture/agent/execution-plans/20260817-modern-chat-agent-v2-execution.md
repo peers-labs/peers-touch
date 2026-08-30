@@ -3713,6 +3713,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   allocated ports were released. The outer cleanup status was `passed`; the
   candidate cleanup artifact requires separate inspection before cleanup can
   be claimed. AS-F06 and G-F remain `PARTIAL / UNPROVEN`.
+- Instrumentation checkpoint `98548eedc2a5e905e713fb61c78353b7ae2985f4`
+  reproduced the projection mismatch in exact-source run
+  `20260830T060656514138Z-212276ef2af0c31e4726da2ea4b68aff`.
+  Immediately after authoritative snapshot reconciliation, the failing Native
+  tuple held status `interrupted` and content length `576`; after client
+  restart, the same projection had reverted to status `failed` and content
+  length `163`, while Station remained `interrupted` with content length `576`.
+  This proves that replay delivery and the pre-restart reducer are correct and
+  isolates the defect to durable cache/startup reconciliation. The local
+  product correction makes equal-sequence cache merges revision-aware, lets an
+  authoritative same-sequence snapshot supersede a prior terminal event,
+  replaces snapshot content by field presence, and prevents generic message
+  merging from restoring stale terminal fields over an authoritative terminal.
+  Desktop 403 tests with one unrelated skip, 106 focused Foundation tests, 48
+  Native static tests, `client-chat-core`, Desktop typecheck/build, Agent
+  Acceptance validation, and `git diff --check` pass. AS-F06 and G-F remain
+  `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source rerun.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
