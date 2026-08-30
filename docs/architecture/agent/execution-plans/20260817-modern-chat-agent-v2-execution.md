@@ -4155,6 +4155,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   The next action is an exact-source profile `two` deployment and serial
   Foundation rerun; AS-F03 must regain its prior pass before AS-F07 evidence
   can be evaluated.
+- The AS-F07 positive-isolation fixture now has its own durable outer journal.
+  It persists the original binding snapshot and setup idempotency key before
+  enabling a real platform capability, replays that setup to recover ambiguous
+  responses, then delegates to the inner revision-fenced isolation journal.
+  Cleanup persists its expected revision and idempotency key before restoring
+  or deleting the fixture, so crashes after either cleanup commit are
+  recoverable without inferring ownership from capability identity. Two
+  independent reviews approved the source checkpoint; exact-source runtime
+  proof remains pending.
+- Checkpoint `ebeb3fca4` contains the approved durable positive-capability
+  fixture and cleanup replay boundary. Desktop typecheck, 459 tests with one
+  unrelated E2E skip, the production build, 51 focused isolation tests, 182
+  focused Foundation/static Python tests, Agent Domain validation for 38
+  capabilities, staged secret scan, and `git diff --check` passed. The next
+  action is to commit this tracking evidence, deploy the resulting clean HEAD
+  exact-source to profile `two`, and rerun Foundation with Station restart
+  authorization.
 - Tracking commit `7bf635c4b` was deployed exact-source. Run
   `20260830T203842372359Z-3e8aa65f2ac7ddefb381dbabaf74709e`
   passed the AS-F03 prefix and retained fully clean Native/Browser teardown,
@@ -4162,6 +4179,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `PT_AGENT_V2_ALLOW_STATION_RESTART=1` authorization. This is an operator
   invocation defect, not product evidence. The next run must use the documented
   restart authorization while keeping profile `two` serially leased.
+- Authorized exact-source run
+  `20260830T205732579819Z-f21c5d46213c2c92b7d03592bdbd9186`
+  on `2dc3dd22b81b30dc0cefe6003e0f020cb1274d1e` restored the required
+  Station restart path, passed the AS-F03 prefix and all AS-F06 tuples, and
+  advanced to Browser AS-F07. Station, Desktop, and evidence source identity
+  matched, redaction and cleanup passed, and the first failure was
+  `agent.acceptance.foundationCapabilityIsolationUnavailable`. This proves the
+  remaining AS-F07 producer gap is a deterministic positive-capability fixture,
+  not AS-F03 zero-READY compatibility, restart authorization, or cleanup.
+  Foundation remains `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

@@ -206,3 +206,14 @@
   zero. The local correction scopes positive effective capability proof to
   AS-F07, permits non-negative journal readiness for recovery, and skips
   journal creation entirely when there are no enabled bindings to mutate.
+- Authorized exact-source run
+  `20260830T205732579819Z-f21c5d46213c2c92b7d03592bdbd9186`
+  on `2dc3dd22b81b30dc0cefe6003e0f020cb1274d1e` passed the AS-F03
+  prefix and all AS-F06 tuples after restoring the required Station restart
+  authorization. It reached Browser AS-F07 and failed first with
+  `agent.acceptance.foundationCapabilityIsolationUnavailable`. The immutable
+  manifest records matching source, Station, and workspace identity,
+  `cleanupStatus=passed`, redaction passed, and `proofStatus=UNPROVEN`.
+  This rejects AS-F03 zero-READY compatibility and AS-F06 restart handling as
+  the current owner; AS-F07 requires a deterministic real positive-capability
+  fixture before entering the strict isolation boundary.
