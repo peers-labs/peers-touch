@@ -64,10 +64,12 @@ class F06HarnessClient:
         *,
         cleanup_log: list[str] | None = None,
         fail_prepare_at: int | None = None,
+        invalid_reload_delivery: bool = False,
     ) -> None:
         self.platform = platform
         self.cleanup_log = cleanup_log
         self.fail_prepare_at = fail_prepare_at
+        self.invalid_reload_delivery = invalid_reload_delivery
         self.restart_count = 0
         self.prepare_calls: list[dict[str, object]] = []
         self.failure_calls: list[dict[str, object]] = []
@@ -106,7 +108,20 @@ class F06HarnessClient:
             }
         if method == "foundationF06DurableReload":
             self.reload_calls.append(request)
-            return {"durableReload": {"observed": True}}
+            if self.invalid_reload_delivery:
+                return {"durableReload": {"observed": True}}
+            return {
+                "durableReload": {
+                    "observed": True,
+                    "source": "station-snapshot-reconcile",
+                    "sourceDelivery": {
+                        "transport": "station-sse",
+                        "eventType": "snapshot",
+                        "sequence": 7,
+                        "rawPayloadHash": "a" * 64,
+                    },
+                }
+            }
         if method == "foundationF06Cleanup":
             self.cleanup_calls.append(request)
             if self.cleanup_log is not None:
@@ -411,6 +426,48 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             native.prepare_calls[0]["scenarioKey"],
             native.prepare_calls[1]["scenarioKey"],
         )
+
+    def test_as_f06_rejects_durable_reload_without_source_delivery(
+        self,
+    ) -> None:
+        native = F06HarnessClient("desktop_app")
+        browser = F06HarnessClient(
+            "browser",
+            invalid_reload_delivery=True,
+        )
+        coordinator = foundation_scenario_runner.FoundationF06Coordinator(
+            SimpleNamespace(native=native, browser=browser),
+            {"profile": {"resolvedName": "two"}},
+            {},
+        )
+
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "restart_foundation_station",
+                side_effect=lambda *_args, **kwargs: (
+                    kwargs["during_outage"](time.monotonic() + 165),
+                    kwargs["after_restart"](time.monotonic() + 180),
+                    {"containerId": "container"},
+                )[-1],
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_authenticate_clients",
+            ),
+        ):
+            with self.assertRaisesRegex(
+                foundation_scenario_runner.ScenarioRunnerError,
+                "durable reload source delivery is invalid",
+            ):
+                coordinator.capture(
+                    DirectRuntimeProbeInput(
+                        platform="browser",
+                        locale="en",
+                        cell="AS-F06",
+                        sample_id="sample-001",
+                    )
+                )
 
     def test_as_f06_cleans_prepared_tuples_in_reverse_order_on_failure(
         self,

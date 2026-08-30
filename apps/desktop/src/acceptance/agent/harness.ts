@@ -3083,10 +3083,6 @@ async function runFoundationF06Complete(
     handoff.conversationId,
     handoff.turnId,
   );
-  const recoveryFailure = evidenceRecord(
-    handoff.recoveryFailure,
-    'foundationF06RecoveryFailure',
-  );
 
   await waitFor(
     () => {
@@ -3162,7 +3158,14 @@ async function runFoundationF06Complete(
   }
 
   await foundationF06ReplayRecording;
-  const latestHandoff = readFoundationF06Handoff(input.scenarioKey) ?? handoff;
+  const latestHandoff = readFoundationF06Handoff(input.scenarioKey);
+  if (!latestHandoff) {
+    throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
+  }
+  const recoveryFailure = evidenceRecord(
+    latestHandoff.recoveryFailure,
+    'foundationF06RecoveryFailure',
+  );
   const stationReplayDeliveries = await foundationStationReplayReadback(handoff);
   const replayIdentity = (delivery: FoundationF06ReplayDelivery) => ({
     eventType: delivery.eventType,

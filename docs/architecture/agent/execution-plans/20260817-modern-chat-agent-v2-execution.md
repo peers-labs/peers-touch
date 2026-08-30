@@ -3596,6 +3596,32 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Agent Acceptance validation, shell syntax, and `git diff --check` pass.
   Runtime proof remains `UNPROVEN` pending checkpoint deployment and a new
   exact-source Foundation run.
+- Checkpoint `4c8eb701cfe2f114f2f531a27ffb9aa70b54a327` was deployed
+  exact-source to profile `two`. Run
+  `20260830T022343527116Z-82001267062fa730fdf9e531e821f189`
+  crossed the Browser session-takeover failure and reached the full Browser
+  AS-F06 completion path. Station session history showed only
+  `desktop-browser` rotations during Browser recovery, while the original
+  `desktop-native` session remained active until Native recovery began; the
+  rendererless Browser BFF therefore removed the cross-surface session
+  authority. The new first failure is
+  `agent.acceptance.foundationF06RecoveryDurableReloadDeliveryMissing` while
+  parsing the complete Browser AS-F06 capture. Local source, Station live
+  source, and evidence source matched `4c8eb701c`; ports and storage were
+  released. Candidate cleanup remained `FAILED` because Native logout timed
+  out, even though the outer Gate manifest reported `passed`; this discrepancy
+  remains part of the required cleanup closure. The durable snapshot reload
+  itself returned a source-bound Station delivery and was accepted before the
+  client restart, but `runFoundationF06Complete` later derived
+  `recoveryFailure` from an earlier handoff object instead of the synchronized
+  post-restart handoff. The local correction now drains the evidence chain,
+  fail-closes if the durable handoff is absent, and reads recovery evidence
+  only from that synchronized snapshot. The Python coordinator additionally
+  requires the complete snapshot `sourceDelivery` identity and payload hash
+  before restarting the client, while the independent oracle remains
+  unchanged. Desktop typecheck, 13 focused coordinator tests, 48 native static
+  tests, and `git diff --check` pass. AS-F06 and G-F remain
+  `PARTIAL / UNPROVEN` pending exact-source runtime verification.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

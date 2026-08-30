@@ -246,6 +246,32 @@ class AgentHarnessStaticTest(unittest.TestCase):
             self.source[observe_start:observe_end],
         )
 
+    def test_recovery_completion_reads_failure_after_evidence_sync(self) -> None:
+        completion_start = self.source.index(
+            "async function runFoundationF06Complete",
+        )
+        completion_end = self.source.index(
+            "interface DirectCellAssertionContext",
+            completion_start,
+        )
+        completion = self.source[completion_start:completion_end]
+        evidence_sync = completion.index("await foundationF06ReplayRecording")
+        latest_handoff = completion.index(
+            "const latestHandoff = readFoundationF06Handoff",
+            evidence_sync,
+        )
+        recovery_failure = completion.index(
+            "latestHandoff.recoveryFailure",
+            latest_handoff,
+        )
+
+        self.assertLess(evidence_sync, latest_handoff)
+        self.assertLess(latest_handoff, recovery_failure)
+        self.assertNotIn(
+            "handoff.recoveryFailure",
+            completion[:evidence_sync],
+        )
+
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)
 

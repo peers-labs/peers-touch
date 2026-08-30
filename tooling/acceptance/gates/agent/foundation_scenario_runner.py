@@ -447,12 +447,27 @@ class FoundationF06Coordinator:
                 if isinstance(result, Mapping)
                 else None
             )
+            source_delivery = (
+                durable_reload.get("sourceDelivery")
+                if isinstance(durable_reload, Mapping)
+                else None
+            )
             if (
                 not isinstance(durable_reload, Mapping)
                 or durable_reload.get("observed") is not True
+                or durable_reload.get("source")
+                != "station-snapshot-reconcile"
+                or not isinstance(source_delivery, Mapping)
+                or source_delivery.get("transport") != "station-sse"
+                or source_delivery.get("eventType") != "snapshot"
+                or not isinstance(source_delivery.get("sequence"), int)
+                or isinstance(source_delivery.get("sequence"), bool)
+                or source_delivery.get("sequence", 0) <= 0
+                or not isinstance(source_delivery.get("rawPayloadHash"), str)
+                or len(source_delivery.get("rawPayloadHash", "")) != 64
             ):
                 raise ScenarioRunnerError(
-                    f"AS-F06 durable reload was not observed for "
+                    f"AS-F06 durable reload source delivery is invalid for "
                     f"{self._scenario_key(probe_input)}: {result!r}"
                 )
 
