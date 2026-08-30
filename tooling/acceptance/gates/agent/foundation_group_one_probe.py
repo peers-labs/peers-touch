@@ -23,6 +23,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f04,
     evaluate_as_f05,
     evaluate_as_f06,
+    evaluate_as_f07,
     evaluate_as_f10,
 )
 
@@ -190,6 +191,7 @@ def assert_group_one_capture(
             locale=probe_input.locale,
             sample_id=probe_input.sample_id,
         ),
+        "AS-F07": lambda facts: evaluate_as_f07(facts),
         "AS-F10": lambda facts: evaluate_as_f10(
             facts,
             platform=probe_input.platform,

@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260830T070915770693Z-1cd477b38e87581aed2ca2ee1e5131c0` disproved cache provenance as the complete AS-F06 correction; the remaining first failure is the recovery runtime closing a catch-up terminal before its authoritative snapshot, and proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260830T080743547253Z-f94c424ec124071ff62ece0ba30f48a5` passed AS-F06 and advanced the first failure to Browser AS-F07 branch/edit/regenerate semantics; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3780,6 +3780,28 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   ESLint, Agent Acceptance validation, and `git diff --check` pass. This is
   implementation evidence only; AS-F06 and G-F remain `PARTIAL / UNPROVEN`
   pending checkpoint commit, exact-source deployment, and runtime proof.
+- Checkpoint `b46ac83020024673030f954a468ea1b5f0944fb4` was deployed
+  exact-source to profile `two`. The first invocation,
+  `20260830T075138404723Z-81b5c5a7203aea354056ce6a7fc0129d`,
+  failed closed before AS-F06 fault injection because the invocation supplied
+  the wrong restart-authorization variable; it is not product evidence.
+  Correctly authorized run
+  `20260830T080743547253Z-f94c424ec124071ff62ece0ba30f48a5`
+  proved all four AS-F06 final projections equal to Station after restart. The
+  previously failing Browser `en` tuple was `interrupted` on both sides with
+  content length `671` and matching hash
+  `ce14fc3815dc71b445aed18542415f183f13ce358e5b7444f0b6bf53fc3c8bcf`.
+  Runtime instrumentation directly observed catch-up terminal rows with
+  `terminalClosesRecovery=false`, followed by same-sequence terminal snapshots
+  with `terminalClosesRecovery=true`. The Gate then advanced to Browser AS-F07
+  `direct_model / en / single / sample-001`, where
+  `branchSwitchPersisted`, `editCreatedSibling`,
+  `regenerateCreatedSiblings`, and `staleBranchConflict` were false. Source,
+  deployed Station, and evidence all matched `b46ac8302`; redaction passed.
+  The outer Provisioner reported cleanup `passed`, but the candidate cleanup
+  artifact remained `failed` because Native logout timed out, while all ports,
+  storage roots, and actor identity were released. AS-F06 is source-matching;
+  G-F remains `PARTIAL / UNPROVEN` at AS-F07.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
@@ -3787,7 +3809,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Expected**: `CONNECTION_LOST -> RECONNECTING -> REPLAYING -> RECONCILING -> CONNECTED`; projection remains idempotent.
 - **Failure variant**: Recovery failure offers retry/snapshot reload and cannot overwrite a newer revision.
 - **Evidence**: App/Browser DOM, cursor/event rows, replay equality, terminal readback.
-- **Status**: implementation checkpoint locally verified; exact-source runtime proof pending
+- **Status**: source-matching runtime proof passed for all required AS-F06 tuples
 
 ### AS-F07 Retry, Regenerate, Edit, And Branch
 - **Precondition**: Completed and failed turns with feedback/usage references.
@@ -3795,7 +3817,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Expected**: Retry is an attempt; regenerate/edit create immutable siblings; original content/usage/feedback remains.
 - **Failure variant**: Stale branch mutation conflicts; delete is never represented as retry/regenerate.
 - **Evidence**: DOM branch selector, Station lineage/active-branch rows, independent usage/feedback.
-- **Status**: pending
+- **Status**: implementation checkpoint locally verified; exact-source runtime proof pending
+- Read-only reconciliation of
+  `20260830T080743547253Z-f94c424ec124071ff62ece0ba30f48a5`
+  confirmed that the prior AS-F07 capture did not invoke any revision action
+  and derived four unrelated assertions from `messages.length > 1`; Python had
+  no independent AS-F07 oracle. The local correction now drives production
+  retry, two regenerations from one source response, edit/resend, stale-version
+  branch mutation, and active-branch selection. It emits Station response and
+  readback lineage, retry attempt deltas, immutable source/usage/feedback
+  hashes, and receiver DOM message IDs. The independent Python evaluator
+  recomputes all six AS-F07 assertions and rejects missing, empty, or mutated
+  evidence. Desktop typecheck, 406 Desktop tests with one unrelated skip,
+  Acceptance-enabled Desktop build, 112 focused Foundation tests, 48 Native
+  static tests, Agent Acceptance validation, and `git diff --check` pass.
+  Product behavior remains `UNPROVEN` until an exact-source runtime run
+  exercises these operations.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

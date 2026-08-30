@@ -2758,6 +2758,7 @@ export interface AgentMessage {
   content: string;
   seq: number;
   branch_id?: string;
+  parent_message_id?: string;
   replaces_message_id?: string;
   thread_id?: string;
   reasoning_json?: string;

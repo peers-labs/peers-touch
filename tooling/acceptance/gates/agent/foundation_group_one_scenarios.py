@@ -1132,6 +1132,254 @@ def evaluate_as_f06(
     return assertions
 
 
+def evaluate_as_f07(capture: Mapping[str, Any]) -> dict[str, bool]:
+    retry = _mapping(capture, "retry", scenario="AS-F07")
+    attempts_before = _list(
+        retry,
+        "attemptsBefore",
+        scenario="AS-F07",
+    )
+    attempts_after = _list(
+        retry,
+        "attemptsAfter",
+        scenario="AS-F07",
+    )
+    regenerate = _mapping(capture, "regenerate", scenario="AS-F07")
+    first_regenerate = _mapping(
+        regenerate,
+        "first",
+        scenario="AS-F07",
+    )
+    second_regenerate = _mapping(
+        regenerate,
+        "second",
+        scenario="AS-F07",
+    )
+    edit = _mapping(capture, "edit", scenario="AS-F07")
+    edited_user = _mapping(edit, "user", scenario="AS-F07")
+    edited_assistant = _mapping(edit, "assistant", scenario="AS-F07")
+    branch = _mapping(capture, "branchSelection", scenario="AS-F07")
+    stale = _mapping(capture, "staleBranch", scenario="AS-F07")
+    original = _mapping(capture, "original", scenario="AS-F07")
+
+    source_turn_id = _nonempty_string(
+        retry,
+        "sourceTurnId",
+        scenario="AS-F07",
+    )
+    source_user_id = _nonempty_string(
+        regenerate,
+        "sourceUserMessageId",
+        scenario="AS-F07",
+    )
+    source_assistant_id = _nonempty_string(
+        regenerate,
+        "sourceAssistantMessageId",
+        scenario="AS-F07",
+    )
+    first_message_id = _nonempty_string(
+        first_regenerate,
+        "messageId",
+        scenario="AS-F07",
+    )
+    second_message_id = _nonempty_string(
+        second_regenerate,
+        "messageId",
+        scenario="AS-F07",
+    )
+    edited_user_id = _nonempty_string(
+        edited_user,
+        "messageId",
+        scenario="AS-F07",
+    )
+    selected_message_id = _nonempty_string(
+        branch,
+        "selectedMessageId",
+        scenario="AS-F07",
+    )
+    selected_message_ids = _string_list(
+        branch,
+        "selectedMessageIds",
+        scenario="AS-F07",
+    )
+    rendered_message_ids = _string_list(
+        branch,
+        "renderedMessageIds",
+        scenario="AS-F07",
+    )
+
+    assertions = {
+        "retryCreatedAttempt": (
+            _nonempty_string(
+                retry,
+                "sourceConversationId",
+                scenario="AS-F07",
+            )
+            and source_turn_id
+            == _nonempty_string(
+                retry,
+                "resultTurnId",
+                scenario="AS-F07",
+            )
+            and _nonempty_string(
+                retry,
+                "attemptId",
+                scenario="AS-F07",
+            )
+            and len(attempts_after) == len(attempts_before) + 1
+            and all(
+                attempt.get("turnId") == source_turn_id
+                for attempt in attempts_after
+            )
+            and retry.get("attemptId")
+            in {attempt.get("attemptId") for attempt in attempts_after}
+        ),
+        "regenerateCreatedSiblings": (
+            first_message_id != second_message_id
+            and first_message_id != source_assistant_id
+            and second_message_id != source_assistant_id
+            and first_regenerate.get("parentMessageId") == source_user_id
+            and second_regenerate.get("parentMessageId") == source_user_id
+            and first_regenerate.get("replacesMessageId")
+            == source_assistant_id
+            and second_regenerate.get("replacesMessageId")
+            == source_assistant_id
+            and _nonempty_string(
+                first_regenerate,
+                "branchId",
+                scenario="AS-F07",
+            )
+            != _nonempty_string(
+                second_regenerate,
+                "branchId",
+                scenario="AS-F07",
+            )
+        ),
+        "editCreatedSibling": (
+            edited_user_id != source_user_id
+            and edited_user.get("replacesMessageId") == source_user_id
+            and edited_user.get("parentMessageId")
+            == edit.get("sourceParentMessageId")
+            and _nonempty_string(
+                edited_user,
+                "contentHash",
+                scenario="AS-F07",
+            )
+            == _nonempty_string(
+                edit,
+                "revisedContentHash",
+                scenario="AS-F07",
+            )
+            and _nonempty_string(
+                edit,
+                "assistantMessageId",
+                scenario="AS-F07",
+            )
+            == _nonempty_string(
+                edit,
+                "activeBranchMessageId",
+                scenario="AS-F07",
+            )
+            and edited_assistant.get("messageId")
+            == edit.get("assistantMessageId")
+            and edited_assistant.get("parentMessageId") == edited_user_id
+            and edited_assistant.get("branchId")
+            == edited_user.get("branchId")
+        ),
+        "branchSwitchPersisted": (
+            branch.get("originalResponseActiveBranchMessageId")
+            == branch.get("originalMessageId")
+            and branch.get("responseActiveBranchMessageId")
+            == selected_message_id
+            and branch.get("readbackActiveBranchMessageId")
+            == selected_message_id
+            and selected_message_id in selected_message_ids
+            and selected_message_id in rendered_message_ids
+            and branch.get("receiverVisible") is True
+        ),
+        "staleBranchConflict": (
+            stale.get("errorCode") == "VERSION_CONFLICT"
+            and _nonempty_string(
+                stale,
+                "beforeHash",
+                scenario="AS-F07",
+            )
+            == _nonempty_string(
+                stale,
+                "afterHash",
+                scenario="AS-F07",
+            )
+            and _positive_int(
+                stale,
+                "versionBefore",
+                scenario="AS-F07",
+            )
+            == _positive_int(
+                stale,
+                "versionAfter",
+                scenario="AS-F07",
+            )
+        ),
+        "originalImmutable": all(
+            len(
+                _nonempty_string(
+                    original,
+                    before_key,
+                    scenario="AS-F07",
+                )
+            )
+            == 64
+            and original.get(before_key) == original.get(after_key)
+            for before_key, after_key in (
+                ("beforeHash", "afterHash"),
+                ("usageBeforeHash", "usageAfterHash"),
+                ("feedbackBeforeHash", "feedbackAfterHash"),
+            )
+        ),
+    }
+    assertions["originalImmutable"] = bool(
+        assertions["originalImmutable"]
+        and _positive_int(
+            original,
+            "attemptCountBefore",
+            scenario="AS-F07",
+        )
+        == _positive_int(
+            original,
+            "attemptCountAfter",
+            scenario="AS-F07",
+        )
+        and _positive_int(
+            original,
+            "feedbackCountBefore",
+            scenario="AS-F07",
+        )
+        == _positive_int(
+            original,
+            "feedbackCountAfter",
+            scenario="AS-F07",
+        )
+    )
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        diagnostics = {
+            "attemptCountBefore": len(attempts_before),
+            "attemptCountAfter": len(attempts_after),
+            "regenerateMessageIds": [
+                first_message_id,
+                second_message_id,
+            ],
+            "editedUserMessageId": edited_user_id,
+            "selectedMessageId": selected_message_id,
+            "staleErrorCode": stale.get("errorCode"),
+        }
+        raise GroupOneScenarioError(
+            "AS-F07 production facts failed assertions: "
+            f"{failed}; diagnostics={json.dumps(diagnostics, sort_keys=True)}"
+        )
+    return assertions
+
+
 def evaluate_as_f10(
     capture: Mapping[str, Any],
     *,

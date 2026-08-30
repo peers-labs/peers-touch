@@ -91,4 +91,16 @@ terminal snapshot or a terminal event after `catchup_done`.
   deferred `error(N) -> snapshot(interrupted,N)` path and normal
   `catchup_done -> error(N)` closure.
 
-Post-fix exact-source runtime verification is pending.
+## Post-Fix Evidence
+- Exact-source run
+  `20260830T080743547253Z-f94c424ec124071ff62ece0ba30f48a5`
+  observed persisted terminal rows with `terminalClosesRecovery=false`,
+  followed by same-sequence authoritative snapshots with
+  `terminalClosesRecovery=true`.
+- All four AS-F06 final projection samples matched Station status, content
+  length, and hash after restart. The previously failing Browser `en` tuple
+  matched `interrupted`, content length `671`, and hash
+  `ce14fc3815dc71b445aed18542415f183f13ce358e5b7444f0b6bf53fc3c8bcf`.
+- The Foundation Gate advanced to AS-F07. AS-F06 is runtime-verified, while the
+  debugging session remains open until the Foundation closure permits
+  instrumentation cleanup.

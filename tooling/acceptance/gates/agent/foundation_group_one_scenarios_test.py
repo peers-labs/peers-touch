@@ -12,6 +12,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f04,
     evaluate_as_f05,
     evaluate_as_f06,
+    evaluate_as_f07,
     evaluate_as_f10,
 )
 
@@ -78,6 +79,106 @@ def valid_capture() -> dict[str, object]:
         "deletion": {
             "activeDependencyError": "ACTIVE_DEPENDENCY",
             "deletedAfterSettlement": True,
+        },
+    }
+
+
+def valid_as_f07_capture() -> dict[str, object]:
+    return {
+        "retry": {
+            "sourceConversationId": "conversation-retry",
+            "sourceTurnId": "turn-retry",
+            "resultTurnId": "turn-retry",
+            "attemptId": "attempt-2",
+            "attemptsBefore": [
+                {
+                    "attemptId": "attempt-1",
+                    "turnId": "turn-retry",
+                    "index": 1,
+                }
+            ],
+            "attemptsAfter": [
+                {
+                    "attemptId": "attempt-1",
+                    "turnId": "turn-retry",
+                    "index": 1,
+                },
+                {
+                    "attemptId": "attempt-2",
+                    "turnId": "turn-retry",
+                    "index": 2,
+                },
+            ],
+        },
+        "regenerate": {
+            "sourceUserMessageId": "user-source",
+            "sourceAssistantMessageId": "assistant-source",
+            "first": {
+                "messageId": "assistant-regenerate-1",
+                "parentMessageId": "user-source",
+                "replacesMessageId": "assistant-source",
+                "branchId": "branch-1",
+            },
+            "second": {
+                "messageId": "assistant-regenerate-2",
+                "parentMessageId": "user-source",
+                "replacesMessageId": "assistant-source",
+                "branchId": "branch-2",
+            },
+        },
+        "edit": {
+            "sourceUserMessageId": "user-source",
+            "sourceParentMessageId": "",
+            "revisedContentHash": "a" * 64,
+            "user": {
+                "messageId": "user-edit",
+                "replacesMessageId": "user-source",
+                "parentMessageId": "",
+                "branchId": "branch-edit",
+                "contentHash": "a" * 64,
+            },
+            "assistant": {
+                "messageId": "assistant-edit",
+                "parentMessageId": "user-edit",
+                "branchId": "branch-edit",
+            },
+            "assistantMessageId": "assistant-edit",
+            "activeBranchMessageId": "assistant-edit",
+        },
+        "branchSelection": {
+            "selectedMessageId": "assistant-regenerate-1",
+            "responseActiveBranchMessageId": "assistant-regenerate-1",
+            "originalResponseActiveBranchMessageId": "assistant-source",
+            "originalMessageId": "assistant-source",
+            "readbackActiveBranchMessageId": "assistant-regenerate-1",
+            "selectedMessageIds": [
+                "user-source",
+                "assistant-regenerate-1",
+            ],
+            "renderedMessageIds": [
+                "user-source",
+                "assistant-regenerate-1",
+            ],
+            "receiverVisible": True,
+        },
+        "staleBranch": {
+            "errorCode": "VERSION_CONFLICT",
+            "beforeHash": "b" * 64,
+            "afterHash": "b" * 64,
+            "versionBefore": 4,
+            "versionAfter": 4,
+        },
+        "original": {
+            "beforeHash": "c" * 64,
+            "afterHash": "c" * 64,
+            "usageBeforeHash": "d" * 64,
+            "usageAfterHash": "d" * 64,
+            "attemptCountBefore": 1,
+            "attemptCountAfter": 1,
+            "feedbackBeforeHash": "e" * 64,
+            "feedbackAfterHash": "e" * 64,
+            "feedbackCountBefore": 1,
+            "feedbackCountAfter": 1,
         },
     }
 
@@ -1033,6 +1134,53 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "firstTurnId must be a non-empty string",
         ):
             evaluate_as_f02(capture)
+
+    def test_as_f07_accepts_complete_revision_facts(self) -> None:
+        assertions = evaluate_as_f07(valid_as_f07_capture())
+
+        self.assertEqual(len(assertions), 6)
+        self.assertTrue(all(assertions.values()))
+
+    def test_as_f07_rejects_regenerate_lineage_drift(self) -> None:
+        capture = copy.deepcopy(valid_as_f07_capture())
+        capture["regenerate"]["second"]["parentMessageId"] = "wrong-parent"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "regenerateCreatedSiblings",
+        ):
+            evaluate_as_f07(capture)
+
+    def test_as_f07_rejects_stale_branch_mutation(self) -> None:
+        capture = copy.deepcopy(valid_as_f07_capture())
+        capture["staleBranch"]["afterHash"] = "f" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "staleBranchConflict",
+        ):
+            evaluate_as_f07(capture)
+
+    def test_as_f07_rejects_original_evidence_mutation(self) -> None:
+        capture = copy.deepcopy(valid_as_f07_capture())
+        capture["original"]["feedbackAfterHash"] = "f" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "originalImmutable",
+        ):
+            evaluate_as_f07(capture)
+
+    def test_as_f07_rejects_empty_original_evidence(self) -> None:
+        capture = copy.deepcopy(valid_as_f07_capture())
+        capture["original"]["feedbackCountBefore"] = 0
+        capture["original"]["feedbackCountAfter"] = 0
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "feedbackCountBefore must be a positive integer",
+        ):
+            evaluate_as_f07(capture)
 
     def test_as_f10_accepts_desktop_and_browser_production_facts(self) -> None:
         for platform in ("desktop_app", "browser"):

@@ -1003,9 +1003,13 @@ async function foundationConversationReadback(conversationId: string) {
       messageId: message.message_id,
       turnId: message.turn_id ?? null,
       role: message.role,
+      status: message.status,
       content: message.content,
       attachments: message.attachments ?? [],
       seq: message.seq,
+      branchId: message.branch_id ?? null,
+      parentMessageId: message.parent_message_id ?? null,
+      replacesMessageId: message.replaces_message_id ?? null,
     })),
     nextCursor: result.next_cursor,
     hasMore: result.has_more,
@@ -3392,6 +3396,517 @@ async function runFoundationF06Complete(
   };
 }
 
+async function foundationRevisionMessageFact(
+  value: unknown,
+  name: string,
+): Promise<Record<string, unknown>> {
+  const message = evidenceRecord(value, name);
+  const content = String(message.content ?? '');
+  return {
+    messageId: String(evidenceField(message, 'messageId', 'message_id') ?? ''),
+    turnId: String(evidenceField(message, 'turnId', 'turn_id') ?? ''),
+    role: String(message.role ?? ''),
+    status: String(
+      evidenceField(message, 'messageStatus', 'message_status')
+      ?? message.status
+      ?? '',
+    ),
+    branchId: String(evidenceField(message, 'branchId', 'branch_id') ?? ''),
+    parentMessageId: String(
+      evidenceField(message, 'parentMessageId', 'parent_message_id') ?? '',
+    ),
+    replacesMessageId: String(
+      evidenceField(message, 'replacesMessageId', 'replaces_message_id') ?? '',
+    ),
+    contentHash: await sha256Hex(content),
+  };
+}
+
+function foundationTurnAttemptFacts(value: unknown): Record<string, unknown>[] {
+  const evidence = evidenceRecord(value, 'foundationF07TurnEvidence');
+  const diagnostics = evidenceRecord(
+    evidence.diagnostics,
+    'foundationF07Diagnostics',
+  );
+  const replay = evidenceRecord(
+    diagnostics.replay,
+    'foundationF07DiagnosticReplay',
+  );
+  return evidenceArray(
+    replay.attempts,
+    'foundationF07Attempts',
+  ).map((candidate) => {
+    const attempt = evidenceRecord(candidate, 'foundationF07Attempt');
+    return {
+      attemptId: String(evidenceField(attempt, 'attemptId', 'attempt_id') ?? ''),
+      turnId: String(evidenceField(attempt, 'turnId', 'turn_id') ?? ''),
+      index: Number(attempt.index ?? 0),
+      status: Number(attempt.status ?? 0),
+      usage: evidenceValue(attempt.usage ?? null),
+    };
+  });
+}
+
+async function runFoundationF07Scenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  platform: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: {
+    eventType: string;
+    sequence: number;
+    observedAt: string;
+  };
+  facts: Record<string, unknown>;
+}> {
+  const agentId = input.agent.id || input.agent.name;
+  const retryConversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation retry ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  await useChatStore.getState().selectSession(retryConversation.conversation_id);
+
+  let cancellationRequested = false;
+  let resolveCancellation!: (value: {
+    turnId: string;
+    result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
+  }) => void;
+  const cancellation = new Promise<{
+    turnId: string;
+    result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
+  }>((resolve) => {
+    resolveCancellation = resolve;
+  });
+  const retrySource = startObservedFoundationTurn({
+    conversationId: retryConversation.conversation_id,
+    agentId,
+    content: 'Write a detailed numbered response with at least 100 short items.',
+    idempotencyKey: crypto.randomUUID(),
+    provider: input.agent.provider || undefined,
+    model: input.agent.model || undefined,
+    effort: 'low',
+    thinkingMode: 'disabled',
+    clientCapabilitySessionId: input.capabilitySessionId,
+    onEvent: (event, events) => {
+      if (cancellationRequested || event.event !== 'text') return;
+      const turnId = observedTurnId(events);
+      if (!turnId) return;
+      cancellationRequested = true;
+      resolveCancellation({
+        turnId,
+        result: api.cancelAgentTurn(turnId),
+      });
+    },
+  });
+  const cancellationAttempt = await Promise.race([
+    cancellation,
+    retrySource.result.then((result) => {
+      throw new Error(
+        result.error || 'agent.acceptance.foundationRevisionRetrySourceMissing',
+      );
+    }),
+  ]);
+  await cancellationAttempt.result;
+  const retrySourceResult = await retrySource.result;
+  if (!retrySourceResult.events.some((event) =>
+    classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
+    throw new Error('agent.acceptance.foundationRevisionRetrySourceNotCancelled');
+  }
+  const retryEvidenceBefore = await foundationTurnEvidence(
+    retryConversation.conversation_id,
+    cancellationAttempt.turnId,
+  );
+  const retryVersion = (
+    await api.getAgentConversation(retryConversation.conversation_id)
+  ).version;
+  const retryResponse = evidenceRecord(
+    await api.retryAgentTurn({
+      conversation_id: retryConversation.conversation_id,
+      source_turn_id: cancellationAttempt.turnId,
+      client_idempotency_key: crypto.randomUUID(),
+      expected_conversation_version: retryVersion,
+    }),
+    'foundationF07RetryResponse',
+  );
+  const retryEvidenceAfter = await foundationTurnEvidence(
+    retryConversation.conversation_id,
+    cancellationAttempt.turnId,
+  );
+
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation revisions ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  await useChatStore.getState().selectSession(conversation.conversation_id);
+  const startedAt = performance.now();
+  const sourceTurn = startObservedFoundationTurn({
+    conversationId: conversation.conversation_id,
+    agentId,
+    content: `Reply with one short sentence for revision sample ${input.sampleId}.`,
+    idempotencyKey: crypto.randomUUID(),
+    provider: input.agent.provider || undefined,
+    model: input.agent.model || undefined,
+    effort: 'low',
+    thinkingMode: 'disabled',
+    clientCapabilitySessionId: input.capabilitySessionId,
+  });
+  const sourceResult = await sourceTurn.result;
+  const durationMs = performance.now() - startedAt;
+  if (!sourceResult.ok) {
+    throw new Error(
+      sourceResult.error || 'agent.acceptance.foundationRevisionSourceFailed',
+    );
+  }
+  const sourceTurnId = observedTurnId(sourceResult.events);
+  const runtimeEvent = [...sourceResult.events].reverse().find((event) =>
+    classifyAgentTurnTerminalEvent(event) !== null);
+  if (!sourceTurnId || !runtimeEvent) {
+    throw new Error('agent.acceptance.foundationRevisionSourceEvidenceMissing');
+  }
+
+  const sourceReadback = await foundationConversationReadback(
+    conversation.conversation_id,
+  );
+  const sourceUser = sourceReadback.messages.find((message) =>
+    message.role === 'user' && message.turnId === sourceTurnId);
+  const sourceAssistant = sourceReadback.messages.find((message) =>
+    message.role === 'assistant' && message.turnId === sourceTurnId);
+  if (!sourceUser || !sourceAssistant) {
+    throw new Error('agent.acceptance.foundationRevisionSourceMessagesMissing');
+  }
+  await submitAgentFeedback(
+    agentId,
+    sourceTurnId,
+    conversation.conversation_id,
+    'positive',
+    undefined,
+    {
+      assistantMessageId: sourceAssistant.messageId,
+      source: 'acceptance',
+    },
+  );
+  const originalEvidenceBefore = evidenceRecord(
+    await foundationTurnEvidence(conversation.conversation_id, sourceTurnId),
+    'foundationF07OriginalEvidenceBefore',
+  );
+
+  const firstRegenerate = evidenceRecord(
+    await api.regenerateAgentTurn({
+      conversation_id: conversation.conversation_id,
+      source_assistant_message_id: sourceAssistant.messageId,
+      client_idempotency_key: crypto.randomUUID(),
+      expected_conversation_version: sourceReadback.conversation.version,
+    }),
+    'foundationF07FirstRegenerate',
+  );
+  const firstRegenerateMessage = await foundationRevisionMessageFact(
+    evidenceField(firstRegenerate, 'assistantMessage', 'assistant_message'),
+    'foundationF07FirstRegenerateMessage',
+  );
+  const afterFirstRegenerate = await api.getAgentConversation(
+    conversation.conversation_id,
+  );
+
+  const secondRegenerate = evidenceRecord(
+    await api.regenerateAgentTurn({
+      conversation_id: conversation.conversation_id,
+      source_assistant_message_id: sourceAssistant.messageId,
+      client_idempotency_key: crypto.randomUUID(),
+      expected_conversation_version: afterFirstRegenerate.version,
+    }),
+    'foundationF07SecondRegenerate',
+  );
+  const secondRegenerateMessage = await foundationRevisionMessageFact(
+    evidenceField(secondRegenerate, 'assistantMessage', 'assistant_message'),
+    'foundationF07SecondRegenerateMessage',
+  );
+  const afterSecondRegenerate = await api.getAgentConversation(
+    conversation.conversation_id,
+  );
+
+  const revisedContent = `Revised foundation message ${input.sampleId}`;
+  const editResponse = evidenceRecord(
+    await api.editAndResendAgentMessage({
+      conversation_id: conversation.conversation_id,
+      source_user_message_id: sourceUser.messageId,
+      revised_content: revisedContent,
+      client_idempotency_key: crypto.randomUUID(),
+      expected_conversation_version: afterSecondRegenerate.version,
+    }),
+    'foundationF07EditResponse',
+  );
+  const editedUserMessage = await foundationRevisionMessageFact(
+    evidenceField(editResponse, 'userMessage', 'user_message'),
+    'foundationF07EditedUserMessage',
+  );
+  const editedTurn = evidenceRecord(
+    editResponse.turn,
+    'foundationF07EditedTurn',
+  );
+  const afterEdit = await api.getAgentConversation(conversation.conversation_id);
+
+  const staleBefore = await foundationConversationReadback(
+    conversation.conversation_id,
+  );
+  let staleBranchError = '';
+  try {
+    await api.selectAgentActiveBranch({
+      conversation_id: conversation.conversation_id,
+      active_branch_message_id: String(firstRegenerateMessage.messageId),
+      client_idempotency_key: crypto.randomUUID(),
+      expected_conversation_version: afterSecondRegenerate.version,
+    });
+  } catch (error) {
+    staleBranchError = observedErrorCode(error);
+  }
+  const staleAfter = await foundationConversationReadback(
+    conversation.conversation_id,
+  );
+  const editedAssistant = staleAfter.messages.find(
+    (message) => message.messageId === afterEdit.active_branch_message_id,
+  );
+  if (!editedAssistant) {
+    throw new Error('agent.acceptance.foundationRevisionEditedAssistantMissing');
+  }
+  const editedAssistantMessage = await foundationRevisionMessageFact(
+    editedAssistant,
+    'foundationF07EditedAssistantMessage',
+  );
+
+  const originalBranch = evidenceRecord(
+    await api.selectAgentActiveBranch({
+      conversation_id: conversation.conversation_id,
+      active_branch_message_id: sourceAssistant.messageId,
+      client_idempotency_key: crypto.randomUUID(),
+      expected_conversation_version: afterEdit.version,
+    }),
+    'foundationF07OriginalBranch',
+  );
+  const originalBranchConversation = evidenceRecord(
+    originalBranch.conversation,
+    'foundationF07OriginalBranchConversation',
+  );
+  const originalReadbackAfter = await foundationConversationReadback(
+    conversation.conversation_id,
+  );
+  const originalEvidenceAfter = evidenceRecord(
+    await foundationTurnEvidence(conversation.conversation_id, sourceTurnId),
+    'foundationF07OriginalEvidenceAfter',
+  );
+  const originalUserAfter = originalReadbackAfter.messages.find(
+    (message) => message.messageId === sourceUser.messageId,
+  );
+  const originalAssistantAfter = originalReadbackAfter.messages.find(
+    (message) => message.messageId === sourceAssistant.messageId,
+  );
+  if (!originalUserAfter || !originalAssistantAfter) {
+    throw new Error('agent.acceptance.foundationRevisionOriginalBranchMissing');
+  }
+
+  const selectedBranch = evidenceRecord(
+    await api.selectAgentActiveBranch({
+      conversation_id: conversation.conversation_id,
+      active_branch_message_id: String(firstRegenerateMessage.messageId),
+      client_idempotency_key: crypto.randomUUID(),
+      expected_conversation_version: Number(
+        evidenceField(
+          originalBranchConversation,
+          'version',
+          'version',
+        ) ?? 0,
+      ),
+    }),
+    'foundationF07SelectedBranch',
+  );
+  const selectedBranchConversation = evidenceRecord(
+    selectedBranch.conversation,
+    'foundationF07SelectedBranchConversation',
+  );
+  await useChatStore.getState().branchFromMessage(
+    String(firstRegenerateMessage.messageId),
+  );
+  await waitFor(
+    () => Array.from(
+      document.querySelectorAll<HTMLElement>('[data-pt-agent-message-id]'),
+    ).some((element) =>
+      element.dataset.ptAgentMessageId === firstRegenerateMessage.messageId),
+    'Foundation AS-F07 selected branch projection',
+    30_000,
+  );
+  const selectedReadback = await foundationConversationReadback(
+    conversation.conversation_id,
+  );
+  const selectedDom = foundationDomSnapshot();
+  const selectedMessageIds = selectedReadback.messages.map(
+    (message) => message.messageId,
+  );
+  const renderedMessageIds = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-pt-agent-message-id]'),
+  ).map((element) => element.dataset.ptAgentMessageId ?? '');
+
+  const originalBefore = {
+    user: await foundationRevisionMessageFact(
+      sourceUser,
+      'foundationF07OriginalUserBefore',
+    ),
+    assistant: await foundationRevisionMessageFact(
+      sourceAssistant,
+      'foundationF07OriginalAssistantBefore',
+    ),
+  };
+  const originalAfter = {
+    user: await foundationRevisionMessageFact(
+      originalUserAfter,
+      'foundationF07OriginalUserAfter',
+    ),
+    assistant: await foundationRevisionMessageFact(
+      originalAssistantAfter,
+      'foundationF07OriginalAssistantAfter',
+    ),
+  };
+  const originalDiagnosticsBefore = evidenceRecord(
+    originalEvidenceBefore.diagnostics,
+    'foundationF07OriginalDiagnosticsBefore',
+  );
+  const originalDiagnosticsAfter = evidenceRecord(
+    originalEvidenceAfter.diagnostics,
+    'foundationF07OriginalDiagnosticsAfter',
+  );
+  const originalAttemptsBefore = foundationTurnAttemptFacts(
+    originalEvidenceBefore,
+  );
+  const originalAttemptsAfter = foundationTurnAttemptFacts(
+    originalEvidenceAfter,
+  );
+  const originalFeedbackBefore = evidenceArray(
+    evidenceRecord(
+      originalEvidenceBefore.feedback,
+      'foundationF07OriginalFeedbackBefore',
+    ).feedback,
+    'foundationF07OriginalFeedbackEntriesBefore',
+  );
+  const originalFeedbackAfter = evidenceArray(
+    evidenceRecord(
+      originalEvidenceAfter.feedback,
+      'foundationF07OriginalFeedbackAfter',
+    ).feedback,
+    'foundationF07OriginalFeedbackEntriesAfter',
+  );
+
+  return {
+    conversationId: conversation.conversation_id,
+    turnId: sourceTurnId,
+    durationMs,
+    runtimeEvent: {
+      eventType: runtimeEvent.event,
+      sequence: Number(runtimeEvent.data.seq ?? 0),
+      observedAt: runtimeEvent.observedAt,
+    },
+    facts: {
+      retry: {
+        sourceConversationId: retryConversation.conversation_id,
+        sourceTurnId: cancellationAttempt.turnId,
+        resultTurnId: String(
+          evidenceField(
+            evidenceRecord(retryResponse.turn, 'foundationF07RetryTurn'),
+            'turnId',
+            'turn_id',
+          ) ?? '',
+        ),
+        attemptId: String(
+          evidenceField(
+            evidenceRecord(retryResponse.attempt, 'foundationF07RetryAttempt'),
+            'attemptId',
+            'attempt_id',
+          ) ?? '',
+        ),
+        attemptsBefore: foundationTurnAttemptFacts(retryEvidenceBefore),
+        attemptsAfter: foundationTurnAttemptFacts(retryEvidenceAfter),
+      },
+      regenerate: {
+        sourceUserMessageId: sourceUser.messageId,
+        sourceAssistantMessageId: sourceAssistant.messageId,
+        first: firstRegenerateMessage,
+        second: secondRegenerateMessage,
+      },
+      edit: {
+        sourceUserMessageId: sourceUser.messageId,
+        sourceParentMessageId: sourceUser.parentMessageId,
+        revisedContentHash: await sha256Hex(revisedContent),
+        user: editedUserMessage,
+        assistant: editedAssistantMessage,
+        assistantMessageId: String(
+          evidenceField(
+            editedTurn,
+            'assistantMessageId',
+            'assistant_message_id',
+          ) ?? afterEdit.active_branch_message_id,
+        ),
+        activeBranchMessageId: afterEdit.active_branch_message_id,
+      },
+      branchSelection: {
+        selectedMessageId: String(firstRegenerateMessage.messageId),
+        responseActiveBranchMessageId: String(
+          evidenceField(
+            selectedBranchConversation,
+            'activeBranchMessageId',
+            'active_branch_message_id',
+          ) ?? '',
+        ),
+        originalResponseActiveBranchMessageId: String(
+          evidenceField(
+            originalBranchConversation,
+            'activeBranchMessageId',
+            'active_branch_message_id',
+          ) ?? '',
+        ),
+        originalMessageId: sourceAssistant.messageId,
+        readbackActiveBranchMessageId:
+          selectedReadback.conversation.active_branch_message_id,
+        selectedMessageIds,
+        renderedMessageIds,
+        receiverVisible:
+          selectedDom.assistantMessages.visibleCount > 0,
+      },
+      staleBranch: {
+        errorCode: staleBranchError,
+        beforeHash: await sha256Hex(stableJson(staleBefore)),
+        afterHash: await sha256Hex(stableJson(staleAfter)),
+        versionBefore: staleBefore.conversation.version,
+        versionAfter: staleAfter.conversation.version,
+      },
+      original: {
+        beforeHash: await sha256Hex(stableJson(originalBefore)),
+        afterHash: await sha256Hex(stableJson(originalAfter)),
+        usageBeforeHash: await sha256Hex(stableJson(
+          withoutDiagnosticGenerationTime(originalDiagnosticsBefore),
+        )),
+        usageAfterHash: await sha256Hex(stableJson(
+          withoutDiagnosticGenerationTime(originalDiagnosticsAfter),
+        )),
+        attemptCountBefore: originalAttemptsBefore.length,
+        attemptCountAfter: originalAttemptsAfter.length,
+        feedbackBeforeHash: await sha256Hex(stableJson(
+          originalFeedbackBefore,
+        )),
+        feedbackAfterHash: await sha256Hex(stableJson(
+          originalFeedbackAfter,
+        )),
+        feedbackCountBefore: originalFeedbackBefore.length,
+        feedbackCountAfter: originalFeedbackAfter.length,
+      },
+    },
+  };
+}
+
 interface DirectCellAssertionContext {
   cell: string;
   agent: ReturnType<typeof selectedAgent>;
@@ -4278,17 +4793,124 @@ function evaluateF02(ctx: DirectCellAssertionContext): Record<string, boolean | 
 }
 
 function evaluateF07(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
-  const messages = ctx.conversationReadback?.messages ?? [];
-  const hasTurnEvidence = Boolean(ctx.turnEvidence);
-  const hasMultipleMessages = messages.length > 1;
+  const facts = evidenceRecord(ctx.scenarioFacts, 'foundationF07Facts');
+  const retry = evidenceRecord(facts.retry, 'foundationF07Retry');
+  const attemptsBefore = evidenceArray(
+    retry.attemptsBefore,
+    'foundationF07AttemptsBefore',
+  );
+  const attemptsAfter = evidenceArray(
+    retry.attemptsAfter,
+    'foundationF07AttemptsAfter',
+  );
+  const regenerate = evidenceRecord(
+    facts.regenerate,
+    'foundationF07Regenerate',
+  );
+  const firstRegenerate = evidenceRecord(
+    regenerate.first,
+    'foundationF07FirstRegenerate',
+  );
+  const secondRegenerate = evidenceRecord(
+    regenerate.second,
+    'foundationF07SecondRegenerate',
+  );
+  const edit = evidenceRecord(facts.edit, 'foundationF07Edit');
+  const editedUser = evidenceRecord(
+    edit.user,
+    'foundationF07EditedUser',
+  );
+  const editedAssistant = evidenceRecord(
+    edit.assistant,
+    'foundationF07EditedAssistant',
+  );
+  const branch = evidenceRecord(
+    facts.branchSelection,
+    'foundationF07BranchSelection',
+  );
+  const stale = evidenceRecord(
+    facts.staleBranch,
+    'foundationF07StaleBranch',
+  );
+  const original = evidenceRecord(
+    facts.original,
+    'foundationF07Original',
+  );
+  const sourceAssistantMessageId = String(
+    regenerate.sourceAssistantMessageId ?? '',
+  );
+  const sourceUserMessageId = String(regenerate.sourceUserMessageId ?? '');
+  const firstMessageId = String(firstRegenerate.messageId ?? '');
+  const secondMessageId = String(secondRegenerate.messageId ?? '');
+  const editedUserMessageId = String(editedUser.messageId ?? '');
+  const selectedMessageIds = evidenceArray(
+    branch.selectedMessageIds,
+    'foundationF07SelectedMessageIds',
+  ).map(String);
+  const renderedMessageIds = evidenceArray(
+    branch.renderedMessageIds,
+    'foundationF07RenderedMessageIds',
+  ).map(String);
 
   return {
-    retryCreatedAttempt: hasTurnEvidence,
-    regenerateCreatedSiblings: hasTurnEvidence && hasMultipleMessages,
-    editCreatedSibling: hasTurnEvidence && hasMultipleMessages,
-    branchSwitchPersisted: hasMultipleMessages,
-    staleBranchConflict: hasMultipleMessages,
-    originalImmutable: hasTurnEvidence,
+    retryCreatedAttempt:
+      String(retry.sourceConversationId ?? '').length > 0
+      && String(retry.sourceTurnId ?? '').length > 0
+      && retry.sourceTurnId === retry.resultTurnId
+      && String(retry.attemptId ?? '').length > 0
+      && attemptsAfter.length === attemptsBefore.length + 1
+      && attemptsAfter.some((attempt) =>
+        evidenceRecord(attempt, 'foundationF07RetryAttemptAfter').attemptId
+          === retry.attemptId),
+    regenerateCreatedSiblings:
+      sourceAssistantMessageId.length > 0
+      && sourceUserMessageId.length > 0
+      && firstMessageId.length > 0
+      && secondMessageId.length > 0
+      && firstMessageId !== secondMessageId
+      && firstMessageId !== sourceAssistantMessageId
+      && secondMessageId !== sourceAssistantMessageId
+      && firstRegenerate.parentMessageId === sourceUserMessageId
+      && secondRegenerate.parentMessageId === sourceUserMessageId
+      && firstRegenerate.replacesMessageId === sourceAssistantMessageId
+      && secondRegenerate.replacesMessageId === sourceAssistantMessageId
+      && String(firstRegenerate.branchId ?? '').length > 0
+      && String(secondRegenerate.branchId ?? '').length > 0
+      && firstRegenerate.branchId !== secondRegenerate.branchId,
+    editCreatedSibling:
+      editedUserMessageId.length > 0
+      && editedUserMessageId !== sourceUserMessageId
+      && editedUser.replacesMessageId === sourceUserMessageId
+      && editedUser.parentMessageId === edit.sourceParentMessageId
+      && editedUser.contentHash === edit.revisedContentHash
+      && String(edit.assistantMessageId ?? '').length > 0
+      && edit.assistantMessageId === edit.activeBranchMessageId
+      && editedAssistant.messageId === edit.assistantMessageId
+      && editedAssistant.parentMessageId === editedUserMessageId
+      && editedAssistant.branchId === editedUser.branchId,
+    branchSwitchPersisted:
+      String(branch.selectedMessageId ?? '').length > 0
+      && branch.originalResponseActiveBranchMessageId === branch.originalMessageId
+      && branch.responseActiveBranchMessageId === branch.selectedMessageId
+      && branch.selectedMessageId === branch.readbackActiveBranchMessageId
+      && selectedMessageIds.includes(String(branch.selectedMessageId))
+      && renderedMessageIds.includes(String(branch.selectedMessageId))
+      && branch.receiverVisible === true,
+    staleBranchConflict:
+      stale.errorCode === 'VERSION_CONFLICT'
+      && stale.beforeHash === stale.afterHash
+      && Number(stale.versionBefore) === Number(stale.versionAfter),
+    originalImmutable:
+      String(original.beforeHash ?? '').length > 0
+      && original.beforeHash === original.afterHash
+      && String(original.usageBeforeHash ?? '').length > 0
+      && original.usageBeforeHash === original.usageAfterHash
+      && Number(original.attemptCountBefore) > 0
+      && original.attemptCountBefore === original.attemptCountAfter
+      && String(original.feedbackBeforeHash ?? '').length > 0
+      && original.feedbackBeforeHash === original.feedbackAfterHash
+      && Number(original.feedbackCountBefore) > 0
+      && original.feedbackCountBefore === original.feedbackCountAfter,
   };
 }
 
@@ -5330,6 +5952,25 @@ export function installAcceptanceHarness(): void {
         turnDurationMs = scenario.durationMs;
         scenarioFacts = scenario.facts;
         await useChatStore.getState().selectSession(scenario.conversationId);
+      }
+
+      if (cell === 'AS-F07') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationF07Scenario({
+          agent,
+          capabilitySessionId,
+          platform,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
       }
 
       if (cell === 'AS-F01') {

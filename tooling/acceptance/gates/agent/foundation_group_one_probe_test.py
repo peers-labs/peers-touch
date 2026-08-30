@@ -16,12 +16,14 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f04,
     evaluate_as_f05,
     evaluate_as_f06,
+    evaluate_as_f07,
     evaluate_as_f10,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
+    valid_as_f07_capture,
 )
 
 
@@ -90,6 +92,11 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
             locale=probe.locale,
             sample_id=probe.sample_id,
         )
+        return result
+    if probe.cell == "AS-F07":
+        facts = valid_as_f07_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_as_f07(facts)
         return result
     if probe.cell == "AS-F10":
         browser = probe.platform == "browser"
@@ -327,6 +334,30 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             '"key":"failedUploadRemovalPreservedSiblings"}]',
         )
         self.assertNotIn("must-not-leak", str(raised.exception))
+
+    def test_as_f07_rejects_assertions_not_derived_from_facts(self) -> None:
+        runner = FoundationGroupOneProbeRunner(
+            desktop_native=RecordingHarnessClient(),
+            browser=RecordingHarnessClient(),
+        )
+
+        def mismatched(
+            client: RecordingHarnessClient,
+            probe: Any,
+        ) -> dict[str, Any]:
+            result = scenario_capture(client, probe)
+            if probe.cell == "AS-F07":
+                result["assertions"] = {
+                    **result["assertions"],
+                    "branchSwitchPersisted": False,
+                }
+            return result
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "AS-F07 assertions do not match production scenario facts",
+        ):
+            runner.collect(mismatched)
 
     def test_deferred_assertion_key_mismatch_remains_fail_closed(self) -> None:
         runner = FoundationGroupOneProbeRunner(
