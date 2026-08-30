@@ -339,7 +339,7 @@ func (s *commandProposalStore) complete(
 		}
 		inbox := &envinf.InboxModel{
 			InboxItemID:       item.InboxItemId,
-			RecipientDID:      item.RecipientPtid,
+			RecipientPTID:     item.RecipientPtid,
 			RecipientDeviceID: item.RecipientDeviceId,
 			IdempotencyKey:    envelope.IdempotencyKey,
 			EnvelopeBytes:     envelopeBytes,

@@ -4,13 +4,6 @@ use crate::infrastructure::window_session_registry::WindowSessionRegistry;
 use crate::messaging::EngineRegistry;
 use std::sync::{Arc, Mutex};
 
-#[derive(Default, Clone)]
-pub struct SessionState {
-    pub actor_id: Option<String>,
-    pub token: Option<String>,
-    pub account_id: Option<String>,
-}
-
 #[derive(Default)]
 pub struct SettingsState {
     pub locale: Option<String>,
@@ -25,17 +18,12 @@ pub struct RealtimeState {
 
 pub struct AppState {
     pub identity_transition: Arc<Mutex<()>>,
-    /// **Deprecated** — last authenticated session in-process for the debug
-    /// HTTP gateway only (`interface::http_gateway`); Tauri windows use
-    /// `WindowSessionRegistry` + per-actor on-disk store (`session_store`).
-    pub session: Mutex<SessionState>,
     pub settings: Mutex<SettingsState>,
     pub realtime: Mutex<RealtimeState>,
     pub storage: StorageLayout,
     pub i18n: I18nService,
     pub messaging_engines: EngineRegistry,
-    /// Per-window `ActiveSession` registry. Coexists with `session` until
-    /// PR-3 finishes the migration.
+    /// Sole in-process authority for authenticated Desktop sessions.
     pub sessions: WindowSessionRegistry,
 }
 
@@ -43,7 +31,6 @@ impl AppState {
     pub fn new(layout: StorageLayout, i18n: I18nService) -> Self {
         Self {
             identity_transition: Arc::new(Mutex::new(())),
-            session: Mutex::new(SessionState::default()),
             settings: Mutex::new(SettingsState::default()),
             realtime: Mutex::new(RealtimeState::default()),
             storage: layout,

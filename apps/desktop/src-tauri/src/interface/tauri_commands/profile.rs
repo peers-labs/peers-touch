@@ -36,7 +36,7 @@ pub fn profile_get(state: State<'_, Arc<AppState>>, window: Window) -> AppResult
     application_profile::profile_get(&token)
 }
 
-/// Fetch a peer actor's public profile by DID. Used by Contacts and Chat
+/// Fetch a peer actor's public profile by PTID. Used by Contacts and Chat
 /// detail panels to render the peer's public information consistently.
 #[tauri::command]
 pub fn peer_profile_get(
@@ -48,7 +48,7 @@ pub fn peer_profile_get(
         Ok(t) => t,
         Err(e) => return e,
     };
-    application_profile::peer_profile_get(&token, &input.did)
+    application_profile::peer_profile_get(&token, &input.actor_ptid)
 }
 
 #[tauri::command]
@@ -74,9 +74,8 @@ pub fn profile_upload_avatar(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_profile::profile_upload_avatar(&actor_id, input, &token)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_profile::profile_upload_avatar(&actor_ptid, input, &token)
 }
 
 #[tauri::command]
@@ -89,9 +88,8 @@ pub fn profile_upload_header(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_profile::profile_upload_header(&actor_id, input, &token)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_profile::profile_upload_header(&actor_ptid, input, &token)
 }
 
 // 2026-04-25: Changed from sync to async with spawn_blocking.
@@ -160,9 +158,8 @@ pub fn profile_update_privacy(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_profile::profile_update_privacy(&actor_id, &token, input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_profile::profile_update_privacy(&actor_ptid, &token, input)
 }
 
 // 2026-04-21: Changed from sync rfd::FileDialog to async rfd::AsyncFileDialog.
@@ -236,7 +233,7 @@ pub fn sync_user_profile(
             )
         }
     };
-    if session.actor.actor_id.trim().is_empty() {
+    if session.actor.ptid.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::Unauthorized,
             "sync_user_profile: window has no bound local actor",

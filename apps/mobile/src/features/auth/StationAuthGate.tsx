@@ -23,7 +23,7 @@ export function StationAuthGate({
   error: string | null;
   loading: boolean;
   onBack: () => void;
-  onLogin: (input: Omit<StationLoginInput, 'stationUrl'>) => Promise<void>;
+  onLogin: (input: Omit<StationLoginInput, 'stationPeerId' | 'stationUrl'>) => Promise<void>;
 }) {
   const { t } = useMobileI18n();
   const [email, setEmail] = useState('');

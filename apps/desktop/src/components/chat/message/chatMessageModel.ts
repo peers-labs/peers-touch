@@ -22,8 +22,8 @@ export function isFriendMessage(message: ChatMessage): boolean {
   return message.conversationKind === 'friend';
 }
 
-export function isOwnMessage(message: ChatMessage, currentUserDid: string | null): boolean {
-  return isOwnChatMessage(message, currentUserDid);
+export function isOwnMessage(message: ChatMessage, currentUserPtid: string | null): boolean {
+  return isOwnChatMessage(message, currentUserPtid);
 }
 
 export function messageReplyToUlid(message: ChatMessage): string {

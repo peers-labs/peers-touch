@@ -20,7 +20,7 @@ message OAuthClient {
 message OAuthAuthCode {
   string code_hash = 1;
   string client_id = 2;
-  string user_id = 3;
+  string actor_ptid = 3;
   string scopes = 4;
   google.protobuf.Timestamp expires_at = 5;
   bool used = 6;
@@ -31,7 +31,7 @@ message OAuthToken {
   string refresh_token_hash = 2;
   string token_type = 3; // Bearer
   string scope = 4;
-  string user_id = 5;
+  string actor_ptid = 5;
   string client_id = 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp expires_at = 8;
@@ -56,10 +56,7 @@ message OAuthBridgeResponse {
   string refresh_token = 3;
   string token_type   = 4;
   string expires_at   = 5;
-  string actor_id     = 6;
-  int64  actor_id_num = 7;
-  string username     = 8;
-  string display_name = 9;
-  string email        = 10;
+  reserved 6, 7, 8, 9, 10;
+  reserved "actor_id", "actor_id_num", "username", "display_name", "email";
   peers_touch.model.actor.v1.ActorRef actor_ref = 11 [json_name = "actor_ref"];
 }

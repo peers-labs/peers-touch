@@ -23,9 +23,8 @@ pub fn agent_execute_turn(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::agent_execute_turn(input, &token, &actor_id)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_agent_turn::agent_execute_turn(input, &token, &actor_ptid)
 }
 
 #[tauri::command]
@@ -46,8 +45,7 @@ pub fn agent_execute_turn_stream(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
     let stream_id = input
         .stream_id
         .as_deref()
@@ -63,7 +61,7 @@ pub fn agent_execute_turn_stream(
             stream_id_for_task.clone(),
             input,
             token,
-            actor_id,
+            actor_ptid,
             cancel_flag,
         );
         application_agent_turn::unregister_agent_turn_stream(&stream_id_for_task);

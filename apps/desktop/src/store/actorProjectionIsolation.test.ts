@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   api,
-  type AccountProfile,
   type NotificationData,
 } from '../services/desktop_api';
 import { useNotificationStore } from './notification';
@@ -17,49 +16,29 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function authenticatedUser(actorId: string): CurrentUser {
+function authenticatedUser(actorPtid: string): CurrentUser {
   return {
-    actorId,
-    name: actorId,
-    email: `${actorId}@p.t`,
+    actorPtid,
+    name: actorPtid,
+    email: `${actorPtid}@p.t`,
     loginMethod: 'password',
   };
 }
 
-function accountProfile(actorId: string, username: string): AccountProfile {
+function accountProfile(actorPtid: string, username: string) {
   return {
-    id: actorId,
+    actorPtid,
     username,
-    acct: `${username}@p.t`,
-    display_name: username,
-    note: '',
-    url: '',
+    displayName: username,
     avatar: '',
-    header: '',
-    locked: false,
-    created_at: '',
-    statuses_count: 0,
-    following_count: 0,
-    followers_count: 0,
-    region: '',
-    timezone: '',
-    tags: [],
-    links: [],
-    default_visibility: '',
-    manually_approves_followers: false,
-    message_permission: '',
-    auto_expire_days: 0,
-    peers_touch: {
-      network_id: '',
-    },
   };
 }
 
 function notification(id: string, body: string): NotificationData {
   return {
     id,
-    recipientId: 'ptid:peer:bob',
-    actorId: 'ptid:peer:bob',
+    recipientPtid: 'ptid:peer:bob',
+    actorPtid: 'ptid:peer:bob',
     type: 1,
     category: 1,
     status: 1,
@@ -121,8 +100,8 @@ describe('actor-scoped projection publication', () => {
   });
 
   it('rejects a stale self-profile response after the actor changes', async () => {
-    const aliceProfile = deferred<AccountProfile>();
-    vi.spyOn(api, 'profileGet').mockReturnValueOnce(aliceProfile.promise);
+    const aliceProfile = deferred<Awaited<ReturnType<typeof api.actorGetMyProfile>>>();
+    vi.spyOn(api, 'actorGetMyProfile').mockReturnValueOnce(aliceProfile.promise);
 
     const load = useSocialChatStore.getState().loadCurrentUserProfile();
     useSessionStore.setState({
@@ -130,9 +109,9 @@ describe('actor-scoped projection publication', () => {
       currentUser: authenticatedUser('ptid:peer:bob'),
     });
     useSocialChatStore.setState({
-      currentUserDid: 'ptid:peer:bob',
+      currentUserPtid: 'ptid:peer:bob',
       currentUserProfile: {
-        id: 'ptid:peer:bob',
+        actorPtid: 'ptid:peer:bob',
         username: 'bob',
         displayName: 'Bob',
         avatar: '',
@@ -142,8 +121,8 @@ describe('actor-scoped projection publication', () => {
     aliceProfile.resolve(accountProfile('ptid:peer:alice', 'alice'));
     await load;
 
-    expect(useSocialChatStore.getState().currentUserDid).toBe('ptid:peer:bob');
-    expect(useSocialChatStore.getState().currentUserProfile?.id).toBe('ptid:peer:bob');
+    expect(useSocialChatStore.getState().currentUserPtid).toBe('ptid:peer:bob');
+    expect(useSocialChatStore.getState().currentUserProfile?.actorPtid).toBe('ptid:peer:bob');
   });
 
   it('rejects stale notification results after the actor changes', async () => {

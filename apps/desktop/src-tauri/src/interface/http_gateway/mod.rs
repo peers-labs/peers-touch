@@ -136,7 +136,7 @@ fn group_chat_federated_actor_input_to_proto(
     input: GroupChatFederatedActorInput,
 ) -> model::chat::FederatedActorRef {
     model::chat::FederatedActorRef {
-        ptid: input.actor_did,
+        ptid: input.actor_ptid,
         home_station_peer_id: input.home_station_peer_id,
         home_station_domain: input.home_station_domain.unwrap_or_default(),
         federated_handle: input.federated_handle.unwrap_or_default(),
@@ -465,25 +465,54 @@ fn content_type_json() -> tiny_http::Header {
 // State extraction helpers (equivalent to tauri_commands helpers)
 // -------------------------------------------------------------------------
 
-fn token_from_state(state: &AppState) -> Result<String, Value> {
-    let guard = state.session.lock().map_err(|_| {
-        serde_json::to_value(AppResult::<StubPayload>::fail(
-            ErrorCode::InternalError,
-            "failed to access session state",
+const HTTP_GATEWAY_SESSION_LABEL: &str = "http-gateway";
+
+fn gateway_session(state: &AppState) -> Option<crate::domain::identity::ActiveSession> {
+    state.sessions.get(HTTP_GATEWAY_SESSION_LABEL)
+}
+
+fn bind_gateway_session(
+    state: &AppState,
+    account_id: String,
+    actor_ptid: String,
+    token: String,
+) -> Result<(), Value> {
+    if !actor_ptid.starts_with("ptid:") || token.trim().is_empty() {
+        return Err(to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::Unauthorized,
+            "canonical actor PTID and session token are required",
             None,
-        ))
-        .unwrap_or(json!({"ok": false}))
-    })?;
-    let token = guard.token.clone().unwrap_or_default();
-    if token.trim().is_empty() {
+        )));
+    }
+    state
+        .sessions
+        .bind(crate::domain::identity::ActiveSession::new(
+            HTTP_GATEWAY_SESSION_LABEL,
+            account_id,
+            crate::domain::identity::ActorRef::new_person(actor_ptid),
+            token,
+        ));
+    Ok(())
+}
+
+fn gateway_access_context(state: &AppState) -> Result<(String, String, String), Value> {
+    let session = gateway_session(state).ok_or_else(|| to_json(unauthorized_error()))?;
+    if !session.actor.ptid.starts_with("ptid:") || session.jwt.trim().is_empty() {
+        return Err(to_json(unauthorized_error()));
+    }
+    Ok((session.account_id, session.actor.ptid, session.jwt))
+}
+
+fn token_from_state(state: &AppState) -> Result<String, Value> {
+    let Some(session) = gateway_session(state) else {
         return Err(serde_json::to_value(AppResult::<StubPayload>::fail(
             ErrorCode::Unauthorized,
             "authentication required",
             None,
         ))
         .unwrap_or(json!({"ok": false})));
-    }
-    Ok(token)
+    };
+    Ok(session.jwt)
 }
 
 fn proxy_authenticated_station_json(
@@ -514,13 +543,30 @@ fn proxy_authenticated_station_json(
     }
 }
 
-fn actor_id_from_state(state: &AppState) -> Option<String> {
-    state.session.lock().ok().and_then(|g| g.actor_id.clone())
+fn actor_ptid_from_state(state: &AppState) -> Option<String> {
+    gateway_session(state)
+        .map(|session| session.actor.ptid)
+        .filter(|ptid| ptid.starts_with("ptid:"))
 }
 
-fn user_scope_from_state(state: &AppState) -> String {
-    let actor_id = actor_id_from_state(state);
-    crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref())
+fn user_scope_from_state(state: &AppState) -> Result<String, Value> {
+    let actor_ptid = actor_ptid_from_state(state).ok_or_else(|| {
+        to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        ))
+    })?;
+    Ok(crate::infrastructure::local_scope::user_scope_for_actor_ptid(&actor_ptid))
+}
+
+macro_rules! require_gateway_user_scope {
+    ($state:expr) => {
+        match user_scope_from_state($state) {
+            Ok(scope) => scope,
+            Err(error) => return error,
+        }
+    };
 }
 
 fn now_unix_seconds_i32() -> i32 {
@@ -556,7 +602,7 @@ struct SignalingEnvelopeOpenInput {
 fn local_identity_x25519_from_state(
     state: &AppState,
 ) -> Result<(StaticSecret, PublicKey), AppResult<StubPayload>> {
-    let actor_id = match actor_id_from_state(state) {
+    let actor_ptid = match actor_ptid_from_state(state) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return Err(AppResult::fail(
@@ -567,7 +613,7 @@ fn local_identity_x25519_from_state(
         }
     };
     let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+        crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid.as_str())
             .identity_key_ref();
     let ik = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
         Ok(k) => k,
@@ -626,20 +672,9 @@ fn peer_x25519_pub_from_ed25519(
 }
 
 fn resolve_scope(state: &AppState) -> Result<Option<String>, Value> {
-    let guard = state.session.lock().map_err(|_| {
-        serde_json::to_value(AppResult::<StubPayload>::fail(
-            ErrorCode::InternalError,
-            "failed to access session state",
-            None,
-        ))
-        .unwrap_or(json!({"ok": false}))
-    })?;
-    let scope = guard.actor_id.clone().unwrap_or_default();
-    let scope = scope.trim();
-    if scope.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(scope.to_string()))
+    actor_ptid_from_state(state)
+        .map(Some)
+        .ok_or_else(|| to_json(unauthorized_error()))
 }
 
 /// Convenience: serialize any AppResult<T: Serialize> to Value.
@@ -679,7 +714,7 @@ fn u32_arg(args: &Value, snake_case: &str, camel_case: &str) -> u32 {
 }
 
 fn authenticated_crypto_context(state: &AppState) -> Result<(String, String), Value> {
-    let actor_id = actor_id_from_state(state)
+    let actor_ptid = actor_ptid_from_state(state)
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| {
             to_json(AppResult::<StubPayload>::fail(
@@ -688,7 +723,7 @@ fn authenticated_crypto_context(state: &AppState) -> Result<(String, String), Va
                 None,
             ))
         })?;
-    Ok((actor_id, user_scope_from_state(state)))
+    Ok((actor_ptid, user_scope_from_state(state)?))
 }
 
 fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> Value {
@@ -750,14 +785,10 @@ fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> 
     to_json(result)
 }
 
-/// Debug HTTP gateway: resolve session token from the legacy global session lock.
 fn http_gateway_bearer_token(state: &AppState) -> Option<String> {
-    state
-        .session
-        .lock()
-        .ok()
-        .and_then(|g| g.token.clone())
-        .filter(|t| !t.trim().is_empty())
+    gateway_session(state)
+        .map(|session| session.jwt)
+        .filter(|token| !token.trim().is_empty())
 }
 
 fn unauthorized_error() -> AppResult<StubPayload> {
@@ -765,20 +796,18 @@ fn unauthorized_error() -> AppResult<StubPayload> {
 }
 
 fn http_gateway_admin_context(state: &AppState) -> Option<crate::domain::admin::AccessContext> {
-    let g = state.session.lock().ok()?;
-    let token = g.token.clone().filter(|t| !t.trim().is_empty())?;
+    let session = gateway_session(state)?;
     Some(crate::domain::admin::AccessContext {
-        actor_id: g.actor_id.clone(),
-        token: Some(token),
+        actor_ptid: Some(session.actor.ptid),
+        token: Some(session.jwt),
     })
 }
 
 fn http_gateway_applet_context(state: &AppState) -> Option<crate::domain::applets::AccessContext> {
-    let g = state.session.lock().ok()?;
-    g.token.as_ref().filter(|t| !t.trim().is_empty())?;
+    let session = gateway_session(state)?;
     Some(crate::domain::applets::AccessContext {
-        actor_id: g.actor_id.clone(),
-        token: g.token.clone().unwrap_or_default(),
+        actor_ptid: Some(session.actor.ptid),
+        token: session.jwt,
     })
 }
 
@@ -930,7 +959,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ))
         }
         "crypto_generate_identity" => {
-            let actor_id = match actor_id_from_state(state) {
+            let actor_ptid = match actor_ptid_from_state(state) {
                 Some(id) if !id.trim().is_empty() => id,
                 _ => {
                     return to_json(AppResult::<StubPayload>::fail(
@@ -940,9 +969,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ));
                 }
             };
-            let identity_key_ref =
-                crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
-                    .identity_key_ref();
+            let identity_key_ref = crate::infrastructure::local_scope::LocalScope::from_actor_ptid(
+                actor_ptid.as_str(),
+            )
+            .identity_key_ref();
             let kp = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
                 Ok(k) => k,
                 Err(reason) => {
@@ -962,7 +992,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ))
         }
         "crypto_generate_key_bundle" => {
-            let actor_id = match actor_id_from_state(state) {
+            let actor_ptid = match actor_ptid_from_state(state) {
                 Some(id) if !id.trim().is_empty() => id,
                 _ => {
                     return to_json(AppResult::<StubPayload>::fail(
@@ -972,10 +1002,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ));
                 }
             };
-            let user_scope = user_scope_from_state(state);
-            let identity_key_ref =
-                crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
-                    .identity_key_ref();
+            let user_scope = require_gateway_user_scope!(state);
+            let identity_key_ref = crate::infrastructure::local_scope::LocalScope::from_actor_ptid(
+                actor_ptid.as_str(),
+            )
+            .identity_key_ref();
             let ik = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
                 Ok(k) => k,
                 Err(reason) => {
@@ -1044,7 +1075,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ))
         }
         "crypto_init_session" => {
-            let (actor_id, user_scope) = match authenticated_crypto_context(state) {
+            let (actor_ptid, user_scope) = match authenticated_crypto_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -1077,13 +1108,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     optional_string_arg(&args, "peer_one_time_pre_key_id", "peerOneTimePreKeyId"),
                     optional_string_arg(&args, "peer_one_time_pre_key", "peerOneTimePreKey"),
                     supported_versions,
-                    actor_id,
+                    actor_ptid,
                     user_scope,
                 ),
             )
         }
         "crypto_accept_session" => {
-            let (actor_id, user_scope) = match authenticated_crypto_context(state) {
+            let (actor_ptid, user_scope) = match authenticated_crypto_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -1110,7 +1141,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         "recipientOneTimePreKeyId",
                     ),
                     u32_arg(&args, "negotiated_version", "negotiatedVersion"),
-                    actor_id,
+                    actor_ptid,
                     user_scope,
                 ),
             )
@@ -1225,7 +1256,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            let actor_id = match actor_id_from_state(state) {
+            let actor_ptid = match actor_ptid_from_state(state) {
                 Some(id) if !id.trim().is_empty() => id,
                 Some(_) | None => {
                     return to_json(AppResult::<StubPayload>::fail(
@@ -1235,7 +1266,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ));
                 }
             };
-            let device_id = match device_install::get_or_create_device_id(actor_id.as_str()) {
+            let device_id = match device_install::get_or_create_device_id(actor_ptid.as_str()) {
                 Ok(id) => id,
                 Err(e) => {
                     return to_json(AppResult::<StubPayload>::fail(
@@ -1278,15 +1309,15 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            if input.did.trim().is_empty() {
+            if input.ptid.trim().is_empty() {
                 return to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::InvalidArgument,
-                    "did is required",
+                    "ptid is required",
                     None,
                 ));
             }
             let req = model::key_exchange::FetchKeyBundleRequest {
-                did: input.did,
+                ptid: input.ptid,
                 device_id: input.device_id.unwrap_or_default(),
                 home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
             };
@@ -1306,7 +1337,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         .iter()
                         .map(|b| {
                             json!({
-                                "did": b.did,
+                                "ptid": b.ptid,
                                 "device_id": b.device_id,
                                 "ik_pub": b.ik_pub,
                                 "fingerprint": wire::identity_fingerprint_hex(&b.ik_pub),
@@ -1643,10 +1674,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            if input.user_id.trim().is_empty() {
+            if input.author_ptid.trim().is_empty() {
                 return to_json(AppResult::<Vec<u8>>::fail(
                     ErrorCode::InvalidArgument,
-                    "user_id is required",
+                    "author_ptid is required",
                     None,
                 ));
             }
@@ -1661,7 +1692,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             if let Some(limit) = input.limit {
                 query.push(("limit", limit.to_string()));
             }
-            let path = format!("/api/v1/social/users/{}/posts", input.user_id);
+            let path = format!("/api/v1/social/users/{}/posts", input.author_ptid);
             let resp = match station_client::request_proto::<(), model::social::ListPostsResponse>(
                 Method::GET,
                 &path,
@@ -2053,9 +2084,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 .items
                 .iter()
                 .map(|a| {
+                    let actor_ptid = a
+                        .r#ref
+                        .as_ref()
+                        .map(|actor_ref| actor_ref.ptid.as_str())
+                        .unwrap_or_default();
                     json!({
-                        "id": a.id, "username": a.username, "displayName": a.display_name,
-                        "email": a.email, "actorId": a.actor_id.to_string(), "avatar": a.avatar,
+                        "actorPtid": actor_ptid, "username": a.username,
+                        "displayName": a.display_name, "email": a.email, "avatar": a.avatar,
                     })
                 })
                 .collect();
@@ -2129,24 +2165,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_auth::auth_validate_token(input, state))
         }
         "acceptance_current_session" => {
-            let session = match state.session.lock() {
-                Ok(session) => session.clone(),
-                Err(_) => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::InternalError,
-                        "Failed to access session state",
-                        None,
-                    ));
-                }
-            };
-            let (Some(actor_id), Some(token), Some(account_id)) =
-                (session.actor_id, session.token, session.account_id)
-            else {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
             let messaging_profile_matches = state
                 .messaging_engines
@@ -2156,7 +2177,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(to_stub(
                 "acceptance_current_session",
                 json!({
-                    "actor_id": actor_id,
+                    "actor_ptid": actor_ptid,
                     "token_fingerprint": hex::encode(Sha256::digest(token.as_bytes())),
                     "account_id": account_id,
                     "messaging_profile_matches": messaging_profile_matches,
@@ -2313,7 +2334,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(t) => to_json(app_profile::peer_profile_get(&t, &input.did)),
+                Some(t) => to_json(app_profile::peer_profile_get(&t, &input.actor_ptid)),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -2443,42 +2464,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 }
             }
         }
-        "sync_user_profile" => {
-            let session = state.session.lock().ok().and_then(|guard| {
-                let token = guard
-                    .token
-                    .clone()
-                    .filter(|value| !value.trim().is_empty())?;
-                let actor_id = guard
-                    .actor_id
-                    .clone()
-                    .filter(|value| !value.trim().is_empty())?;
-                let account_id = guard.account_id.clone().or_else(|| {
-                    crate::infrastructure::auth_identity::find_account_id_by_actor_id(&actor_id)
-                })?;
-                Some((token, account_id))
-            });
-            match session {
-                Some((token, account_id)) => {
-                    let actor_ptid = app_auth::canonical_ptid_for_token(&token);
-                    match actor_ptid {
-                        Some(ptid) => {
-                            to_json(app_profile::sync_user_profile(&token, &account_id, &ptid))
-                        }
-                        None => to_json(AppResult::<StubPayload>::fail(
-                            ErrorCode::Unauthorized,
-                            "canonical actor identity unavailable",
-                            None,
-                        )),
-                    }
-                }
-                _ => to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                )),
-            }
-        }
+        "sync_user_profile" => match gateway_access_context(state) {
+            Ok((account_id, actor_ptid, token)) => to_json(app_profile::sync_user_profile(
+                &token,
+                &account_id,
+                &actor_ptid,
+            )),
+            Err(error) => error,
+        },
 
         // =================================================================
         // Admin (state-dependent)
@@ -3529,9 +3522,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             match http_gateway_bearer_token(state) {
                 Some(token) => {
-                    let actor_id = actor_id_from_state(state).unwrap_or_default();
+                    let actor_ptid = actor_ptid_from_state(state).unwrap_or_default();
                     to_json(app_skills_market::skills_market_install(
-                        &actor_id, input, &token,
+                        &actor_ptid,
+                        input,
+                        &token,
                     ))
                 }
                 None => to_json(AppResult::<StubPayload>::fail(
@@ -3548,9 +3543,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             match http_gateway_bearer_token(state) {
                 Some(token) => {
-                    let actor_id = actor_id_from_state(state).unwrap_or_default();
+                    let actor_ptid = actor_ptid_from_state(state).unwrap_or_default();
                     to_json(app_skills_market::skills_market_uninstall(
-                        &actor_id, input, &token,
+                        &actor_ptid,
+                        input,
+                        &token,
                     ))
                 }
                 None => to_json(AppResult::<StubPayload>::fail(
@@ -4269,7 +4266,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         "account_list" => to_json(app_account::account_list()),
         "account_get_active" => to_json(app_account::account_get_active()),
         "account_get_device_id" => {
-            let actor_id = match actor_id_from_state(state) {
+            let actor_ptid = match actor_ptid_from_state(state) {
                 Some(id) if !id.trim().is_empty() => id,
                 Some(_) | None => {
                     return to_json(AppResult::<StubPayload>::fail(
@@ -4279,7 +4276,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ));
                 }
             };
-            match device_install::get_or_create_device_id(actor_id.as_str()) {
+            match device_install::get_or_create_device_id(actor_ptid.as_str()) {
                 Ok(device_id) => {
                     crate::infrastructure::station_client::set_device_id(device_id.clone());
                     to_json(AppResult::success(StubPayload {
@@ -4398,7 +4395,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let token = state.session.lock().ok().and_then(|g| g.token.clone());
+            let token = gateway_session(state).map(|session| session.jwt);
             let account_id = input.account_id.clone();
             let result = app_account::account_set_pin(input, token.as_deref());
             if result.ok {
@@ -4433,12 +4430,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     Some((
                         v.get("token")?.as_str()?.to_string(),
                         v.get("account_id")?.as_str()?.to_string(),
-                        v.get("actor_id")
+                        v.get("actor_ptid")
                             .and_then(|actor| actor.as_str())
                             .map(str::to_string),
                     ))
                 });
-            let (token, persisted_account_id, persisted_actor_id) = match unlocked {
+            let (token, persisted_account_id, persisted_actor_ptid) = match unlocked {
                 Some(unlocked) => unlocked,
                 None => {
                     return to_json(AppResult::<AuthSessionPayload>::fail(
@@ -4451,7 +4448,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let initial_session = match app_auth::validate_pin_session_token(
                 &input.account_id,
                 &persisted_account_id,
-                persisted_actor_id.as_deref(),
+                persisted_actor_ptid.as_deref(),
                 &token,
             ) {
                 Ok(session) => session,
@@ -4472,7 +4469,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             if let Err(error) = app_auth::invalidate_revoked_actor_runtime(
                 state,
-                &initial_session.actor_id,
+                &initial_session.actor_ptid,
                 &input.account_id,
             ) {
                 return to_json(AppResult::<AuthSessionPayload>::fail(
@@ -4487,7 +4484,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let session = match app_auth::validate_pin_session_token(
                 &input.account_id,
                 &persisted_account_id,
-                Some(&initial_session.actor_id),
+                Some(&initial_session.actor_ptid),
                 &token,
             ) {
                 Ok(session) => session,
@@ -4510,8 +4507,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ));
             }
 
-            let profile =
-                crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
+            let profile = crate::infrastructure::auth_identity::find_profile_by_actor_ptid(
+                &session.actor_ptid,
+            );
             let (p_name, p_email, p_avatar, p_local_avatar, p_method) = match &profile {
                 Some(p) => (
                     Some(p.name.clone()).filter(|v| !v.is_empty()),
@@ -4522,13 +4520,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ),
                 None => (None, None, None, None, None),
             };
-            let actor_id = session.actor_id;
             let prepared = app_auth::PreparedAuthSession {
                 payload: AuthSessionPayload {
                     command: "account_unlock".to_string(),
                     status: "authenticated".to_string(),
-                    actor_id: Some(actor_id.clone()),
-                    ptid: app_auth::canonical_ptid_for_token(&token),
+                    actor_ptid: Some(session.actor_ptid.clone()),
+                    session_token: Some(token.clone()),
                     name: p_name,
                     email: p_email,
                     avatar_url: p_avatar,
@@ -4536,7 +4533,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     login_method: p_method,
                 },
                 account_id: input.account_id.clone(),
-                actor_id,
+                actor_ptid: session.actor_ptid,
                 token,
                 revoked_previous_actor_sessions: true,
                 identity_state: None,
@@ -4570,7 +4567,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let token = state.session.lock().ok().and_then(|g| g.token.clone());
+            let token = gateway_session(state).map(|session| session.jwt);
             let account_id = input.account_id.clone();
             let result = app_account::account_relink_pin(input, token.as_deref());
             if result.ok {
@@ -4741,15 +4738,15 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            if input.receiver_did.trim().is_empty() {
+            if input.receiver_ptid.trim().is_empty() {
                 return to_json(AppResult::<Vec<u8>>::fail(
                     ErrorCode::InvalidArgument,
-                    "receiver_did is required",
+                    "receiver_ptid is required",
                     None,
                 ));
             }
             let req = model::chat::SendFriendRequestRequest {
-                receiver_did: input.receiver_did,
+                receiver_ptid: input.receiver_ptid,
                 message: input.message.unwrap_or_default(),
             };
             let resp = match station_client::request_proto::<
@@ -4920,7 +4917,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(d) => d,
                 Err(e) => return e,
             };
-            let user_scope = user_scope_from_state(state);
+            let user_scope = require_gateway_user_scope!(state);
             let _ = chat_storage::ingest_group_messages(&user_scope, &data);
             to_json(to_stub("group_chat_list_messages", data))
         }
@@ -5033,7 +5030,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let req = model::chat::CreateGroupRequest {
                 name: input.name,
                 description: input.description.unwrap_or_default(),
-                initial_member_dids: input.member_dids.unwrap_or_default(),
+                initial_member_ptids: input.member_ptids.unwrap_or_default(),
                 initial_federated_members: input
                     .initial_federated_members
                     .unwrap_or_default()
@@ -5055,7 +5052,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             let group_json = match resp.group {
                 Some(g) => {
-                    json!({"ulid": g.ulid, "name": g.name, "description": g.description, "owner_did": g.owner_did, "type": g.r#type})
+                    json!({"ulid": g.ulid, "name": g.name, "description": g.description, "owner_ptid": g.owner_ptid, "type": g.r#type})
                 }
                 None => json!(null),
             };
@@ -5124,7 +5121,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None,
                 Some(json!({
                     "group_ulid": input.group_ulid,
-                    "invitee_dids": input.member_dids,
+                    "invitee_ptids": input.member_ptids,
                 })),
             ) {
                 Ok(data) => to_json(to_stub("group_chat_invite_to_group", data)),
@@ -5254,7 +5251,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None,
                 Some(json!({
                     "group_ulid": input.group_ulid,
-                    "ptid": input.member_did,
+                    "ptid": input.member_ptid,
                 })),
             ) {
                 Ok(data) => to_json(to_stub("group_chat_remove_member", data)),
@@ -5278,7 +5275,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 });
             let req = model::chat::UpdateMemberRequest {
                 group_ulid: input.group_ulid,
-                ptid: input.member_did,
+                ptid: input.member_ptid,
                 role: input.role,
                 muted: input.muted,
                 muted_until,
@@ -5576,7 +5573,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     None,
                 ));
             }
-            let user_scope = user_scope_from_state(state);
+            let user_scope = require_gateway_user_scope!(state);
             let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
             match chat_storage::search_group_messages(&user_scope, &input.query, limit) {
                 Ok(items) => to_json(to_stub(
@@ -5595,7 +5592,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let user_scope = user_scope_from_state(state);
+            let user_scope = require_gateway_user_scope!(state);
             if input.scope.trim().is_empty() || input.cursor.trim().is_empty() {
                 return to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::InvalidArgument,
@@ -5619,7 +5616,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let user_scope = user_scope_from_state(state);
+            let user_scope = require_gateway_user_scope!(state);
             if input.scope.trim().is_empty() {
                 return to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::InvalidArgument,
@@ -5640,7 +5637,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "group_chat_get_key_version_scoped" => {
-            let user_scope = user_scope_from_state(state);
+            let user_scope = require_gateway_user_scope!(state);
             match chat_storage::get_chat_key_version(&user_scope) {
                 Ok(v) => to_json(to_stub(
                     "group_chat_get_key_version_scoped",
@@ -5665,7 +5662,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     None,
                 ));
             }
-            let user_scope = user_scope_from_state(state);
+            let user_scope = require_gateway_user_scope!(state);
             match chat_storage::rotate_chat_key(&user_scope, input.next_version) {
                 Ok(v) => to_json(to_stub(
                     "group_chat_rotate_key_scoped",
@@ -5948,7 +5945,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // MLS Group (E2E encryption — requires Tauri AppHandle for state)
         // =================================================================
         "mls_init_identity" => {
-            let actor_id = match actor_id_from_state(state) {
+            let actor_ptid = match actor_ptid_from_state(state) {
                 Some(id) if !id.trim().is_empty() => id,
                 _ => {
                     return to_json(AppResult::<StubPayload>::fail(
@@ -5994,8 +5991,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ));
             }
             let scope =
-                crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id.as_str()));
-            let device_id = match device_install::get_or_create_device_id(actor_id.as_str()) {
+                crate::infrastructure::local_scope::user_scope_for_actor_ptid(actor_ptid.as_str());
+            let device_id = match device_install::get_or_create_device_id(actor_ptid.as_str()) {
                 Ok(device_id) => device_id,
                 Err(error) => {
                     return to_json(AppResult::<StubPayload>::fail(
@@ -6113,11 +6110,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let actor = match resolve_scope(state) {
-                Ok(actor) => actor,
-                Err(e) => return e,
-            };
-            let scope = crate::infrastructure::local_scope::user_scope_for_actor(actor.as_deref());
+            let scope = require_gateway_user_scope!(state);
             to_json(
                 crate::interface::tauri_commands::mls::mls_generate_key_package_for_scope(
                     mls.inner(),
@@ -6139,12 +6132,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
             match mls.create_group(&input.conversation_id, &input.members) {
                 Ok(result) => {
-                    let actor = match resolve_scope(state) {
-                        Ok(actor) => actor,
-                        Err(e) => return e,
-                    };
-                    let scope =
-                        crate::infrastructure::local_scope::user_scope_for_actor(actor.as_deref());
+                    let scope = require_gateway_user_scope!(state);
                     let blob = match mls.export_pending_transition(&input.conversation_id) {
                         Ok(blob) => blob,
                         Err(e) => {
@@ -6183,11 +6171,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let actor = match resolve_scope(state) {
-                Ok(actor) => actor,
-                Err(e) => return e,
-            };
-            let scope = crate::infrastructure::local_scope::user_scope_for_actor(actor.as_deref());
+            let scope = require_gateway_user_scope!(state);
             to_json(
                 crate::interface::tauri_commands::mls::mls_group_join_for_scope(
                     input,
@@ -6209,11 +6193,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let actor = match resolve_scope(state) {
-                Ok(actor) => actor,
-                Err(e) => return e,
-            };
-            let scope = crate::infrastructure::local_scope::user_scope_for_actor(actor.as_deref());
+            let scope = require_gateway_user_scope!(state);
             to_json(
                 crate::interface::tauri_commands::mls::mls_group_encrypt_for_scope(
                     input,
@@ -6273,12 +6253,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
             match mls.add_member(&input.conversation_id, &input.member) {
                 Ok(prepared) => {
-                    let actor = match resolve_scope(state) {
-                        Ok(actor) => actor,
-                        Err(e) => return e,
-                    };
-                    let scope =
-                        crate::infrastructure::local_scope::user_scope_for_actor(actor.as_deref());
+                    let scope = require_gateway_user_scope!(state);
                     let blob = match mls.export_pending_transition(&input.conversation_id) {
                         Ok(blob) => blob,
                         Err(e) => {
@@ -6317,12 +6292,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
             match mls.remove_member(&input.conversation_id, &input.member_ptid) {
                 Ok(prepared) => {
-                    let actor = match resolve_scope(state) {
-                        Ok(actor) => actor,
-                        Err(e) => return e,
-                    };
-                    let scope =
-                        crate::infrastructure::local_scope::user_scope_for_actor(actor.as_deref());
+                    let scope = require_gateway_user_scope!(state);
                     let blob = match mls.export_pending_transition(&input.conversation_id) {
                         Ok(blob) => blob,
                         Err(e) => {
@@ -6361,12 +6331,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
             match mls.remove_device(&input.conversation_id, &input.member_ptid, &input.device_id) {
                 Ok(prepared) => {
-                    let actor = match resolve_scope(state) {
-                        Ok(actor) => actor,
-                        Err(e) => return e,
-                    };
-                    let scope =
-                        crate::infrastructure::local_scope::user_scope_for_actor(actor.as_deref());
+                    let scope = require_gateway_user_scope!(state);
                     let blob = match mls.export_pending_transition(&input.conversation_id) {
                         Ok(blob) => blob,
                         Err(e) => {
@@ -6403,11 +6368,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let actor = match resolve_scope(state) {
-                Ok(actor) => actor,
-                Err(e) => return e,
-            };
-            let scope = crate::infrastructure::local_scope::user_scope_for_actor(actor.as_deref());
+            let scope = require_gateway_user_scope!(state);
             to_json(
                 crate::interface::tauri_commands::mls::mls_group_accept_pending_for_scope(
                     input,
@@ -6429,11 +6390,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let actor = match resolve_scope(state) {
-                Ok(actor) => actor,
-                Err(e) => return e,
-            };
-            let scope = crate::infrastructure::local_scope::user_scope_for_actor(actor.as_deref());
+            let scope = require_gateway_user_scope!(state);
             if let Err(e) =
                 crate::infrastructure::local_chat_store::crypto_delete_mls_pending_transition(
                     &scope,
@@ -6480,7 +6437,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(actor) => actor,
                 Err(e) => return e,
             };
-            let Some(actor_id) = actor.filter(|value| !value.trim().is_empty()) else {
+            let Some(actor_ptid) = actor.filter(|value| !value.trim().is_empty()) else {
                 return to_json(AppResult::<Value>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -6488,7 +6445,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ));
             };
             let scope =
-                crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id.as_str()));
+                crate::infrastructure::local_scope::user_scope_for_actor_ptid(actor_ptid.as_str());
             let recipient_ptid =
                 match crate::interface::tauri_commands::mls::canonical_mls_identity_ptid(&scope) {
                     Ok(ptid) => ptid,
@@ -6522,7 +6479,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(actor) => actor,
                 Err(e) => return e,
             };
-            let Some(actor_id) = actor.filter(|value| !value.trim().is_empty()) else {
+            let Some(actor_ptid) = actor.filter(|value| !value.trim().is_empty()) else {
                 return to_json(AppResult::<Value>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -6530,7 +6487,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ));
             };
             let scope =
-                crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id.as_str()));
+                crate::infrastructure::local_scope::user_scope_for_actor_ptid(actor_ptid.as_str());
             let recipient_ptid =
                 match crate::interface::tauri_commands::mls::canonical_mls_identity_ptid(&scope) {
                     Ok(ptid) => ptid,
@@ -6571,9 +6528,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     None,
                 ));
             };
-            let scope = crate::infrastructure::local_scope::user_scope_for_actor(Some(
+            let scope = crate::infrastructure::local_scope::user_scope_for_actor_ptid(
                 recipient_ptid.as_str(),
-            ));
+            );
             to_json(
                 crate::interface::tauri_commands::mls::mls_recipient_status_for_scope(
                     input,
@@ -6611,7 +6568,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let user_scope = user_scope_from_state(state);
+            let user_scope = require_gateway_user_scope!(state);
             to_json(
                 crate::interface::tauri_commands::mls::mls_group_save_for_scope(
                     input,
@@ -6632,7 +6589,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let user_scope = user_scope_from_state(state);
+            let user_scope = require_gateway_user_scope!(state);
             to_json(
                 crate::interface::tauri_commands::mls::mls_group_load_for_scope(
                     input,
@@ -7048,29 +7005,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_send_message" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let token = guard
-                .as_ref()
-                .and_then(|g| g.token.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
                 _ => {
@@ -7138,25 +7076,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_list_messages" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
                 _ => {
@@ -7240,29 +7163,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_open_attachment" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let token = guard
-                .as_ref()
-                .and_then(|g| g.token.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
                 _ => {
@@ -7290,29 +7194,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_drain" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let token = guard
-                .as_ref()
-                .and_then(|g| g.token.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
                 _ => {
@@ -7337,29 +7222,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_dispatch" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let token = guard
-                .as_ref()
-                .and_then(|g| g.token.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
                 _ => {
@@ -7387,25 +7253,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         #[cfg(feature = "acceptance-webdriver")]
         "messaging_acceptance_interaction_snapshot" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|session| session.actor_id.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|session| session.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(engine)) => engine,
                 _ => {
@@ -7438,29 +7289,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_debug" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let token = guard
-                .as_ref()
-                .and_then(|g| g.token.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
                 _ => {
@@ -7508,29 +7340,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(AppResult::success(json!(results)))
         }
         "messaging_create_direct" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let token = guard
-                .as_ref()
-                .and_then(|g| g.token.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
                 _ => {
@@ -7571,29 +7384,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             })))
         }
         "messaging_create_group" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let token = guard
-                .as_ref()
-                .and_then(|g| g.token.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
                 _ => {
@@ -7702,29 +7496,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_membership_transition" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let token = guard
-                .as_ref()
-                .and_then(|g| g.token.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
                 _ => {
@@ -7808,25 +7583,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_list_conversations" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
                 _ => {
@@ -7859,25 +7619,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_command_status" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(engine)) => engine,
                 _ => {
@@ -7899,29 +7644,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             )
         }
         "messaging_hydrate" => {
-            let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard
-                .as_ref()
-                .and_then(|g| g.actor_id.clone())
-                .unwrap_or_default();
-            let token = guard
-                .as_ref()
-                .and_then(|g| g.token.clone())
-                .unwrap_or_default();
-            let account_id = guard
-                .as_ref()
-                .and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| {
-                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-                });
-            drop(guard);
-            if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            }
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
                 _ => {
@@ -8067,7 +7793,7 @@ fn dispatch_group_sync_from_station(args: Value, state: &AppState) -> Value {
             None,
         ));
     }
-    let user_scope = user_scope_from_state(state);
+    let user_scope = require_gateway_user_scope!(state);
     let scope_key = format!("group:{}", input.group_ulid);
     let cursor = match chat_storage::get_scope_cursor(&user_scope, &scope_key) {
         Ok(c) => c,
@@ -8182,12 +7908,14 @@ mod tests {
             .cloned()
             .unwrap_or_else(PathBuf::new);
         let state = AppState::new(layout, I18nService::new(&config_dir));
-        {
-            let mut session = state.session.lock().expect("test session should lock");
-            session.actor_id = Some("actor-http-gateway-test".to_string());
-            session.token = Some("token-http-gateway-test".to_string());
-            session.account_id = Some("station:account-http-gateway-test".to_string());
-        }
+        state
+            .sessions
+            .bind(crate::domain::identity::ActiveSession::new(
+                HTTP_GATEWAY_SESSION_LABEL,
+                "account-http-gateway-test",
+                crate::domain::identity::ActorRef::new_person("ptid:test:actor-http-gateway-test"),
+                "token-http-gateway-test",
+            ));
         state
     }
 
@@ -8228,8 +7956,8 @@ mod tests {
         assert!(app_result_ok(&result), "current session failed: {}", result);
         let status = status_json(&result);
         assert_eq!(
-            status.get("actor_id").and_then(Value::as_str),
-            Some("actor-http-gateway-test")
+            status.get("actor_ptid").and_then(Value::as_str),
+            Some("ptid:test:actor-http-gateway-test")
         );
         assert_eq!(
             status
@@ -8240,7 +7968,7 @@ mod tests {
         );
         assert_eq!(
             status.get("account_id").and_then(Value::as_str),
-            Some("station:account-http-gateway-test")
+            Some("account-http-gateway-test")
         );
         assert_eq!(
             status

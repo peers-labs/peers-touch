@@ -28,9 +28,9 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const [peopleQuery, setPeopleQuery] = useState('');
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
-  const [selectedGroupMemberDids, setSelectedGroupMemberDids] = useState<string[]>([]);
+  const [selectedGroupMemberPtids, setSelectedGroupMemberPtids] = useState<string[]>([]);
   const [selectedContact, setSelectedContact] = useState<SocialConversation | null>(null);
-  const currentUserDid = useSocialStore((state) => state.currentUserDid);
+  const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
   const friendRequests = useSocialStore((state) => state.friendRequests);
   const loading = useSocialStore((state) => state.loading);
   const error = useSocialStore((state) => state.error);
@@ -64,26 +64,26 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const groupMessages = useGroupStore((state) => state.messages);
   const groupUnreadCounts = useGroupStore((state) => state.unreadCounts);
   const contacts = useMemo(
-    () => projectConversations({ sessions, messages, currentUserDid, peerOnline }),
-    [currentUserDid, messages, peerOnline, sessions],
+    () => projectConversations({ sessions, messages, currentUserPtid, peerOnline }),
+    [currentUserPtid, messages, peerOnline, sessions],
   );
   const groups = useMemo(
     () => projectGroupConversations({ groups: groupItems, messages: groupMessages, unreadCounts: groupUnreadCounts }),
     [groupItems, groupMessages, groupUnreadCounts],
   );
   const inboundRequests = useMemo(
-    () => projectPendingInboundRequests(friendRequests, currentUserDid),
-    [currentUserDid, friendRequests],
+    () => projectPendingInboundRequests(friendRequests, currentUserPtid),
+    [currentUserPtid, friendRequests],
   );
   const sentRequests = useMemo(
-    () => projectOutgoingRequests(friendRequests, currentUserDid),
-    [currentUserDid, friendRequests],
+    () => projectOutgoingRequests(friendRequests, currentUserPtid),
+    [currentUserPtid, friendRequests],
   );
   const filteredContacts = useMemo(() => {
     const query = contactQuery.trim().toLowerCase();
     if (!query) return contacts;
     return contacts.filter((contact) =>
-      `${contact.peerName} ${contact.peerDid}`.toLowerCase().includes(query),
+      `${contact.peerName} ${contact.peerPtid}`.toLowerCase().includes(query),
     );
   }, [contactQuery, contacts]);
   const filteredGroups = useMemo(() => {
@@ -93,25 +93,25 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
       `${group.group.name} ${group.group.ulid} ${group.lastMessage?.content ?? ''}`.toLowerCase().includes(query),
     );
   }, [contactQuery, groups]);
-  const pendingTargetDids = useMemo(
-    () => new Set(friendRequests.map((request) => request.receiverDid || request.senderDid).filter(Boolean)),
+  const pendingTargetPtids = useMemo(
+    () => new Set(friendRequests.map((request) => request.receiverPtid || request.senderPtid).filter(Boolean)),
     [friendRequests],
   );
-  const contactDids = useMemo(
-    () => new Set(contacts.map((contact) => contact.peerDid).filter(Boolean)),
+  const contactPtids = useMemo(
+    () => new Set(contacts.map((contact) => contact.peerPtid).filter(Boolean)),
     [contacts],
   );
-  const selectedProfile = selectedContact ? peerProfiles[selectedContact.peerDid] : null;
-  const selectedProfileLoading = selectedContact ? Boolean(peerProfileLoading[selectedContact.peerDid]) : false;
-  const selectedProfileError = selectedContact ? peerProfileErrors[selectedContact.peerDid] : null;
-  const selectedBlocked = selectedContact ? Boolean(friendshipStatus[selectedContact.peerDid]?.blocked) : false;
+  const selectedProfile = selectedContact ? peerProfiles[selectedContact.peerPtid] : null;
+  const selectedProfileLoading = selectedContact ? Boolean(peerProfileLoading[selectedContact.peerPtid]) : false;
+  const selectedProfileError = selectedContact ? peerProfileErrors[selectedContact.peerPtid] : null;
+  const selectedBlocked = selectedContact ? Boolean(friendshipStatus[selectedContact.peerPtid]?.blocked) : false;
 
   useEffect(() => {
-    if (selectedContact?.peerDid) {
-      void loadPeerProfile(selectedContact.peerDid);
-      void loadFriendshipStatus(selectedContact.peerDid).catch(() => undefined);
+    if (selectedContact?.peerPtid) {
+      void loadPeerProfile(selectedContact.peerPtid);
+      void loadFriendshipStatus(selectedContact.peerPtid).catch(() => undefined);
     }
-  }, [loadFriendshipStatus, loadPeerProfile, selectedContact?.peerDid]);
+  }, [loadFriendshipStatus, loadPeerProfile, selectedContact?.peerPtid]);
 
   const closeFindPeople = () => {
     setAddOpen(false);
@@ -120,9 +120,9 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   };
 
   const sendRequestToResult = async (result: ActorSearchResult) => {
-    const receiverDid = result.actorId || result.id;
-    if (!receiverDid) return;
-    await sendFriendRequest(receiverDid, '');
+    const receiverPtid = result.ptid;
+    if (!receiverPtid) return;
+    await sendFriendRequest(receiverPtid, '');
     await searchPeople(peopleQuery);
   };
 
@@ -142,7 +142,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
       cancelText: t('common.action.cancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
-        await blockUser(selectedContact.peerDid);
+        await blockUser(selectedContact.peerPtid);
         setSelectedContact(null);
       },
     });
@@ -156,7 +156,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
       okText: t('mobile.contacts.unblock'),
       cancelText: t('common.action.cancel'),
       onOk: async () => {
-        await unblockUser(selectedContact.peerDid);
+        await unblockUser(selectedContact.peerPtid);
       },
     });
   };
@@ -171,12 +171,12 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
     setCreateGroupOpen(false);
     setGroupName('');
     setGroupDescription('');
-    setSelectedGroupMemberDids([]);
+    setSelectedGroupMemberPtids([]);
   };
 
-  const toggleInitialGroupMember = (did: string, checked: boolean) => {
-    setSelectedGroupMemberDids((current) =>
-      checked ? [...new Set([...current, did])] : current.filter((item) => item !== did),
+  const toggleInitialGroupMember = (ptid: string, checked: boolean) => {
+    setSelectedGroupMemberPtids((current) =>
+      checked ? [...new Set([...current, ptid])] : current.filter((item) => item !== ptid),
     );
   };
 
@@ -186,7 +186,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
     const groupUlid = await createGroup({
       name,
       description: groupDescription.trim(),
-      initialMemberDids: selectedGroupMemberDids,
+      initialMemberPtids: selectedGroupMemberPtids,
     });
     closeCreateGroup();
     if (groupUlid) {
@@ -364,18 +364,18 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
             <div className="people-result-list">
               {peopleResults.length > 0 ? (
                 peopleResults.map((result) => {
-                  const receiverDid = result.actorId || result.id;
-                  const isSelf = !!currentUserDid && receiverDid === currentUserDid;
-                  const alreadyPending = pendingTargetDids.has(receiverDid);
-                  const alreadyFriend = contactDids.has(receiverDid);
+                  const receiverPtid = result.ptid;
+                  const isSelf = !!currentUserPtid && receiverPtid === currentUserPtid;
+                  const alreadyPending = pendingTargetPtids.has(receiverPtid);
+                  const alreadyFriend = contactPtids.has(receiverPtid);
                   return (
-                    <div className="people-result-card" key={receiverDid || result.username}>
+                    <div className="people-result-card" key={receiverPtid || result.username}>
                       <MobileAvatar src={result.avatar} size={42}>
-                        {(result.displayName || result.username || receiverDid).slice(0, 1)}
+                        {(result.displayName || result.username || receiverPtid).slice(0, 1)}
                       </MobileAvatar>
                       <div className="people-result-copy">
                         <div className="people-result-title">
-                          <Text strong ellipsis>{result.displayName || result.username || receiverDid}</Text>
+                          <Text strong ellipsis>{result.displayName || result.username || receiverPtid}</Text>
                           {result.federation ? (
                             <Tag color="success" icon={<ShieldCheck size={11} />}>
                               {t('mobile.contacts.verified')}
@@ -383,7 +383,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
                           ) : null}
                         </div>
                         <Text type="secondary" ellipsis>
-                          {result.federation?.handle || result.username || receiverDid}
+                          {result.federation?.handle || result.username || receiverPtid}
                         </Text>
                       </div>
                       <Button
@@ -436,7 +436,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
             placeholder={t('mobile.group.descriptionPlaceholder')}
             autoSize={{ minRows: 2, maxRows: 4 }}
           />
-          <SectionTitle title={t('mobile.group.initialMembers')} count={selectedGroupMemberDids.length} />
+          <SectionTitle title={t('mobile.group.initialMembers')} count={selectedGroupMemberPtids.length} />
           {contacts.length > 0 ? (
             <List
               dataSource={contacts}
@@ -445,11 +445,11 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
                   <List.Item.Meta
                     avatar={<MobileAvatar src={contact.peerAvatar}>{contact.peerName.slice(0, 1)}</MobileAvatar>}
                     title={<Text strong>{contact.peerName}</Text>}
-                    description={<Text type="secondary" copyable>{contact.peerDid}</Text>}
+                    description={<Text type="secondary" copyable>{contact.peerPtid}</Text>}
                   />
                   <Checkbox
-                    checked={selectedGroupMemberDids.includes(contact.peerDid)}
-                    onChange={(event) => toggleInitialGroupMember(contact.peerDid, event.target.checked)}
+                    checked={selectedGroupMemberPtids.includes(contact.peerPtid)}
+                    onChange={(event) => toggleInitialGroupMember(contact.peerPtid, event.target.checked)}
                   />
                 </List.Item>
               )}
@@ -479,7 +479,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
               {selectedProfile?.acct || selectedProfile?.username ? (
                 <Text type="secondary">{selectedProfile.acct || selectedProfile.username}</Text>
               ) : null}
-              <Text type="secondary" copyable>{selectedContact.peerDid}</Text>
+              <Text type="secondary" copyable>{selectedContact.peerPtid}</Text>
               {selectedProfile?.note ? <Text className="contact-profile-note">{selectedProfile.note}</Text> : null}
               <Tag color={selectedContact.peerOnline ? 'success' : 'default'}>
                 {selectedContact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}

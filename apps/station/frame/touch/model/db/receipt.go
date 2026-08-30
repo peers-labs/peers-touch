@@ -10,7 +10,7 @@ import (
 type Receipt struct {
 	ID          uint64    `gorm:"column:id;primary_key;autoIncrement:false"`
 	MsgULID     string    `gorm:"column:msg_ulid;index;size:32;not null"`
-	MemberDID   string    `gorm:"column:member_did;index;size:128;not null"`
+	MemberPTID  string    `gorm:"column:member_ptid;index;size:128;not null"`
 	DeliveredAt time.Time `gorm:"column:delivered_at;index"`
 	ReadAt      time.Time `gorm:"column:read_at;index"`
 	FailReason  string    `gorm:"column:fail_reason;size:128"`

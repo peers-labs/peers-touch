@@ -4,9 +4,11 @@ import (
 	"context"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	ossrepo "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -127,6 +129,10 @@ func init() {
 	// (the dashboard read-side, notably) do not race against an
 	// un-migrated schema.
 	store.InitTableHooks(func(ctx context.Context, rds *gorm.DB) {
+		if err := ossrepo.MigratePTIDColumns(rds); err != nil {
+			logger.Errorf(ctx, "[oss] PTID schema migration failed: %v", err)
+			return
+		}
 		_ = rds.AutoMigrate(
 			&ossmodel.Audit{},
 			&ossmodel.Blob{},

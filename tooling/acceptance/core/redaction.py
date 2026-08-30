@@ -40,6 +40,12 @@ def _camel_to_snake(name: str) -> str:
 
 def is_sensitive_key(key: object) -> bool:
     normalized = _camel_to_snake(str(key).strip().replace("-", "_"))
+    if normalized in {
+        "fence_token",
+        "fence_tokens",
+        "max_concurrent_authorizations",
+    }:
+        return False
     if normalized.endswith(
         ("_ref", "_refs", "_reference", "_references")
     ):

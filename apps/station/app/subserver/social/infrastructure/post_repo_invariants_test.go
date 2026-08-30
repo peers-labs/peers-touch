@@ -26,13 +26,13 @@ func TestPublicPostRepo_Create_PanicsOnNonPublic(t *testing.T) {
 		{"SELF", &model.Audience{Kind: model.Audience_SELF}},
 		{"CIRCLE", &model.Audience{Kind: model.Audience_CIRCLE, TargetId: 1}},
 		{"GROUP", &model.Audience{Kind: model.Audience_GROUP, TargetId: 1}},
-		{"CUSTOM_ALLOW", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorDids: []string{"x"}}},
+		{"CUSTOM_ALLOW", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorPtids: []string{"x"}}},
 		{
 			"CUSTOM_DENY base PUBLIC NOT public",
 			&model.Audience{
-				Kind:      model.Audience_CUSTOM_DENY,
-				BaseKind:  model.Audience_PUBLIC,
-				ActorDids: []string{"x"},
+				Kind:       model.Audience_CUSTOM_DENY,
+				BaseKind:   model.Audience_PUBLIC,
+				ActorPtids: []string{"x"},
 			},
 		},
 	}
@@ -44,15 +44,15 @@ func TestPublicPostRepo_Create_PanicsOnNonPublic(t *testing.T) {
 				}
 			}()
 			_ = repo.Create(context.Background(), &domain.Post{
-				AuthorID: 1,
-				Audience: tc.a,
+				AuthorPTID: "ptid:test:author",
+				Audience:   tc.a,
 			})
 		})
 	}
 }
 
 func TestPrivatePostRepo_Create_PanicsOnPublic(t *testing.T) {
-	repo := NewPrivatePostRepository(nil, nil, nil)
+	repo := NewPrivatePostRepository(nil, nil)
 
 	defer func() {
 		if r := recover(); r == nil {
@@ -60,8 +60,8 @@ func TestPrivatePostRepo_Create_PanicsOnPublic(t *testing.T) {
 		}
 	}()
 	_ = repo.Create(context.Background(), &domain.Post{
-		AuthorID: 1,
-		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		AuthorPTID: "ptid:test:author",
+		Audience:   &model.Audience{Kind: model.Audience_PUBLIC},
 	})
 }
 
@@ -70,12 +70,12 @@ func TestPrivatePostRepo_Create_NilAudienceTreatedAsPublic_Panics(t *testing.T) 
 	// compatibility), so handing a nil-audience Post to the private
 	// repo must also panic — otherwise the legacy path would silently
 	// land in the wrong table.
-	repo := NewPrivatePostRepository(nil, nil, nil)
+	repo := NewPrivatePostRepository(nil, nil)
 
 	defer func() {
 		if r := recover(); r == nil {
 			t.Fatal("privatePostRepo.Create with nil audience (treated as PUBLIC) must panic")
 		}
 	}()
-	_ = repo.Create(context.Background(), &domain.Post{AuthorID: 1, Audience: nil})
+	_ = repo.Create(context.Background(), &domain.Post{AuthorPTID: "ptid:test:author", Audience: nil})
 }
