@@ -271,6 +271,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "handoff.recoveryFailure",
             completion[:evidence_sync],
         )
+        replay_boundary = completion.index(
+            "const replayStartTransition = latestHandoff.transitions.find",
+            latest_handoff,
+        )
+        station_readback = completion.index(
+            "const stationReplayDeliveries = await foundationStationReplayReadback",
+            replay_boundary,
+        )
+        self.assertIn(
+            "transition.phase === 'REPLAYING'",
+            completion[replay_boundary:station_readback],
+        )
+        self.assertIn(
+            "acknowledgedCursor: replayAfterCursor",
+            completion[station_readback:],
+        )
+        self.assertIn("afterCursor: replayAfterCursor", completion[station_readback:])
 
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)

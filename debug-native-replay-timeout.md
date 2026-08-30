@@ -47,3 +47,16 @@ client restart, but the final renderer read a stale localStorage copy without
 that field. The follow-up passes the already validated immutable reload
 evidence across the restart boundary and merges it with the synchronized
 post-restart handoff. Runtime verification of that follow-up is pending.
+
+Exact-source run
+`20260830T095955356967Z-30fdd0228f48a45a926c97824d5fec35`
+confirmed a later evidence-boundary race. The Browser fault was injected at
+cursor 3, but the independent global Station event stream advanced the client
+cursor to 6 before the Station outage established recovery. Runtime logs show
+the accepted recovery entering `REPLAYING` at cursor 6 and consuming 7-159.
+The final interrupted projection and hash matched Station, but the evidence
+producer still queried Station from the stale injection cursor and obtained
+4-159. The product replay path is correct; the Foundation evidence producer
+must derive its replay comparison boundary from the first accepted
+`REPLAYING` transition while retaining cursor 3 for the earlier duplicate and
+out-of-order injection proof.

@@ -3854,6 +3854,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   before provisioning and did not execute product scenarios. No product
   conclusion is drawn from these runs; the next run must hold one uninterrupted
   profile/source lease from provisioning through cleanup.
+- Exact-source run
+  `20260830T095955356967Z-30fdd0228f48a45a926c97824d5fec35`
+  held one uninterrupted lease and failed first at Browser AS-F06
+  `replayAfterAcknowledgedCursor`. Runtime evidence shows the original
+  command-stream fault was injected at cursor 3, while the still-live global
+  Station event stream advanced the durable client cursor to 6 before the
+  Station outage established recovery. The recovery stream correctly delivered
+  7-159 and the final client/Station interrupted projection hashes matched, but
+  the evidence producer compared that replay with a Station readback starting
+  from the stale injection cursor and therefore included 4-6 only on the
+  Station side. Source identity, payload hashes, stale fences, and cleanup
+  passed. The correction is limited to deriving the replay readback boundary
+  from the first accepted `REPLAYING` transition while retaining the original
+  injection cursor for duplicate/out-of-order proof.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

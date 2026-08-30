@@ -3182,7 +3182,19 @@ async function runFoundationF06Complete(
       'foundationF06CoordinatorDurableReload',
     ),
   };
-  const stationReplayDeliveries = await foundationStationReplayReadback(handoff);
+  const replayStartTransition = latestHandoff.transitions.find(
+    (transition) =>
+      transition.phase === 'REPLAYING'
+      && transition.sequence >= handoff.acknowledgedCursor,
+  );
+  if (!replayStartTransition) {
+    throw new Error('agent.acceptance.foundationRecoveryReplayBoundaryMissing');
+  }
+  const replayAfterCursor = replayStartTransition.sequence;
+  const stationReplayDeliveries = await foundationStationReplayReadback({
+    ...handoff,
+    acknowledgedCursor: replayAfterCursor,
+  });
   const replayIdentity = (delivery: FoundationF06ReplayDelivery) => ({
     eventType: delivery.eventType,
     sequence: delivery.sequence,
@@ -3306,7 +3318,7 @@ async function runFoundationF06Complete(
       },
       transitions: latestHandoff.transitions,
       replay: {
-        afterCursor: handoff.acknowledgedCursor,
+        afterCursor: replayAfterCursor,
         eventSequences: latestHandoff.replayedSequences,
         deliveries: latestHandoff.replayDeliveries,
         stationReadbackDeliveries: stationReplayDeliveries,
