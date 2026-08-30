@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS federation (
     genesis_hash    BYTEA NOT NULL,
     head_hash       BYTEA NOT NULL,
     head_seq        BIGINT NOT NULL DEFAULT 0,
-    created_by_actor_id VARCHAR(64) NOT NULL,
+    created_by_actor_ptid VARCHAR(255) NOT NULL,
     created_by_station_peer_id VARCHAR(128) NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS federation_ledger_event (
     event_type      SMALLINT NOT NULL,
     payload_bytes   BYTEA NOT NULL,
     payload_hash    BYTEA NOT NULL,
-    actor_id        VARCHAR(64) NOT NULL,
+    actor_ptid      VARCHAR(255) NOT NULL,
     actor_federated_handle VARCHAR(255) NOT NULL DEFAULT '',
     station_peer_id VARCHAR(128) NOT NULL,
     sequencer_station_peer_id VARCHAR(128) NOT NULL,
@@ -68,14 +68,14 @@ CREATE INDEX idx_membership_station ON federation_station_membership(station_pee
 CREATE TABLE IF NOT EXISTS federation_actor_role (
     id              BIGSERIAL PRIMARY KEY,
     federation_id   VARCHAR(30) NOT NULL REFERENCES federation(federation_id),
-    actor_id        VARCHAR(64) NOT NULL,
+    actor_ptid      VARCHAR(255) NOT NULL,
     actor_federated_handle VARCHAR(255) NOT NULL DEFAULT '',
     station_peer_id VARCHAR(128) NOT NULL,
     role            VARCHAR(30) NOT NULL,
     granted_by_event_id VARCHAR(30) NOT NULL DEFAULT '',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     revoked_at      TIMESTAMPTZ,
-    UNIQUE(federation_id, actor_id)
+    UNIQUE(federation_id, actor_ptid)
 );
 
 CREATE INDEX idx_actor_role_federation ON federation_actor_role(federation_id);
@@ -83,7 +83,7 @@ CREATE INDEX idx_actor_role_federation ON federation_actor_role(federation_id);
 -- Actor Signing Key
 CREATE TABLE IF NOT EXISTS actor_signing_key (
     id              BIGSERIAL PRIMARY KEY,
-    actor_id        VARCHAR(64) NOT NULL UNIQUE,
+    actor_ptid      VARCHAR(255) NOT NULL UNIQUE,
     public_key      BYTEA NOT NULL,
     encrypted_private_key BYTEA NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),

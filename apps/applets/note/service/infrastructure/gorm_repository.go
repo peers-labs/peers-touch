@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/apps/applets/note/service/domain"
+	"github.com/peers-labs/peers-touch/apps/applets/note/service/infrastructure/schema"
 	"github.com/peers-labs/peers-touch/apps/applets/note/service/model"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
@@ -15,7 +16,7 @@ import (
 type NoteRecord struct {
 	ID        uint       `gorm:"column:id;primaryKey"`
 	NoteID    string     `gorm:"column:note_id;size:64;uniqueIndex"`
-	OwnerID   string     `gorm:"column:owner_id;size:255;index:idx_note_owner_updated"`
+	OwnerPTID string     `gorm:"column:owner_ptid;size:255;index:idx_note_owner_updated"`
 	Title     string     `gorm:"column:title;size:512"`
 	Content   string     `gorm:"column:content;type:text"`
 	CreatedAt time.Time  `gorm:"column:created_at"`
@@ -36,6 +37,9 @@ func NewGormRepository(db *gorm.DB) *GormRepository {
 }
 
 func (r *GormRepository) AutoMigrate(ctx context.Context) error {
+	if err := schema.MigrateOwnerPTIDColumn(r.db.WithContext(ctx)); err != nil {
+		return err
+	}
 	return r.db.WithContext(ctx).AutoMigrate(&NoteRecord{})
 }
 
@@ -47,9 +51,9 @@ func (r *GormRepository) Create(ctx context.Context, note *model.Note) (*model.N
 	return toProto(record), nil
 }
 
-func (r *GormRepository) Get(ctx context.Context, ownerID string, noteID string, includeDeleted bool) (*model.Note, error) {
+func (r *GormRepository) Get(ctx context.Context, ownerPtid string, noteID string, includeDeleted bool) (*model.Note, error) {
 	var record NoteRecord
-	query := r.ownerQuery(ctx, ownerID).Where("note_id = ?", noteID)
+	query := r.ownerQuery(ctx, ownerPtid).Where("note_id = ?", noteID)
 	if !includeDeleted {
 		query = query.Where("deleted_at IS NULL")
 	}
@@ -69,7 +73,7 @@ func (r *GormRepository) List(ctx context.Context, query domain.ListQuery) (doma
 	if err != nil {
 		return domain.Page{}, err
 	}
-	dbQuery := r.ownerQuery(ctx, query.OwnerID)
+	dbQuery := r.ownerQuery(ctx, query.OwnerPTID)
 	if !query.IncludeDeleted {
 		dbQuery = dbQuery.Where("deleted_at IS NULL")
 	}
@@ -80,9 +84,9 @@ func (r *GormRepository) List(ctx context.Context, query domain.ListQuery) (doma
 	return buildPage(records, pageSize, offset), nil
 }
 
-func (r *GormRepository) Update(ctx context.Context, ownerID string, noteID string, patch domain.UpdatePatch) (*model.Note, error) {
+func (r *GormRepository) Update(ctx context.Context, ownerPtid string, noteID string, patch domain.UpdatePatch) (*model.Note, error) {
 	var record NoteRecord
-	if err := r.ownerQuery(ctx, ownerID).Where("note_id = ? AND deleted_at IS NULL", noteID).First(&record).Error; err != nil {
+	if err := r.ownerQuery(ctx, ownerPtid).Where("note_id = ? AND deleted_at IS NULL", noteID).First(&record).Error; err != nil {
 		return nil, mapGormLookupError(err)
 	}
 	if patch.Title != nil {
@@ -101,9 +105,9 @@ func (r *GormRepository) Update(ctx context.Context, ownerID string, noteID stri
 	return toProto(record), nil
 }
 
-func (r *GormRepository) Delete(ctx context.Context, ownerID string, noteID string) (bool, error) {
+func (r *GormRepository) Delete(ctx context.Context, ownerPtid string, noteID string) (bool, error) {
 	var record NoteRecord
-	if err := r.ownerQuery(ctx, ownerID).Where("note_id = ? AND deleted_at IS NULL", noteID).First(&record).Error; err != nil {
+	if err := r.ownerQuery(ctx, ownerPtid).Where("note_id = ? AND deleted_at IS NULL", noteID).First(&record).Error; err != nil {
 		return false, mapGormLookupError(err)
 	}
 	now := time.Now().UTC()
@@ -115,9 +119,9 @@ func (r *GormRepository) Delete(ctx context.Context, ownerID string, noteID stri
 	return true, nil
 }
 
-func (r *GormRepository) Restore(ctx context.Context, ownerID string, noteID string) (*model.Note, error) {
+func (r *GormRepository) Restore(ctx context.Context, ownerPtid string, noteID string) (*model.Note, error) {
 	var record NoteRecord
-	if err := r.ownerQuery(ctx, ownerID).Where("note_id = ?", noteID).First(&record).Error; err != nil {
+	if err := r.ownerQuery(ctx, ownerPtid).Where("note_id = ?", noteID).First(&record).Error; err != nil {
 		return nil, mapGormLookupError(err)
 	}
 	record.DeletedAt = nil
@@ -140,7 +144,7 @@ func (r *GormRepository) Search(ctx context.Context, query domain.SearchQuery) (
 	}
 	searchTerm := "%" + strings.ToLower(strings.TrimSpace(query.Query)) + "%"
 	var records []NoteRecord
-	err = r.ownerQuery(ctx, query.OwnerID).
+	err = r.ownerQuery(ctx, query.OwnerPTID).
 		Where("deleted_at IS NULL").
 		Where("LOWER(title) LIKE ? OR LOWER(content) LIKE ?", searchTerm, searchTerm).
 		Order(orderBy).
@@ -153,8 +157,8 @@ func (r *GormRepository) Search(ctx context.Context, query domain.SearchQuery) (
 	return buildPage(records, pageSize, offset), nil
 }
 
-func (r *GormRepository) ownerQuery(ctx context.Context, ownerID string) *gorm.DB {
-	return r.db.WithContext(ctx).Where("owner_id = ?", ownerID)
+func (r *GormRepository) ownerQuery(ctx context.Context, ownerPtid string) *gorm.DB {
+	return r.db.WithContext(ctx).Where("owner_ptid = ?", ownerPtid)
 }
 
 func normalizePageSize(pageSize int32) int32 {
@@ -218,7 +222,7 @@ func mapGormLookupError(err error) error {
 func toRecord(note *model.Note) NoteRecord {
 	record := NoteRecord{
 		NoteID:    note.GetNoteId(),
-		OwnerID:   note.GetOwnerId(),
+		OwnerPTID: note.GetOwnerPtid(),
 		Title:     note.GetTitle(),
 		Content:   note.GetContent(),
 		CreatedAt: timestampToTime(note.GetCreatedAt()),
@@ -234,7 +238,7 @@ func toRecord(note *model.Note) NoteRecord {
 func toProto(record NoteRecord) *model.Note {
 	note := &model.Note{
 		NoteId:    record.NoteID,
-		OwnerId:   record.OwnerID,
+		OwnerPtid: record.OwnerPTID,
 		Title:     record.Title,
 		Content:   record.Content,
 		CreatedAt: timestamppb.New(record.CreatedAt),

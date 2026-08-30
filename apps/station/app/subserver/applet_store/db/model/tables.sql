@@ -83,7 +83,7 @@ CREATE INDEX idx_applet_version_channels_channel ON applet_version_channels(chan
 
 CREATE TABLE IF NOT EXISTS applet_install_states (
     id VARCHAR(64) PRIMARY KEY,
-    actor_id VARCHAR(64) NOT NULL,
+    actor_ptid VARCHAR(255) NOT NULL,
     device_id VARCHAR(128),
     applet_id VARCHAR(64) NOT NULL,
     version VARCHAR(32) NOT NULL,
@@ -95,8 +95,8 @@ CREATE TABLE IF NOT EXISTS applet_install_states (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_applet_install_actor_device ON applet_install_states(actor_id, device_id);
-CREATE UNIQUE INDEX idx_applet_install_identity ON applet_install_states(actor_id, device_id, applet_id);
+CREATE INDEX idx_applet_install_actor_device ON applet_install_states(actor_ptid, device_id);
+CREATE UNIQUE INDEX idx_applet_install_identity ON applet_install_states(actor_ptid, device_id, applet_id);
 CREATE INDEX idx_applet_install_status ON applet_install_states(status);
 
 CREATE TABLE IF NOT EXISTS applet_capability_policies (
@@ -138,7 +138,7 @@ CREATE INDEX idx_applet_service_policies_applet_id ON applet_service_policies(ap
 CREATE TABLE IF NOT EXISTS applet_audit_records (
     id VARCHAR(64) PRIMARY KEY,
     audit_id VARCHAR(128) NOT NULL UNIQUE,
-    actor_id VARCHAR(64),
+    actor_ptid VARCHAR(255),
     device_id VARCHAR(128),
     applet_id VARCHAR(64),
     version VARCHAR(32),
@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS applet_audit_records (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_applet_audit_records_actor_id ON applet_audit_records(actor_id);
+CREATE INDEX idx_applet_audit_records_actor_ptid ON applet_audit_records(actor_ptid);
 CREATE INDEX idx_applet_audit_records_device_id ON applet_audit_records(device_id);
 CREATE INDEX idx_applet_audit_records_applet_id ON applet_audit_records(applet_id);
 CREATE INDEX idx_applet_audit_records_session_id ON applet_audit_records(session_id);

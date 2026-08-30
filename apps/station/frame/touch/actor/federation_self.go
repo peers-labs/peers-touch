@@ -35,6 +35,8 @@ import (
 // requesting actor's local row — never a remote_cached projection.
 type FederationSelfSnapshot struct {
 	ActorID           uint64
+	ActorPTID         string
+	ActorKind         string
 	PreferredUsername string
 	FederatedHandle   string
 	HomeStationPeerID string
@@ -160,6 +162,8 @@ func UpdateVisibility(ctx context.Context, actorID uint64, target int16) (*Feder
 func snapshotFromRow(row *db.Actor) *FederationSelfSnapshot {
 	return &FederationSelfSnapshot{
 		ActorID:           row.ID,
+		ActorPTID:         row.PTID,
+		ActorKind:         row.Kind,
 		PreferredUsername: row.PreferredUsername,
 		FederatedHandle:   row.FederatedHandle,
 		HomeStationPeerID: row.HomeStationPeerID,

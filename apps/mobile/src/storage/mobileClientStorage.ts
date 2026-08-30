@@ -8,6 +8,10 @@ import {
 } from '@peers-touch/client-storage';
 
 import type { MobileAuthSession } from '../features/auth/authSession';
+import { mobileAuthScope, mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
+
+const MOBILE_IDENTITY_SCOPE_CUTOVER_KEY = 'peers-touch.mobile.identity-scope-hard-cut.v1';
+const MOBILE_CLIENT_STORAGE_PREFIX = 'peers-touch.client-storage.v1:mobile:';
 
 export interface MobileClientStorageRuntime {
   readonly kernel: ClientStorageKernel;
@@ -52,12 +56,19 @@ export function createMobileAppStorageRuntime(): MobileClientStorageRuntime {
   return createMobileClientStorageRuntimeFromKernel(kernel);
 }
 
-export function createMobileActorStorageRuntime(actorDid: string | null): MobileClientStorageRuntime {
+export function createMobileActorStorageRuntime(
+  stationPeerId: string,
+  ptid: string,
+): MobileClientStorageRuntime {
+  if (!stationPeerId.trim() || !ptid.trim()) {
+    throw new Error('mobile.auth.missingIdentityScope');
+  }
   const kernel = createClientStorageKernel({
     adapter: createLocalStorageAdapter(browserLocalStorage()),
     scope: {
       app: 'mobile',
-      actor: actorDid || null,
+      station: stationPeerId,
+      actor: ptid,
     },
   });
 
@@ -88,17 +99,35 @@ function createMobileClientStorageRuntimeFromKernel(kernel: ClientStorageKernel)
 }
 
 export function mobileStorageScope(session: MobileAuthSession | null): ClientStorageScope {
+  if (!session) {
+    return {
+      app: 'mobile',
+      station: null,
+      actor: null,
+      device: null,
+      session: null,
+    };
+  }
+  const scope = mobileAuthScope(session);
   return {
     app: 'mobile',
-    station: session?.stationUrl ?? null,
-    actor: session ? resolveActorDid(session) || session.sessionId : null,
+    station: scope.stationPeerId,
+    actor: scope.ptid,
     device: null,
-    session: session?.sessionId ?? null,
+    session: mobileAuthScopeKey(session),
   };
 }
 
-function resolveActorDid(session: MobileAuthSession): string {
-  return String(session.actor?.id || session.actor?.actorId || session.actor?.actor_id || '').trim();
+export function purgeLegacyMobileIdentityStorage(storage: Storage | null = browserLocalStorage()): void {
+  if (!storage || storage.getItem(MOBILE_IDENTITY_SCOPE_CUTOVER_KEY) === 'complete') return;
+
+  const legacyKeys: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key?.startsWith(MOBILE_CLIENT_STORAGE_PREFIX)) legacyKeys.push(key);
+  }
+  legacyKeys.forEach((key) => storage.removeItem(key));
+  storage.setItem(MOBILE_IDENTITY_SCOPE_CUTOVER_KEY, 'complete');
 }
 
 function browserLocalStorage(): Storage | null {

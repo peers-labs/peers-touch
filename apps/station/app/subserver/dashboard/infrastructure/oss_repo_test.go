@@ -87,12 +87,12 @@ func TestOSSRepository_ListAndGetBuckets(t *testing.T) {
 	repo := NewOSSRepository(db)
 
 	seedBuckets(t, db,
-		ossmodel.Bucket{ID: "b1", Name: "chat", OwnerActorID: "actor-a", Kind: "system", SystemKey: "chat", DefaultVisibility: "chat", QuotaBytes: 100, UsedBytes: 30},
-		ossmodel.Bucket{ID: "b2", Name: "personal", OwnerActorID: "actor-b", Kind: "system", SystemKey: "personal", DefaultVisibility: "private", QuotaBytes: 200, UsedBytes: 0},
+		ossmodel.Bucket{ID: "b1", Name: "chat", OwnerPTID: "actor-a", Kind: "system", SystemKey: "chat", DefaultVisibility: "chat", QuotaBytes: 100, UsedBytes: 30},
+		ossmodel.Bucket{ID: "b2", Name: "personal", OwnerPTID: "actor-b", Kind: "system", SystemKey: "personal", DefaultVisibility: "private", QuotaBytes: 200, UsedBytes: 0},
 	)
 	seedFiles(t, db,
-		ossmodel.FileMeta{Key: "k1", Name: "a.txt", BucketID: "b1", OwnerActorID: "actor-a", Visibility: "chat", Backend: "local", Size: 10},
-		ossmodel.FileMeta{Key: "k2", Name: "b.txt", BucketID: "b1", OwnerActorID: "actor-a", Visibility: "chat", Backend: "local", Size: 20},
+		ossmodel.FileMeta{Key: "k1", Name: "a.txt", BucketID: "b1", OwnerPTID: "actor-a", Visibility: "chat", Backend: "local", Size: 10},
+		ossmodel.FileMeta{Key: "k2", Name: "b.txt", BucketID: "b1", OwnerPTID: "actor-a", Visibility: "chat", Backend: "local", Size: 20},
 	)
 
 	rows, err := repo.ListBuckets(context.Background())
@@ -139,9 +139,9 @@ func TestOSSRepository_ListObjects_Filters(t *testing.T) {
 	repo := NewOSSRepository(db)
 
 	seedFiles(t, db,
-		ossmodel.FileMeta{Key: "kA", Name: "1", BucketID: "b1", OwnerActorID: "actor-a", Visibility: "public", Mime: "image/png", Backend: "local", Size: 10},
-		ossmodel.FileMeta{Key: "kB", Name: "2", BucketID: "b1", OwnerActorID: "actor-a", Visibility: "private", Mime: "image/png", Backend: "local", Size: 20},
-		ossmodel.FileMeta{Key: "kC", Name: "3", BucketID: "b2", OwnerActorID: "actor-b", Visibility: "chat", Mime: "text/plain", Backend: "s3", Size: 30},
+		ossmodel.FileMeta{Key: "kA", Name: "1", BucketID: "b1", OwnerPTID: "actor-a", Visibility: "public", Mime: "image/png", Backend: "local", Size: 10},
+		ossmodel.FileMeta{Key: "kB", Name: "2", BucketID: "b1", OwnerPTID: "actor-a", Visibility: "private", Mime: "image/png", Backend: "local", Size: 20},
+		ossmodel.FileMeta{Key: "kC", Name: "3", BucketID: "b2", OwnerPTID: "actor-b", Visibility: "chat", Mime: "text/plain", Backend: "s3", Size: 30},
 	)
 
 	rows, total, err := repo.ListObjects(context.Background(), OSSObjectQuery{BucketID: "b1", Page: 1, PageSize: 50})
@@ -175,9 +175,9 @@ func TestOSSRepository_ListAudit_FiltersAndPaging(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	seedAudit(t, db,
-		ossmodel.Audit{TS: now.Add(-3 * time.Hour), Action: "get", Outcome: "ok", FileKey: "k1", BucketID: "b1", ActorID: "actor-a"},
-		ossmodel.Audit{TS: now.Add(-2 * time.Hour), Action: "get", Outcome: "denied", FileKey: "k1", BucketID: "b1", ActorID: "actor-b", Reason: "not_in_session"},
-		ossmodel.Audit{TS: now.Add(-1 * time.Hour), Action: "upload", Outcome: "ok", FileKey: "k2", BucketID: "b1", ActorID: "actor-a"},
+		ossmodel.Audit{TS: now.Add(-3 * time.Hour), Action: "get", Outcome: "ok", FileKey: "k1", BucketID: "b1", ActorPTID: "actor-a"},
+		ossmodel.Audit{TS: now.Add(-2 * time.Hour), Action: "get", Outcome: "denied", FileKey: "k1", BucketID: "b1", ActorPTID: "actor-b", Reason: "not_in_session"},
+		ossmodel.Audit{TS: now.Add(-1 * time.Hour), Action: "upload", Outcome: "ok", FileKey: "k2", BucketID: "b1", ActorPTID: "actor-a"},
 	)
 
 	rows, total, err := repo.ListAudit(context.Background(), OSSAuditQuery{Outcome: "denied", Page: 1, PageSize: 50})
@@ -212,13 +212,13 @@ func TestOSSRepository_Usage(t *testing.T) {
 	repo := NewOSSRepository(db)
 
 	seedBuckets(t, db,
-		ossmodel.Bucket{ID: "b1", Name: "chat", OwnerActorID: "actor-a", Kind: "system", SystemKey: "chat"},
-		ossmodel.Bucket{ID: "b2", Name: "chat", OwnerActorID: "actor-b", Kind: "system", SystemKey: "chat"},
+		ossmodel.Bucket{ID: "b1", Name: "chat", OwnerPTID: "actor-a", Kind: "system", SystemKey: "chat"},
+		ossmodel.Bucket{ID: "b2", Name: "chat", OwnerPTID: "actor-b", Kind: "system", SystemKey: "chat"},
 	)
 	seedFiles(t, db,
-		ossmodel.FileMeta{Key: "k1", BucketID: "b1", OwnerActorID: "actor-a", Visibility: "public", Backend: "local", Size: 100},
-		ossmodel.FileMeta{Key: "k2", BucketID: "b1", OwnerActorID: "actor-a", Visibility: "chat", Backend: "local", Size: 50},
-		ossmodel.FileMeta{Key: "k3", BucketID: "b2", OwnerActorID: "actor-b", Visibility: "private", Backend: "local", Size: 25},
+		ossmodel.FileMeta{Key: "k1", BucketID: "b1", OwnerPTID: "actor-a", Visibility: "public", Backend: "local", Size: 100},
+		ossmodel.FileMeta{Key: "k2", BucketID: "b1", OwnerPTID: "actor-a", Visibility: "chat", Backend: "local", Size: 50},
+		ossmodel.FileMeta{Key: "k3", BucketID: "b2", OwnerPTID: "actor-b", Visibility: "private", Backend: "local", Size: 25},
 	)
 
 	usage, err := repo.Usage(context.Background())
@@ -228,7 +228,7 @@ func TestOSSRepository_Usage(t *testing.T) {
 	if usage.TotalBytes != 175 || usage.TotalFiles != 3 || usage.BucketCount != 2 {
 		t.Errorf("totals: %+v", usage)
 	}
-	if len(usage.TopOwners) == 0 || usage.TopOwners[0].OwnerActorID != "actor-a" || usage.TopOwners[0].Bytes != 150 {
+	if len(usage.TopOwners) == 0 || usage.TopOwners[0].OwnerPTID != "actor-a" || usage.TopOwners[0].Bytes != 150 {
 		t.Errorf("top owners: %+v", usage.TopOwners)
 	}
 	if len(usage.VisibilityMix) != 3 {
@@ -318,7 +318,7 @@ func TestOSSRepository_CreateBucket_HappyAndConflict(t *testing.T) {
 	ctx := context.Background()
 
 	got, err := repo.CreateBucket(ctx, BucketCreateInput{
-		OwnerActorID:      "actor-x",
+		OwnerPTID:         "actor-x",
 		Name:              "photos",
 		DefaultVisibility: "private",
 		QuotaBytes:        1024,
@@ -328,7 +328,7 @@ func TestOSSRepository_CreateBucket_HappyAndConflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateBucket happy: %v", err)
 	}
-	if got == nil || got.OwnerActorID != "actor-x" || got.Name != "photos" {
+	if got == nil || got.OwnerPTID != "actor-x" || got.Name != "photos" {
 		t.Fatalf("CreateBucket happy returned %+v", got)
 	}
 	if got.DefaultVisibility != "private" || got.QuotaBytes != 1024 {
@@ -337,8 +337,8 @@ func TestOSSRepository_CreateBucket_HappyAndConflict(t *testing.T) {
 
 	// Same (owner, name) → ErrBucketExists, not a generic error.
 	if _, err := repo.CreateBucket(ctx, BucketCreateInput{
-		OwnerActorID: "actor-x",
-		Name:         "photos",
+		OwnerPTID: "actor-x",
+		Name:      "photos",
 	}); err != ErrBucketExists {
 		t.Errorf("conflict: want ErrBucketExists, got %v", err)
 	}
@@ -347,7 +347,7 @@ func TestOSSRepository_CreateBucket_HappyAndConflict(t *testing.T) {
 	if _, err := repo.CreateBucket(ctx, BucketCreateInput{Name: "x"}); err != ErrBucketBadInput {
 		t.Errorf("missing owner: want ErrBucketBadInput, got %v", err)
 	}
-	if _, err := repo.CreateBucket(ctx, BucketCreateInput{OwnerActorID: "x"}); err != ErrBucketBadInput {
+	if _, err := repo.CreateBucket(ctx, BucketCreateInput{OwnerPTID: "x"}); err != ErrBucketBadInput {
 		t.Errorf("missing name: want ErrBucketBadInput, got %v", err)
 	}
 }
@@ -358,7 +358,7 @@ func TestOSSRepository_UpdateBucket_PartialPatchAndNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	seedBuckets(t, db, ossmodel.Bucket{
-		ID: "b-update", Name: "photos", OwnerActorID: "actor-x", Kind: "user",
+		ID: "b-update", Name: "photos", OwnerPTID: "actor-x", Kind: "user",
 		DefaultVisibility: "private", QuotaBytes: 100, TTLDays: 7, Description: "old",
 	})
 
@@ -398,9 +398,9 @@ func TestOSSRepository_DeleteBucket_GuardsAndForce(t *testing.T) {
 	ctx := context.Background()
 
 	seedBuckets(t, db,
-		ossmodel.Bucket{ID: "b-empty", Name: "empty", OwnerActorID: "a", Kind: "user", DefaultVisibility: "private"},
-		ossmodel.Bucket{ID: "b-full", Name: "full", OwnerActorID: "a", Kind: "user", DefaultVisibility: "private", ObjectCount: 3, UsedBytes: 999},
-		ossmodel.Bucket{ID: "b-system", Name: "chat", OwnerActorID: "a", Kind: "system", SystemKey: "chat", DefaultVisibility: "chat"},
+		ossmodel.Bucket{ID: "b-empty", Name: "empty", OwnerPTID: "a", Kind: "user", DefaultVisibility: "private"},
+		ossmodel.Bucket{ID: "b-full", Name: "full", OwnerPTID: "a", Kind: "user", DefaultVisibility: "private", ObjectCount: 3, UsedBytes: 999},
+		ossmodel.Bucket{ID: "b-system", Name: "chat", OwnerPTID: "a", Kind: "system", SystemKey: "chat", DefaultVisibility: "chat"},
 	)
 
 	// Empty + non-force → ok.
@@ -443,7 +443,7 @@ func TestOSSRepository_GetObject_FoundAndMissing(t *testing.T) {
 	ctx := context.Background()
 
 	seedFiles(t, db, ossmodel.FileMeta{
-		ID: "f-1", Key: "k1", Name: "n1", BucketID: "b1", OwnerActorID: "a",
+		ID: "f-1", Key: "k1", Name: "n1", BucketID: "b1", OwnerPTID: "a",
 		Visibility: "private", Backend: "local", Size: 7,
 	})
 
@@ -470,7 +470,7 @@ func TestOSSRepository_AdminPatchObject_UpdatesAndBumpsCapability(t *testing.T) 
 	ctx := context.Background()
 
 	seedFiles(t, db, ossmodel.FileMeta{
-		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerActorID: "a",
+		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerPTID: "a",
 		Visibility: "public", Backend: "local",
 	})
 
@@ -512,7 +512,7 @@ func TestOSSRepository_AdminPatchObject_RejectsChatWithoutSession(t *testing.T) 
 	ctx := context.Background()
 
 	seedFiles(t, db, ossmodel.FileMeta{
-		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerActorID: "a",
+		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerPTID: "a",
 		Visibility: "private", Backend: "local",
 	})
 
@@ -537,7 +537,7 @@ func TestOSSRepository_AdminPatchObject_AwayFromChatClearsSession(t *testing.T) 
 	ctx := context.Background()
 
 	seedFiles(t, db, ossmodel.FileMeta{
-		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerActorID: "a",
+		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerPTID: "a",
 		Visibility: "chat", ChatSessionID: "sess-1", Backend: "local",
 	})
 
@@ -558,7 +558,7 @@ func TestOSSRepository_AdminPatchObject_RejectsDeletedRow(t *testing.T) {
 
 	now := time.Now()
 	seedFiles(t, db, ossmodel.FileMeta{
-		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerActorID: "a",
+		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerPTID: "a",
 		Visibility: "private", Backend: "local", DeletedAt: &now,
 	})
 
@@ -574,7 +574,7 @@ func TestOSSRepository_AdminDeleteObject_HappyAndIdempotent(t *testing.T) {
 	ctx := context.Background()
 
 	seedFiles(t, db, ossmodel.FileMeta{
-		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerActorID: "a",
+		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerPTID: "a",
 		Visibility: "private", Backend: "local",
 	})
 
@@ -609,7 +609,7 @@ func TestOSSRepository_RecordOSSAudit_AppendsRow(t *testing.T) {
 	if err := repo.RecordOSSAudit(ctx, OSSAuditAppend{
 		Action:           "bucket_create",
 		BucketID:         "b-1",
-		ActorID:          "actor-x",
+		ActorPTID:        "actor-x",
 		DashboardActorID: "42",
 		Outcome:          "ok",
 	}); err != nil {
@@ -623,7 +623,7 @@ func TestOSSRepository_RecordOSSAudit_AppendsRow(t *testing.T) {
 	if total != 1 || len(rows) != 1 {
 		t.Fatalf("expected 1 row, got total=%d rows=%d", total, len(rows))
 	}
-	if rows[0].BucketID != "b-1" || rows[0].ActorID != "actor-x" || rows[0].Outcome != "ok" {
+	if rows[0].BucketID != "b-1" || rows[0].ActorPTID != "actor-x" || rows[0].Outcome != "ok" {
 		t.Errorf("row mismatch: %+v", rows[0])
 	}
 }

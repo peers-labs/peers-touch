@@ -30,7 +30,7 @@ pub struct PresenceNotifyInput {
 
 #[derive(Debug, Deserialize)]
 pub struct PresenceQueryInput {
-    pub actor_ids: Vec<String>,
+    pub actor_ptids: Vec<String>,
 }
 
 #[tauri::command]
@@ -43,7 +43,7 @@ pub fn presence_query(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let body = json!({ "actor_ids": input.actor_ids });
+    let body = json!({ "actor_ptids": input.actor_ptids });
     match crate::infrastructure::station_client::request_json_auth(
         Method::POST,
         "/presence/query",
@@ -82,7 +82,7 @@ pub fn presence_notify(
         }
     };
 
-    let actor_id = match session_resolver::actor_id_for_window(state.inner(), &window) {
+    let actor_ptid = match session_resolver::ptid_for_window(state.inner(), &window) {
         Some(id) if !id.is_empty() => id,
         _ => {
             tracing::debug!(?trigger, "presence_notify: no bound actor for window");
@@ -101,7 +101,7 @@ pub fn presence_notify(
         // the token is invalidated; otherwise we noop here.
         tracing::debug!(
             ?trigger,
-            actor = actor_id,
+            actor = actor_ptid,
             "presence_notify: no token for window"
         );
         return AppResult::success(StubPayload {
@@ -110,7 +110,7 @@ pub fn presence_notify(
         });
     }
 
-    let _ = supervisor.notify(&actor_id, &token, trigger, app);
+    let _ = supervisor.notify(&actor_ptid, &token, trigger, app);
 
     let _ = ErrorCode::Unauthorized; // keep the import live for future use
     AppResult::success(StubPayload {

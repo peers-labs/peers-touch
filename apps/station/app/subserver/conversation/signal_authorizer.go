@@ -14,10 +14,10 @@ type conversationSignalAuthorizer struct {
 	rel social_gate.RelationshipQuerier
 }
 
-func (a *conversationSignalAuthorizer) CanSignal(senderActorID, recipientActorID string) (bool, error) {
+func (a *conversationSignalAuthorizer) CanSignal(senderPTID, recipientPTID string) (bool, error) {
 	ctx := context.Background()
 
-	blocked, err := a.rel.IsBlocked(ctx, recipientActorID, senderActorID)
+	blocked, err := a.rel.IsBlocked(ctx, recipientPTID, senderPTID)
 	if err != nil {
 		return false, err
 	}
@@ -25,7 +25,7 @@ func (a *conversationSignalAuthorizer) CanSignal(senderActorID, recipientActorID
 		return false, nil
 	}
 
-	blockedReverse, err := a.rel.IsBlocked(ctx, senderActorID, recipientActorID)
+	blockedReverse, err := a.rel.IsBlocked(ctx, senderPTID, recipientPTID)
 	if err != nil {
 		return false, err
 	}
@@ -33,7 +33,7 @@ func (a *conversationSignalAuthorizer) CanSignal(senderActorID, recipientActorID
 		return false, nil
 	}
 
-	shared, err := a.rel.HaveSharedConversation(ctx, senderActorID, recipientActorID)
+	shared, err := a.rel.HaveSharedConversation(ctx, senderPTID, recipientPTID)
 	if err != nil {
 		return false, err
 	}

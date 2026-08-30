@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/key_exchange/key_exchange.proto.
  */
 export const file_domain_key_exchange_key_exchange: GenFile = /*@__PURE__*/
-  fileDesc("CiZkb21haW4va2V5X2V4Y2hhbmdlL2tleV9leGNoYW5nZS5wcm90bxIhcGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxIqwBChZVcGxvYWRLZXlCdW5kbGVSZXF1ZXN0Eg4KBmlrX3B1YhgBIAEoCRIOCgZzcGtfaWQYAiABKAUSDwoHc3BrX3B1YhgDIAEoCRIPCgdzcGtfc2lnGAQgASgJEg8KB29wa19pZHMYBSADKAUSEAoIb3BrX3B1YnMYBiADKAkSEQoJZGV2aWNlX2lkGAcgASgJEhoKEnN1cHBvcnRlZF92ZXJzaW9ucxgIIAMoDSIZChdVcGxvYWRLZXlCdW5kbGVSZXNwb25zZSLGAQoJS2V5QnVuZGxlEgsKA2RpZBgBIAEoCRIRCglkZXZpY2VfaWQYAiABKAkSDgoGaWtfcHViGAMgASgJEg8KB3Nwa19wdWIYBCABKAkSDwoHc3BrX3NpZxgFIAEoCRIMCgRvcGtzGAYgAygJEhwKFHB1Ymxpc2hlZF9hdF91bml4X21zGAcgASgDEhoKEnN1cHBvcnRlZF92ZXJzaW9ucxgIIAMoDRIOCgZzcGtfaWQYCSABKAUSDwoHb3BrX2lkcxgKIAMoBSJVChVGZXRjaEtleUJ1bmRsZVJlcXVlc3QSCwoDZGlkGAEgASgJEhEKCWRldmljZV9pZBgCIAEoCRIcChRob21lX3N0YXRpb25fcGVlcl9pZBgDIAEoCSJXChZGZXRjaEtleUJ1bmRsZVJlc3BvbnNlEj0KB2J1bmRsZXMYASADKAsyLC5wZWVyc190b3VjaC5tb2RlbC5rZXlfZXhjaGFuZ2UudjEuS2V5QnVuZGxlIkwKFFJlcGxlbmlzaE9wa3NSZXF1ZXN0Eg8KB29wa19pZHMYASADKAUSEAoIb3BrX3B1YnMYAiADKAkSEQoJZGV2aWNlX2lkGAMgASgJIhcKFVJlcGxlbmlzaE9wa3NSZXNwb25zZSIkCg9PcGtDb3VudFJlcXVlc3QSEQoJZGV2aWNlX2lkGAEgASgJIiEKEE9wa0NvdW50UmVzcG9uc2USDQoFY291bnQYASABKANCUlpQZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9rZXlfZXhjaGFuZ2UvbW9kZWw7bW9kZWxiBnByb3RvMw");
+  fileDesc("CiZkb21haW4va2V5X2V4Y2hhbmdlL2tleV9leGNoYW5nZS5wcm90bxIhcGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxIqwBChZVcGxvYWRLZXlCdW5kbGVSZXF1ZXN0Eg4KBmlrX3B1YhgBIAEoCRIOCgZzcGtfaWQYAiABKAUSDwoHc3BrX3B1YhgDIAEoCRIPCgdzcGtfc2lnGAQgASgJEg8KB29wa19pZHMYBSADKAUSEAoIb3BrX3B1YnMYBiADKAkSEQoJZGV2aWNlX2lkGAcgASgJEhoKEnN1cHBvcnRlZF92ZXJzaW9ucxgIIAMoDSIZChdVcGxvYWRLZXlCdW5kbGVSZXNwb25zZSLHAQoJS2V5QnVuZGxlEgwKBHB0aWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEg4KBmlrX3B1YhgDIAEoCRIPCgdzcGtfcHViGAQgASgJEg8KB3Nwa19zaWcYBSABKAkSDAoEb3BrcxgGIAMoCRIcChRwdWJsaXNoZWRfYXRfdW5peF9tcxgHIAEoAxIaChJzdXBwb3J0ZWRfdmVyc2lvbnMYCCADKA0SDgoGc3BrX2lkGAkgASgFEg8KB29wa19pZHMYCiADKAUiVgoVRmV0Y2hLZXlCdW5kbGVSZXF1ZXN0EgwKBHB0aWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhwKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAMgASgJIlcKFkZldGNoS2V5QnVuZGxlUmVzcG9uc2USPQoHYnVuZGxlcxgBIAMoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmtleV9leGNoYW5nZS52MS5LZXlCdW5kbGUiTAoUUmVwbGVuaXNoT3Brc1JlcXVlc3QSDwoHb3BrX2lkcxgBIAMoBRIQCghvcGtfcHVicxgCIAMoCRIRCglkZXZpY2VfaWQYAyABKAkiFwoVUmVwbGVuaXNoT3Brc1Jlc3BvbnNlIiQKD09wa0NvdW50UmVxdWVzdBIRCglkZXZpY2VfaWQYASABKAkiIQoQT3BrQ291bnRSZXNwb25zZRINCgVjb3VudBgBIAEoA0JSWlBnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2tleV9leGNoYW5nZS9tb2RlbDttb2RlbGIGcHJvdG8z");
 
 /**
  * X3DH key bundle upload — base64-encoded public keys.
@@ -86,15 +86,15 @@ export const UploadKeyBundleResponseSchema: GenMessage<UploadKeyBundleResponse> 
   messageDesc(file_domain_key_exchange_key_exchange, 1);
 
 /**
- * One logical device publish for a DID (may share the DID across installs).
+ * One logical device publish for a PTID (may share the PTID across installs).
  *
  * @generated from message peers_touch.model.key_exchange.v1.KeyBundle
  */
 export type KeyBundle = Message<"peers_touch.model.key_exchange.v1.KeyBundle"> & {
   /**
-   * @generated from field: string did = 1;
+   * @generated from field: string ptid = 1;
    */
-  did: string;
+  ptid: string;
 
   /**
    * Stable per-install id from the publisher; empty string means legacy row
@@ -159,18 +159,18 @@ export const KeyBundleSchema: GenMessage<KeyBundle> = /*@__PURE__*/
   messageDesc(file_domain_key_exchange_key_exchange, 2);
 
 /**
- * Fetch another actor's key bundles by DID.
+ * Fetch another actor's key bundles by PTID.
  *
  * @generated from message peers_touch.model.key_exchange.v1.FetchKeyBundleRequest
  */
 export type FetchKeyBundleRequest = Message<"peers_touch.model.key_exchange.v1.FetchKeyBundleRequest"> & {
   /**
-   * @generated from field: string did = 1;
+   * @generated from field: string ptid = 1;
    */
-  did: string;
+  ptid: string;
 
   /**
-   * When empty, return all bundles for the DID. When set, only that device_id
+   * When empty, return all bundles for the PTID. When set, only that device_id
    * (after server-side normalization matching upload).
    *
    * @generated from field: string device_id = 2;
@@ -262,7 +262,7 @@ export const ReplenishOpksResponseSchema: GenMessage<ReplenishOpksResponse> = /*
  */
 export type OpkCountRequest = Message<"peers_touch.model.key_exchange.v1.OpkCountRequest"> & {
   /**
-   * empty => legacy bucket for this DID.
+   * empty => legacy bucket for this PTID.
    *
    * @generated from field: string device_id = 1;
    */

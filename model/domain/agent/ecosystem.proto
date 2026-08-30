@@ -53,11 +53,13 @@ message ListAgentGroupsResponse {
 // ─── Topic Comments ──────────────────────────────────────────
 
 message TopicComment {
+  reserved "author_id";
+
   string id = 1;
   string topic_key = 2;
   string content = 3;
   string created_at = 4;
-  string author_id = 5;
+  string author_ptid = 5;
 }
 
 message CreateTopicCommentRequest {

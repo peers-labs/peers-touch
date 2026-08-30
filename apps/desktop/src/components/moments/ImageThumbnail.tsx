@@ -23,7 +23,7 @@ interface ImageThumbnailProps {
   cid: string;
   attachment?: ImageAttachment;
   audience?: Audience | null;
-  authorDid?: string | null;
+  authorPtid?: string | null;
   /** Optional fallback alt text for accessibility. */
   alt?: string;
   /** Disable AntD's built-in preview (parent owns lightbox). */
@@ -38,7 +38,7 @@ export function ImageThumbnail({
   cid,
   attachment,
   audience,
-  authorDid,
+  authorPtid,
   alt,
   disablePreview = false,
   onClick,
@@ -54,9 +54,9 @@ export function ImageThumbnail({
       mimeType: 'image/*',
       mediaEncryption: attachment?.mediaEncryption,
       audience,
-      authorDid,
+      authorPtid,
     }),
-    [attachment?.mediaEncryption, audience, authorDid, cid, isHttp],
+    [attachment?.mediaEncryption, audience, authorPtid, cid, isHttp],
   );
   const encryptedResolved = useDecryptedOssAttachmentUrl(encryptedAttachment);
   const plainResolved = useOssAttachmentUrl(isHttp || attachment?.mediaEncryption ? null : cid);

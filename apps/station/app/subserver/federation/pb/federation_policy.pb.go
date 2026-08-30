@@ -118,7 +118,7 @@ func (*SingleAdminParams) Descriptor() ([]byte, []int) {
 // OwnerAdminParams — reserved for future use.
 type OwnerAdminParams struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
-	OwnerActorId       string                 `protobuf:"bytes,1,opt,name=owner_actor_id,json=ownerActorId,proto3" json:"owner_actor_id,omitempty"`
+	OwnerActorPtid     string                 `protobuf:"bytes,1,opt,name=owner_actor_ptid,json=ownerActorPtid,proto3" json:"owner_actor_ptid,omitempty"`
 	OwnerStationPeerId string                 `protobuf:"bytes,2,opt,name=owner_station_peer_id,json=ownerStationPeerId,proto3" json:"owner_station_peer_id,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
@@ -154,9 +154,9 @@ func (*OwnerAdminParams) Descriptor() ([]byte, []int) {
 	return file_domain_federation_federation_policy_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *OwnerAdminParams) GetOwnerActorId() string {
+func (x *OwnerAdminParams) GetOwnerActorPtid() string {
 	if x != nil {
-		return x.OwnerActorId
+		return x.OwnerActorPtid
 	}
 	return ""
 }
@@ -394,9 +394,9 @@ var File_domain_federation_federation_policy_proto protoreflect.FileDescriptor
 const file_domain_federation_federation_policy_proto_rawDesc = "" +
 	"\n" +
 	")domain/federation/federation_policy.proto\x12\x1fpeers_touch.model.federation.v1\"\x13\n" +
-	"\x11SingleAdminParams\"k\n" +
-	"\x10OwnerAdminParams\x12$\n" +
-	"\x0eowner_actor_id\x18\x01 \x01(\tR\fownerActorId\x121\n" +
+	"\x11SingleAdminParams\"o\n" +
+	"\x10OwnerAdminParams\x12(\n" +
+	"\x10owner_actor_ptid\x18\x01 \x01(\tR\x0eownerActorPtid\x121\n" +
 	"\x15owner_station_peer_id\x18\x02 \x01(\tR\x12ownerStationPeerId\"q\n" +
 	"\fQuorumParams\x12/\n" +
 	"\x13required_signatures\x18\x01 \x01(\rR\x12requiredSignatures\x120\n" +

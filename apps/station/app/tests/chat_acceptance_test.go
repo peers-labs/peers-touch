@@ -97,8 +97,8 @@ func TestP2P_A1_FriendRequestLifecycle(t *testing.T) {
 
 	// A sends friend request to B
 	sendResp := httpPost(t, "/api/v1/social/friend-request/send", &a.token, map[string]string{
-		"receiver_did": b.actorID,
-		"message":      "Hey Bob, let's chat!",
+		"receiver_ptid": b.actorID,
+		"message":       "Hey Bob, let's chat!",
 	})
 	assertSuccess(t, sendResp, "send friend request")
 
@@ -109,8 +109,8 @@ func TestP2P_A1_FriendRequestLifecycle(t *testing.T) {
 	var requestID string
 	for _, r := range requests {
 		req, _ := r.(map[string]interface{})
-		senderID := fmt.Sprintf("%v", req["sender_id"])
-		if senderID == a.actorID {
+		senderPTID := fmt.Sprintf("%v", req["sender_ptid"])
+		if senderPTID == a.actorID {
 			found = true
 			requestID = fmt.Sprintf("%v", req["id"])
 			status := req["status"]
@@ -175,7 +175,7 @@ func TestP2P_A2_TextMessage(t *testing.T) {
 	// A sends text
 	sendResp := httpPost(t, "/friend-chat/message/send", &a.token, map[string]interface{}{
 		"session_ulid":      sessionID,
-		"receiver_did":      b.actorID,
+		"receiver_ptid":     b.actorID,
 		"type":              1,
 		"encrypted_payload": "aGVsbG8gZnJvbSBBbGljZQ==",
 	})
@@ -206,7 +206,7 @@ func TestP2P_A5_EmojiRoundTrip(t *testing.T) {
 	_ = emoji
 	sendResp := httpPost(t, "/friend-chat/message/send", &a.token, map[string]interface{}{
 		"session_ulid":      sessionID,
-		"receiver_did":      b.actorID,
+		"receiver_ptid":     b.actorID,
 		"type":              1,
 		"encrypted_payload": "8J+RjfCfjok8L3htbD7wn5Sl",
 	})
@@ -288,8 +288,8 @@ func TestGroup_B1_CreateAndList(t *testing.T) {
 
 	// A creates group with B and C
 	createResp := httpPost(t, "/group-chat/create", &a.token, map[string]interface{}{
-		"name":                "Test Group ABC",
-		"initial_member_dids": []string{b.actorID, c.actorID},
+		"name":                 "Test Group ABC",
+		"initial_member_ptids": []string{b.actorID, c.actorID},
 	})
 	assertSuccess(t, createResp, "create group")
 	group, _ := createResp["group"].(map[string]interface{})
@@ -441,8 +441,8 @@ func TestError_D3_FriendRequestToSelf(t *testing.T) {
 	a := setupTestActor(t, "alice_self", "alice_self@test.local", "TestPass1!")
 
 	resp := httpPost(t, "/api/v1/social/friend-request/send", &a.token, map[string]string{
-		"receiver_did": a.actorID,
-		"message":      "",
+		"receiver_ptid": a.actorID,
+		"message":       "",
 	})
 	msg := fmt.Sprintf("%v", resp["message"])
 	errMsg := fmt.Sprintf("%v", resp["error"])
@@ -460,8 +460,8 @@ func setupFriendship(t *testing.T, a, b *testClient) string {
 	t.Helper()
 
 	httpPost(t, "/api/v1/social/friend-request/send", &a.token, map[string]string{
-		"receiver_did": b.actorID,
-		"message":      "test friend request",
+		"receiver_ptid": b.actorID,
+		"message":       "test friend request",
 	})
 
 	time.Sleep(200 * time.Millisecond)
@@ -470,7 +470,7 @@ func setupFriendship(t *testing.T, a, b *testClient) string {
 	var requestID string
 	for _, r := range requests {
 		req, _ := r.(map[string]interface{})
-		if fmt.Sprintf("%v", req["sender_id"]) == a.actorID {
+		if fmt.Sprintf("%v", req["sender_ptid"]) == a.actorID {
 			status := fmt.Sprintf("%v", req["status"])
 			if status == "FRIEND_REQUEST_STATUS_PENDING" || status == "1" {
 				requestID = fmt.Sprintf("%v", req["id"])
@@ -499,7 +499,7 @@ func setupFriendship(t *testing.T, a, b *testClient) string {
 
 	// No session exists — create one explicitly.
 	createResp := httpPost(t, "/friend-chat/session/create", &a.token, map[string]string{
-		"participant_did": b.actorID,
+		"participant_ptid": b.actorID,
 	})
 	sess, _ := createResp["session"].(map[string]interface{})
 	if sess != nil {
@@ -511,8 +511,8 @@ func setupFriendship(t *testing.T, a, b *testClient) string {
 func setupGroup(t *testing.T, a, b, c *testClient) string {
 	t.Helper()
 	createResp := httpPost(t, "/group-chat/create", &a.token, map[string]interface{}{
-		"name":                fmt.Sprintf("TestGroup-%d", time.Now().UnixMilli()),
-		"initial_member_dids": []string{b.actorID, c.actorID},
+		"name":                 fmt.Sprintf("TestGroup-%d", time.Now().UnixMilli()),
+		"initial_member_ptids": []string{b.actorID, c.actorID},
 	})
 	group, _ := createResp["group"].(map[string]interface{})
 	if group != nil {

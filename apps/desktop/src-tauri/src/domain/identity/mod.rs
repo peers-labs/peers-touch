@@ -1,12 +1,7 @@
 //! Canonical desktop-side identity types.
 //!
-//! These types collapse the historical zoo of parallel DTOs (`AccountIdentity`,
-//! `AuthSessionPayload`, `CurrentUser`, `SessionUser`, …) into a small set of
-//! pure-domain primitives. They mirror the proto-level `ActorKind` / `ActorRef`
-//! taxonomy planned for `model/domain/actor/actor.proto` (see PR-8).
-//!
-//! Status: **introduced in PR-2**, **not yet wired** anywhere. PR-3 migrates
-//! every command to use these; PR-4 deletes the legacy duplicates.
+//! Actor identity is PTID-only. Numeric Station persistence IDs are not part of
+//! this domain and must never enter Desktop state.
 
 use serde::{Deserialize, Serialize};
 
@@ -51,15 +46,10 @@ impl ActorKind {
 
 /// Lightweight reference to a station actor. Every cross-domain API on the
 /// desktop side (Tauri commands, application services, infrastructure callers)
-/// passes `ActorRef` instead of bare `actor_id` strings.
+/// passes `ActorRef` instead of bare `actor_ptid` strings.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ActorRef {
-    /// Station-internal numeric id (Sonyflake), serialised as string for
-    /// JSON safety on 32-bit clients.
-    pub actor_id: String,
-    /// Federated PTID string (`ptid:v1:actor:...`). Empty when the local
-    /// account hasn't synced one yet.
-    #[serde(default)]
+    /// Federation-stable actor identity (`ptid:v1:actor:...`).
     pub ptid: String,
     /// `@user@host` (ActivityPub webfinger). Empty when not yet known.
     #[serde(default)]
@@ -69,10 +59,9 @@ pub struct ActorRef {
 }
 
 impl ActorRef {
-    pub fn new_person(actor_id: impl Into<String>) -> Self {
+    pub fn new_person(ptid: impl Into<String>) -> Self {
         Self {
-            actor_id: actor_id.into(),
-            ptid: String::new(),
+            ptid: ptid.into(),
             acct: String::new(),
             kind: ActorKind::Person,
         }
@@ -142,11 +131,10 @@ mod tests {
     }
 
     #[test]
-    fn actor_ref_new_person_defaults_kind_to_person() {
-        let r = ActorRef::new_person("42");
-        assert_eq!(r.actor_id, "42");
+    fn actor_ref_new_person_requires_ptid_as_identity() {
+        let r = ActorRef::new_person("ptid:test:alice");
+        assert_eq!(r.ptid, "ptid:test:alice");
         assert_eq!(r.kind, ActorKind::Person);
-        assert!(r.ptid.is_empty());
     }
 
     #[test]

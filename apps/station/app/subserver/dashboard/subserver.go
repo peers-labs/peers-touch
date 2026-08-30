@@ -116,6 +116,10 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.db = rds
 
 	// Auto-migrate dashboard-specific tables
+	if err := infrastructure.MigrateDashboardPTIDColumn(rds); err != nil {
+		s.status = server.StatusError
+		return err
+	}
 	if err := rds.AutoMigrate(&domain.DashboardAdmin{}, &domain.DashboardSession{}, &domain.DashboardAuditLog{}); err != nil {
 		s.status = server.StatusError
 		return fmt.Errorf("[dashboard] auto-migrate failed: %w", err)

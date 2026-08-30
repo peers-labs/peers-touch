@@ -479,6 +479,114 @@
       "tier": "local-evidence",
       "description": "Validate the Station Dashboard managed domain profile against project-wide acceptance contracts and latest gate evidence."
     },
+    "mobile-contract-static": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.contract_static",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate Mobile Acceptance IDs, typed service topology, and contract wiring without claiming native product behavior."
+    },
+    "mobile-identity-contract": {
+      "command": "python3 tooling/acceptance/gates/mobile/identity_contract.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the PTID-only ActorRef hard cut and signed Station identity Proto contract."
+    },
+    "mobile-hard-cut-static": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.contract_static --hard-cut",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate final Mobile identity, lifecycle, persistence, gateway, and retired-path deletion contracts."
+    },
+    "mobile-simulator-access-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_e2e",
+      "timeout_seconds": 2400,
+      "environment": "mobile-simulator",
+      "provisioner": "mobile-simulator",
+      "tier": "env-evidence",
+      "description": "Prove iOS Simulator and Android emulator launch, native callback routing, restart, and fail-closed behavior without claiming physical-device MS-AG03 or provider success."
+    },
+    "mobile-native-access-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario access",
+      "timeout_seconds": 1800,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove Station trust, Access Gate, OAuth, and Station replacement on isolated iOS and Android clients."
+    },
+    "mobile-native-lifecycle-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario lifecycle",
+      "timeout_seconds": 1800,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove Mobile launch, resume, revocation, Station change, logout, generation fencing, and teardown."
+    },
+    "mobile-native-recovery-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario recovery",
+      "timeout_seconds": 2400,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove command outcome convergence, restart recovery, overload, and encrypted draft restoration."
+    },
+    "mobile-native-recovery-ui-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario recovery-ui",
+      "timeout_seconds": 1800,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove receiver-visible recovery, capacity, identity mismatch, revocation, and deferred states."
+    },
+    "mobile-native-social-convergence-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario social-convergence",
+      "timeout_seconds": 2400,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove shared Mobile Social ingress and Station-backed projection convergence across actors and Stations."
+    },
+    "mobile-native-chat-contacts-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario chat-contacts",
+      "timeout_seconds": 2400,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove Chat, Contacts, and Group receiver journeys with authoritative readback."
+    },
+    "mobile-native-moments-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario moments",
+      "timeout_seconds": 2400,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove Moments feed, publish, reaction, comment, reply, rollback, and draft recovery."
+    },
+    "mobile-native-settings-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario settings",
+      "timeout_seconds": 1800,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove account and device settings ownership, persistence, conflict, and readback."
+    },
+    "mobile-native-platform-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario platform",
+      "timeout_seconds": 2400,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove iOS and Android accessibility, localization, performance, permission, and cleanup contracts."
+    },
+    "mobile-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain mobile --require-proven",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the Mobile managed domain against contract, native runtime, evidence, and unproven-scope rules."
+    },
     "chat-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain chat --require-proven",
       "timeout_seconds": 600,

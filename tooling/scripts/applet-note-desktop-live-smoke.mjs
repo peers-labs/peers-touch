@@ -115,7 +115,7 @@ function responseFor(method, params) {
         body: {
           items: [{
             noteId: 'live-smoke-note',
-            ownerId: 'desktop-live-smoke-actor',
+            ownerPtid: 'desktop-live-smoke-actor',
             title: 'Live Smoke Note',
             content: 'Loaded through Desktop Lynx Host',
             createdAt: new Date(0).toISOString(),

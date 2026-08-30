@@ -20,8 +20,9 @@ import (
 // don't pay for converter allocation per row; converters are stateless
 // so the shared instance is safe.
 type publicPostRepo struct {
-	db   *gorm.DB
-	conv *domain.PostConverter
+	db       *gorm.DB
+	conv     *domain.PostConverter
+	identity *ActorIdentity
 }
 
 // NewPublicPostRepository wires the repo against an existing *gorm.DB
@@ -29,7 +30,7 @@ type publicPostRepo struct {
 // MomentService threads a single TX through both the post insert and
 // the audience-grant inserts when creating a CUSTOM_* post.
 func NewPublicPostRepository(gdb *gorm.DB) domain.PublicPostRepository {
-	return &publicPostRepo{db: gdb, conv: domain.NewPostConverter()}
+	return &publicPostRepo{db: gdb, conv: domain.NewPostConverter(), identity: NewActorIdentity(gdb)}
 }
 
 // Create persists a public post. Panics if the supplied Post is not
@@ -47,6 +48,11 @@ func (r *publicPostRepo) Create(ctx context.Context, p *domain.Post) error {
 	if err != nil {
 		return err
 	}
+	authorID, err := r.identity.RequireID(ctx, p.AuthorPTID)
+	if err != nil {
+		return err
+	}
+	row.AuthorID = authorID
 	if err := r.db.WithContext(ctx).Create(row).Error; err != nil {
 		return err
 	}
@@ -67,7 +73,7 @@ func (r *publicPostRepo) GetByID(ctx context.Context, id uint64) (*domain.Post, 
 	if err != nil {
 		return nil, err
 	}
-	return r.conv.PublicDBToDomain(&row), nil
+	return r.hydrateOne(ctx, &row)
 }
 
 // Delete soft-deletes by setting `deleted_at = NOW()`. Author check
@@ -75,14 +81,22 @@ func (r *publicPostRepo) GetByID(ctx context.Context, id uint64) (*domain.Post, 
 // the wrong author is a no-op (no error, zero rows affected). The
 // application layer surfaces "no rows affected" as a 404/403 to avoid
 // confirming the post's existence to a non-author.
-func (r *publicPostRepo) Delete(ctx context.Context, id, authorID uint64) error {
+func (r *publicPostRepo) Delete(ctx context.Context, id uint64, authorPTID string) error {
+	authorID, err := r.identity.RequireID(ctx, authorPTID)
+	if err != nil {
+		return err
+	}
 	return r.db.WithContext(ctx).
 		Model(&db.SocialPublicPost{}).
 		Where("id = ? AND author_id = ? AND deleted_at IS NULL", id, authorID).
 		Update("deleted_at", gorm.Expr("CURRENT_TIMESTAMP")).Error
 }
 
-func (r *publicPostRepo) ListByAuthor(ctx context.Context, authorID uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
+func (r *publicPostRepo) ListByAuthor(ctx context.Context, authorPTID string, c domain.Cursor, limit int) ([]*domain.Post, error) {
+	authorID, err := r.identity.RequireID(ctx, authorPTID)
+	if err != nil {
+		return nil, err
+	}
 	q := r.db.WithContext(ctx).
 		Where("author_id = ? AND deleted_at IS NULL", authorID)
 	if !c.IsZero() {
@@ -92,7 +106,7 @@ func (r *publicPostRepo) ListByAuthor(ctx context.Context, authorID uint64, c do
 	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return r.hydrate(rows), nil
+	return r.hydrate(ctx, rows)
 }
 
 func (r *publicPostRepo) ListPublic(ctx context.Context, c domain.Cursor, limit int) ([]*domain.Post, error) {
@@ -105,7 +119,7 @@ func (r *publicPostRepo) ListPublic(ctx context.Context, c domain.Cursor, limit 
 	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return r.hydrate(rows), nil
+	return r.hydrate(ctx, rows)
 }
 
 // ListPublicHot returns the trending public posts from the last
@@ -150,12 +164,16 @@ func (r *publicPostRepo) ListPublicHot(ctx context.Context, c domain.HotCursor, 
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return r.hydrate(rows), nil
+	return r.hydrate(ctx, rows)
 }
 
-func (r *publicPostRepo) ListPublicByAuthors(ctx context.Context, authorIDs []uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
-	if len(authorIDs) == 0 {
+func (r *publicPostRepo) ListPublicByAuthors(ctx context.Context, authorPTIDs []string, c domain.Cursor, limit int) ([]*domain.Post, error) {
+	if len(authorPTIDs) == 0 {
 		return nil, nil
+	}
+	authorIDs, err := r.identity.RequireIDs(ctx, authorPTIDs)
+	if err != nil {
+		return nil, err
 	}
 	q := r.db.WithContext(ctx).
 		Where("author_id IN ? AND deleted_at IS NULL", authorIDs)
@@ -166,7 +184,7 @@ func (r *publicPostRepo) ListPublicByAuthors(ctx context.Context, authorIDs []ui
 	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return r.hydrate(rows), nil
+	return r.hydrate(ctx, rows)
 }
 
 // UpdateCommentsCount applies a relative delta and returns the new
@@ -200,10 +218,24 @@ func (r *publicPostRepo) UpdateReactionsCount(ctx context.Context, id uint64, sn
 		Update("reactions_count_json", snapshotJSON).Error
 }
 
-func (r *publicPostRepo) hydrate(rows []*db.SocialPublicPost) []*domain.Post {
+func (r *publicPostRepo) hydrate(ctx context.Context, rows []*db.SocialPublicPost) ([]*domain.Post, error) {
 	out := make([]*domain.Post, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, r.conv.PublicDBToDomain(row))
+		post, err := r.hydrateOne(ctx, row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, post)
 	}
-	return out
+	return out, nil
+}
+
+func (r *publicPostRepo) hydrateOne(ctx context.Context, row *db.SocialPublicPost) (*domain.Post, error) {
+	authorPTID, err := r.identity.ResolveID(ctx, row.AuthorID)
+	if err != nil {
+		return nil, err
+	}
+	post := r.conv.PublicDBToDomain(row)
+	post.AuthorPTID = authorPTID
+	return post, nil
 }

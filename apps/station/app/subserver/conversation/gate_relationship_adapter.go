@@ -65,7 +65,7 @@ func (a *ConversationRelationshipAdapter) IsBlocked(ctx context.Context, blocker
 	err = a.db.WithContext(ctx).
 		Table("friend_chat_friendships").
 		Select("1").
-		Where("status = ? AND actor_did = ? AND peer_did = ?",
+		Where("status = ? AND actor_ptid = ? AND peer_ptid = ?",
 			blockStatusFriendship,
 			strconv.FormatUint(blockerID, 10),
 			strconv.FormatUint(blockedID, 10),

@@ -155,7 +155,7 @@ type AcceptInviteRequest struct {
 	StationPublicKey              []byte                 `protobuf:"bytes,2,opt,name=station_public_key,json=stationPublicKey,proto3" json:"station_public_key,omitempty"`
 	StationName                   string                 `protobuf:"bytes,3,opt,name=station_name,json=stationName,proto3" json:"station_name,omitempty"`
 	StationUrl                    string                 `protobuf:"bytes,4,opt,name=station_url,json=stationUrl,proto3" json:"station_url,omitempty"`
-	AcceptingActorId              string                 `protobuf:"bytes,5,opt,name=accepting_actor_id,json=acceptingActorId,proto3" json:"accepting_actor_id,omitempty"`
+	AcceptingActorPtid            string                 `protobuf:"bytes,5,opt,name=accepting_actor_ptid,json=acceptingActorPtid,proto3" json:"accepting_actor_ptid,omitempty"`
 	AcceptingActorFederatedHandle string                 `protobuf:"bytes,6,opt,name=accepting_actor_federated_handle,json=acceptingActorFederatedHandle,proto3" json:"accepting_actor_federated_handle,omitempty"`
 	unknownFields                 protoimpl.UnknownFields
 	sizeCache                     protoimpl.SizeCache
@@ -219,9 +219,9 @@ func (x *AcceptInviteRequest) GetStationUrl() string {
 	return ""
 }
 
-func (x *AcceptInviteRequest) GetAcceptingActorId() string {
+func (x *AcceptInviteRequest) GetAcceptingActorPtid() string {
 	if x != nil {
-		return x.AcceptingActorId
+		return x.AcceptingActorPtid
 	}
 	return ""
 }
@@ -298,14 +298,14 @@ const file_domain_federation_federation_membership_service_proto_rawDesc = "" +
 	"\x04role\x18\x03 \x01(\tR\x04role\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12$\n" +
 	"\x0elocal_head_seq\x18\x05 \x01(\x04R\flocalHeadSeq\x12&\n" +
-	"\x0flocal_head_hash\x18\x06 \x01(\fR\rlocalHeadHash\"\xa3\x02\n" +
+	"\x0flocal_head_hash\x18\x06 \x01(\fR\rlocalHeadHash\"\xa7\x02\n" +
 	"\x13AcceptInviteRequest\x12#\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12,\n" +
 	"\x12station_public_key\x18\x02 \x01(\fR\x10stationPublicKey\x12!\n" +
 	"\fstation_name\x18\x03 \x01(\tR\vstationName\x12\x1f\n" +
 	"\vstation_url\x18\x04 \x01(\tR\n" +
-	"stationUrl\x12,\n" +
-	"\x12accepting_actor_id\x18\x05 \x01(\tR\x10acceptingActorId\x12G\n" +
+	"stationUrl\x120\n" +
+	"\x14accepting_actor_ptid\x18\x05 \x01(\tR\x12acceptingActorPtid\x12G\n" +
 	" accepting_actor_federated_handle\x18\x06 \x01(\tR\x1dacceptingActorFederatedHandle\"U\n" +
 	"\x14AcceptInviteResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
