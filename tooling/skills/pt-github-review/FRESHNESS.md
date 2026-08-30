@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-08-29
-covered_docs_hash: 6275bc607b7bc89ab95824f2ae2437e0ae6b27a025515e7b63721c7a78a26d2c
+last_verified_at: 2026-08-30
+covered_docs_hash: 4b225df0490da847920c86477896f8de6afb5cce819a3e900aae3e7ed1619424
 
 covered_docs:
   - AGENTS.md
@@ -31,3 +31,8 @@ Updating this file is a review act, not bookkeeping. The PR must explain whether
 The 2026-08-29 refresh covers execution-status and evidence updates under the
 Acceptance framework. It does not change review behavior, so no `SKILL.md`
 change or additional review fixture is required.
+
+The 2026-08-30 refresh covers the exact-source Native Desktop evidence rules
+and Mobile OAuth foundation merged through PRs #100 and #101. The corresponding
+runtime identity requirements are present in `pt-github-review/SKILL.md`; no
+additional review fixture is required.
