@@ -231,9 +231,9 @@ ensure_desktop_rust_ready() {
   wt_suffix="$(printf '%s' "${wt_id}" | tr -cs 'a-zA-Z0-9' '-' | sed 's/-$//')"
   local bundle_id="com.peertouch.dev.${wt_suffix}"
   if [[ "$headless" == "--headless" && "$e2e_testing" == "true" ]]; then
-    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}],\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
+    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"create\":false}],\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
   elif [[ "$headless" == "--headless" ]]; then
-    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}]}}"
+    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"create\":false}]}}"
   elif [[ "$e2e_testing" == "true" ]]; then
     tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
   else
@@ -273,8 +273,9 @@ ensure_desktop_rust_ready() {
   echo "[INFO] Starting Desktop Rust BFF (profile=$profile, gateway=:$gw_port)..."
 
   # Both headless (web) and windowed (app) modes use `pnpm tauri dev --config`
-  # to ensure devUrl, window visibility, and beforeDevCommand overrides are
-  # applied correctly. The binary cannot accept runtime config overrides.
+  # to ensure devUrl, window creation, and beforeDevCommand overrides are
+  # applied correctly. Browser mode keeps the Rust BFF rendererless so no
+  # hidden WebView can become a second session owner.
   # See docs/architecture/runtime/desktop-runtime-architecture.md §6.4.
   local tauri_feature_args=()
   if [[ "${PT_DESKTOP_E2E:-false}" == "true" ]]; then

@@ -3560,6 +3560,42 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `code/detailCode/reason/deviceType` projection to the complete
   `foundationF06Prepare` Harness method. No assertion, retry, cleanup, or
   product behavior changes. AS-F06 and G-F remain `PARTIAL / UNPROVEN`.
+- Diagnostic checkpoint
+  `0ceae984f723943d1977f671307f593442523faf` was deployed exact-source to
+  profile `two`. Run
+  `20260830T014644732094Z-786154164c29a051c7f0486c17f9c6f3`
+  failed during the first Browser AS-F06 preparation, before its outage and
+  restart sequence, with typed authorization evidence
+  `code=UNAUTHORIZED`, `detailCode=session_revoked`, and `reason=kicked`;
+  `deviceType` was absent. Local source, Station live source, and evidence
+  source all matched `0ceae984f`, and redaction passed. The outer Gate manifest
+  reported cleanup `passed`, but candidate cleanup artifact
+  `20260830T014649454491Z-a20283424c805e0015f5e6a53761670f`
+  records `failed` because Desktop logout timed out; cleanup is therefore
+  `FAILED`, not `PASS`, despite ports, storage, and actor identity being
+  released. This excludes expiry and transient Station validation as the
+  current primary failure and narrows ownership to a competing session
+  takeover path. The previously deployed replay-sequence and terminal-snapshot
+  corrections remain runtime-unproven because the run did not reach the
+  complete AS-F06 oracle. AS-F06 and G-F remain `PARTIAL / UNPROVEN`.
+  Read-only Station session and request-log correlation then identified the
+  crossed authority: the Browser session row remained valid until cleanup,
+  while the session rejected during Browser AS-F06 was a `desktop-native`
+  session superseded by a later native takeover. Browser Gateway had therefore
+  inherited a native renderer's token rather than losing its own
+  `desktop-browser` session. In Browser mode, `desktop-rust` still created a
+  hidden Tauri WebView; that renderer booted the full identity runtime and
+  shared the process-global `AppState.session` with the HTTP gateway. The local
+  correction sets Tauri window `create=false` for both Browser BFF launch
+  variants, removing the second renderer and leaving the Gateway as the only
+  session owner in that process. A dedicated runtime smoke proved Vite,
+  Gateway, and WebDriver listeners live while WebDriver remained
+  `waiting for webview initialization`; reverse-order cleanup released all
+  three ports and temporary storage. Fifteen Desktop runtime isolation tests,
+  104 focused Foundation tests, 47 native static tests, Desktop typecheck,
+  Agent Acceptance validation, shell syntax, and `git diff --check` pass.
+  Runtime proof remains `UNPROVEN` pending checkpoint deployment and a new
+  exact-source Foundation run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
