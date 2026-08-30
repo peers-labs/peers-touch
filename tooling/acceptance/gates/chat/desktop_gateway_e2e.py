@@ -58,8 +58,8 @@ class ActorCredentials:
     name: str
     email: str
     password: str
-    actor_id: str = ""
-    ptid: str = ""
+    actor_ptid: str = ""
+    account_id: str = ""
 
 
 class GateError(RuntimeError):
@@ -140,13 +140,16 @@ def fixture_actor(role: str) -> ActorCredentials:
         email == ACTOR_ACCOUNTS.get(role),
         f"actor manifest role {role} does not match the committed fixture",
     )
-    ptid = str(actor.get("ptid") or "")
-    require(ptid.startswith("ptid:"), f"actor manifest role {role} has invalid PTID")
+    actor_ptid = str(actor.get("ptid") or "")
+    require(
+        actor_ptid.startswith("ptid:"),
+        f"actor manifest role {role} has invalid PTID",
+    )
     return ActorCredentials(
         name=role,
         email=email,
         password=ACTOR_PASSWORD,
-        ptid=ptid,
+        actor_ptid=actor_ptid,
     )
 
 
@@ -200,26 +203,13 @@ def gateway_status(
     return parsed
 
 
-def account_id_for_actor(gateway: str, actor_id: str) -> str:
-    accounts = gateway_status(gateway, "account_list").get("accounts")
-    require(isinstance(accounts, list), "account_list did not return accounts")
-    matches = [
-        str(account.get("id") or "")
-        for account in accounts
-        if isinstance(account, dict)
-        and str(account.get("provider_user_id") or "") == actor_id
-    ]
-    require(len(matches) == 1 and bool(matches[0]), f"missing account for actor {actor_id}")
-    return matches[0]
-
-
 def current_identity(gateway: str) -> dict[str, Any]:
     session = gateway_status(gateway, "acceptance_current_session")
     active = gateway_status(gateway, "account_get_active").get("account")
     require(isinstance(active, dict), "account_get_active did not return an account")
     return {
         "accountId": str(session.get("account_id") or ""),
-        "actorId": str(session.get("actor_id") or ""),
+        "actorPtid": str(session.get("actor_ptid") or ""),
         "activeAccountId": str(active.get("id") or ""),
         "tokenFingerprint": str(session.get("token_fingerprint") or ""),
         "messagingProfileMatches": session.get("messaging_profile_matches"),
@@ -228,12 +218,12 @@ def current_identity(gateway: str) -> dict[str, Any]:
 
 def require_identity_tuple(
     identity: dict[str, Any],
-    account_to_actor: dict[str, str],
+    account_to_actor_ptid: dict[str, str],
 ) -> None:
     account_id = identity["accountId"]
     require(account_id == identity["activeAccountId"], f"identity account drift: {identity}")
     require(
-        identity["actorId"] == account_to_actor.get(account_id),
+        identity["actorPtid"] == account_to_actor_ptid.get(account_id),
         f"identity actor drift: {identity}",
     )
     require(
@@ -294,7 +284,7 @@ def remove_persisted_actor_binding(account_id: str) -> tuple[Path, bytes]:
     require(isinstance(account, dict), "selected account disappeared from identity state")
     encrypted = account.get("encrypted_session")
     require(isinstance(encrypted, dict), "selected account has no encrypted PIN session")
-    encrypted.pop("actor_id", None)
+    encrypted.pop("actor_ptid", None)
     replace_identity_state(
         path,
         (json.dumps(state, indent=2, sort_keys=True) + "\n").encode("utf-8"),
@@ -308,11 +298,13 @@ def run_identity_consistency_flow(
     actor_a: ActorCredentials,
     actor_b: ActorCredentials,
 ) -> None:
-    account_a = account_id_for_actor(gateway, actor_a.actor_id)
-    account_b = account_id_for_actor(gateway, actor_b.actor_id)
-    account_to_actor = {
-        account_a: actor_a.actor_id,
-        account_b: actor_b.actor_id,
+    account_a = actor_a.account_id
+    account_b = actor_b.account_id
+    require(bool(account_a), "actor A login did not capture an account ID")
+    require(bool(account_b), "actor B login did not capture an account ID")
+    account_to_actor_ptid = {
+        account_a: actor_a.actor_ptid,
+        account_b: actor_b.actor_ptid,
     }
     gateway_status(
         gateway,
@@ -338,7 +330,7 @@ def run_identity_consistency_flow(
             for account_id in (account_a, account_b)
         }
         switched = {
-            account_id: str(future.result().get("actor_id") or "")
+            account_id: str(future.result().get("actor_ptid") or "")
             for account_id, future in futures.items()
         }
     transition_metrics = gateway_status(
@@ -349,8 +341,11 @@ def run_identity_consistency_flow(
         int(transition_metrics.get("max_waiters") or 0) >= 2,
         f"account switch requests did not overlap at the identity lock: {transition_metrics}",
     )
-    require(switched == account_to_actor, f"concurrent account switch drift: {switched}")
-    require_identity_tuple(current_identity(gateway), account_to_actor)
+    require(
+        switched == account_to_actor_ptid,
+        f"concurrent account switch drift: {switched}",
+    )
+    require_identity_tuple(current_identity(gateway), account_to_actor_ptid)
     report.add_assertion("concurrent_account_switch_identity_atomic", True)
 
     gateway_command(gateway, "account_switch", {"id": account_b})
@@ -377,6 +372,7 @@ def run_identity_consistency_flow(
         gateway,
         "account_upsert_oauth",
         {
+            "actor_ptid": actor_b.actor_ptid,
             "provider": "acceptance-oauth",
             "provider_user_id": provider_user_id,
             "name": "Acceptance OAuth",
@@ -411,15 +407,15 @@ def run_identity_consistency_flow(
         {"account_id": oauth_account, "pin": test_pin},
     )
     require(
-        str(unlocked.get("actor_id") or "") == actor_b.actor_id,
+        str(unlocked.get("actor_ptid") or "") == actor_b.actor_ptid,
         "OAuth PIN unlock did not use the JWT actor",
     )
     require(
-        str(unlocked.get("actor_id") or "") != provider_user_id,
+        str(unlocked.get("actor_ptid") or "") != provider_user_id,
         "OAuth PIN unlock derived actor from provider_user_id",
     )
-    account_to_actor[oauth_account] = actor_b.actor_id
-    require_identity_tuple(current_identity(gateway), account_to_actor)
+    account_to_actor_ptid[oauth_account] = actor_b.actor_ptid
+    require_identity_tuple(current_identity(gateway), account_to_actor_ptid)
     report.add_assertion("oauth_pin_unlock_uses_jwt_actor", True)
 
     state_path, original = remove_persisted_actor_binding(oauth_account)
@@ -453,26 +449,29 @@ def gateway_login(gateway: str, actor: ActorCredentials, timeout: int = 30) -> s
         {"account": actor.email, "password": actor.password},
         timeout=timeout,
     )
-    ptid = data.get("ptid") or ""
+    actor_ptid = data.get("actor_ptid") or ""
     require(
-        isinstance(ptid, str) and ptid.startswith("ptid:"),
-        f"gateway auth_login missing ptid data={data}",
+        isinstance(actor_ptid, str) and actor_ptid.startswith("ptid:"),
+        f"gateway auth_login missing actor_ptid data={data}",
     )
-    if actor.ptid:
+    if actor.actor_ptid:
         require(
-            ptid == actor.ptid,
-            f"gateway auth_login PTID mismatch got={ptid} want={actor.ptid}",
+            actor_ptid == actor.actor_ptid,
+            f"gateway auth_login PTID mismatch got={actor_ptid} want={actor.actor_ptid}",
         )
-    actor_id = data.get("actor_id")
-    require(bool(actor_id), f"gateway auth_login missing actor data={data}")
-    if actor.actor_id:
-        require(
-            str(actor_id) == actor.actor_id,
-            f"gateway auth_login actor mismatch got={actor_id} want={actor.actor_id}",
-        )
-    actor.actor_id = str(actor_id)
-    actor.ptid = ptid
-    return ptid
+    identity = current_identity(gateway)
+    require(
+        identity["actorPtid"] == actor_ptid,
+        f"gateway login/session actor drift: {identity}",
+    )
+    require(
+        identity["accountId"] == identity["activeAccountId"],
+        f"gateway login/account drift: {identity}",
+    )
+    require(bool(identity["accountId"]), f"gateway login missing account ID: {identity}")
+    actor.actor_ptid = actor_ptid
+    actor.account_id = identity["accountId"]
+    return actor_ptid
 
 
 def gateway_logout(gateway: str) -> None:
@@ -530,7 +529,7 @@ def run_gateway_flow(report: EvidenceReport) -> dict[str, Any]:
     create_result = gateway_command(
         gateway,
         "messaging_create_direct",
-        {"peer_ptid": actor_b.ptid},
+        {"peer_ptid": actor_b.actor_ptid},
         timeout=30,
     )
     conv_id = create_result.get("conversation_id") or ""
@@ -608,7 +607,10 @@ def run_gateway_flow(report: EvidenceReport) -> dict[str, Any]:
             continue
         if msg.get("plaintext") == test_content:
             sender = msg.get("sender_ptid", "")
-            require(sender == actor_a.ptid, f"message sender mismatch got={sender} want={actor_a.ptid}")
+            require(
+                sender == actor_a.actor_ptid,
+                f"message sender mismatch got={sender} want={actor_a.actor_ptid}",
+            )
             found = True
             break
 

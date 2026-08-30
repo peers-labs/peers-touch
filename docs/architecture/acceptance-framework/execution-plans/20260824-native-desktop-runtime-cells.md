@@ -1259,6 +1259,33 @@ Chat Native static, Desktop check, 365/365 executed frontend tests, and Desktop
 build pass. NDR-W7 remains `PARTIAL/UNPROVEN` pending a clean commit,
 exact-source deployment, and the full 18-Gate Linux aggregate.
 
+Exact-source aggregate
+`20260830T145021738008Z-029197c13bff9a48a385efdb07150cb6` ran against clean
+commit `7c5751f7ad0ca2cefd498d8eeeabd7b0a8f3fd09`, disposable Station `18132`,
+and `desktop-linux-native`. The registry correction crossed the former missing
+Station identity boundary, but the aggregate finished 9 PASS / 9 FAIL and
+remains `PARTIAL/UNPROVEN`. All eight Native Chat Gates failed at initial
+authentication after `auth_login` succeeded: the identity pipeline immediately
+called `auth_restore_session`, whose local token validation required JWT `sub`
+while Station's canonical JWT contract emits `subject_ptid`. The Desktop
+Gateway Gate independently rejected the canonical `actor_ptid` response because
+its assertion still required `ptid`. Every runtime-cell and Provisioner cleanup
+completed successfully, and `proto-build` passed last. The next correction must
+align Desktop token decoding and the Gateway assertion with the canonical PTID
+contracts before rerunning the same 18-Gate aggregate.
+
+The canonical PTID correction is implemented in the current delivery
+candidate. Desktop local JWT validation now consumes only Station's
+`subject_ptid` claim and rejects legacy `sub`-only identity. The Desktop
+Gateway Gate now consumes `actor_ptid`, captures the local `account_id` from
+the committed current-session tuple, supplies `actor_ptid` when creating the
+OAuth PIN fixture, and removes the persisted `actor_ptid` for the legacy
+negative case. Focused normal and `acceptance-webdriver` Rust auth tests,
+40 Chat Python contract tests, `cargo fmt --check`, Desktop check, 365/365
+executed frontend tests, Desktop build, Chat Native static, and Chat structural
+validation pass. NDR-W7 remains `PARTIAL/UNPROVEN` until this candidate is
+committed and the retained exact-source 18-Gate Linux aggregate passes.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

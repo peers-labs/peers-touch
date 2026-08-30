@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -467,6 +468,105 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "python3 -m "
             "tooling.acceptance.gates.chat.desktop_gateway_e2e",
         )
+
+    def test_desktop_gateway_login_uses_canonical_actor_ptid(self) -> None:
+        actor = desktop_gateway_e2e.ActorCredentials(
+            name="alice",
+            email="alice@example.com",
+            password="password",
+            actor_ptid="ptid:test:alice",
+        )
+        identity = {
+            "accountId": "station:test:password:alice",
+            "actorPtid": "ptid:test:alice",
+            "activeAccountId": "station:test:password:alice",
+            "tokenFingerprint": "a" * 64,
+            "messagingProfileMatches": True,
+        }
+
+        with patch.object(
+            desktop_gateway_e2e,
+            "gateway_command",
+            return_value={"actor_ptid": "ptid:test:alice"},
+        ), patch.object(
+            desktop_gateway_e2e,
+            "current_identity",
+            return_value=identity,
+        ):
+            actor_ptid = desktop_gateway_e2e.gateway_login(
+                "http://127.0.0.1:3030",
+                actor,
+            )
+
+        self.assertEqual(actor_ptid, "ptid:test:alice")
+        self.assertEqual(actor.actor_ptid, "ptid:test:alice")
+        self.assertEqual(actor.account_id, "station:test:password:alice")
+
+    def test_desktop_gateway_login_rejects_legacy_ptid_response(self) -> None:
+        actor = desktop_gateway_e2e.ActorCredentials(
+            name="alice",
+            email="alice@example.com",
+            password="password",
+            actor_ptid="ptid:test:alice",
+        )
+
+        with patch.object(
+            desktop_gateway_e2e,
+            "gateway_command",
+            return_value={"ptid": "ptid:test:alice"},
+        ):
+            with self.assertRaisesRegex(
+                desktop_gateway_e2e.GateError,
+                "missing actor_ptid",
+            ):
+                desktop_gateway_e2e.gateway_login(
+                    "http://127.0.0.1:3030",
+                    actor,
+                )
+
+    def test_desktop_gateway_legacy_pin_fixture_removes_actor_ptid(self) -> None:
+        state = {
+            "accounts": [
+                {
+                    "id": "oauth-account",
+                    "encrypted_session": {
+                        "actor_ptid": "ptid:test:bob",
+                        "ciphertext": "ciphertext",
+                    },
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "identities.json"
+            path.write_text(json.dumps(state), encoding="utf-8")
+            with patch.object(
+                desktop_gateway_e2e,
+                "identity_state_path",
+                return_value=path,
+            ):
+                selected_path, original = (
+                    desktop_gateway_e2e.remove_persisted_actor_binding(
+                        "oauth-account",
+                    )
+                )
+
+            updated = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(selected_path, path)
+        self.assertEqual(json.loads(original), state)
+        self.assertNotIn(
+            "actor_ptid",
+            updated["accounts"][0]["encrypted_session"],
+        )
+
+    def test_desktop_gateway_gate_has_no_legacy_actor_id_contract(self) -> None:
+        source = (
+            ROOT / "tooling/acceptance/gates/chat/desktop_gateway_e2e.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("actor_id", source)
+        self.assertNotIn('data.get("ptid")', source)
+        self.assertIn('"actor_ptid": actor_b.actor_ptid', source)
 
     def test_desktop_gateway_gate_publishes_typed_evidence(self) -> None:
         report = Mock()
