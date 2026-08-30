@@ -5153,22 +5153,29 @@ export function installAcceptanceHarness(): void {
       locale: string;
       sampleId: string;
     }) {
-      const agent = selectedAgent();
-      if (!agent) throw new Error('agent.acceptance.agentMissing');
-      const capabilitySessions = await waitForCapabilitySessionEvidence();
-      const capabilitySessionId =
-        capabilitySessions.selectedStationSession?.session_id;
-      if (!capabilitySessionId) {
-        throw new Error('agent.acceptance.capabilitySessionUnavailable');
+      try {
+        const agent = selectedAgent();
+        if (!agent) throw new Error('agent.acceptance.agentMissing');
+        const capabilitySessions = await waitForCapabilitySessionEvidence();
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        return evidenceValue(await runFoundationF06Prepare({
+          agent,
+          capabilitySessionId,
+          scenarioKey,
+          platform,
+          locale,
+          sampleId,
+        }));
+      } catch (error) {
+        const primary = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `${primary}; auth=${JSON.stringify(redactedAuthError(error))}`,
+        );
       }
-      return evidenceValue(await runFoundationF06Prepare({
-        agent,
-        capabilitySessionId,
-        scenarioKey,
-        platform,
-        locale,
-        sampleId,
-      }));
     },
 
     async foundationF06ObserveFailure({

@@ -3548,6 +3548,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   projection corrections remain locally verified but runtime-unproven because
   neither `c79d7bfef` run reached the complete AS-F06 oracle. AS-F06 and G-F
   remain `PARTIAL / UNPROVEN`.
+- Diagnostic checkpoint
+  `c12ab18aff547fdc41a6793699ac0c2014d064e5` was deployed exact-source to
+  profile `two`. Run
+  `20260830T012739608708Z-976238cb00d524c2a79b39043e361b86`
+  reproduced Browser AS-F06 preparation `session revoked` with source
+  matching, cleanup, and redaction passing. The first diagnostic boundary was
+  inside `runFoundationF06Prepare`, but the exception arose earlier while
+  obtaining the capability-session precondition, so it still omitted the
+  typed reason. The local correction moves the same redacted
+  `code/detailCode/reason/deviceType` projection to the complete
+  `foundationF06Prepare` Harness method. No assertion, retry, cleanup, or
+  product behavior changes. AS-F06 and G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
