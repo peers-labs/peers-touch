@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-08-16
+> **Created**: 2026-08-08 | **Updated**: 2026-08-21
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/app/subserver/`, `apps/desktop/`, `apps/mobile/`
 
@@ -76,6 +76,8 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 - Product：`PRODUCT_ACCEPTED`
 - Architecture：`ARCHITECTURE_ACCEPTED`（`MP-D01`–`MP-D27`；interaction/typing
   amendment accepted through the 2026-08-16 completion Goal）
-- Plan：`PLAN_APPROVED`
-- Execution：`MP-W09` in-progress；`MP-W12` implemented-unproven；`MP-W11`
-  reopened until W09/W12 and MP-G01–MP-G16 close。
+- Plan：base plan `PLAN_APPROVED`；`MP-W13` corrective amendment pending review。
+- Execution：live product evidence invalidated the prior MP-W10-E/MP-W12/MP-W11
+  receiver-proof claims；`MP-W13` defines projection、interaction UI、identity/Station
+  attribution、conversation actions/background、attachments and real Native proof
+  closures before MP-W11 can close again。

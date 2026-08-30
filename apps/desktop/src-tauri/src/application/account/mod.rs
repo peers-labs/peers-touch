@@ -1,12 +1,14 @@
 use crate::contracts::{
-    AccountIdInput, AccountRemovePinInput, AccountResetPinInput, AccountSetPinInput,
-    AccountUnlockInput, AccountUpsertOAuthInput, StubPayload,
+    AccountRemovePinInput, AccountResetPinInput, AccountSetPinInput, AccountUnlockInput,
+    AccountUpsertOAuthInput, StubPayload,
 };
 use crate::domain::pin_lock::PinVerifyError;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::auth_identity;
 use crate::infrastructure::session_vault;
+use crate::state::AppState;
 use serde_json::json;
+use std::sync::MutexGuard;
 
 pub mod pin_recovery;
 
@@ -16,8 +18,6 @@ fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayl
         status: data.to_string(),
     })
 }
-
-type CmdResult<T> = Result<T, AppResult<StubPayload>>;
 
 macro_rules! try_cmd {
     ($expr:expr) => {
@@ -91,20 +91,21 @@ pub fn account_get_active() -> AppResult<StubPayload> {
     )
 }
 
-pub fn account_switch(input: AccountIdInput) -> AppResult<StubPayload> {
-    if input.id.trim().is_empty() {
-        return invalid_argument("id is required");
-    }
-    let mut state = try_cmd!(auth_identity::read_state().map_err(internal_error));
-    if !state.accounts.iter().any(|item| item.id == input.id) {
-        return AppResult::fail(ErrorCode::NotFound, "Account not found", None);
-    }
-    state.active_account_id = Some(input.id);
-    try_cmd!(auth_identity::write_state(&state).map_err(internal_error));
-    success_payload("account_switch", json!({ "ok": true }))
+pub fn account_upsert_oauth(
+    input: AccountUpsertOAuthInput,
+    app_state: &AppState,
+) -> AppResult<StubPayload> {
+    let transition = match app_state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => return internal_error("failed to coordinate identity transition"),
+    };
+    account_upsert_oauth_during_transition(input, &transition)
 }
 
-pub fn account_upsert_oauth(input: AccountUpsertOAuthInput) -> AppResult<StubPayload> {
+fn account_upsert_oauth_during_transition(
+    input: AccountUpsertOAuthInput,
+    _transition: &MutexGuard<'_, ()>,
+) -> AppResult<StubPayload> {
     if input.provider.trim().is_empty() {
         return invalid_argument("provider is required");
     }
@@ -165,9 +166,14 @@ pub fn account_unlock(input: AccountUnlockInput) -> AppResult<StubPayload> {
     }
 
     match auth_identity::unlock_account_session(&input.account_id, &input.pin) {
-        Ok(token) => success_payload(
+        Ok(unlocked) => success_payload(
             "account_unlock",
-            json!({ "ok": true, "token": token, "account_id": input.account_id }),
+            json!({
+                "ok": true,
+                "token": unlocked.token,
+                "account_id": unlocked.account_id,
+                "actor_id": unlocked.actor_id,
+            }),
         ),
         Err(PinVerifyError::WrongPin { attempts_remaining }) => AppResult::fail(
             ErrorCode::Unauthorized,
@@ -184,6 +190,14 @@ pub fn account_unlock(input: AccountUnlockInput) -> AppResult<StubPayload> {
                 remaining_secs
             ),
             None,
+        ),
+        Err(PinVerifyError::ActorBindingMissing) => AppResult::fail(
+            ErrorCode::Unauthorized,
+            "Encrypted session is not bound to an actor; sign in again",
+            Some(json!({
+                "command": "account_unlock",
+                "reason": "persisted_actor_missing"
+            })),
         ),
         Err(PinVerifyError::Internal(msg)) => internal_error(msg),
     }
@@ -228,6 +242,16 @@ pub fn account_relink_pin(
                     remaining_secs
                 ),
                 Some(json!({ "remaining_secs": remaining_secs })),
+            )
+        }
+        Err(PinVerifyError::ActorBindingMissing) => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Encrypted session is not bound to an actor; sign in again",
+                Some(json!({
+                    "command": "account_relink_pin",
+                    "reason": "persisted_actor_missing"
+                })),
             )
         }
         Err(PinVerifyError::Internal(msg)) => return internal_error(msg),

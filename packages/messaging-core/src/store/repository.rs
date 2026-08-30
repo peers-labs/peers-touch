@@ -1,7 +1,7 @@
 use crate::contracts::{
     ActorReadReceiveCommit, ConversationProjection, ConversationStateReceiveCommit,
-    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit,
-    InteractionReceiveCommit, PublicEventReceiveCommit, ReceiveCommitResult,
+    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit, InteractionReceiveCommit,
+    PublicEventReceiveCommit, ReceiveCommitResult,
 };
 use crate::crypto::double_ratchet::DrSkippedMessageKey;
 use crate::crypto::session::DirectSession;
@@ -53,15 +53,9 @@ pub trait MessagingRepository: Send + Sync {
 
     // --- Receipts ---
 
-    fn commit_delivery_receipt(
-        &self,
-        commit: &DeliveryReceiptReceiveCommit,
-    ) -> Result<(), String>;
+    fn commit_delivery_receipt(&self, commit: &DeliveryReceiptReceiveCommit) -> Result<(), String>;
 
-    fn commit_actor_read_cursor(
-        &self,
-        commit: &ActorReadReceiveCommit,
-    ) -> Result<(), String>;
+    fn commit_actor_read_cursor(&self, commit: &ActorReadReceiveCommit) -> Result<(), String>;
 
     // --- Command outbox ---
 
@@ -116,10 +110,7 @@ pub trait MessagingRepository: Send + Sync {
         commit: &DirectReceiveCommit,
     ) -> Result<ReceiveCommitResult, String>;
 
-    fn commit_direct_edit(
-        &self,
-        commit: &DirectEditCommit,
-    ) -> Result<ReceiveCommitResult, String>;
+    fn commit_direct_edit(&self, commit: &DirectEditCommit) -> Result<ReceiveCommitResult, String>;
 
     // --- Prekeys ---
 

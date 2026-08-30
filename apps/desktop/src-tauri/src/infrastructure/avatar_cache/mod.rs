@@ -50,12 +50,9 @@ pub fn avatars_dir() -> Result<PathBuf, AvatarCacheError> {
 ///
 /// Returns `Some(path)` only when the file exists on disk and is non-empty.
 pub fn lookup(remote_url: &str) -> Option<PathBuf> {
-    let url = remote_url.trim();
-    if url.is_empty() {
-        return None;
-    }
+    let identity = canonical_remote_identity(remote_url).ok()?;
     let dir = avatars_dir().ok()?;
-    let path = dir.join(user_profile::avatar_local_filename(url));
+    let path = dir.join(user_profile::avatar_local_filename(&identity));
     if path_is_present(&path) {
         Some(path)
     } else {
@@ -75,16 +72,17 @@ pub fn lookup(remote_url: &str) -> Option<PathBuf> {
 /// local file. Network or filesystem failures bubble up so the caller can
 /// either fall back to the unified placeholder or retry later.
 pub fn ensure_local(remote_url: &str) -> Result<PathBuf, AvatarCacheError> {
-    let url = absolute_url(remote_url)?;
+    let identity = canonical_remote_identity(remote_url)?;
+    let url = absolute_url(&identity)?;
 
-    if let Some(path) = lookup(&url) {
+    if let Some(path) = lookup(&identity) {
         return Ok(path);
     }
 
     let dir = avatars_dir()?;
     fs::create_dir_all(&dir).map_err(|e| AvatarCacheError::Io(e.to_string()))?;
 
-    let dest = dir.join(user_profile::avatar_local_filename(&url));
+    let dest = dir.join(user_profile::avatar_local_filename(&identity));
 
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -129,6 +127,35 @@ fn path_is_present(path: &PathBuf) -> bool {
     path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false)
 }
 
+/// Preserve Station-owned media as a transport-independent path. A temporary
+/// proxy or alternate Station route must not become part of avatar identity or
+/// its content-addressed cache key.
+pub fn canonical_remote_identity(remote_url: &str) -> Result<String, AvatarCacheError> {
+    canonical_remote_identity_for_base(remote_url, &station_client::station_base_url())
+}
+
+fn canonical_remote_identity_for_base(
+    remote_url: &str,
+    station_base_url: &str,
+) -> Result<String, AvatarCacheError> {
+    let trimmed = remote_url.trim();
+    if trimmed.is_empty() {
+        return Err(AvatarCacheError::EmptyUrl);
+    }
+    if trimmed.starts_with("/sub-oss/") {
+        return Ok(trimmed.to_string());
+    }
+
+    let base = station_base_url.trim().trim_end_matches('/');
+    if let Some(path) = trimmed.strip_prefix(base) {
+        if path.starts_with("/sub-oss/") {
+            return Ok(path.to_string());
+        }
+    }
+
+    Ok(trimmed.to_string())
+}
+
 /// Normalize a possibly-relative Station URL (e.g. `/sub-oss/file?key=...`)
 /// to an absolute URL so `reqwest` can issue the request.
 fn absolute_url(remote_url: &str) -> Result<String, AvatarCacheError> {
@@ -140,5 +167,40 @@ fn absolute_url(remote_url: &str) -> Result<String, AvatarCacheError> {
         Ok(format!("{}{}", station_client::station_base_url(), trimmed))
     } else {
         Ok(trimmed.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonical_remote_identity_for_base;
+
+    #[test]
+    fn station_media_identity_does_not_include_the_active_transport_origin() {
+        let path = "/sub-oss/file?key=avatars%2Falice.png";
+
+        assert_eq!(
+            canonical_remote_identity_for_base(path, "http://station.example")
+                .expect("relative Station media identity"),
+            path
+        );
+        assert_eq!(
+            canonical_remote_identity_for_base(
+                "http://127.0.0.1:49675/sub-oss/file?key=avatars%2Falice.png",
+                "http://127.0.0.1:49675",
+            )
+            .expect("proxied Station media identity"),
+            path
+        );
+    }
+
+    #[test]
+    fn external_media_identity_preserves_its_origin() {
+        let url = "https://cdn.example.test/avatar/alice.png";
+
+        assert_eq!(
+            canonical_remote_identity_for_base(url, "http://station.example")
+                .expect("external media identity"),
+            url
+        );
     }
 }
