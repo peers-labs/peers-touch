@@ -7,7 +7,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/ai_
 // 访问控制
 message AccessControl {
   string id = 1;
-  string user_id = 2;
+  string actor_ptid = 2;
   string provider_id = 3;
   string model_name = 4;
   bool allowed = 5;

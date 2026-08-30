@@ -25,7 +25,7 @@ export type PeerTrustState = 'unverified' | 'verified' | 'changed';
 /** One row in the per-user trust ledger. */
 export interface PeerTrustRecord {
   /** Peer DID. */
-  peerDid: string;
+  peerPtid: string;
   /** Fingerprint captured at the moment of explicit verification.
    *  Lower-case hex (matches `crypto::identity_fingerprint_hex`). */
   verifiedFingerprint: string;
@@ -36,39 +36,39 @@ export interface PeerTrustRecord {
 /** In-memory snapshot. Persisted lazily on every mutation. */
 type TrustLedger = Record<string, PeerTrustRecord>;
 
-function storageKey(localActorDid: string): string {
+function storageKey(localActorPtid: string): string {
   // Empty actor → process-global slot used during signup / before
   // the local actor is known. Real verifications never land in this
-  // slot because the UI gates the buttons on `currentUserDid` being
+  // slot because the UI gates the buttons on `currentUserPtid` being
   // non-empty. Keeping a default key around just prevents subtle
   // crashes during the bootstrap window.
-  return `socialChat:trust:${localActorDid || 'anon'}`;
+  return `socialChat:trust:${localActorPtid || 'anon'}`;
 }
 
-function load(localActorDid: string): TrustLedger {
+function load(localActorPtid: string): TrustLedger {
   try {
-    const parsed = readDesktopDomainValueSync<TrustLedger>('identity.trust', storageKey(localActorDid));
+    const parsed = readDesktopDomainValueSync<TrustLedger>('identity.trust', storageKey(localActorPtid));
     if (parsed && typeof parsed === 'object') return parsed as TrustLedger;
     return {};
   } catch (err) {
-    log.warn('peerTrust', 'load failed', { actor: localActorDid, error: String(err) });
+    log.warn('peerTrust', 'load failed', { actor: localActorPtid, error: String(err) });
     return {};
   }
 }
 
-function persist(localActorDid: string, ledger: TrustLedger): void {
+function persist(localActorPtid: string, ledger: TrustLedger): void {
   try {
-    writeDesktopDomainValueSync('identity.trust', storageKey(localActorDid), ledger);
+    writeDesktopDomainValueSync('identity.trust', storageKey(localActorPtid), ledger);
   } catch (err) {
-    log.warn('peerTrust', 'persist failed', { actor: localActorDid, error: String(err) });
+    log.warn('peerTrust', 'persist failed', { actor: localActorPtid, error: String(err) });
   }
 }
 
 /** Look up the saved record for a peer, or null. */
-export function getPeerTrust(localActorDid: string, peerDid: string): PeerTrustRecord | null {
-  if (!peerDid) return null;
-  const ledger = load(localActorDid);
-  return ledger[peerDid] ?? null;
+export function getPeerTrust(localActorPtid: string, peerPtid: string): PeerTrustRecord | null {
+  if (!peerPtid) return null;
+  const ledger = load(localActorPtid);
+  return ledger[peerPtid] ?? null;
 }
 
 /** Compare the current peer fingerprint against the saved record.
@@ -78,11 +78,11 @@ export function getPeerTrust(localActorDid: string, peerDid: string): PeerTrustR
  *    - 'changed'    — record exists but fingerprint differs (TOFU breach!)
  */
 export function evaluateTrust(
-  localActorDid: string,
-  peerDid: string,
+  localActorPtid: string,
+  peerPtid: string,
   currentFingerprint: string,
 ): PeerTrustState {
-  const rec = getPeerTrust(localActorDid, peerDid);
+  const rec = getPeerTrust(localActorPtid, peerPtid);
   if (!rec) return 'unverified';
   const a = (rec.verifiedFingerprint || '').toLowerCase();
   const b = (currentFingerprint || '').toLowerCase();
@@ -94,27 +94,27 @@ export function evaluateTrust(
  *  verified peer with the same fingerprint just refreshes the
  *  timestamp so "Last verified at" stays meaningful. */
 export function markVerified(
-  localActorDid: string,
-  peerDid: string,
+  localActorPtid: string,
+  peerPtid: string,
   fingerprint: string,
 ): PeerTrustRecord {
-  const ledger = load(localActorDid);
+  const ledger = load(localActorPtid);
   const rec: PeerTrustRecord = {
-    peerDid,
+    peerPtid,
     verifiedFingerprint: fingerprint.toLowerCase(),
     verifiedAt: Date.now(),
   };
-  ledger[peerDid] = rec;
-  persist(localActorDid, ledger);
+  ledger[peerPtid] = rec;
+  persist(localActorPtid, ledger);
   return rec;
 }
 
 /** Wipe the saved record. Used by the "Reset verification" action
  *  when the user wants to acknowledge a fingerprint change without
  *  immediately re-verifying. */
-export function clearTrust(localActorDid: string, peerDid: string): void {
-  const ledger = load(localActorDid);
-  if (!(peerDid in ledger)) return;
-  delete ledger[peerDid];
-  persist(localActorDid, ledger);
+export function clearTrust(localActorPtid: string, peerPtid: string): void {
+  const ledger = load(localActorPtid);
+  if (!(peerPtid in ledger)) return;
+  delete ledger[peerPtid];
+  persist(localActorPtid, ledger);
 }

@@ -76,10 +76,10 @@ export default function ActorsPage() {
     }
   }, [page, search]);
 
-  const loadActorSessions = useCallback(async (actorId: number) => {
+  const loadActorSessions = useCallback(async (actorPTID: string) => {
     setSessionsLoading(true);
     try {
-      const items = await actorsApi.getActorSessions(actorId);
+      const items = await actorsApi.getActorSessions(actorPTID);
       setActorSessions(items || []);
     } catch (err) {
       log.error('actors', 'Failed to load actor sessions');
@@ -104,7 +104,7 @@ export default function ActorsPage() {
   const handleRowClick = async (actor: actorsApi.ActorDetail) => {
     setSelectedActor(actor);
     setDrawerOpen(true);
-    loadActorSessions(actor.id);
+    loadActorSessions(actor.ptid);
   };
 
   const handleDrawerClose = () => {
@@ -117,9 +117,9 @@ export default function ActorsPage() {
     if (!selectedActor) return;
 
     try {
-      await actorsApi.revokeActorSession(selectedActor.id, sessionId);
+      await actorsApi.revokeActorSession(selectedActor.ptid, sessionId);
       message.success('Session revoked');
-      loadActorSessions(selectedActor.id);
+      loadActorSessions(selectedActor.ptid);
     } catch (err) {
       log.error('actors', 'Failed to revoke session');
       message.error('Failed to revoke session');
@@ -130,7 +130,7 @@ export default function ActorsPage() {
     if (!selectedActor) return;
 
     try {
-      await actorsApi.resetActorPassword(selectedActor.id, values.new_password);
+      await actorsApi.resetActorPassword(selectedActor.ptid, values.new_password);
       message.success('Password reset successfully');
       setPasswordModalOpen(false);
       passwordForm.resetFields();
@@ -335,7 +335,7 @@ export default function ActorsPage() {
         <Table
           dataSource={actors}
           columns={actorColumns}
-          rowKey="id"
+          rowKey="ptid"
           size="small"
           loading={loading}
           onRow={(record) => ({
@@ -390,6 +390,12 @@ export default function ActorsPage() {
               size="small"
               bordered
               items={[
+                {
+                  key: 'ptid',
+                  label: 'PTID',
+                  children: <Text code copyable>{selectedActor.ptid}</Text>,
+                  span: 2,
+                },
                 {
                   key: 'email',
                   label: 'Email',

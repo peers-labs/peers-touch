@@ -132,7 +132,7 @@ func (h *EventStreamHandlers) HandleSubscribe(ctx context.Context, req server.Re
 }
 
 func (h *EventStreamHandlers) writeReplayHertz(ctx context.Context, c *app.RequestContext, agentID, taskID string, afterEventSeq int64) bool {
-	replayEvents, err := h.eventStreamService.ReplayTaskEvents(ctx, subjectActorID(ctx), agentID, taskID, afterEventSeq)
+	replayEvents, err := h.eventStreamService.ReplayTaskEvents(ctx, subjectActorPTID(ctx), agentID, taskID, afterEventSeq)
 	if err != nil {
 		data, _ := json.Marshal(map[string]string{"error": err.Error()})
 		_, _ = c.Write([]byte(fmt.Sprintf("event: error\ndata: %s\n\n", string(data))))
@@ -152,7 +152,7 @@ func (h *EventStreamHandlers) writeReplayHertz(ctx context.Context, c *app.Reque
 }
 
 func (h *EventStreamHandlers) writeReplay(ctx context.Context, resp server.Response, agentID, taskID string, afterEventSeq int64) bool {
-	replayEvents, err := h.eventStreamService.ReplayTaskEvents(ctx, subjectActorID(ctx), agentID, taskID, afterEventSeq)
+	replayEvents, err := h.eventStreamService.ReplayTaskEvents(ctx, subjectActorPTID(ctx), agentID, taskID, afterEventSeq)
 	if err != nil {
 		data, _ := json.Marshal(map[string]string{"error": err.Error()})
 		_, _ = resp.Write([]byte(fmt.Sprintf("event: error\ndata: %s\n\n", string(data))))

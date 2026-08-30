@@ -94,11 +94,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** `(myDid, peerDid)` → stable signaling-session id agreed by both ends.
+/** `(myDid, peerPtid)` → stable signaling-session id agreed by both ends.
  *  We keep the legacy `${a}-${b}` shape so cross-version peers (mid-rollout)
  *  agree on AAD binding without renegotiation. */
-function deriveSignalingSessionId(myDid: string, peerDid: string): string {
-  const [a, b] = normalizePair(myDid, peerDid);
+function deriveSignalingSessionId(myDid: string, peerPtid: string): string {
+  const [a, b] = normalizePair(myDid, peerPtid);
   return `${a}-${b}`;
 }
 
@@ -145,26 +145,26 @@ function pickTransportFromStats(stats: RTCStatsReport): CallP2pTransport {
 const peerIkCache = new Map<string, string>();
 const peerIkInflight = new Map<string, Promise<string>>();
 
-async function loadPeerIk(peerDid: string): Promise<string> {
-  const cached = peerIkCache.get(peerDid);
+async function loadPeerIk(peerPtid: string): Promise<string> {
+  const cached = peerIkCache.get(peerPtid);
   if (cached) return cached;
-  const inflight = peerIkInflight.get(peerDid);
+  const inflight = peerIkInflight.get(peerPtid);
   if (inflight) return inflight;
   const promise = (async () => {
     try {
-      const resp = await api.keyExchangeFetchBundle(peerDid);
+      const resp = await api.keyExchangeFetchBundle(peerPtid);
       const bundle = pickLatestKeyExchangeBundle(resp);
       const ik = String(bundle?.ik_pub || '').trim();
       if (!ik) {
-        throw new Error(`peer ${peerDid} has no published ik_pub`);
+        throw new Error(`peer ${peerPtid} has no published ik_pub`);
       }
-      peerIkCache.set(peerDid, ik);
+      peerIkCache.set(peerPtid, ik);
       return ik;
     } finally {
-      peerIkInflight.delete(peerDid);
+      peerIkInflight.delete(peerPtid);
     }
   })();
-  peerIkInflight.set(peerDid, promise);
+  peerIkInflight.set(peerPtid, promise);
   return promise;
 }
 
@@ -181,7 +181,7 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-type ConnKey = string; // `${myDid}::${peerDid}`
+type ConnKey = string; // `${myDid}::${peerPtid}`
 
 /** Ringing state of an in-flight call on this connection. */
 export type CallStateLifecycle =
@@ -348,7 +348,7 @@ export interface CallSnapshot {
 
 interface Conn {
   myDid: string;
-  peerDid: string;
+  peerPtid: string;
   signalingSessionId: string;
   isOfferer: boolean;
   pc: RTCPeerConnection;
@@ -384,11 +384,11 @@ interface Conn {
 
 class CallP2pManager {
   private conns = new Map<ConnKey, Conn>();
-  private onStatus: ((myDid: string, peerDid: string, status: CallP2pStatus) => void) | null = null;
-  private onCall: ((myDid: string, peerDid: string, snapshot: CallSnapshot) => void) | null = null;
+  private onStatus: ((myDid: string, peerPtid: string, status: CallP2pStatus) => void) | null = null;
+  private onCall: ((myDid: string, peerPtid: string, snapshot: CallSnapshot) => void) | null = null;
   private signalSubscription: (() => void) | null = null;
 
-  setOnStatus(handler: ((myDid: string, peerDid: string, status: CallP2pStatus) => void) | null) {
+  setOnStatus(handler: ((myDid: string, peerPtid: string, status: CallP2pStatus) => void) | null) {
     this.onStatus = handler;
   }
 
@@ -398,16 +398,16 @@ class CallP2pManager {
    *  changes — consumers should snapshot defensively (the object
    *  identity is stable across emits, so `useState({...snapshot})`
    *  is the right pattern). */
-  setOnCall(handler: ((myDid: string, peerDid: string, snapshot: CallSnapshot) => void) | null) {
+  setOnCall(handler: ((myDid: string, peerPtid: string, snapshot: CallSnapshot) => void) | null) {
     this.onCall = handler;
   }
 
-  private emitStatus(myDid: string, peerDid: string, status: CallP2pStatus) {
-    this.onStatus?.(myDid, peerDid, status);
+  private emitStatus(myDid: string, peerPtid: string, status: CallP2pStatus) {
+    this.onStatus?.(myDid, peerPtid, status);
   }
 
   private emitCall(conn: Conn) {
-    this.onCall?.(conn.myDid, conn.peerDid, { ...conn.call });
+    this.onCall?.(conn.myDid, conn.peerPtid, { ...conn.call });
   }
 
   /** Arm the unanswered-ring timeout for a freshly-ringing call. If the
@@ -577,8 +577,8 @@ class CallP2pManager {
     this.ensureSignalSubscription();
   }
 
-  async ensureConnected(myDid: string, peerDid: string): Promise<CallP2pStatus> {
-    const key: ConnKey = `${myDid}::${peerDid}`;
+  async ensureConnected(myDid: string, peerPtid: string): Promise<CallP2pStatus> {
+    const key: ConnKey = `${myDid}::${peerPtid}`;
     const existing = this.conns.get(key);
     if (existing && (existing.status.state === 'connecting' || existing.status.state === 'connected')) {
       return existing.status;
@@ -586,11 +586,11 @@ class CallP2pManager {
 
     this.ensureSignalSubscription();
 
-    const signalingSessionId = deriveSignalingSessionId(myDid, peerDid);
+    const signalingSessionId = deriveSignalingSessionId(myDid, peerPtid);
     const status: CallP2pStatus = { state: 'connecting', signalingSessionId };
-    this.emitStatus(myDid, peerDid, status);
+    this.emitStatus(myDid, peerPtid, status);
 
-    const isOfferer = myDid === normalizePair(myDid, peerDid)[0];
+    const isOfferer = myDid === normalizePair(myDid, peerPtid)[0];
 
     let iceServers: any[] = [];
     try {
@@ -606,7 +606,7 @@ class CallP2pManager {
     // the round-trip latency. Failure is fatal: we cannot encrypt
     // signaling without it.
     try {
-      await loadPeerIk(peerDid);
+      await loadPeerIk(peerPtid);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       const failed: CallP2pStatus = {
@@ -614,14 +614,14 @@ class CallP2pManager {
         detail: `peer key unavailable: ${detail}`,
         signalingSessionId,
       };
-      this.emitStatus(myDid, peerDid, failed);
+      this.emitStatus(myDid, peerPtid, failed);
       return failed;
     }
 
     const pc = new RTCPeerConnection({ iceServers });
     const conn: Conn = {
       myDid,
-      peerDid,
+      peerPtid,
       signalingSessionId,
       isOfferer,
       pc,
@@ -690,7 +690,7 @@ class CallP2pManager {
         // from TURN-relay; emit an interim status while the probe runs
         // (`transport: null` means "connected but path not yet known").
         conn.status = { state: 'connected', signalingSessionId, transport: null };
-        this.emitStatus(myDid, peerDid, conn.status);
+        this.emitStatus(myDid, peerPtid, conn.status);
         // ICE recovered: if a call was riding through a reconnect window,
         // restore the active HUD and cancel the give-up timer
         // (voice-video-calls.md §6.5).
@@ -698,7 +698,7 @@ class CallP2pManager {
           this.recoverReconnectingCall(conn);
         }
         conn.transportProbeStopped = false;
-        this.startTransportProbe(myDid, peerDid, conn);
+        this.startTransportProbe(myDid, peerPtid, conn);
       } else if (s === 'disconnected') {
         // A transient ICE drop on an active call. Keep the UI and local
         // tracks alive and attempt recovery within a bounded window
@@ -718,14 +718,14 @@ class CallP2pManager {
         }
         conn.transportProbeStopped = true;
         conn.status = { state: 'failed', detail: 'webrtc connection failed', signalingSessionId };
-        this.emitStatus(myDid, peerDid, conn.status);
+        this.emitStatus(myDid, peerPtid, conn.status);
         if (conn.call.state === 'outgoing' || conn.call.state === 'incoming') {
           this.teardownCallLocal(conn, 'network-failed');
         }
       } else if (s === 'closed') {
         conn.transportProbeStopped = true;
         conn.status = { state: 'closed', signalingSessionId };
-        this.emitStatus(myDid, peerDid, conn.status);
+        this.emitStatus(myDid, peerPtid, conn.status);
       }
     };
 
@@ -733,7 +733,7 @@ class CallP2pManager {
       conn.dc = dc;
       dc.binaryType = 'arraybuffer';
       dc.onopen = () => {
-        log.info('p2p', 'datachannel open', { peerDid, signalingSessionId });
+        log.info('p2p', 'datachannel open', { peerPtid, signalingSessionId });
         // Preserve any transport the probe may have already resolved —
         // `dc.onopen` and `connectionstate==='connected'` race, and
         // re-emitting without `transport` would briefly flicker the UI
@@ -743,19 +743,19 @@ class CallP2pManager {
           signalingSessionId,
           transport: conn.status.transport ?? null,
         };
-        this.emitStatus(myDid, peerDid, conn.status);
+        this.emitStatus(myDid, peerPtid, conn.status);
         // Probe again in case the data channel opened *before* the
         // connectionstatechange handler had a chance to start one.
         if (!conn.transportProbeStopped && conn.status.transport == null) {
-          this.startTransportProbe(myDid, peerDid, conn);
+          this.startTransportProbe(myDid, peerPtid, conn);
         }
       };
       dc.onclose = () => {
-        log.warn('p2p', 'datachannel closed', { peerDid, signalingSessionId });
+        log.warn('p2p', 'datachannel closed', { peerPtid, signalingSessionId });
       };
       dc.onerror = () => {
         conn.status = { state: 'failed', detail: 'datachannel error', signalingSessionId };
-        this.emitStatus(myDid, peerDid, conn.status);
+        this.emitStatus(myDid, peerPtid, conn.status);
       };
       // Drain inbound bytes silently. Text data plane is now SSE; a
       // peer running an older build might still push hint frames, and
@@ -778,7 +778,7 @@ class CallP2pManager {
         mline: c.sdpMLineIndex ?? 0,
       });
       this.sendSignal(conn, 'CANDIDATE', plaintext).catch((error) => {
-        log.warn('p2p', 'send candidate failed', { peerDid, error });
+        log.warn('p2p', 'send candidate failed', { peerPtid, error });
       });
     };
 
@@ -792,7 +792,7 @@ class CallP2pManager {
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         conn.status = { state: 'failed', detail, signalingSessionId };
-        this.emitStatus(myDid, peerDid, conn.status);
+        this.emitStatus(myDid, peerPtid, conn.status);
         return conn.status;
       }
     }
@@ -810,9 +810,9 @@ class CallP2pManager {
   ): Promise<void> {
     let peerIkPub: string;
     try {
-      peerIkPub = await loadPeerIk(conn.peerDid);
+      peerIkPub = await loadPeerIk(conn.peerPtid);
     } catch (error) {
-      log.warn('p2p', 'loadPeerIk failed', { peerDid: conn.peerDid, error });
+      log.warn('p2p', 'loadPeerIk failed', { peerPtid: conn.peerPtid, error });
       return;
     }
     let payloadB64: string;
@@ -830,7 +830,7 @@ class CallP2pManager {
     }
     try {
       await api.realtimeSignalSend(
-        conn.peerDid,
+        conn.peerPtid,
         conn.signalingSessionId,
         kind,
         payloadB64,
@@ -848,7 +848,7 @@ class CallP2pManager {
   }
 
   private async handleInboundSignal(payload: RealtimeCallSignalPayload): Promise<void> {
-    const { sessionUlid, fromActorId, kind, payload: ciphertext } = payload;
+    const { sessionUlid, fromActorPtid, kind, payload: ciphertext } = payload;
     const conn = this.findConnBySession(sessionUlid);
     if (!conn) {
       // Two legitimate cases land here:
@@ -863,7 +863,7 @@ class CallP2pManager {
       //      fresh handshake under our own session id.
       return;
     }
-    if (fromActorId === conn.myDid) {
+    if (fromActorPtid === conn.myDid) {
       // Multi-device echo of our own outbound signal. Station fans out
       // every signal to the sender's *other* devices too, but those
       // devices cannot decrypt the payload — the sealed envelope is
@@ -889,7 +889,7 @@ class CallP2pManager {
 
     let plaintext: string;
     try {
-      const senderIkPub = await loadPeerIk(fromActorId);
+      const senderIkPub = await loadPeerIk(fromActorPtid);
       const payloadB64 = bytesToBase64(ciphertext);
       const opened = await api.signalingEnvelopeOpen(
         senderIkPub,
@@ -1057,8 +1057,8 @@ class CallP2pManager {
    *  PC has been opened yet. The UI must call `ensureConnected`
    *  *before* `startCall` — we can't bring up media without the
    *  underlying RTCPeerConnection. */
-  getCall(myDid: string, peerDid: string): CallSnapshot | null {
-    const conn = this.conns.get(`${myDid}::${peerDid}`);
+  getCall(myDid: string, peerPtid: string): CallSnapshot | null {
+    const conn = this.conns.get(`${myDid}::${peerPtid}`);
     return conn ? { ...conn.call } : null;
   }
 
@@ -1068,8 +1068,8 @@ class CallP2pManager {
    *  the peer's UI can ring. The promise resolves once the local
    *  media is captured + tracks added; it does NOT wait for the
    *  peer to accept (subscribe to `setOnCall` for that). */
-  async startCall(myDid: string, peerDid: string, mediaKind: CallMediaKind): Promise<void> {
-    const conn = this.conns.get(`${myDid}::${peerDid}`);
+  async startCall(myDid: string, peerPtid: string, mediaKind: CallMediaKind): Promise<void> {
+    const conn = this.conns.get(`${myDid}::${peerPtid}`);
     if (!conn) throw new Error('startCall: no PC; call ensureConnected first');
     if (conn.call.state === 'active' || conn.call.state === 'outgoing') {
       throw new Error('startCall: call already in progress');
@@ -1103,8 +1103,8 @@ class CallP2pManager {
 
   /** Accept an incoming call (`call.state === 'incoming'`). Same
    *  acquisition path as startCall, just in the other direction. */
-  async acceptCall(myDid: string, peerDid: string): Promise<void> {
-    const conn = this.conns.get(`${myDid}::${peerDid}`);
+  async acceptCall(myDid: string, peerPtid: string): Promise<void> {
+    const conn = this.conns.get(`${myDid}::${peerPtid}`);
     if (!conn) throw new Error('acceptCall: no PC');
     if (conn.call.state !== 'incoming') return;
     const { callId, mediaKind } = conn.call;
@@ -1141,8 +1141,8 @@ class CallP2pManager {
   }
 
   /** Reject a ringing incoming call without acquiring media. */
-  async rejectCall(myDid: string, peerDid: string, reason: string = 'declined'): Promise<void> {
-    const conn = this.conns.get(`${myDid}::${peerDid}`);
+  async rejectCall(myDid: string, peerPtid: string, reason: string = 'declined'): Promise<void> {
+    const conn = this.conns.get(`${myDid}::${peerPtid}`);
     if (!conn) return;
     if (conn.call.state !== 'incoming') return;
     const { callId } = conn.call;
@@ -1151,8 +1151,8 @@ class CallP2pManager {
   }
 
   /** End the active call (or cancel an outbound ringing one). */
-  async endCall(myDid: string, peerDid: string): Promise<void> {
-    const conn = this.conns.get(`${myDid}::${peerDid}`);
+  async endCall(myDid: string, peerPtid: string): Promise<void> {
+    const conn = this.conns.get(`${myDid}::${peerPtid}`);
     if (!conn) return;
     if (conn.call.state === 'idle' || conn.call.state === 'ended') return;
     const { callId } = conn.call;
@@ -1168,8 +1168,8 @@ class CallP2pManager {
   /** Mute or unmute the local microphone in-place. The track stays
    *  in the PC sender; only `enabled` flips, which is the cheapest
    *  way to mute and is what every WebRTC tutorial recommends. */
-  toggleMic(myDid: string, peerDid: string, muted: boolean): void {
-    const conn = this.conns.get(`${myDid}::${peerDid}`);
+  toggleMic(myDid: string, peerPtid: string, muted: boolean): void {
+    const conn = this.conns.get(`${myDid}::${peerPtid}`);
     if (!conn?.call.localStream) return;
     for (const t of conn.call.localStream.getAudioTracks()) {
       t.enabled = !muted;
@@ -1182,8 +1182,8 @@ class CallP2pManager {
    *  that would force a renegotiation; flipping `enabled` is enough
    *  for the peer to see a black frame, and the local <video> tag
    *  shows our own placeholder via `cameraOff`. */
-  toggleCamera(myDid: string, peerDid: string, off: boolean): void {
-    const conn = this.conns.get(`${myDid}::${peerDid}`);
+  toggleCamera(myDid: string, peerPtid: string, off: boolean): void {
+    const conn = this.conns.get(`${myDid}::${peerPtid}`);
     if (!conn?.call.localStream) return;
     for (const t of conn.call.localStream.getVideoTracks()) {
       t.enabled = !off;
@@ -1231,16 +1231,16 @@ class CallP2pManager {
    *  no call is active). Uses `RTCRtpSender.replaceTrack` so the swap is
    *  seamless — no renegotiation, no peer-visible interruption. Passing
    *  `undefined` clears the preference back to the OS default. */
-  async switchAudioDevice(myDid: string, peerDid: string, deviceId: string | undefined): Promise<void> {
+  async switchAudioDevice(myDid: string, peerPtid: string, deviceId: string | undefined): Promise<void> {
     writePreferredDevice(PREFERRED_AUDIO_DEVICE_KEY, deviceId);
-    await this.replaceLocalTrack(myDid, peerDid, 'audio', deviceId);
+    await this.replaceLocalTrack(myDid, peerPtid, 'audio', deviceId);
   }
 
   /** Switch the camera mid-call (or persist the preference when idle).
    *  Same seamless `replaceTrack` path as {@link switchAudioDevice}. */
-  async switchVideoDevice(myDid: string, peerDid: string, deviceId: string | undefined): Promise<void> {
+  async switchVideoDevice(myDid: string, peerPtid: string, deviceId: string | undefined): Promise<void> {
     writePreferredDevice(PREFERRED_VIDEO_DEVICE_KEY, deviceId);
-    await this.replaceLocalTrack(myDid, peerDid, 'video', deviceId);
+    await this.replaceLocalTrack(myDid, peerPtid, 'video', deviceId);
   }
 
   /**
@@ -1255,11 +1255,11 @@ class CallP2pManager {
    */
   private async replaceLocalTrack(
     myDid: string,
-    peerDid: string,
+    peerPtid: string,
     kind: CallMediaKind,
     deviceId: string | undefined,
   ): Promise<void> {
-    const conn = this.conns.get(`${myDid}::${peerDid}`);
+    const conn = this.conns.get(`${myDid}::${peerPtid}`);
     if (!conn?.call.localStream) return;
     if (conn.call.state !== 'active' && conn.call.state !== 'reconnecting') return;
     const wantVideo = kind === 'video';
@@ -1401,7 +1401,7 @@ class CallP2pManager {
    * soon as the connection terminates, the transport is determined and
    * stable, or the budget runs out.
    */
-  private startTransportProbe(myDid: string, peerDid: string, conn: Conn) {
+  private startTransportProbe(myDid: string, peerPtid: string, conn: Conn) {
     let elapsed = 0;
     const intervalMs = 4000;
     const budgetMs = 32000;
@@ -1414,14 +1414,14 @@ class CallP2pManager {
         const stats = await conn.pc.getStats();
         transport = pickTransportFromStats(stats);
       } catch (error) {
-        log.warn('p2p', 'getStats probe failed', { peerDid, error });
+        log.warn('p2p', 'getStats probe failed', { peerPtid, error });
         return;
       }
       if (!transport) return;
       // Only emit if the transport just became known or flipped.
       if (conn.status.transport === transport) return;
       conn.status = { ...conn.status, transport };
-      this.emitStatus(myDid, peerDid, conn.status);
+      this.emitStatus(myDid, peerPtid, conn.status);
       // Once we settle on a transport, stop the loop. WebRTC won't silently
       // switch pairs without going through `iceconnectionstatechange`, and
       // we react to that via the existing `onconnectionstatechange` hook.

@@ -41,7 +41,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Whether the device currently considers `actor_id` to be reachable
+/// Whether the device currently considers `actor_ptid` to be reachable
 /// for real-time delivery (WebRTC + Station's pending-queue).
 ///
 /// Note this is **per-actor**, not per-window. Two windows hosting the
@@ -184,7 +184,7 @@ impl PresenceTrigger {
 /// internals.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresenceTransition {
-    pub actor_id: String,
+    pub actor_ptid: String,
     pub from: PresenceState,
     pub to: PresenceState,
     pub trigger: PresenceTrigger,

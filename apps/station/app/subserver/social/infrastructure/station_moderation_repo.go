@@ -10,18 +10,27 @@ import (
 )
 
 type stationModerationRepository struct {
-	db *gorm.DB
+	db       *gorm.DB
+	identity *ActorIdentity
 }
 
 func NewStationModerationRepository(gdb *gorm.DB) domain.StationModerationRepository {
-	return &stationModerationRepository{db: gdb}
+	return &stationModerationRepository{db: gdb, identity: NewActorIdentity(gdb)}
 }
 
 func (r *stationModerationRepository) Upsert(ctx context.Context, policy *domain.StationModerationPolicy) error {
 	if policy == nil {
 		return nil
 	}
-	row := moderationDomainToDB(policy)
+	var creatorID uint64
+	if policy.CreatedByActorPTID != "" {
+		resolvedID, err := r.identity.RequireID(ctx, policy.CreatedByActorPTID)
+		if err != nil {
+			return err
+		}
+		creatorID = resolvedID
+	}
+	row := moderationDomainToDB(policy, creatorID)
 	q := r.db.WithContext(ctx).Where("kind = ?", row.Kind)
 	if row.StationDomain != "" {
 		q = q.Where("station_domain = ?", row.StationDomain)
@@ -79,7 +88,11 @@ func (r *stationModerationRepository) List(
 	}
 	out := make([]*domain.StationModerationPolicy, 0, len(rows))
 	for i := range rows {
-		out = append(out, moderationDBToDomain(&rows[i]))
+		policy, err := r.moderationDBToDomain(ctx, &rows[i])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, policy)
 	}
 	return out, nil
 }
@@ -120,7 +133,10 @@ func (r *stationModerationRepository) ListBlockedStations(ctx context.Context) (
 	}
 	out := make(map[string]*domain.StationModerationPolicy, len(rows))
 	for i := range rows {
-		policy := moderationDBToDomain(&rows[i])
+		policy, err := r.moderationDBToDomain(ctx, &rows[i])
+		if err != nil {
+			return nil, err
+		}
 		if policy.StationDomain == "" {
 			continue
 		}
@@ -129,29 +145,33 @@ func (r *stationModerationRepository) ListBlockedStations(ctx context.Context) (
 	return out, nil
 }
 
-func moderationDomainToDB(policy *domain.StationModerationPolicy) *db.SocialStationModerationPolicy {
+func moderationDomainToDB(policy *domain.StationModerationPolicy, creatorID uint64) *db.SocialStationModerationPolicy {
 	return &db.SocialStationModerationPolicy{
 		ID:               policy.ID,
 		StationDomain:    strings.TrimSpace(policy.StationDomain),
 		StationPeerID:    strings.TrimSpace(policy.StationPeerID),
 		Kind:             string(policy.Kind),
 		Reason:           policy.Reason,
-		CreatedByActorID: policy.CreatedByActorID,
+		CreatedByActorID: creatorID,
 	}
 }
 
-func moderationDBToDomain(row *db.SocialStationModerationPolicy) *domain.StationModerationPolicy {
+func (r *stationModerationRepository) moderationDBToDomain(ctx context.Context, row *db.SocialStationModerationPolicy) (*domain.StationModerationPolicy, error) {
 	if row == nil {
-		return nil
+		return nil, nil
+	}
+	creatorPTID, err := r.identity.ResolveID(ctx, row.CreatedByActorID)
+	if err != nil {
+		return nil, err
 	}
 	return &domain.StationModerationPolicy{
-		ID:               row.ID,
-		StationDomain:    row.StationDomain,
-		StationPeerID:    row.StationPeerID,
-		Kind:             domain.StationModerationPolicyKind(row.Kind),
-		Reason:           row.Reason,
-		CreatedByActorID: row.CreatedByActorID,
-		CreatedAt:        row.CreatedAt,
-		UpdatedAt:        row.UpdatedAt,
-	}
+		ID:                 row.ID,
+		StationDomain:      row.StationDomain,
+		StationPeerID:      row.StationPeerID,
+		Kind:               domain.StationModerationPolicyKind(row.Kind),
+		Reason:             row.Reason,
+		CreatedByActorPTID: creatorPTID,
+		CreatedAt:          row.CreatedAt,
+		UpdatedAt:          row.UpdatedAt,
+	}, nil
 }

@@ -23,7 +23,7 @@ import (
 
 const (
 	keyExchangeFederatedFetchScopeName = "key-exchange-bundle-fetch"
-	keyExchangeClaimActor              = "actor_did"
+	keyExchangeClaimActor              = "actor_ptid"
 	keyExchangeClaimDevice             = "device_id"
 	keyExchangeFederationTTL           = 60 * time.Second
 	keyExchangeFallbackLocalStation    = "local"

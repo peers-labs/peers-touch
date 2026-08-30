@@ -12,7 +12,7 @@ message FileMeta {
   string filename = 2;
   string mime_type = 3;
   int64 size = 4;
-  string uploader_did = 5;
+  string uploader_ptid = 5;
   google.protobuf.Timestamp uploaded_at = 6;
 }
 

@@ -16,6 +16,7 @@ import (
 	dbmodel "github.com/peers-labs/peers-touch/station/app/subserver/applet_store/db/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store/storage"
+	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
 
@@ -32,7 +33,37 @@ func NewStoreService(db *gorm.DB, storagePath string) *StoreService {
 }
 
 func (s *StoreService) Migrate() error {
-	return s.db.AutoMigrate(dbmodel.StoreModels()...)
+	if err := migrateAppletStoreIdentityColumns(s.db); err != nil {
+		return err
+	}
+	if err := s.db.AutoMigrate(dbmodel.StoreModels()...); err != nil {
+		return fmt.Errorf("applet store: migrate schema: %w", err)
+	}
+	return nil
+}
+
+func migrateAppletStoreIdentityColumns(rds *gorm.DB) error {
+	return rds.Transaction(func(tx *gorm.DB) error {
+		for _, rename := range []struct {
+			table string
+			from  string
+			to    string
+		}{
+			{table: "applet_install_states", from: "actor_id", to: "actor_ptid"},
+			{table: "applet_audit_records", from: "actor_id", to: "actor_ptid"},
+		} {
+			if err := modeldb.MigrateStringIdentityColumn(tx, rename.table, rename.from, rename.to); err != nil {
+				return fmt.Errorf(
+					"applet store: rename legacy identity column %s.%s to %s: %w",
+					rename.table,
+					rename.from,
+					rename.to,
+					err,
+				)
+			}
+		}
+		return nil
+	})
 }
 
 // ListApplets returns a list of published applets
@@ -280,7 +311,7 @@ func (s *StoreService) ListCatalog(req *model.ListAppletCatalogRequest) (*model.
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return nil, err
 		}
-		installState, err := s.findInstallState(req.GetActorId(), req.GetDeviceId(), applet.ID)
+		installState, err := s.findInstallState(req.GetActorPtid(), req.GetDeviceId(), applet.ID)
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return nil, err
 		}
@@ -322,11 +353,11 @@ func (s *StoreService) InstallApplet(req *model.InstallAppletRequest) (*model.In
 	}
 
 	now := time.Now()
-	state, err := s.findInstallState(req.GetActorId(), req.GetDeviceId(), req.GetAppletId())
+	state, err := s.findInstallState(req.GetActorPtid(), req.GetDeviceId(), req.GetAppletId())
 	if err == gorm.ErrRecordNotFound {
 		state = &dbmodel.AppletInstallState{
 			ID:          uuid.New().String(),
-			ActorID:     req.GetActorId(),
+			ActorPTID:   req.GetActorPtid(),
 			DeviceID:    req.GetDeviceId(),
 			AppletID:    req.GetAppletId(),
 			InstalledAt: now,
@@ -349,7 +380,7 @@ func (s *StoreService) InstallApplet(req *model.InstallAppletRequest) (*model.In
 }
 
 func (s *StoreService) UninstallApplet(req *model.UninstallAppletRequest) (*model.UninstallAppletResponse, error) {
-	state, err := s.findInstallState(req.GetActorId(), req.GetDeviceId(), req.GetAppletId())
+	state, err := s.findInstallState(req.GetActorPtid(), req.GetDeviceId(), req.GetAppletId())
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +394,7 @@ func (s *StoreService) UninstallApplet(req *model.UninstallAppletRequest) (*mode
 }
 
 func (s *StoreService) ListInstalledApplets(req *model.ListInstalledAppletsRequest) (*model.ListInstalledAppletsResponse, error) {
-	query := s.db.Where("actor_id = ? AND device_id = ?", req.GetActorId(), req.GetDeviceId())
+	query := s.db.Where("actor_ptid = ? AND device_id = ?", req.GetActorPtid(), req.GetDeviceId())
 	if !req.GetIncludeDisabled() {
 		query = query.Where("status = ?", int32(model.AppletInstallStatus_APPLET_INSTALL_STATUS_INSTALLED))
 	}
@@ -442,7 +473,7 @@ func (s *StoreService) IngestAppletAudit(req *model.IngestAppletAuditRequest) (*
 		row := dbmodel.AppletAuditRecord{
 			ID:           uuid.New().String(),
 			AuditID:      auditID,
-			ActorID:      record.GetActorId(),
+			ActorPTID:    record.GetActorPtid(),
 			DeviceID:     record.GetDeviceId(),
 			AppletID:     record.GetAppletId(),
 			Version:      record.GetVersion(),
@@ -467,8 +498,8 @@ func (s *StoreService) IngestAppletAudit(req *model.IngestAppletAuditRequest) (*
 func (s *StoreService) QueryAppletAudit(req *model.QueryAppletAuditRequest) (*model.QueryAppletAuditResponse, error) {
 	limit, offset := normalizeLimitOffset(req.GetLimit(), req.GetOffset())
 	query := s.db.Model(&dbmodel.AppletAuditRecord{})
-	if req.GetActorId() != "" {
-		query = query.Where("actor_id = ?", req.GetActorId())
+	if req.GetActorPtid() != "" {
+		query = query.Where("actor_ptid = ?", req.GetActorPtid())
 	}
 	if req.GetDeviceId() != "" {
 		query = query.Where("device_id = ?", req.GetDeviceId())
@@ -525,9 +556,9 @@ func (s *StoreService) resolveVersion(appletID, version string, channel model.Ap
 	return &row, nil
 }
 
-func (s *StoreService) findInstallState(actorID, deviceID, appletID string) (*dbmodel.AppletInstallState, error) {
+func (s *StoreService) findInstallState(actorPTID, deviceID, appletID string) (*dbmodel.AppletInstallState, error) {
 	var state dbmodel.AppletInstallState
-	err := s.db.Where("actor_id = ? AND device_id = ? AND applet_id = ?", actorID, deviceID, appletID).First(&state).Error
+	err := s.db.Where("actor_ptid = ? AND device_id = ? AND applet_id = ?", actorPTID, deviceID, appletID).First(&state).Error
 	return &state, err
 }
 
@@ -664,7 +695,7 @@ func toProtoInstallState(row *dbmodel.AppletInstallState) *model.AppletInstallSt
 		return nil
 	}
 	return &model.AppletInstallState{
-		ActorId:      row.ActorID,
+		ActorPtid:    row.ActorPTID,
 		DeviceId:     row.DeviceID,
 		AppletId:     row.AppletID,
 		Version:      row.Version,
@@ -691,7 +722,7 @@ func toProtoChannel(row dbmodel.AppletVersionChannel) *model.AppletVersionChanne
 func toProtoAudit(row *dbmodel.AppletAuditRecord) *model.AppletAuditRecord {
 	return &model.AppletAuditRecord{
 		AuditId:    row.AuditID,
-		ActorId:    row.ActorID,
+		ActorPtid:  row.ActorPTID,
 		DeviceId:   row.DeviceID,
 		AppletId:   row.AppletID,
 		Version:    row.Version,

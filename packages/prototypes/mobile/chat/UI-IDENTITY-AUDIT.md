@@ -1,6 +1,7 @@
 # Mobile Prototype — UI Identity Compliance Audit
 
-> Status: drafting (fail-closed — no real apps/mobile runtime acceptance yet).
+> Status: core journey and recovery-state amendment confirmed by the Owner on 2026-08-27;
+> real `apps/mobile` runtime acceptance remains unproven.
 > Goal: 6a4df61d05af3c5c0b257608. This is the audit-before-change gate (Task 3). No code changed while producing it.
 > Rule of engagement: every violation below cites (a) the UI Identity / methodology clause it breaks, and (b) the prototype source anchor. Fixes land at the contract/token/component layer in Task 4 — never as symptom-point CSS.
 
@@ -10,7 +11,8 @@
 - Methodology: `docs/client/common/ux-design-methodology.md` (8 boundary classes + Case Library 001–005 + conflict order).
 - Knowledge gate: `docs/knowledge/invariants/client-ui-identity-before-edit.md` (`owns:` covers `packages/prototypes/`, `apps/mobile/src/`).
 - Source-of-truth (IA / class names / interaction, **NOT visual authority**): `apps/mobile/src/**`, esp. `styles.css` (2442 lines), `pages/{ChatPage,ContactsPage,MomentsPage,SettingsPage}.tsx`, `App.tsx`, `components/MobileShell.tsx`, `StationLaunchScreen.tsx`, `AccessGateHost.tsx`, `StationSelector.tsx`.
-- Prototype under audit: `packages/prototypes/mobile/chat/src/MobilePrototype.tsx` (1373 lines) + `mobilePrototype.css` (2215 lines).
+- Prototype under audit: `packages/prototypes/mobile/chat/src/`, including the
+  shell, page, recovery-state, and scoped style modules.
 
 ## Six-bounds vocabulary used
 
@@ -217,7 +219,10 @@ Each Task-4 change will re-cite the exact rows above (L1 anchor), then pass L2 s
 
 ## Task 4 resolution ledger (verified against current rebuild)
 
-> Verified against `MobilePrototype.tsx` (1713 lines) + `mobilePrototype.css` (2178 lines) rebuilt on the token layer. The audit above was written against the pre-rebuild 1373-line / 2215-line version; this ledger records the current-version resolution anchor + gate for each item. `status: drafting` stays (fail-closed) until real `apps/mobile` runtime acceptance.
+> Verified against the rebuilt shell/page/component source under `src/`. The
+> audit above was written against the pre-rebuild monolith; this ledger records
+> current resolution anchors and gates. Core interaction evidence was confirmed;
+> real `apps/mobile` runtime acceptance remains a separate fail-closed gate.
 
 ### Cross-cutting
 
@@ -274,4 +279,29 @@ Console clean (only React DevTools info notice) across the Desktop Social Chat L
   3. Settings account actions → invented **Account section + chevron rows + count badge**. Real `SettingsPage.tsx:72-79` is two plain block buttons. Restored to plain block buttons.
   Prior ledger rows S6/S7 that referenced the fabricated controls have been corrected. The three earlier claims of "fully source-backed" for these controls were overclaims and are retracted here.
 - **ChatActionSheet + GroupManagementSheet L2/L3 — NOW CLOSED (2026-07-08).** The earlier "clipped right edge / `<html>` intercept" report was a stale interaction pattern, not a real geometry limit. On tab `e9bcee73` (port 3203) the device renders centered (not clipped); using `browser_scroll {scrollIntoView:true}` then `browser_click` on the thread "More actions" affordance opens the ChatActionSheet (Search/Mute/Pin/Alerts icons + 6 background chips + Group members + Clear history), and "Group members" opens the GroupManagementSheet (symmetric per-member icon rows + Invite-friends + footer Transfer ownership/Dissolve group). Both captured by screenshot; console clean (only React DevTools info). See ledger rows S4d.1/S4d.2/S4d.3/S4e.1/S4e.2/S4e.3/S4e.4 above.
-- **Real `apps/mobile` runtime acceptance**: not performed; `status: drafting` retained by design (fail-closed).
+- **Real `apps/mobile` runtime acceptance**: not performed; production readiness remains `UNPROVEN`. Core journey evidence was confirmed; the recovery-state amendment is pending review.
+
+## 2026-08-27 Recovery-State Amendment
+
+New Prototype Portal evidence scenarios:
+
+| Scenario | Product IDs | Required review |
+|---|---|---|
+| Station identity mismatch | MS-C01, MS-C10 / MS-PA25 | Blocking trust state, one primary recovery action, no raw peer ID |
+| OAuth expired | MS-C03 / MS-PA03, MS-PA25 | Preserved Station context, provider retry and Email fallback |
+| Session revoked | MS-C02, MS-C10 / MS-PA05 | Prior content hidden, re-authentication path visible |
+| Unknown write outcome | MS-C06, MS-C10 / MS-PA08 | No success claim or blind resend; status check and draft retention |
+| Command ledger full | MS-C10 / MS-PA26 | Read-only continuation and pending-action recovery |
+| Draft restored | MS-C05, MS-C08 / MS-PA23 | Restored local scope and explicit continue/discard actions |
+| Station removal | MS-C01 / MS-PA16 | Separate remove control and confirmation that Station data is preserved |
+| Deferred/local-only actions | MS-C11..MS-C14 / MS-PA22, MS-PA27 | Docs/add-tab absent; call and WeChat disabled; flag names device-only scope |
+
+L1 static evidence is present in
+`src/components/ExperienceRecovery.tsx`, `src/MobilePrototype.tsx`, and
+`src/MobileShell.tsx`. L2 screenshots are stored under
+`tmp/evidence/mobile-shell/prototype/20260827/`. L3 verified scenario selection,
+pre-shell recovery routing, sheet dismissal, status-check/read-only actions,
+Draft restored → Continue editing → conversation thread, Station removal
+confirmation, absence of the deferred Docs tab, and device-only Flag wording.
+Browser console was clean. The Owner confirmed the complete Prototype on
+2026-08-27; real `apps/mobile` runtime acceptance remains separate.

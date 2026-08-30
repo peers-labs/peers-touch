@@ -10,7 +10,7 @@ import (
 // Each extractor derives Operation fields from the raw request body payload.
 // They are invoked by social_gate.NewGateWrapper before the inner handler runs.
 
-// extractCreateDirectOp extracts the target actor DID from a CreateDirectConversationRequest body.
+// extractCreateDirectOp extracts the target actor PTID from a CreateDirectConversationRequest body.
 func extractCreateDirectOp(body []byte) social_gate.Operation {
 	var partial struct {
 		PeerPtid string `json:"peer_ptid"`
@@ -48,7 +48,7 @@ func extractSubmitCommandOp(body []byte) social_gate.Operation {
 	}
 }
 
-// extractFetchKeyPackageOp extracts the target actor DID from a FetchKeyPackageRequest body.
+// extractFetchKeyPackageOp extracts the target actor PTID from a FetchKeyPackageRequest body.
 func extractFetchKeyPackageOp(body []byte) social_gate.Operation {
 	var partial struct {
 		Ptid string `json:"ptid"`

@@ -30,11 +30,11 @@ func (s *ModerationService) IsStationBlocked(ctx context.Context, stationDomain 
 	return stationModerationBlocksStation(ctx, s.repos.Moderation, stationDomain, peerID)
 }
 
-func (s *ModerationService) IsActorStationBlocked(ctx context.Context, actorID uint64) (bool, error) {
+func (s *ModerationService) IsActorStationBlocked(ctx context.Context, actorPTID string) (bool, error) {
 	if s == nil || s.repos == nil {
 		return false, nil
 	}
-	return actorStationModerated(ctx, s.repos.Moderation, actorID)
+	return actorStationModerated(ctx, s.repos.Moderation, actorPTID)
 }
 
 func (s *ModerationService) IsPostAuthorStationBlocked(ctx context.Context, post *model.Post) (bool, error) {
@@ -47,7 +47,7 @@ func (s *ModerationService) IsPostAuthorStationBlocked(ctx context.Context, post
 func (s *ModerationService) UpsertStationPolicy(
 	ctx context.Context,
 	req *model.UpsertStationModerationPolicyRequest,
-	actorID uint64,
+	actorPTID string,
 ) (*model.StationModerationPolicy, error) {
 	if req == nil || req.GetPolicy() == nil {
 		return nil, fmt.Errorf("policy is required")
@@ -63,11 +63,11 @@ func (s *ModerationService) UpsertStationPolicy(
 		return nil, fmt.Errorf("unsupported station moderation policy kind")
 	}
 	row := &domain.StationModerationPolicy{
-		StationDomain:    stationDomain,
-		StationPeerID:    stationPeerID,
-		Kind:             kind,
-		Reason:           policy.GetReason(),
-		CreatedByActorID: actorID,
+		StationDomain:      stationDomain,
+		StationPeerID:      stationPeerID,
+		Kind:               kind,
+		Reason:             policy.GetReason(),
+		CreatedByActorPTID: actorPTID,
 	}
 	if err := s.repos.Moderation.Upsert(ctx, row); err != nil {
 		return nil, err
@@ -168,12 +168,12 @@ func stationPolicyToProto(policy *domain.StationModerationPolicy) *model.Station
 		return nil
 	}
 	return &model.StationModerationPolicy{
-		StationDomain:    policy.StationDomain,
-		StationPeerId:    policy.StationPeerID,
-		Kind:             stationPolicyKindToProto(policy.Kind),
-		Reason:           policy.Reason,
-		CreatedByActorId: fmt.Sprintf("%d", policy.CreatedByActorID),
-		CreatedAt:        timestamppb.New(policy.CreatedAt),
-		UpdatedAt:        timestamppb.New(policy.UpdatedAt),
+		StationDomain:      policy.StationDomain,
+		StationPeerId:      policy.StationPeerID,
+		Kind:               stationPolicyKindToProto(policy.Kind),
+		Reason:             policy.Reason,
+		CreatedByActorPtid: policy.CreatedByActorPTID,
+		CreatedAt:          timestamppb.New(policy.CreatedAt),
+		UpdatedAt:          timestamppb.New(policy.UpdatedAt),
 	}
 }

@@ -549,31 +549,31 @@ function DetailAttachmentSection({
   );
 }
 
-function getFriendPeerDid(session: FriendChatSession | undefined, currentUserDid: string | null): string {
+function getFriendPeerDid(session: FriendChatSession | undefined, currentUserPtid: string | null): string {
   if (!session) return '';
-  if (currentUserDid) {
-    if (session.participantADid === currentUserDid) return session.participantBDid || '';
-    if (session.participantBDid === currentUserDid) return session.participantADid || '';
+  if (currentUserPtid) {
+    if (session.participantAPtid === currentUserPtid) return session.participantBPtid || '';
+    if (session.participantBPtid === currentUserPtid) return session.participantAPtid || '';
   }
-  return session.participantBDid || session.participantADid || '';
+  return session.participantBPtid || session.participantAPtid || '';
 }
 
-function getFriendPeerName(session: FriendChatSession | undefined, currentUserDid: string | null): string {
+function getFriendPeerName(session: FriendChatSession | undefined, currentUserPtid: string | null): string {
   if (!session) return '';
-  if (currentUserDid) {
-    if (session.participantADid === currentUserDid)
-      return session.participantBDisplayName || session.participantBDid || '';
-    if (session.participantBDid === currentUserDid)
-      return session.participantADisplayName || session.participantADid || '';
+  if (currentUserPtid) {
+    if (session.participantAPtid === currentUserPtid)
+      return session.participantBDisplayName || session.participantBPtid || '';
+    if (session.participantBPtid === currentUserPtid)
+      return session.participantADisplayName || session.participantAPtid || '';
   }
-  return session.participantBDisplayName || session.participantBDid || '';
+  return session.participantBDisplayName || session.participantBPtid || '';
 }
 
-function getFriendPeerAvatar(session: FriendChatSession | undefined, currentUserDid: string | null): string {
+function getFriendPeerAvatar(session: FriendChatSession | undefined, currentUserPtid: string | null): string {
   if (!session) return '';
-  if (currentUserDid) {
-    if (session.participantADid === currentUserDid) return session.participantBAvatar || '';
-    if (session.participantBDid === currentUserDid) return session.participantAAvatar || '';
+  if (currentUserPtid) {
+    if (session.participantAPtid === currentUserPtid) return session.participantBAvatar || '';
+    if (session.participantBPtid === currentUserPtid) return session.participantAAvatar || '';
   }
   return session.participantBAvatar || session.participantAAvatar || '';
 }
@@ -590,7 +590,7 @@ export function ChatDetailPanel() {
     getIMConversations, messages,
     encryptionEnabled,
     ownFingerprint,
-    currentUserDid,
+    currentUserPtid,
     currentUserProfile,
     peerOnline,
     peerProfiles,
@@ -615,7 +615,7 @@ export function ChatDetailPanel() {
     messages: s.messages,
     encryptionEnabled: s.encryptionEnabled,
     ownFingerprint: s.ownFingerprint,
-    currentUserDid: s.currentUserDid,
+    currentUserPtid: s.currentUserPtid,
     currentUserProfile: s.currentUserProfile,
     peerOnline: s.peerOnline,
     peerProfiles: s.peerProfiles,
@@ -653,30 +653,30 @@ export function ChatDetailPanel() {
   const [backgroundRetryPath, setBackgroundRetryPath] = useState<string | null>(null);
   const [historyNow, setHistoryNow] = useState(Date.now());
 
-  const peerDid = !isGroup
-    ? activeConversation?.peerDid || getFriendPeerDid(activeFriendSession, currentUserDid)
+  const peerPtid = !isGroup
+    ? activeConversation?.peerPtid || getFriendPeerDid(activeFriendSession, currentUserPtid)
     : '';
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
-  const myGroupMember = currentUserDid ? members.find((member) => member.ptid === currentUserDid) : undefined;
+  const myGroupMember = currentUserPtid ? members.find((member) => member.ptid === currentUserPtid) : undefined;
   const myGroupNickname = myGroupMember?.nickname?.trim() || '';
   const sourceMembers: GroupMemberLike[] = useMemo(
     () => members.length > 0
       ? members
-      : activeGroup?.ownerDid
+      : activeGroup?.ownerPtid
         ? [{
-            ptid: activeGroup.ownerDid,
+            ptid: activeGroup.ownerPtid,
             nickname: '',
             role: GroupRole.OWNER,
             muted: false,
           }]
         : [],
-    [activeGroup?.ownerDid, members],
+    [activeGroup?.ownerPtid, members],
   );
   const displayMembers: GroupMemberDisplay[] = useMemo(() => {
     return sourceMembers.map((member) => {
       const profile = resolveActorIdentity({
         ptid: member.ptid,
-        currentUserDid,
+        currentUserPtid,
         currentUserProfile,
         peerProfiles,
         sessions,
@@ -696,7 +696,7 @@ export function ChatDetailPanel() {
       };
     });
   }, [
-    currentUserDid,
+    currentUserPtid,
     currentUserProfile,
     peerProfiles,
     sessions,
@@ -708,14 +708,14 @@ export function ChatDetailPanel() {
       sourceMembers,
       (ptid, nickname) => resolveActorIdentity({
         ptid,
-        currentUserDid,
+        currentUserPtid,
         currentUserProfile,
         peerProfiles,
         sessions,
         nickname,
       }),
     ),
-    [currentUserDid, currentUserProfile, peerProfiles, sessions, sourceMembers],
+    [currentUserPtid, currentUserProfile, peerProfiles, sessions, sourceMembers],
   );
   const memberDisplayByDid = useMemo(
     () => new Map(displayMembers.map((member) => [member.ptid, member])),
@@ -725,22 +725,22 @@ export function ChatDetailPanel() {
     memberDisplayByDid.get(member.ptid)?.displayName
     || member.nickname?.trim()
     || t('chat.social.detail.unknownMember');
-  const memberDidSet = useMemo(() => new Set(members.map((member) => member.ptid)), [members]);
+  const memberPtidSet = useMemo(() => new Set(members.map((member) => member.ptid)), [members]);
   const inviteCandidates = useMemo(
     () => sessions
       .map((session) => ({
-        did: getFriendPeerDid(session, currentUserDid),
-        name: getFriendPeerName(session, currentUserDid),
+        did: getFriendPeerDid(session, currentUserPtid),
+        name: getFriendPeerName(session, currentUserPtid),
       }))
       .filter((candidate): candidate is { did: string; name: string } =>
-        Boolean(candidate.did && !memberDidSet.has(candidate.did)),
+        Boolean(candidate.did && !memberPtidSet.has(candidate.did)),
       ),
-    [currentUserDid, memberDidSet, sessions],
+    [currentUserPtid, memberPtidSet, sessions],
   );
   const groupMemberCount = isGroup ? (activeConversation?.memberCount || activeGroup?.memberCount || members.length) : 0;
-  const myGroupRole = activeGroup?.ownerDid === currentUserDid ? GroupRole.OWNER : Number(myGroupMember?.role ?? 0);
+  const myGroupRole = activeGroup?.ownerPtid === currentUserPtid ? GroupRole.OWNER : Number(myGroupMember?.role ?? 0);
   const canManageGroupMembers = Boolean(
-    activeGroup?.ownerDid === currentUserDid ||
+    activeGroup?.ownerPtid === currentUserPtid ||
     myGroupRole >= GroupRole.ADMIN,
   );
   const isGroupOwner = isGroup && myGroupRole === GroupRole.OWNER;
@@ -757,11 +757,11 @@ export function ChatDetailPanel() {
       : t('chat.social.detail.permissionMemberBody');
   const currentName = isGroup
     ? (activeConversation?.title || activeGroup?.name || t('chat.social.sessionList.unnamedGroup'))
-    : activeConversation?.title || getFriendPeerName(activeFriendSession, currentUserDid);
+    : activeConversation?.title || getFriendPeerName(activeFriendSession, currentUserPtid);
   const displayName = currentName || t('chat.social.sessionList.unknown');
-  const peerAvatar = activeConversation?.avatar || getFriendPeerAvatar(activeFriendSession, currentUserDid);
-  const peerPresenceKnown = peerDid ? peerDid in peerOnline : false;
-  const peerIsOnline = peerDid in peerOnline ? peerOnline[peerDid] : null;
+  const peerAvatar = activeConversation?.avatar || getFriendPeerAvatar(activeFriendSession, currentUserPtid);
+  const peerPresenceKnown = peerPtid ? peerPtid in peerOnline : false;
+  const peerIsOnline = peerPtid in peerOnline ? peerOnline[peerPtid] : null;
   const localStateKey = activeUlid ? `${activeTab}:${activeUlid}` : '';
   const activeLocalState = localStateKey ? conversationLocalState[localStateKey] : undefined;
   const activeMessages = useMemo(
@@ -1069,7 +1069,7 @@ export function ChatDetailPanel() {
           await loadGroups();
           toast.success(t('chat.social.detail.transferOwnerSuccess'));
         } catch (error) {
-          log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerDid: member.ptid, error });
+          log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerPtid: member.ptid, error });
           toast.error(t('chat.social.detail.transferOwnerFailed'));
           throw error;
         }
@@ -1092,14 +1092,14 @@ export function ChatDetailPanel() {
             api.federationGetSelf(),
             api.accountGetDeviceId(),
           ]);
-          if (!currentUserDid) throw new Error('No authenticated actor');
+          if (!currentUserPtid) throw new Error('No authenticated actor');
           await imServiceV1.mlsGroup.requestLeaveIntent({
             federationId: conversation.federationId,
             authorityStationPeerId: conversation.authorityStationPeerId,
             authorityEpoch: Number(conversation.authorityEpoch),
             homeStationPeerId: federationSelf.homeStationPeerId,
             conversationId: activeUlid,
-            actorPtid: currentUserDid,
+            actorPtid: currentUserPtid,
             actorDeviceId: device.device_id,
             observedMembershipEpoch: Number(conversation.membershipEpoch),
             observedMlsEpoch: Number(conversation.mlsEpoch),
@@ -1223,12 +1223,12 @@ export function ChatDetailPanel() {
   }, [activeUlid]);
 
   useEffect(() => {
-    if (!isGroup && peerDid) {
-      void loadPeerProfile(peerDid);
+    if (!isGroup && peerPtid) {
+      void loadPeerProfile(peerPtid);
     }
-  }, [isGroup, peerDid, loadPeerProfile]);
+  }, [isGroup, peerPtid, loadPeerProfile]);
 
-  const cachedPeerProfile = !isGroup && peerDid ? peerProfiles[peerDid] : undefined;
+  const cachedPeerProfile = !isGroup && peerPtid ? peerProfiles[peerPtid] : undefined;
 
   return (
     <Flexbox
@@ -1378,7 +1378,7 @@ export function ChatDetailPanel() {
                 isGroup,
                 displayName,
                 peerAvatar,
-                peerDid,
+                peerPtid,
                 activeGroup,
                 groupMemberCount,
                 peerPresenceKnown,
@@ -1618,7 +1618,7 @@ export function ChatDetailPanel() {
             <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all' }}>
               {ownFingerprint || '—'}
             </Text>
-            {!isGroup && peerDid ? (
+            {!isGroup && peerPtid ? (
               <Button
                 type={verifyOpen ? 'default' : 'primary'}
                 ghost={!verifyOpen}
@@ -1632,11 +1632,11 @@ export function ChatDetailPanel() {
                   : t('chat.social.verify.show')}
               </Button>
             ) : null}
-            {!isGroup && peerDid && verifyOpen && currentUserDid ? (
+            {!isGroup && peerPtid && verifyOpen && currentUserPtid ? (
               <SafetyVerificationPanel
-                localActorDid={currentUserDid}
+                localActorPtid={currentUserPtid}
                 localFingerprint={ownFingerprint || ''}
-                peerDid={peerDid}
+                peerPtid={peerPtid}
               />
             ) : null}
             {activeTab === 'friend' ? (
@@ -1719,7 +1719,7 @@ export function ChatDetailPanel() {
         <Flexbox gap={10} style={{ maxHeight: 'min(520px, 70vh)', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4 }}>
           {displayMembers.map((member) => {
             const memberRole = Number(member.role ?? GroupRole.MEMBER);
-            const targetIsSelf = member.ptid === currentUserDid;
+            const targetIsSelf = member.ptid === currentUserPtid;
             const controlState = getGroupMemberControlState({
               canManageGroupMembers,
               isSelf: targetIsSelf,
@@ -1816,7 +1816,7 @@ interface BuildChatDetailProfileArgs {
   isGroup: boolean;
   displayName: string;
   peerAvatar: string;
-  peerDid: string;
+  peerPtid: string;
   activeGroup: Group | undefined;
   groupMemberCount: number;
   peerPresenceKnown: boolean;
@@ -1835,7 +1835,7 @@ function buildChatDetailProfile({
   isGroup,
   displayName,
   peerAvatar,
-  peerDid,
+  peerPtid,
   activeGroup,
   groupMemberCount,
   peerPresenceKnown,
@@ -1903,7 +1903,7 @@ function buildChatDetailProfile({
     header: cachedPeerProfile?.header?.trim() || undefined,
     username: cachedPeerProfile?.username?.trim() || undefined,
     bio: cachedPeerProfile?.note?.trim() || undefined,
-    did: cachedPeerProfile?.id?.trim() || peerDid,
+    did: cachedPeerProfile?.id?.trim() || peerPtid,
     createdAt: cachedPeerProfile?.created_at?.trim() || undefined,
     region: cachedPeerProfile?.region?.trim() || undefined,
     tags: (cachedPeerProfile?.tags ?? []).filter(Boolean),

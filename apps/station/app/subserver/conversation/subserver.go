@@ -31,6 +31,7 @@ import (
 	msginf "github.com/peers-labs/peers-touch/station/app/subserver/messaging/infrastructure"
 
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
 
@@ -90,6 +91,15 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
+		return err
+	}
+
+	if err := modeldb.MigrateStringIdentityColumn(
+		rds,
+		"conversation_members",
+		"actor_did",
+		"ptid",
+	); err != nil {
 		return err
 	}
 

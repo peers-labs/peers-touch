@@ -92,7 +92,7 @@ func (s *NoteSubServer) handle(ctx context.Context, req server.Request, resp ser
 	if err != nil {
 		return server.BadRequestWithCause("invalid applet note request", err)
 	}
-	httpReq.Header.Set(notetransport.OwnerHeader, subject.ID)
+	httpReq.Header.Set(notetransport.OwnerPTIDHeader, subject.ID)
 
 	writer := &serverResponseWriter{resp: resp}
 	s.handler.ServeHTTP(writer, httpReq)

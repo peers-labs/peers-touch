@@ -481,6 +481,9 @@ func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 	ossScopeOnce.Do(registerFederationScope)
 	if s.dbName != "" {
 		if rds, err := store.GetRDS(ctx, store.WithRDSDBName(s.dbName)); err == nil {
+			if err := repo.MigratePTIDColumns(rds); err != nil {
+				return err
+			}
 			// Defensive AutoMigrate. The authoritative migration
 			// runs inside repo.Bootstrap (which also stamps the
 			// schema sentinel and seeds capability_version);

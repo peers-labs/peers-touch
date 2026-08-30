@@ -138,7 +138,7 @@ describe('frontend telemetry queue', () => {
       module: 'social',
       source: 'runtime',
       data: {
-        actorId: 'actor-1',
+        actorPtid: 'actor-1',
         [sensitiveKeys.pw]: 'hunter2',
         nested: { [sensitiveKeys.tok]: 'tk-abc' },
       },
@@ -149,7 +149,7 @@ describe('frontend telemetry queue', () => {
     });
 
     expect(event?.data).toMatchObject({
-      actorId: 'actor-1',
+      actorPtid: 'actor-1',
       [sensitiveKeys.pw]: '[redacted]',
       nested: { [sensitiveKeys.tok]: '[redacted]' },
     });

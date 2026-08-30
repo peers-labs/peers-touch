@@ -17,9 +17,11 @@ func TestModerationServiceUpsertStationBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := gdb.AutoMigrate(&db.SocialStationModerationPolicy{}); err != nil {
+	if err := gdb.AutoMigrate(&db.Actor{}, &db.SocialStationModerationPolicy{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	bindApplicationActorStore(t, gdb)
+	seedFixtureActors(t, gdb)
 	repos := &infrastructure.Repos{
 		Moderation: infrastructure.NewStationModerationRepository(gdb),
 	}
@@ -31,7 +33,7 @@ func TestModerationServiceUpsertStationBlock(t *testing.T) {
 			Kind:          model.StationModerationPolicy_STATION_MODERATION_POLICY_BLOCK,
 			Reason:        "spam wave",
 		},
-	}, 100)
+	}, fixturePTID(100))
 	if err != nil {
 		t.Fatalf("upsert station policy: %v", err)
 	}

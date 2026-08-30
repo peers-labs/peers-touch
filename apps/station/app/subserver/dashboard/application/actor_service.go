@@ -55,8 +55,8 @@ func (s *ActorService) ListActors(ctx context.Context, query domain.ActorListQue
 }
 
 // GetActorDetail returns enriched information about a single actor.
-func (s *ActorService) GetActorDetail(ctx context.Context, actorID uint64) (*domain.ActorDetail, error) {
-	actor, err := s.actorRepo.FindActorByID(ctx, actorID)
+func (s *ActorService) GetActorDetail(ctx context.Context, actorPTID string) (*domain.ActorDetail, error) {
+	actor, err := s.actorRepo.FindActorByPTID(ctx, actorPTID)
 	if err != nil {
 		return nil, fmt.Errorf("actor not found: %w", err)
 	}
@@ -68,8 +68,7 @@ func (s *ActorService) GetActorDetail(ctx context.Context, actorID uint64) (*dom
 // enrichActorDetail populates counts and status for a single actor row.
 func (s *ActorService) enrichActorDetail(ctx context.Context, a touchdb.Actor) domain.ActorDetail {
 	detail := domain.ActorDetail{
-		ID:                a.ID,
-		DID:               a.PTID,
+		PTID:              a.PTID,
 		PreferredUsername: a.PreferredUsername,
 		Name:              a.Name,
 		Email:             a.Email,
@@ -79,7 +78,7 @@ func (s *ActorService) enrichActorDetail(ctx context.Context, a touchdb.Actor) d
 	}
 
 	// Resolve online status
-	actorStatus, err := s.actorRepo.GetActorStatus(ctx, a.ID)
+	actorStatus, err := s.actorRepo.GetActorStatus(ctx, a.PTID)
 	if err == nil {
 		// Dashboard must treat "online" as bounded by heartbeat TTL; otherwise a
 		// single login can leave a permanent online flag if watchdog isn't running.
@@ -100,14 +99,14 @@ func (s *ActorService) enrichActorDetail(ctx context.Context, a touchdb.Actor) d
 	}
 
 	// Social counters
-	detail.PostCount, _ = s.actorRepo.CountPostsByAuthor(ctx, a.ID)
-	detail.FollowerCount, _ = s.actorRepo.CountFollowers(ctx, a.ID)
-	detail.FollowingCount, _ = s.actorRepo.CountFollowing(ctx, a.ID)
+	detail.PostCount, _ = s.actorRepo.CountPostsByAuthor(ctx, a.PTID)
+	detail.FollowerCount, _ = s.actorRepo.CountFollowers(ctx, a.PTID)
+	detail.FollowingCount, _ = s.actorRepo.CountFollowing(ctx, a.PTID)
 
 	// Session-derived signals: we surface these from actor_sessions because
 	// touch_actor itself has no last_login or session counters.
-	detail.SessionCount, _ = s.actorRepo.CountActiveSessionsByActor(ctx, a.ID)
-	detail.LastLoginAt, _ = s.actorRepo.LastLoginAtByActor(ctx, a.ID)
+	detail.SessionCount, _ = s.actorRepo.CountActiveSessionsByActor(ctx, a.PTID)
+	detail.LastLoginAt, _ = s.actorRepo.LastLoginAtByActor(ctx, a.PTID)
 
 	return detail
 }
@@ -122,26 +121,26 @@ func (s *ActorService) ListActivePeersSessions(ctx context.Context, limit int) (
 }
 
 // ResetActorPassword resets an actor's password (admin operation).
-func (s *ActorService) ResetActorPassword(ctx context.Context, actorID uint64, newPassword string) error {
+func (s *ActorService) ResetActorPassword(ctx context.Context, actorPTID string, newPassword string) error {
 	hash, err := domain.HashPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	if err := s.actorRepo.ResetPassword(ctx, actorID, hash); err != nil {
+	if err := s.actorRepo.ResetPassword(ctx, actorPTID, hash); err != nil {
 		return err
 	}
 
-	log.Infof(ctx, "[dashboard] actor %d password reset by admin", actorID)
+	log.Infof(ctx, "[dashboard] actor password reset by admin")
 	return nil
 }
 
 // GetActorSessions returns sessions for a specific actor.
-func (s *ActorService) GetActorSessions(ctx context.Context, actorID uint64) ([]domain.ActorSessionInfo, error) {
-	return s.actorRepo.ListActorSessions(ctx, actorID)
+func (s *ActorService) GetActorSessions(ctx context.Context, actorPTID string) ([]domain.ActorSessionInfo, error) {
+	return s.actorRepo.ListActorSessions(ctx, actorPTID)
 }
 
 // RevokeActorSession revokes a specific actor session by session ID.
-func (s *ActorService) RevokeActorSession(ctx context.Context, sessionID string) error {
-	return s.actorRepo.RevokeActorSession(ctx, sessionID)
+func (s *ActorService) RevokeActorSession(ctx context.Context, actorPTID, sessionID string) error {
+	return s.actorRepo.RevokeActorSession(ctx, actorPTID, sessionID)
 }

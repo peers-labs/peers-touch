@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-03 | **Updated**: 2026-06-06
+> **Created**: 2026-06-03 | **Updated**: 2026-08-27
 > **Owner**: Client Architecture Team
 > **Module**: `apps/desktop/src/runtimes/socialRuntime.ts`, `apps/mobile/src/features/social/`
 
@@ -36,6 +36,7 @@
 | `apps/mobile/src/features/social/socialProjection.ts` | friend requests、conversations、notifications、messages、receipts、mutations、typing reducer | 可作为双端 reducer 语义参考 |
 | `apps/mobile/src/features/social/socialStore.ts` | social projection state + user commands | 保持 store owner，补 group/offline/E2EE domain |
 | `apps/mobile/src/features/social/socialRuntime.ts` | reconcile、SSE、presence、typing sweep、external event dispatch | 与 Desktop supervisor 契约对齐 |
+| `apps/mobile/src/features/group/groupRuntime.ts` | Group projection、E2EE readiness、reconcile | 保持独立 descriptor；复用 social event ingress/host adapter，不建立第二 supervisor |
 | `apps/mobile/src/features/social/useSocialRuntime.ts` | Auth session 到 runtime lifecycle 的 hook adapter | 保持 thin adapter |
 | `apps/mobile/src/runtimes/mobileNativeEventBridge.ts` | Mobile host events -> `SocialHostEvent` | 使用共享 event helper 归一化 push/deep-link/resume/notification tap，后续补 native plugin emit 闭环 |
 | `apps/mobile/src/pages/ChatPage.tsx`, `ContactsPage.tsx` | UI renderer + command dispatch | 保持不拥有 freshness |
@@ -55,11 +56,11 @@
 | Presence | 已有 presence flip projection | 已有 presence stream + seed | 需统一 TTL/seed/drop 语义 |
 | Typing | 已有 typing TTL sweep | 已有 typing TTL sweep | 可抽共同 contract |
 | Peer profile | 已有 cache 注释和 lazy load | 已有 profile projection | 需统一 invalidation 事件 |
-| Group chat | 已有 group/session/member/unread/mutation | 未完成 | Mobile 需新增独立 group domain |
-| E2EE | 已有 key distribution/group sender keys | 仅保留字段，未闭环 | 需单独 domain 设计 |
+| Group chat | 已有 group/session/member/unread/mutation | 已有独立 group store/runtime 与管理操作 | 保持独立 projection descriptor，补 shared supervisor 接线证据 |
+| E2EE | 已有 key distribution/group sender keys | 已有 group E2EE runtime，native 全链路证据未闭合 | 保持独立 domain，补 native readback/evidence |
 | P2P/relay status | Desktop 有 WebRTC/P2P 状态 | Mobile 暂无 | 属于 host/transport adapter，不改变社交业务语义 |
 | Native/system notification | Desktop 部分通过 notification UI | Mobile bridge 已准备，native emit 未补 | 需统一 Host Adapter contract |
-| Offline queue | 未形成统一 outbox | 未形成统一 outbox | 新增 shared projection domain |
+| Offline queue | 未形成统一 durable owner | 未形成统一 durable owner | `InteractionAdmission` 定义语义；平台 command runtime 持久化；`ChatOutboxItem` 仅投影 |
 | Proto wire | Desktop generated proto | Mobile generated proto + 防回退 | Desktop 需补防回退检查 |
 | HTTP DTO | 多处 typed service + generated proto 混用 | normalizer 兼容 JSON shape | 逐步统一 DTO contract |
 
@@ -122,19 +123,22 @@
 - `dispatchExternalEvent` 双端语义一致。
 - host event 不直接写业务 projection。
 
-### Phase 4: Group / Offline / E2EE Domain
+### Phase 4: Group / Command Projection / E2EE Domain
 
 目标：
 
 - Group chat 独立 projection domain。
-- Offline command outbox domain。
+- Offline command status projection backed by platform `InteractionAdmission`。
 - E2EE key/device/message crypto projection domain。
 
 交付：
 
 - Mobile group chat parity。
-- `packages/client-chat-core` 提供 `ChatE2eeProjection` 与 `ChatOutboxItem` 纯 reducer，作为双端 E2EE readiness/error 与 offline retry/drain 的共享状态机。
-- 双端 offline retry/reconcile。
+- `packages/client-chat-core` 提供 `ChatE2eeProjection` 与 `ChatOutboxItem`
+  纯 reducer，作为双端 E2EE readiness/error 与 durable-command visible
+  state；它不拥有持久化或重放。
+- 双端 platform command runtime 负责 bounded admission、retry/readback 和
+  reconcile。
 - 双端 E2EE failure/status projection。
 
 ---

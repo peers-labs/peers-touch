@@ -20,7 +20,7 @@ interface ImageGridProps {
   cids: string[];
   images?: ImageAttachment[];
   audience?: Audience | null;
-  authorDid?: string | null;
+  authorPtid?: string | null;
   /** Optional alt text per image. */
   alts?: string[];
 }
@@ -39,7 +39,7 @@ function pickLayout(n: number): GridLayout {
   return { columns: 3, singleWide: false };
 }
 
-export function ImageGrid({ cids, images, audience, authorDid, alts }: ImageGridProps) {
+export function ImageGrid({ cids, images, audience, authorPtid, alts }: ImageGridProps) {
   const { token } = theme.useToken();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
@@ -71,7 +71,7 @@ export function ImageGrid({ cids, images, audience, authorDid, alts }: ImageGrid
               cid={cid}
               attachment={images?.[idx]}
               audience={audience}
-              authorDid={authorDid}
+              authorPtid={authorPtid}
               alt={alts?.[idx]}
               disablePreview
               onClick={() => setLightboxIndex(idx)}
@@ -86,7 +86,7 @@ export function ImageGrid({ cids, images, audience, authorDid, alts }: ImageGrid
           cids={cids}
           images={images}
           audience={audience}
-          authorDid={authorDid}
+          authorPtid={authorPtid}
           alts={alts}
           startIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
