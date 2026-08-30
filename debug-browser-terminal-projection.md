@@ -36,6 +36,12 @@
   immediately after snapshot reconciliation, then as `failed` with content
   length `163` after client restart. Station remained `interrupted` with
   content length `576`.
+- Exact-source run
+  `20260830T064048656280Z-c8bf14ec8c6d1edd6381367a8f05a5fb`
+  reproduced the same boundary after the first timestamp-based correction:
+  pre-restart state was `interrupted` with content length `677`, while
+  post-restart state was `failed` with content length `80`. Cross-host
+  timestamps are therefore insufficient authority for equal-sequence rows.
 
 ## Instrumentation
 - `chatRuntime.ts:reloadAgentTurnSnapshot.reconciled` records snapshot status
@@ -56,8 +62,9 @@ must make equal-sequence cache merges revision-aware and preserve authoritative
 snapshot terminal fields and content.
 
 ## Fix
-- Equal-sequence cached messages now resolve by `updatedAt`, so an older
-  Station list response cannot overwrite the later source-bound snapshot.
+- Equal-sequence cached messages now resolve first by explicit reconciliation
+  source, with `station-snapshot` authoritative over `station-list`; timestamps
+  only order messages from the same source class.
 - Authoritative snapshots may supersede same-sequence terminal events.
 - Snapshot text is replaced by field presence, including an authoritative
   empty string.

@@ -63,6 +63,7 @@ export interface CachedAgentMessage {
   readonly toolCallsJson?: string;
   readonly metadataJson?: string;
   readonly attachments?: readonly CachedAgentAttachment[];
+  readonly reconciliationSource?: 'station-list' | 'station-snapshot';
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -237,13 +238,23 @@ function reconcileMessage(
 ): CachedAgentMessage {
   const currentUpdatedAt = Date.parse(current.updatedAt);
   const incomingUpdatedAt = Date.parse(incoming.updatedAt);
+  const currentAuthority =
+    current.reconciliationSource === 'station-snapshot' ? 1 : 0;
+  const incomingAuthority =
+    incoming.reconciliationSource === 'station-snapshot' ? 1 : 0;
   const incomingIsNewer = incoming.seq > current.seq
     || (
       incoming.seq === current.seq
       && (
-        !Number.isFinite(currentUpdatedAt)
-        || !Number.isFinite(incomingUpdatedAt)
-        || incomingUpdatedAt >= currentUpdatedAt
+        incomingAuthority > currentAuthority
+        || (
+          incomingAuthority === currentAuthority
+          && (
+            !Number.isFinite(currentUpdatedAt)
+            || !Number.isFinite(incomingUpdatedAt)
+            || incomingUpdatedAt >= currentUpdatedAt
+          )
+        )
       )
     );
   const authoritative = incomingIsNewer ? incoming : current;

@@ -1159,6 +1159,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
           ...assistant,
           status: terminal.status,
           content: terminal.content ?? assistant.content,
+          reconciliationSource: 'station-snapshot',
           updatedAt: new Date().toISOString(),
         });
         synced = await agentChatCache.getMessages(conversationId);

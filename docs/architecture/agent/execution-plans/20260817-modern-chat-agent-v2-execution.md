@@ -3730,6 +3730,21 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Native static tests, `client-chat-core`, Desktop typecheck/build, Agent
   Acceptance validation, and `git diff --check` pass. AS-F06 and G-F remain
   `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source rerun.
+- Checkpoint `25e8b0e6590aae8aac22c447428ca0aed9aa2ab0` was deployed
+  exact-source to profile `two`. Run
+  `20260830T064048656280Z-c8bf14ec8c6d1edd6381367a8f05a5fb`
+  showed that timestamp ordering alone did not close the restart race: the
+  failing Browser tuple was correct immediately after snapshot reconciliation
+  (`interrupted`, content length `677`) but restored the older terminal event
+  after restart (`failed`, content length `80`). The correction now records
+  explicit cache reconciliation provenance and gives a source-bound
+  `station-snapshot` precedence over a same-sequence `station-list` row,
+  independent of cross-host clocks. The generic message and operation reducers
+  retain their authoritative-snapshot protections. Local package tests,
+  Desktop 403 tests with one unrelated skip, 106 focused Foundation tests, 48
+  Native static tests, Desktop typecheck/build, Agent Acceptance validation,
+  and `git diff --check` pass. AS-F06 and G-F remain `PARTIAL / UNPROVEN`
+  pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

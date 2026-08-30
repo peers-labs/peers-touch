@@ -108,6 +108,7 @@ function toCachedMessage(message: {
       expiresAt: attachment.expires_at,
       extractedContentRef: attachment.extracted_content_ref,
     })),
+    reconciliationSource: 'station-list',
     createdAt: message.created_at,
     updatedAt: message.updated_at,
   };

@@ -105,6 +105,7 @@ const interruptedSnapshot = {
   status: 'interrupted',
   content: '',
   seq: 5,
+  reconciliationSource: 'station-snapshot',
   createdAt: '2026-08-30T00:00:00Z',
   updatedAt: '2026-08-30T00:00:02Z',
 };
@@ -112,7 +113,8 @@ const staleTerminalMessage = {
   ...interruptedSnapshot,
   status: 'failed',
   content: 'stale partial response',
-  updatedAt: '2026-08-30T00:00:01Z',
+  reconciliationSource: 'station-list',
+  updatedAt: '2026-08-30T00:00:03Z',
 };
 
 const retainedSnapshot = mergeAgentMessages(
@@ -131,12 +133,12 @@ assert.equal(acceptedSnapshot.status, 'interrupted');
 assert.equal(acceptedSnapshot.content, '');
 assert.equal(acceptedSnapshot.updatedAt, interruptedSnapshot.updatedAt);
 const acceptedNewerMessage = mergeAgentMessages(
+  [{ ...staleTerminalMessage, updatedAt: '2026-08-30T00:00:04Z' }],
   [{ ...staleTerminalMessage, updatedAt: '2026-08-30T00:00:03Z' }],
-  [interruptedSnapshot],
 )[0];
 assert.equal(acceptedNewerMessage.status, 'failed');
 assert.equal(acceptedNewerMessage.content, 'stale partial response');
-assert.equal(acceptedNewerMessage.updatedAt, '2026-08-30T00:00:03Z');
+assert.equal(acceptedNewerMessage.updatedAt, '2026-08-30T00:00:04Z');
 
 const messages = projectIMMessages([
   {
