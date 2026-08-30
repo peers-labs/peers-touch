@@ -44,6 +44,35 @@ const AGENT_TURN_STREAM_EVENT: &str = "agent:turn-stream-event";
 const AGENT_REPLAY_BACKOFF_MS: [u64; 5] = [500, 1_000, 2_000, 4_000, 8_000];
 const AGENT_STREAM_ADMISSION_TIMEOUT: Duration = Duration::from_secs(30);
 
+// #region debug-point B-D:native-replay-transport
+fn report_native_replay_debug(
+    hypothesis_id: &'static str,
+    location: &'static str,
+    message: &'static str,
+    data: Value,
+) {
+    let Ok(url) = std::env::var("DEBUG_SERVER_URL") else {
+        return;
+    };
+    let session_id =
+        std::env::var("DEBUG_SESSION_ID").unwrap_or_else(|_| "native-replay-timeout".to_string());
+    tauri::async_runtime::spawn(async move {
+        let _ = Client::new()
+            .post(url)
+            .json(&json!({
+                "sessionId": session_id,
+                "runId": "pre-fix",
+                "hypothesisId": hypothesis_id,
+                "location": location,
+                "msg": format!("[DEBUG] {message}"),
+                "data": data,
+            }))
+            .send()
+            .await;
+    });
+}
+// #endregion
+
 struct ReplayStreamRegistration {
     generation: u64,
     cancel: watch::Sender<bool>,
@@ -1242,8 +1271,7 @@ fn replay_event_is_terminal(event: &str, data: &Value) -> bool {
 }
 
 fn replay_event_closes_stream(event: &str, data: &Value, live_tail_established: bool) -> bool {
-    replay_event_is_terminal(event, data)
-        && (live_tail_established || event == "snapshot")
+    replay_event_is_terminal(event, data) && (live_tail_established || event == "snapshot")
 }
 
 fn build_replay_request_body(conversation_id: &str, turn_id: &str, after_sequence: i64) -> Value {
@@ -1408,6 +1436,14 @@ async fn replay_station_turn_events(
             response.status()
         ));
     }
+    // #region debug-point D:station-replay-response
+    report_native_replay_debug(
+        "D",
+        "agent_turn::replay_station_turn_events",
+        "Station replay response accepted",
+        json!({ "status": response.status().as_u16() }),
+    );
+    // #endregion
     let mut body = response.bytes_stream();
     let mut buffer = Vec::new();
     let mut last_sequence = after_sequence;
@@ -1585,7 +1621,7 @@ fn emit_turn_stream_event_to(
     event: &str,
     data: Value,
 ) {
-    if let Err(error) = app.emit_to(
+    let emit_result = app.emit_to(
         window_label,
         AGENT_TURN_STREAM_EVENT,
         AgentTurnStreamEventPayload {
@@ -1594,7 +1630,25 @@ fn emit_turn_stream_event_to(
             event: event.to_string(),
             data,
         },
+    );
+    // #region debug-point B:event-emission
+    if matches!(
+        event,
+        "reconnecting" | "replaying" | "reconciling" | "connected" | "snapshot" | "catchup_done"
     ) {
+        report_native_replay_debug(
+            "B",
+            "agent_turn::emit_turn_stream_event_to",
+            "Native replay event emitted",
+            json!({
+                "eventType": event,
+                "windowLabel": window_label,
+                "emitOk": emit_result.is_ok(),
+            }),
+        );
+    }
+    // #endregion
+    if let Err(error) = emit_result {
         tracing::warn!(
             error = %error,
             window_label,

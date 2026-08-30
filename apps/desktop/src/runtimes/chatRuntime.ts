@@ -39,6 +39,29 @@ const AUTHORITATIVE_SNAPSHOT_STATUSES = new Set([
   'interrupted',
 ]);
 
+// #region debug-point A-D:native-replay-delivery
+function reportNativeReplayDebug(
+  hypothesisId: string,
+  location: string,
+  msg: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'native-replay-timeout',
+      runId: 'pre-fix',
+      hypothesisId,
+      location,
+      msg: `[DEBUG] ${msg}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 interface RecoverySubscription {
   turnId: string;
   streamGeneration: number;
@@ -263,6 +286,12 @@ function parseAuthoritativeTurnSnapshot(
 function loadAuthoritativeTurnSnapshot(
   record: ActiveAgentTurnRecovery,
 ): Promise<AuthoritativeTurnSnapshot> {
+  // #region debug-point A:snapshot-reload-start
+  reportNativeReplayDebug('A', 'chatRuntime.ts:loadAuthoritativeTurnSnapshot', 'snapshot reload started', {
+    cursor: record.cursor,
+    streamGeneration: record.streamGeneration,
+  });
+  // #endregion
   return new Promise((resolve, reject) => {
     let settled = false;
     let abortRequested = false;
@@ -275,6 +304,14 @@ function loadAuthoritativeTurnSnapshot(
       settled = true;
       if (controller) controller.abort();
       else abortRequested = true;
+      // #region debug-point A:reload-finished
+      reportNativeReplayDebug('A', 'chatRuntime.ts:loadAuthoritativeTurnSnapshot.finish', 'snapshot reload finished', {
+        outcome: error ? 'error' : 'snapshot',
+        error: error?.message ?? null,
+        eventType: result?.event.event ?? null,
+        sequence: result?.sourceDelivery.sequence ?? null,
+      });
+      // #endregion
       if (error) reject(error);
       else if (result) resolve(result);
     };
@@ -285,6 +322,13 @@ function loadAuthoritativeTurnSnapshot(
         after_seq: record.cursor,
       },
       (event) => {
+        // #region debug-point B-D:replay-event
+        reportNativeReplayDebug('B-D', 'chatRuntime.ts:loadAuthoritativeTurnSnapshot.onEvent', 'replay event received', {
+          eventType: event.event,
+          hasSourceDelivery: Boolean(event.sourceDelivery),
+          sequence: event.sourceDelivery?.sequence ?? null,
+        });
+        // #endregion
         if (event.event !== 'snapshot') {
           if (event.sourceDelivery) {
             eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {

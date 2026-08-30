@@ -3637,6 +3637,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   released. The next diagnostic adds only runtime/method context to Harness
   transport errors; no assertion, timeout, retry, or product behavior changes.
   AS-F06 and G-F remain `PARTIAL / UNPROVEN`.
+- Diagnostic checkpoint `77bbc182399438701ba0a4977147075d58b28b39`
+  was deployed exact-source to profile `two`. Run
+  `20260830T032243491098Z-a82a32290139d61b284621d525d3e9d2`
+  identified the timed-out operation as Native
+  `foundationF06DurableReload`; Station accepted and completed the matching
+  replay request with HTTP 200 in approximately 8 ms, while the Native
+  WebDriver async call did not return within 120 seconds. Browser AS-F06 had
+  already crossed its source-correct `desktop-browser` recovery rotations.
+  Candidate cleanup
+  `20260830T032249225036Z-1e39427660f5b7348beedab77dfebcec`
+  was `FAILED`: the unresponsive Native WebDriver also timed out during logout,
+  although all six ports, both storage roots, and actor identity were
+  subsequently released. The current pre-fix instrumentation distinguishes
+  Station response parsing, Rust `emit_to`, renderer event receipt, and Harness
+  completion without changing runtime behavior. AS-F06 and G-F remain
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
