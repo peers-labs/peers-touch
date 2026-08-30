@@ -270,10 +270,6 @@ class NativeRecoveryGate(AcceptanceGate):
         self.register_driver(client)
         client.wait_for_acceptance_harness(30)
         configure_station(client, self.station_url)
-        with StationDriver(
-            f"http://127.0.0.1:{client.gateway_port}"
-        ) as station:
-            station.auth_logout()
         account_ref = str(
             self.actor_specs[actor].get("accountRef") or ""
         )
