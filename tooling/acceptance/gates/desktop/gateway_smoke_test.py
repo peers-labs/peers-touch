@@ -32,8 +32,11 @@ class RuntimeEndpointsTests(unittest.TestCase):
                         "renderer_port": 3480,
                     }
                 ],
-                "station": {
-                    "url": "http://10.37.94.156:18132/",
+                "services": {
+                    "station": {
+                        "kind": "station",
+                        "endpoint": "http://10.37.94.156:18132/",
+                    },
                 },
             }
         )
@@ -48,15 +51,19 @@ class RuntimeEndpointsTests(unittest.TestCase):
             {"clients": []},
             {
                 "clients": [{"gateway_port": 0, "renderer_port": 3480}],
-                "station": {"url": "http://station"},
+                "services": {
+                    "station": {"kind": "station", "endpoint": "http://station"},
+                },
             },
             {
                 "clients": [{"gateway_port": 3300, "renderer_port": "3480"}],
-                "station": {"url": "http://station"},
+                "services": {
+                    "station": {"kind": "station", "endpoint": "http://station"},
+                },
             },
             {
                 "clients": [{"gateway_port": 3300, "renderer_port": 3480}],
-                "station": {},
+                "services": {"station": {"kind": "station"}},
             },
         )
 

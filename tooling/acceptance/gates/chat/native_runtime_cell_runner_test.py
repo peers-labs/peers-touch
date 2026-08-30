@@ -429,7 +429,12 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         report.runtime = {}
         manifest = {
             "gateId": "chat-desktop-gateway-e2e",
-            "station": {"url": "http://station.example:18132"},
+            "services": {
+                "station": {
+                    "kind": "station",
+                    "endpoint": "http://station.example:18132",
+                },
+            },
         }
         runtime = {
             "conversationId": "conversation-1",

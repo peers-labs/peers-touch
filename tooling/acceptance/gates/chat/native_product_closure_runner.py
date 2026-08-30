@@ -45,7 +45,11 @@ from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
     AcceptanceStationSubmitFaultProxy,
 )
-from tooling.acceptance.gates.chat.native_support import commits_match, wait_until
+from tooling.acceptance.gates.chat.native_support import (
+    commits_match,
+    runtime_station_service,
+    wait_until,
+)
 
 
 GATE_ID = "chat-native-product-closure-e2e"
@@ -278,10 +282,8 @@ class NativeProductClosureGate(AcceptanceGate):
         self.native_adapter: NativeDesktopAdapter = (
             runtime_binding.native_adapter
         )
-        station = self.manifest.get("station")
-        self.station_url = str(
-            station.get("url") if isinstance(station, dict) else ""
-        ).rstrip("/")
+        station = runtime_station_service(self.manifest)
+        self.station_url = str(station.get("endpoint") or "").rstrip("/")
         if not self.station_url:
             raise GateError("runtime manifest Station URL is required")
         self.client_specs = {
@@ -4580,7 +4582,7 @@ class NativeProductClosureGate(AcceptanceGate):
 
     def source_identity(self) -> dict[str, Any]:
         source = self.manifest.get("source")
-        station = self.manifest.get("station")
+        station = runtime_station_service(self.manifest)
         runtime_cell = self.runtime_binding.runtime_identity()
         binary = self.runtime_binding.binary_identity()
         identity = {
@@ -4650,7 +4652,11 @@ class NativeProductClosureGate(AcceptanceGate):
             and isinstance(station, dict)
             and bool(station_commit)
             and commits_match(source_commit, station_commit)
-            and bool(station.get("protoDigest"))
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(station.get("protocolDigest") or ""),
+            )
+            is not None
             and isinstance(runtime_cell, dict)
             and runtime_cell.get("artifactKind")
             == "acceptance-runtime-cell-manifest"
