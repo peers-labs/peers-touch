@@ -3868,6 +3868,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   passed. The correction is limited to deriving the replay readback boundary
   from the first accepted `REPLAYING` transition while retaining the original
   injection cursor for duplicate/out-of-order proof.
+- Checkpoint `9ebe0c4de1173fc26831d9c63cb0c3db2b05cade` passed local
+  type/static verification and was deployed exact-source. Run
+  `20260830T103212068127Z-b561aaacb7748386ae6310f4d09f0d18`
+  stopped earlier at Browser AS-F05 with
+  `agent.acceptance.turnSubmissionTimeout`; cleanup passed and no AS-F07
+  instrumentation event was emitted. This single provider-path timeout does
+  not disprove the AS-F06 evidence-boundary correction and is insufficient to
+  justify a product or Gate change. The next action is one unchanged
+  source-matched rerun; only a repeated AS-F05 failure with runtime evidence
+  can become the next implementation owner.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
