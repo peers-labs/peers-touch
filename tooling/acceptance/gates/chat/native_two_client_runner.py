@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -32,6 +33,7 @@ from tooling.acceptance.gates.chat.native_support import (
     commits_match,
     configure_station,
     enter_chat_page,
+    runtime_station_service,
 )
 
 
@@ -160,10 +162,8 @@ class NativeTwoClientGate(AcceptanceGate):
         self.manifest = manifest
         self.actor_manifest = actor_manifest
         self.runtime_binding = runtime_binding
-        station = manifest.get("station")
-        self.station_url = str(
-            station.get("url") if isinstance(station, dict) else ""
-        ).rstrip("/")
+        station = runtime_station_service(manifest)
+        self.station_url = str(station.get("endpoint") or "").rstrip("/")
         if not self.station_url:
             raise GateError("runtime manifest Station URL is required")
         self.client_specs = {
@@ -249,7 +249,7 @@ class NativeTwoClientGate(AcceptanceGate):
         station_live: dict[str, Any],
     ) -> dict[str, Any]:
         source = self.manifest.get("source")
-        station = self.manifest.get("station")
+        station = runtime_station_service(self.manifest)
         runtime_cell = self.runtime_binding.runtime_identity()
         binary = self.runtime_binding.binary_identity()
         identity = {
@@ -284,10 +284,11 @@ class NativeTwoClientGate(AcceptanceGate):
             or (
                 isinstance(cell_source, dict)
                 and cell_source.get("remoteCheckoutClean") is True
-                and len(
-                    str(cell_source.get("remoteSourceDigest") or "")
+                and re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(cell_source.get("remoteSourceDigest") or ""),
                 )
-                == 64
+                is not None
             )
         )
         self.assert_condition(
@@ -298,7 +299,11 @@ class NativeTwoClientGate(AcceptanceGate):
             and isinstance(station, dict)
             and station.get("workspaceDigest") == "clean"
             and station_commit == source_commit
-            and len(str(station.get("protoDigest") or "")) == 64
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(station.get("protocolDigest") or ""),
+            )
+            is not None
             and commits_match(
                 str(station_live.get("build_commit") or ""),
                 source_commit,
@@ -314,7 +319,7 @@ class NativeTwoClientGate(AcceptanceGate):
             and cell_source.get("workspaceDigest") == "clean"
             and remote_source_valid
             and binary.get("sourceCommit") == source_commit
-            and len(binary_sha256) == 64
+            and re.fullmatch(r"[0-9a-f]{64}", binary_sha256) is not None
             and cell_source.get("binarySha256") == binary_sha256,
             json.dumps(identity, sort_keys=True),
         )
