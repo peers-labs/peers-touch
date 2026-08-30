@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from collections.abc import Mapping
@@ -827,6 +828,110 @@ def _authenticate_clients(
             )
 
 
+def _restore_capability_isolation_for_cleanup(
+    runtime_pair: FoundationRuntimePair,
+    profile_env: Mapping[str, str],
+) -> list[str]:
+    def validate_result(runtime: str, result: Any) -> str | None:
+        if not isinstance(result, Mapping):
+            return f"{runtime} capability isolation restore returned invalid evidence"
+        required = result.get("restorationRequired")
+        restoration = result.get("restoration")
+        if not isinstance(required, bool):
+            return (
+                f"{runtime} capability isolation restore "
+                "omitted restorationRequired"
+            )
+        if required is False:
+            return (
+                None
+                if restoration is None
+                else f"{runtime} capability isolation restore returned "
+                "contradictory evidence"
+            )
+        if not isinstance(restoration, Mapping):
+            return f"{runtime} capability isolation restoration is missing"
+
+        def exact_int(name: str) -> int | None:
+            value = restoration.get(name)
+            return value if type(value) is int else None
+
+        disabled = exact_int("disabledBindingCount")
+        isolated_ready = exact_int("readyCapabilityCount")
+        original_ready = exact_int("originalReadyCapabilityCount")
+        restored_bindings = exact_int("restoredBindingCount")
+        restored_ready = exact_int("restoredReadyCapabilityCount")
+        original_hash = restoration.get("originalReadyCapabilityHash")
+        restored_hash = restoration.get("restoredReadyCapabilityHash")
+        valid = (
+            disabled is not None
+            and disabled > 0
+            and isolated_ready == 0
+            and original_ready is not None
+            and original_ready > 0
+            and restored_bindings == disabled
+            and restored_ready == original_ready
+            and isinstance(original_hash, str)
+            and re.fullmatch(r"[0-9a-f]{64}", original_hash) is not None
+            and restored_hash == original_hash
+            and restoration.get("restorationVerified") is True
+        )
+        return (
+            None
+            if valid
+            else f"{runtime} capability isolation restoration was not verified"
+        )
+
+    errors: list[str] = []
+    for client in (runtime_pair.browser, runtime_pair.native):
+        if getattr(client, "driver", None) is None:
+            storage_root = getattr(client.spec, "storage_root", None)
+            if storage_root is None or not Path(storage_root).exists():
+                continue
+            try:
+                client.restart()
+                _authenticate_clients(
+                    runtime_pair,
+                    profile_env,
+                    clients=(client,),
+                )
+            except BaseException as recovery_error:
+                errors.append(
+                    f"{client.spec.runtime} capability isolation restore: "
+                    f"{type(recovery_error).__name__}"
+                )
+                continue
+        try:
+            result = client.harness(
+                "restoreFoundationCapabilityIsolation",
+                {},
+                timeout=60,
+            )
+        except BaseException:
+            try:
+                client.restart()
+                _authenticate_clients(
+                    runtime_pair,
+                    profile_env,
+                    clients=(client,),
+                )
+                result = client.harness(
+                    "restoreFoundationCapabilityIsolation",
+                    {},
+                    timeout=60,
+                )
+            except BaseException as recovery_error:
+                errors.append(
+                    f"{client.spec.runtime} capability isolation restore: "
+                    f"{type(recovery_error).__name__}"
+                )
+                continue
+        validation_error = validate_result(client.spec.runtime, result)
+        if validation_error:
+            errors.append(validation_error)
+    return errors
+
+
 def run_scenario(*, dry_run: bool = False) -> Path:
     """Execute Phase 1: produce the Foundation candidate manifest.
 
@@ -856,6 +961,8 @@ def run_scenario(*, dry_run: bool = False) -> Path:
         profile_env=profile_env,
         startup_timeout=startup_timeout,
     )
+    candidate_path: Path | None = None
+    primary_error: BaseException | None = None
     try:
         runtime_pair.start()
 
@@ -914,13 +1021,38 @@ def run_scenario(*, dry_run: bool = False) -> Path:
         producer = FoundationCandidateProducer(adapters)
         candidate_path = producer.produce(run)
 
+    except BaseException as error:
+        primary_error = error
     finally:
-        # --- Cleanup: stop clients and record result ---
-        cleanup_result = runtime_pair.stop()
+        # --- Cleanup: restore durable fixture mutations, then stop clients ---
+        restoration_errors = _restore_capability_isolation_for_cleanup(
+            runtime_pair,
+            profile_env,
+        )
+        cleanup_result = runtime_pair.stop(
+            remove_storage=not restoration_errors,
+        )
+        if restoration_errors:
+            cleanup_result["status"] = "failed"
+            cleanup_result["capabilityIsolationFailures"] = restoration_errors
         run.write_json(
             "runtime/cleanup-result.json",
             cleanup_result,
         )
+    if cleanup_result.get("status") != "clean":
+        primary_kind = type(primary_error).__name__ if primary_error else "none"
+        cleanup_kind = (
+            "capability isolation restoration"
+            if restoration_errors
+            else "runtime release"
+        )
+        raise ScenarioRunnerError(
+            f"CLEANUP_FAILED: {cleanup_kind} failed; primary={primary_kind}"
+        ) from primary_error
+    if primary_error is not None:
+        raise primary_error
+    if candidate_path is None:
+        raise ScenarioRunnerError("Foundation candidate manifest was not produced")
 
     # --- Output manifest path to stdout ---
     return candidate_path

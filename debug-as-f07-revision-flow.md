@@ -147,3 +147,17 @@
   pending assistant projection for the new attempt under the existing branch,
   and keeps provider context rooted at the source user message. Post-fix
   runtime comparison is pending.
+- Exact-source run
+  `20260830T170657748668Z-0a16fea71d2a39b75506d46374c2d4d4`
+  on `3803fd4423173f06c06a5e080185854a5a82d06e` confirms the
+  retry fix. Debug lines 1-5 show source cancellation at 3352.7 ms and retry
+  completion at 7042.4 ms, with attempt count increasing from one to two.
+- The next AS-F07 baseline Turn did not finish before the 120-second deadline.
+  Station events show a real `skills_list` ToolCall, manual approval request,
+  and `waiting_local_tool`; teardown then cancelled the Turn. This is an
+  Acceptance scenario isolation defect, not a retry transport or Station
+  revision failure.
+- The local follow-up runs the entire AS-F07 revision scenario inside the
+  existing fail-closed capability-disable/restore boundary used by other
+  Foundation scenarios. This removes unrelated ToolCalls without prompt
+  steering, mocks, or automatic approval. Runtime verification is pending.

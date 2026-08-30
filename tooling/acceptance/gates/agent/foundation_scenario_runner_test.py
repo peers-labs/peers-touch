@@ -5,7 +5,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.gates.agent import foundation_scenario_runner
 from tooling.acceptance.gates.agent.foundation_direct_adapter import (
@@ -187,6 +187,63 @@ class SessionHarnessClient:
         raise AssertionError(f"unexpected method: {method}")
 
 
+class CapabilityIsolationCleanupClient:
+    def __init__(
+        self,
+        runtime: str,
+        *,
+        fail_first: bool = False,
+        always_fail: bool = False,
+        malformed: bool = False,
+        verified: bool = True,
+        connected: bool = True,
+        storage_root: Path | None = None,
+    ) -> None:
+        self.spec = SimpleNamespace(
+            runtime=runtime,
+            storage_root=storage_root or Path("/missing"),
+        )
+        self.driver = object() if connected else None
+        self.fail_first = fail_first
+        self.always_fail = always_fail
+        self.malformed = malformed
+        self.verified = verified
+        self.calls = 0
+        self.restart_count = 0
+
+    def restart(self) -> None:
+        self.restart_count += 1
+        self.driver = object()
+
+    def harness(
+        self,
+        method: str,
+        _payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        del timeout
+        if method != "restoreFoundationCapabilityIsolation":
+            raise AssertionError(f"unexpected method: {method}")
+        self.calls += 1
+        if self.always_fail or (self.fail_first and self.calls == 1):
+            raise RuntimeError("renderer unavailable for ptid:private")
+        if self.malformed:
+            return {}
+        return {
+            "restorationRequired": True,
+            "restoration": {
+                "disabledBindingCount": 1,
+                "readyCapabilityCount": 0,
+                "originalReadyCapabilityCount": 1,
+                "originalReadyCapabilityHash": "a" * 64,
+                "restoredBindingCount": 1,
+                "restoredReadyCapabilityCount": 1,
+                "restoredReadyCapabilityHash": "a" * 64,
+                "restorationVerified": self.verified,
+            },
+        }
+
+
 class FoundationScenarioRunnerProfileTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
@@ -270,6 +327,255 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                     "PT_AGENT_DEFAULT_MODEL_ID": "endpoint-model",
                 }
             )
+
+    def test_cleanup_restores_capability_isolation_on_both_clients(self) -> None:
+        native = CapabilityIsolationCleanupClient("desktop_app")
+        browser = CapabilityIsolationCleanupClient("browser")
+
+        errors = foundation_scenario_runner._restore_capability_isolation_for_cleanup(
+            SimpleNamespace(native=native, browser=browser),
+            {},
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(browser.calls, 1)
+        self.assertEqual(native.calls, 1)
+
+    def test_cleanup_restarts_client_before_retrying_isolation_restore(self) -> None:
+        native = CapabilityIsolationCleanupClient(
+            "desktop_app",
+            fail_first=True,
+        )
+        browser = CapabilityIsolationCleanupClient("browser")
+        authenticated: list[str] = []
+
+        with patch.object(
+            foundation_scenario_runner,
+            "_authenticate_clients",
+            side_effect=lambda _pair, _env, *, clients, **_kwargs: (
+                authenticated.append(clients[0].spec.runtime)
+            ),
+        ):
+            errors = (
+                foundation_scenario_runner._restore_capability_isolation_for_cleanup(
+                    SimpleNamespace(native=native, browser=browser),
+                    {},
+                )
+            )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(native.restart_count, 1)
+        self.assertEqual(native.calls, 2)
+        self.assertEqual(authenticated, ["desktop_app"])
+
+    def test_cleanup_restarts_disconnected_client_with_retained_storage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            storage_root = Path(directory) / "storage"
+            storage_root.mkdir()
+            native = CapabilityIsolationCleanupClient(
+                "desktop_app",
+                connected=False,
+                storage_root=storage_root,
+            )
+            browser = CapabilityIsolationCleanupClient("browser")
+            authenticated: list[str] = []
+
+            with patch.object(
+                foundation_scenario_runner,
+                "_authenticate_clients",
+                side_effect=lambda _pair, _env, *, clients, **_kwargs: (
+                    authenticated.append(clients[0].spec.runtime)
+                ),
+            ):
+                errors = (
+                    foundation_scenario_runner._restore_capability_isolation_for_cleanup(
+                        SimpleNamespace(native=native, browser=browser),
+                        {},
+                    )
+                )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(native.restart_count, 1)
+        self.assertEqual(native.calls, 1)
+        self.assertEqual(authenticated, ["desktop_app"])
+
+    def test_cleanup_rejects_unverified_isolation_restoration(self) -> None:
+        native = CapabilityIsolationCleanupClient(
+            "desktop_app",
+            verified=False,
+        )
+        browser = CapabilityIsolationCleanupClient("browser")
+
+        errors = foundation_scenario_runner._restore_capability_isolation_for_cleanup(
+            SimpleNamespace(native=native, browser=browser),
+            {},
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("was not verified", errors[0])
+
+    def test_cleanup_rejects_malformed_isolation_response(self) -> None:
+        native = CapabilityIsolationCleanupClient(
+            "desktop_app",
+            malformed=True,
+        )
+        browser = CapabilityIsolationCleanupClient("browser")
+
+        errors = foundation_scenario_runner._restore_capability_isolation_for_cleanup(
+            SimpleNamespace(native=native, browser=browser),
+            {},
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("omitted restorationRequired", errors[0])
+
+    def test_cleanup_rejects_contradictory_noop_restoration(self) -> None:
+        native = CapabilityIsolationCleanupClient("desktop_app")
+        browser = CapabilityIsolationCleanupClient("browser")
+        native.harness = lambda *_args, **_kwargs: {
+            "restorationRequired": False,
+            "restoration": {"restorationVerified": True},
+        }
+
+        errors = foundation_scenario_runner._restore_capability_isolation_for_cleanup(
+            SimpleNamespace(native=native, browser=browser),
+            {},
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("contradictory evidence", errors[0])
+
+    def test_cleanup_rejects_non_hex_restoration_hash(self) -> None:
+        native = CapabilityIsolationCleanupClient("desktop_app")
+        browser = CapabilityIsolationCleanupClient("browser")
+        native.harness = lambda *_args, **_kwargs: {
+            "restorationRequired": True,
+            "restoration": {
+                "disabledBindingCount": 1,
+                "readyCapabilityCount": 0,
+                "originalReadyCapabilityCount": 1,
+                "originalReadyCapabilityHash": "z" * 64,
+                "restoredBindingCount": 1,
+                "restoredReadyCapabilityCount": 1,
+                "restoredReadyCapabilityHash": "z" * 64,
+                "restorationVerified": True,
+            },
+        }
+
+        errors = foundation_scenario_runner._restore_capability_isolation_for_cleanup(
+            SimpleNamespace(native=native, browser=browser),
+            {},
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("was not verified", errors[0])
+
+    def test_cleanup_failure_does_not_leak_raw_identity(self) -> None:
+        native = CapabilityIsolationCleanupClient(
+            "desktop_app",
+            always_fail=True,
+        )
+        browser = CapabilityIsolationCleanupClient("browser")
+
+        with patch.object(
+            foundation_scenario_runner,
+            "_authenticate_clients",
+        ):
+            errors = (
+                foundation_scenario_runner._restore_capability_isolation_for_cleanup(
+                    SimpleNamespace(native=native, browser=browser),
+                    {},
+                )
+            )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("RuntimeError", errors[0])
+        self.assertNotIn("ptid:private", errors[0])
+
+    def test_run_scenario_withholds_produced_candidate_on_restore_failure(
+        self,
+    ) -> None:
+        runtime_pair = Mock()
+        runtime_pair.native = Mock()
+        runtime_pair.browser = Mock()
+        runtime_pair.stop.return_value = {"status": "clean"}
+        run = Mock()
+        store = Mock()
+        store.begin_run.return_value = run
+        producer = Mock()
+        producer.produce.return_value = Path("/candidate/manifest.json")
+
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "_load_runtime_manifest",
+                return_value={},
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_load_profile_env",
+                return_value={},
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_build_client_manifest",
+                return_value={},
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_extract_station_profile",
+                return_value={},
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_extract_machine_id",
+                return_value="machine",
+            ),
+            patch.object(
+                foundation_scenario_runner.EvidenceStore,
+                "from_environment",
+                return_value=store,
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "source_identity",
+                return_value=Mock(),
+            ),
+            patch.object(
+                foundation_scenario_runner.FoundationRuntimePair,
+                "from_manifest",
+                return_value=runtime_pair,
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_authenticate_clients",
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_restore_capability_isolation_for_cleanup",
+                return_value=["browser capability identity changed"],
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "FoundationCandidateProducer",
+                return_value=producer,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                foundation_scenario_runner.ScenarioRunnerError,
+                "CLEANUP_FAILED: capability isolation restoration failed",
+            ):
+                foundation_scenario_runner.run_scenario()
+
+        producer.produce.assert_called_once_with(run)
+        runtime_pair.stop.assert_called_once_with(remove_storage=False)
+        run.write_json.assert_called_once()
+        cleanup = run.write_json.call_args.args[1]
+        self.assertEqual(cleanup["status"], "failed")
+        self.assertEqual(
+            cleanup["capabilityIsolationFailures"],
+            ["browser capability identity changed"],
+        )
 
     def test_recovery_setup_reuses_existing_sessions_without_login(self) -> None:
         native = SessionHarnessClient("desktop_app")

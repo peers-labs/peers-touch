@@ -34,6 +34,14 @@ FOUNDATION_RUNTIME_CLIENT = (
     / "agent"
     / "foundation_runtime_client.py"
 )
+FOUNDATION_SCENARIO_RUNNER = (
+    ROOT
+    / "tooling"
+    / "acceptance"
+    / "gates"
+    / "agent"
+    / "foundation_scenario_runner.py"
+)
 DESKTOP_HTTP_GATEWAY = (
     ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "http_gateway" / "mod.rs"
 )
@@ -305,6 +313,134 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertNotIn("event.event !== 'text'", scenario)
+        self.assertEqual(
+            scenario.count("await resolveFoundationToolTurnSession()"),
+            2,
+        )
+        self.assertNotIn("input.capabilitySessionId", scenario)
+
+    def test_revision_scenario_disables_capabilities_and_restores_them(self) -> None:
+        direct_probe = self.source.index("async foundationDirectProbe")
+        scenario_start = self.source.index(
+            "if (cell === 'AS-F07')",
+            direct_probe,
+        )
+        scenario_end = self.source.index(
+            "capabilitySessions = await waitForCapabilitySessionEvidence()",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("withFoundationCapabilitiesDisabled(", scenario)
+        self.assertIn("runFoundationF07Scenario({", scenario)
+        self.assertIn("toolIsolation", scenario)
+        self.assertIn(
+            "restorePersistedFoundationCapabilityIsolation",
+            self.source,
+        )
+        self.assertIn(
+            "FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY",
+            self.source,
+        )
+        self.assertIn("restorationVerified", self.source)
+        isolation_start = self.source.index(
+            "async function withFoundationCapabilitiesDisabled",
+        )
+        isolation_end = self.source.index(
+            "async function startFoundationToolTurn",
+            isolation_start,
+        )
+        isolation = self.source[isolation_start:isolation_end]
+        self.assertLess(
+            isolation.index(
+                "await restorePersistedFoundationCapabilityIsolation()",
+            ),
+            isolation.index("window.localStorage.setItem("),
+        )
+        self.assertLess(
+            isolation.index("const authoritativeAgent = await api.getAgent(agentId)"),
+            isolation.index("window.localStorage.setItem("),
+        )
+        self.assertLess(
+            isolation.index(
+                "assertFoundationCapabilityIsolationPrerequisites(",
+            ),
+            isolation.index("window.localStorage.setItem("),
+        )
+        self.assertLess(
+            isolation.index(
+                "parseFoundationCapabilityIsolationJournal(serializedJournal)",
+            ),
+            isolation.index("window.localStorage.setItem("),
+        )
+        self.assertIn(
+            "updateFoundationCapabilityBindingEnabled(\n"
+            "        authoritativeAgent,",
+            isolation,
+        )
+
+        runner = FOUNDATION_SCENARIO_RUNNER.read_text(encoding="utf-8")
+        self.assertIn(
+            '"restoreFoundationCapabilityIsolation"',
+            runner,
+        )
+        self.assertIn(
+            "remove_storage=not restoration_errors",
+            runner,
+        )
+        self.assertIn(
+            "CLEANUP_FAILED: {cleanup_kind} failed",
+            runner,
+        )
+        self.assertIn(
+            'required = result.get("restorationRequired")',
+            runner,
+        )
+        self.assertIn(
+            "if not isinstance(required, bool):",
+            runner,
+        )
+        self.assertIn(
+            "planFoundationCapabilityBindingRestoration(",
+            self.source,
+        )
+        restore_start = self.source.index(
+            "async function restorePersistedFoundationCapabilityIsolation",
+        )
+        restore_end = self.source.index(
+            "async function withFoundationCapabilitiesDisabled",
+            restore_start,
+        )
+        restore = self.source[restore_start:restore_end]
+        self.assertLess(
+            restore.index("await restoreFoundationCapabilityBindings("),
+            restore.index("await api.upsertAgentCapabilityBinding("),
+        )
+        self.assertIn(
+            "const currentBindings = "
+            "await api.listAgentCapabilityBindings(journal.agentId)",
+            restore,
+        )
+        self.assertIn(
+            "planFoundationCapabilityBindingRestoration(",
+            restore,
+        )
+        self.assertEqual(restore.count("await api.getAgent(journal.agentId)"), 2)
+        self.assertLess(
+            restore.rindex("await api.getAgent(journal.agentId)"),
+            restore.index(
+                "window.localStorage.removeItem("
+                "FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY"
+            ),
+        )
+        self.assertIn(
+            "isFoundationCapabilityIsolationRestored(toolIsolation)",
+            self.source,
+        )
+        self.assertNotIn(
+            "Number(toolIsolation.disabledBindingCount)",
+            self.source,
+        )
 
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)

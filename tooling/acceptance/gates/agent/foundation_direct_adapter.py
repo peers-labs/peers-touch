@@ -111,6 +111,7 @@ REQUIRED_ASSERTIONS = {
             "branchSwitchPersisted",
             "staleBranchConflict",
             "originalImmutable",
+            "capabilityIsolationRestored",
         }
     ),
     "AS-F08": frozenset(

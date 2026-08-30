@@ -41,6 +41,15 @@ import {
   type CapabilityManifest,
 } from '../../gen/proto/domain/agent/capability_pb';
 import { registerAcceptanceHarness } from '../registry';
+import {
+  assertFoundationCapabilityIsolationPrerequisites,
+  assertFoundationCapabilityIsolationAgentVersion,
+  isFoundationCapabilityIsolationRestored,
+  parseFoundationCapabilityIsolationJournal,
+  planFoundationCapabilityBindingRestoration,
+  restoreFoundationCapabilityBindings,
+  type FoundationCapabilityIsolationJournal,
+} from './capabilityIsolation';
 
 interface LoginInput {
   account: string;
@@ -92,6 +101,12 @@ interface ObservedFoundationTurn {
 interface FoundationCapabilityIsolation {
   disabledBindingCount: number;
   readyCapabilityCount: number;
+  originalReadyCapabilityCount: number;
+  originalReadyCapabilityHash: string;
+  restoredBindingCount: number;
+  restoredReadyCapabilityCount: number;
+  restoredReadyCapabilityHash: string;
+  restorationVerified: boolean;
 }
 
 interface FoundationF06Transition {
@@ -172,6 +187,8 @@ interface FoundationF06FaultBoundary {
 }
 
 const FOUNDATION_F06_STORAGE_KEY = 'pt.acceptance.agent.foundation.as-f06';
+const FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY =
+  'pt.acceptance.agent.foundation.capability-isolation';
 const FOUNDATION_F06_PHASE_BY_EVENT: Record<string, string> = {
   connection_lost: 'CONNECTION_LOST',
   reconnecting: 'RECONNECTING',
@@ -1323,22 +1340,164 @@ async function updateFoundationCapabilityBindingEnabled(
   }, binding.revision, crypto.randomUUID());
 }
 
+async function foundationReadyCapabilityHash(
+  readiness: Awaited<ReturnType<typeof api.getAgentCapabilityReadiness>>,
+): Promise<string> {
+  const ready = readiness.capabilities
+    .filter((capability) => capability.state === CapabilityReadinessState.READY)
+    .map((capability) => ({
+      capabilityId: capability.capability_id,
+      capabilityVersion: capability.capability_version,
+    }))
+    .sort((left, right) =>
+      `${left.capabilityId}:${left.capabilityVersion}`
+        .localeCompare(`${right.capabilityId}:${right.capabilityVersion}`));
+  return sha256Hex(stableJson(ready));
+}
+
+function readFoundationCapabilityIsolationJournal(
+): FoundationCapabilityIsolationJournal | null {
+  return parseFoundationCapabilityIsolationJournal(
+    window.localStorage.getItem(
+      FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY,
+    ),
+  );
+}
+
+async function restorePersistedFoundationCapabilityIsolation(
+): Promise<FoundationCapabilityIsolation | null> {
+  const journal = readFoundationCapabilityIsolationJournal();
+  if (!journal) return null;
+  const agent = await api.getAgent(journal.agentId);
+  assertFoundationCapabilityIsolationAgentVersion(
+    journal.agentVersion,
+    agent.version,
+  );
+
+  await restoreFoundationCapabilityBindings(
+    journal.bindings,
+    () => api.listAgentCapabilityBindings(journal.agentId),
+    async (original, current) => {
+      await api.upsertAgentCapabilityBinding({
+        bindingId: current.bindingId,
+        agentId: journal.agentId,
+        capabilityId: original.capabilityId,
+        capabilityVersion: original.capabilityVersion,
+        enabled: true,
+        approvalPolicy: original.approvalPolicy,
+        expectedAgentVersion: agent.version,
+      }, current.revision, crypto.randomUUID());
+    },
+  );
+
+  const currentSession = await resolveFoundationToolTurnSession();
+  const restoredReadiness = await api.getAgentCapabilityReadiness({
+    agent_id: journal.agentId,
+    client_capability_session_id: currentSession.capabilitySessionId,
+  });
+  const restoredReadyCapabilityCount = restoredReadiness.capabilities.filter(
+    (capability) => capability.state === CapabilityReadinessState.READY,
+  ).length;
+  const restoredReadyCapabilityHash = await foundationReadyCapabilityHash(
+    restoredReadiness,
+  );
+  const currentBindings = await api.listAgentCapabilityBindings(journal.agentId);
+  const restoredBindings = planFoundationCapabilityBindingRestoration(
+    journal.bindings,
+    currentBindings,
+  ).filter(({ requiresRestore }) => !requiresRestore);
+  const restorationVerified =
+    restoredBindings.length === journal.bindings.length
+    && restoredReadyCapabilityCount === journal.originalReadyCapabilityCount
+    && restoredReadyCapabilityHash === journal.originalReadyCapabilityHash;
+  if (!restorationVerified) {
+    throw new Error(
+      'agent.acceptance.foundationCapabilityBindingRestoreVerificationFailed',
+    );
+  }
+  const restoredAgent = await api.getAgent(journal.agentId);
+  assertFoundationCapabilityIsolationAgentVersion(
+    journal.agentVersion,
+    restoredAgent.version,
+  );
+  window.localStorage.removeItem(FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY);
+  return {
+    disabledBindingCount: journal.bindings.length,
+    readyCapabilityCount: 0,
+    originalReadyCapabilityCount: journal.originalReadyCapabilityCount,
+    originalReadyCapabilityHash: journal.originalReadyCapabilityHash,
+    restoredBindingCount: restoredBindings.length,
+    restoredReadyCapabilityCount,
+    restoredReadyCapabilityHash,
+    restorationVerified,
+  };
+}
+
 async function withFoundationCapabilitiesDisabled<T>(
   agent: NonNullable<ReturnType<typeof selectedAgent>>,
   capabilitySessionId: string,
   operation: (isolation: FoundationCapabilityIsolation) => Promise<T>,
 ): Promise<T> {
+  await restorePersistedFoundationCapabilityIsolation();
   const agentId = agent.id || agent.name;
+  const authoritativeAgent = await api.getAgent(agentId);
   const originalBindings = (
     await api.listAgentCapabilityBindings(agentId)
   ).filter((binding) => binding.enabled && !binding.tombstonedAt);
-  const disabledBindings: AgentCapabilityBinding[] = [];
+  const originalReadiness = await api.getAgentCapabilityReadiness({
+    agent_id: agentId,
+    client_capability_session_id: capabilitySessionId,
+  });
+  const originalReadyCapabilityCount = originalReadiness.capabilities.filter(
+    (capability) => capability.state === CapabilityReadinessState.READY,
+  ).length;
+  const originalReadyCapabilityHash = await foundationReadyCapabilityHash(
+    originalReadiness,
+  );
+  const journalBindings = originalBindings.map((binding) => ({
+    bindingId: binding.bindingId,
+    capabilityId: binding.capabilityId,
+    capabilityVersion: binding.capabilityVersion,
+    approvalPolicy: binding.approvalPolicy,
+    originalRevision: binding.revision.toString(),
+    isolatedRevision: (binding.revision + 1n).toString(),
+    restoredRevision: (binding.revision + 2n).toString(),
+  }));
+  assertFoundationCapabilityIsolationPrerequisites(
+    journalBindings,
+    originalReadyCapabilityCount,
+  );
+  const isolation: FoundationCapabilityIsolation = {
+    disabledBindingCount: originalBindings.length,
+    readyCapabilityCount: 0,
+    originalReadyCapabilityCount,
+    originalReadyCapabilityHash,
+    restoredBindingCount: 0,
+    restoredReadyCapabilityCount: 0,
+    restoredReadyCapabilityHash: '',
+    restorationVerified: false,
+  };
+  const journal: FoundationCapabilityIsolationJournal = {
+    agentId,
+    agentVersion: authoritativeAgent.version,
+    originalReadyCapabilityCount,
+    originalReadyCapabilityHash,
+    bindings: journalBindings,
+  };
+  const serializedJournal = JSON.stringify(journal);
+  parseFoundationCapabilityIsolationJournal(serializedJournal);
+  window.localStorage.setItem(
+    FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY,
+    serializedJournal,
+  );
   let operationError: unknown = null;
 
   try {
     for (const binding of originalBindings) {
-      disabledBindings.push(
-        await updateFoundationCapabilityBindingEnabled(agent, binding, false),
+      await updateFoundationCapabilityBindingEnabled(
+        authoritativeAgent,
+        binding,
+        false,
       );
     }
     const isolatedReadiness = await api.getAgentCapabilityReadiness({
@@ -1353,29 +1512,22 @@ async function withFoundationCapabilitiesDisabled<T>(
         'agent.acceptance.foundationProgressiveToolIsolationFailed',
       );
     }
-    return await operation({
-      disabledBindingCount: disabledBindings.length,
-      readyCapabilityCount,
-    });
+    isolation.readyCapabilityCount = readyCapabilityCount;
+    return await operation(isolation);
   } catch (error) {
     operationError = error;
     throw error;
   } finally {
-    const restoration = await Promise.allSettled(
-      disabledBindings.reverse().map((binding) =>
-        updateFoundationCapabilityBindingEnabled(agent, binding, true)),
-    );
-    const cleanupFailure = restoration.find(
-      (result) => result.status === 'rejected',
-    );
-    if (cleanupFailure?.status === 'rejected') {
-      const primaryCode = operationError === null
-        ? 'none'
-        : observedErrorCode(operationError);
-      throw new Error(
-        'agent.acceptance.foundationCapabilityBindingRestoreFailed'
-        + `: primary=${primaryCode}`
-        + ` cleanup=${observedErrorCode(cleanupFailure.reason)}`,
+    try {
+      const restoration = await restorePersistedFoundationCapabilityIsolation();
+      if (restoration) Object.assign(isolation, restoration);
+    } catch (cleanupError) {
+      throw Object.assign(
+        new Error('agent.acceptance.foundationCapabilityBindingRestoreFailed'),
+        {
+          primaryError: operationError,
+          cleanupError,
+        },
       );
     }
   }
@@ -3541,7 +3693,6 @@ function foundationTurnAttemptFacts(value: unknown): Record<string, unknown>[] {
 
 async function runFoundationF07Scenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
-  capabilitySessionId: string;
   platform: string;
   sampleId: string;
 }): Promise<{
@@ -3568,6 +3719,7 @@ async function runFoundationF07Scenario(input: {
     model_name: input.agent.model,
   });
   await useChatStore.getState().selectSession(retryConversation.conversation_id);
+  const retryCapabilitySession = await resolveFoundationToolTurnSession();
 
   let cancellationRequested = false;
   let resolveCancellation!: (value: {
@@ -3589,7 +3741,7 @@ async function runFoundationF07Scenario(input: {
     model: input.agent.model || undefined,
     effort: 'low',
     thinkingMode: 'disabled',
-    clientCapabilitySessionId: input.capabilitySessionId,
+    clientCapabilitySessionId: retryCapabilitySession.capabilitySessionId,
     onEvent: (event, events) => {
       if (
         cancellationRequested
@@ -3710,6 +3862,7 @@ async function runFoundationF07Scenario(input: {
     model_name: input.agent.model,
   });
   await useChatStore.getState().selectSession(conversation.conversation_id);
+  const baselineCapabilitySession = await resolveFoundationToolTurnSession();
   const startedAt = performance.now();
   const sourceTurn = startObservedFoundationTurn({
     conversationId: conversation.conversation_id,
@@ -3720,7 +3873,7 @@ async function runFoundationF07Scenario(input: {
     model: input.agent.model || undefined,
     effort: 'low',
     thinkingMode: 'disabled',
-    clientCapabilitySessionId: input.capabilitySessionId,
+    clientCapabilitySessionId: baselineCapabilitySession.capabilitySessionId,
   });
   const sourceResult = await sourceTurn.result;
   const durationMs = performance.now() - startedAt;
@@ -5024,6 +5177,10 @@ function evaluateF07(ctx: DirectCellAssertionContext): Record<string, boolean | 
     facts.original,
     'foundationF07Original',
   );
+  const toolIsolation = evidenceRecord(
+    facts.toolIsolation,
+    'foundationF07ToolIsolation',
+  );
   const sourceAssistantMessageId = String(
     regenerate.sourceAssistantMessageId ?? '',
   );
@@ -5099,6 +5256,8 @@ function evaluateF07(ctx: DirectCellAssertionContext): Record<string, boolean | 
       && original.feedbackBeforeHash === original.feedbackAfterHash
       && Number(original.feedbackCountBefore) > 0
       && original.feedbackCountBefore === original.feedbackCountAfter,
+    capabilityIsolationRestored:
+      isFoundationCapabilityIsolationRestored(toolIsolation),
   };
 }
 
@@ -5231,6 +5390,14 @@ export function installAcceptanceHarness(): void {
         previousOperationsAborted: activeOperations.every(
           (operation) => operation.abortController.signal.aborted,
         ),
+      };
+    },
+
+    async restoreFoundationCapabilityIsolation() {
+      const restoration = await restorePersistedFoundationCapabilityIsolation();
+      return {
+        restorationRequired: restoration !== null,
+        restoration,
       };
     },
 
@@ -6148,12 +6315,24 @@ export function installAcceptanceHarness(): void {
         if (!capabilitySessionId) {
           throw new Error('agent.acceptance.capabilitySessionUnavailable');
         }
-        const scenario = await runFoundationF07Scenario({
+        const scenario = await withFoundationCapabilitiesDisabled(
           agent,
           capabilitySessionId,
-          platform,
-          sampleId,
-        });
+          async (toolIsolation) => {
+            const result = await runFoundationF07Scenario({
+              agent,
+              platform,
+              sampleId,
+            });
+            return {
+              ...result,
+              facts: {
+                ...result.facts,
+                toolIsolation,
+              },
+            };
+          },
+        );
         preparedConversationId = scenario.conversationId;
         preparedTurnId = scenario.turnId;
         preparedRuntimeEvent.current = scenario.runtimeEvent;

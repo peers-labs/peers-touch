@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationClientError,
@@ -214,6 +214,32 @@ class FoundationClientSpecTest(unittest.TestCase):
 
             self.assertTrue(result["actorIdentityReleased"])
             self.assertFalse(pair.native.actor_identity_root.exists())
+
+    def test_runtime_pair_can_preserve_storage_for_failed_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            spec = self.spec(root, "browser")
+            spec.storage_root.mkdir(parents=True)
+            journal = spec.storage_root / "Local Storage" / "capability-journal"
+            journal.parent.mkdir()
+            journal.write_text("retained", encoding="utf-8")
+            client = FoundationRuntimeClient(
+                spec,
+                station_url="https://station.example",
+                profile_env={},
+            )
+
+            with patch(
+                "tooling.acceptance.gates.agent.foundation_runtime_client."
+                "port_open",
+                return_value=False,
+            ):
+                result = client.stop(remove_storage=False)
+
+            self.assertEqual(result["status"], "clean")
+            self.assertTrue(result["storagePreserved"])
+            self.assertIsNone(result["storageReleased"])
+            self.assertEqual(journal.read_text(encoding="utf-8"), "retained")
 
 
 if __name__ == "__main__":

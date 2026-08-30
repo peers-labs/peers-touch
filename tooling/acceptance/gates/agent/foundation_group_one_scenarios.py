@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -1161,6 +1162,11 @@ def evaluate_as_f07(capture: Mapping[str, Any]) -> dict[str, bool]:
     branch = _mapping(capture, "branchSelection", scenario="AS-F07")
     stale = _mapping(capture, "staleBranch", scenario="AS-F07")
     original = _mapping(capture, "original", scenario="AS-F07")
+    tool_isolation = _mapping(
+        capture,
+        "toolIsolation",
+        scenario="AS-F07",
+    )
 
     source_turn_id = _nonempty_string(
         retry,
@@ -1335,6 +1341,46 @@ def evaluate_as_f07(capture: Mapping[str, Any]) -> dict[str, bool]:
                 ("usageBeforeHash", "usageAfterHash"),
                 ("feedbackBeforeHash", "feedbackAfterHash"),
             )
+        ),
+        "capabilityIsolationRestored": (
+            _positive_int(
+                tool_isolation,
+                "disabledBindingCount",
+                scenario="AS-F07",
+            )
+            == _nonnegative_int(
+                tool_isolation,
+                "restoredBindingCount",
+                scenario="AS-F07",
+            )
+            and _nonnegative_int(
+                tool_isolation,
+                "readyCapabilityCount",
+                scenario="AS-F07",
+            )
+            == 0
+            and _positive_int(
+                tool_isolation,
+                "originalReadyCapabilityCount",
+                scenario="AS-F07",
+            )
+            == _nonnegative_int(
+                tool_isolation,
+                "restoredReadyCapabilityCount",
+                scenario="AS-F07",
+            )
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                _nonempty_string(
+                    tool_isolation,
+                    "originalReadyCapabilityHash",
+                    scenario="AS-F07",
+                ),
+            )
+            is not None
+            and tool_isolation.get("originalReadyCapabilityHash")
+            == tool_isolation.get("restoredReadyCapabilityHash")
+            and tool_isolation.get("restorationVerified") is True
         ),
     }
     assertions["originalImmutable"] = bool(

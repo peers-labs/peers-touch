@@ -341,8 +341,8 @@ class FoundationRuntimeClient:
             "failures": failures,
         }
 
-    def stop(self) -> dict[str, Any]:
-        return self._stop_runtime(logout=True, remove_storage=True)
+    def stop(self, *, remove_storage: bool = True) -> dict[str, Any]:
+        return self._stop_runtime(logout=True, remove_storage=remove_storage)
 
 
 class FoundationRuntimePair:
@@ -406,10 +406,10 @@ class FoundationRuntimePair:
                 client.stop()
             raise
 
-    def stop(self) -> dict[str, Any]:
+    def stop(self, *, remove_storage: bool = True) -> dict[str, Any]:
         results = {
-            "browser": self.browser.stop(),
-            "desktop_app": self.native.stop(),
+            "browser": self.browser.stop(remove_storage=remove_storage),
+            "desktop_app": self.native.stop(remove_storage=remove_storage),
         }
         actor_identity_roots = {
             self.native.actor_identity_root,

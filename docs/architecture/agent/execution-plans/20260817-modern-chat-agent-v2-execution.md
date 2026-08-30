@@ -2323,6 +2323,25 @@ AS-F04 implementation progress (2026-08-28):
   checks pass locally. Runtime proof remains `UNPROVEN` pending review,
   checkpoint, deployment, and exact-source rerun. Candidate cleanup again
   released all ports/storage but reported a Native logout script timeout.
+- Exact-source run
+  `20260830T170657748668Z-0a16fea71d2a39b75506d46374c2d4d4`
+  on checkpoint `3803fd4423173f06c06a5e080185854a5a82d06e`
+  runtime-confirmed the retry correction: Browser AS-F07 cancelled its source
+  Turn in 3.35 seconds and the retry completed in another 3.42 seconds with
+  attempt count advancing from one to two. The next first failure was the
+  separate revision baseline Turn timing out after the provider selected the
+  enabled `skills_list` capability and entered manual approval instead of
+  producing the required terminal short response. Station readback showed
+  `tool_approval_required` and `waiting_local_tool`; cleanup then cancelled the
+  Turn. The local Acceptance correction reuses the existing
+  `withFoundationCapabilitiesDisabled` production isolation around the entire
+  AS-F07 revision scenario, with guaranteed binding restoration, instead of
+  relying on prompt steering or auto-approving an unrelated ToolCall. Desktop
+  typecheck, 406 Desktop tests with one unrelated skip, 112 Foundation tests,
+  Agent package/race tests, Agent Domain validation, Go style, and diff checks
+  pass locally. Foundation remains `PARTIAL / UNPROVEN` pending checkpoint,
+  exact-source deployment, and rerun. Candidate cleanup again released all
+  ports/storage but reported a Native logout script timeout.
 
 **W8a checks**:
 
@@ -4040,6 +4059,39 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Coordinator did not delete the protected incremental cache. The environment
   blocker is cleared, so exact-source verification may resume after this plan
   evidence is checkpointed and the resulting source commit is redeployed.
+- Final independent cleanup review remains `HOLD`: the durable capability
+  isolation journal records each original binding's capability ID and version,
+  but restoration currently writes and verifies the binding's current
+  capability identity. Because Station permits a binding ID to be retargeted,
+  an enabled non-ready binding can drift during isolation while the READY-set
+  hash remains unchanged, allowing the journal to be cleared incorrectly.
+  The current AS-F07 first failure is therefore the Harness restoration owner:
+  fail closed when any live binding's capability ID or version differs from
+  the journal, cover non-ready binding retargeting with a regression fixture,
+  and only then rerun the complete local verification set. Foundation remains
+  `PARTIAL / UNPROVEN`; no checkpoint, deploy, or Gate rerun is authorized
+  until independent review approves the corrected cleanup boundary.
+- The AS-F07 cleanup `HOLD` is now closed by two independent `APPROVE`
+  reviews. Capability isolation validates a strict journal before persistence,
+  fences the authoritative Agent version before mutation and before journal
+  removal, and records each binding's exact original, isolated, and restored
+  revisions. Recovery performs a full identity/state preflight, refreshes each
+  binding before its revision-CAS restore, rejects concurrent identity,
+  policy, enabled-state, or revision drift, then rechecks bindings, READY-set
+  count/hash, and Agent version before clearing the journal. Coordinator
+  cleanup restarts disconnected clients against retained storage, rejects
+  malformed or self-certified restoration evidence, preserves storage on
+  failure, and withholds an already-produced candidate when cleanup fails.
+  TypeScript and Python oracles now share strict integer and lowercase
+  SHA-256 validation. Final local evidence: Desktop 437 tests passed with one
+  unrelated E2E skip; Desktop typecheck and production build passed; 179
+  focused Foundation/static Python tests passed; Agent and OSS Go packages,
+  the retry regression under race for 50 runs, Rust library check, Go style,
+  Agent Domain validation for 38 capabilities, and `git diff --check` passed.
+  The broad legacy `*_test.py` discovery remains non-authoritative and fails
+  49 pre-existing stale contract assertions, including four removed source
+  paths. Foundation remains `PARTIAL / UNPROVEN` until the approved checkpoint
+  is deployed exact-source and the serial Gate is rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

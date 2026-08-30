@@ -85,6 +85,16 @@ def valid_capture() -> dict[str, object]:
 
 def valid_as_f07_capture() -> dict[str, object]:
     return {
+        "toolIsolation": {
+            "disabledBindingCount": 1,
+            "readyCapabilityCount": 0,
+            "originalReadyCapabilityCount": 1,
+            "originalReadyCapabilityHash": "f" * 64,
+            "restoredBindingCount": 1,
+            "restoredReadyCapabilityCount": 1,
+            "restoredReadyCapabilityHash": "f" * 64,
+            "restorationVerified": True,
+        },
         "retry": {
             "sourceConversationId": "conversation-retry",
             "sourceTurnId": "turn-retry",
@@ -1138,8 +1148,61 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
     def test_as_f07_accepts_complete_revision_facts(self) -> None:
         assertions = evaluate_as_f07(valid_as_f07_capture())
 
-        self.assertEqual(len(assertions), 6)
+        self.assertEqual(len(assertions), 7)
         self.assertTrue(all(assertions.values()))
+
+    def test_as_f07_rejects_unrestored_capability_isolation(self) -> None:
+        capture = copy.deepcopy(valid_as_f07_capture())
+        capture["toolIsolation"]["restorationVerified"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "capabilityIsolationRestored",
+        ):
+            evaluate_as_f07(capture)
+
+    def test_as_f07_rejects_nonzero_isolated_readiness(self) -> None:
+        capture = copy.deepcopy(valid_as_f07_capture())
+        capture["toolIsolation"]["readyCapabilityCount"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "capabilityIsolationRestored",
+        ):
+            evaluate_as_f07(capture)
+
+    def test_as_f07_rejects_empty_capability_isolation(self) -> None:
+        capture = copy.deepcopy(valid_as_f07_capture())
+        capture["toolIsolation"]["disabledBindingCount"] = 0
+        capture["toolIsolation"]["restoredBindingCount"] = 0
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "disabledBindingCount must be a positive integer",
+        ):
+            evaluate_as_f07(capture)
+
+    def test_as_f07_rejects_empty_original_readiness(self) -> None:
+        capture = copy.deepcopy(valid_as_f07_capture())
+        capture["toolIsolation"]["originalReadyCapabilityCount"] = 0
+        capture["toolIsolation"]["restoredReadyCapabilityCount"] = 0
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "originalReadyCapabilityCount must be a positive integer",
+        ):
+            evaluate_as_f07(capture)
+
+    def test_as_f07_rejects_non_hex_capability_hash(self) -> None:
+        capture = copy.deepcopy(valid_as_f07_capture())
+        capture["toolIsolation"]["originalReadyCapabilityHash"] = "z" * 64
+        capture["toolIsolation"]["restoredReadyCapabilityHash"] = "z" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "capabilityIsolationRestored",
+        ):
+            evaluate_as_f07(capture)
 
     def test_as_f07_rejects_regenerate_lineage_drift(self) -> None:
         capture = copy.deepcopy(valid_as_f07_capture())

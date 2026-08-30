@@ -378,6 +378,8 @@ func (s *RevisionService) admitAndExecute(
 				if err != nil {
 					return err
 				}
+				// Retry restarts provider context at the source user while
+				// retaining the prior attempt artifact under the same branch.
 				empty := ""
 				retryParentID := parentMessage.ID
 				retryAssistantMessage = persistence.AgentMessage{
