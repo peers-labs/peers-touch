@@ -3833,6 +3833,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   static tests, Agent Acceptance validation, and `git diff --check` pass.
   Product behavior remains `UNPROVEN` until an exact-source runtime run
   exercises these operations.
+- Instrumentation checkpoint `4fc6bcd5645c6c3a8587f822e4ea8a0fbf6ba4b7`
+  was built and deployed exact-source to profile `two`. Run
+  `20260830T092128791528Z-9a9c827e6d32f6b854cb103f7e29d6d8`
+  reached Browser AS-F07 after the source turn emitted text, requested
+  cancellation at sequence 3, and observed the authoritative `cancelled`
+  terminal event. The first `RetryTurn` command then failed before a retry
+  attempt result was returned. The run remained `PARTIAL / UNPROVEN`; outer
+  Provisioner cleanup passed. The next diagnostic checkpoint records the
+  already-fetched pre-retry attempt state plus the typed command error so the
+  owner can be distinguished between Station retry admission and Desktop
+  transport mapping without adding waits or changing product behavior.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

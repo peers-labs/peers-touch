@@ -37,6 +37,23 @@
   reached Browser AS-F07 after all AS-F06 tuples passed, then failed with
   `agent.acceptance.turnSubmissionTimeout`.
 - The failure did not identify which of the two observed turns timed out.
+- Exact-source run
+  `20260830T092128791528Z-9a9c827e6d32f6b854cb103f7e29d6d8`
+  used clean source, deployed Station, and Desktop commit
+  `4fc6bcd5645c6c3a8587f822e4ea8a0fbf6ba4b7`.
+- `.dbg/trae-debug-log-as-f07-revision-flow.ndjson` lines 1-3 show that
+  Browser AS-F07 started, requested cancellation after the first text event
+  at 2361 ms / sequence 3, and observed a `cancelled` terminal event at
+  3092 ms.
+- The immutable Gate log then failed at `agent_retry_turn failed`; no
+  `retry-finished` checkpoint was emitted.
 
 ## Verification Conclusion
-Pending instrumentation run.
+- Hypothesis A is rejected: the source emitted cancellable text.
+- Hypothesis B is rejected: cancellation reached a terminal `cancelled` event.
+- Hypothesis C is not reached.
+- Hypothesis D is confirmed at the first retry command, but its owning
+  Station/transport error is not yet identified.
+- Hypothesis E is not reached.
+- Next instrumentation records the existing pre-retry evidence state and the
+  typed `agent_retry_turn` error without adding waits or changing behavior.

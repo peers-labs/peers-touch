@@ -3562,13 +3562,38 @@ async function runFoundationF07Scenario(input: {
   const retryVersion = (
     await api.getAgentConversation(retryConversation.conversation_id)
   ).version;
-  const retryResponse = evidenceRecord(
-    await api.retryAgentTurn({
+  const retryAttemptsBefore = foundationTurnAttemptFacts(retryEvidenceBefore);
+  reportFoundationF07Debug('D', 'retry-started', {
+    elapsedMs: performance.now() - scenarioStartedAt,
+    conversationVersion: retryVersion,
+    attemptStatuses: retryAttemptsBefore.map((attempt) => attempt.status),
+  });
+  let retryResponseValue: Record<string, unknown>;
+  try {
+    retryResponseValue = await api.retryAgentTurn({
       conversation_id: retryConversation.conversation_id,
       source_turn_id: cancellationAttempt.turnId,
       client_idempotency_key: crypto.randomUUID(),
       expected_conversation_version: retryVersion,
-    }),
+    });
+  } catch (error) {
+    const codedError = error as {
+      code?: unknown;
+      details?: { reason?: unknown };
+    };
+    reportFoundationF07Debug('D', 'retry-failed', {
+      elapsedMs: performance.now() - scenarioStartedAt,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: typeof codedError.code === 'string' ? codedError.code : '',
+      errorReason: typeof codedError.details?.reason === 'string'
+        ? codedError.details.reason
+        : '',
+    });
+    throw error;
+  }
+  const retryResponse = evidenceRecord(
+    retryResponseValue,
     'foundationF07RetryResponse',
   );
   const retryEvidenceAfter = await foundationTurnEvidence(
