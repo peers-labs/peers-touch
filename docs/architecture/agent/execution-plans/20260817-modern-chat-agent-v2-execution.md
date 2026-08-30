@@ -4155,6 +4155,13 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   The next action is an exact-source profile `two` deployment and serial
   Foundation rerun; AS-F03 must regain its prior pass before AS-F07 evidence
   can be evaluated.
+- Tracking commit `7bf635c4b` was deployed exact-source. Run
+  `20260830T203842372359Z-3e8aa65f2ac7ddefb381dbabaf74709e`
+  passed the AS-F03 prefix and retained fully clean Native/Browser teardown,
+  then failed at Browser AS-F06 because the invocation omitted the required
+  `PT_AGENT_V2_ALLOW_STATION_RESTART=1` authorization. This is an operator
+  invocation defect, not product evidence. The next run must use the documented
+  restart authorization while keeping profile `two` serially leased.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
