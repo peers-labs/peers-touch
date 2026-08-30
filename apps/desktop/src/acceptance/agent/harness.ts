@@ -3597,13 +3597,33 @@ async function runFoundationF07Scenario(input: {
   } catch (error) {
     const codedError = error as {
       code?: unknown;
-      details?: { reason?: unknown };
+      details?: {
+        body?: unknown;
+        reason?: unknown;
+        status?: unknown;
+      };
     };
+    const responseBody = typeof codedError.details?.body === 'string'
+      ? codedError.details.body
+      : '';
+    let stationError: Record<string, unknown> = {};
+    try {
+      stationError = responseBody
+        ? evidenceRecord(JSON.parse(responseBody), 'foundationF07RetryErrorBody')
+        : {};
+    } catch {
+      stationError = {};
+    }
     reportFoundationF07Debug('D', 'retry-failed', {
       elapsedMs: performance.now() - scenarioStartedAt,
       errorName: error instanceof Error ? error.name : typeof error,
       errorMessage: error instanceof Error ? error.message : String(error),
       errorCode: typeof codedError.code === 'string' ? codedError.code : '',
+      httpStatus: Number(codedError.details?.status ?? 0),
+      stationErrorCode: String(
+        evidenceField(stationError, 'errorCode', 'error_code') ?? '',
+      ),
+      stationErrorMessage: String(stationError.message ?? ''),
       errorReason: typeof codedError.details?.reason === 'string'
         ? codedError.details.reason
         : '',

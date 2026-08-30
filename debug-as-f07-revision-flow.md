@@ -52,6 +52,14 @@
   passed AS-F05 and AS-F06, entered Browser AS-F07, and emitted only
   `scenario-started` before `agent.acceptance.turnSubmissionTimeout`.
   No `retry-source-cancel-requested` event was emitted.
+- Exact-source run
+  `20260830T111643174494Z-96ed0bfa4a8c8fb9f72039d48a16aff7`
+  cancelled at durable `provider_call_started` sequence 2 in 3207 ms and
+  observed terminal `cancelled` in 3421 ms. Retry started with conversation
+  version 4 and one terminal attempt (`status=13`), then returned
+  `RustCommandException / INTERNAL_ERROR` in 113 ms. Station logs show the
+  retry transaction completed and `turn started` was emitted before the HTTP
+  handler returned 500.
 
 ## Verification Conclusion
 - Hypothesis A is confirmed as nondeterministic: one run emitted cancellable
@@ -67,3 +75,7 @@
   `provider_call_started` progress event, which is emitted after source user
   message persistence, while preserving the real provider, cancellation, and
   retry paths. Typed retry error instrumentation remains active.
+- The cancellation-boundary correction is runtime-confirmed. Hypothesis D is
+  now narrowed to the early retry execution path after atomic admission and
+  before provider invocation. The next instrumentation extracts only the
+  typed Station error code/message from the existing HTTP error body.

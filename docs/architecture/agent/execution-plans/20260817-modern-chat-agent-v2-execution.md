@@ -3890,6 +3890,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `provider_call_started` progress event, which occurs after the source user
   message is durable and before external first-token latency, while retaining
   the real Turn, cancellation, retry, and Station readback paths.
+- Checkpoint `53106b90458d599790fc9f01a51dbbd4a421fadc` was built and
+  deployed exact-source. Run
+  `20260830T111643174494Z-96ed0bfa4a8c8fb9f72039d48a16aff7`
+  passed AS-F05 and AS-F06, cancelled the AS-F07 source at durable
+  `provider_call_started` sequence 2 in 3207 ms, and observed terminal
+  `cancelled` in 3421 ms. `RetryTurn` began with conversation version 4 and
+  one terminal attempt, then returned `INTERNAL_ERROR` in 113 ms. Station logs
+  show the retry transaction completed and entered `turn started` before the
+  HTTP handler returned 500. Cleanup and source matching passed. The next
+  diagnostic checkpoint extracts the typed Station error code/message already
+  present in the HTTP response body; no retry behavior changes are authorized
+  until that evidence identifies the failing owner.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
