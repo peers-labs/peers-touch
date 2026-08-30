@@ -1378,6 +1378,18 @@ its existing Federation Phase 1 `WS-6` workstream,
 correction is committed and a new exact-source aggregate plus all final review
 gates pass.
 
+Exact-source aggregate
+`20260829T220529357373Z-d9f2e09e9d76a4c60263e77bb47376bb` at
+`3eb76b57745a31f5ad7b7b444922e8e74ff9579a` then passed the Federation smoke
+with complete traceability and passed the other eight non-product-closure
+Gates. Product Closure failed while opening a newly created direct
+conversation from its first search result. Runtime evidence shows that the
+conversation reached the Station-backed projection, while the UI handler
+could return from a superseded `loadSessions` request before the winning
+reconciliation published the conversation and therefore skip selection.
+Cleanup passed for every Gate. MP-W13-F remains `PARTIAL/UNPROVEN` at
+9 PASS / 1 FAIL.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

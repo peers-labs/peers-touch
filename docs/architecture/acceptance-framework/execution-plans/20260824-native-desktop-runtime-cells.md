@@ -544,7 +544,7 @@ committed to this plan.
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | in progress | Product and receiver runners already consume `NativeDesktopRuntimeBinding`. The remaining six Chat Native runners now have the same runtime-manifest, source identity, Evidence Store, actor-storage, and cleanup contracts; focused static/Infra tests pass, while exact-source Linux Gate evidence is pending. |
-| NDR-W7 Linux MP-W13 proof | reopened / in progress | Exact-source aggregate `20260829T203439484372Z-7c6fba9d9db5ce018b758a5e207fe73a` at `d5b76eaf953504e0b599682a68472ccff04601f0` passed all 10 Gates with cleanup, but Federation Gateway smoke omitted Phase/BOM/Spec traceability and forced the aggregate to `PARTIAL/UNPROVEN`. The Gate metadata correction and a new exact-source aggregate remain pending. |
+| NDR-W7 Linux MP-W13 proof | reopened / in progress | Exact-source aggregate `20260829T220529357373Z-d9f2e09e9d76a4c60263e77bb47376bb` at `3eb76b57745a31f5ad7b7b444922e8e74ff9579a` passed 9 of 10 Gates with complete traceability and cleanup. Product Closure exposed a search-open projection race, so NDR-W7 remains `PARTIAL/UNPROVEN`. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
@@ -1122,6 +1122,17 @@ is a business evidence-injection correction; aggregate proof semantics remain
 unchanged. NDR-W7 still requires a new clean commit, full exact-source
 aggregate, required-proven validation, Gap Detector, Completion Audit, and
 `review-submit`.
+
+The subsequent exact-source aggregate
+`20260829T220529357373Z-d9f2e09e9d76a4c60263e77bb47376bb` at
+`3eb76b57745a31f5ad7b7b444922e8e74ff9579a` proved the Federation traceability
+correction: that Gate and eight others reached `DONE/PROVEN` with successful
+cleanup. `chat-native-product-closure-e2e` failed while opening the first
+direct conversation from search. The Station projection contained the new
+conversation, but the UI handler could observe a superseded `loadSessions`
+request as complete before the winning reconciliation published its state,
+then return without selecting the canonical conversation ID. The aggregate is
+therefore 9 PASS / 1 FAIL and remains `PARTIAL/UNPROVEN`.
 
 ## 13. Final Readiness Gate
 
