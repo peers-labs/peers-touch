@@ -201,10 +201,7 @@ pub fn memory_update(input: MemoryUpdateInput, token: &str) -> AppResult<StubPay
         action: "update".to_string(),
         ..Default::default()
     };
-    match station_client::request_peers_proto::<
-        agent::WriteMemoryRequest,
-        agent::WriteMemoryResponse,
-    >(
+    match station_client::request_peers_proto::<agent::WriteMemoryRequest, agent::WriteMemoryResponse>(
         Method::POST,
         "/agent/memory/update",
         token,

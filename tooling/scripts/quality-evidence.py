@@ -248,6 +248,14 @@ def gate_result_is_proven(
     traceability = result.get("traceability")
     if not isinstance(traceability, dict) or traceability.get("status") != "complete":
         return False
+    if gate.get("tier") == "env-evidence":
+        if (
+            result.get("sourceArtifactKind")
+            != "acceptance-gate-evidence-report"
+            or result.get("evidenceGateId") != gate.get("id")
+            or not isinstance(result.get("sourceArtifact"), dict)
+        ):
+            return False
     if not gate.get("provisioner"):
         return True
     manifest = result.get("manifest")
@@ -268,6 +276,7 @@ def evidence_gaps(
     committed_evidence: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     blocking: list[dict[str, str]] = []
+    review: list[dict[str, str]] = []
     deferred: list[dict[str, str]] = []
     proven_by_attestation: list[str] = []
     committed = committed_evidence or {}
@@ -305,10 +314,7 @@ def evidence_gaps(
             "impact": scope,
             "next_evidence": "Decide in pt-github-review whether this is blocking, acceptable follow-up, or needs owner waiver.",
         }
-        if ci_mode:
-            deferred.append(entry)
-        else:
-            blocking.append(entry)
+        review.append(entry)
 
     results = {
         result.get("id"): result
@@ -330,7 +336,7 @@ def evidence_gaps(
         if ci_mode:
             deferred.append(entry)
         else:
-            blocking.append(entry)
+            review.append(entry)
     for gate in evidence["acceptance"]["gate_buckets"]["nightly_or_release_gates"]:
         result = results.get(gate["id"], {})
         if gate_result_is_proven(gate, result, evidence["head_commit"]):
@@ -344,6 +350,7 @@ def evidence_gaps(
         )
     return {
         "blocking": blocking,
+        "review": review,
         "deferred": deferred,
         "proven_by_attestation": sorted(proven_by_attestation),
     }
@@ -416,6 +423,12 @@ def render_markdown(evidence: dict[str, Any]) -> str:
     for gap in evidence["evidence_gaps"]["blocking"]:
         lines.append(f"- `{gap['kind']}`: {gap['impact']} Next evidence: {gap['next_evidence']}")
     if not evidence["evidence_gaps"]["blocking"]:
+        lines.append("- none")
+
+    lines.extend(["", "## Review Evidence Gaps", ""])
+    for gap in evidence["evidence_gaps"]["review"]:
+        lines.append(f"- `{gap['kind']}`: {gap['impact']} Next evidence: {gap['next_evidence']}")
+    if not evidence["evidence_gaps"]["review"]:
         lines.append("- none")
 
     lines.extend(["", "## Deferred Evidence (informational)", ""])
@@ -573,6 +586,7 @@ def main() -> int:
     print(f"review_profiles: {', '.join(evidence['route']['profiles']) or 'none'}")
     print(f"impacted_features: {', '.join(evidence['acceptance']['impacted_features']) or 'none'}")
     print(f"blocking_gaps: {len(gap_result['blocking'])}")
+    print(f"review_gaps: {len(gap_result['review'])}")
     print(f"deferred_gaps: {len(gap_result['deferred'])}")
     print(f"proven_by_attestation: {len(gap_result.get('proven_by_attestation', []))}")
     print(f"json: {json.dumps(json_ref.to_dict(), sort_keys=True)}")

@@ -35,7 +35,10 @@ export interface ConversationServiceContract {
   listThreadMessages(conversationId: string, rootId: string, afterSeq?: number, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
   threadCounts(conversationId: string, rootIds: string[]): Promise<{ counts: ThreadCountResult[] }>
   getMemberSettings(conversationId: string): Promise<MemberSettingsResult>
-  updateMemberSettings(conversationId: string, settings: Partial<MemberSettingsResult>): Promise<void>
+  updateMemberSettings(
+    conversationId: string,
+    settings: Partial<MemberSettingsResult>,
+  ): Promise<MemberSettingsResult>
   syncFromStation(conversationId: string, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
 }
 
@@ -63,6 +66,10 @@ export interface MemberSettingsResult {
   nickname: string
   muted: boolean
   alertEnabled: boolean
+  pinned: boolean
+  background: string
+  backgroundImage: string
+  clearedAtUnixMs: number
 }
 
 // --- Envelope Service Contract (v1) ---
@@ -317,16 +324,45 @@ export interface MessagingLocalAttachmentIntent {
   size?: number
 }
 
+export type MessagingSendState = 'draft' | 'pending' | 'attachment_failed'
+
+export interface MessagingSendOutcome {
+  commandId?: string
+  messageId: string
+  attachmentIds: string[]
+  attachmentCount: number
+  state: MessagingSendState
+}
+
+export interface MessagingSendOutcomeRecord {
+  revision: number
+  outcome: MessagingSendOutcome
+}
+
+export type MessagingQueuedSendOutcome = MessagingSendOutcome & {
+  commandId: string
+  state: 'pending'
+}
+
 export interface MessagingConversationProjection {
   conversationId: string
+  authorityStationId: string
   kind: 1 | 2
   name: string
   ownerPtid: string
-  memberPtids: string[]
+  members: ConversationMember[]
   membershipEpoch: number
   mlsEpoch: number
+  mlsStatus: MlsRecipientStatusResult['status'] | null
   active: boolean
   updatedAtUnixMs: number
+}
+
+export interface MessagingCommandStatus {
+  commandId: string
+  conversationId: string
+  state: 'pending' | 'retry_wait' | 'submitted' | 'committed' | 'failed' | 'superseded'
+  lastErrorCode: string
 }
 
 export interface MessagingServiceContract {
@@ -335,10 +371,15 @@ export interface MessagingServiceContract {
     conversationId: string,
     name: string,
     memberPtids: string[],
-  ): Promise<{ conversationId: string; state: 'projected' }>
+  ): Promise<{
+    conversationId: string
+    commandId: string
+    state: 'pending' | 'projected' | 'failed'
+  }>
   submitMembershipIntent(
     intent: MessagingActorMembershipIntent,
   ): Promise<{ commandId: string; state: 'pending' }>
+  getCommandStatus(commandId: string): Promise<MessagingCommandStatus>
   listConversations(): Promise<MessagingConversationProjection[]>
   pickAttachmentSource(): Promise<MessagingLocalAttachmentIntent>
   stageAttachmentSource(filename: string, bytes: Uint8Array): Promise<string>
@@ -353,13 +394,12 @@ export interface MessagingServiceContract {
       replyToMessageId?: string
       threadRootMessageId?: string
     },
-  ): Promise<{
-    commandId?: string
-    messageId: string
-    attachmentIds: string[]
-    state: 'draft' | 'pending' | 'attachment_failed'
-  }>
+  ): Promise<MessagingSendOutcome>
   listMessages(conversationId: string): Promise<MessagingProjection[]>
+  listThreadMessages(
+    conversationId: string,
+    threadRootMessageId: string,
+  ): Promise<MessagingProjection[]>
   searchMessages(
     conversationId: string,
     query: string,

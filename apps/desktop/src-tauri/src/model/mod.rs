@@ -51,8 +51,6 @@ pub mod auth {
     pub use v1::*;
 }
 
-
-
 pub mod core {
     pub mod v1 {
         include!(concat!(env!("OUT_DIR"), "/peers_touch.model.core.v1.rs"));
