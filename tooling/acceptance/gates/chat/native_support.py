@@ -345,10 +345,6 @@ def start_authenticated_client(
     try:
         client.wait_for_acceptance_harness(30)
         configure_station(client, station_url)
-        with StationDriver(
-            f"http://127.0.0.1:{client.gateway_port}"
-        ) as station:
-            station.auth_logout()
         login = async_harness(
             client,
             "loginWithPassword",
