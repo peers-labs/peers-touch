@@ -113,24 +113,13 @@ docs/architecture/<module>/
 ## 6. 验证方式
 ```
 
-### 4.3 Context Anchor
-
-Every tracked execution plan must include exactly one `## Context Anchor`
-following `pt-context-anchor`. Initialize it from verified Git context and the
-plan status table:
-
-- persist Worktree as `<repo-root>`;
-- record the verified branch;
-- name one current workstream, current step, and next action;
-- distinguish `PASS`, `FAIL`, and `UNPROVEN` evidence;
-- update the Anchor with the detailed status table, never as a separate summary.
-
-### 4.4 设计文档推荐结构
+### 4.3 设计文档推荐结构
 
 参照 `docs/global/architecture-document-standard.md` §5 各文件编写规范。
 
 ### 4.4 Context Anchor 边界
 
+- Execution plans MUST NOT contain a `## Context Anchor` section.
 - 执行计划正文 **不得**包含 `## Context Anchor`。
 - PRODUCT / DESIGN 阶段尚无正式执行计划时，不创建占位 `active_work` 行。
 - 执行计划文件创建完成后，才在 `project_memory.md` 的 `active_work`
