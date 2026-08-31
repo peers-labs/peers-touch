@@ -4451,7 +4451,13 @@ function foundationF10RejectionFact(
     accepted: false,
     errorCode: String(
       station.commandErrorCode
-      ?? (httpStatus === 401 ? 'UNAUTHORIZED' : ''),
+      ?? (
+        httpStatus === 401
+          ? 'UNAUTHORIZED'
+          : httpStatus === 403
+            ? 'AGENT_4002'
+            : ''
+      ),
     ),
     source: evidenceValue(value),
   };
@@ -4516,15 +4522,7 @@ async function runFoundationF10Scenario(input: {
   if (!turnId || !runtimeEvent) {
     throw new Error('agent.acceptance.foundationCapabilityTurnEvidenceMissing');
   }
-  const readback = await foundationConversationReadback(
-    conversation.conversation_id,
-  );
-  const receiverMessage = useChatStore.getState().messages.find(
-    (message) => message.turnId === turnId && message.role === 'assistant',
-  );
-  const stationMessage = readback.messages.find(
-    (message) => message.turnId === turnId && message.role === 'assistant',
-  );
+  const terminalStatus = classifyAgentTurnTerminalEvent(runtimeEvent);
 
   const controls = Object.fromEntries(await Promise.all(
     ([
@@ -4574,11 +4572,10 @@ async function runFoundationF10Scenario(input: {
     },
     facts: {
       coreOutcome: {
-        stationStatus: stationMessage?.status ?? '',
-        receiverStatus:
-          receiverMessage && !receiverMessage.loading && !receiverMessage.error
-            ? 'completed'
-            : 'incomplete',
+        stationStatus: terminalStatus,
+        receiverStatus: result.ok && terminalStatus === 'completed'
+          ? 'completed'
+          : 'incomplete',
       },
       capabilitySession: {
         platform: clientPlatformName(stationSession.platform),
