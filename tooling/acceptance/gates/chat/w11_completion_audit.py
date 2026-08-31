@@ -25,6 +25,7 @@ from tooling.acceptance.core.evidence_store import (
     ArtifactSession,
     EvidenceStore,
     source_identity,
+    workspace_id,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -225,6 +226,39 @@ def _nested_value(value: dict, path: tuple[str, ...]) -> object:
     return current
 
 
+def source_identities_match(
+    observed: object,
+    expected: dict[str, str],
+) -> bool:
+    if not isinstance(observed, dict):
+        return False
+    if (
+        observed.get("commit") != expected.get("commit")
+        or observed.get("workspaceDigest") != expected.get("workspaceDigest")
+    ):
+        return False
+
+    expected_worktree_hash = expected.get("canonicalWorktreeHash")
+    observed_worktree_hash = observed.get("canonicalWorktreeHash")
+    observed_worktree = observed.get("worktree")
+    if not expected_worktree_hash or not (
+        observed_worktree_hash or observed_worktree
+    ):
+        return False
+    if (
+        observed_worktree_hash
+        and observed_worktree_hash != expected_worktree_hash
+    ):
+        return False
+    if (
+        observed_worktree
+        and workspace_id(Path(str(observed_worktree)))
+        != expected_worktree_hash
+    ):
+        return False
+    return True
+
+
 def compare_runtime_manifest_identity(
     observed: dict,
     immutable: dict,
@@ -290,7 +324,7 @@ def check_native_report_identity(
     orchestrator = identity.get("orchestrator")
     cell = identity.get("runtimeCell")
     binary = identity.get("binary")
-    if orchestrator != expected_source:
+    if not source_identities_match(orchestrator, expected_source):
         errors.append(f"{label}: report orchestrator source identity mismatch")
     if (
         not isinstance(cell, dict)

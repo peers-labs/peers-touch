@@ -1686,6 +1686,36 @@ final exact-source aggregate must contain the union of canonical range Gates
 and retained Linux closure obligations before Gap Detector, MP-W11 Completion
 Audit, and submit review may close.
 
+Final exact-source aggregate
+`20260831T142010116108Z-14a6f4f74f887bfb8a34230afa060fef` at commit
+`162d36a32d8bd5cb62d04f9f3c7caf83e3833b51` completed 19 PASS / 0 FAIL
+with `DONE/PROVEN`, zero missing traceability, and successful cleanup for every
+provisioned Gate. Station evidence belongs to deployment node
+`10.37.94.156` and endpoint `18132`; Linux Native runtime-cell evidence
+belongs to host `10.37.246.80`. Fresh W11 owner scans and Chat
+required-proven validation passed, and Gap Detector reports no gap for the
+Linux-only NDR-W7 / MP-W13-F claim.
+
+W11 Completion Audit run
+`20260831T153920368737Z-db1df6c1d9a07632118f5c542bdb8ff8` nevertheless
+failed because the audit compares two source-identity representations as exact
+dictionaries. Immutable Gate manifests use
+`{commit, workspaceDigest, canonicalWorktreeHash}`; Native evidence reports
+use `{commit, workspaceDigest, worktree}`. Commit `63655081d` introduced this
+comparison without normalizing the already emitted Native report identity.
+The audit must preserve commit, clean-workspace, and canonical-worktree
+binding while comparing these representations. MP-W11 and MP-W13-F remain
+`PARTIAL/UNPROVEN` until the audit correction, exact-source revalidation,
+Completion Audit, and submit review pass. macOS, Windows, and Mobile remain
+`UNPROVEN`.
+
+The approved W11 correction is now implemented at the audit boundary. It
+hashes the report's recorded worktree and requires the resulting canonical
+identity, commit, and clean-workspace digest to match the Evidence Store
+manifest. A different worktree remains a hard failure. The focused Completion
+Audit unit suite passes 12/12; exact-source runtime revalidation remains
+pending at the resulting commit.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
