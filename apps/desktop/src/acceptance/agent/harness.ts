@@ -6803,6 +6803,30 @@ export function installAcceptanceHarness(): void {
         preparedRuntimeEvent.current = scenario.runtimeEvent;
         turnDurationMs = scenario.durationMs;
         scenarioFacts = scenario.facts;
+        const controls = evidenceRecord(
+          scenario.facts.rejections,
+          'foundationF10DiagnosticRejections',
+        );
+        await reportFoundationF10Debug('post-scenario', {
+          coreOutcome: scenario.facts.coreOutcome,
+          capabilitySession: scenario.facts.capabilitySession,
+          selectedDevice: scenario.facts.selectedDevice,
+          execution: scenario.facts.execution,
+          rejections: Object.fromEntries(
+            Object.entries(controls).map(([name, value]) => {
+              const control = evidenceRecord(
+                value,
+                `foundationF10Diagnostic${name}`,
+              );
+              return [name, {
+                availability: control.availability ?? 'available',
+                unavailableReason: control.unavailable_reason ?? null,
+                accepted: control.accepted ?? null,
+                errorCode: control.errorCode ?? null,
+              }];
+            }),
+          ),
+        });
       }
 
       if (cell === 'AS-F05') {

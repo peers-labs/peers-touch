@@ -4349,6 +4349,13 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `NO_PRODUCTION_CAPABILITY_ENDPOINT` facts. Desktop typecheck, 125 focused
   Foundation/static tests, Go formatting, and `git diff --check` pass.
   Runtime proof remains pending.
+- Exact-source run
+  `20260831T140433886829Z-2389647d21647ff8d9cfb8412351f619`
+  on `86ca4034189040d28c004ffaa86127b9cdbe4164` executes the AS-F10
+  Browser scenario and fails only `coreOutcomesMatch` and
+  `crossDeviceRejected`. Source identity, redaction, and cleanup pass. The
+  next diagnostic checkpoint records normalized core statuses and rejection
+  codes before assigning the remaining owner.
 
 **DESIGN_AMENDMENT (2026-08-25) — unsupported/schemaMismatch production proof path**:
 

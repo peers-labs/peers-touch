@@ -56,3 +56,9 @@
   local execution counters. Unsupported and schema-mismatch remain explicit
   `NO_PRODUCTION_CAPABILITY_ENDPOINT` facts. Post-fix runtime evidence is
   pending for hypotheses C-E.
+- Exact-source run
+  `20260831T140433886829Z-2389647d21647ff8d9cfb8412351f619`
+  on `86ca4034189040d28c004ffaa86127b9cdbe4164` executes the new
+  Browser scenario and narrows the first failure to `coreOutcomesMatch` and
+  `crossDeviceRejected`; cleanup and source identity pass. The next diagnostic
+  checkpoint records only normalized core statuses and rejection codes.
