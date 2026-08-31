@@ -31,6 +31,7 @@
 | K | Station classifies the enabled fixture as non-READY | Medium | Low | `isolation-preflight` reports a non-READY state and reason code |
 | L | Protobuf JSON returns a string enum while the Harness compares it with a numeric generated enum | High | Low | `isolation-preflight` reports `stateType=string`, `state=CAPABILITY_READINESS_STATE_READY`, and `readyCapabilityCount=0` |
 | M | The Harness bridge updates Selenium's deprecated class-level transport timeout instead of the active driver's instance config | High | Low | Browser AS-F07 outlives the HTTP read timeout while later Debug Server checkpoints prove the in-page scenario remained active |
+| N | AS-F07's 300-second WebDriver script budget cannot contain its bounded sequence of retry, baseline, regenerate, and edit provider operations | High | Low | The active driver reaches an exact script timeout before the current revision operation returns |
 
 ## Instrumentation
 - Record one redacted stage checkpoint before and after each AS-F07 production
@@ -287,3 +288,14 @@
   for executors without an instance config. Focused Harness and Foundation
   tests plus Acceptance Infra self-validation pass; exact-source runtime
   comparison is pending.
+- Exact-source run
+  `20260831T055806279596Z-f13e9ec5abc9b4969e179ffebe3aa12f`
+  on `618b715f0730753995bee9a8131a2cb92a2ec639` rejects a remaining
+  transport-config mismatch: the Browser adapter now stays attached for the
+  full declared 300-second script budget. It then fails with Chrome's typed
+  `script timeout`, not an HTTP read timeout. The last AS-F07 checkpoint is
+  `retry-started` at 5.764 seconds, followed by cleanup at the 300-second
+  boundary. This confirms hypothesis N. The concrete AS-F07 scenario contains
+  multiple independently bounded provider-backed revision commands, so its
+  aggregate WebDriver budget now matches the existing 900-second AS-F04
+  multi-command budget. Exact-source runtime verification is pending.

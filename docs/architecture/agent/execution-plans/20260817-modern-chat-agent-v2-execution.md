@@ -4248,6 +4248,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   pre-existing Tauri Driver contract failures, and `skill-check.sh` retains
   its pre-existing upstream-review freshness mismatch. Foundation remains
   `PARTIAL / UNPROVEN` pending checkpoint, exact-source deployment, and rerun.
+- Checkpoint `618b715f0` was deployed exact-source to profile `two`. Run
+  `20260831T055806279596Z-f13e9ec5abc9b4969e179ffebe3aa12f`
+  confirms the active Selenium connection now retains its full transport
+  budget: the prior 133.353-second HTTP read timeout is gone. Browser AS-F07
+  instead reaches Chrome's exact 300-second script timeout while the first
+  retry operation remains in progress. AS-F07 includes multiple independently
+  bounded provider-backed revision commands, so the concrete scenario's
+  aggregate WebDriver budget must exceed a single command budget. The local
+  producer correction gives AS-F07 the existing 900-second multi-command
+  budget already used by AS-F04; other direct scenarios retain 300 seconds.
+  Source identity, redaction, and cleanup passed. Foundation remains
+  `PARTIAL / UNPROVEN` pending local verification, checkpoint, exact-source
+  deployment, and rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

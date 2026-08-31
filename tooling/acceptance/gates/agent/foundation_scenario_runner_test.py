@@ -57,6 +57,20 @@ class DirectProbeHarnessClient:
         return result
 
 
+class TimeoutCaptureHarnessClient:
+    def __init__(self) -> None:
+        self.timeout = 0.0
+
+    def harness(
+        self,
+        _method: str,
+        _payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        self.timeout = timeout
+        raise RuntimeError("captured timeout")
+
+
 class F06HarnessClient:
     def __init__(
         self,
@@ -700,6 +714,20 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             foundation_scenario_runner._make_direct_probe(
                 DirectProbeHarnessClient(mismatch=True)
             )(probe_input)
+
+    def test_as_f07_direct_probe_budget_covers_revision_commands(self) -> None:
+        client = TimeoutCaptureHarnessClient()
+        probe_input = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="AS-F07",
+            sample_id="sample-001",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "captured timeout"):
+            foundation_scenario_runner._make_direct_probe(client)(probe_input)
+
+        self.assertEqual(client.timeout, 900)
 
     def test_as_f06_closes_each_tuple_around_its_own_restart(self) -> None:
         native = F06HarnessClient("desktop_app")

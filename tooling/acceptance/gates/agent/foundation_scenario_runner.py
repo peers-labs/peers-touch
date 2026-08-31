@@ -75,6 +75,12 @@ class ScenarioRunnerError(RuntimeError):
     """Fatal error during Foundation scenario execution."""
 
 
+DIRECT_PROBE_TIMEOUT_SECONDS = {
+    "AS-F04": 900,
+    "AS-F07": 900,
+}
+
+
 def _agent_provider_config(profile_env: Mapping[str, str]) -> dict[str, str]:
     config = {
         "providerId": profile_env.get("PT_AGENT_PROVIDER_ID", "").strip(),
@@ -203,7 +209,7 @@ def _make_direct_probe(
                 "cell": probe_input.cell,
                 "sampleId": probe_input.sample_id,
             },
-            timeout=900 if probe_input.cell == "AS-F04" else 300,
+            timeout=DIRECT_PROBE_TIMEOUT_SECONDS.get(probe_input.cell, 300),
         )
         if not isinstance(result, Mapping):
             raise ScenarioRunnerError(
