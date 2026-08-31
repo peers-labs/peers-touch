@@ -581,7 +581,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             {},
         )
 
-    def test_harness_is_bootstrap_only(self) -> None:
+    def test_harness_methods_are_bounded_and_static(self) -> None:
         methods: list[str] = []
         for node in ast.walk(self.tree):
             if not isinstance(node, ast.Call):
@@ -595,7 +595,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             methods.append(str(node.args[1].value))
         self.assertEqual(
             sorted(methods),
-            ["getRealtimeDevice", "hydrateActiveActor", "loginWithPassword"],
+            [
+                "conversationMemberSettings",
+                "engineConversations",
+                "engineMessages",
+                "getRealtimeDevice",
+                "hydrateActiveActor",
+                "loginWithPassword",
+                "openAttachment",
+            ],
         )
         self.assertIn(
             "self.launch_actor(actor, restore_session=True)",
@@ -1089,32 +1097,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"NSApplication"', self.desktop_cargo)
         self.assertIn('"NSRunningApplication"', self.desktop_cargo)
 
-    def test_gateway_commands_are_readback_only(self) -> None:
-        assignment = next(
-            node
-            for node in self.tree.body
-            if isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name)
-                and target.id == "READBACK_COMMANDS"
-                for target in node.targets
-            )
-        )
-        self.assertIsInstance(assignment.value, ast.Set)
-        commands = {
-            str(item.value)
-            for item in assignment.value.elts
-            if isinstance(item, ast.Constant)
-        }
-        self.assertEqual(
-            commands,
-            {
-                "conversation_get_member_settings",
-                "messaging_list_conversations",
-                "messaging_list_messages",
-                "messaging_open_attachment",
-            },
-        )
+    def test_authenticated_readbacks_use_the_owning_tauri_window(self) -> None:
+        self.assertNotIn("gateway_read(", self.source)
+        self.assertNotIn("urllib.request", self.source)
+        for method in (
+            "engineMessages",
+            "engineConversations",
+            "conversationMemberSettings",
+            "openAttachment",
+        ):
+            with self.subTest(method=method):
+                self.assertIn(f'"{method}"', self.source)
+        self.assertIn('"actorPtid": self.ptids[actor]', self.source)
         self.assertIn(
             "self.runtime_binding.native_file_sha256(",
             self.source,
@@ -1171,7 +1165,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"alice2": "alice"', self.source)
         self.assertIn('data-chat-history-action="clear"', self.chat_detail_panel)
         self.assertIn('data-chat-history-action="restore"', self.chat_detail_panel)
-        self.assertIn("conversation_get_member_settings", self.source)
+        self.assertIn('"conversationMemberSettings"', self.source)
+        self.assertNotIn("conversation_get_member_settings", self.source)
         self.assertIn("commits_match(source_commit, station_commit)", self.source)
         self.assertIn('RECOVERY_SELECTORS["restore_submit"]', self.source)
         self.assertNotIn("shutil.copy2", self.source)
