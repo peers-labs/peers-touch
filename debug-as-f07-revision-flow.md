@@ -33,6 +33,9 @@
 | M | The Harness bridge updates Selenium's deprecated class-level transport timeout instead of the active driver's instance config | High | Low | Browser AS-F07 outlives the HTTP read timeout while later Debug Server checkpoints prove the in-page scenario remained active |
 | N | AS-F07's 300-second WebDriver script budget cannot contain its bounded sequence of retry, baseline, regenerate, and edit provider operations | High | Low | The active driver reaches an exact script timeout before the current revision operation returns |
 | O | The retry source retains an obsolete long-output prompt after cancellation moved to provider admission, making the real retry path provider-latency dependent | High | Low | Cancellation occurs at `provider_call_started`, then retry of the same 100-item prompt exhausts the 300-second Turn budget |
+| P | The edit response and Station readback disagree on the edited user/assistant lineage | High | Low | `revision-assertion-inputs.edit` identifies the first mismatching message, parent, replacement, branch, or active-head field |
+| Q | A root user message represents its absent parent differently before and after the edit | Medium | Low | Source and edited parent IDs differ only by absent-value normalization |
+| R | The original Turn diagnostic replay changes after sibling revisions even though immutable usage, feedback, attempts, and messages do not | High | Low | Message, feedback, and attempt facts remain equal while only the whole diagnostic hash changes |
 
 ## Instrumentation
 - Record one redacted stage checkpoint before and after each AS-F07 production
@@ -312,3 +315,12 @@
   fixture correction uses a short response prompt, preserving real admission,
   cancellation, retry, and Station lineage while removing unrelated
   long-output latency. Exact-source runtime verification is pending.
+- Exact-source run
+  `20260831T070443015488Z-de318ef7a65994457f2279f4e0f7ac9c`
+  on `ac98a06faf5ffd7e721a79f0309d0b9f23da1183` proves the bounded
+  retry fixture: retry completed in 20.283 seconds and the full AS-F07
+  production path completed in 218.298 seconds. The independent oracle then
+  failed `editCreatedSibling` and `originalImmutable`. Hypotheses P-R add one
+  redacted assertion-input checkpoint to distinguish a real Station lineage
+  mutation from an evidence-normalization defect before any behavior change.
+  Source identity, redaction, and cleanup passed.

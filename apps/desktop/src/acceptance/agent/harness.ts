@@ -4283,6 +4283,47 @@ async function runFoundationF07Scenario(input: {
     ).feedback,
     'foundationF07OriginalFeedbackEntriesAfter',
   );
+  // #region debug-point P-R:as-f07-assertion-inputs
+  await reportFoundationF07Debug('P-R', 'revision-assertion-inputs', {
+    edit: {
+      sourceUserMessageId: sourceUser.messageId,
+      sourceParentMessageId: sourceUser.parentMessageId,
+      editedUserMessageId: editedUserMessage.messageId,
+      editedUserParentMessageId: editedUserMessage.parentMessageId,
+      editedUserReplacesMessageId: editedUserMessage.replacesMessageId,
+      revisedContentHash: await sha256Hex(revisedContent),
+      editedUserContentHash: editedUserMessage.contentHash,
+      assistantMessageId: String(
+        evidenceField(
+          editedTurn,
+          'assistantMessageId',
+          'assistant_message_id',
+        ) ?? afterEdit.active_branch_message_id,
+      ),
+      activeBranchMessageId: afterEdit.active_branch_message_id,
+      editedAssistantMessageId: editedAssistantMessage.messageId,
+      editedAssistantParentMessageId: editedAssistantMessage.parentMessageId,
+      editedAssistantBranchId: editedAssistantMessage.branchId,
+      editedUserBranchId: editedUserMessage.branchId,
+    },
+    original: {
+      beforeHash: await sha256Hex(stableJson(originalBefore)),
+      afterHash: await sha256Hex(stableJson(originalAfter)),
+      usageBeforeHash: await sha256Hex(stableJson(
+        withoutDiagnosticGenerationTime(originalDiagnosticsBefore),
+      )),
+      usageAfterHash: await sha256Hex(stableJson(
+        withoutDiagnosticGenerationTime(originalDiagnosticsAfter),
+      )),
+      attemptCountBefore: originalAttemptsBefore.length,
+      attemptCountAfter: originalAttemptsAfter.length,
+      feedbackBeforeHash: await sha256Hex(stableJson(originalFeedbackBefore)),
+      feedbackAfterHash: await sha256Hex(stableJson(originalFeedbackAfter)),
+      feedbackCountBefore: originalFeedbackBefore.length,
+      feedbackCountAfter: originalFeedbackAfter.length,
+    },
+  });
+  // #endregion
 
   return {
     conversationId: conversation.conversation_id,

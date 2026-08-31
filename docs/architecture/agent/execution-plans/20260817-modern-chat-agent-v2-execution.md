@@ -4275,6 +4275,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Source identity, redaction, and cleanup passed. Foundation remains
   `PARTIAL / UNPROVEN` pending local verification, checkpoint, exact-source
   deployment, and rerun.
+- Checkpoint `ac98a06fa` was deployed exact-source. Run
+  `20260831T070443015488Z-de318ef7a65994457f2279f4e0f7ac9c`
+  proves the bounded retry fixture: Browser AS-F07 retry completed in
+  20.283 seconds and the complete production revision sequence reached its
+  branch projection in 218.298 seconds. The independent oracle then failed
+  `editCreatedSibling` and `originalImmutable`. The next diagnostic checkpoint
+  records only IDs, branch links, counts, and content/evidence hashes needed to
+  distinguish Station lineage mutation from evidence normalization. No product
+  or oracle behavior change is authorized before that evidence. Source
+  identity, redaction, and cleanup passed; Foundation remains
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
