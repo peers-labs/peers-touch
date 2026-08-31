@@ -1545,6 +1545,36 @@ executed frontend tests, Desktop build, Chat Native static, and Chat structural
 validation pass. MP-W13-F remains `PARTIAL/UNPROVEN` until this candidate is
 committed and the retained exact-source 18-Gate Linux aggregate passes.
 
+Exact-source aggregate
+`20260830T164444086098Z-99846680116645e083efe5ff478ec07d` ran against clean
+commit `2e0a2d52d95d86f009a86f41571e14a1c409b690`, disposable Station `18132`,
+and `desktop-linux-native`. It finished 9 PASS / 8 FAIL / 1 BLOCKED with
+canonical `completionStatus=BLOCKED` and `proofStatus=UNPROVEN`; source,
+Station, runtime-cell, binary, and cleanup identity remained valid.
+
+The run exposed two remaining Acceptance business-injection boundaries:
+
+- nine Native Chat Gate modules still read legacy `actorId` from harness
+  results even though the harness emits canonical `actorPtid`, so the visible
+  post-login identity is read as empty;
+- the Gateway scenario deletes Bob's actor-scoped raw session when it
+  PIN-protects the OAuth account for the same actor, then incorrectly attempts
+  to restore Bob's password account; the prior-tuple rollback check must use
+  Alice's independent account instead.
+
+Both corrections remain inside the accepted MP-W13-F Acceptance scope and do
+not change product semantics. MP-W13-F remains `PARTIAL/UNPROVEN`.
+
+The Acceptance correction now consumes `actorPtid` consistently across all
+nine Native Chat Gate modules and keeps the OAuth PIN failure-path baseline on
+Alice's independent account after Bob's actor-scoped raw session is purged.
+Regression coverage enforces a zero-hit legacy `actorId` scan and the
+independent-account fixture. Focused verification passes 162/162 Chat Python
+tests, 6/6 frontend Acceptance identity tests, Python compilation,
+`git diff --check`, and structural validation for all nine Chat capabilities.
+MP-W13-F remains `PARTIAL/UNPROVEN` pending a clean commit, exact-source
+deployment, and the retained 18-Gate Linux aggregate.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
