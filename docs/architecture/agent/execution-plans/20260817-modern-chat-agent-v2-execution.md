@@ -4196,6 +4196,13 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   as `CAPABILITY_READINESS_STATE_READY`. The next checkpoint adds only
   redacted AS-F07 preflight instrumentation to distinguish Desktop
   protobuf-JSON enum normalization from binding or Station readiness failure.
+- Diagnostic checkpoint `fdee74dea` was deployed exact-source. Run
+  `20260831T013305917274Z-cdf29a553e5fe2cd9f65a010ea5b7480`
+  again reached Browser AS-F07 with clean teardown and reproduced
+  `agent.acceptance.foundationCapabilityIsolationUnavailable`, but the
+  fire-and-forget preflight report did not persist before the assertion threw.
+  The next diagnostic checkpoint awaits only that report; capability setup,
+  readiness, isolation, and cleanup behavior remain unchanged.
 - Tracking commit `7bf635c4b` was deployed exact-source. Run
   `20260830T203842372359Z-3e8aa65f2ac7ddefb381dbabaf74709e`
   passed the AS-F03 prefix and retained fully clean Native/Browser teardown,

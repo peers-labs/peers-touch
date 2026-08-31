@@ -1580,7 +1580,7 @@ async function withFoundationCapabilitiesDisabled<T>(
     originalReadiness,
   );
   if (requireEffectiveCapabilities) {
-    reportFoundationF07Debug('J-L', 'isolation-preflight', {
+    await reportFoundationF07Debug('J-L', 'isolation-preflight', {
       enabledBindingCount: originalBindings.length,
       readyCapabilityCount: originalReadyCapabilityCount,
       readiness: originalReadiness.capabilities.map((capability) => ({
@@ -3792,8 +3792,8 @@ function reportFoundationF07Debug(
   hypothesisId: string,
   stage: string,
   data: Record<string, unknown> = {},
-): void {
-  void fetch('http://127.0.0.1:7777/event', {
+): Promise<void> {
+  return fetch('http://127.0.0.1:7777/event', {
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'as-f07-revision-flow',
@@ -3804,7 +3804,7 @@ function reportFoundationF07Debug(
       data,
       ts: Date.now(),
     }),
-  }).catch(() => {});
+  }).then(() => undefined).catch(() => undefined);
 }
 // #endregion
 

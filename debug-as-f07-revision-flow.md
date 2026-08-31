@@ -246,3 +246,12 @@
   `CAPABILITY_READINESS_STATE_READY`. Hypotheses J-L now distinguish binding
   loss, Station readiness rejection, and Desktop protobuf-JSON enum
   normalization before any behavior correction.
+- Diagnostic run
+  `20260831T013305917274Z-cdf29a553e5fe2cd9f65a010ea5b7480`
+  on `fdee74dea8ebb952e5c783be20ad33e9aa65ec11` again reached Browser
+  AS-F07 and failed with
+  `agent.acceptance.foundationCapabilityIsolationUnavailable`; exact source,
+  redaction, and cleanup passed. The new preflight event was not persisted
+  because the reporter was fire-and-forget and the precondition threw
+  immediately afterward. The instrumentation now awaits only that preflight
+  report before evaluating the unchanged assertion.
