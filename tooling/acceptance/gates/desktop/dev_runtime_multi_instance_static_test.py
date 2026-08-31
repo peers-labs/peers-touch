@@ -131,24 +131,24 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
     def source(self, path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
 
-    def test_env_sh_uses_profile_selector_file(self) -> None:
+    def test_env_sh_uses_worktree_specific_active_profile(self) -> None:
         src = self.source("tooling/scripts/local-dev/env.sh")
         self.assertIn(
-            "PROFILE_SELECTOR", src,
-            "env.sh must resolve the profile name from .local/dev/profile "
-            "rather than relying solely on the legacy active symlink",
+            "ACTIVE_PROFILE", src,
+            "env.sh must resolve the profile from the worktree-specific "
+            "active symlink",
         )
         self.assertIn(
-            'LOCAL_DEV_DIR/profile', src,
-            "the profile selector path must be $LOCAL_DEV_DIR/profile",
+            'LOCAL_DEV_DIR/active/$WORKTREE_ID.env', src,
+            "the active profile path must be scoped by worktree",
         )
 
     def test_env_sh_fails_when_no_profile_configured(self) -> None:
         src = self.source("tooling/scripts/local-dev/env.sh")
-        missing_check = src.find('[[ ! -f "$PROFILE_SELECTOR" ]]')
+        missing_check = src.find('[[ ! -L "$ACTIVE_PROFILE" ]]')
         self.assertGreater(
             missing_check, 0,
-            "env.sh must check whether the profile selector file exists",
+            "env.sh must check whether the worktree-specific active symlink exists",
         )
         exit_after_missing = src.find("exit 1", missing_check)
         self.assertGreater(
@@ -157,23 +157,23 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
             "silently continuing with empty environment",
         )
 
-    def test_env_sh_fails_when_profile_selector_empty(self) -> None:
+    def test_env_sh_fails_when_active_profile_target_is_invalid(self) -> None:
         src = self.source("tooling/scripts/local-dev/env.sh")
-        empty_check = src.find('[[ -z "$PROFILE_NAME" ]]')
+        invalid_target_check = src.find('[[ "$active_filename" != *.env ]]')
         self.assertGreater(
-            empty_check, 0,
-            "env.sh must check whether the profile selector content is empty",
+            invalid_target_check, 0,
+            "env.sh must reject an active symlink target without an .env name",
         )
-        exit_after_empty = src.find("exit 1", empty_check)
+        exit_after_invalid_target = src.find("exit 1", invalid_target_check)
         self.assertGreater(
-            exit_after_empty, empty_check,
-            "env.sh must exit 1 when .local/dev/profile is empty",
+            exit_after_invalid_target, invalid_target_check,
+            "env.sh must exit 1 when the active profile target is invalid",
         )
 
-    def test_env_sh_resolves_from_env_repo_before_local_fallback(self) -> None:
+    def test_env_sh_resolves_from_env_repo_before_active_profile_fallback(self) -> None:
         src = self.source("tooling/scripts/local-dev/env.sh")
         env_repo_check = src.find("profile.env.example")
-        local_fallback = src.find("profiles/${PROFILE_NAME}.env", env_repo_check)
+        local_fallback = src.find('elif [[ -f "$ACTIVE_PROFILE" ]]', env_repo_check)
         self.assertGreater(
             env_repo_check, 0,
             "env.sh must check the env repo (profile.env.example) first",
@@ -193,19 +193,18 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
                 "do not collide",
             )
 
-    def test_profile_sh_writes_selector_on_activation(self) -> None:
+    def test_profile_sh_activates_only_the_worktree_specific_symlink(self) -> None:
         src = self.source("tooling/scripts/local-dev/profile.sh")
-        write_pos = src.find('echo "$name" > "$LOCAL_DEV_DIR/profile"')
-        self.assertGreater(
-            write_pos, 0,
-            "profile.sh activate must write the profile name to "
-            ".local/dev/profile so env.sh can resolve it",
+        self.assertNotIn(
+            'echo "$name" > "$LOCAL_DEV_DIR/profile"',
+            src,
+            "profile.sh must not mutate the retired shared profile selector",
         )
-        symlink_pos = src.find("ln -sfn", write_pos)
+        symlink_pos = src.find('ln -sfn "../profiles/$name.env" "$ACTIVE_FILE"')
         self.assertGreater(
-            symlink_pos, write_pos,
-            "the legacy symlink must still be created after writing the selector "
-            "for backward compatibility",
+            symlink_pos, 0,
+            "profile.sh must activate the profile through the worktree-specific "
+            "symlink",
         )
 
 
