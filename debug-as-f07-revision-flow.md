@@ -32,6 +32,7 @@
 | L | Protobuf JSON returns a string enum while the Harness compares it with a numeric generated enum | High | Low | `isolation-preflight` reports `stateType=string`, `state=CAPABILITY_READINESS_STATE_READY`, and `readyCapabilityCount=0` |
 | M | The Harness bridge updates Selenium's deprecated class-level transport timeout instead of the active driver's instance config | High | Low | Browser AS-F07 outlives the HTTP read timeout while later Debug Server checkpoints prove the in-page scenario remained active |
 | N | AS-F07's 300-second WebDriver script budget cannot contain its bounded sequence of retry, baseline, regenerate, and edit provider operations | High | Low | The active driver reaches an exact script timeout before the current revision operation returns |
+| O | The retry source retains an obsolete long-output prompt after cancellation moved to provider admission, making the real retry path provider-latency dependent | High | Low | Cancellation occurs at `provider_call_started`, then retry of the same 100-item prompt exhausts the 300-second Turn budget |
 
 ## Instrumentation
 - Record one redacted stage checkpoint before and after each AS-F07 production
@@ -299,3 +300,15 @@
   multiple independently bounded provider-backed revision commands, so its
   aggregate WebDriver budget now matches the existing 900-second AS-F04
   multi-command budget. Exact-source runtime verification is pending.
+- Exact-source run
+  `20260831T063340123688Z-447dcc791dcad419fade0929bd57889f`
+  on `f1060608821b06b48c7773858d55c8cbb141900e` confirms hypothesis
+  N's timeout correction: the Harness remains attached beyond 300 seconds and
+  returns the owning typed `agent_retry_turn failed` result instead of a
+  WebDriver timeout. Debug evidence records `retry-started` at 3.828 seconds
+  and the production Turn timeout at 303.996 seconds. This confirms hypothesis
+  O. The 100-item prompt is obsolete because cancellation now occurs at the
+  durable `provider_call_started` event before response generation. The local
+  fixture correction uses a short response prompt, preserving real admission,
+  cancellation, retry, and Station lineage while removing unrelated
+  long-output latency. Exact-source runtime verification is pending.

@@ -4261,6 +4261,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Source identity, redaction, and cleanup passed. Foundation remains
   `PARTIAL / UNPROVEN` pending local verification, checkpoint, exact-source
   deployment, and rerun.
+- Checkpoint `f10606088` was deployed exact-source. Run
+  `20260831T063340123688Z-447dcc791dcad419fade0929bd57889f`
+  verifies the Browser Harness remains attached beyond 300 seconds and returns
+  the owning typed `agent_retry_turn failed` result instead of a WebDriver
+  timeout. The retry source cancelled at the durable provider-admission event
+  in 2.997 seconds, but retrying its inherited 100-item response request
+  exhausted the 300-second Turn budget. That long-output fixture is obsolete
+  now that cancellation no longer waits for first text. The local correction
+  uses a short response prompt while preserving real admission, cancellation,
+  retry, and Station lineage. The 900-second aggregate AS-F07 script budget
+  remains necessary for the sequence of independent revision commands.
+  Source identity, redaction, and cleanup passed. Foundation remains
+  `PARTIAL / UNPROVEN` pending local verification, checkpoint, exact-source
+  deployment, and rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

@@ -315,6 +315,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "event.data.stage !== 'provider_call_started'",
             scenario,
         )
+        self.assertIn(
+            "Reply with one short sentence for retry sample",
+            scenario,
+        )
+        self.assertNotIn(
+            "100 short items",
+            scenario,
+        )
         self.assertNotIn("event.event !== 'text'", scenario)
         self.assertEqual(
             scenario.count("await resolveFoundationToolTurnSession()"),
