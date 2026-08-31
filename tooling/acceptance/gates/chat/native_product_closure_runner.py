@@ -1791,7 +1791,7 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         selector = (
             '[data-chat-search-result-kind="friend"]'
-            f'[data-chat-search-result-peer-did="{peer_ptid}"]'
+            f'[data-chat-search-result-peer-ptid="{peer_ptid}"]'
         )
 
         def exact_result() -> Any | None:
@@ -1807,7 +1807,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "id": result.get_attribute("data-chat-search-result-id") or "",
             "kind": result.get_attribute("data-chat-search-result-kind") or "",
             "peerPtid": (
-                result.get_attribute("data-chat-search-result-peer-did") or ""
+                result.get_attribute("data-chat-search-result-peer-ptid") or ""
             ),
         }
         self.capture_visible_localization(localization_checkpoint, (actor,))

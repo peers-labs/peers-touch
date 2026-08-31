@@ -157,6 +157,16 @@ pub struct MessagingCommandStatusInput {
     pub command_id: String,
 }
 
+#[cfg(feature = "acceptance-webdriver")]
+#[derive(Debug, Deserialize)]
+pub struct MessagingAcceptanceInteractionSnapshotInput {
+    pub expected_actor_ptid: String,
+    pub conversation_id: String,
+    pub message_id: String,
+    #[serde(default)]
+    pub command_id: String,
+}
+
 pub(crate) fn group_creation_state(
     progress: &CommandDispatchProgress,
     target_command_id: &str,
@@ -279,6 +289,36 @@ fn active_engine(
             )
         })?;
     Ok((session.account_id, session.jwt, engine))
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+fn require_acceptance_actor(
+    expected_actor_ptid: &str,
+    actual_actor_ptid: &str,
+) -> Result<String, AppResult<Value>> {
+    let expected = expected_actor_ptid.trim();
+    if !expected.starts_with("ptid:") {
+        return Err(AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "acceptance.chat.expectedActorPtidInvalid",
+            Some(json!({ "reason": "expected_actor_ptid_invalid" })),
+        ));
+    }
+    if !actual_actor_ptid.starts_with("ptid:") {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "acceptance.chat.windowActorPtidInvalid",
+            Some(json!({ "reason": "window_actor_ptid_invalid" })),
+        ));
+    }
+    if expected != actual_actor_ptid {
+        return Err(AppResult::fail(
+            ErrorCode::Forbidden,
+            "acceptance.chat.windowActorMismatch",
+            Some(json!({ "reason": "window_actor_mismatch" })),
+        ));
+    }
+    Ok(expected.to_string())
 }
 
 fn attachment_projection_json(
@@ -461,6 +501,64 @@ pub fn messaging_command_status(
         Err(error) => return error,
     };
     command_status_json(&engine, &input.command_id)
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn messaging_acceptance_interaction_snapshot(
+    input: MessagingAcceptanceInteractionSnapshotInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let session = match state.sessions.get(window.label()) {
+        Some(session) => session,
+        None => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "acceptance.chat.windowSessionMissing",
+                Some(json!({ "reason": "window_session_missing" })),
+            )
+        }
+    };
+    let actor_ptid = match require_acceptance_actor(&input.expected_actor_ptid, &session.actor.ptid)
+    {
+        Ok(actor_ptid) => actor_ptid,
+        Err(error) => return error,
+    };
+    let engine = match state.messaging_engines.get(&session.account_id) {
+        Ok(Some(engine)) => engine,
+        Ok(None) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "acceptance.chat.messagingEngineInactive",
+                Some(json!({ "reason": "messaging_engine_inactive" })),
+            )
+        }
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("read active messaging engine for acceptance: {error}"),
+                Some(json!({ "reason": "messaging_engine_lookup_failed" })),
+            )
+        }
+    };
+    let mut snapshot = match engine.acceptance_interaction_snapshot(
+        &input.conversation_id,
+        &input.message_id,
+        &input.command_id,
+    ) {
+        Ok(snapshot) => snapshot,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let Some(snapshot_object) = snapshot.as_object_mut() else {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "acceptance.chat.interactionSnapshotInvalid",
+            Some(json!({ "reason": "interaction_snapshot_invalid" })),
+        );
+    };
+    snapshot_object.insert("actorPtid".to_string(), json!(actor_ptid));
+    AppResult::success(snapshot)
 }
 
 #[tauri::command]
@@ -1154,6 +1252,8 @@ pub fn messaging_search_messages(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "acceptance-webdriver")]
+    use super::require_acceptance_actor;
     use super::{conversation_member_json, group_creation_state};
     use crate::messaging::CommandDispatchProgress;
     use crate::model::chat::{MemberRole, MemberStatus};
@@ -1235,5 +1335,37 @@ mod tests {
             },
         );
         assert_eq!(admin["role"], MemberRole::Admin as i32);
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    #[test]
+    fn acceptance_actor_requires_the_bound_canonical_ptid() {
+        assert_eq!(
+            require_acceptance_actor(" ptid:v1:actor:alice ", "ptid:v1:actor:alice")
+                .expect("matching canonical actor"),
+            "ptid:v1:actor:alice"
+        );
+
+        let invalid =
+            require_acceptance_actor("alice", "ptid:v1:actor:alice").expect_err("invalid PTID");
+        assert_eq!(
+            invalid
+                .error
+                .expect("invalid PTID error")
+                .details
+                .expect("invalid PTID details")["reason"],
+            "expected_actor_ptid_invalid"
+        );
+
+        let mismatch = require_acceptance_actor("ptid:v1:actor:alice", "ptid:v1:actor:bob")
+            .expect_err("actor mismatch");
+        assert_eq!(
+            mismatch
+                .error
+                .expect("actor mismatch error")
+                .details
+                .expect("actor mismatch details")["reason"],
+            "window_actor_mismatch"
+        );
     }
 }
