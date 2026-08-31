@@ -4203,6 +4203,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   fire-and-forget preflight report did not persist before the assertion threw.
   The next diagnostic checkpoint awaits only that report; capability setup,
   readiness, isolation, and cleanup behavior remain unchanged.
+- Awaited-evidence run
+  `20260831T015223794507Z-17e34707800877c7574cec66cf7885d1`
+  on `a06bf96dc7369603219a2f560fbfd163f5055974` proved the fixture and
+  Station readiness were correct: one enabled binding was present and its
+  readiness was `CAPABILITY_READINESS_STATE_READY`. The Desktop protobuf-JSON
+  adapter exposed that enum as a string while its TypeScript projection and
+  four Foundation checks treated it as the generated numeric enum, yielding a
+  false zero READY count. The owning-layer correction gives the JSON readiness
+  field its exact string-enum type and centralizes exact READY evaluation;
+  post-fix runtime proof remains pending.
 - Tracking commit `7bf635c4b` was deployed exact-source. Run
   `20260830T203842372359Z-3e8aa65f2ac7ddefb381dbabaf74709e`
   passed the AS-F03 prefix and retained fully clean Native/Browser teardown,

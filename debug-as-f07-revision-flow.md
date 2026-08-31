@@ -255,3 +255,14 @@
   because the reporter was fire-and-forget and the precondition threw
   immediately afterward. The instrumentation now awaits only that preflight
   report before evaluating the unchanged assertion.
+- Awaited-evidence run
+  `20260831T015223794507Z-17e34707800877c7574cec66cf7885d1`
+  on `a06bf96dc7369603219a2f560fbfd163f5055974` confirms hypothesis L:
+  `isolation-preflight` recorded one enabled binding and Station readiness
+  `state=CAPABILITY_READINESS_STATE_READY` with `stateType=string`, while the
+  Harness computed `readyCapabilityCount=0`. Hypotheses J and K are rejected.
+  The Desktop API's legacy protobuf-JSON projection typed enum values as the
+  generated numeric enum, and four Foundation checks compared the runtime
+  string with numeric `READY`. The local fix gives that JSON field its exact
+  string-enum type and routes all four checks through one exact predicate.
+  Instrumentation remains active for post-fix comparison.

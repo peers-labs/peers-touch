@@ -89,6 +89,7 @@ import {
 } from '../gen/proto/domain/agent/agent_pb';
 import type {
   CapabilityApprovalPolicy,
+  CapabilityReadiness as ProtoCapabilityReadiness,
   CapabilityReadinessSnapshot as ProtoCapabilityReadinessSnapshot,
   CapabilitySourceKind,
   AgentPackageUnresolvedDependency,
@@ -2576,12 +2577,37 @@ type ProtoJsonProjection<T> =
             }
           : T;
 
+type AgentCapabilityReadinessStateJson =
+  | 'CAPABILITY_READINESS_STATE_UNSPECIFIED'
+  | 'CAPABILITY_READINESS_STATE_READY'
+  | 'CAPABILITY_READINESS_STATE_DEGRADED'
+  | 'CAPABILITY_READINESS_STATE_UNAVAILABLE'
+  | 'CAPABILITY_READINESS_STATE_BLOCKED'
+  | 'CAPABILITY_READINESS_STATE_UNKNOWN';
+
+type AgentCapabilityReadiness = Omit<
+  ProtoJsonProjection<ProtoCapabilityReadiness>,
+  'state'
+> & {
+  state: AgentCapabilityReadinessStateJson;
+};
+
 /**
  * Legacy acceptance callers consume protobuf JSON field names. The shape is
  * derived from the generated message so readiness never gains a parallel DTO.
  */
-export type AgentCapabilityReadinessSnapshot =
-  ProtoJsonProjection<ProtoCapabilityReadinessSnapshot>;
+export type AgentCapabilityReadinessSnapshot = Omit<
+  ProtoJsonProjection<ProtoCapabilityReadinessSnapshot>,
+  'capabilities'
+> & {
+  capabilities: AgentCapabilityReadiness[];
+};
+
+export function isAgentCapabilityReady(
+  capability: AgentCapabilityReadiness,
+): boolean {
+  return capability.state === 'CAPABILITY_READINESS_STATE_READY';
+}
 
 export interface AgentCapabilityBindingInput {
   bindingId?: string;

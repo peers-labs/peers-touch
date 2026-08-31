@@ -10,6 +10,7 @@ import {
   api,
   AuthCommandException,
   classifyAgentTurnTerminalEvent,
+  isAgentCapabilityReady,
   streamAgentTurn,
   streamAgentTurnReplay,
   submitAgentFeedback,
@@ -35,7 +36,6 @@ import {
 } from '../../gen/proto/domain/agent/agent_pb';
 import {
   CapabilityApprovalPolicy,
-  CapabilityReadinessState,
   CapabilitySourceKind,
   type AgentCapabilityBinding,
   type CapabilityManifest,
@@ -1350,7 +1350,7 @@ async function foundationReadyCapabilityHash(
   readiness: Awaited<ReturnType<typeof api.getAgentCapabilityReadiness>>,
 ): Promise<string> {
   const ready = readiness.capabilities
-    .filter((capability) => capability.state === CapabilityReadinessState.READY)
+    .filter(isAgentCapabilityReady)
     .map((capability) => ({
       capabilityId: capability.capability_id,
       capabilityVersion: capability.capability_version,
@@ -1402,7 +1402,7 @@ async function restorePersistedFoundationCapabilityIsolation(
     client_capability_session_id: currentSession.capabilitySessionId,
   });
   const restoredReadyCapabilityCount = restoredReadiness.capabilities.filter(
-    (capability) => capability.state === CapabilityReadinessState.READY,
+    isAgentCapabilityReady,
   ).length;
   const restoredReadyCapabilityHash = await foundationReadyCapabilityHash(
     restoredReadiness,
@@ -1574,7 +1574,7 @@ async function withFoundationCapabilitiesDisabled<T>(
     client_capability_session_id: capabilitySessionId,
   });
   const originalReadyCapabilityCount = originalReadiness.capabilities.filter(
-    (capability) => capability.state === CapabilityReadinessState.READY,
+    isAgentCapabilityReady,
   ).length;
   const originalReadyCapabilityHash = await foundationReadyCapabilityHash(
     originalReadiness,
@@ -1647,7 +1647,7 @@ async function withFoundationCapabilitiesDisabled<T>(
       client_capability_session_id: capabilitySessionId,
     });
     const readyCapabilityCount = isolatedReadiness.capabilities.filter(
-      (capability) => capability.state === CapabilityReadinessState.READY,
+      isAgentCapabilityReady,
     ).length;
     if (readyCapabilityCount !== 0) {
       throw new Error(

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AgentCapabilityBindingSchema,
+  CapabilityReadinessState,
   CapabilityReadinessSnapshotSchema,
   CreateKnowledgeResourceDescriptorRequestSchema,
   CreateKnowledgeResourceDescriptorResponseSchema,
@@ -21,7 +22,7 @@ import {
   UpdateKnowledgeResourceDescriptorResponseSchema,
   UpsertAgentCapabilityBindingResponseSchema,
 } from '../gen/proto/domain/agent/capability_pb';
-import { api } from './desktop_api';
+import { api, isAgentCapabilityReady } from './desktop_api';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -93,6 +94,34 @@ describe('Desktop capability authority API', () => {
     expect(invoke).toHaveBeenNthCalledWith(3, 'agent_capability_readiness', {
       input: { agent_id: 'agent-1' },
     });
+  });
+
+  it('preserves protobuf JSON readiness enum names', async () => {
+    resolveProto(toBinary(
+      GetCapabilityReadinessResponseSchema,
+      create(GetCapabilityReadinessResponseSchema, {
+        snapshot: create(CapabilityReadinessSnapshotSchema, {
+          snapshotId: 'snapshot-1',
+          agentId: 'agent-1',
+          capabilities: [{
+            capabilityId: 'tool:skills_list',
+            capabilityVersion: '1',
+            bindingId: 'binding-1',
+            bindingRevision: 3n,
+            state: CapabilityReadinessState.READY,
+            reasonCode: 'capability_ready',
+          }],
+        }),
+      }),
+    ));
+
+    const readiness = await api.getAgentCapabilityReadiness({
+      agent_id: 'agent-1',
+    });
+    const capability = readiness.capabilities[0];
+
+    expect(capability?.state).toBe('CAPABILITY_READINESS_STATE_READY');
+    expect(capability && isAgentCapabilityReady(capability)).toBe(true);
   });
 
   it('forwards complete CAS inputs and decodes mutation responses', async () => {
