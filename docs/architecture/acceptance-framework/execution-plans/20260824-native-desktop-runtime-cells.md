@@ -1286,6 +1286,37 @@ executed frontend tests, Desktop build, Chat Native static, and Chat structural
 validation pass. NDR-W7 remains `PARTIAL/UNPROVEN` until this candidate is
 committed and the retained exact-source 18-Gate Linux aggregate passes.
 
+Exact-source aggregate
+`20260830T164444086098Z-99846680116645e083efe5ff478ec07d` ran against clean
+commit `2e0a2d52d95d86f009a86f41571e14a1c409b690`, disposable Station `18132`,
+and `desktop-linux-native`. Source, Station, remote checkout, Desktop binary,
+Linux host/image, and cleanup identities were bound correctly. The aggregate
+finished 9 PASS / 8 FAIL / 1 BLOCKED with canonical
+`completionStatus=BLOCKED` and `proofStatus=UNPROVEN`.
+
+The run exposed two remaining Acceptance business-injection boundaries:
+
+- the Chat harness emits canonical `actorPtid`, but nine Native Gate modules
+  still read legacy `actorId`, producing empty post-login actor identity;
+- the Desktop Gateway scenario PIN-protects an OAuth account for Bob, which
+  correctly purges Bob's actor-scoped raw session, then incorrectly expects
+  Bob's password account to remain restorable; the rollback assertion must use
+  Alice's independent prior tuple instead.
+
+Both corrections remain within the existing NDR-W7 / MP-W13-F scope and do not
+change product semantics. No readiness claim advances until they pass focused
+checks and a new full exact-source aggregate.
+
+The Acceptance correction now consumes `actorPtid` consistently across all
+nine Native Chat Gate modules and keeps the OAuth PIN failure-path baseline on
+Alice's independent account after Bob's actor-scoped raw session is purged.
+Regression coverage enforces a zero-hit legacy `actorId` scan and the
+independent-account fixture. Focused verification passes 162/162 Chat Python
+tests, 6/6 frontend Acceptance identity tests, Python compilation,
+`git diff --check`, and structural validation for all nine Chat capabilities.
+NDR-W7 remains `PARTIAL/UNPROVEN` pending a clean commit, exact-source
+deployment, and the retained 18-Gate Linux aggregate.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
