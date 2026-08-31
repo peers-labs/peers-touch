@@ -10,7 +10,7 @@ import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -65,6 +65,184 @@ class SelectedNativeRuntime:
     manifest: dict[str, Any]
     actor_manifest: dict[str, Any]
     binding: NativeDesktopRuntimeBinding
+
+
+NativeProcessState = Literal[
+    "starting",
+    "live",
+    "stopped_preserved",
+    "stopped",
+]
+NativeAuthState = Literal[
+    "none",
+    "restoring",
+    "authenticated",
+    "revoked",
+    "logged_out",
+]
+NativeDeviceState = Literal["active", "revoked"]
+
+
+@dataclass
+class NativeClientLifecycle:
+    client: TauriSession
+    expected_actor_ptid: str
+    process_state: NativeProcessState = "starting"
+    auth_state: NativeAuthState = "none"
+    device_state: NativeDeviceState = "active"
+    successor_client_id: int | None = None
+
+
+class NativeClientLifecycleLedger:
+    def __init__(self) -> None:
+        self.records: list[NativeClientLifecycle] = []
+        self._by_client_id: dict[int, NativeClientLifecycle] = {}
+
+    def register(
+        self,
+        client: TauriSession,
+        expected_actor_ptid: str,
+    ) -> NativeClientLifecycle:
+        if not expected_actor_ptid.startswith("ptid:"):
+            raise GateError(
+                "native client lifecycle requires canonical actor PTID"
+            )
+        record = NativeClientLifecycle(client, expected_actor_ptid)
+        self.records.append(record)
+        self._by_client_id[id(client)] = record
+        return record
+
+    def _record(self, client: TauriSession) -> NativeClientLifecycle:
+        record = self._by_client_id.get(id(client))
+        if record is None:
+            raise GateError(
+                f"native client lifecycle is unregistered: {client.profile}"
+            )
+        return record
+
+    def mark_live(self, client: TauriSession) -> None:
+        self._record(client).process_state = "live"
+
+    def mark_restoring(self, client: TauriSession) -> None:
+        self._record(client).auth_state = "restoring"
+
+    def mark_authenticated(self, client: TauriSession) -> None:
+        self._record(client).auth_state = "authenticated"
+
+    def mark_auth_revoked(self, client: TauriSession) -> None:
+        self._record(client).auth_state = "revoked"
+
+    def mark_device_revoked(self, client: TauriSession) -> None:
+        self._record(client).device_state = "revoked"
+
+    def transfer_preserved_session(
+        self,
+        predecessor: TauriSession,
+        successor: TauriSession,
+    ) -> None:
+        predecessor_record = self._record(predecessor)
+        successor_record = self._record(successor)
+        if predecessor_record.process_state != "stopped_preserved":
+            raise GateError(
+                "native session transfer requires a preserved predecessor"
+            )
+        if (
+            predecessor_record.expected_actor_ptid
+            != successor_record.expected_actor_ptid
+        ):
+            raise GateError(
+                "native session transfer actor PTID mismatch"
+            )
+        predecessor_record.successor_client_id = id(successor)
+        successor_record.auth_state = "restoring"
+
+    def stop_preserving_session(self, client: TauriSession) -> None:
+        record = self._record(client)
+        client.stop(preserve_state=True)
+        record.process_state = "stopped_preserved"
+
+    def release(self, client: TauriSession) -> list[dict[str, str]]:
+        record = self._record(client)
+        if record.process_state == "stopped":
+            return []
+        if record.process_state == "stopped_preserved":
+            successor = self._by_client_id.get(
+                record.successor_client_id or -1
+            )
+            if successor is None or successor.auth_state not in {
+                "authenticated",
+                "revoked",
+                "logged_out",
+            }:
+                return [
+                    {
+                        "resource": f"session:{client.profile}",
+                        "error": (
+                            "preserved native session has no verified "
+                            "successor"
+                        ),
+                    }
+                ]
+            return []
+
+        errors: list[dict[str, str]] = []
+        if record.auth_state in {"authenticated", "restoring"}:
+            try:
+                process_alive = client.is_alive()
+            except Exception as error:
+                process_alive = False
+                errors.append(
+                    {
+                        "resource": f"session:{client.profile}",
+                        "error": (
+                            "failed to inspect authenticated native window: "
+                            f"{error}"
+                        ),
+                    }
+                )
+            if not process_alive:
+                if not errors:
+                    errors.append(
+                        {
+                            "resource": f"session:{client.profile}",
+                            "error": (
+                                "authenticated native window terminated before "
+                                "logout"
+                            ),
+                        }
+                    )
+            else:
+                try:
+                    logout_native_client(
+                        client,
+                        record.expected_actor_ptid,
+                    )
+                    record.auth_state = "logged_out"
+                except Exception as error:
+                    errors.append(
+                        {
+                            "resource": f"session:{client.profile}",
+                            "error": str(error),
+                        }
+                    )
+
+        try:
+            client.stop()
+            record.process_state = "stopped"
+        except Exception as error:
+            errors.append(
+                {
+                    "resource": f"client:{client.profile}",
+                    "error": str(error),
+                }
+            )
+        return errors
+
+    def release_all(self) -> list[dict[str, str]]:
+        errors: list[dict[str, str]] = []
+        for record in reversed(self.records):
+            errors.extend(self.release(record.client))
+        return errors
 
 
 def selected_native_runtime(gate_id: str) -> SelectedNativeRuntime | None:
@@ -288,6 +466,28 @@ def async_harness(
         namespace="chat",
         script_timeout=timeout,
     )
+
+
+def logout_native_client(
+    client: TauriSession,
+    actor_ptid: str,
+) -> dict[str, Any]:
+    result = async_harness(
+        client,
+        "logout",
+        {"actorPtid": actor_ptid},
+        timeout=30,
+    )
+    if (
+        not isinstance(result, dict)
+        or result.get("actorPtid") != actor_ptid
+        or result.get("status") != "logged_out"
+    ):
+        raise GateError(
+            "native window logout returned invalid lifecycle evidence: "
+            f"{result}"
+        )
+    return result
 
 
 def configure_station(client: TauriSession, station_url: str) -> None:
