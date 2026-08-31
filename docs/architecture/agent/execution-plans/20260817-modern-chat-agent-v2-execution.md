@@ -4769,6 +4769,10 @@ miss keeps the relevant Gate `UNPROVEN`.
 - Any undefined lifecycle returns `DESIGN_AMENDMENT_REQUIRED`.
 - No compatibility shim or dual source may survive final cutover.
 - Do not mark a workstream done from compile/static checks alone.
+- Context Anchors that mention a database, log, process, container, port,
+  storage root, cache, queue, service, or Evidence Store artifact must identify
+  its verified deployment node. Unknown or conflicting node identity blocks
+  the related operation.
 - D11: F1 installs Web and Station fail-closed Canvas guards. They remain closed
   throughout and after this plan. W9 proof is only a prerequisite for a future
   separately accepted Agent Canvas canonical-TurnService migration; it never
