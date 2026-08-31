@@ -1610,6 +1610,29 @@ The owner approved the correction cycle on 2026-08-31 with Linux as the only
 compatibility and runtime-proof target. macOS, Windows, and Mobile remain
 explicitly `UNPROVEN`; this cycle does not execute or claim those platforms.
 
+The integrated correction is committed at
+`a8fe6560adfe173dd447a857a7e525d38f04a71f` and pushed to
+`origin/refactor/chat-acceptance-cutover`. A remote deployment attempt was
+stopped before restart because a local cache had repurposed canonical profile
+`three` for disposable endpoint `http://10.37.94.156:18132`, while the runtime
+loader correctly selected the sibling environment repository's `three`
+definition at `http://10.37.94.156:18080`. Exact source synchronization
+completed on deployment node `10.37.94.156` and the build was interrupted; no
+Gate ran and no runtime proof advanced.
+
+MP-W13-F is blocked on an Acceptance/development-environment infrastructure
+correction that gives the disposable Station a distinct canonical environment
+profile and makes preflight plus runtime resolve the same worktree selection
+through that source. MP-W13-F remains `PARTIAL/UNPROVEN`.
+
+The correction now defines canonical profile `chat-native-disposable` for
+deployment node `10.37.94.156` and disposable Station `18132`, removes the
+shared selector from runtime resolution, and makes `make config` consume the
+same resolver as deployment. Three isolated profile-resolution regression
+tests, shell syntax validation, Skill validation, and `git diff --check` pass.
+MP-W13-F is unblocked for exact-source deployment but remains
+`PARTIAL/UNPROVEN` until the retained Linux aggregate passes.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

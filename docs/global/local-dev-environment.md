@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-23 | **Updated**: 2026-07-23
+> **Created**: 2026-07-23 | **Updated**: 2026-08-31
 > **Owner**: Platform Team
 
 ---
@@ -26,9 +26,17 @@ This document does NOT define:
 
 ### 2.1 What Is A Profile
 
-A profile is a `.env` file at `.local/dev/profiles/<name>.env` that configures
-one complete local development topology: which Station to use, which ports, which
-mode. Each git worktree has its own active profile.
+A deployable profile is a `.env` source at
+`../env/peers-touch/<name>/profile.env.example` that configures one complete
+development topology: which Station to use, which ports, and which mode.
+`.local/dev/profiles/<name>.env` is an imported cache, not a competing source
+for a same-named deployable profile.
+
+Each git worktree selects its profile through
+`.local/dev/active/<worktree-name>.env`. Runtime commands derive the selected
+name from that worktree-specific pointer and load the sibling `env` repository
+source when it exists. The shared `.local/dev/profile` selector is not part of
+the runtime contract.
 
 ### 2.2 Profile Fields
 
@@ -53,7 +61,9 @@ mode. Each git worktree has its own active profile.
 
 ### 2.3 Deploy Env Files
 
-Located at `.local/deploy/envs/<name>.env`. These define remote host connection:
+Canonical definitions live at
+`../env/peers-touch/<profile>/deploy/<name>.env.example` and are imported to
+`.local/deploy/envs/<name>.env`. These define remote host connection:
 
 | Field | Semantics |
 |-------|-----------|
@@ -258,3 +268,6 @@ SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_
 3. **Profile per worktree** — each git worktree has its own profile, avoids port conflicts.
 4. **Health check is the contract** — `make station` is not done until health passes.
 5. **Current branch deploys** — remote mode pushes HEAD, not necessarily main.
+6. **Environment repository is authoritative** — do not repurpose a canonical
+   profile by editing only its `.local` cache; create a distinctly named
+   environment profile instead.
