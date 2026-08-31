@@ -4336,6 +4336,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Source identity, redaction, and cleanup passed. The first diagnostic
   checkpoint records the existing Browser capability-session and readiness
   facts before any scenario or product behavior is added.
+- Diagnostic run
+  `20260831T093813288204Z-28c5b5e4e8ee97991078a25b59449f96`
+  on `ab0934e8bd6c6ef6472ca476dc61465aee0a1c4f` confirms the Browser
+  session prerequisites: one local session matches one of two Station
+  sessions, its platform is Browser, it advertises zero local capabilities,
+  and Station readiness selects that same session. The local AS-F10 producer
+  now executes a short Station-backed Turn and the five existing
+  acceptance-gated negative controls, derives selected-device ownership from
+  Station readiness, and records before/after local execution counters.
+  Unsupported and schema-mismatch remain explicit
+  `NO_PRODUCTION_CAPABILITY_ENDPOINT` facts. Desktop typecheck, 125 focused
+  Foundation/static tests, Go formatting, and `git diff --check` pass.
+  Runtime proof remains pending.
 
 **DESIGN_AMENDMENT (2026-08-25) — unsupported/schemaMismatch production proof path**:
 

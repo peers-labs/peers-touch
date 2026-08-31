@@ -44,5 +44,15 @@
 
 ## Verification Conclusion
 - Hypothesis A is confirmed by the runtime failure and source inspection.
-- Hypotheses B-E require one production Harness scenario and redacted runtime
-  evidence before any product or assertion change.
+- Exact-source diagnostic run
+  `20260831T093813288204Z-28c5b5e4e8ee97991078a25b59449f96`
+  on `ab0934e8bd6c6ef6472ca476dc61465aee0a1c4f` confirms hypothesis
+  B for Browser: one local session matches one of two Station sessions,
+  `CLIENT_PLATFORM_BROWSER` is selected, the session advertises zero local
+  capabilities, and the readiness-selected session hash matches.
+- The local producer now executes a short Station-backed Turn, calls all five
+  existing acceptance-gated negative controls, derives selected-device
+  ownership from Station readiness, and records the controls' before/after
+  local execution counters. Unsupported and schema-mismatch remain explicit
+  `NO_PRODUCTION_CAPABILITY_ENDPOINT` facts. Post-fix runtime evidence is
+  pending for hypotheses C-E.

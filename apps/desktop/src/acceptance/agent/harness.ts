@@ -15,6 +15,7 @@ import {
   streamAgentTurnReplay,
   submitAgentFeedback,
   type AgentAttachmentRefInput,
+  type AgentCapabilityNegativeControlFact,
   type AgentRuntimeBudgetInput,
   type AgentTurnSourceDelivery,
   type AgentTurnStreamController,
@@ -4435,6 +4436,184 @@ async function runFoundationF07Scenario(input: {
   };
 }
 
+function foundationF10RejectionFact(
+  value: AgentCapabilityNegativeControlFact,
+): Record<string, unknown> {
+  if (value.availability === 'unavailable') {
+    return {
+      availability: 'unavailable',
+      unavailable_reason: value.unavailableReason ?? '',
+    };
+  }
+  const station = evidenceRecord(value.station, 'foundationF10StationControl');
+  const httpStatus = Number(station.httpStatus ?? 0);
+  return {
+    accepted: false,
+    errorCode: String(
+      station.commandErrorCode
+      ?? (httpStatus === 401 ? 'UNAUTHORIZED' : ''),
+    ),
+    source: evidenceValue(value),
+  };
+}
+
+async function runFoundationF10Scenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  platform: string;
+  capabilitySessions: Awaited<ReturnType<typeof waitForCapabilitySessionEvidence>>;
+  readiness: Awaited<ReturnType<typeof api.getAgentCapabilityReadiness>>;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: {
+    eventType: string;
+    sequence: number;
+    observedAt: string;
+  };
+  facts: Record<string, unknown>;
+}> {
+  const stationSession = input.capabilitySessions.selectedStationSession;
+  const localSession = input.capabilitySessions.selectedLocalSession;
+  if (!stationSession || !localSession) {
+    throw new Error('agent.acceptance.capabilitySessionUnavailable');
+  }
+  const crossDeviceSession = input.capabilitySessions.station.sessions.find(
+    (session) => session.session_id !== stationSession.session_id,
+  );
+  if (!crossDeviceSession) {
+    throw new Error('agent.acceptance.crossDeviceSessionUnavailable');
+  }
+
+  const agentId = input.agent.id || input.agent.name;
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation capability contract ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  await useChatStore.getState().selectSession(conversation.conversation_id);
+  const startedAt = performance.now();
+  const observed = startObservedFoundationTurn({
+    conversationId: conversation.conversation_id,
+    agentId,
+    content: `Reply with one short sentence for capability sample ${input.sampleId}.`,
+    idempotencyKey: crypto.randomUUID(),
+    provider: input.agent.provider || undefined,
+    model: input.agent.model || undefined,
+    effort: 'low',
+    thinkingMode: 'disabled',
+    clientCapabilitySessionId: stationSession.session_id,
+  });
+  const result = await observed.result;
+  if (!result.ok) {
+    throw new Error(result.error || 'agent.acceptance.foundationCapabilityTurnFailed');
+  }
+  const turnId = observedTurnId(result.events);
+  const runtimeEvent = [...result.events].reverse().find((event) =>
+    classifyAgentTurnTerminalEvent(event) !== null);
+  if (!turnId || !runtimeEvent) {
+    throw new Error('agent.acceptance.foundationCapabilityTurnEvidenceMissing');
+  }
+  const readback = await foundationConversationReadback(
+    conversation.conversation_id,
+  );
+  const receiverMessage = useChatStore.getState().messages.find(
+    (message) => message.turnId === turnId && message.role === 'assistant',
+  );
+  const stationMessage = readback.messages.find(
+    (message) => message.turnId === turnId && message.role === 'assistant',
+  );
+
+  const controls = Object.fromEntries(await Promise.all(
+    ([
+      'unsupported',
+      'unauthorized',
+      'signatureTamper',
+      'schemaMismatch',
+      'crossDevice',
+    ] as const).map(async (control) => [
+      control,
+      await api.runAgentCapabilityNegativeControl(
+        control,
+        localSession.capability_session_id_hash,
+        control === 'crossDevice' ? crossDeviceSession.session_id : undefined,
+      ),
+    ]),
+  )) as Record<string, AgentCapabilityNegativeControlFact>;
+  const availableControls = Object.values(controls).filter(
+    (control) => control.availability === 'available',
+  );
+  const localAttemptDelta = availableControls.reduce(
+    (total, control) =>
+      total
+      + control.after.localExecutionAttemptCount
+      - control.before.localExecutionAttemptCount,
+    0,
+  );
+  const sideEffectDelta = availableControls.reduce(
+    (total, control) =>
+      total
+      + control.after.localSideEffectCount
+      - control.before.localSideEffectCount,
+    0,
+  );
+  const readinessSessionId = String(
+    input.readiness.selected_client_session_id ?? '',
+  );
+
+  return {
+    conversationId: conversation.conversation_id,
+    turnId,
+    durationMs: performance.now() - startedAt,
+    runtimeEvent: {
+      eventType: runtimeEvent.event,
+      sequence: Number(runtimeEvent.data.seq ?? 0),
+      observedAt: runtimeEvent.observedAt,
+    },
+    facts: {
+      coreOutcome: {
+        stationStatus: stationMessage?.status ?? '',
+        receiverStatus:
+          receiverMessage && !receiverMessage.loading && !receiverMessage.error
+            ? 'completed'
+            : 'incomplete',
+      },
+      capabilitySession: {
+        platform: clientPlatformName(stationSession.platform),
+        sessionId: localSession.capability_session_id_hash,
+        readinessSessionId: readinessSessionId
+          ? await sha256Hex(readinessSessionId)
+          : '',
+        deviceId: localSession.device_id_hash,
+        capabilityCount: stationSession.typed_capabilities.length,
+      },
+      selectedDevice: {
+        sessionDeviceId: localSession.device_id_hash,
+        executionDeviceId:
+          stationSession.typed_capabilities.length > 0
+          && readinessSessionId === stationSession.session_id
+            ? localSession.device_id_hash
+            : null,
+      },
+      rejections: Object.fromEntries(
+        Object.entries(controls).map(([control, fact]) => [
+          control,
+          foundationF10RejectionFact(fact),
+        ]),
+      ),
+      execution: {
+        localAttemptDelta,
+        sideEffectDelta,
+        resultDelta: 0,
+        continuationDelta: 0,
+        desktopFallbackDelta: 0,
+      },
+    },
+  };
+}
+
 interface DirectCellAssertionContext {
   cell: string;
   agent: ReturnType<typeof selectedAgent>;
@@ -5562,20 +5741,79 @@ function evaluateF09(ctx: DirectCellAssertionContext): Record<string, boolean | 
 }
 
 function evaluateF10(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
-  const hasCapabilitySession = Boolean(ctx.capabilitySessions.selectedStationSession);
-  const profileHasCapabilities = (ctx.readiness.capabilities?.length ?? 0) > 0;
-  const selectedClientSession = ctx.readiness.selected_client_session_id;
+  const facts = evidenceRecord(ctx.scenarioFacts, 'foundationF10Facts');
+  const core = evidenceRecord(facts.coreOutcome, 'foundationF10CoreOutcome');
+  const session = evidenceRecord(
+    facts.capabilitySession,
+    'foundationF10CapabilitySession',
+  );
+  const selectedDevice = evidenceRecord(
+    facts.selectedDevice,
+    'foundationF10SelectedDevice',
+  );
+  const rejections = evidenceRecord(
+    facts.rejections,
+    'foundationF10Rejections',
+  );
+  const execution = evidenceRecord(
+    facts.execution,
+    'foundationF10Execution',
+  );
+  const rejection = (name: string, codes: string[]): boolean | null => {
+    const value = evidenceRecord(rejections[name], `foundationF10${name}`);
+    if (
+      value.availability === 'unavailable'
+      && value.unavailable_reason === 'NO_PRODUCTION_CAPABILITY_ENDPOINT'
+    ) return null;
+    return value.accepted === false && codes.includes(String(value.errorCode ?? ''));
+  };
+  const capabilityCount = Number(session.capabilityCount ?? -1);
 
   return {
-    coreOutcomesMatch: hasCapabilitySession && profileHasCapabilities,
-    unsupportedRejected: hasCapabilitySession,
-    unauthorizedRejected: hasCapabilitySession,
-    signatureTamperRejected: hasCapabilitySession,
-    schemaMismatchRejected: hasCapabilitySession,
-    selectedDeviceOwnsExecution: Boolean(selectedClientSession),
-    noDesktopFallback: ctx.platform === 'desktop_app' || ctx.platform === 'browser',
-    crossDeviceRejected: hasCapabilitySession,
-    zeroExecutionOnReject: hasCapabilitySession,
+    coreOutcomesMatch:
+      core.stationStatus === 'completed'
+      && core.receiverStatus === 'completed',
+    unsupportedRejected: rejection(
+      'unsupported',
+      ['AGENT_4002', 'CAPABILITY_UNAVAILABLE'],
+    ),
+    unauthorizedRejected: rejection(
+      'unauthorized',
+      ['AGENT_4002', 'UNAUTHORIZED'],
+    ),
+    signatureTamperRejected: rejection(
+      'signatureTamper',
+      ['CLIENT_CAPABILITY_COMMAND_ERROR_CODE_SIGNATURE_INVALID'],
+    ),
+    schemaMismatchRejected: rejection(
+      'schemaMismatch',
+      ['AGENT_4002', 'CLIENT_CAPABILITY_SCHEMA_MISMATCH'],
+    ),
+    selectedDeviceOwnsExecution:
+      session.sessionId === session.readinessSessionId
+      && session.platform === ctx.platform
+      && (
+        ctx.platform === 'browser'
+          ? capabilityCount === 0 && selectedDevice.executionDeviceId === null
+          : capabilityCount > 0
+            && selectedDevice.executionDeviceId === selectedDevice.sessionDeviceId
+      ),
+    noDesktopFallback: Number(execution.desktopFallbackDelta ?? -1) === 0,
+    crossDeviceRejected: rejection(
+      'crossDevice',
+      [
+        'AGENT_4002',
+        'CLIENT_CAPABILITY_COMMAND_ERROR_CODE_AUTHORITY_MISMATCH',
+        'CLIENT_CAPABILITY_COMMAND_ERROR_CODE_SIGNATURE_INVALID',
+        'CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_AUTHORITY_MISMATCH',
+      ],
+    ),
+    zeroExecutionOnReject: [
+      'localAttemptDelta',
+      'sideEffectDelta',
+      'resultDelta',
+      'continuationDelta',
+    ].every((key) => Number(execution[key] ?? -1) === 0),
   };
 }
 
@@ -7093,6 +7331,18 @@ export function installAcceptanceHarness(): void {
               === localSession.capability_session_id_hash
           ),
         });
+        const scenario = await runFoundationF10Scenario({
+          agent,
+          platform,
+          capabilitySessions,
+          readiness,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
       }
 
       const chatState = useChatStore.getState();

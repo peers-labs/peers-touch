@@ -1286,6 +1286,16 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         ):
             evaluate_as_f10(capture, platform="desktop_app")
 
+    def test_as_f10_accepts_cross_device_command_authority_rejection(self) -> None:
+        capture = valid_as_f10_capture()
+        capture["rejections"]["crossDevice"]["errorCode"] = (
+            "CLIENT_CAPABILITY_COMMAND_ERROR_CODE_AUTHORITY_MISMATCH"
+        )
+
+        assertions = evaluate_as_f10(capture, platform="desktop_app")
+
+        self.assertTrue(assertions["crossDeviceRejected"])
+
     def test_as_f10_defers_unsupported_when_no_production_endpoint(self) -> None:
         capture = valid_as_f10_capture()
         capture["rejections"]["unsupported"] = {

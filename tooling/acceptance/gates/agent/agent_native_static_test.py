@@ -340,6 +340,29 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
 
+    def test_capability_contract_scenario_uses_production_controls(self) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationF10Scenario",
+        )
+        scenario_end = self.source.index(
+            "interface DirectCellAssertionContext",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("runAgentCapabilityNegativeControl(", scenario)
+        for control in (
+            "'unsupported'",
+            "'unauthorized'",
+            "'signatureTamper'",
+            "'schemaMismatch'",
+            "'crossDevice'",
+        ):
+            self.assertIn(control, scenario)
+        self.assertIn("localAttemptDelta", scenario)
+        self.assertIn("sideEffectDelta", scenario)
+        self.assertIn("crossDeviceSession.session_id", scenario)
+
     def test_revision_scenario_disables_capabilities_and_restores_them(self) -> None:
         helper_start = self.source.index(
             "async function runFoundationF07WithCapabilityIsolation",
