@@ -951,6 +951,20 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertNotIn("setTimeout(resolve, 50)", scenario)
         self.assertNotIn("disconnectTransport()", scenario)
 
+    def test_as_f06_waits_for_an_acknowledged_text_prefix(self) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        start = source.index("const textEvents = durableEvents.filter")
+        end = source.index("const chatBefore =", start)
+        prefix_boundary = source[start:end]
+
+        self.assertIn("Number(candidate.data.seq ?? 0) <= acknowledgedCursor", prefix_boundary)
+        self.assertIn("if (textEvents.length === 0)", prefix_boundary)
+        self.assertIn("'prefix-not-acknowledged'", prefix_boundary)
+        self.assertLess(
+            prefix_boundary.index("if (textEvents.length === 0)"),
+            prefix_boundary.index("if (!prefix)"),
+        )
+
     def test_agent_chat_runtime_bootstraps_before_authenticated_turns(self) -> None:
         app_runtime = DESKTOP_APP_RUNTIME.read_text(encoding="utf-8")
         runtime_hook = DESKTOP_APP_RUNTIME_HOOK.read_text(encoding="utf-8")

@@ -4334,6 +4334,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   the source-backed typed-error producer/oracle, while the AS-F10 deferred
   controls and AS-F12 self-asserting producer remain mandatory pre-completion
   corrections.
+- Exact-source run
+  `20260831T210408061338Z-a4f858ddbe963a87f5beb824f6d74a26`
+  on `d344de98807e85b731c11c4b1d4da6b6bb6c8836` reproduced the
+  intermittent Browser AS-F06 prefix failure before reaching G-FE1. Debug
+  evidence proves the callback had already received a non-empty text event at
+  sequence 3 while the recovery owner still acknowledged cursor 2. The
+  producer incorrectly treated the absence of text at or below that stale
+  cursor as an empty prefix. The local correction waits for an acknowledged
+  text event and retains the fail-closed empty-payload assertion once one
+  exists. Runtime comparison remains pending.
 - **G-FE1 typed-error vertical closure (plan amendment)**: the 419-tuple
   matrix already requires 28 `BASE-*` product error cells, but the direct
   adapter currently rejects all 112 Desktop/Browser tuples before invoking the

@@ -45,8 +45,18 @@
 - That run advanced past AS-F12 and failed at the first unimplemented direct
   error fixture, `BASE-ACTIVE_MUTATION_CONFLICT`. Exact source, redaction, and
   cleanup passed.
+- Exact-source run
+  `20260831T210408061338Z-a4f858ddbe963a87f5beb824f6d74a26`
+  on `d344de98807e85b731c11c4b1d4da6b6bb6c8836` reproduced the
+  failure. Debug lines 7-8 show a non-empty text event at sequence 3 while the
+  recovery owner still acknowledged cursor 2. Filtering the prefix to
+  `sequence <= acknowledgedCursor` therefore produced no eligible text and
+  failed before the recovery cursor could catch up.
 
 ## Verification Conclusion
-The failure did not reproduce in the first instrumented run, so hypotheses A-D
-remain inconclusive and no behavior change is justified. Instrumentation stays
-active for later exact-source samples.
+Hypothesis B is confirmed. Hypotheses A, C, and D are rejected for the failing
+sample: the text payload was non-empty and used the normalized `text` field,
+but its sequence had not yet been acknowledged by the recovery owner. The
+minimal correction waits when no text event is at or below the acknowledged
+cursor; it retains the fail-closed empty-prefix check once an acknowledged text
+event exists. Instrumentation remains active for post-fix comparison.

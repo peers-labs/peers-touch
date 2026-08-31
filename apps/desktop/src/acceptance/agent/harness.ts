@@ -2893,6 +2893,16 @@ async function prepareFoundationF06Conversation(
       const textEvents = durableEvents.filter((candidate) =>
         candidate.event === 'text'
         && Number(candidate.data.seq ?? 0) <= acknowledgedCursor);
+      if (textEvents.length === 0) {
+        void reportFoundationF06PrefixDebug('B-C', 'prefix-not-acknowledged', {
+          acknowledgedCursor,
+          durableEventTypes: durableEvents.map((candidate) => ({
+            event: candidate.event,
+            sequence: Number(candidate.data.seq ?? 0),
+          })),
+        });
+        return;
+      }
       const textEventFacts = textEvents.map((candidate) => {
         const content = String(
           candidate.data.content ?? candidate.data.text ?? '',
