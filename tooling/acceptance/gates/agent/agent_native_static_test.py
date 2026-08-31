@@ -329,6 +329,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
             2,
         )
         self.assertNotIn("input.capabilitySessionId", scenario)
+        self.assertIn(
+            "sourceParentMessageId: String(sourceUser.parentMessageId ?? '')",
+            scenario,
+        )
+        self.assertIn("stableJson(originalAttemptsBefore)", scenario)
+        self.assertIn("stableJson(originalAttemptsAfter)", scenario)
+        self.assertNotIn(
+            "withoutDiagnosticGenerationTime(originalDiagnosticsBefore)",
+            scenario,
+        )
 
     def test_revision_scenario_disables_capabilities_and_restores_them(self) -> None:
         helper_start = self.source.index(

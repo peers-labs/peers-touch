@@ -316,6 +316,19 @@
   cancellation, retry, and Station lineage while removing unrelated
   long-output latency. Exact-source runtime verification is pending.
 - Exact-source run
+  `20260831T074027598526Z-c5e380bfc18629a3411a163af9a72f7a`
+  on `cfaba07dd64eeca3105a6286c7042857c911c883` completed the full
+  Browser AS-F07 production sequence and confirmed hypotheses P-R. PostgreSQL
+  readback on deployment node `station-two` contains the correct edited
+  assistant parent, but the Station conversation JSON handler omits
+  `parent_message_id`; the evidence producer also compares root-parent `null`
+  with normalized empty string. Original message, feedback, and attempt counts
+  remain stable; only the hash of the diagnostics response changes because its
+  nested replay carries a fresh `generated_at`. The local corrections expose
+  persisted parent lineage, normalize the optional root parent, and hash the
+  immutable attempt/usage facts instead of the generated diagnostics envelope.
+  Exact-source runtime verification is pending.
+- Exact-source run
   `20260831T070443015488Z-de318ef7a65994457f2279f4e0f7ac9c`
   on `ac98a06faf5ffd7e721a79f0309d0b9f23da1183` proves the bounded
   retry fixture: retry completed in 20.283 seconds and the full AS-F07

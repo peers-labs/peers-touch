@@ -4255,14 +4255,6 @@ async function runFoundationF07Scenario(input: {
       'foundationF07OriginalAssistantAfter',
     ),
   };
-  const originalDiagnosticsBefore = evidenceRecord(
-    originalEvidenceBefore.diagnostics,
-    'foundationF07OriginalDiagnosticsBefore',
-  );
-  const originalDiagnosticsAfter = evidenceRecord(
-    originalEvidenceAfter.diagnostics,
-    'foundationF07OriginalDiagnosticsAfter',
-  );
   const originalAttemptsBefore = foundationTurnAttemptFacts(
     originalEvidenceBefore,
   );
@@ -4287,7 +4279,7 @@ async function runFoundationF07Scenario(input: {
   await reportFoundationF07Debug('P-R', 'revision-assertion-inputs', {
     edit: {
       sourceUserMessageId: sourceUser.messageId,
-      sourceParentMessageId: sourceUser.parentMessageId,
+      sourceParentMessageId: String(sourceUser.parentMessageId ?? ''),
       editedUserMessageId: editedUserMessage.messageId,
       editedUserParentMessageId: editedUserMessage.parentMessageId,
       editedUserReplacesMessageId: editedUserMessage.replacesMessageId,
@@ -4309,12 +4301,8 @@ async function runFoundationF07Scenario(input: {
     original: {
       beforeHash: await sha256Hex(stableJson(originalBefore)),
       afterHash: await sha256Hex(stableJson(originalAfter)),
-      usageBeforeHash: await sha256Hex(stableJson(
-        withoutDiagnosticGenerationTime(originalDiagnosticsBefore),
-      )),
-      usageAfterHash: await sha256Hex(stableJson(
-        withoutDiagnosticGenerationTime(originalDiagnosticsAfter),
-      )),
+      usageBeforeHash: await sha256Hex(stableJson(originalAttemptsBefore)),
+      usageAfterHash: await sha256Hex(stableJson(originalAttemptsAfter)),
       attemptCountBefore: originalAttemptsBefore.length,
       attemptCountAfter: originalAttemptsAfter.length,
       feedbackBeforeHash: await sha256Hex(stableJson(originalFeedbackBefore)),
@@ -4363,7 +4351,7 @@ async function runFoundationF07Scenario(input: {
       },
       edit: {
         sourceUserMessageId: sourceUser.messageId,
-        sourceParentMessageId: sourceUser.parentMessageId,
+        sourceParentMessageId: String(sourceUser.parentMessageId ?? ''),
         revisedContentHash: await sha256Hex(revisedContent),
         user: editedUserMessage,
         assistant: editedAssistantMessage,
@@ -4410,12 +4398,8 @@ async function runFoundationF07Scenario(input: {
       original: {
         beforeHash: await sha256Hex(stableJson(originalBefore)),
         afterHash: await sha256Hex(stableJson(originalAfter)),
-        usageBeforeHash: await sha256Hex(stableJson(
-          withoutDiagnosticGenerationTime(originalDiagnosticsBefore),
-        )),
-        usageAfterHash: await sha256Hex(stableJson(
-          withoutDiagnosticGenerationTime(originalDiagnosticsAfter),
-        )),
+        usageBeforeHash: await sha256Hex(stableJson(originalAttemptsBefore)),
+        usageAfterHash: await sha256Hex(stableJson(originalAttemptsAfter)),
         attemptCountBefore: originalAttemptsBefore.length,
         attemptCountAfter: originalAttemptsAfter.length,
         feedbackBeforeHash: await sha256Hex(stableJson(

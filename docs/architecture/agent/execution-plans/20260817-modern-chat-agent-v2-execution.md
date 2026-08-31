@@ -4286,6 +4286,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   or oracle behavior change is authorized before that evidence. Source
   identity, redaction, and cleanup passed; Foundation remains
   `PARTIAL / UNPROVEN`.
+- Diagnostic checkpoint `cfaba07dd` was deployed exact-source. After one
+  unchanged rerun closed a transient AS-F02 queue-position capture, run
+  `20260831T074027598526Z-c5e380bfc18629a3411a163af9a72f7a`
+  completed Browser AS-F07 and failed only `editCreatedSibling` and
+  `originalImmutable`. Redacted assertion inputs plus PostgreSQL readback on
+  deployment node `station-two` prove two evidence-boundary defects. The
+  authoritative edited assistant row has the correct parent, but the Station
+  conversation JSON handler omits `parent_message_id`; the producer also
+  compares an absent root parent as `null` against normalized empty string.
+  Original message, feedback, and attempt counts remain unchanged, while the
+  whole diagnostics response hash changes because nested replay
+  `generated_at` is regenerated on export. The local correction exposes
+  persisted parent lineage, normalizes the optional root parent, and hashes
+  the immutable attempt/usage facts instead of the generated diagnostics
+  envelope. Source identity, redaction, and cleanup passed. Foundation remains
+  `PARTIAL / UNPROVEN` pending local verification, checkpoint, exact-source
+  deployment, and rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

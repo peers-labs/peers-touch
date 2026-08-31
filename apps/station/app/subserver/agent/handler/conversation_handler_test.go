@@ -44,6 +44,26 @@ func TestMessagesToJSONIncludesPersistedAttachments(t *testing.T) {
 	}
 }
 
+func TestMessagesToJSONIncludesPersistedLineage(t *testing.T) {
+	items, err := messagesToJSON([]*domain.Message{{
+		MessageID:         "message-1",
+		ConversationID:    "conversation-1",
+		Role:              domain.MessageRoleAssistant,
+		BranchID:          "branch-1",
+		ParentMessageID:   "message-parent",
+		ReplacesMessageID: "message-replaced",
+	}})
+	if err != nil {
+		t.Fatalf("messagesToJSON: %v", err)
+	}
+	if len(items) != 1 ||
+		items[0]["branch_id"] != "branch-1" ||
+		items[0]["parent_message_id"] != "message-parent" ||
+		items[0]["replaces_message_id"] != "message-replaced" {
+		t.Fatalf("message lineage missing from response: %+v", items)
+	}
+}
+
 func TestMessagesToJSONRejectsCorruptAttachmentMetadata(t *testing.T) {
 	_, err := messagesToJSON([]*domain.Message{{
 		MessageID:       "message-1",

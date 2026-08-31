@@ -582,6 +582,9 @@ func messagesToJSON(msgs []*domain.Message) ([]map[string]any, error) {
 		if m.BranchID != "" {
 			item["branch_id"] = m.BranchID
 		}
+		if m.ParentMessageID != "" {
+			item["parent_message_id"] = m.ParentMessageID
+		}
 		if m.ReplacesMessageID != "" {
 			item["replaces_message_id"] = m.ReplacesMessageID
 		}
