@@ -1449,6 +1449,41 @@ accepted worktree-specific selector contract; NDR-W7 remains
 retained Linux closure obligations and canonical range Gates passes at one
 exact source. NDR-W8 macOS and NDR-W9 Windows remain `UNPROVEN`.
 
+### 2026-08-31 NDR-W7 Final Aggregate And Audit Blocker
+
+Exact-source aggregate
+`20260831T142010116108Z-14a6f4f74f887bfb8a34230afa060fef` at commit
+`162d36a32d8bd5cb62d04f9f3c7caf83e3833b51` completed 19 PASS / 0 FAIL
+with `completionStatus=DONE`, `proofStatus=PROVEN`, zero missing
+traceability, and successful cleanup for every provisioned Gate. Station
+evidence belongs to deployment node `10.37.94.156` and endpoint `18132`;
+Linux Native runtime-cell evidence belongs to host `10.37.246.80`.
+
+Fresh W11 forbidden-owner and duplicate-owner scans plus Chat
+required-proven validation passed at the same source. Gap Detector reports
+the Linux-only NDR-W7 / MP-W13-F claim as `PROVEN` with no gaps while macOS,
+Windows, and Mobile remain `UNPROVEN`.
+
+W11 Completion Audit run
+`20260831T153920368737Z-db1df6c1d9a07632118f5c542bdb8ff8` exposed an
+audit identity-shape defect introduced by commit `63655081d`: immutable Gate
+manifests use canonical source identity
+`{commit, workspaceDigest, canonicalWorktreeHash}`, while Native evidence
+reports retain `{commit, workspaceDigest, worktree}`. The audit compares
+these semantically equivalent identities as exact dictionaries and therefore
+rejects all seven valid Linux Native reports. The correction must preserve
+commit, clean-workspace, and canonical-worktree binding while comparing the
+two representations. NDR-W7 remains `PARTIAL/UNPROVEN` until that audit
+correction, exact-source revalidation, Completion Audit, and submit review
+pass.
+
+The approved correction is implemented in the W11 audit owner. It normalizes
+the report representation by hashing its recorded worktree and requires that
+hash, commit, and clean-workspace digest to equal the canonical Evidence Store
+identity. Evidence from another worktree still fails closed. The focused W11
+Completion Audit unit suite passes 12/12. Exact-source runtime revalidation
+remains pending at the resulting commit.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
