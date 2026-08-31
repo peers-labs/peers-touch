@@ -476,6 +476,27 @@ class HarnessBridgeTests(unittest.TestCase):
             call_async_harness(BadDriver(), "anything", {}, namespace="chat")
         self.assertIn("non-dict", str(ctx.exception))
 
+    def test_call_async_harness_updates_instance_transport_timeout(self):
+        mock_driver = MockDriver()
+        mock_driver.set_script_timeout = MagicMock()
+        mock_driver.command_executor = MagicMock()
+        mock_driver.command_executor._client_config.timeout = 120
+
+        call_async_harness(
+            mock_driver,
+            "anything",
+            {},
+            namespace="agent",
+            script_timeout=300,
+        )
+
+        mock_driver.set_script_timeout.assert_called_once_with(300)
+        self.assertEqual(
+            mock_driver.command_executor._client_config.timeout,
+            305,
+        )
+        mock_driver.command_executor.set_timeout.assert_not_called()
+
 
 class TauriDriverContractTests(unittest.TestCase):
     def test_tauri_driver_inherits_basedriver(self):

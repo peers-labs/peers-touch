@@ -4230,6 +4230,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   remaining AS-F07 producer gap is a deterministic positive-capability fixture,
   not AS-F03 zero-READY compatibility, restart authorization, or cleanup.
   Foundation remains `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260831T052152649161Z-db7b6ded7811e787291df17ac9933b5b`
+  on `8848e36d4bfc06c3f31f589f4bbe8704beaae395` proves the
+  protobuf-JSON readiness correction: Browser AS-F07 observed one enabled
+  binding and one READY capability. The in-page scenario completed retry,
+  baseline, two regenerations, edit/stale-conflict, and branch projection by
+  255.228 seconds, but the Browser adapter failed earlier with an HTTP read
+  timeout of 133.353 seconds. A two-connection Selenium reproduction confirms
+  that the generic Harness bridge's deprecated class-level
+  `RemoteConnection.set_timeout` mutates the most recently constructed
+  connection rather than the active driver instance. The local Acceptance
+  Infra correction updates the active command executor's
+  `_client_config.timeout` directly. Focused Harness and Foundation tests,
+  Acceptance Infra self-validation, plan self-check, and `git diff --check`
+  pass. The full legacy Core runtime test file retains two unrelated,
+  pre-existing Tauri Driver contract failures, and `skill-check.sh` retains
+  its pre-existing upstream-review freshness mismatch. Foundation remains
+  `PARTIAL / UNPROVEN` pending checkpoint, exact-source deployment, and rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

@@ -30,6 +30,7 @@
 | J | The AS-F07 fixture setup does not leave an enabled binding | Medium | Low | `isolation-preflight` reports zero enabled bindings |
 | K | Station classifies the enabled fixture as non-READY | Medium | Low | `isolation-preflight` reports a non-READY state and reason code |
 | L | Protobuf JSON returns a string enum while the Harness compares it with a numeric generated enum | High | Low | `isolation-preflight` reports `stateType=string`, `state=CAPABILITY_READINESS_STATE_READY`, and `readyCapabilityCount=0` |
+| M | The Harness bridge updates Selenium's deprecated class-level transport timeout instead of the active driver's instance config | High | Low | Browser AS-F07 outlives the HTTP read timeout while later Debug Server checkpoints prove the in-page scenario remained active |
 
 ## Instrumentation
 - Record one redacted stage checkpoint before and after each AS-F07 production
@@ -266,3 +267,23 @@
   string with numeric `READY`. The local fix gives that JSON field its exact
   string-enum type and routes all four checks through one exact predicate.
   Instrumentation remains active for post-fix comparison.
+- Exact-source run
+  `20260831T052152649161Z-db7b6ded7811e787291df17ac9933b5b`
+  on `8848e36d4bfc06c3f31f589f4bbe8704beaae395` confirms the
+  readiness correction: `isolation-preflight` records one enabled binding and
+  `readyCapabilityCount=1`. AS-F07 then completes retry, baseline,
+  regeneration, edit/stale-conflict, and branch projection in the page by
+  255.228 seconds. The Browser adapter nevertheless fails at 133.353 seconds
+  with an HTTP read timeout. This confirms hypothesis M: the Harness bridge
+  calls Selenium's deprecated class-level `RemoteConnection.set_timeout`,
+  which can update another driver's config after Native/Browser restarts,
+  instead of the active command executor's `_client_config.timeout`.
+  Source identity, redaction, and cleanup passed.
+- A two-connection Selenium reproduction confirms the ownership defect:
+  calling `first.set_timeout(305)` leaves the first connection at `120`
+  seconds and mutates the second connection to `305` seconds. The local
+  correction writes the bounded timeout directly to the active command
+  executor's `_client_config.timeout`, retaining the deprecated setter only
+  for executors without an instance config. Focused Harness and Foundation
+  tests plus Acceptance Infra self-validation pass; exact-source runtime
+  comparison is pending.
