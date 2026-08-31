@@ -3808,6 +3808,26 @@ function reportFoundationF07Debug(
 }
 // #endregion
 
+// #region debug-point A-E:as-f10-capability-contract
+function reportFoundationF10Debug(
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7778/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'as-f10-capability-contract',
+      runId: 'pre-fix',
+      hypothesisId: 'A-E',
+      location: 'harness.ts:foundationDirectProbe',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 function foundationTurnAttemptFacts(value: unknown): Record<string, unknown>[] {
   const evidence = evidenceRecord(value, 'foundationF07TurnEvidence');
   const diagnostics = evidenceRecord(
@@ -7051,6 +7071,29 @@ export function installAcceptanceHarness(): void {
         }),
         api.listAgentConversations(agentId, { page: 1, pageSize: 200 }),
       ]);
+      if (cell === 'AS-F10') {
+        const stationSession = capabilitySessions.selectedStationSession;
+        const localSession = capabilitySessions.selectedLocalSession;
+        const readinessSessionId = String(
+          readiness.selected_client_session_id ?? '',
+        );
+        await reportFoundationF10Debug('pre-oracle', {
+          platform,
+          scenarioFactsPresent: scenarioFacts !== null,
+          localSessionCount: capabilitySessions.local.sessions.length,
+          stationSessionCount: capabilitySessions.station.sessions.length,
+          selectedSessionPresent: Boolean(stationSession && localSession),
+          selectedSessionPlatform: stationSession?.platform ?? null,
+          selectedSessionCapabilityCount:
+            stationSession?.typed_capabilities.length ?? -1,
+          readinessSelectedSessionMatches: Boolean(
+            readinessSessionId
+            && localSession
+            && await sha256Hex(readinessSessionId)
+              === localSession.capability_session_id_hash
+          ),
+        });
+      }
 
       const chatState = useChatStore.getState();
       const currentConversationId =

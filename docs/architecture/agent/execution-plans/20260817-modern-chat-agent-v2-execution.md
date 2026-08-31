@@ -3910,7 +3910,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Expected**: Retry is an attempt; regenerate/edit create immutable siblings; original content/usage/feedback remains.
 - **Failure variant**: Stale branch mutation conflicts; delete is never represented as retry/regenerate.
 - **Evidence**: DOM branch selector, Station lineage/active-branch rows, independent usage/feedback.
-- **Status**: implementation checkpoint locally verified; exact-source runtime proof pending
+- **Status**: source-matching runtime proof passed for all required AS-F07 tuples
 - Read-only reconciliation of
   `20260830T080743547253Z-f94c424ec124071ff62ece0ba30f48a5`
   confirmed that the prior AS-F07 capture did not invoke any revision action
@@ -4328,7 +4328,14 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Expected**: Core command/event outcomes match; unsupported local capability rejects before commitment; selected device owns local execution.
 - **Failure variant**: No Desktop fallback or cross-device lease/result acceptance.
 - **Evidence**: Desktop/Browser DOM, Mobile executable contract tests, readiness/session rows, zero hidden dispatch.
-- **Status**: pending
+- **Status**: in progress. Exact-source run
+  `20260831T082106648095Z-a1595ad4fd43eec41174008c202daca4`
+  on `844bec385c66952850f067eef4bdf44a4aa5443c` passed all required
+  Browser AS-F07 tuples and advanced to Browser AS-F10, where the independent
+  oracle failed closed because the Harness emitted no `scenarioFacts`.
+  Source identity, redaction, and cleanup passed. The first diagnostic
+  checkpoint records the existing Browser capability-session and readiness
+  facts before any scenario or product behavior is added.
 
 **DESIGN_AMENDMENT (2026-08-25) — unsupported/schemaMismatch production proof path**:
 
