@@ -4303,6 +4303,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   envelope. Source identity, redaction, and cleanup passed. Foundation remains
   `PARTIAL / UNPROVEN` pending local verification, checkpoint, exact-source
   deployment, and rerun.
+- After AS-F10 advanced to AS-F12, unchanged-source run
+  `20260831T182402500467Z-82072b4a0b35eeaa0cbf62894c35dc45`
+  failed first at Browser AS-F06 while listing Turn traces. The required
+  unchanged-source rerun
+  `20260831T190230256694Z-d26d4bba1809c91e4081196d6cb2355d`
+  on `5458a5403554dad25cbae505f021005ef4c41abb` instead failed at
+  Browser AS-F06 preparation with
+  `agent.acceptance.foundationRecoveryPrefixMissing`. Exact source,
+  `station-two` deployment identity, redaction, and cleanup passed. The
+  failure occurs after the producer has observed a `text` event, two durable
+  sequences, and duplicate/out-of-order candidates, but before it proves a
+  non-empty recovery prefix. Debug session `as-f06-recovery-prefix` now
+  records only event type/sequence, payload-key, and content-length facts to
+  distinguish an empty text delta, cursor race, non-text provider prefix, or
+  unnormalized payload field. Desktop typecheck, 125 focused Foundation
+  tests, and `git diff --check` pass; no behavior change is authorized before
+  exact-source runtime evidence.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

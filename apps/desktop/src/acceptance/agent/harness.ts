@@ -2890,17 +2890,46 @@ async function prepareFoundationF06Conversation(
           Number(candidate.data.seq ?? 0) < acknowledgedCursor);
       if (!duplicateSource || !outOfOrderSource) return;
 
-      const prefix = durableEvents
-        .filter((candidate) =>
-          candidate.event === 'text'
-          && Number(candidate.data.seq ?? 0) <= acknowledgedCursor)
+      const textEvents = durableEvents.filter((candidate) =>
+        candidate.event === 'text'
+        && Number(candidate.data.seq ?? 0) <= acknowledgedCursor);
+      const textEventFacts = textEvents.map((candidate) => {
+        const content = String(
+          candidate.data.content ?? candidate.data.text ?? '',
+        );
+        return {
+          sequence: Number(candidate.data.seq ?? 0),
+          contentLength: content.length,
+          dataKeys: Object.keys(candidate.data).sort(),
+        };
+      });
+      const prefix = textEvents
         .map((candidate) =>
           String(candidate.data.content ?? candidate.data.text ?? ''))
         .join('');
+      void reportFoundationF06PrefixDebug('A-D', 'boundary-evaluated', {
+        acknowledgedCursor,
+        durableEventCount: durableEvents.length,
+        durableEventTypes: durableEvents.map((candidate) => ({
+          event: candidate.event,
+          sequence: Number(candidate.data.seq ?? 0),
+        })),
+        textEventFacts,
+        prefixLength: prefix.length,
+      });
       if (!prefix) {
+        void reportFoundationF06PrefixDebug('A-D', 'prefix-missing', {
+          acknowledgedCursor,
+          textEventFacts,
+        });
         failBoundary('agent.acceptance.foundationRecoveryPrefixMissing');
         return;
       }
+      void reportFoundationF06PrefixDebug('A-C', 'prefix-ready', {
+        acknowledgedCursor,
+        prefixLength: prefix.length,
+        textEventFacts,
+      });
 
       const chatBefore = useChatStore.getState();
       const projectionBeforeMutation = stableJson({
@@ -3801,6 +3830,27 @@ function reportFoundationF07Debug(
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationF07Scenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:as-f06-recovery-prefix
+function reportFoundationF06PrefixDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7779/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'as-f06-recovery-prefix',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:prepareFoundationF06Conversation',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
