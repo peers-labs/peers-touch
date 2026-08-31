@@ -1388,6 +1388,38 @@ shell syntax validation, Skill validation, and `git diff --check` pass.
 NDR-W7 is unblocked for exact-source deployment but remains
 `PARTIAL/UNPROVEN` until the retained Linux aggregate passes.
 
+### 2026-08-31 NDR-W7 Focused Runtime Result
+
+Exact source `d20a8f91a771fe36a9595ac5e9b9ecbd7b31c4c5` was deployed to
+disposable Station `http://10.37.94.156:18132` on deployment node
+`10.37.94.156`. Focused Linux aggregate
+`20260831T060844651620Z-05ad6436b8ef2710f1319c3c90b4c63d` completed with
+5 PASS / 2 FAIL. Interactions, typing, Group MLS, two-client, and recovery
+passed with source-bound Linux evidence. Product Closure and Multi-Device
+remained `PARTIAL/UNPROVEN`. Provisioner cleanup passed for every Gate,
+including release of runtime-cell resources on Linux host `10.37.246.80`.
+
+The two remaining failures are Chat business Gate lifecycle defects:
+
+- Product Closure authenticates each Tauri window but still performs eight
+  readbacks through the unrelated HTTP Gateway session namespace. The first
+  such readback failed at Alice reaction Engine evidence with
+  `UNAUTHORIZED`. All bounded readbacks must use the authenticated window
+  Harness and preserve actor identity checks.
+- Multi-Device proved all five product assertions, including Bob2 enrollment
+  and session handoff, but its lifecycle ledger still classified the
+  authoritatively kicked Bob1 window as authenticated. Cleanup therefore
+  attempted logout after the window session had already been removed. The
+  Gate must prove Bob1's revoked identity state before recording the explicit
+  revoked lifecycle transition; generic logout must continue to fail on
+  unexpected session loss.
+
+These corrections are a mechanical extension of the approved NDR-W7 /
+MP-W13-F window-session ownership contract. They do not change product
+semantics, runtime-cell architecture, or platform scope. The two failed Gates
+must pass focused reruns before the retained 18-Gate aggregate is executed.
+NDR-W8 macOS and NDR-W9 Windows remain `UNPROVEN`.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

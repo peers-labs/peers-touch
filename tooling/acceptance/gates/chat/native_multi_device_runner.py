@@ -393,6 +393,28 @@ class NativeMultiDeviceGate(AcceptanceGate):
             f"receipt={delivered.get('receipt', '')}",
         )
 
+    def wait_for_revoked_identity(self, actor: str) -> dict[str, Any]:
+        def revoked_identity() -> dict[str, Any] | None:
+            value = async_harness(
+                self.clients[actor],
+                "identityState",
+                {},
+            )
+            if not isinstance(value, dict):
+                return None
+            return (
+                value
+                if value.get("authenticated") is False
+                and value.get("phase") in {"revoked", "accountGate"}
+                and value.get("reason") == "revoked"
+                else None
+            )
+
+        return wait_until(
+            revoked_identity,
+            f"{actor} authoritative session revocation",
+        )
+
     def cleanup_runtime(self) -> dict[str, Any]:
         cleanup_errors: list[dict[str, str]] = []
         if self.runtime_binding is not None:
@@ -617,10 +639,17 @@ class NativeMultiDeviceGate(AcceptanceGate):
                 lambda: self.start_client("bob2"),
                 "bob2",
             )
+            bob1_revoked = self.step(
+                "client.session-revoked",
+                lambda: self.wait_for_revoked_identity("bob1"),
+                "bob1",
+            )
+            self.client_lifecycles.mark_auth_revoked(bob1)
             self.assert_condition(
                 "session_handoff",
                 self.ptids["bob1"] == self.ptids["bob2"]
                 and self.device_ids.get("bob1") != self.device_ids.get("bob2"),
+                json.dumps(bob1_revoked, sort_keys=True),
             )
 
             # Phase 3: bob2 proves enrollment is operational by successfully

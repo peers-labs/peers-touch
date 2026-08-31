@@ -253,6 +253,26 @@ export function installAcceptanceHarness(): void {
       commandId?: string;
     }) => nativeAcceptanceBridge.engineInteractionSnapshot(input),
 
+    engineMessages: (input: {
+      actorPtid: string;
+      conversationId: string;
+    }) => nativeAcceptanceBridge.engineMessages(input),
+
+    engineConversations: (input: { actorPtid: string }) =>
+      nativeAcceptanceBridge.engineConversations(input),
+
+    conversationMemberSettings: (input: {
+      actorPtid: string;
+      conversationId: string;
+    }) => nativeAcceptanceBridge.conversationMemberSettings(input),
+
+    openAttachment: (input: {
+      actorPtid: string;
+      attachmentId: string;
+    }) => nativeAcceptanceBridge.openAttachment(input),
+
+    identityState: () => nativeAcceptanceBridge.identityState(),
+
     async loginWithPassword({ account, password }: LoginInput) {
       await waitForIdentityState(
         ({ phase, lifecycle }) => phase.kind === 'accountGate' && lifecycle.dataReady,

@@ -3,6 +3,10 @@ import type {
   AuthSessionResponse,
   MessagingAcceptanceInteractionSnapshot,
 } from '../../services/desktop_api';
+import type {
+  MessagingConversationProjection,
+  MessagingProjection,
+} from '../../services/im-service-contract';
 import { createNativeAcceptanceBridge } from './nativeBridge';
 
 const ACTOR_PTID = 'ptid:v1:actor:alice';
@@ -49,6 +53,11 @@ describe('nativeAcceptanceBridge', () => {
         calls.push('lifecycle');
       },
       readInteractionSnapshot: vi.fn(),
+      readMessages: vi.fn(),
+      readConversations: vi.fn(),
+      readMemberSettings: vi.fn(),
+      openAttachment: vi.fn(),
+      identityState: vi.fn(),
     });
 
     await expect(bridge.logout({ actorPtid: ACTOR_PTID })).resolves.toEqual({
@@ -66,6 +75,11 @@ describe('nativeAcceptanceBridge', () => {
       logoutWindowSession,
       completeLogoutLifecycle: vi.fn(),
       readInteractionSnapshot: vi.fn(),
+      readMessages: vi.fn(),
+      readConversations: vi.fn(),
+      readMemberSettings: vi.fn(),
+      openAttachment: vi.fn(),
+      identityState: vi.fn(),
     });
 
     await expect(
@@ -83,6 +97,11 @@ describe('nativeAcceptanceBridge', () => {
       logoutWindowSession: vi.fn(),
       completeLogoutLifecycle: vi.fn(),
       readInteractionSnapshot,
+      readMessages: vi.fn(),
+      readConversations: vi.fn(),
+      readMemberSettings: vi.fn(),
+      openAttachment: vi.fn(),
+      identityState: vi.fn(),
     });
 
     await expect(
@@ -109,6 +128,11 @@ describe('nativeAcceptanceBridge', () => {
       logoutWindowSession: vi.fn(),
       completeLogoutLifecycle: vi.fn(),
       readInteractionSnapshot,
+      readMessages: vi.fn(),
+      readConversations: vi.fn(),
+      readMemberSettings: vi.fn(),
+      openAttachment: vi.fn(),
+      identityState: vi.fn(),
     });
 
     await expect(
@@ -119,5 +143,70 @@ describe('nativeAcceptanceBridge', () => {
       }),
     ).rejects.toThrow('acceptance.chat.conversationIdRequired');
     expect(readInteractionSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('routes bounded readbacks through the matching Tauri-window actor', async () => {
+    const messages: MessagingProjection[] = [];
+    const conversations: MessagingConversationProjection[] = [];
+    const settings = {
+      nickname: '',
+      muted: true,
+      alertEnabled: true,
+      pinned: false,
+      background: 'default',
+      backgroundImage: '',
+      clearedAtUnixMs: 0,
+    };
+    const bridge = createNativeAcceptanceBridge({
+      activeActorPtid: () => ACTOR_PTID,
+      markLocalIdentityAction: vi.fn(),
+      logoutWindowSession: vi.fn(),
+      completeLogoutLifecycle: vi.fn(),
+      readInteractionSnapshot: vi.fn(),
+      readMessages: vi.fn().mockResolvedValue(messages),
+      readConversations: vi.fn().mockResolvedValue(conversations),
+      readMemberSettings: vi.fn().mockResolvedValue(settings),
+      openAttachment: vi.fn().mockResolvedValue('/tmp/attachment'),
+      identityState: vi.fn(),
+    });
+
+    await expect(bridge.engineMessages({
+      actorPtid: ACTOR_PTID,
+      conversationId: ' conversation-1 ',
+    })).resolves.toEqual({ messages });
+    await expect(bridge.engineConversations({
+      actorPtid: ACTOR_PTID,
+    })).resolves.toEqual({ conversations });
+    await expect(bridge.conversationMemberSettings({
+      actorPtid: ACTOR_PTID,
+      conversationId: ' conversation-1 ',
+    })).resolves.toEqual({ settings });
+    await expect(bridge.openAttachment({
+      actorPtid: ACTOR_PTID,
+      attachmentId: ' attachment-1 ',
+    })).resolves.toEqual({ localPath: '/tmp/attachment' });
+  });
+
+  it('reports the injected identity lifecycle without requiring an active actor', async () => {
+    const identityState = {
+      phase: 'accountGate',
+      reason: 'revoked',
+      authenticated: false,
+      actorPtid: '',
+    };
+    const bridge = createNativeAcceptanceBridge({
+      activeActorPtid: () => null,
+      markLocalIdentityAction: vi.fn(),
+      logoutWindowSession: vi.fn(),
+      completeLogoutLifecycle: vi.fn(),
+      readInteractionSnapshot: vi.fn(),
+      readMessages: vi.fn(),
+      readConversations: vi.fn(),
+      readMemberSettings: vi.fn(),
+      openAttachment: vi.fn(),
+      identityState: () => identityState,
+    });
+
+    await expect(bridge.identityState()).resolves.toBe(identityState);
   });
 });

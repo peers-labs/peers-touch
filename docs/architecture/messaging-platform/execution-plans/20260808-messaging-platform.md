@@ -1633,6 +1633,33 @@ tests, shell syntax validation, Skill validation, and `git diff --check` pass.
 MP-W13-F is unblocked for exact-source deployment but remains
 `PARTIAL/UNPROVEN` until the retained Linux aggregate passes.
 
+Focused Linux aggregate
+`20260831T060844651620Z-05ad6436b8ef2710f1319c3c90b4c63d` then ran against
+clean source `d20a8f91a771fe36a9595ac5e9b9ecbd7b31c4c5`, disposable Station
+`http://10.37.94.156:18132` on deployment node `10.37.94.156`, and runtime
+cell `desktop-linux-native` on Linux host `10.37.246.80`. It completed
+5 PASS / 2 FAIL. Interactions, typing, Group MLS, two-client, and recovery
+passed. Product Closure failed when its first HTTP Gateway readback attempted
+to consume a Tauri-window-authenticated session. Multi-Device passed all five
+product assertions but failed its business cleanup because Bob1's expected
+session takeover was not reflected in the Gate lifecycle ledger. Provisioner
+cleanup passed for all seven Gates.
+
+The approved MP-W13-F correction is:
+
+- replace all Product Closure HTTP Gateway readbacks with bounded,
+  actor-validated Tauri-window Harness readbacks;
+- prove Bob1 reaches the revoked unauthenticated identity state after Bob2
+  takeover, then record that explicit lifecycle transition before cleanup;
+- retain fail-closed cleanup for any authenticated client that loses its
+  session unexpectedly.
+
+This is a plan bookkeeping amendment within the accepted window-session
+ownership and multi-device handoff contracts. It does not change product
+semantics. Product Closure and Multi-Device must pass focused Linux reruns
+before the retained 18-Gate aggregate runs. macOS, Windows, and Mobile remain
+`UNPROVEN` and outside this correction cycle.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
