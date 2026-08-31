@@ -356,7 +356,7 @@ class NativeProductClosureGate(AcceptanceGate):
             )
             return (
                 device
-                if str((device or {}).get("actorId") or "") == expected_ptid
+                if str((device or {}).get("actorPtid") or "") == expected_ptid
                 and str((device or {}).get("deviceId") or "")
                 else None
             )
@@ -440,7 +440,7 @@ class NativeProductClosureGate(AcceptanceGate):
                     namespace="chat",
                     script_timeout=30,
                 )
-                ptid = str((hydration or {}).get("actorId") or "")
+                ptid = str((hydration or {}).get("actorPtid") or "")
                 if ptid != expected_ptid:
                     raise GateError(
                         f"{actor} login identity mismatch: "
@@ -450,7 +450,7 @@ class NativeProductClosureGate(AcceptanceGate):
             device_id = ""
             if wait_for_device:
                 device = self.wait_for_realtime_device(client, expected_ptid)
-                ptid = str(device.get("actorId") or "")
+                ptid = str(device.get("actorPtid") or "")
                 device_id = str((device or {}).get("deviceId") or "")
                 if not device_id:
                     raise GateError(f"{actor} messaging device identity is missing")
