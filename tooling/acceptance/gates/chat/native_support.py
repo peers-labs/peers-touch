@@ -354,7 +354,7 @@ def start_authenticated_client(
             },
             timeout=30,
         )
-        ptid = str((login or {}).get("actorId") or "")
+        ptid = str((login or {}).get("actorPtid") or "")
         if not (login or {}).get("authenticated") or not ptid.startswith("ptid:"):
             raise GateError(
                 f"{account} login did not return canonical PTID: {login}"

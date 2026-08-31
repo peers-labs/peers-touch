@@ -365,7 +365,7 @@ class NativeTwoClientGate(AcceptanceGate):
             {},
             timeout=30,
         )
-        ptid = str((hydration or {}).get("actorId") or "")
+        ptid = str((hydration or {}).get("actorPtid") or "")
         expected_ptid = str(
             self.actor_specs[actor].get("ptid") or ""
         )

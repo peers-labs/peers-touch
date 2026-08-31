@@ -338,7 +338,7 @@ class NativeTypingGate(AcceptanceGate):
                 {},
                 timeout=30,
             )
-            ptid = str((hydration or {}).get("actorId") or "")
+            ptid = str((hydration or {}).get("actorPtid") or "")
             if ptid != expected_ptid:
                 raise GateError(
                     f"{actor} login identity mismatch: "
@@ -386,7 +386,7 @@ class NativeTypingGate(AcceptanceGate):
                         timeout=10,
                     )
                 )
-                and str(device.get("actorId") or "") == expected_ptid
+                and str(device.get("actorPtid") or "") == expected_ptid
                 and str(device.get("deviceId") or "")
                 else None
             ),

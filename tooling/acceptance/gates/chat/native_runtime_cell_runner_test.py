@@ -568,6 +568,40 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertNotIn('data.get("ptid")', source)
         self.assertIn('"actor_ptid": actor_b.actor_ptid', source)
 
+    def test_native_chat_gates_use_canonical_actor_ptid(self) -> None:
+        runner_root = ROOT / "tooling/acceptance/gates/chat"
+        runner_names = (
+            "contact_message_resilience_runner.py",
+            "native_group_mls_runner.py",
+            "native_interactions_runner.py",
+            "native_multi_device_runner.py",
+            "native_product_closure_runner.py",
+            "native_recovery_runner.py",
+            "native_support.py",
+            "native_two_client_runner.py",
+            "native_typing_runner.py",
+        )
+
+        for runner_name in runner_names:
+            with self.subTest(runner=runner_name):
+                source = (runner_root / runner_name).read_text(
+                    encoding="utf-8"
+                )
+                self.assertNotIn('.get("actorId")', source)
+                self.assertIn('.get("actorPtid")', source)
+
+    def test_desktop_gateway_pin_flow_preserves_independent_account(self) -> None:
+        source = (
+            ROOT / "tooling/acceptance/gates/chat/desktop_gateway_e2e.py"
+        ).read_text(encoding="utf-8")
+        pin_flow = source.split('"account_set_pin"', 1)[1].split(
+            "unlocked =",
+            1,
+        )[0]
+
+        self.assertIn('{"id": account_a}', pin_flow)
+        self.assertNotIn('{"id": account_b}', pin_flow)
+
     def test_desktop_gateway_gate_publishes_typed_evidence(self) -> None:
         report = Mock()
         report.status = "RUNNING"
