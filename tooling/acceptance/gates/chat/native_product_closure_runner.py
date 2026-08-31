@@ -14,7 +14,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
@@ -81,12 +80,6 @@ LOCALIZATION_KEY_PATTERN = re.compile(
     r"moments|notes|oauth|provider|search|settings|share|tts)"
     r"\.[A-Za-z0-9_.-]+\b"
 )
-READBACK_COMMANDS = {
-    "conversation_get_member_settings",
-    "messaging_list_conversations",
-    "messaging_list_messages",
-    "messaging_open_attachment",
-}
 REQUIRED_ASSERTIONS = {
     "native_dom_only",
     "source_build_runtime_identity",
@@ -207,29 +200,6 @@ def runtime_manifest() -> tuple[dict[str, Any], dict[str, Any]]:
     if actors.get("artifactKind") != "acceptance-actor-manifest":
         raise GateError("runtime actor manifest has invalid artifact kind")
     return manifest, actors
-
-
-def gateway_read(
-    client: TauriSession,
-    command: str,
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    if command not in READBACK_COMMANDS:
-        raise GateError(f"mutating or unapproved gateway command is forbidden: {command}")
-    request = urllib.request.Request(
-        f"http://127.0.0.1:{client.gateway_port}",
-        data=json.dumps({"cmd": command, "args": args}).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        envelope = json.loads(response.read().decode("utf-8"))
-    if not isinstance(envelope, dict) or envelope.get("ok") is not True:
-        raise GateError(f"{command} readback failed: {envelope}")
-    data = envelope.get("data")
-    if not isinstance(data, dict):
-        raise GateError(f"{command} readback returned invalid data")
-    return data
 
 
 def port_is_free(port: int) -> bool:
@@ -1998,12 +1968,81 @@ class NativeProductClosureGate(AcceptanceGate):
         return value if isinstance(value, list) else []
 
     def engine_messages(self, actor: str, conversation_id: str) -> list[dict[str, Any]]:
-        value = gateway_read(
+        value = call_async_harness(
             self.clients[actor],
-            "messaging_list_messages",
-            {"conversation_id": conversation_id},
+            "engineMessages",
+            {
+                "actorPtid": self.ptids[actor],
+                "conversationId": conversation_id,
+            },
+            namespace="chat",
+            script_timeout=30,
         ).get("messages")
         return value if isinstance(value, list) else []
+
+    def engine_conversations(self, actor: str) -> list[dict[str, Any]]:
+        value = call_async_harness(
+            self.clients[actor],
+            "engineConversations",
+            {"actorPtid": self.ptids[actor]},
+            namespace="chat",
+            script_timeout=30,
+        )
+        conversations = (
+            value.get("conversations")
+            if isinstance(value, dict)
+            else None
+        )
+        return conversations if isinstance(conversations, list) else []
+
+    def member_settings(
+        self,
+        actor: str,
+        conversation_id: str,
+    ) -> dict[str, Any]:
+        value = call_async_harness(
+            self.clients[actor],
+            "conversationMemberSettings",
+            {
+                "actorPtid": self.ptids[actor],
+                "conversationId": conversation_id,
+            },
+            namespace="chat",
+            script_timeout=30,
+        )
+        if not isinstance(value, dict):
+            raise GateError(
+                "conversationMemberSettings returned invalid window-owned "
+                "readback"
+            )
+        settings = value.get("settings")
+        if not isinstance(settings, dict):
+            raise GateError(
+                "conversationMemberSettings returned invalid settings"
+            )
+        return settings
+
+    def open_attachment(self, actor: str, attachment_id: str) -> Path:
+        value = call_async_harness(
+            self.clients[actor],
+            "openAttachment",
+            {
+                "actorPtid": self.ptids[actor],
+                "attachmentId": attachment_id,
+            },
+            namespace="chat",
+            script_timeout=30,
+        )
+        local_path = (
+            str(value.get("localPath") or "")
+            if isinstance(value, dict)
+            else ""
+        )
+        if not local_path:
+            raise GateError(
+                "openAttachment returned invalid window-owned readback"
+            )
+        return Path(local_path)
 
     def thread_snapshot(self, actor: str, root_id: str) -> dict[str, Any]:
         if self.clients[actor].find_elements("[data-chat-detail-panel='open']"):
@@ -2473,7 +2512,11 @@ class NativeProductClosureGate(AcceptanceGate):
                         (
                             item
                             for item in self.engine_messages(actor, conversation_id)
-                            if item.get("message_id") == message_id
+                            if (
+                                item.get("message_id")
+                                or item.get("messageId")
+                            )
+                            == message_id
                         ),
                         None,
                     )
@@ -2790,11 +2833,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 if node.get("state") == "available" and node.get("visible")
             }
             station_sets[actor] = ids
-            conversations = gateway_read(
-                self.clients[actor],
-                "messaging_list_conversations",
-                {},
-            ).get("conversations")
+            conversations = self.engine_conversations(actor)
             conversation = next(
                 (
                     item
@@ -3215,12 +3254,7 @@ class NativeProductClosureGate(AcceptanceGate):
             json.dumps(rendered, sort_keys=True),
         )
 
-        station = gateway_read(
-            self.clients["alice"],
-            "conversation_get_member_settings",
-            {"conversation_id": group_id},
-        )
-        normalized = station.get("settings") if isinstance(station.get("settings"), dict) else station
+        normalized = self.member_settings("alice", group_id)
         station_matches = (
             bool(normalized.get("muted"))
             and bool(normalized.get("pinned"))
@@ -3678,7 +3712,11 @@ class NativeProductClosureGate(AcceptanceGate):
                     (
                         item
                         for item in messages
-                        if item.get("message_id") == expectation["messageId"]
+                        if (
+                            item.get("message_id")
+                            or item.get("messageId")
+                        )
+                        == expectation["messageId"]
                     ),
                     None,
                 )
@@ -3696,7 +3734,11 @@ class NativeProductClosureGate(AcceptanceGate):
                         f"{attachments}"
                     )
                 engine_attachment_ids = {
-                    str(attachment.get("attachment_id") or "")
+                    str(
+                        attachment.get("attachment_id")
+                        or attachment.get("attachmentId")
+                        or ""
+                    )
                     for attachment in attachments
                     if isinstance(attachment, dict)
                 }
@@ -3714,7 +3756,11 @@ class NativeProductClosureGate(AcceptanceGate):
                 engine[actor][label] = message
                 actor_hashes: dict[str, str] = {}
                 for attachment in attachments:
-                    attachment_id = str(attachment.get("attachment_id") or "")
+                    attachment_id = str(
+                        attachment.get("attachment_id")
+                        or attachment.get("attachmentId")
+                        or ""
+                    )
                     filename = str(attachment.get("filename") or "")
                     selector = f'[data-messaging-attachment-id="{attachment_id}"]'
                     attachment_element = self.clients[actor].find_element(
@@ -3745,12 +3791,7 @@ class NativeProductClosureGate(AcceptanceGate):
                         f"{actor} attachment {attachment_id} Native open",
                         timeout=60,
                     )
-                    opened = gateway_read(
-                        self.clients[actor],
-                        "messaging_open_attachment",
-                        {"attachment_id": attachment_id},
-                    )
-                    local_path = Path(str(opened.get("local_path") or ""))
+                    local_path = self.open_attachment(actor, attachment_id)
                     actor_hashes[filename] = (
                         self.runtime_binding.native_file_sha256(
                             actor,
@@ -3979,16 +4020,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "background resource after client restart",
             timeout=60,
         )
-        station = gateway_read(
-            self.clients["alice"],
-            "conversation_get_member_settings",
-            {"conversation_id": group_id},
-        )
-        normalized_station = (
-            station.get("settings")
-            if isinstance(station.get("settings"), dict)
-            else station
-        )
+        normalized_station = self.member_settings("alice", group_id)
         station_matches = (
             bool(normalized_station.get("muted"))
             and bool(normalized_station.get("pinned"))
@@ -4057,16 +4089,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "clear cursor projection",
             timeout=60,
         )
-        station_cleared = gateway_read(
-            self.clients["alice"],
-            "conversation_get_member_settings",
-            {"conversation_id": group_id},
-        )
-        normalized = (
-            station_cleared.get("settings")
-            if isinstance(station_cleared.get("settings"), dict)
-            else station_cleared
-        )
+        normalized = self.member_settings("alice", group_id)
         station_value = int(
             normalized.get("cleared_at_unix_ms")
             or normalized.get("clearedAtUnixMs")
@@ -4114,16 +4137,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "restored exact transcript",
             timeout=180,
         )
-        station_restored = gateway_read(
-            self.clients["alice"],
-            "conversation_get_member_settings",
-            {"conversation_id": group_id},
-        )
-        restored_settings = (
-            station_restored.get("settings")
-            if isinstance(station_restored.get("settings"), dict)
-            else station_restored
-        )
+        restored_settings = self.member_settings("alice", group_id)
         station_restored_cursor = int(
             restored_settings.get("cleared_at_unix_ms")
             or restored_settings.get("clearedAtUnixMs")
@@ -4356,16 +4370,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "Alice second-device background render",
             timeout=60,
         )
-        station = gateway_read(
-            self.clients["alice2"],
-            "conversation_get_member_settings",
-            {"conversation_id": group_id},
-        )
-        normalized = (
-            station.get("settings")
-            if isinstance(station.get("settings"), dict)
-            else station
-        )
+        normalized = self.member_settings("alice2", group_id)
         station_matches = (
             bool(normalized.get("muted"))
             and bool(normalized.get("pinned"))
@@ -4398,7 +4403,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "secondDeviceId": second_device_id,
             "ptid": self.ptids["alice2"],
             "settings": state,
-            "station": station,
+            "station": normalized,
             "background": rendered,
         }
         self.assert_condition(
