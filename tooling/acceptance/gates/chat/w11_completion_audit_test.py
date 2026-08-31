@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
+from tooling.acceptance.core.evidence_store import workspace_id
 from tooling.acceptance.gates.chat.w11_completion_audit import (
     check_native_report_identity,
     check_report_status,
@@ -277,6 +279,62 @@ class W11CompletionAuditTests(unittest.TestCase):
             report,
             "chat-native-product-closure-e2e",
             expected_source=_source(),
+            runtime_cell="desktop-linux-native",
+            expected_runtime_manifest=report["runtime"]["sourceIdentity"][
+                "runtimeCell"
+            ],
+        )
+
+        self.assertIn(
+            "chat-native-product-closure-e2e: report orchestrator source identity mismatch",
+            errors,
+        )
+
+    def test_accepts_path_bound_report_source_identity(self) -> None:
+        report = _report()
+        worktree = "/workspace/peers-group-chat"
+        expected_source = {
+            **_source(),
+            "canonicalWorktreeHash": workspace_id(Path(worktree)),
+        }
+        report["runtime"]["sourceIdentity"]["orchestrator"] = {
+            "commit": expected_source["commit"],
+            "workspaceDigest": expected_source["workspaceDigest"],
+            "worktree": worktree,
+        }
+
+        errors = check_native_report_identity(
+            report,
+            "chat-native-product-closure-e2e",
+            expected_source=expected_source,
+            runtime_cell="desktop-linux-native",
+            expected_runtime_manifest=report["runtime"]["sourceIdentity"][
+                "runtimeCell"
+            ],
+        )
+
+        self.assertNotIn(
+            "chat-native-product-closure-e2e: report orchestrator source identity mismatch",
+            errors,
+        )
+
+    def test_rejects_path_bound_report_from_another_worktree(self) -> None:
+        report = _report()
+        report["runtime"]["sourceIdentity"]["orchestrator"] = {
+            "commit": _source()["commit"],
+            "workspaceDigest": _source()["workspaceDigest"],
+            "worktree": "/workspace/another-worktree",
+        }
+
+        errors = check_native_report_identity(
+            report,
+            "chat-native-product-closure-e2e",
+            expected_source={
+                **_source(),
+                "canonicalWorktreeHash": workspace_id(
+                    Path("/workspace/peers-group-chat")
+                ),
+            },
             runtime_cell="desktop-linux-native",
             expected_runtime_manifest=report["runtime"]["sourceIdentity"][
                 "runtimeCell"
