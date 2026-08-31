@@ -27,6 +27,9 @@
 | G | `realtimeStreamStop` does not settle after the identity pipeline clears local state | Medium | Low | Identity pipeline finishes but `cleanup-realtime-stop-finished` is absent |
 | H | `authLogout` does not settle after realtime shutdown | Medium | Low | Realtime stop finishes but `cleanup-auth-logout-finished` is absent |
 | I | The Harness wait for unauthenticated state does not settle | Low | Low | Store logout finishes but `cleanup-logout-finished` is absent |
+| J | The AS-F07 fixture setup does not leave an enabled binding | Medium | Low | `isolation-preflight` reports zero enabled bindings |
+| K | Station classifies the enabled fixture as non-READY | Medium | Low | `isolation-preflight` reports a non-READY state and reason code |
+| L | Protobuf JSON returns a string enum while the Harness compares it with a numeric generated enum | High | Low | `isolation-preflight` reports `stateType=string`, `state=CAPABILITY_READINESS_STATE_READY`, and `readyCapabilityCount=0` |
 
 ## Instrumentation
 - Record one redacted stage checkpoint before and after each AS-F07 production
@@ -225,3 +228,21 @@
   container JSON log alone accounts for approximately 10.3 GiB. This is an
   environment blocker, not AS-F07 post-fix evidence. Debug instrumentation,
   server, and retained logs remain active.
+- Exact-source run
+  `20260831T010242155595Z-5cfa82b94fcf878b7c737305cf35ca10`
+  on `58ba31f526c6cf0d0b746429c6ceaf666f0b91dc` failed first at
+  Browser AS-F01 `agent.acceptance.foundationTurnTimeout`. Station completed
+  one provider Turn in 1.96 seconds; the next provider request returned HTTP
+  200 with zero tokens but no terminal Turn event. Cleanup, source identity,
+  redaction, and deployment health passed, so one unchanged-source rerun was
+  required before assigning code ownership.
+- Unchanged-source run
+  `20260831T010906030175Z-a64195abef171d12db40216420212e6d`
+  passed the AS-F01 transient and all AS-F06 tuples, then reproduced Browser
+  AS-F07 `agent.acceptance.foundationCapabilityIsolationUnavailable`.
+  PostgreSQL readback on deployment node `station-two` shows the exact
+  `tool:skills_list` binding enabled at Agent version 142 and the three
+  surrounding readiness snapshots classified it as
+  `CAPABILITY_READINESS_STATE_READY`. Hypotheses J-L now distinguish binding
+  loss, Station readiness rejection, and Desktop protobuf-JSON enum
+  normalization before any behavior correction.

@@ -4183,6 +4183,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `ENVIRONMENT_BLOCKED`; no Gate execution or product conclusion is recorded.
   Destructive cleanup requires explicit approval before Station health can be
   restored and exact-source Foundation execution can resume.
+- After the approved Relay-log truncation restored `station-two`, exact-source
+  run `20260831T010242155595Z-5cfa82b94fcf878b7c737305cf35ca10`
+  failed first at Browser AS-F01 because one provider request returned HTTP 200
+  with zero tokens and no terminal Turn event. Cleanup and source identity
+  passed. The required unchanged-source rerun
+  `20260831T010906030175Z-a64195abef171d12db40216420212e6d`
+  passed that transient and all AS-F06 tuples, then reproduced Browser AS-F07
+  `agent.acceptance.foundationCapabilityIsolationUnavailable`. PostgreSQL
+  readback on `station-two` shows the exact `tool:skills_list` binding enabled
+  at Agent version 142 and the surrounding readiness snapshots classified it
+  as `CAPABILITY_READINESS_STATE_READY`. The next checkpoint adds only
+  redacted AS-F07 preflight instrumentation to distinguish Desktop
+  protobuf-JSON enum normalization from binding or Station readiness failure.
 - Tracking commit `7bf635c4b` was deployed exact-source. Run
   `20260830T203842372359Z-3e8aa65f2ac7ddefb381dbabaf74709e`
   passed the AS-F03 prefix and retained fully clean Native/Browser teardown,

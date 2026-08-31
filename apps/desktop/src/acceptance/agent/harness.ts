@@ -1579,6 +1579,18 @@ async function withFoundationCapabilitiesDisabled<T>(
   const originalReadyCapabilityHash = await foundationReadyCapabilityHash(
     originalReadiness,
   );
+  if (requireEffectiveCapabilities) {
+    reportFoundationF07Debug('J-L', 'isolation-preflight', {
+      enabledBindingCount: originalBindings.length,
+      readyCapabilityCount: originalReadyCapabilityCount,
+      readiness: originalReadiness.capabilities.map((capability) => ({
+        capabilityId: capability.capability_id,
+        state: capability.state,
+        stateType: typeof capability.state,
+        reasonCode: capability.reason_code,
+      })),
+    });
+  }
   const journalBindings = originalBindings.map((binding) => ({
     bindingId: binding.bindingId,
     capabilityId: binding.capabilityId,
