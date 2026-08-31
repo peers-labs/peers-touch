@@ -1317,6 +1317,46 @@ tests, 6/6 frontend Acceptance identity tests, Python compilation,
 NDR-W7 remains `PARTIAL/UNPROVEN` pending a clean commit, exact-source
 deployment, and the retained 18-Gate Linux aggregate.
 
+Exact-source aggregate
+`20260831T010051680324Z-9acc18252a3930520d39240dba1120f1` ran against clean
+commit `6811189717933a5b68380dd6a2b9d07674c6eeb3`, disposable Station `18132`,
+and `desktop-linux-native`. Source, Station, remote checkout, Linux
+host/image, and per-Gate binary identities were bound correctly. Provisioner
+cleanup passed for every environment-backed Gate and `proto-build` passed
+last. The aggregate finished 11 PASS / 7 FAIL with canonical
+`completionStatus=PARTIAL` and `proofStatus=UNPROVEN`.
+
+The run exposed four independent implementation boundaries plus one shared
+Native Gate cleanup defect:
+
+- Product Closure still selects the legacy
+  `data-chat-search-result-peer-did` attribute while the production result
+  exposes canonical `data-chat-search-result-peer-ptid`.
+- Interactions authenticates a Tauri window but reads engine evidence through
+  the unrelated `http-gateway` session namespace, so the snapshot fails
+  `UNAUTHORIZED`.
+- Station typing delivery publishes under a numeric actor ID while the SSE
+  receiver subscribes under canonical PTID. The typing Gate also short-circuits
+  its first receiver wait on the truthy submit response.
+- Group creation callers still send `memberDids` and removal sends
+  `memberDid` after the harness contract moved to `memberPtids` and
+  `memberPtid`.
+- Five Native runners attempt HTTP Gateway logout for Tauri-window sessions.
+  The resulting `session_missing` errors are correct for that namespace; the
+  runners must use the owning window session and distinguish an already
+  unauthenticated or revoked client from an authenticated-session loss.
+
+These findings remain within the accepted NDR-W7 / MP-W13-F product and
+runtime-cell contracts. NDR-W7 remains `PARTIAL/UNPROVEN`; required-proven
+validation, Gap Detector, Completion Audit, and review submission remain
+blocked until focused corrections pass and a new clean exact-source 18-Gate
+aggregate reaches 18/18 `DONE/PROVEN`.
+
+The owner approved this correction cycle on 2026-08-31 with Linux as the only
+compatibility and runtime-proof target. NDR-W8 macOS and NDR-W9 Windows remain
+explicitly `UNPROVEN`; this cycle neither executes their cells nor makes
+cross-platform readiness claims.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

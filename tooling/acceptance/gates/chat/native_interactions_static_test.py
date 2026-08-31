@@ -34,6 +34,8 @@ class NativeInteractionContractsTest(unittest.TestCase):
             "deleteLocalInteractionMessage",
             "revokeCurrentDevice",
             "typingProjection",
+            "engineInteractionSnapshot",
+            "removeGroupMember",
         ):
             self.assertIn(method, source)
         self.assertIn("imServiceV1.messaging.sendMessage", source)
@@ -155,7 +157,7 @@ class NativeInteractionContractsTest(unittest.TestCase):
             self.assertIn("read_station_version", source)
             self.assertIn("wait_until(", source)
             self.assertIn("station_readback", source)
-            self.assertIn("messaging_acceptance_interaction_snapshot", source)
+            self.assertIn("engineInteractionSnapshot", source)
             self.assertIn(
                 "acceptance_station_environment(self.station_url)",
                 source,
@@ -311,7 +313,11 @@ class NativeInteractionContractsTest(unittest.TestCase):
         )
         self.assertIn("AcceptanceStationSubmitFaultProxy", runner)
         self.assertIn("arm_connection_loss", runner)
-        self.assertIn('"messaging_dispatch"', runner)
+        self.assertNotIn('"messaging_dispatch"', runner)
+        self.assertNotIn('"messaging_drain"', runner)
+        self.assertNotIn("def drain(", runner)
+        self.assertNotIn("self.drain(", runner)
+        self.assertIn('"engineInteractionSnapshot"', runner)
         self.assertIn('"retry_wait"', runner)
         self.assertIn("receiverVisibleCount", runner)
         self.assertIn('SUBMIT_PATH = "/messaging/command/submit"', proxy)
@@ -320,6 +326,20 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn("commandSha256", proxy)
         self.assertIn("_submit_command_bytes", proxy)
         self.assertNotIn("localhost:18080", proxy)
+
+    def test_native_interactions_use_window_owned_membership_and_engine(self) -> None:
+        runner = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+        self.assertIn('"actorPtid": self.ptids[actor]', runner)
+        self.assertIn('"conversationId": conversation_id', runner)
+        self.assertIn('"messageId": message_id', runner)
+        self.assertIn('"commandId": command_id', runner)
+        self.assertIn('"removeGroupMember"', runner)
+        self.assertIn('"groupUlid": conversation_id', runner)
+        self.assertIn('"memberPtid": self.ptids["charlie"]', runner)
+        self.assertNotIn("gateway_command", runner)
+        self.assertNotIn('"messaging_membership_transition"', runner)
 
     def test_disposable_station_restart_is_remote_and_source_bound(self) -> None:
         runner = self.source(

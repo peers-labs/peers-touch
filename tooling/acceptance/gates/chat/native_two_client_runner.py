@@ -25,10 +25,10 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.core.provisioning import load_runtime_manifest
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
-from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
+    NativeClientLifecycleLedger,
     async_harness,
     commits_match,
     configure_station,
@@ -187,7 +187,7 @@ class NativeTwoClientGate(AcceptanceGate):
         self.steps: list[dict[str, Any]] = []
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
-        self.authenticated_profiles: set[str] = set()
+        self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
         self.report.station_url = self.station_url
@@ -339,7 +339,12 @@ class NativeTwoClientGate(AcceptanceGate):
             },
         )
         self.runtime_instances.append(client)
+        expected_ptid = str(
+            self.actor_specs[actor].get("ptid") or ""
+        )
+        self.client_lifecycles.register(client, expected_ptid)
         client.start()
+        self.client_lifecycles.mark_live(client)
         self.register_driver(client)
         client.wait_for_acceptance_harness(30)
         configure_station(client, self.station_url)
@@ -358,7 +363,7 @@ class NativeTwoClientGate(AcceptanceGate):
         )
         if not (login or {}).get("authenticated"):
             raise GateError(f"{actor} login did not authenticate")
-        self.authenticated_profiles.add(client.profile)
+        self.client_lifecycles.mark_authenticated(client)
         hydration = async_harness(
             client,
             "hydrateActiveActor",
@@ -366,9 +371,6 @@ class NativeTwoClientGate(AcceptanceGate):
             timeout=30,
         )
         ptid = str((hydration or {}).get("actorPtid") or "")
-        expected_ptid = str(
-            self.actor_specs[actor].get("ptid") or ""
-        )
         if ptid != expected_ptid:
             raise GateError(
                 f"{actor} login identity mismatch: "
@@ -493,30 +495,7 @@ class NativeTwoClientGate(AcceptanceGate):
         self.save_app_log(client, actor)
 
     def cleanup_clients(self) -> dict[str, Any]:
-        cleanup_errors: list[dict[str, str]] = []
-        for client in reversed(self.runtime_instances):
-            if client.profile in self.authenticated_profiles:
-                try:
-                    with StationDriver(
-                        f"http://127.0.0.1:{client.gateway_port}"
-                    ) as station:
-                        station.auth_logout()
-                except Exception as error:
-                    cleanup_errors.append(
-                        {
-                            "resource": f"session:{client.profile}",
-                            "error": str(error),
-                        }
-                    )
-            try:
-                client.stop()
-            except Exception as error:
-                cleanup_errors.append(
-                    {
-                        "resource": f"client:{client.profile}",
-                        "error": str(error),
-                    }
-                )
+        cleanup_errors = self.client_lifecycles.release_all()
 
         for actor, client in self.clients.items():
             if not self.save_app_log(client, actor):
