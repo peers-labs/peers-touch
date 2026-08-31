@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"reflect"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -164,6 +167,98 @@ func TestAgentUpdateRollsBackWhenBindingRebaseFails(t *testing.T) {
 	}
 }
 
+func TestAgentUpdatePreflightConflictReturnsTypedPayloadWithoutStaleMutation(t *testing.T) {
+	db := openAgentServiceTestDB(t, "agent_update_preflight_conflict")
+	service := NewAgentService()
+	eventBus := &recordingAgentEventBus{}
+	service.SetEventBus(eventBus)
+	agent := seedAgentServiceTestAgent(t, db)
+	if err := db.Model(&persistence.Agent{}).
+		Where("id = ?", agent.ID).
+		Updates(map[string]interface{}{
+			"name":        "Winning Agent",
+			"title":       "Winning Title",
+			"config_json": `{"winner":true}`,
+			"version":     2,
+		}).Error; err != nil {
+		t.Fatalf("seed winning mutation: %v", err)
+	}
+
+	_, err := service.UpdateAgent(context.Background(), domain.AgentUpsertOptions{
+		ActorID:    agent.OwnerActorID,
+		AgentID:    agent.ID,
+		Name:       "Stale Agent",
+		Title:      "Stale Title",
+		ConfigJSON: `{"stale":true}`,
+		Version:    1,
+	})
+	assertActiveMutationConflict(t, err, agent.ID, 1, 2)
+
+	var stored persistence.Agent
+	if err := db.First(&stored, "id = ?", agent.ID).Error; err != nil {
+		t.Fatalf("load agent after preflight conflict: %v", err)
+	}
+	if stored.Version != 2 ||
+		stored.Name != "Winning Agent" ||
+		stored.Title != "Winning Title" ||
+		stored.ConfigJSON != `{"winner":true}` {
+		t.Fatalf("stale preflight mutation changed winning agent: %+v", stored)
+	}
+	if events := eventBus.snapshot(); len(events) != 0 {
+		t.Fatalf("preflight conflict published %d invalidation events, want 0", len(events))
+	}
+}
+
+func TestAgentUpdateCASLostRaceReturnsAuthoritativeRevisionWithoutStaleMutation(t *testing.T) {
+	db := openAgentServiceTestDB(t, "agent_update_cas_lost")
+	service := NewAgentService()
+	eventBus := &recordingAgentEventBus{}
+	service.SetEventBus(eventBus)
+	agent := seedAgentServiceTestAgent(t, db)
+	if err := db.Exec(`
+		CREATE TRIGGER simulate_concurrent_agent_winner
+		BEFORE UPDATE OF version ON agents
+		WHEN OLD.id = 'agent-1'
+		  AND OLD.version = 1
+		  AND NEW.version = 2
+		  AND NEW.name = 'Stale Agent'
+		BEGIN
+			UPDATE agents
+			SET name = 'Winning Agent',
+			    version = 2,
+			    updated_at = CURRENT_TIMESTAMP
+			WHERE id = OLD.id;
+			SELECT RAISE(IGNORE);
+		END
+	`).Error; err != nil {
+		t.Fatalf("create CAS race trigger: %v", err)
+	}
+
+	_, err := service.UpdateAgent(context.Background(), domain.AgentUpsertOptions{
+		ActorID:    agent.OwnerActorID,
+		AgentID:    agent.ID,
+		Name:       "Stale Agent",
+		Title:      "Stale Title",
+		ConfigJSON: `{"stale":true}`,
+		Version:    1,
+	})
+	assertActiveMutationConflict(t, err, agent.ID, 1, 2)
+
+	var stored persistence.Agent
+	if err := db.First(&stored, "id = ?", agent.ID).Error; err != nil {
+		t.Fatalf("load agent after CAS race: %v", err)
+	}
+	if stored.Version != 2 || stored.Name != "Winning Agent" {
+		t.Fatalf("winning mutation was not preserved: %+v", stored)
+	}
+	if stored.Title != agent.Title || stored.ConfigJSON != agent.ConfigJSON {
+		t.Fatalf("stale CAS mutation leaked into winning agent: %+v", stored)
+	}
+	if events := eventBus.snapshot(); len(events) != 0 {
+		t.Fatalf("CAS conflict published %d invalidation events, want 0", len(events))
+	}
+}
+
 func TestConcurrentAgentUpdatesAllowOneCASWinner(t *testing.T) {
 	db := openAgentServiceTestDB(t, "agent_update_concurrent_cas")
 	sqlDB, err := db.DB()
@@ -198,7 +293,7 @@ func TestConcurrentAgentUpdatesAllowOneCASWinner(t *testing.T) {
 		switch {
 		case resultErr == nil:
 			successes++
-		case isAgentServiceError(resultErr, errcode.AgentVersionConflict):
+		case isAgentServiceError(resultErr, errcode.AgentActiveMutationConflict):
 			conflicts++
 		default:
 			t.Fatalf("unexpected concurrent update result: %v", resultErr)
@@ -209,9 +304,58 @@ func TestConcurrentAgentUpdatesAllowOneCASWinner(t *testing.T) {
 	}
 }
 
+func assertActiveMutationConflict(
+	t *testing.T,
+	err error,
+	resourceID string,
+	expectedRevision int64,
+	actualRevision int64,
+) {
+	t.Helper()
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) {
+		t.Fatalf("expected BizError, got %T: %v", err, err)
+	}
+	if bizErr.Code != errcode.AgentActiveMutationConflict ||
+		bizErr.HTTPStatus != http.StatusConflict ||
+		bizErr.Message != errcode.AgentActiveMutationConflictLocaleKey {
+		t.Fatalf("unexpected active mutation conflict: %+v", bizErr)
+	}
+	payload := bizErr.Payload
+	if payload == nil ||
+		payload.GetError() != errcode.AgentActiveMutationConflictLocaleKey ||
+		payload.GetErrorType() != string(errcode.AgentActiveMutationConflict) ||
+		payload.GetLocaleKey() != errcode.AgentActiveMutationConflictLocaleKey ||
+		!payload.GetRetryable() ||
+		!payload.GetTerminal() {
+		t.Fatalf("unexpected active mutation payload: %+v", payload)
+	}
+	expectedDetails := map[string]string{
+		"resource_id":       resourceID,
+		"expected_revision": formatRevision(expectedRevision),
+		"actual_revision":   formatRevision(actualRevision),
+	}
+	if !reflect.DeepEqual(payload.GetDetails(), expectedDetails) {
+		t.Fatalf("details = %+v, want %+v", payload.GetDetails(), expectedDetails)
+	}
+}
+
+func formatRevision(revision int64) string {
+	return strconv.FormatInt(revision, 10)
+}
+
 func openAgentServiceTestDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
 	db := openRuntimeAuthorityDB(t, name)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get agent service test database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("close agent service test database: %v", err)
+		}
+	})
 	if err := db.AutoMigrate(&persistence.AgentCapabilityBinding{}); err != nil {
 		t.Fatalf("migrate agent capability binding: %v", err)
 	}

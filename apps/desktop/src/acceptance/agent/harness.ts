@@ -4683,6 +4683,190 @@ interface DirectCellAssertionContext {
   sampleId: string;
 }
 
+interface FoundationActiveMutationConflictResult {
+  durationMs: number;
+  facts: Record<string, unknown>;
+}
+
+function typedActiveMutationConflict(error: unknown): Record<string, unknown> {
+  const record = evidenceRecord(error, 'activeMutationConflictError');
+  const details = evidenceRecord(record.details, 'activeMutationConflictDetails');
+  return {
+    observedAt: new Date().toISOString(),
+    code: details.error_code,
+    localeKey: details.locale_key,
+    retryable: details.retryable === true || details.retryable === 'true',
+    terminal: details.terminal === true || details.terminal === 'true',
+    details: {
+      resource_id: details.resource_id,
+      expected_revision: details.expected_revision,
+      actual_revision: details.actual_revision,
+    },
+  };
+}
+
+async function agentAuthorityHash(agent: Awaited<ReturnType<typeof api.getAgent>>): Promise<string> {
+  return sha256Hex(stableJson(agent));
+}
+
+async function runFoundationActiveMutationConflictScenario(input: {
+  sampleId: string;
+}): Promise<FoundationActiveMutationConflictResult> {
+  const startedAt = performance.now();
+  const store = useAgentStore.getState();
+  const priorSelection = store.selectedAgent;
+  const priorSurface = store.getAgentSurface(priorSelection);
+  const disposable = await store.createAgent({
+    name: `foundation-conflict-${input.sampleId}-${crypto.randomUUID()}`,
+    title: `Foundation conflict ${input.sampleId}`,
+    description: 'Foundation active mutation conflict fixture',
+  });
+  let cleanupError: unknown = null;
+  let facts: Record<string, unknown> | null = null;
+
+  try {
+    await api.setSelectedAgent(disposable.name);
+    useAgentStore.getState().setSelectedAgent(disposable.name);
+    useAgentStore.getState().setAgentSurface(disposable.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+
+    const staleRevision = disposable.version;
+    const winningDescription = `Foundation winner ${input.sampleId}`;
+    const winner = await api.updateAgent(disposable.id, {
+      description: winningDescription,
+      version: staleRevision,
+    });
+    const winnerReadback = await api.getAgent(disposable.id);
+    const winnerHash = await agentAuthorityHash(winnerReadback);
+
+    let rejection: Record<string, unknown> | null = null;
+    try {
+      await useAgentStore.getState().updateAgentProfile(disposable.id, {
+        title: `Foundation stale ${input.sampleId}`,
+      });
+    } catch (error) {
+      rejection = typedActiveMutationConflict(error);
+    }
+    if (!rejection) {
+      throw new Error('agent.acceptance.activeMutationConflictMissing');
+    }
+
+    await waitFor(
+      () => {
+        const conflict = document.querySelector('[data-pt-agent-profile-conflict]');
+        const reload = document.querySelector('[data-pt-agent-profile-reload]');
+        return Boolean(
+          conflict
+          && reload
+          && conflict.getClientRects().length > 0
+          && reload.getClientRects().length > 0,
+        );
+      },
+      'active mutation conflict recovery controls',
+      30_000,
+    );
+    const conflictElement = document.querySelector<HTMLElement>(
+      '[data-pt-agent-profile-conflict]',
+    );
+    const reloadElement = document.querySelector<HTMLElement>(
+      '[data-pt-agent-profile-reload]',
+    );
+    if (!conflictElement || !reloadElement) {
+      throw new Error('agent.acceptance.activeMutationConflictSurfaceMissing');
+    }
+    const receiverBeforeReload = {
+      conflictVisible: conflictElement.getClientRects().length > 0,
+      conflictText: conflictElement.textContent?.trim() ?? '',
+      expectedConflictText: i18n.t('agent.errors.activeMutationConflict'),
+      reloadVisible: reloadElement.getClientRects().length > 0,
+      reloadText: reloadElement.textContent?.trim() ?? '',
+      expectedReloadText: i18n.t('agent.recovery.reloadLatest'),
+    };
+
+    reloadElement.click();
+    await waitFor(
+      () => {
+        const current = useAgentStore.getState();
+        return (
+          current.agents.find((agent) => agent.id === disposable.id)?.version
+            === winner.version
+          && current.saveStateByAgentId[disposable.id] === 'idle'
+        );
+      },
+      'authoritative Agent profile reload',
+      30_000,
+    );
+
+    const afterStaleReadback = await api.getAgent(disposable.id);
+    const afterReloadReadback = await api.getAgent(disposable.id);
+    facts = {
+      rejection,
+      winner: {
+        resourceId: disposable.id,
+        expectedRevision: staleRevision,
+        actualRevision: winner.version,
+        revisionBeforeStale: winnerReadback.version,
+        revisionAfterStale: afterStaleReadback.version,
+        revisionAfterReload: afterReloadReadback.version,
+        hashBeforeStale: winnerHash,
+        hashAfterStale: await agentAuthorityHash(afterStaleReadback),
+        hashAfterReload: await agentAuthorityHash(afterReloadReadback),
+      },
+      staleMutation: {
+        attemptedRevision: staleRevision,
+        mutationDelta: afterStaleReadback.version - winnerReadback.version,
+      },
+      receiver: {
+        ...receiverBeforeReload,
+        reloadExecuted: true,
+        reloadedRevision:
+          useAgentStore.getState().agents.find(
+            (agent) => agent.id === disposable.id,
+          )?.version ?? 0,
+      },
+    };
+  } finally {
+    try {
+      await api.deleteAgent(disposable.id);
+      await useAgentStore.getState().loadAgents();
+      if (priorSelection) {
+        useAgentStore.getState().setSelectedAgent(priorSelection);
+        useAgentStore.getState().setAgentSurface(priorSelection, priorSurface);
+        await api.setSelectedAgent(priorSelection);
+      }
+      const deletedFromRoster = !useAgentStore.getState().agents.some(
+        (agent) => agent.id === disposable.id,
+      );
+      if (!facts) {
+        throw new Error('agent.acceptance.activeMutationConflictFactsMissing');
+      }
+      facts.cleanup = {
+        disposableAgentId: disposable.id,
+        deletedFromRoster,
+        deletedFromStation: await api.getAgent(disposable.id).then(
+          () => false,
+          (error: unknown) => JSON.stringify(
+            (error as { details?: unknown })?.details ?? {},
+          ).includes('AGENT_4004'),
+        ),
+        priorSelection,
+        restoredSelection: useAgentStore.getState().selectedAgent,
+      };
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+
+  if (cleanupError) throw cleanupError;
+  if (!facts) {
+    throw new Error('agent.acceptance.activeMutationConflictFactsMissing');
+  }
+  return {
+    durationMs: performance.now() - startedAt,
+    facts,
+  };
+}
+
 async function buildDirectRuntimeAttestation(
   ctx: DirectCellAssertionContext,
   sampleId: string,
@@ -4938,9 +5122,81 @@ async function evaluateDirectCellAssertions(
       return evaluateF10(ctx);
     case 'AS-F12':
       return evaluateF12(ctx);
+    case 'BASE-ACTIVE_MUTATION_CONFLICT':
+      return evaluateBaseActiveMutationConflict(ctx);
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+function evaluateBaseActiveMutationConflict(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationActiveMutationConflictFacts',
+  );
+  const rejection = evidenceRecord(
+    facts.rejection,
+    'foundationActiveMutationConflictRejection',
+  );
+  const details = evidenceRecord(
+    rejection.details,
+    'foundationActiveMutationConflictErrorDetails',
+  );
+  const winner = evidenceRecord(
+    facts.winner,
+    'foundationActiveMutationConflictWinner',
+  );
+  const staleMutation = evidenceRecord(
+    facts.staleMutation,
+    'foundationActiveMutationConflictStaleMutation',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationActiveMutationConflictReceiver',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationActiveMutationConflictCleanup',
+  );
+  return {
+    typedConflictRejected: (
+      rejection.code === 'ADMISSION_ACTIVE_MUTATION_CONFLICT'
+      && rejection.localeKey === 'agent.errors.activeMutationConflict'
+      && rejection.retryable === true
+      && rejection.terminal === true
+      && details.resource_id === winner.resourceId
+      && Number(details.expected_revision) === winner.expectedRevision
+      && Number(details.actual_revision) === winner.actualRevision
+      && winner.actualRevision === Number(winner.expectedRevision) + 1
+    ),
+    localizedRecoveryVisible: (
+      receiver.conflictVisible === true
+      && receiver.reloadVisible === true
+      && String(receiver.conflictText).includes(
+        String(receiver.expectedConflictText),
+      )
+      && receiver.reloadText === receiver.expectedReloadText
+    ),
+    reloadLatestExecuted: (
+      receiver.reloadExecuted === true
+      && receiver.reloadedRevision === winner.actualRevision
+    ),
+    winnerPreserved: (
+      winner.revisionBeforeStale === winner.actualRevision
+      && winner.revisionAfterStale === winner.actualRevision
+      && winner.revisionAfterReload === winner.actualRevision
+      && winner.hashBeforeStale === winner.hashAfterStale
+      && winner.hashBeforeStale === winner.hashAfterReload
+    ),
+    zeroStaleMutation: staleMutation.mutationDelta === 0,
+    cleanupComplete: (
+      cleanup.deletedFromRoster === true
+      && cleanup.deletedFromStation === true
+      && cleanup.restoredSelection === cleanup.priorSelection
+    ),
+  };
 }
 
 async function evaluateF06(
@@ -6831,6 +7087,14 @@ export function installAcceptanceHarness(): void {
         | Awaited<ReturnType<typeof foundationConversationReadback>>
         | null = null;
 
+      if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT') {
+        const scenario = await runFoundationActiveMutationConflictScenario({
+          sampleId,
+        });
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
       if (cell === 'AS-F06') {
         if (!stationRestart || !scenarioKey || !durableReloadEvidence) {
           throw new Error('agent.acceptance.foundationStationRestartMissing');
@@ -7616,8 +7880,36 @@ export function installAcceptanceHarness(): void {
           JSON.stringify(conversationReadback ?? {}),
         ),
       };
+      if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts) {
+        const winner = evidenceRecord(
+          scenarioFacts.winner,
+          'foundationActiveMutationConflictWinner',
+        );
+        stationReadback.entityKind = 'agent-profile';
+        stationReadback.entityIdHash = await sha256Hex(String(winner.resourceId));
+        stationReadback.revision = Number(winner.revisionAfterReload);
+        stationReadback.stateHash = String(winner.hashAfterReload);
+      }
 
-      const runtimeEvents: Record<string, unknown> = turnEvidence && observedRuntimeEvent
+      const runtimeEvents: Record<string, unknown> =
+        cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
+          ? {
+              eventId: await sha256Hex(stableJson(scenarioFacts.rejection)),
+              sequence: Number(
+                evidenceRecord(
+                  scenarioFacts.winner,
+                  'foundationActiveMutationConflictWinner',
+                ).actualRevision,
+              ),
+              eventType: 'ADMISSION_ACTIVE_MUTATION_CONFLICT',
+              occurredAt: String(
+                evidenceRecord(
+                  scenarioFacts.rejection,
+                  'foundationActiveMutationConflictRejection',
+                ).observedAt,
+              ),
+            }
+          : turnEvidence && observedRuntimeEvent
         ? {
             eventId: await sha256Hex(stableJson({
               turnId,
@@ -7645,7 +7937,26 @@ export function installAcceptanceHarness(): void {
       };
 
       const queueEntryCount = turnQueue?.entries?.length ?? 0;
-      const sideEffectCount: Record<string, unknown> = cell === 'AS-F04'
+      const sideEffectCount: Record<string, unknown> =
+        cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
+          ? {
+              counterId: await sha256Hex(stableJson({
+                cell,
+                sampleId,
+                resourceId: evidenceRecord(
+                  scenarioFacts.winner,
+                  'foundationActiveMutationConflictWinner',
+                ).resourceId,
+              })),
+              count: Number(
+                evidenceRecord(
+                  scenarioFacts.staleMutation,
+                  'foundationActiveMutationConflictStaleMutation',
+                ).mutationDelta,
+              ),
+              maximum: 0,
+            }
+          : cell === 'AS-F04'
         ? (() => {
             const facts = evidenceRecord(
               scenarioFacts,
@@ -7725,7 +8036,22 @@ export function installAcceptanceHarness(): void {
         : [];
       const cleanup: Record<string, unknown> = {
         status: (
-          cell === 'AS-F05'
+          cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
+            ? (
+                evidenceRecord(
+                  scenarioFacts.cleanup,
+                  'foundationActiveMutationConflictCleanup',
+                ).deletedFromRoster === true
+                && evidenceRecord(
+                  scenarioFacts.cleanup,
+                  'foundationActiveMutationConflictCleanup',
+                ).restoredSelection
+                  === evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationActiveMutationConflictCleanup',
+                  ).priorSelection
+              )
+            : cell === 'AS-F05'
             ? attachmentCleanup.length > 0
               && attachmentCleanup.every((entry) =>
                 evidenceRecord(entry, 'foundationF05CleanupEntry').unavailable === true)
@@ -7748,28 +8074,55 @@ export function installAcceptanceHarness(): void {
         ),
         ...(cell === 'AS-F06' && scenarioFacts
           ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : {}),
       };
 
+      const receiver = cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
+        ? evidenceRecord(
+            scenarioFacts.receiver,
+            'foundationActiveMutationConflictReceiver',
+          )
+        : null;
       const receiverDomRole: Record<string, unknown> = {
         scenarioId: cell,
         cellId: cell,
-        visible: cell === 'AS-F05'
+        visible: receiver
+          ? receiver.conflictVisible === true && receiver.reloadVisible === true
+          : cell === 'AS-F05'
           ? receiverDom.messageAttachments.visibleCount >= 2
           : receiverDom.composer.visibleCount > 0
             || receiverDom.assistantMessages.visibleCount > 0,
-        selector: cell === 'AS-F05'
+        selector: receiver
+          ? '[data-pt-agent-profile-conflict],[data-pt-agent-profile-reload]'
+          : cell === 'AS-F05'
           ? '[data-pt-agent-message-attachment]'
           : '[data-pt-agent-composer],[data-pt-agent-message="assistant"]',
         locale,
         textHash: await sha256Hex(
-          JSON.stringify(
+          receiver
+            ? stableJson({
+                conflictText: receiver.conflictText,
+                reloadText: receiver.reloadText,
+              })
+            : JSON.stringify(
             cell === 'AS-F05'
               ? receiverDom.messageAttachments.text
               : receiverDom.assistantMessages.text,
-          ),
+            ),
         ),
       };
+      if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts) {
+        const winner = evidenceRecord(
+          scenarioFacts.winner,
+          'foundationActiveMutationConflictWinner',
+        );
+        replayEvidence.sourceHash = winner.hashBeforeStale;
+        replayEvidence.replayHash = winner.hashAfterReload;
+        replayEvidence.equal = winner.hashBeforeStale === winner.hashAfterReload;
+        replayEvidence.turnId = null;
+      }
 
       return evidenceValue({
         assertions,

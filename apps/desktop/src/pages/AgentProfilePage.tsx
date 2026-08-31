@@ -1280,11 +1280,13 @@ export function AgentProfilePage({
   const availableModels = useAgentStore(s => s.availableModels);
   const loadAgents = useAgentStore(s => s.loadAgents);
   const updateAgentProfile = useAgentStore(s => s.updateAgentProfile);
+  const reloadAgentProfile = useAgentStore(s => s.reloadAgentProfile);
   const createAgent = useAgentStore(s => s.createAgent);
   const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
   const agentRosterOpen = useAgentStore(s => s.agentRosterOpen);
   const setAgentRosterOpen = useAgentStore(s => s.setAgentRosterOpen);
   const saveStateByAgentId = useAgentStore(s => s.saveStateByAgentId);
+  const agentPendingMutations = useAgentStore(s => s.pendingMutations);
 
   const [profileAgentName, setProfileAgentName] = useState(agentName);
   const agentListOpen = agentRosterOpen;
@@ -1642,6 +1644,17 @@ export function AgentProfilePage({
     },
     [agent, updateAgentProfile, t],
   );
+
+  const handleReloadLatest = useCallback(async () => {
+    if (!agent) return;
+    try {
+      const reloaded = await reloadAgentProfile(agent.id);
+      setAgent(reloaded);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+      antMessage.error(message);
+    }
+  }, [agent, reloadAgentProfile, t]);
 
   const handleSettingsSaved = useCallback(
     (updated: Agent) => {
@@ -2086,9 +2099,17 @@ export function AgentProfilePage({
   };
   const activeMode = ACTIVITY_TAB_KEYS.some((tab) => tab.key === activeTab) ? 'activity' : 'configure';
   const visibleTabs = activeMode === 'activity' ? ACTIVITY_TAB_KEYS : TAB_KEYS;
+  const saveState = saveStateByAgentId[agent.id] || 'idle';
+  const conflictReloading = Boolean(
+    agentPendingMutations[`agent-profile-reload:${agent.id}`],
+  );
 
   return (
-    <Flexbox horizontal style={{ height: '100%', width: '100%', minWidth: 0, overflow: 'auto' }}>
+    <Flexbox
+      data-pt-agent-profile={agent.id}
+      horizontal
+      style={{ height: '100%', width: '100%', minWidth: 0, overflow: 'auto' }}
+    >
       {!embedded && <aside
         style={{
           width: agentListOpen ? 230 : 48,
@@ -2464,18 +2485,43 @@ export function AgentProfilePage({
                 ]}
               />
             </div>
-            <Flexbox horizontal justify="flex-end" style={{ marginTop: -6, marginBottom: 10 }}>
+            <Flexbox
+              data-pt-agent-profile-conflict={
+                saveState === 'conflict' ? agent.id : undefined
+              }
+              data-pt-agent-profile-save-state={saveState}
+              horizontal
+              align="center"
+              justify="flex-end"
+              gap={8}
+              style={{ marginTop: -6, marginBottom: 10 }}
+            >
               <Tag
                 color={
-                  saveStateByAgentId[agent.id] === 'failed' || saveStateByAgentId[agent.id] === 'conflict'
+                  saveState === 'failed' || saveState === 'conflict'
                     ? 'red'
-                    : saveStateByAgentId[agent.id] === 'saving'
+                    : saveState === 'saving'
                       ? 'blue'
                       : 'default'
                 }
               >
-                {t(`agent.profile.saveState.${saveStateByAgentId[agent.id] || 'idle'}`)}
+                {saveState === 'conflict'
+                  ? t('agent.errors.activeMutationConflict')
+                  : t(`agent.profile.saveState.${saveState}`)}
               </Tag>
+              {saveState === 'conflict' && (
+                <Button
+                  data-pt-agent-profile-reload={agent.id}
+                  data-pt-agent-profile-reload-latest={agent.id}
+                  type="link"
+                  size="small"
+                  loading={conflictReloading}
+                  onClick={handleReloadLatest}
+                  style={{ height: 24, paddingInline: 4 }}
+                >
+                  {t('agent.recovery.reloadLatest')}
+                </Button>
+              )}
             </Flexbox>
 
             {/* ── Prototype-aligned mode switch: Configure vs Activity ── */}

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Agent } from '../services/desktop_api';
 
 const api = vi.hoisted(() => ({
+  getAgent: vi.fn(),
   updateAgent: vi.fn(),
 }));
 const capabilityStore = vi.hoisted(() => ({
@@ -24,7 +25,7 @@ vi.mock('./agentCapabilities', () => ({
   },
 }));
 
-import { useAgentStore } from './agent';
+import { isActiveMutationConflict, useAgentStore } from './agent';
 
 const agent: Agent = {
   id: 'agent-1',
@@ -72,6 +73,13 @@ describe('Agent profile capability reconciliation', () => {
       model: 'model-2',
       version: 8,
     });
+    api.getAgent.mockResolvedValue({
+      ...agent,
+      title: 'Authoritative title',
+      model: 'model-3',
+      provider: 'provider-2',
+      version: 8,
+    });
     capabilityStore.loadAgent.mockResolvedValue(undefined);
   });
 
@@ -101,5 +109,69 @@ describe('Agent profile capability reconciliation', () => {
     expect(useAgentStore.getState().error).toBe(
       'agent.capabilityRefreshFailed',
     );
+  });
+
+  it('classifies only the exact Station active mutation conflict code', () => {
+    expect(isActiveMutationConflict({
+      details: { error_code: 'ADMISSION_ACTIVE_MUTATION_CONFLICT' },
+    })).toBe(true);
+    expect(isActiveMutationConflict({
+      details: { error_code: 'ADMISSION_ACTIVE_MUTATION_CONFLICT_RETRY' },
+    })).toBe(false);
+    expect(isActiveMutationConflict(new Error('409 version conflict'))).toBe(false);
+  });
+
+  it('retains conflict until authoritative Agent reload succeeds', async () => {
+    const conflict = Object.assign(new Error('agent.errors.activeMutationConflict'), {
+      details: {
+        error_code: 'ADMISSION_ACTIVE_MUTATION_CONFLICT',
+        locale_key: 'agent.errors.activeMutationConflict',
+        retryable: 'true',
+        terminal: 'true',
+        resource_id: agent.id,
+        expected_revision: '7',
+        actual_revision: '8',
+      },
+    });
+    api.updateAgent.mockRejectedValueOnce(conflict);
+
+    await expect(
+      useAgentStore.getState().updateAgentProfile(agent.id, {
+        title: 'Stale title',
+      }),
+    ).rejects.toBe(conflict);
+    expect(useAgentStore.getState().saveStateByAgentId[agent.id]).toBe('conflict');
+
+    const reloadPromise = useAgentStore.getState().reloadAgentProfile(agent.id);
+    expect(useAgentStore.getState().saveStateByAgentId[agent.id]).toBe('conflict');
+
+    await expect(reloadPromise).resolves.toMatchObject({
+      title: 'Authoritative title',
+      version: 8,
+    });
+    expect(api.getAgent).toHaveBeenCalledWith(agent.id);
+    expect(useAgentStore.getState()).toMatchObject({
+      selectedModel: 'model-3',
+      selectedProviderId: 'provider-2',
+      error: null,
+    });
+    expect(useAgentStore.getState().agents[0]).toMatchObject({
+      title: 'Authoritative title',
+      version: 8,
+    });
+    expect(useAgentStore.getState().saveStateByAgentId[agent.id]).toBe('idle');
+  });
+
+  it('keeps conflict visible when authoritative Agent reload fails', async () => {
+    useAgentStore.setState({
+      saveStateByAgentId: { [agent.id]: 'conflict' },
+    });
+    api.getAgent.mockRejectedValueOnce(new Error('agent.profile.reloadFailed'));
+
+    await expect(
+      useAgentStore.getState().reloadAgentProfile(agent.id),
+    ).rejects.toThrow('agent.profile.reloadFailed');
+
+    expect(useAgentStore.getState().saveStateByAgentId[agent.id]).toBe('conflict');
   });
 });

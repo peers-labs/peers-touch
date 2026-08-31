@@ -7,6 +7,7 @@ import unittest
 
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
+    evaluate_base_active_mutation_conflict,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -647,6 +648,53 @@ def valid_as_f04_capture(
             "sourceHash": "source-hash",
             "replayHash": "source-hash",
             "equal": True,
+        },
+    }
+
+
+def valid_active_mutation_conflict_capture() -> dict[str, object]:
+    return {
+        "rejection": {
+            "code": "ADMISSION_ACTIVE_MUTATION_CONFLICT",
+            "localeKey": "agent.errors.activeMutationConflict",
+            "retryable": True,
+            "terminal": True,
+            "details": {
+                "resource_id": "agent-conflict",
+                "expected_revision": "3",
+                "actual_revision": "4",
+            },
+        },
+        "winner": {
+            "resourceId": "agent-conflict",
+            "expectedRevision": 3,
+            "actualRevision": 4,
+            "revisionBeforeStale": 4,
+            "revisionAfterStale": 4,
+            "revisionAfterReload": 4,
+            "hashBeforeStale": "a" * 64,
+            "hashAfterStale": "a" * 64,
+            "hashAfterReload": "a" * 64,
+        },
+        "staleMutation": {
+            "attemptedRevision": 3,
+            "mutationDelta": 0,
+        },
+        "receiver": {
+            "conflictVisible": True,
+            "conflictText": "This item changed while you were editing it.",
+            "expectedConflictText": "This item changed while you were editing it.",
+            "reloadVisible": True,
+            "reloadText": "Reload latest",
+            "expectedReloadText": "Reload latest",
+            "reloadExecuted": True,
+            "reloadedRevision": 4,
+        },
+        "cleanup": {
+            "deletedFromRoster": True,
+            "deletedFromStation": True,
+            "priorSelection": "assistant",
+            "restoredSelection": "assistant",
         },
     }
 
@@ -1315,6 +1363,34 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         self.assertTrue(assertions["unauthorizedRejected"])
         self.assertTrue(assertions["crossDeviceRejected"])
         self.assertTrue(assertions["zeroExecutionOnReject"])
+
+    def test_active_mutation_conflict_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_active_mutation_conflict(
+            valid_active_mutation_conflict_capture()
+        )
+
+        self.assertEqual(len(assertions), 6)
+        self.assertTrue(all(assertions.values()))
+
+    def test_active_mutation_conflict_rejects_winner_hash_drift(self) -> None:
+        capture = valid_active_mutation_conflict_capture()
+        capture["winner"]["hashAfterStale"] = "b" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "winnerPreserved",
+        ):
+            evaluate_base_active_mutation_conflict(capture)
+
+    def test_active_mutation_conflict_rejects_non_localized_recovery(self) -> None:
+        capture = valid_active_mutation_conflict_capture()
+        capture["receiver"]["reloadText"] = "Reload"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "localizedRecoveryVisible",
+        ):
+            evaluate_base_active_mutation_conflict(capture)
 
 
 if __name__ == "__main__":

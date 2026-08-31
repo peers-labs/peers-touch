@@ -158,6 +158,16 @@ REQUIRED_ASSERTIONS = {
             "staleMutationConflict",
         }
     ),
+    "BASE-ACTIVE_MUTATION_CONFLICT": frozenset(
+        {
+            "typedConflictRejected",
+            "localizedRecoveryVisible",
+            "reloadLatestExecuted",
+            "winnerPreserved",
+            "zeroStaleMutation",
+            "cleanupComplete",
+        }
+    ),
 }
 
 

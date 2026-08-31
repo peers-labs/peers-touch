@@ -621,6 +621,27 @@ class AgentHarnessStaticTest(unittest.TestCase):
             with self.subTest(method=method):
                 self.assertIn(method, self.source)
 
+    def test_active_mutation_conflict_uses_production_profile_and_recovery(self) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationActiveMutationConflictScenario"
+        )
+        scenario_end = self.source.index(
+            "async function buildDirectRuntimeAttestation",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("store.createAgent(", scenario)
+        self.assertIn("api.updateAgent(disposable.id", scenario)
+        self.assertIn("updateAgentProfile(disposable.id", scenario)
+        self.assertIn("[data-pt-agent-profile-conflict]", scenario)
+        self.assertIn("[data-pt-agent-profile-reload]", scenario)
+        self.assertIn("reloadElement.click()", scenario)
+        self.assertIn("await api.getAgent(disposable.id)", scenario)
+        self.assertIn("await api.deleteAgent(disposable.id)", scenario)
+        self.assertIn("await api.setSelectedAgent(priorSelection)", scenario)
+        self.assertNotIn("mock", scenario.lower())
+
     def test_harness_drives_as_f05_through_production_boundaries(self) -> None:
         self.assertIn("cell === 'AS-F05'", self.source)
         self.assertIn("runFoundationF05Scenario", self.source)

@@ -3,6 +3,7 @@ package errcode
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 )
@@ -35,6 +36,10 @@ const (
 	AgentAttachmentRejectedLocaleKey           = "agent.errors.attachmentRejected"
 	AgentToolBudgetExhaustedLocaleKey          = "agent.errors.toolLoopBudgetExhausted"
 )
+
+const AgentActiveMutationConflict Code = "ADMISSION_ACTIVE_MUTATION_CONFLICT"
+
+const AgentActiveMutationConflictLocaleKey = "agent.errors.activeMutationConflict"
 
 type BizError struct {
 	Code       Code
@@ -88,6 +93,26 @@ func NewAttachmentRejected(reasonCode string) *BizError {
 			Retryable: false,
 			Terminal:  true,
 			Details:   map[string]string{"reason_code": reasonCode},
+		},
+	}
+}
+
+func NewActiveMutationConflict(resourceID string, expectedRevision, actualRevision int64) *BizError {
+	return &BizError{
+		Code:       AgentActiveMutationConflict,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentActiveMutationConflictLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentActiveMutationConflictLocaleKey,
+			ErrorType: string(AgentActiveMutationConflict),
+			LocaleKey: AgentActiveMutationConflictLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"resource_id":       resourceID,
+				"expected_revision": strconv.FormatInt(expectedRevision, 10),
+				"actual_revision":   strconv.FormatInt(actualRevision, 10),
+			},
 		},
 	}
 }

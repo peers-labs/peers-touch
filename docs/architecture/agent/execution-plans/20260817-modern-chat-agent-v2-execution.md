@@ -4320,6 +4320,50 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   unnormalized payload field. Desktop typecheck, 125 focused Foundation
   tests, and `git diff --check` pass; no behavior change is authorized before
   exact-source runtime evidence.
+- Instrumented exact-source run
+  `20260831T194336872605Z-abd54827ed1f0675c34c227d8fbbb0e2`
+  on `dece8bada00c5c421d7def8283fe7f02d56f6a91` completed all four
+  AS-F06 preparations. Each tuple observed a non-empty sequence-3 text prefix;
+  the fourth also observed duplicate sequence-2 progress/snapshot replay
+  before that text event. The prior prefix failure therefore remains
+  intermittent and no behavior change is justified. The run advanced through
+  the current AS-F12 producer, then failed at the first required direct-runtime
+  error fixture, Browser `BASE-ACTIVE_MUTATION_CONFLICT`, because the direct
+  adapter has no implementation for that cell. Exact source, redaction, and
+  cleanup passed. Foundation remains `PARTIAL / UNPROVEN`; the next closure is
+  the source-backed typed-error producer/oracle, while the AS-F10 deferred
+  controls and AS-F12 self-asserting producer remain mandatory pre-completion
+  corrections.
+- **G-FE1 typed-error vertical closure (plan amendment)**: the 419-tuple
+  matrix already requires 28 `BASE-*` product error cells, but the direct
+  adapter currently rejects all 112 Desktop/Browser tuples before invoking the
+  Harness and most Station paths still emit legacy generic codes. Implement
+  each error family vertically: Station-owned typed `ErrorPayload`, exact
+  client transport, localized receiver recovery action, production Harness
+  action/readback, independent Python oracle, and zero-forbidden-side-effect
+  evidence. Start with the lexically first
+  `BASE-ACTIVE_MUTATION_CONFLICT`: a disposable Agent profile update wins one
+  version CAS, a stale update returns
+  `ADMISSION_ACTIVE_MUTATION_CONFLICT` with
+  `resource_id/expected_revision/actual_revision`, the profile renders and
+  executes `agent.recovery.reloadLatest`, and Station readback proves the
+  winning revision/hash remains unchanged. This is a mechanical execution
+  closure for the already accepted §8.1 contract; it does not change product
+  or architecture semantics.
+- The first G-FE1 vertical now implements that contract without changing the
+  remaining 27 error cells. Station emits a bounded typed payload for both the
+  stale preflight and lost-CAS paths; Desktop Rust preserves the allowlisted
+  detail fields; the Agent store classifies only the exact code and keeps the
+  conflict visible until authoritative reload succeeds; Agent Profile exposes
+  the existing localized reload action. The Acceptance producer uses a
+  disposable Agent, commits one winning update, submits one stale update,
+  executes the visible reload action, verifies the winning revision/hash and
+  zero stale mutation, then deletes the fixture and restores the prior
+  selection. An independent Python oracle recomputes all six assertions.
+  Focused Station service/handler tests, four Rust transport tests, Desktop
+  typecheck and 463 tests with one unrelated skip, 143 focused Foundation
+  tests, formatting, and `git diff --check` pass. Runtime proof remains
+  `UNPROVEN` pending an exact-source deployment and Gate rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

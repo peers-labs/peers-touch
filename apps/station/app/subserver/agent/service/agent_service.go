@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -126,18 +125,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 		return nil, err
 	}
 	var updatedAgent domain.Agent
+	var casLostResourceID string
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		record, loadErr := getOwnedAgentWithDB(ctx, tx, options.ActorID, options.AgentID)
 		if loadErr != nil {
 			return loadErr
 		}
 		if options.Version <= 0 || record.Version != options.Version {
-			return errcode.New(
-				errcode.AgentVersionConflict,
-				http.StatusConflict,
-				fmt.Sprintf("version conflict: current=%d, submitted=%d", record.Version, options.Version),
-				nil,
-			)
+			return errcode.NewActiveMutationConflict(record.ID, options.Version, record.Version)
 		}
 		requestedThinkingMode := options.ThinkingMode
 		if strings.TrimSpace(string(requestedThinkingMode)) == "" {
@@ -181,7 +176,10 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to update agent", result.Error)
 		}
 		if result.RowsAffected != 1 {
-			return errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "agent changed during update", nil)
+			// No mutation precedes the CAS write, so ending this read-only loser
+			// transaction allows an authoritative revision read after the winner commits.
+			casLostResourceID = record.ID
+			return nil
 		}
 		rebase := tx.Model(&persistence.AgentCapabilityBinding{}).
 			Where("ptid = ? AND agent_id = ? AND tombstoned_at IS NULL", options.ActorID, record.ID).
@@ -209,6 +207,20 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 	})
 	if err != nil {
 		return nil, err
+	}
+	if casLostResourceID != "" {
+		actualRevision, loadErr := loadAuthoritativeAgentRevision(ctx, db, options.ActorID, casLostResourceID)
+		if loadErr != nil {
+			logger.Errorf(ctx, "failed to load agent revision after CAS conflict: actor_id=%s agent_id=%s err=%v",
+				options.ActorID, options.AgentID, loadErr)
+			return nil, errcode.New(
+				errcode.AgentInternal,
+				http.StatusInternalServerError,
+				"failed to load agent revision after update conflict",
+				loadErr,
+			)
+		}
+		return nil, errcode.NewActiveMutationConflict(casLostResourceID, options.Version, actualRevision)
 	}
 	s.publishAuthorityInvalidation(ctx, domain.AgentAuthorityInvalidation{
 		Reason:       domain.AgentAuthorityInvalidationAgentUpdated,
@@ -290,6 +302,26 @@ func getOwnedAgentWithDB(
 		return nil, errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden, "agent mutation requires owner", nil)
 	}
 	return &record, nil
+}
+
+func loadAuthoritativeAgentRevision(
+	ctx context.Context,
+	db *gorm.DB,
+	actorID string,
+	agentID string,
+) (int64, error) {
+	var record struct {
+		Version int64
+	}
+	err := db.WithContext(ctx).
+		Model(&persistence.Agent{}).
+		Select("version").
+		Where("id = ? AND owner_actor_id = ?", strings.TrimSpace(agentID), strings.TrimSpace(actorID)).
+		Take(&record).Error
+	if err != nil {
+		return 0, err
+	}
+	return record.Version, nil
 }
 
 func (s *AgentService) publishAuthorityInvalidation(

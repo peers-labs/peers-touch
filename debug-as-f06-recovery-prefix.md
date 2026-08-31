@@ -36,8 +36,17 @@
   on `5458a5403554dad25cbae505f021005ef4c41abb` failed first at
   Browser AS-F06 `agent.acceptance.foundationRecoveryPrefixMissing`.
 - Source identity, deployment identity, redaction, and cleanup passed.
+- Instrumented exact-source run
+  `20260831T194336872605Z-abd54827ed1f0675c34c227d8fbbb0e2`
+  on `dece8bada00c5c421d7def8283fe7f02d56f6a91` completed all four
+  AS-F06 preparations. Every boundary observed a non-empty sequence-3 `text`
+  payload with a one-character prefix; the fourth tuple also included
+  duplicate sequence-2 progress/snapshot replay before that text event.
+- That run advanced past AS-F12 and failed at the first unimplemented direct
+  error fixture, `BASE-ACTIVE_MUTATION_CONFLICT`. Exact source, redaction, and
+  cleanup passed.
 
 ## Verification Conclusion
-Instrumentation-only checkpoint passes Desktop typecheck, 125 focused
-Foundation tests, and `git diff --check`. Exact-source runtime evidence is
-pending.
+The failure did not reproduce in the first instrumented run, so hypotheses A-D
+remain inconclusive and no behavior change is justified. Instrumentation stays
+active for later exact-source samples.

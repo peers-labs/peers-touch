@@ -3,14 +3,19 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
+from tooling.acceptance.gates.agent.foundation_direct_adapter import (
+    DirectRuntimeProbeInput,
+)
 from tooling.acceptance.gates.agent.foundation_direct_adapter_test import capture
 from tooling.acceptance.gates.agent.foundation_group_one_probe import (
     EXPECTED_GROUP_ONE_TUPLES,
     FoundationGroupOneProbeRunner,
     GroupOneProbeError,
+    assert_group_one_capture,
     group_one_tuples,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
+    evaluate_base_active_mutation_conflict,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -20,6 +25,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f10,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
+    valid_active_mutation_conflict_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -215,6 +221,31 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
 
 
 class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
+    def test_active_mutation_conflict_routes_to_independent_oracle(self) -> None:
+        facts = valid_active_mutation_conflict_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_active_mutation_conflict(facts),
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="desktop_app",
+            locale="en",
+            cell="BASE-ACTIVE_MUTATION_CONFLICT",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroStaleMutation": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-ACTIVE_MUTATION_CONFLICT assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
     def test_matrix_selects_exact_group_one_tuple_set(self) -> None:
         tuples = group_one_tuples()
 

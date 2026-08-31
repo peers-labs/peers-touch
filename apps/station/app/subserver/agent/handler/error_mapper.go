@@ -1,11 +1,17 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+)
+
+const (
+	errorDetailsHeader         = "X-Peers-Error-Details"
+	maxErrorDetailsHeaderBytes = 4096
 )
 
 func toHandlerError(err error) error {
@@ -27,8 +33,22 @@ func toHandlerError(err error) error {
 				"X-Peers-Error-Terminal":   fmt.Sprintf("%t", biz.Payload.GetTerminal()),
 				"X-Peers-Required-Gate":    biz.Payload.GetDetails()["required_gate"],
 			}
+			if details := boundedErrorDetailsHeader(biz.Payload.GetDetails()); details != "" {
+				handlerErr.Headers[errorDetailsHeader] = details
+			}
 		}
 		return handlerErr
 	}
 	return server.InternalErrorWithCause(fmt.Sprintf("[%s] internal error", errcode.AgentInternal), err)
+}
+
+func boundedErrorDetailsHeader(details map[string]string) string {
+	if len(details) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(details)
+	if err != nil || len(encoded) > maxErrorDetailsHeaderBytes {
+		return ""
+	}
+	return string(encoded)
 }

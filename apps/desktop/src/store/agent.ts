@@ -40,6 +40,28 @@ interface AgentState extends RevalidationState {
   toggleApplet: (id: string) => Promise<void>;
   createAgent: (input: AgentCreate) => Promise<Agent>;
   updateAgentProfile: (agentId: string, updates: Partial<AgentCreate>) => Promise<Agent>;
+  reloadAgentProfile: (agentId: string) => Promise<Agent>;
+}
+
+const ACTIVE_MUTATION_CONFLICT_CODE = 'ADMISSION_ACTIVE_MUTATION_CONFLICT';
+
+export function isActiveMutationConflict(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('details' in error)) return false;
+  const details = (error as { details?: unknown }).details;
+  return (
+    typeof details === 'object'
+    && details !== null
+    && !Array.isArray(details)
+    && (details as Record<string, unknown>).error_code === ACTIVE_MUTATION_CONFLICT_CODE
+  );
+}
+
+function reconcileAgent(agent: Agent): Agent {
+  return {
+    ...agent,
+    title: resolveI18nValue(agent.title),
+    description: resolveI18nValue(agent.description),
+  };
 }
 
 export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) => ({
@@ -272,11 +294,7 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
     set((state) => ({ error: null, pendingMutations: beginMutation(state.pendingMutations, mutationKey) }));
     try {
       const created = await api.createAgent(input);
-      const reconciled: Agent = {
-        ...created,
-        title: resolveI18nValue(created.title),
-        description: resolveI18nValue(created.description),
-      };
+      const reconciled = reconcileAgent(created);
       set((state) => {
         const others = state.agents.filter((item) => item.id !== reconciled.id);
         return {
@@ -318,11 +336,7 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
 
     try {
       const updated = await api.updateAgent(agentId, { ...updates, version: agent.version });
-      const reconciled: Agent = {
-        ...updated,
-        title: resolveI18nValue(updated.title),
-        description: resolveI18nValue(updated.description),
-      };
+      const reconciled = reconcileAgent(updated);
       set((state) => ({
         agents: state.agents.map((item) => (item.id === reconciled.id ? reconciled : item)),
         saveStateByAgentId: { ...state.saveStateByAgentId, [agentId]: 'saved' },
@@ -341,7 +355,7 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
       return reconciled;
     } catch (error) {
       const message = toStoreError(error);
-      const conflict = /conflict|409|version/i.test(message);
+      const conflict = isActiveMutationConflict(error);
       log.error('agent', 'Failed to update agent profile', { agentId, error: message });
       set((state) => ({
         agents: previousAgents,
@@ -354,6 +368,43 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
       throw error;
     } finally {
       set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
+    }
+  },
+
+  reloadAgentProfile: async (agentId) => {
+    const mutationKey = `agent-profile-reload:${agentId}`;
+    set((state) => ({
+      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
+    }));
+    try {
+      const reloaded = reconcileAgent(await api.getAgent(agentId));
+      set((state) => {
+        const selectedAgent = state.selectedAgent === reloaded.name;
+        return {
+          agents: state.agents.map((item) => (item.id === reloaded.id ? reloaded : item)),
+          error: null,
+          saveStateByAgentId: {
+            ...state.saveStateByAgentId,
+            [agentId]: 'idle',
+          },
+          selectedModel: selectedAgent ? reloaded.model : state.selectedModel,
+          selectedProviderId: selectedAgent ? reloaded.provider : state.selectedProviderId,
+          lastLoadedAt: Date.now(),
+        };
+      });
+      return reloaded;
+    } catch (error) {
+      const message = toStoreError(error);
+      log.error('agent', 'Failed to reload authoritative agent profile', {
+        agentId,
+        error: message,
+      });
+      set({ error: message });
+      throw error;
+    } finally {
+      set((state) => ({
+        pendingMutations: endMutation(state.pendingMutations, mutationKey),
+      }));
     }
   },
 }));

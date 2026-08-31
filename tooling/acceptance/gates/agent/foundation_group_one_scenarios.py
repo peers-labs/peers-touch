@@ -1582,6 +1582,148 @@ def evaluate_as_f10(
     return assertions
 
 
+def evaluate_base_active_mutation_conflict(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-ACTIVE_MUTATION_CONFLICT"
+    rejection = _mapping(capture, "rejection", scenario=scenario)
+    details = _mapping(rejection, "details", scenario=scenario)
+    winner = _mapping(capture, "winner", scenario=scenario)
+    stale_mutation = _mapping(capture, "staleMutation", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+
+    resource_id = _nonempty_string(winner, "resourceId", scenario=scenario)
+    expected_revision = _positive_int(
+        winner,
+        "expectedRevision",
+        scenario=scenario,
+    )
+    actual_revision = _positive_int(
+        winner,
+        "actualRevision",
+        scenario=scenario,
+    )
+    winner_hash = _nonempty_string(
+        winner,
+        "hashBeforeStale",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedConflictRejected": (
+            rejection.get("code") == "ADMISSION_ACTIVE_MUTATION_CONFLICT"
+            and rejection.get("localeKey")
+            == "agent.errors.activeMutationConflict"
+            and rejection.get("retryable") is True
+            and rejection.get("terminal") is True
+            and details.get("resource_id") == resource_id
+            and str(details.get("expected_revision")) == str(expected_revision)
+            and str(details.get("actual_revision")) == str(actual_revision)
+            and actual_revision == expected_revision + 1
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("conflictVisible") is True
+            and receiver.get("reloadVisible") is True
+            and _nonempty_string(
+                receiver,
+                "expectedConflictText",
+                scenario=scenario,
+            )
+            in _nonempty_string(
+                receiver,
+                "conflictText",
+                scenario=scenario,
+            )
+            and _nonempty_string(
+                receiver,
+                "reloadText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedReloadText",
+                scenario=scenario,
+            )
+        ),
+        "reloadLatestExecuted": (
+            receiver.get("reloadExecuted") is True
+            and _positive_int(
+                receiver,
+                "reloadedRevision",
+                scenario=scenario,
+            )
+            == actual_revision
+        ),
+        "winnerPreserved": (
+            _positive_int(
+                winner,
+                "revisionBeforeStale",
+                scenario=scenario,
+            )
+            == actual_revision
+            and _positive_int(
+                winner,
+                "revisionAfterStale",
+                scenario=scenario,
+            )
+            == actual_revision
+            and _positive_int(
+                winner,
+                "revisionAfterReload",
+                scenario=scenario,
+            )
+            == actual_revision
+            and _nonempty_string(
+                winner,
+                "hashAfterStale",
+                scenario=scenario,
+            )
+            == winner_hash
+            and _nonempty_string(
+                winner,
+                "hashAfterReload",
+                scenario=scenario,
+            )
+            == winner_hash
+        ),
+        "zeroStaleMutation": (
+            _nonnegative_int(
+                stale_mutation,
+                "mutationDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _positive_int(
+                stale_mutation,
+                "attemptedRevision",
+                scenario=scenario,
+            )
+            == expected_revision
+        ),
+        "cleanupComplete": (
+            cleanup.get("deletedFromRoster") is True
+            and cleanup.get("deletedFromStation") is True
+            and _nonempty_string(
+                cleanup,
+                "restoredSelection",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                cleanup,
+                "priorSelection",
+                scenario=scenario,
+            )
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def _mapping(
     value: Mapping[str, Any],
     key: str,

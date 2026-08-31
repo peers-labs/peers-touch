@@ -15,6 +15,7 @@ use std::time::Duration;
 const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TURN_EXECUTION_WALL_TIME: Duration = Duration::from_secs(300);
 const TURN_EXECUTION_RESPONSE_MARGIN: Duration = Duration::from_secs(5);
+const SAFE_ERROR_DETAIL_FIELDS: [&str; 3] = ["resource_id", "expected_revision", "actual_revision"];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StationTransportPolicy {
@@ -240,12 +241,30 @@ fn build_error_for_status_with_headers(
                 details.insert(field.to_string(), Value::String(value.to_string()));
             }
         }
+        merge_safe_error_detail_header(details, headers);
     }
     StationClientError::new(
         StationClientErrorKind::HttpStatus(status),
         format!("station returned {} : {}", status, body),
         Some(details),
     )
+}
+
+fn merge_safe_error_detail_header(
+    details: &mut serde_json::Map<String, Value>,
+    headers: &serde_json::Map<String, Value>,
+) {
+    let Some(raw_details) = headers.get("x-peers-error-details").and_then(Value::as_str) else {
+        return;
+    };
+    let Ok(Value::Object(header_details)) = serde_json::from_str::<Value>(raw_details) else {
+        return;
+    };
+    for field in SAFE_ERROR_DETAIL_FIELDS {
+        if let Some(Value::String(value)) = header_details.get(field) {
+            details.insert(field.to_string(), Value::String(value.clone()));
+        }
+    }
 }
 
 pub(crate) fn station_base_url() -> String {
@@ -1231,6 +1250,7 @@ fn request_json_auth_with_optional_device_id(
 
     let status = resp.status();
     let elapsed = start.elapsed().as_millis();
+    let headers = headers_to_json(resp.headers());
 
     let bytes = resp.bytes().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station READ_ERROR (json-auth)");
@@ -1250,7 +1270,12 @@ fn request_json_auth_with_optional_device_id(
             body = %text,
             "← station FAIL (json-auth)",
         );
-        return Err(build_error_for_status(status.as_u16(), path, &text));
+        return Err(build_error_for_status_with_headers(
+            status.as_u16(),
+            path,
+            &text,
+            Some(&headers),
+        ));
     }
 
     // The OSS handlers return 204 No Content for some mutations;
@@ -1532,7 +1557,7 @@ mod tests {
     }
 
     #[test]
-    fn typed_station_error_headers_survive_json_transport() {
+    fn specialized_station_error_code_survives_json_transport() {
         let headers = json!({
             "x-peers-error-code": "AGENT_CANVAS_SINGLE_AGENT_NOT_READY",
             "x-peers-error-locale-key": "agent.errors.canvasSingleAgentNotReady",
@@ -1558,5 +1583,71 @@ mod tests {
         assert_eq!(details["retryable"], "false");
         assert_eq!(details["terminal"], "true");
         assert_eq!(details["required_gate"], "agent-v2-kernel-foundation-e2e");
+    }
+
+    #[test]
+    fn typed_station_error_details_survive_json_transport() {
+        let headers = json!({
+            "x-peers-error-code": "ADMISSION_ACTIVE_MUTATION_CONFLICT",
+            "x-peers-error-locale-key": "agent.errors.activeMutationConflict",
+            "x-peers-error-retryable": "true",
+            "x-peers-error-terminal": "true",
+            "x-peers-error-details": r#"{
+                "resource_id":"agent-1",
+                "expected_revision":"7",
+                "actual_revision":"8",
+                "ignored_string":"not-safe",
+                "ignored_number":9
+            }"#,
+        });
+        let error = build_error_for_status_with_headers(
+            409,
+            "/sub-agent/agent/update",
+            "{\"error\":\"conflict\"}",
+            Some(&headers),
+        );
+        let result = error.into_app_result::<serde_json::Value>("Agent update failed");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::Conflict);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "ADMISSION_ACTIVE_MUTATION_CONFLICT");
+        assert_eq!(details["locale_key"], "agent.errors.activeMutationConflict");
+        assert_eq!(details["retryable"], "true");
+        assert_eq!(details["terminal"], "true");
+        assert_eq!(details["resource_id"], "agent-1");
+        assert_eq!(details["expected_revision"], "7");
+        assert_eq!(details["actual_revision"], "8");
+        assert!(details.get("ignored_string").is_none());
+        assert!(details.get("ignored_number").is_none());
+    }
+
+    #[test]
+    fn malformed_error_details_fail_closed_without_losing_typed_headers() {
+        for raw_details in ["not-json", "[\"agent-1\"]", r#"{"resource_id":7}"#] {
+            let headers = json!({
+                "x-peers-error-code": "ADMISSION_ACTIVE_MUTATION_CONFLICT",
+                "x-peers-error-locale-key": "agent.errors.activeMutationConflict",
+                "x-peers-error-retryable": "true",
+                "x-peers-error-terminal": "true",
+                "x-peers-error-details": raw_details,
+            });
+            let error = build_error_for_status_with_headers(
+                409,
+                "/sub-agent/agent/update",
+                "{\"error\":\"conflict\"}",
+                Some(&headers),
+            );
+            let result = error.into_app_result::<serde_json::Value>("Agent update failed");
+            let details = result
+                .error
+                .expect("AppResult error")
+                .details
+                .expect("typed error details");
+            assert_eq!(details["error_code"], "ADMISSION_ACTIVE_MUTATION_CONFLICT");
+            assert_eq!(details["locale_key"], "agent.errors.activeMutationConflict");
+            assert_eq!(details["retryable"], "true");
+            assert_eq!(details["terminal"], "true");
+            assert!(details.get("resource_id").is_none());
+        }
     }
 }

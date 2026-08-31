@@ -270,6 +270,19 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
                 runtime_tuple("AS-F99")
             )
 
+    def test_other_base_cells_remain_fail_closed(self) -> None:
+        with self.assertRaisesRegex(
+            DirectRuntimeEvidenceError,
+            "direct-runtime group is not implemented",
+        ):
+            self.adapter().observe_browser(
+                runtime_tuple(
+                    "BASE-QUEUE_FULL",
+                    row="foundation-browser-direct",
+                    platform="browser",
+                )
+            )
+
     def test_missing_required_assertion_fails_closed(self) -> None:
         def incomplete(probe: DirectRuntimeProbeInput) -> dict[str, object]:
             evidence = capture(probe)
