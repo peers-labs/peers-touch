@@ -1660,6 +1660,32 @@ semantics. Product Closure and Multi-Device must pass focused Linux reruns
 before the retained 18-Gate aggregate runs. macOS, Windows, and Mobile remain
 `UNPROVEN` and outside this correction cycle.
 
+Focused reruns at clean source
+`468e1702d3948a0664d4e383a95516f8f8d4808e` then proved Product Closure run
+`20260831T072850367906Z-48299bae1ba2d8e516ff92e97faa24f8` and Multi-Device
+run `20260831T075347334163Z-3a9f81176291b81e572ff92dc0437d93` as
+`PASS/DONE/PROVEN`, each with successful cleanup.
+
+Retained aggregate
+`20260831T075903155838Z-beb051cfed538a276e78ad01ade81cad` completed
+18 PASS / 0 FAIL at the same exact source. It reports aggregate
+`completionStatus=DONE`, `proofStatus=PROVEN`, zero missing traceability, and
+successful cleanup for every provisioned Gate. Station evidence belongs to
+deployment node `10.37.94.156` and endpoint `18132`; Linux Native runtime-cell
+evidence belongs to host `10.37.246.80`.
+
+Chat required-proven validation artifact
+`chat-domain-validation/20260831T091909749786Z-2b1ccc9dd33b1a95af3c393e655d2fae`
+marks all nine Chat capabilities `PROVEN`. Final closure nevertheless remains
+`PARTIAL/UNPROVEN`: the canonical `origin/master...HEAD` plan additionally
+selects `desktop-dev-runtime-isolation-static`, whose stale assertions still
+required the retired shared `.local/dev/profile` selector instead of the
+accepted worktree-specific active symlink plus sibling `env` repository
+authority. The assertions are being aligned to that accepted contract. The
+final exact-source aggregate must contain the union of canonical range Gates
+and retained Linux closure obligations before Gap Detector, MP-W11 Completion
+Audit, and submit review may close.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

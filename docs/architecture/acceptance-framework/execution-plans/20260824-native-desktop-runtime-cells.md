@@ -1420,6 +1420,35 @@ semantics, runtime-cell architecture, or platform scope. The two failed Gates
 must pass focused reruns before the retained 18-Gate aggregate is executed.
 NDR-W8 macOS and NDR-W9 Windows remain `UNPROVEN`.
 
+Focused reruns at clean source
+`468e1702d3948a0664d4e383a95516f8f8d4808e` then proved both corrected
+boundaries: Product Closure run
+`20260831T072850367906Z-48299bae1ba2d8e516ff92e97faa24f8` and Multi-Device
+run `20260831T075347334163Z-3a9f81176291b81e572ff92dc0437d93` each reached
+`PASS/DONE/PROVEN` with successful cleanup.
+
+Retained aggregate
+`20260831T075903155838Z-beb051cfed538a276e78ad01ade81cad` subsequently
+completed 18 PASS / 0 FAIL at the same exact source, with aggregate
+`completionStatus=DONE`, `proofStatus=PROVEN`, zero missing traceability, and
+successful cleanup for every provisioned Gate. The Station evidence is
+attributed to deployment node `10.37.94.156` and endpoint `18132`; Linux Native
+runtime-cell evidence is attributed to host `10.37.246.80`.
+
+Chat required-proven validation artifact
+`chat-domain-validation/20260831T091909749786Z-2b1ccc9dd33b1a95af3c393e655d2fae`
+marks all nine Chat capabilities `PROVEN`. Final closure then exposed a stale
+static Gate contract: `desktop-dev-runtime-isolation-static` still required
+the retired shared `.local/dev/profile` selector even though the accepted
+environment-source contract uses the worktree-specific active symlink and
+resolves its profile name against the sibling `env` repository. The Gate also
+was not present in the retained aggregate despite being selected by the
+canonical `origin/master...HEAD` plan. Its assertions are being aligned to the
+accepted worktree-specific selector contract; NDR-W7 remains
+`PARTIAL/UNPROVEN` until that correction is committed and the union of the
+retained Linux closure obligations and canonical range Gates passes at one
+exact source. NDR-W8 macOS and NDR-W9 Windows remain `UNPROVEN`.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
