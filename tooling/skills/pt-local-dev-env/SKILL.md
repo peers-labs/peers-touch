@@ -59,9 +59,14 @@ remote deploy/restart/health closure.
 
 ### Profile
 
-A profile is a `.env` file at `.local/dev/profiles/<name>.env`.
-One profile is **active** per worktree (symlinked from `.local/dev/active/<worktree-name>.env`).
-All `make` commands read the active profile automatically.
+A deployable profile is canonically defined in the sibling environment
+repository at `env/peers-touch/<name>/profile.env.example`. The
+`.local/dev/profiles/<name>.env` file is an imported cache and is never the
+authority for a same-named environment-repository profile.
+
+One profile is **active** per worktree. The symlink at
+`.local/dev/active/<worktree-name>.env` selects its name; all `make` commands
+resolve that name back to the canonical environment repository before use.
 
 ### Slot
 
@@ -183,13 +188,10 @@ make mobile    # Starts Mobile
 
 ### Recipe: Remote Station (e.g. 10.37.246.80) + Local Desktop + Mobile
 
-```bash
-make profile-init PROFILE=remote-s1 SLOT=0
-```
-
-Then edit `.local/dev/profiles/remote-s1.env`:
+Define the deployable profile in the sibling environment repository:
 
 ```env
+# env/peers-touch/remote-s1/profile.env.example
 PT_STATION_MODE=remote
 PT_STATION_URL=http://10.37.246.80:18080
 PT_STATION_PORT=18080
@@ -244,11 +246,13 @@ These variables are passed to Station at startup.
 When the user says "set up environment for X" or "I want to debug against Y":
 
 1. **Bootstrap/check existing profiles**: `make profiles`
-2. **Select remote only**: reuse or create a profile that will set
+2. **Select remote only**: reuse a canonical environment-repository profile that sets
    `PT_STATION_MODE=remote`.
-3. **Create if needed**: `make profile-init <name> SLOT=<n>`, then immediately
-   replace its generated local/compose Station values before activation.
-4. **Configure**: set the approved remote Station URL and deploy environment.
+3. **Create if needed**: add a distinctly named profile and deploy environment
+   under `env/peers-touch/<name>/`; do not repurpose an existing environment
+   name or edit only its `.local` cache.
+4. **Configure**: set the approved remote Station URL and deploy environment in
+   that canonical environment source.
 5. **Activate**: `make profile <name>`.
 6. **Fail-closed preflight**: run `make config` and verify remote mode,
    non-loopback URL, and approved non-empty deploy environment.
@@ -331,7 +335,8 @@ Source modes:
 ## Important Rules
 
 - `.local/` is its own git repo (gitignored by main repo, versioned separately)
-- Profiles and deploy envs are tracked in `.local/` repo
+- Deployable profiles and deploy envs are authoritative in the sibling `env`
+  repository; `.local/` stores imported caches and runtime state
 - `make profiles` and `make profile <name>` bootstrap missing profiles/deploy envs from the shared `.local/` used by sibling worktrees.
 - Runtime artifacts (pids/logs/data) and active pointers are gitignored within `.local/`
 - Each worktree has its own active profile pointer (keyed by worktree basename)
@@ -345,15 +350,16 @@ Source modes:
 - Never hardcode station URLs in code — they come from the profile
 - PIDs/logs/data live in `.local/dev/{pids,logs,data}/<profile-name>/`
 
-## .local/ Git Repo
+## `.local/` Runtime Cache
 
-`.local/` is a standalone git repo (main repo gitignores it entirely).
+`.local/` is a standalone git repo used for imported configuration caches and
+runtime state. The sibling `env` repository remains authoritative for every
+same-named deployable profile and deploy environment.
 
-**Tracked** (committed in `.local/` repo):
-- `dev/profiles/*.env` — all profiles
-- `deploy/envs/*.env` — all deploy env configs
+**Cached configuration**:
+- `dev/profiles/*.env` — imported profile cache or human-only local profile
+- `deploy/envs/*.env` — imported deploy-env cache
 - `topology.env` — network topology reference
-- `.gitignore`
 
 **Ignored** (runtime, never committed):
 - `dev/pids/` — PID files per profile
@@ -371,8 +377,10 @@ ln -sfn /path/to/primary-worktree/.local .local
 ```
 
 Each worktree has its own active profile pointer at
-`.local/dev/active/<worktree-basename>.env`, so switching profiles in one
-worktree doesn't affect others.
+`.local/dev/active/<worktree-basename>.env`. The pointer selects a profile
+name; runtime commands load the canonical sibling-environment profile for that
+name when it exists. Switching profiles in one worktree therefore does not
+affect another worktree.
 
 ## Test Accounts
 

@@ -1357,6 +1357,37 @@ compatibility and runtime-proof target. NDR-W8 macOS and NDR-W9 Windows remain
 explicitly `UNPROVEN`; this cycle neither executes their cells nor makes
 cross-platform readiness claims.
 
+### 2026-08-31 Remote Profile Resolution Blocker
+
+The integrated correction is committed at
+`a8fe6560adfe173dd447a857a7e525d38f04a71f` and pushed to
+`origin/refactor/chat-acceptance-cutover`. Local focused verification remains
+green, but no current-source Linux runtime claim has advanced.
+
+Remote preflight exposed a same-name collision before deployment. `make config`
+read a local cache that had repurposed profile `three` for disposable Station
+`http://10.37.94.156:18132`, while the execution path correctly sourced the
+sibling environment repository's canonical `three` profile at
+`http://10.37.94.156:18080`. The command was interrupted after exact source
+synchronization on deployment node `10.37.94.156` and during build, before
+restart. No Gate was run and no new runtime evidence was emitted.
+
+This is an Acceptance/development-environment infrastructure blocker. The
+environment repository must define a distinctly named disposable profile, and
+preflight plus runtime must derive the worktree selection from one active
+pointer before resolving that canonical source. NDR-W7 remains
+`PARTIAL/UNPROVEN`.
+
+The infrastructure correction now defines canonical environment profile
+`chat-native-disposable` for deployment node `10.37.94.156` and disposable
+Station `18132`. Runtime and `make config` both derive the profile name from
+the worktree-specific active pointer, then resolve the sibling environment
+repository as authority. The shared selector no longer participates in
+runtime resolution. Three isolated profile-resolution regression tests,
+shell syntax validation, Skill validation, and `git diff --check` pass.
+NDR-W7 is unblocked for exact-source deployment but remains
+`PARTIAL/UNPROVEN` until the retained Linux aggregate passes.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
