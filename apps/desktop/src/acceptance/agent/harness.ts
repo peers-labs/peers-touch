@@ -7296,6 +7296,51 @@ export function installAcceptanceHarness(): void {
         await useChatStore.getState().selectSession(scenario.conversationId);
       }
 
+      if (cell === 'AS-F12') {
+        for (const topic of ['alpha', 'beta']) {
+          const conversation = await api.createAgentConversation({
+            agent_id: agentId,
+            title: `Foundation topic ${topic} ${sampleId}`,
+            provider_id: agent.provider,
+            model_name: agent.model,
+          });
+          await useChatStore.getState().selectSession(conversation.conversation_id);
+          const startedAt = performance.now();
+          const observed = startObservedFoundationTurn({
+            conversationId: conversation.conversation_id,
+            agentId,
+            content: `Reply with the code word ${topic}-${sampleId}.`,
+            idempotencyKey: crypto.randomUUID(),
+            provider: agent.provider || undefined,
+            model: agent.model || undefined,
+            effort: 'low',
+            thinkingMode: 'disabled',
+            clientCapabilitySessionId:
+              capabilitySessions.selectedStationSession?.session_id,
+          });
+          const result = await observed.result;
+          if (!result.ok) {
+            throw new Error(
+              result.error || 'agent.acceptance.foundationTopicTurnFailed',
+            );
+          }
+          const turnId = observedTurnId(result.events);
+          const terminal = [...result.events].reverse().find((event) =>
+            classifyAgentTurnTerminalEvent(event) !== null);
+          if (!turnId || !terminal) {
+            throw new Error('agent.acceptance.foundationTopicEvidenceMissing');
+          }
+          preparedConversationId = conversation.conversation_id;
+          preparedTurnId = turnId;
+          preparedRuntimeEvent.current = {
+            eventType: terminal.event,
+            sequence: Number(terminal.data.seq ?? 0),
+            observedAt: terminal.observedAt,
+          };
+          turnDurationMs = performance.now() - startedAt;
+        }
+      }
+
       capabilitySessions = await waitForCapabilitySessionEvidence();
       const [profile, readiness, conversations] = await Promise.all([
         api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
