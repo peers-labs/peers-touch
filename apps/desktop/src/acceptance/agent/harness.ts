@@ -3898,7 +3898,7 @@ async function runFoundationF07Scenario(input: {
   const retrySource = startObservedFoundationTurn({
     conversationId: retryConversation.conversation_id,
     agentId,
-    content: `Reply with one short sentence for retry sample ${input.sampleId}.`,
+    content: `Reply with 20 short numbered items for retry sample ${input.sampleId}.`,
     idempotencyKey: crypto.randomUUID(),
     provider: input.agent.provider || undefined,
     model: input.agent.model || undefined,

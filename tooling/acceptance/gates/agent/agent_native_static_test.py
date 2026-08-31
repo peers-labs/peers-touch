@@ -316,7 +316,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertIn(
-            "Reply with one short sentence for retry sample",
+            "Reply with 20 short numbered items for retry sample",
             scenario,
         )
         self.assertNotIn(
