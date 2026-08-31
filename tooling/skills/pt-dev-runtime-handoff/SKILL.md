@@ -43,19 +43,43 @@ Restart Station when changes touch Station, schema, or generated protocol code.
 Rebuild the Acceptance binary when changes touch Desktop Rust, Desktop UI, the
 Acceptance harness, or driver feature wiring.
 
+## Agent Station Safety Gate
+
+Local and compose-managed Station modes are human-developer-only capabilities.
+Agents MUST NOT start, access, or test against a Station on `127.0.0.1`,
+`localhost`, or another loopback address.
+
+Before any command that may ready or access Station, including `make station`,
+`make desktop`, `make desktop-web`, `make mobile`, restart targets, or an
+environment-backed Acceptance Gate:
+
+1. Run `make config`.
+2. Verify `PT_STATION_MODE=remote`.
+3. Verify `PT_STATION_DEPLOY_ENV` is non-empty and user-approved.
+4. Verify `PT_STATION_URL` is non-loopback and matches the approved node.
+
+Fail closed on missing, local, compose, loopback, defaulted, or mismatched
+values. After this preflight, `make station` is the correct command for the
+remote deploy/restart/health closure. Do not replace it with ad hoc SSH or
+local process commands.
+
 ## Standard Chat Workflow
 
 ```bash
+make config
+# Verify remote mode, approved deploy env, and non-loopback PT_STATION_URL.
+make station
+
 python3 -m pip install -r tooling/acceptance/requirements.txt
 make acceptance-driver-build
 make acceptance-driver-smoke
 
 CHAT_ACCEPTANCE_RESET=1 \
-CHAT_DESKTOP_DOM_STATION_URL=http://10.37.94.156:18080 \
+CHAT_DESKTOP_DOM_STATION_URL="${PT_STATION_URL}" \
 make acceptance-chat-desktop-dom
 
 CHAT_ACCEPTANCE_RESET=1 \
-CHAT_NATIVE_STATION_URL=http://10.37.94.156:18080 \
+CHAT_NATIVE_STATION_URL="${PT_STATION_URL}" \
 make acceptance-chat-native-two-client
 ```
 

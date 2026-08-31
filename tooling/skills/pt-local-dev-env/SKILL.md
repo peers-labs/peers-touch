@@ -3,9 +3,8 @@ name: pt-local-dev-env
 description: >
   Set up worktree-isolated local development environment using profiles.
   Use when the user wants to run Desktop, Mobile, or Station locally, or
-  connect to a remote Station. Handles profile creation, configuration,
-  activation, and service lifecycle. After this skill runs, the user only
-  needs `make desktop`, `make mobile`, `make station` to start services.
+  connect to a remote Station. Agents may operate remote Station profiles
+  only; local/compose Station modes are reserved for human developers.
 ---
 
 # Local Dev Environment
@@ -28,6 +27,33 @@ make restart       # Restart everything
 The agent's job is to ensure a **profile** is created, configured correctly for
 the user's scenario, and activated. Once that's done, all `make` commands work
 without any additional flags.
+
+## Agent Station Safety Boundary
+
+Local and compose-managed Station support exists for human developers only.
+AI agents MUST NOT start, restart, probe, test against, or otherwise access a
+Station whose active profile resolves to:
+
+- `PT_STATION_MODE=local` or `PT_STATION_MODE=compose`;
+- `127.0.0.1`, `localhost`, or another loopback Station URL;
+- an empty or unapproved remote deploy environment.
+
+Before an agent runs `make station`, `make station-restart`, `make restart`,
+`make desktop`, `make desktop-web`, `make mobile`, or any test/Acceptance
+command that may ready or access Station, it MUST:
+
+1. Run `make config`.
+2. Resolve the active worktree profile.
+3. Verify `PT_STATION_MODE=remote`.
+4. Verify `PT_STATION_DEPLOY_ENV` is non-empty and matches the user-approved
+   remote node.
+5. Verify `PT_STATION_URL` is non-loopback and matches that same node.
+
+Any missing, ambiguous, local, compose, loopback, or mismatched value is a
+fail-closed stop. The agent must not rely on defaults because the runtime
+scripts default to local/loopback behavior. `make station` is permitted for an
+agent only after this remote-profile preflight; in that case it performs the
+remote deploy/restart/health closure.
 
 ## Core Concepts
 
@@ -55,7 +81,8 @@ Default slot = 0.
 
 ### Station Mode
 
-- `local` — `make station` compiles and runs Station from source
+- `local` / `compose` — human-developer-only modes; `make station` runs Station
+  on the current machine. Agents MUST NOT activate or execute these modes.
 - `remote` — `make station` runs the remote ready closure:
   pull code via deploy env, build, restart, then health-check. A remote Station
   profile MUST set `PT_STATION_DEPLOY_ENV`.
@@ -141,7 +168,9 @@ PT_MOBILE_DEFAULT_STATION_URL=http://<host>:<port>
 
 ## Recipes
 
-### Recipe: Local Station + Desktop + Mobile
+### Recipe: Local Station + Desktop + Mobile (Human Only)
+
+This recipe is documentation for human developers. Agents MUST NOT execute it.
 
 ```bash
 make profile-init PROFILE=local-dev SLOT=0
@@ -175,7 +204,10 @@ make desktop   # Connects to 10.37.246.80
 make mobile    # Connects to 10.37.246.80
 ```
 
-### Recipe: Second worktree running simultaneously
+### Recipe: Second worktree running simultaneously (Human Local Mode)
+
+This local/compose example is documentation for human developers. Agents must
+instead configure and preflight an approved remote Station profile.
 
 ```bash
 # In worktree-2, use slot=1 to avoid port conflicts
@@ -212,12 +244,17 @@ These variables are passed to Station at startup.
 When the user says "set up environment for X" or "I want to debug against Y":
 
 1. **Bootstrap/check existing profiles**: `make profiles`
-2. **Decide**: create new or reuse existing profile
-3. **Create if needed**: `make profile-init <name> SLOT=<n>`
-4. **Edit profile** if non-default config needed (remote station, relay, etc.)
-5. **Activate**: `make profile <name>`
-6. **Verify**: `make config` to confirm
-7. **Report**: tell user they can now `make desktop` / `make mobile` / `make station`
+2. **Select remote only**: reuse or create a profile that will set
+   `PT_STATION_MODE=remote`.
+3. **Create if needed**: `make profile-init <name> SLOT=<n>`, then immediately
+   replace its generated local/compose Station values before activation.
+4. **Configure**: set the approved remote Station URL and deploy environment.
+5. **Activate**: `make profile <name>`.
+6. **Fail-closed preflight**: run `make config` and verify remote mode,
+   non-loopback URL, and approved non-empty deploy environment.
+7. **Execute**: only after preflight may the agent run `make station`,
+   `make desktop`, `make mobile`, or related lifecycle/Acceptance commands.
+8. **Report**: include the resolved mode, Station URL, and deploy environment.
 
 ## Remote Deployment
 
@@ -300,6 +337,10 @@ Source modes:
 - Each worktree has its own active profile pointer (keyed by worktree basename)
 - Multiple worktrees share one `.local/` via symlink; pids/logs/data are profile-scoped
 - `make station` is idempotent — if Station is already running, it just confirms
+- Agent use of `make station` is remote-only and requires the safety preflight
+  above. Local/compose Station execution is reserved for human developers.
+- `make desktop`, `make desktop-web`, `make mobile`, and restart targets may
+  ready Station indirectly, so the same agent preflight applies to them.
 - `make desktop` / `make mobile` always ensure Station is ready first
 - Never hardcode station URLs in code — they come from the profile
 - PIDs/logs/data live in `.local/dev/{pids,logs,data}/<profile-name>/`
