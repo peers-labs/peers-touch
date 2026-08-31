@@ -10,6 +10,7 @@ import { messageGroupSeq } from '../../store/socialProjection';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { registerAcceptanceHarness } from '../registry';
 import { requireCanonicalAcceptancePtid } from './identity';
+import { nativeAcceptanceBridge } from './nativeBridge';
 
 interface LoginInput {
   account: string;
@@ -242,6 +243,16 @@ async function hydrateSocialForActiveActor(): Promise<void> {
 export function installAcceptanceHarness(): void {
   (window as any).__PT_ACCEPTANCE_STORE__ = useSocialChatStore;
   registerAcceptanceHarness('chat', {
+    logout: (input: { actorPtid: string }) =>
+      nativeAcceptanceBridge.logout(input),
+
+    engineInteractionSnapshot: (input: {
+      actorPtid: string;
+      conversationId: string;
+      messageId: string;
+      commandId?: string;
+    }) => nativeAcceptanceBridge.engineInteractionSnapshot(input),
+
     async loginWithPassword({ account, password }: LoginInput) {
       await waitForIdentityState(
         ({ phase, lifecycle }) => phase.kind === 'accountGate' && lifecycle.dataReady,
