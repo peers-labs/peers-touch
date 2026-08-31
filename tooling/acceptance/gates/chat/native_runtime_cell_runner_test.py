@@ -12,6 +12,7 @@ from tooling.acceptance.core import GateError
 from tooling.acceptance.core.evidence import new_report
 from tooling.acceptance.gates.chat import desktop_gateway_e2e
 from tooling.acceptance.gates.chat.native_support import (
+    NativeClientLifecycleLedger,
     cleanup_preserving_primary_failure,
 )
 from tooling.acceptance.gates.chat.native_multi_device_runner import (
@@ -125,13 +126,15 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 "            actor,\n"
                 "            restore_session=self.runtime_binding is not None,",
                 "    def create_authenticated_client(",
+                "client.stop(preserve_state=True)",
             ),
             "native_typing_runner.py": (
-                "self.start_injected_client(actor, restore_session=True)",
+                "restored_from=self.clients[actor]",
                 "    def start_injected_client(",
+                "stop_preserving_session(client)",
             ),
         }
-        for runner, (restore_call, initial_start) in contracts.items():
+        for runner, (restore_call, initial_start, stop_call) in contracts.items():
             with self.subTest(runner=runner):
                 source = (
                     ROOT / "tooling/acceptance/gates/chat" / runner
@@ -139,7 +142,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 stop_start = source.index("    def stop_client_for_restart(")
                 stop_end = source.index("\n    def ", stop_start + 8)
                 stop_source = source[stop_start:stop_end]
-                self.assertIn("client.stop(preserve_state=True)", stop_source)
+                self.assertIn(stop_call, stop_source)
                 self.assertNotIn("auth_logout", stop_source)
                 self.assertIn(restore_call, source)
                 self.assertIn("def wait_for_realtime_device(", source)
@@ -170,12 +173,11 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 self.assertIn("loginWithPassword", source)
                 self.assertNotIn("station.auth_logout()", source)
 
-    def test_authenticated_cleanup_still_logs_out(self) -> None:
+    def test_native_cleanup_uses_window_owned_lifecycle(self) -> None:
         cleanup_functions = {
             "native_group_mls_runner.py": "stop_authenticated_client",
             "native_multi_device_runner.py": "cleanup_runtime",
             "native_recovery_runner.py": "stop_authenticated_client",
-            "native_support.py": "stop_client",
             "native_two_client_runner.py": "cleanup_clients",
             "native_typing_runner.py": "cleanup_runtime",
         }
@@ -183,7 +185,132 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             with self.subTest(runner=runner):
                 path = ROOT / "tooling/acceptance/gates/chat" / runner
                 source = self.function_source(path, function_name)
-                self.assertIn("station.auth_logout()", source)
+                self.assertIn("client_lifecycles", source)
+                self.assertNotIn("station.auth_logout()", source)
+
+        support = (
+            ROOT / "tooling/acceptance/gates/chat/native_support.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"logout"', self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_support.py",
+            "logout_native_client",
+        ))
+        self.assertIn('"actorPtid": actor_ptid', support)
+
+    def test_native_lifecycle_logs_out_device_revoked_window(self) -> None:
+        client = Mock(profile="acceptance-bob")
+        client.is_alive.return_value = True
+        lifecycle = NativeClientLifecycleLedger()
+        lifecycle.register(client, "ptid:v1:actor:bob")
+        lifecycle.mark_live(client)
+        lifecycle.mark_authenticated(client)
+        lifecycle.mark_device_revoked(client)
+
+        with patch(
+            "tooling.acceptance.gates.chat.native_support."
+            "logout_native_client",
+            return_value={
+                "actorPtid": "ptid:v1:actor:bob",
+                "status": "logged_out",
+            },
+        ) as logout:
+            self.assertEqual(lifecycle.release(client), [])
+
+        logout.assert_called_once_with(client, "ptid:v1:actor:bob")
+        client.stop.assert_called_once_with()
+
+    def test_native_lifecycle_skips_auth_revoked_window_logout(self) -> None:
+        client = Mock(profile="acceptance-bob1")
+        client.is_alive.return_value = True
+        lifecycle = NativeClientLifecycleLedger()
+        lifecycle.register(client, "ptid:v1:actor:bob")
+        lifecycle.mark_live(client)
+        lifecycle.mark_authenticated(client)
+        lifecycle.mark_auth_revoked(client)
+
+        with patch(
+            "tooling.acceptance.gates.chat.native_support."
+            "logout_native_client",
+        ) as logout:
+            self.assertEqual(lifecycle.release(client), [])
+
+        logout.assert_not_called()
+        client.stop.assert_called_once_with()
+
+    def test_native_lifecycle_reports_dead_authenticated_window(self) -> None:
+        client = Mock(profile="acceptance-alice")
+        client.is_alive.return_value = False
+        lifecycle = NativeClientLifecycleLedger()
+        lifecycle.register(client, "ptid:v1:actor:alice")
+        lifecycle.mark_live(client)
+        lifecycle.mark_authenticated(client)
+
+        errors = lifecycle.release(client)
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("terminated before logout", errors[0]["error"])
+        client.stop.assert_called_once_with()
+
+    def test_native_lifecycle_retains_logout_and_stop_failures(self) -> None:
+        client = Mock(profile="acceptance-alice")
+        client.is_alive.return_value = True
+        client.stop.side_effect = RuntimeError("stop failed")
+        lifecycle = NativeClientLifecycleLedger()
+        lifecycle.register(client, "ptid:v1:actor:alice")
+        lifecycle.mark_live(client)
+        lifecycle.mark_authenticated(client)
+
+        with patch(
+            "tooling.acceptance.gates.chat.native_support."
+            "logout_native_client",
+            side_effect=RuntimeError("logout failed"),
+        ):
+            errors = lifecycle.release(client)
+
+        self.assertEqual(
+            [error["error"] for error in errors],
+            ["logout failed", "stop failed"],
+        )
+
+    def test_native_lifecycle_requires_preserved_session_successor(self) -> None:
+        client = Mock(profile="acceptance-alice")
+        lifecycle = NativeClientLifecycleLedger()
+        lifecycle.register(client, "ptid:v1:actor:alice")
+        lifecycle.mark_live(client)
+        lifecycle.mark_authenticated(client)
+        lifecycle.stop_preserving_session(client)
+
+        errors = lifecycle.release(client)
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("no verified successor", errors[0]["error"])
+        client.stop.assert_called_once_with(preserve_state=True)
+
+    def test_native_lifecycle_transfers_preserved_session_ownership(self) -> None:
+        predecessor = Mock(profile="acceptance-alice-old")
+        successor = Mock(profile="acceptance-alice-new")
+        successor.is_alive.return_value = True
+        lifecycle = NativeClientLifecycleLedger()
+        lifecycle.register(predecessor, "ptid:v1:actor:alice")
+        lifecycle.mark_live(predecessor)
+        lifecycle.mark_authenticated(predecessor)
+        lifecycle.stop_preserving_session(predecessor)
+        lifecycle.register(successor, "ptid:v1:actor:alice")
+        lifecycle.transfer_preserved_session(predecessor, successor)
+        lifecycle.mark_live(successor)
+        lifecycle.mark_authenticated(successor)
+
+        with patch(
+            "tooling.acceptance.gates.chat.native_support."
+            "logout_native_client",
+            return_value={
+                "actorPtid": "ptid:v1:actor:alice",
+                "status": "logged_out",
+            },
+        ):
+            self.assertEqual(lifecycle.release_all(), [])
+
+        successor.stop.assert_called_once_with()
 
     def test_selected_runtime_rejects_uninjected_gate_construction(self) -> None:
         previous = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL")
@@ -383,7 +510,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 gate.runtime_binding = binding
                 gate.clients = {"alice": client}
                 gate.runtime_instances = [client]
-                gate.authenticated_profiles = set()
+                gate.client_lifecycles = NativeClientLifecycleLedger()
                 gate.client_specs = {"alice": {}}
                 gate.steps = []
                 gate.cleanup_evidence = {}
@@ -700,6 +827,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self,
     ) -> None:
         for filename in (
+            "native_group_mls_runner.py",
             "native_interactions_runner.py",
             "native_typing_runner.py",
         ):
@@ -708,31 +836,29 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                     ROOT / "tooling/acceptance/gates/chat" / filename
                 ).read_text(encoding="utf-8")
                 tree = ast.parse(source)
-                group_assignment = next(
+                create_group_call = next(
                     node
                     for node in ast.walk(tree)
-                    if isinstance(node, ast.Assign)
-                    and any(
-                        isinstance(target, ast.Name)
-                        and target.id == "group"
-                        for target in node.targets
-                    )
-                )
-                self.assertIsInstance(group_assignment.value, ast.Call)
-                create_group_call = group_assignment.value
-                self.assertIsInstance(create_group_call.func, ast.Name)
-                self.assertEqual(create_group_call.func.id, "async_harness")
-                self.assertEqual(
-                    ast.literal_eval(create_group_call.args[1]),
-                    "createGroup",
+                    if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "async_harness"
+                    and len(node.args) >= 3
+                    and isinstance(node.args[1], ast.Constant)
+                    and node.args[1].value == "createGroup"
                 )
                 payload = create_group_call.args[2]
                 self.assertIsInstance(payload, ast.Dict)
                 self.assertIn(
+                    "memberPtids",
+                    [ast.literal_eval(key) for key in payload.keys],
+                )
+                self.assertNotIn(
                     "memberDids",
                     [ast.literal_eval(key) for key in payload.keys],
                 )
 
+                if filename == "native_group_mls_runner.py":
+                    continue
                 group_id_assignment = next(
                     node
                     for node in ast.walk(tree)
@@ -757,6 +883,29 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                     len(group_id_getters),
                     1,
                 )
+
+        group_runner = (
+            ROOT
+            / "tooling/acceptance/gates/chat/native_group_mls_runner.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"memberPtid": self.ptids["charlie"]', group_runner)
+        self.assertNotIn('"memberDid":', group_runner)
+
+    def test_typing_start_stop_waits_for_receiver_evidence(self) -> None:
+        source = (
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py"
+        ).read_text(encoding="utf-8")
+        prove_direct = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "prove_direct",
+        )
+
+        self.assertIn("def submit_typing_and_wait(", source)
+        self.assertEqual(
+            prove_direct.count("self.submit_typing_and_wait("),
+            2,
+        )
+        self.assertNotIn("or self.wait_typing(", prove_direct)
 
     def test_multi_device_contract_is_unchanged(self) -> None:
         self.assertEqual(

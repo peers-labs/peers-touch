@@ -8,7 +8,6 @@ import os
 import random
 import socket
 import time
-import urllib.request
 from typing import Any, Callable
 
 from tooling.acceptance.core import (
@@ -101,27 +100,6 @@ def selected_runtime() -> tuple[
     if selected is None:
         return None
     return selected.manifest, selected.actor_manifest, selected.binding
-
-
-def gateway_command(
-    client: TauriSession,
-    command: str,
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    request = urllib.request.Request(
-        f"http://127.0.0.1:{client.gateway_port}",
-        data=json.dumps({"cmd": command, "args": args}).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        envelope = json.loads(response.read().decode("utf-8"))
-    if not isinstance(envelope, dict) or envelope.get("ok") is not True:
-        raise GateError(f"{command} failed: {envelope}")
-    data = envelope.get("data")
-    if not isinstance(data, dict):
-        raise GateError(f"{command} returned invalid data")
-    return data
 
 
 def message_dom_snapshot(client: TauriSession, message_id: str) -> dict[str, Any] | None:
@@ -520,22 +498,7 @@ class NativeInteractionsGate(AcceptanceGate):
             timeout=60,
         )
 
-    def drain(self, actor: str) -> None:
-        try:
-            gateway_command(
-                self.clients[actor], "messaging_dispatch", {"batch_limit": 50}
-            )
-        except Exception:
-            pass
-        try:
-            gateway_command(
-                self.clients[actor], "messaging_drain", {"batch_limit": 100}
-            )
-        except Exception:
-            pass
-
     def sync(self, actor: str, kind: str, conversation_id: str) -> None:
-        self.drain(actor)
         method = "syncFriendSession" if kind == "friend" else "syncGroup"
         key = "sessionUlid" if kind == "friend" else "groupUlid"
         async_harness(self.clients[actor], method, {key: conversation_id})
@@ -547,7 +510,6 @@ class NativeInteractionsGate(AcceptanceGate):
         conversation_id: str,
         message_id: str,
     ) -> dict[str, Any] | None:
-        self.drain(actor)
         value = async_harness(
             self.clients[actor],
             "interactionProjection",
@@ -569,7 +531,6 @@ class NativeInteractionsGate(AcceptanceGate):
         reply_to: str = "",
         thread_root: str = "",
     ) -> dict[str, Any]:
-        self.drain(actor)
         result = async_harness(
             self.clients[actor],
             "sendInteractionMessage",
@@ -583,7 +544,6 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         if not isinstance(result, dict) or not result.get("messageId"):
             raise GateError(f"{kind} send returned no message identity")
-        self.drain(actor)
         return result
 
     def expect_rejected(self, action: Callable[[], Any], description: str) -> None:
@@ -600,15 +560,21 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id: str,
         command_id: str = "",
     ) -> dict[str, Any]:
-        return gateway_command(
+        result = async_harness(
             self.clients[actor],
-            "messaging_acceptance_interaction_snapshot",
+            "engineInteractionSnapshot",
             {
-                "conversation_id": conversation_id,
-                "message_id": message_id,
-                "command_id": command_id,
+                "actorPtid": self.ptids[actor],
+                "conversationId": conversation_id,
+                "messageId": message_id,
+                "commandId": command_id,
             },
         )
+        if not isinstance(result, dict):
+            raise GateError(
+                "engineInteractionSnapshot returned invalid evidence"
+            )
+        return result
 
     def prove_lifecycle(
         self,
@@ -1441,7 +1407,6 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id: str,
         actor: str,
     ) -> None:
-        self.drain(actor)
         before_station = station_readback(
             self.station_url,
             conversation_id,
@@ -1727,11 +1692,6 @@ class NativeInteractionsGate(AcceptanceGate):
             proxy.disarm()
 
             def dispatch_until_submitted() -> dict[str, Any] | None:
-                gateway_command(
-                    self.clients["alice"],
-                    "messaging_dispatch",
-                    {},
-                )
                 snapshot = self.engine_snapshot(
                     "alice",
                     conversation_id,
@@ -1966,16 +1926,15 @@ class NativeInteractionsGate(AcceptanceGate):
                 STEP_TIMEOUT,
             )
 
-        removed = gateway_command(
+        removed = async_harness(
             self.clients["alice"],
-            "messaging_membership_transition",
+            "removeGroupMember",
             {
-                "conversation_id": conversation_id,
-                "action": "remove_actor",
-                "target_ptid": self.ptids["charlie"],
+                "groupUlid": conversation_id,
+                "memberPtid": self.ptids["charlie"],
             },
         )
-        if not removed:
+        if not isinstance(removed, dict) or removed.get("success") is not True:
             raise GateError("Charlie Group removal did not succeed")
         before_denied = station_readback(
             self.station_url,
@@ -2109,10 +2068,8 @@ class NativeInteractionsGate(AcceptanceGate):
             )
         except Exception:
             pass
-        self.drain("bob")
 
         def denied_reaction_absent_after_settle() -> bool:
-            self.drain("bob")
             snapshot = station_readback(
                 self.station_url,
                 conversation_id,
@@ -2391,7 +2348,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 "createGroup",
                 {
                     "name": f"acceptance-{time.time_ns()}",
-                    "memberDids": [
+                    "memberPtids": [
                         self.ptids["bob"],
                         self.ptids["charlie"],
                     ],

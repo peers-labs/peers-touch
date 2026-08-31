@@ -19,11 +19,11 @@ from tooling.acceptance.core import (
     GateError,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
-from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     DEV_ACCOUNT_PASSWORD,
+    NativeClientLifecycleLedger,
     async_harness,
     cleanup_preserving_primary_failure,
     commits_match,
@@ -174,7 +174,7 @@ class NativeRecoveryGate(AcceptanceGate):
         self.steps: list[dict[str, Any]] = []
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
-        self.authenticated_profiles: set[str] = set()
+        self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
         self.report.station_url = self.station_url
@@ -266,7 +266,10 @@ class NativeRecoveryGate(AcceptanceGate):
             },
         )
         self.runtime_instances.append(client)
+        expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
+        self.client_lifecycles.register(client, expected_ptid)
         client.start()
+        self.client_lifecycles.mark_live(client)
         self.register_driver(client)
         client.wait_for_acceptance_harness(30)
         configure_station(client, self.station_url)
@@ -284,7 +287,7 @@ class NativeRecoveryGate(AcceptanceGate):
         )
         if not (login or {}).get("authenticated"):
             raise GateError(f"{actor} login did not authenticate")
-        self.authenticated_profiles.add(client.profile)
+        self.client_lifecycles.mark_authenticated(client)
         hydration = async_harness(
             client,
             "hydrateActiveActor",
@@ -292,7 +295,6 @@ class NativeRecoveryGate(AcceptanceGate):
             timeout=30,
         )
         ptid = str((hydration or {}).get("actorPtid") or "")
-        expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
         if ptid != expected_ptid:
             raise GateError(
                 f"{actor} login identity mismatch: "
@@ -532,17 +534,9 @@ class NativeRecoveryGate(AcceptanceGate):
         return identity
 
     def stop_authenticated_client(self, client: TauriSession) -> None:
-        try:
-            if (
-                client.profile in self.authenticated_profiles
-                and client.is_alive()
-            ):
-                with StationDriver(
-                    f"http://127.0.0.1:{client.gateway_port}"
-                ) as station:
-                    station.auth_logout()
-        finally:
-            client.stop()
+        errors = self.client_lifecycles.release(client)
+        if errors:
+            raise GateError(json.dumps(errors, sort_keys=True))
 
     def cleanup_clients(self) -> dict[str, Any]:
         if self.runtime_binding is None:

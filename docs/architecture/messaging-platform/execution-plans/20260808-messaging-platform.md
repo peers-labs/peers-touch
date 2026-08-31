@@ -1575,6 +1575,41 @@ tests, 6/6 frontend Acceptance identity tests, Python compilation,
 MP-W13-F remains `PARTIAL/UNPROVEN` pending a clean commit, exact-source
 deployment, and the retained 18-Gate Linux aggregate.
 
+Exact-source aggregate
+`20260831T010051680324Z-9acc18252a3930520d39240dba1120f1` ran against clean
+commit `6811189717933a5b68380dd6a2b9d07674c6eeb3`, disposable Station `18132`,
+and `desktop-linux-native`. Source, Station, remote checkout, Linux
+host/image, and per-Gate binary identities were bound correctly. Provisioner
+cleanup passed for every environment-backed Gate and `proto-build` passed
+last. The aggregate finished 11 PASS / 7 FAIL with canonical
+`completionStatus=PARTIAL` and `proofStatus=UNPROVEN`.
+
+The remaining boundaries are:
+
+- Product Closure consumes the stale search-result `peer-did` attribute while
+  the production surface exposes canonical `peer-ptid`.
+- Interactions authenticates the Tauri window but reads engine evidence
+  through the unrelated `http-gateway` session namespace.
+- Station typing publishes ephemeral events under a numeric actor ID while the
+  SSE receiver subscribes under canonical PTID; the Gate's first start/stop
+  checks also skip receiver observation because of truthy-response
+  short-circuiting.
+- Native Group callers still send `memberDids` / `memberDid` after the harness
+  contract moved to `memberPtids` / `memberPtid`.
+- Native teardown calls HTTP Gateway logout for Tauri-window sessions, so
+  `session_missing` is expected for that namespace and cannot be treated as a
+  successful Native logout or hidden through an idempotent fallback.
+
+The Gateway OAuth/PIN correction is proven by
+`chat-desktop-gateway-e2e`, but MP-W13-F remains `PARTIAL/UNPROVEN`.
+Required-proven validation, Gap Detector, Completion Audit, and review
+submission remain blocked until focused corrections pass and a new clean
+exact-source 18-Gate aggregate reaches 18/18 `DONE/PROVEN`.
+
+The owner approved the correction cycle on 2026-08-31 with Linux as the only
+compatibility and runtime-proof target. macOS, Windows, and Mobile remain
+explicitly `UNPROVEN`; this cycle does not execute or claim those platforms.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

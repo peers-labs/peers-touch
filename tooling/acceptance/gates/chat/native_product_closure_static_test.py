@@ -1901,6 +1901,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "data-chat-search-result-peer-ptid={conversation.peerPtid || ''}",
             self.chat_search_dropdown,
         )
+        self.assertIn(
+            'data-chat-search-result-peer-ptid="{peer_ptid}"',
+            self.source,
+        )
+        self.assertNotIn("data-chat-search-result-peer-did", self.source)
         journey_start = self.source.index(
             "    def prove_conversation_search_open("
         )

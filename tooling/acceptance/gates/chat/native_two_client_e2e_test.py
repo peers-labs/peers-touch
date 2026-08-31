@@ -19,6 +19,9 @@ from tooling.acceptance.core import (
 from tooling.acceptance.gates.chat.native_two_client_runner import (
     NativeTwoClientGate,
 )
+from tooling.acceptance.gates.chat.native_support import (
+    NativeClientLifecycleLedger,
+)
 
 
 def load_module() -> Any:
@@ -430,6 +433,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         binding.cleanup["portsReleased"] = False
         gate = object.__new__(NativeTwoClientGate)
         gate.runtime_instances = []
+        gate.client_lifecycles = NativeClientLifecycleLedger()
         gate.clients = {}
         gate.client_specs = {}
         gate.runtime_binding = binding
@@ -468,7 +472,12 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         client = ExportedLogClient(log_path)
         gate = object.__new__(NativeTwoClientGate)
         gate.runtime_instances = [client]
-        gate.authenticated_profiles = set()
+        gate.client_lifecycles = NativeClientLifecycleLedger()
+        gate.client_lifecycles.register(
+            client,
+            "ptid:v1:actor:alice",
+        )
+        gate.client_lifecycles.mark_live(client)
         gate.clients = {"alice": client}
         gate.client_specs = {}
         gate.runtime_binding = SyntheticRuntimeBinding()
@@ -522,7 +531,8 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertNotIn("LocalTauriLauncher", runner)
         self.assertNotIn("start_authenticated_client", runner)
         self.assertIn('"hydrateActiveActor"', runner)
-        self.assertIn("self.authenticated_profiles", runner)
+        self.assertIn("self.client_lifecycles", runner)
+        self.assertIn("NativeClientLifecycleLedger", runner)
         self.assertIn(
             '"createDirectConversation"',
             runner.split(
