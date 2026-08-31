@@ -935,6 +935,16 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             source.index('"session_handoff"'),
             source.index('"bob2_enrollment_operational"'),
         )
+        revoked_wait = source.index('self.wait_for_revoked_identity("bob1")')
+        revoked_mark = source.index(
+            "self.client_lifecycles.mark_auth_revoked(bob1)"
+        )
+        self.assertLess(
+            source.index('self.start_client("bob2")'),
+            revoked_wait,
+        )
+        self.assertLess(revoked_wait, revoked_mark)
+        self.assertLess(revoked_mark, source.index('"session_handoff"', revoked_mark))
 
     def test_platform_and_transport_details_stay_out_of_business_runners(
         self,
