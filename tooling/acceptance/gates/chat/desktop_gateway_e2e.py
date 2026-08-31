@@ -387,7 +387,7 @@ def run_identity_consistency_flow(
         {"account_id": oauth_account, "pin": test_pin},
     )
 
-    gateway_command(gateway, "account_switch", {"id": account_b})
+    gateway_command(gateway, "account_switch", {"id": account_a})
     previous_identity = current_identity(gateway)
     failed_switch = gateway_envelope(
         gateway,
