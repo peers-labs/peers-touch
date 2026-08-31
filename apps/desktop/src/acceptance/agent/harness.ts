@@ -3869,6 +3869,26 @@ function reportFoundationF06PrefixDebug(
 }
 // #endregion
 
+// #region debug-point A-E:base-active-mutation-conflict
+function reportActiveMutationConflictDebug(
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7780/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'base-active-mutation-conflict',
+      runId: 'pre-fix',
+      hypothesisId: 'A-E',
+      location: 'harness.ts:runFoundationActiveMutationConflictScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 // #region debug-point A-E:as-f10-capability-contract
 function reportFoundationF10Debug(
   stage: string,
@@ -4760,6 +4780,15 @@ async function runFoundationActiveMutationConflictScenario(input: {
     if (!rejection) {
       throw new Error('agent.acceptance.activeMutationConflictMissing');
     }
+    await reportActiveMutationConflictDebug('conflict-observed', {
+      agentIdHash: await sha256Hex(disposable.id),
+      selectedAgentMatches: useAgentStore.getState().selectedAgent === disposable.name,
+      selectedSurface:
+        useAgentStore.getState().getAgentSurface(disposable.name),
+      saveState: useAgentStore.getState().saveStateByAgentId[disposable.id],
+      rejectionCode: rejection.code,
+      rejectionLocaleKey: rejection.localeKey,
+    });
 
     await waitFor(
       () => {
@@ -4792,6 +4821,28 @@ async function runFoundationActiveMutationConflictScenario(input: {
       reloadText: reloadElement.textContent?.trim() ?? '',
       expectedReloadText: i18n.t('agent.recovery.reloadLatest'),
     };
+    await reportActiveMutationConflictDebug('receiver-observed', {
+      locale: i18n.language,
+      profileAgentIdMatches:
+        document.querySelector('[data-pt-agent-profile]')
+          ?.getAttribute('data-pt-agent-profile') === disposable.id,
+      saveState: useAgentStore.getState().saveStateByAgentId[disposable.id],
+      conflictPresent: Boolean(conflictElement),
+      conflictVisible: receiverBeforeReload.conflictVisible,
+      reloadPresent: Boolean(reloadElement),
+      reloadVisible: receiverBeforeReload.reloadVisible,
+      conflictTextMatches:
+        receiverBeforeReload.conflictText.includes(
+          receiverBeforeReload.expectedConflictText,
+        ),
+      reloadTextMatches:
+        receiverBeforeReload.reloadText === receiverBeforeReload.expectedReloadText,
+      conflictTextLength: receiverBeforeReload.conflictText.length,
+      expectedConflictTextLength:
+        receiverBeforeReload.expectedConflictText.length,
+      reloadTextLength: receiverBeforeReload.reloadText.length,
+      expectedReloadTextLength: receiverBeforeReload.expectedReloadText.length,
+    });
 
     reloadElement.click();
     await waitFor(

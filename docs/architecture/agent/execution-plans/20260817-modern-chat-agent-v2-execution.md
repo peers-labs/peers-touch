@@ -4374,6 +4374,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   typecheck and 463 tests with one unrelated skip, 143 focused Foundation
   tests, formatting, and `git diff --check` pass. Runtime proof remains
   `UNPROVEN` pending an exact-source deployment and Gate rerun.
+- Exact-source run
+  `20260831T214308436370Z-db73b14299793ff96cf7ac6b37e29e1c`
+  on `6539fbc2a` passed the corrected AS-F06 prefix boundary and reached the
+  new Browser English `BASE-ACTIVE_MUTATION_CONFLICT` scenario. The Station
+  typed rejection, winning-state preservation, reload execution, zero stale
+  mutation, and cleanup assertions passed; only
+  `localizedRecoveryVisible` failed. A dedicated debug session now records
+  redacted surface ownership, selector visibility, save state, locale, and
+  actual-versus-expected text equality before any receiver behavior change.
+  Foundation remains `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
