@@ -16,6 +16,9 @@ from tooling.acceptance.gates.chat.native_group_mls_runner import (
     REQUIRED_ASSERTIONS,
     SELECTORS,
 )
+from tooling.acceptance.gates.chat.native_support import (
+    NativeClientLifecycleLedger,
+)
 
 
 RUNNER = Path(__file__).with_name("native_group_mls_runner.py")
@@ -100,7 +103,7 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
             "bob": {},
             "charlie": {},
         }
-        gate.authenticated_profiles = set()
+        gate.client_lifecycles = NativeClientLifecycleLedger()
         gate.report = new_report(gate.gate_id)
         return gate, binding
 
@@ -157,11 +160,16 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
             gateway_port=3030,
         )
         client.is_alive.return_value = True
-        gate.authenticated_profiles.add(client.profile)
+        gate.client_lifecycles.register(
+            client,
+            "ptid:v1:actor:charlie",
+        )
+        gate.client_lifecycles.mark_live(client)
+        gate.client_lifecycles.mark_authenticated(client)
 
         with patch(
-            "tooling.acceptance.gates.chat.native_group_mls_runner."
-            "StationDriver",
+            "tooling.acceptance.gates.chat.native_support."
+            "logout_native_client",
             side_effect=RuntimeError("logout failed"),
         ), self.assertRaisesRegex(RuntimeError, "logout failed"):
             gate.stop_authenticated_client(client)

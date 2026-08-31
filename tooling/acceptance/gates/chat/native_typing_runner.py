@@ -17,7 +17,6 @@ from tooling.acceptance.core import (
     GateError,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
-from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
     acceptance_station_environment,
@@ -25,6 +24,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     DEV_ACCOUNT_PASSWORD,
+    NativeClientLifecycleLedger,
     async_harness,
     cleanup_preserving_primary_failure,
     commits_match,
@@ -32,7 +32,6 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
-    gateway_command,
     native_runtime_source_identity,
     read_station_version,
     reset_fixture,
@@ -228,7 +227,7 @@ class NativeTypingGate(AcceptanceGate):
         self.steps: list[dict[str, Any]] = []
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
-        self.authenticated_profiles: set[str] = set()
+        self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
         self.conversations: dict[str, str] = {}
@@ -297,6 +296,7 @@ class NativeTypingGate(AcceptanceGate):
         actor: str,
         *,
         restore_session: bool = False,
+        restored_from: TauriSession | None = None,
     ) -> None:
         if self.runtime_binding is None:
             raise GateError("Native Desktop runtime binding is required")
@@ -311,10 +311,17 @@ class NativeTypingGate(AcceptanceGate):
             },
         )
         self.runtime_instances.append(client)
+        expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
+        self.client_lifecycles.register(client, expected_ptid)
+        if restored_from is not None:
+            self.client_lifecycles.transfer_preserved_session(
+                restored_from,
+                client,
+            )
         client.start()
+        self.client_lifecycles.mark_live(client)
         self.register_driver(client)
         client.wait_for_acceptance_harness(30)
-        expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
         if restore_session:
             device = self.wait_for_realtime_device(client, expected_ptid)
             ptid = expected_ptid
@@ -332,6 +339,7 @@ class NativeTypingGate(AcceptanceGate):
             )
             if not (login or {}).get("authenticated"):
                 raise GateError(f"{actor} login did not authenticate")
+            self.client_lifecycles.mark_authenticated(client)
             hydration = async_harness(
                 client,
                 "hydrateActiveActor",
@@ -345,7 +353,7 @@ class NativeTypingGate(AcceptanceGate):
                     f"expected={expected_ptid} actual={ptid}"
                 )
             device = self.wait_for_realtime_device(client, expected_ptid)
-        self.authenticated_profiles.add(client.profile)
+        self.client_lifecycles.mark_authenticated(client)
         if not client.get_current_url().startswith("tauri://localhost"):
             raise GateError(
                 f"{actor} is not running in native Tauri WebView: "
@@ -427,7 +435,7 @@ class NativeTypingGate(AcceptanceGate):
         if self.runtime_binding is None:
             stop_client(client)
             return
-        client.stop(preserve_state=True)
+        self.client_lifecycles.stop_preserving_session(client)
 
     def restart_client(self, actor: str, context: str) -> None:
         previous_ptid = self.ptids[actor]
@@ -453,7 +461,11 @@ class NativeTypingGate(AcceptanceGate):
             if ptid != previous_ptid:
                 raise GateError(identity_error)
         else:
-            self.start_injected_client(actor, restore_session=True)
+            self.start_injected_client(
+                actor,
+                restore_session=True,
+                restored_from=self.clients[actor],
+            )
             if self.ptids[actor] != previous_ptid:
                 raise GateError(identity_error)
         replacement = self.clients[actor]
@@ -466,22 +478,7 @@ class NativeTypingGate(AcceptanceGate):
             raise GateError(device_error)
         enter_chat_page(replacement)
 
-    def drain(self, actor: str) -> None:
-        try:
-            gateway_command(
-                self.clients[actor], "messaging_dispatch", {"batch_limit": 50}
-            )
-        except Exception:
-            pass
-        try:
-            gateway_command(
-                self.clients[actor], "messaging_drain", {"batch_limit": 100}
-            )
-        except Exception:
-            pass
-
     def sync(self, actor: str, kind: str, conversation_id: str) -> None:
-        self.drain(actor)
         method = "syncFriendSession" if kind == "friend" else "syncGroup"
         key = "sessionUlid" if kind == "friend" else "groupUlid"
         async_harness(self.clients[actor], method, {key: conversation_id})
@@ -512,15 +509,21 @@ class NativeTypingGate(AcceptanceGate):
         conversation_id: str,
         message_id: str,
     ) -> dict[str, Any]:
-        return gateway_command(
+        result = async_harness(
             self.clients[actor],
-            "messaging_acceptance_interaction_snapshot",
+            "engineInteractionSnapshot",
             {
-                "conversation_id": conversation_id,
-                "message_id": message_id,
-                "command_id": "",
+                "actorPtid": self.ptids[actor],
+                "conversationId": conversation_id,
+                "messageId": message_id,
+                "commandId": "",
             },
         )
+        if not isinstance(result, dict):
+            raise GateError(
+                "engineInteractionSnapshot returned invalid evidence"
+            )
+        return result
 
     def wait_typing(self, actor: str, active: bool, description: str, conversation_id: str = "") -> None:
         expected = "active" if active else "inactive"
@@ -531,6 +534,24 @@ class NativeTypingGate(AcceptanceGate):
             STEP_TIMEOUT,
             0.25,
         )
+
+    def submit_typing_and_wait(
+        self,
+        sender: str,
+        receiver: str,
+        conversation_id: str,
+        active: bool,
+        description: str,
+    ) -> dict[str, Any]:
+        result = async_harness(
+            self.clients[sender],
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": active},
+        )
+        if not isinstance(result, dict) or not result.get("submitted"):
+            raise GateError(f"submitTyping returned unexpected result: {result}")
+        self.wait_typing(receiver, active, description, conversation_id)
+        return result
 
     def assert_typing_inactive_for(
         self,
@@ -551,25 +572,23 @@ class NativeTypingGate(AcceptanceGate):
         self._typing_cid = conversation_id
         self.step(
             "direct.typing.start",
-            lambda: (
-                async_harness(
-                    alice,
-                    "submitTyping",
-                    {"conversationId": conversation_id, "typing": True},
-                )
-                or self.wait_typing("bob", True, "Bob Direct typing active")
+            lambda: self.submit_typing_and_wait(
+                "alice",
+                "bob",
+                conversation_id,
+                True,
+                "Bob Direct typing active",
             ),
             "alice",
         )
         self.step(
             "direct.typing.stop",
-            lambda: (
-                async_harness(
-                    alice,
-                    "submitTyping",
-                    {"conversationId": conversation_id, "typing": False},
-                )
-                or self.wait_typing("bob", False, "Bob Direct typing stopped")
+            lambda: self.submit_typing_and_wait(
+                "alice",
+                "bob",
+                conversation_id,
+                False,
+                "Bob Direct typing stopped",
             ),
             "alice",
         )
@@ -578,7 +597,6 @@ class NativeTypingGate(AcceptanceGate):
         send_text = f"direct-send-clear-{time.time_ns()}"
 
         def typing_settled_inactive() -> bool:
-            self.drain("bob")
             return typing_dom(self.clients["bob"], conversation_id) == "inactive"
 
         wait_until(
@@ -770,16 +788,15 @@ class NativeTypingGate(AcceptanceGate):
         alice = replacement
         self.assert_condition("group_typing_disconnect_ttl_clear", True)
 
-        removed = gateway_command(
+        removed = async_harness(
             alice,
-            "messaging_membership_transition",
+            "removeGroupMember",
             {
-                "conversation_id": conversation_id,
-                "action": "remove_actor",
-                "target_ptid": self.ptids["charlie"],
+                "groupUlid": conversation_id,
+                "memberPtid": self.ptids["charlie"],
             },
         )
-        if not removed:
+        if not isinstance(removed, dict) or removed.get("success") is not True:
             raise GateError("Charlie removal did not succeed")
         try:
             async_harness(
@@ -808,6 +825,7 @@ class NativeTypingGate(AcceptanceGate):
             or (revoked or {}).get("deviceId") != self.device_ids["bob"]
         ):
             raise GateError("Bob current-device revocation did not succeed")
+        self.client_lifecycles.mark_device_revoked(self.clients["bob"])
         # Architecture gap: Station SSE and typing paths do not enforce device
         # revocation in-flight. The revoked device may still receive ephemeral
         # events until its session expires or reconnects. We assert only that
@@ -822,27 +840,9 @@ class NativeTypingGate(AcceptanceGate):
     def cleanup_runtime(self) -> dict[str, Any]:
         cleanup_errors: list[dict[str, str]] = []
         if self.runtime_binding is not None:
-            for client in reversed(tuple(self.clients.values())):
-                if (
-                    client.profile not in self.authenticated_profiles
-                    or not client.is_alive()
-                ):
-                    continue
-                try:
-                    with StationDriver(
-                        f"http://127.0.0.1:{client.gateway_port}"
-                    ) as station:
-                        station.auth_logout()
-                    self.authenticated_profiles.discard(client.profile)
-                except Exception as error:
-                    cleanup_errors.append(
-                        {
-                            "resource": f"session:{client.profile}",
-                            "error": str(error),
-                        }
-                    )
+            cleanup_errors.extend(self.client_lifecycles.release_all())
         cleanup_clients = (
-            reversed(self.runtime_instances)
+            ()
             if self.runtime_binding is not None
             else reversed(tuple(self.clients.values()))
         )
@@ -1043,7 +1043,7 @@ class NativeTypingGate(AcceptanceGate):
                 "createGroup",
                 {
                     "name": f"typing-{time.time_ns()}",
-                    "memberDids": [
+                    "memberPtids": [
                         self.ptids["bob"],
                         self.ptids["charlie"],
                     ],
@@ -1060,27 +1060,23 @@ class NativeTypingGate(AcceptanceGate):
             for actor in ACTORS:
                 self.sync(actor, "group", group_id)
             self.prove_group(group_id, direct_id)
-            for actor in ACTORS:
-                self.drain(actor)
+            group_event_count: int | None = None
+            stable_group_observations = 0
 
             def group_drain_settled() -> bool:
-                for actor in ACTORS:
-                    self.drain(actor)
-                first = station_readback(
+                nonlocal group_event_count, stable_group_observations
+                snapshot = station_readback(
                     group_id,
                     group_seed,
                     station_url=self.station_url,
                 )
-                for actor in ACTORS:
-                    self.drain(actor)
-                second = station_readback(
-                    group_id,
-                    group_seed,
-                    station_url=self.station_url,
-                )
-                first_count = len(first.get("authorityEvents") or [])
-                second_count = len(second.get("authorityEvents") or [])
-                return first_count == second_count
+                event_count = len(snapshot.get("authorityEvents") or [])
+                if event_count == group_event_count:
+                    stable_group_observations += 1
+                else:
+                    group_event_count = event_count
+                    stable_group_observations = 0
+                return stable_group_observations >= 2
 
             wait_until(
                 group_drain_settled,

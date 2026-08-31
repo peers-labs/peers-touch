@@ -16,11 +16,11 @@ from tooling.acceptance.core import (
     REPO_ROOT,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
-from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     DEV_ACCOUNT_PASSWORD,
+    NativeClientLifecycleLedger,
     async_harness,
     cleanup_preserving_primary_failure,
     commits_match,
@@ -28,7 +28,6 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
-    gateway_command,
     message_snapshot,
     native_runtime_source_identity,
     read_station_version,
@@ -167,7 +166,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
         self.steps: list[dict[str, Any]] = []
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
-        self.authenticated_profiles: set[str] = set()
+        self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
         self.cleanup_evidence: dict[str, Any] = {}
@@ -253,7 +252,12 @@ class NativeMultiDeviceGate(AcceptanceGate):
             },
         )
         self.runtime_instances.append(client)
+        expected_ptid = str(
+            self.actor_specs[actor_role].get("ptid") or ""
+        )
+        self.client_lifecycles.register(client, expected_ptid)
         client.start()
+        self.client_lifecycles.mark_live(client)
         self.register_driver(client)
         client.wait_for_acceptance_harness(30)
         configure_station(client, self.station_url)
@@ -269,7 +273,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
         )
         if not (login or {}).get("authenticated"):
             raise GateError(f"{actor} login did not authenticate")
-        self.authenticated_profiles.add(client.profile)
+        self.client_lifecycles.mark_authenticated(client)
         hydration = async_harness(
             client,
             "hydrateActiveActor",
@@ -277,9 +281,6 @@ class NativeMultiDeviceGate(AcceptanceGate):
             timeout=30,
         )
         ptid = str((hydration or {}).get("actorPtid") or "")
-        expected_ptid = str(
-            self.actor_specs[actor_role].get("ptid") or ""
-        )
         if ptid != expected_ptid:
             raise GateError(
                 f"{actor} login identity mismatch: "
@@ -395,27 +396,9 @@ class NativeMultiDeviceGate(AcceptanceGate):
     def cleanup_runtime(self) -> dict[str, Any]:
         cleanup_errors: list[dict[str, str]] = []
         if self.runtime_binding is not None:
-            for client in reversed(tuple(self.clients.values())):
-                if (
-                    client.profile not in self.authenticated_profiles
-                    or not client.is_alive()
-                ):
-                    continue
-                try:
-                    with StationDriver(
-                        f"http://127.0.0.1:{client.gateway_port}"
-                    ) as station:
-                        station.auth_logout()
-                    self.authenticated_profiles.discard(client.profile)
-                except Exception as error:
-                    cleanup_errors.append(
-                        {
-                            "resource": f"session:{client.profile}",
-                            "error": str(error),
-                        }
-                    )
+            cleanup_errors.extend(self.client_lifecycles.release_all())
         cleanup_clients = (
-            reversed(self.runtime_instances)
+            ()
             if self.runtime_binding is not None
             else reversed(tuple(self.clients.values()))
         )
@@ -570,13 +553,6 @@ class NativeMultiDeviceGate(AcceptanceGate):
             bob1 = self.clients["bob1"]
             enter_chat_page(alice)
             enter_chat_page(bob1)
-
-            for client in (alice, bob1):
-                try:
-                    gateway_command(client, "messaging_drain", {"batch_limit": 100})
-                except Exception:
-                    pass
-            time.sleep(2)
 
             # Retry createDirectConversation: bob1's lifecycle worker must complete
             # device enrollment on Station before the peer can be resolved.
