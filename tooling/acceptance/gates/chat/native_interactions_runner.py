@@ -28,6 +28,7 @@ from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
     DEFAULT_STATION,
+    NativeClientLifecycleLedger,
     async_harness,
     cleanup_preserving_primary_failure,
     commits_match,
@@ -300,6 +301,7 @@ class NativeInteractionsGate(AcceptanceGate):
         self.steps: list[dict[str, Any]] = []
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
+        self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
         self.conversations: dict[str, str] = {}
@@ -410,6 +412,7 @@ class NativeInteractionsGate(AcceptanceGate):
         actor: str,
         *,
         restore_session: bool = False,
+        restored_from: TauriSession | None = None,
     ) -> tuple[TauriSession, str]:
         if self.runtime_binding is None:
             return start_authenticated_client(
@@ -427,15 +430,21 @@ class NativeInteractionsGate(AcceptanceGate):
             },
         )
         self.runtime_instances.append(client)
-        client.start()
-        try:
-            client.wait_for_acceptance_harness(30)
-            expected_ptid = str(
-                self.actor_specs[actor].get("ptid") or ""
+        expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
+        self.client_lifecycles.register(client, expected_ptid)
+        if restored_from is not None:
+            self.client_lifecycles.transfer_preserved_session(
+                restored_from,
+                client,
             )
+        try:
+            client.start()
+            self.client_lifecycles.mark_live(client)
+            client.wait_for_acceptance_harness(30)
             if restore_session:
                 self.wait_for_realtime_device(client, expected_ptid)
                 ptid = expected_ptid
+                self.client_lifecycles.mark_authenticated(client)
             else:
                 configure_station(client, self.station_url)
                 account_ref = str(
@@ -452,6 +461,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 )
                 if not (login or {}).get("authenticated"):
                     raise GateError(f"{actor} login did not authenticate")
+                self.client_lifecycles.mark_authenticated(client)
                 hydration = async_harness(
                     client,
                     "hydrateActiveActor",
@@ -470,8 +480,13 @@ class NativeInteractionsGate(AcceptanceGate):
                     f"{client.get_current_url()}"
                 )
             return client, ptid
-        except Exception:
-            client.stop()
+        except Exception as error:
+            cleanup_errors = self.client_lifecycles.release(client)
+            if cleanup_errors and hasattr(error, "add_note"):
+                error.add_note(
+                    "Native interactions launch cleanup also failed: "
+                    f"{json.dumps(cleanup_errors, sort_keys=True)}"
+                )
             raise
 
     def wait_for_realtime_device(
@@ -1817,11 +1832,17 @@ class NativeInteractionsGate(AcceptanceGate):
         *,
         stop_existing: bool = True,
     ) -> None:
+        predecessor = self.clients[actor]
         if stop_existing:
             self.stop_client_for_restart(actor)
         client, ptid = self.create_authenticated_client(
             actor,
             restore_session=self.runtime_binding is not None,
+            restored_from=(
+                predecessor
+                if self.runtime_binding is not None
+                else None
+            ),
         )
         self.register_driver(client)
         if ptid != self.ptids[actor]:
@@ -1843,7 +1864,7 @@ class NativeInteractionsGate(AcceptanceGate):
         if self.runtime_binding is None:
             stop_client(client)
             return
-        client.stop(preserve_state=True)
+        self.client_lifecycles.stop_preserving_session(client)
 
     def prove_restart_convergence(
         self,
@@ -2155,26 +2176,12 @@ class NativeInteractionsGate(AcceptanceGate):
 
     def cleanup_clients(self) -> dict[str, Any]:
         cleanup_errors: list[dict[str, str]] = []
-        sessions = (
-            self.runtime_instances
-            if self.runtime_binding is not None
-            else list(self.clients.values())
-        )
-        for client in reversed(sessions):
-            try:
-                if self.runtime_binding is None:
-                    stop_client(client)
-                else:
-                    client.stop()
-            except Exception as error:
-                cleanup_errors.append(
-                    {
-                        "resource": f"client:{client.profile}",
-                        "error": str(error),
-                    }
-                )
+        if self.runtime_binding is not None:
+            cleanup_errors.extend(self.client_lifecycles.release_all())
+        else:
+            for client in reversed(tuple(self.clients.values())):
                 try:
-                    client.stop()
+                    stop_client(client)
                 except Exception as stop_error:
                     cleanup_errors.append(
                         {

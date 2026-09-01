@@ -176,6 +176,8 @@ def validate_contract(contract: dict[str, Any], gate_defs: dict[str, Any]) -> li
         "version",
         "workstream",
         "claimed_runtime_cell",
+        "canonical_range",
+        "retained_gates",
         "deliverables",
         "gate_order",
     }
@@ -243,6 +245,22 @@ def validate_contract(contract: dict[str, Any], gate_defs: dict[str, Any]) -> li
                     f"{claimed_runtime_cell!r}"
                 )
 
+    canonical_range = contract.get("canonical_range")
+    if not isinstance(canonical_range, str) or "..." not in canonical_range:
+        errors.append("contract must declare a canonical three-dot Git range")
+
+    retained_gates = contract.get("retained_gates")
+    if (
+        not isinstance(retained_gates, list)
+        or not retained_gates
+        or any(not isinstance(gate_id, str) or not gate_id for gate_id in retained_gates)
+    ):
+        errors.append("contract must declare non-empty retained_gates")
+    else:
+        for gate_id in retained_gates:
+            if gate_id not in gate_defs:
+                errors.append(f"retained Gate {gate_id!r} is not defined")
+
     closure_gates_in_order = {g for g in gate_order if g in CLOSURE_GATE_IDS}
     if not closure_gates_in_order:
         errors.append(
@@ -295,6 +313,8 @@ def generate_manifest(contract: dict[str, Any]) -> dict[str, Any]:
         "version": 1,
         "workstream": contract["workstream"],
         "claimed_runtime_cell": contract["claimed_runtime_cell"],
+        "canonical_range": contract["canonical_range"],
+        "retained_gates": contract["retained_gates"],
         "scan_targets": {},
     }
 

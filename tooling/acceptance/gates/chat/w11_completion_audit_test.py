@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
+from tooling.acceptance.core.errors import EvidenceManifestInvalid
 from tooling.acceptance.core.evidence_store import workspace_id
 from tooling.acceptance.gates.chat.w11_completion_audit import (
     check_native_report_identity,
     check_report_status,
-    load_latest_gate_evidence,
+    immutable_results_by_gate,
+    load_gate_evidence,
+    runtime_cell_gates,
 )
 
 
@@ -19,21 +23,31 @@ class _Store:
         manifest: dict,
         report: dict | None = None,
         runtime_manifest: dict | None = None,
+        environment_manifest: dict | None = None,
+        station_attestation: dict | None = None,
     ) -> None:
         self.manifest = manifest
         self.report = report
         self.runtime_manifest = runtime_manifest
-
-    def latest(self, gate_id: str, *, runtime_cell: str | None = None) -> dict:
-        del gate_id, runtime_cell
-        return self.manifest
+        self.environment_manifest = environment_manifest
+        self.station_attestation = station_attestation
 
     def read_json(self, reference: object) -> dict:
         path = getattr(reference, "path", "")
+        if path == "manifest.json":
+            return self.manifest
         if path == "runtime/runtime-cell-manifest.json":
             if self.runtime_manifest is None:
                 raise AssertionError("runtime manifest unavailable")
             return self.runtime_manifest
+        if path == "runtime/environment-manifest.json":
+            if self.environment_manifest is None:
+                raise AssertionError("environment manifest unavailable")
+            return self.environment_manifest
+        if path == "runtime/services/station/attestation.json":
+            if self.station_attestation is None:
+                raise AssertionError("Station attestation unavailable")
+            return self.station_attestation
         if self.report is None:
             raise AssertionError("report unavailable")
         return self.report
@@ -62,6 +76,16 @@ def _report() -> dict:
             "runtimeCellRunId": "cell-run-a",
             "sourceIdentity": {
                 "orchestrator": _source(),
+                "station": {
+                    "attestationArtifact": _station_reference(),
+                    "deploymentEnvironment": "chat-native-disposable-station",
+                    "endpoint": "http://station.example:18132",
+                    "kind": "station",
+                    "liveCommit": _source()["commit"],
+                    "protocolDigest": "3" * 64,
+                    "workspaceDigest": "clean",
+                },
+                "stationLive": {"build_commit": _source()["commit"]},
                 "binary": {
                     "sourceCommit": _source()["commit"],
                     "sha256": binary_digest,
@@ -97,26 +121,81 @@ def _report() -> dict:
     }
 
 
+def _run_id() -> str:
+    return "20260829T120000000000Z-" + ("b" * 32)
+
+
+def _artifact_reference(path: str, sha256: str) -> dict:
+    return {
+        "artifactKind": "acceptance-artifact-ref",
+        "workspaceId": "0123456789abcdef",
+        "gateId": "chat-native-product-closure-e2e",
+        "runId": _run_id(),
+        "path": path,
+        "sha256": sha256,
+        "mediaType": "application/json",
+    }
+
+
+def _station_reference() -> dict:
+    return _artifact_reference(
+        "runtime/services/station/attestation.json",
+        "5" * 64,
+    )
+
+
+def _station_attestation() -> dict:
+    return {
+        "artifactKind": "service-deployment-attestation",
+        "serviceId": "station",
+        "serviceKind": "station",
+        "deploymentEnvironment": "chat-native-disposable-station",
+        "endpoint": "http://station.example:18132",
+        "commit": _source()["commit"],
+        "workspaceDigest": "clean",
+        "protocolDigest": "3" * 64,
+        "liveMetadata": {"buildCommit": _source()["commit"]},
+    }
+
+
+def _immutable_station_attestation() -> dict:
+    return {
+        **_station_attestation(),
+        "_artifact_ref": _station_reference(),
+    }
+
+
+def _environment_manifest() -> dict:
+    return {
+        "artifactKind": "acceptance-runtime-manifest",
+        "gateId": "chat-native-product-closure-e2e",
+        "state": "FIXTURE_READY",
+        "source": _source(),
+        "services": {
+            "station": {
+                "deploymentEnvironment": "chat-native-disposable-station",
+                "endpoint": "http://station.example:18132",
+                "kind": "station",
+                "liveCommit": _source()["commit"],
+                "protocolDigest": "3" * 64,
+                "workspaceDigest": "clean",
+                "attestationArtifact": _station_reference(),
+            }
+        },
+    }
+
+
 def _manifest() -> dict:
     report = _report()
-    reference = {
-        "artifactKind": "acceptance-artifact-ref",
-        "workspaceId": "0123456789abcdef",
-        "gateId": "chat-native-product-closure-e2e",
-        "runId": "20260829T120000000000Z-" + ("b" * 32),
-        "path": "reports/product.json",
-        "sha256": "c" * 64,
-        "mediaType": "application/json",
-    }
-    runtime_reference = {
-        "artifactKind": "acceptance-artifact-ref",
-        "workspaceId": "0123456789abcdef",
-        "gateId": "chat-native-product-closure-e2e",
-        "runId": reference["runId"],
-        "path": "runtime/runtime-cell-manifest.json",
-        "sha256": "4" * 64,
-        "mediaType": "application/json",
-    }
+    reference = _artifact_reference("reports/product.json", "c" * 64)
+    runtime_reference = _artifact_reference(
+        "runtime/runtime-cell-manifest.json",
+        "4" * 64,
+    )
+    environment_reference = _artifact_reference(
+        "runtime/environment-manifest.json",
+        "6" * 64,
+    )
     runtime_manifest_payload = {
         **report["runtime"]["sourceIdentity"]["runtimeCell"],
         "_manifest_ref": runtime_reference,
@@ -133,6 +212,10 @@ def _manifest() -> dict:
             "completionStatus": "DONE",
             "proofStatus": "PROVEN",
             "runtimeCell": "desktop-linux-native",
+            "manifest": {
+                **_environment_manifest(),
+                "_manifest_ref": environment_reference,
+            },
             "runtimeCellManifest": runtime_manifest_payload,
             "secretScan": {"status": "passed"},
             "sourceArtifactKind": "acceptance-gate-evidence-report",
@@ -140,8 +223,17 @@ def _manifest() -> dict:
         },
         "artifacts": {
             "report": reference,
+            "environment-manifest": environment_reference,
             "runtime-cell-manifest": runtime_reference,
+            "station-attestation": _station_reference(),
         },
+    }
+
+
+def _aggregate_result() -> dict:
+    return {
+        "id": "chat-native-product-closure-e2e",
+        "runManifest": _artifact_reference("manifest.json", "7" * 64),
     }
 
 
@@ -172,13 +264,16 @@ class W11CompletionAuditTests(unittest.TestCase):
             manifest["result"]["runtimeCellManifest"],
             _immutable_runtime_manifest(),
         )
-        accepted = load_latest_gate_evidence(
+        accepted = load_gate_evidence(
             _Store(
                 manifest,
                 _report(),
                 _immutable_runtime_manifest(),
+                _environment_manifest(),
+                _station_attestation(),
             ),
             "chat-native-product-closure-e2e",
+            aggregate_result=_aggregate_result(),
             expected_source=_source(),
             runtime_cell="desktop-linux-native",
             require_report=True,
@@ -192,9 +287,36 @@ class W11CompletionAuditTests(unittest.TestCase):
         manifest["source"] = {**_source(), "commit": "d" * 40}
 
         with self.assertRaisesRegex(AssertionError, "current source"):
-            load_latest_gate_evidence(
-                _Store(manifest, _report(), _immutable_runtime_manifest()),
+            load_gate_evidence(
+                _Store(
+                    manifest,
+                    _report(),
+                    _immutable_runtime_manifest(),
+                    _environment_manifest(),
+                    _station_attestation(),
+                ),
                 "chat-native-product-closure-e2e",
+                aggregate_result=_aggregate_result(),
+                expected_source=_source(),
+                runtime_cell="desktop-linux-native",
+                require_report=True,
+            )
+
+    def test_rejects_latest_pointer_substitution_without_immutable_ref(self) -> None:
+        with self.assertRaisesRegex(
+            EvidenceManifestInvalid,
+            "artifact reference",
+        ):
+            load_gate_evidence(
+                _Store(
+                    _manifest(),
+                    _report(),
+                    _immutable_runtime_manifest(),
+                    _environment_manifest(),
+                    _station_attestation(),
+                ),
+                "chat-native-product-closure-e2e",
+                aggregate_result={"id": "chat-native-product-closure-e2e"},
                 expected_source=_source(),
                 runtime_cell="desktop-linux-native",
                 require_report=True,
@@ -205,9 +327,16 @@ class W11CompletionAuditTests(unittest.TestCase):
         manifest["result"].pop("sourceArtifact")
 
         with self.assertRaisesRegex(AssertionError, "canonical evidence report"):
-            load_latest_gate_evidence(
-                _Store(manifest, _report(), _immutable_runtime_manifest()),
+            load_gate_evidence(
+                _Store(
+                    manifest,
+                    _report(),
+                    _immutable_runtime_manifest(),
+                    _environment_manifest(),
+                    _station_attestation(),
+                ),
                 "chat-native-product-closure-e2e",
+                aggregate_result=_aggregate_result(),
                 expected_source=_source(),
                 runtime_cell="desktop-linux-native",
                 require_report=True,
@@ -218,9 +347,16 @@ class W11CompletionAuditTests(unittest.TestCase):
         manifest["result"]["runtimeCell"] = "desktop-macos-native"
 
         with self.assertRaisesRegex(AssertionError, "runtime cell"):
-            load_latest_gate_evidence(
-                _Store(manifest, _report(), _immutable_runtime_manifest()),
+            load_gate_evidence(
+                _Store(
+                    manifest,
+                    _report(),
+                    _immutable_runtime_manifest(),
+                    _environment_manifest(),
+                    _station_attestation(),
+                ),
                 "chat-native-product-closure-e2e",
+                aggregate_result=_aggregate_result(),
                 expected_source=_source(),
                 runtime_cell="desktop-linux-native",
                 require_report=True,
@@ -234,9 +370,16 @@ class W11CompletionAuditTests(unittest.TestCase):
             AssertionError,
             "no immutable artifact reference",
         ):
-            load_latest_gate_evidence(
-                _Store(manifest, _report(), _immutable_runtime_manifest()),
+            load_gate_evidence(
+                _Store(
+                    manifest,
+                    _report(),
+                    _immutable_runtime_manifest(),
+                    _environment_manifest(),
+                    _station_attestation(),
+                ),
                 "chat-native-product-closure-e2e",
+                aggregate_result=_aggregate_result(),
                 expected_source=_source(),
                 runtime_cell="desktop-linux-native",
                 require_report=True,
@@ -250,9 +393,16 @@ class W11CompletionAuditTests(unittest.TestCase):
             AssertionError,
             "runner runtime-cell manifest identity mismatch",
         ):
-            load_latest_gate_evidence(
-                _Store(_manifest(), _report(), immutable),
+            load_gate_evidence(
+                _Store(
+                    _manifest(),
+                    _report(),
+                    immutable,
+                    _environment_manifest(),
+                    _station_attestation(),
+                ),
                 "chat-native-product-closure-e2e",
+                aggregate_result=_aggregate_result(),
                 expected_source=_source(),
                 runtime_cell="desktop-linux-native",
                 require_report=True,
@@ -283,6 +433,7 @@ class W11CompletionAuditTests(unittest.TestCase):
             expected_runtime_manifest=report["runtime"]["sourceIdentity"][
                 "runtimeCell"
             ],
+            expected_station_attestation=_immutable_station_attestation(),
         )
 
         self.assertIn(
@@ -311,6 +462,7 @@ class W11CompletionAuditTests(unittest.TestCase):
             expected_runtime_manifest=report["runtime"]["sourceIdentity"][
                 "runtimeCell"
             ],
+            expected_station_attestation=_immutable_station_attestation(),
         )
 
         self.assertNotIn(
@@ -339,6 +491,7 @@ class W11CompletionAuditTests(unittest.TestCase):
             expected_runtime_manifest=report["runtime"]["sourceIdentity"][
                 "runtimeCell"
             ],
+            expected_station_attestation=_immutable_station_attestation(),
         )
 
         self.assertIn(
@@ -358,6 +511,7 @@ class W11CompletionAuditTests(unittest.TestCase):
             expected_runtime_manifest=report["runtime"]["sourceIdentity"][
                 "runtimeCell"
             ],
+            expected_station_attestation=_immutable_station_attestation(),
         )
 
         self.assertIn(
@@ -378,12 +532,115 @@ class W11CompletionAuditTests(unittest.TestCase):
             expected_source=_source(),
             runtime_cell="desktop-linux-native",
             expected_runtime_manifest=runner_manifest,
+            expected_station_attestation=_immutable_station_attestation(),
         )
 
         self.assertIn(
             "chat-native-product-closure-e2e: report runtime-cell identity mismatch: ['runId']",
             errors,
         )
+
+    def test_rejects_report_station_attestation_substitution(self) -> None:
+        report = _report()
+        report["runtime"]["sourceIdentity"]["station"]["protocolDigest"] = "9" * 64
+
+        errors = check_native_report_identity(
+            report,
+            "chat-native-product-closure-e2e",
+            expected_source=_source(),
+            runtime_cell="desktop-linux-native",
+            expected_runtime_manifest=report["runtime"]["sourceIdentity"][
+                "runtimeCell"
+            ],
+            expected_station_attestation=_immutable_station_attestation(),
+        )
+
+        self.assertTrue(
+            any("Station attestation mismatch" in error for error in errors)
+        )
+
+    def test_rejects_report_live_station_not_bound_to_current_source(self) -> None:
+        report = _report()
+        report["runtime"]["sourceIdentity"]["stationLive"]["build_commit"] = "9" * 40
+
+        errors = check_native_report_identity(
+            report,
+            "chat-native-product-closure-e2e",
+            expected_source=_source(),
+            runtime_cell="desktop-linux-native",
+            expected_runtime_manifest=report["runtime"]["sourceIdentity"][
+                "runtimeCell"
+            ],
+            expected_station_attestation=_immutable_station_attestation(),
+        )
+
+        self.assertTrue(
+            any("live Station identity" in error for error in errors)
+        )
+
+    def test_accepts_exact_parent_aggregate_gate_union(self) -> None:
+        results = immutable_results_by_gate(
+            json.dumps(
+                [
+                    {"id": "gate-a", "runManifest": {"immutable": "a"}},
+                    {"id": "gate-b", "runManifest": {"immutable": "b"}},
+                    {"id": "chat-w11-forbidden-scan", "runManifest": {}},
+                ]
+            ),
+            expected_gates={"gate-a", "gate-b"},
+            allowed_supplemental_gates={"chat-w11-forbidden-scan"},
+        )
+
+        self.assertEqual(set(results), {
+            "gate-a",
+            "gate-b",
+            "chat-w11-forbidden-scan",
+        })
+
+    def test_classifies_native_gate_from_catalog_not_name(self) -> None:
+        gates = runtime_cell_gates(
+            {
+                "chat-contact-message-resilience-e2e",
+                "station-messaging-unit",
+            },
+            runtime_cell="desktop-linux-native",
+        )
+
+        self.assertEqual(gates, {"chat-contact-message-resilience-e2e"})
+
+    def test_rejects_parent_aggregate_missing_canonical_gate(self) -> None:
+        with self.assertRaisesRegex(AssertionError, "missing=\\['gate-b'\\]"):
+            immutable_results_by_gate(
+                json.dumps([{"id": "gate-a", "runManifest": {}}]),
+                expected_gates={"gate-a", "gate-b"},
+                allowed_supplemental_gates=set(),
+            )
+
+    def test_rejects_parent_aggregate_with_unexpected_gate(self) -> None:
+        with self.assertRaisesRegex(AssertionError, "unexpected=\\['stale-gate'\\]"):
+            immutable_results_by_gate(
+                json.dumps(
+                    [
+                        {"id": "gate-a", "runManifest": {}},
+                        {"id": "stale-gate", "runManifest": {}},
+                    ]
+                ),
+                expected_gates={"gate-a"},
+                allowed_supplemental_gates=set(),
+            )
+
+    def test_rejects_parent_aggregate_duplicate_gate(self) -> None:
+        with self.assertRaisesRegex(AssertionError, "duplicate Gate"):
+            immutable_results_by_gate(
+                json.dumps(
+                    [
+                        {"id": "gate-a", "runManifest": {}},
+                        {"id": "gate-a", "runManifest": {}},
+                    ]
+                ),
+                expected_gates={"gate-a"},
+                allowed_supplemental_gates=set(),
+            )
 
 
 if __name__ == "__main__":

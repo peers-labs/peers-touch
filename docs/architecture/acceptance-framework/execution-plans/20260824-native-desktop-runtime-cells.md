@@ -538,13 +538,13 @@ committed to this plan.
 
 | Workstream | Status | Evidence |
 |---|---|---|
-| NDR-W1 Runtime Cell Core | in progress | Contract, manifest and matrix identity are implemented. Runner-owned per-Gate `ready -> Gate -> stop` orchestration and canonical-report selection are implemented with synthetic lifecycle/failure-path coverage; exact-source Linux aggregate evidence is pending. |
+| NDR-W1 Runtime Cell Core | correction implemented; exact-source revalidation pending | Contract, manifest and matrix identity are implemented. Product Closure, Interactions, and Contact Resilience now use the fail-closed Native session lifecycle ledger; focused lifecycle tests pass. |
 | NDR-W2 SSH + source sync | done | source-sync 16/16 PASS; source-sync/lease/runtime-cell suite 60/60 PASS; Acceptance Core tests 159/159 PASS; strict host-key negative PASS; isolated direct sync transferred one new object on the second commit; isolated central/local sync PASS with cleanup; `make station` held the remote source lease through build/restart/health and passed at exact HEAD `33063a7e15be`; remote checkout/residue clean and leases released |
 | NDR-W3 Tauri driver separation | done | pure loopback-only `TauriDriver`; `LocalTauriLauncher` and `ProvisionedTauriLauncher`; composed `TauriSession`; all business callers migrated; Core tests 167/167 PASS; MP-W13 static 34/34 PASS; local Native driver smoke PASS; process/ports/storage/log cleanup PASS; infra validation, plan self-check, coverage report, and skill-check PASS |
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
-| NDR-W6 Chat migration | in progress | Product and receiver runners already consume `NativeDesktopRuntimeBinding`. The remaining six Chat Native runners now have the same runtime-manifest, source identity, Evidence Store, actor-storage, and cleanup contracts; focused static/Infra tests pass, while exact-source Linux Gate evidence is pending. |
-| NDR-W7 Linux MP-W13 proof | current delivery candidate pending exact-source revalidation | Historical aggregate `20260830T052209499498Z-ff6c99fc6e262b23e876f2c2e191a067` proved commit `c69ed69bb6d8d6e7cf2275f0ce2c76a39f35049b`. The current candidate integrates the canonical `peerPtid` migration with the search-selection ordering fix and must rerun all 18 selected Gates before delivery. |
+| NDR-W6 Chat migration | correction implemented; exact-source revalidation pending | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners now register authenticated windows and preserved-session successors in `NativeClientLifecycleLedger`. |
+| NDR-W7 Linux MP-W13 proof | pending clean exact-source revalidation | The independent-review corrections are implemented locally. Closure now requires canonical 18 Gates, retained `proto-build`, both W11 scans, and the in-aggregate W11 Completion Audit at one clean commit. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
@@ -1483,6 +1483,85 @@ hash, commit, and clean-workspace digest to equal the canonical Evidence Store
 identity. Evidence from another worktree still fails closed. The focused W11
 Completion Audit unit suite passes 12/12. Exact-source runtime revalidation
 remains pending at the resulting commit.
+
+### 2026-08-31 NDR-W7 Linux Closure
+
+Exact-source aggregate
+`20260831T160909127606Z-afde2602bffb80909249fd0f7a8d3f6e` at commit
+`9848935196a23250142708355d604a11f437fc54` completed 19 PASS / 0 FAIL
+with `completionStatus=DONE`, `proofStatus=PROVEN`, zero missing result
+traceability, and successful cleanup for every provisioned Gate. Station
+evidence belongs to deployment node `10.37.94.156` and endpoint `18132`;
+Linux Native runtime-cell evidence belongs to host `10.37.246.80`.
+
+Fresh W11 forbidden-owner scan
+`20260831T172746381758Z-cbbe7f358aca6234b74d8073af1017d7`,
+duplicate-owner scan
+`20260831T172746735850Z-eced1e91337156f31eab3d0e121616a0`,
+and Chat required-proven validation
+`20260831T172747490857Z-deed260304989f36515661e94e35bf61`
+passed at the same clean source. Gap Detector reports the Linux-only NDR-W7 /
+MP-W13-F claim as `PROVEN` with all 19 Gates selected and zero gaps.
+
+W11 Completion Audit
+`20260831T173142863566Z-400178f823a88832fef47415314c0168`
+passed with `DONE/PROVEN`, five mechanically verified deletion/ownership
+deliverables, nine accepted Gate runs, and no errors.
+
+`make review-submit REVIEW_BASE=origin/master` passed quality evidence, hard
+rules, knowledge matching, skill freshness, and review routing, then stopped
+at global Acceptance validation because the unfinished Federation `fedp5`
+domain has three Gates without a provisioner or environment contract. The
+Owner previously approved merging this Chat work while Federation remains
+unfinished. This is an explicit delivery waiver for that unrelated global
+validation failure; it is not a passed Gate and does not prove Federation.
+NDR-W8 macOS, NDR-W9 Windows, and Mobile remain `UNPROVEN`.
+
+Independent review then found three P1 root-cause groups:
+
+- Product Closure, Interactions, and Contact Resilience stop authenticated
+  Native windows without registering them in `NativeClientLifecycleLedger`.
+  Their cleanup evidence proves process, port, storage, and log release but
+  does not prove fail-closed authenticated-session logout. The underlying
+  logout path also discards persisted-session deletion errors and only warns
+  on Messaging Engine deactivation failure before returning `logged_out`.
+- the Typing Gate revokes Bob's device but does not attempt a rejected typing
+  submission or verify receiver isolation; it sets
+  `typing_revoked_device_rejected` to `true` unconditionally.
+- W11 independently validates orchestrator, runtime-cell, and binary identity,
+  but does not independently compare the report's Station attestation/live
+  identity, and its closure contract does not bind the full canonical 19-Gate
+  union or Gap Detector result.
+
+The immutable 19-Gate aggregate remains valid evidence for the behavior it
+actually exercised, but NDR-W7 remains `PARTIAL/UNPROVEN` and blocked before
+delivery until these review findings are corrected, covered by negative
+regressions, and revalidated at one clean exact source.
+
+### 2026-09-01 NDR-W7 Independent-Review Corrections
+
+The approved correction resolves the three review groups without changing
+product or architecture semantics:
+
+- Desktop logout now returns typed `logout_cleanup_failed` and retains the
+  committed window session unless both durable-session clearing and Messaging
+  Engine deactivation succeed.
+- Product Closure, Interactions, and Contact Resilience now register Native
+  windows in `NativeClientLifecycleLedger`, transfer preserved sessions across
+  restarts, and fail cleanup when authenticated logout cannot be proven.
+- the Typing Gate now submits from Bob's revoked device, requires the Station
+  active-device rejection, and proves Alice observes no typing pulse.
+- W11 now consumes immutable parent-aggregate run manifests, independently
+  validates Station attestation plus live build identity, and requires the
+  canonical 18-Gate range union plus retained `proto-build`.
+
+Focused Rust tests pass 8/8 in normal and `acceptance-webdriver` modes. The
+combined Chat/Acceptance suites pass 180 tests; Desktop passes 371 tests with
+one existing environment test skipped, and Desktop check/build, Station
+messaging packages, Chat/Infra validation, closure generation, Gap Detector,
+and skill-check pass. NDR-W7 remains `PARTIAL/UNPROVEN` until these changes are
+committed, deployed to Station node `10.37.94.156:18132`, and the complete
+Linux closure plan runs on runtime node `10.37.246.80`.
 
 ## 13. Final Readiness Gate
 

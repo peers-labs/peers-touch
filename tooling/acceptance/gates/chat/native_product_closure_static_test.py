@@ -606,11 +606,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             ],
         )
         self.assertIn(
-            "self.launch_actor(actor, restore_session=True)",
+            "self.launch_actor(\n"
+            "            actor,\n"
+            "            restore_session=True,\n"
+            "            restored_from=predecessor,",
             self.source,
         )
         self.assertIn(
-            "self.clients[actor].stop(preserve_state=True)",
+            "self.client_lifecycles.stop_preserving_session("
+            "self.clients[actor])",
             self.source,
         )
         offline_start = self.source.index("    def prove_offline_recovery(")
@@ -1760,7 +1764,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         cleanup_end = self.source.index("    def run(", cleanup_start)
         cleanup_source = self.source[cleanup_start:cleanup_end]
         self.assertLess(
-            cleanup_source.index("client.stop()"),
+            cleanup_source.index(
+                "self.client_lifecycles.release(client)"
+            ),
             cleanup_source.index("self.audit_runtime_logs()"),
         )
         self.assertIn(

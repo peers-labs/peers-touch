@@ -14,11 +14,13 @@ This gate is deterministic — it does not perform AI-style judgment.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 from tooling.acceptance.core.evidence_store import (
     ArtifactRef,
@@ -41,6 +43,7 @@ CONTRACT_PATH = Path(
         str(REPO_ROOT / "tooling" / "acceptance" / "closures" / "messaging-w11.yaml"),
     )
 )
+GATES_PATH = REPO_ROOT / "tooling" / "acceptance" / "gates.yaml"
 
 SCAN_GATE_MAP = {
     "path-absent": "chat-w11-forbidden-scan",
@@ -49,6 +52,7 @@ SCAN_GATE_MAP = {
     "tauri-command-absent": "chat-w11-forbidden-scan",
     "no-duplicate-symbol": "chat-w11-duplicate-scan",
 }
+CURRENT_RESULTS_ENV = "PT_ACCEPTANCE_CURRENT_RESULTS"
 
 
 def load_manifest() -> dict:
@@ -62,49 +66,61 @@ def load_manifest() -> dict:
     return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
-def load_latest_gate_evidence(
+def load_gate_evidence(
     store: EvidenceStore,
     gate_id: str,
     *,
+    aggregate_result: dict[str, Any],
     expected_source: dict[str, str],
     runtime_cell: str | None = None,
     require_report: bool = False,
 ) -> dict:
-    manifest = store.latest(gate_id, runtime_cell=runtime_cell)
+    manifest_ref = ArtifactRef.from_dict(aggregate_result.get("runManifest", {}))
+    if (
+        manifest_ref.workspace_id != store.workspace_id
+        or manifest_ref.gate_id != gate_id
+        or manifest_ref.path != "manifest.json"
+    ):
+        raise AssertionError(
+            f"{gate_id}: aggregate result has no matching immutable run manifest"
+        )
+    manifest = store.read_json(manifest_ref)
     if (
         manifest.get("artifactKind") != "acceptance-run-manifest"
         or manifest.get("workspaceId") != store.workspace_id
         or manifest.get("gateId") != gate_id
-        or not manifest.get("runId")
+        or manifest.get("runId") != manifest_ref.run_id
         or manifest.get("source") != expected_source
         or manifest.get("redaction", {}).get("status") != "passed"
     ):
         raise AssertionError(
-            f"{gate_id}: latest manifest identity does not match the current source"
+            f"{gate_id}: immutable manifest identity does not match the current source"
         )
     result = manifest.get("result")
     if not isinstance(result, dict) or result.get("status") != "passed":
         status = result.get("status") if isinstance(result, dict) else None
-        raise AssertionError(f"{gate_id}: latest Gate status is {status!r}, expected 'passed'")
+        raise AssertionError(
+            f"{gate_id}: immutable Gate status is {status!r}, expected 'passed'"
+        )
     if result.get("completionStatus") != "DONE":
         raise AssertionError(
-            f"{gate_id}: latest Gate completionStatus is "
+            f"{gate_id}: immutable Gate completionStatus is "
             f"{result.get('completionStatus')!r}, expected 'DONE'"
         )
     if result.get("proofStatus") != "PROVEN":
         raise AssertionError(
-            f"{gate_id}: latest Gate proofStatus is "
+            f"{gate_id}: immutable Gate proofStatus is "
             f"{result.get('proofStatus')!r}, expected 'PROVEN'"
         )
 
     if runtime_cell is not None and result.get("runtimeCell") != runtime_cell:
         raise AssertionError(
-            f"{gate_id}: latest Gate runtime cell is "
+            f"{gate_id}: immutable Gate runtime cell is "
             f"{result.get('runtimeCell')!r}, expected {runtime_cell!r}"
         )
     secret_scan = result.get("secretScan")
     if not isinstance(secret_scan, dict) or secret_scan.get("status") != "passed":
-        raise AssertionError(f"{gate_id}: latest Gate secret scan did not pass")
+        raise AssertionError(f"{gate_id}: immutable Gate secret scan did not pass")
 
     accepted = {
         "gateId": gate_id,
@@ -120,7 +136,7 @@ def load_latest_gate_evidence(
         or not isinstance(source_artifact, dict)
     ):
         raise AssertionError(
-            f"{gate_id}: latest Gate has no canonical evidence report"
+            f"{gate_id}: immutable Gate has no canonical evidence report"
         )
     reference = ArtifactRef.from_dict(source_artifact)
     if (
@@ -134,10 +150,22 @@ def load_latest_gate_evidence(
             f"{gate_id}: canonical evidence report identity is inconsistent"
         )
     report = store.read_json(reference)
+    environment_manifest = load_immutable_environment_manifest(
+        store,
+        manifest,
+        gate_id=gate_id,
+        expected_source=expected_source,
+    )
+    station_attestation = load_immutable_station_attestation(
+        store,
+        manifest,
+        environment_manifest,
+        gate_id=gate_id,
+    )
     runtime_manifest_payload = result.get("runtimeCellManifest")
     if not isinstance(runtime_manifest_payload, dict):
         raise AssertionError(
-            f"{gate_id}: latest Gate has no runtime-cell manifest payload"
+            f"{gate_id}: immutable Gate has no runtime-cell manifest payload"
         )
     runtime_manifest_ref_value = runtime_manifest_payload.get("_manifest_ref")
     if not isinstance(runtime_manifest_ref_value, dict):
@@ -171,12 +199,108 @@ def load_latest_gate_evidence(
             expected_source=expected_source,
             runtime_cell=runtime_cell or "",
             expected_runtime_manifest=immutable_runtime_manifest,
+            expected_station_attestation=station_attestation,
         )
     )
     if errors:
         raise AssertionError("; ".join(errors))
     accepted["sourceArtifact"] = reference.to_dict()
     return accepted
+
+
+def load_immutable_environment_manifest(
+    store: EvidenceStore,
+    gate_manifest: dict[str, Any],
+    *,
+    gate_id: str,
+    expected_source: dict[str, str],
+) -> dict[str, Any]:
+    result = gate_manifest.get("result")
+    payload = result.get("manifest") if isinstance(result, dict) else None
+    reference_value = (
+        payload.get("_manifest_ref")
+        if isinstance(payload, dict)
+        else None
+    )
+    if not isinstance(reference_value, dict):
+        raise AssertionError(
+            f"{gate_id}: Gate has no immutable environment-manifest reference"
+        )
+    reference = ArtifactRef.from_dict(reference_value)
+    if (
+        reference.workspace_id != store.workspace_id
+        or reference.gate_id != gate_id
+        or reference.run_id != gate_manifest.get("runId")
+        or reference.to_dict()
+        not in tuple(gate_manifest.get("artifacts", {}).values())
+    ):
+        raise AssertionError(
+            f"{gate_id}: environment-manifest artifact identity is inconsistent"
+        )
+    immutable = store.read_json(reference)
+    if (
+        immutable.get("artifactKind") != "acceptance-runtime-manifest"
+        or immutable.get("gateId") != gate_id
+        or immutable.get("state") != "FIXTURE_READY"
+        or not source_identities_match(
+            immutable.get("source"),
+            expected_source,
+        )
+    ):
+        raise AssertionError(
+            f"{gate_id}: immutable environment manifest identity is invalid"
+        )
+    return immutable
+
+
+def load_immutable_station_attestation(
+    store: EvidenceStore,
+    gate_manifest: dict[str, Any],
+    environment_manifest: dict[str, Any],
+    *,
+    gate_id: str,
+) -> dict[str, Any]:
+    services = environment_manifest.get("services")
+    station = services.get("station") if isinstance(services, dict) else None
+    reference_value = (
+        station.get("attestationArtifact")
+        if isinstance(station, dict)
+        else None
+    )
+    if not isinstance(reference_value, dict):
+        raise AssertionError(
+            f"{gate_id}: immutable Station attestation reference is missing"
+        )
+    reference = ArtifactRef.from_dict(reference_value)
+    if (
+        reference.workspace_id != store.workspace_id
+        or reference.gate_id != gate_id
+        or reference.run_id != gate_manifest.get("runId")
+        or reference.to_dict()
+        not in tuple(gate_manifest.get("artifacts", {}).values())
+    ):
+        raise AssertionError(
+            f"{gate_id}: Station attestation artifact identity is inconsistent"
+        )
+    attestation = store.read_json(reference)
+    if (
+        attestation.get("artifactKind") != "service-deployment-attestation"
+        or attestation.get("serviceId") != "station"
+        or attestation.get("serviceKind") != "station"
+    ):
+        raise AssertionError(f"{gate_id}: immutable Station attestation is invalid")
+    attestation["_artifact_ref"] = reference.to_dict()
+    live_metadata = attestation.get("liveMetadata")
+    station_errors = check_station_identity(
+        station,
+        live_metadata,
+        attestation,
+        expected_source=gate_manifest.get("source", {}),
+        label=gate_id,
+    )
+    if station_errors:
+        raise AssertionError("; ".join(station_errors))
+    return attestation
 
 
 def check_report_status(report: dict, label: str) -> list[str]:
@@ -310,6 +434,7 @@ def check_native_report_identity(
     expected_source: dict[str, str],
     runtime_cell: str,
     expected_runtime_manifest: object,
+    expected_station_attestation: object,
 ) -> list[str]:
     errors: list[str] = []
     runtime = report.get("runtime")
@@ -322,10 +447,21 @@ def check_native_report_identity(
     if not isinstance(identity, dict):
         return errors + [f"{label}: report source identity is missing"]
     orchestrator = identity.get("orchestrator")
+    station = identity.get("station")
+    station_live = identity.get("stationLive")
     cell = identity.get("runtimeCell")
     binary = identity.get("binary")
     if not source_identities_match(orchestrator, expected_source):
         errors.append(f"{label}: report orchestrator source identity mismatch")
+    errors.extend(
+        check_station_identity(
+            station,
+            station_live,
+            expected_station_attestation,
+            expected_source=expected_source,
+            label=label,
+        )
+    )
     if (
         not isinstance(cell, dict)
         or cell.get("artifactKind")
@@ -400,6 +536,157 @@ def check_native_report_identity(
     return errors
 
 
+def _station_live_commit(station_live: object) -> str:
+    if not isinstance(station_live, dict):
+        return ""
+    return str(
+        station_live.get("build_commit")
+        or station_live.get("buildCommit")
+        or ""
+    )
+
+
+def check_station_identity(
+    station: object,
+    station_live: object,
+    immutable_attestation: object,
+    *,
+    expected_source: dict[str, str],
+    label: str,
+) -> list[str]:
+    if not isinstance(station, dict):
+        return [f"{label}: report Station attestation is missing"]
+    if not isinstance(station_live, dict):
+        return [f"{label}: report live Station identity is missing"]
+    if not isinstance(immutable_attestation, dict):
+        return [f"{label}: immutable Station attestation is missing"]
+
+    live_metadata = immutable_attestation.get("liveMetadata")
+    attested_live_commit = (
+        str(live_metadata.get("buildCommit") or "")
+        if isinstance(live_metadata, dict)
+        else ""
+    )
+    expected_commit = str(expected_source.get("commit") or "")
+    expected_fields = {
+        "kind": immutable_attestation.get("serviceKind"),
+        "endpoint": immutable_attestation.get("endpoint"),
+        "deploymentEnvironment": immutable_attestation.get(
+            "deploymentEnvironment"
+        ),
+        "liveCommit": immutable_attestation.get("commit"),
+        "workspaceDigest": immutable_attestation.get("workspaceDigest"),
+        "protocolDigest": immutable_attestation.get("protocolDigest"),
+    }
+    mismatched = [
+        field
+        for field, expected in expected_fields.items()
+        if expected is None or station.get(field) != expected
+    ]
+    if station.get("attestationArtifact") != immutable_attestation.get(
+        "_artifact_ref"
+    ):
+        mismatched.append("attestationArtifact")
+    errors: list[str] = []
+    if mismatched:
+        errors.append(
+            f"{label}: report Station attestation mismatch: {sorted(set(mismatched))}"
+        )
+    if (
+        immutable_attestation.get("workspaceDigest") != "clean"
+        or immutable_attestation.get("commit") != expected_commit
+        or attested_live_commit != expected_commit
+        or _station_live_commit(station_live) != attested_live_commit
+    ):
+        errors.append(
+            f"{label}: report live Station identity does not match immutable "
+            "attestation/current source"
+        )
+    return errors
+
+
+def canonical_gate_union(diff_range: str) -> set[str]:
+    script_path = REPO_ROOT / "tooling" / "scripts" / "acceptance-plan.py"
+    spec = importlib.util.spec_from_file_location(
+        "w11_acceptance_plan",
+        script_path,
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError("canonical Acceptance planner cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    scripts_path = str(script_path.parent)
+    sys.path.insert(0, scripts_path)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(scripts_path)
+    changed_paths = module.changed_paths(diff_range)
+    plan = module.plan(REPO_ROOT / "tooling" / "acceptance", changed_paths)
+    selected = plan.get("selected_gates")
+    if not isinstance(selected, list) or not selected:
+        raise AssertionError(
+            f"canonical exact-range plan {diff_range!r} selected no Gates"
+        )
+    return {
+        str(gate.get("id") if isinstance(gate, dict) else gate)
+        for gate in selected
+    }
+
+
+def immutable_results_by_gate(
+    raw_results: str,
+    *,
+    expected_gates: set[str],
+    allowed_supplemental_gates: set[str],
+) -> dict[str, dict[str, Any]]:
+    try:
+        values = json.loads(raw_results)
+    except json.JSONDecodeError as error:
+        raise AssertionError("parent aggregate results are malformed") from error
+    if not isinstance(values, list):
+        raise AssertionError("parent aggregate results must be a list")
+
+    by_gate: dict[str, dict[str, Any]] = {}
+    for value in values:
+        if not isinstance(value, dict):
+            raise AssertionError("parent aggregate contains a malformed result")
+        gate_id = value.get("id")
+        if not isinstance(gate_id, str) or not gate_id:
+            raise AssertionError("parent aggregate result has no Gate identity")
+        if gate_id in by_gate:
+            raise AssertionError(
+                f"parent aggregate contains duplicate Gate {gate_id!r}"
+            )
+        by_gate[gate_id] = value
+
+    observed = set(by_gate)
+    missing = sorted(expected_gates - observed)
+    unexpected = sorted(observed - expected_gates - allowed_supplemental_gates)
+    if missing or unexpected:
+        raise AssertionError(
+            "parent aggregate does not match the canonical exact-range Gate "
+            f"union: missing={missing}, unexpected={unexpected}"
+        )
+    return by_gate
+
+
+def runtime_cell_gates(
+    gate_ids: set[str],
+    *,
+    runtime_cell: str,
+) -> set[str]:
+    definitions = json.loads(GATES_PATH.read_text(encoding="utf-8")).get(
+        "gates",
+        {},
+    )
+    return {
+        gate_id
+        for gate_id in gate_ids
+        if runtime_cell
+        in definitions.get(gate_id, {}).get("requiredRuntimeCells", [])
+    }
+
+
 def main() -> int:
     manifest = load_manifest()
     store = EvidenceStore.from_environment(repo_root=REPO_ROOT, worktree=REPO_ROOT)
@@ -408,6 +695,21 @@ def main() -> int:
     if not isinstance(claimed_runtime_cell, str) or not claimed_runtime_cell:
         print("FAIL: W11 contract manifest has no claimed runtime cell")
         return 1
+    canonical_range = manifest.get("canonical_range")
+    if not isinstance(canonical_range, str) or "..." not in canonical_range:
+        print("FAIL: W11 contract manifest has no canonical three-dot Git range")
+        return 1
+    retained_gates_value = manifest.get("retained_gates")
+    if (
+        not isinstance(retained_gates_value, list)
+        or any(
+            not isinstance(gate_id, str) or not gate_id
+            for gate_id in retained_gates_value
+        )
+    ):
+        print("FAIL: W11 contract manifest has invalid retained Gates")
+        return 1
+    retained_gates = set(retained_gates_value)
     targets = manifest.get("scan_targets", {})
     errors: list[str] = []
     accepted_gates: list[dict] = []
@@ -415,6 +717,7 @@ def main() -> int:
 
     required_gates: set[str] = set()
     scan_gates_needed: set[str] = set()
+    planned_gates: set[str] = set()
 
     for did, target in targets.items():
         vtype = target.get("type", "")
@@ -429,12 +732,39 @@ def main() -> int:
             if gid:
                 required_gates.add(gid)
 
+    required_gates.discard("chat-w11-completion-audit")
+    try:
+        planned_gates = canonical_gate_union(canonical_range)
+        expected_aggregate_gates = planned_gates | retained_gates
+        if required_gates != expected_aggregate_gates:
+            missing = sorted(expected_aggregate_gates - required_gates)
+            unexpected = sorted(required_gates - expected_aggregate_gates)
+            raise AssertionError(
+                "closure contract does not match the canonical exact-range "
+                "Gate union plus retained obligations: "
+                f"missing={missing}, unexpected={unexpected}"
+            )
+        aggregate_results = immutable_results_by_gate(
+            os.environ.get(CURRENT_RESULTS_ENV, ""),
+            expected_gates=expected_aggregate_gates,
+            allowed_supplemental_gates=scan_gates_needed,
+        )
+        native_gates = runtime_cell_gates(
+            planned_gates,
+            runtime_cell=claimed_runtime_cell,
+        )
+    except Exception as exc:
+        errors.append(str(exc))
+        aggregate_results = {}
+        native_gates = set()
+
     for gate_id in sorted(scan_gates_needed):
         try:
             accepted_gates.append(
-                load_latest_gate_evidence(
+                load_gate_evidence(
                     store,
                     gate_id,
+                    aggregate_result=aggregate_results[gate_id],
                     expected_source=current_source,
                 )
             )
@@ -445,14 +775,12 @@ def main() -> int:
         if gate_id == "chat-w11-completion-audit":
             continue
         try:
-            native_gate = (
-                gate_id.startswith("chat-native-")
-                and gate_id.endswith("-e2e")
-            )
+            native_gate = gate_id in native_gates
             accepted_gates.append(
-                load_latest_gate_evidence(
+                load_gate_evidence(
                     store,
                     gate_id,
+                    aggregate_result=aggregate_results[gate_id],
                     expected_source=current_source,
                     runtime_cell=(
                         claimed_runtime_cell if native_gate else None
@@ -472,6 +800,9 @@ def main() -> int:
         "contract": str(CONTRACT_PATH.relative_to(REPO_ROOT)),
         "source": current_source,
         "claimedRuntimeCell": claimed_runtime_cell,
+        "canonicalRange": canonical_range,
+        "canonicalGateUnion": sorted(planned_gates),
+        "retainedGateObligations": sorted(retained_gates),
         "unprovenRuntimeCells": [
             cell
             for cell in (

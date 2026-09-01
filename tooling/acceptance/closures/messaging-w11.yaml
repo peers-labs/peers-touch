@@ -1,6 +1,9 @@
 version: 1
 workstream: MP-W11
 claimed_runtime_cell: desktop-linux-native
+canonical_range: origin/master...HEAD
+retained_gates:
+  - proto-build
 plan_source: docs/architecture/messaging-platform/execution-plans/20260808-messaging-platform.md
 description: >
   Machine-readable closure contract for MP-W11 Atomic Cutover And Completion Audit.
@@ -149,19 +152,25 @@ deliverables:
     verify:
       type: gates-passed
       gates:
+        - station-messaging-unit
+        - messaging-platform-contract
+        - desktop-check
+        - chat-native-visible-static
         - chat-native-product-closure-e2e
         - chat-native-two-client-e2e
         - chat-native-interactions-e2e
+        - chat-contact-message-resilience-e2e
         - chat-native-typing-e2e
         - chat-native-multi-device-e2e
         - chat-native-recovery-e2e
         - chat-native-group-mls-e2e
-
-  - id: static-contract-gates
-    verify:
-      type: gates-passed
-      gates:
-        - chat-native-visible-static
+        - chat-desktop-gateway-e2e
+        - federation-desktop-gateway-smoke
+        - acceptance-plan-self
+        - acceptance-infra-validation
+        - acceptance-runtime-provisioning-self
+        - desktop-dev-runtime-isolation-static
+        - proto-build
 
   - id: completion-audit
     verify:
@@ -171,12 +180,23 @@ deliverables:
 gate_order:
   - chat-w11-forbidden-scan
   - chat-w11-duplicate-scan
+  - station-messaging-unit
+  - messaging-platform-contract
+  - desktop-check
   - chat-native-visible-static
   - chat-native-product-closure-e2e
   - chat-native-two-client-e2e
   - chat-native-interactions-e2e
+  - chat-contact-message-resilience-e2e
   - chat-native-typing-e2e
   - chat-native-multi-device-e2e
   - chat-native-recovery-e2e
   - chat-native-group-mls-e2e
+  - chat-desktop-gateway-e2e
+  - federation-desktop-gateway-smoke
+  - acceptance-plan-self
+  - acceptance-infra-validation
+  - acceptance-runtime-provisioning-self
+  - desktop-dev-runtime-isolation-static
+  - proto-build
   - chat-w11-completion-audit

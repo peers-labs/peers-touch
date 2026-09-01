@@ -45,6 +45,7 @@ from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
     AcceptanceStationSubmitFaultProxy,
 )
 from tooling.acceptance.gates.chat.native_support import (
+    NativeClientLifecycleLedger,
     commits_match,
     runtime_station_service,
     wait_until,
@@ -274,6 +275,7 @@ class NativeProductClosureGate(AcceptanceGate):
             raise GateError("actor manifest must contain canonical Alice and Bob identities")
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
+        self.client_lifecycles = NativeClientLifecycleLedger()
         self.runtime_pids: set[int] = set()
         self.runtime_launches: list[dict[str, Any]] = []
         self.ptids: dict[str, str] = {}
@@ -342,6 +344,7 @@ class NativeProductClosureGate(AcceptanceGate):
         actor: str,
         *,
         restore_session: bool = False,
+        restored_from: TauriSession | None = None,
         wait_for_device: bool = True,
     ) -> None:
         spec = self.client_specs[actor]
@@ -379,15 +382,22 @@ class NativeProductClosureGate(AcceptanceGate):
         }
         self.runtime_instances.append(client)
         self.runtime_launches.append(attempt)
+        expected_ptid = str(self.actor_specs[actor_role].get("ptid") or "")
+        self.client_lifecycles.register(client, expected_ptid)
+        if restored_from is not None:
+            self.client_lifecycles.transfer_preserved_session(
+                restored_from,
+                client,
+            )
         try:
             client.start()
+            self.client_lifecycles.mark_live(client)
             attempt["pid"] = client.process_id
             attempt["logPath"] = str(client.log_path or "")
             if client.process_id:
                 self.runtime_pids.add(int(client.process_id))
             self.register_driver(client)
             client.wait_for_acceptance_harness(30)
-            expected_ptid = str(self.actor_specs[actor_role].get("ptid") or "")
             if not restore_session:
                 self.configure_station(client, actor_station_url)
                 account_ref = str(
@@ -403,6 +413,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 )
                 if not (login or {}).get("authenticated"):
                     raise GateError(f"{actor} login did not authenticate")
+                self.client_lifecycles.mark_authenticated(client)
                 hydration = call_async_harness(
                     client,
                     "hydrateActiveActor",
@@ -416,6 +427,8 @@ class NativeProductClosureGate(AcceptanceGate):
                         f"{actor} login identity mismatch: "
                         f"expected={expected_ptid} actual={ptid}"
                     )
+            else:
+                self.client_lifecycles.mark_authenticated(client)
             ptid = expected_ptid
             device_id = ""
             if wait_for_device:
@@ -449,15 +462,25 @@ class NativeProductClosureGate(AcceptanceGate):
             attempt["failureType"] = type(error).__name__
             if client.process_id:
                 self.runtime_pids.add(int(client.process_id))
-            client.stop()
+            cleanup_errors = self.client_lifecycles.release(client)
+            if cleanup_errors and hasattr(error, "add_note"):
+                error.add_note(
+                    "Native product closure launch cleanup also failed: "
+                    f"{json.dumps(cleanup_errors, sort_keys=True)}"
+                )
             raise
 
     def stop_actor_for_restart(self, actor: str) -> None:
-        self.clients[actor].stop(preserve_state=True)
+        self.client_lifecycles.stop_preserving_session(self.clients[actor])
 
     def restore_actor_after_restart(self, actor: str) -> None:
+        predecessor = self.clients[actor]
         previous_device = self.device_ids[actor]
-        self.launch_actor(actor, restore_session=True)
+        self.launch_actor(
+            actor,
+            restore_session=True,
+            restored_from=predecessor,
+        )
         if self.device_ids[actor] != previous_device:
             raise GateError(f"{actor} device identity changed across restart")
 
@@ -4329,7 +4352,14 @@ class NativeProductClosureGate(AcceptanceGate):
         self.save_dom(self.clients["alice"], "alice-final")
         self.save_app_log(self.clients["alice"], "alice-final")
         first_device_id = self.device_ids["alice"]
-        self.clients["alice"].stop()
+        release_errors = self.client_lifecycles.release(
+            self.clients["alice"]
+        )
+        if release_errors:
+            raise GateError(
+                "Alice first-device logout failed before recovery: "
+                f"{json.dumps(release_errors, sort_keys=True)}"
+            )
         self.launch_actor("alice2", wait_for_device=False)
         self.restore_recovery_revision("alice2", recovery_phrase)
         second_device_id = self.bind_recovered_device("alice2")
@@ -4486,15 +4516,12 @@ class NativeProductClosureGate(AcceptanceGate):
         for index in reversed(range(len(self.runtime_instances))):
             client = self.runtime_instances[index]
             attempt = self.runtime_launches[index]
-            try:
-                client.stop()
+            release_errors = self.client_lifecycles.release(client)
+            if not release_errors:
                 attempt["cleanupStatus"] = "stopped"
-            except Exception as error:
+            else:
                 attempt["cleanupStatus"] = "failed"
-                cleanup_errors.append({
-                    "resource": f"client:{client.profile}",
-                    "error": str(error),
-                })
+                cleanup_errors.extend(release_errors)
         runtime_log_audit = self.audit_runtime_logs()
         self.write_json_evidence("runtime-log-audit", runtime_log_audit)
         self.write_json_evidence(

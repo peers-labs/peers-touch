@@ -126,7 +126,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 "            actor,\n"
                 "            restore_session=self.runtime_binding is not None,",
                 "    def create_authenticated_client(",
-                "client.stop(preserve_state=True)",
+                "stop_preserving_session(client)",
             ),
             "native_typing_runner.py": (
                 "restored_from=self.clients[actor]",
@@ -175,8 +175,11 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
 
     def test_native_cleanup_uses_window_owned_lifecycle(self) -> None:
         cleanup_functions = {
+            "contact_message_resilience_runner.py": "cleanup_runtime",
             "native_group_mls_runner.py": "stop_authenticated_client",
+            "native_interactions_runner.py": "cleanup_clients",
             "native_multi_device_runner.py": "cleanup_runtime",
+            "native_product_closure_runner.py": "cleanup_clients",
             "native_recovery_runner.py": "stop_authenticated_client",
             "native_two_client_runner.py": "cleanup_clients",
             "native_typing_runner.py": "cleanup_runtime",
@@ -196,6 +199,61 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "logout_native_client",
         ))
         self.assertIn('"actorPtid": actor_ptid', support)
+
+    def test_corrected_native_runners_register_authenticated_windows(self) -> None:
+        start_functions = {
+            "contact_message_resilience_runner.py": "start_client",
+            "native_interactions_runner.py": "create_authenticated_client",
+            "native_product_closure_runner.py": "launch_actor",
+        }
+        for runner, function_name in start_functions.items():
+            with self.subTest(runner=runner):
+                source = self.function_source(
+                    ROOT / "tooling/acceptance/gates/chat" / runner,
+                    function_name,
+                )
+                self.assertIn("self.client_lifecycles.register(", source)
+                self.assertIn("self.client_lifecycles.mark_live(", source)
+                self.assertIn(
+                    "self.client_lifecycles.mark_authenticated(",
+                    source,
+                )
+                self.assertIn("self.client_lifecycles.release(", source)
+
+    def test_corrected_restart_paths_transfer_preserved_sessions(self) -> None:
+        runners = (
+            "native_interactions_runner.py",
+            "native_product_closure_runner.py",
+        )
+        for runner in runners:
+            with self.subTest(runner=runner):
+                source = (
+                    ROOT / "tooling/acceptance/gates/chat" / runner
+                ).read_text(encoding="utf-8")
+                self.assertIn(
+                    "self.client_lifecycles.stop_preserving_session(",
+                    source,
+                )
+                self.assertIn(
+                    "self.client_lifecycles.transfer_preserved_session(",
+                    source,
+                )
+
+    def test_revoked_typing_is_submitted_and_receiver_stays_inactive(self) -> None:
+        source = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "prove_revoked_device",
+        )
+        self.assertIn('"submitTyping"', source)
+        self.assertIn('self.clients["bob"]', source)
+        self.assertIn("except GateError as error:", source)
+        self.assertIn("REVOKED_DEVICE_REJECTION_MARKERS", source)
+        self.assertIn("self.assert_typing_inactive_for(", source)
+        self.assertIn('"alice"', source)
+        self.assertNotIn(
+            'self.assert_condition("typing_revoked_device_rejected", True)',
+            source,
+        )
 
     def test_native_lifecycle_logs_out_device_revoked_window(self) -> None:
         client = Mock(profile="acceptance-bob")
