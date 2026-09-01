@@ -8,10 +8,12 @@ import json
 import multiprocessing
 import os
 import pickle
+import subprocess
 import tempfile
 import threading
 import time
 import unittest
+from collections import Counter
 from unittest import mock
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timedelta, timezone
@@ -38,6 +40,8 @@ from tooling.acceptance.fixtures.mobile_resource_lease import (
     LeaseHeartbeatExpired,
     MobileResourceLeaseError,
     MobileResourceLeaseBroker,
+    MobileResourceLeaseDeadlineExceeded,
+    MobileResourceLeaseHeartbeatOwner,
     ResourceLeaseLedger,
     ResolvedPhysicalDeviceHandle,
     RunScopedCorrelationSecret,
@@ -54,6 +58,15 @@ PROVIDER_SUBJECTS = {
     "google": "google-secret-subject",
 }
 PROCESS_TIMEOUT_SECONDS = 30
+
+
+def test_resource_lease_ledger(storage_root: Path) -> ResourceLeaseLedger:
+    with mock.patch.object(
+        mobile_resource_lease,
+        "_default_ledger_root",
+        return_value=storage_root,
+    ):
+        return ResourceLeaseLedger()
 
 
 def verified_browser_baseline(
@@ -182,9 +195,18 @@ class CorruptingArtifactWriter(MemoryArtifactWriter):
 class DirectoryArtifactWriter:
     gate_id = GATE_ID
 
-    def __init__(self, root: Path, run_id: str) -> None:
+    def __init__(
+        self,
+        root: Path,
+        run_id: str,
+        *,
+        artifact_workspace_id: str | None = None,
+    ) -> None:
         self.root = root
         self.run_id = run_id
+        self.artifact_workspace_id = (
+            artifact_workspace_id or workspace_id(REPO_ROOT)
+        )
 
     def write_json(
         self,
@@ -224,7 +246,7 @@ class DirectoryArtifactWriter:
                 handle.flush()
                 os.fsync(handle.fileno())
         return ArtifactRef(
-            workspace_id=workspace_id(REPO_ROOT),
+            workspace_id=self.artifact_workspace_id,
             gate_id=self.gate_id,
             run_id=self.run_id,
             path=relative_path,
@@ -234,7 +256,7 @@ class DirectoryArtifactWriter:
 
     def read_bytes(self, reference: ArtifactRef) -> bytes:
         if (
-            reference.workspace_id != workspace_id(REPO_ROOT)
+            reference.workspace_id != self.artifact_workspace_id
             or reference.gate_id != self.gate_id
         ):
             raise MobileResourceLeaseError(
@@ -309,7 +331,7 @@ def _process_crash_after_acquisition_artifact_write(
             reference.run_id,
         ),
         provider_expected_subjects=PROVIDER_SUBJECTS,
-        ledger=ResourceLeaseLedger(Path(storage_root)),
+        ledger=test_resource_lease_ledger(Path(storage_root)),
         now=lambda: NOW,
     )
     broker.acquire_provider_account("github")
@@ -332,7 +354,7 @@ def _process_acquire_provider(
             reference.run_id,
         ),
         provider_expected_subjects=PROVIDER_SUBJECTS,
-        ledger=ResourceLeaseLedger(Path(storage_root)),
+        ledger=test_resource_lease_ledger(Path(storage_root)),
         now=lambda: NOW,
     )
     start_event.wait()
@@ -374,7 +396,7 @@ def _process_acquire_physical_device(
             True,
             False,
         ),
-        ledger=ResourceLeaseLedger(Path(storage_root)),
+        ledger=test_resource_lease_ledger(Path(storage_root)),
         now=lambda: NOW,
     )
     start_event.wait()
@@ -390,6 +412,67 @@ def _process_acquire_physical_device(
         finish_event.wait(timeout=PROCESS_TIMEOUT_SECONDS)
     except LeaseConflict:
         result_queue.put({"status": "conflict", "runId": run_id})
+
+
+def _process_acquire_from_linked_worktree(
+    artifact_root: str,
+    artifact_roots_by_workspace: Mapping[str, str],
+    authority_root: str,
+    worktree: str,
+    run_id: str,
+    start_event: Any,
+    finish_event: Any,
+    result_queue: Any,
+) -> None:
+    artifact_workspace_id = workspace_id(Path(worktree))
+    writer_root = Path(artifact_root) / "writer-artifacts"
+    os.environ["PT_ACCEPTANCE_ARTIFACT_ROOT"] = artifact_root
+    broker = MobileResourceLeaseBroker(
+        run_handle=DirectoryArtifactWriter(
+            writer_root,
+            run_id,
+            artifact_workspace_id=artifact_workspace_id,
+        ),
+        correlation_secret=RunScopedCorrelationSecret(b"w" * 32),
+        physical_identity_key=PHYSICAL_IDENTITY_KEY,
+        artifact_writer_resolver=lambda reference: DirectoryArtifactWriter(
+            Path(artifact_roots_by_workspace[reference.workspace_id]),
+            reference.run_id,
+            artifact_workspace_id=reference.workspace_id,
+        ),
+        physical_device_resolver=lambda client_id: ResolvedPhysicalDeviceHandle(
+            "shared-two-worktree-physical-identity",
+            CLIENT_PLATFORM[client_id],
+            True,
+            True,
+            False,
+        ),
+        ledger=test_resource_lease_ledger(Path(authority_root)),
+        now=lambda: NOW,
+        artifact_workspace_id=artifact_workspace_id,
+    )
+    start_event.wait()
+    try:
+        lease = broker.acquire_physical_device("alice-ios")
+        result_queue.put(
+            {
+                "status": "acquired",
+                "runId": run_id,
+                "workspaceId": artifact_workspace_id,
+                "artifactRoot": artifact_root,
+                "fenceToken": lease["fenceToken"],
+            }
+        )
+        finish_event.wait(timeout=PROCESS_TIMEOUT_SECONDS)
+    except LeaseConflict:
+        result_queue.put(
+            {
+                "status": "conflict",
+                "runId": run_id,
+                "workspaceId": artifact_workspace_id,
+                "artifactRoot": artifact_root,
+            }
+        )
 
 
 def _process_authorize_provider(
@@ -409,7 +492,7 @@ def _process_authorize_provider(
         physical_identity_key=PHYSICAL_IDENTITY_KEY,
         artifact_writer_resolver=lambda _: artifact_reader,
         provider_expected_subjects=PROVIDER_SUBJECTS,
-        ledger=ResourceLeaseLedger(Path(storage_root)),
+        ledger=test_resource_lease_ledger(Path(storage_root)),
         now=lambda: NOW,
     )
 
@@ -437,7 +520,7 @@ def _process_reentrant_provider_callback(
     result_queue: Any,
 ) -> None:
     artifact_reader = ImmutableArtifactReader(acquisition_payloads)
-    outer_ledger = ResourceLeaseLedger(Path(storage_root))
+    outer_ledger = test_resource_lease_ledger(Path(storage_root))
     broker = MobileResourceLeaseBroker(
         run_handle=MemoryArtifactWriter(str(lease["runId"])),
         correlation_secret=RunScopedCorrelationSecret(b"o" * 32),
@@ -449,7 +532,7 @@ def _process_reentrant_provider_callback(
     )
 
     def operation() -> None:
-        nested_ledger = ResourceLeaseLedger(Path(storage_root))
+        nested_ledger = test_resource_lease_ledger(Path(storage_root))
         try:
             nested_broker = MobileResourceLeaseBroker(
                 run_handle=MemoryArtifactWriter(str(lease["runId"])),
@@ -483,7 +566,7 @@ def _process_crash_during_provider_authorization(
     intent_persisted: Any,
 ) -> None:
     artifact_reader = ImmutableArtifactReader(acquisition_payloads)
-    ledger = ResourceLeaseLedger(Path(storage_root))
+    ledger = test_resource_lease_ledger(Path(storage_root))
     broker = MobileResourceLeaseBroker(
         run_handle=MemoryArtifactWriter(str(lease["runId"])),
         correlation_secret=RunScopedCorrelationSecret(b"o" * 32),
@@ -526,7 +609,7 @@ def _process_crash_during_resource_operation(
     intent_persisted: Any,
 ) -> None:
     artifact_reader = ImmutableArtifactReader(acquisition_payloads)
-    ledger = ResourceLeaseLedger(Path(storage_root))
+    ledger = test_resource_lease_ledger(Path(storage_root))
     broker = MobileResourceLeaseBroker(
         run_handle=MemoryArtifactWriter(str(lease["runId"])),
         correlation_secret=RunScopedCorrelationSecret(b"o" * 32),
@@ -573,7 +656,7 @@ def _process_crash_during_cleanup(
     intent_persisted: Any,
 ) -> None:
     artifact_reader = ImmutableArtifactReader(acquisition_payloads)
-    ledger = ResourceLeaseLedger(Path(storage_root))
+    ledger = test_resource_lease_ledger(Path(storage_root))
     broker = MobileResourceLeaseBroker(
         run_handle=MemoryArtifactWriter(str(lease["runId"])),
         correlation_secret=RunScopedCorrelationSecret(b"o" * 32),
@@ -604,7 +687,7 @@ def _process_crash_during_recovery(
     audit_persisted: Any,
 ) -> None:
     artifact_reader = ImmutableArtifactReader(acquisition_payloads)
-    ledger = ResourceLeaseLedger(Path(storage_root))
+    ledger = test_resource_lease_ledger(Path(storage_root))
     broker = MobileResourceLeaseBroker(
         run_handle=MemoryArtifactWriter(),
         correlation_secret=RunScopedCorrelationSecret(b"o" * 32),
@@ -648,6 +731,17 @@ class MutableClock:
 
 
 class MobileResourceLeaseTests(unittest.TestCase):
+    def test_production_default_ledger_root_is_canonical(self) -> None:
+        root = mobile_resource_lease._default_ledger_root()
+
+        self.assertEqual(root, root.resolve())
+        self.assertFalse(any(path.is_symlink() for path in [root, *root.parents]))
+        ledger = ResourceLeaseLedger()
+        try:
+            self.assertEqual(ledger.storage_root, root)
+        finally:
+            ledger.close()
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.temp_root = Path(self.temporary.name).resolve()
@@ -673,7 +767,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             }
             for client_id in self.device_identifiers
         }
-        self.ledger = ResourceLeaseLedger(self.ledger_root)
+        self.ledger = test_resource_lease_ledger(self.ledger_root)
         self.broker = MobileResourceLeaseBroker(
             run_handle=self.writer,
             correlation_secret=self.secret,
@@ -733,7 +827,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
         self,
         message: str,
     ) -> None:
-        reconstructed_ledger = ResourceLeaseLedger(self.ledger_root)
+        reconstructed_ledger = test_resource_lease_ledger(self.ledger_root)
         try:
             with self.assertRaisesRegex(
                 MobileResourceLeaseError,
@@ -833,16 +927,16 @@ class MobileResourceLeaseTests(unittest.TestCase):
             },
             {
                 "runtime/mobile/leases/accounts/github.json": (
-                    "runtime/mobile/leases/accounts/github.json"
+                    "provider-account-lease/github"
                 ),
                 "runtime/mobile/identities/providers/github.json": (
-                    "runtime/mobile/identities/providers/github.json"
+                    "provider-identity-assertion/github"
                 ),
                 "runtime/mobile/leases/devices/alice-ios.json": (
-                    "runtime/mobile/leases/devices/alice-ios.json"
+                    "physical-device-lease/alice-ios"
                 ),
                 "runtime/mobile/leases/browsers/alice-ios.json": (
-                    "runtime/mobile/leases/browsers/alice-ios.json"
+                    "provider-browser-session-lease/alice-ios"
                 ),
             },
         )
@@ -862,7 +956,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             )
             self.assertEqual(
                 self.writer.roles[outcome_path],
-                outcome_path,
+                f"mobile-lease-outcome/{lease['leaseId']}",
             )
             self.assertEqual(
                 outcome["acquisition"]["path"],
@@ -878,7 +972,9 @@ class MobileResourceLeaseTests(unittest.TestCase):
         artifact_root = self.temp_root / "real-evidence"
         store = EvidenceStore(artifact_root, worktree=REPO_ROOT)
         run = store.begin_run(GATE_ID, source={"test": "lease-cardinality"})
-        ledger = ResourceLeaseLedger(self.temp_root / "real-run-ledger")
+        ledger = test_resource_lease_ledger(
+            self.temp_root / "real-run-ledger"
+        )
         broker = MobileResourceLeaseBroker(
             run_handle=run,
             correlation_secret=RunScopedCorrelationSecret(b"h" * 32),
@@ -922,7 +1018,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             for record in ledger.records.values():
                 if record.acquisition_ref is not None:
                     acquisition_refs.append(record.acquisition_ref)
-            restarted_ledger = ResourceLeaseLedger(
+            restarted_ledger = test_resource_lease_ledger(
                 self.temp_root / "real-run-ledger"
             )
             restarted_broker = MobileResourceLeaseBroker(
@@ -966,26 +1062,67 @@ class MobileResourceLeaseTests(unittest.TestCase):
         self.assertEqual(len(acquisition_refs), 10)
         self.assertEqual(len(outcomes), 10)
         self.assertEqual(len(manifest["artifacts"]), 22)
-        self.assertEqual(
-            set(manifest["artifacts"]),
-            {
-                reference.path for reference in acquisition_refs
-            }
-            | {
-                "runtime/mobile/identities/providers/github.json",
-                "runtime/mobile/identities/providers/google.json",
-            }
-            | {
-                f"evidence/mobile/cleanup/leases/{outcome['leaseId']}.json"
+        expected_role_paths = {
+            **{
+                f"provider-account-lease/{provider}": (
+                    f"runtime/mobile/leases/accounts/{provider}.json"
+                )
+                for provider in ("github", "google")
+            },
+            **{
+                f"provider-identity-assertion/{provider}": (
+                    f"runtime/mobile/identities/providers/{provider}.json"
+                )
+                for provider in ("github", "google")
+            },
+            **{
+                f"physical-device-lease/{client_id}": (
+                    f"runtime/mobile/leases/devices/{client_id}.json"
+                )
+                for client_id in CLIENT_PLATFORM
+            },
+            **{
+                f"provider-browser-session-lease/{client_id}": (
+                    f"runtime/mobile/leases/browsers/{client_id}.json"
+                )
+                for client_id in CLIENT_PLATFORM
+            },
+            **{
+                f"mobile-lease-outcome/{outcome['leaseId']}": (
+                    "evidence/mobile/cleanup/leases/"
+                    f"{outcome['leaseId']}.json"
+                )
                 for outcome in outcomes
             },
-        )
-        self.assertTrue(
-            all(
-                role == reference["path"]
+        }
+        self.assertEqual(
+            {
+                role: reference["path"]
                 for role, reference in manifest["artifacts"].items()
-            )
+            },
+            expected_role_paths,
         )
+        observed_cardinalities = Counter(
+            role.split("/", 1)[0] for role in manifest["artifacts"]
+        )
+        self.assertEqual(
+            observed_cardinalities,
+            {
+                "provider-account-lease": 2,
+                "provider-identity-assertion": 2,
+                "physical-device-lease": 4,
+                "provider-browser-session-lease": 4,
+                "mobile-lease-outcome": 10,
+            },
+        )
+        for role, count in observed_cardinalities.items():
+            frozen = mobile_resource_lease.ARTIFACT_ROLES[role]
+            expected = (
+                10
+                if role == "mobile-lease-outcome"
+                else frozen.cardinality
+            )
+            self.assertEqual(count, expected)
 
     def test_acquisition_reference_returns_immutable_real_run_handle_ref(
         self,
@@ -993,7 +1130,9 @@ class MobileResourceLeaseTests(unittest.TestCase):
         artifact_root = self.temp_root / "real-reference-evidence"
         store = EvidenceStore(artifact_root, worktree=REPO_ROOT)
         run = store.begin_run(GATE_ID, source={"test": "acquisition-reference"})
-        ledger = ResourceLeaseLedger(self.temp_root / "real-reference-ledger")
+        ledger = test_resource_lease_ledger(
+            self.temp_root / "real-reference-ledger"
+        )
         broker = MobileResourceLeaseBroker(
             run_handle=run,
             correlation_secret=RunScopedCorrelationSecret(b"j" * 32),
@@ -1021,7 +1160,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             "runtime/mobile/leases/devices/alice-ios.json",
         )
         self.assertEqual(
-            manifest["artifacts"][reference.path],
+            manifest["artifacts"]["physical-device-lease/alice-ios"],
             reference.to_dict(),
         )
         with self.assertRaises(FrozenInstanceError):
@@ -1176,7 +1315,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             crashing_writer.values,
         )
 
-        reconstructed_ledger = ResourceLeaseLedger(self.ledger_root)
+        reconstructed_ledger = test_resource_lease_ledger(self.ledger_root)
         try:
             MobileResourceLeaseBroker(
                 run_handle=self.writer,
@@ -1236,7 +1375,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
 
         reader = ReadOnlyDirectoryArtifactReader(artifact_root)
         run_handle = MemoryArtifactWriter()
-        reconstructed_ledger = ResourceLeaseLedger(storage_root)
+        reconstructed_ledger = test_resource_lease_ledger(storage_root)
         try:
             MobileResourceLeaseBroker(
                 run_handle=run_handle,
@@ -1313,7 +1452,9 @@ class MobileResourceLeaseTests(unittest.TestCase):
                     expected_reason = "ACQUISITION_ARTIFACT_RECOVERY_MISMATCH"
 
                 reader = ReadOnlyDirectoryArtifactReader(artifact_root)
-                reconstructed_ledger = ResourceLeaseLedger(storage_root)
+                reconstructed_ledger = test_resource_lease_ledger(
+                    storage_root
+                )
                 try:
                     broker = MobileResourceLeaseBroker(
                         run_handle=MemoryArtifactWriter(),
@@ -1364,7 +1505,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             with self.subTest(field=field):
                 with tempfile.TemporaryDirectory() as directory:
                     root = Path(directory).resolve()
-                    ledger = ResourceLeaseLedger(root / "ledger")
+                    ledger = test_resource_lease_ledger(root / "ledger")
                     writer = CorruptingArtifactWriter(
                         corrupt_field=field,
                         corrupt_value=value,
@@ -1434,7 +1575,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
         )
         changed_subjects = dict(PROVIDER_SUBJECTS)
         changed_subjects["github"] = "changed-secret-subject"
-        reconstructed_ledger = ResourceLeaseLedger(self.ledger_root)
+        reconstructed_ledger = test_resource_lease_ledger(self.ledger_root)
         try:
             with self.assertRaisesRegex(
                 LeaseBaselineMismatch,
@@ -1512,7 +1653,9 @@ class MobileResourceLeaseTests(unittest.TestCase):
                         False,
                     )
 
-                reconstructed_ledger = ResourceLeaseLedger(self.ledger_root)
+                reconstructed_ledger = test_resource_lease_ledger(
+                    self.ledger_root
+                )
                 try:
                     with self.assertRaises(MobileResourceLeaseError):
                         MobileResourceLeaseBroker(
@@ -1623,7 +1766,10 @@ class MobileResourceLeaseTests(unittest.TestCase):
                 {
                     "schema": "peers-mobile-resource-lease-ledger",
                     "version": 1,
-                    "workspaceId": workspace_id(REPO_ROOT),
+                    "authorityNamespace": (
+                        mobile_resource_lease.LEDGER_AUTHORITY_NAMESPACE
+                    ),
+                    "authorityId": mobile_resource_lease.LEDGER_AUTHORITY_ID,
                     "physicalIdentityKeyId": "",
                     "fences": {},
                     "acquisitionOrder": [],
@@ -1636,7 +1782,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
-        ledger = ResourceLeaseLedger(root)
+        ledger = test_resource_lease_ledger(root)
         try:
             MobileResourceLeaseBroker(
                 run_handle=self.writer,
@@ -1773,7 +1919,9 @@ class MobileResourceLeaseTests(unittest.TestCase):
             "_write_generation_anchor_at",
             wraps=original_append,
         ) as append:
-            reconstructed_ledger = ResourceLeaseLedger(self.ledger_root)
+            reconstructed_ledger = test_resource_lease_ledger(
+                self.ledger_root
+            )
             try:
                 MobileResourceLeaseBroker(
                     run_handle=self.writer,
@@ -1825,7 +1973,9 @@ class MobileResourceLeaseTests(unittest.TestCase):
                     json.dumps(tampered, indent=2, sort_keys=True) + "\n",
                     encoding="utf-8",
                 )
-                reconstructed_ledger = ResourceLeaseLedger(self.ledger_root)
+                reconstructed_ledger = test_resource_lease_ledger(
+                    self.ledger_root
+                )
                 try:
                     with self.assertRaisesRegex(
                         MobileResourceLeaseError,
@@ -1873,7 +2023,9 @@ class MobileResourceLeaseTests(unittest.TestCase):
                     json.dumps(tampered, indent=2, sort_keys=True) + "\n",
                     encoding="utf-8",
                 )
-                reconstructed_ledger = ResourceLeaseLedger(self.ledger_root)
+                reconstructed_ledger = test_resource_lease_ledger(
+                    self.ledger_root
+                )
                 try:
                     with self.assertRaisesRegex(
                         MobileResourceLeaseError,
@@ -1932,7 +2084,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             encoding="utf-8",
         )
         reader = ImmutableArtifactReader({reference.path: payload})
-        reconstructed_ledger = ResourceLeaseLedger(self.ledger_root)
+        reconstructed_ledger = test_resource_lease_ledger(self.ledger_root)
         try:
             with self.assertRaisesRegex(
                 MobileResourceLeaseError,
@@ -1965,7 +2117,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
                     json.dumps(payload, indent=2, sort_keys=True) + "\n"
                 ).encode("utf-8")
 
-        reconstructed_ledger = ResourceLeaseLedger(self.ledger_root)
+        reconstructed_ledger = test_resource_lease_ledger(self.ledger_root)
         try:
             with self.assertRaisesRegex(
                 MobileResourceLeaseError,
@@ -2017,7 +2169,9 @@ class MobileResourceLeaseTests(unittest.TestCase):
                     json.dumps(tampered, indent=2, sort_keys=True) + "\n",
                     encoding="utf-8",
                 )
-                reconstructed_ledger = ResourceLeaseLedger(self.ledger_root)
+                reconstructed_ledger = test_resource_lease_ledger(
+                    self.ledger_root
+                )
                 try:
                     with self.assertRaises(MobileResourceLeaseError):
                         MobileResourceLeaseBroker(
@@ -2115,21 +2269,51 @@ class MobileResourceLeaseTests(unittest.TestCase):
             lease,
             "LEASE_IDENTITY_MISMATCH",
         )
+        failed_ledger = test_resource_lease_ledger(self.ledger_root)
+        failed_secret = RunScopedCorrelationSecret(b"r" * 32)
+        closed_brokers: list[MobileResourceLeaseBroker] = []
+        close_evidence: list[dict[str, bool]] = []
+        original_close = MobileResourceLeaseBroker.close
 
-        with self.assertRaisesRegex(
+        def close_failed_broker(
+            broker: MobileResourceLeaseBroker,
+        ) -> dict[str, bool]:
+            closed_brokers.append(broker)
+            evidence = original_close(broker)
+            close_evidence.append(evidence)
+            return evidence
+
+        with mock.patch.object(
+            MobileResourceLeaseBroker,
+            "close",
+            new=close_failed_broker,
+        ), self.assertRaisesRegex(
             MobileResourceLeaseError,
             "authentication failed",
         ):
             MobileResourceLeaseBroker(
                 run_handle=self.writer,
-                correlation_secret=RunScopedCorrelationSecret(b"r" * 32),
+                correlation_secret=failed_secret,
                 physical_identity_key=b"x" * 32,
                 artifact_writer_resolver=self._resolve_artifact_writer,
                 physical_device_resolver=self._resolve_device,
                 provider_expected_subjects=PROVIDER_SUBJECTS,
-                ledger=ResourceLeaseLedger(self.ledger_root),
+                ledger=failed_ledger,
                 now=self.clock,
             )
+        self.assertEqual(len(closed_brokers), 1)
+        self.assertTrue(all(close_evidence[0].values()))
+        self.assertFalse(any(closed_brokers[0]._physical_identity_key))
+        self.assertFalse(any(failed_ledger._authentication_key))
+        self.assertEqual(failed_ledger._state_lock_fd, -1)
+        self.assertEqual(failed_ledger._operations_fd, -1)
+        self.assertEqual(failed_ledger._generations_fd, -1)
+        self.assertEqual(failed_ledger._root_fd, -1)
+        with self.assertRaisesRegex(
+            MobileResourceLeaseError,
+            "correlation channel is closed",
+        ):
+            failed_secret.fingerprint("github", "subject")
         durable = json.loads(self.ledger.state_path.read_text(encoding="utf-8"))
         self.assertRegex(
             durable["physicalIdentityKeyId"],
@@ -2159,7 +2343,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             correlation_secret=RunScopedCorrelationSecret(b"r" * 32),
             physical_identity_key=PHYSICAL_IDENTITY_KEY,
             artifact_writer_resolver=self._resolve_artifact_writer,
-            ledger=ResourceLeaseLedger(self.ledger_root),
+            ledger=test_resource_lease_ledger(self.ledger_root),
             now=self.clock,
         )
         with self.assertRaisesRegex(
@@ -2185,6 +2369,152 @@ class MobileResourceLeaseTests(unittest.TestCase):
         self.clock.advance(timedelta(minutes=11))
         outcomes = reconstructed.quarantine_expired()
         self.assertEqual(outcomes, ())
+
+    def test_two_linked_worktrees_share_one_physical_authority(self) -> None:
+        repository = self.temp_root / "authority-repository"
+        linked_worktree = self.temp_root / "authority-linked-worktree"
+        with self.assertRaises(TypeError):
+            ResourceLeaseLedger(self.temp_root / "production-override")
+        repository.mkdir()
+        for command in (
+            ("git", "init"),
+            ("git", "config", "user.email", "acceptance@example.invalid"),
+            ("git", "config", "user.name", "Acceptance Test"),
+        ):
+            subprocess.run(
+                command,
+                cwd=repository,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        (repository / "tracked.txt").write_text(
+            "physical authority fixture\n",
+            encoding="utf-8",
+        )
+        subprocess.run(
+            ("git", "add", "tracked.txt"),
+            cwd=repository,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        subprocess.run(
+            ("git", "commit", "-m", "test fixture"),
+            cwd=repository,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        subprocess.run(
+            (
+                "git",
+                "worktree",
+                "add",
+                "-b",
+                "linked",
+                str(linked_worktree),
+            ),
+            cwd=repository,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertNotEqual(
+            workspace_id(repository),
+            workspace_id(linked_worktree),
+        )
+
+        authority_root = self.temp_root / "machine-global-authority"
+        artifact_roots = (
+            self.temp_root / "artifact-root-primary",
+            self.temp_root / "artifact-root-linked",
+        )
+        artifact_roots_by_workspace = {
+            workspace_id(worktree): str(artifact_root / "writer-artifacts")
+            for worktree, artifact_root in zip(
+                (repository, linked_worktree),
+                artifact_roots,
+            )
+        }
+        with mock.patch.dict(
+            os.environ,
+            {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(artifact_roots[0])},
+        ):
+            self.assertEqual(
+                mobile_resource_lease._default_ledger_root(),
+                mobile_resource_lease.LEDGER_AUTHORITY_ROOT,
+            )
+            initialized_ledger = test_resource_lease_ledger(authority_root)
+            initialized_ledger.close()
+        context = multiprocessing.get_context("spawn")
+        start_event = context.Event()
+        finish_event = context.Event()
+        result_queue = context.Queue()
+        processes = [
+            context.Process(
+                target=_process_acquire_from_linked_worktree,
+                args=(
+                    str(artifact_roots[index - 1]),
+                    artifact_roots_by_workspace,
+                    str(authority_root),
+                    str(worktree),
+                    (
+                        "20260830T120000000000Z-"
+                        f"{index:032x}"
+                    ),
+                    start_event,
+                    finish_event,
+                    result_queue,
+                ),
+            )
+            for index, worktree in enumerate(
+                (repository, linked_worktree),
+                start=1,
+            )
+        ]
+        for process in processes:
+            process.start()
+        start_event.set()
+        results = [
+            result_queue.get(timeout=PROCESS_TIMEOUT_SECONDS)
+            for _ in processes
+        ]
+        finish_event.set()
+        for process in processes:
+            process.join(timeout=PROCESS_TIMEOUT_SECONDS)
+            self.assertEqual(process.exitcode, 0)
+
+        self.assertEqual(
+            sorted(result["status"] for result in results),
+            ["acquired", "conflict"],
+        )
+        self.assertEqual(
+            len({result["workspaceId"] for result in results}),
+            2,
+        )
+        self.assertEqual(
+            len({result["artifactRoot"] for result in results}),
+            2,
+        )
+        durable = json.loads(
+            (authority_root / "ledger.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            durable["authorityNamespace"],
+            mobile_resource_lease.LEDGER_AUTHORITY_NAMESPACE,
+        )
+        self.assertNotIn("workspaceId", durable)
+        self.assertEqual(
+            list(
+                durable["records"]
+            ),
+            ["physical-device/alice-ios"],
+        )
 
     def test_multiprocess_duplicate_physical_identity_is_atomic(self) -> None:
         context = multiprocessing.get_context("spawn")
@@ -2281,7 +2611,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
                 reference.run_id,
             ),
             provider_expected_subjects=PROVIDER_SUBJECTS,
-            ledger=ResourceLeaseLedger(self.ledger_root),
+            ledger=test_resource_lease_ledger(self.ledger_root),
             now=self.clock,
         )
         with self.assertRaisesRegex(LeaseConflict, "quarantined"):
@@ -2708,6 +3038,94 @@ class MobileResourceLeaseTests(unittest.TestCase):
             "authorized",
         )
 
+    def test_heartbeat_owner_schedules_renewal_and_stops_bounded(self) -> None:
+        lease = self.broker.acquire_provider_account("google")
+        self.broker.provider_identity_assertion(
+            lease,
+            observed_subject=PROVIDER_SUBJECTS["google"],
+        )
+        owner = MobileResourceLeaseHeartbeatOwner(
+            self.broker,
+            interval_seconds=0.01,
+            stop_timeout_seconds=1,
+        )
+        owner.register(lease)
+        self.clock.advance(timedelta(minutes=9))
+        with owner:
+            self.assertTrue(
+                owner.wait_for_heartbeat(
+                    lease["resourceKey"],
+                    timeout_seconds=2,
+                )
+            )
+            owner.unregister(lease)
+        self.clock.advance(timedelta(minutes=2))
+        self.assertEqual(
+            self.broker.authorize_provider(
+                lease,
+                client_id="bob-ios",
+                operation=lambda: "scheduled-heartbeat-authorized",
+            ),
+            "scheduled-heartbeat-authorized",
+        )
+
+    def test_heartbeat_owner_expiry_quarantines_until_recovery(self) -> None:
+        lease = self.broker.acquire_physical_device("bob-ios")
+        owner = MobileResourceLeaseHeartbeatOwner(
+            self.broker,
+            interval_seconds=0.01,
+            stop_timeout_seconds=1,
+        )
+        owner.register(lease)
+        self.clock.advance(timedelta(minutes=11))
+        owner.start()
+        self.assertTrue(owner.wait_until_failed(timeout_seconds=2))
+        owner.close()
+        with self.assertRaisesRegex(
+            MobileResourceLeaseError,
+            "heartbeat owner failed",
+        ) as failure:
+            owner.raise_if_failed()
+        self.assertIsInstance(failure.exception.__cause__, LeaseHeartbeatExpired)
+        outcome = self.broker.terminal_outcome(lease["resourceKey"])
+        self.assertIsNotNone(outcome)
+        self.assertEqual(outcome["finalState"], "QUARANTINED")
+        self.assertEqual(
+            outcome["failureCode"],
+            "LEASE_HEARTBEAT_EXPIRED",
+        )
+        self.broker.recover_quarantined(
+            lease["resourceKey"],
+            restore_and_reverify=lambda _, __: BaselineRestoreResult(
+                True,
+                True,
+                True,
+            ),
+        )
+        _, recovered_broker = self._broker_for_run(
+            "20260830T120001000000Z-77777777777777777777777777777777"
+        )
+        recovered = recovered_broker.acquire_physical_device("bob-ios")
+        self.assertGreater(recovered["fenceToken"], lease["fenceToken"])
+
+    def test_heartbeat_owner_rejects_unbounded_lifecycle_values(self) -> None:
+        for interval, stop_timeout in (
+            (0, 1),
+            (mobile_resource_lease.LEASE_DURATION.total_seconds(), 1),
+            (1, 0),
+            (1, mobile_resource_lease.MAX_HEARTBEAT_STOP_SECONDS + 1),
+        ):
+            with self.subTest(
+                interval=interval,
+                stop_timeout=stop_timeout,
+            ):
+                with self.assertRaises(ValueError):
+                    MobileResourceLeaseHeartbeatOwner(
+                        self.broker,
+                        interval_seconds=interval,
+                        stop_timeout_seconds=stop_timeout,
+                    )
+
     def test_authenticated_heartbeat_chain_survives_restart(self) -> None:
         lease = self.broker.acquire_provider_account("google")
         self.broker.provider_identity_assertion(
@@ -2730,7 +3148,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             record["heartbeatHistory"][0]["expiresAt"],
         )
 
-        restarted_ledger = ResourceLeaseLedger(self.ledger_root)
+        restarted_ledger = test_resource_lease_ledger(self.ledger_root)
         try:
             restarted = MobileResourceLeaseBroker(
                 run_handle=self.writer,
@@ -2810,7 +3228,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
                     root = Path(directory).resolve()
                     writer = MemoryArtifactWriter(run_id)
                     clock = MutableClock()
-                    ledger = ResourceLeaseLedger(root / "ledger")
+                    ledger = test_resource_lease_ledger(root / "ledger")
                     broker = MobileResourceLeaseBroker(
                         run_handle=writer,
                         correlation_secret=RunScopedCorrelationSecret(
@@ -3097,6 +3515,226 @@ class MobileResourceLeaseTests(unittest.TestCase):
             },
         )
 
+    def test_physical_device_operation_lock_deadline_never_runs_callback(
+        self,
+    ) -> None:
+        lease = self.broker.acquire_physical_device("alice-ios")
+        owner_started = threading.Event()
+        release_owner = threading.Event()
+        contender_callback_called = threading.Event()
+        owner_errors: list[BaseException] = []
+
+        def hold_device(_handle: ResolvedPhysicalDeviceHandle) -> None:
+            owner_started.set()
+            if not release_owner.wait(timeout=5):
+                raise AssertionError("physical-device lock owner was not released")
+
+        def run_owner() -> None:
+            try:
+                self.broker.with_physical_device(lease, hold_device)
+            except BaseException as error:
+                owner_errors.append(error)
+
+        owner = threading.Thread(target=run_owner)
+        owner.start()
+        self.assertTrue(owner_started.wait(timeout=5))
+        self.assertTrue(owner.is_alive())
+
+        started = time.monotonic()
+        try:
+            with self.assertRaisesRegex(
+                MobileResourceLeaseDeadlineExceeded,
+                "exceeded its lock deadline",
+            ):
+                self.broker.with_physical_device(
+                    lease,
+                    lambda _handle: contender_callback_called.set(),
+                    deadline_monotonic=started + 0.05,
+                )
+            self.assertLess(time.monotonic() - started, 0.5)
+            self.assertFalse(contender_callback_called.is_set())
+        finally:
+            release_owner.set()
+            owner.join(timeout=5)
+
+        self.assertFalse(owner.is_alive())
+        self.assertEqual(owner_errors, [])
+        self.assertFalse(contender_callback_called.is_set())
+
+    def test_provider_account_operation_lock_deadline_never_runs_callback(
+        self,
+    ) -> None:
+        lease = self.broker.acquire_provider_account("github")
+        self.broker.provider_identity_assertion(
+            lease,
+            observed_subject=PROVIDER_SUBJECTS["github"],
+        )
+        owner_started = threading.Event()
+        release_owner = threading.Event()
+        contender_callback_called = threading.Event()
+        owner_errors: list[BaseException] = []
+
+        def hold_account() -> None:
+            owner_started.set()
+            if not release_owner.wait(timeout=5):
+                raise AssertionError("provider-account lock owner was not released")
+
+        def run_owner() -> None:
+            try:
+                self.broker.authorize_provider(
+                    lease,
+                    client_id="alice-ios",
+                    operation=hold_account,
+                )
+            except BaseException as error:
+                owner_errors.append(error)
+
+        owner = threading.Thread(target=run_owner)
+        owner.start()
+        self.assertTrue(owner_started.wait(timeout=5))
+        self.assertTrue(owner.is_alive())
+
+        started = time.monotonic()
+        try:
+            with self.assertRaisesRegex(
+                MobileResourceLeaseDeadlineExceeded,
+                "exceeded its lock deadline",
+            ):
+                self.broker.authorize_provider(
+                    lease,
+                    client_id="bob-android",
+                    operation=contender_callback_called.set,
+                    deadline_monotonic=started + 0.05,
+                )
+            self.assertLess(time.monotonic() - started, 0.5)
+            self.assertFalse(contender_callback_called.is_set())
+        finally:
+            release_owner.set()
+            owner.join(timeout=5)
+
+        self.assertFalse(owner.is_alive())
+        self.assertEqual(owner_errors, [])
+        self.assertFalse(contender_callback_called.is_set())
+
+    def test_cleanup_operations_honor_one_deadline_under_lock_contention(
+        self,
+    ) -> None:
+        lease = self.broker.acquire_physical_device("alice-ios")
+        owner_started = threading.Event()
+        release_owner = threading.Event()
+        restore_called = threading.Event()
+
+        def hold_resource() -> None:
+            with self.ledger.operation_lock(str(lease["resourceKey"])):
+                owner_started.set()
+                release_owner.wait(timeout=5)
+
+        owner = threading.Thread(target=hold_resource)
+        owner.start()
+        self.assertTrue(owner_started.wait(timeout=5))
+        try:
+            for operation in ("release", "quarantine"):
+                deadline = time.monotonic() + 0.05
+                with self.subTest(operation=operation), self.assertRaisesRegex(
+                    MobileResourceLeaseDeadlineExceeded,
+                    "exceeded its lock deadline",
+                ):
+                    if operation == "release":
+                        self.broker.release(
+                            lease,
+                            restore=lambda: restore_called.set()
+                            or BaselineRestoreResult(True, True, True),
+                            deadline_monotonic=deadline,
+                        )
+                    else:
+                        self.broker.quarantine(
+                            lease,
+                            "LEASE_CLEANUP_FAILED",
+                            deadline_monotonic=deadline,
+                        )
+            self.assertFalse(restore_called.is_set())
+        finally:
+            release_owner.set()
+            owner.join(timeout=5)
+
+        self.assertFalse(owner.is_alive())
+
+    def test_operation_lock_wait_honors_cancellation_before_callback(
+        self,
+    ) -> None:
+        lease = self.broker.acquire_provider_account("github")
+        self.broker.provider_identity_assertion(
+            lease,
+            observed_subject=PROVIDER_SUBJECTS["github"],
+        )
+        owner_started = threading.Event()
+        release_owner = threading.Event()
+        contender_started = threading.Event()
+        cancellation = threading.Event()
+        contender_callback_called = threading.Event()
+        owner_errors: list[BaseException] = []
+        contender_errors: list[BaseException] = []
+
+        def hold_account() -> None:
+            owner_started.set()
+            if not release_owner.wait(timeout=5):
+                raise AssertionError("provider-account lock owner was not released")
+
+        def run_owner() -> None:
+            try:
+                self.broker.authorize_provider(
+                    lease,
+                    client_id="alice-ios",
+                    operation=hold_account,
+                )
+            except BaseException as error:
+                owner_errors.append(error)
+
+        def run_contender() -> None:
+            contender_started.set()
+            try:
+                self.broker.authorize_provider(
+                    lease,
+                    client_id="bob-android",
+                    operation=contender_callback_called.set,
+                    deadline_monotonic=time.monotonic() + 5,
+                    cancellation=cancellation,
+                )
+            except BaseException as error:
+                contender_errors.append(error)
+
+        owner = threading.Thread(target=run_owner)
+        contender = threading.Thread(target=run_contender)
+        owner.start()
+        self.assertTrue(owner_started.wait(timeout=5))
+        contender.start()
+        self.assertTrue(contender_started.wait(timeout=5))
+        time.sleep(0.05)
+        self.assertTrue(contender.is_alive())
+
+        try:
+            cancellation.set()
+            contender.join(timeout=1)
+            self.assertFalse(contender.is_alive())
+            self.assertFalse(contender_callback_called.is_set())
+        finally:
+            release_owner.set()
+            owner.join(timeout=5)
+            contender.join(timeout=5)
+
+        self.assertFalse(owner.is_alive())
+        self.assertEqual(owner_errors, [])
+        self.assertEqual(len(contender_errors), 1)
+        self.assertIsInstance(
+            contender_errors[0],
+            MobileResourceLeaseDeadlineExceeded,
+        )
+        self.assertRegex(
+            str(contender_errors[0]),
+            "cancelled while waiting for its lock",
+        )
+        self.assertFalse(contender_callback_called.is_set())
+
     def test_expiry_waits_for_active_resource_operation(self) -> None:
         lease = self.broker.acquire_provider_account("github")
         self.broker.provider_identity_assertion(
@@ -3201,7 +3839,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             artifact_writer_resolver=self._resolve_artifact_writer,
             physical_device_resolver=self._resolve_device,
             provider_expected_subjects=PROVIDER_SUBJECTS,
-            ledger=ResourceLeaseLedger(self.ledger_root),
+            ledger=test_resource_lease_ledger(self.ledger_root),
             now=self.clock,
         )
         browser = reconstructed.acquire_browser_session(
@@ -3321,7 +3959,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             physical_identity_key=PHYSICAL_IDENTITY_KEY,
             artifact_writer_resolver=lambda _: self.writer,
             provider_expected_subjects=PROVIDER_SUBJECTS,
-            ledger=ResourceLeaseLedger(self.ledger_root),
+            ledger=test_resource_lease_ledger(self.ledger_root),
             now=self.clock,
         )
         published = reconstructed.provider_identity_assertion(
@@ -3534,7 +4172,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             with self.subTest(case=case):
                 run_id = f"20260829T120020000000Z-{index:032x}"
                 writer = MemoryArtifactWriter(run_id)
-                ledger = ResourceLeaseLedger(
+                ledger = test_resource_lease_ledger(
                     self.temp_root / f"reresolution-{case}"
                 )
                 current_facts = {
@@ -3658,7 +4296,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             with self.subTest(failure_point=failure_point):
                 with tempfile.TemporaryDirectory() as directory:
                     root = Path(directory).resolve()
-                    ledger = ResourceLeaseLedger(root / "ledger")
+                    ledger = test_resource_lease_ledger(root / "ledger")
                     clock = MutableClock()
 
                     class CrashOnceTerminalWriter(MemoryArtifactWriter):
@@ -4098,15 +4736,28 @@ class MobileResourceLeaseTests(unittest.TestCase):
         )
         self.assertEqual(self.broker.quarantine_expired(), ())
 
-    def test_correlation_cleanup_closes_and_zeroizes_secret(self) -> None:
-        evidence = self.broker.cleanup_correlation_channel()
-        self.assertEqual(
-            evidence,
-            {
-                "correlationChannelClosed": True,
-                "correlationKeyZeroized": True,
-            },
+    def test_broker_close_is_idempotent_and_closes_all_authority(self) -> None:
+        operation_lock = self.ledger.operation_lock("physical-device/alice-ios")
+        descriptors = (
+            self.ledger._state_lock_fd,
+            self.ledger._operations_fd,
+            self.ledger._generations_fd,
+            self.ledger._root_fd,
+            operation_lock._directory_fd,
         )
+        broker_key = self.broker._physical_identity_key
+        ledger_key = self.ledger._authentication_key
+
+        first = self.broker.close()
+        second = self.broker.close()
+
+        self.assertEqual(first, second)
+        self.assertTrue(all(first.values()))
+        self.assertFalse(any(broker_key))
+        self.assertFalse(any(ledger_key))
+        for descriptor in descriptors:
+            with self.subTest(descriptor=descriptor), self.assertRaises(OSError):
+                os.fstat(descriptor)
         with self.assertRaisesRegex(
             RuntimeError,
             "correlation channel is closed",
@@ -4122,7 +4773,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             MobileResourceLeaseError,
             "symlink component",
         ):
-            ResourceLeaseLedger(linked / "ledger")
+            test_resource_lease_ledger(linked / "ledger")
 
     def test_state_and_lock_symlinks_fail_closed(self) -> None:
         for filename, operation in (
@@ -4139,7 +4790,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
                 target.write_text("{}\n", encoding="utf-8")
                 (root / filename).symlink_to(target)
                 with self.assertRaises(MobileResourceLeaseError):
-                    ledger = ResourceLeaseLedger(root)
+                    ledger = test_resource_lease_ledger(root)
                     with ledger.lock:
                         pass
 
@@ -4150,7 +4801,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
         target.mkdir()
         (root / "operations").symlink_to(target, target_is_directory=True)
         with self.assertRaises(MobileResourceLeaseError):
-            ResourceLeaseLedger(root)
+            test_resource_lease_ledger(root)
 
     def test_generation_anchor_directory_symlink_fails_closed(self) -> None:
         root = self.temp_root / "generation-symlink-ledger"
@@ -4163,7 +4814,7 @@ class MobileResourceLeaseTests(unittest.TestCase):
             target_is_directory=True,
         )
         with self.assertRaises(MobileResourceLeaseError):
-            ResourceLeaseLedger(root)
+            test_resource_lease_ledger(root)
 
     def test_ledger_permissions_are_private(self) -> None:
         self.broker.acquire_provider_account("github")

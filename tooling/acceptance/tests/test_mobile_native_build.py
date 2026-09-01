@@ -4,14 +4,17 @@ import hashlib
 import json
 import os
 import plistlib
+import signal
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 from tooling.acceptance.core import ArtifactRef, EvidenceStore
 from tooling.acceptance.provisioners.mobile_native_build import (
@@ -31,6 +34,7 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     MobileNativeBuildError,
     RELEASE_VARIANT,
     SourceIdentity,
+    SubprocessCommandRunner,
     SuccessfulBuildReceipt,
     ToolchainIdentity,
     WEB_ACCEPTANCE_HARNESS_MARKERS,
@@ -82,6 +86,29 @@ RUN_ID = "20260829T120000000000Z-" + ("1" * 32)
 WORKSPACE_ID = "a" * 16
 SHA256 = "sha256:" + ("b" * 64)
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def wait_for_pid_file(path: Path, timeout_seconds: float = 3) -> int:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if path.exists():
+            return int(path.read_text(encoding="utf-8"))
+        time.sleep(0.01)
+    raise AssertionError(f"descendant pid file was not created: {path}")
+
+
+def assert_process_absent(test: unittest.TestCase, pid: int, context: str) -> None:
+    try:
+        with test.assertRaises(
+            ProcessLookupError,
+            msg=f"descendant process {pid} survived {context}",
+        ):
+            os.kill(pid, 0)
+    finally:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
 
 class FakeRunner:
@@ -1413,6 +1440,376 @@ class MobileNativeBuildTest(unittest.TestCase):
                     identity=identity_value,
                     runner=FakeRunner(),
                 )
+
+    def test_build_command_timeout_kills_and_reaps_the_process_group(self) -> None:
+        process = Mock()
+        process.pid = 4811
+        process.communicate.side_effect = [
+            subprocess.TimeoutExpired(("build-tool",), 1),
+            subprocess.TimeoutExpired(("build-tool",), 0.25),
+            ("", ""),
+        ]
+        runner = SubprocessCommandRunner(
+            timeout_seconds=1,
+            termination_timeout_seconds=0.25,
+        )
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_native_build.subprocess.Popen",
+                return_value=process,
+            ) as popen,
+            patch(
+                "tooling.acceptance.provisioners.mobile_native_build.os.killpg",
+                side_effect=(None, None, None, ProcessLookupError()),
+            ) as killpg,
+            self.assertRaisesRegex(MobileNativeBuildError, "timed out after 1s"),
+        ):
+            runner.run(["build-tool", "build"], cwd=REPO_ROOT, env={"PATH": "/bin"})
+
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        self.assertFalse(popen.call_args.kwargs["shell"])
+        self.assertTrue(popen.call_args.kwargs["close_fds"])
+        self.assertEqual(
+            process.communicate.call_args_list,
+            [call(timeout=1), call(timeout=0.25), call(timeout=0.25)],
+        )
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                call(4811, signal.SIGTERM),
+                call(4811, signal.SIGKILL),
+                call(4811, signal.SIGKILL),
+                call(4811, 0),
+            ],
+        )
+
+    def test_build_command_cancellation_uses_the_same_process_tree_cleanup(
+        self,
+    ) -> None:
+        process = Mock()
+        process.pid = 4812
+        process.communicate.side_effect = [KeyboardInterrupt(), ("", "")]
+        runner = SubprocessCommandRunner(
+            timeout_seconds=1,
+            termination_timeout_seconds=0.25,
+        )
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_native_build.subprocess.Popen",
+                return_value=process,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_native_build.os.killpg",
+                side_effect=(None, None, ProcessLookupError()),
+            ) as killpg,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            runner.run(["build-tool", "build"], cwd=REPO_ROOT)
+
+        self.assertEqual(
+            process.communicate.call_args_list,
+            [call(timeout=1), call(timeout=0.25)],
+        )
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                call(4812, signal.SIGTERM),
+                call(4812, signal.SIGKILL),
+                call(4812, 0),
+            ],
+        )
+
+    def test_cleanup_communicate_interruption_forces_final_reap(self) -> None:
+        process = Mock()
+        process.pid = 4814
+        process.communicate.side_effect = [
+            KeyboardInterrupt(),
+            RuntimeError("cleanup interrupted"),
+            ("", ""),
+        ]
+        runner = SubprocessCommandRunner(
+            timeout_seconds=1,
+            termination_timeout_seconds=0.25,
+        )
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_native_build.subprocess.Popen",
+                return_value=process,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_native_build.os.killpg",
+                side_effect=(None, None, None, ProcessLookupError()),
+            ) as killpg,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            runner.run(["build-tool", "build"], cwd=REPO_ROOT)
+
+        self.assertEqual(
+            process.communicate.call_args_list,
+            [
+                call(timeout=1),
+                call(timeout=0.25),
+                call(timeout=0.25),
+            ],
+        )
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                call(4814, signal.SIGTERM),
+                call(4814, signal.SIGKILL),
+                call(4814, signal.SIGKILL),
+                call(4814, 0),
+            ],
+        )
+
+    def test_failed_build_command_removes_surviving_descendants(self) -> None:
+        process = Mock()
+        process.pid = 4813
+        process.returncode = 17
+        process.communicate.return_value = ("stdout", "stderr")
+        runner = SubprocessCommandRunner(timeout_seconds=1)
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_native_build.subprocess.Popen",
+                return_value=process,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_native_build.os.killpg",
+                side_effect=(None, ProcessLookupError()),
+            ) as killpg,
+        ):
+            result = runner.run(["build-tool", "build"], cwd=REPO_ROOT)
+
+        self.assertEqual(result, CommandResult(17, "stdout", "stderr"))
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                call(4813, signal.SIGKILL),
+                call(4813, 0),
+            ],
+        )
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process-group contract")
+    def test_successful_build_command_proves_descendant_extinction(self) -> None:
+        self._assert_completed_build_kills_descendant(returncode=0)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process-group contract")
+    def test_nonzero_build_command_proves_descendant_extinction(self) -> None:
+        self._assert_completed_build_kills_descendant(returncode=17)
+
+    def _assert_completed_build_kills_descendant(self, *, returncode: int) -> None:
+        script = """
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+subprocess.Popen(
+    [
+        sys.executable,
+        "-c",
+        "import os, signal, sys, time; from pathlib import Path; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "Path(sys.argv[1]).write_text(str(os.getpid()), encoding='utf-8'); "
+        "time.sleep(60)",
+        sys.argv[1],
+    ],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
+while not Path(sys.argv[1]).exists():
+    time.sleep(0.01)
+raise SystemExit(int(sys.argv[2]))
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            pid_path = Path(directory) / "descendant.pid"
+            completed = SubprocessCommandRunner(
+                timeout_seconds=3,
+                termination_timeout_seconds=0.5,
+            ).run(
+                (
+                    sys.executable,
+                    "-c",
+                    script,
+                    str(pid_path),
+                    str(returncode),
+                ),
+                cwd=REPO_ROOT,
+            )
+
+            descendant_pid = wait_for_pid_file(pid_path)
+            self.assertEqual(completed.returncode, returncode)
+            assert_process_absent(
+                self,
+                descendant_pid,
+                "completed build cleanup",
+            )
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process-group contract")
+    def test_timed_out_build_command_proves_descendant_extinction(self) -> None:
+        script = """
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+subprocess.Popen(
+    [
+        sys.executable,
+        "-c",
+        "import os, signal, sys, time; from pathlib import Path; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "Path(sys.argv[1]).write_text(str(os.getpid()), encoding='utf-8'); "
+        "time.sleep(60)",
+        sys.argv[1],
+    ],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
+while not Path(sys.argv[1]).exists():
+    time.sleep(0.01)
+time.sleep(60)
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            pid_path = Path(directory) / "descendant.pid"
+            runner = SubprocessCommandRunner(
+                timeout_seconds=0.3,
+                termination_timeout_seconds=0.5,
+            )
+
+            with self.assertRaisesRegex(
+                MobileNativeBuildError,
+                "timed out after",
+            ):
+                runner.run(
+                    (sys.executable, "-c", script, str(pid_path)),
+                    cwd=REPO_ROOT,
+                )
+
+            descendant_pid = wait_for_pid_file(pid_path)
+            assert_process_absent(self, descendant_pid, "build timeout cleanup")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process-group contract")
+    def test_cancelled_build_command_proves_descendant_extinction(self) -> None:
+        script = """
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+subprocess.Popen(
+    [
+        sys.executable,
+        "-c",
+        "import os, signal, sys, time; from pathlib import Path; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "Path(sys.argv[1]).write_text(str(os.getpid()), encoding='utf-8'); "
+        "time.sleep(60)",
+        sys.argv[1],
+    ],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
+while not Path(sys.argv[1]).exists():
+    time.sleep(0.01)
+time.sleep(60)
+"""
+
+        class CancellingProcess:
+            def __init__(
+                self,
+                process: subprocess.Popen[str],
+                pid_path: Path,
+            ) -> None:
+                self._process = process
+                self._pid_path = pid_path
+                self._cancelled = False
+
+            @property
+            def pid(self) -> int:
+                return self._process.pid
+
+            @property
+            def returncode(self) -> int | None:
+                return self._process.returncode
+
+            def communicate(self, *, timeout: float) -> tuple[str, str]:
+                if not self._cancelled:
+                    self._cancelled = True
+                    wait_for_pid_file(self._pid_path)
+                    raise KeyboardInterrupt
+                return self._process.communicate(timeout=timeout)
+
+        real_popen = subprocess.Popen
+        with tempfile.TemporaryDirectory() as directory:
+            pid_path = Path(directory) / "descendant.pid"
+
+            def cancelling_popen(
+                *args: object,
+                **kwargs: object,
+            ) -> CancellingProcess:
+                return CancellingProcess(real_popen(*args, **kwargs), pid_path)
+
+            with patch(
+                "tooling.acceptance.provisioners.mobile_native_build.subprocess.Popen",
+                side_effect=cancelling_popen,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    SubprocessCommandRunner(
+                        timeout_seconds=3,
+                        termination_timeout_seconds=0.5,
+                    ).run(
+                        (sys.executable, "-c", script, str(pid_path)),
+                        cwd=REPO_ROOT,
+                    )
+
+            descendant_pid = wait_for_pid_file(pid_path)
+            assert_process_absent(
+                self,
+                descendant_pid,
+                "build cancellation cleanup",
+            )
+
+    def test_build_runner_fails_closed_when_process_group_survives_sigkill(
+        self,
+    ) -> None:
+        process = Mock()
+        process.pid = 4815
+        runner = SubprocessCommandRunner(termination_timeout_seconds=0.1)
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_native_build.os.killpg",
+                return_value=None,
+            ) as killpg,
+            patch(
+                "tooling.acceptance.provisioners.mobile_native_build.time.monotonic",
+                side_effect=(10.0, 10.1),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_native_build.time.sleep",
+            ),
+            self.assertRaisesRegex(
+                MobileNativeBuildError,
+                "survived forced termination",
+            ),
+        ):
+            runner._kill_remaining_process_group(process)
+
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                call(4815, signal.SIGKILL),
+                call(4815, 0),
+            ],
+        )
 
     def test_apk_inspection_requires_exact_schemes_and_one_signer(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

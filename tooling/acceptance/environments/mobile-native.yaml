@@ -16,10 +16,6 @@
       "ios": "apps/mobile/src-tauri/gen/apple/peers-touch-mobile.xcodeproj",
       "android": "apps/mobile/src-tauri/gen/android"
     },
-    "artifacts": {
-      "ios": "env:PT_MOBILE_IOS_APP_PATH",
-      "android": "env:PT_MOBILE_ANDROID_APP_PATH"
-    },
     "applications": {
       "ios": {
         "id": "com.peers.touch.mobile",
@@ -147,8 +143,7 @@
       "platform": "ios",
       "actor": "alice",
       "runtime": "tauri-ios",
-      "destination_ref": "env:PT_MOBILE_IOS_DESTINATION",
-      "device_ref": "env:PT_MOBILE_IOS_ALICE_DEVICE_UDID",
+      "destination_class_ref": "ios-physical",
       "physical_device_lease_ref": "physical-device-lease/alice-ios",
       "device_role": "primary-physical",
       "profile": "mobile-shell-alice-ios",
@@ -161,10 +156,7 @@
         "credential_ref": "github-disposable-account",
         "lease_ref": "provider-browser-session-lease/alice-ios",
         "baseline": "preauthenticated-exclusive",
-        "cleanup_policy": "preserve-login-verify-identity",
-        "clean_start": "required",
-        "readback": "required",
-        "cleanup": "required"
+        "cleanup_policy": "preserve-login-verify-identity"
       }
     },
     {
@@ -172,8 +164,7 @@
       "platform": "ios",
       "actor": "bob",
       "runtime": "tauri-ios",
-      "destination_ref": "env:PT_MOBILE_IOS_DESTINATION",
-      "device_ref": "env:PT_MOBILE_IOS_BOB_DEVICE_UDID",
+      "destination_class_ref": "ios-physical",
       "physical_device_lease_ref": "physical-device-lease/bob-ios",
       "device_role": "secondary-physical",
       "profile": "mobile-shell-bob-ios",
@@ -186,10 +177,7 @@
         "credential_ref": "google-disposable-account",
         "lease_ref": "provider-browser-session-lease/bob-ios",
         "baseline": "preauthenticated-exclusive",
-        "cleanup_policy": "preserve-login-verify-identity",
-        "clean_start": "required",
-        "readback": "required",
-        "cleanup": "required"
+        "cleanup_policy": "preserve-login-verify-identity"
       }
     },
     {
@@ -197,8 +185,7 @@
       "platform": "android",
       "actor": "alice",
       "runtime": "tauri-android",
-      "destination_ref": "env:PT_MOBILE_ANDROID_AVD",
-      "device_ref": "env:PT_MOBILE_ANDROID_ALICE_DEVICE_SERIAL",
+      "destination_class_ref": "android-physical",
       "physical_device_lease_ref": "physical-device-lease/alice-android",
       "device_role": "primary-physical",
       "profile": "mobile-shell-alice-android",
@@ -211,10 +198,7 @@
         "credential_ref": "google-disposable-account",
         "lease_ref": "provider-browser-session-lease/alice-android",
         "baseline": "preauthenticated-exclusive",
-        "cleanup_policy": "preserve-login-verify-identity",
-        "clean_start": "required",
-        "readback": "required",
-        "cleanup": "required"
+        "cleanup_policy": "preserve-login-verify-identity"
       }
     },
     {
@@ -222,8 +206,7 @@
       "platform": "android",
       "actor": "bob",
       "runtime": "tauri-android",
-      "destination_ref": "env:PT_MOBILE_ANDROID_AVD",
-      "device_ref": "env:PT_MOBILE_ANDROID_BOB_DEVICE_SERIAL",
+      "destination_class_ref": "android-physical",
       "physical_device_lease_ref": "physical-device-lease/bob-android",
       "device_role": "secondary-physical",
       "profile": "mobile-shell-bob-android",
@@ -236,10 +219,7 @@
         "credential_ref": "github-disposable-account",
         "lease_ref": "provider-browser-session-lease/bob-android",
         "baseline": "preauthenticated-exclusive",
-        "cleanup_policy": "preserve-login-verify-identity",
-        "clean_start": "required",
-        "readback": "required",
-        "cleanup": "required"
+        "cleanup_policy": "preserve-login-verify-identity"
       }
     }
   ],
@@ -254,9 +234,13 @@
       "oauth.status",
       "oauth.cancel",
       "lifecycle.restart",
-      "native.deliverDeepLink",
       "projection.read",
       "cleanup"
+    ],
+    "parent_only_actions": [
+      "build.identity",
+      "oauth.replayHandle",
+      "oauth.negativeCallback"
     ],
     "policy": "production actions only; direct Store mutation and successful-result injection are forbidden"
   },
@@ -265,6 +249,7 @@
     "ports": "one reserved set per client",
     "storage": "one isolated root per client and run",
     "storage_root_ref": "env:PT_MOBILE_ACCEPTANCE_RUNTIME_ROOT",
+    "authentication_key_ref": "env:PT_MOBILE_RESOURCE_LEASE_AUTH_KEY",
     "sessions": "one Appium session lease per client",
     "deployments": ["station-primary", "station-secondary", "relay"],
     "resource_broker": {

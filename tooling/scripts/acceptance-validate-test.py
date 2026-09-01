@@ -18,6 +18,152 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+class GateLaunchContractTests(unittest.TestCase):
+    def test_accepts_each_canonical_launch_form(self) -> None:
+        MODULE.validate_gate_catalog(
+            {
+                "legacy-gate": {
+                    "command": "python3 legacy_gate.py",
+                    "environment": "local",
+                    "tier": "ci-cheap",
+                },
+                "context-gate": {
+                    "argv": ["python3", "-m", "example.gate"],
+                    "ephemeralCapabilities": [
+                        "example.echo",
+                        "example.deny",
+                    ],
+                    "environment": "local",
+                    "tier": "ci-cheap",
+                },
+            },
+            {"legacy-gate", "context-gate"},
+        )
+
+    def test_rejects_invalid_launch_forms(self) -> None:
+        cases = [
+            (
+                {},
+                "exactly one of command or argv",
+            ),
+            (
+                {"command": "true", "argv": ["true"]},
+                "exactly one of command or argv",
+            ),
+            (
+                {"command": ""},
+                "command must be a non-empty string",
+            ),
+            (
+                {"argv": []},
+                "argv must be a non-empty list of non-empty strings",
+            ),
+            (
+                {"argv": ["python3", ""]},
+                "argv must be a non-empty list of non-empty strings",
+            ),
+        ]
+
+        for launch, expected_error in cases:
+            with self.subTest(launch=launch):
+                with self.assertRaisesRegex(RuntimeError, expected_error):
+                    MODULE.validate_gate_catalog(
+                        {
+                            "invalid-gate": {
+                                **launch,
+                                "environment": "local",
+                                "tier": "ci-cheap",
+                            }
+                        },
+                        {"invalid-gate"},
+                    )
+
+    def test_rejects_invalid_ephemeral_capabilities(self) -> None:
+        cases = [
+            (
+                {
+                    "command": "true",
+                    "ephemeralCapabilities": ["example.echo"],
+                },
+                "ephemeralCapabilities requires argv",
+            ),
+            (
+                {
+                    "argv": ["true"],
+                    "ephemeralCapabilities": [],
+                },
+                "unique, non-empty list of non-empty strings",
+            ),
+            (
+                {
+                    "argv": ["true"],
+                    "ephemeralCapabilities": ["example.echo", "example.echo"],
+                },
+                "unique, non-empty list of non-empty strings",
+            ),
+            (
+                {
+                    "argv": ["true"],
+                    "ephemeralCapabilities": ["example.echo", 1],
+                },
+                "unique, non-empty list of non-empty strings",
+            ),
+            (
+                {
+                    "argv": ["node", "gate.js"],
+                    "ephemeralCapabilities": ["example.echo"],
+                },
+                "requires a Python module, script, or -c argv",
+            ),
+        ]
+
+        for launch, expected_error in cases:
+            with self.subTest(launch=launch):
+                with self.assertRaisesRegex(RuntimeError, expected_error):
+                    MODULE.validate_gate_catalog(
+                        {
+                            "invalid-gate": {
+                                **launch,
+                                "environment": "local",
+                                "tier": "ci-cheap",
+                            }
+                        },
+                        {"invalid-gate"},
+                    )
+
+    def test_argv_gate_participates_in_inheritance_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            module_path = (
+                repo_root
+                / "tooling"
+                / "acceptance"
+                / "gates"
+                / "example"
+                / "gate.py"
+            )
+            module_path.parent.mkdir(parents=True)
+            module_path.write_text("def main():\n    return 0\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "ACCEPTANCE_GATE_CONTRACT_VIOLATION",
+            ):
+                MODULE.validate_gate_inheritance(
+                    repo_root,
+                    {
+                        "context-gate": {
+                            "argv": [
+                                "python3",
+                                "-m",
+                                "tooling.acceptance.gates.example.gate",
+                            ]
+                        }
+                    },
+                    {"context-gate"},
+                )
+
+
 class DomainContractClosureTests(unittest.TestCase):
     def test_infra_validation_selects_only_core_self_validation(self) -> None:
         with mock.patch.object(

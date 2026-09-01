@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+import selectors
+import signal
 import subprocess
+import threading
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -27,6 +32,41 @@ ALLOWED_OPERATIONS = (
 )
 COMMAND_TIMEOUT_SECONDS = 60.0
 MAXIMUM_OUTPUT_BYTES = 1 << 20
+PROCESS_POLL_SECONDS = 0.02
+PROCESS_TERMINATION_SECONDS = 1.0
+HMAC_FD_ENVIRONMENT = "PT_MOBILE_OAUTH_ACCEPTANCE_HMAC_FD"
+STATION_COMMAND_ENVIRONMENT_KEYS = (
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "PATH",
+    "TMPDIR",
+    "TZ",
+    "__CF_USER_TEXT_ENCODING",
+)
+
+
+def _fixture_command_deadline(
+    configured_timeout: float,
+    deadline_monotonic: float | None,
+    cancellation: threading.Event | None,
+) -> float:
+    if cancellation is not None and cancellation.is_set():
+        raise StationFixtureError("Station Fixture command was cancelled")
+    if not math.isfinite(configured_timeout) or configured_timeout <= 0:
+        raise StationFixtureError(
+            "Station Fixture command timeout must be positive and finite"
+        )
+    local_deadline = time.monotonic() + configured_timeout
+    if deadline_monotonic is None:
+        return local_deadline
+    if (
+        not math.isfinite(deadline_monotonic)
+        or deadline_monotonic <= time.monotonic()
+    ):
+        raise StationFixtureError("Station Fixture command exceeded its deadline")
+    return min(local_deadline, deadline_monotonic)
 
 
 class StationFixtureError(RuntimeError):
@@ -45,7 +85,8 @@ class StationCommandExecutor(Protocol):
         input_text: str,
         environment: Mapping[str, str],
         pass_fds: tuple[int, ...],
-        timeout: float,
+        deadline_monotonic: float,
+        cancellation: threading.Event | None,
     ) -> "StationCommandResult":
         ...
 
@@ -80,28 +121,245 @@ class SubprocessStationCommandExecutor:
         input_text: str,
         environment: Mapping[str, str],
         pass_fds: tuple[int, ...],
-        timeout: float,
+        deadline_monotonic: float,
+        cancellation: threading.Event | None,
     ) -> StationCommandResult:
-        try:
-            completed = subprocess.run(
-                list(command),
-                input=input_text,
-                text=True,
-                capture_output=True,
-                check=False,
-                env=dict(environment),
-                pass_fds=pass_fds,
-                timeout=timeout,
+        if os.name != "posix":
+            raise StationFixtureError(
+                "deployment-owned Station Fixture commands require POSIX "
+                "process-group isolation"
             )
-        except (OSError, subprocess.TimeoutExpired) as error:
+        if cancellation is not None and cancellation.is_set():
+            raise StationFixtureError(
+                "deployment-owned Station Fixture command was cancelled"
+            )
+        if (
+            not math.isfinite(deadline_monotonic)
+            or deadline_monotonic <= time.monotonic()
+        ):
+            raise StationFixtureError(
+                "deployment-owned Station Fixture command exceeded its deadline"
+            )
+        child_environment = self._child_environment(environment, pass_fds)
+        encoded_input = input_text.encode("utf-8")
+        if len(encoded_input) > MAXIMUM_OUTPUT_BYTES:
+            raise StationFixtureError(
+                "deployment-owned Station Fixture command input exceeded its bound"
+            )
+
+        process: subprocess.Popen[bytes] | None = None
+        try:
+            process = subprocess.Popen(
+                list(command),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=False,
+                shell=False,
+                close_fds=True,
+                start_new_session=True,
+                env=child_environment,
+                pass_fds=pass_fds,
+            )
+            stdout, stderr = self._communicate_bounded(
+                process,
+                encoded_input,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            self._kill_remaining_process_group(process)
+        except OSError as error:
+            if process is not None:
+                self._terminate(process)
             raise StationFixtureError(
                 "deployment-owned Station Fixture command outcome is unknown"
             ) from error
+        except BaseException:
+            if process is not None:
+                self._terminate(process)
+            raise
+        finally:
+            if process is not None:
+                self._close_process_streams(process)
+
         return StationCommandResult(
-            returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
+            returncode=int(process.returncode),
+            stdout=stdout.decode("utf-8", errors="replace"),
+            stderr=stderr.decode("utf-8", errors="replace"),
         )
+
+    @staticmethod
+    def _child_environment(
+        environment: Mapping[str, str],
+        pass_fds: tuple[int, ...],
+    ) -> dict[str, str]:
+        child_environment = {
+            name: environment[name]
+            for name in STATION_COMMAND_ENVIRONMENT_KEYS
+            if name in environment
+        }
+        hmac_fd = str(environment.get(HMAC_FD_ENVIRONMENT, "")).strip()
+        if pass_fds:
+            if (
+                len(pass_fds) != 1
+                or pass_fds[0] < 0
+                or hmac_fd != str(pass_fds[0])
+            ):
+                raise StationFixtureError(
+                    "Station Fixture HMAC descriptor injection is inconsistent"
+                )
+            child_environment[HMAC_FD_ENVIRONMENT] = hmac_fd
+        elif hmac_fd:
+            raise StationFixtureError(
+                "Station Fixture HMAC descriptor locator has no inherited descriptor"
+            )
+        return child_environment
+
+    def _communicate_bounded(
+        self,
+        process: subprocess.Popen[bytes],
+        input_bytes: bytes,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event | None,
+    ) -> tuple[bytes, bytes]:
+        if process.stdin is None or process.stdout is None or process.stderr is None:
+            raise StationFixtureError(
+                "deployment-owned Station Fixture command pipes are unavailable"
+            )
+
+        buffers = {"stdout": bytearray(), "stderr": bytearray()}
+        selector = selectors.DefaultSelector()
+        input_offset = 0
+        for stream, label in (
+            (process.stdout, "stdout"),
+            (process.stderr, "stderr"),
+        ):
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ, label)
+        if input_bytes:
+            os.set_blocking(process.stdin.fileno(), False)
+            selector.register(process.stdin, selectors.EVENT_WRITE, "stdin")
+        else:
+            process.stdin.close()
+
+        try:
+            while selector.get_map() or process.poll() is None:
+                if cancellation is not None and cancellation.is_set():
+                    raise StationFixtureError(
+                        "deployment-owned Station Fixture command was cancelled"
+                    )
+                remaining = deadline_monotonic - time.monotonic()
+                if remaining <= 0:
+                    raise StationFixtureError(
+                        "deployment-owned Station Fixture command exceeded its deadline"
+                    )
+
+                for key, _ in selector.select(
+                    min(PROCESS_POLL_SECONDS, remaining)
+                ):
+                    stream = key.fileobj
+                    if key.data == "stdin":
+                        try:
+                            written = os.write(
+                                stream.fileno(),
+                                input_bytes[input_offset:],
+                            )
+                        except BrokenPipeError:
+                            written = len(input_bytes) - input_offset
+                        input_offset += written
+                        if input_offset >= len(input_bytes):
+                            selector.unregister(stream)
+                            stream.close()
+                        continue
+
+                    try:
+                        chunk = os.read(stream.fileno(), 65536)
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        selector.unregister(stream)
+                        stream.close()
+                        continue
+                    target = buffers[str(key.data)]
+                    target.extend(chunk)
+                    if len(target) > MAXIMUM_OUTPUT_BYTES:
+                        raise StationFixtureError(
+                            "deployment-owned Station Fixture command output "
+                            "exceeded its bound"
+                        )
+            process.wait(timeout=0)
+            return bytes(buffers["stdout"]), bytes(buffers["stderr"])
+        finally:
+            selector.close()
+
+    def _terminate(self, process: subprocess.Popen[bytes]) -> None:
+        self._close_process_streams(process)
+        self._signal_process_group(process, signal.SIGTERM)
+        try:
+            process.wait(timeout=PROCESS_TERMINATION_SECONDS)
+        except subprocess.TimeoutExpired:
+            pass
+        self._signal_process_group(process, signal.SIGKILL)
+        try:
+            process.wait(timeout=PROCESS_TERMINATION_SECONDS)
+        except subprocess.TimeoutExpired as error:
+            raise StationFixtureError(
+                "deployment-owned Station Fixture command could not be reaped"
+            ) from error
+        self._kill_remaining_process_group(process)
+
+    @staticmethod
+    def _signal_process_group(
+        process: subprocess.Popen[bytes],
+        signal_number: signal.Signals,
+    ) -> None:
+        try:
+            os.killpg(process.pid, signal_number)
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            # macOS may report EPERM briefly for a zombie-only group. The
+            # bounded extinction probe remains authoritative.
+            return
+        except OSError as error:
+            raise StationFixtureError(
+                "deployment-owned Station Fixture process group could not be "
+                "signalled"
+            ) from error
+
+    def _kill_remaining_process_group(
+        self,
+        process: subprocess.Popen[bytes],
+    ) -> None:
+        self._signal_process_group(process, signal.SIGKILL)
+        deadline = time.monotonic() + PROCESS_TERMINATION_SECONDS
+        while True:
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                return
+            except PermissionError:
+                pass
+            except OSError as error:
+                raise StationFixtureError(
+                    "deployment-owned Station Fixture process-group extinction "
+                    "could not be verified"
+                ) from error
+            if time.monotonic() >= deadline:
+                raise StationFixtureError(
+                    "deployment-owned Station Fixture process group survived "
+                    "forced termination"
+                )
+            time.sleep(
+                min(PROCESS_POLL_SECONDS, max(0.0, deadline - time.monotonic()))
+            )
+
+    @staticmethod
+    def _close_process_streams(process: subprocess.Popen[bytes]) -> None:
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None and not stream.closed:
+                stream.close()
 
 
 @dataclass(frozen=True)
@@ -230,7 +488,12 @@ class MobileOAuthStationFixture:
         }
         self.correlation_key = bytearray(correlation_key)
         self.executor = executor or SubprocessStationCommandExecutor()
-        self.environment = dict(os.environ if environment is None else environment)
+        source_environment = os.environ if environment is None else environment
+        self.environment = {
+            name: source_environment[name]
+            for name in STATION_COMMAND_ENVIRONMENT_KEYS
+            if name in source_environment
+        }
         self.timeout = timeout
         self.leases: dict[str, dict[str, Any]] = {}
         self.pending: dict[str, list[PendingFixtureOperation]] = {
@@ -350,6 +613,8 @@ class MobileOAuthStationFixture:
         oauth_state: str,
         expected_provider: str,
         invite_code: str = "",
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
     ) -> dict[str, Any]:
         if operation not in {
             "prepare_following_gate",
@@ -389,8 +654,15 @@ class MobileOAuthStationFixture:
                 f"runtime/mobile/fixtures/{service_id}/operations/"
                 f"{operation_id}-before.json"
             ),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
         )
-        receipt = self._invoke_operation(service_id, request)
+        receipt = self._invoke_operation(
+            service_id,
+            request,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
         try:
             self._validate_receipt(request, receipt)
         except StationFixtureConflict:
@@ -404,6 +676,8 @@ class MobileOAuthStationFixture:
             target=target,
             expected_provider=expected_provider,
             path=f"evidence/mobile/{variant_id}/station/{service_id}.json",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
         )
         self.pending[service_id].append(
             PendingFixtureOperation(
@@ -425,6 +699,8 @@ class MobileOAuthStationFixture:
         target: Mapping[str, Any],
         expected_provider: str,
         path: str,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
     ) -> ArtifactRef:
         lease = self._lease(service_id, allow_released=snapshot_phase == "post_cleanup")
         payload = self._invoke(
@@ -439,6 +715,8 @@ class MobileOAuthStationFixture:
                 "expectedProvider": expected_provider,
             },
             correlation_key=True,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
         )
         snapshot = self._validate_payload(
             payload,
@@ -457,7 +735,12 @@ class MobileOAuthStationFixture:
             raise
         return self._write_payload(path, snapshot)
 
-    def cleanup(self) -> tuple[str, ...]:
+    def cleanup(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> tuple[str, ...]:
         if self._cleanup_result is not None:
             return self._cleanup_result
         if self._closed:
@@ -471,7 +754,16 @@ class MobileOAuthStationFixture:
                 failures.append(f"{service_id}: quarantined")
                 continue
             try:
-                self._cleanup_service(service_id)
+                _fixture_command_deadline(
+                    self.timeout,
+                    deadline_monotonic,
+                    cancellation,
+                )
+                self._cleanup_service(
+                    service_id,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
                 completed.append(service_id)
             except Exception as error:
                 self._quarantine(service_id, _conflict_reason(error))
@@ -508,7 +800,13 @@ class MobileOAuthStationFixture:
             self.correlation_key[index] = 0
         self._closed = True
 
-    def _cleanup_service(self, service_id: str) -> None:
+    def _cleanup_service(
+        self,
+        service_id: str,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
         operations = self.pending[service_id]
         lease = self._lease(service_id)
         if operations:
@@ -527,7 +825,12 @@ class MobileOAuthStationFixture:
             target=target,
             oauth_state=oauth_state,
         )
-        receipt = self._invoke_operation(service_id, cleanup_request)
+        receipt = self._invoke_operation(
+            service_id,
+            cleanup_request,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
         self._validate_receipt(cleanup_request, receipt)
         released = dict(lease)
         released["state"] = "RELEASED"
@@ -544,6 +847,8 @@ class MobileOAuthStationFixture:
                 str(target["deviceAlias"])
             ),
             path=f"evidence/mobile/cleanup/station/{service_id}.json",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
         )
         for pending in operations:
             operation_payload = self._finalize_operation(
@@ -556,7 +861,13 @@ class MobileOAuthStationFixture:
                 operation_payload,
             )
         operations.clear()
-        self._invoke(service_id, "teardown", None)
+        self._invoke(
+            service_id,
+            "teardown",
+            None,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
 
     def _operation_request(
         self,
@@ -600,6 +911,9 @@ class MobileOAuthStationFixture:
         self,
         service_id: str,
         request: Mapping[str, Any],
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
     ) -> dict[str, Any]:
         try:
             return self._invoke(
@@ -607,6 +921,8 @@ class MobileOAuthStationFixture:
                 str(request["operation"]),
                 request,
                 retry_unknown=True,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
             )
         except StationFixtureConflict:
             self._quarantine(service_id, "operation_conflict")
@@ -620,6 +936,8 @@ class MobileOAuthStationFixture:
         *,
         correlation_key: bool = False,
         retry_unknown: bool = False,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
     ) -> dict[str, Any]:
         self._require_service_available(service_id)
         if operation not in {
@@ -639,15 +957,28 @@ class MobileOAuthStationFixture:
             else json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         )
         attempts = 2 if retry_unknown else 1
+        command_deadline = _fixture_command_deadline(
+            self.timeout,
+            deadline_monotonic,
+            cancellation,
+        )
         for attempt in range(attempts):
             try:
                 result = self._run_command(
                     command,
                     input_text=input_text,
                     correlation_key=correlation_key,
+                    deadline_monotonic=command_deadline,
+                    cancellation=cancellation,
                 )
             except StationFixtureError:
-                if attempt + 1 < attempts:
+                if (
+                    attempt + 1 < attempts
+                    and not (
+                        cancellation is not None and cancellation.is_set()
+                    )
+                    and time.monotonic() < command_deadline
+                ):
                     continue
                 raise
             if result.returncode != 0:
@@ -670,6 +1001,8 @@ class MobileOAuthStationFixture:
         *,
         input_text: str,
         correlation_key: bool,
+        deadline_monotonic: float,
+        cancellation: threading.Event | None,
     ) -> StationCommandResult:
         read_fd = -1
         write_fd = -1
@@ -681,14 +1014,15 @@ class MobileOAuthStationFixture:
                 os.write(write_fd, self.correlation_key)
                 os.close(write_fd)
                 write_fd = -1
-                environment["PT_MOBILE_OAUTH_ACCEPTANCE_HMAC_FD"] = str(read_fd)
+                environment[HMAC_FD_ENVIRONMENT] = str(read_fd)
                 pass_fds = (read_fd,)
             return self.executor.run(
                 command,
                 input_text=input_text,
                 environment=environment,
                 pass_fds=pass_fds,
-                timeout=self.timeout,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
             )
         finally:
             if write_fd >= 0:

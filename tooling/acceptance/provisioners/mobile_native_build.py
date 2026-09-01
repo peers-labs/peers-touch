@@ -6,10 +6,12 @@ import json
 import os
 import plistlib
 import re
+import signal
 import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 import zipfile
 from collections.abc import Mapping, Sequence
@@ -220,6 +222,8 @@ WEB_ACCEPTANCE_HARNESS_MARKERS = (
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+BUILD_COMMAND_TIMEOUT_SECONDS = 1800.0
+BUILD_COMMAND_TERMINATION_TIMEOUT_SECONDS = 5.0
 
 
 class MobileNativeBuildError(RuntimeError):
@@ -245,6 +249,17 @@ class CommandRunner(Protocol):
 
 
 class SubprocessCommandRunner:
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = BUILD_COMMAND_TIMEOUT_SECONDS,
+        termination_timeout_seconds: float = BUILD_COMMAND_TERMINATION_TIMEOUT_SECONDS,
+    ) -> None:
+        if timeout_seconds <= 0 or termination_timeout_seconds <= 0:
+            raise MobileNativeBuildError("build command timeouts must be positive")
+        self._timeout_seconds = timeout_seconds
+        self._termination_timeout_seconds = termination_timeout_seconds
+
     def run(
         self,
         command: Sequence[str],
@@ -252,16 +267,105 @@ class SubprocessCommandRunner:
         cwd: Path,
         env: Mapping[str, str] | None = None,
     ) -> CommandResult:
-        completed = subprocess.run(
-            list(command),
-            cwd=cwd,
-            env=None if env is None else dict(env),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return CommandResult(completed.returncode, completed.stdout, completed.stderr)
+        if not command:
+            raise MobileNativeBuildError("build command must not be empty")
+        if os.name != "posix":
+            raise MobileNativeBuildError(
+                "build command process-tree ownership requires POSIX"
+            )
+        try:
+            process = subprocess.Popen(
+                list(command),
+                cwd=cwd,
+                env=None if env is None else dict(env),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                shell=False,
+                close_fds=True,
+                start_new_session=True,
+            )
+        except OSError as error:
+            raise MobileNativeBuildError(
+                f"failed to start build command: {Path(command[0]).name}"
+            ) from error
 
+        try:
+            stdout, stderr = process.communicate(timeout=self._timeout_seconds)
+        except subprocess.TimeoutExpired as error:
+            self._terminate_and_reap(process)
+            raise MobileNativeBuildError(
+                "build command timed out after "
+                f"{self._timeout_seconds:g}s: {Path(command[0]).name}"
+            ) from error
+        except BaseException:
+            self._terminate_and_reap(process)
+            raise
+
+        self._kill_remaining_process_group(process)
+        return CommandResult(process.returncode, stdout, stderr)
+
+    def _terminate_and_reap(self, process: subprocess.Popen[str]) -> None:
+        self._signal_process_group(process, signal.SIGTERM)
+        try:
+            process.communicate(timeout=self._termination_timeout_seconds)
+        except subprocess.TimeoutExpired:
+            self._signal_process_group(process, signal.SIGKILL)
+            self._reap_after_sigkill(process)
+        except BaseException:
+            self._signal_process_group(process, signal.SIGKILL)
+            self._reap_after_sigkill(process)
+        self._kill_remaining_process_group(process)
+
+    def _reap_after_sigkill(self, process: subprocess.Popen[str]) -> None:
+        try:
+            process.communicate(timeout=self._termination_timeout_seconds)
+        except subprocess.TimeoutExpired as error:
+            raise MobileNativeBuildError(
+                "build command process tree did not stop after SIGKILL"
+            ) from error
+        except BaseException as error:
+            raise MobileNativeBuildError(
+                "build command process could not be reaped after SIGKILL"
+            ) from error
+
+    @staticmethod
+    def _signal_process_group(
+        process: subprocess.Popen[str],
+        process_signal: signal.Signals,
+    ) -> None:
+        try:
+            os.killpg(process.pid, process_signal)
+        except ProcessLookupError:
+            return
+        except OSError as error:
+            raise MobileNativeBuildError(
+                "build command process group could not be signalled"
+            ) from error
+
+    def _kill_remaining_process_group(
+        self,
+        process: subprocess.Popen[str],
+    ) -> None:
+        self._signal_process_group(process, signal.SIGKILL)
+        deadline = time.monotonic() + self._termination_timeout_seconds
+        while True:
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                return
+            except PermissionError:
+                pass
+            except OSError as error:
+                raise MobileNativeBuildError(
+                    "build command process-group extinction could not be verified"
+                ) from error
+            if time.monotonic() >= deadline:
+                raise MobileNativeBuildError(
+                    "build command process group survived forced termination"
+                )
+            time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
 
 @dataclass(frozen=True)
 class SourceIdentity:

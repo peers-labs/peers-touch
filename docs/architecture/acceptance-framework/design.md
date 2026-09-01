@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-27
+> **Created**: 2026-06-03 | **Updated**: 2026-08-30
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -42,7 +42,33 @@
 | repository含tracked historical runtime reports | `verified_fact` | `git ls-files tooling/acceptance/reports` | high | classification/deletion |
 | repo外immutable run store可解耦权限和并发 | `accepted_decision` | D-11 owner acceptance | high | implementation gates |
 
+### 1.3 Native Desktop Runtime Cell 证据账本
+
+| Claim | Class | Evidence | Confidence | Missing proof |
+|---|---|---|---|---|
+| Embedded WebDriver 插件支持 macOS、Linux 与 Windows 原生 WebView backend | `verified_fact` | `tauri-plugin-wdio-webdriver` 1.3.0 README 与 `src/platform/{macos,linux,windows}.rs` | high | project Linux/Windows build smoke |
+| 当前 `TauriDriver` 只启动本机 binary 并连接 `127.0.0.1` | `verified_fact` | `tooling/acceptance/drivers/tauri.py` | high | none |
+| 当前 MP-W13 runner 直接依赖 AppKit、Quartz、CoreGraphics 与 `osascript` | `verified_fact` | `tooling/acceptance/gates/chat/native_product_closure_runner.py` | high | none |
+| 当前 native environment 未表达 host、display、platform adapter 或远端 source staging | `verified_fact` | `tooling/acceptance/environments/native-tauri-embedded-webdriver.yaml` | high | none |
+| Linux 候选机已有 GDM、GNOME、QXL connected virtual output 与 WebKitGTK runtime | `verified_fact` | 2026-08-24 SSH read-only preflight | high | logged-in Acceptance desktop session |
+| Linux 候选机 Ubuntu 20.04 标准源缺少当前 Tauri 所需 `libwebkit2gtk-4.1-dev` | `verified_fact` | remote `apt-cache policy`; Tauri v2 Linux prerequisites | high | supported container userland proof |
+| 同一业务 Gate 可在不同 Desktop OS cell 复用 | `accepted_decision` | D-13 | high | cross-platform driver contract and live proofs |
+| SSH tunnel 可在不暴露 WebDriver 端口的前提下驱动远端 cell | `accepted_decision` | D-14 | high | disconnect/cleanup failure-path proof |
+| Linux 最终 Native proof 不需要物理显示器或 Xvfb | `accepted_decision` | D-15; connected QXL evidence | high | Xorg session, native input, focus and screenshot proof |
+| Remote cell 通过增量 Git objects 获取 clean source | `accepted_decision` | D-16; `tooling/scripts/deploy/deploy.sh` | high | remote source/build attestation proof |
+
 ---
+
+### 1.4 Ephemeral Gate Launch Context 证据账本
+
+| Claim | Class | Evidence | Confidence | Missing proof |
+|---|---|---|---|---|
+| D-18前runner在Provisioner返回可序列化Runtime Manifest后，以独立子进程执行Gate且没有process-local capability handoff | `verified_fact` | D-18 execution plan initial evidence | high | superseded by D-18 landing |
+| 当前runner准备、seal、bind并activate `EphemeralGateLaunchContext`后通过受控child launch执行Gate | `verified_fact` | `tooling/scripts/acceptance-run.py`; `tooling/acceptance/core/launch_context.py` | high | none |
+| Mobile physical device handle明确不可序列化，correlation secret具有显式zeroization | `verified_fact` | `mobile_resource_lease.py::ResolvedPhysicalDeviceHandle`、`RunScopedCorrelationSecret` | high | generic lifecycle integration |
+| Mobile Station Fixture已用anonymous pipe和`pass_fds`把HMAC key限制在一次子进程调用 | `verified_fact` | `mobile_oauth_station.py::_run_command`及其focused tests | high | outer Provisioner-to-Gate handoff |
+| Python `subprocess.run`把额外参数转交`Popen`，POSIX `Popen`提供`pass_fds`精确继承集合 | `verified_fact` | [Python subprocess](https://docs.python.org/3.14/library/subprocess.html#popen-constructor) | high | project synthetic process test |
+| 一个run-scoped、不可持久化、domain-neutral的capability channel可关闭该边界 | `accepted_decision` | D-18 owner acceptance and closure evidence | high | none |
 
 ## 2. 系统架构
 
@@ -90,6 +116,86 @@ Acceptance Framework 由六层组成：
 | Gate Catalog | `tooling/acceptance/gates.yaml` | 定义稳定 gate 的命令、环境、超时和说明 |
 | Gate Implementation | `tooling/acceptance/gates/**/*.py` | 产生可重复 evidence，不承载业务真源 |
 | Evidence Report | D-11 Evidence Store `ArtifactRef` | 汇总 proven / unproven scope，供人审阅 |
+
+### 2.1 Native Desktop Runtime Cell 拓扑
+
+Native Desktop Gate 的产品断言保持一个 Gate identity；运行平台是独立证据维度，
+不得复制三份业务 Gate 或让某个平台 evidence 代替另一个平台。
+
+```text
+Local Acceptance Orchestrator
+  │
+  ├── Gate definition + required runtime cells
+  ├── incremental Git object sync + commit attestation
+  ├── SSH control channel + localhost port forwards
+  └── local Evidence Store writer
+          │
+          ▼
+Remote Runtime Cell Lease
+  ├── pinned supported userland
+  ├── dedicated graphical session
+  ├── exact-source Desktop Acceptance binary
+  ├── app-local embedded WebDriver on 127.0.0.1
+  ├── platform NativeInput/WindowObservation adapter
+  └── reverse-order process/port/storage/session cleanup
+          │
+          ▼
+macOS WKWebView | Linux WebKitGTK | Windows WebView2
+```
+
+控制面与数据面边界：
+
+- Orchestrator 负责选择 cell、校验 source identity、建立 tunnel、收集 evidence 和
+  发布最终结果。
+- Runtime Cell Provisioner 负责目标主机、图形 session、构建、进程、端口和 storage
+  生命周期；不得包含 Chat selector、actor 或产品断言。
+- Remote source acquisition 复用 `make station` 的 pull-model 语义：Profile 解析目标、
+  source lease、Git push/fetch、exact commit checkout、remote build cache 和
+  attestation；不得每次复制完整 worktree。
+- `TauriDriver` 只负责 W3C WebDriver/DOM 能力，不再假定 app process 必须在本机。
+- `NativeDesktopAdapter` 负责平台窗口激活、真实键鼠输入、焦点、窗口栈和屏幕观察。
+- Business Gate 只调用稳定的 DOM 与 native action interface；不得导入 AppKit、
+  Quartz、X11 或 Win32 API。
+- Embedded WebDriver 仅绑定 cell 内 `127.0.0.1`；远端访问必须经过 run-scoped SSH
+  tunnel，禁止开放到局域网。
+
+---
+
+### 2.2 Ephemeral Gate Launch Context 拓扑
+
+Runtime Manifest继续承载可持久化、可审计的资源事实；无法安全序列化的run-scoped
+capability由独立launch context承载。两者是互补边界，不是两个runtime真源。
+
+```text
+Environment Provisioner
+  ├── Runtime Manifest ───────────────► Evidence Store
+  │     ArtifactRef / service / actor / public runtime identity
+  │
+  └── Ephemeral capability handlers
+          │ parent endpoint + secrets/raw handles stay in orchestrator
+          ▼
+Acceptance Orchestrator
+  ├── seals context to workspaceId/gateId/evidenceRunId/provisioningRunId
+  ├── creates one anonymous capability channel
+  ├── starts bounded broker loop
+  └── launches exact Gate argv with one inherited capability endpoint
+          │
+          ▼
+Gate Process
+  ├── reads non-secret descriptor locator
+  ├── performs handshake bound to gateId/runId/workspaceId
+  ├── invokes allowlisted capability operations
+  └── closes endpoint before process exit
+          │
+          ▼
+Orchestrator quiesces channel -> closes descriptors -> joins broker
+  -> runtime-cell cleanup -> provisioner cleanup
+  -> closes context and verifies zeroization
+```
+
+该拓扑不允许Gate获得broker对象、raw device identifier、provider subject或HMAC key。
+Gate只持有一次性channel capability；具体业务Provisioner注册哪些操作属于业务注入，
+Core只拥有channel、framing、binding、timeout、cancel和cleanup语义。
 
 ---
 
@@ -301,6 +407,70 @@ latest(worktree, gate_id) -> RunManifest
 所有path必须通过resolver，reject absolute child paths、`..`、NUL、symlink escape和
 identity mismatch。
 
+### 3.10 Native Runtime Cell Contract
+
+Native Desktop Gate 可声明 `requiredRuntimeCells`。每个 cell 由独立 contract
+解析，运行结果按 `(gateId, cellId, sourceCommit)` 隔离：
+
+```yaml
+id: desktop-linux-native
+platform: linux
+architecture: x86_64
+isolation:
+  kind: container
+  image_ref: profile:acceptance-linux-image
+  image_digest_required: true
+transport:
+  kind: ssh
+  target_ref: profile:acceptance-linux
+  webdriver_forward: local-loopback
+display:
+  session_type: x11
+  physical_monitor_required: false
+  connected_output_required: true
+  fixed_geometry: 1920x1080
+webdriver:
+  kind: tauri-embedded
+  bind: 127.0.0.1
+native_adapter:
+  input: x11-xtest
+  window: x11-ewmh
+  screenshot: webkitgtk-and-desktop
+source:
+  mode: git-object-sync
+  clean_commit_required_for_proof: true
+  binary_sha256_required: true
+lease:
+  scope: gui-session
+  ttl_seconds: 5400
+cleanup:
+  resources:
+    - ssh-tunnel
+    - processes
+    - ports
+    - storage
+    - source-workspace
+    - gui-session-lease
+```
+
+约束：
+
+- `target_ref` 是 Profile/secret-backed reference，不在仓库中保存 IP、用户名或密钥。
+- Cell preflight 必须核验 OS、architecture、WebView backend、display/session、
+  compositor/window manager、native input、screen capture、toolchain 和磁盘。
+- Host OS 与 cell userland 必须分别取证。容器化 cell 可运行受支持的 Linux
+  userland，而不要求宿主发行版升级，但必须记录 image digest、host kernel 与
+  container isolation。
+- 最终 `PROVEN` 要求 clean commit、remote source digest、binary SHA-256 与运行进程
+  identity 一致；dirty source 只允许诊断并保持 `PARTIAL/UNPROVEN`。
+- Remote proof 只接受 Git 可寻址 clean commit。未提交修改不进入远端 source sync，
+  也不得通过 rsync/tar overlay 绕过 source identity。
+- 每个 cell 必须独占 GUI session lease。同一 session 的并发 Gate fail closed。
+- SSH 中断、Gate timeout 和 orchestrator cancellation 都必须触发远端 TTL/reaper 与
+  本地 reverse-order cleanup。
+- 平台专属断言只能由对应 cell 证明；Linux 不能证明 AppKit/Spaces，macOS 不能证明
+  WebKitGTK/X11，Windows 不能证明另外两者。
+
 Source traceability：
 
 - `workspaceId`: canonical worktree path SHA-256前16个hex，只负责isolation；
@@ -343,6 +513,163 @@ Retention：
 - cleanup失败是typed operational error，不得损坏已durable evidence。
 
 ---
+
+### 3.11 Ephemeral Gate Launch Context
+
+`EphemeralGateLaunchContext`是orchestrator进程内对象，不属于Runtime Manifest、
+Evidence Store或Gate Catalog schema。
+
+```python
+@dataclass(frozen=True)
+class GateLaunchBinding:
+    environment: Mapping[str, str]   # non-secret locator metadata only
+    pass_fds: tuple[int, ...]        # exact POSIX inheritance allowlist
+
+
+@dataclass(frozen=True)
+class GateLaunchSpec:
+    argv: tuple[str, ...]
+    timeout_seconds: int
+    required_capabilities: tuple[str, ...]
+
+
+class EphemeralGateLaunchContext:
+    def register_capability(
+        self,
+        capability_id: str,
+        handler: EphemeralCapabilityHandler,
+    ) -> None: ...
+
+    def seal(
+        self,
+        *,
+        workspace_id: str,
+        gate_id: str,
+        evidence_run_id: str,
+        provisioning_run_id: str,
+    ) -> None: ...
+
+    def bind_child(self) -> GateLaunchBinding: ...
+    def activate(self) -> None: ...
+    def quiesce(self) -> None: ...
+    def close(self) -> EphemeralCleanupResult: ...
+
+
+class EnvironmentProvisioner:
+    def create_gate_launch_context(
+        self,
+        *,
+        gate_id: str,
+        evidence_run_id: str,
+        provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext | None: ...
+
+
+class EphemeralGateClient:
+    @classmethod
+    def from_environment(cls) -> EphemeralGateClient | None: ...
+
+    def invoke(
+        self,
+        capability_id: str,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        timeout_seconds: float,
+    ) -> Mapping[str, object]: ...
+
+
+class GateProcessLauncher:
+    def run(
+        self,
+        spec: GateLaunchSpec,
+        binding: GateLaunchBinding | None,
+    ) -> CompletedProcess[str]: ...
+
+
+class EphemeralCapabilityHandler:
+    @property
+    def sensitive_values(self) -> tuple[str, ...]: ...
+
+    def invoke(
+        self,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        deadline_monotonic: float,
+        cancellation: Event,
+    ) -> Mapping[str, object]: ...
+    def project_response(
+        self,
+        operation: str,
+        response: Mapping[str, object],
+    ) -> Mapping[str, object]: ...
+    def quarantine(self, reason: str, *, deadline_monotonic: float) -> bool: ...
+    def close(self) -> EphemeralHandlerCleanup: ...
+```
+
+通用请求只描述transport envelope，不定义Mobile操作：
+
+```json
+{
+  "requestId": "<run-unique opaque id>",
+  "workspaceId": "<workspace-id>",
+  "gateId": "<gate-id>",
+  "evidenceRunId": "<Evidence Store run id>",
+  "provisioningRunId": "<Runtime Manifest run id>",
+  "capability": "<injected capability id>",
+  "operation": "<injected allowlisted operation>",
+  "payload": {}
+}
+```
+
+契约：
+
+- launch context、handler、parent endpoint、secret和raw handle均不可pickle、不可
+  `repr`泄露、不可写入artifact，也不得进入`RuntimeManifest.to_dict()`。
+- Gate Catalog对需要context的Gate声明`argv`和`ephemeralCapabilities`；`argv`与
+  legacy `command`二选一，禁止同一Gate保留两套execution truth。
+- POSIX backend使用`socket.socketpair()`形成双向anonymous channel；只有Gate child
+  endpoint列入
+  `pass_fds`，其余descriptor保持close-on-exec。环境变量最多携带descriptor number
+  和非敏感contract locator，不携带key、token、subject、raw device identifier或
+  endpoint address。
+- 携带launch context时runner必须使用明确argv和隔离Python bootstrap；bootstrap以
+  `python -I -S`启动，在导入或执行任何Gate代码前恢复descriptor的
+  non-inheritable属性，再在同一进程内执行catalog声明的Python module/script。
+  parent使用`subprocess.Popen(..., shell=False, close_fds=True, pass_fds=...)`，
+  spawn结束后立即关闭其child endpoint副本，再以bounded
+  `communicate(timeout=...)`等待。任意可执行文件、shell wrapper、字符串插值和
+  bootstrap前grandchild继承都必须在spawn前被拒绝。
+- handshake必须精确匹配`workspaceId + gateId + evidenceRunId +
+  provisioningRunId`。capability和operation由Provisioner显式注册；未知、重复冲突
+  或越权请求fail closed。
+- frame有固定byte上限；每次请求有deadline；同一`requestId + requestDigest`
+  可返回缓存结果，不同digest复用requestId是protocol conflict。
+- raw-handle-bound操作必须完全在parent handler内执行。Gate只能获得opaque session
+  reference、脱敏structured result或ArtifactRef，不能获得UDID、serial、provider
+  subject、token或correlation key。
+- handler返回值和blocked metadata必须先经过其注入的`project_response`策略，再由
+  Core对完整response envelope扫描`handler.sensitive_values`；命中任一敏感值时
+  channel fail closed，禁止把原值或仅靠日志后置redaction传给child。
+- 每个context默认只允许一个in-flight request；超额请求以typed backpressure错误
+  拒绝，不创建无界线程、队列或response cache。
+- Windows或其它不支持已实现backend的平台在Gate启动前返回typed
+  `EPHEMERAL_LAUNCH_TRANSPORT_UNSUPPORTED`；不得回退环境变量、文件、localhost
+  service或Gate-side reacquisition。
+- `quiesce()`幂等，先停止新请求、关闭两端descriptor并bounded join broker，但不
+  提前销毁Provisioner完成资源回收仍需的authority。
+- broker或handler无法在deadline内quiesce时，相关resource必须fence/quarantine，
+  禁止进入可复用pool；runner记录cleanup failure后继续完成不依赖该authority的
+  bounded teardown。Core只调用通用`handler.quarantine(...)`接口，具体fencing由
+  业务handler实现。
+- 现有runtime-cell与Environment Provisioner完成reverse cleanup后，`close()`释放
+  context-owned buffer并验证capability owner已关闭和其mutable secret owner buffer
+  已清零。该证据不宣称Python进程内所有历史副本已被物理擦除；任一步失败产生
+  cleanup failure，不得把产品proof标记为`PROVEN`。
+- Python官方`socket.socketpair()`返回一对connected、默认non-inheritable socket：
+  <https://docs.python.org/3.14/library/socket.html#socket.socketpair>。
 
 ## 4. 组件关系
 
@@ -605,7 +932,51 @@ Agent 对 Acceptance Infra 的优化和审计必须使用
 业务接入与产品证明继续使用
 [`pt-acceptance-engineering`](../../../tooling/skills/pt-acceptance-engineering/SKILL.md)。
 
+### 4.12 Runtime Cell 所有权与失败语义
+
+| 组件 | Owner | 允许职责 | 禁止职责 |
+|---|---|---|---|
+| Cell schema/registry/lease | Acceptance Infra | contract validation、选择、互斥、typed failure | 业务 actor、selector、成功条件 |
+| SSH transport | Acceptance Infra | host-key verification、command/tunnel、timeout/cancel | 保存凭据值、解释产品结果 |
+| Desktop cell injection | Desktop platform | OS/display/toolchain/build/native adapter 配置 | Chat journey 与断言 |
+| Native adapter | Desktop platform | focus/input/window stack/screenshot primitive | DOM selector、消息语义 |
+| Chat Gate | Chat business | actor journey、产品动作、receiver-visible assertion | SSH、display setup、平台 API |
+| Evidence Store | Acceptance Infra | local durable artifact、remote artifact import validation | 未验证远端输出、跨 cell 冒充 |
+
+失败必须分层：
+
+- Cell/session/toolchain/source/tunnel 失败：
+  `ACCEPTANCE_GATE_BLOCKED_BY_ENVIRONMENT`，产品 proof 为 `UNPROVEN`。
+- Native adapter 无法证明真实 input/focus/window ownership：
+  environment failure，不得退化为 WebDriver-only click。
+- 产品断言在 ready cell 中失败：`ACCEPTANCE_GATE_FAILED`。
+- Cleanup 未完全释放 remote process、port、storage、session lease：
+  `ACCEPTANCE_CLEANUP_FAILED`，已观察行为可保留但 readiness 为 failed。
+
 ---
+
+### 4.13 Ephemeral Launch Context 所有权与失败语义
+
+| 组件 | Owner | 允许职责 | 禁止职责 |
+|---|---|---|---|
+| `EphemeralGateLaunchContext` | Acceptance Infra | identity binding、descriptor lifecycle、framing、deadline、dedupe、cancel、cleanup | 定义Mobile actor、provider、device或产品成功条件 |
+| Environment Provisioner | 业务环境注入 | 注册本环境的capability handler并持有secret/raw resource owner | 把secret/raw handle写入manifest、env、argv或artifact |
+| Acceptance Orchestrator | Acceptance Infra | seal context、启动broker、精确传递descriptor、统一teardown | 解释业务operation或重建业务resource |
+| Gate launch client | Acceptance Infra | handshake、typed request/response、关闭child endpoint | 持久化channel、把descriptor传给grandchild |
+| Product Gate | 业务模块 | 通过注入client调用allowlisted capability并执行产品断言 | 读取Provisioner对象、Profile或Gate-side reacquisition |
+
+失败分类：
+
+- context未注册、未seal、任一run identity mismatch、backend unsupported或child
+  bind失败：
+  Gate不得启动，结果为`BLOCKED/UNPROVEN`；
+- handshake、frame validation、deadline、EOF或broker handler transport失败：
+  这是Acceptance runtime failure，不是产品断言失败，结果保持`UNPROVEN`；
+- capability handler返回明确业务资源冲突时，保留其typed blocked/quarantine语义；
+- Gate exit、timeout或cancellation后必须先quiesce launch context，再执行
+  runtime-cell和Environment Provisioner reverse cleanup，最后close context；
+- context quiesce/close、broker join、descriptor close或secret zeroization任一失败：
+  `ACCEPTANCE_CLEANUP_FAILED`，已有观察可保留但readiness失败。
 
 ## 5. 端点 / API
 
@@ -688,3 +1059,40 @@ domain 的业务接入缺口，也不提供 bypass 参数。
 - tracked reports已分类，stale runtime evidence不再作为proof；
 - cleanup在active lock存在时拒绝删除；
 - secret redaction与source-bound traceability tests保持通过。
+
+## 8. Native Desktop Runtime Cell 架构质量门
+
+- Gate Catalog 能把同一产品 Gate 展开到声明的 macOS/Linux/Windows cells，结果互不
+  覆盖且不能相互替代。
+- Cell contract 缺失、host key 不匹配、GUI session 不可用、source/binary identity
+  不一致时，在启动产品 Gate 前 fail closed。
+- Embedded WebDriver 只监听 cell loopback；本地仅通过 run-scoped tunnel 访问。
+- Linux cell 使用受支持的 WebKitGTK 4.1 userland 和 persistent Xorg desktop
+  session；允许 digest-pinned container，不要求宿主发行版升级；不混装其它发行版
+  软件包，不以 Xvfb 证据冒充最终 Native proof。
+- macOS、Linux、Windows adapter 均证明真实 input、document focus、window ownership
+  与 screenshot；缺一项时对应 cell 保持 `UNPROVEN`。
+- 成功、失败、timeout、SSH disconnect 与 cancellation 都执行同一 reverse-order
+  cleanup，并验证 tunnel、process、port、storage 和 lease 无残留。
+- Runtime manifest 和 Gate evidence 记录 cell ID、OS/WebView/display identity、
+  source commit/digest、binary hash、actor isolation 与 cleanup result。
+
+## 9. Ephemeral Gate Launch Context 架构质量门
+
+- synthetic Provisioner可注册不含业务语义的echo/deny capability，并由独立Gate
+  process通过继承channel调用；manifest、environment value、argv、stdout/stderr和
+  Evidence Store扫描不到secret canary。
+- 仅声明的child descriptor可继承；无context Gate保持当前启动行为；携带context的
+  Gate必须使用明确argv和`shell=False`。
+- wrong workspace/gate/evidence-run/provisioning-run handshake、unknown
+  capability/operation、oversized frame、duplicate request ID with different
+  digest、EOF和deadline均产生typed `BLOCKED/UNPROVEN`。
+- Gate success、non-zero exit、timeout、cancellation和spawn failure均执行同一
+  `context quiesce -> runtime cell -> provisioner -> context close`清理；descriptor
+  leak probe为零，broker thread bounded join，secret owner报告zeroized。
+- 两个并发Gate的context、descriptor、request namespace和handler完全隔离，不能
+  cross-call或复用另一个run的authority。
+- unsupported host backend在spawn前fail closed；不得出现env/file/network fallback。
+- Mobile E2-5只能在上述Infra self-validation通过并经架构评审接受后，注入自己的
+  device/provider/Station Fixture capability；Infra测试不得使用Mobile业务fixture
+  证明自身ready。

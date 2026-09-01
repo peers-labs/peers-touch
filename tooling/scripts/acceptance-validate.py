@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -109,7 +110,7 @@ def validate_gate_catalog(
     )
     for gate_id in sorted(required_gate_ids):
         gate = gate_defs[gate_id]
-        require(gate.get("command"), f"{gate_id}: gate command is required")
+        validate_gate_launch(gate_id, gate)
         environment = gate.get("environment", "local")
         tier = gate.get("tier")
         require(environment in ALLOWED_GATE_ENVIRONMENTS, f"{gate_id}: invalid environment {environment!r}")
@@ -123,6 +124,76 @@ def validate_gate_catalog(
             require(environment == "local", f"{gate_id}: CI tier gates must use local environment")
 
 
+def validate_gate_launch(gate_id: str, gate: dict[str, Any]) -> None:
+    has_command = "command" in gate
+    has_argv = "argv" in gate
+    require(
+        has_command != has_argv,
+        f"{gate_id}: gate must define exactly one of command or argv",
+    )
+
+    if has_command:
+        command = gate["command"]
+        require(
+            isinstance(command, str) and bool(command.strip()),
+            f"{gate_id}: gate command must be a non-empty string",
+        )
+    else:
+        argv = gate["argv"]
+        require(
+            isinstance(argv, list)
+            and bool(argv)
+            and all(
+                isinstance(argument, str) and bool(argument)
+                for argument in argv
+            ),
+            f"{gate_id}: gate argv must be a non-empty list of non-empty strings",
+        )
+
+    if "ephemeralCapabilities" not in gate:
+        return
+
+    capabilities = gate["ephemeralCapabilities"]
+    require(
+        isinstance(capabilities, list)
+        and bool(capabilities)
+        and all(
+            isinstance(capability, str) and bool(capability)
+            for capability in capabilities
+        )
+        and len(set(capabilities)) == len(capabilities),
+        f"{gate_id}: ephemeralCapabilities must be a unique, non-empty list "
+        "of non-empty strings",
+    )
+    require(has_argv, f"{gate_id}: ephemeralCapabilities requires argv")
+    require(
+        isinstance(argv, list) and is_supported_context_argv(argv),
+        f"{gate_id}: ephemeralCapabilities requires a Python module, "
+        "script, or -c argv",
+    )
+
+
+def is_supported_context_argv(argv: list[str]) -> bool:
+    if len(argv) < 2 or not re.fullmatch(
+        r"python(?:\d+(?:\.\d+)*)?",
+        Path(argv[0]).name,
+    ):
+        return False
+    if argv[1] == "-m":
+        return len(argv) >= 3 and bool(
+            re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", argv[2])
+        )
+    if argv[1] == "-c":
+        return len(argv) >= 3
+    return not argv[1].startswith("-") and Path(argv[1]).suffix == ".py"
+
+
+def gate_launch_arguments(gate: dict[str, Any]) -> list[str]:
+    if "argv" in gate:
+        return list(gate["argv"])
+    return str(gate["command"]).split()
+
+
 def validate_gate_inheritance(
     repo_root: Path,
     gate_defs: dict[str, Any],
@@ -131,10 +202,9 @@ def validate_gate_inheritance(
     """I1: Gates using python3 -m must contain an AcceptanceGate subclass."""
     violations: list[str] = []
     for gate_id in sorted(required_gate_ids & gate_defs.keys()):
-        command = str(gate_defs[gate_id].get("command", ""))
-        if "python3 -m" not in command and "python3 -c" not in command:
+        parts = gate_launch_arguments(gate_defs[gate_id])
+        if "-m" not in parts and "-c" not in parts:
             continue
-        parts = command.split()
         try:
             module_index = parts.index("-m") + 1
         except ValueError:
@@ -171,10 +241,9 @@ def validate_gate_import_isolation(
     gate_files: dict[str, tuple[Path, str]] = {}
 
     for gate_id in sorted(required_gate_ids & gate_defs.keys()):
-        command = str(gate_defs[gate_id].get("command", ""))
-        if "python3 -m" not in command:
+        parts = gate_launch_arguments(gate_defs[gate_id])
+        if "-m" not in parts:
             continue
-        parts = command.split()
         try:
             module_index = parts.index("-m") + 1
         except ValueError:

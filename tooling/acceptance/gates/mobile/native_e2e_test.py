@@ -1,25 +1,37 @@
 from __future__ import annotations
 
+import inspect
 import json
+import tempfile
 import unittest
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from tooling.acceptance.core import ArtifactRef, GateError
+from tooling.acceptance.gates.mobile.appium import (
+    APPIUM_CAPABILITY_ID,
+    AppiumSession,
+)
 from tooling.acceptance.gates.mobile.native_e2e import (
+    CAPABILITY_OPERATIONS,
+    PRODUCTION_OAUTH_PURGE_ACTION,
+    PROVIDER_CAPABILITY,
     REQUIRED_ACCESS_VARIANTS,
+    SECURE_STORAGE_ABSENCE_FIELDS,
+    STATION_FIXTURE_CAPABILITY,
     AccessVariantLedger,
     ClientEvidenceBinding,
     MobileNativeGate,
     MobileNativeBlocked,
-    ProviderFlow,
-    ProviderStep,
     _assert_fail_closed_projection,
     _begin_oauth,
     _fixture_target,
     _mobile_projection_summary,
     _negative_oauth_intent,
 )
+from tooling.acceptance.gates.mobile.proof_contracts import ProofContractError
 
 
 def artifact_ref(path: str) -> dict[str, str]:
@@ -72,6 +84,19 @@ def variant_evidence(variant_id: str) -> dict[str, Any]:
             f"evidence/mobile/{variant.id}/{variant.client_id}/projection.json"
         ),
         "stationSnapshots": snapshots,
+    }
+
+
+def valid_cleanup_result() -> dict[str, Any]:
+    return {
+        "oauthPurge": {
+            "stationRevocation": "confirmed",
+            "secureStorage": {
+                field: True for field in SECURE_STORAGE_ABSENCE_FIELDS
+            },
+        },
+        "webSessionProjectionCleared": True,
+        "stationRegistryCleared": True,
     }
 
 
@@ -189,77 +214,429 @@ class AccessVariantLedgerTests(unittest.TestCase):
                     ledger.mark_passed("success-ios-github", evidence)
 
 
-class ProviderFlowContractTests(unittest.TestCase):
-    def test_parses_click_only_preauthenticated_native_automation(self) -> None:
-        flow = ProviderFlow.from_credential(
-            "github",
-            json.dumps(
-                {
-                    "provider": "github",
-                    "steps": [
-                        {
-                            "using": "accessibility id",
-                            "selector": "Continue as disposable account",
-                            "action": "click",
-                        },
-                    ],
-                }
-            ),
+class RecordingCapabilityClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict[str, object], float]] = []
+        self.responses: dict[tuple[str, str], Mapping[str, object]] = {}
+
+    def invoke(
+        self,
+        capability_id: str,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        timeout_seconds: float,
+    ) -> Mapping[str, object]:
+        self.calls.append(
+            (capability_id, operation, dict(payload), timeout_seconds)
         )
-        self.assertEqual(flow.provider, "github")
-        self.assertEqual(len(flow.steps), 1)
+        return self.responses.get((capability_id, operation), {})
 
-    def test_rejects_untyped_provider_credential(self) -> None:
-        with self.assertRaises(MobileNativeBlocked):
-            ProviderFlow.from_credential("google", "plain-account-name")
 
-    def test_rejects_callback_locator_for_provider_success(self) -> None:
-        with self.assertRaisesRegex(
-            MobileNativeBlocked,
-            "must not define a callback locator",
-        ):
-            ProviderFlow.from_credential(
-                "github",
-                json.dumps(
-                    {
-                        "provider": "github",
-                        "steps": [
-                            {
-                                "using": "accessibility id",
-                                "selector": "Continue",
-                                "action": "click",
-                            }
-                        ],
-                        "callback": {
-                            "using": "xpath",
-                            "selector": "//*[@name='callback']",
-                            "attribute": "value",
-                        },
-                    }
+def client_binding(client_id: str = "alice-ios") -> ClientEvidenceBinding:
+    platform = "ios" if client_id.endswith("-ios") else "android"
+    provider = "github" if client_id == "alice-ios" else "google"
+    reference = ArtifactRef.from_dict(
+        artifact_ref(f"runtime/mobile/builds/{platform}.json")
+    )
+    return ClientEvidenceBinding(
+        client_id=client_id,
+        platform=platform,
+        provider=provider,
+        service_id="station-primary",
+        build_attestation_ref=reference,
+        build_attestation={"buildIdentity": {"buildId": f"build-{platform}"}},
+        physical_device_lease_ref=ArtifactRef.from_dict(
+            artifact_ref(
+                f"runtime/mobile/leases/devices/{client_id}.json"
+            )
+        ),
+        physical_device_lease={
+            "holderRunId": reference.run_id,
+            "fenceToken": 11,
+            "state": "BASELINE_VERIFIED",
+            "expiresAt": "2099-08-30T12:10:00Z",
+        },
+        provider_account_lease_ref=ArtifactRef.from_dict(
+            artifact_ref(
+                f"runtime/mobile/leases/accounts/{provider}.json"
+            )
+        ),
+        provider_account_lease={
+            "holderRunId": reference.run_id,
+            "fenceToken": 12,
+            "state": "LEASED",
+            "expiresAt": "2099-08-30T12:10:00Z",
+        },
+        browser_session_lease_ref=ArtifactRef.from_dict(
+            artifact_ref(
+                f"runtime/mobile/leases/browsers/{client_id}.json"
+            )
+        ),
+        browser_session_lease={
+            "holderRunId": reference.run_id,
+            "fenceToken": 13,
+            "state": "BASELINE_VERIFIED",
+            "expiresAt": "2099-08-30T12:10:00Z",
+        },
+    )
+
+
+class EphemeralCapabilityBindingTests(unittest.TestCase):
+    def test_exact_plan_capability_table_is_preserved(self) -> None:
+        self.assertEqual(
+            CAPABILITY_OPERATIONS,
+            {
+                APPIUM_CAPABILITY_ID: (
+                    "start",
+                    "stop",
+                    "wait_ready",
+                    "is_alive",
+                    "contexts",
+                    "switch_context",
+                    "harness_inventory",
+                    "harness_action",
+                    "harness_negative_callback",
+                    "refresh_webview",
+                    "find_element",
+                    "click",
+                    "capture_page_source",
+                    "capture_screenshot",
+                    "verify_build_identity",
                 ),
+                PROVIDER_CAPABILITY: ("authorize",),
+                STATION_FIXTURE_CAPABILITY: (
+                    "prepare_following_gate",
+                    "expire_awaiting_attempt",
+                    "read_proof_snapshot",
+                ),
+            },
+        )
+
+    def test_appium_start_and_identity_use_only_manifest_artifact_refs(
+        self,
+    ) -> None:
+        client = RecordingCapabilityClient()
+        binding = client_binding()
+        client.responses[(APPIUM_CAPABILITY_ID, "start")] = {
+            "sessionRef": "session-alice-ios",
+            "applicationId": "com.peers.touch.mobile",
+            "freshInstallTrace": artifact_ref(
+                "evidence/mobile/runtime/alice-ios/install.json"
+            )
+        }
+        client.responses[(APPIUM_CAPABILITY_ID, "verify_build_identity")] = {
+            "installedBuildIdentity": artifact_ref(
+                "evidence/mobile/runtime/alice-ios/build-identity.json"
+            )
+        }
+        session = AppiumSession(
+            client,  # type: ignore[arg-type]
+            client_id=binding.client_id,
+            platform=binding.platform,
+            physical_device_lease=binding.physical_device_lease_ref,
+            build_attestation=binding.build_attestation_ref,
+            callback_scheme="peers-touch",
+        )
+
+        session.start()
+        identity_ref = session.verify_installed_build_identity(
+            session.fresh_install_trace
+        )
+
+        start = client.calls[0]
+        self.assertEqual(start[:2], (APPIUM_CAPABILITY_ID, "start"))
+        self.assertEqual(
+            set(start[2]),
+            {
+                "clientId",
+                "platform",
+                "physicalDeviceLease",
+                "buildAttestation",
+            },
+        )
+        self.assertEqual(
+            start[2]["physicalDeviceLease"],
+            binding.physical_device_lease_ref.to_dict(),
+        )
+        self.assertEqual(
+            start[2]["buildAttestation"],
+            binding.build_attestation_ref.to_dict(),
+        )
+        self.assertEqual(
+            identity_ref.path,
+            "evidence/mobile/runtime/alice-ios/build-identity.json",
+        )
+
+    def test_provider_and_station_calls_use_exact_capabilities(self) -> None:
+        client = RecordingCapabilityClient()
+        client.responses[(PROVIDER_CAPABILITY, "authorize")] = {
+            "authorized": True
+        }
+        client.responses[
+            (STATION_FIXTURE_CAPABILITY, "prepare_following_gate")
+        ] = {"completed": True}
+        variant = next(
+            item
+            for item in REQUIRED_ACCESS_VARIANTS
+            if item.id == "following-gate-ios"
+        )
+        gate = MobileNativeGate("access", capability_client=client)
+
+        gate._authorize_provider(variant)
+        gate._station_operation(
+            "prepare_following_gate",
+            variant,
+            {
+                "serviceId": "station-primary",
+                "oauthAttemptRef": "oauth-attempt",
+                "accessAttemptRef": "access-attempt",
+                "deviceAlias": "alice-ios",
+                "lifecycleGeneration": 7,
+            },
+        )
+
+        self.assertEqual(
+            [(call[0], call[1]) for call in client.calls],
+            [
+                (PROVIDER_CAPABILITY, "authorize"),
+                (STATION_FIXTURE_CAPABILITY, "prepare_following_gate"),
+            ],
+        )
+
+    def test_station_snapshot_accepts_only_same_run_artifact_ref(self) -> None:
+        class Store:
+            workspace_id = "a" * 16
+
+        client = RecordingCapabilityClient()
+        client.responses[
+            (STATION_FIXTURE_CAPABILITY, "read_proof_snapshot")
+        ] = {
+            "artifactRef": artifact_ref(
+                "evidence/mobile/success-ios-github/"
+                "station/station-primary.json"
+            )
+        }
+        variant = next(
+            item
+            for item in REQUIRED_ACCESS_VARIANTS
+            if item.id == "success-ios-github"
+        )
+        gate = MobileNativeGate("access", capability_client=client)
+
+        with patch(
+            "tooling.acceptance.gates.mobile.native_e2e."
+            "_load_contract_artifact",
+        ) as validate:
+            snapshots = gate._read_station_snapshots(
+                Store(),  # type: ignore[arg-type]
+                variant,
+                {
+                    "serviceId": "station-primary",
+                    "oauthAttemptRef": "oauth-attempt",
+                    "accessAttemptRef": "access-attempt",
+                    "deviceAlias": "alice-ios",
+                    "lifecycleGeneration": 7,
+                },
+                expected_run_id=artifact_ref("unused")["runId"],
             )
 
-    def test_rejects_provider_steps_that_send_secret_text(self) -> None:
-        with self.assertRaisesRegex(
-            MobileNativeBlocked,
-            "pre-authenticated click action",
-        ):
-            ProviderFlow.from_credential(
-                "google",
+        self.assertEqual(set(snapshots), {"station-primary"})
+        self.assertEqual(
+            client.calls[0][:2],
+            (STATION_FIXTURE_CAPABILITY, "read_proof_snapshot"),
+        )
+        validate.assert_called_once()
+
+    def test_child_uses_product_purge_without_resource_cleanup_ownership(
+        self,
+    ) -> None:
+        source = inspect.getsource(
+            __import__(
+                "tooling.acceptance.gates.mobile.native_e2e",
+                fromlist=["native_e2e"],
+            )
+        )
+        self.assertNotIn("CredentialRef", source)
+        self.assertNotIn("device_broker", source)
+        self.assertNotIn("secure_storage_remove", source)
+        self.assertNotIn("session.stop()", source)
+        self.assertEqual(PRODUCTION_OAUTH_PURGE_ACTION, "cleanup")
+        self.assertIn("session.call_action(PRODUCTION_OAUTH_PURGE_ACTION)", source)
+        self.assertIn("EphemeralGateClient.from_environment()", source)
+        cutover = inspect.getsource(MobileNativeGate._run_access)
+        self.assertNotIn("automation_name=", cutover)
+        self.assertNotIn("artifact_reader=", cutover)
+        self.assertNotIn("device_broker=", cutover)
+        self.assertIn("physical_device_lease=", cutover)
+        self.assertIn("build_attestation=", cutover)
+        self.assertRegex(
+            cutover,
+            r"finally:\s+self\._purge_native_oauth\(artifacts, sessions\)"
+            r"\s+return \{",
+        )
+
+
+class FinalEvidenceJudgmentTests(unittest.TestCase):
+    def test_final_inventory_uses_exact_evidence_run_identity(self) -> None:
+        evidence_run_id = "20260830T120000000000Z-" + ("4" * 32)
+        provisioning_run_id = "20260830T120000000000Z-" + ("5" * 32)
+
+        class Store:
+            workspace_id = "a" * 16
+
+            @staticmethod
+            def read_json(_: ArtifactRef) -> dict[str, Any]:
+                return {"artifactKind": "mobile-native-result"}
+
+        class Artifacts:
+            run_id = evidence_run_id
+            store = Store()
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            role_dir = run_dir / ".artifact-roles"
+            role_dir.mkdir()
+            (role_dir / "result.json").write_text(
                 json.dumps(
                     {
-                        "provider": "google",
-                        "steps": [
-                            {
-                                "using": "accessibility id",
-                                "selector": "Password",
-                                "action": "type",
-                                "text": "must-not-cross-appium",
-                            }
-                        ],
+                        "role": "mobile-native-result",
+                        "artifact": artifact_ref(
+                            "reports/mobile-native-result.json"
+                        ),
                     }
                 ),
+                encoding="utf-8",
             )
+            records = [object()]
+            with (
+                patch(
+                    "tooling.acceptance.gates.mobile.native_e2e."
+                    "current_run_directory",
+                    return_value=run_dir,
+                ),
+                patch(
+                    "tooling.acceptance.gates.mobile.native_e2e."
+                    "artifact_records_from_evidence_manifest",
+                    return_value=records,
+                ) as project,
+                patch(
+                    "tooling.acceptance.gates.mobile.native_e2e."
+                    "validate_artifact_roles",
+                ) as validate,
+            ):
+                MobileNativeGate("access")._validate_final_artifact_roles(
+                    Artifacts()  # type: ignore[arg-type]
+                )
+
+        projected_manifest = project.call_args.args[0]
+        self.assertEqual(projected_manifest["runId"], evidence_run_id)
+        self.assertNotEqual(projected_manifest["runId"], provisioning_run_id)
+        validate.assert_called_once_with(
+            records,
+            expected_run_id=evidence_run_id,
+            expected_gate_id="mobile-native-access-e2e",
+            expected_workspace_id="a" * 16,
+        )
+
+    def test_proven_is_assigned_only_after_frozen_role_validation(self) -> None:
+        events: list[str] = []
+
+        class Store:
+            workspace_id = "a" * 16
+
+        class Artifacts:
+            run_id = artifact_ref("unused")["runId"]
+            store = Store()
+
+            def __enter__(self) -> "Artifacts":
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+            def complete(self, **values: object) -> None:
+                self.completed = values
+                events.append("complete")
+
+        artifacts = Artifacts()
+        gate = MobileNativeGate("access")
+        with (
+            patch(
+                "tooling.acceptance.gates.mobile.native_e2e.ArtifactSession",
+                return_value=artifacts,
+            ),
+            patch.object(
+                gate,
+                "_run_access",
+                side_effect=lambda _: (
+                    events.append("run")
+                    or {
+                        "artifactKind": "mobile-native-gate-result",
+                        "gate": gate.gate_id,
+                    }
+                ),
+            ),
+            patch.object(
+                gate,
+                "_write_final_judgment_inputs",
+                side_effect=lambda *_: events.append("write"),
+            ),
+            patch.object(
+                gate,
+                "_validate_final_artifact_roles",
+                side_effect=lambda *_: events.append("validate"),
+            ),
+        ):
+            exit_code = gate.execute()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(events, ["run", "write", "validate", "complete"])
+        self.assertEqual(artifacts.completed["proof_status"], "PROVEN")
+
+    def test_role_validation_failure_keeps_gate_unproven(self) -> None:
+        class Store:
+            workspace_id = "a" * 16
+
+        class Artifacts:
+            run_id = artifact_ref("unused")["runId"]
+            store = Store()
+
+            def __enter__(self) -> "Artifacts":
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+            def complete(self, **values: object) -> None:
+                self.completed = values
+
+        artifacts = Artifacts()
+        gate = MobileNativeGate("access")
+        with (
+            patch(
+                "tooling.acceptance.gates.mobile.native_e2e.ArtifactSession",
+                return_value=artifacts,
+            ),
+            patch.object(
+                gate,
+                "_run_access",
+                return_value={
+                    "artifactKind": "mobile-native-gate-result",
+                    "gate": gate.gate_id,
+                },
+            ),
+            patch.object(gate, "_write_final_judgment_inputs"),
+            patch.object(
+                gate,
+                "_validate_final_artifact_roles",
+                side_effect=ProofContractError("missing frozen role"),
+            ),
+        ):
+            exit_code = gate.execute()
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(artifacts.completed["proof_status"], "UNPROVEN")
 
 
 class FakeHarnessSession:
@@ -298,6 +675,111 @@ class FakeHarnessSession:
 
 
 class MobileHarnessContractTests(unittest.TestCase):
+    def test_physical_manifest_requires_purge_but_not_deep_link_adapter(
+        self,
+    ) -> None:
+        environment_path = (
+            Path(__file__).resolve().parents[2]
+            / "environments"
+            / "mobile-native.yaml"
+        )
+        environment = json.loads(environment_path.read_text(encoding="utf-8"))
+        required_actions = environment["harness"]["required_actions"]
+
+        self.assertIn(PRODUCTION_OAUTH_PURGE_ACTION, required_actions)
+        self.assertNotIn("native.deliverDeepLink", required_actions)
+
+    def test_product_purge_persists_four_secure_storage_absence_artifacts(
+        self,
+    ) -> None:
+        class PurgeSession:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, Any]] = []
+
+            def switch_to_app_webview(self, timeout: float = 30.0) -> str:
+                self.calls.append(("switch_to_app_webview", timeout))
+                return "WEBVIEW_com.peers.touch.mobile"
+
+            def call_action(
+                self,
+                action: str,
+                payload: Mapping[str, Any] | None = None,
+            ) -> Any:
+                self.calls.append((action, payload))
+                return valid_cleanup_result()
+
+        class Artifacts:
+            run_id = artifact_ref("unused")["runId"]
+
+            def __init__(self) -> None:
+                self.writes: list[tuple[str, dict[str, Any], str | None]] = []
+
+            def write_json(
+                self,
+                path: str,
+                value: Mapping[str, Any],
+                *,
+                role: str | None = None,
+            ) -> None:
+                self.writes.append((path, dict(value), role))
+
+        sessions = {
+            client_id: PurgeSession()
+            for client_id in (
+                "alice-ios",
+                "bob-ios",
+                "alice-android",
+                "bob-android",
+            )
+        }
+        artifacts = Artifacts()
+
+        MobileNativeGate("access")._purge_native_oauth(  # type: ignore[arg-type]
+            artifacts,  # type: ignore[arg-type]
+            sessions,  # type: ignore[arg-type]
+        )
+
+        self.assertEqual(len(artifacts.writes), 4)
+        self.assertEqual(
+            {write[2] for write in artifacts.writes},
+            {
+                f"mobile-secure-storage-absence/{client_id}"
+                for client_id in sessions
+            },
+        )
+        for path, payload, _ in artifacts.writes:
+            client_id = payload["clientId"]
+            self.assertEqual(
+                path,
+                f"evidence/mobile/cleanup/secure-storage/{client_id}.json",
+            )
+            self.assertEqual(
+                payload["secureStorage"],
+                {
+                    field: True
+                    for field in SECURE_STORAGE_ABSENCE_FIELDS
+                },
+            )
+            self.assertEqual(
+                sessions[client_id].calls,
+                [
+                    ("switch_to_app_webview", 5),
+                    (PRODUCTION_OAUTH_PURGE_ACTION, None),
+                ],
+            )
+
+    def test_product_purge_fails_closed_on_incomplete_absence(self) -> None:
+        incomplete = valid_cleanup_result()
+        incomplete["oauthPurge"]["secureStorage"][
+            "credentialRecordAbsent"
+        ] = False
+
+        with self.assertRaisesRegex(GateError, "secure-storage absence"):
+            MobileNativeGate("access")._secure_storage_absence_result(
+                "alice-ios",
+                incomplete,
+            )
+
     def test_runner_sends_exact_station_access_and_oauth_payloads(self) -> None:
         session = FakeHarnessSession()
 
@@ -414,94 +896,22 @@ class MobileHarnessContractTests(unittest.TestCase):
     def test_cancel_variant_requires_cancelled_projection_without_session(
         self,
     ) -> None:
-        class CancelSession(FakeHarnessSession):
-            def call_action(
-                self,
-                action: str,
-                payload: Mapping[str, Any] | None = None,
-            ) -> Any:
-                if action == "oauth.cancel":
-                    return {
-                        "phase": "cancelled",
-                        "session": None,
-                    }
-                if action == "projection.read":
-                    return {
-                        "station": {
-                            "activeStationPeerId": "station-peer",
-                            "entries": [{"stationPeerId": "station-peer"}],
-                        },
-                        "access": {
-                            "decision": {
-                                "state": "ACCESS_DECISION_STATE_ACTION_REQUIRED",
-                                "attemptId": "access-attempt",
-                                "currentGateId": "auth.oauth",
-                                "accessGrantId": "",
-                            },
-                            "session": None,
-                            "loading": False,
-                            "errorKey": None,
-                            "restored": False,
-                        },
-                        "oauth": {
-                            "phase": "cancelled",
-                            "session": None,
-                        },
-                    }
-                return super().call_action(action, payload)
-
+        variant = next(
+            item
+            for item in REQUIRED_ACCESS_VARIANTS
+            if item.id == "cancel-ios"
+        )
         gate = MobileNativeGate("access")
-        readback = gate._run_cancel_variant(  # type: ignore[arg-type]
-            CancelSession(),
-            station_url="https://station.example",
-            provider="github",
-            client_id="alice-ios",
+        gate._require_terminal_projection(
+            variant,
+            {"phase": "cancelled", "session": None},
         )
 
-        self.assertEqual(readback["oauth"]["phase"], "cancelled")
-        self.assertIsNone(readback["oauth"]["session"])
-        self.assertEqual(gate.lifecycle[-1]["event"], "oauth.cancel")
-
-    def test_provider_success_waits_for_automatic_app_return(self) -> None:
-        class AutomaticRedirectSession:
-            def __init__(self) -> None:
-                self.events: list[tuple[str, Any]] = []
-
-            def switch_to_native(self) -> None:
-                self.events.append(("context", "NATIVE_APP"))
-
-            def find_element(self, using: str, selector: str) -> str:
-                self.events.append(("find", (using, selector)))
-                return "continue"
-
-            def click(self, element_id: str) -> None:
-                self.events.append(("click", element_id))
-
-            def switch_to_app_webview(self, timeout: float = 30.0) -> str:
-                self.events.append(("automatic-return", timeout))
-                return "WEBVIEW_com.peers.touch.mobile"
-
-        session = AutomaticRedirectSession()
-        flow = ProviderFlow(
-            provider="github",
-            steps=(
-                ProviderStep(
-                    using="accessibility id",
-                    selector="Continue",
-                    action="click",
-                ),
-            ),
-        )
-
-        MobileNativeGate("access")._complete_provider_flow(  # type: ignore[arg-type]
-            session,
-            flow,
-        )
-
-        self.assertEqual(session.events[-1], ("automatic-return", 90))
-        self.assertFalse(
-            any(event[0] in {"attribute", "deep-link"} for event in session.events)
-        )
+        with self.assertRaisesRegex(GateError, "did not fail closed"):
+            gate._require_terminal_projection(
+                variant,
+                {"phase": "cancelled", "session": {"actorPtid": "ptid:alice"}},
+            )
 
 
 class NegativeVariantContractTests(unittest.TestCase):

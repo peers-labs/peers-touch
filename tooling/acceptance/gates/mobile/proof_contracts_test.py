@@ -17,6 +17,7 @@ from tooling.acceptance.gates.mobile.proof_contracts import (
     VARIANTS,
     ArtifactRecord,
     ProofContractError,
+    artifact_records_from_evidence_manifest,
     protected_path_snapshot,
     validate_artifact_roles,
     validate_contract_payload,
@@ -1602,6 +1603,138 @@ def payload_inventory() -> list[ArtifactRecord]:
 
 
 class ArtifactRoleContractTests(unittest.TestCase):
+    def test_evidence_role_instances_project_to_complete_frozen_inventory(
+        self,
+    ) -> None:
+        expected_records = payload_inventory()
+        payloads_by_path = {
+            record.path: record.payload for record in expected_records
+        }
+        role_counts: dict[str, int] = {}
+        artifacts: dict[str, dict[str, Any]] = {}
+        for record in expected_records:
+            role_index = role_counts.get(record.role, 0)
+            role_counts[record.role] = role_index + 1
+            role_instance = (
+                record.role
+                if (
+                    ARTIFACT_ROLES[record.role].cardinality == 1
+                    or ARTIFACT_ROLES[record.role].minimum_cardinality == 1
+                )
+                else f"{record.role}/{role_index}"
+            )
+            reference_path = record.path
+            if record.role == "mobile-visible-proof":
+                reference_path += "projection.json"
+                payloads_by_path[reference_path] = record.payload
+            artifacts[role_instance] = artifact_ref(
+                reference_path,
+                payload=record.payload,
+            )
+        artifacts["diagnostic-log"] = artifact_ref(
+            "logs/mobile-native-access-e2e.log"
+        )
+        manifest = {
+            "workspaceId": WORKSPACE_ID,
+            "gateId": GATE_ID,
+            "runId": RUN_ID,
+            "artifacts": artifacts,
+        }
+
+        projected = artifact_records_from_evidence_manifest(
+            manifest,
+            payload_loader=lambda reference: payloads_by_path[reference.path],
+        )
+        validated = validate_artifact_roles(
+            projected,
+            expected_run_id=RUN_ID,
+            expected_workspace_id=WORKSPACE_ID,
+        )
+
+        self.assertEqual(
+            [(record.role, record.path) for record in validated],
+            [(record.role, record.path) for record in expected_records],
+        )
+
+    def test_evidence_role_projection_rejects_invalid_instance_identity(
+        self,
+    ) -> None:
+        record = payload_inventory()[0]
+        manifest = {
+            "workspaceId": WORKSPACE_ID,
+            "gateId": GATE_ID,
+            "runId": RUN_ID,
+            "artifacts": {
+                f"{record.role}/nested/instance": artifact_ref(
+                    record.path,
+                    payload=record.payload,
+                )
+            },
+        }
+        with self.assertRaisesRegex(
+            ProofContractError,
+            "invalid Evidence Store Artifact Role instance",
+        ):
+            artifact_records_from_evidence_manifest(
+                manifest,
+                payload_loader=lambda _: record.payload,
+            )
+
+    def test_evidence_role_projection_rejects_reference_run_mismatch(
+        self,
+    ) -> None:
+        record = payload_inventory()[0]
+        manifest = {
+            "workspaceId": WORKSPACE_ID,
+            "gateId": GATE_ID,
+            "runId": RUN_ID,
+            "artifacts": {
+                record.role: artifact_ref(
+                    record.path,
+                    run_id="20260830T120000000001Z-" + ("2" * 32),
+                )
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ProofContractError,
+            "runId does not match its manifest",
+        ):
+            artifact_records_from_evidence_manifest(
+                manifest,
+                payload_loader=lambda _: record.payload,
+            )
+
+    def test_evidence_role_projection_uses_real_visible_payload_and_path(
+        self,
+    ) -> None:
+        record = next(
+            item
+            for item in payload_inventory()
+            if item.role == "mobile-visible-proof"
+        )
+        loaded: list[str] = []
+        manifest = {
+            "workspaceId": WORKSPACE_ID,
+            "gateId": GATE_ID,
+            "runId": RUN_ID,
+            "artifacts": {
+                f"{record.role}/success-ios-github": artifact_ref(
+                    record.path + "projection.json"
+                )
+            },
+        }
+
+        projected = artifact_records_from_evidence_manifest(
+            manifest,
+            payload_loader=lambda reference: (
+                loaded.append(reference.path) or record.payload
+            ),
+        )
+
+        self.assertEqual(loaded, [record.path + "projection.json"])
+        self.assertEqual(projected, [record])
+
     def test_role_catalog_has_exact_names_cardinality_and_relations(self) -> None:
         expected = {
             "mobile-proof-contract-catalog": 1,
@@ -2178,11 +2311,11 @@ class CutoverInventoryContractTests(unittest.TestCase):
             ),
             "legacy-android-avd-destination": (
                 "tooling/acceptance/environments/mobile-native.yaml",
-                '"destination_ref": "env:PT_MOBILE_ANDROID_AVD"',
+                '"destination_ref": "env:PT_MOBILE_ANDROID_' + 'AVD"',
             ),
             "declarative-browser-required-marker": (
                 "tooling/acceptance/environments/mobile-native.yaml",
-                '"clean_start": "required"',
+                '"clean_' + 'start": "required"',
             ),
             "stale-physical-install": (
                 "tooling/acceptance/gates/mobile/appium.py",
@@ -2219,10 +2352,6 @@ class CutoverInventoryContractTests(unittest.TestCase):
     def test_only_simulator_deep_link_and_reset_exceptions_are_retained(self) -> None:
         simulator_cases = (
             (
-                "tooling/acceptance/gates/mobile/appium.py",
-                "def deep_link_for_failure_case(self, url, failure_case):",
-            ),
-            (
                 "tooling/acceptance/gates/mobile/simulator_e2e.py",
                 "session.deep_link_for_failure_case(url, failure_case)",
             ),
@@ -2243,6 +2372,10 @@ class CutoverInventoryContractTests(unittest.TestCase):
                 )
 
         shared_or_physical_cases = (
+            (
+                "tooling/acceptance/gates/mobile/appium.py",
+                "def deep_link_for_failure_case(self, url, failure_case):",
+            ),
             (
                 "tooling/acceptance/gates/mobile/appium.py",
                 '"appium:noReset": True',

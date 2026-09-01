@@ -7,6 +7,7 @@ import argparse
 import fnmatch
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -68,6 +69,90 @@ def path_matches_any(path: str, patterns: list[str]) -> bool:
                for pattern in patterns)
 
 
+def gate_launch_fields(gate_id: str, gate: dict[str, Any]) -> dict[str, Any]:
+    has_command = "command" in gate
+    has_argv = "argv" in gate
+    if has_command == has_argv:
+        raise SystemExit(
+            f"{gate_id}: gate must define exactly one of command or argv"
+        )
+
+    if has_command:
+        command = gate["command"]
+        if not isinstance(command, str) or not command.strip():
+            raise SystemExit(f"{gate_id}: gate command must be a non-empty string")
+        launch: dict[str, Any] = {"command": command}
+    else:
+        argv = gate["argv"]
+        if (
+            not isinstance(argv, list)
+            or not argv
+            or any(not isinstance(argument, str) or not argument for argument in argv)
+        ):
+            raise SystemExit(
+                f"{gate_id}: gate argv must be a non-empty list of non-empty strings"
+            )
+        launch = {"argv": list(argv)}
+
+    if "ephemeralCapabilities" in gate:
+        capabilities = gate["ephemeralCapabilities"]
+        if (
+            not isinstance(capabilities, list)
+            or not capabilities
+            or any(
+                not isinstance(capability, str) or not capability
+                for capability in capabilities
+            )
+            or len(set(capabilities)) != len(capabilities)
+        ):
+            raise SystemExit(
+                f"{gate_id}: ephemeralCapabilities must be a unique, non-empty "
+                "list of non-empty strings"
+            )
+        if not has_argv:
+            raise SystemExit(f"{gate_id}: ephemeralCapabilities requires argv")
+        if not is_supported_context_argv(argv):
+            raise SystemExit(
+                f"{gate_id}: ephemeralCapabilities requires a Python module, "
+                "script, or -c argv"
+            )
+        launch["ephemeralCapabilities"] = list(capabilities)
+
+    return launch
+
+
+def is_supported_context_argv(argv: list[str]) -> bool:
+    if len(argv) < 2 or not re.fullmatch(
+        r"python(?:\d+(?:\.\d+)*)?",
+        Path(argv[0]).name,
+    ):
+        return False
+    if argv[1] == "-m":
+        return len(argv) >= 3 and bool(
+            re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", argv[2])
+        )
+    if argv[1] == "-c":
+        return len(argv) >= 3
+    return not argv[1].startswith("-") and Path(argv[1]).suffix == ".py"
+
+
+def planned_gate(
+    gate_id: str,
+    gate: dict[str, Any],
+) -> dict[str, Any]:
+    planned = {
+        "id": gate_id,
+        **gate_launch_fields(gate_id, gate),
+        "timeout_seconds": gate.get("timeout_seconds", 600),
+        "environment": gate.get("environment", "local"),
+        "provisioner": gate.get("provisioner", ""),
+        "tier": gate.get("tier", "local-evidence"),
+        "description": gate.get("description", ""),
+        "required_by": [],
+    }
+    return planned
+
+
 def plan(root: Path, paths: list[str]) -> dict[str, Any]:
     registry = load_json_yaml(root / "registry.yaml")
     gates = load_json_yaml(root / "gates.yaml").get("gates", {})
@@ -88,16 +173,7 @@ def plan(root: Path, paths: list[str]) -> dict[str, Any]:
                 raise SystemExit(f"gate {gate_id!r} referenced by rule {rule.get('id')!r} is missing")
             selected.setdefault(
                 gate_id,
-                {
-                    "id": gate_id,
-                    "command": gates[gate_id]["command"],
-                    "timeout_seconds": gates[gate_id].get("timeout_seconds", 600),
-                    "environment": gates[gate_id].get("environment", "local"),
-                    "provisioner": gates[gate_id].get("provisioner", ""),
-                    "tier": gates[gate_id].get("tier", "local-evidence"),
-                    "description": gates[gate_id].get("description", ""),
-                    "required_by": [],
-                },
+                planned_gate(gate_id, gates[gate_id]),
             )
             selected[gate_id]["required_by"].append(rule.get("id"))
 
@@ -121,16 +197,7 @@ def plan(root: Path, paths: list[str]) -> dict[str, Any]:
                 raise SystemExit(f"gate {gate_id!r} referenced by behavior rule {rule.get('id')!r} is missing")
             selected.setdefault(
                 gate_id,
-                {
-                    "id": gate_id,
-                    "command": gates[gate_id]["command"],
-                    "timeout_seconds": gates[gate_id].get("timeout_seconds", 600),
-                    "environment": gates[gate_id].get("environment", "local"),
-                    "provisioner": gates[gate_id].get("provisioner", ""),
-                    "tier": gates[gate_id].get("tier", "local-evidence"),
-                    "description": gates[gate_id].get("description", ""),
-                    "required_by": [],
-                },
+                planned_gate(gate_id, gates[gate_id]),
             )
             selected[gate_id]["required_by"].append(f"behavior:{rule.get('id')}")
 
@@ -242,7 +309,12 @@ def main() -> int:
     print(f"impacted_features: {', '.join(result['impacted_features']) or 'none'}")
     if result["selected_gates"]:
         for gate in result["selected_gates"]:
-            print(f"[GATE] {gate['id']} [{gate['tier']}/{gate['environment']}]: {gate['command']}")
+            launch = (
+                gate["command"]
+                if "command" in gate
+                else json.dumps(gate["argv"], ensure_ascii=False)
+            )
+            print(f"[GATE] {gate['id']} [{gate['tier']}/{gate['environment']}]: {launch}")
     else:
         print("[GATE] none")
     print(

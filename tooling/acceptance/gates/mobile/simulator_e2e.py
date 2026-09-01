@@ -5,11 +5,16 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
+import json
+import math
 import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,13 +29,13 @@ from tooling.acceptance.core import (
     REPO_ROOT,
     load_runtime_manifest,
 )
-from tooling.acceptance.core.redaction import redact_text, redact_value
-from tooling.acceptance.gates.mobile.appium import (
-    AppiumHttpTransport,
-    HARNESS_ACTION_SCRIPT,
-    HARNESS_INVENTORY_SCRIPT,
-    UrllibAppiumTransport,
+from tooling.acceptance.core.bounded_http import (
+    HttpResponseBodyTooLarge,
+    HttpResponseDeadlineExceeded,
+    HttpResponseDeadlineUnsupported,
+    read_bounded_http_response,
 )
+from tooling.acceptance.core.redaction import redact_text, redact_value
 
 
 GATE_ID = "mobile-simulator-access-e2e"
@@ -55,7 +60,46 @@ REQUIRED_HARNESS_ACTIONS = (
 )
 IOS_NATIVE_PREFLIGHT_TIMEOUT_SECONDS = 15.0
 IOS_WEBVIEW_PREFLIGHT_TIMEOUT_SECONDS = 30.0
+MAX_APPIUM_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_APPIUM_ERROR_RESPONSE_BYTES = 1024 * 1024
+MAX_MOBILE_PAGE_SOURCE_BYTES = 32 * 1024 * 1024
+MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES = 64 * 1024 * 1024
+MAX_MOBILE_SCREENSHOT_BYTES = 64 * 1024 * 1024
+MAX_MOBILE_SCREENSHOT_BASE64_BYTES = (
+    4 * ((MAX_MOBILE_SCREENSHOT_BYTES + 2) // 3)
+)
+MAX_MOBILE_SCREENSHOT_RESPONSE_BYTES = (
+    MAX_MOBILE_SCREENSHOT_BASE64_BYTES + 4096
+)
 PHYSICAL_PROVIDER_SCOPE = "physical provider OAuth/MS-AG03 remains UNPROVEN"
+SECURE_STORAGE_ABSENCE_FIELDS = (
+    "activeAttemptIndexAbsent",
+    "attemptSecretRecordAbsent",
+    "currentSessionIndexAbsent",
+    "credentialRecordAbsent",
+    "publicProjectionAbsent",
+)
+
+HARNESS_INVENTORY_SCRIPT = """
+const root = window.__PEERS_MOBILE_ACCEPTANCE__;
+return root ? Object.keys(root).sort() : null;
+"""
+
+HARNESS_ACTION_SCRIPT = """
+const action = arguments[0];
+const input = arguments[1] || {};
+const done = arguments[arguments.length - 1];
+const root = window.__PEERS_MOBILE_ACCEPTANCE__;
+if (!root || typeof root[action] !== 'function') {
+  done({error: `acceptance.mobile.actionUnavailable:${action}`});
+  return;
+}
+Promise.resolve(root[action](input))
+  .then((value) => done({value}))
+  .catch((error) => done({
+    error: String(error && error.message || error),
+  }));
+"""
 
 
 class EvidenceWriter(Protocol):
@@ -78,6 +122,131 @@ class EvidenceWriter(Protocol):
         role: str | None = None,
     ) -> Any:
         ...
+
+
+class AppiumHttpTransport(Protocol):
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        max_response_bytes: int = MAX_APPIUM_RESPONSE_BYTES,
+    ) -> Any:
+        ...
+
+
+class UrllibAppiumTransport:
+    """Simulator-only Appium HTTP transport."""
+
+    def __init__(self, server_url: str, timeout_seconds: float = 60.0) -> None:
+        if (
+            not isinstance(timeout_seconds, (int, float))
+            or isinstance(timeout_seconds, bool)
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("Appium timeout must be a positive finite number")
+        self.server_url = server_url.rstrip("/")
+        self.timeout_seconds = float(timeout_seconds)
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        max_response_bytes: int = MAX_APPIUM_RESPONSE_BYTES,
+    ) -> Any:
+        if (
+            not isinstance(max_response_bytes, int)
+            or isinstance(max_response_bytes, bool)
+            or max_response_bytes <= 0
+        ):
+            raise ValueError("Appium response byte limit must be positive")
+        url = f"{self.server_url}/{path.lstrip('/')}"
+        body = None
+        headers = {"Accept": "application/json"}
+        if payload is not None:
+            body = json.dumps(dict(payload)).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers=headers,
+            method=method,
+        )
+        deadline = time.monotonic() + self.timeout_seconds
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=max(deadline - time.monotonic(), 0.001),
+            ) as response:
+                raw = read_bounded_http_response(
+                    response,
+                    max_bytes=max_response_bytes,
+                    deadline_monotonic=deadline,
+                )
+        except urllib.error.HTTPError as error:
+            try:
+                try:
+                    response_body = read_bounded_http_response(
+                        error,
+                        max_bytes=MAX_APPIUM_ERROR_RESPONSE_BYTES,
+                        deadline_monotonic=deadline,
+                    ).decode("utf-8", errors="replace")
+                    decoded_error = json.loads(response_body)
+                    value = decoded_error.get("value", {})
+                    message = (
+                        value.get("message")
+                        if isinstance(value, dict)
+                        else response_body
+                    )
+                except (
+                    HttpResponseBodyTooLarge,
+                    HttpResponseDeadlineExceeded,
+                    HttpResponseDeadlineUnsupported,
+                    OSError,
+                    json.JSONDecodeError,
+                ):
+                    message = error.reason
+                raise DriverError(
+                    f"Appium {method} {path} failed with HTTP "
+                    f"{error.code}: {redact_text(str(message))}"
+                ) from error
+            finally:
+                error.close()
+        except HttpResponseBodyTooLarge as error:
+            raise DriverError(
+                f"Appium {method} {path} response exceeds its byte limit"
+            ) from error
+        except (
+            HttpResponseDeadlineExceeded,
+            HttpResponseDeadlineUnsupported,
+            OSError,
+            TimeoutError,
+            urllib.error.URLError,
+        ) as error:
+            raise DriverError(
+                f"Appium {method} {path} failed: {type(error).__name__}"
+            ) from error
+        try:
+            decoded = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise DriverError(
+                f"Appium {method} {path} returned invalid JSON"
+            ) from error
+        if not isinstance(decoded, dict):
+            raise DriverError(
+                f"Appium {method} {path} returned a non-object response"
+            )
+        value = decoded.get("value")
+        if isinstance(value, dict) and value.get("error"):
+            error_name = str(value.get("error") or "unknown")
+            raise DriverError(
+                f"Appium {method} {path} failed with {error_name}"
+            )
+        return value
 
 
 class SimulatorGateBlocked(GateError):
@@ -112,6 +281,17 @@ class SimulatorClientSpec:
     ports: dict[str, int]
     required_harness_actions: tuple[str, ...]
     chromedriver_executable: str = ""
+
+
+def _positive_timeout(value: float) -> float:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise DriverError("Appium timeout must be a positive finite number")
+    return float(value)
 
 
 class SimulatorAppiumSession:
@@ -258,7 +438,7 @@ class SimulatorAppiumSession:
         self.session_id = ""
 
     def wait_for_ready(self, timeout: float = 30.0) -> None:
-        deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + _positive_timeout(timeout)
         last_contexts: list[str] = []
         while time.monotonic() < deadline:
             last_contexts = self.contexts()
@@ -298,7 +478,7 @@ class SimulatorAppiumSession:
         self.switch_context("NATIVE_APP")
 
     def switch_to_app_webview(self, timeout: float = 30.0) -> str:
-        deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + _positive_timeout(timeout)
         last_contexts: list[str] = []
         while time.monotonic() < deadline:
             last_contexts = self.contexts()
@@ -389,18 +569,35 @@ class SimulatorAppiumSession:
         )
 
     def screenshot_bytes(self) -> bytes:
-        value = self._request("GET", self._path("/screenshot"))
+        value = self._request(
+            "GET",
+            self._path("/screenshot"),
+            max_response_bytes=MAX_MOBILE_SCREENSHOT_RESPONSE_BYTES,
+        )
         if not isinstance(value, str):
             raise DriverError("Appium screenshot response is invalid")
+        if len(value) > MAX_MOBILE_SCREENSHOT_BASE64_BYTES:
+            raise DriverError(
+                "Appium screenshot encoding exceeds its byte limit"
+            )
         try:
-            return base64.b64decode(value, validate=True)
-        except ValueError as error:
+            screenshot = base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as error:
             raise DriverError("Appium screenshot is not valid base64") from error
+        if len(screenshot) > MAX_MOBILE_SCREENSHOT_BYTES:
+            raise DriverError("Appium screenshot exceeds its byte limit")
+        return screenshot
 
     def get_page_source(self) -> str:
-        value = self._request("GET", self._path("/source"))
+        value = self._request(
+            "GET",
+            self._path("/source"),
+            max_response_bytes=MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES,
+        )
         if not isinstance(value, str):
             raise DriverError("Appium page source response is invalid")
+        if len(value.encode("utf-8")) > MAX_MOBILE_PAGE_SOURCE_BYTES:
+            raise DriverError("Appium page source exceeds its byte limit")
         return value
 
     def get_current_url(self) -> str:
@@ -414,8 +611,17 @@ class SimulatorAppiumSession:
         method: str,
         path: str,
         payload: Mapping[str, Any] | None = None,
+        *,
+        max_response_bytes: int | None = None,
     ) -> Any:
-        return self.transport.request(method, path, payload)
+        if max_response_bytes is None:
+            return self.transport.request(method, path, payload)
+        return self.transport.request(
+            method,
+            path,
+            payload,
+            max_response_bytes=max_response_bytes,
+        )
 
     def _required_port(self, role: str) -> int:
         value = self.ports.get(role)
@@ -699,6 +905,38 @@ def _validate_fail_closed_projection(value: Any) -> dict[str, Any]:
 
     if str(oauth.get("phase") or "").lower() == "active_session":
         raise GateError("Mobile simulator callback reached active_session")
+    return dict(value)
+
+
+def _validate_cleanup_result(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise GateError("Mobile simulator cleanup result must be an object")
+    oauth_purge = value.get("oauthPurge")
+    if not isinstance(oauth_purge, dict):
+        raise GateError("Mobile simulator cleanup omitted OAuth purge proof")
+    if oauth_purge.get("stationRevocation") not in {
+        "not_required",
+        "confirmed",
+        "unconfirmed",
+    }:
+        raise GateError(
+            "Mobile simulator cleanup returned invalid Station revocation proof"
+        )
+    secure_storage = oauth_purge.get("secureStorage")
+    if not isinstance(secure_storage, dict) or any(
+        secure_storage.get(field) is not True
+        for field in SECURE_STORAGE_ABSENCE_FIELDS
+    ):
+        raise GateError(
+            "Mobile simulator cleanup did not prove secure-storage absence"
+        )
+    if (
+        value.get("webSessionProjectionCleared") is not True
+        or value.get("stationRegistryCleared") is not True
+    ):
+        raise GateError(
+            "Mobile simulator cleanup did not clear public session projections"
+        )
     return dict(value)
 
 
@@ -1507,14 +1745,7 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
                 try:
                     session.switch_to_app_webview(timeout=5)
                     session.require_harness(["cleanup"])
-                    cleanup_result = session.call_action("cleanup")
-                    if not isinstance(cleanup_result, dict) or (
-                        cleanup_result.get("sessionCleared") is not True
-                        or cleanup_result.get("stationRegistryCleared") is not True
-                    ):
-                        raise GateError(
-                            f"client {client_id} returned invalid cleanup readback"
-                        )
+                    _validate_cleanup_result(session.call_action("cleanup"))
                     self.cleanup.append(
                         {
                             "clientId": client_id,

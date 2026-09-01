@@ -12,25 +12,28 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from tooling.acceptance.core import (
     AcceptanceGate,
     ArtifactRef,
     ArtifactSession,
-    CredentialRef,
     DriverError,
+    EphemeralCapabilityBlocked,
+    EphemeralGateClient,
+    EvidenceError,
     EvidenceStore,
     GateError,
     ProvisioningError,
     REPO_ROOT,
+    current_run_directory,
     load_runtime_manifest,
     require_runtime_service,
 )
 from tooling.acceptance.core.redaction import is_sensitive_key
 from tooling.acceptance.gates.mobile.appium import (
+    APPIUM_CAPABILITY_ID,
     AppiumSession,
-    UrllibAppiumTransport,
 )
 from tooling.acceptance.gates.mobile.proof_contracts import (
     CLIENT_PLATFORM,
@@ -38,6 +41,8 @@ from tooling.acceptance.gates.mobile.proof_contracts import (
     CLIENT_SERVICE,
     GATE_ID,
     ProofContractError,
+    artifact_records_from_evidence_manifest,
+    validate_artifact_roles,
     validate_contract_payload,
 )
 
@@ -59,6 +64,43 @@ ACCESS_ASSIGNMENTS = {
     "bob-ios": ("station-secondary", "google"),
     "alice-android": ("station-primary", "google"),
     "bob-android": ("station-secondary", "github"),
+}
+
+PROVIDER_CAPABILITY = "mobile.native.provider-authorization"
+STATION_FIXTURE_CAPABILITY = "mobile.native.station-fixture"
+PRODUCTION_OAUTH_PURGE_ACTION = "cleanup"
+SECURE_STORAGE_ABSENCE_FIELDS = (
+    "activeAttemptIndexAbsent",
+    "attemptSecretRecordAbsent",
+    "currentSessionIndexAbsent",
+    "credentialRecordAbsent",
+    "publicProjectionAbsent",
+)
+
+CAPABILITY_OPERATIONS = {
+    APPIUM_CAPABILITY_ID: (
+        "start",
+        "stop",
+        "wait_ready",
+        "is_alive",
+        "contexts",
+        "switch_context",
+        "harness_inventory",
+        "harness_action",
+        "harness_negative_callback",
+        "refresh_webview",
+        "find_element",
+        "click",
+        "capture_page_source",
+        "capture_screenshot",
+        "verify_build_identity",
+    ),
+    PROVIDER_CAPABILITY: ("authorize",),
+    STATION_FIXTURE_CAPABILITY: (
+        "prepare_following_gate",
+        "expire_awaiting_attempt",
+        "read_proof_snapshot",
+    ),
 }
 
 
@@ -392,80 +434,70 @@ class AccessVariantLedger:
 
 
 
-@dataclass(frozen=True)
-class ProviderStep:
-    using: str
-    selector: str
-    action: str
+class CapabilityClient(Protocol):
+    def invoke(
+        self,
+        capability_id: str,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        timeout_seconds: float,
+    ) -> Mapping[str, object]:
+        ...
 
 
-@dataclass(frozen=True)
-class ProviderFlow:
-    provider: str
-    steps: tuple[ProviderStep, ...]
-
-    @classmethod
-    def from_credential(cls, provider: str, raw_value: str) -> "ProviderFlow":
-        try:
-            payload = json.loads(raw_value)
-        except json.JSONDecodeError as error:
-            raise MobileNativeBlocked(
-                f"{provider} account credential must be JSON",
-                f"credential:{provider}:format",
-            ) from error
-        if not isinstance(payload, dict) or payload.get("provider") != provider:
-            raise MobileNativeBlocked(
-                f"{provider} account credential has the wrong provider identity",
-                f"credential:{provider}:identity",
-            )
-        if "callback" in payload:
-            raise MobileNativeBlocked(
-                f"{provider} account credential must not define a callback locator",
-                f"credential:{provider}:automation",
-            )
-        raw_steps = payload.get("steps")
-        if not isinstance(raw_steps, list) or not raw_steps:
-            raise MobileNativeBlocked(
-                f"{provider} account credential requires native browser steps",
-                f"credential:{provider}:automation",
-            )
-        steps: list[ProviderStep] = []
-        for index, raw_step in enumerate(raw_steps):
-            if not isinstance(raw_step, dict):
-                raise MobileNativeBlocked(
-                    f"{provider} account step {index} must be an object",
-                    f"credential:{provider}:automation",
-                )
-            using = _required_text(raw_step, "using", f"{provider} step {index}")
-            selector = _required_text(
-                raw_step,
-                "selector",
-                f"{provider} step {index}",
-            )
-            action = _required_text(
-                raw_step,
-                "action",
-                f"{provider} step {index}",
-            )
-            if action != "click":
-                raise MobileNativeBlocked(
-                    (
-                        f"{provider} account step {index} must use a "
-                        "pre-authenticated click action"
-                    ),
-                    f"credential:{provider}:automation",
-                )
-            steps.append(
-                ProviderStep(
-                    using=using,
-                    selector=selector,
-                    action=action,
-                )
-            )
-        return cls(
-            provider=provider,
-            steps=tuple(steps),
+def _invoke_capability(
+    client: CapabilityClient,
+    capability_id: str,
+    operation: str,
+    payload: Mapping[str, object],
+    *,
+    timeout_seconds: float = 120.0,
+) -> dict[str, Any]:
+    if operation not in CAPABILITY_OPERATIONS[capability_id]:
+        raise GateError(
+            f"Mobile Gate attempted undeclared operation {operation!r} "
+            f"for capability {capability_id!r}"
         )
+    try:
+        response = client.invoke(
+            capability_id,
+            operation,
+            payload,
+            timeout_seconds=timeout_seconds,
+        )
+    except EphemeralCapabilityBlocked as error:
+        raise MobileNativeBlocked(
+            str(error),
+            error.resource or f"ephemeral-capability:{capability_id}",
+        ) from error
+    if not isinstance(response, Mapping):
+        raise GateError(
+            f"Mobile capability {capability_id!r} returned an invalid response"
+        )
+    projected = dict(response)
+    _assert_no_secret_fields(
+        projected,
+        f"capability.{capability_id}.{operation}",
+    )
+    return projected
+
+
+def _response_artifact_ref(
+    response: Mapping[str, Any],
+    name: str,
+    *,
+    expected_path: str,
+    expected_run_id: str,
+    expected_workspace_id: str,
+) -> ArtifactRef:
+    return _artifact_ref(
+        response,
+        name,
+        expected_path=expected_path,
+        expected_run_id=expected_run_id,
+        expected_workspace_id=expected_workspace_id,
+    )
 
 
 def _required_text(
@@ -1026,15 +1058,13 @@ class MobileNativeGate(AcceptanceGate):
         self,
         scenario: str,
         *,
-        device_broker: Any | None = None,
+        capability_client: CapabilityClient | None = None,
     ) -> None:
         self.scenario = scenario
         self.gate_id = SCENARIO_GATES[scenario]
         super().__init__()
-        self.device_broker = device_broker
-        self.sessions: list[AppiumSession] = []
+        self.capability_client = capability_client
         self.lifecycle: list[dict[str, Any]] = []
-        self.cleanup: list[dict[str, Any]] = []
         self.access_variant_ledger = AccessVariantLedger()
 
     def run(self) -> dict[str, Any]:
@@ -1051,6 +1081,7 @@ class MobileNativeGate(AcceptanceGate):
             completion_status = "PARTIAL"
             proof_status = "UNPROVEN"
             result: dict[str, Any]
+            final_inputs_written = False
             try:
                 if self.scenario != "access":
                     raise MobileNativeBlocked(
@@ -1058,6 +1089,16 @@ class MobileNativeGate(AcceptanceGate):
                         f"mobile-scenario:{self.scenario}",
                     )
                 result = self._run_access(artifacts)
+                self._write_final_judgment_inputs(artifacts, result)
+                final_inputs_written = True
+                self._validate_final_artifact_roles(artifacts)
+                result.update(
+                    {
+                        "status": "PASS",
+                        "completionStatus": "DONE",
+                        "proofStatus": "PROVEN",
+                    }
+                )
                 status = "PASS"
                 completion_status = "DONE"
                 proof_status = "PROVEN"
@@ -1082,7 +1123,13 @@ class MobileNativeGate(AcceptanceGate):
                     result["evidenceGaps"] = error.evidence_gaps
                 completion_status = "BLOCKED"
                 exit_code = 2
-            except (DriverError, GateError, ProvisioningError) as error:
+            except (
+                DriverError,
+                EvidenceError,
+                GateError,
+                ProofContractError,
+                ProvisioningError,
+            ) as error:
                 result = {
                     "artifactKind": "mobile-native-gate-result",
                     "gate": self.gate_id,
@@ -1097,38 +1144,10 @@ class MobileNativeGate(AcceptanceGate):
                     "sourceGate": self.gate_id,
                 }
                 exit_code = 1
-            finally:
-                self._cleanup_sessions(artifacts)
-
-            artifacts.write_json(
-                "mobile/lifecycle.json",
-                {
-                    "artifactKind": "mobile-native-lifecycle",
-                    "events": self.lifecycle,
-                },
-                role="mobile-lifecycle",
-            )
-            if any(item["status"] == "failed" for item in self.cleanup):
-                status = "FAIL"
-                completion_status = "PARTIAL"
-                proof_status = "UNPROVEN"
-                exit_code = 1
-                result.update(
-                    {
-                        "status": "FAIL",
-                        "completionStatus": "PARTIAL",
-                        "proofStatus": "UNPROVEN",
-                        "reason": "one or more Mobile cleanup actions failed",
-                    }
-                )
             if self.scenario == "access":
                 result["variantLedger"] = self.access_variant_ledger.as_dict()
-            result["cleanup"] = list(self.cleanup)
-            artifacts.write_json(
-                "mobile/result.json",
-                result,
-                role="mobile-native-result",
-            )
+            if not final_inputs_written:
+                self._write_final_judgment_inputs(artifacts, result)
             artifacts.complete(
                 status=status,
                 completion_status=completion_status,
@@ -1153,6 +1172,97 @@ class MobileNativeGate(AcceptanceGate):
             )
         return exit_code
 
+    def _write_final_judgment_inputs(
+        self,
+        artifacts: ArtifactSession,
+        result: Mapping[str, Any],
+    ) -> None:
+        artifacts.write_json(
+            "reports/mobile-native-lifecycle.json",
+            {
+                "artifactKind": "mobile-native-lifecycle",
+                "runId": artifacts.run_id,
+                "gateId": self.gate_id,
+                "events": self.lifecycle,
+            },
+            role="mobile-native-lifecycle",
+        )
+        claim_neutral_result = dict(result)
+        claim_neutral_result.pop("status", None)
+        claim_neutral_result.pop("completionStatus", None)
+        claim_neutral_result.pop("proofStatus", None)
+        claim_neutral_result.update(
+            {
+                "artifactKind": "mobile-native-result",
+                "runId": artifacts.run_id,
+                "gateId": self.gate_id,
+            }
+        )
+        artifacts.write_json(
+            "reports/mobile-native-result.json",
+            claim_neutral_result,
+            role="mobile-native-result",
+        )
+
+    def _validate_final_artifact_roles(
+        self,
+        artifacts: ArtifactSession,
+    ) -> None:
+        run_dir = current_run_directory(repo_root=REPO_ROOT)
+        role_dir = run_dir / ".artifact-roles"
+        if role_dir.is_symlink() or not role_dir.is_dir():
+            raise ProofContractError(
+                "Evidence Store role-instance inventory is unavailable"
+            )
+        role_inventory: dict[str, Mapping[str, Any]] = {}
+        for metadata_path in sorted(role_dir.glob("*.json")):
+            if metadata_path.is_symlink():
+                raise ProofContractError(
+                    "Evidence Store role-instance metadata must not be a symlink"
+                )
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise ProofContractError(
+                    "Evidence Store role-instance metadata is malformed"
+                ) from error
+            if not isinstance(metadata, Mapping):
+                raise ProofContractError(
+                    "Evidence Store role-instance metadata must be an object"
+                )
+            role_instance = metadata.get("role")
+            reference = metadata.get("artifact")
+            if (
+                not isinstance(role_instance, str)
+                or not role_instance
+                or not isinstance(reference, Mapping)
+            ):
+                raise ProofContractError(
+                    "Evidence Store role-instance metadata is incomplete"
+                )
+            if role_instance in role_inventory:
+                raise ProofContractError(
+                    f"duplicate Evidence Store Artifact Role {role_instance!r}"
+                )
+            role_inventory[role_instance] = reference
+
+        evidence_manifest = {
+            "workspaceId": artifacts.store.workspace_id,
+            "gateId": self.gate_id,
+            "runId": artifacts.run_id,
+            "artifacts": role_inventory,
+        }
+        records = artifact_records_from_evidence_manifest(
+            evidence_manifest,
+            payload_loader=artifacts.store.read_json,
+        )
+        validate_artifact_roles(
+            records,
+            expected_run_id=artifacts.run_id,
+            expected_gate_id=self.gate_id,
+            expected_workspace_id=artifacts.store.workspace_id,
+        )
+
     def _run_access(self, artifacts: ArtifactSession) -> dict[str, Any]:
         manifest = self._load_manifest()
         resources = _required_object(
@@ -1160,7 +1270,7 @@ class MobileNativeGate(AcceptanceGate):
             "mobileNative",
             "Mobile runtime manifest",
         )
-        run_id = _required_text(manifest, "runId", "Mobile runtime manifest")
+        _required_text(manifest, "runId", "Mobile runtime manifest")
         source_bindings = {
             client_id: _load_client_evidence_binding(
                 artifacts.store,
@@ -1169,73 +1279,35 @@ class MobileNativeGate(AcceptanceGate):
                 platform=CLIENT_PLATFORM[client_id],
                 provider=CLIENT_PROVIDER[client_id],
                 service_id=CLIENT_SERVICE[client_id],
-                expected_run_id=run_id,
+                expected_run_id=artifacts.run_id,
             )
             for client_id in ACCESS_ASSIGNMENTS
         }
-        if self.device_broker is None:
+        if self.capability_client is None:
             raise MobileNativeBlocked(
-                (
-                    "Mobile native RuntimeManifest has no process-local fenced "
-                    "device broker handoff"
-                ),
-                "mobile-runtime:physical-device-broker",
+                "Mobile native Gate requires EphemeralGateLaunchContext",
+                "mobile-runtime:ephemeral-launch-context",
                 evidence_gaps=[
                     {
                         "variantId": variant.id,
                         "platform": variant.platform,
                         "requiredCell": variant.required_cell,
                         "status": "BLOCKED",
-                        "reason": (
-                            "process-local fenced device broker is unavailable"
-                        ),
+                        "reason": "ephemeral Mobile capability binding is unavailable",
                     }
                     for variant in REQUIRED_ACCESS_VARIANTS
                 ],
             )
-        del source_bindings
-        raise MobileNativeBlocked(
-            (
-                "Mobile OAuth projection has no opaque Station Fixture binding "
-                "for oauthAttemptRef and lifecycleGeneration"
-            ),
-            "mobile-runtime:station-fixture-binding",
-            evidence_gaps=[
-                {
-                    "variantId": variant.id,
-                    "platform": variant.platform,
-                    "requiredCell": variant.required_cell,
-                    "status": "BLOCKED",
-                    "reason": (
-                        "authoritative Station Fixture correlation is unavailable"
-                    ),
-                }
-                for variant in REQUIRED_ACCESS_VARIANTS
-            ],
-        )
-        appium = _required_object(resources, "appium", "Mobile runtime manifest")
-        applications = _required_object(
-            resources,
-            "applications",
-            "Mobile runtime manifest",
-        )
-        clients = _required_object(
-            resources,
-            "clients",
-            "Mobile runtime manifest",
-        )
         harness = _required_object(
             resources,
             "harness",
             "Mobile runtime manifest",
         )
-        credential_refs = _required_object(
+        applications = _required_object(
             resources,
-            "credentialRefs",
+            "applications",
             "Mobile runtime manifest",
         )
-        server_url = _required_text(appium, "serverUrl", "Appium resource")
-        drivers = _required_object(appium, "drivers", "Appium resource")
         required_actions = harness.get("requiredActions")
         if not isinstance(required_actions, list) or any(
             not isinstance(action, str) for action in required_actions
@@ -1249,7 +1321,6 @@ class MobileNativeGate(AcceptanceGate):
             artifacts.store,
             manifest.get("actorManifest"),
         )
-        provider_flows = self._load_provider_flows(credential_refs)
         source = _required_object(manifest, "source", "Mobile runtime manifest")
         artifacts.write_json(
             "mobile/source-identity.json",
@@ -1262,85 +1333,39 @@ class MobileNativeGate(AcceptanceGate):
             role="mobile-source-identity",
         )
 
-        readbacks: dict[str, Any] = {}
-        for client_id, (service_id, provider) in ACCESS_ASSIGNMENTS.items():
-            client = _required_object(
-                clients,
-                client_id,
-                f"Mobile client {client_id}",
-            )
-            platform = _required_text(client, "platform", f"Mobile client {client_id}")
-            device_role = _required_text(
-                client,
-                "deviceRole",
-                f"Mobile client {client_id}",
-            )
-            if not device_role.endswith("-physical"):
-                raise MobileNativeBlocked(
-                    (
-                        f"Mobile client {client_id!r} must be a physical device "
-                        "for MS-AG03"
-                    ),
-                    f"mobile-runtime:physical-device:{client_id}",
-                )
+        sessions: dict[str, AppiumSession] = {}
+        for client_id, binding in source_bindings.items():
             application = _required_object(
                 applications,
-                platform,
-                f"Mobile application {platform}",
+                binding.platform,
+                f"Mobile application {binding.platform}",
             )
-            driver = _required_object(
-                drivers,
-                platform,
-                f"Appium driver {platform}",
-            )
-            ports = _required_object(client, "ports", f"Mobile client {client_id}")
             session = AppiumSession(
-                UrllibAppiumTransport(server_url),
+                self.capability_client,  # type: ignore[arg-type]
                 client_id=client_id,
-                platform=platform,
-                automation_name=_required_text(
-                    driver,
-                    "automationName",
-                    f"Appium driver {platform}",
-                ),
-                device=_required_text(client, "device", f"Mobile client {client_id}"),
-                artifact=_required_text(
-                    application,
-                    "artifact",
-                    f"Mobile application {platform}",
-                ),
-                application_id=_required_text(
-                    application,
-                    "id",
-                    f"Mobile application {platform}",
-                ),
+                platform=binding.platform,
+                physical_device_lease=binding.physical_device_lease_ref,
+                build_attestation=binding.build_attestation_ref,
                 callback_scheme=_required_text(
                     application,
                     "callbackScheme",
-                    f"Mobile application {platform}",
+                    f"Mobile application {binding.platform}",
                 ),
-                ports={
-                    name: _required_int(ports, name, f"Mobile client {client_id}")
-                    for name in ports
-                },
             )
-            self.sessions.append(session)
             try:
                 session.start()
                 session.wait_for_ready()
                 session.switch_to_native()
+                session.verify_installed_build_identity(
+                    session.fresh_install_trace
+                )
             except DriverError as error:
                 raise MobileNativeBlocked(
                     f"Mobile client {client_id!r} cannot start an isolated Appium session",
                     f"mobile-runtime:appium-session:{client_id}",
                 ) from error
             self._record_lifecycle(client_id, "session-created")
-            artifacts.write_bytes(
-                f"mobile/{client_id}/native-ax.xml",
-                session.get_page_source().encode("utf-8"),
-                media_type="application/xml",
-                role=f"{client_id}-native-ax",
-            )
+            session.capture_native_accessibility()
             try:
                 webview = session.switch_to_app_webview()
                 inventory = session.require_harness(list(required_actions))
@@ -1351,152 +1376,401 @@ class MobileNativeGate(AcceptanceGate):
                 ) from error
             self._record_lifecycle(client_id, "webview-selected")
             self._record_lifecycle(client_id, "harness-ready")
+            self._record_lifecycle(client_id, "build-identity-verified")
+            sessions[client_id] = session
 
-            service = require_runtime_service(
-                manifest,
-                service_id,
-                "station",
-            )
-            station_url = _required_text(service, "endpoint", service_id)
-            cancel_variant_id = f"cancel-{platform}"
-            should_run_cancel = (
-                client_id.startswith("alice-")
-                and self.access_variant_ledger.status(cancel_variant_id) == "PENDING"
-            )
-            if should_run_cancel:
-                cancel_readback = self._run_cancel_variant(
-                    session,
-                    station_url=station_url,
-                    provider=provider,
-                    client_id=client_id,
+        try:
+            execution_order = {
+                "cancel": 0,
+                "following_gate": 1,
+                "expiry": 2,
+                "provider_mismatch": 3,
+                "station_mismatch": 4,
+                "replay": 5,
+                "success": 6,
+            }
+            for variant in sorted(
+                REQUIRED_ACCESS_VARIANTS,
+                key=lambda item: (
+                    item.client_id,
+                    execution_order[item.operation],
+                    item.id,
+                ),
+            ):
+                evidence = self._run_access_variant(
+                    artifacts,
+                    manifest=manifest,
+                    actor_manifest=actor_manifest,
+                    variant=variant,
+                    session=sessions[variant.client_id],
+                    binding=source_bindings[variant.client_id],
                 )
-                self.access_variant_ledger.mark_passed(cancel_variant_id)
-                artifacts.write_json(
-                    f"mobile/{client_id}/cancel-readback.json",
-                    cancel_readback,
-                    role=f"{client_id}-cancel-readback",
-                )
-            station_result = _begin_oauth(
-                session,
-                station_url=station_url,
-                provider=provider,
-                client_id=client_id,
-            )
-            self._record_lifecycle(client_id, "station.add")
-            self._record_lifecycle(client_id, "access.start")
-            self._record_lifecycle(client_id, "oauth.start")
-            try:
-                self._complete_provider_flow(
-                    session,
-                    provider_flows[provider],
-                )
-            except DriverError as error:
-                raise MobileNativeBlocked(
-                    f"{provider} native authorization did not redirect back to the app",
-                    f"mobile-runtime:provider-authorization:{provider}",
-                ) from error
-            self._record_lifecycle(client_id, "provider.redirect-returned")
-            projection = self._await_access_result(
-                session,
-            )
-            readback = _mobile_projection_summary(
-                session.call_action("projection.read")
-            )
-            self._verify_access_readback(
-                readback,
-                projection,
-                actor_manifest,
-                service_id,
-                str(client.get("actor") or ""),
-                station_result,
-            )
-            readbacks[client_id] = readback
+                self.access_variant_ledger.mark_passed(variant.id, evidence)
+
             artifacts.write_json(
-                f"mobile/{client_id}/station-readback.json",
-                readback,
-                role=f"{client_id}-station-readback",
+                "mobile/oauth-variant-ledger.json",
+                self.access_variant_ledger.as_dict(),
+                role="mobile-oauth-variant-ledger",
             )
-            artifacts.write_bytes(
-                f"mobile/{client_id}/web-dom.html",
-                session.get_page_source().encode("utf-8"),
-                media_type="text/html",
-                role=f"{client_id}-web-dom",
-            )
-            artifacts.write_bytes(
-                f"mobile/{client_id}/screenshot.png",
-                session.screenshot_bytes(),
-                media_type="image/png",
-                role=f"{client_id}-screenshot",
-            )
-            self._record_lifecycle(
-                client_id,
-                "evidence-captured",
-                {"webview": webview, "actionCount": len(inventory)},
-            )
-            self.access_variant_ledger.mark_passed(
-                f"success-{platform}-{provider}"
-            )
-
-        artifacts.write_json(
-            "mobile/oauth-variant-ledger.json",
-            self.access_variant_ledger.as_dict(),
-            role="mobile-oauth-variant-ledger",
-        )
-        self.access_variant_ledger.require_proven()
+            self.access_variant_ledger.require_proven()
+        finally:
+            self._purge_native_oauth(artifacts, sessions)
         return {
             "artifactKind": "mobile-native-gate-result",
             "gate": self.gate_id,
             "scenario": "access",
-            "status": "PASS",
-            "completionStatus": "DONE",
-            "proofStatus": "PROVEN",
             "sourcePhase": "W2-E Native Acceptance",
             "sourceBom": ["W2-E"],
             "sourceSpec": ["MS-D14", "MS-AG03"],
             "sourceGate": "mobile-native-access-e2e",
-            "clients": sorted(readbacks),
-            "providers": sorted(provider_flows),
+            "clients": sorted(sessions),
+            "providers": sorted(set(CLIENT_PROVIDER.values())),
         }
 
-    def _run_cancel_variant(
+    def _purge_native_oauth(
         self,
-        session: AppiumSession,
-        *,
-        station_url: str,
-        provider: str,
+        artifacts: ArtifactSession,
+        sessions: Mapping[str, AppiumSession],
+    ) -> None:
+        for client_id in sorted(sessions):
+            session = sessions[client_id]
+            session.switch_to_app_webview(timeout=5)
+            raw_result = session.call_action(PRODUCTION_OAUTH_PURGE_ACTION)
+            result = self._secure_storage_absence_result(client_id, raw_result)
+            artifacts.write_json(
+                f"evidence/mobile/cleanup/secure-storage/{client_id}.json",
+                {
+                    "artifactKind": "mobile-secure-storage-absence",
+                    "runId": artifacts.run_id,
+                    "gateId": self.gate_id,
+                    "clientId": client_id,
+                    "platform": CLIENT_PLATFORM[client_id],
+                    **result,
+                },
+                role=f"mobile-secure-storage-absence/{client_id}",
+            )
+            self._record_lifecycle(client_id, "oauth.purge-absence-persisted")
+
+    @staticmethod
+    def _secure_storage_absence_result(
         client_id: str,
+        value: Any,
     ) -> dict[str, Any]:
-        _begin_oauth(
+        if not isinstance(value, Mapping):
+            raise GateError(
+                f"Mobile OAuth purge for {client_id!r} returned an invalid result"
+            )
+        result = _required_object(
+            value,
+            "oauthPurge",
+            f"Mobile OAuth purge result for {client_id}",
+        )
+        station_revocation = result.get("stationRevocation")
+        if station_revocation not in {
+            "not_required",
+            "confirmed",
+            "unconfirmed",
+        }:
+            raise GateError(
+                f"Mobile OAuth purge for {client_id!r} has invalid Station revocation"
+            )
+        secure_storage = _required_object(
+            result,
+            "secureStorage",
+            f"Mobile OAuth purge result for {client_id}",
+        )
+        if any(
+            secure_storage.get(field) is not True
+            for field in SECURE_STORAGE_ABSENCE_FIELDS
+        ):
+            raise GateError(
+                f"Mobile OAuth purge for {client_id!r} did not prove "
+                "secure-storage absence"
+            )
+        if (
+            value.get("webSessionProjectionCleared") is not True
+            or value.get("stationRegistryCleared") is not True
+        ):
+            raise GateError(
+                f"Mobile OAuth purge for {client_id!r} did not clear "
+                "public projections"
+            )
+        return {
+            "stationRevocation": station_revocation,
+            "secureStorage": {
+                field: True for field in SECURE_STORAGE_ABSENCE_FIELDS
+            },
+            "webSessionProjectionCleared": True,
+            "stationRegistryCleared": True,
+        }
+
+    def _run_access_variant(
+        self,
+        artifacts: ArtifactSession,
+        *,
+        manifest: Mapping[str, Any],
+        actor_manifest: Mapping[str, Any],
+        variant: AccessVariant,
+        session: AppiumSession,
+        binding: ClientEvidenceBinding,
+    ) -> dict[str, Any]:
+        service = require_runtime_service(manifest, variant.service_id, "station")
+        station_url = _required_text(service, "endpoint", variant.service_id)
+        started = _begin_oauth(
             session,
             station_url=station_url,
-            provider=provider,
-            client_id=client_id,
+            provider=variant.provider,
+            client_id=variant.client_id,
         )
-        cancelled = _oauth_projection_summary(
-            session.call_action("oauth.cancel")
+        self._record_lifecycle(variant.client_id, f"{variant.id}:oauth.start")
+        fixture_target = _fixture_target(
+            started["oauth"],
+            service_id=variant.service_id,
+            client_id=variant.client_id,
         )
-        if cancelled.get("phase") != "cancelled":
-            raise GateError(
-                f"OAuth cancel variant for {client_id!r} did not reach cancelled"
+
+        if variant.operation == "cancel":
+            projection = _oauth_projection_summary(
+                session.call_action("oauth.cancel")
             )
-        if cancelled.get("session") is not None:
-            raise GateError(
-                f"OAuth cancel variant for {client_id!r} activated a session"
+            self._require_terminal_projection(variant, projection)
+        elif variant.operation == "following_gate":
+            self._station_operation(
+                "prepare_following_gate",
+                variant,
+                fixture_target,
             )
+            self._authorize_provider(variant)
+            projection = self._await_access_phase(
+                session,
+                expected_phase=variant.expected_phase,
+            )
+        elif variant.operation == "expiry":
+            self._station_operation(
+                "expire_awaiting_attempt",
+                variant,
+                fixture_target,
+            )
+            projection = self._await_access_phase(
+                session,
+                expected_phase=variant.expected_phase,
+            )
+        elif variant.operation == "success":
+            self._authorize_provider(variant)
+            projection = self._await_access_phase(
+                session,
+                expected_phase=variant.expected_phase,
+            )
+        else:
+            if variant.operation == "replay":
+                self._authorize_provider(variant)
+                self._await_access_phase(
+                    session,
+                    expected_phase="active_session",
+                )
+                intent = _negative_oauth_intent(
+                    variant,
+                    binding,
+                    run_id=binding.build_attestation_ref.run_id,
+                    callback_replay_handle="parent-owned-replay-handle",
+                )
+                negative_result = session.call_negative_callback(
+                    replay_payload={
+                        "runId": binding.build_attestation_ref.run_id,
+                        "gateId": GATE_ID,
+                        "clientId": variant.client_id,
+                        "context": binding.runtime_context(manifest["services"]),
+                    },
+                    negative_payload={
+                        "context": binding.runtime_context(
+                            manifest["services"]
+                        ),
+                        "intent": intent,
+                    },
+                )
+            else:
+                intent = _negative_oauth_intent(
+                    variant,
+                    binding,
+                    run_id=binding.build_attestation_ref.run_id,
+                )
+                negative_result = session.call_negative_callback(
+                    replay_payload=None,
+                    negative_payload={
+                        "context": binding.runtime_context(
+                            manifest["services"]
+                        ),
+                        "intent": intent,
+                    },
+                )
+            projection = _assert_fail_closed_projection(
+                variant,
+                negative_result,
+            )["projection"]
+
         readback = _mobile_projection_summary(
             session.call_action("projection.read")
         )
-        oauth = readback.get("oauth")
+        if variant.operation == "success":
+            self._verify_access_readback(
+                readback,
+                projection,
+                actor_manifest,
+                variant.service_id,
+                variant.client_id.split("-", 1)[0],
+                started["station"],
+            )
+        dom_ref = session.capture_web_dom(variant.id)
+        screenshot_ref = session.capture_screenshot(variant.id)
+        mobile_evidence_ref = artifacts.write_json(
+            (
+                f"evidence/mobile/{variant.id}/"
+                f"{variant.client_id}/projection.json"
+            ),
+            {
+                "artifactKind": "mobile-visible-proof",
+                "runId": artifacts.run_id,
+                "gateId": self.gate_id,
+                "variantId": variant.id,
+                "clientId": variant.client_id,
+                "platform": variant.platform,
+                "projection": projection,
+                "readback": readback,
+                "dom": dom_ref.to_dict(),
+                "screenshot": screenshot_ref.to_dict(),
+            },
+            role=f"mobile-visible-proof/{variant.id}",
+        )
+        station_snapshots = self._read_station_snapshots(
+            artifacts.store,
+            variant,
+            fixture_target,
+            expected_run_id=binding.build_attestation_ref.run_id,
+        )
+        self._record_lifecycle(variant.client_id, f"{variant.id}:evidence")
+
+        return {
+            "buildAttestation": binding.build_attestation_ref.to_dict(),
+            "freshInstallTrace": session.fresh_install_trace.to_dict(),
+            "installedBuildIdentity": (
+                session.installed_build_identity.to_dict()
+            ),
+            "physicalDeviceLease": binding.physical_device_lease_ref.to_dict(),
+            "providerAccountLease": binding.provider_account_lease_ref.to_dict(),
+            "browserSessionLease": binding.browser_session_lease_ref.to_dict(),
+            "mobileEvidence": mobile_evidence_ref.to_dict(),
+            "stationSnapshots": {
+                service_id: reference.to_dict()
+                for service_id, reference in station_snapshots.items()
+            },
+        }
+
+    def _authorize_provider(self, variant: AccessVariant) -> None:
+        if self.capability_client is None:
+            raise GateError("Mobile capability client is unavailable")
+        response = _invoke_capability(
+            self.capability_client,
+            PROVIDER_CAPABILITY,
+            "authorize",
+            {
+                "clientId": variant.client_id,
+                "provider": variant.provider,
+            },
+            timeout_seconds=180.0,
+        )
+        if response.get("authorized") is not True:
+            raise GateError(
+                f"Provider authorization did not complete for {variant.id!r}"
+            )
+        self._record_lifecycle(
+            variant.client_id,
+            f"{variant.id}:provider.authorize",
+        )
+
+    def _station_operation(
+        self,
+        operation: str,
+        variant: AccessVariant,
+        target: Mapping[str, Any],
+    ) -> None:
+        if self.capability_client is None:
+            raise GateError("Mobile capability client is unavailable")
+        response = _invoke_capability(
+            self.capability_client,
+            STATION_FIXTURE_CAPABILITY,
+            operation,
+            {
+                "operationId": f"{variant.id}-{operation}",
+                "variantId": variant.id,
+                "clientId": variant.client_id,
+                "serviceId": variant.service_id,
+                "target": dict(target),
+                "expectedProvider": variant.provider,
+            },
+        )
+        if response.get("completed") is not True:
+            raise GateError(
+                f"Station Fixture operation did not complete for {variant.id!r}"
+            )
+
+    def _read_station_snapshots(
+        self,
+        store: EvidenceStore,
+        variant: AccessVariant,
+        target: Mapping[str, Any],
+        *,
+        expected_run_id: str,
+    ) -> dict[str, ArtifactRef]:
+        if self.capability_client is None:
+            raise GateError("Mobile capability client is unavailable")
+        service_ids = [variant.service_id]
+        if variant.alternate_service_id:
+            service_ids.append(variant.alternate_service_id)
+        snapshots: dict[str, ArtifactRef] = {}
+        for service_id in service_ids:
+            response = _invoke_capability(
+                self.capability_client,
+                STATION_FIXTURE_CAPABILITY,
+                "read_proof_snapshot",
+                {
+                    "operationId": f"{variant.id}-proof-{service_id}",
+                    "variantId": variant.id,
+                    "clientId": variant.client_id,
+                    "serviceId": service_id,
+                    "snapshotPhase": "post_action",
+                    "target": dict(target),
+                    "expectedProvider": variant.provider,
+                },
+            )
+            reference = _response_artifact_ref(
+                response,
+                "artifactRef",
+                expected_path=(
+                    f"evidence/mobile/{variant.id}/station/{service_id}.json"
+                ),
+                expected_run_id=expected_run_id,
+                expected_workspace_id=store.workspace_id,
+            )
+            _load_contract_artifact(
+                store,
+                reference,
+                "station-oauth-proof-snapshot",
+            )
+            snapshots[service_id] = reference
+        return snapshots
+
+    @staticmethod
+    def _require_terminal_projection(
+        variant: AccessVariant,
+        projection: Mapping[str, Any],
+    ) -> None:
         if (
-            not isinstance(oauth, dict)
-            or oauth.get("phase") != "cancelled"
-            or oauth.get("session") is not None
+            projection.get("phase") != variant.expected_phase
+            or projection.get("session") is not None
         ):
             raise GateError(
-                f"OAuth cancel readback for {client_id!r} is not fail-closed"
+                f"OAuth variant {variant.id!r} did not fail closed"
             )
-        self._record_lifecycle(client_id, "oauth.cancel")
-        return readback
 
     def _load_manifest(self) -> dict[str, Any]:
         manifest_path = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "")
@@ -1538,49 +1812,11 @@ class MobileNativeGate(AcceptanceGate):
             ) from error
         return actor_manifest
 
-    def _load_provider_flows(
-        self,
-        credential_refs: Mapping[str, Any],
-    ) -> dict[str, ProviderFlow]:
-        flows: dict[str, ProviderFlow] = {}
-        for provider in ("github", "google"):
-            credential_id = f"{provider}-disposable-account"
-            source_ref = credential_refs.get(credential_id)
-            if not isinstance(source_ref, str):
-                raise MobileNativeBlocked(
-                    f"Mobile runtime manifest is missing {credential_id}",
-                    f"credential:{provider}",
-                )
-            try:
-                raw_value = CredentialRef(
-                    id=credential_id,
-                    source_ref=source_ref,
-                ).resolve()
-            except ProvisioningError as error:
-                raise MobileNativeBlocked(
-                    f"Mobile {provider} credential is unavailable",
-                    f"credential:{provider}",
-                ) from error
-            flows[provider] = ProviderFlow.from_credential(
-                provider,
-                raw_value,
-            )
-        return flows
-
-    def _complete_provider_flow(
+    def _await_access_phase(
         self,
         session: AppiumSession,
-        flow: ProviderFlow,
-    ) -> None:
-        session.switch_to_native()
-        for step in flow.steps:
-            element_id = session.find_element(step.using, step.selector)
-            session.click(element_id)
-        session.switch_to_app_webview(timeout=90)
-
-    def _await_access_result(
-        self,
-        session: AppiumSession,
+        *,
+        expected_phase: str,
         timeout_seconds: float = 90.0,
     ) -> dict[str, Any]:
         deadline = time.monotonic() + timeout_seconds
@@ -1589,14 +1825,16 @@ class MobileNativeGate(AcceptanceGate):
             value = session.call_action("oauth.status")
             projection = _oauth_projection_summary(value)
             phase = projection.get("phase")
-            if phase == "active_session":
+            if phase == expected_phase:
                 return projection
-            if phase in {"cancelled", "expired", "failed"}:
+            if phase in {"active_session", "cancelled", "expired", "failed"}:
                 raise GateError(
-                    f"OAuth access ended in terminal phase {phase!r}"
+                    f"OAuth access reached {phase!r}, expected {expected_phase!r}"
                 )
             time.sleep(0.5)
-        raise GateError("OAuth access did not reach active_session before timeout")
+        raise GateError(
+            f"OAuth access did not reach {expected_phase!r} before timeout"
+        )
 
     def _verify_access_readback(
         self,
@@ -1618,18 +1856,18 @@ class MobileNativeGate(AcceptanceGate):
             not isinstance(decision, dict)
             or decision.get("state") != "ACCESS_DECISION_STATE_GRANTED"
         ):
-            raise GateError("Station readback does not show granted access")
+            raise GateError("Authoritative readback does not show granted access")
         if not isinstance(oauth_session, dict) or not oauth_session.get("actorPtid"):
             raise GateError("OAuth readback does not expose native secure-session metadata")
         if not isinstance(station, dict) or not isinstance(station_result, dict):
-            raise GateError("Station readback is missing Station identity")
+            raise GateError("Authoritative readback is missing Station identity")
         verified_station_peer_id = station_result.get("verifiedStationPeerId")
         if (
             not isinstance(verified_station_peer_id, str)
             or not verified_station_peer_id
             or station.get("activeStationPeerId") != verified_station_peer_id
         ):
-            raise GateError("Station readback does not match the verified Station")
+            raise GateError("Authoritative readback does not match the verified Station")
         expected_ptid = self._actor_ptid(actor_manifest, service_id, actor)
         if oauth_session.get("actorPtid") != expected_ptid:
             raise GateError("OAuth readback actor PTID does not match Fixture")
@@ -1672,63 +1910,18 @@ class MobileNativeGate(AcceptanceGate):
             }
         )
 
-    def _cleanup_sessions(self, artifacts: ArtifactSession) -> None:
-        for session in reversed(self.sessions):
-            client_id = session.client_id
-            try:
-                if session.session_id:
-                    try:
-                        session.switch_to_app_webview(timeout=5)
-                        session.call_action("cleanup", {})
-                        self.cleanup.append(
-                            {
-                                "clientId": client_id,
-                                "resource": "product-harness",
-                                "status": "passed",
-                            }
-                        )
-                    except Exception as error:
-                        self.cleanup.append(
-                            {
-                                "clientId": client_id,
-                                "resource": "product-harness",
-                                "status": "failed",
-                                "errorType": type(error).__name__,
-                            }
-                        )
-                session.stop()
-                self.cleanup.append(
-                    {
-                        "clientId": client_id,
-                        "resource": "appium-session",
-                        "status": "passed",
-                    }
-                )
-            except Exception as error:
-                self.cleanup.append(
-                    {
-                        "clientId": client_id,
-                        "resource": "appium-session",
-                        "status": "failed",
-                        "errorType": type(error).__name__,
-                    }
-                )
-        self.sessions.clear()
-        artifacts.write_json(
-            "mobile/cleanup.json",
-            {
-                "artifactKind": "mobile-native-cleanup",
-                "resources": self.cleanup,
-            },
-            role="mobile-cleanup",
-        )
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=sorted(SCENARIO_GATES), required=True)
     args = parser.parse_args()
-    return MobileNativeGate(args.scenario).execute()
+    client = EphemeralGateClient.from_environment()
+    if client is None:
+        return MobileNativeGate(args.scenario).execute()
+    with client:
+        return MobileNativeGate(
+            args.scenario,
+            capability_client=client,
+        ).execute()
 
 
 if __name__ == "__main__":

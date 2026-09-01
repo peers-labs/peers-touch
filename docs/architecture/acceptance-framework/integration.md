@@ -106,6 +106,53 @@ test-only path不能成为production fallback。
 
 ---
 
+### 1.7 Ephemeral Gate Launch Context 初始到目标映射（D-18落地前基线）
+
+> 本节由accepted D-18约束。
+
+| 初始输入或行为 | 初始问题 | 目标 Owner | 目标 contract |
+|---|---|---|---|
+| `EnvironmentProvisioner.provision()`只返回Runtime Manifest | process-local broker无法跨越Gate subprocess边界 | Acceptance Infra | optional `EphemeralGateLaunchContext` |
+| `acceptance-run.py`使用`shell=True`执行command string | descriptor继承目标不精确，shell可能扩散authority | Acceptance Infra | context Gate使用validated argv + `shell=False` |
+| Gate Catalog只有`command` string | 无法声明需要哪些ephemeral capability | Acceptance Infra schema + business entry | mutually-exclusive `argv`与`ephemeralCapabilities` |
+| Gate通过constructor注入`device_broker` | CLI子进程无法获得parent Python object | business Provisioner + Core channel | registered capability handler + child client |
+| Mobile broker持有raw device handle与correlation secret | 两者禁止序列化和持久化 | Mobile business injection | parent-only handler state |
+| Runtime Manifest path通过environment传递 | 只适合非敏感durable artifact | Runtime Provisioning | 保持不变，不承载ephemeral authority |
+
+目标调用链：
+
+```text
+Provisioner prepares durable resources
+  -> writes immutable Runtime Manifest
+  -> registers business capability handlers in in-memory launch context
+  -> Core seals context to workspace/gate/evidence-run/provisioning-run
+  -> Core starts anonymous broker channel
+  -> runner uses Popen to launch exact Gate argv with one inherited child descriptor
+  -> parent immediately closes its child endpoint copy
+  -> Gate performs bound handshake and typed capability calls
+  -> runner quiesces context
+  -> runtime-cell cleanup -> Environment Provisioner cleanup
+  -> runner closes context and verifies zeroization
+```
+
+业务迁移边界：
+
+- Acceptance Infra只提供channel、identity、framing、timeout、dedupe、cancel和cleanup。
+- Acceptance Infra扩展Gate Catalog validator以支持`argv`和
+  `ephemeralCapabilities`；具体capability ID仍由业务Gate entry注入。
+- Mobile Provisioner负责把现有device/provider/Station Fixture broker能力注册为
+  typed handler；其operation和payload schema仍属于Mobile。
+- device-bound Appium操作在parent handler内执行，只向Gate返回opaque session
+  reference、脱敏结果或ArtifactRef；不得通过channel返回raw device identifier。
+- quiesce失败时，仍可能被handler使用的device/account/browser resource必须
+  quarantine，不得由cleanup错误地释放回共享pool。
+- Mobile Gate只把`device_broker` constructor注入替换为Core child client adapter；
+  产品variant、assertion和evidence语义不变。
+- 无launch context的现有Gate保持当前执行路径；不得为它们创建空context或隐式
+  capability。
+
+---
+
 ## 2. 影响面分析
 
 ### 2.1 受影响的现有代码
@@ -236,3 +283,12 @@ D-11 compatibility boundary：
 - explicit test fixture paths保留，但必须位于temporary directory或
   `tooling/acceptance/tests/fixtures/`；
 - downstream consumer无法解析ArtifactRef时fail closed，不尝试旧路径。
+
+D-18 compatibility boundary：
+
+- 未声明ephemeral capability的Gate继续使用现有command路径；
+- 声明capability的Gate必须原子迁移到child client，不保留旧constructor注入；
+- Runtime Manifest schema和现有ArtifactRef不变；
+- POSIX inherited descriptor是首个backend，不代表Windows支持；缺少安全backend时
+  对应host保持`BLOCKED/UNPROVEN`；
+- Gate ID、产品assertion、evidence role和现有cleanup resource identity保持稳定。

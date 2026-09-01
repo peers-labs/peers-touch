@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import io
 import json
+import time
 import unittest
+import urllib.error
 from collections.abc import Mapping
 from contextlib import redirect_stderr
 from pathlib import Path
@@ -13,6 +15,9 @@ from unittest.mock import patch
 from tooling.acceptance.core import DriverError, GateError
 from tooling.acceptance.gates.mobile.simulator_e2e import (
     GATE_ID,
+    MAX_APPIUM_ERROR_RESPONSE_BYTES,
+    MAX_APPIUM_RESPONSE_BYTES,
+    MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES,
     PHYSICAL_PROVIDER_SCOPE,
     PROVEN_SCOPE,
     SimulatorAppiumSession,
@@ -21,7 +26,9 @@ from tooling.acceptance.gates.mobile.simulator_e2e import (
     SimulatorClientSpec,
     SimulatorDeviceTarget,
     SimulatorGateBlocked,
+    UrllibAppiumTransport,
     _redacted_markup,
+    _validate_cleanup_result,
     _validate_fail_closed_projection,
     _validate_runtime_identity,
 )
@@ -147,6 +154,23 @@ def simulator_resources() -> dict[str, Any]:
     }
 
 
+def valid_cleanup_result() -> dict[str, Any]:
+    return {
+        "oauthPurge": {
+            "stationRevocation": "confirmed",
+            "secureStorage": {
+                "activeAttemptIndexAbsent": True,
+                "attemptSecretRecordAbsent": True,
+                "currentSessionIndexAbsent": True,
+                "credentialRecordAbsent": True,
+                "publicProjectionAbsent": True,
+            },
+        },
+        "webSessionProjectionCleared": True,
+        "stationRegistryCleared": True,
+    }
+
+
 def runtime_manifest() -> dict[str, Any]:
     return {
         "artifactKind": "acceptance-runtime-manifest",
@@ -180,6 +204,161 @@ class FakeAppiumTransport:
         if method == "POST" and path == "/session":
             return {"sessionId": self.session_id, "capabilities": {}}
         return None
+
+
+class UrllibAppiumTransportTests(unittest.TestCase):
+    class Response:
+        def __init__(
+            self,
+            body: bytes,
+            *,
+            bytes_per_read: int | None = None,
+            delay_seconds: float = 0,
+        ) -> None:
+            self.body = body
+            self.bytes_per_read = bytes_per_read
+            self.delay_seconds = delay_seconds
+            self.offset = 0
+            self.read_sizes: list[int] = []
+            self.timeouts: list[float] = []
+            self.closed = False
+
+        def __enter__(self) -> "UrllibAppiumTransportTests.Response":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def close(self) -> None:
+            self.closed = True
+
+        def settimeout(self, timeout_seconds: float) -> None:
+            self.timeouts.append(timeout_seconds)
+
+        def read1(self, size: int = -1) -> bytes:
+            self.read_sizes.append(size)
+            if self.delay_seconds:
+                time.sleep(self.delay_seconds)
+            if self.offset >= len(self.body):
+                return b""
+            actual_size = (
+                len(self.body) - self.offset
+                if size < 0
+                else size
+            )
+            if self.bytes_per_read is not None:
+                actual_size = min(actual_size, self.bytes_per_read)
+            chunk = self.body[self.offset : self.offset + actual_size]
+            self.offset += len(chunk)
+            return chunk
+
+    def test_ordinary_response_uses_mandatory_default_bound(self) -> None:
+        response = self.Response(b"x" * (MAX_APPIUM_RESPONSE_BYTES + 1))
+        transport = UrllibAppiumTransport("http://appium.invalid")
+
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_e2e."
+            "urllib.request.urlopen",
+            return_value=response,
+        ), self.assertRaisesRegex(DriverError, "exceeds its byte limit"):
+            transport.request("GET", "/session/test/contexts")
+
+        self.assertNotIn(-1, response.read_sizes)
+
+    def test_http_error_body_is_bounded(self) -> None:
+        response = self.Response(
+            b"x" * (MAX_APPIUM_ERROR_RESPONSE_BYTES + 1)
+        )
+        error = urllib.error.HTTPError(
+            "http://appium.invalid/session/test",
+            500,
+            "server error",
+            {},
+            response,
+        )
+        transport = UrllibAppiumTransport("http://appium.invalid")
+
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_e2e."
+            "urllib.request.urlopen",
+            side_effect=error,
+        ), self.assertRaisesRegex(DriverError, "HTTP 500"):
+            transport.request("GET", "/session/test")
+
+        self.assertNotIn(-1, response.read_sizes)
+        self.assertTrue(response.closed)
+
+    def test_trickle_response_obeys_total_deadline(self) -> None:
+        response = self.Response(
+            b'{"value":"ok"}',
+            bytes_per_read=1,
+            delay_seconds=0.02,
+        )
+        transport = UrllibAppiumTransport(
+            "http://appium.invalid",
+            timeout_seconds=0.03,
+        )
+        started = time.monotonic()
+
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_e2e."
+            "urllib.request.urlopen",
+            return_value=response,
+        ), self.assertRaisesRegex(
+            DriverError,
+            "HttpResponseDeadlineExceeded",
+        ):
+            transport.request("GET", "/session/test/contexts")
+
+        self.assertLess(time.monotonic() - started, 0.15)
+
+    def test_page_source_uses_its_explicit_response_bound(self) -> None:
+        limits: list[int] = []
+
+        class Transport:
+            @staticmethod
+            def request(
+                _method: str,
+                _path: str,
+                _payload: Mapping[str, Any] | None = None,
+                *,
+                max_response_bytes: int,
+            ) -> str:
+                limits.append(max_response_bytes)
+                return "<AppiumAUT />"
+
+        session = SimulatorAppiumSession(
+            transport=Transport(),
+            client_id="sim-ios",
+            platform="ios",
+            automation_name="XCUITest",
+            device=SimulatorDeviceTarget(
+                platform="ios",
+                identifier="simulator-id",
+                role="ios-simulator",
+            ),
+            build=SimulatorBuildTarget(
+                platform="ios",
+                artifact=Path("/tmp/mobile.app"),
+                application_id="com.peers.touch.mobile",
+            ),
+            callback_scheme="peers-touch",
+            ports={"wda-local": 8101, "mjpeg": 9101, "webview": 9511},
+        )
+        session.session_id = "test"
+
+        self.assertEqual(session.get_page_source(), "<AppiumAUT />")
+        self.assertEqual(limits, [MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES])
+
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_e2e."
+            "MAX_MOBILE_PAGE_SOURCE_BYTES",
+            8,
+        ), self.assertRaisesRegex(
+            DriverError,
+            "page source exceeds",
+        ):
+            session.get_page_source()
 
 
 class FakeEvidenceWriter:
@@ -229,6 +408,7 @@ class FakeSimulatorSession:
         available_actions: list[str] | None = None,
         fail_first_projection: bool = False,
         fail_cleanup: bool = False,
+        cleanup_result: Mapping[str, Any] | None = None,
     ) -> None:
         self.client_id = client_id
         self.session_id = ""
@@ -241,6 +421,7 @@ class FakeSimulatorSession:
         ]
         self.fail_first_projection = fail_first_projection
         self.fail_cleanup = fail_cleanup
+        self.cleanup_result = dict(cleanup_result or valid_cleanup_result())
         self.projection_reads = 0
         self.events: list[str] = []
         self.current_context = "NATIVE_APP"
@@ -310,10 +491,7 @@ class FakeSimulatorSession:
         if action == "lifecycle.restart":
             return {"requested": True, "scope": "webview"}
         if action == "cleanup":
-            return {
-                "sessionCleared": True,
-                "stationRegistryCleared": True,
-            }
+            return copy.deepcopy(self.cleanup_result)
         raise AssertionError(f"unexpected action {action}")
 
     def refresh_webview(self) -> None:
@@ -405,6 +583,32 @@ def client_spec(platform: str) -> SimulatorClientSpec:
 
 
 class SimulatorSeamContractTests(unittest.TestCase):
+    def test_cleanup_requires_production_purge_and_absence_contract(self) -> None:
+        self.assertEqual(
+            _validate_cleanup_result(valid_cleanup_result()),
+            valid_cleanup_result(),
+        )
+
+        obsolete = {"stationRegistryCleared": True}
+        with self.assertRaisesRegex(GateError, "omitted OAuth purge proof"):
+            _validate_cleanup_result(obsolete)
+
+        for field in (
+            "activeAttemptIndexAbsent",
+            "attemptSecretRecordAbsent",
+            "currentSessionIndexAbsent",
+            "credentialRecordAbsent",
+            "publicProjectionAbsent",
+        ):
+            with self.subTest(field=field):
+                incomplete = valid_cleanup_result()
+                incomplete["oauthPurge"]["secureStorage"][field] = False
+                with self.assertRaisesRegex(
+                    GateError,
+                    "secure-storage absence",
+                ):
+                    _validate_cleanup_result(incomplete)
+
     def test_catalog_gate_identity_manifest_key_and_proof_scope(self) -> None:
         catalog_path = Path(__file__).resolve().parents[2] / "gates.yaml"
         catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
@@ -478,6 +682,32 @@ class SimulatorSeamContractTests(unittest.TestCase):
 
 
 class SimulatorAppiumCapabilityTests(unittest.TestCase):
+    def test_polling_rejects_non_finite_timeouts(self) -> None:
+        transport = FakeAppiumTransport("ios-session")
+        gate = SimulatorCallbackRoutingGate(
+            transport_factory=lambda _url: transport
+        )
+        session = gate._create_session(
+            "http://127.0.0.1:4723",
+            client_spec("ios"),
+        )
+
+        for method_name in ("wait_for_ready", "switch_to_app_webview"):
+            method = getattr(session, method_name)
+            for timeout in (
+                float("nan"),
+                float("inf"),
+                float("-inf"),
+            ):
+                with self.subTest(method=method_name, timeout=timeout):
+                    with self.assertRaisesRegex(
+                        DriverError,
+                        "positive finite number",
+                    ):
+                        method(timeout)
+
+        self.assertEqual(transport.requests, [])
+
     def test_ios_and_android_use_isolated_w3c_capabilities(self) -> None:
         for platform in ("ios", "android"):
             with self.subTest(platform=platform):

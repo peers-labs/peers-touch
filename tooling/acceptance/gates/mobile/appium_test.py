@@ -1,37 +1,24 @@
 from __future__ import annotations
 
-import hashlib
-import json
-import tempfile
+import inspect
+import time
 import unittest
-from collections.abc import Callable, Mapping
-from pathlib import Path
-from typing import Any, TypeVar
+from collections.abc import Mapping
 
 from tooling.acceptance.core import ArtifactRef, DriverError
-from tooling.acceptance.fixtures.mobile_resource_lease import (
-    ResolvedPhysicalDeviceHandle,
+from tooling.acceptance.gates.mobile.appium import (
+    APPIUM_CAPABILITY_ID,
+    AppiumSession,
 )
-from tooling.acceptance.gates.mobile.appium import AppiumSession
 
 
 RUN_ID = "20260830T120000000000Z-" + ("1" * 32)
 WORKSPACE_ID = "a" * 16
 GATE_ID = "mobile-native-access-e2e"
-APPLICATION_ID = "com.peers.touch.mobile"
-SHA256 = "sha256:" + ("b" * 64)
-_T = TypeVar("_T")
-
-
-def _json_bytes(value: Mapping[str, Any]) -> bytes:
-    return (
-        json.dumps(value, indent=2, sort_keys=True, default=str) + "\n"
-    ).encode("utf-8")
 
 
 def _reference(
     path: str,
-    content: bytes,
     *,
     media_type: str = "application/json",
 ) -> ArtifactRef:
@@ -40,397 +27,362 @@ def _reference(
         gate_id=GATE_ID,
         run_id=RUN_ID,
         path=path,
-        sha256=hashlib.sha256(content).hexdigest(),
+        sha256="b" * 64,
         media_type=media_type,
     )
 
 
-def _device_lease(client_id: str, platform: str) -> dict[str, Any]:
-    return {
-        "artifactKind": "physical-device-lease",
-        "leaseId": f"device-{client_id}",
-        "resourceKey": f"physical-device/{client_id}",
-        "holderRunId": RUN_ID,
-        "fenceToken": 9,
-        "runId": RUN_ID,
-        "gateId": GATE_ID,
-        "clientId": client_id,
-        "platform": platform,
-        "physicalDeviceRef": f"device-ref/{client_id}",
-        "destinationClassRef": f"{platform}-physical",
-        "brokerRef": "mobile-physical-device-broker",
-        "checks": {
-            "connected": True,
-            "physical": True,
-            "simulator": False,
-            "platformMatched": True,
-        },
-        "heartbeatAt": "2099-08-30T12:00:00Z",
-        "renewBefore": "2099-08-30T12:05:00Z",
-        "acquiredAt": "2099-08-30T12:00:00Z",
-        "expiresAt": "2099-08-30T12:10:00Z",
-        "state": "BASELINE_VERIFIED",
-        "quarantineReason": "",
-        "releaseEvidence": None,
-    }
+class RecordingEphemeralClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict[str, object], float]] = []
+        self.responses: dict[str, Mapping[str, object]] = {
+            "start": {
+                "sessionRef": "opaque-session/alice-ios",
+                "freshInstallTrace": _reference(
+                    "evidence/mobile/runtime/alice-ios/install.json"
+                ).to_dict(),
+            },
+            "stop": {},
+            "wait_ready": {"ready": True},
+            "is_alive": {"alive": True},
+            "contexts": {
+                "contexts": [
+                    "NATIVE_APP",
+                    "WEBVIEW_com.peers.touch.mobile",
+                ]
+            },
+            "switch_context": {},
+            "harness_inventory": {"actions": ["build.identity"]},
+            "harness_action": {"value": {"ok": True}},
+            "harness_negative_callback": {
+                "value": {"operation": "replay"}
+            },
+            "refresh_webview": {},
+            "find_element": {"elementRef": "opaque-element/button"},
+            "click": {},
+            "verify_build_identity": {
+                "installedBuildIdentity": _reference(
+                    "evidence/mobile/runtime/alice-ios/build-identity.json"
+                ).to_dict(),
+            },
+        }
 
-
-def _build_attestation(
-    platform: str,
-    package_reference: ArtifactRef,
-) -> dict[str, Any]:
-    package_kind = "ipa" if platform == "ios" else "apk"
-    signing: dict[str, Any] = {
-        "policyId": "mobile-acceptance-debug",
-        "certificateSha256": SHA256,
-        "applicationIdentifier": APPLICATION_ID,
-        "debuggable": True,
-    }
-    if platform == "ios":
-        signing.update(
-            {
-                "teamIdentifier": "PEERSTEAM",
-                "applicationIdentifierEntitlement": (
-                    f"PEERSTEAM.{APPLICATION_ID}"
-                ),
-                "cdHash": {
-                    "source": "codesign",
-                    "algorithm": "sha256",
-                    "valueHex": "a" * 40,
-                    "candidateFullValueHex": "a" * 64,
-                },
-            }
-        )
-    else:
-        signing.update(
-            {
-                "signerCertificateSha256": SHA256,
-                "enabledSigningSchemes": ["v2", "v3"],
-            }
-        )
-    resolver_arguments = {
-        "pnpm": ["--offline", "--frozen-lockfile"],
-        "cargo": ["--frozen"],
-        "xcode" if platform == "ios" else "gradle": (
-            ["-disableAutomaticPackageResolution"]
-            if platform == "ios"
-            else ["--offline"]
-        ),
-    }
-    return {
-        "artifactKind": "mobile-application-build-attestation",
-        "runId": RUN_ID,
-        "gateId": GATE_ID,
-        "producer": "mobile-native-build",
-        "producerSourceDigest": SHA256,
-        "toolchainDigest": SHA256,
-        "buildIsolation": {
-            "environmentPolicy": "empty-base-explicit-allowlist",
-            "dependencyPolicy": "locked-preseeded-offline",
-            "resolverArguments": resolver_arguments,
-            "inapplicableResolvers": [
-                "gradle" if platform == "ios" else "xcode"
-            ],
-            "cacheMissPolicy": "BLOCK",
-            "ambientEnvironmentInherited": False,
-        },
-        "buildIdentity": {
-            "schema": "peers-mobile-build-identity",
-            "buildId": f"build-{platform}",
-            "platform": platform,
-            "configuration": "acceptance-debug",
-            "sourceCommit": "1" * 40,
-            "workspaceState": "dirty",
-            "workspaceDigest": SHA256,
-            "buildInputsDigest": SHA256,
-            "allowlistedEnvironmentDigest": SHA256,
-            "applicationId": APPLICATION_ID,
-            "harnessEnabled": True,
-        },
-        "embeddedIdentitySha256": SHA256,
-        "artifact": {
-            "kind": package_kind,
-            "sha256": f"sha256:{package_reference.sha256}",
-            "sizeBytes": 15,
-            "artifactRef": package_reference.to_dict(),
-        },
-        "signing": signing,
-        "createdAt": "2026-08-30T12:00:00Z",
-    }
-
-
-class FakeArtifactReader:
-    def __init__(self, root: Path) -> None:
-        self.root = root
-        self.values: dict[str, bytes] = {}
-
-    def add_json(self, path: str, value: Mapping[str, Any]) -> ArtifactRef:
-        content = _json_bytes(value)
-        reference = _reference(path, content)
-        self.values[path] = content
-        return reference
-
-    def add_package(self, platform: str) -> ArtifactRef:
-        suffix = "ipa" if platform == "ios" else "apk"
-        path = f"runtime/mobile/builds/{platform}.{suffix}"
-        content = b"attested-mobile"
-        self.values[path] = content
-        return _reference(path, content, media_type="application/octet-stream")
-
-    def read_json(self, reference: ArtifactRef) -> dict[str, Any]:
-        content = self.values[reference.path]
-        if hashlib.sha256(content).hexdigest() != reference.sha256:
-            raise ValueError("artifact hash mismatch")
-        value = json.loads(content)
-        if not isinstance(value, dict):
-            raise ValueError("artifact is not an object")
-        return value
-
-    def resolve(self, reference: ArtifactRef) -> Path:
-        content = self.values[reference.path]
-        if hashlib.sha256(content).hexdigest() != reference.sha256:
-            raise ValueError("artifact hash mismatch")
-        path = self.root / Path(reference.path).name
-        path.write_bytes(content)
-        return path
-
-
-class RecordingBroker:
-    def __init__(self, platform: str, *, failure: Exception | None = None) -> None:
-        self.platform = platform
-        self.failure = failure
-        self.calls: list[dict[str, Any]] = []
-
-    def with_physical_device(
+    def invoke(
         self,
-        lease: Mapping[str, Any],
-        operation: Callable[[ResolvedPhysicalDeviceHandle], _T],
-    ) -> _T:
-        self.calls.append(dict(lease))
-        if self.failure is not None:
-            raise self.failure
-        return operation(
-            ResolvedPhysicalDeviceHandle(
-                _identifier=f"secret-{self.platform}-device",
-                platform=self.platform,
-                connected=True,
-                physical=True,
-                simulator=False,
+        capability_id: str,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        timeout_seconds: float,
+    ) -> Mapping[str, object]:
+        self.calls.append(
+            (
+                capability_id,
+                operation,
+                dict(payload),
+                timeout_seconds,
             )
         )
+        if operation == "capture_page_source":
+            if payload.get("captureKind") == "native-ax":
+                reference = _reference(
+                    "mobile/alice-ios/native-ax.xml",
+                    media_type="application/xml",
+                )
+            else:
+                reference = _reference(
+                    (
+                        f"evidence/mobile/{payload['captureId']}/"
+                        "alice-ios/web-dom.html"
+                    ),
+                    media_type="text/html",
+                )
+            return {"pageSource": reference.to_dict()}
+        if operation == "capture_screenshot":
+            reference = _reference(
+                (
+                    f"evidence/mobile/{payload['captureId']}/"
+                    "alice-ios/screenshot.png"
+                ),
+                media_type="image/png",
+            )
+            return {"screenshot": reference.to_dict()}
+        return self.responses[operation]
 
 
-class RecordingTransport:
-    def __init__(self, identity: Mapping[str, Any]) -> None:
-        self.identity = dict(identity)
-        self.installed = True
-        self.requests: list[tuple[str, str, dict[str, Any] | None]] = []
-
-    def request(
-        self,
-        method: str,
-        path: str,
-        payload: Mapping[str, Any] | None = None,
-    ) -> Any:
-        body = dict(payload) if payload is not None else None
-        self.requests.append((method, path, body))
-        if method == "POST" and path == "/session":
-            return {"sessionId": "session", "capabilities": {}}
-        if path.endswith("/appium/device/remove_app"):
-            self.installed = False
-            return None
-        if path.endswith("/appium/device/app_installed"):
-            return self.installed
-        if path.endswith("/appium/device/install_app"):
-            self.installed = True
-            return None
-        if (
-            path.endswith("/execute/sync")
-            and body
-            and body["script"] == "mobile: activeAppInfo"
-        ):
-            return {"bundleId": APPLICATION_ID}
-        if (
-            path.endswith("/execute/sync")
-            and body
-            and body["script"] == "mobile: getCurrentActivity"
-        ):
-            return {"appPackage": APPLICATION_ID, "appActivity": ".MainActivity"}
-        if path.endswith("/execute/async"):
-            return {
-                "value": {
-                    "identity": dict(self.identity),
-                    "embeddedIdentitySha256": SHA256,
-                }
-            }
-        if path.endswith("/contexts"):
-            return ["NATIVE_APP", "WEBVIEW_com.peers.touch.mobile"]
-        if path.endswith("/execute/sync"):
-            return ["build.identity"]
-        return None
-
-
-class AppiumConsumerCutoverTests(unittest.TestCase):
+class AppiumChildFacadeTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temporary.cleanup)
-
-    def _session(
-        self,
-        platform: str = "ios",
-        *,
-        broker_failure: Exception | None = None,
-    ) -> tuple[
-        AppiumSession,
-        RecordingTransport,
-        RecordingBroker,
-        FakeArtifactReader,
-    ]:
-        reader = FakeArtifactReader(Path(self.temporary.name))
-        package_ref = reader.add_package(platform)
-        attestation = _build_attestation(platform, package_ref)
-        build_ref = reader.add_json(
-            f"runtime/mobile/builds/{platform}.json",
-            attestation,
+        self.client = RecordingEphemeralClient()
+        self.device_ref = _reference(
+            "runtime/mobile/leases/devices/alice-ios.json"
         )
-        client_id = f"alice-{platform}"
-        device_ref = reader.add_json(
-            f"runtime/mobile/leases/devices/{client_id}.json",
-            _device_lease(client_id, platform),
-        )
-        transport = RecordingTransport(attestation["buildIdentity"])
-        broker = RecordingBroker(platform, failure=broker_failure)
-        session = AppiumSession(
-            transport,
-            client_id=client_id,
-            platform=platform,
-            automation_name=(
-                "XCUITest" if platform == "ios" else "UiAutomator2"
-            ),
-            artifact_reader=reader,
-            device_broker=broker,
-            physical_device_lease=device_ref,
-            build_attestation=build_ref,
+        self.build_ref = _reference("runtime/mobile/builds/ios.json")
+        self.session = AppiumSession(
+            self.client,  # type: ignore[arg-type]
+            client_id="alice-ios",
+            platform="ios",
+            physical_device_lease=self.device_ref,
+            build_attestation=self.build_ref,
             callback_scheme="peers-touch",
-            ports={
-                "wda-local": 8101,
-                "system": 8201,
-                "mjpeg": 9101,
-                "webview": 9512,
-            },
-            chromedriver_executable=(
-                "/runtime-cache/chromedriver"
-                if platform == "android"
-                else ""
-            ),
         )
-        return session, transport, broker, reader
 
-    def test_start_uses_fenced_handle_and_exact_fresh_install_order(self) -> None:
-        session, transport, broker, _ = self._session()
+    def test_constructor_has_no_raw_authority_compatibility_inputs(self) -> None:
+        parameters = inspect.signature(AppiumSession).parameters
 
-        session.start()
+        self.assertEqual(
+            set(parameters),
+            {
+                "client",
+                "client_id",
+                "platform",
+                "physical_device_lease",
+                "build_attestation",
+                "callback_scheme",
+            },
+        )
+        for forbidden in (
+            "transport",
+            "device_broker",
+            "artifact_reader",
+            "ports",
+            "chromedriver_executable",
+        ):
+            self.assertNotIn(forbidden, parameters)
+        for forbidden_method in (
+            "execute_script",
+            "execute_async_script",
+            "element_attribute",
+            "get_page_source",
+            "get_current_url",
+            "screenshot_bytes",
+        ):
+            self.assertFalse(hasattr(self.session, forbidden_method))
 
-        capabilities = transport.requests[0][2]["capabilities"]["alwaysMatch"]
-        self.assertEqual(capabilities["appium:udid"], "secret-ios-device")
-        self.assertNotIn("appium:app", capabilities)
-        legacy_reset_capabilities = {
-            "appium:" + "no" + "Reset",
-            "appium:" + "full" + "Reset",
-        }
-        self.assertFalse(legacy_reset_capabilities & set(capabilities))
-        operations = [
-            path.rsplit("/", 1)[-1]
-            for _, path, _ in transport.requests
-            if "/appium/device/" in path
+    def test_start_binds_typed_sources_without_raw_authority(self) -> None:
+        self.session.start()
+
+        capability, operation, payload, timeout = self.client.calls[0]
+        self.assertEqual(capability, APPIUM_CAPABILITY_ID)
+        self.assertEqual(operation, "start")
+        self.assertEqual(payload["clientId"], "alice-ios")
+        self.assertEqual(payload["platform"], "ios")
+        self.assertEqual(
+            payload["physicalDeviceLease"],
+            self.device_ref.to_dict(),
+        )
+        self.assertEqual(payload["buildAttestation"], self.build_ref.to_dict())
+        self.assertNotIn("sessionId", payload)
+        self.assertNotIn("udid", payload)
+        self.assertNotIn("serial", payload)
+        self.assertNotIn("device", payload)
+        self.assertGreaterEqual(timeout, 180.0)
+        self.assertIsInstance(self.session.fresh_install_trace, ArtifactRef)
+
+    def test_all_session_operations_use_bound_capability_and_opaque_ref(self) -> None:
+        self.session.start()
+        install_ref = self.session.fresh_install_trace
+
+        self.session.wait_for_ready(12.0)
+        self.assertTrue(self.session.is_alive())
+        self.assertEqual(
+            self.session.contexts(),
+            ["NATIVE_APP", "WEBVIEW_com.peers.touch.mobile"],
+        )
+        self.session.switch_context("NATIVE_APP")
+        self.assertEqual(
+            self.session.harness_inventory(),
+            ["build.identity"],
+        )
+        self.assertEqual(
+            self.session.call_action("projection.read"),
+            {"ok": True},
+        )
+        self.assertEqual(
+            self.session.call_negative_callback(
+                replay_payload={"runId": RUN_ID},
+                negative_payload={"intent": {"operation": "replay"}},
+            ),
+            {"operation": "replay"},
+        )
+        self.session.refresh_webview()
+        element_ref = self.session.find_element("accessibility id", "continue")
+        self.assertEqual(element_ref, "opaque-element/button")
+        self.session.click(element_ref)
+        self.assertEqual(
+            self.session.capture_native_accessibility().media_type,
+            "application/xml",
+        )
+        self.assertEqual(
+            self.session.capture_web_dom("success-ios").media_type,
+            "text/html",
+        )
+        self.assertEqual(
+            self.session.capture_screenshot("success-ios").media_type,
+            "image/png",
+        )
+        identity_ref = self.session.verify_installed_build_identity(install_ref)
+        self.assertIsInstance(identity_ref, ArtifactRef)
+        self.assertEqual(identity_ref, self.session.installed_build_identity)
+        self.session.stop()
+
+        expected_operations = [
+            "start",
+            "wait_ready",
+            "is_alive",
+            "contexts",
+            "switch_context",
+            "harness_inventory",
+            "harness_action",
+            "harness_negative_callback",
+            "refresh_webview",
+            "find_element",
+            "click",
+            "capture_page_source",
+            "capture_page_source",
+            "capture_screenshot",
+            "verify_build_identity",
+            "stop",
         ]
         self.assertEqual(
-            operations,
-            [
-                "remove_app",
-                "app_installed",
-                "install_app",
-                "app_installed",
-                "activate_app",
-            ],
+            [operation for _, operation, _, _ in self.client.calls],
+            expected_operations,
         )
-        self.assertGreaterEqual(len(broker.calls), len(transport.requests))
-        trace = session.fresh_install_trace
-        self.assertTrue(trace["uninstall"]["priorInstallationAbsent"])
-        self.assertTrue(trace["install"]["applicationPresent"])
+        for capability, operation, payload, _ in self.client.calls:
+            self.assertEqual(capability, APPIUM_CAPABILITY_ID)
+            self.assertEqual(payload["clientId"], "alice-ios")
+            self.assertEqual(payload["platform"], "ios")
+            if operation != "start":
+                self.assertEqual(
+                    payload["sessionRef"],
+                    "opaque-session/alice-ios",
+                )
+            serialized = repr(payload).lower()
+            self.assertNotIn("sessionid", serialized)
+            self.assertNotIn("udid", serialized)
+            self.assertNotIn("serial", serialized)
+
+    def test_public_polling_rejects_non_finite_timeouts(self) -> None:
+        for method_name in ("wait_for_ready", "switch_to_app_webview"):
+            method = getattr(self.session, method_name)
+            for timeout in (
+                float("nan"),
+                float("inf"),
+                float("-inf"),
+            ):
+                with self.subTest(method=method_name, timeout=timeout):
+                    with self.assertRaisesRegex(
+                        DriverError,
+                        "positive finite number",
+                    ):
+                        method(timeout)
+
+        self.assertEqual(self.client.calls, [])
+
+    def test_webview_polling_does_not_succeed_after_its_deadline(self) -> None:
+        class DelayedClient(RecordingEphemeralClient):
+            def invoke(
+                self,
+                capability_id: str,
+                operation: str,
+                payload: Mapping[str, object],
+                *,
+                timeout_seconds: float,
+            ) -> Mapping[str, object]:
+                time.sleep(0.1)
+                return super().invoke(
+                    capability_id,
+                    operation,
+                    payload,
+                    timeout_seconds=timeout_seconds,
+                )
+
+        client = DelayedClient()
+        session = AppiumSession(
+            client,  # type: ignore[arg-type]
+            client_id="alice-ios",
+            platform="ios",
+            physical_device_lease=self.device_ref,
+            build_attestation=self.build_ref,
+            callback_scheme="peers-touch",
+        )
+        session._session_ref = "opaque-session/alice-ios"
+
+        with self.assertRaisesRegex(DriverError, "exceeded its deadline"):
+            session.switch_to_app_webview(timeout=0.05)
+
         self.assertEqual(
-            trace["artifactSha256"],
-            "sha256:" + hashlib.sha256(b"attested-mobile").hexdigest(),
+            [operation for _, operation, _, _ in client.calls],
+            ["contexts"],
         )
-        session.stop()
-        self.assertEqual(
-            transport.requests[-1],
-            ("DELETE", "/session/session", None),
-        )
-        self.assertEqual(session.session_id, "")
+        self.assertLessEqual(client.calls[0][3], 0.05)
 
-    def test_runtime_identity_matches_app_web_rust_and_attestation(self) -> None:
-        session, _, _, reader = self._session("android")
-        session.start()
-        install_ref = reader.add_json(
-            "evidence/mobile/runtime/alice-android/install.json",
-            session.fresh_install_trace,
-        )
+    def test_capture_rejects_invalid_identity(self) -> None:
+        self.session.start()
 
-        identity = session.verify_installed_build_identity(install_ref)
+        for capture_id in ("", "../escape", "Uppercase"):
+            with self.subTest(capture_id=capture_id):
+                with self.assertRaisesRegex(
+                    DriverError,
+                    "capture identity",
+                ):
+                    self.session.capture_screenshot(capture_id)
 
-        self.assertEqual(identity["buildId"], "build-android")
-        self.assertEqual(identity["activeApplicationId"], APPLICATION_ID)
-        self.assertEqual(identity["webEmbeddedIdentitySha256"], SHA256)
-        self.assertEqual(identity["rustEmbeddedIdentitySha256"], SHA256)
-        self.assertTrue(identity["allIdentitiesMatch"])
+    def test_malformed_or_cross_run_evidence_fails_closed(self) -> None:
+        self.client.responses["start"] = {
+            "sessionRef": "opaque-session/alice-ios",
+            "freshInstallTrace": ArtifactRef(
+                workspace_id=WORKSPACE_ID,
+                gate_id=GATE_ID,
+                run_id="20260830T120001000000Z-" + ("2" * 32),
+                path="evidence/mobile/runtime/alice-ios/install.json",
+                sha256="c" * 64,
+                media_type="application/json",
+            ).to_dict(),
+        }
 
-    def test_runtime_identity_mismatch_fails_closed(self) -> None:
-        session, transport, _, reader = self._session()
-        session.start()
-        install_ref = reader.add_json(
-            "evidence/mobile/runtime/alice-ios/install.json",
-            session.fresh_install_trace,
-        )
-        transport.identity["buildId"] = "stale-build"
+        with self.assertRaisesRegex(DriverError, "ArtifactRef identity"):
+            self.session.start()
 
-        with self.assertRaisesRegex(DriverError, "identities differ"):
-            session.verify_installed_build_identity(install_ref)
+    def test_typed_source_refs_are_required_and_same_run(self) -> None:
+        with self.assertRaisesRegex(DriverError, "typed ArtifactRefs"):
+            AppiumSession(
+                self.client,  # type: ignore[arg-type]
+                client_id="alice-ios",
+                platform="ios",
+                physical_device_lease={},  # type: ignore[arg-type]
+                build_attestation=self.build_ref,
+                callback_scheme="peers-touch",
+            )
 
-    def test_stale_device_fence_blocks_before_appium_request(self) -> None:
-        session, transport, _, _ = self._session(
-            broker_failure=RuntimeError("stale fence"),
-        )
-
-        with self.assertRaisesRegex(RuntimeError, "stale fence"):
-            session.start()
-
-        self.assertEqual(transport.requests, [])
-
-    def test_cross_run_source_refs_fail_before_appium_request(self) -> None:
-        session, transport, _, _ = self._session()
-        session.build_attestation_ref = ArtifactRef(
+        other_run = ArtifactRef(
             workspace_id=WORKSPACE_ID,
             gate_id=GATE_ID,
             run_id="20260830T120001000000Z-" + ("2" * 32),
-            path=session.build_attestation_ref.path,
-            sha256=session.build_attestation_ref.sha256,
-            media_type=session.build_attestation_ref.media_type,
+            path=self.build_ref.path,
+            sha256=self.build_ref.sha256,
+            media_type=self.build_ref.media_type,
         )
+        with self.assertRaisesRegex(DriverError, "cross proof runs"):
+            AppiumSession(
+                self.client,  # type: ignore[arg-type]
+                client_id="alice-ios",
+                platform="ios",
+                physical_device_lease=self.device_ref,
+                build_attestation=other_run,
+                callback_scheme="peers-touch",
+            )
 
-        with self.assertRaises(DriverError):
-            session.start()
+    def test_stop_is_idempotent_without_child_cleanup_authority(self) -> None:
+        self.session.stop()
+        self.assertEqual(self.client.calls, [])
 
-        self.assertEqual(transport.requests, [])
-
-    def test_android_requires_explicit_chromedriver(self) -> None:
-        session, transport, _, _ = self._session("android")
-        session.chromedriver_executable = ""
-
-        with self.assertRaisesRegex(DriverError, "explicitly verified"):
-            session.start()
-
-        self.assertEqual(transport.requests, [])
+        self.session.start()
+        self.session.stop()
+        self.session.stop()
+        self.assertEqual(
+            [operation for _, operation, _, _ in self.client.calls],
+            ["start", "stop"],
+        )
 
 
 if __name__ == "__main__":

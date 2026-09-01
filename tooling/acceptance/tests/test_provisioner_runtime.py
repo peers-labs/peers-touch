@@ -244,7 +244,11 @@ class ProvisionerBlockingTests(unittest.TestCase):
             ENVIRONMENTS_DIR / "home-station.yaml"
         )
         provisioner = get_provisioner(contract)
-        with patch.object(
+        with tempfile.TemporaryDirectory() as lease_dir, patch.dict(
+            "os.environ",
+            {"PT_PROFILE_LEASE_DIR": lease_dir},
+            clear=True,
+        ), patch.object(
             provisioner,
             "_resolve_active_profile",
             return_value=(
@@ -358,7 +362,11 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "acquire_remote_git_source_lease",
             ), patch.dict(
                 "os.environ",
-                {},
+                {
+                    "PT_PROFILE_LEASE_DIR": str(
+                        Path(tmpdir) / "profile-leases"
+                    )
+                },
                 clear=True,
             ):
                 manifest = provisioner.provision(

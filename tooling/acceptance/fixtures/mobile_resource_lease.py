@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import os
 import secrets
 import stat
 import threading
+import time
 import weakref
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, ExitStack
@@ -18,12 +20,12 @@ from typing import Any, Optional, Protocol, TypeVar
 from tooling.acceptance.core import (
     REPO_ROOT,
     ArtifactRef,
-    resolve_artifact_root,
     validate_external_output_path,
     workspace_id,
 )
 from tooling.acceptance.core.redaction import redact_value
 from tooling.acceptance.gates.mobile.proof_contracts import (
+    ARTIFACT_ROLES,
     GATE_ID,
     validate_contract_payload,
 )
@@ -53,12 +55,31 @@ LEDGER_ANCHOR_DOMAIN = b"peers-mobile-resource-lease-ledger-anchor-v1\0"
 LEDGER_GENERATIONS_DIRECTORY = "ledger.generations"
 LEDGER_PENDING_NAME = "ledger.pending.json"
 HEARTBEAT_CHAIN_DOMAIN = b"peers-mobile-resource-lease-heartbeat-v1\0"
+LEDGER_AUTHORITY_NAMESPACE = "peers-touch/mobile-resource-leases/process-global"
+LEDGER_AUTHORITY_ID = hashlib.sha256(
+    LEDGER_AUTHORITY_NAMESPACE.encode("utf-8")
+).hexdigest()[:16]
+LEDGER_AUTHORITY_ROOT = (
+    Path("/var/tmp").resolve(strict=True)
+    / "peers-touch"
+    / "acceptance"
+    / "mobile-resource-leases"
+    / LEDGER_AUTHORITY_ID
+)
+MAX_HEARTBEAT_STOP_SECONDS = 30.0
 
 _T = TypeVar("_T")
 
 
 class MobileResourceLeaseError(RuntimeError):
     """A Mobile resource lease operation failed closed."""
+
+
+class MobileResourceLeaseDeadlineExceeded(
+    MobileResourceLeaseError,
+    TimeoutError,
+):
+    """A resource operation could not acquire authority before its deadline."""
 
 
 class LeaseConflict(MobileResourceLeaseError):
@@ -121,10 +142,11 @@ def _validate_json_artifact_reference(
     path: str,
     value: Mapping[str, Any],
     redact: bool = True,
+    expected_workspace_id: str | None = None,
 ) -> ArtifactRef:
     expected = {
         "artifactKind": "acceptance-artifact-ref",
-        "workspaceId": workspace_id(REPO_ROOT),
+        "workspaceId": expected_workspace_id or workspace_id(REPO_ROOT),
         "gateId": gate_id,
         "runId": run_id,
         "path": path,
@@ -145,6 +167,46 @@ def _validate_json_artifact_reference(
             + ", ".join(mismatched)
         )
     return reference
+
+
+def _artifact_role_instance(role: str, discriminator: str) -> str:
+    if role not in ARTIFACT_ROLES:
+        raise MobileResourceLeaseError(
+            f"unknown frozen Mobile Artifact Role {role!r}"
+        )
+    if (
+        not discriminator
+        or discriminator in {".", ".."}
+        or "/" in discriminator
+        or "\\" in discriminator
+        or "\x00" in discriminator
+    ):
+        raise MobileResourceLeaseError(
+            f"invalid Mobile Artifact Role discriminator for {role!r}"
+        )
+    return f"{role}/{discriminator}"
+
+
+def _acquisition_artifact_role(payload: Mapping[str, Any]) -> str:
+    artifact_kind = str(payload.get("artifactKind", ""))
+    if artifact_kind == "provider-account-lease":
+        return _artifact_role_instance(
+            "provider-account-lease",
+            str(payload["provider"]),
+        )
+    if artifact_kind == "physical-device-lease":
+        return _artifact_role_instance(
+            "physical-device-lease",
+            str(payload["clientId"]),
+        )
+    if artifact_kind == "provider-browser-session-lease":
+        return _artifact_role_instance(
+            "provider-browser-session-lease",
+            str(payload["clientId"]),
+        )
+    raise MobileResourceLeaseError(
+        f"unsupported acquisition Artifact Role kind {artifact_kind!r}"
+    )
 
 
 def _read_artifact_bytes(
@@ -288,6 +350,7 @@ class _LeaseRecord:
     kind: str
     acquisition: dict[str, Any]
     acquisition_ref: ArtifactRef | None
+    artifact_workspace_id: str
     expires_at: datetime
     state: str
     operation_started: int = 0
@@ -313,13 +376,9 @@ class _LeaseRecord:
 class ResourceLeaseLedger:
     """Mobile-owned durable state shared atomically across runner processes."""
 
-    def __init__(self, storage_root: Path | None = None) -> None:
+    def __init__(self) -> None:
         _require_secure_posix_io()
-        requested_root = (
-            Path(storage_root)
-            if storage_root is not None
-            else _default_ledger_root()
-        )
+        requested_root = _default_ledger_root()
         _reject_symlink_components(requested_root)
         self.storage_root = validate_external_output_path(
             requested_root,
@@ -375,27 +434,54 @@ class ResourceLeaseLedger:
                 )
             self._authentication_key = bytearray(candidate)
 
-    def operation_lock(self, resource_key: str) -> AbstractContextManager[None]:
-        with self._thread_lock:
+    def operation_lock(
+        self,
+        resource_key: str,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> AbstractContextManager[None]:
+        _acquire_thread_lock(
+            self._thread_lock,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        try:
             operation_lock = self.operation_locks.get(resource_key)
             if operation_lock is None:
                 digest = hashlib.sha256(resource_key.encode("utf-8")).hexdigest()
                 operation_lock = _shared_operation_lock(
                     self._operations_fd,
                     f"{digest}.lock",
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
                 )
                 self.operation_locks[resource_key] = operation_lock
-        return operation_lock
+            return operation_lock
+        finally:
+            self._thread_lock.release()
 
-    def _enter_transaction(self) -> None:
-        self._thread_lock.acquire()
+    def _enter_transaction(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
+        _acquire_thread_lock(
+            self._thread_lock,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
         depth = getattr(self._transaction, "depth", 0)
         if depth > 0:
             self._transaction.depth = depth + 1
             return
         file_lock = self._state_file_lock
         try:
-            file_lock.acquire()
+            file_lock.acquire(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
             self._load()
         except BaseException:
             file_lock.release()
@@ -472,7 +558,9 @@ class ResourceLeaseLedger:
             if (
                 payload.get("schema") != LEDGER_SCHEMA
                 or payload.get("version") != LEDGER_VERSION
-                or payload.get("workspaceId") != workspace_id(REPO_ROOT)
+                or payload.get("authorityNamespace")
+                != LEDGER_AUTHORITY_NAMESPACE
+                or payload.get("authorityId") != LEDGER_AUTHORITY_ID
             ):
                 raise MobileResourceLeaseError(
                     "resource lease ledger identity is invalid"
@@ -532,7 +620,8 @@ class ResourceLeaseLedger:
         payload = {
             "schema": LEDGER_SCHEMA,
             "version": LEDGER_VERSION,
-            "workspaceId": workspace_id(REPO_ROOT),
+            "authorityNamespace": LEDGER_AUTHORITY_NAMESPACE,
+            "authorityId": LEDGER_AUTHORITY_ID,
             "physicalIdentityKeyId": self.physical_identity_key_id,
             "fences": self.fences,
             "acquisitionOrder": self.acquisition_order,
@@ -585,7 +674,8 @@ class ResourceLeaseLedger:
         pending = {
             "schema": LEDGER_SCHEMA,
             "version": LEDGER_VERSION,
-            "workspaceId": workspace_id(REPO_ROOT),
+            "authorityNamespace": LEDGER_AUTHORITY_NAMESPACE,
+            "authorityId": LEDGER_AUTHORITY_ID,
             "ledger": authenticated_payload,
             "anchor": anchor,
         }
@@ -716,7 +806,9 @@ class ResourceLeaseLedger:
             if (
                 pending.get("schema") != LEDGER_SCHEMA
                 or pending.get("version") != LEDGER_VERSION
-                or pending.get("workspaceId") != workspace_id(REPO_ROOT)
+                or pending.get("authorityNamespace")
+                != LEDGER_AUTHORITY_NAMESPACE
+                or pending.get("authorityId") != LEDGER_AUTHORITY_ID
                 or not isinstance(pending["ledger"], Mapping)
                 or not isinstance(pending["anchor"], Mapping)
             ):
@@ -897,41 +989,89 @@ class ResourceLeaseLedger:
             )
         return generation, state_mac
 
-    def close(self) -> None:
-        state_lock_fd = getattr(self, "_state_lock_fd", -1)
-        operations_fd = getattr(self, "_operations_fd", -1)
-        generations_fd = getattr(self, "_generations_fd", -1)
-        root_fd = getattr(self, "_root_fd", -1)
-        if state_lock_fd >= 0:
-            os.close(state_lock_fd)
-            self._state_lock_fd = -1
+    def close(self) -> dict[str, bool]:
+        def close_descriptor(attribute: str) -> bool:
+            descriptor = getattr(self, attribute, -1)
+            if descriptor < 0:
+                return True
+            try:
+                os.close(descriptor)
+            except OSError:
+                return False
+            setattr(self, attribute, -1)
+            return True
+
         operation_locks = getattr(self, "operation_locks", None)
+        operation_locks_closed = True
         if operation_locks is not None:
+            for operation_lock in tuple(operation_locks.values()):
+                operation_locks_closed = (
+                    operation_lock.close() and operation_locks_closed
+                )
             operation_locks.clear()
-        if operations_fd >= 0:
-            os.close(operations_fd)
-            self._operations_fd = -1
-        if generations_fd >= 0:
-            os.close(generations_fd)
-            self._generations_fd = -1
-        if root_fd >= 0:
-            os.close(root_fd)
-            self._root_fd = -1
+
+        state_lock_closed = close_descriptor("_state_lock_fd")
+        operations_closed = close_descriptor("_operations_fd")
+        generations_closed = close_descriptor("_generations_fd")
+        root_closed = close_descriptor("_root_fd")
+
         authentication_key = getattr(self, "_authentication_key", None)
         if authentication_key is not None:
             for index in range(len(authentication_key)):
                 authentication_key[index] = 0
+        authentication_key_zeroized = (
+            authentication_key is None or not any(authentication_key)
+        )
+        evidence = {
+            "leaseLedgerStateLockDescriptorClosed": state_lock_closed,
+            "leaseLedgerOperationLockDescriptorsClosed": (
+                operation_locks_closed
+            ),
+            "leaseLedgerOperationsDescriptorClosed": operations_closed,
+            "leaseLedgerGenerationsDescriptorClosed": generations_closed,
+            "leaseLedgerRootDescriptorClosed": root_closed,
+            "leaseLedgerAuthenticationKeyZeroized": (
+                authentication_key_zeroized
+            ),
+        }
+        return {
+            **evidence,
+            "leaseLedgerClosed": all(evidence.values()),
+        }
 
     def __del__(self) -> None:
         self.close()
 
 
 class _LedgerTransactionLock:
-    def __init__(self, ledger: ResourceLeaseLedger) -> None:
+    def __init__(
+        self,
+        ledger: ResourceLeaseLedger,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
         self._ledger = ledger
+        self._deadline_monotonic = deadline_monotonic
+        self._cancellation = cancellation
+
+    def bounded(
+        self,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event | None = None,
+    ) -> "_LedgerTransactionLock":
+        return _LedgerTransactionLock(
+            self._ledger,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
 
     def __enter__(self) -> None:
-        self._ledger._enter_transaction()
+        self._ledger._enter_transaction(
+            deadline_monotonic=self._deadline_monotonic,
+            cancellation=self._cancellation,
+        )
 
     def __exit__(self, *_: object) -> None:
         self._ledger._exit_transaction()
@@ -946,20 +1086,50 @@ class _ReentrantProcessOperationLock:
         self._thread_lock = threading.RLock()
         self._local = threading.local()
 
-    def __enter__(self) -> None:
-        self._thread_lock.acquire()
+    def bounded(
+        self,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event | None = None,
+    ) -> "_BoundedOperationLock":
+        return _BoundedOperationLock(
+            self,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def acquire(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
+        _acquire_thread_lock(
+            self._thread_lock,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
         depth = getattr(self._local, "depth", 0)
         if depth > 0:
             self._local.depth = depth + 1
             return
         file_lock = _FileLock(self._directory_fd, self._name)
         try:
-            file_lock.acquire()
+            file_lock.acquire(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
         except BaseException:
             self._thread_lock.release()
             raise
         self._local.file_lock = file_lock
         self._local.depth = 1
+
+    def release(self) -> None:
+        self.__exit__()
+
+    def __enter__(self) -> None:
+        self.acquire()
 
     def __exit__(self, *_: object) -> None:
         depth = getattr(self._local, "depth", 0)
@@ -977,11 +1147,41 @@ class _ReentrantProcessOperationLock:
             self._local.file_lock = None
             self._thread_lock.release()
 
-    def __del__(self) -> None:
+    def close(self) -> bool:
         directory_fd = getattr(self, "_directory_fd", -1)
-        if directory_fd >= 0:
+        if directory_fd < 0:
+            return True
+        try:
             os.close(directory_fd)
-            self._directory_fd = -1
+        except OSError:
+            return False
+        self._directory_fd = -1
+        return True
+
+    def __del__(self) -> None:
+        self.close()
+
+
+class _BoundedOperationLock:
+    def __init__(
+        self,
+        operation_lock: _ReentrantProcessOperationLock,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event | None,
+    ) -> None:
+        self._operation_lock = operation_lock
+        self._deadline_monotonic = deadline_monotonic
+        self._cancellation = cancellation
+
+    def __enter__(self) -> None:
+        self._operation_lock.acquire(
+            deadline_monotonic=self._deadline_monotonic,
+            cancellation=self._cancellation,
+        )
+
+    def __exit__(self, *_: object) -> None:
+        self._operation_lock.release()
 
 
 _OPERATION_LOCK_REGISTRY_GUARD = threading.Lock()
@@ -994,15 +1194,25 @@ _OPERATION_LOCK_REGISTRY: weakref.WeakValueDictionary[
 def _shared_operation_lock(
     directory_fd: int,
     name: str,
+    *,
+    deadline_monotonic: float | None = None,
+    cancellation: threading.Event | None = None,
 ) -> _ReentrantProcessOperationLock:
     directory_stat = os.fstat(directory_fd)
     key = (directory_stat.st_dev, directory_stat.st_ino, name)
-    with _OPERATION_LOCK_REGISTRY_GUARD:
+    _acquire_thread_lock(
+        _OPERATION_LOCK_REGISTRY_GUARD,
+        deadline_monotonic=deadline_monotonic,
+        cancellation=cancellation,
+    )
+    try:
         operation_lock = _OPERATION_LOCK_REGISTRY.get(key)
         if operation_lock is None:
             operation_lock = _ReentrantProcessOperationLock(directory_fd, name)
             _OPERATION_LOCK_REGISTRY[key] = operation_lock
         return operation_lock
+    finally:
+        _OPERATION_LOCK_REGISTRY_GUARD.release()
 
 
 class _FileLock:
@@ -1011,7 +1221,12 @@ class _FileLock:
         self._name = name
         self._descriptor: int | None = None
 
-    def acquire(self) -> None:
+    def acquire(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
         descriptor = _open_regular_file_at(
             self._directory_fd,
             self._name,
@@ -1022,7 +1237,24 @@ class _FileLock:
             os.fchmod(descriptor, 0o600)
             import fcntl
 
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            if deadline_monotonic is None and cancellation is None:
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+            else:
+                while True:
+                    _require_lock_budget(
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    )
+                    try:
+                        fcntl.flock(
+                            descriptor,
+                            fcntl.LOCK_EX | fcntl.LOCK_NB,
+                        )
+                        break
+                    except BlockingIOError:
+                        time.sleep(
+                            _lock_poll_seconds(deadline_monotonic)
+                        )
         except BaseException:
             os.close(descriptor)
             raise
@@ -1041,14 +1273,83 @@ class _FileLock:
             os.close(descriptor)
 
 
+def _acquire_thread_lock(
+    lock: threading.RLock,
+    *,
+    deadline_monotonic: float | None,
+    cancellation: threading.Event | None,
+) -> None:
+    if deadline_monotonic is None and cancellation is None:
+        lock.acquire()
+        return
+    while True:
+        _require_lock_budget(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if lock.acquire(timeout=_lock_poll_seconds(deadline_monotonic)):
+            return
+
+
+def _require_lock_budget(
+    *,
+    deadline_monotonic: float | None,
+    cancellation: threading.Event | None,
+) -> None:
+    if cancellation is not None and cancellation.is_set():
+        raise MobileResourceLeaseDeadlineExceeded(
+            "resource operation was cancelled while waiting for its lock"
+        )
+    if deadline_monotonic is None:
+        return
+    if (
+        not isinstance(deadline_monotonic, (int, float))
+        or isinstance(deadline_monotonic, bool)
+        or not math.isfinite(deadline_monotonic)
+    ):
+        raise MobileResourceLeaseError(
+            "resource operation deadline must be finite"
+        )
+    if time.monotonic() >= deadline_monotonic:
+        raise MobileResourceLeaseDeadlineExceeded(
+            "resource operation exceeded its lock deadline"
+        )
+
+
+def _lock_poll_seconds(deadline_monotonic: float | None) -> float:
+    if deadline_monotonic is None:
+        return 0.05
+    return min(0.05, max(0.001, deadline_monotonic - time.monotonic()))
+
+
 class _PersistentFileLock:
     def __init__(self, descriptor: int) -> None:
         self._descriptor = descriptor
 
-    def acquire(self) -> None:
+    def acquire(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
         import fcntl
 
-        fcntl.flock(self._descriptor, fcntl.LOCK_EX)
+        if deadline_monotonic is None and cancellation is None:
+            fcntl.flock(self._descriptor, fcntl.LOCK_EX)
+            return
+        while True:
+            _require_lock_budget(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            try:
+                fcntl.flock(
+                    self._descriptor,
+                    fcntl.LOCK_EX | fcntl.LOCK_NB,
+                )
+                return
+            except BlockingIOError:
+                time.sleep(_lock_poll_seconds(deadline_monotonic))
 
     def release(self) -> None:
         import fcntl
@@ -1104,7 +1405,10 @@ def _open_secure_directory_tree(path: Path) -> int:
                     dir_fd=descriptor,
                 )
             except FileNotFoundError:
-                os.mkdir(component, mode=0o700, dir_fd=descriptor)
+                try:
+                    os.mkdir(component, mode=0o700, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
                 child = os.open(
                     component,
                     os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
@@ -1126,7 +1430,10 @@ def _open_or_create_directory_at(parent_fd: int, name: str) -> int:
             dir_fd=parent_fd,
         )
     except FileNotFoundError:
-        os.mkdir(name, mode=0o700, dir_fd=parent_fd)
+        try:
+            os.mkdir(name, mode=0o700, dir_fd=parent_fd)
+        except FileExistsError:
+            pass
         return os.open(
             name,
             os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
@@ -1353,7 +1660,8 @@ def _ledger_anchor_payload(
     authority = {
         "schema": LEDGER_SCHEMA,
         "version": LEDGER_VERSION,
-        "workspaceId": workspace_id(REPO_ROOT),
+        "authorityNamespace": LEDGER_AUTHORITY_NAMESPACE,
+        "authorityId": LEDGER_AUTHORITY_ID,
         "generation": generation,
         "previousGeneration": generation - 1,
         "previousStateMac": previous_state_mac,
@@ -1403,7 +1711,8 @@ def _verify_generation_anchor(
     authority = {
         "schema": anchor.get("schema"),
         "version": anchor.get("version"),
-        "workspaceId": anchor.get("workspaceId"),
+        "authorityNamespace": anchor.get("authorityNamespace"),
+        "authorityId": anchor.get("authorityId"),
         "generation": generation,
         "previousGeneration": previous_generation,
         "previousStateMac": previous_state_mac,
@@ -1422,7 +1731,8 @@ def _verify_generation_anchor(
     if (
         authority["schema"] != LEDGER_SCHEMA
         or authority["version"] != LEDGER_VERSION
-        or authority["workspaceId"] != workspace_id(REPO_ROOT)
+        or authority["authorityNamespace"] != LEDGER_AUTHORITY_NAMESPACE
+        or authority["authorityId"] != LEDGER_AUTHORITY_ID
         or isinstance(anchor.get("generation"), bool)
         or isinstance(anchor.get("previousGeneration"), bool)
         or generation != expected_generation
@@ -1540,7 +1850,8 @@ def _is_fresh_empty_ledger_payload(payload: Mapping[str, Any]) -> bool:
     return (
         payload.get("schema") == LEDGER_SCHEMA
         and payload.get("version") == LEDGER_VERSION
-        and payload.get("workspaceId") == workspace_id(REPO_ROOT)
+        and payload.get("authorityNamespace") == LEDGER_AUTHORITY_NAMESPACE
+        and payload.get("authorityId") == LEDGER_AUTHORITY_ID
         and payload.get("physicalIdentityKeyId", "") == ""
         and payload.get("records") == {}
         and payload.get("fences") == {}
@@ -1550,13 +1861,7 @@ def _is_fresh_empty_ledger_payload(payload: Mapping[str, Any]) -> bool:
 
 
 def _default_ledger_root() -> Path:
-    artifact_root = resolve_artifact_root(repo_root=REPO_ROOT)
-    return (
-        artifact_root.parent
-        / "runtime"
-        / "mobile-resource-leases"
-        / workspace_id(REPO_ROOT)
-    )
+    return LEDGER_AUTHORITY_ROOT
 
 
 def _record_to_dict(record: _LeaseRecord) -> dict[str, Any]:
@@ -1568,6 +1873,7 @@ def _record_to_dict(record: _LeaseRecord) -> dict[str, Any]:
             if record.acquisition_ref is not None
             else None
         ),
+        "artifactWorkspaceId": record.artifact_workspace_id,
         "expiresAt": _timestamp(record.expires_at),
         "state": record.state,
         "operationStarted": record.operation_started,
@@ -1613,6 +1919,7 @@ def _record_from_dict(value: Mapping[str, Any]) -> _LeaseRecord:
             if acquisition_ref is not None
             else None
         ),
+        artifact_workspace_id=str(value["artifactWorkspaceId"]),
         expires_at=_parse_timestamp(str(value["expiresAt"])),
         state=str(value["state"]),
         operation_started=int(value["operationStarted"]),
@@ -1714,50 +2021,72 @@ class MobileResourceLeaseBroker:
         provider_expected_subjects: Mapping[str, str] | None = None,
         ledger: ResourceLeaseLedger | None = None,
         now: Callable[[], datetime] | None = None,
+        artifact_workspace_id: str | None = None,
     ) -> None:
-        if run_handle.gate_id != GATE_ID:
-            raise MobileResourceLeaseError(
-                f"resource leases require gate {GATE_ID!r}"
-            )
-        if len(physical_identity_key) < 32:
-            raise ValueError(
-                "physical identity broker key must contain at least 32 bytes"
-            )
-        if not callable(artifact_writer_resolver):
-            raise MobileResourceLeaseError(
-                "original acquisition run artifact writer resolver is required"
-            )
         self.run_handle = run_handle
-        self.run_id = run_handle.run_id
+        self.run_id = ""
         self.correlation_secret = correlation_secret
-        self._physical_identity_key = bytearray(physical_identity_key)
-        self._physical_device_resolver = physical_device_resolver
-        self._provider_expected_subjects = dict(
-            provider_expected_subjects or {}
-        )
-        self._artifact_writer_resolver = artifact_writer_resolver
-        self.ledger = ledger or ResourceLeaseLedger()
-        self.ledger.bind_authentication_key(self._physical_identity_key)
-        self._now = now or (lambda: datetime.now(timezone.utc))
-        physical_identity_key_id = "sha256:" + hashlib.sha256(
-            bytes(self._physical_identity_key)
-        ).hexdigest()
-        with self.ledger.lock:
-            self._validate_reconstructed_ledger()
-            bound_key_id = self.ledger.physical_identity_key_id
-            if not bound_key_id:
-                if self.ledger.records:
-                    raise MobileResourceLeaseError(
-                        "resource lease ledger has no physical identity key binding"
-                    )
-                self.ledger.physical_identity_key_id = physical_identity_key_id
-            elif not hmac.compare_digest(
-                bound_key_id,
-                physical_identity_key_id,
+        self._physical_identity_key = bytearray()
+        self.ledger = ledger
+        self._closed = False
+        try:
+            self.run_id = run_handle.run_id
+            self._physical_identity_key = bytearray(physical_identity_key)
+            if run_handle.gate_id != GATE_ID:
+                raise MobileResourceLeaseError(
+                    f"resource leases require gate {GATE_ID!r}"
+                )
+            if len(physical_identity_key) < 32:
+                raise ValueError(
+                    "physical identity broker key must contain at least 32 bytes"
+                )
+            if not callable(artifact_writer_resolver):
+                raise MobileResourceLeaseError(
+                    "original acquisition run artifact writer resolver is required"
+                )
+            self._physical_device_resolver = physical_device_resolver
+            self._provider_expected_subjects = dict(
+                provider_expected_subjects or {}
+            )
+            self._artifact_writer_resolver = artifact_writer_resolver
+            self._artifact_workspace_id = (
+                artifact_workspace_id or workspace_id(REPO_ROOT)
+            )
+            if (
+                len(self._artifact_workspace_id) != 16
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in self._artifact_workspace_id
+                )
             ):
                 raise MobileResourceLeaseError(
-                    "physical identity broker key does not match the ledger"
+                    "resource lease artifact workspace identity is invalid"
                 )
+            self.ledger = ledger or ResourceLeaseLedger()
+            self.ledger.bind_authentication_key(self._physical_identity_key)
+            self._now = now or (lambda: datetime.now(timezone.utc))
+            physical_identity_key_id = "sha256:" + hashlib.sha256(
+                bytes(self._physical_identity_key)
+            ).hexdigest()
+            with self.ledger.lock:
+                self._validate_reconstructed_ledger()
+                bound_key_id = self.ledger.physical_identity_key_id
+                if not bound_key_id:
+                    if self.ledger.records:
+                        raise MobileResourceLeaseError(
+                            "resource lease ledger has no physical identity key binding"
+                        )
+                    self.ledger.physical_identity_key_id = physical_identity_key_id
+                elif not hmac.compare_digest(
+                    bound_key_id,
+                    physical_identity_key_id,
+                ):
+                    raise MobileResourceLeaseError(
+                        "physical identity broker key does not match the ledger"
+                    )
+        except BaseException:
+            self.close()
+            raise
 
     def _validate_reconstructed_ledger(self) -> None:
         canonical_records: dict[str, tuple[_LeaseRecord, dict[str, Any]]] = {}
@@ -1815,6 +2144,7 @@ class MobileResourceLeaseBroker:
                     path=artifact_path,
                     value=canonical_payload,
                     redact=False,
+                    expected_workspace_id=record.artifact_workspace_id,
                 )
             except MobileResourceLeaseError:
                 raise
@@ -1953,7 +2283,7 @@ class MobileResourceLeaseBroker:
             record.acquisition,
             expected_run_id=str(record.acquisition.get("runId", "")),
             expected_gate_id=GATE_ID,
-            expected_workspace_id=workspace_id(REPO_ROOT),
+            expected_workspace_id=record.artifact_workspace_id,
         )
         kind, resource_key, artifact_path = _canonical_acquisition_authority(
             payload
@@ -1964,7 +2294,7 @@ class MobileResourceLeaseBroker:
             )
         expected_bytes = _canonical_json_bytes(payload, redact=False)
         reference = ArtifactRef(
-            workspace_id=workspace_id(REPO_ROOT),
+            workspace_id=record.artifact_workspace_id,
             gate_id=GATE_ID,
             run_id=str(payload["runId"]),
             path=artifact_path,
@@ -2512,11 +2842,34 @@ class MobileResourceLeaseBroker:
         self,
         lease: Mapping[str, Any],
         operation: Callable[[ResolvedPhysicalDeviceHandle], _T],
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
     ) -> _T:
         resource_key = str(lease["resourceKey"])
-        operation_lock = self.ledger.operation_lock(resource_key)
-        with operation_lock:
-            with self.ledger.lock:
+        operation_lock = self.ledger.operation_lock(
+            resource_key,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        lock_context = (
+            operation_lock
+            if deadline_monotonic is None and cancellation is None
+            else operation_lock.bounded(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        )
+        with lock_context:
+            ledger_lock = (
+                self.ledger.lock
+                if deadline_monotonic is None and cancellation is None
+                else self.ledger.lock.bounded(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            )
+            with ledger_lock:
                 record = self._validate_operation(lease, _utc(self._now()))
                 if record.kind != "physical-device":
                     raise MobileResourceLeaseError(
@@ -2559,16 +2912,33 @@ class MobileResourceLeaseBroker:
                     details={"clientId": client_id},
                 )
             try:
+                _require_lock_budget(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
                 result = operation(handle)
             except BaseException:
-                self._quarantine_interrupted_operation(
-                    resource_key,
-                    lease,
-                    operation_id,
-                )
+                try:
+                    self._quarantine_interrupted_operation(
+                        resource_key,
+                        lease,
+                        operation_id,
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    )
+                except MobileResourceLeaseDeadlineExceeded:
+                    pass
                 raise
             try:
-                with self.ledger.lock:
+                completion_lock = (
+                    self.ledger.lock
+                    if deadline_monotonic is None and cancellation is None
+                    else self.ledger.lock.bounded(
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    )
+                )
+                with completion_lock:
                     current = self._validate_operation(lease, _utc(self._now()))
                     if current.kind != "physical-device":
                         self._quarantine_current_operation(
@@ -2585,11 +2955,16 @@ class MobileResourceLeaseBroker:
                         operation_id,
                     )
             except BaseException:
-                self._quarantine_interrupted_operation(
-                    resource_key,
-                    lease,
-                    operation_id,
-                )
+                try:
+                    self._quarantine_interrupted_operation(
+                        resource_key,
+                        lease,
+                        operation_id,
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    )
+                except MobileResourceLeaseDeadlineExceeded:
+                    pass
                 raise
             return result
 
@@ -2645,13 +3020,33 @@ class MobileResourceLeaseBroker:
         *,
         client_id: str,
         operation: Callable[[], _T],
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
     ) -> _T:
         operation_lock = self.ledger.operation_lock(
-            str(account_lease["resourceKey"])
+            str(account_lease["resourceKey"]),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
         )
-        with operation_lock:
+        lock_context = (
+            operation_lock
+            if deadline_monotonic is None and cancellation is None
+            else operation_lock.bounded(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        )
+        with lock_context:
             resource_key = str(account_lease["resourceKey"])
-            with self.ledger.lock:
+            ledger_lock = (
+                self.ledger.lock
+                if deadline_monotonic is None and cancellation is None
+                else self.ledger.lock.bounded(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            )
+            with ledger_lock:
                 record = self._validate_operation(
                     account_lease,
                     _utc(self._now()),
@@ -2682,16 +3077,33 @@ class MobileResourceLeaseBroker:
                     count_for_summary=True,
                 )
             try:
+                _require_lock_budget(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
                 result = operation()
             except BaseException:
-                self._quarantine_interrupted_operation(
-                    resource_key,
-                    account_lease,
-                    operation_id,
-                )
+                try:
+                    self._quarantine_interrupted_operation(
+                        resource_key,
+                        account_lease,
+                        operation_id,
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    )
+                except MobileResourceLeaseDeadlineExceeded:
+                    pass
                 raise
             try:
-                with self.ledger.lock:
+                completion_lock = (
+                    self.ledger.lock
+                    if deadline_monotonic is None and cancellation is None
+                    else self.ledger.lock.bounded(
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    )
+                )
+                with completion_lock:
                     current = self._validate_operation(
                         account_lease,
                         _utc(self._now()),
@@ -2702,11 +3114,16 @@ class MobileResourceLeaseBroker:
                         operation_id,
                     )
             except BaseException:
-                self._quarantine_interrupted_operation(
-                    resource_key,
-                    account_lease,
-                    operation_id,
-                )
+                try:
+                    self._quarantine_interrupted_operation(
+                        resource_key,
+                        account_lease,
+                        operation_id,
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    )
+                except MobileResourceLeaseDeadlineExceeded:
+                    pass
                 raise
             return result
 
@@ -2716,10 +3133,28 @@ class MobileResourceLeaseBroker:
         *,
         observed_subject: str,
         observed_at: datetime | None = None,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
     ) -> dict[str, Any]:
         resource_key = str(account_lease["resourceKey"])
-        with self.ledger.operation_lock(resource_key):
-            with self.ledger.lock:
+        operation_lock = self.ledger.operation_lock(
+            resource_key,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        with operation_lock.bounded(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        ) if deadline_monotonic is not None else operation_lock:
+            ledger_lock = (
+                self.ledger.lock.bounded(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                if deadline_monotonic is not None
+                else self.ledger.lock
+            )
+            with ledger_lock:
                 record = self._validate_operation(
                     account_lease,
                     _utc(self._now()),
@@ -2797,18 +3232,42 @@ class MobileResourceLeaseBroker:
                     raise MobileResourceLeaseError(
                         "pending provider identity assertion is inconsistent"
                     )
+            _require_lock_budget(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
             identity_path = (
                 f"runtime/mobile/identities/providers/{provider}.json"
             )
-            identity_reference = writer.write_json(identity_path, payload)
+            identity_reference = writer.write_json(
+                identity_path,
+                payload,
+                role=_artifact_role_instance(
+                    "provider-identity-assertion",
+                    provider,
+                ),
+            )
             _validate_json_artifact_reference(
                 identity_reference,
                 gate_id=GATE_ID,
                 run_id=run_id,
                 path=identity_path,
                 value=payload,
+                expected_workspace_id=record.artifact_workspace_id,
             )
-            with self.ledger.lock:
+            _require_lock_budget(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            completion_lock = (
+                self.ledger.lock.bounded(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                if deadline_monotonic is not None
+                else self.ledger.lock
+            )
+            with completion_lock:
                 record = self._validate_operation(
                     account_lease,
                     _utc(self._now()),
@@ -2828,10 +3287,24 @@ class MobileResourceLeaseBroker:
         *,
         restore: Callable[[], BaselineRestoreResult],
         observed_at: datetime | None = None,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
     ) -> dict[str, Any]:
         resource_key = str(lease["resourceKey"])
-        with self._lease_operation_locks(lease):
-            with self.ledger.lock:
+        with self._lease_operation_locks(
+            lease,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        ):
+            ledger_lock = (
+                self.ledger.lock.bounded(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                if deadline_monotonic is not None
+                else self.ledger.lock
+            )
+            with ledger_lock:
                 record = self._record(resource_key)
                 self._require_exact_lease_tuple(record, lease)
                 if record.pending_outcome is not None:
@@ -2856,6 +3329,10 @@ class MobileResourceLeaseBroker:
                     operation_kind="baseline-restore-callback",
                 )
             try:
+                _require_lock_budget(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
                 result = restore()
             except BaseException as error:
                 self._quarantine_interrupted_operation(
@@ -2864,7 +3341,11 @@ class MobileResourceLeaseBroker:
                     cleanup_operation_id,
                     failure_code="LEASE_CLEANUP_FAILED",
                     observed_at=_utc(observed_at or self._now()),
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
                 )
+                if isinstance(error, MobileResourceLeaseDeadlineExceeded):
+                    raise
                 raise MobileResourceLeaseError(
                     "baseline restore failed and quarantined the resource"
                 ) from error
@@ -2875,11 +3356,25 @@ class MobileResourceLeaseBroker:
                     cleanup_operation_id,
                     failure_code="LEASE_CLEANUP_FAILED",
                     observed_at=_utc(observed_at or self._now()),
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
                 )
                 raise MobileResourceLeaseError(
                     "baseline restore must return BaselineRestoreResult"
                 )
-            with self.ledger.lock:
+            _require_lock_budget(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            completion_lock = (
+                self.ledger.lock.bounded(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                if deadline_monotonic is not None
+                else self.ledger.lock
+            )
+            with completion_lock:
                 if record.kind == "provider-browser-session":
                     record = self._validate_browser_operation(
                         lease,
@@ -2922,10 +3417,28 @@ class MobileResourceLeaseBroker:
         failure_code: str,
         *,
         observed_at: datetime | None = None,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
     ) -> dict[str, Any]:
         resource_key = str(lease["resourceKey"])
-        with self.ledger.operation_lock(resource_key):
-            with self.ledger.lock:
+        operation_lock = self.ledger.operation_lock(
+            resource_key,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        with operation_lock.bounded(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        ) if deadline_monotonic is not None else operation_lock:
+            ledger_lock = (
+                self.ledger.lock.bounded(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                if deadline_monotonic is not None
+                else self.ledger.lock
+            )
+            with ledger_lock:
                 record = self._record(resource_key)
                 if (
                     str(lease.get("holderRunId", "")) != self.run_id
@@ -3095,8 +3608,45 @@ class MobileResourceLeaseBroker:
                     )
                 del self.ledger.records[resource_key]
 
-    def cleanup_correlation_channel(self) -> dict[str, bool]:
-        return self.correlation_secret.close()
+    def close(self) -> dict[str, bool]:
+        correlation_evidence = {
+            "correlationChannelClosed": False,
+            "correlationKeyZeroized": False,
+        }
+        try:
+            correlation_evidence = self.correlation_secret.close()
+        except BaseException:
+            pass
+
+        ledger_evidence = {
+            "leaseLedgerStateLockDescriptorClosed": self.ledger is None,
+            "leaseLedgerOperationLockDescriptorsClosed": self.ledger is None,
+            "leaseLedgerOperationsDescriptorClosed": self.ledger is None,
+            "leaseLedgerGenerationsDescriptorClosed": self.ledger is None,
+            "leaseLedgerRootDescriptorClosed": self.ledger is None,
+            "leaseLedgerAuthenticationKeyZeroized": self.ledger is None,
+            "leaseLedgerClosed": self.ledger is None,
+        }
+        if self.ledger is not None:
+            try:
+                ledger_evidence = self.ledger.close()
+            except BaseException:
+                pass
+
+        for index in range(len(self._physical_identity_key)):
+            self._physical_identity_key[index] = 0
+        self._closed = True
+        evidence = {
+            **correlation_evidence,
+            "physicalIdentityKeyZeroized": not any(
+                self._physical_identity_key
+            ),
+            **ledger_evidence,
+        }
+        return {
+            **evidence,
+            "resourceLeaseBrokerClosed": all(evidence.values()),
+        }
 
     def current_acquisition(self, resource_key: str) -> dict[str, Any]:
         with self.ledger.operation_lock(resource_key):
@@ -3143,6 +3693,7 @@ class MobileResourceLeaseBroker:
                     path=self._acquisition_artifact_path(record),
                     value=record.acquisition,
                     redact=False,
+                    expected_workspace_id=record.artifact_workspace_id,
                 )
 
     def terminal_outcome(self, resource_key: str) -> dict[str, Any] | None:
@@ -3218,6 +3769,7 @@ class MobileResourceLeaseBroker:
             kind=kind,
             acquisition=dict(payload),
             acquisition_ref=None,
+            artifact_workspace_id=self._artifact_workspace_id,
             expires_at=expires_at,
             state=state,
             owner_pid=os.getpid(),
@@ -3253,6 +3805,7 @@ class MobileResourceLeaseBroker:
             reference = self.run_handle.write_json(
                 artifact_path,
                 payload,
+                role=_acquisition_artifact_role(payload),
                 redact=False,
             )
             _validate_json_artifact_reference(
@@ -3262,6 +3815,7 @@ class MobileResourceLeaseBroker:
                 path=artifact_path,
                 value=payload,
                 redact=False,
+                expected_workspace_id=record.artifact_workspace_id,
             )
         except BaseException:
             self._quarantine_unpublished(
@@ -3276,9 +3830,20 @@ class MobileResourceLeaseBroker:
     def _lease_operation_locks(
         self,
         lease: Mapping[str, Any],
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
     ) -> AbstractContextManager[None]:
         resource_key = str(lease["resourceKey"])
-        with self.ledger.lock:
+        ledger_lock = (
+            self.ledger.lock.bounded(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            if deadline_monotonic is not None
+            else self.ledger.lock
+        )
+        with ledger_lock:
             record = self._record(resource_key)
             resource_keys = {
                 resource_key,
@@ -3290,7 +3855,19 @@ class MobileResourceLeaseBroker:
         stack = ExitStack()
         try:
             for locked_key in sorted(resource_keys):
-                stack.enter_context(self.ledger.operation_lock(locked_key))
+                operation_lock = self.ledger.operation_lock(
+                    locked_key,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                stack.enter_context(
+                    operation_lock.bounded(
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    )
+                    if deadline_monotonic is not None
+                    else operation_lock
+                )
         except BaseException:
             stack.close()
             raise
@@ -3581,8 +4158,18 @@ class MobileResourceLeaseBroker:
         *,
         failure_code: str = "LEASE_OPERATION_INCOMPLETE",
         observed_at: datetime | None = None,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
     ) -> None:
-        with self.ledger.lock:
+        lock_context = (
+            self.ledger.lock
+            if deadline_monotonic is None and cancellation is None
+            else self.ledger.lock.bounded(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        )
+        with lock_context:
             record = self.ledger.records.get(resource_key)
             if record is None:
                 return
@@ -3672,13 +4259,21 @@ class MobileResourceLeaseBroker:
         outcome_path = (
             f"evidence/mobile/cleanup/leases/{acquisition['leaseId']}.json"
         )
-        outcome_reference = writer.write_json(outcome_path, payload)
+        outcome_reference = writer.write_json(
+            outcome_path,
+            payload,
+            role=_artifact_role_instance(
+                "mobile-lease-outcome",
+                str(acquisition["leaseId"]),
+            ),
+        )
         _validate_json_artifact_reference(
             outcome_reference,
             gate_id=GATE_ID,
             run_id=run_id,
             path=outcome_path,
             value=payload,
+            expected_workspace_id=record.artifact_workspace_id,
         )
         final_state = str(payload["finalState"])
         record.state = final_state
@@ -3702,6 +4297,7 @@ class MobileResourceLeaseBroker:
             path=self._acquisition_artifact_path(record),
             value=record.acquisition,
             redact=False,
+            expected_workspace_id=record.artifact_workspace_id,
         )
         writer: ArtifactWriter | None
         if (
@@ -3957,6 +4553,235 @@ class MobileResourceLeaseBroker:
                 f"resource {resource_key!r} dependency fence changed"
             )
         return self._validate_operation(presented_lease, observed_at)
+
+
+class MobileResourceLeaseHeartbeatOwner(
+    AbstractContextManager["MobileResourceLeaseHeartbeatOwner"]
+):
+    """Owns one bounded scheduler for the current run's active leases."""
+
+    def __init__(
+        self,
+        broker: MobileResourceLeaseBroker,
+        *,
+        interval_seconds: float,
+        stop_timeout_seconds: float = 5.0,
+    ) -> None:
+        maximum_interval = LEASE_DURATION.total_seconds() / 2
+        if (
+            interval_seconds <= 0
+            or interval_seconds > maximum_interval
+            or stop_timeout_seconds <= 0
+            or stop_timeout_seconds > MAX_HEARTBEAT_STOP_SECONDS
+        ):
+            raise ValueError(
+                "heartbeat interval and stop timeout must be positive and bounded"
+            )
+        self._broker = broker
+        self._interval_seconds = interval_seconds
+        self._stop_timeout_seconds = stop_timeout_seconds
+        self._condition = threading.Condition()
+        self._stop = threading.Event()
+        self._leases: dict[str, dict[str, Any]] = {}
+        self._external_heartbeats: dict[str, Callable[[], None]] = {}
+        self._heartbeat_counts: dict[str, int] = {}
+        self._failure: BaseException | None = None
+        self._thread: threading.Thread | None = None
+        self._closed = False
+
+    def register(self, lease: Mapping[str, Any]) -> None:
+        identity = LeaseIdentity.from_payload(lease)
+        if (
+            identity.holder_run_id != self._broker.run_id
+            or str(lease.get("runId", "")) != self._broker.run_id
+        ):
+            raise LeaseConflict(
+                f"resource {identity.resource_key!r} belongs to another holder run"
+            )
+        self._broker.acquisition_reference(lease)
+        with self._condition:
+            if self._closed:
+                raise MobileResourceLeaseError(
+                    "heartbeat owner is already closed"
+                )
+            if self._failure is not None:
+                raise MobileResourceLeaseError(
+                    "heartbeat owner has already failed"
+                ) from self._failure
+            existing = self._leases.get(identity.resource_key)
+            candidate = dict(lease)
+            if existing is not None and LeaseIdentity.from_payload(
+                existing
+            ) != identity:
+                raise LeaseFenceStale(
+                    f"resource {identity.resource_key!r} heartbeat fence changed"
+                )
+            self._leases[identity.resource_key] = candidate
+            self._heartbeat_counts.setdefault(identity.resource_key, 0)
+            self._condition.notify_all()
+
+    def register_external(
+        self,
+        lease: Mapping[str, Any],
+        heartbeat: Callable[[], None],
+    ) -> None:
+        identity = LeaseIdentity.from_payload(lease)
+        if (
+            identity.holder_run_id != self._broker.run_id
+            or str(lease.get("runId", "")) != self._broker.run_id
+        ):
+            raise LeaseConflict(
+                f"resource {identity.resource_key!r} belongs to another holder run"
+            )
+        with self._condition:
+            if self._closed or self._failure is not None:
+                raise MobileResourceLeaseError(
+                    "heartbeat owner is unavailable"
+                )
+            if identity.resource_key in self._leases:
+                raise LeaseConflict(
+                    f"resource {identity.resource_key!r} is already registered"
+                )
+            self._leases[identity.resource_key] = dict(lease)
+            self._external_heartbeats[identity.resource_key] = heartbeat
+            self._heartbeat_counts.setdefault(identity.resource_key, 0)
+            self._condition.notify_all()
+
+    def unregister(self, lease: Mapping[str, Any]) -> None:
+        identity = LeaseIdentity.from_payload(lease)
+        with self._condition:
+            existing = self._leases.get(identity.resource_key)
+            if existing is None:
+                return
+            if LeaseIdentity.from_payload(existing) != identity:
+                raise LeaseFenceStale(
+                    f"resource {identity.resource_key!r} heartbeat fence changed"
+                )
+            del self._leases[identity.resource_key]
+            self._external_heartbeats.pop(identity.resource_key, None)
+            self._condition.notify_all()
+
+    def start(self) -> None:
+        with self._condition:
+            if self._closed:
+                raise MobileResourceLeaseError(
+                    "heartbeat owner is already closed"
+                )
+            if self._thread is not None:
+                raise MobileResourceLeaseError(
+                    "heartbeat owner is already started"
+                )
+            self._thread = threading.Thread(
+                target=self._run,
+                name="mobile-resource-lease-heartbeat",
+                daemon=True,
+            )
+            self._thread.start()
+
+    def wait_for_heartbeat(
+        self,
+        resource_key: str,
+        *,
+        minimum_count: int = 1,
+        timeout_seconds: float,
+    ) -> bool:
+        if minimum_count < 1 or timeout_seconds <= 0:
+            raise ValueError(
+                "heartbeat wait count and timeout must be positive"
+            )
+        deadline = time.monotonic() + timeout_seconds
+        with self._condition:
+            while (
+                self._heartbeat_counts.get(resource_key, 0) < minimum_count
+                and self._failure is None
+                and not self._closed
+            ):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(remaining)
+            return (
+                self._heartbeat_counts.get(resource_key, 0) >= minimum_count
+            )
+
+    def wait_until_failed(self, *, timeout_seconds: float) -> bool:
+        if timeout_seconds <= 0:
+            raise ValueError("heartbeat failure wait timeout must be positive")
+        deadline = time.monotonic() + timeout_seconds
+        with self._condition:
+            while self._failure is None and not self._closed:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(remaining)
+            return self._failure is not None
+
+    def raise_if_failed(self) -> None:
+        with self._condition:
+            failure = self._failure
+        if failure is not None:
+            raise MobileResourceLeaseError(
+                "heartbeat owner failed and stopped"
+            ) from failure
+
+    def close(self) -> None:
+        with self._condition:
+            if self._closed:
+                return
+            self._closed = True
+            thread = self._thread
+            self._stop.set()
+            self._condition.notify_all()
+        if thread is not None:
+            thread.join(timeout=self._stop_timeout_seconds)
+            if thread.is_alive():
+                raise MobileResourceLeaseError(
+                    "heartbeat owner did not stop within its bounded timeout"
+                )
+
+    def __enter__(self) -> "MobileResourceLeaseHeartbeatOwner":
+        self.start()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: object,
+        exc_value: object,
+        traceback: object,
+    ) -> None:
+        self.close()
+        if exc_type is None:
+            self.raise_if_failed()
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval_seconds):
+            with self._condition:
+                leases = tuple(
+                    (
+                        resource_key,
+                        dict(lease),
+                        self._external_heartbeats.get(resource_key),
+                    )
+                    for resource_key, lease in self._leases.items()
+                )
+            for resource_key, lease, external_heartbeat in leases:
+                if self._stop.is_set():
+                    return
+                try:
+                    if external_heartbeat is None:
+                        self._broker.heartbeat(lease)
+                    else:
+                        external_heartbeat()
+                except BaseException as error:
+                    with self._condition:
+                        self._failure = error
+                        self._stop.set()
+                        self._condition.notify_all()
+                    return
+                with self._condition:
+                    if resource_key in self._leases:
+                        self._heartbeat_counts[resource_key] += 1
+                    self._condition.notify_all()
 
 
 def _client_platform(client_id: str) -> str:

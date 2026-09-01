@@ -1,26 +1,49 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import dataclasses
 import hashlib
 import json
+import math
 import os
 import platform
 import re
+import secrets
 import shutil
 import socket
 import subprocess
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
+from tooling.acceptance.core import (
+    EphemeralCapabilityBlocked,
+    EphemeralCapabilityHandler,
+    EphemeralGateLaunchContext,
+    EphemeralHandlerCleanup,
+    EvidenceStore,
+    DriverError,
+    RunHandle,
+)
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR, REPO_ROOT
 from tooling.acceptance.core.attestation import (
     produce_service_attestation,
     produce_station_attestation,
+)
+from tooling.acceptance.core.bounded_http import (
+    HttpResponseBodyTooLarge,
+    HttpResponseCancelled,
+    HttpResponseDeadlineExceeded,
+    HttpResponseDeadlineUnsupported,
+    read_bounded_http_response,
 )
 from tooling.acceptance.core.errors import (
     BlockedError,
@@ -30,25 +53,45 @@ from tooling.acceptance.core.errors import (
 from tooling.acceptance.core.evidence_store import ArtifactRef
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import (
-    ClientRuntime,
     EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
+    utc_now,
 )
 from tooling.acceptance.core.redaction import redact_value
 from tooling.acceptance.fixtures.mobile_native_reset import (
-    cleanup_fixture,
-    prepare_fixture,
+    ACTOR_PASSWORD,
+    ROLES,
+    SERVICE_CONFIG,
+    _write_fixture_outcomes,
+    reset_fixture,
+    resolve_actor_identity,
+    verify_reset_target,
+)
+from tooling.acceptance.fixtures.mobile_oauth_station import (
+    MobileOAuthStationFixture,
+    SERVICES as MOBILE_OAUTH_FIXTURE_SERVICES,
 )
 from tooling.acceptance.fixtures.mobile_resource_lease import (
+    BaselineRestoreResult,
+    BrowserBaselineVerificationResult,
     CLIENT_PLATFORM,
     CLIENT_PROVIDER,
+    MobileResourceLeaseBroker,
+    MobileResourceLeaseHeartbeatOwner,
     PROVIDER_CLIENTS,
+    ResolvedPhysicalDeviceHandle,
+    RunScopedCorrelationSecret,
 )
 from tooling.acceptance.gates.mobile.proof_contracts import (
     GATE_ID as MOBILE_OAUTH_PROOF_GATE_ID,
     ProofContractError,
     validate_contract_payload,
+)
+from tooling.acceptance.provisioners.mobile_native_build import (
+    MobileNativeBuildError,
+    orchestrate_source_bound_build,
+    produce_build_attestation,
 )
 
 
@@ -68,6 +111,112 @@ EXPECTED_CLIENTS = {
     "alice-android": ("android", "alice"),
     "bob-android": ("android", "bob"),
 }
+HARNESS_INVENTORY_SCRIPT = """
+const root = window.__PEERS_MOBILE_ACCEPTANCE__;
+return root ? Object.keys(root).sort() : null;
+"""
+HARNESS_ACTION_SCRIPT = """
+const action = arguments[0];
+const input = arguments[1] || {};
+const done = arguments[arguments.length - 1];
+const root = window.__PEERS_MOBILE_ACCEPTANCE__;
+if (!root || typeof root[action] !== 'function') {
+  done({error: `acceptance.mobile.actionUnavailable:${action}`});
+  return;
+}
+Promise.resolve(root[action](input))
+  .then((value) => done({value}))
+  .catch((error) => done({
+    error: String(error && error.message || error),
+  }));
+"""
+MAX_MOBILE_SCREENSHOT_BYTES = 64 * 1024 * 1024
+MAX_MOBILE_SCREENSHOT_BASE64_BYTES = (
+    4 * ((MAX_MOBILE_SCREENSHOT_BYTES + 2) // 3)
+)
+MAX_MOBILE_SCREENSHOT_RESPONSE_BYTES = (
+    MAX_MOBILE_SCREENSHOT_BASE64_BYTES + 4096
+)
+MAX_APPIUM_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_APPIUM_ERROR_RESPONSE_BYTES = 1024 * 1024
+MAX_MOBILE_PAGE_SOURCE_BYTES = 32 * 1024 * 1024
+MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES = 64 * 1024 * 1024
+MOBILE_RESOURCE_LEASE_AUTH_KEY_BYTES = 32
+MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS = 30.0
+MOBILE_CAPTURE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,95}$")
+MOBILE_CHANNEL_FORBIDDEN_FIELDS = frozenset(
+    {
+        "accesstoken",
+        "authorizationcode",
+        "authorizationurl",
+        "bearertoken",
+        "browserstorage",
+        "callbackcode",
+        "callbackreplayhandle",
+        "cookie",
+        "cookies",
+        "deviceid",
+        "deviceserial",
+        "localstorage",
+        "nonce",
+        "password",
+        "pkce",
+        "pkceverifier",
+        "attemptsecret",
+        "privatekey",
+        "provideremail",
+        "providersubject",
+        "providersubjectid",
+        "refreshtoken",
+        "serial",
+        "sessionstorage",
+        "token",
+        "udid",
+    }
+)
+MOBILE_CHANNEL_FORBIDDEN_VALUE_PATTERNS = (
+    re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}"),
+    re.compile(
+        r"(?i)\b(?:(?:access|refresh)?[_-]?token|authorization[_-]?code|"
+        r"provider[_-]?subject|code[_-]?verifier)\s*[:=]\s*[^\s,;]+"
+    ),
+    re.compile(
+        r"(?i)[?&](?:code|state|token|nonce|code_verifier)=[^&#\s]+"
+    ),
+    re.compile(r"\beyJ[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_-]{8,}\b"),
+)
+MOBILE_NATIVE_CAPABILITIES = {
+    "mobile.native.appium-session": (
+        "start",
+        "stop",
+        "wait_ready",
+        "is_alive",
+        "contexts",
+        "switch_context",
+        "harness_inventory",
+        "harness_action",
+        "harness_negative_callback",
+        "refresh_webview",
+        "find_element",
+        "click",
+        "capture_page_source",
+        "capture_screenshot",
+        "verify_build_identity",
+    ),
+    "mobile.native.provider-authorization": ("authorize",),
+    "mobile.native.station-fixture": (
+        "prepare_following_gate",
+        "expire_awaiting_attempt",
+        "read_proof_snapshot",
+    ),
+}
+EXPECTED_PARENT_HARNESS_ACTIONS = frozenset(
+    {
+        "build.identity",
+        "oauth.replayHandle",
+        "oauth.negativeCallback",
+    }
+)
 HARNESS_REGISTRATION_PATTERN = re.compile(
     r"""registerMobileAcceptanceAction\s*\(\s*['"]([^'"]+)['"]"""
 )
@@ -169,9 +318,7 @@ class BrowserSessionSpec:
     owner: str
     provider: str
     credential_ref: str
-    clean_start: str
-    readback: str
-    cleanup: str
+    lease_ref: str
 
 
 @dataclass(frozen=True)
@@ -180,8 +327,8 @@ class NativeClientSpec:
     platform: str
     actor: str
     runtime: str
-    destination_ref: str
-    device_ref: str
+    destination_class_ref: str
+    physical_device_lease_ref: str
     device_role: str
     profile: str
     port_roles: tuple[str, ...]
@@ -205,14 +352,15 @@ class MobileNativePreflightSpec:
     android_device_inventory_command: tuple[str, ...]
     chromedriver: ChromedriverSpec
     projects: dict[str, str]
-    artifact_refs: dict[str, str]
     application_ids: dict[str, str]
     callback_schemes: dict[str, str]
     build_environment: dict[str, str]
     clients: tuple[NativeClientSpec, ...]
     harness_namespace: str
     harness_actions: tuple[str, ...]
+    parent_harness_actions: tuple[str, ...]
     storage_root_ref: str
+    lease_authentication_key_ref: str
 
 
 class ArtifactReader(Protocol):
@@ -792,6 +940,42 @@ def _required_env_ref(reference: str, resource: str) -> tuple[str, str]:
     return variable, value
 
 
+def _required_lease_authentication_key(
+    reference: str,
+    environment: Mapping[str, str],
+) -> bytearray:
+    if not reference.startswith("env:"):
+        raise BlockedError(
+            reason=(
+                "Mobile resource lease authentication key must use an env "
+                f"reference: {reference!r}"
+            ),
+            resource="mobile-runtime:resource-lease-authentication",
+        )
+    variable = reference.removeprefix("env:")
+    encoded = str(environment.get(variable, "")).strip()
+    try:
+        key = bytearray.fromhex(encoded)
+    except ValueError as error:
+        raise BlockedError(
+            reason=(
+                "Mobile resource lease authentication key must be hexadecimal"
+            ),
+            resource=f"mobile-runtime:resource-lease-authentication:{variable}",
+        ) from error
+    if len(key) != MOBILE_RESOURCE_LEASE_AUTH_KEY_BYTES:
+        for index in range(len(key)):
+            key[index] = 0
+        raise BlockedError(
+            reason=(
+                "Mobile resource lease authentication key must decode to "
+                f"{MOBILE_RESOURCE_LEASE_AUTH_KEY_BYTES} bytes"
+            ),
+            resource=f"mobile-runtime:resource-lease-authentication:{variable}",
+        )
+    return key
+
+
 def load_mobile_native_preflight_spec(
     path: Path = ENVIRONMENTS_DIR / "mobile-native.yaml",
 ) -> MobileNativePreflightSpec:
@@ -889,7 +1073,6 @@ def load_mobile_native_preflight_spec(
 
     build = _required_object(payload, "build", "mobile-contract:build")
     projects = _required_object(build, "projects", "mobile-contract:projects")
-    artifacts = _required_object(build, "artifacts", "mobile-contract:artifacts")
     applications = _required_object(
         build,
         "applications",
@@ -926,16 +1109,16 @@ def load_mobile_native_preflight_spec(
             runtime=_required_text(client, "runtime", "mobile-contract:client")
             if isinstance(client, dict)
             else "",
-            destination_ref=_required_text(
+            destination_class_ref=_required_text(
                 client,
-                "destination_ref",
+                "destination_class_ref",
                 "mobile-contract:client",
             )
             if isinstance(client, dict)
             else "",
-            device_ref=_required_text(
+            physical_device_lease_ref=_required_text(
                 client,
-                "device_ref",
+                "physical_device_lease_ref",
                 "mobile-contract:client",
             )
             if isinstance(client, dict)
@@ -995,36 +1178,18 @@ def load_mobile_native_preflight_spec(
                     "credential_ref",
                     "mobile-contract:browser-session",
                 ),
-                clean_start=_required_text(
+                lease_ref=_required_text(
                     _required_object(
                         client,
                         "browser_session",
                         "mobile-contract:browser-session",
                     ),
-                    "clean_start",
-                    "mobile-contract:browser-session",
-                ),
-                readback=_required_text(
-                    _required_object(
-                        client,
-                        "browser_session",
-                        "mobile-contract:browser-session",
-                    ),
-                    "readback",
-                    "mobile-contract:browser-session",
-                ),
-                cleanup=_required_text(
-                    _required_object(
-                        client,
-                        "browser_session",
-                        "mobile-contract:browser-session",
-                    ),
-                    "cleanup",
+                    "lease_ref",
                     "mobile-contract:browser-session",
                 ),
             )
             if isinstance(client, dict)
-            else BrowserSessionSpec("", "", "", "", "", ""),
+            else BrowserSessionSpec("", "", "", ""),
         )
         for client in raw_clients
     )
@@ -1044,9 +1209,9 @@ def load_mobile_native_preflight_spec(
             reason="Mobile native client profiles must be unique",
             resource="mobile-contract:client-profiles",
         )
-    if len({client.device_ref for client in clients}) != 4:
+    if len({client.physical_device_lease_ref for client in clients}) != 4:
         raise BlockedError(
-            reason="Mobile native client device references must be unique",
+            reason="Mobile native physical-device lease references must be unique",
             resource="mobile-contract:client-devices",
         )
     if any(len(client.port_roles) != 3 for client in clients):
@@ -1066,13 +1231,16 @@ def load_mobile_native_preflight_spec(
             browser.owner != client.id
             or (browser.provider, browser.credential_ref)
             != expected_browser_sessions[client.id]
-            or {browser.clean_start, browser.readback, browser.cleanup}
-            != {"required"}
+            or client.destination_class_ref != f"{client.platform}-physical"
+            or client.physical_device_lease_ref
+            != f"physical-device-lease/{client.id}"
+            or browser.lease_ref
+            != f"provider-browser-session-lease/{client.id}"
         ):
             raise BlockedError(
                 reason=(
-                    f"Mobile native client {client.id!r} requires owned "
-                    "clean-start/readback/cleanup browser session semantics"
+                    f"Mobile native client {client.id!r} has an invalid "
+                    "lease or physical-destination binding"
                 ),
                 resource=f"mobile-contract:browser-session:{client.id}",
             )
@@ -1085,6 +1253,20 @@ def load_mobile_native_preflight_spec(
         raise BlockedError(
             reason="Mobile native Harness requires typed action names",
             resource="mobile-contract:harness-actions",
+        )
+    parent_actions = harness.get("parent_only_actions")
+    if (
+        not isinstance(parent_actions, list)
+        or set(parent_actions) != EXPECTED_PARENT_HARNESS_ACTIONS
+        or any(not isinstance(action, str) for action in parent_actions)
+        or set(actions).intersection(parent_actions)
+    ):
+        raise BlockedError(
+            reason=(
+                "Mobile native Harness parent-only actions must match the "
+                "frozen disjoint action set"
+            ),
+            resource="mobile-contract:harness-parent-actions",
         )
     leases = _required_object(payload, "leases", "mobile-contract:leases")
     return MobileNativePreflightSpec(
@@ -1144,14 +1326,6 @@ def load_mobile_native_preflight_spec(
             )
             for platform in EXPECTED_DRIVER_IDENTITIES
         },
-        artifact_refs={
-            platform: _required_text(
-                artifacts,
-                platform,
-                f"mobile-contract:artifact:{platform}",
-            )
-            for platform in EXPECTED_DRIVER_IDENTITIES
-        },
         application_ids={
             platform: _required_text(
                 _required_object(
@@ -1187,10 +1361,16 @@ def load_mobile_native_preflight_spec(
             "mobile-contract:harness",
         ),
         harness_actions=tuple(actions),
+        parent_harness_actions=tuple(parent_actions),
         storage_root_ref=_required_text(
             leases,
             "storage_root_ref",
             "mobile-contract:storage",
+        ),
+        lease_authentication_key_ref=_required_text(
+            leases,
+            "authentication_key_ref",
+            "mobile-contract:resource-lease-authentication",
         ),
     )
 
@@ -1204,10 +1384,33 @@ def _appium_server_version(server_url: str, status_path: str) -> str:
         status_url,
         headers={"Accept": "application/json"},
     )
+    deadline = time.monotonic() + 8
     try:
-        with urllib.request.urlopen(request, timeout=8) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        with urllib.request.urlopen(
+            request,
+            timeout=max(deadline - time.monotonic(), 0.001),
+        ) as response:
+            raw = read_bounded_http_response(
+                response,
+                max_bytes=MAX_APPIUM_ERROR_RESPONSE_BYTES,
+                deadline_monotonic=deadline,
+            )
+            payload = json.loads(raw.decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        try:
+            raise BlockedError(
+                reason=(
+                    f"Appium server is unavailable at {status_url}: "
+                    f"HTTP {error.code}"
+                ),
+                resource="mobile-runtime:appium-server",
+            ) from error
+        finally:
+            error.close()
     except (
+        HttpResponseBodyTooLarge,
+        HttpResponseDeadlineExceeded,
+        HttpResponseDeadlineUnsupported,
         OSError,
         TimeoutError,
         urllib.error.URLError,
@@ -1557,19 +1760,6 @@ def preflight_mobile_native_inputs(
                 resource=f"mobile-runtime:{platform}-project",
             )
 
-    build_artifacts: dict[str, str] = {}
-    for platform, reference in spec.artifact_refs.items():
-        _, artifact = _required_env_ref(
-            reference,
-            f"mobile-runtime:{platform}-build",
-        )
-        if not Path(artifact).is_file():
-            raise BlockedError(
-                reason=f"Mobile native {platform} build artifact is missing",
-                resource=f"mobile-runtime:{platform}-build",
-            )
-        build_artifacts[platform] = artifact
-
     _, appium_url = _required_env_ref(
         spec.appium_server_url_ref,
         "mobile-runtime:appium-server",
@@ -1593,22 +1783,7 @@ def preflight_mobile_native_inputs(
         repo_root,
         command_environment,
     )
-    client_inputs: dict[str, dict[str, str]] = {}
     for client in spec.clients:
-        destination_variable, destination = _required_env_ref(
-            client.destination_ref,
-            f"mobile-runtime:destination:{client.id}",
-        )
-        device_variable, device = _required_env_ref(
-            client.device_ref,
-            f"mobile-runtime:device:{client.id}",
-        )
-        client_inputs[client.id] = {
-            "destinationVariable": destination_variable,
-            "destination": destination,
-            "deviceVariable": device_variable,
-            "device": device,
-        }
         if not client.device_role.endswith("-physical"):
             raise BlockedError(
                 reason=f"Mobile native client {client.id!r} must be physical",
@@ -1621,20 +1796,6 @@ def preflight_mobile_native_inputs(
     android_clients = [
         client for client in spec.clients if client.platform == "android"
     ]
-    for platform_name, clients in (
-        ("ios", ios_clients),
-        ("android", android_clients),
-    ):
-        devices = [client_inputs[client.id]["device"] for client in clients]
-        if len(set(devices)) != 2:
-            raise BlockedError(
-                reason=(
-                    f"Mobile native {platform_name} clients require two "
-                    "distinct physical devices"
-                ),
-                resource=f"mobile-runtime:{platform_name}-device-isolation",
-            )
-
     ios_inventory = _run_checked(
         executor,
         spec.ios_device_inventory_command,
@@ -1643,17 +1804,11 @@ def preflight_mobile_native_inputs(
         resource="mobile-runtime:ios-device-inventory",
     )
     connected_ios = _connected_ios_devices(ios_inventory.stdout)
-    for client in ios_clients:
-        device = client_inputs[client.id]["device"]
-        destination = client_inputs[client.id]["destination"].lower()
-        if device not in connected_ios or "simulator" in destination:
-            raise BlockedError(
-                reason=(
-                    f"iOS client {client.id!r} is not a connected physical "
-                    "device"
-                ),
-                resource=f"mobile-runtime:physical-device:{client.id}",
-            )
+    if len(connected_ios) != len(ios_clients):
+        raise BlockedError(
+            reason="Mobile native requires exactly two connected physical iOS devices",
+            resource="mobile-runtime:ios-device-isolation",
+        )
 
     _, ios_wda_bundle_id = _required_env_ref(
         spec.ios_wda_bundle_id_ref,
@@ -1680,18 +1835,44 @@ def preflight_mobile_native_inputs(
         resource="mobile-runtime:android-device-inventory",
     )
     connected_android = _connected_android_devices(android_inventory.stdout)
+    if len(connected_android) != len(android_clients):
+        raise BlockedError(
+            reason=(
+                "Mobile native requires exactly two connected physical "
+                "Android devices"
+            ),
+            resource="mobile-runtime:android-device-isolation",
+        )
+    device_identifiers = {
+        **dict(
+            zip(
+                sorted(client.id for client in ios_clients),
+                sorted(connected_ios),
+            )
+        ),
+        **dict(
+            zip(
+                sorted(client.id for client in android_clients),
+                sorted(connected_android),
+            )
+        ),
+    }
+    physical_devices = {
+        client.id: ResolvedPhysicalDeviceHandle(
+            device_identifiers[client.id],
+            client.platform,
+            True,
+            True,
+            False,
+        )
+        for client in spec.clients
+    }
     android_abis: set[str] = set()
     browser_details: dict[str, dict[str, Any]] = {}
     browser_majors: set[int] = set()
     for client in android_clients:
-        device = client_inputs[client.id]["device"]
-        destination = client_inputs[client.id]["destination"].lower()
-        if (
-            device not in connected_android
-            or device.startswith("emulator-")
-            or "emulator" in destination
-            or "avd" in destination
-        ):
+        device = physical_devices[client.id].identifier
+        if device.startswith("emulator-"):
             raise BlockedError(
                 reason=(
                     f"Android client {client.id!r} is not a connected "
@@ -1759,7 +1940,9 @@ def preflight_mobile_native_inputs(
         spec.storage_root_ref,
         "mobile-runtime:storage-root",
     )
-    required_actions = set(spec.harness_actions)
+    required_actions = set(spec.harness_actions).union(
+        spec.parent_harness_actions
+    )
     missing_actions = sorted(
         required_actions - _registered_harness_actions(repo_root)
     )
@@ -1771,6 +1954,10 @@ def preflight_mobile_native_inputs(
             ),
             resource="mobile-runtime:harness-actions",
         )
+    lease_authentication_key = _required_lease_authentication_key(
+        spec.lease_authentication_key_ref,
+        command_environment,
+    )
     return {
         "appiumUrl": appium_url,
         "appiumVersion": actual_appium_version,
@@ -1783,9 +1970,9 @@ def preflight_mobile_native_inputs(
         },
         "androidBrowsers": browser_details,
         "chromedriver": chromedriver,
-        "buildArtifacts": build_artifacts,
-        "clients": client_inputs,
+        "physicalDevices": physical_devices,
         "storageRoot": storage_root,
+        "leaseAuthenticationKey": lease_authentication_key,
     }
 
 
@@ -1840,11 +2027,3360 @@ def _with_mobile_resources(
     )
 
 
+def _mobile_native_manifest_resources(
+    projection: MobileNativeSourceProjection,
+    fixture_refs: Mapping[str, ArtifactRef],
+    spec: MobileNativePreflightSpec,
+    *,
+    evidence_run_id: str,
+    provisioning_run_id: str,
+) -> dict[str, Any]:
+    if set(fixture_refs) != set(MOBILE_OAUTH_FIXTURE_SERVICES):
+        raise BlockedError(
+            reason="Mobile native Station Fixture refs are incomplete",
+            resource="mobile-source:station-fixture-leases",
+        )
+    if not evidence_run_id or not provisioning_run_id:
+        raise BlockedError(
+            reason="Mobile native run identities are incomplete",
+            resource="mobile-source:run-identities",
+        )
+    if evidence_run_id == provisioning_run_id:
+        raise BlockedError(
+            reason=(
+                "Mobile native evidence and provisioning run identities "
+                "must remain distinct"
+            ),
+            resource="mobile-source:run-identities",
+        )
+    authority_refs = [
+        *(
+            values["buildAttestation"]
+            for values in projection.applications.values()
+        ),
+        *projection.provider_account_leases.values(),
+        *(
+            values[field]
+            for values in projection.clients.values()
+            for field in ("physicalDeviceLease", "browserSessionLease")
+        ),
+        *fixture_refs.values(),
+    ]
+    if any(reference.run_id != evidence_run_id for reference in authority_refs):
+        raise BlockedError(
+            reason=(
+                "Mobile native authority ArtifactRefs must use the "
+                "evidence run identity"
+            ),
+            resource="mobile-source:run-identities",
+        )
+    return {
+        "runIdentities": {
+            "evidenceRunId": evidence_run_id,
+            "provisioningRunId": provisioning_run_id,
+        },
+        "sourceArtifacts": projection.to_dict(),
+        "applications": {
+            platform_name: {
+                "callbackScheme": spec.callback_schemes[platform_name],
+            }
+            for platform_name in EXPECTED_DRIVER_IDENTITIES
+        },
+        "harness": {
+            "namespace": spec.harness_namespace,
+            "requiredActions": list(spec.harness_actions),
+        },
+        "oauthFixtureLeases": {
+            service_id: fixture_refs[service_id].to_dict()
+            for service_id in MOBILE_OAUTH_FIXTURE_SERVICES
+        },
+    }
+
+
+def _capability_text(
+    payload: Mapping[str, object],
+    name: str,
+    *,
+    resource: str,
+) -> str:
+    value = payload.get(name)
+    if not isinstance(value, str) or not value:
+        raise EphemeralCapabilityBlocked(
+            f"Mobile native capability requires {name!r}",
+            resource=resource,
+        )
+    return value
+
+
+def _capability_mapping(
+    payload: Mapping[str, object],
+    name: str,
+    *,
+    resource: str,
+) -> Mapping[str, object]:
+    value = payload.get(name)
+    if not isinstance(value, Mapping):
+        raise EphemeralCapabilityBlocked(
+            f"Mobile native capability requires object {name!r}",
+            resource=resource,
+        )
+    return value
+
+
+def _quarantine_broker_lease(
+    broker: MobileResourceLeaseBroker,
+    lease: Mapping[str, Any],
+    reason: str,
+    *,
+    deadline_monotonic: float | None = None,
+    cancellation: threading.Event | None = None,
+) -> bool:
+    outcome = broker.quarantine(
+        lease,
+        reason,
+        deadline_monotonic=deadline_monotonic,
+        cancellation=cancellation,
+    )
+    return (
+        isinstance(outcome, Mapping)
+        and outcome.get("finalState") == "QUARANTINED"
+    )
+
+
+def _quarantine_fixture_lease(
+    fixture: MobileOAuthStationFixture,
+    service_id: str,
+    reason: str,
+    *,
+    deadline_monotonic: float | None = None,
+    cancellation: threading.Event | None = None,
+) -> bool:
+    _require_cleanup_budget(deadline_monotonic, cancellation)
+    fixture._quarantine(service_id, reason)
+    return fixture.quarantined.get(service_id) == reason
+
+
+def _require_cleanup_budget(
+    deadline_monotonic: float | None,
+    cancellation: threading.Event | None,
+) -> None:
+    if cancellation is not None and cancellation.is_set():
+        raise TimeoutError("Mobile native parent cleanup was cancelled")
+    if (
+        deadline_monotonic is not None
+        and time.monotonic() >= deadline_monotonic
+    ):
+        raise TimeoutError("Mobile native parent cleanup exceeded its deadline")
+
+
+class _ParentAppiumTransport:
+    def __init__(self, server_url: str, timeout_seconds: float = 60.0) -> None:
+        if (
+            not isinstance(timeout_seconds, (int, float))
+            or isinstance(timeout_seconds, bool)
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("Appium timeout must be a positive finite number")
+        self.server_url = server_url.rstrip("/")
+        self.timeout_seconds = float(timeout_seconds)
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        max_response_bytes: int = MAX_APPIUM_RESPONSE_BYTES,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> Any:
+        if (
+            not isinstance(max_response_bytes, int)
+            or isinstance(max_response_bytes, bool)
+            or max_response_bytes <= 0
+        ):
+            raise ValueError("Appium response byte limit must be positive")
+        body = (
+            json.dumps(dict(payload)).encode("utf-8")
+            if payload is not None
+            else None
+        )
+        request = urllib.request.Request(
+            f"{self.server_url}/{path.lstrip('/')}",
+            data=body,
+            headers={
+                "Accept": "application/json",
+                **({"Content-Type": "application/json"} if body else {}),
+            },
+            method=method,
+        )
+        if deadline_monotonic is not None and (
+            not isinstance(deadline_monotonic, (int, float))
+            or isinstance(deadline_monotonic, bool)
+            or not math.isfinite(deadline_monotonic)
+        ):
+            raise ValueError("Appium deadline must be finite")
+        now = time.monotonic()
+        deadline = now + self.timeout_seconds
+        if deadline_monotonic is not None:
+            deadline = min(deadline, float(deadline_monotonic))
+        if deadline <= now:
+            raise _AppiumDeadlineExceeded(
+                "Appium request failed: "
+                "HttpResponseDeadlineExceeded before dispatch"
+            )
+        if cancellation is not None and cancellation.is_set():
+            raise _AppiumDeadlineExceeded(
+                "Appium request failed: HttpResponseCancelled before dispatch"
+            )
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=max(deadline - time.monotonic(), 0.001),
+            ) as response:
+                raw = read_bounded_http_response(
+                    response,
+                    max_bytes=max_response_bytes,
+                    deadline_monotonic=deadline,
+                    cancellation=cancellation,
+                )
+        except urllib.error.HTTPError as error:
+            try:
+                try:
+                    read_bounded_http_response(
+                        error,
+                        max_bytes=MAX_APPIUM_ERROR_RESPONSE_BYTES,
+                        deadline_monotonic=deadline,
+                        cancellation=cancellation,
+                    )
+                except HttpResponseCancelled as cancellation_error:
+                    raise _AppiumDeadlineExceeded(
+                        "Appium request failed: HttpResponseCancelled"
+                    ) from cancellation_error
+                except HttpResponseDeadlineExceeded as deadline_error:
+                    raise _AppiumDeadlineExceeded(
+                        "Appium request failed: "
+                        "HttpResponseDeadlineExceeded"
+                    ) from deadline_error
+                except (
+                    HttpResponseBodyTooLarge,
+                    HttpResponseDeadlineUnsupported,
+                    OSError,
+                ):
+                    pass
+                raise DriverError(
+                    f"Appium {method} request failed with HTTP {error.code}"
+                ) from error
+            finally:
+                error.close()
+        except HttpResponseBodyTooLarge as error:
+            raise DriverError(
+                "Appium response exceeds the configured byte limit"
+            ) from error
+        except HttpResponseDeadlineExceeded as error:
+            raise _AppiumDeadlineExceeded(
+                "Appium request failed: HttpResponseDeadlineExceeded"
+            ) from error
+        except HttpResponseCancelled as error:
+            raise _AppiumDeadlineExceeded(
+                "Appium request failed: HttpResponseCancelled"
+            ) from error
+        except (TimeoutError, socket.timeout) as error:
+            raise _AppiumDeadlineExceeded(
+                "Appium request failed: HttpResponseDeadlineExceeded"
+            ) from error
+        except urllib.error.URLError as error:
+            if isinstance(error.reason, (TimeoutError, socket.timeout)):
+                raise _AppiumDeadlineExceeded(
+                    "Appium request failed: HttpResponseDeadlineExceeded"
+                ) from error
+            raise DriverError(
+                f"Appium {method} request failed: {type(error).__name__}"
+            ) from error
+        except (HttpResponseDeadlineUnsupported, OSError) as error:
+            raise DriverError(
+                f"Appium {method} request failed: {type(error).__name__}"
+            ) from error
+        try:
+            decoded = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise DriverError("Appium returned invalid JSON") from error
+        if not isinstance(decoded, dict):
+            raise DriverError("Appium returned a non-object response")
+        value = decoded.get("value")
+        if isinstance(value, dict) and value.get("error"):
+            raise DriverError(
+                f"Appium request failed with {value.get('error')}"
+            )
+        return value
+
+
+class _AppiumDeadlineExceeded(DriverError, TimeoutError):
+    """An Appium request exhausted the enclosing capability deadline."""
+
+
+class _ParentAppiumSession:
+    """Raw Appium authority retained exclusively in the Provisioner process."""
+
+    def __init__(
+        self,
+        transport: _ParentAppiumTransport,
+        *,
+        client_id: str,
+        platform_name: str,
+        automation_name: str,
+        artifact_reader: EvidenceStore,
+        device_broker: MobileResourceLeaseBroker,
+        physical_device_lease: ArtifactRef,
+        build_attestation: ArtifactRef,
+        ports: Mapping[str, int],
+        chromedriver_executable: str = "",
+    ) -> None:
+        self.transport = transport
+        self.client_id = client_id
+        self.platform = platform_name
+        self.automation_name = automation_name
+        self.artifact_reader = artifact_reader
+        self.device_broker = device_broker
+        self.physical_device_lease_ref = physical_device_lease
+        self.build_attestation_ref = build_attestation
+        self.ports = dict(ports)
+        self.chromedriver_executable = chromedriver_executable
+        self.session_id = ""
+        self._device_lease: dict[str, Any] | None = None
+        self._build_attestation: dict[str, Any] | None = None
+        self._application_id = ""
+        self._fresh_install_trace: dict[str, Any] | None = None
+
+    @property
+    def fresh_install_trace(self) -> dict[str, Any]:
+        if self._fresh_install_trace is None:
+            raise DriverError("Appium fresh-install trace is unavailable")
+        return json.loads(json.dumps(self._fresh_install_trace))
+
+    def start(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> "_ParentAppiumSession":
+        device = _load_source_artifact(
+            self.artifact_reader,
+            self.physical_device_lease_ref,
+            expected_path=(
+                f"runtime/mobile/leases/devices/{self.client_id}.json"
+            ),
+            expected_kind="physical-device-lease",
+            expected_workspace_id=self.physical_device_lease_ref.workspace_id,
+            expected_run_id=self.physical_device_lease_ref.run_id,
+        )
+        attestation = _load_source_artifact(
+            self.artifact_reader,
+            self.build_attestation_ref,
+            expected_path=f"runtime/mobile/builds/{self.platform}.json",
+            expected_kind="mobile-application-build-attestation",
+            expected_workspace_id=self.build_attestation_ref.workspace_id,
+            expected_run_id=self.build_attestation_ref.run_id,
+        )
+        package_ref = _resolve_build_package(
+            self.artifact_reader,
+            attestation,
+            platform=self.platform,
+            expected_workspace_id=self.build_attestation_ref.workspace_id,
+            expected_run_id=self.build_attestation_ref.run_id,
+        )
+        package = self.artifact_reader.resolve(package_ref)
+        self._device_lease = device
+        self._build_attestation = attestation
+        self._application_id = str(attestation["buildIdentity"]["applicationId"])
+        capabilities: dict[str, Any] = {
+            "platformName": "iOS" if self.platform == "ios" else "Android",
+            "appium:automationName": self.automation_name,
+            "appium:autoWebview": False,
+            "appium:newCommandTimeout": 180,
+        }
+        if self.platform == "ios":
+            capabilities.update(
+                {
+                    "appium:wdaLocalPort": self._required_port("wda-local"),
+                    "appium:mjpegServerPort": self._required_port("mjpeg"),
+                    "appium:webviewConnectTimeout": 30000,
+                    "appium:includeSafariInWebviews": True,
+                }
+            )
+        else:
+            if not self.chromedriver_executable:
+                raise DriverError(
+                    "Android Appium requires the verified ChromeDriver"
+                )
+            capabilities.update(
+                {
+                    "appium:systemPort": self._required_port("system"),
+                    "appium:mjpegServerPort": self._required_port("mjpeg"),
+                    "appium:chromedriverPort": self._required_port("webview"),
+                    "appium:ensureWebviewsHavePages": True,
+                    "appium:chromedriverExecutable": self.chromedriver_executable,
+                }
+            )
+
+        lease_options: dict[str, Any] = {}
+        if deadline_monotonic is not None:
+            lease_options["deadline_monotonic"] = deadline_monotonic
+        value = self.device_broker.with_physical_device(
+            device,
+            lambda handle: self.transport.request(
+                "POST",
+                "/session",
+                {
+                    "capabilities": {
+                        "alwaysMatch": {
+                            **capabilities,
+                            "appium:udid": handle.identifier,
+                        },
+                        "firstMatch": [{}],
+                    }
+                },
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+            cancellation=cancellation,
+            **lease_options,
+        )
+        session_id = (
+            str(value.get("sessionId") or "")
+            if isinstance(value, Mapping)
+            else ""
+        )
+        if not session_id:
+            raise DriverError("Appium session response has no session ID")
+        self.session_id = session_id
+        try:
+            self._fresh_install_trace = self._fresh_install(
+                package,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        except BaseException:
+            try:
+                self.stop(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            except BaseException:
+                pass
+            raise
+        return self
+
+    def stop(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
+        if self.session_id:
+            session_id = self.session_id
+            self._request(
+                "DELETE",
+                f"/session/{urllib.parse.quote(session_id, safe='')}",
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            self.session_id = ""
+
+    def wait_for_ready(
+        self,
+        timeout: float = 30.0,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
+        local_deadline = time.monotonic() + _positive_appium_timeout(timeout)
+        deadline = _bounded_appium_deadline(timeout, deadline_monotonic)
+        while time.monotonic() < deadline:
+            if "NATIVE_APP" in self.contexts(
+                deadline_monotonic=deadline,
+                cancellation=cancellation,
+            ):
+                return
+            _wait_for_appium_poll(
+                min(0.25, max(0.0, deadline - time.monotonic())),
+                cancellation=cancellation,
+            )
+        _raise_if_capability_deadline_exhausted(
+            deadline_monotonic,
+            local_deadline=local_deadline,
+            cancellation=cancellation,
+        )
+        raise DriverError("Appium native context did not become ready")
+
+    def is_alive(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> bool:
+        try:
+            self._request(
+                "GET",
+                self._path("/timeouts"),
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            return True
+        except _AppiumDeadlineExceeded:
+            raise
+        except DriverError:
+            return False
+
+    def contexts(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> list[str]:
+        value = self._request(
+            "GET",
+            self._path("/contexts"),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if not isinstance(value, list) or any(
+            not isinstance(item, str) for item in value
+        ):
+            raise DriverError("Appium contexts response is invalid")
+        return list(value)
+
+    def switch_context(
+        self,
+        name: str,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
+        self._request(
+            "POST",
+            self._path("/context"),
+            {"name": name},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def switch_to_native(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
+        self.switch_context(
+            "NATIVE_APP",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def switch_to_app_webview(
+        self,
+        timeout: float = 30.0,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> str:
+        local_deadline = time.monotonic() + _positive_appium_timeout(timeout)
+        deadline = _bounded_appium_deadline(timeout, deadline_monotonic)
+        while time.monotonic() < deadline:
+            for context in self.contexts(
+                deadline_monotonic=deadline,
+                cancellation=cancellation,
+            ):
+                if context.upper().startswith(("WEBVIEW", "CHROMIUM")):
+                    self.switch_context(
+                        context,
+                        deadline_monotonic=deadline,
+                        cancellation=cancellation,
+                    )
+                    return context
+            _wait_for_appium_poll(
+                min(0.25, max(0.0, deadline - time.monotonic())),
+                cancellation=cancellation,
+            )
+        _raise_if_capability_deadline_exhausted(
+            deadline_monotonic,
+            local_deadline=local_deadline,
+            cancellation=cancellation,
+        )
+        raise DriverError("Appium WebView did not become ready")
+
+    def execute_script(
+        self,
+        script: str,
+        *args: Any,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> Any:
+        return self._request(
+            "POST",
+            self._path("/execute/sync"),
+            {"script": script, "args": list(args)},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def execute_async_script(
+        self,
+        script: str,
+        *args: Any,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> Any:
+        return self._request(
+            "POST",
+            self._path("/execute/async"),
+            {"script": script, "args": list(args)},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def refresh_webview(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
+        self._request(
+            "POST",
+            self._path("/refresh"),
+            {},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def find_element(
+        self,
+        using: str,
+        value: str,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> str:
+        result = self._request(
+            "POST",
+            self._path("/element"),
+            {"using": using, "value": value},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        element_ref = (
+            str(result.get("element-6066-11e4-a52e-4f735466cecf") or "")
+            if isinstance(result, Mapping)
+            else ""
+        )
+        if not element_ref:
+            raise DriverError("Appium element response is invalid")
+        return element_ref
+
+    def click(
+        self,
+        element_ref: str,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
+        self._request(
+            "POST",
+            self._path(
+                f"/element/{urllib.parse.quote(element_ref, safe='')}/click"
+            ),
+            {},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def screenshot_bytes(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> bytes:
+        value = self._request(
+            "GET",
+            self._path("/screenshot"),
+            max_response_bytes=MAX_MOBILE_SCREENSHOT_RESPONSE_BYTES,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if not isinstance(value, str):
+            raise DriverError("Appium screenshot response is invalid")
+        if len(value) > MAX_MOBILE_SCREENSHOT_BASE64_BYTES:
+            raise DriverError(
+                "Appium screenshot encoding exceeds the configured byte limit"
+            )
+        try:
+            return base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise DriverError("Appium screenshot response is invalid") from error
+
+    def get_page_source(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> str:
+        value = self._request(
+            "GET",
+            self._path("/source"),
+            max_response_bytes=MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if not isinstance(value, str):
+            raise DriverError("Appium page source response is invalid")
+        if len(value.encode("utf-8")) > MAX_MOBILE_PAGE_SOURCE_BYTES:
+            raise DriverError(
+                "Appium page source exceeds the configured byte limit"
+            )
+        return value
+
+    def harness_inventory(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> list[str]:
+        inventory = self.execute_script(
+            HARNESS_INVENTORY_SCRIPT,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if not isinstance(inventory, list) or any(
+            not isinstance(action, str) for action in inventory
+        ):
+            raise DriverError("Mobile Acceptance Harness inventory is invalid")
+        return inventory
+
+    def call_action(
+        self,
+        action: str,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> Any:
+        result = self.execute_async_script(
+            HARNESS_ACTION_SCRIPT,
+            action,
+            dict(payload or {}),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if not isinstance(result, Mapping) or result.get("error"):
+            raise DriverError(f"Mobile Acceptance action {action!r} failed")
+        return result.get("value")
+
+    def verify_installed_build_identity(
+        self,
+        fresh_install_trace: ArtifactRef,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> dict[str, Any]:
+        if self._build_attestation is None:
+            raise DriverError("Appium build attestation is unavailable")
+        trace = _load_source_artifact(
+            self.artifact_reader,
+            fresh_install_trace,
+            expected_path=(
+                f"evidence/mobile/runtime/{self.client_id}/install.json"
+            ),
+            expected_kind="mobile-fresh-install-trace",
+            expected_workspace_id=fresh_install_trace.workspace_id,
+            expected_run_id=fresh_install_trace.run_id,
+        )
+        runtime = self.call_action(
+            "build.identity",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        expected = self._build_attestation["buildIdentity"]
+        digest = self._build_attestation["embeddedIdentitySha256"]
+        if (
+            not isinstance(runtime, Mapping)
+            or set(runtime) != {"identity", "embeddedIdentitySha256"}
+            or runtime.get("identity") != expected
+            or runtime.get("embeddedIdentitySha256") != digest
+            or self._active_application_id(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            != expected["applicationId"]
+            or trace != self._fresh_install_trace
+        ):
+            raise DriverError("installed and attested build identities differ")
+        return validate_contract_payload(
+            {
+                "artifactKind": "mobile-installed-build-identity",
+                "runId": self._build_attestation["runId"],
+                "gateId": MOBILE_OAUTH_PROOF_GATE_ID,
+                "clientId": self.client_id,
+                "platform": self.platform,
+                "buildAttestation": self.build_attestation_ref.to_dict(),
+                "freshInstallTrace": fresh_install_trace.to_dict(),
+                "buildId": expected["buildId"],
+                "activeApplicationId": expected["applicationId"],
+                "webEmbeddedIdentitySha256": digest,
+                "rustEmbeddedIdentitySha256": digest,
+                "attestedEmbeddedIdentitySha256": digest,
+                "allIdentitiesMatch": True,
+                "observedAt": _utc_timestamp(),
+            },
+            expected_kind="mobile-installed-build-identity",
+            expected_run_id=self._build_attestation["runId"],
+            expected_workspace_id=self.build_attestation_ref.workspace_id,
+        )
+
+    def _fresh_install(
+        self,
+        package: Path,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> dict[str, Any]:
+        application_id = self._application_id
+        self._request(
+            "POST",
+            self._path("/appium/device/remove_app"),
+            {"appId": application_id},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if self._is_installed(
+            application_id,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        ):
+            raise DriverError("Appium prior application remains installed")
+        uninstall_at = _utc_timestamp()
+        self._request(
+            "POST",
+            self._path("/appium/device/install_app"),
+            {"appPath": str(package)},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if not self._is_installed(
+            application_id,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        ):
+            raise DriverError("Appium installed application is unavailable")
+        install_at = _utc_timestamp()
+        self._request(
+            "POST",
+            self._path("/appium/device/activate_app"),
+            {"appId": application_id},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        assert self._build_attestation is not None
+        return validate_contract_payload(
+            {
+                "artifactKind": "mobile-fresh-install-trace",
+                "runId": self._build_attestation["runId"],
+                "gateId": MOBILE_OAUTH_PROOF_GATE_ID,
+                "clientId": self.client_id,
+                "platform": self.platform,
+                "physicalDeviceLease": self.physical_device_lease_ref.to_dict(),
+                "buildAttestation": self.build_attestation_ref.to_dict(),
+                "applicationId": application_id,
+                "artifactSha256": self._build_attestation["artifact"]["sha256"],
+                "uninstall": {
+                    "stepIndex": 1,
+                    "requested": True,
+                    "priorInstallationAbsent": True,
+                    "completedAt": uninstall_at,
+                },
+                "install": {
+                    "stepIndex": 2,
+                    "completed": True,
+                    "applicationPresent": True,
+                    "completedAt": install_at,
+                },
+                "observedAt": _utc_timestamp(),
+            },
+            expected_kind="mobile-fresh-install-trace",
+            expected_run_id=self._build_attestation["runId"],
+            expected_workspace_id=self.build_attestation_ref.workspace_id,
+        )
+
+    def _is_installed(
+        self,
+        application_id: str,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> bool:
+        value = self._request(
+            "POST",
+            self._path("/appium/device/app_installed"),
+            {"bundleId": application_id},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if not isinstance(value, bool):
+            raise DriverError("Appium application readback is invalid")
+        return value
+
+    def _active_application_id(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> str:
+        if self.platform == "ios":
+            value = self.execute_script(
+                "mobile: activeAppInfo",
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            field = "bundleId"
+        else:
+            value = self.execute_script(
+                "mobile: getCurrentActivity",
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            field = "appPackage"
+        result = (
+            str(value.get(field) or "") if isinstance(value, Mapping) else ""
+        )
+        if not result:
+            raise DriverError("Appium active application is unavailable")
+        return result
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        max_response_bytes: int = MAX_APPIUM_RESPONSE_BYTES,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> Any:
+        if self._device_lease is None:
+            raise DriverError("Appium physical-device lease is unavailable")
+        request_options: dict[str, Any] = {
+            "max_response_bytes": max_response_bytes
+        }
+        if deadline_monotonic is not None:
+            request_options["deadline_monotonic"] = deadline_monotonic
+        if cancellation is not None:
+            request_options["cancellation"] = cancellation
+        lease_options: dict[str, Any] = {}
+        if deadline_monotonic is not None:
+            lease_options["deadline_monotonic"] = deadline_monotonic
+        if cancellation is not None:
+            lease_options["cancellation"] = cancellation
+        return self.device_broker.with_physical_device(
+            self._device_lease,
+            lambda _: self.transport.request(
+                method,
+                path,
+                payload,
+                **request_options,
+            ),
+            **lease_options,
+        )
+
+    def _required_port(self, role: str) -> int:
+        value = self.ports.get(role)
+        if not isinstance(value, int) or value <= 0:
+            raise DriverError(f"Appium requires port role {role!r}")
+        return value
+
+    def _path(self, suffix: str) -> str:
+        if not self.session_id:
+            raise DriverError("Appium session is not started")
+        return (
+            f"/session/{urllib.parse.quote(self.session_id, safe='')}{suffix}"
+        )
+
+
+def _utc_timestamp() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def _bounded_appium_deadline(
+    timeout_seconds: float,
+    deadline_monotonic: float | None,
+) -> float:
+    timeout = _positive_appium_timeout(timeout_seconds)
+    deadline = time.monotonic() + timeout
+    if deadline_monotonic is None:
+        return deadline
+    if (
+        not isinstance(deadline_monotonic, (int, float))
+        or isinstance(deadline_monotonic, bool)
+        or not math.isfinite(deadline_monotonic)
+    ):
+        raise ValueError("Appium deadline must be finite")
+    return min(deadline, float(deadline_monotonic))
+
+
+def _positive_appium_timeout(timeout_seconds: float) -> float:
+    if (
+        not isinstance(timeout_seconds, (int, float))
+        or isinstance(timeout_seconds, bool)
+        or not math.isfinite(timeout_seconds)
+        or timeout_seconds <= 0
+    ):
+        raise ValueError("Appium timeout must be a positive finite number")
+    return float(timeout_seconds)
+
+
+def _wait_for_appium_poll(
+    timeout_seconds: float,
+    *,
+    cancellation: threading.Event | None,
+) -> None:
+    if cancellation is None:
+        time.sleep(timeout_seconds)
+        return
+    if cancellation.wait(timeout_seconds):
+        raise _AppiumDeadlineExceeded(
+            "Appium request failed: HttpResponseCancelled"
+        )
+
+
+def _raise_if_capability_deadline_exhausted(
+    deadline_monotonic: float | None,
+    *,
+    local_deadline: float,
+    cancellation: threading.Event | None,
+) -> None:
+    if cancellation is not None and cancellation.is_set():
+        raise _AppiumDeadlineExceeded(
+            "Appium request failed: HttpResponseCancelled"
+        )
+    if (
+        deadline_monotonic is not None
+        and deadline_monotonic <= local_deadline
+        and time.monotonic() >= deadline_monotonic
+    ):
+        raise _AppiumDeadlineExceeded(
+            "Appium request failed: HttpResponseDeadlineExceeded"
+        )
+
+
+def _mobile_capture_id(
+    payload: Mapping[str, object],
+    *,
+    client_id: str,
+) -> str:
+    capture_id = _capability_text(
+        payload,
+        "captureId",
+        resource=f"mobile.native.appium-session:{client_id}",
+    )
+    if MOBILE_CAPTURE_ID_PATTERN.fullmatch(capture_id) is None:
+        raise EphemeralCapabilityBlocked(
+            "Mobile evidence capture identity is invalid",
+            resource=f"mobile.native.appium-session:{client_id}",
+        )
+    return capture_id
+
+
+def _assert_mobile_channel_safe(
+    value: object,
+    *,
+    path: str = "$",
+) -> None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            if normalized in MOBILE_CHANNEL_FORBIDDEN_FIELDS:
+                raise ValueError(
+                    f"Mobile Appium response field is forbidden at {path}.{key}"
+                )
+            _assert_mobile_channel_safe(item, path=f"{path}.{key}")
+        return
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            _assert_mobile_channel_safe(item, path=f"{path}[{index}]")
+        return
+    if isinstance(value, str) and any(
+        pattern.search(value)
+        for pattern in MOBILE_CHANNEL_FORBIDDEN_VALUE_PATTERNS
+    ):
+        raise ValueError(
+            f"Mobile Appium response contains forbidden material at {path}"
+        )
+
+
+def _closed_mapping(
+    value: object,
+    *,
+    required: set[str],
+    optional: set[str] = frozenset(),
+    label: str,
+) -> Mapping[str, object]:
+    if not isinstance(value, Mapping) or set(value) - required - optional:
+        raise EphemeralCapabilityBlocked(
+            f"{label} response has an invalid field set",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    missing = required - set(value)
+    if missing:
+        raise EphemeralCapabilityBlocked(
+            f"{label} response is missing fields: {sorted(missing)}",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    return value
+
+
+def _response_string(
+    value: object,
+    *,
+    label: str,
+    nullable: bool = False,
+) -> None:
+    if value is None and nullable:
+        return
+    if not isinstance(value, str):
+        raise EphemeralCapabilityBlocked(
+            f"{label} response field must be a string",
+            resource="mobile.native.appium-session:harness-response",
+        )
+
+
+def _response_number(value: object, *, label: str) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+    ):
+        raise EphemeralCapabilityBlocked(
+            f"{label} response field must be a finite number",
+            resource="mobile.native.appium-session:harness-response",
+        )
+
+
+def _validate_station_entry(value: object) -> None:
+    entry = _closed_mapping(
+        value,
+        required={"stationPeerId", "url", "label"},
+        optional={"online", "lastCheckedAt"},
+        label="station entry",
+    )
+    for field in ("stationPeerId", "url", "label"):
+        _response_string(entry[field], label=f"station entry {field}")
+    if "online" in entry and not isinstance(entry["online"], bool):
+        raise EphemeralCapabilityBlocked(
+            "station entry online response field must be a boolean",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    if "lastCheckedAt" in entry:
+        _response_number(
+            entry["lastCheckedAt"],
+            label="station entry lastCheckedAt",
+        )
+
+
+def _validate_access_decision(value: object, *, nullable: bool = False) -> None:
+    if value is None and nullable:
+        return
+    decision = _closed_mapping(
+        value,
+        required={"state", "attemptId", "gates"},
+        optional={"currentGateId", "accessGrantId"},
+        label="access decision",
+    )
+    if isinstance(decision["state"], bool) or not isinstance(
+        decision["state"], (str, int, float)
+    ):
+        raise EphemeralCapabilityBlocked(
+            "access decision state has an invalid type",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    _response_string(decision["attemptId"], label="access decision attemptId")
+    for field in ("currentGateId", "accessGrantId"):
+        if field in decision:
+            _response_string(decision[field], label=f"access decision {field}")
+    gates = decision["gates"]
+    if not isinstance(gates, list):
+        raise EphemeralCapabilityBlocked(
+            "access decision gates must be a list",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    for item in gates:
+        gate = _closed_mapping(
+            item,
+            required={"gateId", "type", "state"},
+            label="access gate",
+        )
+        _response_string(gate["gateId"], label="access gate gateId")
+        for field in ("type", "state"):
+            if isinstance(gate[field], bool) or not isinstance(
+                gate[field], (str, int, float)
+            ):
+                raise EphemeralCapabilityBlocked(
+                    f"access gate {field} has an invalid type",
+                    resource="mobile.native.appium-session:harness-response",
+                )
+
+
+def _validate_session(
+    value: object,
+    *,
+    include_station: bool,
+) -> None:
+    if value is None:
+        return
+    required = {"actorPtid"}
+    if include_station:
+        required.add("stationPeerId")
+    session = _closed_mapping(
+        value,
+        required=required,
+        optional={"expiresAt"},
+        label="access session",
+    )
+    for field in required:
+        _response_string(session[field], label=f"access session {field}")
+    if "expiresAt" in session:
+        _response_string(session["expiresAt"], label="access session expiresAt")
+
+
+def _validate_oauth_projection(value: object) -> None:
+    projection = _closed_mapping(
+        value,
+        required={
+            "phase",
+            "candidatePtid",
+            "accessDecision",
+            "session",
+            "errorKey",
+            "recovery",
+        },
+        optional={
+            "stationPeerId",
+            "provider",
+            "accessAttemptId",
+            "gateId",
+            "expiresAtUnixMs",
+            "result",
+            "errorCode",
+        },
+        label="OAuth projection",
+    )
+    if projection["phase"] not in {
+        "idle",
+        "starting",
+        "awaiting_provider",
+        "callback_received",
+        "exchanging",
+        "following_gate",
+        "credential_delivery",
+        "active_session",
+        "cancelled",
+        "expired",
+        "failed",
+    }:
+        raise EphemeralCapabilityBlocked(
+            "OAuth projection phase is invalid",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    if projection["recovery"] not in {
+        "none",
+        "retry-provider",
+        "check-status",
+        "restart",
+        "change-station",
+    }:
+        raise EphemeralCapabilityBlocked(
+            "OAuth projection recovery is invalid",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    for field in (
+        "candidatePtid",
+        "errorKey",
+    ):
+        _response_string(
+            projection[field],
+            label=f"OAuth projection {field}",
+            nullable=True,
+        )
+    for field in (
+        "stationPeerId",
+        "provider",
+        "accessAttemptId",
+        "gateId",
+        "result",
+        "errorCode",
+    ):
+        if field in projection:
+            _response_string(
+                projection[field],
+                label=f"OAuth projection {field}",
+            )
+    if "expiresAtUnixMs" in projection:
+        _response_number(
+            projection["expiresAtUnixMs"],
+            label="OAuth projection expiresAtUnixMs",
+        )
+    _validate_access_decision(projection["accessDecision"], nullable=True)
+    _validate_session(projection["session"], include_station=False)
+
+
+def _validate_harness_action_result(action: str, value: object) -> None:
+    if action in {"station.add", "station.replace"}:
+        result = _closed_mapping(
+            value,
+            required={
+                "activeStationPeerId",
+                "verifiedStationPeerId",
+                "canonicalOrigin",
+                "entries",
+            },
+            label=action,
+        )
+        for field in (
+            "activeStationPeerId",
+            "verifiedStationPeerId",
+            "canonicalOrigin",
+        ):
+            _response_string(result[field], label=f"{action} {field}")
+        if not isinstance(result["entries"], list):
+            raise EphemeralCapabilityBlocked(
+                f"{action} entries must be a list",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        for entry in result["entries"]:
+            _validate_station_entry(entry)
+        return
+    if action == "access.submit":
+        result = _closed_mapping(
+            value,
+            required={"decision", "session"},
+            label=action,
+        )
+        _validate_access_decision(result["decision"])
+        _validate_session(result["session"], include_station=True)
+        return
+    if action in {"oauth.start", "oauth.status", "oauth.cancel"}:
+        _validate_oauth_projection(value)
+        return
+    if action == "lifecycle.restart":
+        result = _closed_mapping(
+            value,
+            required={"requested", "scope"},
+            label=action,
+        )
+        if result != {"requested": True, "scope": "webview"}:
+            raise EphemeralCapabilityBlocked(
+                "lifecycle restart response is invalid",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        return
+    if action == "projection.read":
+        result = _closed_mapping(
+            value,
+            required={"station", "access", "oauth"},
+            label=action,
+        )
+        station = _closed_mapping(
+            result["station"],
+            required={"activeStationPeerId", "entries"},
+            label="station projection",
+        )
+        _response_string(
+            station["activeStationPeerId"],
+            label="station projection activeStationPeerId",
+        )
+        if not isinstance(station["entries"], list):
+            raise EphemeralCapabilityBlocked(
+                "station projection entries must be a list",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        for entry in station["entries"]:
+            _validate_station_entry(entry)
+        access = _closed_mapping(
+            result["access"],
+            required={"decision", "session", "loading", "errorKey", "restored"},
+            label="access projection",
+        )
+        _validate_access_decision(access["decision"], nullable=True)
+        _validate_session(access["session"], include_station=True)
+        if not isinstance(access["loading"], bool) or not isinstance(
+            access["restored"], bool
+        ):
+            raise EphemeralCapabilityBlocked(
+                "access projection flags must be booleans",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        _response_string(
+            access["errorKey"],
+            label="access projection errorKey",
+            nullable=True,
+        )
+        _validate_oauth_projection(result["oauth"])
+        return
+    if action == "cleanup":
+        result = _closed_mapping(
+            value,
+            required={
+                "oauthPurge",
+                "webSessionProjectionCleared",
+                "stationRegistryCleared",
+            },
+            label=action,
+        )
+        purge = _closed_mapping(
+            result["oauthPurge"],
+            required={"stationRevocation", "secureStorage"},
+            label="OAuth purge",
+        )
+        if purge["stationRevocation"] not in {
+            "not_required",
+            "confirmed",
+            "unconfirmed",
+        }:
+            raise EphemeralCapabilityBlocked(
+                "OAuth purge Station revocation is invalid",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        secure_storage = _closed_mapping(
+            purge["secureStorage"],
+            required={
+                "activeAttemptIndexAbsent",
+                "attemptSecretRecordAbsent",
+                "currentSessionIndexAbsent",
+                "credentialRecordAbsent",
+                "publicProjectionAbsent",
+            },
+            label="OAuth secure-storage absence",
+        )
+        if (
+            any(value is not True for value in secure_storage.values())
+            or result["webSessionProjectionCleared"] is not True
+            or result["stationRegistryCleared"] is not True
+        ):
+            raise EphemeralCapabilityBlocked(
+                "OAuth cleanup response did not prove absence",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        return
+    raise EphemeralCapabilityBlocked(
+        f"Mobile Harness action {action!r} has no response contract",
+        resource="mobile.native.appium-session:harness-response",
+    )
+
+
+def _validate_negative_callback_result(
+    value: object,
+    *,
+    expected_operation: object,
+    expected_failure: object,
+) -> None:
+    result = _closed_mapping(
+        value,
+        required={"operation", "failure", "projection"},
+        label="negative OAuth callback",
+    )
+    if (
+        result["operation"] != expected_operation
+        or result["failure"] != expected_failure
+    ):
+        raise EphemeralCapabilityBlocked(
+            "negative OAuth callback result does not match its intent",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    projection = _closed_mapping(
+        result["projection"],
+        required={"phase", "accessDecision", "sessionPresent"},
+        optional={
+            "stationPeerId",
+            "provider",
+            "accessAttemptId",
+            "gateId",
+            "expiresAtUnixMs",
+            "result",
+            "errorCode",
+            "candidatePtid",
+        },
+        label="negative OAuth projection",
+    )
+    if projection["phase"] not in {
+        "idle",
+        "starting",
+        "awaiting_provider",
+        "callback_received",
+        "exchanging",
+        "following_gate",
+        "credential_delivery",
+        "active_session",
+        "cancelled",
+        "expired",
+        "failed",
+    } or not isinstance(projection["sessionPresent"], bool):
+        raise EphemeralCapabilityBlocked(
+            "negative OAuth projection is invalid",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    for field in (
+        "stationPeerId",
+        "provider",
+        "accessAttemptId",
+        "gateId",
+        "result",
+        "errorCode",
+        "candidatePtid",
+    ):
+        if field in projection:
+            _response_string(
+                projection[field],
+                label=f"negative OAuth projection {field}",
+            )
+    if "expiresAtUnixMs" in projection:
+        _response_number(
+            projection["expiresAtUnixMs"],
+            label="negative OAuth projection expiresAtUnixMs",
+        )
+    decision = projection["accessDecision"]
+    if decision is not None:
+        decision = _closed_mapping(
+            decision,
+            required=set(),
+            optional={"state", "currentGateId"},
+            label="negative OAuth access decision",
+        )
+        for field in decision:
+            _response_string(
+                decision[field],
+                label=f"negative OAuth access decision {field}",
+            )
+
+
+class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
+    """Own Appium sessions and expose only the frozen D-18 operation surface."""
+
+    def __init__(
+        self,
+        *,
+        session_factory: Callable[[str], _ParentAppiumSession],
+        artifact_writer: RunHandle,
+        broker: MobileResourceLeaseBroker,
+        device_leases: Mapping[str, Mapping[str, Any]],
+        harness_actions: Sequence[str] = (),
+        parent_harness_actions: Sequence[str] = (),
+        sensitive_values: Sequence[str] = (),
+    ) -> None:
+        self._session_factory = session_factory
+        self._artifact_writer = artifact_writer
+        self._broker = broker
+        self._device_leases = {
+            client_id: dict(lease)
+            for client_id, lease in device_leases.items()
+        }
+        self._harness_actions = frozenset(harness_actions)
+        self._parent_harness_actions = frozenset(parent_harness_actions)
+        self._sensitive_values = tuple(
+            value for value in sensitive_values if value
+        )
+        self._sessions: dict[str, _ParentAppiumSession] = {}
+        self._cleanup_sessions: list[_ParentAppiumSession] = []
+        self._session_refs: dict[str, str] = {}
+        self._install_refs: dict[str, ArtifactRef] = {}
+        self._closed = False
+
+    @property
+    def allowed_operations(self) -> tuple[str, ...]:
+        return MOBILE_NATIVE_CAPABILITIES["mobile.native.appium-session"]
+
+    @property
+    def sensitive_values(self) -> tuple[str, ...]:
+        return self._sensitive_values
+
+    @property
+    def sessions(self) -> Mapping[str, _ParentAppiumSession]:
+        return dict(self._sessions)
+
+    def invoke(
+        self,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> Mapping[str, object]:
+        self._require_active(deadline_monotonic, cancellation)
+        client_id = _capability_text(
+            payload,
+            "clientId",
+            resource="mobile.native.appium-session",
+        )
+        if client_id not in EXPECTED_CLIENTS:
+            raise EphemeralCapabilityBlocked(
+                "Mobile native Appium client is not declared",
+                resource=f"mobile.native.appium-session:{client_id}",
+            )
+        if operation == "start":
+            if client_id in self._sessions:
+                raise EphemeralCapabilityBlocked(
+                    "Mobile native Appium session is already active",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            session = self._session_factory(client_id)
+            physical_device_lease = ArtifactRef.from_dict(
+                _capability_mapping(
+                    payload,
+                    "physicalDeviceLease",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            )
+            build_attestation = ArtifactRef.from_dict(
+                _capability_mapping(
+                    payload,
+                    "buildAttestation",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            )
+            if (
+                physical_device_lease != session.physical_device_lease_ref
+                or build_attestation != session.build_attestation_ref
+            ):
+                raise EphemeralCapabilityBlocked(
+                    "Mobile native Appium source refs do not match acquisition",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            try:
+                session.start(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            except BaseException:
+                if getattr(session, "session_id", ""):
+                    self._cleanup_sessions.append(session)
+                raise
+            session_ref = secrets.token_hex(16)
+            self._sessions[client_id] = session
+            self._session_refs[client_id] = session_ref
+            try:
+                reference = self._artifact_writer.write_json(
+                    f"evidence/mobile/runtime/{client_id}/install.json",
+                    session.fresh_install_trace,
+                    role=f"mobile-fresh-install-trace/{client_id}",
+                    redact=False,
+                )
+            except BaseException:
+                try:
+                    session.stop(
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    )
+                except BaseException:
+                    pass
+                else:
+                    self._sessions.pop(client_id, None)
+                    self._session_refs.pop(client_id, None)
+                raise
+            self._install_refs[client_id] = reference
+            return {
+                "clientId": client_id,
+                "sessionRef": session_ref,
+                "applicationId": session._application_id,
+                "freshInstallTrace": reference.to_dict(),
+            }
+
+        session = self._require_session(client_id)
+        if payload.get("sessionRef") != self._session_refs.get(client_id):
+            raise EphemeralCapabilityBlocked(
+                "Mobile native Appium session reference is invalid",
+                resource=f"mobile.native.appium-session:{client_id}",
+            )
+        if operation == "stop":
+            session.stop(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            del self._sessions[client_id]
+            self._session_refs.pop(client_id, None)
+            return {"clientId": client_id, "stopped": True}
+        if operation == "wait_ready":
+            session.wait_for_ready(
+                self._timeout(payload, deadline_monotonic),
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            return {"clientId": client_id, "ready": True}
+        if operation == "is_alive":
+            return {
+                "clientId": client_id,
+                "alive": session.is_alive(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            }
+        if operation == "contexts":
+            return {
+                "clientId": client_id,
+                "contexts": session.contexts(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            }
+        if operation == "switch_context":
+            session.switch_context(
+                _capability_text(
+                    payload,
+                    "name",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                ),
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            return {"clientId": client_id, "switched": True}
+        if operation == "harness_inventory":
+            inventory = session.harness_inventory(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            return {
+                "clientId": client_id,
+                "actions": sorted(
+                    set(inventory).intersection(self._harness_actions)
+                ),
+            }
+        if operation == "harness_action":
+            action = _capability_text(
+                payload,
+                "action",
+                resource=f"mobile.native.appium-session:{client_id}",
+            )
+            if (
+                action not in self._harness_actions
+                or action in self._parent_harness_actions
+            ):
+                raise EphemeralCapabilityBlocked(
+                    "Mobile Acceptance Harness action is not allowlisted",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            action_payload = _capability_mapping(
+                payload,
+                "actionPayload",
+                resource=f"mobile.native.appium-session:{client_id}",
+            )
+            value = session.call_action(
+                action,
+                action_payload,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            _validate_harness_action_result(action, value)
+            return {
+                "clientId": client_id,
+                "value": value,
+            }
+        if operation == "harness_negative_callback":
+            if "oauth.negativeCallback" not in self._parent_harness_actions:
+                raise EphemeralCapabilityBlocked(
+                    "Mobile negative callback action is not parent-authorized",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            negative_payload = dict(
+                _capability_mapping(
+                    payload,
+                    "negativePayload",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            )
+            intent = dict(
+                _capability_mapping(
+                    negative_payload,
+                    "intent",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            )
+            intent_operation = intent.get("operation")
+            if intent_operation == "replay":
+                if "oauth.replayHandle" not in self._parent_harness_actions:
+                    raise EphemeralCapabilityBlocked(
+                        "Mobile replay action is not parent-authorized",
+                        resource=f"mobile.native.appium-session:{client_id}",
+                    )
+                replay_payload = _capability_mapping(
+                    payload,
+                    "replayPayload",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+                replay = session.call_action(
+                    "oauth.replayHandle",
+                    replay_payload,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                if (
+                    not isinstance(replay, Mapping)
+                    or set(replay) != {"callbackReplayHandle"}
+                ):
+                    raise EphemeralCapabilityBlocked(
+                        "Mobile replay handle response is invalid",
+                        resource=f"mobile.native.appium-session:{client_id}",
+                    )
+                callback_replay_handle = replay.get("callbackReplayHandle")
+                if (
+                    not isinstance(callback_replay_handle, str)
+                    or not callback_replay_handle
+                ):
+                    raise EphemeralCapabilityBlocked(
+                        "Mobile replay handle is unavailable",
+                        resource=f"mobile.native.appium-session:{client_id}",
+                    )
+                intent["callbackReplayHandle"] = callback_replay_handle
+            elif "replayPayload" in payload:
+                raise EphemeralCapabilityBlocked(
+                    "Mobile non-replay callback cannot carry replay input",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            try:
+                negative_payload["intent"] = validate_contract_payload(
+                    intent,
+                    expected_kind="mobile-oauth-negative-callback-intent",
+                    expected_run_id=session.build_attestation_ref.run_id,
+                    expected_gate_id=MOBILE_OAUTH_PROOF_GATE_ID,
+                    expected_workspace_id=(
+                        session.build_attestation_ref.workspace_id
+                    ),
+                    durable=False,
+                )
+            except ProofContractError as error:
+                raise EphemeralCapabilityBlocked(
+                    "Mobile replay callback intent is invalid",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                ) from error
+            value = session.call_action(
+                "oauth.negativeCallback",
+                negative_payload,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            _validate_negative_callback_result(
+                value,
+                expected_operation=intent_operation,
+                expected_failure=intent.get("expectedFailure"),
+            )
+            return {"clientId": client_id, "value": value}
+        if operation == "refresh_webview":
+            session.refresh_webview(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            return {"clientId": client_id, "refreshed": True}
+        if operation == "find_element":
+            element_ref = session.find_element(
+                _capability_text(
+                    payload,
+                    "using",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                ),
+                _capability_text(
+                    payload,
+                    "value",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                ),
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            return {"clientId": client_id, "elementRef": element_ref}
+        if operation == "click":
+            session.click(
+                _capability_text(
+                    payload,
+                    "elementRef",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                ),
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            return {"clientId": client_id, "clicked": True}
+        if operation == "capture_page_source":
+            capture_kind = _capability_text(
+                payload,
+                "captureKind",
+                resource=f"mobile.native.appium-session:{client_id}",
+            )
+            if capture_kind == "native-ax":
+                path = f"mobile/{client_id}/native-ax.xml"
+                media_type = "application/xml"
+                role = f"{client_id}-native-ax"
+            elif capture_kind == "web-dom":
+                variant_id = _mobile_capture_id(payload, client_id=client_id)
+                path = (
+                    f"evidence/mobile/{variant_id}/{client_id}/web-dom.html"
+                )
+                media_type = "text/html"
+                role = None
+            else:
+                raise EphemeralCapabilityBlocked(
+                    "Mobile page-source capture kind is invalid",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            page_source = session.get_page_source(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            _assert_mobile_channel_safe(page_source)
+            reference = self._artifact_writer.write_bytes(
+                path,
+                page_source.encode("utf-8"),
+                media_type=media_type,
+                role=role,
+            )
+            return {
+                "clientId": client_id,
+                "pageSource": reference.to_dict(),
+            }
+        if operation == "capture_screenshot":
+            variant_id = _mobile_capture_id(payload, client_id=client_id)
+            screenshot = session.screenshot_bytes(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            if len(screenshot) > MAX_MOBILE_SCREENSHOT_BYTES:
+                raise EphemeralCapabilityBlocked(
+                    "Mobile native screenshot exceeds the evidence byte limit",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            reference = self._artifact_writer.write_bytes(
+                (
+                    f"evidence/mobile/{variant_id}/"
+                    f"{client_id}/screenshot.png"
+                ),
+                screenshot,
+                media_type="image/png",
+            )
+            return {
+                "clientId": client_id,
+                "screenshot": reference.to_dict(),
+            }
+        if operation == "verify_build_identity":
+            if "build.identity" not in self._parent_harness_actions:
+                raise EphemeralCapabilityBlocked(
+                    "Mobile build identity action is not parent-authorized",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            install_ref = self._install_refs.get(client_id)
+            if install_ref is None:
+                raise EphemeralCapabilityBlocked(
+                    "Mobile native fresh-install evidence is unavailable",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            requested_install_ref = ArtifactRef.from_dict(
+                _capability_mapping(
+                    payload,
+                    "freshInstallTrace",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            )
+            if requested_install_ref != install_ref:
+                raise EphemeralCapabilityBlocked(
+                    "Mobile native fresh-install ref does not match the session",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
+            identity = session.verify_installed_build_identity(
+                install_ref,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            reference = self._artifact_writer.write_json(
+                f"evidence/mobile/runtime/{client_id}/build-identity.json",
+                identity,
+                role=f"mobile-installed-build-identity/{client_id}",
+                redact=False,
+            )
+            return {
+                "clientId": client_id,
+                "installedBuildIdentity": reference.to_dict(),
+            }
+        raise EphemeralCapabilityBlocked(
+            "Mobile native Appium operation is not implemented",
+            resource=f"mobile.native.appium-session:{operation}",
+        )
+
+    def project_response(
+        self,
+        operation: str,
+        response: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        projected = dict(response)
+        if projected.get("status") == "OK":
+            result = projected.get("result")
+            if not isinstance(result, Mapping):
+                raise ValueError("Mobile Appium response result is invalid")
+            expected_fields = {
+                "start": {
+                    "clientId",
+                    "sessionRef",
+                    "applicationId",
+                    "freshInstallTrace",
+                },
+                "stop": {"clientId", "stopped"},
+                "wait_ready": {"clientId", "ready"},
+                "is_alive": {"clientId", "alive"},
+                "contexts": {"clientId", "contexts"},
+                "switch_context": {"clientId", "switched"},
+                "harness_inventory": {"clientId", "actions"},
+                "harness_action": {"clientId", "value"},
+                "harness_negative_callback": {"clientId", "value"},
+                "refresh_webview": {"clientId", "refreshed"},
+                "find_element": {"clientId", "elementRef"},
+                "click": {"clientId", "clicked"},
+                "capture_page_source": {"clientId", "pageSource"},
+                "capture_screenshot": {"clientId", "screenshot"},
+                "verify_build_identity": {
+                    "clientId",
+                    "installedBuildIdentity",
+                },
+            }
+            if operation not in expected_fields or set(result) != expected_fields[
+                operation
+            ]:
+                raise ValueError(
+                    "Mobile Appium response does not match its closed operation schema"
+                )
+        _assert_mobile_channel_safe(projected)
+        return projected
+
+    def quarantine(self, reason: str, *, deadline_monotonic: float) -> bool:
+        cancellation = threading.Event()
+        succeeded = self._stop_all(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        for lease in reversed(tuple(self._device_leases.values())):
+            try:
+                if not _quarantine_broker_lease(
+                    self._broker,
+                    lease,
+                    "EPHEMERAL_CAPABILITY_QUARANTINED",
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ):
+                    succeeded = False
+            except BaseException:
+                succeeded = False
+            if time.monotonic() >= deadline_monotonic:
+                succeeded = False
+        return succeeded
+
+    def close(self) -> EphemeralHandlerCleanup:
+        deadline = (
+            time.monotonic() + MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS
+        )
+        return EphemeralHandlerCleanup(
+            closed=self._stop_all(
+                deadline_monotonic=deadline,
+                cancellation=threading.Event(),
+            ),
+            secrets_zeroized=True,
+        )
+
+    def _stop_all(
+        self,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> bool:
+        deadline = deadline_monotonic or (
+            time.monotonic() + MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS
+        )
+        stop_signal = cancellation or threading.Event()
+        failures = False
+        for client_id, session in reversed(tuple(self._sessions.items())):
+            try:
+                _require_cleanup_budget(deadline, stop_signal)
+                session.stop(
+                    deadline_monotonic=deadline,
+                    cancellation=stop_signal,
+                )
+            except Exception:
+                failures = True
+            else:
+                self._sessions.pop(client_id, None)
+                self._session_refs.pop(client_id, None)
+        for session in reversed(self._cleanup_sessions):
+            try:
+                _require_cleanup_budget(deadline, stop_signal)
+                session.stop(
+                    deadline_monotonic=deadline,
+                    cancellation=stop_signal,
+                )
+            except Exception:
+                failures = True
+            else:
+                self._cleanup_sessions.remove(session)
+        self._closed = True
+        return not failures
+
+    def _require_session(self, client_id: str) -> _ParentAppiumSession:
+        session = self._sessions.get(client_id)
+        if session is None:
+            raise EphemeralCapabilityBlocked(
+                "Mobile native Appium session is not active",
+                resource=f"mobile.native.appium-session:{client_id}",
+            )
+        return session
+
+    def _require_active(
+        self,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> None:
+        if self._closed or cancellation.is_set() or time.monotonic() >= deadline_monotonic:
+            raise EphemeralCapabilityBlocked(
+                "Mobile native Appium capability is unavailable",
+                resource="mobile.native.appium-session",
+            )
+
+    @staticmethod
+    def _timeout(
+        payload: Mapping[str, object],
+        deadline_monotonic: float,
+    ) -> float:
+        requested = payload.get("timeoutSeconds", 30.0)
+        if (
+            not isinstance(requested, (int, float))
+            or isinstance(requested, bool)
+            or not math.isfinite(requested)
+            or requested <= 0
+        ):
+            raise EphemeralCapabilityBlocked(
+                "Mobile native Appium timeout is invalid",
+                resource="mobile.native.appium-session",
+            )
+        return min(float(requested), max(0.001, deadline_monotonic - time.monotonic()))
+
+
+class MobileNativeProviderAuthorizationHandler(EphemeralCapabilityHandler):
+    """Keep provider credentials and account serialization in the parent."""
+
+    def __init__(
+        self,
+        *,
+        broker: MobileResourceLeaseBroker,
+        account_leases: Mapping[str, Mapping[str, Any]],
+        browser_leases: Mapping[str, Mapping[str, Any]],
+        credential_values: Mapping[str, str],
+        appium_handler: MobileNativeAppiumCapabilityHandler,
+    ) -> None:
+        self._broker = broker
+        self._account_leases = {
+            provider: dict(lease) for provider, lease in account_leases.items()
+        }
+        self._browser_leases = {
+            client_id: dict(lease)
+            for client_id, lease in browser_leases.items()
+        }
+        self._credentials = {
+            provider: bytearray(value.encode("utf-8"))
+            for provider, value in credential_values.items()
+        }
+        self._appium_handler = appium_handler
+        self._closed = False
+
+    @property
+    def allowed_operations(self) -> tuple[str, ...]:
+        return MOBILE_NATIVE_CAPABILITIES[
+            "mobile.native.provider-authorization"
+        ]
+
+    @property
+    def sensitive_values(self) -> tuple[str, ...]:
+        return tuple(
+            value.decode("utf-8", errors="strict")
+            for value in self._credentials.values()
+            if value
+        )
+
+    def invoke(
+        self,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> Mapping[str, object]:
+        if (
+            self._closed
+            or operation != "authorize"
+            or cancellation.is_set()
+            or time.monotonic() >= deadline_monotonic
+        ):
+            raise EphemeralCapabilityBlocked(
+                "Mobile native provider authorization is unavailable",
+                resource="mobile.native.provider-authorization",
+            )
+        client_id = _capability_text(
+            payload,
+            "clientId",
+            resource="mobile.native.provider-authorization",
+        )
+        provider = CLIENT_PROVIDER.get(client_id)
+        if provider is None:
+            raise EphemeralCapabilityBlocked(
+                "Mobile native provider client is not declared",
+                resource=f"mobile.native.provider-authorization:{client_id}",
+            )
+        if payload.get("provider") != provider:
+            raise EphemeralCapabilityBlocked(
+                "Mobile native provider does not match the client binding",
+                resource=f"mobile.native.provider-authorization:{client_id}",
+            )
+        raw_credential = self._credentials.get(provider)
+        account_lease = self._account_leases.get(provider)
+        session = self._appium_handler.sessions.get(client_id)
+        if raw_credential is None or account_lease is None or session is None:
+            raise EphemeralCapabilityBlocked(
+                "Mobile native provider authority is incomplete",
+                resource=f"mobile.native.provider-authorization:{client_id}",
+            )
+        try:
+            credential = json.loads(raw_credential.decode("utf-8"))
+            steps = credential["steps"]
+            if (
+                credential.get("provider") != provider
+                or not isinstance(steps, list)
+                or not steps
+            ):
+                raise ValueError("provider credential shape is invalid")
+        except (KeyError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+            raise EphemeralCapabilityBlocked(
+                "Mobile native provider credential is invalid",
+                resource=f"mobile.native.provider-authorization:{provider}",
+            ) from error
+
+        def authorize() -> None:
+            session.switch_to_native(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            for step in steps:
+                if (
+                    not isinstance(step, Mapping)
+                    or step.get("action") != "click"
+                    or not isinstance(step.get("using"), str)
+                    or not isinstance(step.get("selector"), str)
+                ):
+                    raise EphemeralCapabilityBlocked(
+                        "Mobile native provider step is invalid",
+                        resource=f"mobile.native.provider-authorization:{provider}",
+                    )
+                element_ref = session.find_element(
+                    str(step["using"]),
+                    str(step["selector"]),
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                session.click(
+                    element_ref,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            session.switch_to_app_webview(
+                min(90.0, max(0.001, deadline_monotonic - time.monotonic())),
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+
+        self._broker.authorize_provider(
+            account_lease,
+            client_id=client_id,
+            operation=authorize,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        return {"clientId": client_id, "provider": provider, "authorized": True}
+
+    def project_response(
+        self,
+        operation: str,
+        response: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        del operation
+        return dict(response)
+
+    def quarantine(self, reason: str, *, deadline_monotonic: float) -> bool:
+        del reason
+        succeeded = True
+        for leases in (self._browser_leases, self._account_leases):
+            for lease in reversed(tuple(leases.values())):
+                try:
+                    if not _quarantine_broker_lease(
+                        self._broker,
+                        lease,
+                        "EPHEMERAL_CAPABILITY_QUARANTINED",
+                        deadline_monotonic=deadline_monotonic,
+                    ):
+                        succeeded = False
+                except BaseException:
+                    succeeded = False
+                if time.monotonic() >= deadline_monotonic:
+                    succeeded = False
+        self._zeroize()
+        return succeeded
+
+    def close(self) -> EphemeralHandlerCleanup:
+        self._zeroize()
+        return EphemeralHandlerCleanup(closed=True, secrets_zeroized=True)
+
+    def _zeroize(self) -> None:
+        for value in self._credentials.values():
+            for index in range(len(value)):
+                value[index] = 0
+        self._credentials.clear()
+        self._closed = True
+
+
+class MobileNativeStationFixtureCapabilityHandler(EphemeralCapabilityHandler):
+    """Expose only the three frozen Station Fixture operations."""
+
+    def __init__(self, fixture: MobileOAuthStationFixture) -> None:
+        self._fixture = fixture
+        self._closed = False
+
+    @property
+    def allowed_operations(self) -> tuple[str, ...]:
+        return MOBILE_NATIVE_CAPABILITIES["mobile.native.station-fixture"]
+
+    @property
+    def sensitive_values(self) -> tuple[str, ...]:
+        return ()
+
+    def invoke(
+        self,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> Mapping[str, object]:
+        if self._closed or cancellation.is_set() or time.monotonic() >= deadline_monotonic:
+            raise EphemeralCapabilityBlocked(
+                "Mobile native Station Fixture is unavailable",
+                resource="mobile.native.station-fixture",
+            )
+        service_id = _capability_text(
+            payload,
+            "serviceId",
+            resource="mobile.native.station-fixture",
+        )
+        if service_id not in MOBILE_OAUTH_FIXTURE_SERVICES:
+            raise EphemeralCapabilityBlocked(
+                "Mobile native Station Fixture service is not declared",
+                resource=f"mobile.native.station-fixture:{service_id}",
+            )
+        operation_id = _capability_text(
+            payload,
+            "operationId",
+            resource="mobile.native.station-fixture",
+        )
+        variant_id = _capability_text(
+            payload,
+            "variantId",
+            resource="mobile.native.station-fixture",
+        )
+        target = _capability_mapping(
+            payload,
+            "target",
+            resource="mobile.native.station-fixture",
+        )
+        expected_provider = _capability_text(
+            payload,
+            "expectedProvider",
+            resource="mobile.native.station-fixture",
+        )
+        if operation == "read_proof_snapshot":
+            reference = self._fixture.snapshot(
+                service_id,
+                operation_id=operation_id,
+                variant_id=variant_id,
+                snapshot_phase=_capability_text(
+                    payload,
+                    "snapshotPhase",
+                    resource="mobile.native.station-fixture",
+                ),
+                target=target,
+                expected_provider=expected_provider,
+                path=(
+                    f"evidence/mobile/{variant_id}/station/{service_id}.json"
+                ),
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            return {"artifactRef": reference.to_dict()}
+        receipt = self._fixture.execute(
+            service_id,
+            operation_id=operation_id,
+            variant_id=variant_id,
+            operation=operation,
+            target=target,
+            oauth_state="OAUTH_ATTEMPT_STATE_AWAITING_PROVIDER",
+            expected_provider=expected_provider,
+            invite_code=str(payload.get("inviteCode") or ""),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        return {
+            "completed": (
+                receipt.get("journalState") == "COMMITTED"
+                and receipt.get("preconditionMatched") is True
+                and receipt.get("affectedRows") == 1
+            )
+        }
+
+    def project_response(
+        self,
+        operation: str,
+        response: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        del operation
+        return dict(response)
+
+    def quarantine(self, reason: str, *, deadline_monotonic: float) -> bool:
+        succeeded = True
+        for service_id in reversed(MOBILE_OAUTH_FIXTURE_SERVICES):
+            try:
+                if not _quarantine_fixture_lease(
+                    self._fixture,
+                    service_id,
+                    reason,
+                        deadline_monotonic=deadline_monotonic,
+                ):
+                    succeeded = False
+            except BaseException:
+                succeeded = False
+            if time.monotonic() >= deadline_monotonic:
+                succeeded = False
+        self._fixture.close()
+        self._closed = True
+        return succeeded
+
+    def close(self) -> EphemeralHandlerCleanup:
+        self._fixture.close()
+        self._closed = True
+        return EphemeralHandlerCleanup(closed=True, secrets_zeroized=True)
+
+
 class MobileNativeProvisioner(EnvironmentProvisioner):
     environment_id = "mobile-native"
 
     def __init__(self, contract: EnvironmentContract) -> None:
         super().__init__(contract)
+        self._artifact_session: RunHandle | None = None
+        self._artifact_store: EvidenceStore | None = None
+        self._native_spec: MobileNativePreflightSpec | None = None
+        self._native_inputs: dict[str, Any] = {}
+        self._client_resources: dict[str, dict[str, Any]] = {}
+        self._source_projection: MobileNativeSourceProjection | None = None
+        self._station_fixture: MobileOAuthStationFixture | None = None
+        self._lease_broker: MobileResourceLeaseBroker | None = None
+        self._heartbeat_owner: MobileResourceLeaseHeartbeatOwner | None = None
+        self._account_leases: dict[str, dict[str, Any]] = {}
+        self._device_leases: dict[str, dict[str, Any]] = {}
+        self._browser_leases: dict[str, dict[str, Any]] = {}
+        self._resource_leases: list[dict[str, Any]] = []
+        self._fixture_heartbeat_leases: list[dict[str, Any]] = []
+        self._restore_callbacks: dict[
+            str,
+            Callable[[float, threading.Event], BaselineRestoreResult],
+        ] = {}
+        self._service_bindings: dict[str, tuple[str, str]] = {}
+        self._fixture_refs: dict[str, ArtifactRef] = {}
+        self._actor_manifest_ref: dict[str, Any] | None = None
+        self._credential_values_by_provider: dict[str, str] = {}
+        self._provider_subjects: dict[str, str] = {}
+        self._appium_handler: MobileNativeAppiumCapabilityHandler | None = None
+        self._port_reservations: list[_PortReservation] = []
+        self._storage_roots: list[Path] = []
+        self._cleanup_registered = False
+
+    def create_gate_launch_context(
+        self,
+        *,
+        gate_id: str,
+        evidence_run_id: str,
+        provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext:
+        expected = tuple(MOBILE_NATIVE_CAPABILITIES)
+        if gate_id != MOBILE_OAUTH_PROOF_GATE_ID or tuple(
+            required_capabilities
+        ) != expected:
+            raise BlockedError(
+                reason=(
+                    "Mobile native Gate requires the exact frozen D-18 "
+                    "capability set"
+                ),
+                resource=f"ephemeral-capabilities:{gate_id}",
+            )
+        if (
+            self._artifact_session is None
+            or self._artifact_store is None
+            or self._native_spec is None
+            or self._source_projection is None
+            or self._station_fixture is None
+            or self._lease_broker is None
+        ):
+            raise BlockedError(
+                reason="Mobile native parent authorities are not ready",
+                resource=f"ephemeral-capabilities:{gate_id}",
+            )
+        self._require_heartbeat_healthy()
+        run_identities = (
+            self._manifest.mobile_resources.get("runIdentities")
+            if isinstance(self._manifest, MobileNativeRuntimeManifest)
+            else None
+        )
+        authority_refs = [
+            *(
+                values["buildAttestation"]
+                for values in self._source_projection.applications.values()
+            ),
+            *self._source_projection.provider_account_leases.values(),
+            *(
+                values[field]
+                for values in self._source_projection.clients.values()
+                for field in ("physicalDeviceLease", "browserSessionLease")
+            ),
+            *self._fixture_refs.values(),
+        ]
+        if (
+            not isinstance(run_identities, Mapping)
+            or evidence_run_id == provisioning_run_id
+            or evidence_run_id != self._artifact_session.run_id
+            or provisioning_run_id != self._manifest.run_id
+            or run_identities.get("evidenceRunId") != evidence_run_id
+            or run_identities.get("provisioningRunId") != provisioning_run_id
+            or any(
+                reference.run_id != evidence_run_id
+                for reference in authority_refs
+            )
+        ):
+            raise BlockedError(
+                reason="Mobile native run identity projection is invalid",
+                resource=f"ephemeral-capabilities:{gate_id}:run-identities",
+            )
+        appium_handler = MobileNativeAppiumCapabilityHandler(
+            session_factory=self._new_appium_session,
+            artifact_writer=self._artifact_session,
+            broker=self._lease_broker,
+            device_leases=self._device_leases,
+            harness_actions=self._native_spec.harness_actions,
+            parent_harness_actions=self._native_spec.parent_harness_actions,
+            sensitive_values=tuple(
+                dict.fromkeys(
+                    (
+                        *self._credential_values_by_provider.values(),
+                        *self._provider_subjects.values(),
+                    )
+                )
+            ),
+        )
+        provider_handler = MobileNativeProviderAuthorizationHandler(
+            broker=self._lease_broker,
+            account_leases=self._account_leases,
+            browser_leases=self._browser_leases,
+            credential_values=self._credential_values_by_provider,
+            appium_handler=appium_handler,
+        )
+        fixture_handler = MobileNativeStationFixtureCapabilityHandler(
+            self._station_fixture
+        )
+        context = EphemeralGateLaunchContext(
+            required_capabilities=required_capabilities
+        )
+        context.register_capability(expected[0], appium_handler)
+        context.register_capability(expected[1], provider_handler)
+        context.register_capability(expected[2], fixture_handler)
+        self._appium_handler = appium_handler
+        return context
+
+    def _new_appium_session(self, client_id: str) -> _ParentAppiumSession:
+        if (
+            self._artifact_store is None
+            or self._lease_broker is None
+            or self._native_spec is None
+            or self._source_projection is None
+        ):
+            raise BlockedError(
+                reason="Mobile native Appium parent authority is unavailable",
+                resource=f"mobile.native.appium-session:{client_id}",
+            )
+        client = next(
+            item for item in self._native_spec.clients if item.id == client_id
+        )
+        resources = self._client_resources[client_id]
+        return _ParentAppiumSession(
+            _ParentAppiumTransport(str(self._native_inputs["appiumUrl"])),
+            client_id=client_id,
+            platform_name=client.platform,
+            automation_name=self._native_spec.drivers[
+                client.platform
+            ].automation_name,
+            artifact_reader=self._artifact_store,
+            device_broker=self._lease_broker,
+            physical_device_lease=self._source_projection.clients[client_id][
+                "physicalDeviceLease"
+            ],
+            build_attestation=self._source_projection.applications[
+                client.platform
+            ]["buildAttestation"],
+            ports=resources["ports"],
+            chromedriver_executable=(
+                str(self._native_inputs["chromedriver"]["executable"])
+                if client.platform == "android"
+                else ""
+            ),
+        )
+
+    def _prepare_parent_authorities(
+        self,
+        *,
+        gate_id: str,
+        runtime_root: Path,
+        credential_values: Mapping[str, str],
+        profile_environment: Mapping[str, str],
+    ) -> MobileNativeSourceProjection:
+        if self._manifest is None or self._native_spec is None:
+            raise BlockedError(
+                reason="Mobile native source preparation has no manifest",
+                resource="mobile-source:manifest",
+            )
+        self._register_parent_cleanup()
+        if self.evidence_run.gate_id != gate_id:
+            raise BlockedError(
+                reason="Mobile native evidence run does not match the Gate",
+                resource=f"mobile-source:evidence-run:{gate_id}",
+            )
+        self._artifact_session = self.evidence_run
+        self._artifact_store = EvidenceStore.from_environment(
+            repo_root=REPO_ROOT,
+            worktree=REPO_ROOT,
+        )
+        build_refs: dict[str, ArtifactRef] = {}
+        for platform_name in EXPECTED_DRIVER_IDENTITIES:
+            receipt = orchestrate_source_bound_build(
+                root=REPO_ROOT,
+                platform=platform_name,
+                run_root=runtime_root / "source-builds" / platform_name,
+            )
+            _, build_refs[platform_name] = produce_build_attestation(
+                run=self._artifact_session,
+                receipt=receipt,
+                created_at=utc_now(),
+            )
+
+        self._actor_manifest_ref = self._prepare_actor_manifest(
+            profile_environment
+        )
+        correlation_key = secrets.token_bytes(32)
+        self._station_fixture = MobileOAuthStationFixture.from_environment(
+            run_handle=self._artifact_session,
+            correlation_key=correlation_key,
+        )
+        self._station_fixture.bootstrap()
+        for service_id in MOBILE_OAUTH_FIXTURE_SERVICES:
+            self._fixture_heartbeat_leases.append(
+                self._station_fixture.acquire(service_id)
+            )
+
+        provider_subjects, browser_baselines = self._credential_authorities(
+            credential_values
+        )
+        self._provider_subjects = dict(provider_subjects)
+        self._credential_values_by_provider = {
+            provider: credential_values[f"{provider}-disposable-account"]
+            for provider in PROVIDER_CLIENTS
+        }
+        physical_devices = self._native_inputs.get("physicalDevices")
+        if not isinstance(physical_devices, Mapping):
+            raise BlockedError(
+                reason="Mobile native physical-device authority is unavailable",
+                resource="mobile-source:physical-devices",
+            )
+        lease_authentication_key = self._native_inputs.pop(
+            "leaseAuthenticationKey",
+            None,
+        )
+        if not isinstance(lease_authentication_key, bytearray):
+            raise BlockedError(
+                reason="Mobile resource lease authentication key is unavailable",
+                resource="mobile-runtime:resource-lease-authentication",
+            )
+        try:
+            self._lease_broker = MobileResourceLeaseBroker(
+                run_handle=self._artifact_session,
+                correlation_secret=RunScopedCorrelationSecret(correlation_key),
+                physical_identity_key=lease_authentication_key,
+                artifact_writer_resolver=self._resolve_artifact_writer,
+                physical_device_resolver=lambda client_id: physical_devices[client_id],
+                provider_expected_subjects=provider_subjects,
+                artifact_workspace_id=self._artifact_store.workspace_id,
+            )
+        finally:
+            for index in range(len(lease_authentication_key)):
+                lease_authentication_key[index] = 0
+
+        for client_id in EXPECTED_CLIENTS:
+            lease = self._lease_broker.acquire_physical_device(client_id)
+            self._device_leases[client_id] = lease
+            self._resource_leases.append(lease)
+            self._restore_callbacks[str(lease["resourceKey"])] = (
+                lambda deadline, cancellation, lease=lease: self._restore_device(
+                    lease,
+                    deadline_monotonic=deadline,
+                    cancellation=cancellation,
+                )
+            )
+        for provider in PROVIDER_CLIENTS:
+            lease = self._lease_broker.acquire_provider_account(provider)
+            self._lease_broker.provider_identity_assertion(
+                lease,
+                observed_subject=provider_subjects[provider],
+            )
+            self._account_leases[provider] = lease
+            self._resource_leases.append(lease)
+            self._restore_callbacks[str(lease["resourceKey"])] = (
+                lambda deadline, cancellation, provider=provider, lease=lease: self._restore_account(
+                    provider,
+                    lease,
+                    provider_subjects[provider],
+                    deadline_monotonic=deadline,
+                    cancellation=cancellation,
+                )
+            )
+        for client_id in EXPECTED_CLIENTS:
+            provider = CLIENT_PROVIDER[client_id]
+            self._browser_leases[client_id] = (
+                self._lease_broker.acquire_browser_session(
+                    client_id,
+                    physical_device_lease=self._device_leases[client_id],
+                    provider_account_lease=self._account_leases[provider],
+                    verify_baseline=lambda _device, _account, client_id=client_id: (
+                        browser_baselines[client_id]
+                    ),
+                )
+            )
+            lease = self._browser_leases[client_id]
+            self._resource_leases.append(lease)
+            baseline = browser_baselines[client_id]
+            self._restore_callbacks[
+                str(lease["resourceKey"])
+            ] = lambda deadline, cancellation, baseline=baseline: (
+                _require_cleanup_budget(deadline, cancellation)
+                or BaselineRestoreResult(
+                    cleanup_completed=True,
+                    baseline_restored=(
+                        baseline.mobile_oauth_state_absent
+                        and baseline.station_run_state_absent
+                    ),
+                    identity_reverified=baseline.expected_identity_matched,
+                )
+            )
+
+        self._heartbeat_owner = MobileResourceLeaseHeartbeatOwner(
+            self._lease_broker,
+            interval_seconds=300,
+        )
+        for lease in self._resource_leases:
+            self._heartbeat_owner.register(lease)
+        for service_id, lease in zip(
+            MOBILE_OAUTH_FIXTURE_SERVICES,
+            self._fixture_heartbeat_leases,
+        ):
+            self._heartbeat_owner.register_external(
+                lease,
+                lambda service_id=service_id: self._station_fixture.heartbeat(
+                    service_id
+                ),
+            )
+        self._heartbeat_owner.start()
+
+        fixture_refs = self._station_fixture.lease_refs
+        artifacts = MobileNativeSourceArtifactRefs(
+            build_attestations=build_refs,
+            provider_account_leases={
+                provider: self._lease_broker.acquisition_reference(lease)
+                for provider, lease in self._account_leases.items()
+            },
+            physical_device_leases={
+                client_id: self._lease_broker.acquisition_reference(lease)
+                for client_id, lease in self._device_leases.items()
+            },
+            browser_session_leases={
+                client_id: self._lease_broker.acquisition_reference(lease)
+                for client_id, lease in self._browser_leases.items()
+            },
+        )
+        projection = build_mobile_native_source_projection(
+            artifacts,
+            reader=self._artifact_store,
+            expected_workspace_id=self._artifact_store.workspace_id,
+            expected_run_id=self._artifact_session.run_id,
+        )
+        self._fixture_refs = {
+            service_id: fixture_refs[service_id]
+            for service_id in MOBILE_OAUTH_FIXTURE_SERVICES
+        }
+        self._source_projection = projection
+        return projection
+
+    def _prepare_actor_manifest(
+        self,
+        profile_environment: Mapping[str, str],
+    ) -> dict[str, Any]:
+        if os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1":
+            raise BlockedError(
+                reason=(
+                    "Mobile native actor reset requires "
+                    "MOBILE_ACCEPTANCE_RESET=1"
+                ),
+                resource="fixture-authorization:MOBILE_ACCEPTANCE_RESET",
+            )
+        if self._artifact_session is None or self._native_spec is None:
+            raise BlockedError(
+                reason="Mobile native actor Fixture has no artifact authority",
+                resource="fixture-artifact-authority",
+            )
+
+        stations: dict[str, dict[str, Any]] = {}
+        for service_id, (url_name, deploy_name) in SERVICE_CONFIG.items():
+            station_url = str(profile_environment.get(url_name) or "")
+            deployment_environment = str(
+                profile_environment.get(deploy_name) or ""
+            )
+            if not station_url or not deployment_environment:
+                raise BlockedError(
+                    reason=(
+                        f"Mobile native actor Fixture requires {url_name} "
+                        f"and {deploy_name}"
+                    ),
+                    resource=f"fixture-environment:{service_id}",
+                )
+            verify_reset_target(station_url, deployment_environment)
+            reset_fixture(deployment_environment, ROLES)
+            actors = [
+                resolve_actor_identity(station_url, role, ACTOR_PASSWORD)
+                for role in ROLES
+            ]
+            stations[service_id] = {
+                "actors": [
+                    {
+                        "role": actor.role,
+                        "accountRef": actor.account_ref,
+                        "ptid": actor.ptid,
+                        "devicePolicy": actor.device_policy,
+                    }
+                    for actor in actors
+                ],
+                "targetVerified": True,
+            }
+            self._service_bindings[service_id] = (
+                station_url,
+                deployment_environment,
+            )
+
+        payload = {
+            "artifactKind": "mobile-native-actor-manifest",
+            "fixtureId": "mobile-native-actors",
+            "environmentId": self.environment_id,
+            "runId": self._artifact_session.run_id,
+            "createdAt": utc_now(),
+            "initialState": "ready",
+            "stations": stations,
+            "clients": [
+                {
+                    "id": client.id,
+                    "platform": client.platform,
+                    "actor": client.actor,
+                    "deviceRole": client.device_role,
+                    "profile": client.profile,
+                    "sessionLease": client.session_lease,
+                }
+                for client in self._native_spec.clients
+            ],
+            "reset": {"authorized": True, "targetVerified": True},
+            "cleanup": {
+                "deterministic": True,
+                "action": "reset disposable actors and revoke fixture sessions",
+            },
+        }
+        return self._artifact_session.write_json(
+            "runtime/mobile-actor-manifest.json",
+            payload,
+        ).to_dict()
+
+    def _resolve_artifact_writer(self, reference: ArtifactRef) -> object | None:
+        if (
+            self._artifact_session is not None
+            and reference.run_id == self._artifact_session.run_id
+            and reference.gate_id == self._artifact_session.gate_id
+        ):
+            return self._artifact_session
+        return None
+
+    @staticmethod
+    def _credential_authorities(
+        credential_values: Mapping[str, str],
+    ) -> tuple[dict[str, str], dict[str, BrowserBaselineVerificationResult]]:
+        subjects: dict[str, str] = {}
+        baselines: dict[str, BrowserBaselineVerificationResult] = {}
+        for provider, clients in PROVIDER_CLIENTS.items():
+            credential_id = f"{provider}-disposable-account"
+            raw = credential_values.get(credential_id, "")
+            try:
+                value = json.loads(raw)
+                subject = value["subject"]
+                observed = value["browserBaselines"]
+                if (
+                    value.get("provider") != provider
+                    or not isinstance(subject, str)
+                    or not subject
+                    or not isinstance(observed, Mapping)
+                    or set(observed) != set(clients)
+                ):
+                    raise ValueError("credential authority shape is invalid")
+                subjects[provider] = subject
+                for client_id in clients:
+                    baseline = observed[client_id]
+                    if not isinstance(baseline, Mapping):
+                        raise ValueError("browser baseline is invalid")
+                    result = BrowserBaselineVerificationResult(
+                        expected_identity_matched=(
+                            baseline.get("expectedIdentityMatched") is True
+                        ),
+                        authorization_in_progress=(
+                            baseline.get("authorizationInProgress") is True
+                        ),
+                        mobile_oauth_state_absent=(
+                            baseline.get("mobileOAuthStateAbsent") is True
+                        ),
+                        station_run_state_absent=(
+                            baseline.get("stationRunStateAbsent") is True
+                        ),
+                    )
+                    if (
+                        not result.expected_identity_matched
+                        or result.authorization_in_progress
+                        or not result.mobile_oauth_state_absent
+                        or not result.station_run_state_absent
+                    ):
+                        raise ValueError("browser baseline is not clean")
+                    baselines[client_id] = result
+            except (
+                KeyError,
+                TypeError,
+                ValueError,
+                json.JSONDecodeError,
+            ) as error:
+                raise BlockedError(
+                    reason=(
+                        f"Mobile native {provider} account authority is "
+                        "missing an exact subject/browser baseline"
+                    ),
+                    resource=f"mobile-source:provider-account:{provider}",
+                ) from error
+        return subjects, baselines
+
+    def _register_parent_cleanup(self) -> None:
+        if self._cleanup_registered:
+            return
+        self.register_cleanup("mobile-native-parent-authorities", self._cleanup_parent)
+        self._cleanup_registered = True
+
+    def _zeroize_pending_lease_authentication_key(self) -> bool:
+        key = self._native_inputs.pop("leaseAuthenticationKey", None)
+        if key is None:
+            return True
+        if not isinstance(key, bytearray):
+            return False
+        for index in range(len(key)):
+            key[index] = 0
+        return not any(key)
+
+    def _require_heartbeat_healthy(self) -> None:
+        owner = self._heartbeat_owner
+        if owner is None:
+            raise BlockedError(
+                reason="Mobile native heartbeat owner is unavailable",
+                resource="mobile-source:heartbeat-owner",
+            )
+        try:
+            owner.raise_if_failed()
+        except BaseException as error:
+            quarantine_failures = self._quarantine_parent_authorities(
+                "LEASE_HEARTBEAT_OWNER_FAILED"
+            )
+            detail = (
+                f"; quarantine failures: {', '.join(quarantine_failures)}"
+                if quarantine_failures
+                else ""
+            )
+            raise BlockedError(
+                reason=f"Mobile native heartbeat owner failed{detail}",
+                resource="mobile-source:heartbeat-owner",
+            ) from error
+
+    def _quarantine_parent_authorities(self, reason: str) -> list[str]:
+        deadline = (
+            time.monotonic() + MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS
+        )
+        cancellation = threading.Event()
+        failures: list[str] = []
+        broker = self._lease_broker
+        if self._appium_handler is not None:
+            try:
+                if not self._appium_handler._stop_all(
+                    deadline_monotonic=deadline,
+                    cancellation=cancellation,
+                ):
+                    failures.append("appium sessions")
+            except BaseException as error:
+                failures.append(f"appium sessions: {type(error).__name__}")
+        if broker is not None:
+            failures.extend(
+                self._quarantine_leases(
+                    broker,
+                    self._browser_leases,
+                    reason,
+                    deadline_monotonic=deadline,
+                    cancellation=cancellation,
+                )
+            )
+        if self._station_fixture is not None:
+            for service_id in reversed(MOBILE_OAUTH_FIXTURE_SERVICES):
+                try:
+                    if not _quarantine_fixture_lease(
+                        self._station_fixture,
+                        service_id,
+                        reason,
+                        deadline_monotonic=deadline,
+                        cancellation=cancellation,
+                    ):
+                        failures.append(
+                            f"station fixture {service_id}: not quarantined"
+                        )
+                except BaseException as error:
+                    failures.append(
+                        f"station fixture {service_id}: {type(error).__name__}"
+                    )
+        if broker is not None:
+            failures.extend(
+                self._quarantine_leases(
+                    broker,
+                    self._account_leases,
+                    reason,
+                    deadline_monotonic=deadline,
+                    cancellation=cancellation,
+                )
+            )
+            failures.extend(
+                self._quarantine_leases(
+                    broker,
+                    self._device_leases,
+                    reason,
+                    deadline_monotonic=deadline,
+                    cancellation=cancellation,
+                )
+            )
+        return failures
+
+    @staticmethod
+    def _quarantine_leases(
+        broker: MobileResourceLeaseBroker,
+        leases: Mapping[str, Mapping[str, Any]],
+        reason: str,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> list[str]:
+        failures: list[str] = []
+        for lease in reversed(tuple(leases.values())):
+            resource_key = str(lease.get("resourceKey") or "unknown")
+            try:
+                if not _quarantine_broker_lease(
+                    broker,
+                    lease,
+                    reason,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ):
+                    failures.append(f"{resource_key}: not quarantined")
+            except BaseException as error:
+                failures.append(f"{resource_key}: {type(error).__name__}")
+        return failures
+
+    def _restore_account(
+        self,
+        provider: str,
+        lease: Mapping[str, Any],
+        expected_subject: str,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> BaselineRestoreResult:
+        assert self._lease_broker is not None
+        assertion = self._lease_broker.provider_identity_assertion(
+            lease,
+            observed_subject=expected_subject,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        return BaselineRestoreResult(
+            cleanup_completed=True,
+            baseline_restored=True,
+            identity_reverified=(
+                assertion.get("provider") == provider
+                and assertion.get("identityMatched") is True
+            ),
+        )
+
+    def _restore_device(
+        self,
+        lease: Mapping[str, Any],
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> BaselineRestoreResult:
+        assert self._lease_broker is not None
+        verified = self._lease_broker.with_physical_device(
+            lease,
+            lambda handle: (
+                handle.connected and handle.physical and not handle.simulator
+            ),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        return BaselineRestoreResult(
+            cleanup_completed=True,
+            baseline_restored=True,
+            identity_reverified=bool(verified),
+        )
+
+    def _cleanup_parent(self) -> None:
+        deadline = (
+            time.monotonic() + MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS
+        )
+        cancellation = threading.Event()
+        failures: list[str] = []
+        if not self._zeroize_pending_lease_authentication_key():
+            failures.append("pending lease authentication key")
+        heartbeat_failed = False
+        if self._heartbeat_owner is not None:
+            try:
+                self._heartbeat_owner.close()
+                self._heartbeat_owner.raise_if_failed()
+            except BaseException as error:
+                heartbeat_failed = True
+                failures.append(f"heartbeat owner: {type(error).__name__}")
+        if self._appium_handler is not None:
+            try:
+                if not self._appium_handler._stop_all(
+                    deadline_monotonic=deadline,
+                    cancellation=cancellation,
+                ):
+                    failures.append("appium sessions")
+            except BaseException as error:
+                failures.append(f"appium sessions: {type(error).__name__}")
+        broker = self._lease_broker
+        if broker is not None:
+            if heartbeat_failed:
+                failures.extend(
+                    self._quarantine_leases(
+                        broker,
+                        self._browser_leases,
+                        "LEASE_HEARTBEAT_OWNER_FAILED",
+                        deadline_monotonic=deadline,
+                        cancellation=cancellation,
+                    )
+                )
+            else:
+                failures.extend(
+                    self._release_leases(
+                        broker,
+                        self._browser_leases,
+                        deadline_monotonic=deadline,
+                        cancellation=cancellation,
+                    )
+                )
+        if self._station_fixture is not None:
+            try:
+                if heartbeat_failed:
+                    for service_id in reversed(MOBILE_OAUTH_FIXTURE_SERVICES):
+                        if not _quarantine_fixture_lease(
+                            self._station_fixture,
+                            service_id,
+                            "LEASE_HEARTBEAT_OWNER_FAILED",
+                            deadline_monotonic=deadline,
+                            cancellation=cancellation,
+                        ):
+                            failures.append(
+                                f"station fixture {service_id}: not quarantined"
+                            )
+                else:
+                    for service_id in reversed(tuple(self._service_bindings)):
+                        _require_cleanup_budget(deadline, cancellation)
+                        station_url, deployment_environment = (
+                            self._service_bindings[service_id]
+                        )
+                        verify_reset_target(
+                            station_url,
+                            deployment_environment,
+                            deadline_monotonic=deadline,
+                            cancellation=cancellation,
+                        )
+                        reset_fixture(
+                            deployment_environment,
+                            ROLES,
+                            deadline_monotonic=deadline,
+                            cancellation=cancellation,
+                        )
+                    self._station_fixture.cleanup(
+                        deadline_monotonic=deadline,
+                        cancellation=cancellation,
+                    )
+                    _require_cleanup_budget(deadline, cancellation)
+                    _write_fixture_outcomes(self._station_fixture)
+            except BaseException as error:
+                failures.append(f"station fixture: {type(error).__name__}")
+        if broker is not None:
+            if heartbeat_failed:
+                failures.extend(
+                    self._quarantine_leases(
+                        broker,
+                        self._account_leases,
+                        "LEASE_HEARTBEAT_OWNER_FAILED",
+                        deadline_monotonic=deadline,
+                        cancellation=cancellation,
+                    )
+                )
+                failures.extend(
+                    self._quarantine_leases(
+                        broker,
+                        self._device_leases,
+                        "LEASE_HEARTBEAT_OWNER_FAILED",
+                        deadline_monotonic=deadline,
+                        cancellation=cancellation,
+                    )
+                )
+            else:
+                failures.extend(
+                    self._release_leases(
+                        broker,
+                        self._account_leases,
+                        deadline_monotonic=deadline,
+                        cancellation=cancellation,
+                    )
+                )
+                failures.extend(
+                    self._release_leases(
+                        broker,
+                        self._device_leases,
+                        deadline_monotonic=deadline,
+                        cancellation=cancellation,
+                    )
+                )
+        if self._heartbeat_owner is not None:
+            for lease in reversed(
+                (*self._resource_leases, *self._fixture_heartbeat_leases)
+            ):
+                try:
+                    _require_cleanup_budget(deadline, cancellation)
+                    self._heartbeat_owner.unregister(lease)
+                except BaseException as error:
+                    failures.append(
+                        "heartbeat unregister "
+                        f"{lease.get('resourceKey')}: {type(error).__name__}"
+                    )
+        if broker is not None:
+            try:
+                cleanup = broker.close()
+                if not all(cleanup.values()):
+                    failures.append("resource lease broker")
+            except BaseException as error:
+                failures.append(
+                    f"resource lease broker: {type(error).__name__}"
+                )
+        for storage_root in reversed(self._storage_roots):
+            try:
+                _require_cleanup_budget(deadline, cancellation)
+                shutil.rmtree(storage_root)
+            except FileNotFoundError:
+                continue
+            except BaseException as error:
+                failures.append(
+                    f"storage {storage_root.name}: {type(error).__name__}"
+                )
+        for reservation in reversed(self._port_reservations):
+            try:
+                _require_cleanup_budget(deadline, cancellation)
+                reservation.release()
+            except BaseException as error:
+                failures.append(f"port reservation: {type(error).__name__}")
+        if failures:
+            raise ProvisioningError(
+                "Mobile native parent cleanup failed: " + "; ".join(failures)
+            )
+
+    def _release_leases(
+        self,
+        broker: MobileResourceLeaseBroker,
+        leases: Mapping[str, Mapping[str, Any]],
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> list[str]:
+        failures: list[str] = []
+        for lease in reversed(tuple(leases.values())):
+            resource_key = str(lease["resourceKey"])
+            restore = self._restore_callbacks.get(resource_key)
+            if restore is None:
+                broker.quarantine(
+                    lease,
+                    "LEASE_CLEANUP_FAILED",
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                failures.append(f"{resource_key}: restore callback missing")
+                continue
+            try:
+                broker.release(
+                    lease,
+                    restore=lambda restore=restore: restore(
+                        deadline_monotonic,
+                        cancellation,
+                    ),
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            except BaseException as error:
+                try:
+                    broker.quarantine(
+                        lease,
+                        "LEASE_CLEANUP_FAILED",
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    )
+                except BaseException as quarantine_error:
+                    failures.append(
+                        f"{resource_key}: quarantine "
+                        f"{type(quarantine_error).__name__}"
+                    )
+                failures.append(f"{resource_key}: {type(error).__name__}")
+        return failures
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -1859,7 +5395,10 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 )
             native_spec = load_mobile_native_preflight_spec()
             native_inputs = preflight_mobile_native_inputs(native_spec)
-            credential_refs = require_mobile_native_credentials(self.contract)
+            self._native_spec = native_spec
+            self._native_inputs = native_inputs
+            self._register_parent_cleanup()
+            credential_refs, credential_values = self.prepare_credentials()
 
             profile_name, _, slot, profile_env = self._resolve_active_profile()
             manifest = self._preflighted(
@@ -1982,7 +5521,6 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 Path(native_inputs["storageRoot"]).expanduser()
                 / manifest.run_id
             )
-            clients: list[ClientRuntime] = []
             client_resources: dict[str, dict[str, Any]] = {}
             for client in native_spec.clients:
                 owner = f"acceptance:{gate_id}:{manifest.run_id}:{client.id}"
@@ -1992,50 +5530,21 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 for role in client.port_roles:
                     reservation = _PortReservation()
                     reservations.append(reservation)
-                    self.register_cleanup(
-                        f"port:{client.id}:{role}",
-                        reservation.release,
-                    )
+                    self._port_reservations.append(reservation)
                 storage_root = runtime_root / client.id
                 storage_root.mkdir(parents=True, exist_ok=False)
+                self._storage_roots.append(storage_root)
                 self.acquire_profile_lease(
                     f"mobile-native-storage-{client.id}",
                     owner,
-                )
-                self.register_cleanup(
-                    f"storage:{client.id}",
-                    lambda path=storage_root: shutil.rmtree(path),
-                )
-                clients.append(
-                    ClientRuntime(
-                        actor=client.actor,
-                        runtime=client.runtime,
-                        worktree=str(REPO_ROOT),
-                        gateway_port=reservations[0].port,
-                        renderer_port=reservations[1].port,
-                        webdriver_port=reservations[2].port,
-                        profile=client.profile,
-                        storage_root=str(storage_root),
-                    )
                 )
                 client_resources[client.id] = {
                     "platform": client.platform,
                     "actor": client.actor,
                     "runtime": client.runtime,
-                    "destination": native_inputs["clients"][client.id]["destination"],
-                    "device": native_inputs["clients"][client.id]["device"],
                     "deviceRole": client.device_role,
                     "profile": client.profile,
-                    "storageRoot": str(storage_root),
                     "sessionLease": client.session_lease,
-                    "browserSession": {
-                        "owner": client.browser_session.owner,
-                        "provider": client.browser_session.provider,
-                        "credentialRef": client.browser_session.credential_ref,
-                        "cleanStart": client.browser_session.clean_start,
-                        "readback": client.browser_session.readback,
-                        "cleanup": client.browser_session.cleanup,
-                    },
                     "ports": {
                         role: reservation.port
                         for role, reservation in zip(
@@ -2045,87 +5554,29 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                         )
                     },
                 }
-                if client.platform == "ios":
-                    client_resources[client.id]["readiness"] = dict(
-                        native_inputs["iosReadiness"]
-                    )
-                    client_resources[client.id]["appiumCapabilities"] = {
-                        "appium:updatedWDABundleId": native_inputs[
-                            "iosReadiness"
-                        ]["wdaBundleId"],
-                        "appium:additionalWebviewBundleIds": [
-                            native_inputs["iosReadiness"]["webviewBundleId"]
-                        ],
-                    }
-                else:
-                    client_resources[client.id]["browser"] = (
-                        native_inputs["androidBrowsers"][client.id]
-                    )
-                    client_resources[client.id]["appiumCapabilities"] = {
-                        "appium:chromedriverExecutable": native_inputs[
-                            "chromedriver"
-                        ]["executable"],
-                        "chromedriverExecutableReference": native_inputs[
-                            "chromedriver"
-                        ]["executableReference"],
-                    }
                 for reservation in reservations:
                     reservation.release()
 
-            fixture_ref = prepare_fixture(
-                environment_id=self.environment_id,
-                run_id=manifest.run_id,
-                client_specs=native_spec.clients,
+            self._client_resources = client_resources
+            source_projection = self._prepare_parent_authorities(
+                gate_id=gate_id,
+                runtime_root=runtime_root,
+                credential_values=credential_values,
+                profile_environment=profile_env,
             )
-            self.register_cleanup("mobile-native-actors", cleanup_fixture)
             manifest = dataclasses.replace(
                 manifest,
-                actor_manifest_ref=fixture_ref,
-                clients=tuple(clients),
+                actor_manifest_ref=self._actor_manifest_ref,
             )
             manifest = _with_mobile_resources(
                 manifest,
-                {
-                    "appium": {
-                        "serverUrl": native_inputs["appiumUrl"],
-                        "serverVersion": native_inputs["appiumVersion"],
-                        "expectedServerVersion": native_spec.appium_expected_version,
-                        "drivers": {
-                            platform: {
-                                "identity": native_spec.drivers[platform].identity,
-                                "installedName": (
-                                    native_spec.drivers[platform].installed_name
-                                ),
-                                "automationName": (
-                                    native_spec.drivers[platform].automation_name
-                                ),
-                                "version": native_inputs["driverVersions"][platform],
-                                "expectedVersion": (
-                                    native_spec.drivers[platform].expected_version
-                                ),
-                            }
-                            for platform in EXPECTED_DRIVER_IDENTITIES
-                        },
-                    },
-                    "chromedriver": native_inputs["chromedriver"],
-                    "applications": {
-                        platform: {
-                            "artifact": native_inputs["buildArtifacts"][platform],
-                            "id": native_spec.application_ids[platform],
-                            "callbackScheme": native_spec.callback_schemes[platform],
-                        }
-                        for platform in EXPECTED_DRIVER_IDENTITIES
-                    },
-                    "clients": client_resources,
-                    "harness": {
-                        "namespace": native_spec.harness_namespace,
-                        "requiredActions": list(native_spec.harness_actions),
-                    },
-                    "credentialRefs": {
-                        credential.id: credential.source_ref
-                        for credential in self.contract.credentials
-                    },
-                },
+                _mobile_native_manifest_resources(
+                    source_projection,
+                    self._fixture_refs,
+                    native_spec,
+                    evidence_run_id=self._artifact_session.run_id,
+                    provisioning_run_id=manifest.run_id,
+                ),
             )
             self._manifest = manifest
             return self._ready(manifest)
@@ -2143,3 +5594,6 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 reason=blocked.reason,
                 resource=blocked.resource,
             )
+        finally:
+            if self._lease_broker is None:
+                self._zeroize_pending_lease_authentication_key()

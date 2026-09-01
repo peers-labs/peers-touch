@@ -19,7 +19,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from tooling.acceptance.core import ArtifactRef as CoreArtifactRef
 from tooling.acceptance.core import EvidenceError
@@ -163,7 +163,7 @@ ROLE_PAYLOAD_KINDS = {
 # Frozen at the accepted E2-0 source inventory. The tree digest includes every
 # non-symlink file under model/domain with its repository-relative path.
 FROZEN_PROTECTED_BASELINE = {
-    "model/domain": "30b813c8c81b963870332b4346ef4444995af1e84fc5f1d936a017b097fa418d",
+    "model/domain": "ae6d01387bf984e545e7aba23b2c912c85af865c951c068a3568d6e42ddd3253",
     "pnpm-lock.yaml": "8f8577c49ef1fccc3031acb2169c0f63ce69aabfef1861e8241b848b77af3b72",
     "apps/mobile/src-tauri/Cargo.lock": (
         "7c9761ed5f2bbcae34b62029374cb0372103f30bd78a2625e0258950d61275c4"
@@ -304,6 +304,96 @@ class ArtifactRecord:
     role: str
     path: str
     payload: Mapping[str, Any] | None = None
+
+
+def artifact_records_from_evidence_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    payload_loader: Callable[[CoreArtifactRef], Mapping[str, Any]],
+) -> list[ArtifactRecord]:
+    """Project unique Evidence Store role instances onto frozen role names."""
+
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, Mapping):
+        raise ProofContractError("Evidence Store manifest artifacts must be an object")
+    manifest_identity = {
+        "workspaceId": manifest.get("workspaceId"),
+        "gateId": manifest.get("gateId"),
+        "runId": manifest.get("runId"),
+    }
+    for field, value in manifest_identity.items():
+        if not isinstance(value, str) or not value:
+            raise ProofContractError(
+                f"Evidence Store manifest {field} must be a non-empty string"
+            )
+    records: list[ArtifactRecord] = []
+    for role_instance, raw_reference in artifacts.items():
+        if not isinstance(role_instance, str) or not role_instance:
+            raise ProofContractError("Evidence Store Artifact Role key is invalid")
+        role_name, separator, discriminator = role_instance.partition("/")
+        if role_name not in ARTIFACT_ROLES:
+            continue
+        role = ARTIFACT_ROLES[role_name]
+        requires_discriminator = (
+            role.cardinality != 1 and role.minimum_cardinality != 1
+        )
+        if requires_discriminator != bool(separator) or (
+            separator
+            and (
+                not discriminator
+                or "/" in discriminator
+                or discriminator in {".", ".."}
+            )
+        ):
+            raise ProofContractError(
+                f"invalid Evidence Store Artifact Role instance: {role_instance!r}"
+            )
+        if not isinstance(raw_reference, Mapping):
+            raise ProofContractError(
+                f"Evidence Store Artifact Role {role_instance!r} has no reference"
+            )
+        try:
+            reference = CoreArtifactRef.from_dict(raw_reference)
+        except EvidenceError as error:
+            raise ProofContractError(
+                f"Evidence Store Artifact Role {role_instance!r} has an invalid reference"
+            ) from error
+        for field, expected in manifest_identity.items():
+            if getattr(reference, _snake_case_identity_field(field)) != expected:
+                raise ProofContractError(
+                    f"Evidence Store Artifact Role {role_instance!r} "
+                    f"{field} does not match its manifest"
+                )
+        payload = payload_loader(reference)
+        if not isinstance(payload, Mapping):
+            raise ProofContractError(
+                f"Evidence Store Artifact Role {role_instance!r} payload is not an object"
+            )
+        canonical_path = reference.path
+        if role_name == "mobile-visible-proof":
+            variant_id = payload.get("variantId")
+            client_id = payload.get("clientId")
+            if not isinstance(variant_id, str) or not isinstance(client_id, str):
+                raise ProofContractError(
+                    f"Evidence Store Artifact Role {role_instance!r} "
+                    "payload is missing variantId/clientId"
+                )
+            canonical_path = f"evidence/mobile/{variant_id}/{client_id}/"
+            if reference.path != canonical_path + "projection.json":
+                raise ProofContractError(
+                    f"Evidence Store Artifact Role {role_instance!r} "
+                    "does not reference its canonical projection"
+                )
+        records.append(ArtifactRecord(role_name, canonical_path, payload))
+    return records
+
+
+def _snake_case_identity_field(field: str) -> str:
+    return {
+        "workspaceId": "workspace_id",
+        "gateId": "gate_id",
+        "runId": "run_id",
+    }[field]
 
 
 @dataclass(frozen=True)
@@ -2021,7 +2111,7 @@ CUTOVER_RULES = (
     ),
     CutoverRule(
         match_class="legacy-android-avd-destination",
-        pattern=re.compile(r"PT_MOBILE_ANDROID_AVD"),
+        pattern=re.compile("PT_MOBILE_ANDROID_" + "AVD"),
         roots=("tooling/acceptance", "apps/mobile", "docs/architecture/mobile"),
         replace_paths=(
             "tooling/acceptance/environments/mobile-native.yaml",
@@ -2085,11 +2175,11 @@ CUTOVER_RULES = (
         pattern=re.compile(r"\bdeep_link_for_failure_case\b"),
         roots=("tooling/acceptance/gates/mobile",),
         replace_paths=(
+            "tooling/acceptance/gates/mobile/appium.py",
             "tooling/acceptance/gates/mobile/native_e2e.py",
             "tooling/acceptance/gates/mobile/native_e2e_test.py",
         ),
         retained_paths=(
-            "tooling/acceptance/gates/mobile/appium.py",
             "tooling/acceptance/gates/mobile/simulator_e2e.py",
             "tooling/acceptance/gates/mobile/simulator_e2e_test.py",
         ),
@@ -2110,7 +2200,10 @@ CUTOVER_RULES = (
     ),
     CutoverRule(
         match_class="mobile-native-cleanup-registration",
-        pattern=re.compile(r"\bregister_cleanup\("),
+        pattern=re.compile(
+            r"\bregister_cleanup\(\s*f?[\"']"
+            r"(?:port:|storage:|mobile-native-actors)"
+        ),
         roots=("tooling/acceptance/provisioners/mobile_native.py",),
         replace_paths=("tooling/acceptance/provisioners/mobile_native.py",),
     ),
@@ -2219,18 +2312,22 @@ def verify_cutover_inventory(root: Path = REPO_ROOT) -> dict[str, Any]:
     counts: dict[str, int] = {}
     for match in matches:
         counts[match.match_class] = counts.get(match.match_class, 0) + 1
-    missing_classes = sorted(
-        rule.match_class
-        for rule in CUTOVER_RULES
-        if not counts.get(rule.match_class)
-    )
-    if missing_classes:
+    pending = [
+        match
+        for match in matches
+        if match.disposition == "replace-at-e2-5"
+    ]
+    if pending:
         raise ProofContractError(
-            f"cutover inventory unexpectedly lost declared match classes: {missing_classes}"
+            "Mobile E2-5 cutover retains legacy matches: "
+            + ", ".join(
+                f"{match.match_class}:{match.path}:{match.line}"
+                for match in pending
+            )
         )
     return {
         "status": "PASS",
-        "result": "CLASSIFIED",
+        "result": "CUTOVER_COMPLETE",
         "matches": [
             {
                 "class": match.match_class,

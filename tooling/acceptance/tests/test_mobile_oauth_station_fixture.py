@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import inspect
 import json
 import os
+import sys
+import tempfile
+import threading
+import time
 import unittest
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -18,10 +23,14 @@ from tooling.acceptance.core import (
 from tooling.acceptance.fixtures import mobile_native_reset
 from tooling.acceptance.fixtures.mobile_oauth_station import (
     COMMANDS_ENVIRONMENT,
+    HMAC_FD_ENVIRONMENT,
+    MAXIMUM_OUTPUT_BYTES,
     MobileOAuthStationFixture,
+    STATION_COMMAND_ENVIRONMENT_KEYS,
     StationCommandResult,
     StationFixtureConflict,
     StationFixtureError,
+    SubprocessStationCommandExecutor,
     load_deployment_commands,
     operation_input_digest,
 )
@@ -30,9 +39,6 @@ from tooling.acceptance.gates.mobile.proof_contracts_test import (
     RUN_ID,
     fixture_lease,
     station_snapshot,
-)
-from tooling.acceptance.fixtures.mobile_resource_lease import (
-    BaselineRestoreResult,
 )
 
 
@@ -78,9 +84,9 @@ class FakeStationExecutor:
         input_text: str,
         environment: Mapping[str, str],
         pass_fds: tuple[int, ...],
-        timeout: float,
+        deadline_monotonic: float,
+        cancellation: threading.Event | None,
     ) -> StationCommandResult:
-        del timeout
         service_id = command[0]
         operation = command[-1]
         payload = json.loads(input_text) if input_text else {}
@@ -97,7 +103,10 @@ class FakeStationExecutor:
                     "PT_MOBILE_OAUTH_ACCEPTANCE_HMAC_FD",
                     "",
                 ),
+                "environment": dict(environment),
                 "correlationKey": correlation_key,
+                "deadlineMonotonic": deadline_monotonic,
+                "cancellation": cancellation,
             }
         )
 
@@ -166,73 +175,6 @@ class FakeStationExecutor:
             returncode=0,
             stdout=json.dumps(payload),
         )
-
-
-class FakeLeaseBroker:
-    def __init__(self, events: list[str]) -> None:
-        self.events = events
-        self.outcomes: dict[str, dict[str, object]] = {}
-        self.release_failure = ""
-
-    def release(
-        self,
-        lease: Mapping[str, object],
-        *,
-        restore: object,
-    ) -> dict[str, object]:
-        resource_key = str(lease["resourceKey"])
-        self.events.append(f"release:{resource_key}")
-        if resource_key == self.release_failure:
-            self.outcomes[resource_key] = self._outcome(
-                lease,
-                "QUARANTINED",
-                "LEASE_CLEANUP_FAILED",
-            )
-            raise RuntimeError("synthetic cleanup failure")
-        result = restore()
-        if result != BaselineRestoreResult(True, True, True):
-            raise AssertionError("unexpected restore result")
-        outcome = self._outcome(lease, "RELEASED", "")
-        self.outcomes[resource_key] = outcome
-        return outcome
-
-    def quarantine(
-        self,
-        lease: Mapping[str, object],
-        failure_code: str,
-    ) -> dict[str, object]:
-        resource_key = str(lease["resourceKey"])
-        self.events.append(f"quarantine:{resource_key}:{failure_code}")
-        outcome = self._outcome(lease, "QUARANTINED", failure_code)
-        self.outcomes[resource_key] = outcome
-        return outcome
-
-    def terminal_outcome(
-        self,
-        resource_key: str,
-    ) -> dict[str, object] | None:
-        return self.outcomes.get(resource_key)
-
-    def cleanup_correlation_channel(self) -> dict[str, bool]:
-        self.events.append("correlation")
-        return {
-            "correlationChannelClosed": True,
-            "correlationKeyZeroized": True,
-        }
-
-    @staticmethod
-    def _outcome(
-        lease: Mapping[str, object],
-        state: str,
-        failure_code: str,
-    ) -> dict[str, object]:
-        return {
-            "leaseId": lease["leaseId"],
-            "leaseKind": lease["leaseKind"],
-            "resourceKey": lease["resourceKey"],
-            "finalState": state,
-            "failureCode": failure_code,
-        }
 
 
 def target(service_id: str, client_id: str) -> dict[str, object]:
@@ -516,6 +458,200 @@ class MobileOAuthStationFixtureTests(unittest.TestCase):
             ["cleanup_run", "read_proof_snapshot", "teardown"],
         )
 
+    def test_cleanup_uses_one_deadline_and_honors_cancellation(self) -> None:
+        self.fixture.acquire("station-primary")
+        self.executor.calls.clear()
+        deadline = time.monotonic() + 1
+
+        self.fixture.cleanup(
+            deadline_monotonic=deadline,
+            cancellation=threading.Event(),
+        )
+
+        cleanup_deadlines = [
+            float(call["deadlineMonotonic"])
+            for call in self.executor.calls
+            if call["operation"]
+            in {"cleanup_run", "read_proof_snapshot", "teardown"}
+        ]
+        self.assertEqual(cleanup_deadlines, [deadline, deadline, deadline])
+
+        fixture = MobileOAuthStationFixture(
+            run_handle=self.writer,
+            commands={
+                "station-primary": ("station-primary",),
+                "station-secondary": ("station-secondary",),
+            },
+            correlation_key=b"c" * 32,
+            executor=self.executor,
+        )
+        fixture.acquire("station-primary")
+        self.executor.calls.clear()
+        cancellation = threading.Event()
+        cancellation.set()
+        with self.assertRaises(StationFixtureConflict):
+            fixture.cleanup(
+                deadline_monotonic=time.monotonic() + 1,
+                cancellation=cancellation,
+            )
+        self.assertFalse(
+            any(call["operation"] == "cleanup_run" for call in self.executor.calls)
+        )
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process-group contract")
+    def test_subprocess_executor_uses_minimal_environment_and_hmac_fd(
+        self,
+    ) -> None:
+        read_fd, write_fd = os.pipe()
+        os.write(write_fd, b"correlation-key")
+        os.close(write_fd)
+        script = (
+            "import json, os; "
+            f"fd = int(os.environ[{HMAC_FD_ENVIRONMENT!r}]); "
+            "value = os.read(fd, 4096).decode('utf-8'); "
+            "print(json.dumps({'keys': sorted(os.environ), 'value': value}))"
+        )
+        try:
+            result = SubprocessStationCommandExecutor().run(
+                (sys.executable, "-c", script),
+                input_text="",
+                environment={
+                    "HOME": os.environ.get("HOME", ""),
+                    "PATH": os.environ.get("PATH", ""),
+                    "AWS_SECRET_ACCESS_KEY": "ambient-secret-canary",
+                    HMAC_FD_ENVIRONMENT: str(read_fd),
+                },
+                pass_fds=(read_fd,),
+                deadline_monotonic=time.monotonic() + 3,
+                cancellation=threading.Event(),
+            )
+        finally:
+            os.close(read_fd)
+
+        payload = json.loads(result.stdout)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(payload["value"], "correlation-key")
+        self.assertNotIn("AWS_SECRET_ACCESS_KEY", payload["keys"])
+        self.assertLessEqual(
+            set(payload["keys"]),
+            {*STATION_COMMAND_ENVIRONMENT_KEYS, HMAC_FD_ENVIRONMENT},
+        )
+
+    def test_fixture_filters_environment_before_executor_dispatch(self) -> None:
+        fixture = MobileOAuthStationFixture(
+            run_handle=self.writer,
+            commands={
+                "station-primary": ("station-primary",),
+                "station-secondary": ("station-secondary",),
+            },
+            correlation_key=b"k" * 32,
+            executor=self.executor,
+            environment={
+                "HOME": "/tmp/mobile-fixture-home",
+                "PATH": "/usr/bin",
+                "AWS_SECRET_ACCESS_KEY": "ambient-secret-canary",
+                "PT_MOBILE_RESOURCE_LEASE_AUTH_KEY": "lease-secret-canary",
+                "PT_ACCEPTANCE_REDACTION_VALUES": "raw-redaction-canary",
+            },
+        )
+
+        fixture.bootstrap()
+
+        for invocation in self.executor.calls:
+            child_environment = invocation["environment"]
+            self.assertEqual(
+                child_environment,
+                {
+                    "HOME": "/tmp/mobile-fixture-home",
+                    "PATH": "/usr/bin",
+                },
+            )
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process-group contract")
+    def test_subprocess_executor_cancellation_reaps_resistant_process_group(
+        self,
+    ) -> None:
+        script = """
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+descendant = subprocess.Popen(
+    [
+        sys.executable,
+        "-c",
+        "import os, signal, sys, time; from pathlib import Path; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "Path(sys.argv[1]).write_text(str(os.getpid()), encoding='utf-8'); "
+        "time.sleep(60)",
+        sys.argv[1],
+    ],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
+while not Path(sys.argv[1]).exists():
+    time.sleep(0.01)
+time.sleep(60)
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            pid_path = Path(directory) / "descendant.pid"
+            cancellation = threading.Event()
+
+            def cancel_when_descendant_starts() -> None:
+                deadline = time.monotonic() + 3
+                while not pid_path.exists():
+                    if time.monotonic() >= deadline:
+                        return
+                    time.sleep(0.01)
+                cancellation.set()
+
+            cancel_thread = threading.Thread(
+                target=cancel_when_descendant_starts,
+                daemon=True,
+            )
+            cancel_thread.start()
+            with self.assertRaisesRegex(StationFixtureError, "cancelled"):
+                SubprocessStationCommandExecutor().run(
+                    (sys.executable, "-c", script, str(pid_path)),
+                    input_text="",
+                    environment={
+                        "HOME": os.environ.get("HOME", ""),
+                        "PATH": os.environ.get("PATH", ""),
+                    },
+                    pass_fds=(),
+                    deadline_monotonic=time.monotonic() + 5,
+                    cancellation=cancellation,
+                )
+            cancel_thread.join(timeout=1)
+
+            descendant_pid = int(pid_path.read_text(encoding="utf-8"))
+            with self.assertRaises(
+                ProcessLookupError,
+                msg=f"descendant process {descendant_pid} survived cancellation",
+            ):
+                os.kill(descendant_pid, 0)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process-group contract")
+    def test_subprocess_executor_rejects_unbounded_output(self) -> None:
+        with self.assertRaisesRegex(StationFixtureError, "output exceeded"):
+            SubprocessStationCommandExecutor().run(
+                (
+                    sys.executable,
+                    "-c",
+                    f"import sys; sys.stdout.write('x' * {MAXIMUM_OUTPUT_BYTES + 1})",
+                ),
+                input_text="",
+                environment={
+                    "HOME": os.environ.get("HOME", ""),
+                    "PATH": os.environ.get("PATH", ""),
+                },
+                pass_fds=(),
+                deadline_monotonic=time.monotonic() + 3,
+                cancellation=threading.Event(),
+            )
+
     def test_source_has_no_direct_evidence_or_database_access(self) -> None:
         source = (
             __import__(
@@ -582,168 +718,21 @@ class MobileOAuthStationFixtureTests(unittest.TestCase):
             ],
         )
 
-    def test_mobile_reset_releases_browser_device_account_then_fixture(
-        self,
-    ) -> None:
-        events: list[str] = []
-        broker = FakeLeaseBroker(events)
-        leases = {
-            name: {
-                "leaseId": name,
-                "leaseKind": kind,
-                "resourceKey": name,
-            }
-            for name, kind in (
-                ("account-github", "provider-account"),
-                ("account-google", "provider-account"),
-                ("device-alice", "physical-device"),
-                ("device-bob", "physical-device"),
-                ("browser-alice", "provider-browser-session"),
-                ("browser-bob", "provider-browser-session"),
-            )
-        }
-
-        class StationCleanup:
-            run_id = RUN_ID
-            run_handle = FakeRunHandle()
-            leases: dict[str, dict[str, object]] = {}
-            lease_refs: dict[str, ArtifactRef] = {}
-            quarantined: dict[str, str] = {}
-
-            def cleanup(self) -> tuple[str, ...]:
-                events.append("fixture")
-                return ("station-secondary", "station-primary")
-
-        restore_callbacks = {
-            resource_key: (
-                lambda resource_key=resource_key: (
-                    events.append(f"restore:{resource_key}")
-                    or BaselineRestoreResult(True, True, True)
-                )
-            )
-            for resource_key in leases
-        }
-        environment = {
-            "MOBILE_ACCEPTANCE_RESET": "1",
-            "PT_MOBILE_STATION_PRIMARY_URL": "https://primary.invalid",
-            "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "primary",
-            "PT_MOBILE_STATION_SECONDARY_URL": "https://secondary.invalid",
-            "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "secondary",
-        }
-        with (
-            patch.dict(os.environ, environment, clear=True),
-            patch.object(mobile_native_reset, "verify_reset_target"),
-            patch.object(mobile_native_reset, "reset_fixture"),
+    def test_mobile_reset_does_not_own_parent_resource_cleanup(self) -> None:
+        parameters = inspect.signature(
+            mobile_native_reset.cleanup_fixture
+        ).parameters
+        self.assertEqual(tuple(parameters), ("station_fixture",))
+        source = inspect.getsource(mobile_native_reset.cleanup_fixture)
+        for forbidden_owner in (
+            "lease_broker",
+            "browser_leases",
+            "physical_device_leases",
+            "provider_account_leases",
+            "cleanup_correlation_channel",
         ):
-            result = mobile_native_reset.cleanup_fixture(
-                StationCleanup(),
-                lease_broker=broker,
-                browser_leases=(
-                    leases["browser-alice"],
-                    leases["browser-bob"],
-                ),
-                physical_device_leases=(
-                    leases["device-alice"],
-                    leases["device-bob"],
-                ),
-                provider_account_leases=(
-                    leases["account-github"],
-                    leases["account-google"],
-                ),
-                restore_callbacks=restore_callbacks,
-            )
-
-        self.assertEqual(
-            [event for event in events if event.startswith("release:")],
-            [
-                "release:browser-bob",
-                "release:browser-alice",
-                "release:device-bob",
-                "release:device-alice",
-                "release:account-google",
-                "release:account-github",
-            ],
-        )
-        self.assertLess(
-            events.index("release:account-github"),
-            events.index("fixture"),
-        )
-        self.assertLess(events.index("fixture"), events.index("correlation"))
-        self.assertEqual(
-            result.post_cleanup_station_proofs,
-            (
-                "evidence/mobile/cleanup/station/station-secondary.json",
-                "evidence/mobile/cleanup/station/station-primary.json",
-            ),
-        )
-        self.assertTrue(result.correlation_channel_closed)
-        self.assertTrue(result.correlation_key_zeroized)
-
-    def test_mobile_reset_quarantines_failure_and_continues_cleanup(self) -> None:
-        events: list[str] = []
-        broker = FakeLeaseBroker(events)
-        failed = {
-            "leaseId": "browser-failed",
-            "leaseKind": "provider-browser-session",
-            "resourceKey": "browser-failed",
-        }
-        device = {
-            "leaseId": "device-ok",
-            "leaseKind": "physical-device",
-            "resourceKey": "device-ok",
-        }
-        broker.release_failure = "browser-failed"
-
-        class StationCleanup:
-            run_id = RUN_ID
-            run_handle = FakeRunHandle()
-            leases: dict[str, dict[str, object]] = {}
-            lease_refs: dict[str, ArtifactRef] = {}
-            quarantined: dict[str, str] = {}
-
-            def cleanup(self) -> tuple[str, ...]:
-                events.append("fixture")
-                return ()
-
-        environment = {
-            "MOBILE_ACCEPTANCE_RESET": "1",
-            "PT_MOBILE_STATION_PRIMARY_URL": "https://primary.invalid",
-            "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "primary",
-            "PT_MOBILE_STATION_SECONDARY_URL": "https://secondary.invalid",
-            "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "secondary",
-        }
-        with (
-            patch.dict(os.environ, environment, clear=True),
-            patch.object(mobile_native_reset, "verify_reset_target"),
-            patch.object(mobile_native_reset, "reset_fixture"),
-            self.assertRaises(BlockedError),
-        ):
-            mobile_native_reset.cleanup_fixture(
-                StationCleanup(),
-                lease_broker=broker,
-                browser_leases=(failed,),
-                physical_device_leases=(device,),
-                restore_callbacks={
-                    "browser-failed": lambda: BaselineRestoreResult(
-                        True,
-                        True,
-                        True,
-                    ),
-                    "device-ok": lambda: BaselineRestoreResult(True, True, True),
-                },
-            )
-
-        self.assertEqual(
-            broker.outcomes["browser-failed"]["finalState"],
-            "QUARANTINED",
-        )
-        self.assertEqual(
-            broker.outcomes["browser-failed"]["failureCode"],
-            "LEASE_CLEANUP_FAILED",
-        )
-        self.assertIn("release:device-ok", events)
-        self.assertIn("fixture", events)
-        self.assertEqual(events[-1], "correlation")
+            with self.subTest(forbidden_owner=forbidden_owner):
+                self.assertNotIn(forbidden_owner, source)
 
     def test_mobile_reset_emits_fixture_outcomes_after_station_proof(self) -> None:
         for service_id in ("station-primary", "station-secondary"):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -188,6 +189,101 @@ class BehaviorRuleTests(unittest.TestCase):
                     "agent-stream-resilience-e2e",
                     self.selected_ids(path),
                 )
+
+
+class GateLaunchContractTests(unittest.TestCase):
+    def test_plan_preserves_context_argv_and_capabilities(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "registry.yaml").write_text(
+                json.dumps(
+                    {
+                        "rules": [
+                            {
+                                "id": "context-rule",
+                                "when": {"paths": ["src/**"]},
+                                "require": ["context-gate"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "gates.yaml").write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "context-gate": {
+                                "argv": ["python3", "-m", "example.gate"],
+                                "ephemeralCapabilities": [
+                                    "example.echo",
+                                    "example.deny",
+                                ],
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = MODULE.plan(root, ["src/example.py"])
+
+        gate = result["selected_gates"][0]
+        self.assertEqual(gate["argv"], ["python3", "-m", "example.gate"])
+        self.assertEqual(
+            gate["ephemeralCapabilities"],
+            ["example.echo", "example.deny"],
+        )
+        self.assertNotIn("command", gate)
+
+    def test_legacy_command_remains_the_only_launch_form(self) -> None:
+        gate = MODULE.planned_gate(
+            "legacy-gate",
+            {"command": "python3 legacy_gate.py"},
+        )
+
+        self.assertEqual(gate["command"], "python3 legacy_gate.py")
+        self.assertNotIn("argv", gate)
+        self.assertNotIn("ephemeralCapabilities", gate)
+
+    def test_rejects_dual_launch_truth(self) -> None:
+        with self.assertRaisesRegex(
+            SystemExit,
+            "exactly one of command or argv",
+        ):
+            MODULE.planned_gate(
+                "invalid-gate",
+                {
+                    "command": "python3 legacy_gate.py",
+                    "argv": ["python3", "context_gate.py"],
+                },
+            )
+
+    def test_rejects_command_capability_declaration(self) -> None:
+        with self.assertRaisesRegex(
+            SystemExit,
+            "ephemeralCapabilities requires argv",
+        ):
+            MODULE.planned_gate(
+                "invalid-gate",
+                {
+                    "command": "python3 legacy_gate.py",
+                    "ephemeralCapabilities": ["example.echo"],
+                },
+            )
+
+    def test_rejects_non_python_context_argv(self) -> None:
+        with self.assertRaisesRegex(
+            SystemExit,
+            "requires a Python module, script, or -c argv",
+        ):
+            MODULE.planned_gate(
+                "invalid-context-gate",
+                {
+                    "argv": ["node", "gate.js"],
+                    "ephemeralCapabilities": ["example.echo"],
+                },
+            )
 
 
 if __name__ == "__main__":

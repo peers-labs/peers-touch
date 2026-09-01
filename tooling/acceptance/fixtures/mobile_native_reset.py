@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Protocol
@@ -22,9 +22,6 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     reset_fixture,
     resolve_actor_identity,
     verify_reset_target,
-)
-from tooling.acceptance.fixtures.mobile_resource_lease import (
-    BaselineRestoreResult,
 )
 from tooling.acceptance.gates.mobile.proof_contracts import (
     GATE_ID,
@@ -61,36 +58,10 @@ class StationFixtureCleanup(Protocol):
         ...
 
 
-class ResourceLeaseCleanup(Protocol):
-    def release(
-        self,
-        lease: Mapping[str, Any],
-        *,
-        restore: Callable[[], BaselineRestoreResult],
-    ) -> dict[str, Any]:
-        ...
-
-    def quarantine(
-        self,
-        lease: Mapping[str, Any],
-        failure_code: str,
-    ) -> dict[str, Any]:
-        ...
-
-    def terminal_outcome(self, resource_key: str) -> dict[str, Any] | None:
-        ...
-
-    def cleanup_correlation_channel(self) -> dict[str, bool]:
-        ...
-
-
 @dataclass(frozen=True)
 class MobileNativeCleanupResult:
-    resource_outcomes: tuple[dict[str, Any], ...]
     fixture_outcomes: tuple[dict[str, Any], ...]
     post_cleanup_station_proofs: tuple[str, ...]
-    correlation_channel_closed: bool
-    correlation_key_zeroized: bool
 
 
 def _required_environment(name: str) -> str:
@@ -235,15 +206,6 @@ def prepare_fixture(
 
 def cleanup_fixture(
     station_fixture: StationFixtureCleanup | None = None,
-    *,
-    lease_broker: ResourceLeaseCleanup | None = None,
-    browser_leases: Sequence[Mapping[str, Any]] = (),
-    physical_device_leases: Sequence[Mapping[str, Any]] = (),
-    provider_account_leases: Sequence[Mapping[str, Any]] = (),
-    restore_callbacks: Mapping[
-        str,
-        Callable[[], BaselineRestoreResult],
-    ] | None = None,
 ) -> MobileNativeCleanupResult:
     if os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1":
         raise BlockedError(
@@ -254,47 +216,6 @@ def cleanup_fixture(
             resource="fixture-authorization:MOBILE_ACCEPTANCE_RESET",
         )
     failures: list[str] = []
-    resource_outcomes: list[dict[str, Any]] = []
-    callbacks = restore_callbacks or {}
-
-    if lease_broker is None and (
-        browser_leases
-        or physical_device_leases
-        or provider_account_leases
-        or restore_callbacks
-    ):
-        raise BlockedError(
-            reason="Mobile native leased cleanup requires the resource broker",
-            resource="fixture-cleanup:resource-broker",
-        )
-    if lease_broker is not None and station_fixture is None:
-        raise BlockedError(
-            reason="Mobile native leased cleanup requires the Station Fixture",
-            resource="fixture-cleanup:station-fixture",
-        )
-
-    if lease_broker is not None:
-        for lease_kind, leases in (
-            ("browser", browser_leases),
-            ("device", physical_device_leases),
-            ("account", provider_account_leases),
-        ):
-            for lease in reversed(tuple(leases)):
-                try:
-                    outcome, failure = _release_resource(
-                        lease_broker,
-                        lease,
-                        callbacks,
-                    )
-                except BaseException as error:
-                    failures.append(
-                        f"{lease_kind}:{lease.get('resourceKey')}: "
-                        f"terminalization failed: {error}"
-                    )
-                    continue
-                resource_outcomes.append(outcome)
-                if failure:
-                    failures.append(f"{lease_kind}:{failure}")
 
     for service_id in reversed(tuple(SERVICE_CONFIG)):
         url_name, deploy_name = SERVICE_CONFIG[service_id]
@@ -320,33 +241,11 @@ def cleanup_fixture(
         except BaseException as error:
             failures.append(f"mobile-oauth-station-outcomes: {error}")
 
-    correlation_cleanup = {
-        "correlationChannelClosed": lease_broker is None,
-        "correlationKeyZeroized": lease_broker is None,
-    }
-    if lease_broker is not None:
-        try:
-            correlation_cleanup = lease_broker.cleanup_correlation_channel()
-        except BaseException as error:
-            failures.append(f"provider-correlation: {error}")
-    if not (
-        correlation_cleanup.get("correlationChannelClosed") is True
-        and correlation_cleanup.get("correlationKeyZeroized") is True
-    ):
-        failures.append("provider-correlation: cleanup was incomplete")
-
     result = MobileNativeCleanupResult(
-        resource_outcomes=tuple(resource_outcomes),
         fixture_outcomes=fixture_outcomes,
         post_cleanup_station_proofs=tuple(
             f"evidence/mobile/cleanup/station/{service_id}.json"
             for service_id in released_fixture_services
-        ),
-        correlation_channel_closed=bool(
-            correlation_cleanup.get("correlationChannelClosed")
-        ),
-        correlation_key_zeroized=bool(
-            correlation_cleanup.get("correlationKeyZeroized")
         ),
     )
     if failures:
@@ -358,49 +257,6 @@ def cleanup_fixture(
             resource="fixture-cleanup",
         )
     return result
-
-
-def _release_resource(
-    broker: ResourceLeaseCleanup,
-    lease: Mapping[str, Any],
-    callbacks: Mapping[str, Callable[[], BaselineRestoreResult]],
-) -> tuple[dict[str, Any], str]:
-    resource_key = str(lease.get("resourceKey") or "")
-    restore = callbacks.get(resource_key)
-    if restore is None:
-        outcome = _quarantine_without_terminal_outcome(
-            broker,
-            lease,
-            "LEASE_CLEANUP_FAILED",
-        )
-        return outcome, f"{resource_key}: restore callback is missing"
-
-    try:
-        outcome = broker.release(lease, restore=restore)
-    except BaseException as error:
-        outcome = _quarantine_without_terminal_outcome(
-            broker,
-            lease,
-            "LEASE_CLEANUP_FAILED",
-        )
-        return outcome, f"{resource_key}: {error}"
-    if outcome.get("finalState") != "RELEASED":
-        return outcome, (
-            f"{resource_key}: {outcome.get('failureCode') or 'LEASE_CLEANUP_FAILED'}"
-        )
-    return outcome, ""
-
-
-def _quarantine_without_terminal_outcome(
-    broker: ResourceLeaseCleanup,
-    lease: Mapping[str, Any],
-    failure_code: str,
-) -> dict[str, Any]:
-    resource_key = str(lease.get("resourceKey") or "")
-    outcome = broker.terminal_outcome(resource_key)
-    if outcome is not None:
-        return outcome
-    return broker.quarantine(lease, failure_code)
 
 
 def _write_fixture_outcomes(
@@ -442,7 +298,7 @@ def _write_fixture_outcomes(
         station_fixture.run_handle.write_json(
             path,
             validated,
-            role=path,
+            role=f"mobile-lease-outcome/fixture-{service_id}",
             redact=False,
         )
         outcomes.append(validated)
