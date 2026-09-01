@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-08-30
-covered_docs_hash: 4b225df0490da847920c86477896f8de6afb5cce819a3e900aae3e7ed1619424
+last_verified_at: 2026-08-29
+covered_docs_hash: 224378519df36821ec75cb94bca5d78a31e6864a6f4c2e5feb898e7059ae64d3
 
 covered_docs:
   - AGENTS.md
@@ -31,8 +31,13 @@ Updating this file is a review act, not bookkeeping. The PR must explain whether
 The 2026-08-29 refresh covers execution-status and evidence updates under the
 Acceptance framework. It does not change review behavior, so no `SKILL.md`
 change or additional review fixture is required.
+## 2026-08-29 Review
 
-The 2026-08-30 refresh covers the exact-source Native Desktop evidence rules
-and Mobile OAuth foundation merged through PRs #100 and #101. The corresponding
-runtime identity requirements are present in `pt-github-review/SKILL.md`; no
-additional review fixture is required.
+`AGENTS.md` added the fail-closed Execution Worktree Binding contract. Local
+review target establishment now verifies that persisted binding and stops on
+identity drift. No fixture or knowledge entry is required because the
+executable verifier and its dedicated contract tests own deterministic
+coverage.
+
+The Mobile agent-entry link cleanup removes developer-home absolute paths
+without changing review behavior.
