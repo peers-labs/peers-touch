@@ -53,6 +53,23 @@ SCAN_GATE_MAP = {
     "no-duplicate-symbol": "chat-w11-duplicate-scan",
 }
 CURRENT_RESULTS_ENV = "PT_ACCEPTANCE_CURRENT_RESULTS"
+AGGREGATE_SOURCE_ENV = "PT_ACCEPTANCE_AGGREGATE_SOURCE"
+
+
+def load_aggregate_source_identity(raw: str) -> dict[str, str]:
+    try:
+        source = json.loads(raw)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise AssertionError("aggregate source identity is missing or malformed") from error
+    required = ("commit", "workspaceDigest", "canonicalWorktreeHash")
+    if not isinstance(source, dict) or any(
+        not isinstance(source.get(field), str) or not source[field]
+        for field in required
+    ):
+        raise AssertionError("aggregate source identity is missing or malformed")
+    if source["workspaceDigest"] != "clean":
+        raise AssertionError("aggregate source identity is not clean")
+    return {field: source[field] for field in required}
 
 
 def load_manifest() -> dict:
@@ -690,7 +707,20 @@ def runtime_cell_gates(
 def main() -> int:
     manifest = load_manifest()
     store = EvidenceStore.from_environment(repo_root=REPO_ROOT, worktree=REPO_ROOT)
-    current_source = source_identity(REPO_ROOT)
+    observed_source = source_identity(REPO_ROOT)
+    errors: list[str] = []
+    try:
+        expected_source = load_aggregate_source_identity(
+            os.environ.get(AGGREGATE_SOURCE_ENV, "")
+        )
+    except AssertionError as error:
+        errors.append(str(error))
+        expected_source = {}
+    if expected_source and observed_source != expected_source:
+        errors.append(
+            "aggregate source drift detected: "
+            f"expected={expected_source} observed={observed_source}"
+        )
     claimed_runtime_cell = manifest.get("claimed_runtime_cell")
     if not isinstance(claimed_runtime_cell, str) or not claimed_runtime_cell:
         print("FAIL: W11 contract manifest has no claimed runtime cell")
@@ -711,7 +741,6 @@ def main() -> int:
         return 1
     retained_gates = set(retained_gates_value)
     targets = manifest.get("scan_targets", {})
-    errors: list[str] = []
     accepted_gates: list[dict] = []
     verified_deliverables: list[str] = []
 
@@ -765,7 +794,7 @@ def main() -> int:
                     store,
                     gate_id,
                     aggregate_result=aggregate_results[gate_id],
-                    expected_source=current_source,
+                    expected_source=expected_source,
                 )
             )
         except Exception as exc:
@@ -781,7 +810,7 @@ def main() -> int:
                     store,
                     gate_id,
                     aggregate_result=aggregate_results[gate_id],
-                    expected_source=current_source,
+                    expected_source=expected_source,
                     runtime_cell=(
                         claimed_runtime_cell if native_gate else None
                     ),
@@ -798,7 +827,8 @@ def main() -> int:
         "completionStatus": "DONE" if passed else "PARTIAL",
         "proofStatus": "PROVEN" if passed else "UNPROVEN",
         "contract": str(CONTRACT_PATH.relative_to(REPO_ROOT)),
-        "source": current_source,
+        "source": expected_source,
+        "observedSource": observed_source,
         "claimedRuntimeCell": claimed_runtime_cell,
         "canonicalRange": canonical_range,
         "canonicalGateUnion": sorted(planned_gates),
@@ -815,11 +845,15 @@ def main() -> int:
         "acceptedGates": accepted_gates,
         "errors": errors,
         "remainingClosureStep": "independent review (pt-github-review)",
+        "phase": "MP-W11",
+        "bom": ["MP-W11"],
+        "spec": ["messaging-w11-closure"],
+        "gate": "chat-w11-completion-audit",
     }
     with ArtifactSession(
         repo_root=REPO_ROOT,
         gate_id="chat-w11-completion-audit",
-        source=current_source,
+        source=observed_source,
     ) as session:
         reference = session.write_json(
             "reports/chat-w11-closure-verdict.json",
