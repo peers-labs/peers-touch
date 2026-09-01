@@ -986,10 +986,10 @@ Closure enforcement (deterministic):
 | MP-W10-B | completed | W02/W06/W10-A | Authority upload/session/part/object/grant UOW, replay/conflict/expiry/cancel/finalize/orphan-GC, event-bound grants, ranged download, signed Home-to-Authority proxy, bounded admission, durable audit, redacted logs and Prometheus metrics pass. SQLite and deployed PostgreSQL competing part/finalize/grant gates pass; removed-member historical grant and later denial pass. Native `group-chat` Home Station #2 -> Authority Station #1 upload persisted bitmap `01` and its 1,048,592-byte encrypted chunk through `make station-restart`, reopened the same SQLCipher profile, resumed to bitmap `03`, and finalized exactly once. Both deployed Stations expose the privacy-safe 14-column audit schema and runtime scans show zero filename/key/nonce/plaintext-hash/decrypted-byte, resource-ID, or SQL-text leakage. |
 | MP-W10-C | completed | W03/W04/W10-A | Engine encrypt/upload/download workers now own bounded two-chunk memory, SQLCipher checkpoints, descriptor commitments, partial-file re-encryption binding, chunk/whole ciphertext hash + AEAD + whole plaintext hash verification, atomic cache promotion, typed retry/cancel/shutdown/overload states, capped jittered backoff and finite Station deadlines. The 15-test worker suite covers every position in a three-chunk upload/download interruption vector, corrupt chunk, wrong ETag, short/same-length corrupt partials, retry, cancellation, shutdown, overload, and 100 MiB upload/download resume at 25%/50%/75%. Separate native live runs completed a two-chunk Engine upload through Station #1, reopened an isolated on-disk SQLCipher checkpoint in a second OS process from bitmap `0b01` to `0b11`, and completed Bob Home Station #2 -> Authority Station #1 proxy upload. Non-generated Desktop/Mobile UI scan found zero key/nonce/hash/bitmap/resume-cursor ownership. This is Engine closure only; attachment product readiness remains W10-E. |
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
-| MP-W10-E | reopened by W13 | W05/W10-D | Prior byte-exact Engine evidence remains valid for its recorded runtime, but current product use proves the Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, and count conservation are not closed. W13-E/F must replace the product-proof claim with real UI evidence. |
-| MP-W12 | reopened by W13 (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | Prior authority/Engine interaction evidence remains useful, but current product use proves thread panel, reaction picker, hover toolbar, and complete transcript convergence were bypassed or unasserted. W13-A/B/F must rerun through real Native UI actions. Mobile remains pending W09. |
-| MP-W13 | current Linux delivery candidate pending exact-source revalidation; macOS, Windows, and Mobile `UNPROVEN` | W10-E/W12 + Social Runtime Phase 3 | Historical aggregate `20260830T052209499498Z-ff6c99fc6e262b23e876f2c2e191a067` proved commit `c69ed69bb6d8d6e7cf2275f0ce2c76a39f35049b`. The current candidate semantically overlays that search-selection fix onto the canonical `peerPtid` migration from `origin/master`; it must produce a new source/Station/runtime-cell-bound 18-Gate aggregate before delivery. |
-| MP-W11 | pending current Linux delivery-candidate revalidation | W02-W10/W12/W13 | Run final closure only after the integrated MP-W13-F candidate passes the exact-source aggregate and stale reports are rejected by source/build/runtime identity. Platform-wide readiness remains open because macOS, Windows, and Mobile are independent `UNPROVEN` claims. |
+| MP-W10-E | completed for `desktop-linux-native` | W05/W10-D | Exact-source Product Closure proves Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, count conservation, restart, and cleanup on Linux. Other Desktop runtime cells and Mobile remain `UNPROVEN`. |
+| MP-W12 | correction implemented for `desktop-linux-native`; exact-source revalidation pending | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | The Typing Gate now exercises revoked-device submission rejection and receiver non-observation; focused tests pass. macOS, Windows, and Mobile parity remain `UNPROVEN`. |
+| MP-W13 | independent-review corrections implemented; macOS, Windows, and Mobile `UNPROVEN` | W10-E/W12 + Social Runtime Phase 3 | Fail-closed Desktop logout and Native lifecycle cleanup corrections pass focused and full local verification. A clean exact-source Linux aggregate remains required. |
+| MP-W11 | pending clean exact-source revalidation | W02-W10/W12/W13 | W11 now binds immutable Station/live identity and the parent aggregate containing canonical 18 Gates plus retained `proto-build`; both W11 scans and Completion Audit run in the same closure plan. |
 
 The 2026-08-27 persistent Linux Desktop handoff exposed four additional MP-W13-F
 gaps: the installed runtime did not preserve the runtime-cell keyring boundary,
@@ -1715,6 +1715,87 @@ identity, commit, and clean-workspace digest to match the Evidence Store
 manifest. A different worktree remains a hard failure. The focused Completion
 Audit unit suite passes 12/12; exact-source runtime revalidation remains
 pending at the resulting commit.
+
+### 2026-08-31 MP-W13-F And MP-W11 Linux Closure
+
+Exact-source aggregate
+`20260831T160909127606Z-afde2602bffb80909249fd0f7a8d3f6e` at commit
+`9848935196a23250142708355d604a11f437fc54` completed 19 PASS / 0 FAIL
+with `DONE/PROVEN`, zero missing result traceability, and successful cleanup
+for every provisioned Gate. Station evidence belongs to deployment node
+`10.37.94.156` and endpoint `18132`; Linux Native runtime-cell evidence
+belongs to host `10.37.246.80`.
+
+Fresh W11 forbidden-owner scan
+`20260831T172746381758Z-cbbe7f358aca6234b74d8073af1017d7`,
+duplicate-owner scan
+`20260831T172746735850Z-eced1e91337156f31eab3d0e121616a0`,
+and Chat required-proven validation
+`20260831T172747490857Z-deed260304989f36515661e94e35bf61`
+passed at the same clean source. Gap Detector reports the Linux-only NDR-W7 /
+MP-W13-F claim as `PROVEN`, with all 19 selected Gates required and zero gaps.
+
+W11 Completion Audit
+`20260831T173142863566Z-400178f823a88832fef47415314c0168`
+passed with `DONE/PROVEN`, exact canonical source identity, five mechanically
+verified deletion/ownership deliverables, nine accepted Gate runs, and no
+errors.
+
+`make review-submit REVIEW_BASE=origin/master` passed quality evidence, hard
+rules, knowledge matching, skill freshness, and review routing, then stopped
+at global Acceptance validation because the unfinished Federation `fedp5`
+domain has three Gates without a provisioner or environment contract. The
+Owner previously approved merging this Chat work while Federation remains
+unfinished. This is an explicit delivery waiver for that unrelated global
+validation failure; it is not a passed Gate and does not prove Federation.
+macOS, Windows, and Mobile remain `UNPROVEN`.
+
+Independent review then found three P1 root-cause groups:
+
+- Product Closure, Interactions, and Contact Resilience stop authenticated
+  Native windows without registering them in `NativeClientLifecycleLedger`.
+  Their cleanup evidence proves process, port, storage, and log release but
+  does not prove fail-closed authenticated-session logout. The underlying
+  logout path also discards persisted-session deletion errors and only warns
+  on Messaging Engine deactivation failure before returning `logged_out`.
+- the Typing Gate revokes Bob's device but does not attempt a rejected typing
+  submission or verify receiver isolation; it sets
+  `typing_revoked_device_rejected` to `true` unconditionally.
+- W11 independently validates orchestrator, runtime-cell, and binary identity,
+  but does not independently compare the report's Station attestation/live
+  identity, and its closure contract does not bind the full canonical 19-Gate
+  union or Gap Detector result.
+
+The immutable 19-Gate aggregate remains valid evidence for the behavior it
+actually exercised, but MP-W12, MP-W13-F, and MP-W11 remain
+`PARTIAL/UNPROVEN` and blocked before delivery until these review findings are
+corrected, covered by negative regressions, and revalidated at one clean exact
+source.
+
+### 2026-09-01 MP-W12 / MP-W13-F / MP-W11 Review Corrections
+
+The approved correction follows existing accepted semantics:
+
+- Desktop logout now returns typed `logout_cleanup_failed` and retains the
+  committed window session unless both durable-session clearing and Messaging
+  Engine deactivation succeed.
+- Product Closure, Interactions, and Contact Resilience now register Native
+  windows in `NativeClientLifecycleLedger`, transfer preserved sessions across
+  restarts, and fail cleanup when authenticated logout cannot be proven.
+- the Typing Gate now submits from Bob's revoked device, requires the Station
+  active-device rejection, and proves Alice observes no typing pulse.
+- W11 now consumes immutable parent-aggregate run manifests, independently
+  validates Station attestation plus live build identity, and requires the
+  canonical 18-Gate range union plus retained `proto-build`.
+
+Focused Rust tests pass 8/8 in normal and `acceptance-webdriver` modes. The
+combined Chat/Acceptance suites pass 180 tests; Desktop passes 371 tests with
+one existing environment test skipped, and Desktop check/build, Station
+messaging packages, Chat/Infra validation, closure generation, Gap Detector,
+and skill-check pass. MP-W12, MP-W13-F, and MP-W11 remain
+`PARTIAL/UNPROVEN` until these changes are committed, deployed to Station node
+`10.37.94.156:18132`, and the complete Linux closure plan runs on runtime node
+`10.37.246.80`.
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 

@@ -29,6 +29,7 @@ from tooling.acceptance.fixtures.chat_contact_message_fault_proxy import (
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
     DEFAULT_STATION,
+    NativeClientLifecycleLedger,
     async_harness,
     cleanup_preserving_primary_failure,
     configure_station,
@@ -142,6 +143,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
             ).rstrip("/")
         self.client: TauriSession | None = None
         self.runtime_instances: list[TauriSession] = []
+        self.client_lifecycles = NativeClientLifecycleLedger()
         self.proxy: AcceptanceStationContactMessageFaultProxy | None = None
         self.ptid = ""
         self.bob_ptid = ""
@@ -199,8 +201,11 @@ class ContactMessageResilienceGate(AcceptanceGate):
             },
         )
         self.runtime_instances.append(client)
-        client.start()
+        expected_ptid = str(self.actor_specs["alice"].get("ptid") or "")
+        self.client_lifecycles.register(client, expected_ptid)
         try:
+            client.start()
+            self.client_lifecycles.mark_live(client)
             client.wait_for_acceptance_harness(30)
             configure_station(client, self.station_url)
             account_ref = str(
@@ -217,6 +222,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
             )
             if not (login or {}).get("authenticated"):
                 raise GateError("alice login did not authenticate")
+            self.client_lifecycles.mark_authenticated(client)
             hydration = async_harness(
                 client,
                 "hydrateActiveActor",
@@ -224,9 +230,6 @@ class ContactMessageResilienceGate(AcceptanceGate):
                 timeout=30,
             )
             ptid = str((hydration or {}).get("actorPtid") or "")
-            expected_ptid = str(
-                self.actor_specs["alice"].get("ptid") or ""
-            )
             if ptid != expected_ptid:
                 raise GateError(
                     "alice login identity mismatch: "
@@ -238,8 +241,13 @@ class ContactMessageResilienceGate(AcceptanceGate):
                     f"{client.get_current_url()}"
                 )
             return client, ptid
-        except Exception:
-            client.stop()
+        except Exception as error:
+            cleanup_errors = self.client_lifecycles.release(client)
+            if cleanup_errors and hasattr(error, "add_note"):
+                error.add_note(
+                    "Contact resilience launch cleanup also failed: "
+                    f"{json.dumps(cleanup_errors, sort_keys=True)}"
+                )
             raise
 
     def _switch_to_contacts(self) -> None:
@@ -424,7 +432,9 @@ class ContactMessageResilienceGate(AcceptanceGate):
                 if self.runtime_binding is None:
                     stop_client(self.client)
                 else:
-                    self.client.stop()
+                    cleanup_errors.extend(
+                        self.client_lifecycles.release_all()
+                    )
             except Exception as error:
                 cleanup_errors.append(
                     {
@@ -432,15 +442,6 @@ class ContactMessageResilienceGate(AcceptanceGate):
                         "error": str(error),
                     }
                 )
-                try:
-                    self.client.stop()
-                except Exception as stop_error:
-                    cleanup_errors.append(
-                        {
-                            "resource": f"client-stop:{self.client.profile}",
-                            "error": str(stop_error),
-                        }
-                    )
 
         if self.runtime_binding is None:
             cleanup = {

@@ -50,6 +50,12 @@ REPORT_PATH = None
 CLIENT_PORTS = {"alice": 4461, "bob": 4462, "charlie": 4463}
 ACTORS = ("alice", "bob", "charlie")
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
+REVOKED_DEVICE_OBSERVATION_SECONDS = 2.0
+REVOKED_DEVICE_REJECTION_MARKERS = (
+    "endpoint is not active",
+    "forbidden",
+    "status 403",
+)
 REQUIRED_ASSERTIONS = {
     "native_runtime",
     "actor_isolation",
@@ -815,6 +821,12 @@ class NativeTypingGate(AcceptanceGate):
         self._typing_cid = conversation_id
         self.sync("alice", "friend", conversation_id)
         self.sync("bob", "friend", conversation_id)
+        self.wait_typing(
+            "alice",
+            False,
+            "Alice Direct typing inactive before Bob device revocation",
+            conversation_id,
+        )
         revoked = async_harness(
             self.clients["bob"],
             "revokeCurrentDevice",
@@ -826,11 +838,42 @@ class NativeTypingGate(AcceptanceGate):
         ):
             raise GateError("Bob current-device revocation did not succeed")
         self.client_lifecycles.mark_device_revoked(self.clients["bob"])
-        # Architecture gap: Station SSE and typing paths do not enforce device
-        # revocation in-flight. The revoked device may still receive ephemeral
-        # events until its session expires or reconnects. We assert only that
-        # revocation itself succeeded (verified above).
-        self.assert_condition("typing_revoked_device_rejected", True)
+        rejection = ""
+        try:
+            async_harness(
+                self.clients["bob"],
+                "submitTyping",
+                {"conversationId": conversation_id, "typing": True},
+            )
+        except GateError as error:
+            rejection = str(error)
+        if not any(
+            marker in rejection.lower()
+            for marker in REVOKED_DEVICE_REJECTION_MARKERS
+        ):
+            raise GateError(
+                "revoked Bob device did not receive an authorization "
+                f"rejection for typing submission: {rejection or 'accepted'}"
+            )
+        self.assert_typing_inactive_for(
+            "alice",
+            REVOKED_DEVICE_OBSERVATION_SECONDS,
+            "revoked Bob device produced visible Direct typing for Alice",
+            conversation_id,
+        )
+        evidence = {
+            "deviceId": self.device_ids["bob"],
+            "submissionRejected": True,
+            "receiverObservedTyping": False,
+            "receiver": "alice",
+        }
+        self.durable_evidence["revokedDevice"] = evidence
+        self.assert_condition(
+            "typing_revoked_device_rejected",
+            evidence["submissionRejected"]
+            and not evidence["receiverObservedTyping"],
+            json.dumps(evidence, sort_keys=True),
+        )
 
     @staticmethod
     def port_is_free(port: int) -> bool:
