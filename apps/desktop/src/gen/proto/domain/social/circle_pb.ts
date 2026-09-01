@@ -410,3 +410,4 @@ export type ListCircleMembersResponse = Message<"peers_touch.model.social.v1.Lis
  */
 export const ListCircleMembersResponseSchema: GenMessage<ListCircleMembersResponse> = /*@__PURE__*/
   messageDesc(file_domain_social_circle, 15);
+
