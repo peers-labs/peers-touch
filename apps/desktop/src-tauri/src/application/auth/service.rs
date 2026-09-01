@@ -1001,13 +1001,14 @@ pub(crate) fn auth_logout_during_transition(
         );
     };
     let account_id = target_session.account_id;
-    {
-        let _ = crate::infrastructure::auth_identity::clear_account_session(&account_id);
-        if let Err(error) = deactivate_messaging_profile(state, &account_id) {
-            tracing::warn!(account_id = %account_id, error = %error, "failed to deactivate messaging profile");
-        }
-        session_vault::purge_raw_session_for_account(&account_id);
+    if let Err(error) = run_required_logout_cleanup(
+        &account_id,
+        crate::infrastructure::auth_identity::clear_account_session,
+        |account_id| deactivate_messaging_profile(state, account_id),
+    ) {
+        return error;
     }
+    session_vault::purge_raw_session_for_account(&account_id);
     state.sessions.unbind(&target_session.window_label);
     crate::infrastructure::event_stream::stop(&target_session.actor.ptid);
     AppResult::success(AuthSessionPayload {
@@ -1021,6 +1022,46 @@ pub(crate) fn auth_logout_during_transition(
         avatar_local_path: None,
         login_method: None,
     })
+}
+
+fn run_required_logout_cleanup(
+    account_id: &str,
+    clear_durable_session: impl FnOnce(&str) -> Result<(), String>,
+    deactivate_messaging: impl FnOnce(&str) -> Result<(), String>,
+) -> Result<(), AppResult<AuthSessionPayload>> {
+    let mut failures = Vec::new();
+    if let Err(error) = clear_durable_session(account_id) {
+        tracing::error!(
+            error = %error,
+            "failed to clear durable account session during logout"
+        );
+        failures.push(json!({
+            "operation": "durable_session_clear",
+            "message": error,
+        }));
+    }
+    if let Err(error) = deactivate_messaging(account_id) {
+        tracing::error!(
+            error = %error,
+            "failed to deactivate messaging profile during logout"
+        );
+        failures.push(json!({
+            "operation": "messaging_engine_deactivation",
+            "message": error,
+        }));
+    }
+    if failures.is_empty() {
+        return Ok(());
+    }
+    Err(AppResult::fail(
+        ErrorCode::InternalError,
+        "Failed to complete logout cleanup",
+        Some(json!({
+            "command": "auth_logout",
+            "reason": "logout_cleanup_failed",
+            "failures": failures,
+        })),
+    ))
 }
 
 pub(crate) fn detach_for_station_switch(
@@ -1514,10 +1555,15 @@ pub(crate) fn verify_session_with_station(
 
 #[cfg(test)]
 mod tests {
-    use super::{restore_account_session_state, validate_pin_session_token, PreparedAuthSession};
+    use super::{
+        restore_account_session_state, run_required_logout_cleanup, validate_pin_session_token,
+        PreparedAuthSession,
+    };
     use crate::contracts::AuthSessionPayload;
+    use crate::error::ErrorCode;
     use crate::infrastructure::auth_identity::{AccountIdentity, AccountIdentityState};
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    use std::cell::Cell;
 
     fn jwt_for_actor(actor_ptid: &str) -> String {
         let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256"}"#);
@@ -1655,6 +1701,107 @@ mod tests {
                     .and_then(|details| details.get("reason").cloned()),
                 Some(serde_json::json!("persisted_actor_missing"))
             );
+        }
+    }
+
+    #[test]
+    fn logout_cleanup_succeeds_only_after_all_required_operations() {
+        let durable_session_clear_called = Cell::new(false);
+        let messaging_deactivation_called = Cell::new(false);
+
+        let result = run_required_logout_cleanup(
+            "station:account",
+            |_| {
+                durable_session_clear_called.set(true);
+                Ok(())
+            },
+            |_| {
+                messaging_deactivation_called.set(true);
+                Ok(())
+            },
+        );
+
+        assert!(result.is_ok());
+        assert!(durable_session_clear_called.get());
+        assert!(messaging_deactivation_called.get());
+    }
+
+    #[test]
+    fn logout_cleanup_fails_when_durable_session_clear_fails() {
+        let messaging_deactivation_called = Cell::new(false);
+
+        let result = run_required_logout_cleanup(
+            "station:account",
+            |_| Err("identity store write failed".to_string()),
+            |_| {
+                messaging_deactivation_called.set(true);
+                Ok(())
+            },
+        );
+
+        assert!(messaging_deactivation_called.get());
+        assert_logout_cleanup_failure(
+            result,
+            &[("durable_session_clear", "identity store write failed")],
+        );
+    }
+
+    #[test]
+    fn logout_cleanup_fails_when_messaging_deactivation_fails() {
+        let durable_session_clear_called = Cell::new(false);
+
+        let result = run_required_logout_cleanup(
+            "station:account",
+            |_| {
+                durable_session_clear_called.set(true);
+                Ok(())
+            },
+            |_| Err("worker stop failed".to_string()),
+        );
+
+        assert!(durable_session_clear_called.get());
+        assert_logout_cleanup_failure(
+            result,
+            &[("messaging_engine_deactivation", "worker stop failed")],
+        );
+    }
+
+    #[test]
+    fn logout_cleanup_reports_all_required_operation_failures() {
+        let result = run_required_logout_cleanup(
+            "station:account",
+            |_| Err("identity store write failed".to_string()),
+            |_| Err("worker stop failed".to_string()),
+        );
+
+        assert_logout_cleanup_failure(
+            result,
+            &[
+                ("durable_session_clear", "identity store write failed"),
+                ("messaging_engine_deactivation", "worker stop failed"),
+            ],
+        );
+    }
+
+    fn assert_logout_cleanup_failure(
+        result: Result<(), crate::error::AppResult<AuthSessionPayload>>,
+        expected_failures: &[(&str, &str)],
+    ) {
+        let failure = result.expect_err("logout cleanup must fail closed");
+        assert!(!failure.ok);
+        assert!(failure.data.is_none());
+        let error = failure.error.expect("typed logout error is required");
+        assert_eq!(error.code, ErrorCode::InternalError);
+        let details = error.details.expect("logout failure details are required");
+        assert_eq!(details["command"], "auth_logout");
+        assert_eq!(details["reason"], "logout_cleanup_failed");
+        let failures = details["failures"]
+            .as_array()
+            .expect("logout operation failures are required");
+        assert_eq!(failures.len(), expected_failures.len());
+        for (actual, (operation, message)) in failures.iter().zip(expected_failures) {
+            assert_eq!(actual["operation"], *operation);
+            assert_eq!(actual["message"], *message);
         }
     }
 }
