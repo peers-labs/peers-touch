@@ -36,6 +36,7 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    is_station_authorization_rejection,
     native_runtime_source_identity,
     read_station_version,
     reset_fixture,
@@ -2074,6 +2075,7 @@ class NativeInteractionsGate(AcceptanceGate):
             conversation_id,
             message_id,
         )
+        rejection = ""
         try:
             async_harness(
                 self.clients["bob"],
@@ -2087,8 +2089,13 @@ class NativeInteractionsGate(AcceptanceGate):
                     "remove": False,
                 },
             )
-        except Exception:
-            pass
+        except GateError as error:
+            rejection = str(error)
+        if not is_station_authorization_rejection(rejection):
+            raise GateError(
+                "revoked Bob device did not receive an authorization "
+                f"rejection for metadata interaction: {rejection or 'accepted'}"
+            )
 
         def denied_reaction_absent_after_settle() -> bool:
             snapshot = station_readback(
@@ -2113,46 +2120,23 @@ class NativeInteractionsGate(AcceptanceGate):
             conversation_id,
             message_id,
         )
-
-        async_harness(
-            self.clients["alice"],
-            "submitMetadataInteraction",
-            {
-                "conversationId": conversation_id,
-                "kind": "friend",
-                "messageId": message_id,
-                "interaction": "reaction",
-                "reaction": "✅",
-                "remove": False,
-            },
-        )
-        wait_until(
-            lambda: (
-                snapshot
-                if (
-                    snapshot := self.projection(
-                        "alice",
-                        "friend",
-                        conversation_id,
-                        message_id,
-                    )
-                )
-                and any(
-                    r.get("emoji") == "✅"
-                    for r in (snapshot.get("reactions") or [])
-                )
-                else None
+        authority_event_count_before = len(before_denied.get("events") or [])
+        authority_event_count_after = len(after_denied.get("events") or [])
+        self.station_evidence["direct.revoked"] = after_denied
+        self.assert_condition(
+            "revoked_device_denied",
+            bool(rejection)
+            and authority_event_count_after == authority_event_count_before,
+            json.dumps(
+                {
+                    "deviceId": self.device_ids["bob"],
+                    "submissionRejected": True,
+                    "authorityEventCountBefore": authority_event_count_before,
+                    "authorityEventCountAfter": authority_event_count_after,
+                },
+                sort_keys=True,
             ),
-            "Alice post-revocation Direct interaction",
-            STEP_TIMEOUT,
         )
-        after_allowed = station_readback(
-            self.station_url,
-            conversation_id,
-            message_id,
-        )
-        self.station_evidence["direct.revoked"] = after_allowed
-        self.assert_condition("revoked_device_denied", True)
 
     def restart_station(self) -> None:
         try:
