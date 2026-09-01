@@ -914,4 +914,3 @@ export enum AttachmentTransferErrorCode {
  */
 export const AttachmentTransferErrorCodeSchema: GenEnum<AttachmentTransferErrorCode> = /*@__PURE__*/
   enumDesc(file_domain_chat_attachment, 4);
-

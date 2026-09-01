@@ -453,4 +453,3 @@ export enum TurnStreamEventType {
  */
 export const TurnStreamEventTypeSchema: GenEnum<TurnStreamEventType> = /*@__PURE__*/
   enumDesc(file_domain_agent_turn_stream, 0);
-
