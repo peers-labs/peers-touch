@@ -1452,4 +1452,3 @@ export type GetConversationStatsResponse = Message<"peers_touch.model.chat.v1.Ge
  */
 export const GetConversationStatsResponseSchema: GenMessage<GetConversationStatsResponse> = /*@__PURE__*/
   messageDesc(file_domain_chat_conversation_api, 66);
-

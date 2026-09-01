@@ -4870,6 +4870,14 @@ export const api = {
       command_id: input.commandId ?? '',
     }),
 
+  messagingAcceptanceCurrentEndpoint: (expectedActorPtid: string) =>
+    invokeRustData<
+      { expected_actor_ptid: string },
+      { actor_ptid: string; device_id: string }
+    >('messaging_acceptance_current_endpoint', {
+      expected_actor_ptid: expectedActorPtid,
+    }),
+
   /**
    * Seal a WebRTC signaling plaintext (canonical JSON for SDP /
    * candidate / hangup) into the standalone signaling envelope

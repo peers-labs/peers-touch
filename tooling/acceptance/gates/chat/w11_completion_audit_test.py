@@ -10,6 +10,7 @@ from tooling.acceptance.gates.chat.w11_completion_audit import (
     check_native_report_identity,
     check_report_status,
     immutable_results_by_gate,
+    load_aggregate_source_identity,
     load_gate_evidence,
     runtime_cell_gates,
 )
@@ -258,6 +259,24 @@ def _immutable_runtime_manifest() -> dict:
 
 
 class W11CompletionAuditTests(unittest.TestCase):
+    def test_aggregate_source_identity_requires_clean_complete_snapshot(self) -> None:
+        self.assertEqual(
+            load_aggregate_source_identity(json.dumps(_source())),
+            _source(),
+        )
+        for invalid in (
+            "",
+            "{",
+            json.dumps({"commit": "a" * 40}),
+            json.dumps({**_source(), "workspaceDigest": "sha256:dirty"}),
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(
+                    AssertionError,
+                    "aggregate source identity",
+                ):
+                    load_aggregate_source_identity(invalid)
+
     def test_accepts_current_source_linux_evidence(self) -> None:
         manifest = _manifest()
         self.assertNotEqual(
