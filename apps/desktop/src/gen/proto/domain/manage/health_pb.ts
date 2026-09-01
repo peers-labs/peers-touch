@@ -48,3 +48,4 @@ export type HealthResponse = Message<"peers_touch.model.manage.v1.HealthResponse
  */
 export const HealthResponseSchema: GenMessage<HealthResponse> = /*@__PURE__*/
   messageDesc(file_domain_manage_health, 1);
+

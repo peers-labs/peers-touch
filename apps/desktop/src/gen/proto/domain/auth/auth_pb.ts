@@ -172,3 +172,4 @@ export type AuthSessionCandidate = Message<"peers_touch.model.auth.v1.AuthSessio
  */
 export const AuthSessionCandidateSchema: GenMessage<AuthSessionCandidate> = /*@__PURE__*/
   messageDesc(file_domain_auth_auth, 3);
+

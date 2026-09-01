@@ -3149,3 +3149,4 @@ export enum ResumeAnchorPolicyKind {
  */
 export const ResumeAnchorPolicyKindSchema: GenEnum<ResumeAnchorPolicyKind> = /*@__PURE__*/
   enumDesc(file_domain_agent_orchestration, 22);
+
