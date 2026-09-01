@@ -210,3 +210,4 @@ export type FederationStationEntry = Message<"peers_touch.model.federation.v1.Fe
  */
 export const FederationStationEntrySchema: GenMessage<FederationStationEntry> = /*@__PURE__*/
   messageDesc(file_domain_federation_federation_discovery, 5);
+

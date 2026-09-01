@@ -2380,3 +2380,4 @@ export enum ReceiptType {
  */
 export const ReceiptTypeSchema: GenEnum<ReceiptType> = /*@__PURE__*/
   enumDesc(file_domain_chat_conversation, 12);
+

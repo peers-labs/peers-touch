@@ -248,3 +248,4 @@ export type DirectDeviceCiphertext = Message<"peers_touch.model.chat.v1.DirectDe
  */
 export const DirectDeviceCiphertextSchema: GenMessage<DirectDeviceCiphertext> = /*@__PURE__*/
   messageDesc(file_domain_chat_direct_crypto, 3);
+

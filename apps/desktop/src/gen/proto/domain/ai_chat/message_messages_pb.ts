@@ -204,3 +204,4 @@ export type DeleteMessageResponse = Message<"peers_touch.model.ai_chat.v1.Delete
  */
 export const DeleteMessageResponseSchema: GenMessage<DeleteMessageResponse> = /*@__PURE__*/
   messageDesc(file_domain_ai_chat_message_messages, 7);
+

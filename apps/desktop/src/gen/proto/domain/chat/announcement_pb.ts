@@ -448,3 +448,4 @@ export type GetAnnouncementReadersResponse = Message<"peers_touch.model.chat.v1.
  */
 export const GetAnnouncementReadersResponseSchema: GenMessage<GetAnnouncementReadersResponse> = /*@__PURE__*/
   messageDesc(file_domain_chat_announcement, 15);
+

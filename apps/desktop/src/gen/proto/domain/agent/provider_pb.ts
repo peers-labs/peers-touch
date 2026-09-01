@@ -962,3 +962,4 @@ export type ResolveCredentialResponse = Message<"peers_touch.model.agent.v1.Reso
  */
 export const ResolveCredentialResponseSchema: GenMessage<ResolveCredentialResponse> = /*@__PURE__*/
   messageDesc(file_domain_agent_provider, 35);
+
