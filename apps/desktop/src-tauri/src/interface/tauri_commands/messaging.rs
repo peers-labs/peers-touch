@@ -159,6 +159,12 @@ pub struct MessagingCommandStatusInput {
 
 #[cfg(feature = "acceptance-webdriver")]
 #[derive(Debug, Deserialize)]
+pub struct MessagingAcceptanceActorInput {
+    pub expected_actor_ptid: String,
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[derive(Debug, Deserialize)]
 pub struct MessagingAcceptanceInteractionSnapshotInput {
     pub expected_actor_ptid: String,
     pub conversation_id: String,
@@ -501,6 +507,58 @@ pub fn messaging_command_status(
         Err(error) => return error,
     };
     command_status_json(&engine, &input.command_id)
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn messaging_acceptance_current_endpoint(
+    input: MessagingAcceptanceActorInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let session = match state.sessions.get(window.label()) {
+        Some(session) => session,
+        None => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "acceptance.chat.windowSessionMissing",
+                Some(json!({ "reason": "window_session_missing" })),
+            )
+        }
+    };
+    let actor_ptid = match require_acceptance_actor(&input.expected_actor_ptid, &session.actor.ptid)
+    {
+        Ok(actor_ptid) => actor_ptid,
+        Err(error) => return error,
+    };
+    let engine = match state.messaging_engines.get(&session.account_id) {
+        Ok(Some(engine)) => engine,
+        Ok(None) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "acceptance.chat.messagingEngineInactive",
+                Some(json!({ "reason": "messaging_engine_inactive" })),
+            )
+        }
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("read active messaging engine for acceptance: {error}"),
+                Some(json!({ "reason": "messaging_engine_lookup_failed" })),
+            )
+        }
+    };
+    if engine.endpoint().ptid != actor_ptid {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "acceptance.chat.messagingEndpointActorMismatch",
+            Some(json!({ "reason": "messaging_endpoint_actor_mismatch" })),
+        );
+    }
+    AppResult::success(json!({
+        "actor_ptid": actor_ptid,
+        "device_id": engine.endpoint().device_id.as_str(),
+    }))
 }
 
 #[cfg(feature = "acceptance-webdriver")]

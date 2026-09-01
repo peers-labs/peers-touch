@@ -845,6 +845,8 @@ fn main() {
             messaging_commands::messaging_list_conversations,
             messaging_commands::messaging_command_status,
             #[cfg(feature = "acceptance-webdriver")]
+            messaging_commands::messaging_acceptance_current_endpoint,
+            #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_interaction_snapshot,
             messaging_commands::messaging_pick_attachment_source,
             messaging_commands::messaging_stage_attachment_source,

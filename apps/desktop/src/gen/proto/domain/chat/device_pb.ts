@@ -275,4 +275,3 @@ export enum MessagingDeviceStatus {
  */
 export const MessagingDeviceStatusSchema: GenEnum<MessagingDeviceStatus> = /*@__PURE__*/
   enumDesc(file_domain_chat_device, 0);
-

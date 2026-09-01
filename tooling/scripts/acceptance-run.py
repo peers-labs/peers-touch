@@ -19,6 +19,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
+AGGREGATE_SOURCE_ENV = "PT_ACCEPTANCE_AGGREGATE_SOURCE"
 RESULT_TRACEABILITY_FIELDS = (
     "sourceArtifact",
     "sourceArtifactKind",
@@ -27,6 +28,18 @@ RESULT_TRACEABILITY_FIELDS = (
     "sourceSpec",
     "sourceGate",
 )
+
+
+def source_identity_drift(
+    expected: dict[str, str],
+    observed: dict[str, str],
+) -> dict[str, dict[str, str]] | None:
+    if observed == expected:
+        return None
+    return {
+        "expected": expected,
+        "observed": observed,
+    }
 
 
 @contextlib.contextmanager
@@ -38,6 +51,7 @@ def run_environment(environment: dict[str, str]):
         "PT_ACCEPTANCE_RUN_ID",
         "PT_ACCEPTANCE_REDACTION_VALUES",
         "PT_ACCEPTANCE_RUNTIME_CELL",
+        AGGREGATE_SOURCE_ENV,
     )
     previous = {key: os.environ.get(key) for key in keys}
     for key in keys:
@@ -1160,9 +1174,10 @@ def main() -> int:
             Path(args.plan) if args.plan else None,
             store,
         )
+        aggregate_source = source_identity(REPO_ROOT)
         aggregate_run = store.begin_run(
             "acceptance-run",
-            source=source_identity(REPO_ROOT),
+            source=aggregate_source,
         )
     except EvidenceError as error:
         print(
@@ -1212,12 +1227,21 @@ def main() -> int:
                 )
                 continue
 
+            gate_source = source_identity(REPO_ROOT)
+            source_drift = source_identity_drift(
+                aggregate_source,
+                gate_source,
+            )
             gate_run = store.begin_run(
                 gate_id,
-                source=source_identity(REPO_ROOT),
+                source=gate_source,
             )
             active_gate_run = gate_run
             gate_env = gate_run.subprocess_environment(os.environ.copy())
+            gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
+                aggregate_source,
+                sort_keys=True,
+            )
             if runtime_cell:
                 gate_env["PT_ACCEPTANCE_RUNTIME_CELL"] = runtime_cell
             provisioner = None
@@ -1241,8 +1265,28 @@ def main() -> int:
             cleanup_artifact: dict[str, Any] | None = None
             result: dict[str, Any] | None = None
             provisioner_id = str(gate.get("provisioner") or "")
+            if source_drift is not None:
+                output_text = (
+                    "Acceptance source drifted before Gate execution; "
+                    "the Gate was not started.\n"
+                )
+                result = {
+                    "id": gate_id,
+                    "command": command,
+                    "environment": environment,
+                    "runtimeCell": runtime_cell or None,
+                    "tier": tier,
+                    "status": "failed",
+                    "exit_code": None,
+                    "duration_seconds": 0,
+                    "completionStatus": "PARTIAL",
+                    "proofStatus": "UNPROVEN",
+                    "sampleEmissionAllowed": False,
+                    "reason": "aggregate source drift before Gate execution",
+                    "sourceDrift": source_drift,
+                }
             try:
-                if provisioner_id:
+                if result is None and provisioner_id:
                     if provisioner_id != environment:
                         raise SystemExit(
                             f"gate {gate_id!r} provisioner {provisioner_id!r} "
@@ -1354,6 +1398,10 @@ def main() -> int:
                         results,
                         ensure_ascii=False,
                     )
+                    gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
+                        aggregate_source,
+                        sort_keys=True,
+                    )
                     if manifest_path is not None:
                         gate_env["PT_ACCEPTANCE_RUNTIME_MANIFEST"] = str(
                             manifest_path
@@ -1426,6 +1474,17 @@ def main() -> int:
                     or environment_cleanup_status == "passed"
                 ):
                     cleanup_status = "passed"
+
+            source_drift_after = source_identity_drift(
+                aggregate_source,
+                source_identity(REPO_ROOT),
+            )
+            if source_drift_after is not None:
+                source_drift = source_drift or source_drift_after
+                output_text += (
+                    "\nAcceptance source drifted during aggregate execution; "
+                    "the Gate cannot contribute exact-source proof.\n"
+                )
 
             if provisioner is not None or runtime_cell_lifecycle is not None:
                 cleanup_artifact = persist_provisioner_cleanup_result(
@@ -1518,6 +1577,12 @@ def main() -> int:
             if cleanup_error:
                 result["cleanupError"] = cleanup_error
                 result["status"] = "failed"
+            if source_drift is not None:
+                result["sourceDrift"] = source_drift
+                result["status"] = "failed"
+                result["completionStatus"] = "PARTIAL"
+                result["proofStatus"] = "UNPROVEN"
+                result["sampleEmissionAllowed"] = False
 
             result = enrich_result_with_run_artifacts(result, gate_run)
             finalized_runtime = dict(manifest or {})

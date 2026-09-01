@@ -53,4 +53,3 @@ export type ActorPreferences = Message<"peers.actor.ActorPreferences"> & {
  */
 export const ActorPreferencesSchema: GenMessage<ActorPreferences> = /*@__PURE__*/
   messageDesc(file_domain_actor_preferences, 0);
-

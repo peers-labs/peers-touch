@@ -725,15 +725,15 @@ export function installAcceptanceHarness(): void {
     },
 
     async getRealtimeDevice() {
-      const device = await api.accountGetDeviceId();
+      const device = await api.messagingAcceptanceCurrentEndpoint(activeActorPtid());
       return {
-        actorPtid: activeActorPtid(),
+        actorPtid: String(device?.actor_ptid ?? ''),
         deviceId: String(device?.device_id ?? ''),
       };
     },
 
     async revokeCurrentDevice() {
-      const device = await api.accountGetDeviceId();
+      const device = await api.messagingAcceptanceCurrentEndpoint(activeActorPtid());
       const deviceId = String(device?.device_id ?? '');
       if (!deviceId) {
         throw new Error('No active device is available for revocation');

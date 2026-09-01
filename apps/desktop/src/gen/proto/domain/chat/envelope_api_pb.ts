@@ -151,4 +151,3 @@ export type FederationDeliverEnvelopeResponse = Message<"peers_touch.model.chat.
  */
 export const FederationDeliverEnvelopeResponseSchema: GenMessage<FederationDeliverEnvelopeResponse> = /*@__PURE__*/
   messageDesc(file_domain_chat_envelope_api, 7);
-

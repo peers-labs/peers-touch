@@ -428,4 +428,3 @@ export type DeregisterNodeResponse = Message<"peers_touch.model.peer.v1.Deregist
  */
 export const DeregisterNodeResponseSchema: GenMessage<DeregisterNodeResponse> = /*@__PURE__*/
   messageDesc(file_domain_peer_peer, 15);
-

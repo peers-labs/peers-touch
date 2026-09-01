@@ -610,4 +610,3 @@ export enum ProviderType {
  */
 export const ProviderTypeSchema: GenEnum<ProviderType> = /*@__PURE__*/
   enumDesc(file_domain_ai_chat_provider, 0);
-

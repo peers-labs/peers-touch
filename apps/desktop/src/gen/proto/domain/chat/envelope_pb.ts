@@ -581,4 +581,3 @@ export enum DirectKeyExchangeKind {
  */
 export const DirectKeyExchangeKindSchema: GenEnum<DirectKeyExchangeKind> = /*@__PURE__*/
   enumDesc(file_domain_chat_envelope, 4);
-

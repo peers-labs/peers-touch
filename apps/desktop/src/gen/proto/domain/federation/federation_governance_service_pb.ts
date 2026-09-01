@@ -261,4 +261,3 @@ export enum ProposalDecision {
  */
 export const ProposalDecisionSchema: GenEnum<ProposalDecision> = /*@__PURE__*/
   enumDesc(file_domain_federation_federation_governance_service, 0);
-

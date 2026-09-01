@@ -326,4 +326,3 @@ export enum MediaProcessingStatus {
  */
 export const MediaProcessingStatusSchema: GenEnum<MediaProcessingStatus> = /*@__PURE__*/
   enumDesc(file_domain_social_media, 1);
-

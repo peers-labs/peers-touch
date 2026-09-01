@@ -123,6 +123,27 @@ func TestTypingServiceFansOutOnlyAfterActiveMembershipAdmission(t *testing.T) {
 		t.Fatalf("typing recipients = %+v", recipients)
 	}
 
+	deviceStore := touchactor.NewDeviceStore(db)
+	if err := deviceStore.Revoke(
+		context.Background(),
+		"alice",
+		"alice-1",
+	); err != nil {
+		t.Fatal(err)
+	}
+	err = service.BroadcastTyping(
+		context.Background(),
+		&chat.CryptoEndpoint{Ptid: "alice", DeviceId: "alice-1"},
+		"conversation-1",
+		true,
+	)
+	if !errors.Is(err, messaging.ErrSenderUnauthorized) {
+		t.Fatalf("newly revoked sender error = %v, want ErrSenderUnauthorized", err)
+	}
+	if len(publisher.events) != 2 {
+		t.Fatalf("newly revoked sender published events: %+v", publisher.events)
+	}
+
 	err = service.BroadcastTyping(
 		context.Background(),
 		&chat.CryptoEndpoint{Ptid: "alice", DeviceId: "alice-revoked"},

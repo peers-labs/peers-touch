@@ -112,5 +112,9 @@ for file in $GO_PROTO_FILES; do
         "$file"
 done
 
+# protoc-gen-es output must be stable under repeated generation. Normalize
+# trailing newlines so a clean checkout stays clean after the proto Gate.
+find "$TS_OUT" -type f -name '*_pb.ts' -exec perl -0pi -e 's/\n+\z/\n/' {} +
+
 echo ""
 echo "=== Proto generation complete (Go + TS) ==="

@@ -193,4 +193,3 @@ export type SearchResponse = Message<"peers_touch.domain.launcher.SearchResponse
  */
 export const SearchResponseSchema: GenMessage<SearchResponse> = /*@__PURE__*/
   messageDesc(file_domain_launcher_launcher, 5);
-

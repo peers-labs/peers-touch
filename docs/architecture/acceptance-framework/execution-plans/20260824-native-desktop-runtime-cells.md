@@ -1563,6 +1563,26 @@ and skill-check pass. NDR-W7 remains `PARTIAL/UNPROVEN` until these changes are
 committed, deployed to Station node `10.37.94.156:18132`, and the complete
 Linux closure plan runs on runtime node `10.37.246.80`.
 
+### 2026-09-01 NDR-W7 Exact-Source Revalidation Findings
+
+Aggregate `20260901T013544036203Z-2d66b83a59468e07bab1b580583a673c`
+passed 20 of 22 Gates at commit
+`fdc74df1ff3cff393adb1742944b051c9ec472d1`. The run exposed two
+implementation defects within the approved NDR-W7 closure:
+
+- the revoked-device Typing proof targeted the legacy install device ID while
+  `messaging_submit_typing` authenticated with the active Messaging Engine
+  endpoint ID, so the requested row was not revoked;
+- `proto-build` changed three tracked generated TypeScript files before W11,
+  and W11 re-read the late dirty workspace identity instead of using the
+  aggregate-start identity, producing 21 misleading stale-identity errors.
+
+The correction must expose the active Messaging Engine endpoint to the
+Acceptance harness, make a zero-row Station revoke fail closed, preserve
+generator-idempotent output, and bind W11 validation to the immutable
+aggregate-start identity while reporting any live workspace drift separately.
+NDR-W7 remains `PARTIAL/UNPROVEN` pending a fresh clean exact-source run.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

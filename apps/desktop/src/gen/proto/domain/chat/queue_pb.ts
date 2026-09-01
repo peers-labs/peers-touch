@@ -434,4 +434,3 @@ export enum DeviceQueueItemState {
  */
 export const DeviceQueueItemStateSchema: GenEnum<DeviceQueueItemState> = /*@__PURE__*/
   enumDesc(file_domain_chat_queue, 1);
-

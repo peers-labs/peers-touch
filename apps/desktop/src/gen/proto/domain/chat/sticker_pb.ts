@@ -611,4 +611,3 @@ export type CreateStickerPackResponse = Message<"peers_touch.model.chat.v1.Creat
  */
 export const CreateStickerPackResponseSchema: GenMessage<CreateStickerPackResponse> = /*@__PURE__*/
   messageDesc(file_domain_chat_sticker, 20);
-

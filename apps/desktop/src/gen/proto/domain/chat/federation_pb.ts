@@ -630,4 +630,3 @@ export enum MessagingFederationPayloadType {
  */
 export const MessagingFederationPayloadTypeSchema: GenEnum<MessagingFederationPayloadType> = /*@__PURE__*/
   enumDesc(file_domain_chat_federation, 0);
-

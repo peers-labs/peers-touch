@@ -1797,6 +1797,24 @@ and skill-check pass. MP-W12, MP-W13-F, and MP-W11 remain
 `10.37.94.156:18132`, and the complete Linux closure plan runs on runtime node
 `10.37.246.80`.
 
+### 2026-09-01 MP-W12 / MP-W11 Exact-Source Revalidation Findings
+
+Aggregate `20260901T013544036203Z-2d66b83a59468e07bab1b580583a673c`
+passed 20 of 22 Gates at commit
+`fdc74df1ff3cff393adb1742944b051c9ec472d1`. The real revoked-device
+Typing assertion failed because the Acceptance harness revoked the legacy
+install device ID instead of the active Messaging Engine endpoint used by
+`messaging_submit_typing`. Station also returned success when the revoke
+updated no device row.
+
+The same run exposed a separate W11 evidence-integrity defect: `proto-build`
+changed three generated TypeScript files, then W11 compared all immutable
+clean-source manifests against a newly measured dirty workspace identity. The
+fix must retain the aggregate-start identity as the audit baseline, report
+live source drift once, and keep generated output idempotent. MP-W12 and
+MP-W11 remain `PARTIAL/UNPROVEN` until the corrected exact-source aggregate
+passes.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
