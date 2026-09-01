@@ -258,3 +258,4 @@ export type ListSessionsResponse = Message<"peers_touch.model.ai_chat.v1.ListSes
  */
 export const ListSessionsResponseSchema: GenMessage<ListSessionsResponse> = /*@__PURE__*/
   messageDesc(file_domain_ai_chat_session_messages, 9);
+

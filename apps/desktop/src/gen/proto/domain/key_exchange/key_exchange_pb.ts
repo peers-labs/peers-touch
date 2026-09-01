@@ -292,3 +292,4 @@ export type OpkCountResponse = Message<"peers_touch.model.key_exchange.v1.OpkCou
  */
 export const OpkCountResponseSchema: GenMessage<OpkCountResponse> = /*@__PURE__*/
   messageDesc(file_domain_key_exchange_key_exchange, 8);
+

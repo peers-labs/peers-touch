@@ -235,3 +235,4 @@ export enum RecoveryArchiveSectionKind {
  */
 export const RecoveryArchiveSectionKindSchema: GenEnum<RecoveryArchiveSectionKind> = /*@__PURE__*/
   enumDesc(file_domain_chat_recovery, 0);
+
