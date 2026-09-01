@@ -14,6 +14,7 @@ from tooling.acceptance.gates.chat import desktop_gateway_e2e
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
     cleanup_preserving_primary_failure,
+    is_station_authorization_rejection,
 )
 from tooling.acceptance.gates.chat.native_multi_device_runner import (
     NativeMultiDeviceGate,
@@ -279,11 +280,49 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertIn('"submitTyping"', source)
         self.assertIn('self.clients["bob"]', source)
         self.assertIn("except GateError as error:", source)
-        self.assertIn("REVOKED_DEVICE_REJECTION_MARKERS", source)
+        self.assertIn("is_station_authorization_rejection(rejection)", source)
         self.assertIn("self.assert_typing_inactive_for(", source)
         self.assertIn('"alice"', source)
         self.assertNotIn(
             'self.assert_condition("typing_revoked_device_rejected", True)',
+            source,
+        )
+
+    def test_station_authorization_rejection_is_explicit(self) -> None:
+        for error in (
+            "endpoint is not active",
+            "sender unauthorized",
+            "Forbidden",
+            "request failed status 403",
+            "station returned 403 :",
+        ):
+            with self.subTest(error=error):
+                self.assertTrue(is_station_authorization_rejection(error))
+        for error in (
+            "",
+            "station returned 404 :",
+            "request timed out",
+            "connection refused",
+        ):
+            with self.subTest(error=error):
+                self.assertFalse(is_station_authorization_rejection(error))
+
+    def test_revoked_metadata_interaction_requires_rejection_and_no_event(self) -> None:
+        source = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_interactions_runner.py",
+            "prove_revoked_device",
+        )
+        self.assertIn('"submitMetadataInteraction"', source)
+        self.assertIn('self.clients["bob"]', source)
+        self.assertIn("except GateError as error:", source)
+        self.assertIn("is_station_authorization_rejection(rejection)", source)
+        self.assertIn(
+            "authority_event_count_after == authority_event_count_before",
+            source,
+        )
+        self.assertNotIn('self.clients["alice"]', source)
+        self.assertNotIn(
+            'self.assert_condition("revoked_device_denied", True)',
             source,
         )
 

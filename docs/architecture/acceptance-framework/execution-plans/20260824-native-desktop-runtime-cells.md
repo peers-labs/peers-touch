@@ -1583,6 +1583,26 @@ generator-idempotent output, and bind W11 validation to the immutable
 aggregate-start identity while reporting any live workspace drift separately.
 NDR-W7 remains `PARTIAL/UNPROVEN` pending a fresh clean exact-source run.
 
+### 2026-09-01 NDR-W7 Revoked-Endpoint Rejection Classification
+
+Exact-source aggregate
+`20260901T035623385274Z-f39e906c60248bfed2b5626d4ef311ad` at
+`325c4341ae560b8b5670d98ee563c175ec401595` passed 19 of 22 Gates.
+All runtime provisioner cleanup passed, and `proto-build` preserved the clean
+aggregate source. The only primary failures were the Interactions and Typing
+Gates; W11 Completion Audit then failed as their dependent closure.
+
+Both failures were in Chat Gate rejection classification. Typing received the
+required Station `403` but did not recognize the Harness text
+`station returned 403`. Interactions swallowed Bob's revoked-endpoint
+rejection and then incorrectly required Alice to submit into a Direct
+conversation with no remaining active recipient endpoint. The correction
+requires an explicit authorization rejection in both Gates, verifies no new
+Authority event for the denied metadata command, and removes that invalid
+post-revocation send requirement. Focused Chat Acceptance regression tests
+pass 73/73. NDR-W7 remains `PARTIAL/UNPROVEN` pending a new clean exact-source
+run.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

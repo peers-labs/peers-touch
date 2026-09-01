@@ -32,6 +32,7 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    is_station_authorization_rejection,
     native_runtime_source_identity,
     read_station_version,
     reset_fixture,
@@ -51,11 +52,6 @@ CLIENT_PORTS = {"alice": 4461, "bob": 4462, "charlie": 4463}
 ACTORS = ("alice", "bob", "charlie")
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 REVOKED_DEVICE_OBSERVATION_SECONDS = 2.0
-REVOKED_DEVICE_REJECTION_MARKERS = (
-    "endpoint is not active",
-    "forbidden",
-    "status 403",
-)
 REQUIRED_ASSERTIONS = {
     "native_runtime",
     "actor_isolation",
@@ -847,10 +843,7 @@ class NativeTypingGate(AcceptanceGate):
             )
         except GateError as error:
             rejection = str(error)
-        if not any(
-            marker in rejection.lower()
-            for marker in REVOKED_DEVICE_REJECTION_MARKERS
-        ):
+        if not is_station_authorization_rejection(rejection):
             raise GateError(
                 "revoked Bob device did not receive an authorization "
                 f"rejection for typing submission: {rejection or 'accepted'}"

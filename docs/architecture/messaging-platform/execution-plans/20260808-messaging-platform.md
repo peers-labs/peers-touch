@@ -1815,6 +1815,31 @@ live source drift once, and keep generated output idempotent. MP-W12 and
 MP-W11 remain `PARTIAL/UNPROVEN` until the corrected exact-source aggregate
 passes.
 
+### 2026-09-01 MP-W12 Revoked-Endpoint Rejection Classification
+
+Exact-source aggregate
+`20260901T035623385274Z-f39e906c60248bfed2b5626d4ef311ad` at
+`325c4341ae560b8b5670d98ee563c175ec401595` passed 19 of 22 Gates.
+Product Closure, Two Client, Contact Resilience, Multi Device, Recovery, Group
+MLS, Desktop Gateway, Federation smoke, `proto-build`, and every structural
+Gate passed. `proto-build` preserved the clean aggregate source.
+
+The two primary failures were evidence-classification defects:
+
+- revoked-device Typing correctly received Station `403`, but the Gate matched
+  only `status 403` and rejected the Harness form `station returned 403`;
+- revoked-device metadata submission swallowed Bob's rejection, then required
+  Alice to submit into a Direct conversation whose only recipient endpoint had
+  just been revoked. Station correctly returned `404` because no active
+  recipient endpoint remained.
+
+The correction centralizes explicit Station authorization-rejection matching,
+requires both revoked submissions to receive that rejection, and proves the
+metadata submission creates no new Authority event. It removes the invalid
+post-revocation send requirement instead of weakening Station endpoint
+semantics. Focused Chat Acceptance regression tests pass 73/73. MP-W12 and
+MP-W11 remain `PARTIAL/UNPROVEN` pending a new clean exact-source aggregate.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
