@@ -38,6 +38,97 @@ def load_module() -> Any:
 
 
 class AcceptanceRunTest(unittest.TestCase):
+    def test_source_identity_drift_preserves_aggregate_baseline(self) -> None:
+        module = load_module()
+        expected = {
+            "commit": "a" * 40,
+            "workspaceDigest": "clean",
+            "canonicalWorktreeHash": "workspace-a",
+        }
+
+        self.assertIsNone(module.source_identity_drift(expected, dict(expected)))
+        observed = {
+            **expected,
+            "workspaceDigest": "sha256:dirty",
+        }
+        self.assertEqual(
+            module.source_identity_drift(expected, observed),
+            {
+                "expected": expected,
+                "observed": observed,
+            },
+        )
+
+    def test_main_skips_gate_when_source_drift_exists_at_gate_start(self) -> None:
+        module = load_module()
+        expected = {
+            "commit": "a" * 40,
+            "workspaceDigest": "clean",
+            "canonicalWorktreeHash": "workspace-a",
+        }
+        observed = {
+            **expected,
+            "workspaceDigest": "sha256:dirty",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_root = root / "artifacts"
+            gates_path = root / "gates.json"
+            gates_path.write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "synthetic-gate": {
+                                "command": "synthetic-command",
+                                "environment": "local",
+                                "tier": "ci-cheap",
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            plan_path = root / "plan.json"
+            plan_path.write_text(
+                json.dumps({"selected_gates": []}),
+                encoding="utf-8",
+            )
+            run_gate = mock.Mock()
+            with mock.patch.dict(
+                os.environ,
+                {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(artifact_root)},
+                clear=False,
+            ), mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "acceptance-run.py",
+                    "--plan",
+                    str(plan_path),
+                    "--gates",
+                    str(gates_path),
+                    "--gate",
+                    "synthetic-gate",
+                ],
+            ), mock.patch(
+                "tooling.acceptance.core.source_identity",
+                side_effect=(expected, observed, expected),
+            ), mock.patch.object(
+                module.subprocess,
+                "run",
+                run_gate,
+            ):
+                exit_code = module.main()
+
+            store = EvidenceStore(artifact_root, worktree=REPO_ROOT)
+            latest = store.latest("synthetic-gate")
+
+        self.assertEqual(exit_code, 1)
+        run_gate.assert_not_called()
+        self.assertEqual(latest["result"]["status"], "failed")
+        self.assertEqual(latest["result"]["sourceDrift"]["expected"], expected)
+        self.assertEqual(latest["result"]["sourceDrift"]["observed"], observed)
+
     def test_run_environment_projects_and_restores_runtime_cell(self) -> None:
         module = load_module()
         keys = {
@@ -177,7 +268,13 @@ class AcceptanceRunTest(unittest.TestCase):
                 None,
             )
 
-        def run_gate(*_args, **_kwargs):
+        def run_gate(*_args, **kwargs):
+            self.assertEqual(
+                json.loads(
+                    kwargs["env"][module.AGGREGATE_SOURCE_ENV]
+                ),
+                {"commit": "abc123", "workspaceDigest": "clean"},
+            )
             events.append("gate")
             return mock.Mock(stdout="", stderr="", returncode=1)
 

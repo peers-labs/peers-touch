@@ -154,6 +154,38 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 initial_source = source[initial_start_index:initial_end_index]
                 self.assertNotIn("station.auth_logout()", initial_source)
 
+    def test_revoke_current_device_uses_messaging_endpoint_identity(self) -> None:
+        harness = (
+            ROOT / "apps/desktop/src/acceptance/chat/harness.ts"
+        ).read_text(encoding="utf-8")
+        get_device = harness[
+            harness.index("    async getRealtimeDevice() {"):
+            harness.index("    async revokeCurrentDevice() {")
+        ]
+        revoke_device = harness[
+            harness.index("    async revokeCurrentDevice() {"):
+            harness.index("    async dispatchRealtimeFrame(", harness.index(
+                "    async revokeCurrentDevice() {"
+            ))
+        ]
+        for source in (get_device, revoke_device):
+            self.assertIn("messagingAcceptanceCurrentEndpoint", source)
+            self.assertNotIn("accountGetDeviceId", source)
+        rust_commands = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
+        ).read_text(encoding="utf-8")
+        endpoint_start = rust_commands.index(
+            "pub fn messaging_acceptance_current_endpoint("
+        )
+        endpoint_end = rust_commands.index(
+            "\n#[cfg(feature = \"acceptance-webdriver\")]",
+            endpoint_start,
+        )
+        endpoint_source = rust_commands[endpoint_start:endpoint_end]
+        self.assertIn("engine.endpoint().device_id.as_str()", endpoint_source)
+        self.assertIn("engine.endpoint().ptid != actor_ptid", endpoint_source)
+
     def test_initial_authentication_never_logs_out(self) -> None:
         runner_functions = {
             "contact_message_resilience_runner.py": "start_client",

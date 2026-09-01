@@ -686,4 +686,3 @@ export type DeviceEventDelivery = Message<"peers_touch.model.chat.v1.DeviceEvent
  */
 export const DeviceEventDeliverySchema: GenMessage<DeviceEventDelivery> = /*@__PURE__*/
   messageDesc(file_domain_chat_event, 15);
-
