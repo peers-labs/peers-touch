@@ -468,6 +468,20 @@ def async_harness(
     )
 
 
+def is_station_authorization_rejection(error: BaseException | str) -> bool:
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in (
+            "endpoint is not active",
+            "sender unauthorized",
+            "forbidden",
+            "status 403",
+            "station returned 403",
+        )
+    )
+
+
 def logout_native_client(
     client: TauriSession,
     actor_ptid: str,
