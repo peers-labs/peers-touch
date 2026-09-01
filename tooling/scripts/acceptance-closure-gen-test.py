@@ -45,7 +45,15 @@ class AcceptanceClosureGeneratorTests(unittest.TestCase):
             manifest["claimed_runtime_cell"],
             "desktop-linux-native",
         )
+        self.assertEqual(
+            manifest["canonical_range"],
+            "origin/master...HEAD",
+        )
+        self.assertEqual(manifest["retained_gates"], ["proto-build"])
         self.assertIn("chat-native-product-closure-e2e", gate_ids)
+        self.assertIn("chat-contact-message-resilience-e2e", gate_ids)
+        self.assertIn("desktop-dev-runtime-isolation-static", gate_ids)
+        self.assertIn("proto-build", gate_ids)
         self.assertLess(
             gate_ids.index("chat-native-product-closure-e2e"),
             gate_ids.index("chat-w11-completion-audit"),
@@ -60,6 +68,22 @@ class AcceptanceClosureGeneratorTests(unittest.TestCase):
         self.assertTrue(
             any("does not support claimed runtime cell" in error for error in errors)
         )
+
+    def test_rejects_missing_canonical_range(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        contract.pop("canonical_range")
+
+        errors = MODULE.validate_contract(contract, self.gates)
+
+        self.assertIn("contract missing required field: canonical_range", errors)
+
+    def test_rejects_missing_retained_gates(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        contract.pop("retained_gates")
+
+        errors = MODULE.validate_contract(contract, self.gates)
+
+        self.assertIn("contract missing required field: retained_gates", errors)
 
 
 if __name__ == "__main__":
