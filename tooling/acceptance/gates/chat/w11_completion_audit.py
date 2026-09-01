@@ -563,6 +563,15 @@ def _station_live_commit(station_live: object) -> str:
     )
 
 
+def commit_identities_match(left: str, right: str) -> bool:
+    if (
+        re.fullmatch(r"[0-9a-f]{7,40}", left) is None
+        or re.fullmatch(r"[0-9a-f]{7,40}", right) is None
+    ):
+        return False
+    return left.startswith(right) or right.startswith(left)
+
+
 def check_station_identity(
     station: object,
     station_live: object,
@@ -612,8 +621,11 @@ def check_station_identity(
     if (
         immutable_attestation.get("workspaceDigest") != "clean"
         or immutable_attestation.get("commit") != expected_commit
-        or attested_live_commit != expected_commit
-        or _station_live_commit(station_live) != attested_live_commit
+        or not commit_identities_match(attested_live_commit, expected_commit)
+        or not commit_identities_match(
+            _station_live_commit(station_live),
+            attested_live_commit,
+        )
     ):
         errors.append(
             f"{label}: report live Station identity does not match immutable "

@@ -47,6 +47,7 @@ from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
     commits_match,
+    read_station_version,
     runtime_station_service,
     wait_until,
 )
@@ -4611,11 +4612,13 @@ class NativeProductClosureGate(AcceptanceGate):
     def source_identity(self) -> dict[str, Any]:
         source = self.manifest.get("source")
         station = runtime_station_service(self.manifest)
+        station_live = read_station_version(self.station_url)
         runtime_cell = self.runtime_binding.runtime_identity()
         binary = self.runtime_binding.binary_identity()
         identity = {
             "orchestrator": source,
             "station": station,
+            "stationLive": station_live,
             "runtimeCell": runtime_cell,
             "binary": binary,
         }
@@ -4626,6 +4629,11 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         station_commit = str(
             station.get("liveCommit") if isinstance(station, dict) else ""
+        )
+        station_live_commit = str(
+            station_live.get("build_commit")
+            or station_live.get("buildCommit")
+            or ""
         )
         cell_source = (
             runtime_cell.get("source")
@@ -4680,6 +4688,7 @@ class NativeProductClosureGate(AcceptanceGate):
             and isinstance(station, dict)
             and bool(station_commit)
             and commits_match(source_commit, station_commit)
+            and commits_match(source_commit, station_live_commit)
             and re.fullmatch(
                 r"[0-9a-f]{64}",
                 str(station.get("protocolDigest") or ""),

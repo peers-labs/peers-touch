@@ -9,6 +9,7 @@ from tooling.acceptance.core.evidence_store import workspace_id
 from tooling.acceptance.gates.chat.w11_completion_audit import (
     check_native_report_identity,
     check_report_status,
+    commit_identities_match,
     immutable_results_by_gate,
     load_aggregate_source_identity,
     load_gate_evidence,
@@ -60,6 +61,18 @@ def _source() -> dict[str, str]:
         "workspaceDigest": "clean",
         "canonicalWorktreeHash": "0123456789abcdef",
     }
+
+
+class CommitIdentityTests(unittest.TestCase):
+    def test_accepts_full_and_abbreviated_commit_identity(self) -> None:
+        full = "a" * 40
+        self.assertTrue(commit_identities_match(full, full[:12]))
+        self.assertTrue(commit_identities_match(full[:12], full))
+
+    def test_rejects_invalid_or_different_commit_identity(self) -> None:
+        self.assertFalse(commit_identities_match("a" * 40, "b" * 12))
+        self.assertFalse(commit_identities_match("a" * 40, "not-a-commit"))
+        self.assertFalse(commit_identities_match("a" * 6, "a" * 40))
 
 
 def _report() -> dict:
@@ -596,6 +609,25 @@ class W11CompletionAuditTests(unittest.TestCase):
         self.assertTrue(
             any("live Station identity" in error for error in errors)
         )
+
+    def test_accepts_abbreviated_live_station_commit(self) -> None:
+        report = _report()
+        report["runtime"]["sourceIdentity"]["stationLive"]["build_commit"] = (
+            _source()["commit"][:12]
+        )
+
+        errors = check_native_report_identity(
+            report,
+            "chat-native-product-closure-e2e",
+            expected_source=_source(),
+            runtime_cell="desktop-linux-native",
+            expected_runtime_manifest=report["runtime"]["sourceIdentity"][
+                "runtimeCell"
+            ],
+            expected_station_attestation=_immutable_station_attestation(),
+        )
+
+        self.assertEqual(errors, [])
 
     def test_accepts_exact_parent_aggregate_gate_union(self) -> None:
         results = immutable_results_by_gate(

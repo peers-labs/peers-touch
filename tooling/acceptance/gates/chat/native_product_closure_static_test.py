@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
+from unittest.mock import patch
 
 from selenium.webdriver.common.by import By
 
@@ -97,6 +98,13 @@ class SyntheticLinuxRuntimeBinding:
 
 class NativeProductClosureStaticTests(unittest.TestCase):
     def setUp(self) -> None:
+        station_version = patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner."
+            "read_station_version",
+            return_value={"build_commit": "commit-a"},
+        )
+        station_version.start()
+        self.addCleanup(station_version.stop)
         self.source = RUNNER.read_text(encoding="utf-8")
         self.entry = ENTRY.read_text(encoding="utf-8")
         self.runtime_binding = RUNTIME_BINDING.read_text(encoding="utf-8")
@@ -147,6 +155,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             },
         }
         gate.runtime_binding = runtime_binding
+        gate.station_url = "http://station"
         gate.report = new_report(gate.gate_id)
         return gate
 
@@ -158,6 +167,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
 
         self.assertEqual(identity["runtimeCell"], binding.runtime)
         self.assertEqual(identity["binary"], binding.binary)
+        self.assertEqual(identity["stationLive"]["build_commit"], "commit-a")
         self.assertEqual(gate.report.runtime["runtimeCellRunId"], "cell-run-a")
         self.assertTrue(gate.report.assertions[-1].passed)
 
