@@ -222,3 +222,4 @@ export enum MessagingReceiptKind {
  */
 export const MessagingReceiptKindSchema: GenEnum<MessagingReceiptKind> = /*@__PURE__*/
   enumDesc(file_domain_chat_receipt, 0);
+

@@ -170,3 +170,4 @@ export type GetPollResultResponse = Message<"peers_touch.model.social.v1.GetPoll
  */
 export const GetPollResultResponseSchema: GenMessage<GetPollResultResponse> = /*@__PURE__*/
   messageDesc(file_domain_social_poll, 5);
+

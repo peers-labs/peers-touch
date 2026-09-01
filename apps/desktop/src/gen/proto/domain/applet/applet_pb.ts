@@ -1518,3 +1518,4 @@ export enum AppletAuditDecision {
  */
 export const AppletAuditDecisionSchema: GenEnum<AppletAuditDecision> = /*@__PURE__*/
   enumDesc(file_domain_applet_applet, 4);
+

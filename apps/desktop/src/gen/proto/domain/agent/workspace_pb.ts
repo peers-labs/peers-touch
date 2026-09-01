@@ -755,3 +755,4 @@ export enum WorkspaceStorageBackend {
  */
 export const WorkspaceStorageBackendSchema: GenEnum<WorkspaceStorageBackend> = /*@__PURE__*/
   enumDesc(file_domain_agent_workspace, 1);
+

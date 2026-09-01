@@ -103,3 +103,4 @@ export type FederationResolveView = Message<"peers_touch.model.federation.v1.Fed
  */
 export const FederationResolveViewSchema: GenMessage<FederationResolveView> = /*@__PURE__*/
   messageDesc(file_domain_federation_federation_resolve, 0);
+

@@ -613,3 +613,4 @@ export enum FriendRequestStatus {
  */
 export const FriendRequestStatusSchema: GenEnum<FriendRequestStatus> = /*@__PURE__*/
   enumDesc(file_domain_chat_chat, 4);
+

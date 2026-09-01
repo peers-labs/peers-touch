@@ -679,3 +679,4 @@ export enum ActorSigningKeyVerificationSource {
  */
 export const ActorSigningKeyVerificationSourceSchema: GenEnum<ActorSigningKeyVerificationSource> = /*@__PURE__*/
   enumDesc(file_domain_actor_actor, 3);
+

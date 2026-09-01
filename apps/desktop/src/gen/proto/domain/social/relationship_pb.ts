@@ -400,3 +400,4 @@ export type Following = Message<"peers_touch.model.social.v1.Following"> & {
  */
 export const FollowingSchema: GenMessage<Following> = /*@__PURE__*/
   messageDesc(file_domain_social_relationship, 14);
+

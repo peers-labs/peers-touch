@@ -261,3 +261,4 @@ export type OAuthBridgeResponse = Message<"peers_touch.model.oauth.v1.OAuthBridg
  */
 export const OAuthBridgeResponseSchema: GenMessage<OAuthBridgeResponse> = /*@__PURE__*/
   messageDesc(file_domain_oauth_oauth, 4);
+

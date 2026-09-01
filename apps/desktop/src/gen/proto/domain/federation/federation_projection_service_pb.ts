@@ -394,3 +394,4 @@ export type DeleteFederationResponse = Message<"peers_touch.model.federation.v1.
  */
 export const DeleteFederationResponseSchema: GenMessage<DeleteFederationResponse> = /*@__PURE__*/
   messageDesc(file_domain_federation_federation_projection_service, 13);
+

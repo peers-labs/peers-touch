@@ -122,3 +122,4 @@ export type UploadFileResponse = Message<"peers_touch.model.oss.v1.UploadFileRes
  */
 export const UploadFileResponseSchema: GenMessage<UploadFileResponse> = /*@__PURE__*/
   messageDesc(file_domain_oss_oss, 3);
+

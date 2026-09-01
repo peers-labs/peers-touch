@@ -302,3 +302,4 @@ export type AiModelInfo = Message<"peers_touch.model.ai_chat.v1.AiModelInfo"> & 
  */
 export const AiModelInfoSchema: GenMessage<AiModelInfo> = /*@__PURE__*/
   messageDesc(file_domain_ai_chat_ai_models, 2);
+

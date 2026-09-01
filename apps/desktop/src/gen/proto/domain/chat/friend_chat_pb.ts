@@ -1743,3 +1743,4 @@ export enum OfflineMessageStatus {
  */
 export const OfflineMessageStatusSchema: GenEnum<OfflineMessageStatus> = /*@__PURE__*/
   enumDesc(file_domain_chat_friend_chat, 2);
+

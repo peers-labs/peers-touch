@@ -2041,3 +2041,4 @@ export enum AtelierProjectionPatchKind {
  */
 export const AtelierProjectionPatchKindSchema: GenEnum<AtelierProjectionPatchKind> = /*@__PURE__*/
   enumDesc(file_domain_atelier_v1_projection, 1);
+

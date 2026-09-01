@@ -947,3 +947,4 @@ export type PostSnapshotResponse = Message$1<"peers_touch.model.message.v1.PostS
  */
 export const PostSnapshotResponseSchema: GenMessage<PostSnapshotResponse> = /*@__PURE__*/
   messageDesc(file_domain_message_conversation, 38);
+

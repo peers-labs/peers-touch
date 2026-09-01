@@ -627,3 +627,4 @@ export type GetHiddenModelsResponse = Message<"peers_touch.model.agent.v1.GetHid
  */
 export const GetHiddenModelsResponseSchema: GenMessage<GetHiddenModelsResponse> = /*@__PURE__*/
   messageDesc(file_domain_agent_agent_config, 30);
+
