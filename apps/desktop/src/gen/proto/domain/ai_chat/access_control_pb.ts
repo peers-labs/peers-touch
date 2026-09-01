@@ -60,3 +60,4 @@ export type AccessControl = Message<"peers_touch.model.ai_chat.v1.AccessControl"
  */
 export const AccessControlSchema: GenMessage<AccessControl> = /*@__PURE__*/
   messageDesc(file_domain_ai_chat_access_control, 0);
+

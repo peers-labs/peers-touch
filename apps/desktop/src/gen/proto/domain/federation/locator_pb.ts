@@ -132,3 +132,4 @@ export type ActorLocatorRecord = Message<"peers_touch.model.federation.v1.ActorL
  */
 export const ActorLocatorRecordSchema: GenMessage<ActorLocatorRecord> = /*@__PURE__*/
   messageDesc(file_domain_federation_locator, 0);
+

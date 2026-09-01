@@ -65,3 +65,4 @@ export type ActorSessionSnapshot = Message<"peers.actor.ActorSessionSnapshot"> &
  */
 export const ActorSessionSnapshotSchema: GenMessage<ActorSessionSnapshot> = /*@__PURE__*/
   messageDesc(file_domain_actor_session, 0);
+

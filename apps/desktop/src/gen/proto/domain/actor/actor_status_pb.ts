@@ -102,3 +102,4 @@ export type HeartbeatResponse = Message<"peers_touch.model.actor.v1.HeartbeatRes
  */
 export const HeartbeatResponseSchema: GenMessage<HeartbeatResponse> = /*@__PURE__*/
   messageDesc(file_domain_actor_actor_status, 3);
+

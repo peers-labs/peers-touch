@@ -595,3 +595,4 @@ export enum MessagingCommandRejectCode {
  */
 export const MessagingCommandRejectCodeSchema: GenEnum<MessagingCommandRejectCode> = /*@__PURE__*/
   enumDesc(file_domain_chat_messaging_api, 0);
+

@@ -210,3 +210,4 @@ export type MediaUploadResponse = Message<"peers_touch.model.activity.v1.MediaUp
  */
 export const MediaUploadResponseSchema: GenMessage<MediaUploadResponse> = /*@__PURE__*/
   messageDesc(file_domain_activity_activity, 5);
+
