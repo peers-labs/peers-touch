@@ -1840,6 +1840,31 @@ post-revocation send requirement instead of weakening Station endpoint
 semantics. Focused Chat Acceptance regression tests pass 73/73. MP-W12 and
 MP-W11 remain `PARTIAL/UNPROVEN` pending a new clean exact-source aggregate.
 
+### 2026-09-01 MP-W13-F / MP-W11 Live-Identity Revalidation
+
+Exact-source aggregate
+`20260901T055104027980Z-97ff871417bbf2cc212a77c4ba844cf7` at
+`ef0b9006a82a5673ab432c8e355f4b2713bba8fa` passed 21 of 22 Gates. Every
+Linux Chat product/runtime Gate passed, including Product Closure,
+Interactions, Typing, Gateway, Federation smoke, and idempotent `proto-build`;
+all provisioner cleanup passed. Only the dependent W11 Completion Audit
+failed.
+
+The remaining defect is at the W11 evidence-audit boundary. Station live
+metadata uses a 12-character Git commit abbreviation while the immutable
+aggregate and deployment attestation retain the canonical 40-character
+commit, but W11 compared those representations by raw equality. Product
+Closure also omitted its own `stationLive` observation from report source
+identity.
+
+The correction preserves exact canonical commit binding in the immutable
+attestation, accepts only valid 7-to-40-character hexadecimal
+prefix-equivalent live identities, rejects malformed or divergent identities,
+and requires Product Closure to capture and validate live Station metadata.
+Focused Chat Acceptance verification passes 120 tests. MP-W13-F and MP-W11
+remain `PARTIAL/UNPROVEN` pending a new clean commit, deployment to the
+approved remote Station, and the complete 22-Gate exact-source rerun.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
