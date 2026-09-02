@@ -9,8 +9,17 @@ import type { MobileAuthSession } from '../auth/authSession';
 import { mobileAuthScopeKey } from '../auth/mobileAuthIdentity';
 import { SocialApiError, readableErrorMessage } from '../social/socialTypes';
 import type { ChatEncryptedMessagePayload, Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
-import type { ChatAttachmentInput } from '../social/socialApi';
-import { createGroupApiClient, type CreateGroupInput, type GroupApiClient, type GroupSettings, type UpdateGroupInput, type UpdateGroupMemberInput, type UpdateGroupSettingsInput } from './groupApi';
+import type { ChatAttachmentInput } from '../social/socialApiTypes';
+import {
+  createGroupGateway,
+  unwrapOutcome,
+  type GroupGateway,
+  type GroupGatewaySettings as GroupSettings,
+  type GroupGatewayCreateInput as CreateGroupInput,
+  type GroupGatewayUpdateInput as UpdateGroupInput,
+  type GroupGatewayUpdateMemberInput as UpdateGroupMemberInput,
+  type GroupGatewayUpdateSettingsInput as UpdateGroupSettingsInput,
+} from '../../services/gateways';
 import { normalizeGroup, normalizeGroupMember, normalizeGroupMessage } from './groupNormalizers';
 import {
   applyGroupDecryptedContentToList,
@@ -20,9 +29,11 @@ import {
   type GroupConversation,
 } from './groupProjection';
 
+export type { GroupSettings, CreateGroupInput, UpdateGroupInput, UpdateGroupMemberInput, UpdateGroupSettingsInput };
+
 export interface GroupState {
   sessionKey: string | null;
-  api: GroupApiClient | null;
+  gateway: GroupGateway | null;
   groups: Group[];
   members: Record<string, GroupMember[]>;
   messages: Record<string, GroupMessage[]>;
@@ -82,7 +93,7 @@ export interface GroupState {
 
 export const useGroupStore = create<GroupState>((set, get) => ({
   sessionKey: null,
-  api: null,
+  gateway: null,
   groups: [],
   members: {},
   messages: {},
@@ -110,7 +121,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     set({
       ...emptyGroupState(),
       sessionKey,
-      api: createGroupApiClient(session),
+      gateway: createGroupGateway(session),
     });
   },
 
@@ -136,12 +147,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   refreshGroups: async () => {
-    const api = requireApi(get());
-    const payload = await api.listGroups();
-    const groups = (payload.groups ?? []).map(normalizeGroup);
+    const gw = requireGateway(get());
+    const result = unwrapOutcome(await gw.listGroups());
+    const groups = result.groups.map(normalizeGroup);
     set({ groups });
     const entries = await Promise.allSettled(groups.map(async (group) => {
-      const settings = await api.getMySettings(group.ulid);
+      const settings = unwrapOutcome(await gw.getMySettings(group.ulid));
       return [group.ulid, settings] as const;
     }));
     set((state) => {
@@ -154,9 +165,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   createGroup: async (input) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.createGroup(input);
+      const payload = unwrapOutcome(await gw.createGroup(input));
       if (payload.group) {
         const group = normalizeGroup(payload.group);
         set((state) => ({ groups: mergeGroups(state.groups, group) }));
@@ -171,9 +182,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   updateGroup: async (groupUlid, input) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.updateGroup(groupUlid, input);
+      const payload = unwrapOutcome(await gw.updateGroup(groupUlid, input));
       if (payload.group) {
         const group = normalizeGroup(payload.group);
         set((state) => ({ groups: mergeGroups(state.groups, group) }));
@@ -187,11 +198,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   refreshUnreadCounts: async () => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     const groups = get().groups.slice();
     const entries = await Promise.all(groups.map(async (group) => {
-      const payload = await api.unreadCount(group.ulid);
-      return [group.ulid, Number(payload.unreadCount ?? payload.unread_count ?? 0)] as const;
+      const result = unwrapOutcome(await gw.unreadCount(group.ulid));
+      return [group.ulid, result.unreadCount] as const;
     }));
     const unreadCounts = Object.fromEntries(entries);
     const activeGroupUlid = get().activeGroupUlid;
@@ -206,10 +217,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   loadMessages: async (groupUlid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.listMessages(groupUlid);
-      const messages = (payload.messages ?? []).map(normalizeGroupMessage);
+      const result = unwrapOutcome(await gw.listMessages(groupUlid));
+      const messages = result.messages.map(normalizeGroupMessage);
       set((state) => ({
         messages: { ...state.messages, [groupUlid]: messages },
       }));
@@ -222,11 +233,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   loadMembers: async (groupUlid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.listMembers(groupUlid);
+      const result = unwrapOutcome(await gw.listMembers(groupUlid));
       set((state) => ({
-        members: { ...state.members, [groupUlid]: (payload.members ?? []).map(normalizeGroupMember) },
+        members: { ...state.members, [groupUlid]: result.members.map(normalizeGroupMember) },
       }));
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -235,9 +246,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   loadSettings: async (groupUlid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const settings = await api.getMySettings(groupUlid);
+      const settings = unwrapOutcome(await gw.getMySettings(groupUlid));
       set((state) => ({
         settings: { ...state.settings, [groupUlid]: settings },
       }));
@@ -248,9 +259,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   updateMySettings: async (groupUlid, input) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.updateMySettings(groupUlid, input);
+      unwrapOutcome(await gw.updateMySettings(groupUlid, input));
       await get().loadSettings(groupUlid);
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -259,9 +270,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   updateMyNickname: async (groupUlid, nickname) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.updateMyNickname(groupUlid, nickname);
+      const payload = unwrapOutcome(await gw.updateMyNickname(groupUlid, nickname));
       if (payload.member) {
         const member = normalizeGroupMember(payload.member);
         set((state) => ({
@@ -281,9 +292,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   inviteMembers: async (groupUlid, inviteePtids) => {
     if (!inviteePtids.length) return;
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.inviteMembers(groupUlid, inviteePtids);
+      unwrapOutcome(await gw.inviteMembers(groupUlid, inviteePtids));
       await get().loadMembers(groupUlid);
       await get().refreshGroups();
     } catch (error) {
@@ -293,9 +304,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   leaveGroup: async (groupUlid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.leaveGroup(groupUlid);
+      unwrapOutcome(await gw.leaveGroup(groupUlid));
       set((state) => removeGroupFromState(state, groupUlid));
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -304,9 +315,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   removeMember: async (groupUlid, actorPtid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.removeMember(groupUlid, actorPtid);
+      unwrapOutcome(await gw.removeMember(groupUlid, actorPtid));
       await get().loadMembers(groupUlid);
       await get().refreshGroups();
     } catch (error) {
@@ -316,9 +327,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   updateMember: async (groupUlid, actorPtid, input) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.updateMember(groupUlid, actorPtid, input);
+      const payload = unwrapOutcome(await gw.updateMember(groupUlid, actorPtid, input));
       if (payload.member) {
         const member = normalizeGroupMember(payload.member);
         set((state) => ({
@@ -337,9 +348,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   transferOwnership: async (groupUlid, nextOwnerPtid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.transferOwnership(groupUlid, nextOwnerPtid);
+      const payload = unwrapOutcome(await gw.transferOwnership(groupUlid, nextOwnerPtid));
       if (payload.group) {
         const group = normalizeGroup(payload.group);
         set((state) => ({ groups: mergeGroups(state.groups, group) }));
@@ -354,9 +365,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   dissolveGroup: async (groupUlid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.dissolveGroup(groupUlid);
+      unwrapOutcome(await gw.dissolveGroup(groupUlid));
       set((state) => removeGroupFromState(state, groupUlid));
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -438,9 +449,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   recallMessage: async (groupUlid, messageUlid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.recallMessage(groupUlid, messageUlid);
+      unwrapOutcome(await gw.recallMessage(groupUlid, messageUlid));
       get().applyMessageMutation(groupUlid, messageUlid, 'RECALL', { mutatedTsUnixMs: Date.now() });
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -449,9 +460,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   deleteMessage: async (groupUlid, messageUlid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.deleteMessage(groupUlid, messageUlid);
+      unwrapOutcome(await gw.deleteMessage(groupUlid, messageUlid));
       get().applyMessageMutation(groupUlid, messageUlid, 'DELETE', { mutatedTsUnixMs: Date.now() });
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -477,8 +488,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }),
 
   markRead: async (groupUlid, upToUlid) => {
-    const api = requireApi(get());
-    await api.markRead(groupUlid, upToUlid);
+    const gw = requireGateway(get());
+    unwrapOutcome(await gw.markRead(groupUlid, upToUlid));
     set((state) => ({ unreadCounts: { ...state.unreadCounts, [groupUlid]: 0 } }));
   },
 
@@ -496,7 +507,7 @@ export function selectGroupConversations(state: GroupState): GroupConversation[]
 function emptyGroupState() {
   return {
     sessionKey: null,
-    api: null,
+    gateway: null,
     groups: [],
     members: {},
     messages: {},
@@ -547,11 +558,11 @@ function removeGroupFromState(state: GroupState, groupUlid: string) {
   };
 }
 
-function requireApi(state: GroupState): GroupApiClient {
-  if (!state.api) {
-    throw new SocialApiError({ method: 'GET', path: '/group-chat', message: 'group api is not bound' });
+function requireGateway(state: GroupState): GroupGateway {
+  if (!state.gateway) {
+    throw new SocialApiError({ method: 'GET', path: '/group-chat', message: 'group gateway is not bound' });
   }
-  return state.api;
+  return state.gateway;
 }
 
 function normalizeError(error: unknown): SocialApiError {

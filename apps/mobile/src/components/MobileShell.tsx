@@ -1,8 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Badge } from 'antd';
 import { Image, MessageCircle, Users, Settings } from 'lucide-react';
 
+import { useLifecyclePhase } from '../app/lifecycle';
 import { useMobileI18n } from '../app/mobileI18n';
+import { primaryTabDescriptors } from '../app/navigation';
+import {
+  saveScrollPosition,
+  restoreScrollPosition,
+  clearAllScrollPositions,
+} from '../app/navigation/scrollRestoration';
 import { ChatPage } from '../pages/ChatPage';
 import { ContactsPage } from '../pages/ContactsPage';
 import { MomentsPage } from '../pages/MomentsPage';
@@ -21,18 +28,21 @@ import { useGroupStore } from '../features/group/groupStore';
 
 type TabId = 'chat' | 'moments' | 'contacts' | 'settings';
 
-interface TabDef {
-  id: TabId;
-  labelKey: string;
-  icon: typeof MessageCircle;
-}
+const TAB_ICON_MAP: Record<TabId, typeof MessageCircle> = {
+  chat: MessageCircle,
+  moments: Image,
+  contacts: Users,
+  settings: Settings,
+};
 
-const tabs: TabDef[] = [
-  { id: 'chat', labelKey: 'mobile.tab.chat', icon: MessageCircle },
-  { id: 'moments', labelKey: 'mobile.tab.moments', icon: Image },
-  { id: 'contacts', labelKey: 'mobile.tab.contacts', icon: Users },
-  { id: 'settings', labelKey: 'mobile.tab.settings', icon: Settings },
-];
+/** Map navigation descriptor route IDs to local tab IDs. */
+function routeIdToTabId(routeId: string): TabId | null {
+  const suffix = routeId.replace('tab:', '');
+  if (suffix === 'chat' || suffix === 'moments' || suffix === 'contacts' || suffix === 'settings') {
+    return suffix;
+  }
+  return null;
+}
 
 function renderPage(tabId: TabId, props: MobileShellProps, authSession: MobileAuthSession | null, onOpenChat: () => void) {
   switch (tabId) {
@@ -60,10 +70,20 @@ export interface MobileShellProps {
   onLogout: () => Promise<void>;
 }
 
+/**
+ * MobileShell — the main tab-based shell rendered after authentication.
+ *
+ * Receives lifecycle phase from the kernel to gate rendering.
+ * Tab definitions come from navigation descriptors; scroll positions
+ * are saved/restored through the externalized scroll restoration module.
+ */
 export function MobileShell(props: MobileShellProps) {
   const { t } = useMobileI18n();
+  const lifecyclePhase = useLifecyclePhase();
   const authSession = useAuthStore((state) => state.session);
   const [activeTab, setActiveTab] = useState<TabId>('chat');
+  const contentRef = useRef<HTMLDivElement>(null);
+  const previousTabRef = useRef<TabId>(activeTab);
   useSocialRuntime(authSession);
 
   const activeSessionUlid = useSocialStore((state) => state.activeSessionUlid);
@@ -107,31 +127,53 @@ export function MobileShell(props: MobileShellProps) {
   );
   const contactBadge = inboundRequests.length;
 
-  const switchTab = (tabId: TabId) => {
+  const switchTab = useCallback((tabId: TabId) => {
+    // Save scroll position of the tab we're leaving
+    const previousRouteId = `tab:${previousTabRef.current}`;
+    saveScrollPosition(previousRouteId, contentRef.current);
+
     setActiveTab(tabId);
-  };
+    previousTabRef.current = tabId;
+
+    // Restore scroll position of the tab we're entering (deferred to next frame)
+    requestAnimationFrame(() => {
+      const nextRouteId = `tab:${tabId}`;
+      restoreScrollPosition(nextRouteId, contentRef.current);
+    });
+  }, []);
+
+  // Clear scroll positions when lifecycle transitions away from ACTIVE
+  // (e.g. during teardown or suspend)
+  if (lifecyclePhase !== 'ACTIVE' && lifecyclePhase !== 'RESUMING') {
+    clearAllScrollPositions();
+  }
+
   const hideTabbar = activeTab === 'chat' && Boolean(activeSessionUlid || activeGroupUlid);
 
   return (
     <div className={`mobile-shell ${hideTabbar ? 'tabbar-hidden' : ''}`}>
-      <div className="mobile-content">{renderPage(activeTab, props, authSession, () => switchTab('chat'))}</div>
+      <div className="mobile-content" ref={contentRef}>
+        {renderPage(activeTab, props, authSession, () => switchTab('chat'))}
+      </div>
 
       {!hideTabbar ? <nav className="mobile-tabbar">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          const badgeCount = tab.id === 'chat' ? chatBadge : tab.id === 'contacts' ? contactBadge : 0;
+        {primaryTabDescriptors.map((descriptor) => {
+          const tabId = routeIdToTabId(descriptor.routeId);
+          if (!tabId) return null;
+          const Icon = TAB_ICON_MAP[tabId];
+          const isActive = activeTab === tabId;
+          const badgeCount = tabId === 'chat' ? chatBadge : tabId === 'contacts' ? contactBadge : 0;
           return (
             <button
-              key={tab.id}
+              key={tabId}
               className={`tabbar-item ${isActive ? 'active' : ''}`}
-              onClick={() => switchTab(tab.id)}
+              onClick={() => switchTab(tabId)}
               type="button"
             >
               <Badge count={badgeCount} size="small" offset={[4, 0]}>
                 <Icon size={22} strokeWidth={isActive ? 2.2 : 1.6} />
               </Badge>
-              <span className="tabbar-label">{t(tab.labelKey)}</span>
+              <span className="tabbar-label">{t(descriptor.labelKey)}</span>
             </button>
           );
         })}

@@ -1,0 +1,46 @@
+/**
+ * Gateway barrel — re-exports all domain API gateways and shared types.
+ *
+ * Import from this module to access any domain gateway factory without
+ * knowing the internal file layout.
+ */
+
+export { createGatewayTransport, gatewayBytesToBase64, unwrapOutcome } from './gatewayTypes';
+export type {
+  CommandOutcome,
+  CommandWithReadback,
+  GatewayError,
+  GatewayRequestOptions,
+  HttpMethod,
+  ReadbackAdapter,
+} from './gatewayTypes';
+
+export { createSocialGateway } from './socialGateway';
+export type { SocialGateway, SocialFriendRequestsResult, SocialSessionsResult, SocialMessagesResult } from './socialGateway';
+
+export { createGroupGateway } from './groupGateway';
+export type {
+  GroupGateway,
+  GroupListResult,
+  GroupMessagesResult,
+  GroupMembersResult,
+  GroupSettings as GroupGatewaySettings,
+  CreateGroupInput as GroupGatewayCreateInput,
+  UpdateGroupInput as GroupGatewayUpdateInput,
+  UpdateGroupMemberInput as GroupGatewayUpdateMemberInput,
+  UpdateGroupSettingsInput as GroupGatewayUpdateSettingsInput,
+} from './groupGateway';
+
+export { createMomentsGateway } from './momentsGateway';
+export type { MomentsGateway, MomentCreatedResult } from './momentsGateway';
+
+export { createNotificationGateway } from './notificationGateway';
+export type { NotificationGateway, NotificationListResult } from './notificationGateway';
+
+export { createProfileGateway } from './profileGateway';
+export type {
+  ProfileGateway,
+  ActorSearchResultList,
+  FederationResolveResult,
+  AccountPreference,
+} from './profileGateway';
