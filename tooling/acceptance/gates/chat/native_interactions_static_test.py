@@ -28,6 +28,8 @@ class NativeInteractionContractsTest(unittest.TestCase):
             "deleteLocalInteractionMessage",
             "revokeCurrentDevice",
             "typingProjection",
+            "engineInteractionSnapshot",
+            "removeGroupMember",
         ):
             self.assertIn(method, source)
         self.assertIn("imServiceV1.messaging.sendMessage", source)
@@ -112,10 +114,79 @@ class NativeInteractionContractsTest(unittest.TestCase):
             self.assertIn("read_station_version", source)
             self.assertIn("wait_until(", source)
             self.assertIn("station_readback", source)
-            self.assertIn("messaging_acceptance_interaction_snapshot", source)
-            self.assertIn("profile_three_environment(self.station_url)", source)
+            self.assertIn("engineInteractionSnapshot", source)
+            self.assertIn(
+                "acceptance_station_environment(self.station_url)",
+                source,
+            )
             self.assertNotIn("time.sleep(", source)
             self.assertNotIn("localhost:18080", source)
+
+    def test_interaction_retry_preserves_the_last_submission_error(self) -> None:
+        source = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+        retry_start = source.index("            def _submit_edit()")
+        retry_end = source.index(
+            "            edit = wait_until(",
+            retry_start,
+        )
+        retry_submission = source[retry_start:retry_end]
+
+        self.assertIn("return async_harness(", retry_submission)
+        self.assertNotIn("except Exception", retry_submission)
+        self.assertIn("contentState={content_state}", source)
+
+    def test_interaction_runner_binds_selected_runtime_cell(self) -> None:
+        source = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+        for required in (
+            "def selected_runtime()",
+            "selected_native_runtime(GATE_ID)",
+            "selected runtime cell requires injected runtime resources",
+            "runtime_binding.cell_id != selected_cell",
+            "self.runtime_binding.create_bound_session(",
+            "self.runtime_binding.expose_orchestrator_endpoint(proxy.url).url",
+            "native_runtime_source_identity(",
+            "self.runtime_binding.finalize_cleanup(",
+            'bool(cleanup.get("processesReleased"))',
+            'bool(cleanup.get("storageReleased"))',
+            '"hydrateActiveActor"',
+        ):
+            self.assertIn(required, source)
+        self.assertIn(
+            "if self.runtime_binding is None:\n"
+            "            return start_authenticated_client(",
+            source,
+        )
+        self.assertIn(
+            "if self.runtime_binding is None:\n"
+            "            try:\n"
+            "                acceptance_station_environment(self.station_url)",
+            source,
+        )
+
+    def test_selected_runtime_rejects_uninjected_gate_construction(self) -> None:
+        previous = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL")
+        os.environ["PT_ACCEPTANCE_RUNTIME_CELL"] = "desktop-linux-native"
+        try:
+            for gate in (
+                NativeInteractionsGate,
+                ContactMessageResilienceGate,
+            ):
+                with self.subTest(gate=gate.__name__):
+                    with self.assertRaisesRegex(
+                        GateError,
+                        "requires injected runtime resources",
+                    ):
+                        gate()
+        finally:
+            if previous is None:
+                os.environ.pop("PT_ACCEPTANCE_RUNTIME_CELL", None)
+            else:
+                os.environ["PT_ACCEPTANCE_RUNTIME_CELL"] = previous
+
 
     def test_mutation_fingerprint_ignores_receipts_but_tracks_authority_fanout(
         self,
@@ -200,7 +271,11 @@ class NativeInteractionContractsTest(unittest.TestCase):
         )
         self.assertIn("ProfileThreeSubmitFaultProxy", runner)
         self.assertIn("arm_connection_loss", runner)
-        self.assertIn('"messaging_dispatch"', runner)
+        self.assertNotIn('"messaging_dispatch"', runner)
+        self.assertNotIn('"messaging_drain"', runner)
+        self.assertNotIn("def drain(", runner)
+        self.assertNotIn("self.drain(", runner)
+        self.assertIn('"engineInteractionSnapshot"', runner)
         self.assertIn('"retry_wait"', runner)
         self.assertIn("receiverVisibleCount", runner)
         self.assertIn('SUBMIT_PATH = "/messaging/command/submit"', proxy)
@@ -210,7 +285,22 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn("_submit_command_bytes", proxy)
         self.assertNotIn("localhost:18080", proxy)
 
-    def test_profile_three_restart_is_remote_and_source_bound(self) -> None:
+    def test_native_interactions_use_window_owned_membership_and_engine(self) -> None:
+        runner = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+        self.assertIn('"actorPtid": self.ptids[actor]', runner)
+        self.assertIn('"conversationId": conversation_id', runner)
+        self.assertIn('"messageId": message_id', runner)
+        self.assertIn('"commandId": command_id', runner)
+        self.assertIn('"removeGroupMember"', runner)
+        self.assertIn('"groupUlid": conversation_id', runner)
+        self.assertIn('"memberPtid": self.ptids["charlie"]', runner)
+        self.assertNotIn("gateway_command", runner)
+        self.assertNotIn('"messaging_membership_transition"', runner)
+
+    def test_disposable_station_restart_is_remote_and_source_bound(self) -> None:
+
         runner = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
         )
@@ -296,7 +386,7 @@ class ContactMessageResilienceTest(unittest.TestCase):
         src = self.source(
             "apps/desktop/src/components/chat/ChatContactsDetailPanel.tsx"
         )
-        create_direct_pos = src.find("createDirect(peerDid)")
+        create_direct_pos = src.find("createDirect(peerPtid)")
         self.assertGreater(
             create_direct_pos, 0,
             "handleMessage must call imServiceV1.messaging.createDirect",
@@ -317,6 +407,37 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "presentError", src[create_direct_pos:catch_block + 200],
             "errors must be presented within the already-open chat view",
         )
+
+    def test_runner_binds_selected_runtime_cell(self) -> None:
+        source = self.source(
+            "tooling/acceptance/gates/chat/contact_message_resilience_runner.py"
+        )
+        for required in (
+            "def selected_runtime()",
+            "selected_native_runtime(GATE_ID)",
+            "selected runtime cell requires injected runtime resources",
+            "runtime_binding.cell_id != selected_cell",
+            "self.runtime_binding.create_bound_session(",
+            "self.runtime_binding.expose_orchestrator_endpoint(",
+            "native_runtime_source_identity(",
+            "self.runtime_binding.finalize_cleanup(",
+            'bool(cleanup.get("processesReleased"))',
+            'bool(cleanup.get("storageReleased"))',
+            '"hydrateActiveActor"',
+        ):
+            self.assertIn(required, source)
+        self.assertIn(
+            "if self.runtime_binding is None:\n"
+            "            return start_authenticated_client(",
+            source,
+        )
+        self.assertIn(
+            "if self.runtime_binding is None:\n"
+            "            try:\n"
+            "                acceptance_station_environment(self.station_url)",
+            source,
+        )
+
 
     def test_engine_has_stale_enrollment_recovery(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/messaging/engine.rs")
@@ -571,9 +692,8 @@ class ContactMessageResilienceTest(unittest.TestCase):
         )
 
         self.assertIn(
-            "actor_did", src,
-            "repairMemberIndex must detect the legacy 'actor_did' column to decide "
-            "whether repair is needed",
+            'columns[1].ColumnName != "ptid"', src,
+            "repairMemberIndex must repair every non-PTID member index shape",
         )
 
         early_return = src.find("len(columns) == 0")
