@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { uploadAgentAttachmentFile } from '../../services/agentAttachments';
-import type { ChatAttachmentInput } from '../../services/desktop_api';
+import {
+  deleteAgentAttachment,
+  uploadAgentAttachmentFile,
+} from '../../services/agentAttachments';
+import type { AgentAttachmentRefInput } from '../../services/desktop_api';
+import { conversationIdFromAgentDraftKey } from '../../store/agentDraft';
 import { log } from '../../utils/logger';
 
 export type AgentDraftStatus = 'uploading' | 'ready' | 'failed';
@@ -15,7 +19,8 @@ export interface AgentAttachmentDraft {
   status: AgentDraftStatus;
   progress: number;
   error?: string;
-  attachment?: ChatAttachmentInput;
+  attachment?: AgentAttachmentRefInput;
+  file: File;
 }
 
 interface UseAgentAttachmentDraftsOptions {
@@ -32,9 +37,24 @@ function revokePreviewUrl(draft: AgentAttachmentDraft): void {
   if (draft.previewUrl) URL.revokeObjectURL(draft.previewUrl);
 }
 
+function deleteUploadedAttachment(draft: AgentAttachmentDraft): void {
+  if (!draft.attachment) return;
+  deleteAgentAttachment(draft.attachment).catch((error) => {
+    log.warn('agentChat', 'attachment cleanup failed', {
+      attachmentId: draft.attachment?.attachment_id,
+      error: String(error),
+    });
+  });
+}
+
+export function agentAttachmentDraftsBlockSend(
+  drafts: readonly Pick<AgentAttachmentDraft, 'status'>[],
+): boolean {
+  return drafts.some((draft) => draft.status === 'uploading' || draft.status === 'failed');
+}
+
 /** File types accepted by the agent attachment flow. */
-export const AGENT_ATTACHMENT_ACCEPT =
-  'image/*,application/pdf,.txt,.md,.json,.csv,.zip,.tar.gz,.docx,.xlsx,.pptx,audio/*,video/*';
+export const AGENT_ATTACHMENT_ACCEPT = 'image/png,application/pdf';
 
 export function useAgentAttachmentDrafts({
   conversationId,
@@ -45,28 +65,42 @@ export function useAgentAttachmentDrafts({
   const [drafts, setDrafts] = useState<AgentAttachmentDraft[]>([]);
 
   const patchDraft = useCallback((id: string, patch: Partial<AgentAttachmentDraft>) => {
-    setDrafts((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    const next = draftsRef.current.map((item) => (item.id === id ? { ...item, ...patch } : item));
+    draftsRef.current = next;
+    setDrafts(next);
   }, []);
 
-  const clearDrafts = useCallback(() => {
-    setDrafts((current) => {
-      current.forEach(revokePreviewUrl);
-      return [];
+  const clearDrafts = useCallback((deleteUploaded = true) => {
+    const current = draftsRef.current;
+    draftsRef.current = [];
+    setDrafts([]);
+    current.forEach((draft) => {
+      if (deleteUploaded) {
+        revokePreviewUrl(draft);
+        deleteUploadedAttachment(draft);
+      }
     });
   }, []);
 
   const removeDraft = useCallback((id: string) => {
-    setDrafts((current) => {
-      const target = current.find((draft) => draft.id === id);
-      if (target) revokePreviewUrl(target);
-      return current.filter((draft) => draft.id !== id);
-    });
+    const target = draftsRef.current.find((draft) => draft.id === id);
+    draftsRef.current = draftsRef.current.filter((draft) => draft.id !== id);
+    setDrafts(draftsRef.current);
+    if (!target) return;
+    revokePreviewUrl(target);
+    deleteUploadedAttachment(target);
   }, []);
 
-  const uploadDraft = useCallback((draft: AgentAttachmentDraft, file: File) => {
+  const uploadDraft = useCallback((draft: AgentAttachmentDraft) => {
     patchDraft(draft.id, { status: 'uploading', progress: 10, error: undefined });
-    uploadAgentAttachmentFile({ conversationId }, file)
+    const attachmentConversationId =
+      conversationIdFromAgentDraftKey(conversationId) ?? conversationId;
+    uploadAgentAttachmentFile({ conversationId: attachmentConversationId }, draft.file)
       .then((attachment) => {
+        if (!draftsRef.current.some((item) => item.id === draft.id)) {
+          void deleteAgentAttachment(attachment);
+          return;
+        }
         patchDraft(draft.id, { status: 'ready', progress: 100, attachment });
       })
       .catch((error) => {
@@ -86,35 +120,38 @@ export function useAgentAttachmentDrafts({
       previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
       status: 'uploading',
       progress: 0,
+      file,
     }));
-    setDrafts((current) => [...current, ...added]);
-    files.forEach((file, index) => {
-      uploadDraft(added[index], file);
+    draftsRef.current = [...draftsRef.current, ...added];
+    setDrafts(draftsRef.current);
+    added.forEach((draft) => {
+      uploadDraft(draft);
     });
   }, [disabled, fallbackName, uploadDraft]);
 
-  const retryDraft = useCallback((id: string, file: File) => {
+  const retryDraft = useCallback((id: string) => {
     const draft = draftsRef.current.find((item) => item.id === id);
-    if (draft) uploadDraft(draft, file);
+    if (draft) uploadDraft(draft);
   }, [uploadDraft]);
 
-  useEffect(() => {
-    draftsRef.current = drafts;
-  }, [drafts]);
-
   useEffect(() => () => {
-    draftsRef.current.forEach(revokePreviewUrl);
+    const current = draftsRef.current;
+    draftsRef.current = [];
+    current.forEach((draft) => {
+      revokePreviewUrl(draft);
+      deleteUploadedAttachment(draft);
+    });
   }, []);
 
   useEffect(() => {
-    clearDrafts();
+    clearDrafts(true);
   }, [clearDrafts, conversationId]);
 
   return {
     drafts,
     readyAttachments: drafts
       .map((draft) => draft.attachment)
-      .filter((attachment): attachment is ChatAttachmentInput => Boolean(attachment)),
+      .filter((attachment): attachment is AgentAttachmentRefInput => Boolean(attachment)),
     uploading: drafts.some((draft) => draft.status === 'uploading'),
     failed: drafts.some((draft) => draft.status === 'failed'),
     addFiles,

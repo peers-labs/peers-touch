@@ -71,6 +71,13 @@ func CheckSubjectSessionValid(ctx context.Context, subject *Subject) (bool, stri
 	return validator.CheckSessionValid(ctx, subject.SessionID)
 }
 
+// SessionDeviceTypeResolver optionally resolves the device_type associated with
+// a session. Middleware uses this to enrich 401 responses when a revoked session
+// is encountered so the client can filter device-scoped kicks.
+type SessionDeviceTypeResolver interface {
+	ResolveSessionDeviceType(ctx context.Context, sessionID string) string
+}
+
 type Token struct {
 	Value     string
 	ExpiresAt time.Time

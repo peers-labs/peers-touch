@@ -23,9 +23,12 @@ const APP_VIEWS: Record<AppState, ComponentType<ViewProps>> = {
 
 function App() {
   const lifecycle = useAppLifecycle();
-  useAppRuntime(lifecycle);
+  const criticalRuntimeReady = useAppRuntime(lifecycle);
 
-  const View = APP_VIEWS[lifecycle.state];
+  const viewState = lifecycle.state === 'ready' && !criticalRuntimeReady
+    ? 'resuming'
+    : lifecycle.state;
+  const View = APP_VIEWS[viewState];
 
   return (
     <>

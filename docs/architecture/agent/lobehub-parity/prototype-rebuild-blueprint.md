@@ -28,12 +28,12 @@ A new Agent parity prototype may be registered only after these conditions are s
 
 Primary LobeHub sources:
 
-- `external/lobehub/src/routes/(main)/home/_layout/index.tsx`
-- `external/lobehub/src/routes/(main)/home/_layout/Sidebar.tsx`
-- `external/lobehub/src/routes/(main)/home/features/index.tsx`
-- `external/lobehub/src/routes/(main)/home/features/AgentSelect/index.tsx`
-- `external/lobehub/src/routes/(main)/home/features/WelcomeText/index.tsx`
-- `external/lobehub/src/routes/(main)/home/features/InputArea/index.tsx`
+- `external/lobehub/src/routes/(main)<home>/index.tsx`
+- `external/lobehub/src/routes/(main)<home>/Sidebar.tsx`
+- `external/lobehub/src/routes/(main)<home>/index.tsx`
+- `external/lobehub/src/routes/(main)<home>/AgentSelect/index.tsx`
+- `external/lobehub/src/routes/(main)<home>/WelcomeText/index.tsx`
+- `external/lobehub/src/routes/(main)<home>/InputArea/index.tsx`
 - `external/lobehub/src/features/ChatInput/Desktop/index.tsx`
 
 Required prototype structure:

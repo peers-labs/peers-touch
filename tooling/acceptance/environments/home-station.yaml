@@ -6,7 +6,6 @@
   },
   "services": {
     "station": {
-      "kind": "station",
       "required": true,
       "ready_action": "station",
       "health_action": "station-check",

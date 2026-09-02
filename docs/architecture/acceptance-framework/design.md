@@ -3,6 +3,7 @@
 > **Status**: active
 > **Version**: v1.1
 > **Created**: 2026-06-03 | **Updated**: 2026-09-02
+
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -69,6 +70,7 @@
 | Native Desktop Provisioner 已提供同一 runtime cell 内多客户端隔离 | `verified_fact` | `provisioners/home_station.py::_clients`；Linux NDR-W7 evidence | high | multi-service binding |
 | 客户端依赖应成为 Environment Contract 和 Runtime Manifest 的 typed edge | `proposal` | D-18 | high | architecture re-review |
 
+
 ---
 
 ## 2. 系统架构
@@ -117,48 +119,6 @@ Acceptance Framework 由六层组成：
 | Gate Catalog | `tooling/acceptance/gates.yaml` | 定义稳定 gate 的命令、环境、超时和说明 |
 | Gate Implementation | `tooling/acceptance/gates/**/*.py` | 产生可重复 evidence，不承载业务真源 |
 | Evidence Report | D-11 Evidence Store `ArtifactRef` | 汇总 proven / unproven scope，供人审阅 |
-
-### 2.1 Native Desktop Runtime Cell 拓扑
-
-Native Desktop Gate 的产品断言保持一个 Gate identity；运行平台是独立证据维度，
-不得复制三份业务 Gate 或让某个平台 evidence 代替另一个平台。
-
-```text
-Local Acceptance Orchestrator
-  │
-  ├── Gate definition + required runtime cells
-  ├── incremental Git object sync + commit attestation
-  ├── SSH control channel + localhost port forwards
-  └── local Evidence Store writer
-          │
-          ▼
-Remote Runtime Cell Lease
-  ├── pinned supported userland
-  ├── dedicated graphical session
-  ├── exact-source Desktop Acceptance binary
-  ├── app-local embedded WebDriver on 127.0.0.1
-  ├── platform NativeInput/WindowObservation adapter
-  └── reverse-order process/port/storage/session cleanup
-          │
-          ▼
-macOS WKWebView | Linux WebKitGTK | Windows WebView2
-```
-
-控制面与数据面边界：
-
-- Orchestrator 负责选择 cell、校验 source identity、建立 tunnel、收集 evidence 和
-  发布最终结果。
-- Runtime Cell Provisioner 负责目标主机、图形 session、构建、进程、端口和 storage
-  生命周期；不得包含 Chat selector、actor 或产品断言。
-- Remote source acquisition 复用 `make station` 的 pull-model 语义：Profile 解析目标、
-  source lease、Git push/fetch、exact commit checkout、remote build cache 和
-  attestation；不得每次复制完整 worktree。
-- `TauriDriver` 只负责 W3C WebDriver/DOM 能力，不再假定 app process 必须在本机。
-- `NativeDesktopAdapter` 负责平台窗口激活、真实键鼠输入、焦点、窗口栈和屏幕观察。
-- Business Gate 只调用稳定的 DOM 与 native action interface；不得导入 AppKit、
-  Quartz、X11 或 Win32 API。
-- Embedded WebDriver 仅绑定 cell 内 `127.0.0.1`；远端访问必须经过 run-scoped SSH
-  tunnel，禁止开放到局域网。
 
 ---
 
@@ -335,9 +295,9 @@ Provisioner 成功后必须输出一次运行的不可变 manifest。Manifest �
   evidence.
   See [data-model.md §3](./data-model.md#3-runtime-resource-manifest) for
   proof schema and typed error code table.
+
 - 包含 actor role 到 canonical PTID 的解析结果，但不包含密码、token、PIN 或私钥。
 - 作为 Gate evidence 的 source artifact，并由 validator 校验 freshness。
-- 顶层 singular `station` 已删除；禁止 dual-write、compatibility alias 或 fallback。
 - 完整 schema 见 [data-model.md §3](./data-model.md#3-runtime-resource-manifest)。
 
 ### 3.8 Acceptance Gap Contract
@@ -404,70 +364,6 @@ latest(worktree, gate_id) -> RunManifest
 `publish_latest`只能在`finalize`成功后调用。Reader不得通过字符串拼接artifact root；
 所有path必须通过resolver，reject absolute child paths、`..`、NUL、symlink escape和
 identity mismatch。
-
-### 3.10 Native Runtime Cell Contract
-
-Native Desktop Gate 可声明 `requiredRuntimeCells`。每个 cell 由独立 contract
-解析，运行结果按 `(gateId, cellId, sourceCommit)` 隔离：
-
-```yaml
-id: desktop-linux-native
-platform: linux
-architecture: x86_64
-isolation:
-  kind: container
-  image_ref: profile:acceptance-linux-image
-  image_digest_required: true
-transport:
-  kind: ssh
-  target_ref: profile:acceptance-linux
-  webdriver_forward: local-loopback
-display:
-  session_type: x11
-  physical_monitor_required: false
-  connected_output_required: true
-  fixed_geometry: 1920x1080
-webdriver:
-  kind: tauri-embedded
-  bind: 127.0.0.1
-native_adapter:
-  input: x11-xtest
-  window: x11-ewmh
-  screenshot: webkitgtk-and-desktop
-source:
-  mode: git-object-sync
-  clean_commit_required_for_proof: true
-  binary_sha256_required: true
-lease:
-  scope: gui-session
-  ttl_seconds: 5400
-cleanup:
-  resources:
-    - ssh-tunnel
-    - processes
-    - ports
-    - storage
-    - source-workspace
-    - gui-session-lease
-```
-
-约束：
-
-- `target_ref` 是 Profile/secret-backed reference，不在仓库中保存 IP、用户名或密钥。
-- Cell preflight 必须核验 OS、architecture、WebView backend、display/session、
-  compositor/window manager、native input、screen capture、toolchain 和磁盘。
-- Host OS 与 cell userland 必须分别取证。容器化 cell 可运行受支持的 Linux
-  userland，而不要求宿主发行版升级，但必须记录 image digest、host kernel 与
-  container isolation。
-- 最终 `PROVEN` 要求 clean commit、remote source digest、binary SHA-256 与运行进程
-  identity 一致；dirty source 只允许诊断并保持 `PARTIAL/UNPROVEN`。
-- Remote proof 只接受 Git 可寻址 clean commit。未提交修改不进入远端 source sync，
-  也不得通过 rsync/tar overlay 绕过 source identity。
-- 每个 cell 必须独占 GUI session lease。同一 session 的并发 Gate fail closed。
-- SSH 中断、Gate timeout 和 orchestrator cancellation 都必须触发远端 TTL/reaper 与
-  本地 reverse-order cleanup。
-- 平台专属断言只能由对应 cell 证明；Linux 不能证明 AppKit/Spaces，macOS 不能证明
-  WebKitGTK/X11，Windows 不能证明另外两者。
 
 Source traceability：
 
@@ -780,26 +676,39 @@ Agent 对 Acceptance Infra 的优化和审计必须使用
 业务接入与产品证明继续使用
 [`pt-acceptance-engineering`](../../../tooling/skills/pt-acceptance-engineering/SKILL.md)。
 
-### 4.12 Runtime Cell 所有权与失败语义
+### 4.12 Runtime Matrix Evidence Role Applicability
 
-| 组件 | Owner | 允许职责 | 禁止职责 |
-|---|---|---|---|
-| Cell schema/registry/lease | Acceptance Infra | contract validation、选择、互斥、typed failure | 业务 actor、selector、成功条件 |
-| SSH transport | Acceptance Infra | host-key verification、command/tunnel、timeout/cancel | 保存凭据值、解释产品结果 |
-| Desktop cell injection | Desktop platform | OS/display/toolchain/build/native adapter 配置 | Chat journey 与断言 |
-| Native adapter | Desktop platform | focus/input/window stack/screenshot primitive | DOM selector、消息语义 |
-| Chat Gate | Chat business | actor journey、产品动作、receiver-visible assertion | SSH、display setup、平台 API |
-| Evidence Store | Acceptance Infra | local durable artifact、remote artifact import validation | 未验证远端输出、跨 cell 冒充 |
+Gate-level `required_artifact_roles` 定义 Gate 可能产生的 role 并集。具体 row
+需要哪些 role，由 runtime matrix 的 `role_policy` 决定：
 
-失败必须分层：
+```text
+Gate role union
+  ├── row: desktop-native
+  │     └── cell-results + runtime-attestation + receiver-dom
+  │         + station-readback + runtime-events + measurement + cleanup
+  ├── row: browser
+  │     └── cell-results + runtime-attestation + receiver-dom
+  │         + station-readback + runtime-events + measurement + cleanup
+  ├── row: mobile-contract
+  │     └── cell-results + runtime-attestation + contract-evidence + cleanup
+  └── row: orchestration-guard
+        └── cell-results + runtime-attestation + guard-report + cleanup
+```
 
-- Cell/session/toolchain/source/tunnel 失败：
-  `ACCEPTANCE_GATE_BLOCKED_BY_ENVIRONMENT`，产品 proof 为 `UNPROVEN`。
-- Native adapter 无法证明真实 input/focus/window ownership：
-  environment failure，不得退化为 WebDriver-only click。
-- 产品断言在 ready cell 中失败：`ACCEPTANCE_GATE_FAILED`。
-- Cleanup 未完全释放 remote process、port、storage、session lease：
-  `ACCEPTANCE_CLEANUP_FAILED`，已观察行为可保留但 readiness 为 failed。
+不变量：
+
+- `cell-results` 和 `runtime-attestation-set` 覆盖全部 tuple。
+- `runtime-attestation-set` 按 row 的 `runtime_attestation_profile` 校验：
+  direct runtime 使用完整 conversation/Turn/ToolCall/client-session 绑定；
+  contract、guard、non-advertised rows 使用对应事实源的最小 typed attestation。
+- 其它 role 只覆盖 matrix row 显式声明的 tuple 子集。
+- 每个 role artifact 的 refs、scenario IDs 和 sample count 必须精确匹配该子集。
+- `not_applicable` 只能来自 matrix，不允许 producer 或 validator 临场推断。
+- contract-only row 禁止生成虚构 DOM；guard row 禁止生成虚构 Turn/readback。
+- 缺少 applicable role、出现额外 role 或 observation 绑定到错误 tuple 均 fail closed。
+
+ 该关系由 accepted decision D-13 约束；matrix、evidence schema、validator 与
+producer 必须原子迁移，不得用 producer 局部约定替代。
 
 ---
 
@@ -952,3 +861,4 @@ domain 的业务接入缺口，也不提供 bypass 参数。
   change. Cross-Domain migration order is independent.
 - 任一 service、client 或 binding 的 cleanup / attestation 不完整时，环境结果为
   `BLOCKED/UNPROVEN` 或 cleanup failure，不得降级成部分拓扑 proof。
+

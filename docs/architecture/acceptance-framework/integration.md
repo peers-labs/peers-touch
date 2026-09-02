@@ -3,6 +3,7 @@
 > **Status**: active
 > **Version**: v2.1
 > **Created**: 2026-08-15 | **Updated**: 2026-09-02
+
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/core/`
 
@@ -43,11 +44,11 @@
 |---|---|---|---|
 | `gates.yaml.environment` | 只有标签，没有 acquisition contract | Acceptance Provisioning Registry | environment contract |
 | active `.local` Profile | 文件名与内部 identity 可漂移 | Local Dev Environment | validated profile identity |
-| `make station` / `station-status` | 能 ready/check，但不产出 Gate 可消费的完整 attestation | Station deployment/runtime | service-scoped Station attestation |
+| `make station` / `station-status` | 能 ready/check，但不产出 Gate 可消费的完整 attestation | Station deployment/runtime | station attestation |
 | `CHAT_NATIVE_*_PTID` | 由调用方手工提供 | Chat Fixture | actor manifest |
 | `CHAT_NATIVE_DEMO_PASSWORD` | 来源未声明且 runner 有默认值 | approved credential source | credential reference |
-| `CHAT_NATIVE_STATION_ATTESTATION` | runner 只消费，没有生产者 | Station deployment/runtime | source-bound service attestation artifact |
-| `CHAT_NATIVE_STATION_URL` | Profile 与 Gate 使用不同变量 | Environment Provisioner | `runtime manifest.services.station.endpoint` |
+| `CHAT_NATIVE_STATION_ATTESTATION` | runner 只消费，没有生产者 | Station deployment/runtime | source-bound attestation artifact |
+| `CHAT_NATIVE_STATION_URL` | Profile 与 Gate 使用不同变量 | Environment Provisioner | runtime manifest station URL |
 | Gateway/Native ports | runner 局部计算，缺少统一 preflight record | Environment Provisioner + Driver | client isolation manifest |
 | Gate failure text log | 缺少 source-bound preflight identity | Provisioner/Gate Runner | structured blocked artifact |
 
@@ -104,73 +105,6 @@ Runtime report中对其它artifact的引用必须normalize为`ArtifactRef`。用
 `--input/--output`可接受explicit filesystem path，但default必须来自Evidence Store；
 test-only path不能成为production fallback。
 
-### 1.5 Native Desktop Runtime Cell 目标映射
-
-> 本节由 accepted D-13 ~ D-16 约束。
-
-| 当前输入或行为 | 当前问题 | 目标 Owner | 目标 contract/artifact |
-|---|---|---|---|
-| `gates.yaml.environment` 单值 | 无法表达同一 Gate 的 macOS/Linux/Windows proof matrix | Acceptance Infra | optional `requiredRuntimeCells` schema + matrix result |
-| `TauriDriver._launch_app()` | 本机 launch 与 W3C client 耦合 | Acceptance Infra | launcher-neutral `TauriDriver` |
-| `127.0.0.1:<port>` | 默认等同 orchestrator localhost | Acceptance Infra | run-scoped endpoint/tunnel lease |
-| macOS AppKit/CoreGraphics methods 位于 Chat runner | 平台机制污染业务 Gate | Desktop platform injection | `NativeDesktopAdapter` |
-| 本机 `.local/acceptance/bin` | 无远端 source/binary identity | Desktop platform injection | source staging + binary attestation |
-| `deploy.sh` 内嵌 source push/fetch | Git 增量同步能力与 Station/Relay role lifecycle 耦合 | Deployment/Acceptance Infra | role-neutral remote source-sync contract |
-| 本机 process/storage cleanup | 无远端 crash/SSH disconnect 回收 | Acceptance Infra + cell injection | remote lease + TTL reaper + cleanup audit |
-| 单个 Gate result | 无 runtime cell identity，可能跨平台冒充 | Acceptance Infra | `(gateId, cellId, sourceCommit)` result |
-
-目标调用链：
-
-```text
-Gate Catalog
-  -> Environment Contract
-  -> required Runtime Cell Contract
-  -> Runtime Cell lease
-  -> incremental Git object sync + exact commit checkout
-  -> exact-source remote build with persistent caches
-  -> remote app + loopback embedded WebDriver
-  -> run-scoped SSH tunnel
-  -> local TauriDriver + remote NativeDesktopAdapter
-  -> unchanged business Gate assertions
-  -> local immutable Evidence Store
-  -> remote reverse-order cleanup
-```
-
-平台 adapter mapping：
-
-| Cell | WebView | Native input/window backend | Platform-only evidence |
-|---|---|---|---|
-| `desktop-macos-native` | WKWebView | AppKit + CoreGraphics + Accessibility | Spaces、frontmost PID、AX focus |
-| `desktop-linux-native` | WebKitGTK | X11 XTest + EWMH | active window、stack/point owner、X11 focus |
-| `desktop-windows-native` | WebView2 | Win32 `SendInput` + UI Automation | foreground HWND、process/window ownership |
-
-Business Gate 只能依赖 adapter interface。平台实现不得 import Chat Gate，也不得改变
-selector、actor journey、timeout budget 或 success assertion。
-
-### 1.6 Linux Candidate Cell Preflight Baseline
-
-Linux cell 必须通过以下 fail-closed preflight：
-
-- x86_64 Linux host kernel 与 working container runtime；
-- digest-pinned supported Linux userland image；
-- cell userland 内具备 Tauri 当前锁定依赖所需的 WebKitGTK 4.1
-  development/runtime packages；
-- connected virtual or physical output、固定 geometry、persistent Xorg session；
-- dedicated GUI identity、DBus session、keyring 与 user runtime directory；
-- Node/pnpm、Rust/Cargo、Python 和 native build dependencies；
-- SSH host-key pinning、loopback tunnel capability 与 passwordless non-interactive
-  lifecycle commands；
-- repository source staging、clean commit check、remote digest 与 binary SHA-256；
-- 首次传输完整 Git objects、后续仅传缺失 objects；不得传输 `node_modules`、Cargo
-  target 或完整 worktree；
-- X11 XTest input、EWMH focus/window stack 与 desktop screenshot probes；
-- remote process/port/storage/session lease cleanup。
-
-候选机缺少任一项时输出 `ACCEPTANCE_GATE_BLOCKED_BY_ENVIRONMENT`。不得混装其它
-发行版的软件包、回退 Xvfb、改用 browser shell 或省略 Native input proof。宿主
-发行版不需要升级；host kernel、container image digest 与 cell userland 必须分别
-attest。
-
 ---
 
 ## 2. 影响面分析
@@ -213,6 +147,7 @@ attest。
 | `tooling/scripts/acceptance-run.py` | 架构扩展 | Gate × cell expansion、per-cell result 与 aggregate proof |
 | Native business runners | 依赖反转 | 删除平台 API，改为消费 `NativeDesktopAdapter` |
 
+
 ### 2.2 不受影响的代码
 
 - Station Go 代码（`apps/station/`）
@@ -221,8 +156,6 @@ attest。
 - Applet 业务代码
 - Chat 产品业务逻辑；本设计不修复 `DELIVERED` receipt
 - Gate 产品成功标准；不得因 provisioning 改造而降低
-- Chat actor journey、selector、message/attachment assertion 与 first-failed-boundary
-  纪律
 - CI/CD 调用的 Make target 名称
 
 ### 2.3 必须删除或禁止保留的旧路径
@@ -257,6 +190,7 @@ Native runtime cell 迁移禁止：
   default-Station 推断并存。
 - client record 复制 Station endpoint、deployment、commit 或 attestation。
 - Gate 从 Profile、环境变量、client/service 顺序或业务常量恢复缺失 binding。
+
 
 ---
 
@@ -402,6 +336,7 @@ generic helper is available and correct before any Domain begins migration.
 
 该 hard cut 不改变 Chat、Mobile 或 Federation 产品断言。具体 `four`、`fiveArm`
 拓扑与回执、恢复、故障注入场景属于业务 Domain injection，在独立执行计划中接入。
+
 
 D-11 compatibility boundary：
 

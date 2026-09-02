@@ -61,15 +61,15 @@
 - **状态**：`idle` → `connecting` → `connected` → `failed` / `closed`（附属维度 `FriendChatP2pTransport`：`direct` / `relay` / `null`，由 ICE 统计选择）
 - **触发**：发起信令会话→`connecting`；WebRTC 连接成功→`connected`；连接失败 / datachannel error→`failed`；主动关闭→`closed`
 - **不变量**：每对端一条连接；`failed`/`closed` 后需重新 `startConnection`；transport 与 presence 正交（online 既可能 direct 也可能 relay）。
-- **Owner**：[callP2p.ts](file://apps/desktop/src/modules/p2p/callP2p.ts#L66)（`conn.status`，转换见 :355/:455/:460/:464/:494/:531）
-- **关联架构** → [realtime/event-stream.md](file://docs/architecture/realtime/event-stream.md)（信令面）
+- **Owner**：[callP2p.ts](../../../apps/desktop/src/modules/p2p/callP2p.ts#L66)（`conn.status`，转换见 :355/:455/:460/:464/:494/:531）
+- **关联架构** → [realtime/event-stream.md](../realtime/event-stream.md)（信令面）
 
 ### 4.3 WebRTC Call Lifecycle（音视频呼叫）⚠️ 内嵌精简设计
 
 - **状态**：`idle` · `outgoing`（已发 CALL_REQUEST 等待应答）· `incoming`（收到 CALL_REQUEST 等待应答）· `active`（媒体流动）· `ended`（终态）（媒体维度 `CallMediaKind`：`audio` / `video`）
 - **触发**：`startCall`→`outgoing`；收到 CALL_REQUEST→`incoming`；接受 / 媒体就绪→`active`；CALL_END / 挂断→`ended`
 - **不变量**：呼叫由 `callId` 标识，防陈旧信令；`ended` 为本轮终态，下次 `startCall` 重新开始；呼叫 FSM 复用 §4.2 的 P2P 连接通道。
-- **Owner**：[callP2p.ts](file://apps/desktop/src/modules/p2p/callP2p.ts#L187)（转换见 :712/:725/:785/:830/:901）
+- **Owner**：[callP2p.ts](../../../apps/desktop/src/modules/p2p/callP2p.ts#L187)（转换见 :712/:725/:785/:830/:901）
 
 ### 4.4 Chat Outbox（发件箱重试队列，跨端共享）⚠️ 内嵌精简设计
 

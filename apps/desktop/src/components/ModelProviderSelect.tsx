@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Check, ChevronRight, Settings, Search, X, Eye, Wrench, Sparkles, Globe, Image } from 'lucide-react';
 import { ProviderIcon } from './settings/ProviderIcon';
@@ -34,19 +34,12 @@ export function ModelProviderSelect({
   const availableModels = useAgentStore(s => s.availableModels);
   const defaultModel = useAgentStore(s => s.defaultModel);
   const modelsLoading = useAgentStore(s => s.loading);
-  const loadModels = useAgentStore(s => s.loadModels);
   const [searchQuery, setSearchQuery] = useState('');
 
   const effectiveModels = models ?? availableModels;
   const currentId = selectedModelId ?? defaultModel;
   // Show loading skeleton only when using store models (not prop-injected) and loading for the first time
   const showSkeleton = !models && modelsLoading && effectiveModels.length === 0;
-
-  useEffect(() => {
-    if (!models) {
-      loadModels();
-    }
-  }, [models, loadModels]);
 
   const filteredModels = useMemo(() => {
     const enabledModels = effectiveModels.filter((m) => m.enabled);

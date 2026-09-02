@@ -2,8 +2,11 @@
 
 > **Module**: P1-M2 MCP Plugin System
 > **Step**: S2 — Peers Design
-> **Status**: draft
+> **Status**: superseded by `docs/architecture/agent/modern-chat-agent/`
 > **Finding**: MCP system is 90%+ implemented. This module closes remaining gaps.
+> **Historical note**: the Station `local_mcp` broker bridge was deleted by
+> MCA-D19 G1-E. MCP execution now requires a Station-issued fenced client
+> capability envelope.
 
 ---
 
