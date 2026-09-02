@@ -4,6 +4,7 @@ import { api } from '../services/desktop_api';
 import { useAgentStore } from './agent';
 import { log } from '../utils/logger';
 import { resolveI18nValue } from '../i18n/index';
+import { createAgentDraftKey, isAgentDraftKey } from './agentDraft';
 
 export type TopicTitleState = 'untitled' | 'manual' | 'generating' | 'generated' | 'failed';
 
@@ -39,16 +40,17 @@ interface AgentTopicState {
   reconcileSelectedAgentTopics: (reason?: string) => Promise<void>;
   upsertTopics: (agentId: string, sessions: Session[]) => void;
   createDraftTopic: (agentId: string, agentName: string, title: string) => AgentTopic;
+  promoteDraftTopic: (agentId: string, draftKey: string, session: Session) => void;
   deleteTopic: (key: string) => Promise<void>;
   renameTopic: (key: string, title: string) => Promise<void>;
   smartRenameTopic: (key: string) => Promise<{ title: string }>;
   revertGeneratedTitle: (key: string) => Promise<void>;
-  duplicateTopic: (key: string) => Promise<void>;
   pinTopic: (key: string, pinned: boolean) => Promise<void>;
   favoriteTopic: (key: string, favorite: boolean) => Promise<void>;
   setSearchQuery: (query: string) => void;
   setSearchMode: (mode: TopicSearchMode) => void;
   setSortBy: (sortBy: TopicSortBy) => void;
+  resetProjection: () => void;
 }
 
 function toISODate(value: string): string {
@@ -129,7 +131,13 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
     try {
       const sessions = await chatService.listAgentSessions(agentId);
       const existingByKey = new Map((get().topicsByAgentId[agentId] || []).map((topic) => [topic.key, topic]));
-      const topics = sessions.map((session) => normalizeTopic(session, existingByKey.get(session.key)));
+      const drafts = (get().topicsByAgentId[agentId] || []).filter((topic) =>
+        isAgentDraftKey(topic.key),
+      );
+      const topics = [
+        ...drafts,
+        ...sessions.map((session) => normalizeTopic(session, existingByKey.get(session.key))),
+      ];
       set((state) => ({
         topicsByAgentId: { ...state.topicsByAgentId, [agentId]: topics },
         loadingAgentIds: { ...state.loadingAgentIds, [agentId]: false },
@@ -168,7 +176,7 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
 
   createDraftTopic: (agentId: string, agentName: string, title: string) => {
     const now = new Date().toISOString();
-    const key = `agent:${agentName}:${Date.now()}`;
+    const key = createAgentDraftKey(agentId);
     const topic: AgentTopic = {
       id: key,
       key,
@@ -187,6 +195,36 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
       },
     }));
     return topic;
+  },
+
+  promoteDraftTopic: (agentId: string, draftKey: string, session: Session) => {
+    if (!agentId || !isAgentDraftKey(draftKey)) return;
+    set((state) => {
+      const topics = state.topicsByAgentId[agentId] || [];
+      const draftIndex = topics.findIndex((topic) => topic.key === draftKey);
+      const existingRealIndex = topics.findIndex((topic) => topic.key === session.key);
+      if (draftIndex < 0 && existingRealIndex >= 0) return state;
+
+      const draft = draftIndex >= 0 ? topics[draftIndex] : undefined;
+      const promoted = normalizeTopic(
+        {
+          ...session,
+          id: session.key,
+          key: session.key,
+          title: session.title || draft?.title || '',
+          created_at: draft?.created_at || session.created_at,
+        },
+        draft,
+      );
+      const next = topics.filter(
+        (topic) => topic.key !== draftKey && topic.key !== session.key,
+      );
+      next.splice(draftIndex >= 0 ? draftIndex : 0, 0, promoted);
+      return {
+        activeAgentId: agentId,
+        topicsByAgentId: { ...state.topicsByAgentId, [agentId]: next },
+      };
+    });
   },
 
   deleteTopic: async (key: string) => {
@@ -276,12 +314,6 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
     });
   },
 
-  duplicateTopic: async (key: string) => {
-    await chatService.duplicateSession(key);
-    const agentId = get().activeAgentId || findSelectedAgentId();
-    if (agentId) await get().loadTopicsForAgent(agentId, 'duplicate');
-  },
-
   pinTopic: async (key: string, pinned: boolean) => {
     const before = get().topicsByAgentId;
     set((state) => ({
@@ -291,7 +323,12 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
       })),
     }));
     try {
-      await api.pinSession(key, pinned);
+      const conversation = await api.getAgentConversation(key);
+      await api.updateAgentConversation({
+        conversation_id: key,
+        expected_version: conversation.version,
+        meta: { pinned: String(pinned) },
+      });
     } catch (error) {
       log.warn('agentTopics', 'Failed to persist pin state, rolling back', { key, pinned, error: String(error) });
       set({ topicsByAgentId: before });
@@ -307,7 +344,12 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
       })),
     }));
     try {
-      await api.favoriteSession(key, favorite);
+      const conversation = await api.getAgentConversation(key);
+      await api.updateAgentConversation({
+        conversation_id: key,
+        expected_version: conversation.version,
+        meta: { favorite: String(favorite) },
+      });
     } catch (error) {
       log.warn('agentTopics', 'Failed to persist favorite state, rolling back', { key, favorite, error: String(error) });
       set({ topicsByAgentId: before });
@@ -324,5 +366,19 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
 
   setSortBy: (sortBy: TopicSortBy) => {
     set({ sortBy });
+  },
+
+  resetProjection: () => {
+    set({
+      topicsByAgentId: {},
+      activeAgentId: '',
+      loadingAgentIds: {},
+      generatingTitleKeys: {},
+      titleHistoryByKey: {},
+      lastError: undefined,
+      searchQuery: '',
+      searchMode: 'title',
+      sortBy: 'updated_at',
+    });
   },
 }));

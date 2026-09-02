@@ -3,6 +3,12 @@
 > Step 1b of architecture design methodology.
 > Source: LobeHub `src/features/AgentSetting/`, `src/store/agent/`, `src/services/agent.ts`
 > Comparand: Peers-Touch `peers-ai-agent/apps/desktop/src/store/agent.ts`, `AgentSettingsModal.tsx`
+>
+> **Current authority note (2026-08-28)**: This document is benchmark analysis,
+> not the current binding contract. MCA-D15/MCA-D15K replace the legacy
+> `AgentKnowledgeBinding` / `AgentSkillBinding` / `AgentMcpBinding` APIs with
+> versioned manifests, `AgentCapabilityBinding`, and immutable readiness
+> snapshots.
 
 ---
 

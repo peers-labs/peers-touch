@@ -4,6 +4,7 @@ export function isSecretLikeKey(key: string): boolean {
   const normalized = key.toLowerCase();
   return normalized.includes('api_key')
     || normalized.includes('apikey')
+    || normalized.includes('key_vault')
     || normalized.includes('authorization')
     || normalized.includes('bearer')
     || normalized.includes('secret')

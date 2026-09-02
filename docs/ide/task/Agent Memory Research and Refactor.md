@@ -4,7 +4,7 @@
 > 不作为当前 Agent Memory 架构或实现真源。
 > 若与现状冲突，以 `docs/README.md`、`docs/architecture/`、`docs/global/coding-guide/` 及对应平台真源文档为准。
 
-> **Workspace:** /Users/bytedance/Documents/Projects/peers-touch/peers-touch
+> **Workspace:** <repo-root>
 
 ---
 
@@ -1569,7 +1569,7 @@ export const MEMORY_SEARCH_TOP_K_LIMITS = {
 
 ### 一、Zod Schema 定义（位于 `@lobechat/memory-user-memory` 包）
 
-所有 schema 文件位于 `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/memory-user-memory/src/schemas/` 目录下。
+所有 schema 文件位于 `external/lobehub/packages/memory-user-memory/src/schemas/` 目录下。
 
 #### 0. 通用 Schema — [common.ts](../../../external/lobehub/packages/memory-user-memory/src/schemas/common.ts)
 
@@ -1804,7 +1804,7 @@ export interface UserMemoryData {
 
 ### 三、数据库表结构（所有迁移合并后的最终态）
 
-所有 SQL 迁移文件位于 `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/database/migrations/`。
+所有 SQL 迁移文件位于 `external/lobehub/packages/database/migrations/`。
 
 #### 1. `user_memories` 表 — [0037](../../../external/lobehub/packages/database/migrations/0037_add_user_memory.sql) + [0040](../../../external/lobehub/packages/database/migrations/0040_improve_user_memory_field.sql) + [0061](../../../external/lobehub/packages/database/migrations/0061_add_document_and_memory_index.sql)
 

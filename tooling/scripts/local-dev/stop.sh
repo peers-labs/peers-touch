@@ -10,7 +10,7 @@ target="${1:-all}"
 
 compose_stop_station() {
   local mode="${PT_STATION_MODE:-local}"
-  if [[ "$mode" != "local" && "$mode" != "compose" ]]; then
+  if [[ "$mode" != "compose" ]]; then
     return 0
   fi
   local compose_file="$PROJECT_ROOT/tooling/docker/compose.yml"
@@ -31,13 +31,18 @@ compose_stop_station() {
 }
 
 stop_pid() {
-  local name="$1" file="$2"
+  local name="$1" file="$2" expected="$3"
   if [[ -f "$file" ]]; then
-    local pid
+    local pid command
     pid="$(cat "$file" 2>/dev/null || true)"
     if [[ -n "$pid" ]] && ps -p "$pid" >/dev/null 2>&1; then
-      kill "$pid" 2>/dev/null || true
-      echo "[OK] Stopped $name (PID $pid)"
+      command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+      if [[ -n "$expected" && "$command" != *"$expected"* ]]; then
+        echo "[WARN] Ignored stale $name PID $pid; process is not owned by this profile"
+      else
+        kill "$pid" 2>/dev/null || true
+        echo "[OK] Stopped $name (PID $pid)"
+      fi
     else
       echo "[INFO] $name was not running"
     fi
@@ -50,29 +55,29 @@ stop_pid() {
 case "$target" in
   station)
     compose_stop_station
-    stop_pid "Station" "$PT_DEV_PIDS/station.pid"
+    stop_pid "Station" "$PT_DEV_PIDS/station.pid" "$PT_DEV_DATA/station-conf/peers-sqlite.yml"
     ;;
   relay)
-    stop_pid "Relay" "$PT_DEV_PIDS/relay.pid"
+    stop_pid "Relay" "$PT_DEV_PIDS/relay.pid" "$PROJECT_ROOT"
     ;;
   desktop)
-    stop_pid "Desktop App Vite" "$PT_DEV_PIDS/desktop-app-vite.pid"
-    stop_pid "Desktop App Rust" "$PT_DEV_PIDS/desktop-app-rust.pid"
-    stop_pid "Desktop Web Vite" "$PT_DEV_PIDS/desktop-web-vite.pid"
-    stop_pid "Desktop Web Rust" "$PT_DEV_PIDS/desktop-web-rust.pid"
+    stop_pid "Desktop App Vite" "$PT_DEV_PIDS/desktop-app-vite.pid" "--port ${PT_DESKTOP_APP_WEB_PORT:-}"
+    stop_pid "Desktop App Rust" "$PT_DEV_PIDS/desktop-app-rust.pid" "$PROJECT_ROOT"
+    stop_pid "Desktop Web Vite" "$PT_DEV_PIDS/desktop-web-vite.pid" "--port ${PT_DESKTOP_WEB_WEB_PORT:-}"
+    stop_pid "Desktop Web Rust" "$PT_DEV_PIDS/desktop-web-rust.pid" "$PROJECT_ROOT"
     ;;
   mobile)
-    stop_pid "Mobile" "$PT_DEV_PIDS/mobile-ios-sim.pid"
+    stop_pid "Mobile" "$PT_DEV_PIDS/mobile-ios-sim.pid" "$PROJECT_ROOT"
     ;;
   all)
     compose_stop_station
-    stop_pid "Station" "$PT_DEV_PIDS/station.pid"
-    stop_pid "Relay" "$PT_DEV_PIDS/relay.pid"
-    stop_pid "Desktop App Vite" "$PT_DEV_PIDS/desktop-app-vite.pid"
-    stop_pid "Desktop App Rust" "$PT_DEV_PIDS/desktop-app-rust.pid"
-    stop_pid "Desktop Web Vite" "$PT_DEV_PIDS/desktop-web-vite.pid"
-    stop_pid "Desktop Web Rust" "$PT_DEV_PIDS/desktop-web-rust.pid"
-    stop_pid "Mobile" "$PT_DEV_PIDS/mobile-ios-sim.pid"
+    stop_pid "Station" "$PT_DEV_PIDS/station.pid" "$PT_DEV_DATA/station-conf/peers-sqlite.yml"
+    stop_pid "Relay" "$PT_DEV_PIDS/relay.pid" "$PROJECT_ROOT"
+    stop_pid "Desktop App Vite" "$PT_DEV_PIDS/desktop-app-vite.pid" "--port ${PT_DESKTOP_APP_WEB_PORT:-}"
+    stop_pid "Desktop App Rust" "$PT_DEV_PIDS/desktop-app-rust.pid" "$PROJECT_ROOT"
+    stop_pid "Desktop Web Vite" "$PT_DEV_PIDS/desktop-web-vite.pid" "--port ${PT_DESKTOP_WEB_WEB_PORT:-}"
+    stop_pid "Desktop Web Rust" "$PT_DEV_PIDS/desktop-web-rust.pid" "$PROJECT_ROOT"
+    stop_pid "Mobile" "$PT_DEV_PIDS/mobile-ios-sim.pid" "$PROJECT_ROOT"
     ;;
   *)
     echo "[ERROR] Usage: stop.sh [station|relay|desktop|mobile|all]"

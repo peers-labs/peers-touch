@@ -54,7 +54,7 @@ export function AttachmentStage({ drafts, onRemove, onRetry }: AttachmentStagePr
             style={{
               maxWidth: 260,
               padding: '5px 8px 5px 10px',
-              borderRadius: 10,
+              borderRadius: 8,
               background: isFailed ? token.colorErrorBg : token.colorFillQuaternary,
               border: isFailed ? `1px solid ${token.colorErrorBorder}` : '1px solid transparent',
               opacity: isUploading ? 0.85 : 1,

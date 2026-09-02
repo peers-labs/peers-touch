@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography, Input, Button } from 'antd';
 import { useTranslation } from 'react-i18next';
@@ -16,7 +16,13 @@ export function TopicCommentsView({ topicKey }: TopicCommentsViewProps) {
   const comments = useTopicCommentStore((s) => s.commentsByTopic[topicKey] || []);
   const addComment = useTopicCommentStore((s) => s.addComment);
   const deleteComment = useTopicCommentStore((s) => s.deleteComment);
+  const loadComments = useTopicCommentStore((s) => s.loadComments);
   const [input, setInput] = useState('');
+
+  // Load durable comments for this topic from Station on mount / topic change.
+  useEffect(() => {
+    void loadComments(topicKey);
+  }, [topicKey, loadComments]);
 
   const handleSubmit = () => {
     if (!input.trim()) return;

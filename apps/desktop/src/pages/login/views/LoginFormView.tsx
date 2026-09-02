@@ -279,14 +279,10 @@ export const LoginFormView = memo(function LoginFormView({
           border: `1px solid ${token.colorBorderSecondary}`,
         }}
       >
-        <button style={tabStyle(tab === 'quick')} onClick={() => onTabChange('quick')}>
+        <button style={tabStyle(tab === 'quick')} onClick={() => onTabChange('quick')} data-login-tab="quick">
           {t('auth.login.tab.quick')}
         </button>
-        <button
-          data-login-tab="password"
-          style={tabStyle(tab === 'email')}
-          onClick={() => onTabChange('email')}
-        >
+        <button data-login-tab="email" style={tabStyle(tab === 'email')} onClick={() => onTabChange('email')}>
           {t('auth.login.tab.email')}
         </button>
       </div>

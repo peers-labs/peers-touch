@@ -8,7 +8,7 @@ Peers-Touch 当前正在做 Agent 入口、Agent Profile、Agent Canvas 编排�
 
 | 类型 | 路径 |
 |------|------|
-| 项目根目录 | /Users/bytedance/Documents/Projects/peers-touch/peers-touch |
+| 项目根目录 | `<repo-root>` |
 | 原型落地计划 | docs/architecture/agent/execution-plans/20260623-agent-prototype-landing.md |
 | Agent 入口架构 | docs/architecture/agent/agent-entry-architecture-rebuild.md |
 | Agent 编排架构 | docs/architecture/agent/agent-orchestration-architecture.md |
@@ -25,7 +25,7 @@ Peers-Touch 当前正在做 Agent 入口、Agent Profile、Agent Canvas 编排�
 ## 启动方式
 
 ```bash
-cd /Users/bytedance/Documents/Projects/peers-touch/peers-touch
+cd "$(git rev-parse --show-toplevel)"
 make desktop-web
 ```
 
@@ -43,14 +43,14 @@ make desktop
 ## 必须通过的静态检查
 
 ```bash
-cd /Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop
+cd "$(git rev-parse --show-toplevel)/apps/desktop"
 pnpm run check
 ```
 
 如果验证后端变更：
 
 ```bash
-cd /Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station
+cd "$(git rev-parse --show-toplevel)/apps/station"
 go test ./app/subserver/agent/...
 ```
 

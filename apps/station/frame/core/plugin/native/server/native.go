@@ -274,6 +274,13 @@ func (r *response) Write(b []byte) (int, error) {
 	return r.w.Write(b)
 }
 
+func (r *response) Flush() error {
+	if flusher, ok := r.w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return nil
+}
+
 // WriteHeader sets the pending response status code.
 func (r *response) WriteHeader(status int) {
 	r.status = status

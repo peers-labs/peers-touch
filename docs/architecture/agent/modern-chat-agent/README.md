@@ -1,8 +1,8 @@
 # Modern Chat Agent
 
-> **Status**: design-complete
+> **Status**: product-accepted / design-accepted / execution-active
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-07-30
+> **Created**: 2026-07-30 | **Updated**: 2026-08-22
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
 
@@ -23,6 +23,8 @@ It defines:
 - Context, memory, skill, knowledge, attachment, and tool semantics.
 - Turn admission, ordering, cancellation, replay, retry, and branching.
 - Runtime budgets, model capability negotiation, feedback, and evaluation.
+- Home Command Center, unified Tool/MCP/Connector capability governance, and
+  user-visible Evaluation Lab.
 - Platform-neutral client capabilities for Desktop and future Mobile.
 - Architecture quality gates required before execution planning.
 
@@ -40,11 +42,11 @@ It does not define:
 
 ## 2. Problem
 
-The repository has most Agent capability foundations, but the current
-execution plan does not yet define the full runtime contract needed to claim a
-dependable Agent. In particular, context construction, stateful external
-runtimes, event recovery, runtime budgets, capability degradation, and
-evaluation are not closed as one architecture.
+The repository has most Agent capability foundations, but the accepted
+MCA-D01–D13 architecture predates V2 Home, unified capability binding and
+operation lifecycles, Connector-to-tool invocation, and durable Evaluation
+run/result ownership. Those V2 contracts must be reconciled before a formal
+execution DAG can authorize implementation.
 
 LobeHub and AgentBox are evidence sources for capability shape and failure
 semantics. They do not override Peers-Touch ownership boundaries.
@@ -65,21 +67,57 @@ A Modern Chat Agent is:
 | [product-definition.md](./product-definition.md) | Target users, product promise, capability profile, trust promises, and non-goals |
 | [benchmark-disposition.md](./benchmark-disposition.md) | Evidence-backed LobeHub/AgentBox adopt, adapt, reject, and defer decisions |
 | [experience-contract.md](./experience-contract.md) | End-to-end journeys, surface anatomy, recovery, and platform adaptation |
-| [product-state-model.md](./product-state-model.md) | User-observable readiness, topic, composer, turn, tool, resource, and recovery states |
+| [product-state-model.md](./product-state-model.md) | User-observable readiness, Home, topic, composer, turn, capability, Evaluation, and recovery states |
 | [acceptance-matrix.md](./acceptance-matrix.md) | Product-to-architecture-to-prototype-to-production evidence traceability |
+| [product-review-prompt.md](./product-review-prompt.md) | Independent V2 PRODUCT review instructions, evidence boundaries, and verdict contract |
+| [design-review-prompt.md](./design-review-prompt.md) | Independent V2 DESIGN review instructions and acceptance contract |
+| [lobehub-v2-reference-analysis.md](./lobehub-v2-reference-analysis.md) | Source-backed Home, capability-plane, and Evaluation reference analysis |
 | [design.md](./design.md) | Target topology, ownership, lifecycle, contracts, forbidden relationships, and quality gates |
 | [decisions.md](./decisions.md) | Proposed architecture decisions and rejected alternatives |
 | [data-model.md](./data-model.md) | Canonical entities, state machines, event ordering, persistence, and proto roots |
 | [module-layout.md](./module-layout.md) | Target ownership packages, registries, dependency direction, and forbidden imports |
 | [integration.md](./integration.md) | Current-code mapping, product acceptance contract, canonical completion locator, and planning handoff |
 | [prototype/README.md](./prototype/README.md) | Peers-owned executable product prototype, review states, and confirmation blockers |
-| [Execution plan](../execution-plans/20260730-modern-chat-agent-v1.md) | **ACTIVE PLAN** — MODERN_CHAT_AGENT_V1, Phase 0-4 dependency-ordered workstreams |
+| [Execution plan](../execution-plans/20260817-modern-chat-agent-v2.md) | **ACTIVE PRODUCT PLAN** — V2 scope reconciliation, prototype review, architecture handoff, and later execution phases |
+| [Formal V2 execution plan](../execution-plans/20260817-modern-chat-agent-v2-execution.md) | Dependency DAG, W0/F1-F4/W1-W9 closures, atomic cutovers, Gates, and acceptance scenarios |
+| [Reviewed V2 runtime matrix](../execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml) | Immutable Gate/platform/runtime/cell/locale/order/sample expansion, Mobile semantic-contract cells, and frozen P12/CLI non-advertisement |
+| [Prior V1 plan](../execution-plans/20260730-modern-chat-agent-v1.md) | Historical first-loop plan; does not own current V2 status |
 | [Old blocked plan](../execution-plans/20260730-modern-chat-agent.md) | Superseded — drafted before PRODUCT/DESIGN completion, retained for historical reference only |
+
+The Owner accepted the MCA-D19 result-identity, ToolBatch barrier, and durable
+continuation core on 2026-08-21. The G1-C entry audit then exposed missing
+receipt-recovery, replay-policy, lease-lifecycle, deadline, and opaque-resource
+contracts. The Owner accepted `MCA-D19A` on 2026-08-22. G1-A then verified that
+actor JWT does not authenticate `X-Device-ID`; proposed `MCA-D19B` adds
+device-possession proof for all capability commands. The Owner accepted D19B
+into the main Goal G1 task on 2026-08-22. G1-A and G1-B are complete. The G1-C
+completion audit then exposed an undefined post-restart execution-authority
+handoff for externally idempotent PREPARED work; the Owner accepted
+`MCA-D19C` on 2026-08-22. XR-4 later exposed that filtered provider lists and
+TurnTrace cannot prove conditional-runtime absence or zero local side effects;
+the Owner accepted production-owned advertisement/readiness and monotonic
+activity snapshots as `MCA-D19D` on 2026-08-25. The tracked execution source is
+`../execution-plans/20260817-modern-chat-agent-v2-execution.md`.
 
 ## 5. Review Status
 
-Product approved (P1-P4 PASSED). Architecture decisions MCA-D01–D13 approved.
-Design quality gate D2 PASSED. All MCA-C01–C10 closure cells mapped to ownership,
-contracts, deletion obligations, and evidence requirements. Ready for owner
-DESIGN review (D3). After D3 passes, execution plan will be rewritten per
-integration.md §14 handoff query.
+V2 owner scope decisions are closed: Home and Evaluation are required; image
+generation is unsupported; video and server-side audio generation are deferred;
+Desktop is the complete delivery target, Browser preserves Station-backed
+outcomes, and Mobile UI is deferred while contract compatibility remains
+required.
+
+PRODUCT is accepted. Independent DESIGN review passed on 2026-08-17 after
+D14-D18, C11-C15, A15-A20, concurrency fencing, deletion/retention, and Gate
+oracles were reconciled. Execution of F4 exposed an undefined Station-to-client
+execution-ingress protocol. The Owner accepted `MCA-D19` on 2026-08-21.
+The subsequent G1-C audit reopened G1-A/B formal closure and produced
+`MCA-D19A`, accepted on 2026-08-22. The G1-A auth audit then produced
+`MCA-D19B`, accepted into the main task on 2026-08-22. MCA-D19C was then
+accepted to require Station-authorized higher-fence restart takeover. MCA-D19D
+was accepted on 2026-08-25 to make P12/CLI non-advertisement falsifiable through
+Station/Desktop production snapshots and isolated Browser evidence. G1-A,
+G1-B, G1-C, G1-D, G1-E, and G1-F are complete; Acceptance D-12 and the
+G1-XR matrix/schema/validator cutover are complete, while real adapters are active.
+No production capability currently advertises external idempotency, and all V2
+product Gates remain `UNPROVEN`.
