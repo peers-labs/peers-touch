@@ -1,8 +1,8 @@
 # Modern Chat Agent — Product Acceptance Matrix
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-07-30
+> **Created**: 2026-07-30 | **Updated**: 2026-08-17
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -42,6 +42,27 @@ required by that row all pass.
 | MCA-P11 Client portability | B08, B16 | all required journeys; platform matrix | MCA-C10; D01/D05/D07/D13 | Desktop now; narrow/mobile contract states | Core outcomes remain coherent while unsupported local abilities are explicit | Desktop App/browser cells plus Mobile contract tests |
 | MCA-P12 External Agent runtime | B14-B16 | J10 | MCA-C03/C05/C07; D02/D03/D05/D07/D09 | Runtime/device/workspace controls, activity blocks | An advertised runtime resumes safely and explains reset/device constraints | Two-topic isolation, resume/reset, process cleanup, structured activity |
 | MCA-P13 Artifacts | B19-B20 | separate optional journey required | Attachment/artifact architecture extension | Existing parity prototype artifact surface | Advertised artifacts are durable, previewable, iterative, and exportable | Not yet defined; cannot be advertised |
+| MCA-V2-H01 Home Command Center | B23 | V2-J01; Home FSM | MCA-C11; D14; A15 | V2 Home review surface | I can resume Chat/Task work with accurate readiness, recents, Brief/Needs You, task, and capability state | Native Chat/Task submit, Station topic/task/readback, restart, stale/error/retry |
+| MCA-V2-T01 / MCA-V2-T02 / MCA-V2-T03 Capability inventory/binding/compatibility | B24, B10, B16 | V2-J02; capability readiness FSM | MCA-C12; D15; A16 | V2 Capability review surface | I can tell what the Agent can use and bind it only after authoritative compatibility/readiness | Manifest/binding readback and compatibility rejection |
+| MCA-V2-T04 Governed Tool Loop | B11, B24 | V2-J03; tool intervention FSM | MCA-C12/C13; D15/D16; A19 | V2 Capability review surface | I can approve or deny once and see exactly one authoritative result | Policy decision, one execution/result lineage, replay dedupe |
+| MCA-V2-M01 MCP lifecycle | B24, B11 | V2-J04 | MCA-C13; D16; A17 | V2 Capability review surface | I can install, test, invoke, cancel, reconnect, and understand MCP failure without leaked process or secret | Disposable MCP Native journey, Station trace, process/port cleanup, redaction |
+| MCA-V2-C01 Connector lifecycle | B24, B11 | V2-J05 | MCA-C14; D17; A18 | V2 Capability review surface | I can connect OAuth resources, bind tools, invoke them, and recover from expiry | Approved OAuth fixture, tool manifest, invocation result, expiry/disconnect readback |
+| MCA-V2-O01 Tool observability/recovery | B11, B17-B18, B24 | V2-J03/J04/J05 | MCA-C12/C13/C14; D15-D17; A17-A19 | V2 Capability review surface | Failure, timeout, denial, cancellation, disconnect, replay, and diagnostics identify the next action | Typed terminal state, retryability, replay/reconcile, redacted source-bound diagnostics |
+| MCA-V2-E01 Evaluation Lab | B25 | V2-J06; Evaluation FSM | MCA-C15; D18; A20 | V2 Evaluation review surface | I can run durable cases against an Agent, cancel/retry, inspect results, and recover after restart | Native dataset/run/cancel/retry/result, Station readback, restart, actor isolation |
+
+### 2.1 V2 Required Production Gate Contracts
+
+| Gate ID | Capabilities | Journey | Current status |
+|---|---|---|---|
+| `agent-v2-home-command-center-e2e` | MCA-V2-H01/T03 | V2-J01 | `UNPROVEN` |
+| `agent-v2-capability-binding-e2e` | MCA-V2-T01 / MCA-V2-T02 / MCA-V2-T03 | V2-J02 | `UNPROVEN` |
+| `agent-v2-governed-tool-loop-e2e` | MCA-V2-T04/O01 | V2-J03 | `UNPROVEN` |
+| `agent-v2-mcp-lifecycle-e2e` | MCA-V2-M01/O01 | V2-J04 | `UNPROVEN` |
+| `agent-v2-connector-invocation-e2e` | MCA-V2-C01/O01 | V2-J05 | `UNPROVEN` |
+| `agent-v2-evaluation-lab-e2e` | MCA-V2-E01 | V2-J06 | `UNPROVEN` |
+
+These are required production Gate contracts, not current registry entries.
+Prototype evidence cannot change them to `PROVEN`.
 
 ## 3. Feasibility Closures
 
@@ -60,6 +81,13 @@ required by that row all pass.
 | MCA-P11 | Run the core flow in App/browser; evaluate Mobile contract with no shell capability | Desktop and Mobile Tauri kernels; shared proto roots | Shared client capability/session contract and Mobile adapter | Contract tests prove same core commands/events; Mobile advertises no shell/stdio MCP and rejects them before send |
 | MCA-P12 | Select advertised external runtime and workspace, send follow-up, restart, resume/reset | Station CLI foundation; conversation runtime design; Desktop activity blocks | Stateful runtime manager, topic-owned session/home, cleanup | Two topics use distinct runtime homes/session IDs; restart resumes each; explicit reset rotates epoch and cleans process |
 | MCA-P13 | Generate substantial output, open preview, refine, export | Existing parity prototype artifact surface only | Accepted journey, durable owner/storage, sandbox/export contract | `UNPROVEN`: no production proof may be defined until product and architecture amendments are accepted |
+| MCA-V2-H01 | Select Agent/model, submit Chat and Task, open Brief/Needs You, restart Home | Existing Home pinned/recent UI, Station topics/tasks, readiness and connector foundations | Runtime-owned Home projection, Chat/Task handoff, authoritative recents/Brief/capability recovery | Native Home scenario with Station topic/task readback before and after restart |
+| MCA-V2-T01 / MCA-V2-T02 / MCA-V2-T03 | Inspect inventory, bind capability, and reject incompatible model/runtime | Tool registry, Agent config, connector/MCP stores | One manifest/binding/policy source and compatibility snapshot | Bind/read back and reject incompatible model before execution |
+| MCA-V2-T04 | Trigger governed tool turn and approve/deny once | ToolCall events, approval bridge, TurnTrace | Exactly-once decision/execution/result lineage | Prove one approval, one execution/result, denial, expiry, timeout, cancellation, and dedupe |
+| MCA-V2-M01 | Install/config/test/invoke/cancel/reconnect disposable MCP | Desktop Rust MCP bridge and MCP management UI | Bounded operation lifecycle, secret boundary, restart/process cleanup | Native disposable MCP run with process/port/secret leak canary |
+| MCA-V2-C01 | OAuth connect, sync resource tools, bind, invoke, expire/reconnect | Existing OAuth and C7 lifecycle proof | Resource-to-manifest-to-turn invocation and typed expiry recovery | Approved fixture Native invocation plus Station binding/TurnTrace readback |
+| MCA-V2-O01 | Force deny, timeout, cancellation, disconnect, replay, and diagnostic export | TurnTrace, ToolCallCard, recovery foundations | Typed retryability and source-bound redacted diagnostics | Native failure matrix plus Station terminal/readback and replay equality |
+| MCA-V2-E01 | Create benchmark/dataset/cases, run Agent, cancel, retry failed case, restart | Evaluation UI/store and Station dataset proto/API | Station benchmark/test-case/run/result lifecycle and real Agent runtime | Native dataset→run→result, cancel/retry, restart readback, actor isolation |
 
 Feasibility status:
 
@@ -72,10 +100,10 @@ Feasibility status:
 
 | Cell | Required scope |
 |---|---|
-| Desktop App + Direct Model | All P01-P11 rows |
-| Browser gateway + Direct Model | P01-P10 except unavailable device-local operations |
+| Desktop App + Direct Model | All P01-P11 and all required MCA-V2 rows |
+| Browser gateway + Direct Model | P01-P10 and required MCA-V2 Station-backed outcomes except unavailable device-local operations |
 | Desktop App + external Agent | P12 only when advertised |
-| Future Mobile contract | P01-P11 semantic compatibility; no Mobile UI delivery claim |
+| Future Mobile contract | P01-P11 and MCA-V2 semantic contract compatibility; no Mobile UI delivery claim |
 | Two actors | P01-P10 isolation and no credential/resource leakage |
 | Two devices | Config conflict, capability target selection, replay, and resource isolation |
 
@@ -93,6 +121,10 @@ Every required runtime cell covers:
 - Client disconnect, page switch, client restart, and Station restart.
 - Duplicate command/event delivery.
 - Stale Agent config and branch mutation.
+- Home recents/readiness/Brief/task projection stale or partially unavailable.
+- MCP process disconnect, Connector token expiry, and capability incompatibility.
+- Evaluation cancel race, duplicate case retry, partial result, client restart,
+  and actor/device isolation.
 
 ## 6. Prototype Gate
 
@@ -101,7 +133,7 @@ The current executable reference is:
 - `packages/prototypes/desktop/features/modern-chat-agent/`
 - `docs/architecture/agent/modern-chat-agent/prototype/README.md`
 
-Current status: `pending-review`.
+Current status: `confirmed`.
 
 For this product contract, Owner review must explicitly decide at least:
 
@@ -113,22 +145,24 @@ For this product contract, Owner review must explicitly decide at least:
 - Branch/retry/regenerate interaction.
 - Memory/skill/source and usage/diagnostic inspection.
 - Narrow-container behavior.
+- Home default/loading/empty/error/stale, Chat submit, Task submit, and
+  Brief/Needs You behavior.
+- Unified Tool/MCP/Connector inventory, compatibility, binding, approval,
+  terminal result, and recovery.
+- Evaluation draft/running/cancelling/completed/partial/failed/restart states.
 
-The PRODUCT gate cannot pass while the relevant prototype surfaces remain
-`pending-review` or `revision-required`.
+Prototype confirmation proves intended interaction only; production Gate
+contracts remain `UNPROVEN`.
 
 ## 7. Product Gate Status
 
-Current judgment: `PRODUCT_DESIGN_INCOMPLETE`.
+Current judgment: `PRODUCT_READY_FOR_ARCHITECTURE`.
 
-Blocking evidence:
+Evidence:
 
-1. Product decisions in `product-definition.md §8` are proposed, not approved.
-2. The relevant executable prototype is not `confirmed`.
-3. MCA-P13 lacks an accepted optional artifact journey and production evidence
-   contract.
-4. No independent PRODUCT review has passed.
-
-Architecture and execution planning remain blocked from claiming an accepted
-product contract. Existing architecture may continue as draft input and must be
-reconciled after PRODUCT approval.
+1. Owner confirmed the Home/Tool/Evaluation prototype on 2026-08-17.
+2. Third-round independent PRODUCT review returned `passed` on 2026-08-17.
+3. Capability→brain-map→journey→architecture closure/decision/scenario→Gate
+   trace is complete; every V2 production Gate remains honestly `UNPROVEN`.
+4. MCA-P13 remains optional and `UNPROVEN`; it is outside the required V2
+   claim and does not block architecture reconciliation.

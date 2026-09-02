@@ -2,6 +2,8 @@ import {
   api,
   type Agent,
   type AgentPackage,
+  type AgentPackageExportResult,
+  type AgentPackageImportResult,
   type AgentChatConfig,
   parseAgentChatConfig,
   type GrowthSnapshot,
@@ -9,6 +11,7 @@ import {
   type SkillItem,
   type SchedulerStatusResponse,
   type AgentExecuteTurnInput,
+  type AgentTurnStreamController,
   type StreamEvent,
   streamAgentTurn,
 } from './desktop_api';
@@ -40,11 +43,11 @@ export class AgentService {
     return api.duplicateAgent(id, name);
   }
 
-  async exportPackage(id: string, options?: { includeLocalPaths?: boolean }): Promise<AgentPackage> {
+  async exportPackage(id: string, options?: { includeLocalPaths?: boolean }): Promise<AgentPackageExportResult> {
     return api.exportAgentPackage(id, options);
   }
 
-  async importPackage(pkg: AgentPackage | Record<string, unknown>, name?: string): Promise<Agent> {
+  async importPackage(pkg: AgentPackage | Record<string, unknown>, name?: string): Promise<AgentPackageImportResult> {
     return api.importAgentPackage(pkg, name);
   }
 
@@ -79,7 +82,7 @@ export class AgentService {
     comment?: string,
   ): Promise<void> {
     const { submitAgentFeedback } = await import('./desktop_api');
-    return submitAgentFeedback(agentId, turnId, conversationId, signal, comment);
+    await submitAgentFeedback(agentId, turnId, conversationId, signal, comment);
   }
 
   async startScheduler(agentId: string): Promise<void> {
@@ -102,8 +105,9 @@ export class AgentService {
     onEvent: (event: StreamEvent) => void,
     onDone: () => void,
     onError: (err: Error) => void,
-  ): AbortController {
-    return streamAgentTurn(input, onEvent, onDone, onError);
+    sourcePtid: string,
+  ): AgentTurnStreamController {
+    return streamAgentTurn(input, onEvent, onDone, onError, sourcePtid);
   }
 }
 

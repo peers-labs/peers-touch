@@ -1,0 +1,37 @@
+{
+  "id": "agent-connector-lifecycle",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+    "apps/desktop/src/store/agentConnectors.ts",
+    "apps/desktop/src/runtimes/agentCapabilityRuntime.ts",
+    "apps/desktop/src/store/oauth2.ts"
+  ],
+  "truth_sources": [
+    "Station OAuth provider and connection state",
+    "Station-backed Agent chatConfig.connectors"
+  ],
+  "visible_surfaces": [
+    {"type": "native-tauri", "route": "#/agent", "surface": "Agent Profile connectors section"},
+    {"type": "station-readback", "surface": "Agent configuration and OAuth provider resources"}
+  ],
+  "required_gates": ["agent-native-connector-lifecycle-e2e"],
+  "acceptance": {
+    "service": [
+      "mounting a connector persists its connector id in the selected Agent configuration",
+      "sync tools persists the provider resource ids as enabled tools",
+      "unmounting removes the connector from authoritative Agent configuration"
+    ],
+    "visible": [
+      "a disconnected connector exposes the production OAuth connect action",
+      "a mounted connector exposes sync and enable controls",
+      "OAuth or tool-sync failures remain visible and retryable"
+    ]
+  },
+  "negative": [
+    "localStorage or component-local state must not prove connector mounting",
+    "provider label text must not prove OAuth connection",
+    "missing approved OAuth test provider or credential must block proof"
+  ]
+}

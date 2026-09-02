@@ -420,10 +420,17 @@ func (s *SchedulerService) executeDogfood(ctx context.Context, agentID string, t
 }
 
 func (s *SchedulerService) executeCollaborationSupervisorSweep(ctx context.Context, agentID string) error {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return err
+	}
+	return s.executeCollaborationSupervisorSweepAfterCanvasReadiness(ctx, agentID)
+}
+
+func (s *SchedulerService) executeCollaborationSupervisorSweepAfterCanvasReadiness(ctx context.Context, agentID string) error {
 	if s.orchestration == nil {
 		return fmt.Errorf("orchestration service is not configured")
 	}
-	result, err := s.orchestration.RunCollaborationSupervisorSweep(ctx, agentID, 50)
+	result, err := s.orchestration.runCollaborationSupervisorSweepAfterCanvasReadiness(ctx, agentID, 50)
 	if err != nil {
 		return err
 	}

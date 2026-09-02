@@ -2,64 +2,7 @@ syntax = "proto3";
 
 package peers_touch.model.agent.v1;
 
-import "google/protobuf/timestamp.proto";
-
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
-
-message AgentKnowledgeBinding {
-  string id = 1;
-  string agent_id = 2;
-  string resource_id = 3;
-  string policy = 4;
-  bool enabled = 5;
-  google.protobuf.Timestamp created_at = 6;
-  google.protobuf.Timestamp updated_at = 7;
-}
-
-message AgentSkillBinding {
-  string id = 1;
-  string agent_id = 2;
-  string skill_id = 3;
-  bool enabled = 4;
-  google.protobuf.Timestamp created_at = 5;
-  google.protobuf.Timestamp updated_at = 6;
-}
-
-message AgentMcpBinding {
-  string id = 1;
-  string agent_id = 2;
-  string server_name = 3;
-  bool enabled = 4;
-  google.protobuf.Timestamp created_at = 5;
-  google.protobuf.Timestamp updated_at = 6;
-}
-
-message ListAgentKnowledgeBindingsRequest { string agent_id = 1; }
-message ListAgentKnowledgeBindingsResponse { repeated AgentKnowledgeBinding bindings = 1; }
-message CreateAgentKnowledgeBindingRequest { AgentKnowledgeBinding binding = 1; }
-message CreateAgentKnowledgeBindingResponse { AgentKnowledgeBinding binding = 1; }
-message UpdateAgentKnowledgeBindingRequest { AgentKnowledgeBinding binding = 1; }
-message UpdateAgentKnowledgeBindingResponse { AgentKnowledgeBinding binding = 1; }
-message DeleteAgentKnowledgeBindingRequest { string id = 1; }
-message DeleteAgentKnowledgeBindingResponse { bool success = 1; }
-
-message ListAgentSkillBindingsRequest { string agent_id = 1; }
-message ListAgentSkillBindingsResponse { repeated AgentSkillBinding bindings = 1; }
-message CreateAgentSkillBindingRequest { AgentSkillBinding binding = 1; }
-message CreateAgentSkillBindingResponse { AgentSkillBinding binding = 1; }
-message UpdateAgentSkillBindingRequest { AgentSkillBinding binding = 1; }
-message UpdateAgentSkillBindingResponse { AgentSkillBinding binding = 1; }
-message DeleteAgentSkillBindingRequest { string id = 1; }
-message DeleteAgentSkillBindingResponse { bool success = 1; }
-
-message ListAgentMcpBindingsRequest { string agent_id = 1; }
-message ListAgentMcpBindingsResponse { repeated AgentMcpBinding bindings = 1; }
-message CreateAgentMcpBindingRequest { AgentMcpBinding binding = 1; }
-message CreateAgentMcpBindingResponse { AgentMcpBinding binding = 1; }
-message UpdateAgentMcpBindingRequest { AgentMcpBinding binding = 1; }
-message UpdateAgentMcpBindingResponse { AgentMcpBinding binding = 1; }
-message DeleteAgentMcpBindingRequest { string id = 1; }
-message DeleteAgentMcpBindingResponse { bool success = 1; }
 
 // Provider model visibility preferences.
 message HideModelRequest {
@@ -71,3 +14,34 @@ message HideModelResponse { bool ok = 1; }
 message GetHiddenModelsRequest { string provider_id = 1; }
 message GetHiddenModelsResponse { repeated string hidden_models = 1; }
 
+// Station-authoritative approval command. Actor identity is derived from the
+// authenticated request context and is intentionally absent from this message.
+message SubmitToolApprovalDecisionRequest {
+  string approval_id = 1;
+  string tool_call_id = 2;
+  string decision_id = 3;
+  uint64 expected_revision = 4;
+  bool approved = 5;
+  string idempotency_key = 6;
+  string payload_hash = 7;
+}
+
+enum ToolApprovalDecisionErrorCode {
+  TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED = 0;
+  TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION = 1;
+  TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT = 2;
+  TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED = 3;
+  TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND = 4;
+}
+
+message SubmitToolApprovalDecisionResponse {
+  bool accepted = 1;
+  uint64 decision_revision = 2;
+  string approval_id = 3;
+  string tool_call_id = 4;
+  string decision_id = 5;
+  bool approved = 6;
+  string idempotency_key = 7;
+  string payload_hash = 8;
+  ToolApprovalDecisionErrorCode error_code = 9;
+}

@@ -7,8 +7,10 @@
 package model
 
 import (
+	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -29,7 +31,6 @@ const (
 	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_THINKING               TurnStreamEventType = 2
 	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_TOOL_CALL              TurnStreamEventType = 3
 	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_TOOL_RESULT            TurnStreamEventType = 4
-	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_LOCAL_TOOL_REQUEST     TurnStreamEventType = 5
 	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_REQUIRED TurnStreamEventType = 6
 	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_DECISION TurnStreamEventType = 7
 	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_PROGRESS               TurnStreamEventType = 8
@@ -37,6 +38,9 @@ const (
 	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_CONVERSATION_CREATED   TurnStreamEventType = 10
 	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_ERROR                  TurnStreamEventType = 11
 	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_DONE                   TurnStreamEventType = 12
+	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_CANCELLED              TurnStreamEventType = 13
+	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_SNAPSHOT               TurnStreamEventType = 14
+	TurnStreamEventType_TURN_STREAM_EVENT_TYPE_CATCHUP_DONE           TurnStreamEventType = 15
 )
 
 // Enum value maps for TurnStreamEventType.
@@ -47,7 +51,6 @@ var (
 		2:  "TURN_STREAM_EVENT_TYPE_THINKING",
 		3:  "TURN_STREAM_EVENT_TYPE_TOOL_CALL",
 		4:  "TURN_STREAM_EVENT_TYPE_TOOL_RESULT",
-		5:  "TURN_STREAM_EVENT_TYPE_LOCAL_TOOL_REQUEST",
 		6:  "TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_REQUIRED",
 		7:  "TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_DECISION",
 		8:  "TURN_STREAM_EVENT_TYPE_PROGRESS",
@@ -55,6 +58,9 @@ var (
 		10: "TURN_STREAM_EVENT_TYPE_CONVERSATION_CREATED",
 		11: "TURN_STREAM_EVENT_TYPE_ERROR",
 		12: "TURN_STREAM_EVENT_TYPE_DONE",
+		13: "TURN_STREAM_EVENT_TYPE_CANCELLED",
+		14: "TURN_STREAM_EVENT_TYPE_SNAPSHOT",
+		15: "TURN_STREAM_EVENT_TYPE_CATCHUP_DONE",
 	}
 	TurnStreamEventType_value = map[string]int32{
 		"TURN_STREAM_EVENT_TYPE_UNSPECIFIED":            0,
@@ -62,7 +68,6 @@ var (
 		"TURN_STREAM_EVENT_TYPE_THINKING":               2,
 		"TURN_STREAM_EVENT_TYPE_TOOL_CALL":              3,
 		"TURN_STREAM_EVENT_TYPE_TOOL_RESULT":            4,
-		"TURN_STREAM_EVENT_TYPE_LOCAL_TOOL_REQUEST":     5,
 		"TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_REQUIRED": 6,
 		"TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_DECISION": 7,
 		"TURN_STREAM_EVENT_TYPE_PROGRESS":               8,
@@ -70,6 +75,9 @@ var (
 		"TURN_STREAM_EVENT_TYPE_CONVERSATION_CREATED":   10,
 		"TURN_STREAM_EVENT_TYPE_ERROR":                  11,
 		"TURN_STREAM_EVENT_TYPE_DONE":                   12,
+		"TURN_STREAM_EVENT_TYPE_CANCELLED":              13,
+		"TURN_STREAM_EVENT_TYPE_SNAPSHOT":               14,
+		"TURN_STREAM_EVENT_TYPE_CATCHUP_DONE":           15,
 	}
 )
 
@@ -106,6 +114,9 @@ type TurnStreamEvent struct {
 	TurnId         string                 `protobuf:"bytes,2,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
 	ConversationId string                 `protobuf:"bytes,3,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	AgentId        string                 `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Sequence       uint64                 `protobuf:"varint,5,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	EventId        string                 `protobuf:"bytes,6,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	OccurredAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*TurnStreamEvent_Text
@@ -118,6 +129,10 @@ type TurnStreamEvent struct {
 	//	*TurnStreamEvent_ConversationCreated
 	//	*TurnStreamEvent_Error
 	//	*TurnStreamEvent_Done
+	//	*TurnStreamEvent_ToolApprovalDecision
+	//	*TurnStreamEvent_Cancelled
+	//	*TurnStreamEvent_Snapshot
+	//	*TurnStreamEvent_CatchupDone
 	Payload       isTurnStreamEvent_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -179,6 +194,27 @@ func (x *TurnStreamEvent) GetAgentId() string {
 		return x.AgentId
 	}
 	return ""
+}
+
+func (x *TurnStreamEvent) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *TurnStreamEvent) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *TurnStreamEvent) GetOccurredAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return nil
 }
 
 func (x *TurnStreamEvent) GetPayload() isTurnStreamEvent_Payload {
@@ -278,6 +314,42 @@ func (x *TurnStreamEvent) GetDone() *DonePayload {
 	return nil
 }
 
+func (x *TurnStreamEvent) GetToolApprovalDecision() *ToolApprovalDecisionPayload {
+	if x != nil {
+		if x, ok := x.Payload.(*TurnStreamEvent_ToolApprovalDecision); ok {
+			return x.ToolApprovalDecision
+		}
+	}
+	return nil
+}
+
+func (x *TurnStreamEvent) GetCancelled() *CancelledPayload {
+	if x != nil {
+		if x, ok := x.Payload.(*TurnStreamEvent_Cancelled); ok {
+			return x.Cancelled
+		}
+	}
+	return nil
+}
+
+func (x *TurnStreamEvent) GetSnapshot() *TurnSnapshot {
+	if x != nil {
+		if x, ok := x.Payload.(*TurnStreamEvent_Snapshot); ok {
+			return x.Snapshot
+		}
+	}
+	return nil
+}
+
+func (x *TurnStreamEvent) GetCatchupDone() *CatchupDonePayload {
+	if x != nil {
+		if x, ok := x.Payload.(*TurnStreamEvent_CatchupDone); ok {
+			return x.CatchupDone
+		}
+	}
+	return nil
+}
+
 type isTurnStreamEvent_Payload interface {
 	isTurnStreamEvent_Payload()
 }
@@ -322,6 +394,22 @@ type TurnStreamEvent_Done struct {
 	Done *DonePayload `protobuf:"bytes,19,opt,name=done,proto3,oneof"`
 }
 
+type TurnStreamEvent_ToolApprovalDecision struct {
+	ToolApprovalDecision *ToolApprovalDecisionPayload `protobuf:"bytes,20,opt,name=tool_approval_decision,json=toolApprovalDecision,proto3,oneof"`
+}
+
+type TurnStreamEvent_Cancelled struct {
+	Cancelled *CancelledPayload `protobuf:"bytes,21,opt,name=cancelled,proto3,oneof"`
+}
+
+type TurnStreamEvent_Snapshot struct {
+	Snapshot *TurnSnapshot `protobuf:"bytes,22,opt,name=snapshot,proto3,oneof"`
+}
+
+type TurnStreamEvent_CatchupDone struct {
+	CatchupDone *CatchupDonePayload `protobuf:"bytes,23,opt,name=catchup_done,json=catchupDone,proto3,oneof"`
+}
+
 func (*TurnStreamEvent_Text) isTurnStreamEvent_Payload() {}
 
 func (*TurnStreamEvent_Thinking) isTurnStreamEvent_Payload() {}
@@ -342,6 +430,262 @@ func (*TurnStreamEvent_Error) isTurnStreamEvent_Payload() {}
 
 func (*TurnStreamEvent_Done) isTurnStreamEvent_Payload() {}
 
+func (*TurnStreamEvent_ToolApprovalDecision) isTurnStreamEvent_Payload() {}
+
+func (*TurnStreamEvent_Cancelled) isTurnStreamEvent_Payload() {}
+
+func (*TurnStreamEvent_Snapshot) isTurnStreamEvent_Payload() {}
+
+func (*TurnStreamEvent_CatchupDone) isTurnStreamEvent_Payload() {}
+
+type StreamTurnEventsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	TurnId         string                 `protobuf:"bytes,2,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	AfterSequence  uint64                 `protobuf:"varint,3,opt,name=after_sequence,json=afterSequence,proto3" json:"after_sequence,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *StreamTurnEventsRequest) Reset() {
+	*x = StreamTurnEventsRequest{}
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamTurnEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamTurnEventsRequest) ProtoMessage() {}
+
+func (x *StreamTurnEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamTurnEventsRequest.ProtoReflect.Descriptor instead.
+func (*StreamTurnEventsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *StreamTurnEventsRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *StreamTurnEventsRequest) GetTurnId() string {
+	if x != nil {
+		return x.TurnId
+	}
+	return ""
+}
+
+func (x *StreamTurnEventsRequest) GetAfterSequence() uint64 {
+	if x != nil {
+		return x.AfterSequence
+	}
+	return 0
+}
+
+type TurnSnapshot struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TurnId         string                 `protobuf:"bytes,1,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	ConversationId string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	AgentId        string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Status         TurnStatus             `protobuf:"varint,4,opt,name=status,proto3,enum=peers_touch.model.agent.v1.TurnStatus" json:"status,omitempty"`
+	Text           string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
+	LastSequence   uint64                 `protobuf:"varint,6,opt,name=last_sequence,json=lastSequence,proto3" json:"last_sequence,omitempty"`
+	TerminalReason string                 `protobuf:"bytes,7,opt,name=terminal_reason,json=terminalReason,proto3" json:"terminal_reason,omitempty"`
+	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *TurnSnapshot) Reset() {
+	*x = TurnSnapshot{}
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TurnSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TurnSnapshot) ProtoMessage() {}
+
+func (x *TurnSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TurnSnapshot.ProtoReflect.Descriptor instead.
+func (*TurnSnapshot) Descriptor() ([]byte, []int) {
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *TurnSnapshot) GetTurnId() string {
+	if x != nil {
+		return x.TurnId
+	}
+	return ""
+}
+
+func (x *TurnSnapshot) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *TurnSnapshot) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *TurnSnapshot) GetStatus() TurnStatus {
+	if x != nil {
+		return x.Status
+	}
+	return TurnStatus_TURN_STATUS_UNSPECIFIED
+}
+
+func (x *TurnSnapshot) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *TurnSnapshot) GetLastSequence() uint64 {
+	if x != nil {
+		return x.LastSequence
+	}
+	return 0
+}
+
+func (x *TurnSnapshot) GetTerminalReason() string {
+	if x != nil {
+		return x.TerminalReason
+	}
+	return ""
+}
+
+func (x *TurnSnapshot) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type CancelledPayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reason        string                 `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelledPayload) Reset() {
+	*x = CancelledPayload{}
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelledPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelledPayload) ProtoMessage() {}
+
+func (x *CancelledPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelledPayload.ProtoReflect.Descriptor instead.
+func (*CancelledPayload) Descriptor() ([]byte, []int) {
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CancelledPayload) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type CatchupDonePayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LastSequence  uint64                 `protobuf:"varint,1,opt,name=last_sequence,json=lastSequence,proto3" json:"last_sequence,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CatchupDonePayload) Reset() {
+	*x = CatchupDonePayload{}
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CatchupDonePayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CatchupDonePayload) ProtoMessage() {}
+
+func (x *CatchupDonePayload) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CatchupDonePayload.ProtoReflect.Descriptor instead.
+func (*CatchupDonePayload) Descriptor() ([]byte, []int) {
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CatchupDonePayload) GetLastSequence() uint64 {
+	if x != nil {
+		return x.LastSequence
+	}
+	return 0
+}
+
 type TextPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
@@ -351,7 +695,7 @@ type TextPayload struct {
 
 func (x *TextPayload) Reset() {
 	*x = TextPayload{}
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[1]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -363,7 +707,7 @@ func (x *TextPayload) String() string {
 func (*TextPayload) ProtoMessage() {}
 
 func (x *TextPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[1]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -376,7 +720,7 @@ func (x *TextPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TextPayload.ProtoReflect.Descriptor instead.
 func (*TextPayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{1}
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TextPayload) GetText() string {
@@ -396,7 +740,7 @@ type ThinkingPayload struct {
 
 func (x *ThinkingPayload) Reset() {
 	*x = ThinkingPayload{}
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[2]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -408,7 +752,7 @@ func (x *ThinkingPayload) String() string {
 func (*ThinkingPayload) ProtoMessage() {}
 
 func (x *ThinkingPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[2]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -421,7 +765,7 @@ func (x *ThinkingPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ThinkingPayload.ProtoReflect.Descriptor instead.
 func (*ThinkingPayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{2}
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ThinkingPayload) GetText() string {
@@ -449,7 +793,7 @@ type ToolCallPayload struct {
 
 func (x *ToolCallPayload) Reset() {
 	*x = ToolCallPayload{}
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[3]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -461,7 +805,7 @@ func (x *ToolCallPayload) String() string {
 func (*ToolCallPayload) ProtoMessage() {}
 
 func (x *ToolCallPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[3]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -474,7 +818,7 @@ func (x *ToolCallPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolCallPayload.ProtoReflect.Descriptor instead.
 func (*ToolCallPayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{3}
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ToolCallPayload) GetToolCallId() string {
@@ -508,7 +852,7 @@ type ToolResultPayload struct {
 
 func (x *ToolResultPayload) Reset() {
 	*x = ToolResultPayload{}
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[4]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -520,7 +864,7 @@ func (x *ToolResultPayload) String() string {
 func (*ToolResultPayload) ProtoMessage() {}
 
 func (x *ToolResultPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[4]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -533,7 +877,7 @@ func (x *ToolResultPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolResultPayload.ProtoReflect.Descriptor instead.
 func (*ToolResultPayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{4}
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ToolResultPayload) GetToolCallId() string {
@@ -551,19 +895,24 @@ func (x *ToolResultPayload) GetResult() string {
 }
 
 type ToolApprovalRequiredPayload struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApprovalId    string                 `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
-	ToolName      string                 `protobuf:"bytes,2,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
-	ServerName    string                 `protobuf:"bytes,3,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"`
-	Arguments     string                 `protobuf:"bytes,4,opt,name=arguments,proto3" json:"arguments,omitempty"`
-	Source        string                 `protobuf:"bytes,5,opt,name=source,proto3" json:"source,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ApprovalId       string                 `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
+	ToolName         string                 `protobuf:"bytes,2,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
+	ServerName       string                 `protobuf:"bytes,3,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"`
+	Arguments        string                 `protobuf:"bytes,4,opt,name=arguments,proto3" json:"arguments,omitempty"`
+	Source           string                 `protobuf:"bytes,5,opt,name=source,proto3" json:"source,omitempty"`
+	ToolCallId       string                 `protobuf:"bytes,6,opt,name=tool_call_id,json=toolCallId,proto3" json:"tool_call_id,omitempty"`
+	DecisionId       string                 `protobuf:"bytes,7,opt,name=decision_id,json=decisionId,proto3" json:"decision_id,omitempty"`
+	DecisionRevision uint64                 `protobuf:"varint,8,opt,name=decision_revision,json=decisionRevision,proto3" json:"decision_revision,omitempty"`
+	ExpiresAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	PayloadHash      string                 `protobuf:"bytes,10,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ToolApprovalRequiredPayload) Reset() {
 	*x = ToolApprovalRequiredPayload{}
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[5]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -575,7 +924,7 @@ func (x *ToolApprovalRequiredPayload) String() string {
 func (*ToolApprovalRequiredPayload) ProtoMessage() {}
 
 func (x *ToolApprovalRequiredPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[5]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -588,7 +937,7 @@ func (x *ToolApprovalRequiredPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolApprovalRequiredPayload.ProtoReflect.Descriptor instead.
 func (*ToolApprovalRequiredPayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{5}
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ToolApprovalRequiredPayload) GetApprovalId() string {
@@ -626,6 +975,149 @@ func (x *ToolApprovalRequiredPayload) GetSource() string {
 	return ""
 }
 
+func (x *ToolApprovalRequiredPayload) GetToolCallId() string {
+	if x != nil {
+		return x.ToolCallId
+	}
+	return ""
+}
+
+func (x *ToolApprovalRequiredPayload) GetDecisionId() string {
+	if x != nil {
+		return x.DecisionId
+	}
+	return ""
+}
+
+func (x *ToolApprovalRequiredPayload) GetDecisionRevision() uint64 {
+	if x != nil {
+		return x.DecisionRevision
+	}
+	return 0
+}
+
+func (x *ToolApprovalRequiredPayload) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *ToolApprovalRequiredPayload) GetPayloadHash() string {
+	if x != nil {
+		return x.PayloadHash
+	}
+	return ""
+}
+
+type ToolApprovalDecisionPayload struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ApprovalId       string                 `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
+	ToolCallId       string                 `protobuf:"bytes,2,opt,name=tool_call_id,json=toolCallId,proto3" json:"tool_call_id,omitempty"`
+	DecisionId       string                 `protobuf:"bytes,3,opt,name=decision_id,json=decisionId,proto3" json:"decision_id,omitempty"`
+	DecisionRevision uint64                 `protobuf:"varint,4,opt,name=decision_revision,json=decisionRevision,proto3" json:"decision_revision,omitempty"`
+	Approved         bool                   `protobuf:"varint,5,opt,name=approved,proto3" json:"approved,omitempty"`
+	ActorRef         *model.ActorRef        `protobuf:"bytes,6,opt,name=actor_ref,json=actorRef,proto3" json:"actor_ref,omitempty"`
+	DecidedAt        *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=decided_at,json=decidedAt,proto3" json:"decided_at,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,8,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	PayloadHash      string                 `protobuf:"bytes,9,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ToolApprovalDecisionPayload) Reset() {
+	*x = ToolApprovalDecisionPayload{}
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolApprovalDecisionPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolApprovalDecisionPayload) ProtoMessage() {}
+
+func (x *ToolApprovalDecisionPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolApprovalDecisionPayload.ProtoReflect.Descriptor instead.
+func (*ToolApprovalDecisionPayload) Descriptor() ([]byte, []int) {
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ToolApprovalDecisionPayload) GetApprovalId() string {
+	if x != nil {
+		return x.ApprovalId
+	}
+	return ""
+}
+
+func (x *ToolApprovalDecisionPayload) GetToolCallId() string {
+	if x != nil {
+		return x.ToolCallId
+	}
+	return ""
+}
+
+func (x *ToolApprovalDecisionPayload) GetDecisionId() string {
+	if x != nil {
+		return x.DecisionId
+	}
+	return ""
+}
+
+func (x *ToolApprovalDecisionPayload) GetDecisionRevision() uint64 {
+	if x != nil {
+		return x.DecisionRevision
+	}
+	return 0
+}
+
+func (x *ToolApprovalDecisionPayload) GetApproved() bool {
+	if x != nil {
+		return x.Approved
+	}
+	return false
+}
+
+func (x *ToolApprovalDecisionPayload) GetActorRef() *model.ActorRef {
+	if x != nil {
+		return x.ActorRef
+	}
+	return nil
+}
+
+func (x *ToolApprovalDecisionPayload) GetDecidedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DecidedAt
+	}
+	return nil
+}
+
+func (x *ToolApprovalDecisionPayload) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *ToolApprovalDecisionPayload) GetPayloadHash() string {
+	if x != nil {
+		return x.PayloadHash
+	}
+	return ""
+}
+
 type ProgressPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Stage         string                 `protobuf:"bytes,1,opt,name=stage,proto3" json:"stage,omitempty"`
@@ -635,7 +1127,7 @@ type ProgressPayload struct {
 
 func (x *ProgressPayload) Reset() {
 	*x = ProgressPayload{}
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[6]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -647,7 +1139,7 @@ func (x *ProgressPayload) String() string {
 func (*ProgressPayload) ProtoMessage() {}
 
 func (x *ProgressPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[6]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -660,7 +1152,7 @@ func (x *ProgressPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProgressPayload.ProtoReflect.Descriptor instead.
 func (*ProgressPayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{6}
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ProgressPayload) GetStage() string {
@@ -679,7 +1171,7 @@ type ImagePayload struct {
 
 func (x *ImagePayload) Reset() {
 	*x = ImagePayload{}
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[7]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -691,7 +1183,7 @@ func (x *ImagePayload) String() string {
 func (*ImagePayload) ProtoMessage() {}
 
 func (x *ImagePayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[7]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -704,7 +1196,7 @@ func (x *ImagePayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImagePayload.ProtoReflect.Descriptor instead.
 func (*ImagePayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{7}
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ImagePayload) GetUrl() string {
@@ -723,7 +1215,7 @@ type ConversationCreatedPayload struct {
 
 func (x *ConversationCreatedPayload) Reset() {
 	*x = ConversationCreatedPayload{}
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[8]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -735,7 +1227,7 @@ func (x *ConversationCreatedPayload) String() string {
 func (*ConversationCreatedPayload) ProtoMessage() {}
 
 func (x *ConversationCreatedPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[8]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -748,7 +1240,7 @@ func (x *ConversationCreatedPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationCreatedPayload.ProtoReflect.Descriptor instead.
 func (*ConversationCreatedPayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{8}
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ConversationCreatedPayload) GetConversationId() string {
@@ -762,13 +1254,17 @@ type ErrorPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Error         string                 `protobuf:"bytes,1,opt,name=error,proto3" json:"error,omitempty"`
 	ErrorType     string                 `protobuf:"bytes,2,opt,name=error_type,json=errorType,proto3" json:"error_type,omitempty"`
+	LocaleKey     string                 `protobuf:"bytes,3,opt,name=locale_key,json=localeKey,proto3" json:"locale_key,omitempty"`
+	Retryable     bool                   `protobuf:"varint,4,opt,name=retryable,proto3" json:"retryable,omitempty"`
+	Terminal      bool                   `protobuf:"varint,5,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	Details       map[string]string      `protobuf:"bytes,6,rep,name=details,proto3" json:"details,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ErrorPayload) Reset() {
 	*x = ErrorPayload{}
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[9]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -780,7 +1276,7 @@ func (x *ErrorPayload) String() string {
 func (*ErrorPayload) ProtoMessage() {}
 
 func (x *ErrorPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[9]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -793,7 +1289,7 @@ func (x *ErrorPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorPayload.ProtoReflect.Descriptor instead.
 func (*ErrorPayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{9}
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ErrorPayload) GetError() string {
@@ -810,6 +1306,34 @@ func (x *ErrorPayload) GetErrorType() string {
 	return ""
 }
 
+func (x *ErrorPayload) GetLocaleKey() string {
+	if x != nil {
+		return x.LocaleKey
+	}
+	return ""
+}
+
+func (x *ErrorPayload) GetRetryable() bool {
+	if x != nil {
+		return x.Retryable
+	}
+	return false
+}
+
+func (x *ErrorPayload) GetTerminal() bool {
+	if x != nil {
+		return x.Terminal
+	}
+	return false
+}
+
+func (x *ErrorPayload) GetDetails() map[string]string {
+	if x != nil {
+		return x.Details
+	}
+	return nil
+}
+
 type DonePayload struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	TaskId              string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
@@ -821,7 +1345,7 @@ type DonePayload struct {
 
 func (x *DonePayload) Reset() {
 	*x = DonePayload{}
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[10]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -833,7 +1357,7 @@ func (x *DonePayload) String() string {
 func (*DonePayload) ProtoMessage() {}
 
 func (x *DonePayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[10]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -846,7 +1370,7 @@ func (x *DonePayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DonePayload.ProtoReflect.Descriptor instead.
 func (*DonePayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{10}
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DonePayload) GetTaskId() string {
@@ -884,7 +1408,7 @@ type TurnSummary struct {
 
 func (x *TurnSummary) Reset() {
 	*x = TurnSummary{}
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[11]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -896,7 +1420,7 @@ func (x *TurnSummary) String() string {
 func (*TurnSummary) ProtoMessage() {}
 
 func (x *TurnSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_turn_stream_proto_msgTypes[11]
+	mi := &file_domain_agent_turn_stream_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -909,7 +1433,7 @@ func (x *TurnSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnSummary.ProtoReflect.Descriptor instead.
 func (*TurnSummary) Descriptor() ([]byte, []int) {
-	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{11}
+	return file_domain_agent_turn_stream_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TurnSummary) GetTurnId() string {
@@ -958,12 +1482,16 @@ var File_domain_agent_turn_stream_proto protoreflect.FileDescriptor
 
 const file_domain_agent_turn_stream_proto_rawDesc = "" +
 	"\n" +
-	"\x1edomain/agent/turn_stream.proto\x12\x1apeers_touch.model.agent.v1\x1a\x18domain/agent/agent.proto\"\xd2\a\n" +
+	"\x1edomain/agent/turn_stream.proto\x12\x1apeers_touch.model.agent.v1\x1a\x18domain/agent/agent.proto\x1a\x18domain/actor/actor.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa2\v\n" +
 	"\x0fTurnStreamEvent\x12C\n" +
 	"\x04type\x18\x01 \x01(\x0e2/.peers_touch.model.agent.v1.TurnStreamEventTypeR\x04type\x12\x17\n" +
 	"\aturn_id\x18\x02 \x01(\tR\x06turnId\x12'\n" +
 	"\x0fconversation_id\x18\x03 \x01(\tR\x0econversationId\x12\x19\n" +
-	"\bagent_id\x18\x04 \x01(\tR\aagentId\x12=\n" +
+	"\bagent_id\x18\x04 \x01(\tR\aagentId\x12\x1a\n" +
+	"\bsequence\x18\x05 \x01(\x04R\bsequence\x12\x19\n" +
+	"\bevent_id\x18\x06 \x01(\tR\aeventId\x12;\n" +
+	"\voccurred_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"occurredAt\x12=\n" +
 	"\x04text\x18\n" +
 	" \x01(\v2'.peers_touch.model.agent.v1.TextPayloadH\x00R\x04text\x12I\n" +
 	"\bthinking\x18\v \x01(\v2+.peers_touch.model.agent.v1.ThinkingPayloadH\x00R\bthinking\x12J\n" +
@@ -975,8 +1503,30 @@ const file_domain_agent_turn_stream_proto_rawDesc = "" +
 	"\x05image\x18\x10 \x01(\v2(.peers_touch.model.agent.v1.ImagePayloadH\x00R\x05image\x12k\n" +
 	"\x14conversation_created\x18\x11 \x01(\v26.peers_touch.model.agent.v1.ConversationCreatedPayloadH\x00R\x13conversationCreated\x12@\n" +
 	"\x05error\x18\x12 \x01(\v2(.peers_touch.model.agent.v1.ErrorPayloadH\x00R\x05error\x12=\n" +
-	"\x04done\x18\x13 \x01(\v2'.peers_touch.model.agent.v1.DonePayloadH\x00R\x04doneB\t\n" +
-	"\apayload\"!\n" +
+	"\x04done\x18\x13 \x01(\v2'.peers_touch.model.agent.v1.DonePayloadH\x00R\x04done\x12o\n" +
+	"\x16tool_approval_decision\x18\x14 \x01(\v27.peers_touch.model.agent.v1.ToolApprovalDecisionPayloadH\x00R\x14toolApprovalDecision\x12L\n" +
+	"\tcancelled\x18\x15 \x01(\v2,.peers_touch.model.agent.v1.CancelledPayloadH\x00R\tcancelled\x12F\n" +
+	"\bsnapshot\x18\x16 \x01(\v2(.peers_touch.model.agent.v1.TurnSnapshotH\x00R\bsnapshot\x12S\n" +
+	"\fcatchup_done\x18\x17 \x01(\v2..peers_touch.model.agent.v1.CatchupDonePayloadH\x00R\vcatchupDoneB\t\n" +
+	"\apayload\"\x82\x01\n" +
+	"\x17StreamTurnEventsRequest\x12'\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x17\n" +
+	"\aturn_id\x18\x02 \x01(\tR\x06turnId\x12%\n" +
+	"\x0eafter_sequence\x18\x03 \x01(\x04R\rafterSequence\"\xc8\x02\n" +
+	"\fTurnSnapshot\x12\x17\n" +
+	"\aturn_id\x18\x01 \x01(\tR\x06turnId\x12'\n" +
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x19\n" +
+	"\bagent_id\x18\x03 \x01(\tR\aagentId\x12>\n" +
+	"\x06status\x18\x04 \x01(\x0e2&.peers_touch.model.agent.v1.TurnStatusR\x06status\x12\x12\n" +
+	"\x04text\x18\x05 \x01(\tR\x04text\x12#\n" +
+	"\rlast_sequence\x18\x06 \x01(\x04R\flastSequence\x12'\n" +
+	"\x0fterminal_reason\x18\a \x01(\tR\x0eterminalReason\x129\n" +
+	"\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"*\n" +
+	"\x10CancelledPayload\x12\x16\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"9\n" +
+	"\x12CatchupDonePayload\x12#\n" +
+	"\rlast_sequence\x18\x01 \x01(\x04R\flastSequence\"!\n" +
 	"\vTextPayload\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\"9\n" +
 	"\x0fThinkingPayload\x12\x12\n" +
@@ -990,7 +1540,7 @@ const file_domain_agent_turn_stream_proto_rawDesc = "" +
 	"\x11ToolResultPayload\x12 \n" +
 	"\ftool_call_id\x18\x01 \x01(\tR\n" +
 	"toolCallId\x12\x16\n" +
-	"\x06result\x18\x02 \x01(\tR\x06result\"\xb2\x01\n" +
+	"\x06result\x18\x02 \x01(\tR\x06result\"\x80\x03\n" +
 	"\x1bToolApprovalRequiredPayload\x12\x1f\n" +
 	"\vapproval_id\x18\x01 \x01(\tR\n" +
 	"approvalId\x12\x1b\n" +
@@ -998,17 +1548,48 @@ const file_domain_agent_turn_stream_proto_rawDesc = "" +
 	"\vserver_name\x18\x03 \x01(\tR\n" +
 	"serverName\x12\x1c\n" +
 	"\targuments\x18\x04 \x01(\tR\targuments\x12\x16\n" +
-	"\x06source\x18\x05 \x01(\tR\x06source\"'\n" +
+	"\x06source\x18\x05 \x01(\tR\x06source\x12 \n" +
+	"\ftool_call_id\x18\x06 \x01(\tR\n" +
+	"toolCallId\x12\x1f\n" +
+	"\vdecision_id\x18\a \x01(\tR\n" +
+	"decisionId\x12+\n" +
+	"\x11decision_revision\x18\b \x01(\x04R\x10decisionRevision\x129\n" +
+	"\n" +
+	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12!\n" +
+	"\fpayload_hash\x18\n" +
+	" \x01(\tR\vpayloadHash\"\x94\x03\n" +
+	"\x1bToolApprovalDecisionPayload\x12\x1f\n" +
+	"\vapproval_id\x18\x01 \x01(\tR\n" +
+	"approvalId\x12 \n" +
+	"\ftool_call_id\x18\x02 \x01(\tR\n" +
+	"toolCallId\x12\x1f\n" +
+	"\vdecision_id\x18\x03 \x01(\tR\n" +
+	"decisionId\x12+\n" +
+	"\x11decision_revision\x18\x04 \x01(\x04R\x10decisionRevision\x12\x1a\n" +
+	"\bapproved\x18\x05 \x01(\bR\bapproved\x12A\n" +
+	"\tactor_ref\x18\x06 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\bactorRef\x129\n" +
+	"\n" +
+	"decided_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tdecidedAt\x12'\n" +
+	"\x0fidempotency_key\x18\b \x01(\tR\x0eidempotencyKey\x12!\n" +
+	"\fpayload_hash\x18\t \x01(\tR\vpayloadHash\"'\n" +
 	"\x0fProgressPayload\x12\x14\n" +
 	"\x05stage\x18\x01 \x01(\tR\x05stage\" \n" +
 	"\fImagePayload\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\"E\n" +
 	"\x1aConversationCreatedPayload\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"C\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"\xa9\x02\n" +
 	"\fErrorPayload\x12\x14\n" +
 	"\x05error\x18\x01 \x01(\tR\x05error\x12\x1d\n" +
 	"\n" +
-	"error_type\x18\x02 \x01(\tR\terrorType\"\xa6\x01\n" +
+	"error_type\x18\x02 \x01(\tR\terrorType\x12\x1d\n" +
+	"\n" +
+	"locale_key\x18\x03 \x01(\tR\tlocaleKey\x12\x1c\n" +
+	"\tretryable\x18\x04 \x01(\bR\tretryable\x12\x1a\n" +
+	"\bterminal\x18\x05 \x01(\bR\bterminal\x12O\n" +
+	"\adetails\x18\x06 \x03(\v25.peers_touch.model.agent.v1.ErrorPayload.DetailsEntryR\adetails\x1a:\n" +
+	"\fDetailsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa6\x01\n" +
 	"\vDonePayload\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12J\n" +
 	"\fturn_summary\x18\x02 \x01(\v2'.peers_touch.model.agent.v1.TurnSummaryR\vturnSummary\x122\n" +
@@ -1020,14 +1601,13 @@ const file_domain_agent_turn_stream_proto_rawDesc = "" +
 	"\n" +
 	"user_input\x18\x04 \x01(\tR\tuserInput\x12%\n" +
 	"\x0efinal_response\x18\x05 \x01(\tR\rfinalResponse\x12>\n" +
-	"\x06status\x18\x06 \x01(\x0e2&.peers_touch.model.agent.v1.TurnStatusR\x06status*\xa1\x04\n" +
+	"\x06status\x18\x06 \x01(\x0e2&.peers_touch.model.agent.v1.TurnStatusR\x06status*\x97\x05\n" +
 	"\x13TurnStreamEventType\x12&\n" +
 	"\"TURN_STREAM_EVENT_TYPE_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bTURN_STREAM_EVENT_TYPE_TEXT\x10\x01\x12#\n" +
 	"\x1fTURN_STREAM_EVENT_TYPE_THINKING\x10\x02\x12$\n" +
 	" TURN_STREAM_EVENT_TYPE_TOOL_CALL\x10\x03\x12&\n" +
-	"\"TURN_STREAM_EVENT_TYPE_TOOL_RESULT\x10\x04\x12-\n" +
-	")TURN_STREAM_EVENT_TYPE_LOCAL_TOOL_REQUEST\x10\x05\x121\n" +
+	"\"TURN_STREAM_EVENT_TYPE_TOOL_RESULT\x10\x04\x121\n" +
 	"-TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_REQUIRED\x10\x06\x121\n" +
 	"-TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_DECISION\x10\a\x12#\n" +
 	"\x1fTURN_STREAM_EVENT_TYPE_PROGRESS\x10\b\x12 \n" +
@@ -1035,7 +1615,10 @@ const file_domain_agent_turn_stream_proto_rawDesc = "" +
 	"+TURN_STREAM_EVENT_TYPE_CONVERSATION_CREATED\x10\n" +
 	"\x12 \n" +
 	"\x1cTURN_STREAM_EVENT_TYPE_ERROR\x10\v\x12\x1f\n" +
-	"\x1bTURN_STREAM_EVENT_TYPE_DONE\x10\fBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
+	"\x1bTURN_STREAM_EVENT_TYPE_DONE\x10\f\x12$\n" +
+	" TURN_STREAM_EVENT_TYPE_CANCELLED\x10\r\x12#\n" +
+	"\x1fTURN_STREAM_EVENT_TYPE_SNAPSHOT\x10\x0e\x12'\n" +
+	"#TURN_STREAM_EVENT_TYPE_CATCHUP_DONE\x10\x0f\"\x04\b\x05\x10\x05*)TURN_STREAM_EVENT_TYPE_LOCAL_TOOL_REQUESTBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
 
 var (
 	file_domain_agent_turn_stream_proto_rawDescOnce sync.Once
@@ -1050,42 +1633,61 @@ func file_domain_agent_turn_stream_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_agent_turn_stream_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_agent_turn_stream_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_domain_agent_turn_stream_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_domain_agent_turn_stream_proto_goTypes = []any{
 	(TurnStreamEventType)(0),            // 0: peers_touch.model.agent.v1.TurnStreamEventType
 	(*TurnStreamEvent)(nil),             // 1: peers_touch.model.agent.v1.TurnStreamEvent
-	(*TextPayload)(nil),                 // 2: peers_touch.model.agent.v1.TextPayload
-	(*ThinkingPayload)(nil),             // 3: peers_touch.model.agent.v1.ThinkingPayload
-	(*ToolCallPayload)(nil),             // 4: peers_touch.model.agent.v1.ToolCallPayload
-	(*ToolResultPayload)(nil),           // 5: peers_touch.model.agent.v1.ToolResultPayload
-	(*ToolApprovalRequiredPayload)(nil), // 6: peers_touch.model.agent.v1.ToolApprovalRequiredPayload
-	(*ProgressPayload)(nil),             // 7: peers_touch.model.agent.v1.ProgressPayload
-	(*ImagePayload)(nil),                // 8: peers_touch.model.agent.v1.ImagePayload
-	(*ConversationCreatedPayload)(nil),  // 9: peers_touch.model.agent.v1.ConversationCreatedPayload
-	(*ErrorPayload)(nil),                // 10: peers_touch.model.agent.v1.ErrorPayload
-	(*DonePayload)(nil),                 // 11: peers_touch.model.agent.v1.DonePayload
-	(*TurnSummary)(nil),                 // 12: peers_touch.model.agent.v1.TurnSummary
-	(TurnStatus)(0),                     // 13: peers_touch.model.agent.v1.TurnStatus
+	(*StreamTurnEventsRequest)(nil),     // 2: peers_touch.model.agent.v1.StreamTurnEventsRequest
+	(*TurnSnapshot)(nil),                // 3: peers_touch.model.agent.v1.TurnSnapshot
+	(*CancelledPayload)(nil),            // 4: peers_touch.model.agent.v1.CancelledPayload
+	(*CatchupDonePayload)(nil),          // 5: peers_touch.model.agent.v1.CatchupDonePayload
+	(*TextPayload)(nil),                 // 6: peers_touch.model.agent.v1.TextPayload
+	(*ThinkingPayload)(nil),             // 7: peers_touch.model.agent.v1.ThinkingPayload
+	(*ToolCallPayload)(nil),             // 8: peers_touch.model.agent.v1.ToolCallPayload
+	(*ToolResultPayload)(nil),           // 9: peers_touch.model.agent.v1.ToolResultPayload
+	(*ToolApprovalRequiredPayload)(nil), // 10: peers_touch.model.agent.v1.ToolApprovalRequiredPayload
+	(*ToolApprovalDecisionPayload)(nil), // 11: peers_touch.model.agent.v1.ToolApprovalDecisionPayload
+	(*ProgressPayload)(nil),             // 12: peers_touch.model.agent.v1.ProgressPayload
+	(*ImagePayload)(nil),                // 13: peers_touch.model.agent.v1.ImagePayload
+	(*ConversationCreatedPayload)(nil),  // 14: peers_touch.model.agent.v1.ConversationCreatedPayload
+	(*ErrorPayload)(nil),                // 15: peers_touch.model.agent.v1.ErrorPayload
+	(*DonePayload)(nil),                 // 16: peers_touch.model.agent.v1.DonePayload
+	(*TurnSummary)(nil),                 // 17: peers_touch.model.agent.v1.TurnSummary
+	nil,                                 // 18: peers_touch.model.agent.v1.ErrorPayload.DetailsEntry
+	(*timestamppb.Timestamp)(nil),       // 19: google.protobuf.Timestamp
+	(TurnStatus)(0),                     // 20: peers_touch.model.agent.v1.TurnStatus
+	(*model.ActorRef)(nil),              // 21: peers_touch.model.actor.v1.ActorRef
 }
 var file_domain_agent_turn_stream_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.agent.v1.TurnStreamEvent.type:type_name -> peers_touch.model.agent.v1.TurnStreamEventType
-	2,  // 1: peers_touch.model.agent.v1.TurnStreamEvent.text:type_name -> peers_touch.model.agent.v1.TextPayload
-	3,  // 2: peers_touch.model.agent.v1.TurnStreamEvent.thinking:type_name -> peers_touch.model.agent.v1.ThinkingPayload
-	4,  // 3: peers_touch.model.agent.v1.TurnStreamEvent.tool_call:type_name -> peers_touch.model.agent.v1.ToolCallPayload
-	5,  // 4: peers_touch.model.agent.v1.TurnStreamEvent.tool_result:type_name -> peers_touch.model.agent.v1.ToolResultPayload
-	6,  // 5: peers_touch.model.agent.v1.TurnStreamEvent.tool_approval_required:type_name -> peers_touch.model.agent.v1.ToolApprovalRequiredPayload
-	7,  // 6: peers_touch.model.agent.v1.TurnStreamEvent.progress:type_name -> peers_touch.model.agent.v1.ProgressPayload
-	8,  // 7: peers_touch.model.agent.v1.TurnStreamEvent.image:type_name -> peers_touch.model.agent.v1.ImagePayload
-	9,  // 8: peers_touch.model.agent.v1.TurnStreamEvent.conversation_created:type_name -> peers_touch.model.agent.v1.ConversationCreatedPayload
-	10, // 9: peers_touch.model.agent.v1.TurnStreamEvent.error:type_name -> peers_touch.model.agent.v1.ErrorPayload
-	11, // 10: peers_touch.model.agent.v1.TurnStreamEvent.done:type_name -> peers_touch.model.agent.v1.DonePayload
-	12, // 11: peers_touch.model.agent.v1.DonePayload.turn_summary:type_name -> peers_touch.model.agent.v1.TurnSummary
-	13, // 12: peers_touch.model.agent.v1.TurnSummary.status:type_name -> peers_touch.model.agent.v1.TurnStatus
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	19, // 1: peers_touch.model.agent.v1.TurnStreamEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	6,  // 2: peers_touch.model.agent.v1.TurnStreamEvent.text:type_name -> peers_touch.model.agent.v1.TextPayload
+	7,  // 3: peers_touch.model.agent.v1.TurnStreamEvent.thinking:type_name -> peers_touch.model.agent.v1.ThinkingPayload
+	8,  // 4: peers_touch.model.agent.v1.TurnStreamEvent.tool_call:type_name -> peers_touch.model.agent.v1.ToolCallPayload
+	9,  // 5: peers_touch.model.agent.v1.TurnStreamEvent.tool_result:type_name -> peers_touch.model.agent.v1.ToolResultPayload
+	10, // 6: peers_touch.model.agent.v1.TurnStreamEvent.tool_approval_required:type_name -> peers_touch.model.agent.v1.ToolApprovalRequiredPayload
+	12, // 7: peers_touch.model.agent.v1.TurnStreamEvent.progress:type_name -> peers_touch.model.agent.v1.ProgressPayload
+	13, // 8: peers_touch.model.agent.v1.TurnStreamEvent.image:type_name -> peers_touch.model.agent.v1.ImagePayload
+	14, // 9: peers_touch.model.agent.v1.TurnStreamEvent.conversation_created:type_name -> peers_touch.model.agent.v1.ConversationCreatedPayload
+	15, // 10: peers_touch.model.agent.v1.TurnStreamEvent.error:type_name -> peers_touch.model.agent.v1.ErrorPayload
+	16, // 11: peers_touch.model.agent.v1.TurnStreamEvent.done:type_name -> peers_touch.model.agent.v1.DonePayload
+	11, // 12: peers_touch.model.agent.v1.TurnStreamEvent.tool_approval_decision:type_name -> peers_touch.model.agent.v1.ToolApprovalDecisionPayload
+	4,  // 13: peers_touch.model.agent.v1.TurnStreamEvent.cancelled:type_name -> peers_touch.model.agent.v1.CancelledPayload
+	3,  // 14: peers_touch.model.agent.v1.TurnStreamEvent.snapshot:type_name -> peers_touch.model.agent.v1.TurnSnapshot
+	5,  // 15: peers_touch.model.agent.v1.TurnStreamEvent.catchup_done:type_name -> peers_touch.model.agent.v1.CatchupDonePayload
+	20, // 16: peers_touch.model.agent.v1.TurnSnapshot.status:type_name -> peers_touch.model.agent.v1.TurnStatus
+	19, // 17: peers_touch.model.agent.v1.TurnSnapshot.updated_at:type_name -> google.protobuf.Timestamp
+	19, // 18: peers_touch.model.agent.v1.ToolApprovalRequiredPayload.expires_at:type_name -> google.protobuf.Timestamp
+	21, // 19: peers_touch.model.agent.v1.ToolApprovalDecisionPayload.actor_ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	19, // 20: peers_touch.model.agent.v1.ToolApprovalDecisionPayload.decided_at:type_name -> google.protobuf.Timestamp
+	18, // 21: peers_touch.model.agent.v1.ErrorPayload.details:type_name -> peers_touch.model.agent.v1.ErrorPayload.DetailsEntry
+	17, // 22: peers_touch.model.agent.v1.DonePayload.turn_summary:type_name -> peers_touch.model.agent.v1.TurnSummary
+	20, // 23: peers_touch.model.agent.v1.TurnSummary.status:type_name -> peers_touch.model.agent.v1.TurnStatus
+	24, // [24:24] is the sub-list for method output_type
+	24, // [24:24] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_turn_stream_proto_init() }
@@ -1105,6 +1707,10 @@ func file_domain_agent_turn_stream_proto_init() {
 		(*TurnStreamEvent_ConversationCreated)(nil),
 		(*TurnStreamEvent_Error)(nil),
 		(*TurnStreamEvent_Done)(nil),
+		(*TurnStreamEvent_ToolApprovalDecision)(nil),
+		(*TurnStreamEvent_Cancelled)(nil),
+		(*TurnStreamEvent_Snapshot)(nil),
+		(*TurnStreamEvent_CatchupDone)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1112,7 +1718,7 @@ func file_domain_agent_turn_stream_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_turn_stream_proto_rawDesc), len(file_domain_agent_turn_stream_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

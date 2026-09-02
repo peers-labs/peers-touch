@@ -1,0 +1,44 @@
+{
+  "id": "agent-thread-branching",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/thread_handler.go",
+    "apps/station/app/subserver/agent/service/thread_service.go",
+    "apps/station/app/subserver/agent/handler/conversation_handler.go",
+    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/services/desktop_api.ts"
+  ],
+  "truth_sources": [
+    "running Station agent API",
+    "agent_threads table",
+    "agent_messages table with branch_id"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/threads/create"},
+    {"type": "api", "route": "/agent/threads"},
+    {"type": "api", "route": "/agent/threads/:id/messages"},
+    {"type": "api", "route": "/agent/messages/:id/edit-resend"},
+    {"type": "api", "route": "/agent/conversations/:id/select-branch"}
+  ],
+  "required_gates": ["agent-thread-e2e"],
+  "acceptance": {
+    "service": [
+      "thread create forks a new branch from a specified message point in the conversation",
+      "thread list returns all threads/branches for a conversation with metadata",
+      "thread messages returns the message sequence for a specific branch",
+      "edit-resend modifies a user message and creates a new branch with a fresh assistant response",
+      "select-branch switches the conversation view to a specified branch"
+    ],
+    "visible": [
+      "branch selector UI shows available branches at fork points in the conversation",
+      "editing a message shows the regenerated response on the new branch",
+      "switching branches updates the visible message history immediately"
+    ]
+  },
+  "negative": [
+    "creating a thread must not duplicate messages from the parent branch",
+    "edit-resend must not mutate the original branch messages",
+    "deleting a branch must not affect messages on other branches that share a common ancestor"
+  ]
+}

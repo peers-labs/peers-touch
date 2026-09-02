@@ -5,10 +5,12 @@ import "time"
 type TurnStatus string
 
 const (
-	TurnStatusRunning     TurnStatus = "running"
-	TurnStatusCompleted   TurnStatus = "completed"
-	TurnStatusFailed      TurnStatus = "failed"
-	TurnStatusInterrupted TurnStatus = "interrupted"
+	TurnStatusRunning          TurnStatus = "running"
+	TurnStatusWaitingLocalTool TurnStatus = "waiting_local_tool"
+	TurnStatusCompleted        TurnStatus = "completed"
+	TurnStatusFailed           TurnStatus = "failed"
+	TurnStatusCancelled        TurnStatus = "cancelled"
+	TurnStatusInterrupted      TurnStatus = "interrupted"
 )
 
 type Turn struct {
@@ -21,6 +23,11 @@ type Turn struct {
 	Status         TurnStatus
 	StartedAt      time.Time
 	EndedAt        *time.Time
+	// Model records the LLM model that produced the final response. This is a
+	// domain-only field (not proto-mapped) populated after the provider call
+	// completes, so the turn stream "done" event can carry the model name back
+	// to the client.
+	Model string
 }
 
 type TurnTrace struct {
@@ -39,6 +46,27 @@ type TurnTrace struct {
 	CompressionAfter     int
 	DelegationResults    []DelegationResult
 	KnowledgeChunks      []KnowledgeChunkReference
+	CapabilitySnapshotID string
+	ToolDefinitionTokens uint64
+}
+
+type TurnUsage struct {
+	TurnID               string
+	AttemptID            string
+	InputTokens          uint64
+	OutputTokens         uint64
+	CacheTokens          uint64
+	ReasoningTokens      uint64
+	ToolDefinitionTokens uint64
+	ProviderCallCount    uint32
+	ToolCallCount        uint32
+	ProviderLatency      time.Duration
+	ToolLatency          time.Duration
+	Cost                 *float64
+	Currency             string
+	ProviderID           string
+	ModelID              string
+	ToolCallIDs          []string
 }
 
 type TurnTraceEntry struct {
@@ -47,6 +75,7 @@ type TurnTraceEntry struct {
 }
 
 type TurnTraceListOptions struct {
+	Ptid           string
 	AgentID        string
 	ConversationID string
 	Page           int

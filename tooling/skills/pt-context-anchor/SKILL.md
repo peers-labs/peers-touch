@@ -51,10 +51,31 @@ Resolve each field from its owner instead of applying one global precedence:
 | Progress, last completed, blocker detail, decisions | Plan status table or linked tracking source |
 | Overall progress ratio | Count of done/total workstreams from the plan status table; must not be guessed |
 | Evidence | Named commands and repository evidence |
+| Deployment node for runtime entities | Verified profile, environment manifest, deployment status, or runtime evidence |
 | Chat Anchor | Projection of the sources above |
 
 Any disagreement blocks progress reporting until reconciled. Never choose the
 most convenient value or reconstruct state from conversation memory.
+
+### Deployment Node Attribution
+
+Whenever an Anchor says that an agent will inspect, use, mutate, clean up, or
+otherwise operate an environment-bound entity, it MUST identify the deployment
+node that owns that entity. This includes databases, logs, processes,
+containers, ports, storage roots, caches, queues, services, and Evidence Store
+artifacts.
+
+- Use the verified logical deployment name plus host or endpoint when it is
+  non-secret, for example `station-two (10.37.118.48)` or
+  `local workstation (peers-ai-agent)`.
+- Qualify each entity at first mention in `Action and reason`, `Evidence`,
+  `Next action`, or `Blockers / decisions`; do not write ambiguous phrases such
+  as "the database", "remote logs", or "clean storage".
+- Add a `Deployment nodes` field to the Anchor and map each referenced entity
+  to its node. Use `Not applicable` only when no environment-bound entity is
+  referenced.
+- If the node cannot be verified, write `UNKNOWN`, mark the operation blocked,
+  and resolve the deployment identity before acting.
 
 ## Required Active Work Schema
 
@@ -89,6 +110,7 @@ Every user-facing Context Anchor is one fenced `markdown` block exactly like:
 - **Progress**:
 - **Action and reason**:
 - **Evidence**:
+- **Deployment nodes**:
 - **Next action**:
 - **Blockers / decisions**:
 - **Tracking document**:
@@ -100,8 +122,8 @@ blocker, readiness, and session-close responses. It must be the final section
 of the response.
 
 Use repository-relative paths inside the block. Do not split, quote, render as
-a table, wrap in a widget, or omit worktree, branch, evidence, next action, or
-tracking document.
+a table, wrap in a widget, or omit worktree, branch, evidence, deployment
+nodes, next action, or tracking document.
 
 ## Workflow
 
@@ -127,7 +149,17 @@ The actual root and branch must match the selected work. Preserve unrelated
 dirty files. Persist repository paths as `<repo-root>` or repo-relative paths,
 never a developer or CI home-directory path.
 
-### 3. Derive And Reconcile
+### 3. Verify Deployment Nodes
+
+1. Inventory every environment-bound entity mentioned by the planned action,
+   current evidence, blocker, or next action.
+2. Resolve each entity to a deployment node from the active profile,
+   environment manifest, deployment status, or runtime evidence.
+3. Record the logical node name and non-secret host or endpoint.
+4. Stop before operating any entity whose node is unknown or conflicts across
+   sources.
+
+### 4. Derive And Reconcile
 
 1. Read objective and scope from the plan.
 2. Read progress and evidence from its status table or tracking source.
@@ -135,7 +167,7 @@ never a developer or CI home-directory path.
 4. Reconcile stale fields before reporting or executing.
 5. Mark absent proof `UNPROVEN`; do not infer success.
 
-### 4. Synchronize Meaningful Changes
+### 5. Synchronize Meaningful Changes
 
 After a step, stage, branch, blocker, decision, or evidence change:
 
@@ -146,7 +178,7 @@ After a step, stage, branch, blocker, decision, or evidence change:
 
 Anchor synchronization never completes a task by itself.
 
-### 5. Handoff And Resume
+### 6. Handoff And Resume
 
 At handoff, record the last completed evidence, exact current action, one
 dependency-ready next action, blockers, and decisions. At resume, verify Git
@@ -167,6 +199,7 @@ state and reconcile sources before continuing from that next action.
 - The execution plan contains no `## Context Anchor` section.
 - Actual Git root and branch were verified.
 - Progress and evidence match plan/tracking sources.
+- Every referenced runtime entity identifies its verified deployment node.
 - Evidence distinguishes `PASS`, `FAIL`, `NOT RUN`, and `UNPROVEN`.
 - The chat Anchor is one final fenced `markdown` block.
 - `git diff --check -- tooling/skills AGENTS.md` passes.
@@ -183,4 +216,6 @@ Never:
 - copy an Anchor across worktrees without verification;
 - claim completion from summaries or missing evidence;
 - persist absolute user-home paths, transient command logs, or secrets;
+- refer to a database, log, process, container, port, storage root, cache,
+  queue, service, or Evidence Store artifact without its deployment node;
 - use an Anchor to bypass product, architecture, plan, or review gates.

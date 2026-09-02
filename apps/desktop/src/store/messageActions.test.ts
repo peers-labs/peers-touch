@@ -15,6 +15,8 @@ function createContext(overrides: Partial<MessageActionContext> = {}): MessageAc
     onDelete: noop,
     onRegenerate: noop,
     onRetry: noop,
+    onRetryRecovery: noop,
+    onReloadSnapshot: noop,
     onBranch: noop,
     onContinue: noop,
     onDeleteAndRegenerate: noop,
@@ -22,6 +24,7 @@ function createContext(overrides: Partial<MessageActionContext> = {}): MessageAc
     onThread: noop,
     onReadAloud: noop,
     onExport: noop,
+    onForward: noop,
     ...overrides,
   };
 }
@@ -38,7 +41,8 @@ describe('message action registry', () => {
     const ctx = createContext();
     const { primary, menu } = buildMessageActions(ctx);
     expect(primary.map((a) => a.key)).toEqual(['copy', 'regenerate', 'readAloud']);
-    expect(menu.map((a) => a.key)).toContain('edit');
+    expect(menu.map((a) => a.key)).not.toContain('regenerate');
+    expect(menu.map((a) => a.key)).not.toContain('edit');
     expect(menu.map((a) => a.key)).toContain('branch');
     expect(menu.map((a) => a.key)).toContain('continue');
     expect(menu.map((a) => a.key)).toContain('delete');
@@ -50,6 +54,37 @@ describe('message action registry', () => {
     });
     const { primary } = buildMessageActions(ctx);
     expect(primary.map((a) => a.key)).toEqual(['retry', 'delete']);
+  });
+
+  it('exposes retry and durable reload when recovery failed', () => {
+    const ctx = createContext({
+      message: {
+        id: 'msg-1',
+        role: 'assistant',
+        content: 'Partial',
+        error: 'chat.agentTurnRecovery.recoveryFailed',
+        timestamp: Date.now(),
+        turnId: 'turn-1',
+      } as ChatMessage,
+      operation: {
+        id: 'op-1',
+        sessionKey: 'conversation-1',
+        type: 'sendMessage',
+        status: 'running',
+        runState: 'recovery_failed',
+        assistantMessageId: 'msg-1',
+        abortController: new AbortController(),
+        startedAt: Date.now(),
+        turnId: 'turn-1',
+      },
+    });
+
+    const { primary } = buildMessageActions(ctx);
+
+    expect(primary.map((action) => action.key)).toEqual([
+      'retryRecovery',
+      'reloadSnapshot',
+    ]);
   });
 
   it('returns copy + edit for user message', () => {

@@ -1,14 +1,16 @@
-use crate::application::{agents, mcp, plugins};
+use crate::application::capability_authority::EncodedRequestInput;
+use crate::application::{agents, capability_authority, mcp, plugins};
 use crate::contracts::{
-    AgentIdInput, AgentPackageImportInput, McpCreateInput, McpNameInput, SkillImportAddressInput,
-    SkillImportGitHubInput, SkillImportZipInput, SkillMarketAddInput, SkillMarketDetailInput,
-    SkillMarketIdInput, SkillMarketListInput, SkillMarketSyncInput, StubPayload,
+    AgentIdInput, McpCreateInput, McpNameInput, SkillImportAddressInput, SkillImportGitHubInput,
+    SkillImportZipInput, SkillMarketAddInput, SkillMarketDetailInput, SkillMarketIdInput,
+    SkillMarketListInput, SkillMarketSyncInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model;
 use base64::prelude::*;
+use prost::Message;
 use reqwest::blocking::Client;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -17,6 +19,8 @@ use std::fs;
 use std::io::{Cursor, Read};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
+
+const AGENT_PACKAGE_SCHEMA: &str = "peers.agent.package.v1";
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
@@ -90,6 +94,89 @@ struct SkillInstallOutcome {
     verdict: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AgentPackageDocumentJson {
+    schema_version: String,
+    agent: Option<AgentPackageAgentJson>,
+    #[serde(default)]
+    bindings: Vec<AgentPackageBindingJson>,
+    #[serde(default)]
+    knowledge_resources: Vec<AgentPackageKnowledgeResourceJson>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AgentPackageAgentJson {
+    #[serde(default)]
+    agent_id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    provider_id: String,
+    #[serde(default)]
+    model_name: String,
+    #[serde(default)]
+    effort: String,
+    #[serde(default)]
+    visibility: Option<ProtoEnumJson>,
+    #[serde(default)]
+    owner_actor_id: String,
+    #[serde(default)]
+    config_json: String,
+    #[serde(default)]
+    created_at: Option<String>,
+    #[serde(default)]
+    updated_at: Option<String>,
+    #[serde(default)]
+    version: Option<ProtoInt64Json>,
+    #[serde(default)]
+    thinking_mode: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AgentPackageBindingJson {
+    capability_id: String,
+    capability_version: String,
+    enabled: bool,
+    approval_policy: ProtoEnumJson,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AgentPackageKnowledgeResourceJson {
+    package_resource_id: String,
+    resource_kind: ProtoEnumJson,
+    title: String,
+    station_content: String,
+    content_hash: String,
+    index_revision: String,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ProtoEnumJson {
+    Number(i32),
+    Name(String),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ProtoInt64Json {
+    Number(i64),
+    String(String),
+}
+
+struct AgentMarketImportOutcome {
+    imported_agent_id: Option<String>,
+    payload: Value,
+}
+
 fn market_store() -> &'static Mutex<MarketStore> {
     static STORE: OnceLock<Mutex<MarketStore>> = OnceLock::new();
     STORE.get_or_init(|| Mutex::new(load_market_store()))
@@ -107,6 +194,234 @@ fn agent_id(input: Option<String>) -> String {
         .filter(|value| !value.is_empty())
         .unwrap_or("assistant")
         .to_string()
+}
+
+fn parse_proto_enum(
+    value: ProtoEnumJson,
+    field: &str,
+    valid_number: impl Fn(i32) -> bool,
+    number_from_name: impl Fn(&str) -> Option<i32>,
+) -> Result<i32, String> {
+    let number = match value {
+        ProtoEnumJson::Number(number) => number,
+        ProtoEnumJson::Name(name) => number_from_name(name.trim())
+            .ok_or_else(|| format!("Agent package {field} enum is invalid"))?,
+    };
+    if !valid_number(number) {
+        return Err(format!("Agent package {field} enum is invalid"));
+    }
+    Ok(number)
+}
+
+fn parse_timestamp(
+    value: Option<String>,
+    field: &str,
+) -> Result<Option<prost_types::Timestamp>, String> {
+    value
+        .map(|value| {
+            value
+                .parse::<prost_types::Timestamp>()
+                .map_err(|error| format!("Agent package {field} is invalid: {error}"))
+        })
+        .transpose()
+}
+
+fn parse_int64(value: Option<ProtoInt64Json>, field: &str) -> Result<i64, String> {
+    match value {
+        None => Ok(0),
+        Some(ProtoInt64Json::Number(value)) => Ok(value),
+        Some(ProtoInt64Json::String(value)) => value
+            .parse::<i64>()
+            .map_err(|error| format!("Agent package {field} is invalid: {error}")),
+    }
+}
+
+fn agent_package_document_from_json(
+    content: &str,
+) -> Result<model::agent::AgentPackageDocument, String> {
+    let document = serde_json::from_str::<AgentPackageDocumentJson>(content)
+        .map_err(|error| format!("invalid Agent package JSON: {error}"))?;
+    if document.schema_version != AGENT_PACKAGE_SCHEMA {
+        return Err(format!(
+            "unsupported Agent package schema: {}",
+            document.schema_version
+        ));
+    }
+    let agent_json = document
+        .agent
+        .ok_or_else(|| "Agent package agent is required".to_string())?;
+    let visibility = match agent_json.visibility {
+        Some(value) => parse_proto_enum(
+            value,
+            "agent.visibility",
+            |number| model::agent::AgentVisibility::try_from(number).is_ok(),
+            |name| model::agent::AgentVisibility::from_str_name(name).map(|value| value as i32),
+        )?,
+        None => model::agent::AgentVisibility::Unspecified as i32,
+    };
+    let package_agent = model::agent::Agent {
+        agent_id: agent_json.agent_id,
+        name: agent_json.name,
+        title: agent_json.title,
+        description: agent_json.description,
+        provider_id: agent_json.provider_id,
+        model_name: agent_json.model_name,
+        effort: agent_json.effort,
+        visibility,
+        owner_actor_id: agent_json.owner_actor_id,
+        config_json: agent_json.config_json,
+        created_at: parse_timestamp(agent_json.created_at, "agent.createdAt")?,
+        updated_at: parse_timestamp(agent_json.updated_at, "agent.updatedAt")?,
+        version: parse_int64(agent_json.version, "agent.version")?,
+        thinking_mode: agent_json.thinking_mode,
+    };
+
+    let bindings = document
+        .bindings
+        .into_iter()
+        .map(|binding| {
+            Ok(model::agent::AgentPackageBindingRef {
+                capability_id: binding.capability_id,
+                capability_version: binding.capability_version,
+                enabled: binding.enabled,
+                approval_policy: parse_proto_enum(
+                    binding.approval_policy,
+                    "bindings.approvalPolicy",
+                    |number| model::agent::CapabilityApprovalPolicy::try_from(number).is_ok(),
+                    |name| {
+                        model::agent::CapabilityApprovalPolicy::from_str_name(name)
+                            .map(|value| value as i32)
+                    },
+                )?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let knowledge_resources = document
+        .knowledge_resources
+        .into_iter()
+        .map(|resource| {
+            Ok(model::agent::AgentPackageKnowledgeResource {
+                package_resource_id: resource.package_resource_id,
+                resource_kind: parse_proto_enum(
+                    resource.resource_kind,
+                    "knowledgeResources.resourceKind",
+                    |number| model::agent::KnowledgeResourceKind::try_from(number).is_ok(),
+                    |name| {
+                        model::agent::KnowledgeResourceKind::from_str_name(name)
+                            .map(|value| value as i32)
+                    },
+                )?,
+                title: resource.title,
+                station_content: BASE64_STANDARD
+                    .decode(resource.station_content.as_bytes())
+                    .map_err(|error| {
+                        format!(
+                            "Agent package knowledgeResources.stationContent is invalid: {error}"
+                        )
+                    })?,
+                content_hash: resource.content_hash,
+                index_revision: resource.index_revision,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(model::agent::AgentPackageDocument {
+        schema_version: document.schema_version,
+        agent: Some(package_agent),
+        bindings,
+        knowledge_resources,
+    })
+}
+
+fn market_agent_import_idempotency_key(
+    market_id: &str,
+    file_path: &str,
+    name: &str,
+    package: &model::agent::AgentPackageDocument,
+) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(market_id.trim().as_bytes());
+    hasher.update([0]);
+    hasher.update(file_path.trim().as_bytes());
+    hasher.update([0]);
+    hasher.update(name.trim().as_bytes());
+    hasher.update([0]);
+    hasher.update(package.encode_to_vec());
+    format!("market-agent-package:{}", hex::encode(hasher.finalize()))
+}
+
+fn unresolved_dependencies_json(
+    dependencies: &[model::agent::AgentPackageUnresolvedDependency],
+) -> Vec<Value> {
+    dependencies
+        .iter()
+        .map(|dependency| {
+            json!({
+                "packageResourceId": dependency.package_resource_id,
+                "capabilityId": dependency.capability_id,
+                "capabilityVersion": dependency.capability_version,
+                "reasonCode": dependency.reason_code,
+            })
+        })
+        .collect()
+}
+
+fn agent_market_import_outcome(
+    response: model::agent::ImportAgentPackageResponse,
+    skill: &MarketSkill,
+) -> Result<AgentMarketImportOutcome, String> {
+    if !response.unresolved_dependencies.is_empty() {
+        if response.agent.is_some() {
+            return Err(
+                "Station returned both an Agent and unresolved package dependencies".to_string(),
+            );
+        }
+        return Ok(AgentMarketImportOutcome {
+            imported_agent_id: None,
+            payload: json!({
+                "agent": Value::Null,
+                "identifier": skill.identifier,
+                "name": skill.name,
+                "isNew": false,
+                "packageType": "agent",
+                "scanVerdict": "unresolved",
+                "unresolvedDependencies": unresolved_dependencies_json(
+                    &response.unresolved_dependencies,
+                ),
+            }),
+        });
+    }
+
+    let imported_agent = response.agent.ok_or_else(|| {
+        "Station package import returned neither an Agent nor unresolved dependencies".to_string()
+    })?;
+    if imported_agent.agent_id.trim().is_empty() {
+        return Err("Station package import returned an Agent without an id".to_string());
+    }
+    let identifier = if imported_agent.name.trim().is_empty() {
+        skill.identifier.clone()
+    } else {
+        imported_agent.name.clone()
+    };
+    let name = if imported_agent.title.trim().is_empty() {
+        skill.name.clone()
+    } else {
+        imported_agent.title.clone()
+    };
+    Ok(AgentMarketImportOutcome {
+        imported_agent_id: Some(imported_agent.agent_id.clone()),
+        payload: json!({
+            "id": imported_agent.agent_id,
+            "identifier": identifier,
+            "name": name,
+            "isNew": true,
+            "packageType": "agent",
+            "scanVerdict": "package-validated",
+            "unresolvedDependencies": [],
+        }),
+    })
 }
 
 fn http_client() -> Result<Client, String> {
@@ -233,7 +548,7 @@ fn install_skill_at_station(
         model::agent::InstallSkillResponse,
     >(
         Method::POST,
-        "/agent/skill/install",
+        "/sub-agent/agent/skill/install",
         token,
         None,
         Some(&req),
@@ -932,6 +1247,7 @@ pub fn skills_market_install(
         "agent" => {
             return install_agent_market_package(
                 actor_ptid,
+                token,
                 target_agent_id,
                 market_id,
                 skill,
@@ -1085,42 +1401,72 @@ fn install_plugin_market_package(
 
 fn install_agent_market_package(
     actor_ptid: &str,
+    token: &str,
     target_agent_id: String,
     market_id: String,
     skill: MarketSkill,
     source: String,
     content: String,
 ) -> AppResult<StubPayload> {
-    let package = match serde_json::from_str::<Value>(&content) {
-        Ok(value) => value.get("package").cloned().unwrap_or(value),
+    let package = match agent_package_document_from_json(&content) {
+        Ok(package) => package,
+        Err(error) => {
+            return AppResult::fail(ErrorCode::InvalidArgument, error, None);
+        }
+    };
+    let request = model::agent::ImportAgentPackageRequest {
+        idempotency_key: market_agent_import_idempotency_key(
+            &market_id,
+            &skill.file_path,
+            &skill.name,
+            &package,
+        ),
+        package: Some(package),
+        name: skill.name.clone(),
+    };
+    let result = capability_authority::import_agent_package(
+        EncodedRequestInput {
+            request_bytes: request.encode_to_vec(),
+        },
+        token,
+    );
+    if !result.ok {
+        return AppResult {
+            ok: false,
+            data: None,
+            error: result.error,
+        };
+    }
+    let Some(response_bytes) = result.data else {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "Station package import returned no response",
+            None,
+        );
+    };
+    let response = match model::agent::ImportAgentPackageResponse::decode(response_bytes.as_slice())
+    {
+        Ok(response) => response,
         Err(error) => {
             return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                format!("invalid Agent package JSON: {error}"),
+                ErrorCode::InternalError,
+                format!("failed to decode Station Agent package import response: {error}"),
                 None,
             )
         }
     };
-    let result = agents::agents_import_package(
-        actor_ptid,
-        AgentPackageImportInput {
-            package,
-            name: Some(skill.name.clone()),
-        },
-    );
-    let Some(payload) = result.data else {
-        return result;
+    let outcome = match agent_market_import_outcome(response, &skill) {
+        Ok(outcome) => outcome,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    let agent = serde_json::from_str::<Value>(&payload.status).unwrap_or_else(|_| json!({}));
-    let agent_id = agent
-        .get("id")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    if agent_id.is_empty() {
+    let Some(imported_agent_id) = outcome.imported_agent_id else {
+        return success_payload("skills_market_install", outcome.payload);
+    };
+
+    if !agents::agents_list(actor_ptid, token).ok {
         return AppResult::fail(
             ErrorCode::InternalError,
-            "Agent package installed without an agent id",
+            "Failed to refresh Agent projection after package import",
             None,
         );
     }
@@ -1143,7 +1489,7 @@ fn install_agent_market_package(
         market_id,
         file_path: skill.file_path,
         agent_id: target_agent_id,
-        skill_id: agent_id.clone(),
+        skill_id: imported_agent_id,
         installed_at: current_millis().to_string(),
         source,
         scan_verdict: "package-validated".to_string(),
@@ -1152,17 +1498,7 @@ fn install_agent_market_package(
     if let Err(error) = persist_market_store(&guard) {
         return persist_error(error);
     }
-    success_payload(
-        "skills_market_install",
-        json!({
-            "id": agent_id,
-            "identifier": agent.get("name").and_then(Value::as_str).unwrap_or(&skill.identifier),
-            "name": agent.get("title").and_then(Value::as_str).unwrap_or(&skill.name),
-            "isNew": true,
-            "packageType": "agent",
-            "scanVerdict": "package-validated"
-        }),
-    )
+    success_payload("skills_market_install", outcome.payload)
 }
 
 fn install_mcp_market_package(
@@ -1285,6 +1621,7 @@ pub fn skills_market_uninstall(
     if package_type == "agent" {
         let result = agents::agents_delete(
             actor_ptid,
+            token,
             AgentIdInput {
                 id: record.skill_id.clone(),
             },
@@ -1338,8 +1675,13 @@ pub fn skills_market_uninstall(
     if let Err(err) = station_client::request_proto::<
         model::agent::DeleteSkillRequest,
         model::agent::DeleteSkillResponse,
-    >(Method::POST, "/agent/skill/delete", token, None, Some(&req))
-    {
+    >(
+        Method::POST,
+        "/sub-agent/agent/skill/delete",
+        token,
+        None,
+        Some(&req),
+    ) {
         return station_error("skills_market_uninstall", err);
     }
     if let Err(result) = remove_market_install_record(&record) {
@@ -1508,6 +1850,127 @@ mod tests {
         assert_eq!(packages.len(), 2);
         assert_eq!(packages[0].package_type.as_deref(), Some("agent"));
         assert_eq!(packages[1].package_type.as_deref(), Some("mcp"));
+    }
+
+    #[test]
+    fn canonical_agent_package_json_converts_to_station_proto() {
+        let package = agent_package_document_from_json(
+            r#"{
+              "schemaVersion": "peers.agent.package.v1",
+              "agent": {
+                "agentId": "source-agent",
+                "name": "reviewer",
+                "title": "Reviewer",
+                "description": "Reviews changes",
+                "providerId": "provider-test",
+                "modelName": "model-test",
+                "effort": "medium",
+                "visibility": 1,
+                "ownerActorId": "ptid:person:source",
+                "configJson": "{\"temperature\":0.2}",
+                "createdAt": "2026-08-28T12:00:00Z",
+                "updatedAt": "2026-08-28T12:01:00Z",
+                "version": "9",
+                "thinkingMode": "auto"
+              },
+              "bindings": [{
+                "capabilityId": "knowledge.resource/resource-1",
+                "capabilityVersion": "1",
+                "enabled": true,
+                "approvalPolicy": "CAPABILITY_APPROVAL_POLICY_AUTO"
+              }],
+              "knowledgeResources": [{
+                "packageResourceId": "resource-1",
+                "resourceKind": "KNOWLEDGE_RESOURCE_KIND_DOCUMENT",
+                "title": "Guide",
+                "stationContent": "AQID",
+                "contentHash": "content-hash",
+                "indexRevision": "index-revision"
+              }]
+            }"#,
+        )
+        .expect("canonical package JSON should convert");
+
+        assert_eq!(package.schema_version, AGENT_PACKAGE_SCHEMA);
+        let imported_agent = package.agent.expect("package Agent");
+        assert_eq!(imported_agent.agent_id, "source-agent");
+        assert_eq!(imported_agent.version, 9);
+        assert_eq!(
+            imported_agent.visibility,
+            model::agent::AgentVisibility::Private as i32
+        );
+        assert_eq!(
+            package.bindings[0].approval_policy,
+            model::agent::CapabilityApprovalPolicy::Auto as i32
+        );
+        assert_eq!(
+            package.knowledge_resources[0].resource_kind,
+            model::agent::KnowledgeResourceKind::Document as i32
+        );
+        assert_eq!(
+            package.knowledge_resources[0].station_content,
+            vec![1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn legacy_agent_package_chat_config_fails_closed() {
+        let error = agent_package_document_from_json(
+            r#"{
+              "schemaVersion": "peers.agent.package.v1",
+              "agent": {
+                "name": "reviewer",
+                "chatConfig": "{\"tools\":[\"legacy\"]}"
+              },
+              "bindings": []
+            }"#,
+        )
+        .expect_err("legacy package shape must be rejected");
+
+        assert!(error.contains("unknown field `chatConfig`"));
+    }
+
+    #[test]
+    fn unresolved_agent_package_import_returns_no_agent() {
+        let skill = MarketSkill {
+            identifier: "reviewer".to_string(),
+            name: "Reviewer".to_string(),
+            description: String::new(),
+            file_path: "agents/reviewer.json".to_string(),
+            content: None,
+            version: Some("1".to_string()),
+            author: None,
+            license: None,
+            keywords: Vec::new(),
+            publisher: None,
+            homepage: None,
+            repository: None,
+            trust_level: None,
+            risk_level: None,
+            package_type: Some("agent".to_string()),
+            source: None,
+        };
+        let outcome = agent_market_import_outcome(
+            model::agent::ImportAgentPackageResponse {
+                agent: None,
+                unresolved_dependencies: vec![model::agent::AgentPackageUnresolvedDependency {
+                    package_resource_id: "local-resource".to_string(),
+                    capability_id: "knowledge.resource/local-resource".to_string(),
+                    capability_version: "1".to_string(),
+                    reason_code: "client_local_resource_resolution_required".to_string(),
+                }],
+            },
+            &skill,
+        )
+        .expect("unresolved import should remain a successful preflight result");
+
+        assert!(outcome.imported_agent_id.is_none());
+        assert!(outcome.payload["agent"].is_null());
+        assert_eq!(outcome.payload["isNew"], false);
+        assert_eq!(
+            outcome.payload["unresolvedDependencies"][0]["packageResourceId"],
+            "local-resource"
+        );
     }
 
     #[test]

@@ -3,7 +3,7 @@
 > **Status**: diagnostic evidence
 > **Date**: 2026-07-06
 > **Scope**: Desktop Shell / PageHost / section tabs / overlay / store projection / Tauri bridge
-> **Environment**: `<workspace-root>/peers-touch`, `profile=one`, Vite browser baseline at `http://localhost:3211/`
+> **Environment**: `<repo-root>`, `profile=one`, Vite browser baseline at `http://localhost:3211/`
 
 ---
 

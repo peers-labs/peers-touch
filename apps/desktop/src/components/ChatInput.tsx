@@ -4,12 +4,23 @@ import { Flexbox } from 'react-layout-kit';
 import { ActionIcon } from '@lobehub/ui';
 import { Dropdown, Input, theme } from 'antd';
 import type { MenuProps } from 'antd';
-import { ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Square, X } from 'lucide-react';
+import { ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
+import { useMentionStore } from '../store/mentions';
+import { AttachmentStage } from './composer/AttachmentStage';
 import { useAgentAttachmentDrafts } from './composer/useAgentAttachmentDrafts';
-import type { AvailableModel } from '../services/desktop_api';
+import {
+  modelMenuIconStyle,
+  modelMenuItemStyle,
+  modelMenuLabelStyle,
+  modelMenuTextStyle,
+} from './composer/modelPickerLayout';
+import { useMentionTrigger } from './chat/composer/useMentionTrigger';
+import { MentionPopup } from './chat/MentionPopup';
+import { MentionTagBar } from './chat/MentionTag';
+import type { AvailableModel, Agent } from '../services/desktop_api';
 import { ProviderIcon } from './settings/ProviderIcon';
 
 const COMPOSER_COLORS = {
@@ -46,29 +57,36 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const stopStreaming = useChatStore(s => s.stopStreaming);
   const isStreaming = useChatStore(s => s.isStreaming);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
+  const readinessErrorKey = useChatStore(s => s.readinessErrorKey);
+  const composerFill = useChatStore(s => s.composerFill);
+  const consumeComposerFill = useChatStore(s => s.consumeComposerFill);
   const selectedModel = useAgentStore(s => s.selectedModel);
   const selectedProviderId = useAgentStore(s => s.selectedProviderId);
   const defaultModel = useAgentStore(s => s.defaultModel);
   const availableModels = useAgentStore(s => s.availableModels);
-  const loadModels = useAgentStore(s => s.loadModels);
   const setSelectedModel = useAgentStore(s => s.setSelectedModel);
+
+  // Mention (@) system — wires the standalone mention store/popup/trigger into
+  // the live agent composer. Aligns Peers @mention with LobeHub composer-level
+  // mention draft behavior.
+  const { handleInputChange: mentionScan, handleKeyDown: mentionKeyDown } = useMentionTrigger();
+  const clearMentions = useMentionStore(s => s.clearMentions);
+  const showMentionPopup = useMentionStore(s => s.showMentionPopup);
 
   const {
     drafts,
     readyAttachments,
     uploading,
+    failed,
     addFiles,
     clearDrafts,
     removeDraft,
+    retryDraft,
   } = useAgentAttachmentDrafts({
     conversationId: currentSessionKey,
     disabled: isStreaming,
     fallbackName: t('chat.input.attachmentFallbackName'),
   });
-
-  useEffect(() => {
-    loadModels();
-  }, [loadModels]);
 
   useEffect(() => {
     const previousKey = prevSessionKeyRef.current;
@@ -80,6 +98,22 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   useEffect(() => {
     if (currentSessionKey) topicDraftRef.current[currentSessionKey] = input;
   }, [currentSessionKey, input]);
+
+  // I2 follow-up: consume a pending composer-fill request (fill-not-send), aligning
+  // with LobeHub `fillInputMessage`. Populate the draft, focus, then clear the request.
+  useEffect(() => {
+    if (!composerFill) return;
+    setInput(composerFill.text);
+    consumeComposerFill();
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        const end = composerFill.text.length;
+        el.setSelectionRange(end, end);
+      }
+    });
+  }, [composerFill, consumeComposerFill]);
 
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
@@ -94,30 +128,59 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
   const toComposerAttachments = useCallback((): ChatComposerAttachment[] =>
     readyAttachments.map((attachment) => ({
-      cid: attachment.cid,
+      cid: attachment.object_ref,
       filename: attachment.filename,
       mime_type: attachment.mime_type,
-      size: attachment.size,
+      size: attachment.size_bytes,
       attachment,
     })),
   [readyAttachments]);
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if ((!text && readyAttachments.length === 0) || isStreaming || uploading) return;
-    sendMessage(text, toComposerAttachments());
-    setInput('');
-    clearDrafts();
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [input, readyAttachments.length, isStreaming, uploading, sendMessage, toComposerAttachments, clearDrafts]);
+    if ((!text && readyAttachments.length === 0) || isStreaming || uploading || failed) return;
+    sendMessage(text, toComposerAttachments(), {
+      onAccepted: () => {
+        setInput('');
+        clearDrafts(false);
+        clearMentions();
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      },
+    });
+  }, [input, readyAttachments.length, isStreaming, uploading, failed, sendMessage, toComposerAttachments, clearDrafts, clearMentions]);
+
+  // Scan the draft for "@" triggers whenever it changes, driving the popup.
+  const handleInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
+    const value = event.target.value;
+    setInput(value);
+    mentionScan(value, event.target.selectionStart ?? value.length);
+  }, [mentionScan]);
+
+  // Insert the selected agent's mention token into the draft at the "@" position.
+  const handleMentionSelect = useCallback((_agent: Agent, insertText: string) => {
+    const el = textareaRef.current;
+    setInput((prev) => {
+      const cursor = el?.selectionStart ?? prev.length;
+      const before = prev.slice(0, cursor);
+      const after = prev.slice(cursor);
+      const atIndex = before.lastIndexOf('@');
+      if (atIndex === -1) return prev;
+      const next = before.slice(0, atIndex) + insertText + after;
+      return next;
+    });
+    // Return focus to the textarea after selection.
+    requestAnimationFrame(() => el?.focus());
+  }, []);
 
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Let the mention popup consume navigation keys while it is open.
+    if (mentionKeyDown(event)) return;
     if (event.key !== 'Enter' || event.shiftKey) return;
     const native = event.nativeEvent as unknown as { isComposing?: boolean; keyCode?: number };
     if (isComposingRef.current || native.isComposing || native.keyCode === 229) return;
     event.preventDefault();
     handleSend();
-  }, [handleSend]);
+  }, [handleSend, mentionKeyDown]);
 
   const insertSlash = useCallback(() => {
     const el = textareaRef.current;
@@ -144,7 +207,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     availableModels.find((model) => model.id === currentModelId && (!selectedProviderId || model.provider_id === selectedProviderId)) ||
     availableModels.find((model) => model.id === currentModelId);
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
-  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading;
+  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading || failed;
 
   const modelDisplayName = modelInfo?.display_name || modelInfo?.id || currentModelId;
   const modelLabel = modelInfo
@@ -185,14 +248,17 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         ),
         children: items.map((model) => ({
           key: modelMenuKey(model),
+          style: modelMenuItemStyle,
           label: (
-            <Flexbox horizontal align="center" gap={8}>
-              <ProviderIcon
-                providerId={model.provider_id || ''}
-                providerName={model.provider_name}
-                size={18}
-              />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
+            <Flexbox horizontal align="center" gap={8} style={modelMenuLabelStyle}>
+              <span style={modelMenuIconStyle}>
+                <ProviderIcon
+                  providerId={model.provider_id || ''}
+                  providerName={model.provider_name}
+                  size={18}
+                />
+              </span>
+              <span title={model.display_name || model.id} style={modelMenuTextStyle}>
                 {model.display_name || model.id}
               </span>
             </Flexbox>
@@ -240,6 +306,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
   return (
     <section
+      data-pt-agent-composer
       style={{
         width: '100%',
         minHeight,
@@ -254,73 +321,50 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         gap: 8,
       }}
     >
-      {drafts.length > 0 && (
-        <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-          {drafts.map((draft) => (
-            <Flexbox
-              key={draft.id}
-              horizontal
-              align="center"
-              gap={6}
-              style={{
-                maxWidth: 220,
-                padding: '4px 8px 4px 10px',
-                borderRadius: 10,
-                background: token.colorFillQuaternary,
-                opacity: draft.status === 'uploading' ? 0.6 : 1,
-              }}
-            >
-              {draft.previewUrl ? (
-                <img
-                  src={draft.previewUrl}
-                  alt={draft.name}
-                  style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'cover' }}
-                />
-              ) : null}
-              <span style={{ fontSize: 12, color: token.colorTextSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {draft.name}
-              </span>
-              <ActionIcon
-                icon={X}
-                size="small"
-                title={t('chat.input.attachmentRemove')}
-                onClick={() => removeDraft(draft.id)}
-              />
-            </Flexbox>
-          ))}
-        </Flexbox>
+      <AttachmentStage drafts={drafts} onRemove={removeDraft} onRetry={retryDraft} />
+
+      {readinessErrorKey && (
+        <div style={{ color: token.colorError, fontSize: 12 }}>
+          {t(readinessErrorKey)}
+        </div>
       )}
 
-      <textarea
-        ref={textareaRef}
-        value={input}
-        onChange={(event) => setInput(event.target.value)}
-        onKeyDown={handleKeyDown}
-        onInput={resizeTextarea}
-        onCompositionStart={() => {
-          isComposingRef.current = true;
-        }}
-        onCompositionEnd={() => {
-          isComposingRef.current = false;
-        }}
-        placeholder={customPlaceholder || t('chat.input.placeholder')}
-        rows={2}
-        style={{
-          width: '100%',
-          minHeight: 34,
-          maxHeight: 190,
-          border: 0,
-          outline: 'none',
-          resize: 'none',
-          color: token.colorText,
-          fontSize: 14,
-          lineHeight: 1.5,
-          fontFamily: 'inherit',
-          background: 'transparent',
-          boxSizing: 'border-box',
-          padding: 0,
-        }}
-      />
+      <MentionTagBar />
+
+      <div style={{ position: 'relative', width: '100%' }}>
+        {showMentionPopup && <MentionPopup onSelect={handleMentionSelect} />}
+        <textarea
+          data-pt-agent-composer-input
+          ref={textareaRef}
+          value={input}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
+          onInput={resizeTextarea}
+          onCompositionStart={() => {
+            isComposingRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            isComposingRef.current = false;
+          }}
+          placeholder={customPlaceholder || t('chat.input.placeholder')}
+          rows={2}
+          style={{
+            width: '100%',
+            minHeight: 34,
+            maxHeight: 190,
+            border: 0,
+            outline: 'none',
+            resize: 'none',
+            color: token.colorText,
+            fontSize: 14,
+            lineHeight: 1.5,
+            fontFamily: 'inherit',
+            background: 'transparent',
+            boxSizing: 'border-box',
+            padding: 0,
+          }}
+        />
+      </div>
 
       <Flexbox horizontal align="center" gap={8}>
         <Flexbox horizontal align="center" gap={8}>
@@ -388,13 +432,15 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
               }}
             >
               {modelInfo && (
+              <span style={modelMenuIconStyle}>
                 <ProviderIcon
                   providerId={modelInfo.provider_id || ''}
                   providerName={modelInfo.provider_name}
                   size={16}
                 />
+              </span>
               )}
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1 }}>{modelLabel}</span>
+            <span title={modelLabel} style={{ ...modelMenuTextStyle, lineHeight: 1 }}>{modelLabel}</span>
               {modelDropdownOpen
                 ? <ChevronUp size={12} color={COMPOSER_COLORS.textTertiary} style={{ flexShrink: 0 }} />
                 : <ChevronDown size={12} color={COMPOSER_COLORS.textTertiary} style={{ flexShrink: 0 }} />
@@ -406,6 +452,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         <Flexbox horizontal align="center" gap={8} justify="flex-end">
           {isStreaming ? (
             <ActionIcon
+              data-pt-agent-stop
               icon={Square}
               onClick={stopStreaming}
               title={t('chat.input.stop')}
@@ -418,6 +465,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
             />
           ) : (
             <ActionIcon
+              data-pt-agent-composer-send
               icon={ArrowUp}
               onClick={handleSend}
               disabled={sendDisabled}

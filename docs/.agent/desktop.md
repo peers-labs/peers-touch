@@ -23,27 +23,27 @@ Do **not** use this file as the place to redefine Desktop architecture, module b
 
 ### Architecture Sources
 
-- [Desktop Runtime Architecture](file://docs/architecture/runtime/desktop-runtime-architecture.md)
-- [Station/Desktop Scope Boundary](file://docs/architecture/boundaries/station-desktop-scope-boundary.md)
+- [Desktop Runtime Architecture](../../docs/architecture/runtime/desktop-runtime-architecture.md)
+- [Station/Desktop Scope Boundary](../../docs/architecture/boundaries/station-desktop-scope-boundary.md)
 
 ### Platform Sources
 
-- [Desktop Base](file://docs/client/desktop/base.md)
-- [Desktop README](file://docs/client/desktop/README.md)
-- [Client UI Identity](file://docs/client/common/ui-identity/README.md)
-- [Client UX Design Methodology](file://docs/client/common/ux-design-methodology.md)
-- [Desktop Client Lifecycle](file://docs/client/desktop/lifecycle.md)
-- [Desktop Runtime Projections — Page / Runtime / Boot kernel contracts (single source of truth)](file://docs/client/desktop/runtime-projections.md)
-- [Desktop Global Context Kernel](file://docs/client/desktop/global-context-kernel.md)
+- [Desktop Base](../../docs/client/desktop/base.md)
+- [Desktop README](../../docs/client/desktop/README.md)
+- [Client UI Identity](../../docs/client/common/ui-identity/README.md)
+- [Client UX Design Methodology](../../docs/client/common/ux-design-methodology.md)
+- [Desktop Client Lifecycle](../../docs/client/desktop/lifecycle.md)
+- [Desktop Runtime Projections — Page / Runtime / Boot kernel contracts (single source of truth)](../../docs/client/desktop/runtime-projections.md)
+- [Desktop Global Context Kernel](../../docs/client/desktop/global-context-kernel.md)
 
 ### Specification Sources
 
-- [Desktop Coding Guide](file://docs/global/coding-guide/desktop)
-- [Common Coding Guide](file://docs/global/coding-guide/common)
+- [Desktop Coding Guide](../../docs/global/coding-guide/desktop)
+- [Common Coding Guide](../../docs/global/coding-guide/common)
 
 ### Topic Sources
 
-- [Provider Model Target Architecture](file://docs/client/desktop/provider-model-target-architecture.md)
+- [Provider Model Target Architecture](../../docs/client/desktop/provider-model-target-architecture.md)
 
 ---
 

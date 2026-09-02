@@ -69,10 +69,12 @@ export function PortalPanel() {
       maxWidth={560}
       expand={expanded}
       onExpandChange={(expand) => {
-        if (!expand) usePortalStore.getState().close();
+        if (!expand) usePortalStore.getState().collapse();
       }}
     >
       <Flexbox
+        data-pt-agent-portal
+        data-pt-agent-portal-view={activeView?.type ?? 'artifacts'}
         style={{
           height: '100%',
           background: token.colorBgContainer,

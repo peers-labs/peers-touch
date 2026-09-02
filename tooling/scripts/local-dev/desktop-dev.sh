@@ -11,7 +11,12 @@ MODE="${1:-app}"
 # Derive a stable port offset from WORKTREE_ID so each worktree gets
 # deterministic, non-conflicting ports without explicit configuration.
 # Range: 0–99, giving base+offset within safe ephemeral territory.
-_wt_offset=$(printf '%s' "${WORKTREE_ID}" | cksum | awk '{print $1 % 100}')
+# In E2E acceptance mode the caller already chose exact ports — skip offset.
+if [[ "${PT_DESKTOP_E2E:-}" == "true" ]]; then
+  _wt_offset=0
+else
+  _wt_offset=$(printf '%s' "${WORKTREE_ID}" | cksum | awk '{print $1 % 100}')
+fi
 
 case "$MODE" in
   app)

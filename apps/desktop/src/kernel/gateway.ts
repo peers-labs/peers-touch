@@ -10,6 +10,10 @@ declare global {
   }
 }
 
+export function isBrowserGatewayRuntime(): boolean {
+  return typeof window !== 'undefined' && '__PT_GATEWAY_BASE__' in window;
+}
+
 export function installBrowserGateway(): void {
   if (typeof window === 'undefined' || '__TAURI_INTERNALS__' in window) return;
 

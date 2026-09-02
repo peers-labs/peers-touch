@@ -27,6 +27,7 @@ import { api, streamAgentCollaborationEvents } from '../services/desktop_api';
 import type { Agent } from '../services/desktop_api';
 import { AgentIconTile } from '../components/agent/AgentIconTile';
 import { useAgentStore } from '../store/agent';
+import { enforce_canvas_single_agent_readiness } from '../services/agentCanvasReadinessGuard';
 
 type CanvasRunState = 'idle' | 'matched' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -204,8 +205,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
   const { token } = theme.useToken();
   const agents = useAgentStore(s => s.agents);
   const loadAgents = useAgentStore(s => s.loadAgents);
-  const setAgentSurface = useAgentStore(s => s.setAgentSurface);
-  const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
+  const createAgent = useAgentStore(s => s.createAgent);
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [prompt, setPrompt] = useState('');
   const [runState, setRunState] = useState<CanvasRunState>('idle');
@@ -357,7 +357,9 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
   const handleCreateAgent = useCallback(async () => {
     if (isRunning) return;
     const suffix = Date.now().toString(36);
-    const created = await api.createAgent({
+    // Use the store's first-class createAgent (C5): it persists, merges into the
+    // roster, selects the new agent and switches to its profile surface.
+    const created = await createAgent({
       name: `agent-${suffix}`,
       title: t('agent.profile.identityTitlePlaceholder'),
       description: '',
@@ -368,11 +370,8 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
       visibility: 'private',
       workspaceMode: 'agent',
     });
-    await loadAgents();
-    setAgentSurface(created.name, 'profile');
-    setSelectedAgent(created.name);
     onCreateAgent(created.name);
-  }, [isRunning, loadAgents, onCreateAgent, setAgentSurface, setSelectedAgent, t]);
+  }, [isRunning, createAgent, onCreateAgent, t]);
 
   const removeNode = useCallback((nodeId: string) => {
     if (isRunning) return;
@@ -387,6 +386,14 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
 
   const runCanvas = useCallback(() => {
     if (!canRun) return;
+    const blocker = enforce_canvas_single_agent_readiness();
+    if (blocker.terminal) {
+      setRunError(t(blocker.localeKey, {
+        required_gate: blocker.details.required_gate,
+      }));
+      return;
+    }
+
     const runSeq = runSeqRef.current + 1;
     runSeqRef.current = runSeq;
     desktopExecutorNodeIdsRef.current.clear();
@@ -555,8 +562,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
 
           const stationAgentId = fieldString(persisted, 'agentId', 'agent_id');
           const agent = agentById.get(stationAgentId) || nodes[index]?.agent;
-          const cliCommand = agent?.cliCommand?.trim();
-          if (!agent || !cliCommand) return;
+          if (!agent) return;
 
           desktopExecutorInFlightRef.current.add(nodeId);
           setNodes((current) => current.map((node) => (
@@ -600,18 +606,14 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
                   lease_ttl_ms: 300000,
                 }).catch(() => undefined);
               }, 15000);
-              const result = await api.executeAgentTurnOnce({
+              const result = await api.executeGuardedCanvasTurnOnce({
+                client_idempotency_key: crypto.randomUUID(),
                 conversation_id: `${createdTaskId}:${nodeId}`,
                 agent_id: agent.id,
                 user_input: desktopExecutorPrompt(persisted, detail, prompt, t),
                 provider: agent.provider,
                 model: agent.model,
-                cli_command: cliCommand,
-                workspace_mode: agent.workspaceMode,
-                runtime_backend: agent.runtimeBackend,
-                rootfs_path: agent.rootfsPath,
                 effort: agent.effort,
-                platform: 'desktop',
               });
               if (runSeqRef.current !== runSeq) return;
               resultSummary = extractDesktopExecutorSummary(result) || t('agent.canvas.desktopExecutorCompleted');

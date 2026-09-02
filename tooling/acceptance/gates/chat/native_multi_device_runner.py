@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from tooling.acceptance.core import (
@@ -14,6 +14,7 @@ from tooling.acceptance.core import (
     ActorRuntime,
     GateError,
     REPO_ROOT,
+    REPORTS_DIR,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
@@ -23,14 +24,11 @@ from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
     NativeClientLifecycleLedger,
     async_harness,
-    cleanup_preserving_primary_failure,
     commits_match,
-    configure_station,
     current_commit,
     current_workspace_digest,
     enter_chat_page,
     message_snapshot,
-    native_runtime_source_identity,
     read_station_version,
     reset_fixture,
     runtime_station_service,
@@ -38,19 +36,17 @@ from tooling.acceptance.gates.chat.native_support import (
     send_text,
     start_authenticated_client,
     stop_client,
-    verify_runtime_fixture_ready,
     wait_until,
 )
 
 
-GATE_ID = "chat-native-multi-device-e2e"
-REPORT_PATH = None
+REPORT_PATH = Path(
+    os.environ.get(
+        "CHAT_NATIVE_MULTI_DEVICE_REPORT",
+        str(REPORTS_DIR / "chat-native-multi-device-run.json"),
+    )
+)
 CLIENT_PORTS = {"alice": 4447, "bob1": 4448, "bob2": 4449}
-CLIENT_ACTOR_ROLES = {
-    "alice": "alice",
-    "bob1": "bob",
-    "bob2": "bob",
-}
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 REQUIRED_ASSERTIONS = {
     "native_runtime",
@@ -61,36 +57,12 @@ REQUIRED_ASSERTIONS = {
 }
 
 
-def selected_runtime() -> tuple[
-    dict[str, Any],
-    dict[str, Any],
-    NativeDesktopRuntimeBinding,
-] | None:
-    selected = selected_native_runtime(GATE_ID)
-    if selected is None:
-        return None
-    return selected.manifest, selected.actor_manifest, selected.binding
-
-
 class NativeMultiDeviceGate(AcceptanceGate):
-    gate_id = GATE_ID
-    phase = "MP-W07"
-    bom = ("MP-G05", "MP-G06")
-    spec = ("chat-native-visible-clients",)
+    gate_id = "chat-native-multi-device-e2e"
     report_path = REPORT_PATH
-    evidence_dir = (
-        REPORT_PATH.parent / "chat-native-multi-device-evidence"
-        if REPORT_PATH is not None
-        else None
-    )
+    evidence_dir = REPORT_PATH.parent / "chat-native-multi-device-evidence"
 
-    def __init__(
-        self,
-        *,
-        manifest: dict[str, Any] | None = None,
-        actor_manifest: dict[str, Any] | None = None,
-        runtime_binding: NativeDesktopRuntimeBinding | None = None,
-    ) -> None:
+    def __init__(self) -> None:
         super().__init__()
         injected = (manifest, actor_manifest, runtime_binding)
         if any(value is not None for value in injected) and not all(
@@ -170,8 +142,6 @@ class NativeMultiDeviceGate(AcceptanceGate):
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
-        self.cleanup_evidence: dict[str, Any] = {}
-        self.source_evidence: dict[str, Any] = {}
 
     def step(
         self,
@@ -204,9 +174,6 @@ class NativeMultiDeviceGate(AcceptanceGate):
         return value
 
     def start_client(self, actor: str) -> None:
-        if self.runtime_binding is not None:
-            self.start_injected_client(actor)
-            return
         account = "bob" if actor.startswith("bob") else actor
         client, ptid = start_authenticated_client(
             account,
@@ -518,33 +485,21 @@ class NativeMultiDeviceGate(AcceptanceGate):
             "station.identity",
             lambda: read_station_version(self.station_url),
         )
-        if self.runtime_binding is None:
-            live_commit = str(version.get("build_commit") or "")
-            if not commits_match(live_commit, self.tested_commit):
-                raise GateError(
-                    "Station/client commit mismatch: "
-                    f"station={live_commit or 'missing'} "
-                    f"client={self.tested_commit}"
-                )
-        else:
-            self.source_evidence = self.validate_source_identity(version)
+        live_commit = str(version.get("build_commit") or "")
+        if not commits_match(live_commit, self.tested_commit):
+            raise GateError(
+                "Station/client commit mismatch: "
+                f"station={live_commit or 'missing'} client={self.tested_commit}"
+            )
 
-        self.step(
-            "fixture.reset",
-            self.verify_fixture_ready
-            if self.runtime_binding is not None
-            else lambda: reset_fixture(("alice", "bob")),
-        )
-        webdriver_root = (
-            REPO_ROOT / ".local" / "acceptance" / "embedded-webdriver"
-        )
-        if self.runtime_binding is None:
-            # The local fixture does not own instance-specific storage.
-            for instance in ("bob1", "bob2"):
-                instance_storage = webdriver_root / instance / "storage"
-                if instance_storage.exists():
-                    shutil.rmtree(instance_storage)
-                instance_storage.mkdir(parents=True, exist_ok=True)
+        self.step("fixture.reset", lambda: reset_fixture(("alice", "bob")))
+        # Clear instance-specific storage (bob1, bob2) not covered by reset_fixture.
+        webdriver_root = REPO_ROOT / ".local" / "acceptance" / "embedded-webdriver"
+        for instance in ("bob1", "bob2"):
+            instance_storage = webdriver_root / instance / "storage"
+            if instance_storage.exists():
+                shutil.rmtree(instance_storage)
+            instance_storage.mkdir(parents=True, exist_ok=True)
         try:
             # Phase 1: alice + bob1 — verify initial delivery
             for actor in ("alice", "bob1"):
@@ -607,27 +562,18 @@ class NativeMultiDeviceGate(AcceptanceGate):
             # Phase 2: bob2 logs in (session kick).
             # Copy bob1's actor identity key to bob2's storage so the same PTID
             # can enroll a second device without ErrActorIdentityConflict.
-            if self.runtime_binding is None:
-                bob1_keys = (
-                    webdriver_root / "bob1" / "storage" / "peers-touch"
-                    / "desktop" / "data" / "secure-store" / "identity-keys"
-                )
-                bob2_keys = (
-                    webdriver_root / "bob2" / "storage" / "peers-touch"
-                    / "desktop" / "data" / "secure-store" / "identity-keys"
-                )
-                if bob1_keys.exists():
-                    bob2_keys.mkdir(parents=True, exist_ok=True)
-                    for key_file in bob1_keys.iterdir():
-                        shutil.copy2(key_file, bob2_keys / key_file.name)
-            else:
-                self.runtime_binding.clone_actor_storage(
-                    "bob1",
-                    self.client_specs["bob1"],
-                    "bob2",
-                    self.client_specs["bob2"],
-                    "peers-touch/desktop/data/secure-store/identity-keys",
-                )
+            bob1_keys = (
+                webdriver_root / "bob1" / "storage" / "peers-touch"
+                / "desktop" / "data" / "secure-store" / "identity-keys"
+            )
+            bob2_keys = (
+                webdriver_root / "bob2" / "storage" / "peers-touch"
+                / "desktop" / "data" / "secure-store" / "identity-keys"
+            )
+            if bob1_keys.exists():
+                bob2_keys.mkdir(parents=True, exist_ok=True)
+                for key_file in bob1_keys.iterdir():
+                    shutil.copy2(key_file, bob2_keys / key_file.name)
 
             self.step(
                 "client.authenticated",
@@ -680,29 +626,23 @@ class NativeMultiDeviceGate(AcceptanceGate):
                 self.save_dom(self.clients[actor], actor)
                 self.save_app_log(self.clients[actor], actor)
         finally:
-            cleanup_preserving_primary_failure(
-                self.cleanup_runtime,
-                self.report,
-                "Native multi-device",
-            )
+            for client in self.clients.values():
+                try:
+                    stop_client(client)
+                except Exception:
+                    client.stop()
 
         assertion_names = {assertion.name for assertion in self.report.assertions}
         missing = REQUIRED_ASSERTIONS - assertion_names
         if missing:
             raise GateError(f"required assertions are missing: {sorted(missing)}")
         return {
-            "runtimeCell": (
-                self.runtime_binding.cell_id
-                if self.runtime_binding is not None
-                else "native-tauri-embedded-webdriver"
-            ),
+            "runtimeCell": "native-tauri-embedded-webdriver",
             "journey": "session-handoff-delivery",
             "testedCommit": self.tested_commit,
             "testedWorkspaceDigest": self.workspace_digest,
             "stationLive": version,
-            "sourceIdentity": self.source_evidence,
             "conversationId": conversation_id,
-            "cleanup": self.cleanup_evidence,
             "steps": self.steps,
             "clients": {
                 actor: {
@@ -719,14 +659,4 @@ class NativeMultiDeviceGate(AcceptanceGate):
 
 
 if __name__ == "__main__":
-    runtime = selected_runtime()
-    gate = (
-        NativeMultiDeviceGate()
-        if runtime is None
-        else NativeMultiDeviceGate(
-            manifest=runtime[0],
-            actor_manifest=runtime[1],
-            runtime_binding=runtime[2],
-        )
-    )
-    raise SystemExit(gate.execute())
+    raise SystemExit(NativeMultiDeviceGate().execute())

@@ -118,7 +118,10 @@ func (p *ProviderMemoryEmbeddingProvider) Embed(ctx context.Context, text string
 
 	providerHelper := NewProviderService(nil)
 	baseURL, apiKey := providerHelper.extractConfig(provider.Config, provider.KeyVaults)
-	providerType := providerHelper.detectProviderType(provider.Name, provider.SourceType, baseURL)
+	providerType, err := explicitProviderType(provider.Protocol)
+	if err != nil {
+		return nil, err
+	}
 	model := p.resolveModel(provider)
 	if model == "" {
 		return nil, fmt.Errorf("embedding model is required for provider %q", p.providerID)

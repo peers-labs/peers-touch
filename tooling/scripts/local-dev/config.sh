@@ -12,5 +12,5 @@ echo "  Worktree: $WORKTREE_ID"
 echo "  File: $PROFILE_FILE"
 echo ""
 echo "Configuration:"
-grep -v '^#' "$PROFILE_FILE" | grep -v '^$' | sed 's/^/  /'
+print_redacted_env_file "$PROFILE_FILE" | sed 's/^/  /'
 echo ""

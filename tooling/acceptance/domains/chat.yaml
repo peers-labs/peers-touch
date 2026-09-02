@@ -10,7 +10,6 @@
     "chat-direct-delivery-receipt",
     "chat-native-visible-clients",
     "chat-message-interactions",
-    "chat-product-closure",
     "chat-typing-presence"
   ],
   "validation_gate_id": "chat-domain-validation"

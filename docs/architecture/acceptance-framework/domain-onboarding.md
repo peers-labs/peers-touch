@@ -3,6 +3,7 @@
 > **Status**: active
 > **Version**: v1.0
 > **Created**: 2026-06-03 | **Updated**: 2026-09-02
+
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -87,6 +88,7 @@ Gate catalog、environment contract 和 Provisioner 必须形成一个可执行�
 | Client service bindings | Environment contract | 每个 client 必须显式声明 `required_service_roles`；需要服务时通过 `service_bindings[role]` 引用稳定 service ID 并声明 required kind，无服务依赖时显式声明空列表；不得保存 endpoint 副本 |
 | Runtime consumption | Platform Runtime Binding + Gate runner | Runtime Binding 通过 `create_bound_session(client_id, launch_options)` 分配 launch generation，按每个 required role 从 live connection state 读取 identity，并绑定既有 D-13 runtime-instance identity；每个 role 验证并自动登记 proof 后才返回 session。`launch_options` 必须使用平台 closed schema；Gate 不得传入 generation、任意环境变量、service URL、service identity、legacy `station` 或其他拓扑字段 |
 | Fault transport | Platform Runtime Binding + Domain Gate | Domain Gate 可提供本地 fault proxy，但只能通过 Runtime Binding 获取和应用 opaque `TransportOverrideHandle`；Gate 不得读取 routable proxy URL，override 不得替代 canonical service binding 或 proof |
+
 
 Native Tauri Gate 还必须通过 `acceptance-driver-build` 产出专用 binary，并通过
 `tooling/acceptance/drivers/tauri.py` 的公开入口解析 binary。具体路径属于 Driver
@@ -185,5 +187,5 @@ Feature / Gate closure，并 fail closed：
 | `federation` | `active` | `project_validation_domain` | 首个复杂验证域，用于双边互验证 |
 | `station-dashboard` | `active` | `managed_domain` | 首个普通产品域，验证 onboarding 标准可泛化 |
 | `chat` | `active` | `managed_domain` | 首个用户主路径 domain，覆盖 persistence / Station runtime message flow / live realtime delivery / realtime typed contract / Desktop typed surface |
-| `mobile` | `active` | `managed_domain` | 结构接入完成；iOS/Android native product proof 在对应 environment Gates 通过前保持 `UNPROVEN` |
+| `mobile` | `planned` | `not_onboarded` | 待补 mobile-web / Tauri mobile / native plugin boundaries |
 | `applet` | `active` | `managed_domain` | Domain 契约和 local lifecycle Gate 已接入；Python Core wrapper、原生可见流程和 Mobile 仍为未完成/未证明范围 |

@@ -57,12 +57,25 @@ pub fn agent_submit_feedback(
     input: app::AgentFeedbackInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<StubPayload> {
+) -> AppResult<Vec<u8>> {
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     app::agent_submit_feedback(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_list_turn_feedback(
+    input: app::AgentTurnFeedbackListInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    app::agent_list_turn_feedback(input, &token)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

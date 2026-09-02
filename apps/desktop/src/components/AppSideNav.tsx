@@ -12,6 +12,7 @@ import {
   Keyboard,
   NotebookTabs,
   Plus,
+  Sparkles,
   UserRoundCog,
 } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
@@ -332,6 +333,15 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
                 active={page === 'notes'}
                 onClick={() => navigatePrimary('notes')}
                 title={t('layout.nav.notes')}
+              />
+            </PrimaryNavAnchor>
+            <PrimaryNavAnchor pageId="marketplace">
+              <ActionIcon
+                icon={Sparkles}
+                size="large"
+                active={page === 'marketplace'}
+                onClick={() => navigatePrimary('marketplace')}
+                title={t('layout.nav.marketplace')}
               />
             </PrimaryNavAnchor>
             {getModulesWithSidebar()

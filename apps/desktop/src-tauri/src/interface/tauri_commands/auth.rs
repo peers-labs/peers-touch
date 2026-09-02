@@ -189,9 +189,11 @@ fn broadcast_identity(
             reason,
             actor_ptid: data.actor_ptid.clone(),
             login_method: data.login_method.clone(),
+            device_type: Some("desktop-native".to_string()),
         },
     );
 }
+
 
 fn unbind_after(state: &Arc<AppState>, window: &Window, result: &AppResult<AuthSessionPayload>) {
     if !result.ok {

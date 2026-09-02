@@ -11,13 +11,16 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // ---------------------------------------------------------------------------
@@ -200,16 +203,50 @@ func (h *GrowthHandlers) HandleRecordFeedback(ctx context.Context, req *model.Re
 			"signal must be \"positive\" or \"negative\"", nil))
 	}
 
-	// RecordFeedback is fire-and-forget; errors are logged inside the service.
-	// We generate an acknowledgement ID for the caller.
-	h.growthMetrics.RecordFeedback(ctx, req.GetAgentId(), req.GetTurnId(), req.GetConversationId(), req.GetSignal(), req.Comment)
+	record, replayed, err := h.growthMetrics.RecordFeedback(ctx, subjectActorID(ctx), service.TurnFeedbackInput{
+		AgentID:            req.GetAgentId(),
+		TurnID:             req.GetTurnId(),
+		ConversationID:     req.GetConversationId(),
+		AssistantMessageID: req.GetAssistantMessageId(),
+		Signal:             req.GetSignal(),
+		Source:             req.GetSource(),
+		Rating:             req.GetRating(),
+		Categories:         req.GetCategories(),
+		Comment:            req.Comment,
+		IdempotencyKey:     req.GetIdempotencyKey(),
+	})
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
 
 	logger.Infof(ctx, "HandleRecordFeedback accepted: agent_id=%s turn_id=%s signal=%s",
 		req.GetAgentId(), req.GetTurnId(), req.GetSignal())
 
 	return &model.RecordFeedbackResponse{
-		Id: req.GetTurnId(),
+		Id:       record.ID,
+		Feedback: persistenceFeedbackToProto(record),
+		Replayed: replayed,
 	}, nil
+}
+
+func (h *GrowthHandlers) HandleListTurnFeedback(
+	ctx context.Context,
+	req *model.ListTurnFeedbackRequest,
+) (*model.ListTurnFeedbackResponse, error) {
+	if req.GetTurnId() == "" {
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "turn_id is required", nil))
+	}
+	records, err := h.growthMetrics.ListTurnFeedback(ctx, subjectActorID(ctx), req.GetTurnId())
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	response := &model.ListTurnFeedbackResponse{
+		Feedback: make([]*model.TurnFeedback, 0, len(records)),
+	}
+	for index := range records {
+		response.Feedback = append(response.Feedback, persistenceFeedbackToProto(&records[index]))
+	}
+	return response, nil
 }
 
 // ===========================================================================
@@ -534,7 +571,7 @@ func (h *GrowthHandlers) HandleGetFeedbackHistory(ctx context.Context, req *GetF
 	limit := clampLimit(req.Limit)
 	offset := clampOffset(req.Offset)
 
-	feedbacks, total, err := h.growthMetrics.GetFeedbackHistory(ctx, req.AgentID, limit, offset)
+	feedbacks, total, err := h.growthMetrics.GetFeedbackHistory(ctx, subjectActorID(ctx), req.AgentID, limit, offset)
 	if err != nil {
 		logger.Errorf(ctx, "HandleGetFeedbackHistory failed: agent_id=%s err=%v", req.AgentID, err)
 		return nil, toHandlerError(err)
@@ -558,6 +595,34 @@ func (h *GrowthHandlers) HandleGetFeedbackHistory(ctx context.Context, req *GetF
 	}
 
 	return resp, nil
+}
+
+func persistenceFeedbackToProto(record *persistence.UserFeedback) *model.TurnFeedback {
+	if record == nil {
+		return nil
+	}
+	var categories []string
+	_ = json.Unmarshal(record.Categories, &categories)
+	return &model.TurnFeedback{
+		FeedbackId:         record.ID,
+		TurnId:             record.TurnID,
+		AssistantMessageId: record.AssistantMessageID,
+		Ptid:               record.Ptid,
+		Source:             record.Source,
+		Rating:             record.Rating,
+		Categories:         categories,
+		Comment:            optionalStringValue(record.Comment),
+		CreatedAt:          timestamppb.New(record.CreatedAt),
+		UpdatedAt:          timestamppb.New(record.UpdatedAt),
+		ConversationId:     record.ConversationID,
+	}
+}
+
+func optionalStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // ===========================================================================

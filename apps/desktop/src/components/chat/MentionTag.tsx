@@ -25,6 +25,7 @@ export function MentionTag({ agentId }: MentionTagProps) {
 
   return (
     <Tag
+      data-pt-agent-mention-tag={agentId}
       closable
       closeIcon={<X size={12} />}
       onClose={() => removeMention(agentId)}
@@ -64,6 +65,7 @@ export function MentionTagBar() {
 
   return (
     <Flexbox
+      data-pt-agent-mention-tags
       horizontal
       align="center"
       gap={token.marginXS}

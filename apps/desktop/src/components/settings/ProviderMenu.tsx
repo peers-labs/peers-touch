@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Typography, Modal, Form, theme, Divider, Avatar } from 'antd';
@@ -12,20 +12,15 @@ const { Text } = Typography;
 
 export function ProviderMenu() {
   const { t } = useTranslation('provider');
-  const { providers, selectedId, loadProviders, selectProvider, createProvider } = useActiveProviderSlice((s) => ({
+  const { providers, selectedId, selectProvider, createProvider } = useActiveProviderSlice((s) => ({
     providers: s.providers,
     selectedId: s.selectedId,
-    loadProviders: s.loadProviders,
     selectProvider: s.selectProvider,
     createProvider: s.createProvider,
   }));
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const { token } = theme.useToken();
-
-  useEffect(() => {
-    loadProviders();
-  }, [loadProviders]);
 
   const filtered = providers.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase()),

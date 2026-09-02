@@ -31,6 +31,7 @@ func (r *typedHandlerTestResponse) Write(body []byte) (int, error) {
 	r.body = append(r.body, body...)
 	return len(body), nil
 }
+func (r *typedHandlerTestResponse) Flush() error           { return nil }
 func (r *typedHandlerTestResponse) WriteHeader(status int) { r.status = status }
 func (r *typedHandlerTestResponse) Status() int            { return r.status }
 

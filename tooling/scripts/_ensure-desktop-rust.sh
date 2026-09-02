@@ -231,9 +231,9 @@ ensure_desktop_rust_ready() {
   wt_suffix="$(printf '%s' "${wt_id}" | tr -cs 'a-zA-Z0-9' '-' | sed 's/-$//')"
   local bundle_id="com.peertouch.dev.${wt_suffix}"
   if [[ "$headless" == "--headless" && "$e2e_testing" == "true" ]]; then
-    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}],\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
+    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"create\":false}],\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
   elif [[ "$headless" == "--headless" ]]; then
-    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}]}}"
+    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"create\":false}]}}"
   elif [[ "$e2e_testing" == "true" ]]; then
     tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
   else
@@ -241,7 +241,7 @@ ensure_desktop_rust_ready() {
   fi
 
   local desired_fp
-  desired_fp="$(tauri_compute_fingerprint "$desktop_dir" "$profile")"
+  desired_fp="$(tauri_compute_fingerprint "$desktop_dir" "$profile"):${PT_CLIENT_SURFACE:-desktop}"
 
   # Determine if a restart is needed: explicit RESTART=1 or source code changed
   local needs_restart=false
@@ -273,13 +273,14 @@ ensure_desktop_rust_ready() {
   echo "[INFO] Starting Desktop Rust BFF (profile=$profile, gateway=:$gw_port)..."
 
   # Both headless (web) and windowed (app) modes use `pnpm tauri dev --config`
-  # to ensure devUrl, window visibility, and beforeDevCommand overrides are
-  # applied correctly. The binary cannot accept runtime config overrides.
+  # to ensure devUrl, window creation, and beforeDevCommand overrides are
+  # applied correctly. Browser mode keeps the Rust BFF rendererless so no
+  # hidden WebView can become a second session owner.
   # See docs/architecture/runtime/desktop-runtime-architecture.md §6.4.
   local tauri_feature_args=()
   if [[ "${PT_DESKTOP_E2E:-false}" == "true" ]]; then
-    tauri_feature_args=(--features acceptance-webdriver)
-    echo "[INFO] Native Playwright observer enabled (acceptance-webdriver feature)"
+    tauri_feature_args=(--features e2e-testing)
+    echo "[INFO] Native Playwright observer enabled (e2e-testing feature)"
   fi
   (
     cd "$desktop_dir"
@@ -300,6 +301,7 @@ TAURI_GATEWAY_PORT='${gw_port}'
 TAURI_VITE_PORT='${vite_port}'
 TAURI_STATION_URL='${PEERS_STATION_URL:-}'
 TAURI_E2E_TESTING='${PT_DESKTOP_E2E:-false}'
+TAURI_CLIENT_SURFACE='${PT_CLIENT_SURFACE:-desktop}'
 TAURI_PID='${TAURI_PID}'
 EOF
   echo "[INFO] Rust BFF started (pid: $TAURI_PID), waiting for gateway..."

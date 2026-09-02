@@ -2,9 +2,12 @@
 
 > **Module**: P0-M1 Streaming Runtime
 > **Step**: S2 — Peers Design
-> **Status**: draft
+> **Status**: superseded by `docs/architecture/agent/modern-chat-agent/`
 > **Depends on**: reference-analysis.md (S1 complete)
 > **ADR compliance**: ADR-1 (Station is sole executor)
+> **Historical note**: the `local_tool_request` bridge and Rust approval waiter
+> were deleted by MCA-D19 G1-E. Current client execution uses Station-issued
+> fenced capability envelopes.
 
 ---
 

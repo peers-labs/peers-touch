@@ -41,10 +41,18 @@ if (import.meta.hot) {
   });
 }
 
-if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
-  void import('./acceptance/registry').then(({ installAcceptanceHarnesses }) => {
-    void installAcceptanceHarnesses();
-  });
+async function installAcceptanceHarnessesForBuild(): Promise<void> {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+
+  const [
+    { installAcceptanceHarnesses },
+    { installAgentAcceptanceHarness },
+  ] = await Promise.all([
+    import('./acceptance/registry'),
+    import('./acceptance/agentAcceptanceHarness'),
+  ]);
+  await installAcceptanceHarnesses();
+  installAgentAcceptanceHarness();
 }
 
 window.__PT_BOOT_STATUS__?.('Initializing…');
@@ -53,6 +61,8 @@ window.__PT_BOOT_STATUS__?.('Initializing…');
 
 async function bootstrap() {
   markPhaseStart('shell');
+
+  await installAcceptanceHarnessesForBuild();
 
   window.__PT_BOOT_STATUS__?.('Loading language packs…');
   const i18n = await initI18n();

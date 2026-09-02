@@ -1,6 +1,12 @@
 import { log } from '../utils/logger';
 
-export type IdentityChangeReason = 'login' | 'logout' | 'switch' | 'unlock' | 'oauth_bridge';
+export type IdentityChangeReason =
+  | 'login'
+  | 'logout'
+  | 'revoked'
+  | 'switch'
+  | 'unlock'
+  | 'oauth_bridge';
 
 export interface IdentityChangePayload {
   reason: IdentityChangeReason;
@@ -35,6 +41,31 @@ const orderedHandlers: Array<{
   fn: (payload: IdentityChangePayload) => void | Promise<void>;
 }> = [];
 
+// #region debug-point F:foundation-cleanup-identity-pipeline
+function reportFoundationCleanupIdentityHandler(
+  stage: string,
+  handlerName: string,
+  durationMs?: number,
+): void {
+  if (typeof fetch !== 'function') return;
+  void fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'as-f07-revision-flow',
+      runId: 'pre-fix-logout',
+      hypothesisId: 'F',
+      location: 'identityPipeline.ts:runIdentityPipeline',
+      msg: `[DEBUG] ${stage}`,
+      data: {
+        handlerName,
+        ...(durationMs === undefined ? {} : { durationMs }),
+      },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 export function registerIdentityHandler(
   name: string,
   fn: (payload: IdentityChangePayload) => void | Promise<void>,
@@ -53,12 +84,21 @@ export async function runIdentityPipeline(payload: IdentityChangePayload): Promi
   const failures: IdentityHandlerFailure[] = [];
   for (const { name, fn } of orderedHandlers) {
     const t0 = performance.now();
+    if (payload.reason === 'logout') {
+      reportFoundationCleanupIdentityHandler('handler-started', name);
+    }
     try {
       await fn(payload);
       const ms = Math.round(performance.now() - t0);
+      if (payload.reason === 'logout') {
+        reportFoundationCleanupIdentityHandler('handler-finished', name, ms);
+      }
       log.info('identity', `identity pipeline handler ok: ${name}`, { ms, reason: payload.reason });
     } catch (error) {
       const ms = Math.round(performance.now() - t0);
+      if (payload.reason === 'logout') {
+        reportFoundationCleanupIdentityHandler('handler-failed', name, ms);
+      }
       log.error('identity', `identity pipeline handler failed: ${name}`, { ms, reason: payload.reason, error: String(error) });
       failures.push({ handlerName: name, error, durationMs: ms });
     }

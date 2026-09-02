@@ -1,8 +1,8 @@
 # Modern Chat Agent — Product State Model
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-07-30
+> **Created**: 2026-07-30 | **Updated**: 2026-08-17
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -22,6 +22,9 @@ runtime representation.
 | Tool intervention | Timeline approval card | What action needs my decision? |
 | Resource admission | Composer/resource chip | Is this file usable and retained? |
 | Recovery | Timeline/recovery layer | What survived and what can I do next? |
+| Home command state | Home content/recovery rails | What can I resume or start now? |
+| Capability operation | Capability inventory/tool timeline | Is this capability bound, ready, running, or recoverable? |
+| Evaluation lifecycle | Evaluation Lab | What is being evaluated and is the result authoritative? |
 
 ## 2. Agent Readiness
 
@@ -171,7 +174,67 @@ ACTIVE_BRANCH
 The branch selector shows alternatives without duplicating the entire topic
 rail. Delete is never presented as retry or regenerate.
 
-## 11. Forbidden Product Transitions
+## 11. Home Command Center
+
+```text
+HOME_LOADING -> HOME_READY | HOME_EMPTY | HOME_STALE | HOME_FAILED
+HOME_READY -> CHAT_SUBMITTING -> TOPIC_ACCEPTED | CHAT_REJECTED
+HOME_READY -> TASK_CREATING -> TASK_RUNNING | TASK_REJECTED
+HOME_STALE -> HOME_REFRESHING -> HOME_READY | HOME_FAILED
+```
+
+| State | Required visible behavior |
+|---|---|
+| `HOME_LOADING` | Stable composer and section geometry; no mock success data |
+| `HOME_READY` | Agent/model readiness, recents, Brief/Needs You, tasks, and capability state agree with Station projection |
+| `HOME_EMPTY` | Explains first useful Chat/Task action |
+| `HOME_STALE` | Names stale/disconnected source and preserves last accepted data |
+| `HOME_FAILED` | Typed failure and retry without hiding usable accepted data |
+| `CHAT_SUBMITTING` | Draft remains until Station topic/turn acceptance |
+| `TASK_CREATING` | Task intent remains until Station task creation succeeds |
+
+## 12. Capability Operation
+
+```text
+DISCOVERED -> CHECKING -> READY | INCOMPATIBLE | DISCONNECTED | BLOCKED
+READY -> BINDING -> BOUND
+BOUND -> PROPOSED -> AWAITING_APPROVAL | RUNNING
+AWAITING_APPROVAL -> APPROVED -> RUNNING
+                  -> DENIED | EXPIRED
+RUNNING -> SUCCEEDED | FAILED | TIMED_OUT | CANCELLED | DISCONNECTED
+DISCONNECTED -> RECONNECTING -> READY | FAILED
+```
+
+The visible state always names source, compatibility authority, execution
+owner, risk, and recovery action. A Connector label or installed MCP process is
+not sufficient evidence for `READY`.
+
+## 13. Evaluation Lab
+
+```text
+EVAL_DRAFT -> EVAL_PENDING -> EVAL_RUNNING
+EVAL_RUNNING -> EVAL_CANCELLING -> EVAL_CANCELLED | EVAL_PARTIAL
+             -> EVAL_COMPLETED | EVAL_PARTIAL | EVAL_FAILED
+EVAL_FAILED | EVAL_PARTIAL -> CREATE_RETRY_RUN -> CHILD_EVAL_PENDING
+RESTORING_EVAL -> EVAL_RUNNING | EVAL_COMPLETED | EVAL_FAILED
+```
+
+| State | Required visible behavior |
+|---|---|
+| `EVAL_DRAFT` | Benchmark, dataset, cases, target Agent, and config are editable |
+| `EVAL_PENDING` | Durable run ID exists; execution has not been inferred |
+| `EVAL_RUNNING` | Case progress and completed results update without erasing prior evidence |
+| `EVAL_CANCELLING` | Cancellation request is pending; UI does not label the run failed or cancelled early |
+| `EVAL_CANCELLED` | Authority and retained case results are visible |
+| `EVAL_PARTIAL` after cancel | Cancellation deadline expired; retained results, unresolved cleanup, and typed cause remain visible |
+| `EVAL_COMPLETED` | Metrics derive from authoritative terminal case results |
+| `EVAL_PARTIAL` | Missing/failed cases and retry scope remain explicit |
+| `EVAL_FAILED` | Typed cause and retryable cases are visible |
+| `CREATE_RETRY_RUN` | Terminal parent remains immutable while selected cases seed a linked child run |
+| `CHILD_EVAL_PENDING` | Child run has a new durable ID and awaits execution |
+| `RESTORING_EVAL` | Restart/reconnect readback is in progress; no local terminal inference |
+
+## 14. Forbidden Product Transitions
 
 - `LOCAL_DRAFT -> ACTIVE` before Station accepts the first turn.
 - `WAITING_APPROVAL -> SUCCEEDED` without an authoritative decision and result.
@@ -180,3 +243,7 @@ rail. Delete is never presented as retry or regenerate.
 - `PARTIAL/FAILED/CANCELLED -> COMPLETED` by client inference.
 - `REGENERATE_BRANCH -> destructive replacement of the source response`.
 - `REJECTED attachment -> silent omission`.
+- `HOME_LOADING/HOME_FAILED -> HOME_READY` because static cards rendered.
+- `DISCOVERED/BOUND -> READY` without compatibility and connection evidence.
+- `EVAL_RUNNING -> EVAL_COMPLETED` from Desktop-local loop completion without Station terminal readback.
+- `EVAL_CANCELLING -> EVAL_CANCELLED` before authoritative cancellation.

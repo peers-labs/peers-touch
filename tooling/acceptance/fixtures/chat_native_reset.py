@@ -7,21 +7,20 @@ import argparse
 import json
 import os
 from pathlib import Path
-import re
 import shlex
 import shutil
+import subprocess
 import threading
 import time
 import urllib.parse
 import urllib.request
 
-from tooling.acceptance.transports.ssh import SshTarget, SshTransport
-
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SAFE_RUNTIME_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
-APPROVED_DISPOSABLE_STATION_PORT = 18132
-PROTECTED_CLEANUP_PORTS = frozenset({4445, 18080})
+PROFILE_THREE_ENVIRONMENT = "station-three"
+# Environments approved for destructive fixture reset (disposable stations only).
+APPROVED_RESET_ENVIRONMENTS = ("station-three", "station-1", "station-two")
+PROFILE_THREE_STATION_CONTAINER = "pt-station-a-station-1"
 CHAT_TABLES = (
     "actor_devices",
     "actor_identity_keys",
@@ -29,8 +28,6 @@ CHAT_TABLES = (
     "device_queue_items",
     "device_queue_lanes",
     "federated_endpoint_manifests",
-    "friend_chat_friend_requests",
-    "friend_chat_friendships",
     "messaging_attachment_audit",
     "messaging_attachment_grants",
     "messaging_attachment_objects",
@@ -52,9 +49,10 @@ CHAT_TABLES = (
 )
 
 
-def load_environment_file(path: Path) -> dict[str, str]:
+def deploy_environment(name: str) -> dict[str, str]:
+    path = REPO_ROOT / ".local" / "deploy" / "envs" / f"{name}.env"
     if not path.exists():
-        raise RuntimeError(f"environment file not found: {path}")
+        raise RuntimeError(f"deployment environment not found: {path}")
     values: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
@@ -65,160 +63,24 @@ def load_environment_file(path: Path) -> dict[str, str]:
     return values
 
 
-def deploy_environment(name: str) -> dict[str, str]:
-    return load_environment_file(
-        REPO_ROOT / ".local" / "deploy" / "envs" / f"{name}.env"
-    )
-
-
-def active_profile_environment() -> dict[str, str]:
-    active_profile = (
-        REPO_ROOT
-        / ".local"
-        / "dev"
-        / "active"
-        / f"{REPO_ROOT.name}.env"
-    )
-    return load_environment_file(active_profile)
-
-
-def active_deployment_environment() -> str:
-    profile = active_profile_environment()
-    environment_name = profile.get("PT_STATION_DEPLOY_ENV", "").strip()
-    if not environment_name:
-        raise RuntimeError(
-            "active profile must define PT_STATION_DEPLOY_ENV for destructive "
-            "Chat Acceptance"
-        )
-    return environment_name
-
-
-def active_station_url() -> str:
-    station_url = active_profile_environment().get(
-        "PT_STATION_URL",
-        "",
-    ).rstrip("/")
-    if not station_url:
-        raise RuntimeError(
-            "active profile must define PT_STATION_URL for Chat Acceptance"
-        )
-    return station_url
-
-
-def acceptance_station_environment(
-    station_url: str,
-    environment_name: str | None = None,
-) -> dict[str, str]:
-    selected_environment = environment_name or active_deployment_environment()
-    environment = deploy_environment(selected_environment)
+def profile_three_environment(station_url: str) -> dict[str, str]:
+    environment = deploy_environment(PROFILE_THREE_ENVIRONMENT)
     host = environment.get("PT_DEPLOY_HOST", "").strip()
-    user = environment.get("PT_DEPLOY_USER", "").strip()
-    expected_url = environment.get("PT_ACCEPTANCE_STATION_URL", "").rstrip("/")
     parsed_url = urllib.parse.urlparse(station_url)
-    expected = urllib.parse.urlparse(expected_url)
-    if parsed_url.port in PROTECTED_CLEANUP_PORTS:
-        raise RuntimeError(
-            "Disposable Chat Acceptance refuses protected cleanup target port: "
-            f"{parsed_url.port}"
-        )
     if (
-        environment.get("PT_ACCEPTANCE_DISPOSABLE", "").strip() != "1"
-        or not host
-        or not user
-        or not expected_url
-        or station_url.rstrip("/") != expected_url
-        or parsed_url.scheme not in {"http", "https"}
-        or parsed_url.scheme != expected.scheme
+        parsed_url.scheme not in {"http", "https"}
         or parsed_url.hostname != host
-        or parsed_url.hostname != expected.hostname
-        or parsed_url.port != APPROVED_DISPOSABLE_STATION_PORT
-        or expected.port != APPROVED_DISPOSABLE_STATION_PORT
-        or parsed_url.port != expected.port
+        or parsed_url.port != 18080
         or parsed_url.path not in {"", "/"}
         or parsed_url.params
         or parsed_url.query
         or parsed_url.fragment
-        or expected.path not in {"", "/"}
-        or expected.params
-        or expected.query
-        or expected.fragment
     ):
         raise RuntimeError(
-            "Disposable Chat Acceptance target mismatch: "
-            f"environment={selected_environment} station_url={station_url} "
-            f"expected_url={expected_url or 'missing'}"
+            "Profile Three target mismatch: "
+            f"station_url={station_url} deploy_host={host or 'missing'}"
         )
-    for key in (
-        "PT_ACCEPTANCE_COMPOSE_PROJECT",
-        "PT_ACCEPTANCE_STATION_CONTAINER",
-        "PT_ACCEPTANCE_POSTGRES_CONTAINER",
-        "PT_ACCEPTANCE_POSTGRES_VOLUME",
-    ):
-        value = environment.get(key, "").strip()
-        if not value or not SAFE_RUNTIME_NAME.fullmatch(value):
-            raise RuntimeError(
-                f"Disposable Chat Acceptance target requires safe {key}"
-            )
-    environment["PT_ACCEPTANCE_ENVIRONMENT"] = selected_environment
     return environment
-
-
-def verify_disposable_station_runtime(
-    environment: dict[str, str],
-) -> dict[str, str]:
-    expected_project = environment["PT_ACCEPTANCE_COMPOSE_PROJECT"]
-    expected_volume = environment["PT_ACCEPTANCE_POSTGRES_VOLUME"]
-    containers = {
-        "station": environment["PT_ACCEPTANCE_STATION_CONTAINER"],
-        "postgres": environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"],
-    }
-    observed: dict[str, str] = {}
-    for service, container in containers.items():
-        output = _remote_command(
-            environment,
-            "docker inspect "
-            "--format '{{json .}}' "
-            f"{shlex.quote(container)}",
-        )
-        try:
-            inspection = json.loads(output)
-        except json.JSONDecodeError as error:
-            raise RuntimeError(
-                f"Disposable Chat Acceptance {service} inspect is invalid"
-            ) from error
-        labels = (
-            inspection.get("Config", {}).get("Labels", {})
-            if isinstance(inspection, dict)
-            else {}
-        )
-        state = inspection.get("State", {}) if isinstance(inspection, dict) else {}
-        if (
-            labels.get("com.docker.compose.project") != expected_project
-            or labels.get("com.docker.compose.service") != service
-            or state.get("Running") is not True
-        ):
-            raise RuntimeError(
-                "Disposable Chat Acceptance runtime identity mismatch: "
-                f"service={service} container={container}"
-            )
-        observed[f"{service}Container"] = container
-
-        if service == "postgres":
-            volumes = {
-                str(mount.get("Name") or "")
-                for mount in inspection.get("Mounts", [])
-                if isinstance(mount, dict)
-                and mount.get("Destination") == "/var/lib/postgresql/data"
-            }
-            if volumes != {expected_volume}:
-                raise RuntimeError(
-                    "Disposable Chat Acceptance PostgreSQL volume mismatch: "
-                    f"expected={expected_volume} actual={sorted(volumes)}"
-                )
-            observed["postgresVolume"] = expected_volume
-    observed["composeProject"] = expected_project
-    observed["environment"] = environment["PT_ACCEPTANCE_ENVIRONMENT"]
-    return observed
 
 
 def _commits_match(left: str, right: str) -> bool:
@@ -232,40 +94,32 @@ def _station_version(station_url: str) -> dict[str, object]:
     ) as response:
         value = json.loads(response.read().decode("utf-8"))
     if not isinstance(value, dict):
-        raise RuntimeError("Chat Acceptance Station version response is invalid")
+        raise RuntimeError("Profile Three Station version response is invalid")
     return value
 
 
-def _remote_transport(environment: dict[str, str]) -> SshTransport:
+def _remote_command(environment: dict[str, str], command: str) -> str:
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     user = environment.get("PT_DEPLOY_USER", "").strip()
     if not host or not user:
         raise RuntimeError(
-            "Chat Acceptance deployment must define PT_DEPLOY_HOST and "
-            "PT_DEPLOY_USER"
+            "station-three must define PT_DEPLOY_HOST and PT_DEPLOY_USER"
         )
-    try:
-        port = int(environment.get("PT_DEPLOY_PORT", "22"))
-    except ValueError as error:
-        raise RuntimeError("PT_DEPLOY_PORT must be a valid SSH port") from error
-    return SshTransport(
-        SshTarget(
-            host=host,
-            user=user,
-            port=port,
-            known_hosts_file=environment.get(
-                "PT_DEPLOY_KNOWN_HOSTS_FILE",
-                "",
-            ).strip(),
-        ),
-    )
-
-
-def _remote_command(environment: dict[str, str], command: str) -> str:
-    result = _remote_transport(environment).run_argv(
-        ["sh", "-lc", command],
-        timeout=30,
+    result = subprocess.run(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "StrictHostKeyChecking=no",
+            f"{user}@{host}",
+            command,
+        ],
         check=True,
+        capture_output=True,
+        text=True,
     )
     return result.stdout.strip()
 
@@ -275,22 +129,46 @@ def _sql_literal(value: str) -> str:
 
 
 def _remote_psql(environment: dict[str, str], sql: str) -> str:
-    container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
+    container = os.environ.get(
+        "CHAT_ACCEPTANCE_POSTGRES_CONTAINER",
+        "pt-station-a-postgres-1",
+    ).strip()
+    if container != "pt-station-a-postgres-1":
+        raise RuntimeError(
+            "Profile Three PostgreSQL container must be pt-station-a-postgres-1"
+        )
     remote = (
         f"docker exec -i {container} sh -lc "
         "'psql -At -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" "
         "-d \"$POSTGRES_DB\"'"
     )
-    result = _remote_transport(environment).run_argv(
-        ["sh", "-lc", remote],
-        timeout=30,
+    host = environment.get("PT_DEPLOY_HOST", "").strip()
+    user = environment.get("PT_DEPLOY_USER", "").strip()
+    if not host or not user:
+        raise RuntimeError(
+            "station-three must define PT_DEPLOY_HOST and PT_DEPLOY_USER"
+        )
+    result = subprocess.run(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "StrictHostKeyChecking=no",
+            f"{user}@{host}",
+            remote,
+        ],
+        input=sql,
+        text=True,
         check=True,
-        input_text=sql,
+        capture_output=True,
     )
     return result.stdout.strip()
 
 
-def duplicate_acceptance_queue_delivery(
+def duplicate_profile_three_queue_delivery(
     station_url: str,
     source_item_id: str,
     recipient_ptid: str,
@@ -303,8 +181,7 @@ def duplicate_acceptance_queue_delivery(
     if not source_item_id or not recipient_ptid or not recipient_device_id:
         raise RuntimeError("queue replay requires source item and recipient endpoint")
 
-    environment = acceptance_station_environment(station_url)
-    verify_disposable_station_runtime(environment)
+    environment = profile_three_environment(station_url)
     source = _sql_literal(source_item_id)
     ptid = _sql_literal(recipient_ptid)
     device = _sql_literal(recipient_device_id)
@@ -390,40 +267,45 @@ COMMIT;
     return value
 
 
-def restart_acceptance_station(
+def restart_profile_three_station(
     station_url: str,
     expected_commit: str,
-) -> dict[str, object]:
+) -> dict[str, str]:
     if os.environ.get("CHAT_ACCEPTANCE_ALLOW_STATION_RESTART") != "1":
         raise RuntimeError(
             "CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1 is required for the "
-            "authorized disposable Station restart scenario"
+            "authorized Profile Three restart scenario"
         )
 
-    environment = acceptance_station_environment(station_url)
-    runtime_identity = verify_disposable_station_runtime(environment)
+    environment = profile_three_environment(station_url)
     host = environment.get("PT_DEPLOY_HOST", "").strip()
 
-    container = environment["PT_ACCEPTANCE_STATION_CONTAINER"]
+    container = os.environ.get(
+        "CHAT_ACCEPTANCE_STATION_CONTAINER",
+        PROFILE_THREE_STATION_CONTAINER,
+    ).strip()
+    if container != PROFILE_THREE_STATION_CONTAINER:
+        raise RuntimeError(
+            "Profile Three restart container must be "
+            f"{PROFILE_THREE_STATION_CONTAINER}"
+        )
 
     before_version = _station_version(station_url)
     before_commit = str(before_version.get("build_commit") or "")
     if not _commits_match(before_commit, expected_commit):
         raise RuntimeError(
-            "Chat Acceptance Station commit mismatch before restart: "
+            "Profile Three commit mismatch before restart: "
             f"station={before_commit or 'missing'} expected={expected_commit}"
         )
     inspect = f"docker inspect -f '{{{{.State.StartedAt}}}}' {container}"
     before_started_at = _remote_command(environment, inspect)
     if not before_started_at:
-        raise RuntimeError(
-            "Chat Acceptance Station start timestamp is unavailable"
-        )
+        raise RuntimeError("Profile Three Station start timestamp is unavailable")
 
     restarted_container = _remote_command(environment, f"docker restart {container}")
     if restarted_container != container:
         raise RuntimeError(
-            "Chat Acceptance Station restart returned an unexpected container: "
+            "Profile Three Station restart returned an unexpected container: "
             f"{restarted_container or 'missing'}"
         )
 
@@ -438,7 +320,7 @@ def restart_acceptance_station(
                 after_version = candidate
                 break
             last_error = (
-                "Chat Acceptance Station returned a different commit after restart: "
+                "Profile Three returned a different commit after restart: "
                 f"{candidate_commit or 'missing'}"
             )
         except Exception as error:
@@ -446,19 +328,18 @@ def restart_acceptance_station(
         threading.Event().wait(1)
     if after_version is None:
         raise RuntimeError(
-            "Chat Acceptance Station did not recover after restart"
+            "Profile Three Station did not recover after restart"
             + (f": {last_error}" if last_error else "")
         )
 
     after_started_at = _remote_command(environment, inspect)
     if not after_started_at or after_started_at == before_started_at:
         raise RuntimeError(
-            "Chat Acceptance Station container start timestamp did not change"
+            "Profile Three Station container start timestamp did not change"
         )
     after_commit = str(after_version.get("build_commit") or "")
     return {
-        "environment": environment["PT_ACCEPTANCE_ENVIRONMENT"],
-        "runtimeIdentity": runtime_identity,
+        "environment": PROFILE_THREE_ENVIRONMENT,
         "host": host,
         "container": container,
         "beforeStartedAt": before_started_at,
@@ -488,14 +369,78 @@ def reset_local_client_storage(
 
 
 def reset_station_messaging_state(environment_name: str) -> None:
+    if environment_name not in APPROVED_RESET_ENVIRONMENTS:
+        raise RuntimeError(
+            f"native Chat fixture reset is restricted to approved environments "
+            f"{APPROVED_RESET_ENVIRONMENTS}; got {environment_name!r}"
+        )
     environment = deploy_environment(environment_name)
-    station_url = environment.get("PT_ACCEPTANCE_STATION_URL", "").strip()
-    environment = acceptance_station_environment(
-        station_url,
-        environment_name,
-    )
-    verify_disposable_station_runtime(environment)
-    container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
+    host = environment.get("PT_DEPLOY_HOST", "").strip()
+    user = environment.get("PT_DEPLOY_USER", "").strip()
+    if not host or not user:
+        raise RuntimeError(
+            f"{environment_name} must define PT_DEPLOY_HOST and PT_DEPLOY_USER"
+        )
+    explicit_container = os.environ.get(
+        "CHAT_ACCEPTANCE_POSTGRES_CONTAINER",
+        "",
+    ).strip()
+    if explicit_container:
+        container = explicit_container
+    else:
+        station_url = os.environ.get("PT_STATION_URL", "").strip()
+        station_port = urllib.parse.urlparse(station_url).port
+        if station_port is None:
+            raise RuntimeError(
+                "PT_STATION_URL must include the published Station port"
+            )
+        discover = (
+            "set -e; "
+            f"station=$(docker ps --filter publish={station_port} "
+            "--format '{{.Names}}'); "
+            "test \"$(printf '%s\\n' \"$station\" | sed '/^$/d' | wc -l)\" -eq 1; "
+            "project=$(docker inspect --format "
+            "'{{ index .Config.Labels \"com.docker.compose.project\" }}' "
+            "\"$station\"); "
+            "test -n \"$project\"; "
+            "docker ps "
+            "--filter \"label=com.docker.compose.project=$project\" "
+            "--filter \"label=com.docker.compose.service=postgres\" "
+            "--format '{{.Names}}'"
+        )
+        completed = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=10",
+                "-o",
+                "StrictHostKeyChecking=no",
+                f"{user}@{host}",
+                discover,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        containers = [
+            line.strip()
+            for line in completed.stdout.splitlines()
+            if line.strip()
+        ]
+        if completed.returncode != 0 or len(containers) != 1:
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "no matching container"
+            )
+            raise RuntimeError(
+                "could not resolve the Station PostgreSQL container "
+                f"for published port {station_port}: {detail}"
+            )
+        container = containers[0]
     sql = f"""
 BEGIN;
 TRUNCATE TABLE {', '.join(CHAT_TABLES)} CASCADE;
@@ -603,20 +548,30 @@ $acceptance$;
 COMMIT;
 """
     remote = (
-        f"docker exec -i {container} sh -lc "
+        f"docker exec -i {shlex.quote(container)} sh -lc "
         "'psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'"
     )
-    _remote_transport(environment).run_argv(
-        ["sh", "-lc", remote],
-        timeout=30,
+    subprocess.run(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "StrictHostKeyChecking=no",
+            f"{user}@{host}",
+            remote,
+        ],
+        input=sql,
+        text=True,
         check=True,
-        input_text=sql,
     )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--environment", required=True)
+    parser.add_argument("--environment", default="station-three")
     parser.add_argument("--accounts", nargs="+", default=["alice", "bob", "charlie"])
     args = parser.parse_args()
 

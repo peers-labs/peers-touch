@@ -5,6 +5,8 @@ package peers_touch.model.agent.v1;
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
 
 import "domain/agent/agent.proto";
+import "domain/actor/actor.proto";
+import "google/protobuf/timestamp.proto";
 
 enum TurnStreamEventType {
   TURN_STREAM_EVENT_TYPE_UNSPECIFIED = 0;
@@ -12,7 +14,8 @@ enum TurnStreamEventType {
   TURN_STREAM_EVENT_TYPE_THINKING = 2;
   TURN_STREAM_EVENT_TYPE_TOOL_CALL = 3;
   TURN_STREAM_EVENT_TYPE_TOOL_RESULT = 4;
-  TURN_STREAM_EVENT_TYPE_LOCAL_TOOL_REQUEST = 5;
+  reserved 5;
+  reserved "TURN_STREAM_EVENT_TYPE_LOCAL_TOOL_REQUEST";
   TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_REQUIRED = 6;
   TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_DECISION = 7;
   TURN_STREAM_EVENT_TYPE_PROGRESS = 8;
@@ -20,6 +23,9 @@ enum TurnStreamEventType {
   TURN_STREAM_EVENT_TYPE_CONVERSATION_CREATED = 10;
   TURN_STREAM_EVENT_TYPE_ERROR = 11;
   TURN_STREAM_EVENT_TYPE_DONE = 12;
+  TURN_STREAM_EVENT_TYPE_CANCELLED = 13;
+  TURN_STREAM_EVENT_TYPE_SNAPSHOT = 14;
+  TURN_STREAM_EVENT_TYPE_CATCHUP_DONE = 15;
 }
 
 message TurnStreamEvent {
@@ -27,6 +33,9 @@ message TurnStreamEvent {
   string turn_id = 2;
   string conversation_id = 3;
   string agent_id = 4;
+  uint64 sequence = 5;
+  string event_id = 6;
+  google.protobuf.Timestamp occurred_at = 7;
 
   oneof payload {
     TextPayload text = 10;
@@ -39,7 +48,36 @@ message TurnStreamEvent {
     ConversationCreatedPayload conversation_created = 17;
     ErrorPayload error = 18;
     DonePayload done = 19;
+    ToolApprovalDecisionPayload tool_approval_decision = 20;
+    CancelledPayload cancelled = 21;
+    TurnSnapshot snapshot = 22;
+    CatchupDonePayload catchup_done = 23;
   }
+}
+
+message StreamTurnEventsRequest {
+  string conversation_id = 1;
+  string turn_id = 2;
+  uint64 after_sequence = 3;
+}
+
+message TurnSnapshot {
+  string turn_id = 1;
+  string conversation_id = 2;
+  string agent_id = 3;
+  TurnStatus status = 4;
+  string text = 5;
+  uint64 last_sequence = 6;
+  string terminal_reason = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message CancelledPayload {
+  string reason = 1;
+}
+
+message CatchupDonePayload {
+  uint64 last_sequence = 1;
 }
 
 message TextPayload {
@@ -68,6 +106,23 @@ message ToolApprovalRequiredPayload {
   string server_name = 3;
   string arguments = 4;
   string source = 5;
+  string tool_call_id = 6;
+  string decision_id = 7;
+  uint64 decision_revision = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  string payload_hash = 10;
+}
+
+message ToolApprovalDecisionPayload {
+  string approval_id = 1;
+  string tool_call_id = 2;
+  string decision_id = 3;
+  uint64 decision_revision = 4;
+  bool approved = 5;
+  peers_touch.model.actor.v1.ActorRef actor_ref = 6;
+  google.protobuf.Timestamp decided_at = 7;
+  string idempotency_key = 8;
+  string payload_hash = 9;
 }
 
 message ProgressPayload {
@@ -85,6 +140,10 @@ message ConversationCreatedPayload {
 message ErrorPayload {
   string error = 1;
   string error_type = 2;
+  string locale_key = 3;
+  bool retryable = 4;
+  bool terminal = 5;
+  map<string, string> details = 6;
 }
 
 message DonePayload {

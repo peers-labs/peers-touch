@@ -23,21 +23,21 @@ Do **not** use this file as the place to redefine Station architecture, Subserve
 
 ### Platform Sources
 
-- [Station Base](file://docs/station/base.md)
-- [App Layer](file://docs/station/app-layer.md)
-- [Frame Layer](file://docs/station/frame-layer.md)
-- [Subserver Standard](file://docs/station/subserver-standard.md)
+- [Station Base](../../docs/station/base.md)
+- [App Layer](../../docs/station/app-layer.md)
+- [Frame Layer](../../docs/station/frame-layer.md)
+- [Subserver Standard](../../docs/station/subserver-standard.md)
 
 ### Architecture Sources
 
-- [Project Architecture](file://docs/global/architecture.md)
-- [Station/Desktop Scope Boundary](file://docs/architecture/boundaries/station-desktop-scope-boundary.md)
-- [Unified Handler Architecture](file://docs/architecture/runtime/unified-handler-architecture.md)
+- [Project Architecture](../../docs/global/architecture.md)
+- [Station/Desktop Scope Boundary](../../docs/architecture/boundaries/station-desktop-scope-boundary.md)
+- [Unified Handler Architecture](../../docs/architecture/runtime/unified-handler-architecture.md)
 
 ### Specification Sources
 
-- [Station Coding Guide](file://docs/global/coding-guide/station)
-- [Common Coding Guide](file://docs/global/coding-guide/common)
+- [Station Coding Guide](../../docs/global/coding-guide/station)
+- [Common Coding Guide](../../docs/global/coding-guide/common)
 
 ---
 

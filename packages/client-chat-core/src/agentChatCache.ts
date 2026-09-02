@@ -19,16 +19,31 @@ import type { DomainCacheRepository } from '@peers-touch/client-storage';
 
 export type AgentRole = 'system' | 'user' | 'assistant' | 'tool';
 
+export interface CachedAgentAttachment {
+  readonly attachmentId: string;
+  readonly objectRef: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+  readonly checksum: string;
+  readonly filename: string;
+  readonly authorizationScope: string;
+  readonly expiresAt: string;
+  readonly extractedContentRef: string;
+}
+
 export interface CachedAgentConversation {
   readonly conversationId: string;
   readonly agentId: string;
-  readonly userId?: string;
+  readonly ptid: string;
   readonly title: string;
   readonly description?: string;
   readonly providerId?: string;
   readonly modelName?: string;
   readonly status: string;
   readonly parentId?: string;
+  readonly activeBranchMessageId: string;
+  readonly queuedTurnCount: number;
+  readonly version: number;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -39,12 +54,16 @@ export interface CachedAgentMessage {
   readonly turnId?: string;
   readonly modelName?: string;
   readonly role: AgentRole;
+  readonly status?: string;
   readonly content: string;
   readonly seq: number;
   readonly branchId?: string;
   readonly replacesMessageId?: string;
   readonly reasoningJson?: string;
   readonly toolCallsJson?: string;
+  readonly metadataJson?: string;
+  readonly attachments?: readonly CachedAgentAttachment[];
+  readonly reconciliationSource?: 'station-list' | 'station-snapshot';
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -147,19 +166,17 @@ export function createAgentChatCache(deps: {
   return {
     async listConversations(agentId: string): Promise<readonly CachedAgentConversation[]> {
       const cached = await readConversationBundle(agentId);
-      void fetcher
-        .listConversations(agentId)
-        .then(async (result) => {
-          const next: Record<string, CachedAgentConversation> = { ...cached };
-          for (const conversation of result.conversations) {
-            next[conversation.conversationId] = conversation;
-          }
-          await conversationRepo.write(agentId, next);
-        })
-        .catch(() => {
-          // Background refresh must not throw into the UI; cache stays intact.
-        });
-      return Object.values(cached).sort(compareConversationByUpdatedAt);
+      try {
+        const result = await fetcher.listConversations(agentId);
+        const next: Record<string, CachedAgentConversation> = {};
+        for (const conversation of result.conversations) {
+          next[conversation.conversationId] = conversation;
+        }
+        await conversationRepo.write(agentId, next);
+        return Object.values(next).sort(compareConversationByUpdatedAt);
+      } catch {
+        return Object.values(cached).sort(compareConversationByUpdatedAt);
+      }
     },
 
     async getMessages(conversationId: string): Promise<readonly CachedAgentMessage[]> {
@@ -219,13 +236,35 @@ function reconcileMessage(
   current: CachedAgentMessage,
   incoming: CachedAgentMessage,
 ): CachedAgentMessage {
-  const higherSeq = incoming.seq >= current.seq ? incoming : current;
+  const currentUpdatedAt = Date.parse(current.updatedAt);
+  const incomingUpdatedAt = Date.parse(incoming.updatedAt);
+  const currentAuthority =
+    current.reconciliationSource === 'station-snapshot' ? 1 : 0;
+  const incomingAuthority =
+    incoming.reconciliationSource === 'station-snapshot' ? 1 : 0;
+  const incomingIsNewer = incoming.seq > current.seq
+    || (
+      incoming.seq === current.seq
+      && (
+        incomingAuthority > currentAuthority
+        || (
+          incomingAuthority === currentAuthority
+          && (
+            !Number.isFinite(currentUpdatedAt)
+            || !Number.isFinite(incomingUpdatedAt)
+            || incomingUpdatedAt >= currentUpdatedAt
+          )
+        )
+      )
+    );
+  const authoritative = incomingIsNewer ? incoming : current;
+  const fallback = incomingIsNewer ? current : incoming;
   return {
-    ...current,
-    ...higherSeq,
-    content: incoming.content || current.content,
-    reasoningJson: incoming.reasoningJson ?? current.reasoningJson,
-    toolCallsJson: incoming.toolCallsJson ?? current.toolCallsJson,
+    ...fallback,
+    ...authoritative,
+    content: authoritative.content,
+    reasoningJson: authoritative.reasoningJson ?? fallback.reasoningJson,
+    toolCallsJson: authoritative.toolCallsJson ?? fallback.toolCallsJson,
   };
 }
 

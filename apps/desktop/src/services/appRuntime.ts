@@ -14,6 +14,8 @@ import { momentsRuntime } from '../runtimes/momentsRuntime';
 import { agentCapabilityRuntime } from '../runtimes/agentCapabilityRuntime';
 import { agentTopicRuntime } from '../runtimes/agentTopicRuntime';
 import { messagingRecoveryRuntime } from '../runtimes/messagingRecoveryRuntime';
+import { toolRuntime } from '../runtimes/toolRuntime';
+import { chatRuntime } from '../runtimes/chatRuntime';
 import { log } from '../utils/logger';
 
 // Register kernel-managed runtimes once. The legacy bridges
@@ -33,20 +35,28 @@ function registerKernelRuntimes(): void {
   registerRuntime(momentsRuntime);
   registerRuntime(agentCapabilityRuntime);
   registerRuntime(agentTopicRuntime);
+  registerRuntime(chatRuntime);
   registerRuntime(messagingRecoveryRuntime);
+  registerRuntime(toolRuntime);
 }
 
 let installed = false;
 let deferredInstalled = false;
 let deferredInstallInFlight: Promise<void> | null = null;
+let criticalInstallInFlight: {
+  actorId: string;
+  promise: Promise<void>;
+} | null = null;
 
 const DEFERRED_APP_RUNTIME_IDS = [
   searchRuntime.id,
   settingsRuntime.id,
   federationRuntime.id,
   momentsRuntime.id,
-  agentCapabilityRuntime.id,
-  agentTopicRuntime.id,
+];
+
+export const CRITICAL_SESSION_RUNTIME_IDS: ReadonlyArray<string> = [
+  chatRuntime.id,
 ];
 
 function yieldToRenderer(): Promise<void> {
@@ -103,11 +113,35 @@ export function installDeferredAppRuntimeProjections(actorPtid: string): Promise
   return deferredInstallInFlight;
 }
 
+export async function installAuthenticatedCriticalRuntimes(
+  actorId: string,
+): Promise<void> {
+  if (criticalInstallInFlight?.actorId === actorId) {
+    return criticalInstallInFlight.promise;
+  }
+  installAppRuntime();
+  const promise = (async () => {
+    for (const runtimeId of CRITICAL_SESSION_RUNTIME_IDS) {
+      installRuntime(runtimeId);
+      await bootstrapRuntime(runtimeId, actorId);
+    }
+  })();
+  criticalInstallInFlight = { actorId, promise };
+  try {
+    await promise;
+  } finally {
+    if (criticalInstallInFlight?.promise === promise) {
+      criticalInstallInFlight = null;
+    }
+  }
+}
+
 export function teardownAppRuntime(): void {
   if (!installed) return;
   installed = false;
   deferredInstalled = false;
   deferredInstallInFlight = null;
+  criticalInstallInFlight = null;
 
   teardownRuntime(socialRuntime.id);
   teardownRuntime(searchRuntime.id);
@@ -117,7 +151,9 @@ export function teardownAppRuntime(): void {
   teardownRuntime(momentsRuntime.id);
   teardownRuntime(agentCapabilityRuntime.id);
   teardownRuntime(agentTopicRuntime.id);
+  teardownRuntime(chatRuntime.id);
   teardownRuntime(messagingRecoveryRuntime.id);
+  teardownRuntime(toolRuntime.id);
   teardownMediaRuntime();
   teardownNavigationBadgeProjection();
   teardownSessionKickBridge();

@@ -17,6 +17,7 @@ const APPLET_CATALOG_RECONCILE_MS = 60_000;
 const KERNEL_SWEEP_MS = 60_000;
 const MEMORY_SAMPLE_MS = 30_000;
 const APPLET_PAGE_PREFIX = 'applet:';
+const DESKTOP_PLATFORM_ID = 'desktop';
 const MODERATE_HEAP_RATIO = 0.75;
 const CRITICAL_HEAP_RATIO = 0.9;
 
@@ -234,7 +235,7 @@ async function acquireAppletPage(pageId: string): Promise<void> {
       instanceId: pageId,
       sessionId,
       manifestVersion: info?.version ?? '0.0.0',
-      platform: 'desktop',
+      platform: DESKTOP_PLATFORM_ID,
     });
     await kernel.dispatch(lifecycleEvent('ready', appletId, pageId));
     await getDesktopAppletAdapter().applySurfaceCommand('show', surfaceTarget(appletId, pageId));

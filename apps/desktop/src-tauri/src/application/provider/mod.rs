@@ -187,17 +187,27 @@ pub fn provider_create(
     )
 }
 
-pub fn provider_delete(
-    _scope: &str,
-    token: &str,
-    input: ProviderIdInput,
-) -> AppResult<StubPayload> {
+pub fn provider_delete(scope: &str, token: &str, input: ProviderIdInput) -> AppResult<StubPayload> {
     let id = input.id.trim();
     if id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
 
-    if let Err(e) = station_api::delete_provider(token, id, 0) {
+    let version = match station_api::get_providers(token, scope) {
+        Ok(providers) => match providers.into_iter().find(|provider| provider.id == id) {
+            Some(provider) => provider.version,
+            None => {
+                return AppResult::fail(
+                    ErrorCode::NotFound,
+                    &format!("provider not found: {id}"),
+                    None,
+                )
+            }
+        },
+        Err(e) => return station_error_to_result(e),
+    };
+
+    if let Err(e) = station_api::delete_provider(token, id, version) {
         return station_error_to_result(e);
     }
 

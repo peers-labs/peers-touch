@@ -6,6 +6,7 @@
   "layout.nav.applets": "Applet Box",
   "layout.nav.contacts": "通讯录",
   "layout.nav.settings": "设置",
+  "layout.nav.marketplace": "市场",
 
   "layout.command.title": "命令面板",
   "layout.command.placeholder": "搜索命令或快捷键",

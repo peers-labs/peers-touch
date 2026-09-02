@@ -44,6 +44,7 @@ type Response interface {
 	Header() map[string]string
 	SetHeader(key, value string)
 	Write([]byte) (int, error)
+	Flush() error
 	WriteHeader(int)
 	Status() int
 }
@@ -290,6 +291,11 @@ func (w *httpResponseWriter) WriteHeader(statusCode int) {
 	w.resp.WriteHeader(statusCode)
 }
 
+func (w *httpResponseWriter) Flush() {
+	w.syncHeaders()
+	_ = w.resp.Flush()
+}
+
 func (w *httpResponseWriter) syncHeaders() {
 	if w.header != nil {
 		for k, vals := range w.header {
@@ -420,6 +426,13 @@ func (r *httpResponseAdapter) SetHeader(key, value string) {
 
 func (r *httpResponseAdapter) Write(b []byte) (int, error) {
 	return r.w.Write(b)
+}
+
+func (r *httpResponseAdapter) Flush() error {
+	if flusher, ok := r.w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return nil
 }
 
 func (r *httpResponseAdapter) WriteHeader(statusCode int) {

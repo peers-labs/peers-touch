@@ -162,6 +162,10 @@ station
 
 - `desktop-app`
 
+Browser 模式中的 Tauri 进程只承载 `desktop-rust`，不得创建或加载隐藏
+WebView。否则隐藏 renderer 会成为第二个 Desktop session owner，并与浏览器
+通过 HTTP gateway 使用的 session 发生竞争。
+
 脚本：`dev-desktop-web.sh`
 
 ### 5.2 App 调试模式
@@ -238,16 +242,17 @@ Tauri instance A                       Tauri instance B
 | 脚本 | 职责 | 启动的运行单元 |
 |------|------|----------------|
 | `dev-desktop-app.sh` | App 开发模式 | station + desktop-rust(A) + desktop-web(Vite:3210) + desktop-app(Window) |
-| `dev-desktop-web.sh` | Web 开发模式 | station + desktop-rust(B) + desktop-web(Vite:3211 → Browser) |
+| `dev-desktop-web.sh` | Web 开发模式 | station + rendererless desktop-rust(B) + desktop-web(Vite:3211 → Browser) |
 | `_ensure-station.sh` | 共享基础设施 | station（检测 → 复用 / 启动） |
 | `_ensure-desktop-rust.sh` | 共享基础设施 | desktop-rust via Tauri（按 port + profile 参数启动） |
 | `preview-desktop.sh` | 生产预览模式 | station + desktop-rust + desktop-app（从 dist/ 加载） |
 
 ### 6.4 当前限制
 
-`desktop-rust` 尚未从 Tauri 进程中独立抽出。启动 Rust BFF = 启动 Tauri = 附带产生一个原生窗口。
-
-在 Web 模式下，窗口通过 `--config '{"app":{"windows":[{"visible":false}]}}'` 隐藏。
+`desktop-rust` 尚未从 Tauri 进程中独立抽出。启动 Rust BFF 仍需启动 Tauri
+event loop，但 Web 模式通过
+`--config '{"app":{"windows":[{"create":false}]}}'` 禁止创建 WebView，
+因此只运行 HTTP gateway 和 Rust services，不启动第二个前端 renderer。
 
 ## 7. 当前代码映射
 
@@ -295,7 +300,8 @@ Tauri instance A                       Tauri instance B
 
 剩余缺口：
 
-- `desktop-rust` 仍然绑定在 Tauri 进程内。启动 Rust BFF = 启动 Tauri = 附带产生窗口（Web 模式下已通过 config 隐藏）。
+- `desktop-rust` 仍然绑定在 Tauri 进程内。Web 模式已禁止创建 WebView，
+  但尚未提供独立于 Tauri event loop 的 Rust BFF 可执行入口。
 
 ## 9. 决策规则
 

@@ -2,6 +2,7 @@ use crate::contracts::StubPayload;
 use crate::error::AppResult;
 use crate::infrastructure::station_client;
 use crate::model;
+use prost::Message;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -26,8 +27,18 @@ pub struct AgentFeedbackInput {
     pub agent_id: String,
     pub turn_id: String,
     pub conversation_id: String,
+    pub assistant_message_id: String,
     pub signal: String,
+    pub source: String,
+    pub rating: i32,
+    pub categories: Vec<String>,
     pub comment: Option<String>,
+    pub idempotency_key: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AgentTurnFeedbackListInput {
+    pub turn_id: String,
 }
 
 fn ts_millis(ts: &Option<prost_types::Timestamp>) -> Value {
@@ -179,8 +190,13 @@ pub fn agent_skill_list(input: AgentSkillListInput, token: &str) -> AppResult<St
     match station_client::request_proto::<
         model::agent::ListSkillsRequest,
         model::agent::ListSkillsResponse,
-    >(Method::POST, "/agent/skill/list", token, None, Some(&req))
-    {
+    >(
+        Method::POST,
+        "/sub-agent/agent/skill/list",
+        token,
+        None,
+        Some(&req),
+    ) {
         Ok(resp) => {
             let skills: Vec<Value> = resp.skills.iter().map(skill_manifest_to_json).collect();
             let n = skills.len() as i32;
@@ -202,13 +218,18 @@ pub fn agent_skill_list(input: AgentSkillListInput, token: &str) -> AppResult<St
     }
 }
 
-pub fn agent_submit_feedback(input: AgentFeedbackInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_submit_feedback(input: AgentFeedbackInput, token: &str) -> AppResult<Vec<u8>> {
     let req = model::agent::RecordFeedbackRequest {
         agent_id: input.agent_id,
         turn_id: input.turn_id,
         conversation_id: input.conversation_id,
         signal: input.signal,
         comment: input.comment,
+        assistant_message_id: input.assistant_message_id,
+        source: input.source,
+        rating: input.rating,
+        categories: input.categories,
+        idempotency_key: input.idempotency_key,
     };
 
     match station_client::request_proto::<
@@ -216,23 +237,46 @@ pub fn agent_submit_feedback(input: AgentFeedbackInput, token: &str) -> AppResul
         model::agent::RecordFeedbackResponse,
     >(
         Method::POST,
-        "/agent/growth/feedback",
+        "/sub-agent/agent/growth/feedback",
         token,
         None,
         Some(&req),
     ) {
-        Ok(resp) => {
-            let payload = json!({ "id": resp.id });
-            let status =
-                serde_json::to_string(&payload).unwrap_or_else(|_| r#"{"id":""}"#.to_string());
-            AppResult::success(StubPayload {
-                command: "agent_submit_feedback".to_string(),
-                status,
-            })
-        }
+        Ok(resp) => AppResult::success(resp.encode_to_vec()),
         Err(err) => {
             tracing::error!(command = "agent_submit_feedback", error = %err);
             err.into_app_result("Failed to submit agent feedback")
+        }
+    }
+}
+
+pub fn agent_list_turn_feedback(
+    input: AgentTurnFeedbackListInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
+    let turn_id = input.turn_id.trim().to_string();
+    if turn_id.is_empty() {
+        return AppResult::fail(
+            crate::error::ErrorCode::InvalidArgument,
+            "turn_id is required",
+            None,
+        );
+    }
+    let req = model::agent::ListTurnFeedbackRequest { turn_id };
+    match station_client::request_proto::<
+        model::agent::ListTurnFeedbackRequest,
+        model::agent::ListTurnFeedbackResponse,
+    >(
+        Method::POST,
+        "/sub-agent/agent/growth/feedback/turn/list",
+        token,
+        None,
+        Some(&req),
+    ) {
+        Ok(resp) => AppResult::success(resp.encode_to_vec()),
+        Err(err) => {
+            tracing::error!(command = "agent_list_turn_feedback", error = %err);
+            err.into_app_result("Failed to list agent turn feedback")
         }
     }
 }

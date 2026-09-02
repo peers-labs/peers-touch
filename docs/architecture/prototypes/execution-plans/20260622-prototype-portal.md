@@ -197,7 +197,7 @@ type PrototypeWorktreeTarget = {
   "id": "peers-ai-agent",
   "label": "peers-ai-agent",
   "branch": "peers-ai-agent",
-  "worktreePath": "<workspace-root>/peers-ai-agent",
+  "worktreePath": "<repo-root>",
   "portalUrl": "http://localhost:3201",
   "sites": {
     "desktop": "http://localhost:3201/desktop"

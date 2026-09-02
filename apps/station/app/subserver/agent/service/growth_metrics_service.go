@@ -29,13 +29,19 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -190,62 +196,225 @@ func (s *GrowthMetricsService) RecordEvent(
 // RecordFeedback — insert UserFeedback record + emit growth event
 // ---------------------------------------------------------------------------
 
-// RecordFeedback persists explicit user feedback (thumbs up/down) on an
-// agent response. Like RecordEvent, errors are logged but never surfaced.
-// A corresponding GrowthEvent is also emitted so the feedback signal
-// appears in the unified event stream and contributes to window-based
-// aggregations.
+type TurnFeedbackInput struct {
+	AgentID            string
+	TurnID             string
+	ConversationID     string
+	AssistantMessageID string
+	Signal             string
+	Source             string
+	Rating             int32
+	Categories         []string
+	Comment            *string
+	IdempotencyKey     string
+}
+
+// RecordFeedback persists one actor-scoped feedback record per immutable turn.
 func (s *GrowthMetricsService) RecordFeedback(
 	ctx context.Context,
-	agentID, turnID, conversationID, signal string,
-	comment *string,
-) {
+	ptid string,
+	input TurnFeedbackInput,
+) (*persistence.UserFeedback, bool, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
-		logger.Warnf(ctx, "growth_metrics: failed to get db for RecordFeedback: err=%v", err)
-		return
+		return nil, false, err
 	}
 
-	record := &persistence.UserFeedback{
-		ID:             generateGrowthID("fb"),
-		AgentID:        agentID,
-		TurnID:         turnID,
-		ConversationID: conversationID,
-		Signal:         signal,
-		Comment:        comment,
-		CreatedAt:      time.Now(),
+	ptid = strings.TrimSpace(ptid)
+	input.AgentID = strings.TrimSpace(input.AgentID)
+	input.TurnID = strings.TrimSpace(input.TurnID)
+	input.ConversationID = strings.TrimSpace(input.ConversationID)
+	if ptid == "" || input.AgentID == "" || input.TurnID == "" || input.ConversationID == "" {
+		return nil, false, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"feedback requires actor, agent, conversation, and turn",
+			nil,
+		)
+	}
+	if input.Signal != string(domain.FeedbackPositive) && input.Signal != string(domain.FeedbackNegative) {
+		return nil, false, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"feedback signal is invalid",
+			nil,
+		)
+	}
+	if input.Rating == 0 {
+		if input.Signal == string(domain.FeedbackPositive) {
+			input.Rating = 1
+		} else {
+			input.Rating = -1
+		}
+	}
+	if input.Rating < -1 || input.Rating > 1 {
+		return nil, false, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"feedback rating must be between -1 and 1",
+			nil,
+		)
+	}
+	if (input.Signal == string(domain.FeedbackPositive) && input.Rating != 1) ||
+		(input.Signal == string(domain.FeedbackNegative) && input.Rating != -1) {
+		return nil, false, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"feedback rating does not match signal",
+			nil,
+		)
+	}
+	if input.Source == "" {
+		input.Source = "user"
+	}
+	if input.IdempotencyKey == "" {
+		input.IdempotencyKey = stableFeedbackKey(input)
 	}
 
-	if createErr := db.WithContext(ctx).Create(record).Error; createErr != nil {
-		logger.Warnf(ctx, "growth_metrics: failed to record feedback: agent_id=%s turn_id=%s err=%v",
-			agentID, turnID, createErr)
+	categoriesJSON, err := json.Marshal(input.Categories)
+	if err != nil {
+		return nil, false, fmt.Errorf("growth_metrics: encode feedback categories: %w", err)
+	}
+	now := time.Now().UTC()
+	record := &persistence.UserFeedback{}
+	replayed := false
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var turn persistence.AgentTurn
+		if queryErr := tx.
+			Joins("JOIN agent_conversations ON agent_conversations.id = agent_turns.conversation_id").
+			Where(
+				"agent_turns.id = ? AND agent_turns.agent_id = ? AND agent_turns.conversation_id = ? AND agent_conversations.ptid = ?",
+				input.TurnID,
+				input.AgentID,
+				input.ConversationID,
+				ptid,
+			).
+			First(&turn).Error; queryErr != nil {
+			if queryErr == gorm.ErrRecordNotFound {
+				return errcode.New(errcode.AgentNotFound, http.StatusNotFound, "feedback turn not found", queryErr)
+			}
+			return fmt.Errorf("load feedback turn: %w", queryErr)
+		}
+
+		assistantMessageID := strings.TrimSpace(input.AssistantMessageID)
+		if assistantMessageID == "" {
+			var assistant persistence.AgentMessage
+			if queryErr := tx.
+				Where("turn_id = ? AND role = ?", input.TurnID, string(domain.MessageRoleAssistant)).
+				Order("seq DESC").
+				First(&assistant).Error; queryErr != nil {
+				return errcode.New(errcode.AgentNotFound, http.StatusNotFound, "assistant message for feedback not found", queryErr)
+			}
+			assistantMessageID = assistant.ID
+		} else {
+			var count int64
+			if queryErr := tx.Model(&persistence.AgentMessage{}).
+				Where(
+					"id = ? AND turn_id = ? AND conversation_id = ? AND role = ?",
+					assistantMessageID,
+					input.TurnID,
+					input.ConversationID,
+					string(domain.MessageRoleAssistant),
+				).
+				Count(&count).Error; queryErr != nil {
+				return fmt.Errorf("validate feedback assistant message: %w", queryErr)
+			}
+			if count != 1 {
+				return errcode.New(errcode.AgentNotFound, http.StatusNotFound, "feedback assistant message not found", nil)
+			}
+		}
+
+		feedbackID := stableFeedbackID(ptid, input.IdempotencyKey)
+		queryErr := tx.First(record, "id = ?", feedbackID).Error
+		if queryErr != nil && queryErr != gorm.ErrRecordNotFound {
+			return fmt.Errorf("load existing turn feedback: %w", queryErr)
+		}
+		if queryErr == nil {
+			if record.Ptid == ptid &&
+				record.TurnID == input.TurnID &&
+				record.IdempotencyKey == input.IdempotencyKey &&
+				record.Signal == input.Signal &&
+				record.Rating == input.Rating &&
+				record.AssistantMessageID == assistantMessageID &&
+				string(record.Categories) == string(categoriesJSON) &&
+				stringValue(record.Comment) == stringValue(input.Comment) {
+				replayed = true
+				return nil
+			}
+			return errcode.New(
+				errcode.AgentIdempotencyConflict,
+				http.StatusConflict,
+				"feedback idempotency key conflicts with an existing command",
+				nil,
+			)
+		}
+
+		record = &persistence.UserFeedback{
+			ID:                 feedbackID,
+			Ptid:               ptid,
+			AgentID:            input.AgentID,
+			TurnID:             input.TurnID,
+			ConversationID:     input.ConversationID,
+			AssistantMessageID: assistantMessageID,
+			Source:             input.Source,
+			Signal:             input.Signal,
+			Rating:             input.Rating,
+			Categories:         categoriesJSON,
+			Comment:            input.Comment,
+			IdempotencyKey:     input.IdempotencyKey,
+			CreatedAt:          now,
+			UpdatedAt:          now,
+		}
+		return tx.Create(record).Error
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if replayed {
+		return record, true, nil
 	}
 
-	// Also emit a growth event for the feedback signal so it appears in the
-	// unified event stream and contributes to window-based aggregations.
 	eventType := EventFeedbackPositive
-	if signal == "negative" {
+	if input.Signal == string(domain.FeedbackNegative) {
 		eventType = EventFeedbackNegative
 	}
 
 	detailsMap := map[string]string{
-		"turn_id":         turnID,
-		"conversation_id": conversationID,
-		"signal":          signal,
+		"turn_id":         input.TurnID,
+		"conversation_id": input.ConversationID,
+		"signal":          input.Signal,
 	}
 	detailsJSON, _ := json.Marshal(detailsMap)
 
-	s.RecordEvent(ctx, agentID, eventType, CategoryFeedback, turnID, string(detailsJSON), "success")
+	s.RecordEvent(ctx, input.AgentID, eventType, CategoryFeedback, input.TurnID, string(detailsJSON), "success")
 
-	// Trigger trust score adjustment and attribution analysis.
 	if s.diagnosticService != nil {
 		bgCtx := context.WithoutCancel(ctx)
-		if signal == "negative" {
-			go s.diagnosticService.AttributeNegativeFeedback(bgCtx, agentID, turnID)
-		} else if signal == "positive" {
-			go s.diagnosticService.AdjustMemoryTrustPositive(bgCtx, agentID, turnID)
+		if input.Signal == string(domain.FeedbackNegative) {
+			go s.diagnosticService.AttributeNegativeFeedback(bgCtx, input.AgentID, input.TurnID)
+		} else if input.Signal == string(domain.FeedbackPositive) {
+			go s.diagnosticService.AdjustMemoryTrustPositive(bgCtx, input.AgentID, input.TurnID)
 		}
 	}
+	return record, false, nil
+}
+
+func stableFeedbackKey(input TurnFeedbackInput) string {
+	canonical := fmt.Sprintf(
+		"%s\x00%s\x00%d\x00%s\x00%s",
+		input.TurnID,
+		input.Signal,
+		input.Rating,
+		input.Source,
+		stringValue(input.Comment),
+	)
+	digest := sha256.Sum256([]byte(canonical))
+	return hex.EncodeToString(digest[:])
+}
+
+func stableFeedbackID(ptid string, idempotencyKey string) string {
+	digest := sha256.Sum256([]byte(ptid + "\x00" + idempotencyKey))
+	return "fb_" + hex.EncodeToString(digest[:16])
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +587,7 @@ func (s *GrowthMetricsService) GetAuditLog(
 // the total count for pagination.
 func (s *GrowthMetricsService) GetFeedbackHistory(
 	ctx context.Context,
+	ptid string,
 	agentID string,
 	limit, offset int,
 ) ([]persistence.UserFeedback, int64, error) {
@@ -429,14 +599,14 @@ func (s *GrowthMetricsService) GetFeedbackHistory(
 
 	var total int64
 	if countErr := db.WithContext(ctx).Model(&persistence.UserFeedback{}).
-		Where("agent_id = ?", agentID).
+		Where("ptid = ? AND agent_id = ?", ptid, agentID).
 		Count(&total).Error; countErr != nil {
 		return nil, 0, fmt.Errorf("growth_metrics: count feedback history failed: %w", countErr)
 	}
 
 	var records []persistence.UserFeedback
 	if queryErr := db.WithContext(ctx).
-		Where("agent_id = ?", agentID).
+		Where("ptid = ? AND agent_id = ?", ptid, agentID).
 		Order("created_at DESC").
 		Limit(limit).
 		Offset(offset).
@@ -445,6 +615,25 @@ func (s *GrowthMetricsService) GetFeedbackHistory(
 	}
 
 	return records, total, nil
+}
+
+func (s *GrowthMetricsService) ListTurnFeedback(
+	ctx context.Context,
+	ptid string,
+	turnID string,
+) ([]persistence.UserFeedback, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var records []persistence.UserFeedback
+	if err := db.WithContext(ctx).
+		Where("ptid = ? AND turn_id = ?", strings.TrimSpace(ptid), strings.TrimSpace(turnID)).
+		Order("created_at ASC").
+		Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("growth_metrics: list turn feedback failed: %w", err)
+	}
+	return records, nil
 }
 
 // ---------------------------------------------------------------------------

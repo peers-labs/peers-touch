@@ -3,11 +3,11 @@
 
 from __future__ import annotations
 
-import json
 import os
 import random
 import shutil
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from selenium.webdriver.common.by import By
@@ -17,6 +17,7 @@ from tooling.acceptance.core import (
     AcceptanceGate,
     ActorRuntime,
     GateError,
+    REPORTS_DIR,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
@@ -26,14 +27,11 @@ from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
     NativeClientLifecycleLedger,
     async_harness,
-    cleanup_preserving_primary_failure,
     commits_match,
-    configure_station,
     current_commit,
     current_workspace_digest,
     enter_chat_page,
     message_snapshot,
-    native_runtime_source_identity,
     read_station_version,
     reset_fixture,
     runtime_station_service,
@@ -41,12 +39,16 @@ from tooling.acceptance.gates.chat.native_support import (
     send_text,
     start_authenticated_client,
     stop_client,
-    verify_runtime_fixture_ready,
     wait_until,
 )
 
 
-REPORT_PATH = None
+REPORT_PATH = Path(
+    os.environ.get(
+        "CHAT_NATIVE_RECOVERY_REPORT",
+        str(REPORTS_DIR / "chat-native-recovery-run.json"),
+    )
+)
 CLIENT_PORTS = {"alice": 4445, "bob": 4446}
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 REQUIRED_ASSERTIONS = {
@@ -70,36 +72,12 @@ SELECTORS = {
 }
 
 
-def selected_runtime() -> tuple[
-    dict[str, Any],
-    dict[str, Any],
-    NativeDesktopRuntimeBinding,
-] | None:
-    selected = selected_native_runtime(NativeRecoveryGate.gate_id)
-    if selected is None:
-        return None
-    return selected.manifest, selected.actor_manifest, selected.binding
-
-
 class NativeRecoveryGate(AcceptanceGate):
     gate_id = "chat-native-recovery-e2e"
-    phase = "MP-W08"
-    bom = ("MP-G07", "MP-G08", "MP-G12")
-    spec = ("chat-native-visible-clients",)
     report_path = REPORT_PATH
-    evidence_dir = (
-        REPORT_PATH.parent / "chat-native-recovery-evidence"
-        if REPORT_PATH is not None
-        else None
-    )
+    evidence_dir = REPORT_PATH.parent / "chat-native-recovery-evidence"
 
-    def __init__(
-        self,
-        *,
-        manifest: dict[str, Any] | None = None,
-        actor_manifest: dict[str, Any] | None = None,
-        runtime_binding: NativeDesktopRuntimeBinding | None = None,
-    ) -> None:
+    def __init__(self) -> None:
         super().__init__()
         injected = (manifest, actor_manifest, runtime_binding)
         if any(value is not None for value in injected) and not all(
@@ -178,19 +156,6 @@ class NativeRecoveryGate(AcceptanceGate):
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
-        self.report.station_url = self.station_url
-        self.report.runtime.update(
-            {
-                "runtimeCell": (
-                    runtime_binding.cell_id
-                    if runtime_binding is not None
-                    else "native-tauri-embedded-webdriver"
-                ),
-                "journey": "reinstall-24-word-recovery-restore",
-                "steps": self.steps,
-                "cleanup": {},
-            }
-        )
 
     def step(
         self,
@@ -312,7 +277,7 @@ class NativeRecoveryGate(AcceptanceGate):
         self.report.add_actor(
             ActorRuntime(
                 name=actor,
-                runtime=self.runtime_binding.cell_id,
+                runtime="native-tauri-embedded-webdriver",
                 port=client.port,
                 gateway_port=client.gateway_port,
                 profile=client.profile,
@@ -419,27 +384,18 @@ class NativeRecoveryGate(AcceptanceGate):
 
     def reinstall_and_restore(self, phrase: str, text: str, conversation_id: str = "") -> None:
         bob = self.clients["bob"]
-        if self.runtime_binding is None:
-            bob_storage = bob.storage_root
-            stop_client(bob)
-            shutil.rmtree(bob_storage, ignore_errors=True)
-            new_bob, ptid = start_authenticated_client(
-                "bob",
-                CLIENT_PORTS["bob"],
-                self.station_url,
-            )
-            self.register_driver(new_bob)
-            if ptid != self.ptids["bob"]:
-                raise GateError("Bob identity changed after reinstall")
-            self.clients["bob"] = new_bob
-        else:
-            self.stop_authenticated_client(bob)
-            self.start_injected_client("bob")
-            new_bob = self.clients["bob"]
-            if self.ptids["bob"] != str(
-                self.actor_specs["bob"].get("ptid") or ""
-            ):
-                raise GateError("Bob identity changed after reinstall")
+        bob_storage = bob.storage_root
+        stop_client(bob)
+        shutil.rmtree(bob_storage, ignore_errors=True)
+        new_bob, ptid = start_authenticated_client(
+            "bob",
+            CLIENT_PORTS["bob"],
+            self.station_url,
+        )
+        self.register_driver(new_bob)
+        if ptid != self.ptids["bob"]:
+            raise GateError("Bob identity changed after reinstall")
+        self.clients["bob"] = new_bob
         new_bob.find_element(SELECTORS["settings_nav"], 30).click()
         new_bob.find_element(SELECTORS["security_section"], 10).click()
         WebDriverWait(new_bob.driver, 30).until(
@@ -607,6 +563,7 @@ class NativeRecoveryGate(AcceptanceGate):
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
 
+        self.report.station_url = self.station_url
         version = self.step(
             "station.identity",
             lambda: read_station_version(self.station_url),
@@ -618,18 +575,9 @@ class NativeRecoveryGate(AcceptanceGate):
                 f"station={live_commit or 'missing'} client={self.tested_commit}"
             )
 
-        source_identity = self.source_identity(version)
-        self.step(
-            "fixture.reset",
-            (
-                self.verify_fixture_ready
-                if self.runtime_binding is not None
-                else reset_fixture
-            ),
-        )
+        self.step("fixture.reset", reset_fixture)
         order = ["alice", "bob"]
         random.SystemRandom().shuffle(order)
-        cleanup: dict[str, Any] = {}
         try:
             for actor in order:
                 self.step(
@@ -678,32 +626,25 @@ class NativeRecoveryGate(AcceptanceGate):
                 self.save_dom(self.clients[actor], actor)
                 self.save_app_log(self.clients[actor], actor)
         finally:
-            cleanup = cleanup_preserving_primary_failure(
-                self.cleanup_clients,
-                self.report,
-                "Native recovery",
-            )
-            self.report.runtime["steps"] = self.steps
+            for client in self.clients.values():
+                try:
+                    stop_client(client)
+                except Exception:
+                    client.stop()
 
         assertion_names = {assertion.name for assertion in self.report.assertions}
         missing = REQUIRED_ASSERTIONS - assertion_names
         if missing:
             raise GateError(f"required assertions are missing: {sorted(missing)}")
         return {
-            "runtimeCell": (
-                self.runtime_binding.cell_id
-                if self.runtime_binding is not None
-                else "native-tauri-embedded-webdriver"
-            ),
+            "runtimeCell": "native-tauri-embedded-webdriver",
             "journey": "reinstall-24-word-recovery-restore",
             "testedCommit": self.tested_commit,
             "testedWorkspaceDigest": self.workspace_digest,
             "stationLive": version,
-            "sourceIdentity": source_identity,
             "launchOrder": order,
             "conversationId": conversation_id,
             "steps": self.steps,
-            "cleanup": cleanup,
             "clients": {
                 actor: {
                     "ptid": self.ptids[actor],
@@ -718,19 +659,5 @@ class NativeRecoveryGate(AcceptanceGate):
         }
 
 
-def main() -> int:
-    runtime = selected_runtime()
-    gate = (
-        NativeRecoveryGate()
-        if runtime is None
-        else NativeRecoveryGate(
-            manifest=runtime[0],
-            actor_manifest=runtime[1],
-            runtime_binding=runtime[2],
-        )
-    )
-    return gate.execute()
-
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(NativeRecoveryGate().execute())

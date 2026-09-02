@@ -313,6 +313,9 @@ The handoff package to `pt-execution-plan-guardian` is:
 - Per-task acceptance commands and evidence paths.
 - Cutover/deletion obligations.
 - Final readiness gate and prohibited claims.
+- A plan-owned `Context Anchor` created through `pt-context-anchor`, with the
+  verified worktree, branch, entry stage, first dependency-ready step, and
+  initial evidence state.
 
 ## Design Escalation
 

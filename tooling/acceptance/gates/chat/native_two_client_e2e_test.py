@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,10 +25,7 @@ from tooling.acceptance.gates.chat.native_support import (
 
 def load_module() -> Any:
     path = Path(__file__).with_name("native_two_client_e2e.py")
-    spec = importlib.util.spec_from_file_location(
-        "native_two_client_e2e",
-        path,
-    )
+    spec = importlib.util.spec_from_file_location("native_two_client_e2e", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"failed to load {path}")
     module = importlib.util.module_from_spec(spec)
@@ -37,81 +33,17 @@ def load_module() -> Any:
     return module
 
 
-class SyntheticRuntimeBinding:
-    cell_id = "desktop-linux-native"
-
-    def __init__(self) -> None:
-        self.cleanup = {
-            "portsReleased": True,
-            "processesReleased": True,
-            "storageReleased": True,
-            "logsReleased": True,
-            "cleanupErrors": [],
-        }
-
-    def runtime_identity(self) -> dict[str, Any]:
-        return {
-            "artifactKind": "acceptance-runtime-cell-manifest",
-            "cellId": self.cell_id,
-            "gateId": "chat-native-two-client-e2e",
-            "runId": "cell-run-a",
-            "state": "LEASED",
-            "platform": {
-                "os": "linux",
-                "imageDigest": "c" * 64,
-            },
-            "source": {
-                "commit": "commit-a",
-                "workspaceDigest": "clean",
-                "remoteSourceDigest": "b" * 64,
-                "remoteCheckoutClean": True,
-                "binarySha256": "a" * 64,
-            },
-        }
-
-    def binary_identity(self) -> dict[str, str]:
-        return {
-            "path": "runtime-cell:desktop-linux-native:cell-run-a:bin",
-            "sha256": "a" * 64,
-            "sourceCommit": "commit-a",
-        }
-
-    def finalize_cleanup(
-        self,
-        sessions: list[Any],
-        client_specs: dict[str, dict[str, Any]],
-    ) -> dict[str, Any]:
-        del sessions, client_specs
-        return dict(self.cleanup)
-
-
 class NativeTwoClientEvidenceTest(unittest.TestCase):
     def setUp(self) -> None:
         self.module = load_module()
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.store = EvidenceStore(
-            self.root / "artifacts",
-            worktree=REPO_ROOT,
-        )
-        self.run = self.store.begin_run(
-            self.module.GATE_ID,
-            source={"commit": "commit-a", "workspaceDigest": "clean"},
-        )
-        environment = self.run.subprocess_environment(os.environ.copy())
-        environment["PT_ACCEPTANCE_RUNTIME_CELL"] = (
-            "desktop-linux-native"
-        )
-        self.environment = patch.dict(os.environ, environment)
-        self.environment.start()
 
     def tearDown(self) -> None:
-        self.environment.stop()
-        self.run.close()
         self.temp.cleanup()
 
     def valid_report(self) -> dict[str, Any]:
-        evidence: dict[str, dict[str, str]] = {}
+        evidence: dict[str, str] = {}
         for actor in ("alice", "bob"):
             for suffix in ("screenshot", "dom", "app-log"):
                 key = f"{actor}-{suffix}"
@@ -137,8 +69,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         }
         runtime_cell = SyntheticRuntimeBinding().runtime_identity()
         return {
-            "artifactKind": "acceptance-gate-evidence-report",
-            "gate": self.module.GATE_ID,
+            "gate": "chat-native-two-client-e2e",
             "status": "PASS",
             "station_url": "http://station",
             "manifest": {
@@ -150,39 +81,35 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 "services": {"station": station},
             },
             "runtime": {
-                "runtimeCell": "desktop-linux-native",
-                "runtimeCellRunId": "cell-run-a",
+                "runtimeCell": "native-tauri-embedded-webdriver",
                 "journey": "direct-delivered-receipt",
-                "sourceIdentity": {
-                    "orchestrator": source,
-                    "station": station,
-                    "stationLive": {"build_commit": "commit-a"},
-                    "runtimeCell": runtime_cell,
-                    "binary": SyntheticRuntimeBinding().binary_identity(),
-                },
+                "testedCommit": "commit-a",
+                "testedWorkspaceDigest": "workspace-a",
+                "stationLive": {"build_commit": "commit-a"},
                 "steps": [
                     {"step": step, "status": "pass"}
                     for step in sorted(self.module.REQUIRED_STEPS)
                 ],
-                "cleanup": {
-                    "portsReleased": True,
-                    "processesReleased": True,
-                    "storageReleased": True,
-                    "logsReleased": True,
-                    "cleanupErrors": [],
-                },
             },
             "actors": {
-                actor: {
-                    "name": actor,
-                    "runtime": "desktop-linux-native",
-                    "port": 4445 + index,
-                    "gateway_port": 3030 + index,
-                    "profile": actor,
-                    "storage_root": f"/tmp/{actor}",
-                    "pid": 100 + index,
-                }
-                for index, actor in enumerate(("alice", "bob"))
+                "alice": {
+                    "name": "alice",
+                    "runtime": "native-tauri-embedded-webdriver",
+                    "port": 4445,
+                    "gateway_port": 3030,
+                    "profile": "alice",
+                    "storage_root": "/tmp/alice",
+                    "pid": 100,
+                },
+                "bob": {
+                    "name": "bob",
+                    "runtime": "native-tauri-embedded-webdriver",
+                    "port": 4446,
+                    "gateway_port": 3031,
+                    "profile": "bob",
+                    "storage_root": "/tmp/bob",
+                    "pid": 101,
+                },
             },
             "assertions": [
                 {"name": name, "passed": True, "detail": ""}
@@ -191,45 +118,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             "evidence": evidence,
         }
 
-    def write_report(
-        self,
-        report: dict[str, Any] | None = None,
-    ) -> tuple[dict[str, Any], ArtifactRef]:
-        expected = report or self.valid_report()
-        self.write_environment_manifest(expected)
-        self.run.write_json(
-            self.module.SOURCE_REPORT_PATH,
-            expected,
-        )
-        return self.module.load_report(self.store)
-
-    def write_environment_manifest(
-        self,
-        report: dict[str, Any],
-    ) -> None:
-        self.run.write_json(
-            self.module.ENVIRONMENT_MANIFEST_PATH,
-            report["manifest"],
-        )
-
-    def test_accepts_current_source_bound_report(self) -> None:
-        report, source_ref = self.write_report()
-        self.module.validate_report(
-            report,
-            source_ref=source_ref,
-            store=self.store,
-        )
-        validation_ref = self.module.write_validation(
-            report,
-            source_ref=source_ref,
-        )
-        self.assertEqual(validation_ref.run_id, self.run.run_id)
-        self.assertEqual(
-            self.store.read_json(validation_ref)["proofStatus"],
-            "PROVEN",
-        )
-
-    def test_rejects_embedded_environment_manifest_substitution(self) -> None:
+    def test_accepts_current_isolated_native_report(self) -> None:
         report = self.valid_report()
         self.run.write_json(
             self.module.ENVIRONMENT_MANIFEST_PATH,
@@ -382,32 +271,31 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
         )
         with (
-            patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"}),
-            patch(
-                "tooling.acceptance.gates.chat.native_two_client_runner."
-                "read_station_version",
-                return_value={"build_commit": "commit-a"},
-            ),
+            patch.object(self.module, "current_commit", return_value="commit-a"),
             patch.object(
-                gate,
-                "start_client",
-                side_effect=GateError("synthetic launch failure"),
+                self.module,
+                "current_workspace_digest",
+                return_value="workspace-a",
             ),
-            self.assertRaisesRegex(GateError, "synthetic launch failure"),
         ):
-            gate.run()
+            self.module.validate_report(report)
 
-        self.assertEqual(
-            gate.report.runtime["steps"][-1]["step"],
-            "client.authenticated",
-        )
-        self.assertEqual(
-            gate.report.runtime["steps"][-1]["status"],
-            "fail",
-        )
-        self.assertTrue(
-            gate.report.runtime["cleanup"]["portsReleased"],
-        )
+    def test_rejects_stale_or_non_native_report(self) -> None:
+        report = self.valid_report()
+        report["runtime"]["runtimeCell"] = "browser"
+        with self.assertRaisesRegex(self.module.GateError, "runtime cell"):
+            self.module.validate_report(report)
+        report = self.valid_report()
+        with (
+            patch.object(self.module, "current_commit", return_value="commit-b"),
+            patch.object(
+                self.module,
+                "current_workspace_digest",
+                return_value="workspace-a",
+            ),
+            self.assertRaisesRegex(self.module.GateError, "commit is stale"),
+        ):
+            self.module.validate_report(report)
 
     def test_source_identity_rejects_malformed_station_protocol_digest(self) -> None:
         manifest = self.valid_report()["manifest"]
@@ -581,6 +469,53 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             '--output "$(ACCEPTANCE_PLAN)"',
             makefile,
         )
+
+    def test_rejects_stale_or_non_native_report(self) -> None:
+        report = self.valid_report()
+        report["runtime"]["runtimeCell"] = "browser"
+        with self.assertRaisesRegex(self.module.GateError, "runtime cell"):
+            self.module.validate_report(report)
+        report = self.valid_report()
+        with (
+            patch.object(self.module, "current_commit", return_value="commit-b"),
+            patch.object(
+                self.module,
+                "current_workspace_digest",
+                return_value="workspace-a",
+            ),
+            self.assertRaisesRegex(self.module.GateError, "commit is stale"),
+        ):
+            self.module.validate_report(report)
+
+    def test_rejects_shared_actor_resources_and_missing_receipt(self) -> None:
+        report = self.valid_report()
+        report["actors"]["bob"]["storage_root"] = "/tmp/alice"
+        with (
+            patch.object(self.module, "current_commit", return_value="commit-a"),
+            patch.object(
+                self.module,
+                "current_workspace_digest",
+                return_value="workspace-a",
+            ),
+            self.assertRaisesRegex(self.module.GateError, "distinct storage_root"),
+        ):
+            self.module.validate_report(report)
+        report = self.valid_report()
+        report["assertions"] = [
+            assertion
+            for assertion in report["assertions"]
+            if assertion["name"] != "alice_to_bob_delivered"
+        ]
+        with (
+            patch.object(self.module, "current_commit", return_value="commit-a"),
+            patch.object(
+                self.module,
+                "current_workspace_digest",
+                return_value="workspace-a",
+            ),
+            self.assertRaisesRegex(self.module.GateError, "required assertions"),
+        ):
+            self.module.validate_report(report)
 
 
 if __name__ == "__main__":

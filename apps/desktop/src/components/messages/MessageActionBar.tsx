@@ -20,6 +20,7 @@ export function MessageActionBar({ context, style }: MessageActionBarProps) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 2, ...style }}>
       {primary.map((action) => (
         <button
+          data-pt-message-action={action.key}
           key={action.key}
           onClick={action.onClick}
           disabled={action.disabled}
@@ -34,7 +35,7 @@ export function MessageActionBar({ context, style }: MessageActionBarProps) {
           menu={{
             items: visibleMenu.map((action) => ({
               key: action.key,
-              label: t(action.label),
+              label: <span data-pt-message-action={action.key}>{t(action.label)}</span>,
               icon: <action.icon size={14} />,
               danger: action.danger,
               disabled: action.disabled,
@@ -43,7 +44,11 @@ export function MessageActionBar({ context, style }: MessageActionBarProps) {
           }}
           trigger={['click']}
         >
-          <button style={buttonStyle} title={t('chat.message.action.more')}>
+          <button
+            data-pt-message-actions-more
+            style={buttonStyle}
+            title={t('chat.message.action.more')}
+          >
             <MoreHorizontal size={14} />
           </button>
         </Dropdown>

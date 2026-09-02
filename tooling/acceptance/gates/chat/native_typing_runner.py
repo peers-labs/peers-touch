@@ -3,36 +3,37 @@
 
 from __future__ import annotations
 
-import json
 import os
 import random
 import socket
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from tooling.acceptance.core import (
     AcceptanceGate,
     ActorRuntime,
     GateError,
+    REPORTS_DIR,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
-from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.drivers.tauri import TauriDriver, TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
     acceptance_station_environment,
+    profile_three_environment,
 )
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     DEV_ACCOUNT_PASSWORD,
     NativeClientLifecycleLedger,
     async_harness,
-    cleanup_preserving_primary_failure,
     commits_match,
-    configure_station,
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    gateway_command,
     is_station_authorization_rejection,
     native_runtime_source_identity,
     read_station_version,
@@ -42,13 +43,16 @@ from tooling.acceptance.gates.chat.native_support import (
     start_authenticated_client,
     station_readback,
     stop_client,
-    verify_runtime_fixture_ready,
     wait_until,
 )
 
 
-GATE_ID = "chat-native-typing-e2e"
-REPORT_PATH = None
+REPORT_PATH = Path(
+    os.environ.get(
+        "CHAT_NATIVE_TYPING_REPORT",
+        str(REPORTS_DIR / "chat-native-typing-run.json"),
+    )
+)
 CLIENT_PORTS = {"alice": 4461, "bob": 4462, "charlie": 4463}
 ACTORS = ("alice", "bob", "charlie")
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
@@ -73,18 +77,7 @@ REQUIRED_ASSERTIONS = {
 }
 
 
-def selected_runtime() -> tuple[
-    dict[str, Any],
-    dict[str, Any],
-    NativeDesktopRuntimeBinding,
-] | None:
-    selected = selected_native_runtime(GATE_ID)
-    if selected is None:
-        return None
-    return selected.manifest, selected.actor_manifest, selected.binding
-
-
-def typing_dom(client: TauriSession, conversation_id: str = "") -> str:
+def typing_dom(client: TauriDriver, conversation_id: str = "") -> str:
     value = client.execute_script(
         """
         const cid = arguments[0];
@@ -104,7 +97,7 @@ def typing_dom(client: TauriSession, conversation_id: str = "") -> str:
     return str(value or "")
 
 
-def set_composer(client: TauriSession, value: str, *, blur: bool = False) -> None:
+def set_composer(client: TauriDriver, value: str, *, blur: bool = False) -> None:
     composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
     client.execute_script(
         """
@@ -135,24 +128,11 @@ def set_composer(client: TauriSession, value: str, *, blur: bool = False) -> Non
 
 
 class NativeTypingGate(AcceptanceGate):
-    gate_id = GATE_ID
-    phase = "MP-W12"
-    bom = ("MP-G16",)
-    spec = ("AS-W12-06",)
+    gate_id = "chat-native-typing-e2e"
     report_path = REPORT_PATH
-    evidence_dir = (
-        REPORT_PATH.parent / "chat-native-typing-evidence"
-        if REPORT_PATH is not None
-        else None
-    )
+    evidence_dir = REPORT_PATH.parent / "chat-native-typing-evidence"
 
-    def __init__(
-        self,
-        *,
-        manifest: dict[str, Any] | None = None,
-        actor_manifest: dict[str, Any] | None = None,
-        runtime_binding: NativeDesktopRuntimeBinding | None = None,
-    ) -> None:
+    def __init__(self) -> None:
         super().__init__()
         injected = (manifest, actor_manifest, runtime_binding)
         if any(value is not None for value in injected) and not all(
@@ -228,7 +208,7 @@ class NativeTypingGate(AcceptanceGate):
         if not self.station_url:
             raise GateError("Native typing Station URL is required")
         self.steps: list[dict[str, Any]] = []
-        self.clients: dict[str, TauriSession] = {}
+        self.clients: dict[str, TauriDriver] = {}
         self.runtime_instances: list[TauriSession] = []
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
@@ -237,7 +217,6 @@ class NativeTypingGate(AcceptanceGate):
         self.message_ids: dict[str, str] = {}
         self.durable_evidence: dict[str, Any] = {}
         self.cleanup_evidence: dict[str, Any] = {}
-        self.source_evidence: dict[str, Any] = {}
 
     def step(self, name: str, action: Callable[[], Any], client: str = "") -> Any:
         started = time.monotonic()
@@ -265,9 +244,6 @@ class NativeTypingGate(AcceptanceGate):
         return value
 
     def start_client(self, actor: str) -> None:
-        if self.runtime_binding is not None:
-            self.start_injected_client(actor)
-            return
         client, ptid = start_authenticated_client(
             actor,
             CLIENT_PORTS[actor],
@@ -479,6 +455,20 @@ class NativeTypingGate(AcceptanceGate):
             raise GateError(device_error)
         enter_chat_page(replacement)
 
+    def drain(self, actor: str) -> None:
+        try:
+            gateway_command(
+                self.clients[actor], "messaging_dispatch", {"batch_limit": 50}
+            )
+        except Exception:
+            pass
+        try:
+            gateway_command(
+                self.clients[actor], "messaging_drain", {"batch_limit": 100}
+            )
+        except Exception:
+            pass
+
     def sync(self, actor: str, kind: str, conversation_id: str) -> None:
         method = "syncFriendSession" if kind == "friend" else "syncGroup"
         key = "sessionUlid" if kind == "friend" else "groupUlid"
@@ -674,14 +664,25 @@ class NativeTypingGate(AcceptanceGate):
             {"conversationId": conversation_id, "typing": True},
         )
         self.wait_typing("bob", True, "Bob Direct typing before disconnect")
-        self.stop_client_for_restart("alice")
+        stop_client(alice)
         self.wait_typing(
             "bob",
             False,
             "Bob Direct phantom typing cleared by observed TTL",
         )
-        self.restart_client("alice", "disconnect")
-        replacement = self.clients["alice"]
+        replacement, ptid = start_authenticated_client(
+            "alice",
+            CLIENT_PORTS["alice"],
+            self.station_url,
+        )
+        self.register_driver(replacement)
+        if ptid != self.ptids["alice"]:
+            raise GateError("Alice identity changed after disconnect restart")
+        device = async_harness(replacement, "getRealtimeDevice", {})
+        if str((device or {}).get("deviceId") or "") != self.device_ids["alice"]:
+            raise GateError("Alice device changed after disconnect restart")
+        self.clients["alice"] = replacement
+        enter_chat_page(replacement)
         self.sync("alice", "friend", conversation_id)
         self.assert_condition("direct_typing_disconnect_ttl_clear", True)
 
@@ -776,15 +777,26 @@ class NativeTypingGate(AcceptanceGate):
         )
         for actor in ("bob", "charlie"):
             self.wait_typing(actor, True, f"{actor} Group typing before disconnect")
-        self.stop_client_for_restart("alice")
+        stop_client(alice)
         for actor in ("bob", "charlie"):
             self.wait_typing(
                 actor,
                 False,
                 f"{actor} Group phantom typing cleared by observed TTL",
             )
-        self.restart_client("alice", "Group disconnect")
-        replacement = self.clients["alice"]
+        replacement, ptid = start_authenticated_client(
+            "alice",
+            CLIENT_PORTS["alice"],
+            self.station_url,
+        )
+        self.register_driver(replacement)
+        if ptid != self.ptids["alice"]:
+            raise GateError("Alice identity changed after Group disconnect restart")
+        device = async_harness(replacement, "getRealtimeDevice", {})
+        if str((device or {}).get("deviceId") or "") != self.device_ids["alice"]:
+            raise GateError("Alice device changed after Group disconnect restart")
+        self.clients["alice"] = replacement
+        enter_chat_page(replacement)
         self.sync("alice", "group", conversation_id)
         alice = replacement
         self.assert_condition("group_typing_disconnect_ttl_clear", True)
@@ -983,32 +995,22 @@ class NativeTypingGate(AcceptanceGate):
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
-        if self.runtime_binding is None:
-            try:
-                acceptance_station_environment(self.station_url)
-            except RuntimeError as error:
-                raise GateError(str(error)) from error
+        try:
+            profile_three_environment(self.station_url)
+        except RuntimeError as error:
+            raise GateError(str(error)) from error
         self.report.station_url = self.station_url
         version = self.step(
             "station.identity",
             lambda: read_station_version(self.station_url),
         )
-        if self.runtime_binding is None:
-            live_commit = str(version.get("build_commit") or "")
-            if not commits_match(live_commit, self.tested_commit):
-                raise GateError(
-                    "Station/client commit mismatch: "
-                    f"station={live_commit or 'missing'} "
-                    f"client={self.tested_commit}"
-                )
-        else:
-            self.source_evidence = self.validate_source_identity(version)
-        self.step(
-            "fixture.reset",
-            self.verify_fixture_ready
-            if self.runtime_binding is not None
-            else lambda: reset_fixture(ACTORS),
-        )
+        live_commit = str(version.get("build_commit") or "")
+        if not commits_match(live_commit, self.tested_commit):
+            raise GateError(
+                "Station/client commit mismatch: "
+                f"station={live_commit or 'missing'} client={self.tested_commit}"
+            )
+        self.step("fixture.reset", lambda: reset_fixture(ACTORS))
         order = list(ACTORS)
         random.SystemRandom().shuffle(order)
         try:
@@ -1048,11 +1050,7 @@ class NativeTypingGate(AcceptanceGate):
             for actor in ("alice", "bob"):
                 self.sync(actor, "friend", direct_id)
             self.prove_direct(direct_id)
-            direct_before_station = station_readback(
-                direct_id,
-                direct_seed,
-                station_url=self.station_url,
-            )
+            direct_before_station = station_readback(direct_id, direct_seed)
             direct_before_engine = self.engine_snapshot("bob", direct_id, direct_seed)
             async_harness(
                 self.clients["alice"],
@@ -1066,16 +1064,12 @@ class NativeTypingGate(AcceptanceGate):
                 {"conversationId": direct_id, "typing": False},
             )
             self.wait_typing("bob", False, "Bob Direct zero-write typing stopped")
-            direct_after_station = station_readback(
-                direct_id,
-                direct_seed,
-                station_url=self.station_url,
-            )
+            direct_after_station = station_readback(direct_id, direct_seed)
             direct_after_engine = self.engine_snapshot("bob", direct_id, direct_seed)
 
-            group = async_harness(
+            group = gateway_command(
                 self.clients["alice"],
-                "createGroup",
+                "messaging_create_group",
                 {
                     "name": f"typing-{time.time_ns()}",
                     "memberPtids": [
@@ -1084,7 +1078,7 @@ class NativeTypingGate(AcceptanceGate):
                     ],
                 },
             )
-            group_id = str((group or {}).get("groupUlid") or "")
+            group_id = str((group or {}).get("conversation_id") or "")
             if not group_id:
                 raise GateError("Group creation returned no conversation_id")
             self.conversations["group"] = group_id
@@ -1100,10 +1094,11 @@ class NativeTypingGate(AcceptanceGate):
 
             def group_drain_settled() -> bool:
                 nonlocal group_event_count, stable_group_observations
+                for actor in ACTORS:
+                    self.drain(actor)
                 snapshot = station_readback(
                     group_id,
                     group_seed,
-                    station_url=self.station_url,
                 )
                 event_count = len(snapshot.get("authorityEvents") or [])
                 if event_count == group_event_count:
@@ -1118,11 +1113,7 @@ class NativeTypingGate(AcceptanceGate):
                 "Group drain settled before zero-write snapshot",
                 STEP_TIMEOUT,
             )
-            group_before_station = station_readback(
-                group_id,
-                group_seed,
-                station_url=self.station_url,
-            )
+            group_before_station = station_readback(group_id, group_seed)
             group_before_engine = self.engine_snapshot("bob", group_id, group_seed)
             async_harness(
                 self.clients["alice"],
@@ -1136,11 +1127,7 @@ class NativeTypingGate(AcceptanceGate):
                 {"conversationId": group_id, "typing": False},
             )
             self.wait_typing("bob", False, "Bob Group zero-write typing stopped")
-            group_after_station = station_readback(
-                group_id,
-                group_seed,
-                station_url=self.station_url,
-            )
+            group_after_station = station_readback(group_id, group_seed)
             group_after_engine = self.engine_snapshot("bob", group_id, group_seed)
 
             durable_pairs = {
@@ -1190,27 +1177,43 @@ class NativeTypingGate(AcceptanceGate):
                 self.save_dom(client, actor)
                 self.save_app_log(client, actor)
         finally:
-            cleanup_preserving_primary_failure(
-                self.cleanup_runtime,
-                self.report,
-                "Native typing",
+            for client in self.clients.values():
+                try:
+                    stop_client(client)
+                except Exception:
+                    client.stop()
+        ports = sorted(
+            {
+                port
+                for client in self.clients.values()
+                for port in (client.port, client.gateway_port)
+            }
+        )
+        released = bool(
+            wait_until(
+                lambda: all(self.port_is_free(port) for port in ports),
+                "Native typing client port release",
+                30,
+                0.25,
             )
+        )
+        self.cleanup_evidence = {
+            "ports": ports,
+            "allPortsReleased": released,
+            "clientsStopped": sorted(self.clients),
+        }
+        self.assert_condition("resources_released", released)
 
         names = {assertion.name for assertion in self.report.assertions}
         missing = REQUIRED_ASSERTIONS - names
         if missing:
             raise GateError(f"required assertions are missing: {sorted(missing)}")
         return {
-            "runtimeCell": (
-                self.runtime_binding.cell_id
-                if self.runtime_binding is not None
-                else "native-tauri-embedded-webdriver"
-            ),
+            "runtimeCell": "native-tauri-embedded-webdriver",
             "journey": "direct-and-group-typing-presence",
             "testedCommit": self.tested_commit,
             "testedWorkspaceDigest": self.workspace_digest,
             "stationLive": version,
-            "sourceIdentity": self.source_evidence,
             "launchOrder": order,
             "conversations": self.conversations,
             "messageIds": self.message_ids,
@@ -1232,14 +1235,4 @@ class NativeTypingGate(AcceptanceGate):
 
 
 if __name__ == "__main__":
-    runtime = selected_runtime()
-    gate = (
-        NativeTypingGate()
-        if runtime is None
-        else NativeTypingGate(
-            manifest=runtime[0],
-            actor_manifest=runtime[1],
-            runtime_binding=runtime[2],
-        )
-    )
-    raise SystemExit(gate.execute())
+    raise SystemExit(NativeTypingGate().execute())

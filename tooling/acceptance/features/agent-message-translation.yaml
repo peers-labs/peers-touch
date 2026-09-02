@@ -1,0 +1,37 @@
+{
+  "id": "agent-message-translation",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/conversation_handler.go",
+    "apps/station/app/subserver/agent/service/conversation_service.go",
+    "apps/desktop/src/store/chat.ts"
+  ],
+  "truth_sources": [
+    "Station message metadata_json.translation field",
+    "Desktop translateMessage action",
+    "Station SetMessageTranslation service"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/conversation/message/translate"},
+    {"type": "ui", "surface": "Message action bar translate button"}
+  ],
+  "required_gates": ["agent-translation-e2e"],
+  "acceptance": {
+    "service": [
+      "translating a message persists the translated text in Station metadata_json.translation",
+      "clearing a translation removes the translation field from the message metadata",
+      "translated content is restored on conversation reload from metadata_json",
+      "translation uses the agent's configured provider and model"
+    ],
+    "visible": [
+      "a translate button appears in the message action bar",
+      "translated text displays below the original message content",
+      "clearing translation removes the translated text and restores original-only view"
+    ]
+  },
+  "negative": [
+    "translation must not modify the original message content",
+    "translation must not persist if the provider call fails"
+  ]
+}

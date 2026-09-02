@@ -1,11 +1,12 @@
 // Agent Groups store — manages collections of agents that collaborate.
 //
-// v1 persists to localStorage. Station integration is deferred.
+// Station-backed (O1/O2): CRUD + member management persist to Station via the
+// ecosystem agent-group API. Members are carried as an ordered id array; reorder
+// is a full-array update. Mutations refresh the list from Station truth.
 
 import { createDesktopStore } from './createDesktopStore';
 import { log } from '../utils/logger';
-
-const STORAGE_KEY = 'peers-ai-agent-groups';
+import { api, type StationAgentGroupRow } from '../services/desktop_api';
 
 export type OrchestrationMode = 'sequential' | 'parallel' | 'router';
 
@@ -29,108 +30,123 @@ export interface AgentGroupCreate {
 interface AgentGroupsState {
   groups: AgentGroup[];
 
-  loadGroups: () => void;
-  createGroup: (input: AgentGroupCreate) => AgentGroup;
-  updateGroup: (id: string, updates: Partial<Pick<AgentGroup, 'name' | 'description' | 'orchestrationMode'>>) => void;
-  deleteGroup: (id: string) => void;
-  addMember: (groupId: string, agentId: string) => void;
-  removeMember: (groupId: string, agentId: string) => void;
-  reorderMembers: (groupId: string, memberAgentIds: string[]) => void;
+  loadGroups: () => Promise<void>;
+  createGroup: (input: AgentGroupCreate) => Promise<void>;
+  updateGroup: (id: string, updates: Partial<Pick<AgentGroup, 'name' | 'description' | 'orchestrationMode'>>) => Promise<void>;
+  deleteGroup: (id: string) => Promise<void>;
+  addMember: (groupId: string, agentId: string) => Promise<void>;
+  removeMember: (groupId: string, agentId: string) => Promise<void>;
+  reorderMembers: (groupId: string, memberAgentIds: string[]) => Promise<void>;
 }
 
-function generateId(): string {
-  return `grp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function persistGroups(groups: AgentGroup[]): void {
+function parseMemberIds(raw: string): string[] {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(groups));
-  } catch (error) {
-    log.error('agentGroups', 'Failed to persist groups to localStorage', { error });
-  }
-}
-
-function loadFromStorage(): AgentGroup[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as AgentGroup[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed;
-  } catch (error) {
-    log.error('agentGroups', 'Failed to load groups from localStorage', { error });
+    const parsed = JSON.parse(raw || '[]');
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
     return [];
   }
+}
+
+function normalizeMode(mode: string): OrchestrationMode {
+  return mode === 'parallel' || mode === 'router' ? mode : 'sequential';
+}
+
+// Maps the raw Station row (Go PascalCase) into the UI AgentGroup shape.
+function rowToGroup(row: StationAgentGroupRow): AgentGroup {
+  return {
+    id: row.ID,
+    name: row.Name,
+    description: row.Description || '',
+    memberAgentIds: parseMemberIds(row.MemberAgentIDs),
+    orchestrationMode: normalizeMode(row.OrchestrationMode),
+    createdAt: new Date(row.CreatedAt).getTime(),
+    updatedAt: new Date(row.UpdatedAt).getTime(),
+  };
 }
 
 export const useAgentGroupsStore = createDesktopStore<AgentGroupsState>('agentGroups', (set, get) => ({
   groups: [],
 
-  loadGroups: () => {
-    const groups = loadFromStorage();
-    set({ groups });
-    log.info('agentGroups', 'Groups loaded from storage', { count: groups.length });
+  loadGroups: async () => {
+    try {
+      const rows = await api.listAgentGroupsRemote();
+      set({ groups: rows.map(rowToGroup) });
+      log.info('agentGroups', 'Groups loaded from Station', { count: rows.length });
+    } catch (error) {
+      log.error('agentGroups', 'Failed to load groups from Station', { error });
+    }
   },
 
-  createGroup: (input: AgentGroupCreate) => {
-    const now = Date.now();
-    const group: AgentGroup = {
-      id: generateId(),
-      name: input.name,
-      description: input.description || '',
-      memberAgentIds: input.memberAgentIds || [],
-      orchestrationMode: input.orchestrationMode || 'sequential',
-      createdAt: now,
-      updatedAt: now,
-    };
-    const next = [...get().groups, group];
-    set({ groups: next });
-    persistGroups(next);
-    log.info('agentGroups', 'Group created', { id: group.id, name: group.name });
-    return group;
+  createGroup: async (input: AgentGroupCreate) => {
+    try {
+      await api.createAgentGroupRemote({
+        name: input.name,
+        description: input.description,
+        member_agent_ids: input.memberAgentIds || [],
+        orchestration_mode: input.orchestrationMode || 'sequential',
+      });
+      await get().loadGroups();
+      log.info('agentGroups', 'Group created', { name: input.name });
+    } catch (error) {
+      log.error('agentGroups', 'Failed to create group', { error });
+    }
   },
 
-  updateGroup: (id, updates) => {
-    const next = get().groups.map((g) =>
-      g.id === id ? { ...g, ...updates, updatedAt: Date.now() } : g,
-    );
-    set({ groups: next });
-    persistGroups(next);
-    log.info('agentGroups', 'Group updated', { id, updates: Object.keys(updates) });
+  updateGroup: async (id, updates) => {
+    const current = get().groups.find((g) => g.id === id);
+    if (!current) return;
+    try {
+      await api.updateAgentGroupRemote({
+        id,
+        name: updates.name ?? current.name,
+        description: updates.description ?? current.description,
+        member_agent_ids: current.memberAgentIds,
+        orchestration_mode: updates.orchestrationMode ?? current.orchestrationMode,
+      });
+      await get().loadGroups();
+      log.info('agentGroups', 'Group updated', { id, updates: Object.keys(updates) });
+    } catch (error) {
+      log.error('agentGroups', 'Failed to update group', { id, error });
+    }
   },
 
-  deleteGroup: (id) => {
-    const next = get().groups.filter((g) => g.id !== id);
-    set({ groups: next });
-    persistGroups(next);
-    log.info('agentGroups', 'Group deleted', { id });
+  deleteGroup: async (id) => {
+    try {
+      await api.deleteAgentGroupRemote(id);
+      await get().loadGroups();
+      log.info('agentGroups', 'Group deleted', { id });
+    } catch (error) {
+      log.error('agentGroups', 'Failed to delete group', { id, error });
+    }
   },
 
-  addMember: (groupId, agentId) => {
-    const next = get().groups.map((g) => {
-      if (g.id !== groupId) return g;
-      if (g.memberAgentIds.includes(agentId)) return g;
-      return { ...g, memberAgentIds: [...g.memberAgentIds, agentId], updatedAt: Date.now() };
-    });
-    set({ groups: next });
-    persistGroups(next);
+  addMember: async (groupId, agentId) => {
+    const group = get().groups.find((g) => g.id === groupId);
+    if (!group || group.memberAgentIds.includes(agentId)) return;
+    await get().reorderMembers(groupId, [...group.memberAgentIds, agentId]);
   },
 
-  removeMember: (groupId, agentId) => {
-    const next = get().groups.map((g) => {
-      if (g.id !== groupId) return g;
-      return { ...g, memberAgentIds: g.memberAgentIds.filter((id) => id !== agentId), updatedAt: Date.now() };
-    });
-    set({ groups: next });
-    persistGroups(next);
+  removeMember: async (groupId, agentId) => {
+    const group = get().groups.find((g) => g.id === groupId);
+    if (!group) return;
+    await get().reorderMembers(groupId, group.memberAgentIds.filter((id) => id !== agentId));
   },
 
-  reorderMembers: (groupId, memberAgentIds) => {
-    const next = get().groups.map((g) => {
-      if (g.id !== groupId) return g;
-      return { ...g, memberAgentIds, updatedAt: Date.now() };
-    });
-    set({ groups: next });
-    persistGroups(next);
+  reorderMembers: async (groupId, memberAgentIds) => {
+    const group = get().groups.find((g) => g.id === groupId);
+    if (!group) return;
+    try {
+      await api.updateAgentGroupRemote({
+        id: groupId,
+        name: group.name,
+        description: group.description,
+        member_agent_ids: memberAgentIds,
+        orchestration_mode: group.orchestrationMode,
+      });
+      await get().loadGroups();
+    } catch (error) {
+      log.error('agentGroups', 'Failed to update group members', { groupId, error });
+    }
   },
 }));

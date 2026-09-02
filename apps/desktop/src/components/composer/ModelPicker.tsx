@@ -8,6 +8,12 @@ import { useTranslation } from 'react-i18next';
 import { useAgentStore } from '../../store/agent';
 import type { AvailableModel } from '../../services/desktop_api';
 import { ProviderIcon } from '../settings/ProviderIcon';
+import {
+  modelMenuIconStyle,
+  modelMenuItemStyle,
+  modelMenuLabelStyle,
+  modelMenuTextStyle,
+} from './modelPickerLayout';
 
 const COMPOSER_COLORS = {
   textTertiary: '#9b9b9b',
@@ -86,14 +92,17 @@ export function ModelPicker() {
         ),
         children: items.map((model) => ({
           key: modelMenuKey(model),
+          style: modelMenuItemStyle,
           label: (
-            <Flexbox horizontal align="center" gap={8}>
-              <ProviderIcon
-                providerId={model.provider_id || ''}
-                providerName={model.provider_name}
-                size={18}
-              />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
+            <Flexbox horizontal align="center" gap={8} style={modelMenuLabelStyle}>
+              <span style={modelMenuIconStyle}>
+                <ProviderIcon
+                  providerId={model.provider_id || ''}
+                  providerName={model.provider_name}
+                  size={18}
+                />
+              </span>
+              <span title={model.display_name || model.id} style={modelMenuTextStyle}>
                 {model.display_name || model.id}
               </span>
             </Flexbox>
@@ -174,13 +183,15 @@ export function ModelPicker() {
           }}
         >
           {modelInfo && (
-            <ProviderIcon
-              providerId={modelInfo.provider_id || ''}
-              providerName={modelInfo.provider_name}
-              size={16}
-            />
+            <span style={modelMenuIconStyle}>
+              <ProviderIcon
+                providerId={modelInfo.provider_id || ''}
+                providerName={modelInfo.provider_name}
+                size={16}
+              />
+            </span>
           )}
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1 }}>
+          <span title={modelLabel} style={{ ...modelMenuTextStyle, lineHeight: 1 }}>
             {modelLabel}
           </span>
           {open
