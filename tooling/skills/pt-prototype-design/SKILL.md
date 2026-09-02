@@ -91,6 +91,37 @@ L2 可直接判定的问题：
 - empty/loading/error/retry 是否像真实页面状态，而不是空白、占位或调试态。
 - 长文案、长标题、数字、列表是否截断或溢出。
 
+### 3.3 布局稳定性（Layout Stability）
+
+原型交互过程中**禁止出现非预期的布局跳动**——用户切换 Tab、展开/折叠面板、加载内容时，周围元素不得位移或抖动。
+
+硬规则：
+
+| 场景 | 约束 | 实现手段 |
+|------|------|----------|
+| **Tab / Segment 切换** | 切换前后容器高度不得突变 | 所有互斥 tab-content 容器必须声明**相同的** `min-height` 值（取所有面板自然高度的最大值）。条件渲染（`{tab === 'a' && <A/>}`）中各分支的顶层容器 class **必须共享同一 min-height 声明**。若差异极大则用绝对定位叠层 + `visibility` 切换 |
+| **列表加载 / 空态** | 内容区高度不得因条目数量变化而闪烁 | 空态 / loading 骨架占满 `min-height`；列表容器固定高度 + 内部滚动 |
+| **输入框 / Textarea 展开** | 展开方向向下推，不得向上顶 header 或相邻区块 | 使用 flex 布局让可伸缩区独占剩余空间，或 `position: absolute` 浮层 |
+| **Toast / Snackbar** | 出现 / 消失不推动页面内容 | 固定在 viewport 边缘（`position: fixed`），不占文档流 |
+| **图片 / 媒体** | 加载前后不得导致重排 | 必须有明确的 `width` × `height` 占位或 `aspect-ratio` |
+
+检查方法：
+
+- L2 Visual 截图时，需要对比 Tab 切换前后两帧，确认容器高度像素一致。
+- L3 Dynamic 时，若存在高度跳动超过 2px，判定为 **layout-shift defect**，阻断 `pending-review`。
+
+实现优先级：
+
+1. **同级容器统一 `min-height`**——最简单、最可预测。
+2. 绝对定位叠层（隐藏面板用 `visibility: hidden; position: absolute`）——适合内容高度差异极大的情况。
+3. CSS `grid` 行固定高度——适合固定格子布局。
+
+反模式（禁止）：
+
+- 依赖 JS 动态计算高度再 setState → 必然有一帧跳动。
+- `display: none` 隐藏非活动 Tab → 无法为布局贡献尺寸，切回时闪烁。
+- 只设 `height` 不设 `min-height` → 内容溢出时被截断且无滚动。
+
 ---
 
 ## 4. 目录与文件约定
@@ -251,6 +282,8 @@ Prototype Portal 支持 worktree / branch 切换：
 - [ ] mock 数据驱动，未依赖后端接口
 - [ ] 原型登记在正确一级站点下（`desktop` / `mobile` / `dashboard`），没有把 applet 或局部能力登记成一级模块
 - [ ] 跨 worktree / branch 预览使用 registry + iframe，没有直接引用其他 worktree 源码
+- [ ] Tab / Segment 切换无布局跳动：所有 tab-content 面板有统一 `min-height` 或使用叠层方案，切换前后容器高度像素一致
+- [ ] 列表 / 空态 / 媒体加载无重排：骨架屏和占位区域已预留正确尺寸
 
 ---
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -53,83 +52,47 @@ func (s *CredentialConfigService) Set(ctx context.Context, req CredentialSetRequ
 		return nil, err
 	}
 
-	if strings.TrimSpace(req.ActorPTID) == "" || strings.TrimSpace(req.ProviderID) == "" {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			"actor_id and provider_id are required", nil)
-	}
-	if strings.TrimSpace(req.APIKey) == "" {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			"api_key is required", nil)
-	}
+	now := time.Now()
 
-	status, err := s.setWithDB(ctx, db, req)
-	if err != nil {
-		return nil, err
-	}
-	logger.Infof(ctx, "credential set: actor_ptid=%s, provider=%s, version=%d", req.ActorPTID, req.ProviderID, status.Version)
-	return status, nil
-}
+	keyVaultsJSON := fmt.Sprintf(`{"api_key":"%s"}`, req.APIKey)
 
-func (s *CredentialConfigService) setWithDB(
-	ctx context.Context,
-	db *gorm.DB,
-	req CredentialSetRequest,
-) (*CredentialStatusResponse, error) {
-	var result *CredentialStatusResponse
-
-	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		now := time.Now()
-
-		var providerRecord persistence.AgentProvider
-		query := tx.Where("actor_ptid = ? AND name = ?", req.ActorPTID, req.ProviderID).
-			First(&providerRecord)
-		if query.Error != nil {
-			if query.Error != gorm.ErrRecordNotFound {
-				return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-					"failed to query provider for credential registration", query.Error)
-			}
-
-			providerRecord = *newProviderRecord(ProviderCreateRequest{
-				ActorPTID: req.ActorPTID,
-				ProviderID: req.ProviderID,
-			})
-			if providerRecord.SourceType != "catalog" {
-				return errcode.New(errcode.AgentNotFound, http.StatusNotFound,
-					fmt.Sprintf("provider %q not found", req.ProviderID), nil)
-			}
-			if err := tx.Create(&providerRecord).Error; err != nil {
-				return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-					"failed to materialize catalog provider", err)
-			}
-		}
-
-		keyVaultsJSON, err := json.Marshal(map[string]string{"api_key": req.APIKey})
-		if err != nil {
-			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-				"failed to encode provider credential", err)
-		}
-		if err := tx.Model(&providerRecord).Updates(map[string]interface{}{
-			"key_vaults": string(keyVaultsJSON),
+	if err := db.WithContext(ctx).
+		Model(&persistence.AgentProvider{}).
+		Where("actor_ptid = ? AND name = ?", req.ActorPTID, req.ProviderID).
+		Updates(map[string]interface{}{
+			"key_vaults": keyVaultsJSON,
 			"updated_at": now,
 		}).Error; err != nil {
-			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-				"failed to update provider credential", err)
-		}
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to update provider key_vaults", err)
+	}
 
-		poolID := providerRecord.ID
-		if poolID == "" {
-			poolID = uuid.New().String()
-		}
-		cred := persistence.Credential{
-			ID:       poolID,
-			ActorPTID: req.ActorPTID,
-			Provider: req.ProviderID,
-			AuthType: "api_key",
-			Source:   "auth_store",
-			Status:   "active",
-			Version:  1,
-		}
-		if err := tx.Clauses(clause.OnConflict{
+	// Use the provider's own ID so ProviderService.loadProvider can find it.
+	var providerRecord persistence.AgentProvider
+	if err := db.WithContext(ctx).
+		Where("actor_ptid = ? AND name = ?", req.ActorPTID, req.ProviderID).
+		First(&providerRecord).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"provider record not found for credential registration", err)
+	}
+
+	poolID := providerRecord.ID
+	if poolID == "" {
+		poolID = uuid.New().String()
+	}
+
+	cred := persistence.Credential{
+		ID:        poolID,
+		ActorPTID: req.ActorPTID,
+		Provider:  req.ProviderID,
+		AuthType:  "api_key",
+		Source:    "auth_store",
+		Status:    "active",
+		Version:   1,
+	}
+
+	db.WithContext(ctx).
+		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "actor_ptid"}, {Name: "provider"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{
 				"id":         poolID,
@@ -137,30 +100,25 @@ func (s *CredentialConfigService) setWithDB(
 				"version":    gorm.Expr("agent_credential_pool.version + 1"),
 				"updated_at": now,
 			}),
-		}).Create(&cred).Error; err != nil {
-			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-				"failed to register credential", err)
-		}
+		}).
+		Create(&cred)
 
-		var current persistence.Credential
-		if err := tx.Where("actor_ptid = ? AND provider = ?", req.ActorPTID, req.ProviderID).
-			First(&current).Error; err != nil {
-			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-				"failed to read credential after set", err)
-		}
-
-		result = &CredentialStatusResponse{
-			ProviderID: req.ProviderID,
-			Configured: true,
-			Status:     current.Status,
-			Version:    current.Version,
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	var current persistence.Credential
+	if err := db.WithContext(ctx).
+		Where("actor_ptid = ? AND provider = ?", req.ActorPTID, req.ProviderID).
+		First(&current).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to read credential after set", err)
 	}
-	return result, nil
+
+	logger.Infof(ctx, "credential set: actor_ptid=%s, provider=%s, version=%d", req.ActorPTID, req.ProviderID, current.Version)
+
+	return &CredentialStatusResponse{
+		ProviderID: req.ProviderID,
+		Configured: true,
+		Status:     current.Status,
+		Version:    current.Version,
+	}, nil
 }
 
 // Delete removes a credential with version check.
