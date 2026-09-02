@@ -122,13 +122,16 @@ class ProfileResolutionTests(unittest.TestCase):
 
 class ProvisionerBlockingTests(unittest.TestCase):
     @staticmethod
-    def _station_attestation(commit: str = "abc1234") -> StationAttestation:
-        return StationAttestation(
+    def _station_attestation(commit: str = "abc1234") -> ServiceAttestation:
+        return ServiceAttestation(
+            service_id="station",
+            service_kind="station",
             environment_id="home-station",
-            url="http://station.example:18080",
+            deployment_environment="station-1",
+            endpoint="http://station.example:18080",
             live_commit=commit,
             workspace_digest="clean",
-            proto_digest="proto-digest",
+            protocol_digest="proto-digest",
             artifact_ref={
                 "artifactKind": "acceptance-artifact-ref",
                 "workspaceId": "0" * 16,
@@ -139,6 +142,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "mediaType": "application/json",
             },
             produced_at="2026-08-16T00:00:00+00:00",
+            producer="station-deployment",
         )
 
     @staticmethod
@@ -446,7 +450,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
 
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
         self.assertEqual(manifest.profile_resolved, "one")
-        self.assertEqual(manifest.station, attestation)
+        self.assertEqual(manifest.services, {"station": attestation})
         self.assertEqual(
             manifest.credential_refs,
             (
