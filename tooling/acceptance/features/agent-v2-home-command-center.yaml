@@ -1,0 +1,37 @@
+{
+  "id": "agent-v2-home-command-center",
+  "status": "active",
+  "initial_proof_status": "UNPROVEN",
+  "product_area": "agent",
+  "owners": [
+    "model/domain/agent/home.proto",
+    "apps/station/app/subserver/agent/**/home*",
+    "apps/desktop/src/pages/HomePage.tsx",
+    "apps/desktop/src/runtimes/homeRuntime.ts"
+  ],
+  "truth_sources": [
+    "Station Home projection revision",
+    "Station Agent topics and tasks",
+    "Authoritative Agent readiness"
+  ],
+  "visible_surfaces": [
+    {"type": "native-tauri", "surface": "Home Command Center"},
+    {"type": "station-readback", "surface": "Home projection, topic, and task records"}
+  ],
+  "required_gates": ["agent-v2-home-command-center-e2e"],
+  "acceptance": {
+    "service": [
+      "Chat and Task submission is idempotent and returns authoritative object identifiers",
+      "Home recovers the same projection after client restart"
+    ],
+    "visible": [
+      "readiness, recents, Brief, Needs You, tasks, and capability state match Station readback",
+      "stale, partial, and failed projection states expose bounded retry or recovery"
+    ]
+  },
+  "negative": [
+    "page-derived recents or optimistic submission must not prove Home truth",
+    "duplicate submission must not create a second topic or task",
+    "missing receiver DOM, Station readback, replay, or cleanup keeps the Gate UNPROVEN"
+  ]
+}

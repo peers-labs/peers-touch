@@ -1,0 +1,48 @@
+{
+  "id": "agent-revision-retry",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/revision_handler.go",
+    "apps/station/app/subserver/agent/service/revision_service.go",
+    "apps/desktop/src/store/agentRevision.ts"
+  ],
+  "truth_sources": [
+    "Station turn_attempts table",
+    "Station conversation revision history",
+    "Desktop revision branch state"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/revision/retry"},
+    {"type": "api", "route": "/agent/revision/regenerate"},
+    {"type": "api", "route": "/agent/revision/edit-resend"},
+    {"type": "api", "route": "/agent/revision/select-branch"},
+    {"type": "api", "route": "/agent/revision/tombstone"}
+  ],
+  "required_gates": [
+    "agent-message-actions-static",
+    "agent-revision-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "retrying a failed turn creates a new attempt under the same turn with incremented attempt index",
+      "regenerating a turn forks a new branch from the parent message and produces a fresh assistant response",
+      "edit-and-resend replaces the user message content and triggers a new assistant turn on the new branch",
+      "selecting an active branch switches the conversation view to the chosen branch lineage",
+      "tombstoning a message marks it deleted without removing branch history"
+    ],
+    "visible": [
+      "retry button appears on failed assistant messages and produces a new streaming response",
+      "regenerate button is in the primary action bar (not hidden in dropdown) on completed assistant messages",
+      "edit-resend opens an inline editor pre-filled with original content",
+      "branch navigation shows attempt count and allows switching between branches",
+      "tombstoned messages display a 'message deleted' placeholder"
+    ]
+  },
+  "negative": [
+    "retry must not create a new conversation or lose the existing context window",
+    "regenerate must not mutate the original branch — it creates a sibling",
+    "edit-resend must not send if the edited content is identical to the original",
+    "tombstone must not cascade-delete child branches"
+  ]
+}
