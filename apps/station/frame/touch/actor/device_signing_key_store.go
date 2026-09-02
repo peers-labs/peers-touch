@@ -392,13 +392,20 @@ func (s *DeviceStore) IsVerifiedActive(
 
 func (s *DeviceStore) Revoke(ctx context.Context, ptid string, deviceID string) error {
 	now := time.Now()
-	return s.db.WithContext(ctx).
+	result := s.db.WithContext(ctx).
 		Model(&DeviceRecord{}).
 		Where("ptid = ? AND device_id = ?", ptid, deviceID).
 		Updates(map[string]any{
 			"revoked":    true,
 			"revoked_at": now,
-		}).Error
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrDeviceSigningKeyNotFound
+	}
+	return nil
 }
 
 func (s *DeviceStore) Count(ctx context.Context, ptid string) (int64, error) {
