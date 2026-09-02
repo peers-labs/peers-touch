@@ -1,0 +1,36 @@
+{
+  "id": "agent-v2-connector-invocation",
+  "status": "active",
+  "initial_proof_status": "UNPROVEN",
+  "product_area": "agent",
+  "owners": [
+    "apps/desktop/src/store/agentConnectors.ts",
+    "apps/desktop/src/store/oauth2.ts",
+    "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+    "apps/station/app/subserver/agent/**/connector*"
+  ],
+  "truth_sources": [
+    "OAuth subsystem connection and resource revision",
+    "Station Connector resource manifest, Agent binding, ToolCall, and TurnTrace"
+  ],
+  "visible_surfaces": [
+    {"type": "native-tauri", "surface": "Connector connect, bind, invoke, expiry, and recovery flow"},
+    {"type": "station-readback", "surface": "OAuth resource, manifest, binding, and invocation lineage"}
+  ],
+  "required_gates": ["agent-v2-connector-invocation-e2e"],
+  "acceptance": {
+    "service": [
+      "an authorized resource produces a scoped versioned tool manifest and governed invocation result",
+      "scope expiry, provider revoke, disconnect, resource removal, and replay preserve authoritative state"
+    ],
+    "visible": [
+      "the user can connect, bind, invoke, and recover without exposing OAuth credentials",
+      "expiry and disconnect identify the next safe recovery action"
+    ]
+  },
+  "negative": [
+    "provider label, local enabledTools, or optimistic UI state must not prove invocation",
+    "OAuth tokens must not enter Agent bindings or evidence",
+    "missing provider-revoke or OAuth resource-manifest evidence keeps the Gate UNPROVEN"
+  ]
+}
