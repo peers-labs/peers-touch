@@ -1,9 +1,12 @@
 import { createDesktopStore } from './createDesktopStore';
+import { log } from '../utils/logger';
+import { api, type StationTopicCommentRow } from '../services/desktop_api';
 
 export interface TopicComment {
   id: string;
   topicKey: string;
   content: string;
+  authorId: string;
   createdAt: number;
 }
 
@@ -13,67 +16,66 @@ interface TopicCommentState {
 }
 
 interface TopicCommentActions {
-  addComment: (topicKey: string, content: string) => void;
-  deleteComment: (topicKey: string, commentId: string) => void;
+  addComment: (topicKey: string, content: string) => Promise<void>;
+  deleteComment: (topicKey: string, commentId: string) => Promise<void>;
   setDraft: (content: string) => void;
-  loadComments: (topicKey: string) => void;
+  loadComments: (topicKey: string) => Promise<void>;
 }
 
-const STORAGE_KEY = 'peers-agent-topic-comments';
-
-function persistComments(commentsByTopic: Record<string, TopicComment[]>) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(commentsByTopic));
-  } catch { /* storage full or unavailable */ }
+// Maps the raw Station row (Go PascalCase) into the UI TopicComment shape.
+function rowToComment(row: StationTopicCommentRow): TopicComment {
+  return {
+    id: row.ID,
+    topicKey: row.TopicKey,
+    content: row.Content,
+    authorId: row.AuthorID,
+    createdAt: new Date(row.CreatedAt).getTime(),
+  };
 }
 
-function loadPersistedComments(): Record<string, TopicComment[]> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
+// Topic Comments store — Station-backed (X4). CRUD persists to Station via the
+// ecosystem topic-comment API; comments are keyed by topicKey and refreshed from
+// Station truth after each mutation. Comment editing is intentionally unsupported
+// (no Station update endpoint — comments are immutable once posted).
 export const useTopicCommentStore = createDesktopStore<TopicCommentState & TopicCommentActions>(
   'topicComment',
   (set, get) => ({
-    commentsByTopic: loadPersistedComments(),
+    commentsByTopic: {},
     draft: '',
 
-    addComment: (topicKey: string, content: string) => {
+    addComment: async (topicKey: string, content: string) => {
       if (!content.trim()) return;
-      const comment: TopicComment = {
-        id: `tc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        topicKey,
-        content: content.trim(),
-        createdAt: Date.now(),
-      };
-      const updated = {
-        ...get().commentsByTopic,
-        [topicKey]: [...(get().commentsByTopic[topicKey] || []), comment],
-      };
-      set({ commentsByTopic: updated, draft: '' });
-      persistComments(updated);
+      try {
+        await api.createTopicCommentRemote({ topic_key: topicKey, content: content.trim() });
+        set({ draft: '' });
+        await get().loadComments(topicKey);
+      } catch (error) {
+        log.error('topicComment', 'Failed to create comment', { topicKey, error });
+      }
     },
 
-    deleteComment: (topicKey: string, commentId: string) => {
-      const existing = get().commentsByTopic[topicKey] || [];
-      const updated = {
-        ...get().commentsByTopic,
-        [topicKey]: existing.filter((c) => c.id !== commentId),
-      };
-      set({ commentsByTopic: updated });
-      persistComments(updated);
+    deleteComment: async (topicKey: string, commentId: string) => {
+      try {
+        await api.deleteTopicCommentRemote({ topic_key: topicKey, comment_id: commentId });
+        await get().loadComments(topicKey);
+      } catch (error) {
+        log.error('topicComment', 'Failed to delete comment', { topicKey, commentId, error });
+      }
     },
 
     setDraft: (content: string) => {
       set({ draft: content });
     },
 
-    loadComments: () => {
-      set({ commentsByTopic: loadPersistedComments() });
+    loadComments: async (topicKey: string) => {
+      try {
+        const rows = await api.listTopicCommentsRemote(topicKey);
+        set((state) => ({
+          commentsByTopic: { ...state.commentsByTopic, [topicKey]: rows.map(rowToComment) },
+        }));
+      } catch (error) {
+        log.error('topicComment', 'Failed to load comments', { topicKey, error });
+      }
     },
   }),
 );

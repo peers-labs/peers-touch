@@ -205,13 +205,15 @@
 - Applet / 小程序运行时架构：`architecture/applet-runtime/README.md`
 - A2A 协议集成：`architecture/agent/a2a/`（文档集，入口 `README.md`）
 - Agent Canvas 编排架构：`architecture/agent/agent-canvas-orchestration.md`
-- Modern Chat Agent 产品与单 Agent 运行时：`architecture/agent/modern-chat-agent/README.md`（draft / `PRODUCT_DESIGN_INCOMPLETE`；包含 LobeHub/Peers-Touch benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
+- Modern Chat Agent 产品与单 Agent 运行时：`architecture/agent/modern-chat-agent/README.md`（PRODUCT accepted；MCA-D19A/D19B/D19C 与 Acceptance D-12 accepted；G1-A 至 G1-F complete；G1-XR matrix/schema/validator cutover complete，real adapters active；G-F blocked；包含 LobeHub/Peers-Touch benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
 - Actor 隔离环境平面：`architecture/runtime/actor-isolated-environment.md`
 - Federation 虚拟网络与治理账本：`architecture/federation/README.md`
 - 质量保证闭环：`architecture/quality-framework/README.md`
 - 产品验收框架：`architecture/acceptance-framework/README.md`
 - Human 联邦社交活动层：`architecture/federated-social-activity/README.md`
 - Agent LobeHub 蓝本重构：`architecture/agent/agent-lobehub-blueprint.md`
+- Agent V1 First Useful Answer 源码级实施手册：`architecture/agent/execution-plans/20260815-v1-first-useful-answer.md`（当前最高优先执行入口；按完整用户旅程切换生产 Agent UI/runtime，不再按模块数量声明对标完成）
+- Agent V1 像素级复刻合同：`architecture/agent/execution-plans/20260815-v1-visual-replica-contract.md`（约束生产意图原型、固定视口、组件/几何/token/DOM/computed-style/截图/L3 交互证据，禁止历史 mock prototype 直接复制到生产）
 - Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/atelier/README.md`（文档集，入口 `README.md`；Station projection endpoints 已登记为 `/sub-agent/agent/atelier/workspace/load`、`/sub-agent/agent/atelier/project/create-from-goal`、`/sub-agent/agent/atelier/message/send`、`/sub-agent/agent/atelier/escalation/resolve`、`/sub-agent/agent/atelier/task/set-status`、`/sub-agent/agent/atelier/task/purge`，Desktop applet capabilities / contract permissions 已登记为 `atelier.workspace.load`、`atelier.project.createFromGoal`、`atelier.message.send`、`atelier.escalation.resolve`、`atelier.task.setStatus`、`atelier.task.purge`、`atelier.events.subscribe`，projection event topic 为 `atelier.projection.event`；Artifact/Gate projection mapper 已支持 `artifact.upsert` / `gate.upsert`，真实生产与端到端验证后置；prototype 入口已通过 `runtimeBootstrap` 在 Lynx / Web Host 中走 applet-sdk bridge，在 standalone / unavailable 中回退 mock；runtime manifest 草案位于 `apps/applets/atelier/applet.manifest.json`，真实 bundle integrity 待正式 applet 化补齐）
 - 原型统一入口（Prototype Portal + 统一登记 + 确认门）：`architecture/prototypes/README.md`
 

@@ -6,6 +6,7 @@
   "layout.nav.applets": "Applet Box",
   "layout.nav.contacts": "Contacts",
   "layout.nav.settings": "Settings",
+  "layout.nav.marketplace": "Marketplace",
 
   "layout.command.title": "Command palette",
   "layout.command.placeholder": "Search commands or hotkeys",

@@ -10,6 +10,10 @@ export default defineConfig({
       { find: /^react\/jsx-runtime$/, replacement: fileURLToPath(new URL('./node_modules/react/jsx-runtime.js', import.meta.url)) },
       { find: /^react\/jsx-dev-runtime$/, replacement: fileURLToPath(new URL('./node_modules/react/jsx-dev-runtime.js', import.meta.url)) },
       { find: /^lucide-react$/, replacement: fileURLToPath(new URL('./node_modules/lucide-react/dist/esm/lucide-react.js', import.meta.url)) },
+      { find: /^antd$/, replacement: fileURLToPath(new URL('./node_modules/antd/es/index.js', import.meta.url)) },
+      { find: /^@lobehub\/ui$/, replacement: fileURLToPath(new URL('./node_modules/@lobehub/ui/es/index.mjs', import.meta.url)) },
+      { find: /^@lobehub\/icons$/, replacement: fileURLToPath(new URL('./node_modules/@lobehub/icons/es/index.js', import.meta.url)) },
+      { find: /^react-layout-kit$/, replacement: fileURLToPath(new URL('./node_modules/react-layout-kit/es/index.js', import.meta.url)) },
     ],
   },
   server: {

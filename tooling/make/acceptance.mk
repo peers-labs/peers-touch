@@ -15,6 +15,9 @@
         acceptance-chat-w11 \
         acceptance-station-dashboard acceptance-station-dashboard-domain-validation \
         acceptance-federation acceptance-federation-mutual-validation acceptance-federation-report \
+        acceptance-agent acceptance-agent-domain-validation \
+        acceptance-agent-native-static acceptance-agent-native-e2e acceptance-agent-full \
+        acceptance-driver-build acceptance-driver-smoke \
         acceptance-desktop-performance-preflight-static acceptance-desktop-performance-preflight \
         acceptance-desktop-telemetry-live acceptance-desktop-telemetry-mirror-static \
         acceptance-desktop-telemetry-mirror-template-static acceptance-desktop-telemetry-mirror-template \
@@ -310,3 +313,31 @@ federation-dashboard-operational-drilldown:
 
 federation-desktop-gateway-smoke:
 	python3 tooling/acceptance/gates/desktop/gateway_smoke.py
+
+acceptance-agent:
+	python3 tooling/scripts/acceptance-run.py \
+		--gate acceptance-plan-self \
+		--gate proto-build \
+		--gate station-agent-unit \
+		--gate agent-contract-static \
+		--gate desktop-check \
+		--gate desktop-rust-check
+
+acceptance-agent-domain-validation:
+	python3 tooling/scripts/acceptance-run.py \
+		--gate acceptance-plan-self \
+		--gate proto-build \
+		--gate station-agent-unit \
+		--gate agent-contract-static \
+		--gate desktop-check \
+		--gate desktop-rust-check \
+		--gate agent-domain-validation
+
+acceptance-agent-native-static:
+	python3 tooling/scripts/acceptance-run.py --gate agent-native-turn-static
+
+acceptance-agent-native-e2e:
+	python3 tooling/scripts/acceptance-run.py --gate agent-native-turn-e2e
+
+acceptance-agent-full: acceptance-agent-domain-validation acceptance-agent-native-static
+	python3 tooling/scripts/acceptance-run.py --gate agent-native-turn-e2e

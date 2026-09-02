@@ -97,13 +97,13 @@ pnpm --filter @peers-touch/prototype-portal build
 - Owner review runbook：`docs/architecture/agent/prototype/owner-review-runbook.md`
 - confirmed 前缺口审计：`docs/architecture/agent/lobehub-parity/prototype-confirmation-gap-audit.md`
 - LobeHub source:
-  - `external/lobehub/src/routes/(main)/home/_layout/index.tsx`
-  - `external/lobehub/src/routes/(main)/home/_layout/SidebarContent.tsx`
-  - `external/lobehub/src/routes/(main)/home/features/index.tsx`
-  - `external/lobehub/src/routes/(main)/home/features/AgentSelect/index.tsx`
-  - `external/lobehub/src/routes/(main)/home/features/InputArea/index.tsx`
-  - `external/lobehub/src/routes/(main)/home/features/Recents/index.tsx`
-  - `external/lobehub/src/routes/(main)/home/features/FeaturedPlugins/index.tsx`
+  - `external/lobehub/src/routes/(main)<home>/index.tsx`
+  - `external/lobehub/src/routes/(main)<home>/SidebarContent.tsx`
+  - `external/lobehub/src/routes/(main)<home>/index.tsx`
+  - `external/lobehub/src/routes/(main)<home>/AgentSelect/index.tsx`
+  - `external/lobehub/src/routes/(main)<home>/InputArea/index.tsx`
+  - `external/lobehub/src/routes/(main)<home>/Recents/index.tsx`
+  - `external/lobehub/src/routes/(main)<home>/FeaturedPlugins/index.tsx`
   - `external/lobehub/src/features/ChatInput/Desktop/index.tsx`
   - `external/lobehub/src/routes/(main)/agent/_layout/Sidebar/Topic/index.tsx`
   - `external/lobehub/src/routes/(main)/agent/features/Conversation/ConversationArea.tsx`

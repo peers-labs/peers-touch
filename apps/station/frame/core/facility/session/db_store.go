@@ -315,10 +315,14 @@ func (s *DBStore) GetActiveSessionByUserAndDevice(ctx context.Context, userID ui
 	return &record, nil
 }
 
-// CreateWithKick creates a new session and revokes any existing session for the same user.
-// This is the central Station-side takeover policy: a single Station may have
-// only one active login for a given actor, regardless of desktop/mobile/web
-// device labels.
+// CreateWithKick creates a new session and revokes existing sessions that
+// conflict with it. The revocation scope depends on the provided deviceType:
+//
+//   - If deviceType is non-empty, only sessions for the same user_id AND
+//     device_type are revoked. This allows parallel sessions across different
+//     device types (e.g. Desktop native + Browser), as required by MCA-D19.
+//   - If deviceType is empty (backward-compat / legacy callers), ALL active
+//     sessions for the user are revoked (original "one active login" behavior).
 func (s *DBStore) CreateWithKick(ctx context.Context, sess *Session, deviceType DeviceType) (*Session, int64, error) {
 	if sess.Data == nil {
 		sess.Data = make(map[string]interface{})
@@ -333,13 +337,26 @@ func (s *DBStore) CreateWithKick(ctx context.Context, sess *Session, deviceType 
 	var kicked int64
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
-		result := tx.Model(&SessionRecord{}).
-			Where("user_id = ? AND revoked = ?", sess.UserID, false).
-			Updates(map[string]interface{}{
-				"revoked":        true,
-				"revoked_at":     now,
-				"revoked_reason": "kicked",
-			})
+
+		// Scope revocation: same device_type if provided, otherwise all.
+		var result *gorm.DB
+		if deviceType != "" {
+			result = tx.Model(&SessionRecord{}).
+				Where("user_id = ? AND device_type = ? AND revoked = ?", sess.UserID, deviceType, false).
+				Updates(map[string]interface{}{
+					"revoked":        true,
+					"revoked_at":     now,
+					"revoked_reason": "kicked",
+				})
+		} else {
+			result = tx.Model(&SessionRecord{}).
+				Where("user_id = ? AND revoked = ?", sess.UserID, false).
+				Updates(map[string]interface{}{
+					"revoked":        true,
+					"revoked_at":     now,
+					"revoked_reason": "kicked",
+				})
+		}
 		if result.Error != nil {
 			return result.Error
 		}
@@ -376,4 +393,21 @@ func (s *DBStore) CheckSessionValid(ctx context.Context, sessionID string) (bool
 	}
 
 	return true, ""
+}
+
+// ResolveSessionDeviceType returns the device_type recorded on the session.
+// Used by auth middleware to include device_type in 401 responses so that
+// multi-device clients can filter session revocations.
+func (s *DBStore) ResolveSessionDeviceType(ctx context.Context, sessionID string) string {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return ""
+	}
+
+	var record SessionRecord
+	if err := db.Select("device_type").Where("session_id = ?", sessionID).First(&record).Error; err != nil {
+		return ""
+	}
+
+	return string(record.DeviceType)
 }

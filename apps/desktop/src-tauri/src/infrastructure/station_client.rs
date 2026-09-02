@@ -10,6 +10,36 @@ use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
 use std::sync::{LazyLock, OnceLock, RwLock};
+use std::time::Duration;
+
+const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const TURN_EXECUTION_WALL_TIME: Duration = Duration::from_secs(300);
+const TURN_EXECUTION_RESPONSE_MARGIN: Duration = Duration::from_secs(5);
+const SAFE_ERROR_DETAIL_FIELDS: [&str; 3] = ["resource_id", "expected_revision", "actual_revision"];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StationTransportPolicy {
+    Interactive,
+    TurnExecution,
+}
+
+impl StationTransportPolicy {
+    fn timeout(self) -> Duration {
+        match self {
+            Self::Interactive => INTERACTIVE_REQUEST_TIMEOUT,
+            // Station owns the Turn deadline. The transport stays open long
+            // enough to receive the synchronous terminal response it settles.
+            Self::TurnExecution => TURN_EXECUTION_WALL_TIME + TURN_EXECUTION_RESPONSE_MARGIN,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Interactive => "interactive",
+            Self::TurnExecution => "turn_execution",
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Global station registry (initialized once during bootstrap)
@@ -113,13 +143,23 @@ impl StationClientError {
                 AppResult::fail(ErrorCode::Unauthorized, "session revoked", self.details)
             }
             StationClientErrorKind::HttpStatus(status) => {
-                let code = match status {
-                    400 => ErrorCode::InvalidArgument,
-                    401 => ErrorCode::Unauthorized,
-                    403 => ErrorCode::Forbidden,
-                    404 => ErrorCode::NotFound,
-                    409 => ErrorCode::Conflict,
-                    _ => ErrorCode::InternalError,
+                let code = if self
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.get("error_code"))
+                    .and_then(Value::as_str)
+                    == Some("AGENT_CANVAS_SINGLE_AGENT_NOT_READY")
+                {
+                    ErrorCode::AgentCanvasSingleAgentNotReady
+                } else {
+                    match status {
+                        400 => ErrorCode::InvalidArgument,
+                        401 => ErrorCode::Unauthorized,
+                        403 => ErrorCode::Forbidden,
+                        404 => ErrorCode::NotFound,
+                        409 => ErrorCode::Conflict,
+                        _ => ErrorCode::InternalError,
+                    }
                 };
                 AppResult::fail(code, context.into(), self.details)
             }
@@ -151,14 +191,29 @@ pub fn session_revoked_details_from_text(text: &str) -> Option<Value> {
         .get("reason")
         .and_then(|x| x.as_str())
         .unwrap_or("unknown");
-    Some(serde_json::json!({
+    let mut details = serde_json::json!({
         "code": "session_revoked",
         "reason": reason,
         "raw": text,
-    }))
+    });
+    // Forward device_type so the frontend can filter revocations targeting
+    // a different device type in multi-device mode (MCA-D19).
+    if let Some(device_type) = v.get("device_type").and_then(|x| x.as_str()) {
+        details["device_type"] = serde_json::json!(device_type);
+    }
+    Some(details)
 }
 
 fn build_error_for_status(status: u16, path: &str, body: &str) -> StationClientError {
+    build_error_for_status_with_headers(status, path, body, None)
+}
+
+fn build_error_for_status_with_headers(
+    status: u16,
+    path: &str,
+    body: &str,
+    headers: Option<&Value>,
+) -> StationClientError {
     if status == 401 && body.contains("session_revoked") {
         let reason = serde_json::from_str::<Value>(body)
             .ok()
@@ -171,11 +226,45 @@ fn build_error_for_status(status: u16, path: &str, body: &str) -> StationClientE
         tracing::warn!(path = %path, reason = %reason, "Session revoked by server");
         return StationClientError::session_revoked(body);
     }
+    let mut details = serde_json::json!({ "status": status, "body": body });
+    if let (Some(details), Some(headers)) =
+        (details.as_object_mut(), headers.and_then(Value::as_object))
+    {
+        for (header, field) in [
+            ("x-peers-error-code", "error_code"),
+            ("x-peers-error-locale-key", "locale_key"),
+            ("x-peers-error-retryable", "retryable"),
+            ("x-peers-error-terminal", "terminal"),
+            ("x-peers-required-gate", "required_gate"),
+        ] {
+            if let Some(value) = headers.get(header).and_then(Value::as_str) {
+                details.insert(field.to_string(), Value::String(value.to_string()));
+            }
+        }
+        merge_safe_error_detail_header(details, headers);
+    }
     StationClientError::new(
         StationClientErrorKind::HttpStatus(status),
         format!("station returned {} : {}", status, body),
-        Some(serde_json::json!({ "status": status, "body": body })),
+        Some(details),
     )
+}
+
+fn merge_safe_error_detail_header(
+    details: &mut serde_json::Map<String, Value>,
+    headers: &serde_json::Map<String, Value>,
+) {
+    let Some(raw_details) = headers.get("x-peers-error-details").and_then(Value::as_str) else {
+        return;
+    };
+    let Ok(Value::Object(header_details)) = serde_json::from_str::<Value>(raw_details) else {
+        return;
+    };
+    for field in SAFE_ERROR_DETAIL_FIELDS {
+        if let Some(Value::String(value)) = header_details.get(field) {
+            details.insert(field.to_string(), Value::String(value.clone()));
+        }
+    }
 }
 
 pub(crate) fn station_base_url() -> String {
@@ -202,8 +291,12 @@ pub(crate) fn active_station_peer_id() -> Option<String> {
 }
 
 fn build_client() -> Result<Client, StationClientError> {
+    build_client_with_policy(StationTransportPolicy::Interactive)
+}
+
+fn build_client_with_policy(policy: StationTransportPolicy) -> Result<Client, StationClientError> {
     Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(policy.timeout())
         .build()
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to create HTTP client");
@@ -392,9 +485,15 @@ pub(crate) fn request_peers_proto_no_body<Payload: Message + Default>(
 
     if !status.is_success() {
         let code = status.as_u16();
+        let headers = headers_to_json(resp.headers());
         let text = resp.text().unwrap_or_default();
         tracing::warn!(path = %path, status = code, elapsed_ms = elapsed, body = %text, "← station FAIL");
-        return Err(build_error_for_status(code, path, &text));
+        return Err(build_error_for_status_with_headers(
+            code,
+            path,
+            &text,
+            Some(&headers),
+        ));
     }
 
     let bytes = resp.bytes().map_err(|e| {
@@ -601,6 +700,30 @@ where
     Req: Message,
     Payload: Message + Default,
 {
+    request_proto_for_device_at(
+        &station_base_url(),
+        method,
+        path,
+        token,
+        query,
+        body,
+        device_id,
+    )
+}
+
+pub(crate) fn request_proto_for_device_at<Req, Payload>(
+    station_url: &str,
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Req>,
+    device_id: &str,
+) -> Result<Payload, StationClientError>
+where
+    Req: Message,
+    Payload: Message + Default,
+{
     if device_id.trim().is_empty() {
         return Err(StationClientError::new(
             StationClientErrorKind::Decode,
@@ -608,7 +731,7 @@ where
             None,
         ));
     }
-    let url = format!("{}{}", station_base_url(), path);
+    let url = format!("{}{}", station_url.trim_end_matches('/'), path);
     let start = std::time::Instant::now();
     let client = build_client()?;
     let mut req = client
@@ -652,6 +775,74 @@ where
         status = status.as_u16(),
         elapsed_ms = start.elapsed().as_millis(),
         "← station OK (profile-scoped proto)"
+    );
+    Payload::decode(bytes.as_ref()).map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("decode proto response failed: {error}"),
+            None,
+        )
+    })
+}
+
+/// Unauthenticated protobuf call returning a direct typed response.
+///
+/// This is intentionally limited to endpoints whose authority is carried by
+/// their signed protobuf body, such as terminal capability-receipt recovery.
+pub(crate) fn request_proto_no_auth<Req, Payload>(
+    method: Method,
+    path: &str,
+    body: &Req,
+) -> Result<Payload, StationClientError>
+where
+    Req: Message,
+    Payload: Message + Default,
+{
+    request_proto_no_auth_at(&station_base_url(), method, path, body)
+}
+
+pub(crate) fn request_proto_no_auth_at<Req, Payload>(
+    station_url: &str,
+    method: Method,
+    path: &str,
+    body: &Req,
+) -> Result<Payload, StationClientError>
+where
+    Req: Message,
+    Payload: Message + Default,
+{
+    let url = format!("{}{}", station_url.trim_end_matches('/'), path);
+    let start = std::time::Instant::now();
+    let response = build_client()?
+        .request(method, &url)
+        .header("Content-Type", "application/protobuf")
+        .header("Accept", "application/protobuf")
+        .body(body.encode_to_vec())
+        .send()
+        .map_err(|error| {
+            StationClientError::new(
+                StationClientErrorKind::Network,
+                format!("request failed: {error}"),
+                None,
+            )
+        })?;
+    let status = response.status();
+    let bytes = response.bytes().map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("read body failed: {error}"),
+            None,
+        )
+    })?;
+    if !status.is_success() {
+        let body = String::from_utf8_lossy(&bytes).to_string();
+        return Err(build_error_for_status(status.as_u16(), path, &body));
+    }
+    tracing::debug!(
+        path = %path,
+        status = status.as_u16(),
+        elapsed_ms = start.elapsed().as_millis(),
+        "← station OK (signed no-auth proto)"
     );
     Payload::decode(bytes.as_ref()).map_err(|error| {
         StationClientError::new(
@@ -725,11 +916,29 @@ pub(crate) fn request_json(
     query: Option<&[(&str, String)]>,
     body: Option<Value>,
 ) -> Result<Value, StationClientError> {
+    request_json_with_policy(
+        method,
+        path,
+        token,
+        query,
+        body,
+        StationTransportPolicy::Interactive,
+    )
+}
+
+pub(crate) fn request_json_with_policy(
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<Value>,
+    policy: StationTransportPolicy,
+) -> Result<Value, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
-    tracing::debug!(method = %method, path = %path, "→ station (json)");
+    tracing::debug!(method = %method, path = %path, policy = ?policy, "→ station (json)");
 
     let start = std::time::Instant::now();
-    let client = build_client()?;
+    let client = build_client_with_policy(policy)?;
 
     let mut req = with_device_id(client.request(method.clone(), &url).bearer_auth(token));
 
@@ -748,10 +957,17 @@ pub(crate) fn request_json(
     let resp = req.send().map_err(|e| {
         let elapsed = start.elapsed().as_millis();
         tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
+        let details = e.is_timeout().then(|| {
+            serde_json::json!({
+                "reason": "request_timeout",
+                "transportPolicy": policy.label(),
+                "timeoutMs": policy.timeout().as_millis(),
+            })
+        });
         StationClientError::new(
             StationClientErrorKind::Network,
             format!("request failed: {}", e),
-            None,
+            details,
         )
     })?;
 
@@ -1034,6 +1250,7 @@ fn request_json_auth_with_optional_device_id(
 
     let status = resp.status();
     let elapsed = start.elapsed().as_millis();
+    let headers = headers_to_json(resp.headers());
 
     let bytes = resp.bytes().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station READ_ERROR (json-auth)");
@@ -1053,7 +1270,12 @@ fn request_json_auth_with_optional_device_id(
             body = %text,
             "← station FAIL (json-auth)",
         );
-        return Err(build_error_for_status(status.as_u16(), path, &text));
+        return Err(build_error_for_status_with_headers(
+            status.as_u16(),
+            path,
+            &text,
+            Some(&headers),
+        ));
     }
 
     // The OSS handlers return 204 No Content for some mutations;
@@ -1308,4 +1530,124 @@ pub(crate) fn probe_station(url: &str) -> (bool, Option<String>, Option<String>,
     );
 
     (true, label, peer_id, peers_count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_error_for_status_with_headers, StationTransportPolicy};
+    use crate::error::ErrorCode;
+    use serde_json::json;
+    use std::time::Duration;
+
+    #[test]
+    fn transport_policies_are_bounded_by_operation_semantics() {
+        assert_eq!(
+            StationTransportPolicy::Interactive.timeout(),
+            Duration::from_secs(15)
+        );
+        assert_eq!(
+            StationTransportPolicy::TurnExecution.timeout(),
+            Duration::from_secs(305)
+        );
+        assert_eq!(StationTransportPolicy::Interactive.label(), "interactive");
+        assert_eq!(
+            StationTransportPolicy::TurnExecution.label(),
+            "turn_execution"
+        );
+    }
+
+    #[test]
+    fn specialized_station_error_code_survives_json_transport() {
+        let headers = json!({
+            "x-peers-error-code": "AGENT_CANVAS_SINGLE_AGENT_NOT_READY",
+            "x-peers-error-locale-key": "agent.errors.canvasSingleAgentNotReady",
+            "x-peers-error-retryable": "false",
+            "x-peers-error-terminal": "true",
+            "x-peers-required-gate": "agent-v2-kernel-foundation-e2e",
+        });
+        let error = build_error_for_status_with_headers(
+            409,
+            "/sub-agent/agent/collaboration/create",
+            "{\"error\":\"blocked\"}",
+            Some(&headers),
+        );
+        let result = error.into_app_result::<serde_json::Value>("collaboration blocked");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::AgentCanvasSingleAgentNotReady);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "AGENT_CANVAS_SINGLE_AGENT_NOT_READY");
+        assert_eq!(
+            details["locale_key"],
+            "agent.errors.canvasSingleAgentNotReady"
+        );
+        assert_eq!(details["retryable"], "false");
+        assert_eq!(details["terminal"], "true");
+        assert_eq!(details["required_gate"], "agent-v2-kernel-foundation-e2e");
+    }
+
+    #[test]
+    fn typed_station_error_details_survive_json_transport() {
+        let headers = json!({
+            "x-peers-error-code": "ADMISSION_ACTIVE_MUTATION_CONFLICT",
+            "x-peers-error-locale-key": "agent.errors.activeMutationConflict",
+            "x-peers-error-retryable": "true",
+            "x-peers-error-terminal": "true",
+            "x-peers-error-details": r#"{
+                "resource_id":"agent-1",
+                "expected_revision":"7",
+                "actual_revision":"8",
+                "ignored_string":"not-safe",
+                "ignored_number":9
+            }"#,
+        });
+        let error = build_error_for_status_with_headers(
+            409,
+            "/sub-agent/agent/update",
+            "{\"error\":\"conflict\"}",
+            Some(&headers),
+        );
+        let result = error.into_app_result::<serde_json::Value>("Agent update failed");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::Conflict);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "ADMISSION_ACTIVE_MUTATION_CONFLICT");
+        assert_eq!(details["locale_key"], "agent.errors.activeMutationConflict");
+        assert_eq!(details["retryable"], "true");
+        assert_eq!(details["terminal"], "true");
+        assert_eq!(details["resource_id"], "agent-1");
+        assert_eq!(details["expected_revision"], "7");
+        assert_eq!(details["actual_revision"], "8");
+        assert!(details.get("ignored_string").is_none());
+        assert!(details.get("ignored_number").is_none());
+    }
+
+    #[test]
+    fn malformed_error_details_fail_closed_without_losing_typed_headers() {
+        for raw_details in ["not-json", "[\"agent-1\"]", r#"{"resource_id":7}"#] {
+            let headers = json!({
+                "x-peers-error-code": "ADMISSION_ACTIVE_MUTATION_CONFLICT",
+                "x-peers-error-locale-key": "agent.errors.activeMutationConflict",
+                "x-peers-error-retryable": "true",
+                "x-peers-error-terminal": "true",
+                "x-peers-error-details": raw_details,
+            });
+            let error = build_error_for_status_with_headers(
+                409,
+                "/sub-agent/agent/update",
+                "{\"error\":\"conflict\"}",
+                Some(&headers),
+            );
+            let result = error.into_app_result::<serde_json::Value>("Agent update failed");
+            let details = result
+                .error
+                .expect("AppResult error")
+                .details
+                .expect("typed error details");
+            assert_eq!(details["error_code"], "ADMISSION_ACTIVE_MUTATION_CONFLICT");
+            assert_eq!(details["locale_key"], "agent.errors.activeMutationConflict");
+            assert_eq!(details["retryable"], "true");
+            assert_eq!(details["terminal"], "true");
+            assert!(details.get("resource_id").is_none());
+        }
+    }
 }

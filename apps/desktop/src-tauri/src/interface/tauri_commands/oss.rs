@@ -68,12 +68,7 @@ pub struct OssUploadAttachmentBytesInput {
     #[serde(default)]
     pub mime_type: String,
     pub bytes: Vec<u8>,
-    #[serde(default)]
-    pub bucket: String,
-    #[serde(default)]
-    pub visibility: String,
-    #[serde(default)]
-    pub chat_session_id: Option<String>,
+    pub conversation_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -310,16 +305,6 @@ fn upload_attachment_bytes(
     if input.bytes.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "bytes is required", None);
     }
-    let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_oss_upload_scope(
-        input.bucket.as_str(),
-        vis.as_str(),
-        &input.chat_session_id,
-    ) {
-        Ok(scope) => scope,
-        Err(error) => return error,
-    };
-
     let filename = safe_temp_filename(input.filename.as_str());
     let temp_path =
         std::env::temp_dir().join(format!("peers-{consumer}-{}-{filename}", Ulid::new()));
@@ -333,7 +318,7 @@ fn upload_attachment_bytes(
     let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "byte attachment");
 
     let mime_override = input.mime_type.trim();
-    let result = application_oss::upload_attachment_with_mime(
+    let result = application_oss::upload_agent_attachment(
         temp_path.to_string_lossy().as_ref(),
         &token,
         consumer,

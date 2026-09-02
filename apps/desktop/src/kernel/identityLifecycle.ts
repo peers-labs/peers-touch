@@ -1,4 +1,4 @@
-import type { SessionUser } from '../types/navigation';
+import type { AppState, SessionUser } from '../types/navigation';
 
 export type IdentityBootReason = 'cold_launch' | 'renderer_reload' | 'applet_launch';
 
@@ -33,6 +33,7 @@ export type IdentityPhase =
   | { kind: 'checkingLaunchContext'; reason: IdentityBootReason }
   | { kind: 'resolvingSession'; reason: IdentityBootReason; source: 'live' | 'disk' | 'applet' }
   | { kind: 'accessGateChainPending'; user: SessionUser }
+  | { kind: 'loggingOut' }
   | { kind: 'accountGate'; reason: IdentityAuthGateReason }
   | { kind: 'pinGate'; accountId: string }
   | { kind: 'pinRecoveryAuthenticating'; recoveryId: string; targetLocalAccountId: string; provider: string }
@@ -302,7 +303,7 @@ export function identityReducer(state: IdentityPhase, event: IdentityEvent): Ide
     case 'SESSION_REVOKED':
       return { kind: 'revoked', reason: event.reason };
     case 'LOGOUT_REQUESTED':
-      return { kind: 'accountGate', reason: 'logout' };
+      return { kind: 'loggingOut' };
     case 'PIN_RECOVERY_REQUESTED':
       if (state.kind === 'pinGate') {
         return {
@@ -350,4 +351,16 @@ export function identityPhaseAllowsReady(phase: IdentityPhase): boolean {
 export function identityPhaseNeedsAuthGate(phase: IdentityPhase): boolean {
   return phase.kind === 'accountGate' || phase.kind === 'pinGate' || phase.kind === 'revoked'
     || phase.kind === 'pinRecoveryAuthenticating' || phase.kind === 'pinRecoveryPendingPin';
+}
+
+export function appStateFromIdentity(phase: IdentityPhase): AppState {
+  if (identityPhaseAllowsReady(phase)) return 'ready';
+  if (
+    phase.kind === 'resolvingSession'
+    || phase.kind === 'accessGateChainPending'
+    || phase.kind === 'loggingOut'
+  ) {
+    return 'resuming';
+  }
+  return 'onboarding';
 }

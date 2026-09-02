@@ -1,0 +1,242 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "domain/agent/agent.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+enum EvaluationRunStatus {
+  EVALUATION_RUN_STATUS_UNSPECIFIED = 0;
+  EVALUATION_RUN_STATUS_DRAFT = 1;
+  EVALUATION_RUN_STATUS_PENDING = 2;
+  EVALUATION_RUN_STATUS_RUNNING = 3;
+  EVALUATION_RUN_STATUS_CANCEL_INTENT_COMMITTED = 4;
+  EVALUATION_RUN_STATUS_CANCELLING = 5;
+  EVALUATION_RUN_STATUS_COMPLETED = 6;
+  EVALUATION_RUN_STATUS_PARTIAL = 7;
+  EVALUATION_RUN_STATUS_FAILED = 8;
+  EVALUATION_RUN_STATUS_CANCELLED = 9;
+}
+
+enum EvaluationAttemptStatus {
+  EVALUATION_ATTEMPT_STATUS_UNSPECIFIED = 0;
+  EVALUATION_ATTEMPT_STATUS_PENDING = 1;
+  EVALUATION_ATTEMPT_STATUS_RUNNING = 2;
+  EVALUATION_ATTEMPT_STATUS_COMPLETED = 3;
+  EVALUATION_ATTEMPT_STATUS_FAILED = 4;
+  EVALUATION_ATTEMPT_STATUS_CANCELLED = 5;
+  EVALUATION_ATTEMPT_STATUS_INTERRUPTED = 6;
+}
+
+enum EvaluationCommandKind {
+  EVALUATION_COMMAND_KIND_UNSPECIFIED = 0;
+  EVALUATION_COMMAND_KIND_CREATE_RUN = 1;
+  EVALUATION_COMMAND_KIND_START_RUN = 2;
+  EVALUATION_COMMAND_KIND_CANCEL_RUN = 3;
+  EVALUATION_COMMAND_KIND_RETRY_CASES = 4;
+}
+
+enum EvaluationErrorCode {
+  EVALUATION_ERROR_CODE_UNSPECIFIED = 0;
+  EVALUATION_ERROR_CODE_DATASET_REVISION_CONFLICT = 1;
+  EVALUATION_ERROR_CODE_TARGET_SNAPSHOT_INVALID = 2;
+  EVALUATION_ERROR_CODE_RUN_NOT_CANCELLABLE = 3;
+  EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT = 4;
+  EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE = 5;
+  EVALUATION_ERROR_CODE_IDEMPOTENCY_CONFLICT = 6;
+  EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT = 7;
+}
+
+message EvaluationError {
+  EvaluationErrorCode code = 1;
+  bool retryable = 2;
+  string recovery_action = 3;
+}
+
+message EvaluationBenchmark {
+  string benchmark_id = 1;
+  string ptid = 2;
+  string name = 3;
+  string rubric = 4;
+  uint64 revision = 5;
+}
+
+message EvaluationDataset {
+  string dataset_id = 1;
+  string benchmark_id = 2;
+  string ptid = 3;
+  string name = 4;
+  uint64 revision = 5;
+}
+
+message EvaluationTestCase {
+  string case_id = 1;
+  string dataset_id = 2;
+  string input = 3;
+  string expected = 4;
+  optional string rubric_override = 5;
+  uint64 revision = 6;
+}
+
+message EvaluationMetrics {
+  uint32 total_cases = 1;
+  uint32 terminal_cases = 2;
+  uint32 passed_cases = 3;
+  double average_score = 4;
+  string metrics_version = 5;
+  bool comparable = 6;
+}
+
+message EvaluationRun {
+  string run_id = 1;
+  string ptid = 2;
+  string idempotency_key = 3;
+  string payload_hash = 4;
+  uint64 revision = 5;
+  optional string parent_run_id = 6;
+  EvaluationCommandKind command_kind = 7;
+  string mutation_scope = 8;
+  string cancel_intent_fence = 9;
+  google.protobuf.Timestamp cancel_ack_deadline = 10;
+  string terminal_fence = 11;
+  string dataset_id = 12;
+  uint64 dataset_revision = 13;
+  RuntimeSnapshot target_agent_snapshot = 14;
+  string readiness_snapshot_id = 15;
+  EvaluationRunStatus status = 16;
+  uint32 completed_cases = 17;
+  uint32 total_cases = 18;
+  EvaluationMetrics metrics = 19;
+  google.protobuf.Timestamp created_at = 20;
+  google.protobuf.Timestamp terminal_at = 21;
+  EvaluationError error = 22;
+}
+
+message EvaluationCaseAttempt {
+  string attempt_id = 1;
+  string run_id = 2;
+  string case_id = 3;
+  uint32 attempt = 4;
+  string idempotency_key = 5;
+  optional string source_attempt_id = 6;
+  optional string source_result_id = 7;
+  string turn_id = 8;
+  EvaluationAttemptStatus status = 9;
+  string output_ref = 10;
+  optional double score = 11;
+  EvaluationError error = 12;
+  google.protobuf.Timestamp cancellation_ack_at = 13;
+  google.protobuf.Timestamp terminal_at = 14;
+}
+
+message EvaluationResult {
+  string result_id = 1;
+  string run_id = 2;
+  string case_id = 3;
+  string attempt_id = 4;
+  string output_ref = 5;
+  double score = 6;
+  string rubric_version = 7;
+  EvaluationAttemptStatus terminal_status = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message EvaluationRunEvent {
+  string run_id = 1;
+  uint64 sequence = 2;
+  EvaluationRunStatus status = 3;
+  uint32 completed_cases = 4;
+  uint32 total_cases = 5;
+  string case_id = 6;
+  string attempt_id = 7;
+  EvaluationError error = 8;
+  google.protobuf.Timestamp occurred_at = 9;
+}
+
+message CreateEvaluationBenchmarkRequest {
+  string name = 1;
+  string rubric = 2;
+  string idempotency_key = 3;
+}
+
+message CreateEvaluationBenchmarkResponse {
+  EvaluationBenchmark benchmark = 1;
+}
+
+message CreateEvaluationDatasetRequest {
+  string benchmark_id = 1;
+  string name = 2;
+  uint64 expected_benchmark_revision = 3;
+  string idempotency_key = 4;
+}
+
+message CreateEvaluationDatasetResponse {
+  EvaluationDataset dataset = 1;
+}
+
+message CreateEvaluationTestCaseRequest {
+  string dataset_id = 1;
+  string input = 2;
+  string expected = 3;
+  optional string rubric_override = 4;
+  uint64 expected_dataset_revision = 5;
+  string idempotency_key = 6;
+}
+
+message CreateEvaluationTestCaseResponse {
+  EvaluationTestCase test_case = 1;
+}
+
+message CreateEvaluationRunRequest {
+  string dataset_id = 1;
+  uint64 dataset_revision = 2;
+  RuntimeSnapshot target_agent_snapshot = 3;
+  string readiness_snapshot_id = 4;
+  string idempotency_key = 5;
+}
+
+message CreateEvaluationRunResponse {
+  EvaluationRun run = 1;
+}
+
+message StartEvaluationRunRequest {
+  string run_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message StartEvaluationRunResponse {
+  EvaluationRun run = 1;
+}
+
+message CancelEvaluationRunRequest {
+  string run_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message CancelEvaluationRunResponse {
+  EvaluationRun run = 1;
+}
+
+message RetryEvaluationCasesRequest {
+  string parent_run_id = 1;
+  repeated string case_ids = 2;
+  string idempotency_key = 3;
+}
+
+message RetryEvaluationCasesResponse {
+  EvaluationRun child_run = 1;
+}
+
+message GetEvaluationRunRequest {
+  string run_id = 1;
+}
+
+message GetEvaluationRunResponse {
+  EvaluationRun run = 1;
+  repeated EvaluationCaseAttempt attempts = 2;
+  repeated EvaluationResult results = 3;
+}
