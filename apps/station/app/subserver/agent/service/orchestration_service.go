@@ -173,9 +173,6 @@ func (s *OrchestrationService) CreateCollaborationTask(
 	actorPTID string,
 	req *model.CreateCollaborationTaskRequest,
 ) (*model.CollaborationTask, []*model.TaskNode, error) {
-	if err := enforce_canvas_single_agent_readiness(); err != nil {
-		return nil, nil, err
-	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -394,18 +391,12 @@ func (s *OrchestrationService) ListTaskEvents(ctx context.Context, actorPTID str
 }
 
 func (s *OrchestrationService) StartTaskRecovery(ctx context.Context) {
-	if enforce_canvas_single_agent_readiness() != nil {
-		return
-	}
 	s.recoveryOnce.Do(func() {
 		go s.recoverRunningTasks(context.Background())
 	})
 }
 
 func (s *OrchestrationService) recoverRunningTasks(ctx context.Context) {
-	if enforce_canvas_single_agent_readiness() != nil {
-		return
-	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		logger.Errorf(ctx, "failed to open db for collaboration recovery: err=%v", err)
@@ -454,12 +445,9 @@ func isDirectRunTaskForRecovery(ctx context.Context, db *gorm.DB, taskID string)
 	return count > 0, nil
 }
 
-func (s *OrchestrationService) startTaskExecution(actorID string, task persistence.CollaborationTask, nodes []persistence.CollaborationTaskNode, reason string) {
-	if enforce_canvas_single_agent_readiness() != nil {
-		return
-	}
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
+func (s *OrchestrationService) startTaskExecution(actorPTID string, task persistence.CollaborationTask, nodes []persistence.CollaborationTaskNode, reason string) {
+	actorPTID = strings.TrimSpace(actorPTID)
+	if actorPTID == "" {
 		return
 	}
 	taskCopy := task
@@ -471,11 +459,8 @@ func (s *OrchestrationService) startTaskExecution(actorID string, task persisten
 	}()
 }
 
-func (s *OrchestrationService) startDirectRunExecution(actorID string, taskID string, reason string) {
-	if enforce_canvas_single_agent_readiness() != nil {
-		return
-	}
-	actorID = strings.TrimSpace(actorID)
+func (s *OrchestrationService) startDirectRunExecution(actorPTID string, taskID string, reason string) {
+	actorPTID = strings.TrimSpace(actorPTID)
 	taskID = strings.TrimSpace(taskID)
 	if actorPTID == "" || taskID == "" {
 		return
@@ -495,14 +480,7 @@ type directRunRuntimeSnapshot struct {
 	Step    persistence.ExecutionStep
 }
 
-func (s *OrchestrationService) executePendingDirectRun(ctx context.Context, actorID string, taskID string, reason string) error {
-	if err := enforce_canvas_single_agent_readiness(); err != nil {
-		return err
-	}
-	return s.executePendingDirectRunAfterCanvasReadiness(ctx, actorID, taskID, reason)
-}
-
-func (s *OrchestrationService) executePendingDirectRunAfterCanvasReadiness(ctx context.Context, actorID string, taskID string, reason string) error {
+func (s *OrchestrationService) executePendingDirectRun(ctx context.Context, actorPTID string, taskID string, reason string) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
@@ -1427,10 +1405,7 @@ func (s *OrchestrationService) CancelCollaborationTask(ctx context.Context, acto
 	return taskRecordToProto(&task), nodeRecordsToProto(nodes), nil
 }
 
-func (s *OrchestrationService) ResumeCollaborationTask(ctx context.Context, actorID, taskID, reason string) (*model.CollaborationTask, []*model.TaskNode, error) {
-	if err := enforce_canvas_single_agent_readiness(); err != nil {
-		return nil, nil, err
-	}
+func (s *OrchestrationService) ResumeCollaborationTask(ctx context.Context, actorPTID, taskID, reason string) (*model.CollaborationTask, []*model.TaskNode, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -1524,9 +1499,6 @@ func (s *OrchestrationService) ResolveCollaborationInterrupt(
 	reason string,
 	payload map[string]interface{},
 ) (*model.CollaborationTask, []*model.TaskNode, error) {
-	if err := enforce_canvas_single_agent_readiness(); err != nil {
-		return nil, nil, err
-	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -1611,10 +1583,7 @@ func requestCollaborationInterruptTx(
 	return task, record, nil
 }
 
-func (s *OrchestrationService) RunCollaborationSupervisorTick(ctx context.Context, actorID string, taskID string) (*model.CollaborationTask, *model.TaskEvent, bool, error) {
-	if err := enforce_canvas_single_agent_readiness(); err != nil {
-		return nil, nil, false, err
-	}
+func (s *OrchestrationService) RunCollaborationSupervisorTick(ctx context.Context, actorPTID string, taskID string) (*model.CollaborationTask, *model.TaskEvent, bool, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, false, err
@@ -1641,14 +1610,7 @@ func (s *OrchestrationService) RunCollaborationSupervisorTick(ctx context.Contex
 	return taskRecordToProto(&task), taskEventRecordToProto(record), requested, nil
 }
 
-func (s *OrchestrationService) RunCollaborationSupervisorSweep(ctx context.Context, actorID string, limit int) (*CollaborationSupervisorSweepResult, error) {
-	if err := enforce_canvas_single_agent_readiness(); err != nil {
-		return nil, err
-	}
-	return s.runCollaborationSupervisorSweepAfterCanvasReadiness(ctx, actorID, limit)
-}
-
-func (s *OrchestrationService) runCollaborationSupervisorSweepAfterCanvasReadiness(ctx context.Context, actorID string, limit int) (*CollaborationSupervisorSweepResult, error) {
+func (s *OrchestrationService) RunCollaborationSupervisorSweep(ctx context.Context, actorPTID string, limit int) (*CollaborationSupervisorSweepResult, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -1689,9 +1651,7 @@ func (s *OrchestrationService) runCollaborationSupervisorSweepAfterCanvasReadine
 		var requested bool
 		if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var txErr error
-			_, _, requested, txErr = runCollaborationSupervisorTickTxAfterCanvasReadiness(
-				ctx, tx, writer, actorID, taskID, now,
-			)
+			_, _, requested, txErr = runCollaborationSupervisorTickTx(ctx, tx, writer, actorPTID, taskID, now)
 			return txErr
 		}); err != nil {
 			return nil, err
@@ -1711,22 +1671,6 @@ func runCollaborationSupervisorTickTx(
 	tx *gorm.DB,
 	writer *TaskEventWriter,
 	actorPTID string,
-	taskID string,
-	now time.Time,
-) (persistence.CollaborationTask, *persistence.TaskEvent, bool, error) {
-	if err := enforce_canvas_single_agent_readiness(); err != nil {
-		return persistence.CollaborationTask{}, nil, false, err
-	}
-	return runCollaborationSupervisorTickTxAfterCanvasReadiness(
-		ctx, tx, writer, actorID, taskID, now,
-	)
-}
-
-func runCollaborationSupervisorTickTxAfterCanvasReadiness(
-	ctx context.Context,
-	tx *gorm.DB,
-	writer *TaskEventWriter,
-	actorID string,
 	taskID string,
 	now time.Time,
 ) (persistence.CollaborationTask, *persistence.TaskEvent, bool, error) {
@@ -2809,14 +2753,7 @@ func validateCollaborationTaskResumable(task persistence.CollaborationTask, node
 	}
 }
 
-func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context, actorID string, req *model.SubmitCollaborationNodeResultRequest) (*model.CollaborationTask, []*model.TaskNode, error) {
-	if err := enforce_canvas_single_agent_readiness(); err != nil {
-		return nil, nil, err
-	}
-	return s.submitCollaborationNodeResultAfterCanvasReadiness(ctx, actorID, req)
-}
-
-func (s *OrchestrationService) submitCollaborationNodeResultAfterCanvasReadiness(ctx context.Context, actorID string, req *model.SubmitCollaborationNodeResultRequest) (*model.CollaborationTask, []*model.TaskNode, error) {
+func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context, actorPTID string, req *model.SubmitCollaborationNodeResultRequest) (*model.CollaborationTask, []*model.TaskNode, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -2989,10 +2926,7 @@ func (s *OrchestrationService) submitCollaborationNodeResultAfterCanvasReadiness
 	return taskRecordToProto(&task), nodeRecordsToProto(nodes), nil
 }
 
-func (s *OrchestrationService) ClaimDesktopExecutorTask(ctx context.Context, actorID string, req *model.ClaimDesktopExecutorTaskRequest) (*model.ClaimDesktopExecutorTaskResponse, error) {
-	if err := enforce_canvas_single_agent_readiness(); err != nil {
-		return nil, err
-	}
+func (s *OrchestrationService) ClaimDesktopExecutorTask(ctx context.Context, actorPTID string, req *model.ClaimDesktopExecutorTaskRequest) (*model.ClaimDesktopExecutorTaskResponse, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -3079,10 +3013,7 @@ func (s *OrchestrationService) ClaimDesktopExecutorTask(ctx context.Context, act
 	}, nil
 }
 
-func (s *OrchestrationService) HeartbeatExecutorLease(ctx context.Context, actorID string, req *model.HeartbeatExecutorLeaseRequest) (*model.ExecutorLease, error) {
-	if err := enforce_canvas_single_agent_readiness(); err != nil {
-		return nil, err
-	}
+func (s *OrchestrationService) HeartbeatExecutorLease(ctx context.Context, actorPTID string, req *model.HeartbeatExecutorLeaseRequest) (*model.ExecutorLease, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -4639,7 +4570,7 @@ func (s *OrchestrationService) ensureNodeConversation(
 	conversation := persistence.Conversation{
 		ID:          node.ID,
 		AgentID:     agent.AgentID,
-		Ptid:        actorID,
+		ActorPTID:   actorPTID,
 		Title:       task.Title,
 		ProviderID:  providerID,
 		ModelName:   &modelName,
@@ -4779,6 +4710,10 @@ func agentExecutorKind(agent *domain.Agent) model.ExecutorKind {
 		return model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE
 	case "station_hosted", strings.ToLower(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED.String()):
 		return model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED
+	}
+	runtimeKind := strings.ToLower(firstConfigString(config, "runtimeKind", "runtime_kind", "protocol"))
+	if runtimeKind == "cli" || firstConfigString(config, "cliCommand", "cli_command") != "" {
+		return model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE
 	}
 	return model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED
 }

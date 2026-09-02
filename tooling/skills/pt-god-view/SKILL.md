@@ -42,11 +42,55 @@ Also invoke when the agent recognizes it should be operating methodologically
 rather than freestyling (e.g., cross-module work, architecture decisions,
 multi-step implementations).
 
+### 2.1 Worktree Identity Gate
+
+Skill discovery and execution context are separate. A skill source path selects
+instructions only; it MUST NOT select or change the execution worktree. The
+current verified worktree remains bound.
+
+Before any stage dispatch and before the first edit:
+
+1. Require one explicitly selected current worktree. If the session exposes
+   multiple candidate roots and none is explicit, stop for clarification. Do
+   not choose from a skill path, plan path, branch name, or nearby repository.
+2. From that exact root, capture the candidate identity with
+   `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --capture`.
+3. Compare the captured identity with every worktree identity in `active_work`,
+   the selected plan, and the latest Context Anchor. A missing verifier or
+   unresolved field returns `WORKTREE_IDENTITY_UNAVAILABLE`; a mismatch or
+   later drift returns `WORKTREE_IDENTITY_MISMATCH`. Both stop without
+   automatic `cd`, branch switch, or worktree selection.
+4. From the same root, immediately verify the captured identity with
+   `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --branch '<branch>' --workspace-id '<workspaceId>' --head '<expected-head>' --worktree-set-digest '<digest>'`,
+   then bind its canonical root, branch, `workspaceId`, initial HEAD, expected
+   HEAD, and worktree-set digest. Materialized values must each be one POSIX
+   shell-safe argument.
+5. Re-run the exact verifier after resume or context compaction and before status,
+   readiness, handoff, or completion reporting.
+
+Every mutating tool call must set the bound canonical root as its explicit
+`workdir`; file mutation tools must use absolute paths below that root.
+Subagents inherit the full immutable binding and verify it before writes.
+
+The initial HEAD remains the audit baseline. Expected HEAD may refresh only
+after an explicitly authorized commit, rebase, or merge. The worktree-set
+digest may refresh only after an explicitly requested worktree operation. Do
+not run `git switch`, `git checkout`, `git worktree add`,
+`git worktree remove`, or `git worktree prune`, and do not create a worktree,
+unless the user explicitly requested that exact operation.
+
+After initial registration, `active_work` owns the persisted initial HEAD,
+expected HEAD, and worktree-set digest. Resume or context compaction verifies
+those values and MUST NOT recapture current Git state as a replacement
+baseline.
+
 ---
 
 ## 3. Thinking Framework
 
 When god-view is active, the agent reasons in this order:
+
+0. Verify the immutable worktree binding through §2.1.
 
 ### 3.1 What Kind of Work Is This?
 
@@ -135,6 +179,7 @@ The agent must NOT do the work itself when a skill exists for it:
 | Need to design architecture | Write design ad-hoc | `pt-architecture-design-methodology` |
 | Need to break down into steps | List steps from memory | `pt-architecture-execution-methodology` |
 | Need to write plan to file | Just dump markdown | `pt-plan-and-document` |
+| Need a TRAE `/goal`, multi-subagent execution contract, or Goal review | Assemble an ad hoc prompt | `pt-trae-goal-orchestrator` |
 | Need tracked-work status, resume, handoff, or blocker projection | Reconstruct from chat | `pt-context-anchor` |
 | Need to implement planned step | Code without checking plan | `pt-execution-plan-guardian` |
 | Need to optimize/audit Acceptance Infra | Let business evidence drive framework readiness | `pt-acceptance-infra-engineering` |
@@ -219,10 +264,16 @@ implementation of something already accepted and planned?"
 
 When asked for tracked-work status or resume:
 
-1. Resolve the `active_work` entry and readable formal plan.
-2. Invoke `pt-context-anchor`.
-3. Verify actual worktree and branch.
-4. End the response with the exact fenced chat projection required by that skill.
+1. Re-verify the bound canonical root, branch, `workspaceId`, expected HEAD,
+   and worktree-set digest through §2.1 without replacing the persisted
+   baseline.
+2. Resolve the `active_work` entry and readable formal plan.
+3. Invoke `pt-context-anchor`.
+4. Record `<worktree-name> (<repo-root>)`, verified branch, `workspaceId`,
+   initial HEAD, expected/verified HEAD, and worktree-set digest in the chat
+   projection. A bare `<repo-root>` is invalid; never persist a user-home
+   absolute path.
+5. End the response with the exact fenced chat projection required by that skill.
 
 If no formal plan and matching `active_work` row exist, do not fabricate an
 Anchor. Report the current PRODUCT/DESIGN/PLAN gate in normal prose.
@@ -236,7 +287,7 @@ Anchor. Report the current PRODUCT/DESIGN/PLAN gate in normal prose.
 | "new task" | Classify → dispatch; add to registry only after a formal plan is created |
 | "close #N" | Set `stage: complete` |
 | "blocked" | Set `blocked: true` + reason |
-| "switch to #N" | Change focus → dispatch |
+| "switch to #N" | Change tracked-work focus only after its identity matches the current binding; never switch branch/worktree implicitly |
 
 ---
 
@@ -267,6 +318,9 @@ When showing status, flag entries with `last_session` >14 days:
 
 ```
 pt-god-view (methodology OS / entry point)
+  │
+  ├── TRAE GOAL orchestration
+  │     └── pt-trae-goal-orchestrator (stage-owned ready work → bounded TRAE Goal Slice)
   │
   ├── TRACKED-WORK projection
   │     └── pt-context-anchor (active_work + plan evidence → fenced chat block)
@@ -314,3 +368,5 @@ pt-god-view (methodology OS / entry point)
    plan exists, update plan/tracking evidence first, then `active_work`, then
    emit the `pt-context-anchor` chat projection when reporting.
 6. **Respect gates** — never skip a review boundary.
+7. **Fail closed on identity** — return `WORKTREE_IDENTITY_MISMATCH` for an
+   unresolved, mismatched, or drifting binding; never repair it implicitly.

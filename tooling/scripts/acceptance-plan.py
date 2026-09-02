@@ -7,6 +7,7 @@ import argparse
 import fnmatch
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -17,10 +18,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from _acceptance_artifacts import explicit_output_path  # noqa: E402
+from tooling.acceptance.finalizers import load_strict_json_object  # noqa: E402
 
 
 def load_json_yaml(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return load_strict_json_object(path, str(path))
 
 
 def changed_paths(diff_range: str) -> list[str]:
@@ -56,7 +58,7 @@ def load_behavior_rules(root: Path) -> list[dict[str, Any]]:
     if not behavior_dir.exists():
         return rules
     for rule_file in sorted(behavior_dir.glob("*.yaml")):
-        data = json.loads(rule_file.read_text(encoding="utf-8"))
+        data = load_json_yaml(rule_file)
         for rule in data.get("rules", []):
             rule["_source_file"] = str(rule_file.relative_to(root))
             rules.append(rule)
@@ -68,9 +70,118 @@ def path_matches_any(path: str, patterns: list[str]) -> bool:
                for pattern in patterns)
 
 
+def finalizer_bindings(
+    root: Path,
+    gates: dict[str, Any],
+) -> dict[str, Any]:
+    has_catalog_config = any(
+        isinstance(gate, dict) and "evidenceFinalizer" in gate
+        for gate in gates.values()
+    )
+    has_capability_declaration = any(
+        "finalizerRegistry" in load_json_yaml(path)
+        or "requiredEvidenceFinalizers" in load_json_yaml(path)
+        for path in sorted((root / "capabilities").glob("*.yaml"))
+    )
+    if not has_catalog_config and not has_capability_declaration:
+        return {}
+
+    from tooling.acceptance.finalizers import load_finalizer_bindings
+
+    return dict(load_finalizer_bindings(root, gates))
+
+
+def gate_launch_fields(gate_id: str, gate: dict[str, Any]) -> dict[str, Any]:
+    has_command = "command" in gate
+    has_argv = "argv" in gate
+    if has_command == has_argv:
+        raise SystemExit(
+            f"{gate_id}: gate must define exactly one of command or argv"
+        )
+
+    if has_command:
+        command = gate["command"]
+        if not isinstance(command, str) or not command.strip():
+            raise SystemExit(f"{gate_id}: gate command must be a non-empty string")
+        launch: dict[str, Any] = {"command": command}
+    else:
+        argv = gate["argv"]
+        if (
+            not isinstance(argv, list)
+            or not argv
+            or any(not isinstance(argument, str) or not argument for argument in argv)
+        ):
+            raise SystemExit(
+                f"{gate_id}: gate argv must be a non-empty list of non-empty strings"
+            )
+        launch = {"argv": list(argv)}
+
+    if "ephemeralCapabilities" in gate:
+        capabilities = gate["ephemeralCapabilities"]
+        if (
+            not isinstance(capabilities, list)
+            or not capabilities
+            or any(
+                not isinstance(capability, str) or not capability
+                for capability in capabilities
+            )
+            or len(set(capabilities)) != len(capabilities)
+        ):
+            raise SystemExit(
+                f"{gate_id}: ephemeralCapabilities must be a unique, non-empty "
+                "list of non-empty strings"
+            )
+        if not has_argv:
+            raise SystemExit(f"{gate_id}: ephemeralCapabilities requires argv")
+        if not is_supported_context_argv(argv):
+            raise SystemExit(
+                f"{gate_id}: ephemeralCapabilities requires a Python module, "
+                "script, or -c argv"
+            )
+        launch["ephemeralCapabilities"] = list(capabilities)
+
+    return launch
+
+
+def is_supported_context_argv(argv: list[str]) -> bool:
+    if len(argv) < 2 or not re.fullmatch(
+        r"python(?:\d+(?:\.\d+)*)?",
+        Path(argv[0]).name,
+    ):
+        return False
+    if argv[1] == "-m":
+        return len(argv) >= 3 and bool(
+            re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", argv[2])
+        )
+    if argv[1] == "-c":
+        return len(argv) >= 3
+    return not argv[1].startswith("-") and Path(argv[1]).suffix == ".py"
+
+
+def planned_gate(
+    gate_id: str,
+    gate: dict[str, Any],
+    finalizer_binding: Any | None = None,
+) -> dict[str, Any]:
+    planned = {
+        "id": gate_id,
+        **gate_launch_fields(gate_id, gate),
+        "timeout_seconds": gate.get("timeout_seconds", 600),
+        "environment": gate.get("environment", "local"),
+        "provisioner": gate.get("provisioner", ""),
+        "tier": gate.get("tier", "local-evidence"),
+        "description": gate.get("description", ""),
+        "required_by": [],
+    }
+    if finalizer_binding is not None:
+        planned["evidenceFinalizer"] = finalizer_binding.plan_config()
+    return planned
+
+
 def plan(root: Path, paths: list[str]) -> dict[str, Any]:
     registry = load_json_yaml(root / "registry.yaml")
     gates = load_json_yaml(root / "gates.yaml").get("gates", {})
+    bindings = finalizer_bindings(root, gates)
     behavior_rules = load_behavior_rules(root)
     selected: dict[str, dict[str, Any]] = {}
     impacted_features: set[str] = set()
@@ -88,16 +199,7 @@ def plan(root: Path, paths: list[str]) -> dict[str, Any]:
                 raise SystemExit(f"gate {gate_id!r} referenced by rule {rule.get('id')!r} is missing")
             selected.setdefault(
                 gate_id,
-                {
-                    "id": gate_id,
-                    "command": gates[gate_id]["command"],
-                    "timeout_seconds": gates[gate_id].get("timeout_seconds", 600),
-                    "environment": gates[gate_id].get("environment", "local"),
-                    "provisioner": gates[gate_id].get("provisioner", ""),
-                    "tier": gates[gate_id].get("tier", "local-evidence"),
-                    "description": gates[gate_id].get("description", ""),
-                    "required_by": [],
-                },
+                planned_gate(gate_id, gates[gate_id], bindings.get(gate_id)),
             )
             selected[gate_id]["required_by"].append(rule.get("id"))
 
@@ -121,16 +223,7 @@ def plan(root: Path, paths: list[str]) -> dict[str, Any]:
                 raise SystemExit(f"gate {gate_id!r} referenced by behavior rule {rule.get('id')!r} is missing")
             selected.setdefault(
                 gate_id,
-                {
-                    "id": gate_id,
-                    "command": gates[gate_id]["command"],
-                    "timeout_seconds": gates[gate_id].get("timeout_seconds", 600),
-                    "environment": gates[gate_id].get("environment", "local"),
-                    "provisioner": gates[gate_id].get("provisioner", ""),
-                    "tier": gates[gate_id].get("tier", "local-evidence"),
-                    "description": gates[gate_id].get("description", ""),
-                    "required_by": [],
-                },
+                planned_gate(gate_id, gates[gate_id], bindings.get(gate_id)),
             )
             selected[gate_id]["required_by"].append(f"behavior:{rule.get('id')}")
 
@@ -242,7 +335,12 @@ def main() -> int:
     print(f"impacted_features: {', '.join(result['impacted_features']) or 'none'}")
     if result["selected_gates"]:
         for gate in result["selected_gates"]:
-            print(f"[GATE] {gate['id']} [{gate['tier']}/{gate['environment']}]: {gate['command']}")
+            launch = (
+                gate["command"]
+                if "command" in gate
+                else json.dumps(gate["argv"], ensure_ascii=False)
+            )
+            print(f"[GATE] {gate['id']} [{gate['tier']}/{gate['environment']}]: {launch}")
     else:
         print("[GATE] none")
     print(

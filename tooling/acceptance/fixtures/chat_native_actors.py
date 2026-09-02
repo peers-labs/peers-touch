@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
+import threading
+import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
@@ -22,95 +24,220 @@ from tooling.acceptance.core.provisioning import (
     ActorManifest,
     utc_now,
 )
+from tooling.acceptance.fixtures.chat_native_reset import (
+    acceptance_station_environment,
+    verify_disposable_station_runtime,
+)
 
 
 ACTOR_ACCOUNTS = {
     "alice": "alice@p.t",
     "bob": "bob@p.t",
-    "charlie": "charlie@p.t",
+    "charlie": "carol@p.t",
 }
 
 ACTOR_PASSWORD = "1"
+RESET_TIMEOUT_SECONDS = 120.0
+RESET_TERMINATION_RESERVE_SECONDS = 1.0
+RESET_POLL_INTERVAL_SECONDS = 0.05
 
 
-def _load_env(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("'\"")
-    return values
+def _remaining_timeout(
+    configured_timeout: float,
+    deadline_monotonic: float | None,
+    cancellation: threading.Event | None,
+) -> float:
+    if cancellation is not None and cancellation.is_set():
+        raise TimeoutError("Chat native actor reset was cancelled")
+    if deadline_monotonic is None:
+        return configured_timeout
+    remaining = deadline_monotonic - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Chat native actor reset exceeded its deadline")
+    return min(configured_timeout, remaining)
 
 
 def verify_reset_target(
     station_url: str,
     deployment_environment: str,
+    *,
+    deadline_monotonic: float | None = None,
+    cancellation: threading.Event | None = None,
 ) -> None:
-    environment_path = (
-        REPO_ROOT
-        / ".local"
-        / "deploy"
-        / "envs"
-        / f"{deployment_environment}.env"
+    _remaining_timeout(
+        RESET_TIMEOUT_SECONDS,
+        deadline_monotonic,
+        cancellation,
     )
-    if not environment_path.is_file():
-        raise BlockedError(
-            reason=f"Reset target environment is missing: {environment_path}",
-            resource=f"fixture-target:{deployment_environment}",
+    try:
+        environment = acceptance_station_environment(
+            station_url,
+            deployment_environment,
         )
-    environment = _load_env(environment_path)
-    target_host = str(environment.get("PT_DEPLOY_HOST") or "").strip()
-    station_host = urllib.parse.urlparse(station_url).hostname or ""
-    if not target_host or target_host != station_host:
+        verify_disposable_station_runtime(
+            environment,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         raise BlockedError(
             reason=(
-                f"Fixture reset target mismatch: Station host {station_host!r} "
-                f"does not match deployment host {target_host!r}"
+                "Fixture reset target is not an isolated disposable Station: "
+                f"{error}"
             ),
             resource=f"fixture-target:{deployment_environment}",
-        )
+        ) from error
 
 
 def reset_fixture(
     deployment_environment: str,
     actors: Iterable[str],
     *,
-    station_url: str = "",
+    deadline_monotonic: float | None = None,
+    cancellation: threading.Event | None = None,
 ) -> None:
     accounts = sorted(set(actors))
-    env = None
-    if station_url:
-        env = {**os.environ, "PT_STATION_URL": station_url}
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                REPO_ROOT
-                / "tooling"
-                / "acceptance"
-                / "fixtures"
-                / "chat_native_reset.py"
-            ),
-            "--environment",
-            deployment_environment,
-            "--accounts",
-            *accounts,
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-        env=env,
+    remaining = _remaining_timeout(
+        RESET_TIMEOUT_SECONDS,
+        deadline_monotonic,
+        cancellation,
     )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "no output"
+    effective_deadline = time.monotonic() + remaining
+    termination_reserve = min(
+        RESET_TERMINATION_RESERVE_SECONDS,
+        remaining / 2,
+    )
+    operation_deadline = effective_deadline - termination_reserve
+    try:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "tooling.acceptance.fixtures.chat_native_reset",
+                "--environment",
+                deployment_environment,
+                "--accounts",
+                *accounts,
+            ],
+            cwd=REPO_ROOT,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            shell=False,
+            close_fds=True,
+            start_new_session=os.name == "posix",
+        )
+    except OSError as error:
+        raise BlockedError(
+            reason=f"Chat native actor reset could not start: {error}",
+            resource=f"fixture-reset:{deployment_environment}",
+        ) from error
+
+    try:
+        while True:
+            _remaining_timeout(
+                RESET_TIMEOUT_SECONDS,
+                deadline_monotonic,
+                cancellation,
+            )
+            operation_remaining = operation_deadline - time.monotonic()
+            if operation_remaining <= 0:
+                raise TimeoutError(
+                    "Chat native actor reset exceeded its deadline"
+                )
+            try:
+                stdout, stderr = process.communicate(
+                    timeout=min(
+                        RESET_POLL_INTERVAL_SECONDS,
+                        operation_remaining,
+                    )
+                )
+                break
+            except subprocess.TimeoutExpired:
+                continue
+    except BaseException:
+        _terminate_reset_process(process, effective_deadline)
+        raise
+
+    _kill_remaining_reset_group(process, effective_deadline)
+    _remaining_timeout(
+        RESET_TIMEOUT_SECONDS,
+        deadline_monotonic,
+        cancellation,
+    )
+    if process.returncode != 0:
+        detail = stderr.strip() or stdout.strip() or "no output"
         raise BlockedError(
             reason=f"Chat native actor reset failed: {detail}",
             resource=f"fixture-reset:{deployment_environment}",
         )
+
+
+def _signal_reset_process_group(
+    process: subprocess.Popen[str],
+    process_signal: signal.Signals,
+) -> None:
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, process_signal)
+        elif process_signal == signal.SIGTERM:
+            process.terminate()
+        else:
+            process.kill()
+    except ProcessLookupError:
+        return
+    except OSError as error:
+        raise RuntimeError(
+            "Chat native actor reset process group could not be signalled"
+        ) from error
+
+
+def _terminate_reset_process(
+    process: subprocess.Popen[str],
+    deadline_monotonic: float,
+) -> None:
+    _signal_reset_process_group(process, signal.SIGTERM)
+    remaining = max(0.0, deadline_monotonic - time.monotonic())
+    try:
+        process.communicate(timeout=min(0.25, remaining))
+    except subprocess.TimeoutExpired:
+        _signal_reset_process_group(process, signal.SIGKILL)
+        remaining = max(0.0, deadline_monotonic - time.monotonic())
+        try:
+            process.communicate(timeout=remaining)
+        except subprocess.TimeoutExpired as error:
+            raise TimeoutError(
+                "Chat native actor reset process did not stop before deadline"
+            ) from error
+    _kill_remaining_reset_group(process, deadline_monotonic)
+
+
+def _kill_remaining_reset_group(
+    process: subprocess.Popen[str],
+    deadline_monotonic: float,
+) -> None:
+    _signal_reset_process_group(process, signal.SIGKILL)
+    if os.name != "posix":
+        return
+    while True:
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            pass
+        except OSError as error:
+            raise RuntimeError(
+                "Chat native actor reset process-group extinction "
+                "could not be verified"
+            ) from error
+        remaining = deadline_monotonic - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(
+                "Chat native actor reset process group survived its deadline"
+            )
+        time.sleep(min(0.01, remaining))
 
 
 def _response_data(payload: dict[str, object]) -> dict[str, object]:
@@ -247,7 +374,7 @@ def produce_actor_manifest(
         )
 
     verify_reset_target(station_url, deployment_environment)
-    reset_fixture(deployment_environment, unique_roles, station_url=station_url)
+    reset_fixture(deployment_environment, unique_roles)
     actors = tuple(
         resolve_actor_identity(station_url, role, ACTOR_PASSWORD)
         for role in unique_roles

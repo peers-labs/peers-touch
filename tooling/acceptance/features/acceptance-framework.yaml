@@ -31,6 +31,8 @@
       "domain profiles select product domains used to validate acceptance effectiveness",
       "changed paths select required gates through registry rules",
       "explicit product gates can run independently from the current diff",
+      "context-enabled Gates receive non-persisted parent-owned capabilities through a bounded anonymous process channel",
+      "launch-context timeout cancellation quarantine and cleanup failures remain fail-closed and observable",
       "reports preserve proven and unproven product scope for human review"
     ],
     "product_loop": [
