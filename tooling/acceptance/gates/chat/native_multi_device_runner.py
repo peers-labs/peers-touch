@@ -9,19 +9,30 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPO_ROOT, REPORTS_DIR
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.core import (
+    AcceptanceGate,
+    ActorRuntime,
+    GateError,
+    REPO_ROOT,
+    REPORTS_DIR,
+)
+from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
+from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
+from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
+    DEV_ACCOUNT_PASSWORD,
+    NativeClientLifecycleLedger,
     async_harness,
     commits_match,
     current_commit,
     current_workspace_digest,
     enter_chat_page,
-    gateway_command,
     message_snapshot,
     read_station_version,
     reset_fixture,
+    runtime_station_service,
+    selected_native_runtime,
     send_text,
     start_authenticated_client,
     stop_client,
@@ -53,14 +64,82 @@ class NativeMultiDeviceGate(AcceptanceGate):
 
     def __init__(self) -> None:
         super().__init__()
-        self.station_url = os.environ.get(
-            "CHAT_NATIVE_STATION_URL",
-            DEFAULT_STATION,
-        ).rstrip("/")
-        self.tested_commit = current_commit()
-        self.workspace_digest = current_workspace_digest()
+        injected = (manifest, actor_manifest, runtime_binding)
+        if any(value is not None for value in injected) and not all(
+            value is not None for value in injected
+        ):
+            raise GateError(
+                "runtime manifest, actor manifest, and runtime binding "
+                "must be injected together"
+            )
+        selected_cell = os.environ.get(
+            "PT_ACCEPTANCE_RUNTIME_CELL",
+            "",
+        ).strip()
+        if selected_cell and runtime_binding is None:
+            raise GateError(
+                "selected Native Desktop runtime cell requires injected "
+                "runtime resources"
+            )
+        if (
+            selected_cell
+            and runtime_binding is not None
+            and runtime_binding.cell_id != selected_cell
+        ):
+            raise GateError(
+                "injected Native Desktop runtime binding does not match "
+                f"PT_ACCEPTANCE_RUNTIME_CELL={selected_cell}"
+            )
+        self.manifest = manifest
+        self.actor_manifest = actor_manifest
+        self.runtime_binding = runtime_binding
+        if manifest is not None:
+            station = runtime_station_service(manifest)
+            source = manifest.get("source")
+            self.station_url = str(station.get("endpoint") or "").rstrip("/")
+            self.tested_commit = str(
+                source.get("commit") if isinstance(source, dict) else ""
+            )
+            self.workspace_digest = str(
+                source.get("workspaceDigest")
+                if isinstance(source, dict)
+                else ""
+            )
+            self.client_specs = {
+                str(client.get("actor")): client
+                for client in manifest.get("clients", [])
+                if isinstance(client, dict)
+            }
+            self.actor_specs = {
+                str(actor.get("role")): actor
+                for actor in (actor_manifest or {}).get("actors", [])
+                if isinstance(actor, dict)
+            }
+            if set(self.client_specs) != set(CLIENT_ACTOR_ROLES):
+                raise GateError(
+                    "runtime manifest must allocate isolated Alice, Bob1, "
+                    "and Bob2 clients"
+                )
+            if set(self.actor_specs) != {"alice", "bob"}:
+                raise GateError(
+                    "actor manifest must contain canonical Alice and Bob identities"
+                )
+            self.report.manifest = manifest
+        else:
+            self.station_url = os.environ.get(
+                "CHAT_NATIVE_STATION_URL",
+                DEFAULT_STATION,
+            ).rstrip("/")
+            self.tested_commit = current_commit()
+            self.workspace_digest = current_workspace_digest()
+            self.client_specs: dict[str, dict[str, Any]] = {}
+            self.actor_specs: dict[str, dict[str, Any]] = {}
+        if not self.station_url:
+            raise GateError("Native multi-device Station URL is required")
         self.steps: list[dict[str, Any]] = []
-        self.clients: dict[str, TauriDriver] = {}
+        self.clients: dict[str, TauriSession] = {}
+        self.runtime_instances: list[TauriSession] = []
+        self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
 
@@ -122,6 +201,105 @@ class NativeMultiDeviceGate(AcceptanceGate):
             )
         )
 
+    def start_injected_client(self, actor: str) -> None:
+        if self.runtime_binding is None:
+            raise GateError("Native Desktop runtime binding is required")
+        actor_role = CLIENT_ACTOR_ROLES[actor]
+        spec = self.client_specs[actor]
+        client = self.runtime_binding.create_bound_session(
+            actor,
+            NativeLaunchOptions(
+                window_slot=tuple(CLIENT_ACTOR_ROLES).index(actor),
+                window_count=len(CLIENT_ACTOR_ROLES),
+            ),
+        )
+        self.runtime_instances.append(client)
+        expected_ptid = str(
+            self.actor_specs[actor_role].get("ptid") or ""
+        )
+        self.client_lifecycles.register(client, expected_ptid)
+        client.start()
+        self.client_lifecycles.mark_live(client)
+        self.register_driver(client)
+        client.wait_for_acceptance_harness(30)
+        configure_station(client, self.station_url)
+        account_ref = str(
+            self.actor_specs[actor_role].get("accountRef") or ""
+        )
+        account = account_ref.removeprefix("station-account:")
+        login = async_harness(
+            client,
+            "loginWithPassword",
+            {"account": account, "password": DEV_ACCOUNT_PASSWORD},
+            timeout=30,
+        )
+        if not (login or {}).get("authenticated"):
+            raise GateError(f"{actor} login did not authenticate")
+        self.client_lifecycles.mark_authenticated(client)
+        hydration = async_harness(
+            client,
+            "hydrateActiveActor",
+            {},
+            timeout=30,
+        )
+        ptid = str((hydration or {}).get("actorPtid") or "")
+        if ptid != expected_ptid:
+            raise GateError(
+                f"{actor} login identity mismatch: "
+                f"expected={expected_ptid} actual={ptid}"
+            )
+        if not client.get_current_url().startswith("tauri://localhost"):
+            raise GateError(
+                f"{actor} is not running in native Tauri WebView: "
+                f"{client.get_current_url()}"
+            )
+        self.clients[actor] = client
+        self.ptids[actor] = ptid
+        device = async_harness(client, "getRealtimeDevice", {})
+        device_id = str((device or {}).get("deviceId") or "")
+        if not device_id:
+            raise GateError(f"{actor}: messaging device ID is missing")
+        self.device_ids[actor] = device_id
+        self.report.add_actor(
+            ActorRuntime(
+                name=actor,
+                runtime=self.runtime_binding.cell_id,
+                port=client.port,
+                gateway_port=client.gateway_port,
+                profile=client.profile,
+                storage_root=client.storage_root,
+                pid=client.process_id,
+            )
+        )
+
+    def verify_fixture_ready(self) -> bool:
+        verify_runtime_fixture_ready(
+            self.manifest or {},
+            self.actor_manifest or {},
+        )
+        return True
+
+    def validate_source_identity(
+        self,
+        station_live: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self.runtime_binding is None or self.manifest is None:
+            return {}
+        identity = native_runtime_source_identity(
+            gate_id=self.gate_id,
+            manifest=self.manifest,
+            runtime_binding=self.runtime_binding,
+            station_live=station_live,
+        )
+        runtime_cell = identity["runtimeCell"]
+        self.report.runtime.update(
+            {
+                "runtimeCellRunId": runtime_cell.get("runId"),
+                "sourceIdentity": identity,
+            }
+        )
+        return identity
+
     def open_conversation(self) -> str:
         alice = self.clients["alice"]
         for client in self.clients.values():
@@ -177,6 +355,127 @@ class NativeMultiDeviceGate(AcceptanceGate):
             f"receipt={delivered.get('receipt', '')}",
         )
 
+    def wait_for_revoked_identity(self, actor: str) -> dict[str, Any]:
+        def revoked_identity() -> dict[str, Any] | None:
+            value = async_harness(
+                self.clients[actor],
+                "identityState",
+                {},
+            )
+            if not isinstance(value, dict):
+                return None
+            return (
+                value
+                if value.get("authenticated") is False
+                and value.get("phase") in {"revoked", "accountGate"}
+                and value.get("reason") == "revoked"
+                else None
+            )
+
+        return wait_until(
+            revoked_identity,
+            f"{actor} authoritative session revocation",
+        )
+
+    def cleanup_runtime(self) -> dict[str, Any]:
+        cleanup_errors: list[dict[str, str]] = []
+        if self.runtime_binding is not None:
+            cleanup_errors.extend(self.client_lifecycles.release_all())
+        cleanup_clients = (
+            ()
+            if self.runtime_binding is not None
+            else reversed(tuple(self.clients.values()))
+        )
+        for client in cleanup_clients:
+            try:
+                if self.runtime_binding is None:
+                    stop_client(client)
+                else:
+                    client.stop()
+            except Exception as error:
+                cleanup_errors.append(
+                    {
+                        "resource": f"client:{client.profile}",
+                        "error": str(error),
+                    }
+                )
+        if self.runtime_binding is not None:
+            for actor, client in self.clients.items():
+                try:
+                    saved = self.save_app_log(client, actor)
+                except Exception as error:
+                    saved = False
+                    cleanup_errors.append(
+                        {
+                            "resource": f"log:{client.profile}",
+                            "error": str(error),
+                        }
+                    )
+                if not saved and not any(
+                    error["resource"] == f"log:{client.profile}"
+                    for error in cleanup_errors
+                ):
+                    cleanup_errors.append(
+                        {
+                            "resource": f"log:{client.profile}",
+                            "error": "Native client log was not exported",
+                        }
+                    )
+            try:
+                cleanup = self.runtime_binding.finalize_cleanup(
+                    self.runtime_instances,
+                    self.client_specs,
+                )
+            except Exception as error:
+                cleanup = {
+                    "portsReleased": False,
+                    "processesReleased": False,
+                    "storageReleased": False,
+                    "logsReleased": False,
+                    "cleanupErrors": [
+                        {
+                            "resource": "runtime-binding",
+                            "error": str(error),
+                        }
+                    ],
+                }
+            binding_errors = cleanup.get("cleanupErrors")
+            if isinstance(binding_errors, list):
+                cleanup_errors.extend(
+                    error
+                    for error in binding_errors
+                    if isinstance(error, dict)
+                )
+            cleanup["cleanupErrors"] = cleanup_errors
+            cleanup["released"] = (
+                bool(cleanup.get("portsReleased"))
+                and bool(cleanup.get("processesReleased"))
+                and bool(cleanup.get("storageReleased"))
+                and bool(cleanup.get("logsReleased"))
+                and not cleanup_errors
+            )
+            self.cleanup_evidence = cleanup
+        else:
+            self.cleanup_evidence = {
+                "clientsStopped": sorted(self.clients),
+                "cleanupErrors": cleanup_errors,
+            }
+        self.report.runtime.update(
+            {
+                "steps": self.steps,
+                "cleanup": self.cleanup_evidence,
+            }
+        )
+        if (
+            self.runtime_binding is not None
+            and not self.cleanup_evidence.get("released")
+        ):
+            raise GateError(
+                "Native multi-device runtime cleanup failed: "
+                f"{json.dumps(self.cleanup_evidence, sort_keys=True)}"
+            )
+        return self.cleanup_evidence
+
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
@@ -226,13 +525,6 @@ class NativeMultiDeviceGate(AcceptanceGate):
             bob1 = self.clients["bob1"]
             enter_chat_page(alice)
             enter_chat_page(bob1)
-
-            for client in (alice, bob1):
-                try:
-                    gateway_command(client, "messaging_drain", {"batch_limit": 100})
-                except Exception:
-                    pass
-            time.sleep(2)
 
             # Retry createDirectConversation: bob1's lifecycle worker must complete
             # device enrollment on Station before the peer can be resolved.
@@ -288,10 +580,17 @@ class NativeMultiDeviceGate(AcceptanceGate):
                 lambda: self.start_client("bob2"),
                 "bob2",
             )
+            bob1_revoked = self.step(
+                "client.session-revoked",
+                lambda: self.wait_for_revoked_identity("bob1"),
+                "bob1",
+            )
+            self.client_lifecycles.mark_auth_revoked(bob1)
             self.assert_condition(
                 "session_handoff",
                 self.ptids["bob1"] == self.ptids["bob2"]
                 and self.device_ids.get("bob1") != self.device_ids.get("bob2"),
+                json.dumps(bob1_revoked, sort_keys=True),
             )
 
             # Phase 3: bob2 proves enrollment is operational by successfully
