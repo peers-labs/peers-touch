@@ -51,17 +51,17 @@ func TestAgentUpdateRebasesLiveBindingsAndPublishesInvalidation(t *testing.T) {
 	tombstonedAt := now.Add(-time.Minute)
 	bindings := []persistence.AgentCapabilityBinding{
 		{
-			BindingID: "binding-live-1", Ptid: agent.OwnerActorID, AgentID: agent.ID,
+			BindingID: "binding-live-1", Ptid: agent.OwnerActorPTID, AgentID: agent.ID,
 			CapabilityID: "builtin.search", CapabilityVersion: "1",
 			Enabled: true, AgentVersion: 1, Revision: 4, UpdatedAt: now,
 		},
 		{
-			BindingID: "binding-live-2", Ptid: agent.OwnerActorID, AgentID: agent.ID,
+			BindingID: "binding-live-2", Ptid: agent.OwnerActorPTID, AgentID: agent.ID,
 			CapabilityID: "builtin.memory", CapabilityVersion: "1",
 			Enabled: true, AgentVersion: 1, Revision: 8, UpdatedAt: now,
 		},
 		{
-			BindingID: "binding-deleted", Ptid: agent.OwnerActorID, AgentID: agent.ID,
+			BindingID: "binding-deleted", Ptid: agent.OwnerActorPTID, AgentID: agent.ID,
 			CapabilityID: "builtin.deleted", CapabilityVersion: "1",
 			Enabled: true, AgentVersion: 1, Revision: 3, UpdatedAt: now,
 			TombstonedAt: &tombstonedAt,
@@ -72,10 +72,10 @@ func TestAgentUpdateRebasesLiveBindingsAndPublishesInvalidation(t *testing.T) {
 	}
 
 	updated, err := service.UpdateAgent(context.Background(), domain.AgentUpsertOptions{
-		ActorID: agent.OwnerActorID,
-		AgentID: agent.ID,
-		Name:    "Updated Agent",
-		Version: agent.Version,
+		ActorPTID: agent.OwnerActorPTID,
+		AgentID:   agent.ID,
+		Name:      "Updated Agent",
+		Version:   agent.Version,
 	})
 	if err != nil {
 		t.Fatalf("update agent: %v", err)
@@ -125,7 +125,7 @@ func TestAgentUpdateRollsBackWhenBindingRebaseFails(t *testing.T) {
 	service := NewAgentService()
 	agent := seedAgentServiceTestAgent(t, db)
 	if err := db.Create(&persistence.AgentCapabilityBinding{
-		BindingID: "binding-live", Ptid: agent.OwnerActorID, AgentID: agent.ID,
+		BindingID: "binding-live", Ptid: agent.OwnerActorPTID, AgentID: agent.ID,
 		CapabilityID: "builtin.search", CapabilityVersion: "1",
 		Enabled: true, AgentVersion: 1, Revision: 1, UpdatedAt: time.Now().UTC(),
 	}).Error; err != nil {
@@ -142,10 +142,10 @@ func TestAgentUpdateRollsBackWhenBindingRebaseFails(t *testing.T) {
 	}
 
 	_, err := service.UpdateAgent(context.Background(), domain.AgentUpsertOptions{
-		ActorID: agent.OwnerActorID,
-		AgentID: agent.ID,
-		Name:    "Must Roll Back",
-		Version: agent.Version,
+		ActorPTID: agent.OwnerActorPTID,
+		AgentID:   agent.ID,
+		Name:      "Must Roll Back",
+		Version:   agent.Version,
 	})
 	if !isAgentServiceError(err, errcode.AgentInternal) {
 		t.Fatalf("expected binding rebase failure, got %v", err)
@@ -185,7 +185,7 @@ func TestAgentUpdatePreflightConflictReturnsTypedPayloadWithoutStaleMutation(t *
 	}
 
 	_, err := service.UpdateAgent(context.Background(), domain.AgentUpsertOptions{
-		ActorID:    agent.OwnerActorID,
+		ActorPTID:  agent.OwnerActorPTID,
 		AgentID:    agent.ID,
 		Name:       "Stale Agent",
 		Title:      "Stale Title",
@@ -235,7 +235,7 @@ func TestAgentUpdateCASLostRaceReturnsAuthoritativeRevisionWithoutStaleMutation(
 	}
 
 	_, err := service.UpdateAgent(context.Background(), domain.AgentUpsertOptions{
-		ActorID:    agent.OwnerActorID,
+		ActorPTID:  agent.OwnerActorPTID,
 		AgentID:    agent.ID,
 		Name:       "Stale Agent",
 		Title:      "Stale Title",
@@ -276,10 +276,10 @@ func TestConcurrentAgentUpdatesAllowOneCASWinner(t *testing.T) {
 		go func() {
 			<-start
 			_, updateErr := service.UpdateAgent(context.Background(), domain.AgentUpsertOptions{
-				ActorID: agent.OwnerActorID,
-				AgentID: agent.ID,
-				Name:    name,
-				Version: agent.Version,
+				ActorPTID: agent.OwnerActorPTID,
+				AgentID:   agent.ID,
+				Name:      name,
+				Version:   agent.Version,
 			})
 			results <- updateErr
 		}()
@@ -366,14 +366,14 @@ func seedAgentServiceTestAgent(t *testing.T, db *gorm.DB) persistence.Agent {
 	t.Helper()
 	now := time.Now().UTC()
 	agent := persistence.Agent{
-		ID:           "agent-1",
-		Name:         "Original Agent",
-		ThinkingMode: string(domain.ThinkingModeAuto),
-		Visibility:   string(domain.AgentVisibilityPrivate),
-		OwnerActorID: "ptid:person:owner",
-		Version:      1,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:             "agent-1",
+		Name:           "Original Agent",
+		ThinkingMode:   string(domain.ThinkingModeAuto),
+		Visibility:     string(domain.AgentVisibilityPrivate),
+		OwnerActorPTID: "ptid:person:owner",
+		Version:        1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := db.Create(&agent).Error; err != nil {
 		t.Fatalf("seed agent: %v", err)

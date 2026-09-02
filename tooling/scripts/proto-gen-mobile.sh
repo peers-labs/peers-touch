@@ -5,7 +5,7 @@ PROJECT_ROOT=$(cd "$(dirname "$0")/../.."; pwd)
 PROTO_ROOT="$PROJECT_ROOT/model"
 ANDROID_OUT="$PROJECT_ROOT/apps/mobile/android/app/src/main/java"
 IOS_OUT="$PROJECT_ROOT/apps/mobile/ios/PeersTouch/Core/Proto"
-WEB_TS_OUT="$PROJECT_ROOT/apps/mobile/src/gen/proto"
+WEB_TS_OUT="${PT_MOBILE_WEB_PROTO_OUT:-$PROJECT_ROOT/apps/mobile/src/gen/proto}"
 PROTOC_GEN_ES="$PROJECT_ROOT/apps/mobile/node_modules/.bin/protoc-gen-es"
 
 echo "=== Peers Touch Mobile Proto Generation ==="
@@ -101,19 +101,39 @@ generate_web_ts() {
         return 1
     fi
 
-    rm -rf "$WEB_TS_OUT"
-    mkdir -p "$WEB_TS_OUT"
+    WEB_TS_STAGE=$(mktemp -d)
+    trap 'rm -rf "$WEB_TS_STAGE"' RETURN
 
     for file in $PROTO_FILES; do
         REL_PATH=${file#$PROTO_ROOT/}
         echo "  $REL_PATH"
         protoc \
             --plugin=protoc-gen-es="$PROTOC_GEN_ES" \
-            --es_out="$WEB_TS_OUT" \
+            --es_out="$WEB_TS_STAGE" \
             --es_opt=target=ts \
             -I"$PROTO_ROOT" \
             "$file"
     done
+
+    while IFS= read -r -d '' generated_file; do
+        relative_path=${generated_file#$WEB_TS_STAGE/}
+        destination="$WEB_TS_OUT/$relative_path"
+        if [ -f "$destination" ] && cmp -s "$generated_file" "$destination"; then
+            continue
+        fi
+        perl -0pi -e 's/\n*\z/\n/' "$generated_file"
+        mkdir -p "$(dirname "$destination")"
+        cp "$generated_file" "$destination"
+    done < <(find "$WEB_TS_STAGE" -type f -name '*_pb.ts' -print0)
+
+    if [ -d "$WEB_TS_OUT" ]; then
+        while IFS= read -r -d '' existing_file; do
+            relative_path=${existing_file#$WEB_TS_OUT/}
+            if [ ! -f "$WEB_TS_STAGE/$relative_path" ]; then
+                rm "$existing_file"
+            fi
+        done < <(find "$WEB_TS_OUT" -type f -name '*_pb.ts' -print0)
+    fi
 
     echo "Web TypeScript generation complete."
     echo ""

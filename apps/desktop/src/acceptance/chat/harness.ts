@@ -255,9 +255,9 @@ export function installAcceptanceHarness(): void {
         ({ lifecycle }) => lifecycle.state === 'ready' && lifecycle.authenticated,
         'authenticated identity lifecycle',
       );
-      await installDeferredAppRuntimeProjections();
-      await hydrateSocialForActiveActor();
       const actorPtid = activeActorPtid();
+      await installDeferredAppRuntimeProjections(actorPtid);
+      await hydrateSocialForActiveActor();
       return {
         authenticated: true,
         actorPtid: actorPtid,

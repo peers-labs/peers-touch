@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use crate::application::agent_workspace::{self, WorkspaceCleanScope};
 use crate::contracts::{
-    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentPackageExportInput,
-    AgentPackageImportInput, AgentSearchInput, AgentSelectInput, AgentUpdateInput,
-    AgentWorkspaceCleanInput, AgentWorkspaceInfoInput, StubPayload,
+    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentSelectInput,
+    AgentUpdateInput, AgentWorkspaceCleanInput, AgentWorkspaceInfoInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 
@@ -112,26 +111,6 @@ pub fn agents_duplicate(
 }
 
 #[tauri::command]
-pub fn agents_export_package(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-    input: AgentPackageExportInput,
-) -> AppResult<StubPayload> {
-    let actor_ptid = actor_ptid_for_cmd(&state, &window);
-    application_agents::agents_export_package(&actor_ptid, input)
-}
-
-#[tauri::command]
-pub fn agents_import_package(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-    input: AgentPackageImportInput,
-) -> AppResult<StubPayload> {
-    let actor_ptid = actor_ptid_for_cmd(&state, &window);
-    application_agents::agents_import_package(&actor_ptid, input)
-}
-
-#[tauri::command]
 pub fn agents_search(
     state: State<'_, Arc<AppState>>,
     window: Window,
@@ -139,16 +118,6 @@ pub fn agents_search(
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
     application_agents::agents_search(&actor_ptid, input)
-}
-
-#[tauri::command]
-pub fn agents_list_sessions(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-    input: AgentIdInput,
-) -> AppResult<StubPayload> {
-    let actor_ptid = actor_ptid_for_cmd(&state, &window);
-    application_agents::agents_list_sessions(&actor_ptid, input)
 }
 
 #[tauri::command]

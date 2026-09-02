@@ -1,10 +1,51 @@
-import type { ChatMessage, KnowledgeChunkInfo, ErrorResolutionAction } from '../chat';
+import type {
+  BudgetExhaustionKind,
+  BudgetNotice,
+  ChatMessage,
+  KnowledgeChunkInfo,
+  ErrorResolutionAction,
+} from '../chat';
 import type { TurnStreamEvent, StreamingAccumulator } from './types';
 import { useInterventionStore } from '../intervention';
 import type { InterventionType } from '../intervention';
 
 function s(v: unknown): string {
   return typeof v === 'string' ? v : v != null ? String(v) : '';
+}
+
+export const BUDGET_ERROR_TYPE = 'TOOL_LOOP_BUDGET_EXHAUSTED';
+
+function budgetKind(reason: string): BudgetExhaustionKind {
+  if (reason.includes('tool_call')) return 'tool_calls';
+  if (reason.includes('wall_time')) return 'wall_time';
+  if (reason.includes('attempt')) return 'attempts';
+  if (reason.includes('agent_step')) return 'agent_steps';
+  if (reason.includes('input_token')) return 'input_tokens';
+  if (reason.includes('output_token')) return 'output_tokens';
+  if (reason.includes('attachment')) return 'attachments';
+  if (reason.includes('cost')) return 'cost';
+  return 'unknown';
+}
+
+export function projectBudgetNotice(data: Record<string, unknown>): BudgetNotice | undefined {
+  const errorType = s(data.error_type || data.errorType || data.type);
+  const localeKey = s(data.locale_key || data.localeKey);
+  const details = data.details && typeof data.details === 'object'
+    ? data.details as Record<string, unknown>
+    : {};
+  const reason = s(details.reason || data.reason || data.terminal_reason || data.terminalReason);
+  const budget_exhausted = errorType === BUDGET_ERROR_TYPE
+    || localeKey === 'agent.errors.toolLoopBudgetExhausted'
+    || reason.includes('exhausted');
+  if (!budget_exhausted) return undefined;
+
+  return {
+    kind: budgetKind(reason),
+    reason,
+    limit: s(details.limit) || undefined,
+    consumed: s(details.consumed) || undefined,
+    localeKey: localeKey || 'chat.message.budget.exhausted',
+  };
 }
 
 export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): ChatMessage {
@@ -61,11 +102,14 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       return { ...msg, lastEventAt: Date.now() };
     }
 
+    case 'budget_exhausted':
     case 'error': {
       const errMsg = s(d.error) || 'Unknown error';
+      const budgetNotice = projectBudgetNotice(d);
       return {
         ...msg,
-        error: errMsg,
+        error: budgetNotice?.localeKey || errMsg,
+        budgetNotice: budgetNotice ?? msg.budgetNotice,
         terminalStatus: 'failed',
         errorDetail: s(d.detail),
         resolution: (d.resolution && typeof d.resolution === 'object' ? d.resolution as ErrorResolutionAction : null),
@@ -130,6 +174,7 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
     case 'snapshot': {
       const status = s(d.status).toLowerCase();
       const terminalReason = s(d.terminal_reason || d.terminalReason);
+      const budgetNotice = projectBudgetNotice(d);
       const hasSnapshotText = typeof d.text === 'string';
       const terminalStatus = ['completed', 'failed', 'cancelled', 'interrupted'].includes(status)
         ? status as NonNullable<ChatMessage['terminalStatus']>
@@ -148,6 +193,7 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
           status === 'failed' || status === 'cancelled' || status === 'interrupted'
             ? terminalReason || msg.errorDetail
             : msg.errorDetail,
+        budgetNotice: budgetNotice ?? msg.budgetNotice,
         terminalStatus,
         loading: status === 'running',
         lastEventAt: Date.now(),
@@ -179,6 +225,7 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
 export function isTerminalEvent(event: TurnStreamEvent): boolean {
   return event.event === 'done'
     || event.event === 'error'
+    || event.event === 'budget_exhausted'
     || event.event === 'cancelled'
     || event.event === 'queued'
     || event.event === 'admission_replayed';
