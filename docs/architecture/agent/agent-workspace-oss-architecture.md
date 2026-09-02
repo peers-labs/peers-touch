@@ -1,6 +1,12 @@
 # Agent Workspace OSS 托管与配置拆解架构
 
 > Agent 资源存储架构调整：Workspace 上移 Station 用 OSS 托管，config_json 拆解为结构化表，支持双端同步。
+>
+> **Capability binding supersession (2026-08-28)**: 本文第 4 节中的
+> `AgentKnowledgeBinding` / `AgentSkillBinding` / `AgentMcpBinding` 写入 API
+> 已由 `modern-chat-agent/decisions.md` 的 MCA-D15/MCA-D15K 取代。当前唯一
+> binding authority 是 `capability.proto` 中的 `AgentCapabilityBinding`；
+> 旧表和 `config_json` 字段仅作为受限迁移输入，不再提供 mutation contract。
 
 ---
 

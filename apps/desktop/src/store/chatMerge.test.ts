@@ -74,4 +74,111 @@ describe('mergeServerMessages', () => {
     expect(merged.map((m) => m.id)).toEqual(['temp-user-1', 'temp-assistant-1']);
     expect(merged[1].error).toBe('runtime unavailable');
   });
+
+  it.each([
+    ['cancelled', true, undefined],
+    ['failed', false, 'provider failed'],
+    ['interrupted', false, 'station restarted'],
+  ] as const)(
+    'preserves an immediate authoritative %s terminal fact when sync is stale',
+    (terminalStatus, cancelled, error) => {
+      const current = [
+        msg('a1', 'assistant', 'partial answer', {
+          loading: false,
+          cancelled,
+          terminalStatus,
+          error,
+          errorDetail: error,
+        }),
+      ];
+      const server = [
+        msg('a1', 'assistant', 'persisted partial answer', { loading: true }),
+      ];
+
+      const [merged] = mergeServerMessages(current, server);
+
+      expect(merged).toMatchObject({
+        loading: false,
+        cancelled,
+        terminalStatus,
+      });
+      if (error) {
+        expect(merged.error).toBe(error);
+        expect(merged.errorDetail).toBe(error);
+      }
+    },
+  );
+
+  it('keeps the authoritative server terminal over a stale local terminal', () => {
+    const current = [
+      msg('assistant-1', 'assistant', 'stale partial response', {
+        turnId: 'turn-1',
+        loading: false,
+        terminalStatus: 'failed',
+        error: 'provider failed',
+        errorDetail: 'provider failed',
+      }),
+    ];
+    const server = [
+      msg('assistant-1', 'assistant', '', {
+        turnId: 'turn-1',
+        loading: false,
+        terminalStatus: 'interrupted',
+      }),
+    ];
+
+    const [merged] = mergeServerMessages(current, server);
+
+    expect(merged).toMatchObject({
+      content: '',
+      loading: false,
+      terminalStatus: 'interrupted',
+    });
+    expect(merged.cancelled).not.toBe(true);
+    expect(merged.error).toBeUndefined();
+    expect(merged.errorDetail).toBeUndefined();
+  });
+
+  it('carries a recovered cancelled terminal fact to a persisted message with the same turn', () => {
+    const current = [
+      msg('recovered-turn-1', 'assistant', 'partial answer', {
+        turnId: 'turn-1',
+        loading: false,
+        cancelled: true,
+        terminalStatus: 'cancelled',
+      }),
+    ];
+    const server = [
+      msg('assistant-1', 'assistant', 'persisted partial answer', {
+        turnId: 'turn-1',
+        loading: true,
+      }),
+    ];
+
+    const merged = mergeServerMessages(current, server);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      id: 'assistant-1',
+      turnId: 'turn-1',
+      loading: false,
+      cancelled: true,
+      terminalStatus: 'cancelled',
+    });
+  });
+
+  it('retains a recovered terminal message while Station message sync is empty', () => {
+    const current = [
+      msg('recovered-turn-1', 'assistant', 'partial answer', {
+        turnId: 'turn-1',
+        loading: false,
+        cancelled: true,
+        terminalStatus: 'cancelled',
+      }),
+    ];
+
+    const merged = mergeServerMessages(current, []);
+
+    expect(merged).toEqual(current);
+  });
 });

@@ -61,6 +61,49 @@ start_compose_station() {
     up -d $build_flag postgres station
 }
 
+start_source_station() {
+  local runtime_conf_dir="$PT_DEV_DATA/station-conf"
+  local runtime_db="$PT_DEV_DATA/station.db"
+  local runtime_identity="./data/${PT_DEV_PROFILE}-libp2p.key"
+  local runtime_oss="$PT_DEV_DATA/oss"
+  local auth_secret_file="$PT_DEV_DATA/auth-secret"
+
+  mkdir -p "$runtime_conf_dir" "$runtime_oss"
+  cp "$STATION_DIR"/conf/*.yml "$runtime_conf_dir/"
+
+  RUNTIME_DB="$runtime_db" \
+  RUNTIME_IDENTITY="$runtime_identity" \
+  RUNTIME_PORT="$STATION_PORT" \
+  RUNTIME_BASE_URL="$STATION_URL" \
+  perl -pi -e '
+    s#/tmp/peers-touch-local\.db#$ENV{RUNTIME_DB}#g;
+    s#\./data/libp2p\.key#$ENV{RUNTIME_IDENTITY}#g;
+    s#address: :18080#address: :$ENV{RUNTIME_PORT}#g;
+    s#http://127\.0\.0\.1:18080#$ENV{RUNTIME_BASE_URL}#g;
+  ' "$runtime_conf_dir"/*.yml
+
+  if [[ ! -s "$auth_secret_file" ]]; then
+    umask 077
+    openssl rand -hex 32 > "$auth_secret_file"
+  fi
+
+  echo "[INFO] Station mode: local source"
+  echo "       URL     : $STATION_URL"
+  echo "       Config  : $runtime_conf_dir/peers-sqlite.yml"
+  echo "       Database: $runtime_db"
+  echo "       Log     : $STATION_LOG_FILE"
+
+  (
+    cd "$STATION_DIR"
+    PEERS_AUTH_SECRET="$(cat "$auth_secret_file")" \
+    PEERS_NODE_LABEL="${PT_STATION_NAME:-local}" \
+    PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH="$runtime_oss" \
+    nohup go run . --config="$runtime_conf_dir/peers-sqlite.yml" \
+      >"$STATION_LOG_FILE" 2>&1 &
+    echo $! > "$STATION_PID_FILE"
+  )
+}
+
 if [[ "$STATION_MODE" == "remote" ]]; then
   skip_deploy="${PT_STATION_SKIP_DEPLOY:-false}"
 
@@ -97,8 +140,6 @@ if [[ "$STATION_MODE" == "remote" ]]; then
   exit 0
 fi
 
-# Local mode is compose-managed so `make station` owns the Station+Postgres
-# runtime dependency closure instead of relying on an external localhost DB.
 if station_is_ready; then
   echo "[INFO] Station already running: $STATION_URL"
   exit 0
@@ -119,10 +160,22 @@ if [[ -f "$STATION_PID_FILE" ]]; then
   fi
 fi
 
-start_compose_station
+case "$STATION_MODE" in
+  local)
+    start_source_station
+    ;;
+  compose)
+    start_compose_station
+    ;;
+  *)
+    echo "[ERROR] Unsupported PT_STATION_MODE: $STATION_MODE"
+    echo "        Expected one of: local, compose, remote"
+    exit 1
+    ;;
+esac
 
 # Wait
-for _ in {1..40}; do
+for _ in {1..120}; do
   if station_is_ready; then
     echo "[OK] Station ready: $STATION_URL"
     exit 0

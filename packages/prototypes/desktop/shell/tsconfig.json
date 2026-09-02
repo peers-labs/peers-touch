@@ -4,6 +4,13 @@
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
+    "baseUrl": ".",
+    "paths": {
+      "@lobehub/ui": ["./node_modules/@lobehub/ui"],
+      "antd": ["./node_modules/antd"],
+      "lucide-react": ["./node_modules/lucide-react"],
+      "react-layout-kit": ["./node_modules/react-layout-kit"]
+    },
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

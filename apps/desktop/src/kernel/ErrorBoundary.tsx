@@ -1,4 +1,4 @@
-import { Component, type ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 import type { i18n as I18nInstance } from 'i18next';
 import { log } from '../utils/logger';
 
@@ -18,7 +18,26 @@ export class ErrorBoundary extends Component<Props, State> {
     return { error };
   }
 
-  componentDidCatch(error: Error) {
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // #region debug-point A:react-component-stack
+    void fetch('http://127.0.0.1:7777/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'post-login-update-loop',
+        runId: 'post-fix',
+        hypothesisId: 'A',
+        location: 'kernel/ErrorBoundary.tsx:componentDidCatch',
+        msg: '[DEBUG] React render crash',
+        data: {
+          message: error.message,
+          stack: error.stack,
+          componentStack: info.componentStack,
+          hash: window.location.hash,
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     log.error('app', 'React render crash', { error: error.message, stack: error.stack });
   }
 
