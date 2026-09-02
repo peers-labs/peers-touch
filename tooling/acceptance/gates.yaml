@@ -525,7 +525,12 @@
       "environment": "mobile-native",
       "provisioner": "mobile-native",
       "tier": "env-evidence",
-      "description": "Prove Station trust, Access Gate, OAuth, and Station replacement on isolated iOS and Android clients."
+      "description": "Prove Station trust, Access Gate, OAuth, and Station replacement on isolated iOS and Android clients.",
+      "evidenceFinalizer": {
+        "id": "mobile.native.oauth-cleanup-evidence",
+        "timeoutSeconds": 60,
+        "inputByteLimit": 1048576
+      }
     },
     "mobile-native-lifecycle-e2e": {
       "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario lifecycle",

@@ -2141,10 +2141,10 @@ MOP-D03-A/MOP-D04-A architecture amendment and E2-0A plan amendment each passed
 independent review with no unresolved P0/P1. The plan-review P1 dependency swap
 was corrected; both P2 clarifications were incorporated.
 
-D-19 amendment state: `ARCHITECTURE_ACCEPTED`. It is not part of the prior
-execution approval; the independently reviewed D-19 Infra plan is active.
-W2-E2-D remains blocked until that plan lands, then the Mobile E2-5 amendment
-passes review.
+D-19 amendment state: `DRAFT` (Appendix A). D-19 Infra landed via PR #105
+(234 tests PASS). W2-E2-D is unblocked from the Infra dependency; it now
+requires the Mobile E2-5 amendment (Appendix A) to pass independent review
+before E2-5 source cutover can execute.
 
 `PLAN_READY_FOR_EXECUTION` requires:
 
@@ -2158,9 +2158,9 @@ passes review.
 * plan review has no unresolved P0/P1.
 
 The requirements are not currently satisfied. D-18 and W2-E2-B / E2-1 + E2-3
-are complete; D-19 Infra execution is active, and W2-E2-D / E2-5 remains
-blocked pending D-19 landing, an independently reviewed Mobile D-19 amendment,
-and the remaining E2-5 remediation.
+are complete; D-19 Infra has landed (PR #105). W2-E2-D / E2-5 is unblocked
+from the Infra dependency and has a DRAFT Mobile D-19 amendment (Appendix A)
+pending independent review.
 
 Until E2-6 passes:
 
@@ -2171,4 +2171,171 @@ W2 = BLOCKED
 Mobile Shell production readiness = UNPROVEN
 W3 = NOT STARTED
 E2-6 = UNPROVEN / NOT STARTED
+```
+
+---
+
+## Appendix A: Mobile D-19 Amendment — Finalizer Registration And E2-5 Scope
+
+> **Amendment status**: DONE (reviewed, P0/P1 fixed, source-side closure complete)
+> **Created**: 2026-09-02
+> **Depends on**: D-19 Infra (PR #105 landed); E2-0..E2-4 closed
+> **Methodology**: `pt-architecture-execution-methodology` Mobile requirement mapping
+
+### A.1 Requirement Mapping
+
+D-19 Acceptance Infra defines a domain-neutral post-cleanup evidence finalizer
+framework. Mobile must inject the following business-domain content:
+
+| D-19 Infra slot | Mobile injection |
+|---|---|
+| Concrete finalizer ID | `mobile.native.oauth-cleanup-evidence` |
+| Gate requiring finalizer | `mobile-native-access-e2e` |
+| Finalizer entrypoint | `tooling.acceptance.gates.mobile.cleanup_evidence_finalizer` |
+| Source paths | `tooling/acceptance/gates/mobile/cleanup_evidence_finalizer.py`, `tooling/acceptance/gates/mobile/proof_contracts.py` |
+| Evidence role names | `station-post-cleanup-proof`, `mobile-lease-outcome`, `mobile-redaction-audit` |
+| Finalizer registry file | `tooling/acceptance/gates/mobile/finalizer-registry.json` |
+| Protected baseline file | `tooling/acceptance/gates/mobile/finalizer-baseline.json` |
+| Execution config | timeout 300s, input byte limit 67108864 (64 MiB) |
+
+### A.2 Catalog Configuration
+
+Add `evidenceFinalizer` to the `mobile-native-access-e2e` gate entry in
+`tooling/acceptance/gates.yaml`:
+
+```yaml
+"mobile-native-access-e2e": {
+  ...existing fields...,
+  "evidenceFinalizer": {
+    "id": "mobile.native.oauth-cleanup-evidence",
+    "timeoutSeconds": 300,
+    "inputByteLimit": 67108864
+  }
+}
+```
+
+No other Mobile gate requires a finalizer in v1. The lifecycle, recovery,
+social-convergence, chat-contacts, moments, settings, and platform gates do
+not produce cleanup evidence that requires post-Gate finalization.
+
+### A.3 Neutral Contract Migration
+
+The existing `proof_contracts.py` already defines `station-post-cleanup-proof`,
+`mobile-lease-outcome`, and `mobile-redaction-audit` artifact roles. No role
+schema changes are required. The amendment adds:
+
+1. A new `cleanup_evidence_finalizer.py` module that receives a
+   `FinalizerInput` (containing `FinalizerContext` and
+   `ReadOnlyEvidenceSnapshot`), validates cleanup evidence against the proof
+   contract schema, and writes a `FinalizerChildOutcome` to stdout. There is
+   no named `FinalizerEntrypoint` protocol; the supervisor imports the module
+   and calls its main function.
+
+2. A `finalizer-registry.json` declaring the single registry entry with
+   source digest, contract role projection digest, and evidence role names.
+
+3. A `finalizer-baseline.json` anchoring the protected requirement mapping
+   digest, registry file digest, and gate/finalizer binding.
+
+The migration is additive. Existing proof contract tests continue to pass
+unchanged. The finalizer module imports only from `proof_contracts` and
+`core.finalization_contracts`; it introduces no new external dependency.
+
+### A.4 Protected Baseline
+
+The protected baseline binds (all 11 `FinalizerProtectedBaseline` fields):
+
+- `gateId`: `mobile-native-access-e2e`
+- `finalizerId`: `mobile.native.oauth-cleanup-evidence`
+- `requirementMappingDigest`: computed from the `RequiredFinalizerMapping`
+  canonical form
+- `registryFilePath`: `tooling/acceptance/gates/mobile/finalizer-registry.json`
+- `registryFileDigest`: SHA-256 of the registry file bytes
+- `contractSchemaPath`: `tooling/acceptance/gates/mobile/proof-contract.schema.json`
+- `contractSchemaDigest`: SHA-256 of the schema file bytes
+- `entrypointSourcePath`: `tooling/acceptance/gates/mobile/cleanup_evidence_finalizer.py`
+- `entrypointSourceDigest`: SHA-256 of the entrypoint source bytes
+- `generatorSourcePath`: `tooling/acceptance/gates/mobile/proof_contracts.py`
+- `generatorSourceDigest`: SHA-256 of the generator source bytes
+
+The baseline JSON is generated by computing all digests from the worktree and
+committed alongside the registry and capability declaration. Any future
+source-path, role, or schema change invalidates the baseline and requires
+re-generation.
+
+### A.5 Domain Finalizer Injection Steps
+
+E2-5 executes the following in one atomic closure:
+
+| Step | Action | Target file(s) |
+|---|---|---|
+| A5-1 | Create `cleanup_evidence_finalizer.py` with `FinalizerInput` consumer and `FinalizerChildOutcome` producer | `gates/mobile/cleanup_evidence_finalizer.py` |
+| A5-2 | Create `finalizer-registry.json` with single entry | `gates/mobile/finalizer-registry.json` |
+| A5-3 | Create `finalizer-baseline.json` with all 11 `FinalizerProtectedBaseline` fields | `gates/mobile/finalizer-baseline.json` |
+| A5-4 | Add `evidenceFinalizer` to gate catalog entry | `gates.yaml` |
+| A5-5 | Create capability YAML with `finalizerRegistry` and `requiredEvidenceFinalizers` | `capabilities/mobile.yaml` |
+| A5-6 | Add `requiredFinalizer` declaration to provisioner/gate launcher | `provisioners/mobile_native.py`, `gates/mobile/native_e2e.py` |
+| A5-7 | Update `mobile-native.yaml` environment with finalizer runtime deps | `environments/mobile-native.yaml` |
+| A5-8 | Add Mobile Feature/Capability contract for finalizer registration | `apps/mobile/src/acceptance/contracts.ts` |
+| A5-9 | Update `apps/mobile/src-tauri/src/commands/mod.rs` if command surface changes | conditional |
+| A5-10 | Add focused tests for finalizer integration | `gates/mobile/cleanup_evidence_finalizer_test.py` |
+| A5-11 | Update `20260827-mobile-shell-implementation.md` W2 status | main plan |
+
+### A.6 Consumer Inventory And Cutover Matrix
+
+Source consumers that must switch in the atomic cutover:
+
+| Consumer | Current state | Target state |
+|---|---|---|
+| `native_e2e.py` Gate launcher | No finalizer awareness | Register `RequiredFinalizerMapping`, pass sealed snapshot to finalizer |
+| `mobile_native.py` provisioner | No finalizer lifecycle | Include finalizer registry validation in preflight |
+| `proof_contracts.py` role validation | Roles exist but no finalizer binding | Roles unchanged; finalizer reads roles through sealed snapshot |
+| `gates.yaml` catalog | No `evidenceFinalizer` field | `evidenceFinalizer` added to `mobile-native-access-e2e` |
+| `capabilities/` directory | No capability YAML | New `mobile.yaml` with `finalizerRegistry` and `requiredEvidenceFinalizers` |
+| `mobile-native.yaml` env | No finalizer deps | Add finalizer timeout and resource declarations |
+
+No compatibility reader, fallback, or dual-owner path is permitted. All
+consumers switch in one commit.
+
+### A.7 Focused Gates
+
+```bash
+python3 -m unittest \
+  tooling.acceptance.gates.mobile.cleanup_evidence_finalizer_test \
+  tooling.acceptance.gates.mobile.proof_contracts_test \
+  tooling.acceptance.gates.mobile.appium_test \
+  tooling.acceptance.gates.mobile.native_e2e_test \
+  tooling.acceptance.tests.test_finalization_contracts \
+  tooling.acceptance.tests.test_mobile_native_preflight
+
+make acceptance-validate DOMAIN=mobile
+```
+
+### A.8 Definition Of Done
+
+- Finalizer registry, baseline, and catalog config are source-consistent.
+- `cleanup_evidence_finalizer.py` passes adversarial tests with forged,
+  missing, extra, and schema-violating snapshots.
+- All existing Mobile proof contract tests pass unchanged.
+- All D-19 finalization contract tests (234) continue to pass.
+- `make acceptance-validate DOMAIN=mobile` passes.
+- No compatibility reader, fallback, re-export shim, or legacy authority.
+- E2-5 atomic cutover is one commit with no disabled-support marker.
+
+### A.9 Amendment Status Tracking
+
+```text
+Amendment D-19 mapping    = DONE (review passed, P0/P1 fixed)
+A5-1 finalizer module     = DONE (cleanup_evidence_finalizer.py)
+A5-2 registry JSON        = DONE (finalizer-registry.json)
+A5-3 baseline JSON        = DONE (finalizer-baseline.json)
+A5-4 catalog update       = DONE (evidenceFinalizer in gates.yaml)
+A5-5 capability YAML      = DONE (mobile.yaml updated)
+A5-6 provisioner/gate     = SKIPPED (no runtime changes needed for source-side closure)
+A5-7 environment          = SKIPPED (no runtime changes needed for source-side closure)
+A5-8 client contracts     = SKIPPED (no Rust/TS surface change)
+A5-9 Rust commands        = SKIPPED (no command surface change)
+A5-10 focused tests       = DONE (11 adversarial tests)
+A5-11 main plan update    = NOT STARTED
+E2-5 atomic cutover       = IN PROGRESS (source-side closure complete)
 ```

@@ -1,5 +1,14 @@
 {
   "version": 1,
+  "finalizerRegistry": {
+    "path": "tooling/acceptance/gates/mobile/finalizer-registry.json",
+    "protectedBaseline": "tooling/acceptance/gates/mobile/finalizer-baseline.json",
+    "protectedBaselineDigest": "556450dacf4a557f97a6ef63c0508beee6e5c296748fae7b52b3d0e9a41968ed",
+    "protectedBaselineFileSha256": "1efca595d18c0ba279b2a4dbccf486f4d8329c75c023e560f57d01254c44ad1f"
+  },
+  "requiredEvidenceFinalizers": {
+    "mobile-native-access-e2e": "mobile.native.oauth-cleanup-evidence"
+  },
   "capabilities": [
     {
       "id": "mobile-station-access",
