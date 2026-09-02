@@ -1,0 +1,37 @@
+{
+  "id": "agent-message-forward",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/desktop/src/components/messages/ForwardMessageModal.tsx",
+    "apps/desktop/src/components/messages/actions/registry.ts",
+    "apps/desktop/src/utils/forwardContent.ts",
+    "apps/desktop/src/utils/openAgentChatSession.ts",
+    "apps/desktop/src/store/chat.ts"
+  ],
+  "truth_sources": [
+    "Station Agent conversations",
+    "Station Agent messages"
+  ],
+  "visible_surfaces": [
+    {"type": "native-tauri", "route": "#/agent", "surface": "Agent message action and forward modal"},
+    {"type": "station-readback", "surface": "target Agent conversation history"}
+  ],
+  "required_gates": ["agent-native-message-forward-e2e"],
+  "acceptance": {
+    "service": [
+      "forward creates or selects a new target-Agent conversation through the production action",
+      "the serialized forwarded transcript is persisted as a user message in the target conversation"
+    ],
+    "visible": [
+      "the message action opens the forward modal",
+      "the user can select a different target Agent and complete forwarding",
+      "the destination conversation renders the forwarded transcript"
+    ]
+  },
+  "negative": [
+    "opening the modal alone must not prove forwarding",
+    "a source-store mutation without Station destination readback must not pass",
+    "the source and target Agent fixtures must be distinct"
+  ]
+}
