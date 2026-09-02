@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -74,3 +75,67 @@ def redact_value(value: Any) -> Any:
     if isinstance(value, str):
         return redact_text(value)
     return value
+
+
+def redact_text_with_values(text: str, secret_values: tuple[str, ...]) -> str:
+    redacted = redact_text(text)
+    for secret in secret_values:
+        if len(secret) >= 4:
+            redacted = redacted.replace(secret, REDACTED)
+    return redacted
+
+
+def redact_value_with_values(
+    value: Any,
+    secret_values: tuple[str, ...],
+) -> Any:
+    redacted = redact_value(value)
+    if isinstance(redacted, dict):
+        return {
+            key: redact_value_with_values(item, secret_values)
+            for key, item in redacted.items()
+        }
+    if isinstance(redacted, list):
+        return [
+            redact_value_with_values(item, secret_values)
+            for item in redacted
+        ]
+    if isinstance(redacted, str):
+        return redact_text_with_values(redacted, secret_values)
+    return redacted
+
+
+def redact_artifact_bytes(
+    value: bytes,
+    secret_values: tuple[str, ...] = (),
+) -> tuple[bytes, bool]:
+    explicit_secrets = tuple(
+        secret.encode("utf-8")
+        for secret in secret_values
+        if len(secret) >= 4
+    )
+    explicit_leak = any(secret in value for secret in explicit_secrets)
+    try:
+        original = value.decode("utf-8")
+    except UnicodeDecodeError:
+        if explicit_leak:
+            return f"{REDACTED}\n".encode("utf-8"), True
+        return value, False
+
+    try:
+        structured = json.loads(original)
+    except json.JSONDecodeError:
+        structured = None
+    else:
+        redacted_val = redact_value_with_values(structured, secret_values)
+        if redacted_val != structured:
+            encoded = (
+                json.dumps(redacted_val, indent=2, sort_keys=True, default=str)
+                + "\n"
+            ).encode("utf-8")
+            return encoded, True
+        return value, False
+
+    redacted = redact_text_with_values(original, secret_values)
+    encoded = redacted.encode("utf-8")
+    return encoded, encoded != value
