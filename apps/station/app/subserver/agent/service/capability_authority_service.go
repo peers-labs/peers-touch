@@ -867,7 +867,7 @@ func (s *CapabilityAuthorityService) publishBindingInvalidation(
 		EventID:    generateID("event"),
 		EventType:  string(domain.EventTypeAgentAuthorityInvalidated),
 		OccurredAt: s.now(),
-		ActorID:    binding.GetPtid(),
+		ActorPTID:  binding.GetPtid(),
 		Payload:    payload,
 		Metadata: map[string]string{
 			"agent_id":   binding.GetAgentId(),
@@ -916,7 +916,7 @@ func (s *CapabilityAuthorityService) publishManifestInvalidations(
 			EventID:    generateID("event"),
 			EventType:  string(domain.EventTypeAgentAuthorityInvalidated),
 			OccurredAt: s.now(),
-			ActorID:    agents[i].OwnerActorID,
+			ActorPTID:  agents[i].OwnerActorPTID,
 			Payload:    payload,
 			Metadata: map[string]string{
 				"agent_id":           agents[i].ID,
@@ -927,7 +927,7 @@ func (s *CapabilityAuthorityService) publishManifestInvalidations(
 			logger.Errorf(
 				ctx,
 				"failed to publish capability catalog invalidation: actor_id=%s agent_id=%s capability_id=%s capability_version=%s err=%v",
-				agents[i].OwnerActorID,
+					agents[i].OwnerActorPTID,
 				agents[i].ID,
 				manifest.GetCapabilityId(),
 				manifest.GetVersion(),

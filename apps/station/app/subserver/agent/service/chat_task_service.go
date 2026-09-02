@@ -435,7 +435,7 @@ func (s *ChatTaskService) settleInterruptedChatStep(
 		if err := tx.Where(
 			"id = ? AND ptid = ?",
 			task.ConversationID,
-			task.OwnerActorID,
+			task.OwnerActorPTID,
 		).First(&conversation).Error; err != nil {
 			return fmt.Errorf("load actor-owned chat conversation: %w", err)
 		}
