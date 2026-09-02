@@ -20,11 +20,13 @@ def runtime_manifest() -> dict[str, object]:
     return {
         "profile": {"resolvedName": "two"},
         "source": {"commit": SOURCE_COMMIT, "workspaceDigest": "clean"},
-        "station": {
-            "url": "http://station.example:18080",
-            "liveCommit": SOURCE_COMMIT[:12],
-            "protoDigest": PROTO_DIGEST,
-            "workspaceDigest": "clean",
+        "services": {
+            "station": {
+                "endpoint": "http://station.example:18080",
+                "liveCommit": SOURCE_COMMIT[:12],
+                "protocolDigest": PROTO_DIGEST,
+                "workspaceDigest": "clean",
+            },
         },
     }
 
