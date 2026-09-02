@@ -23,7 +23,7 @@ SENSITIVE_KEY_PARTS = (
 _SENSITIVE_ASSIGNMENT = re.compile(
     r"(?i)(\b(?:api[_-]?key|authorization|credential|password|passwd|"
     r"private[_-]?key|secret|session[_-]?token|token)\b\s*[:=]\s*)"
-    r"([\"']?)([^\"'\s,;}\]]+)([\"']?)"
+    rf"([\"']?)(?!{re.escape(REDACTED)})([^\"'\s,;}}\]]+)([\"']?)"
 )
 _BEARER_TOKEN = re.compile(r"(?i)(\bbearer\s+)[A-Za-z0-9._~+/=-]+")
 _PRIVATE_KEY = re.compile(
@@ -40,6 +40,12 @@ def _camel_to_snake(name: str) -> str:
 
 def is_sensitive_key(key: object) -> bool:
     normalized = _camel_to_snake(str(key).strip().replace("-", "_"))
+    if normalized in {
+        "fence_token",
+        "fence_tokens",
+        "max_concurrent_authorizations",
+    }:
+        return False
     if normalized.endswith(
         ("_ref", "_refs", "_reference", "_references")
     ):
@@ -127,10 +133,18 @@ def redact_artifact_bytes(
     except json.JSONDecodeError:
         structured = None
     else:
-        redacted_val = redact_value_with_values(structured, secret_values)
-        if redacted_val != structured:
+        redacted_value = redact_value_with_values(
+            structured,
+            secret_values,
+        )
+        if redacted_value != structured:
             encoded = (
-                json.dumps(redacted_val, indent=2, sort_keys=True, default=str)
+                json.dumps(
+                    redacted_value,
+                    indent=2,
+                    sort_keys=True,
+                    default=str,
+                )
                 + "\n"
             ).encode("utf-8")
             return encoded, True

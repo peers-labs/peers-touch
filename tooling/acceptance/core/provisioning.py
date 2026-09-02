@@ -1109,7 +1109,6 @@ def _validate_loaded_runtime_clients(
     return clients_by_id
 
 
-
 def require_runtime_service(
     manifest: dict[str, Any],
     service_id: str,
