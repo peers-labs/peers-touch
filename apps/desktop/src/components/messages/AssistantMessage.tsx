@@ -37,6 +37,7 @@ import { ThinkingIndicator } from './ThinkingBlock';
 import { chatMarkdownProps } from './markdownConfig';
 import { timeAgo, fullTime, downloadCodeBlock, downloadArtifact } from './shared';
 import { TTSControls } from '../chat/TTSControls';
+import { SourceAttributionBadges } from './SourceAttributionBadges';
 
 // --- Collect delegation results from message + tool calls ---
 
@@ -334,6 +335,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const sendMessage = useChatStore(s => s.sendMessage);
   const translateMessage = useChatStore(s => s.translateMessage);
   const openThread = usePortalStore(s => s.openThread);
+  const openTurnDetails = usePortalStore(s => s.openTurnDetails);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const operation = useChatStore((state) => {
     const current = state.operations[state.currentSessionKey];
@@ -388,6 +390,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const handleReloadSnapshot = useCallback(() => {
     void reloadTurnSnapshot(currentSessionKey);
   }, [currentSessionKey, reloadTurnSnapshot]);
+
+  const handleOpenTurnDetails = useCallback(() => {
+    if (message.turnId) openTurnDetails(message.id, message.turnId);
+  }, [message.id, message.turnId, openTurnDetails]);
 
   const handleDelAndRegenerate = useCallback(() => {
     deleteAndRegenerateMessage(message.id);
@@ -487,6 +493,43 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             compressionEnabled={!!activeChatConfig.enableContextCompression}
           />
 
+          {message.budgetNotice && (
+            <Flexbox
+              data-budget-notice
+              data-budget-kind={message.budgetNotice.kind}
+              gap={8}
+              style={{
+                border: `1px solid ${token.colorWarningBorder}`,
+                borderRadius: token.borderRadiusLG,
+                background: token.colorWarningBg,
+                color: token.colorWarningText,
+                marginBottom: 8,
+                padding: '10px 12px',
+              }}
+            >
+              <Flexbox horizontal align="center" gap={6}>
+                <AlertTriangle size={14} />
+                <strong>{t('chat.message.budget.title')}</strong>
+              </Flexbox>
+              <span style={{ fontSize: 12 }}>
+                {t(`chat.message.budget.kind.${message.budgetNotice.kind}`, {
+                  limit: message.budgetNotice.limit,
+                  consumed: message.budgetNotice.consumed,
+                })}
+              </span>
+              <Flexbox horizontal gap={8}>
+                <Button size="small" onClick={handleRetry}>
+                  {t('chat.message.budget.retry')}
+                </Button>
+                {message.turnId && (
+                  <Button size="small" type="text" onClick={handleOpenTurnDetails}>
+                    {t('chat.message.action.turnDetails')}
+                  </Button>
+                )}
+              </Flexbox>
+            </Flexbox>
+          )}
+
           {/* Tool calls block */}
           {message.toolCalls && message.toolCalls.length > 0 && (
             <ToolCallsBlock toolCalls={message.toolCalls} messageId={message.id} />
@@ -553,6 +596,13 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             </div>
           ) : null}
 
+          <div data-source-badges>
+            <SourceAttributionBadges
+              message={message}
+              onOpenDetails={message.turnId ? handleOpenTurnDetails : undefined}
+            />
+          </div>
+
           {/* TTS inline controls */}
           <TTSControls messageId={message.id} />
 
@@ -579,7 +629,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           )}
 
           {/* Error block */}
-          {message.error && (
+          {message.error && !message.budgetNotice && (
             <div
               className="selectable"
               style={{
@@ -670,6 +720,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             onDeleteAndRegenerate: handleDelAndRegenerate,
             onTranslate: () => translateMessage(message.id),
             onThread: () => openThread(currentSessionKey, message.id),
+            onTurnDetails: handleOpenTurnDetails,
             onReadAloud: () => {
               if (message.content) {
                 useTTSStore.getState().speak(message.id, message.content);

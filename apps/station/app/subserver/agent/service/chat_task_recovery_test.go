@@ -72,7 +72,7 @@ func TestRecoverRunningChatTasksSettlesDirectTurnAndSnapshot(t *testing.T) {
 			Title:          "Restart",
 			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-			OwnerActorID:   "ptid:person:owner",
+			OwnerActorPTID: "ptid:person:owner",
 			ConversationID: "conversation-restart",
 			CreatedAt:      now,
 			StartedAt:      now,
@@ -226,7 +226,7 @@ func TestRecoverRunningChatTasksConvergesAlreadyTerminalTurn(t *testing.T) {
 		&persistence.Conversation{ID: "conversation-terminal", AgentID: "agent-1", Ptid: "ptid:person:owner", Title: "Terminal", Status: "active", CreatedAt: now, UpdatedAt: now},
 		&persistence.AgentTurn{ID: "turn-terminal", ConversationID: "conversation-terminal", AgentID: "agent-1", Status: string(domain.TurnStatusCompleted), FinalResponse: &finalResponse, TerminalReason: "completed", StartedAt: now, EndedAt: &now},
 		&persistence.TurnAttempt{ID: "attempt-terminal", TurnID: "turn-terminal", AttemptIndex: 1, Status: string(domain.TurnStatusCompleted), StartedAt: now, EndedAt: &now},
-		&persistence.TaskRun{TaskID: "task-terminal", Surface: int32(model.TaskSurface_TASK_SURFACE_CHAT), Status: int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING), OwnerActorID: "ptid:person:owner", ConversationID: "conversation-terminal", CreatedAt: now, StartedAt: now, UpdatedAt: now},
+		&persistence.TaskRun{TaskID: "task-terminal", Surface: int32(model.TaskSurface_TASK_SURFACE_CHAT), Status: int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING), OwnerActorPTID: "ptid:person:owner", ConversationID: "conversation-terminal", CreatedAt: now, StartedAt: now, UpdatedAt: now},
 		&persistence.ExecutionStep{StepID: "step-terminal", TaskID: "task-terminal", AgentID: "agent-1", TurnID: "turn-terminal", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING), StartedAt: now},
 		&persistence.ExecutorLease{LeaseID: "lease-terminal", TaskID: "task-terminal", StepID: "step-terminal", ExecutorID: "station-old", ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED), Status: chatLeaseStatusActive, AcquiredAt: now, HeartbeatAt: now, ExpiresAt: now.Add(time.Minute)},
 	}

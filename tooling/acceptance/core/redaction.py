@@ -15,7 +15,30 @@ _SAFE_REFERENCE_SUFFIXES = (
     "_reference",
     "_references",
 )
-_SAFE_EXACT_KEYS = frozenset({"public_key", "public_keys"})
+_SAFE_EXACT_KEYS = frozenset(
+    {
+        "cache_tokens",
+        "context_tokens",
+        "fencing_token",
+        "has_token_accounting",
+        "idempotency_key_hash",
+        "input_tokens",
+        "locale_key",
+        "max_input_tokens",
+        "max_output_tokens",
+        "output_tokens",
+        "process_port_secret_canary",
+        "public_key",
+        "public_keys",
+        "reasoning_tokens",
+        "runtime_tuple_key",
+        "scenario_key",
+        "secret_leak_count",
+        "token_accounting_present",
+        "token_usage",
+        "tool_definition_tokens",
+    }
+)
 _SENSITIVE_KEY_TOKENS = frozenset(
     {
         "auth",

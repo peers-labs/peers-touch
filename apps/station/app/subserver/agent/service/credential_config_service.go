@@ -90,7 +90,7 @@ func (s *CredentialConfigService) setWithDB(
 			}
 
 			providerRecord = *newProviderRecord(ProviderCreateRequest{
-				ActorPTID: req.ActorPTID,
+				ActorPTID:  req.ActorPTID,
 				ProviderID: req.ProviderID,
 			})
 			if providerRecord.SourceType != "catalog" {
@@ -121,13 +121,13 @@ func (s *CredentialConfigService) setWithDB(
 			poolID = uuid.New().String()
 		}
 		cred := persistence.Credential{
-			ID:       poolID,
+			ID:        poolID,
 			ActorPTID: req.ActorPTID,
-			Provider: req.ProviderID,
-			AuthType: "api_key",
-			Source:   "auth_store",
-			Status:   "active",
-			Version:  1,
+			Provider:  req.ProviderID,
+			AuthType:  "api_key",
+			Source:    "auth_store",
+			Status:    "active",
+			Version:   1,
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "actor_ptid"}, {Name: "provider"}},

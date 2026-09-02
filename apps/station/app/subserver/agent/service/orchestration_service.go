@@ -556,7 +556,7 @@ func (s *OrchestrationService) executePendingDirectRunAfterCanvasReadiness(ctx c
 			Content: directRunUserPrompt(runtime),
 		}},
 		UserID: actorPTID,
-		Effort:    directRunReasoningEffort(runtime.Run.InputSnapshotJSON),
+		Effort: directRunReasoningEffort(runtime.Run.InputSnapshotJSON),
 	})
 	if callErr != nil {
 		failureEvents, finishErr := s.finishDirectRunFailure(ctx, db, runtime, fmt.Sprintf("DirectRun provider execution failed: %v", callErr))

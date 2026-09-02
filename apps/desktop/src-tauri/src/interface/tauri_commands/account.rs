@@ -17,6 +17,46 @@ use crate::application::auth::service as auth_service;
 use crate::application::key_exchange::device_install;
 use crate::application::session_resolver;
 
+fn auth_failure_to_stub(result: AppResult<AuthSessionPayload>) -> AppResult<StubPayload> {
+    match result.error {
+        Some(error) => AppResult::fail(error.code, error.message, error.details),
+        None => AppResult::fail(
+            ErrorCode::InternalError,
+            "account transition failed without error details",
+            None,
+        ),
+    }
+}
+
+fn account_transition_failure(stage: &str, message: impl Into<String>) -> AppResult<StubPayload> {
+    AppResult::fail(
+        ErrorCode::InternalError,
+        "Account switch failed after old session detachment",
+        Some(serde_json::json!({
+            "command": "account_switch",
+            "reason": "account_switch_failed_closed",
+            "stage": stage,
+            "detached": true,
+            "message": message.into(),
+        })),
+    )
+}
+
+fn run_account_switch_transition<P, T>(
+    prevalidate: impl FnOnce() -> Result<P, AppResult<StubPayload>>,
+    detach_old: impl FnOnce() -> Result<(), AppResult<StubPayload>>,
+    acquire_new: impl FnOnce(P) -> Result<T, AppResult<StubPayload>>,
+    persist_active: impl FnOnce(&T) -> Result<(), AppResult<StubPayload>>,
+    bind_new: impl FnOnce(&T) -> Result<(), AppResult<StubPayload>>,
+) -> Result<T, AppResult<StubPayload>> {
+    let prevalidated = prevalidate()?;
+    detach_old()?;
+    let prepared = acquire_new(prevalidated)?;
+    persist_active(&prepared)?;
+    bind_new(&prepared)?;
+    Ok(prepared)
+}
+
 #[tauri::command]
 pub fn account_list() -> AppResult<StubPayload> {
     application_account::account_list()
@@ -62,61 +102,94 @@ pub fn account_switch(
     window: Window,
 ) -> AppResult<StubPayload> {
     let switched_id = input.id.clone();
-    let result = application_account::account_switch(input);
-    if result.ok {
-        let actor_ptid = actor_ptid_for_account(&switched_id);
-        let Some(actor_ptid) = actor_ptid else {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "selected account has no canonical actor PTID",
-                None,
-            );
-        };
-        let restored = auth_service::auth_restore_session(state.inner());
-        let Some(session) = restored.data else {
-            return AppResult::fail(
-                restored
-                    .error
-                    .as_ref()
-                    .map(|error| error.code.clone())
-                    .unwrap_or(ErrorCode::Unauthorized),
-                restored
-                    .error
-                    .map(|error| error.message)
-                    .unwrap_or_else(|| "selected account session is unavailable".to_string()),
-                None,
-            );
-        };
-        if session.actor_ptid.as_deref() != Some(actor_ptid.as_str()) {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "selected account session PTID mismatch",
-                None,
-            );
-        }
-        let Some(token) = session.session_token else {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "selected account session token is unavailable",
-                None,
-            );
-        };
-        state.sessions.bind_exclusive(ActiveSession::new(
-            window.label(),
-            switched_id.clone(),
-            ActorRef::new_person(actor_ptid.clone()),
-            token,
-        ));
-        identity_event::emit(
-            &app,
-            IdentityChangedPayload {
-                reason: IdentityChangeReason::Switch,
-                actor_ptid: Some(actor_ptid),
-                login_method: None,
-            },
-        );
-    }
-    result
+    let prepared = match run_account_switch_transition(
+        || auth_service::prepare_account_switch_session(&switched_id).map_err(auth_failure_to_stub),
+        || {
+            let previous = state.sessions.unbind(window.label());
+            if let Some(previous) = previous {
+                crate::infrastructure::event_stream::stop(&previous.actor.ptid);
+                auth_service::deactivate_messaging_profile(state.inner(), &previous.account_id)
+                    .map_err(|error| account_transition_failure("detach_old_messaging", error))?;
+            }
+            Ok(())
+        },
+        |prevalidated| {
+            auth_service::acquire_account_switch_session(prevalidated).map_err(auth_failure_to_stub)
+        },
+        |prepared| {
+            let result = application_account::account_switch(input);
+            if !result.ok {
+                return Err(result);
+            }
+            auth_service::persist_prepared_account_switch_session(prepared)
+                .map_err(auth_failure_to_stub)
+        },
+        |prepared| {
+            auth_service::prepare_messaging_profile(
+                state.inner(),
+                &prepared.account_id,
+                &prepared.actor_ptid,
+            )
+            .map_err(|error| account_transition_failure("prepare_new_messaging", error))?;
+
+            let binding = state
+                .sessions
+                .try_bind_exclusive(ActiveSession::new(
+                    window.label(),
+                    prepared.account_id.clone(),
+                    ActorRef::new_person(prepared.actor_ptid.clone()),
+                    prepared.token.clone(),
+                ))
+                .map_err(|error| {
+                    let _ = auth_service::deactivate_messaging_profile(
+                        state.inner(),
+                        &prepared.account_id,
+                    );
+                    account_transition_failure("bind_new_session", error)
+                })?;
+
+            if let Err(error) = auth_service::activate_messaging_profile_worker(
+                state.inner(),
+                &prepared.account_id,
+                &prepared.token,
+            ) {
+                state.sessions.unbind(window.label());
+                crate::infrastructure::event_stream::stop(&prepared.actor_ptid);
+                let _ =
+                    auth_service::deactivate_messaging_profile(state.inner(), &prepared.account_id);
+                return Err(account_transition_failure("activate_new_messaging", error));
+            }
+
+            for kicked_session in binding.into_kicked() {
+                let payload = serde_json::json!({
+                    "reason": "takeover",
+                    "actor_ptid": kicked_session.actor.ptid,
+                });
+                if let Err(error) =
+                    app.emit_to(&kicked_session.window_label, SESSION_KICKED_EVENT, &payload)
+                {
+                    tracing::warn!(window = %kicked_session.window_label, error = %error, "account_switch: failed to emit local session kick");
+                }
+            }
+            Ok(())
+        },
+    ) {
+        Ok(prepared) => prepared,
+        Err(error) => return error,
+    };
+
+    identity_event::emit(
+        &app,
+        IdentityChangedPayload {
+            reason: IdentityChangeReason::Switch,
+            actor_ptid: Some(prepared.actor_ptid),
+            login_method: prepared.payload.login_method,
+        },
+    );
+    AppResult::success(StubPayload {
+        command: "account_switch".to_string(),
+        status: serde_json::json!({ "ok": true }).to_string(),
+    })
 }
 
 pub(crate) fn actor_ptid_for_account(account_id: &str) -> Option<String> {
@@ -461,4 +534,224 @@ pub fn account_begin_pin_recovery(window: Window, input: AccountIdInput) -> AppR
 #[tauri::command]
 pub fn account_reset_pin(window: Window, input: AccountResetPinInput) -> AppResult<StubPayload> {
     application_account::account_reset_pin(input, &window.label())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_account_switch_transition;
+    use crate::contracts::StubPayload;
+    use crate::error::{AppResult, ErrorCode};
+    use std::cell::RefCell;
+
+    fn failure(stage: &str) -> AppResult<StubPayload> {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            stage,
+            Some(serde_json::json!({ "stage": stage })),
+        )
+    }
+
+    #[test]
+    fn account_switch_prevalidates_before_detach_and_commits_after_detach() {
+        let order = RefCell::new(Vec::new());
+        let result: Result<&str, AppResult<StubPayload>> = run_account_switch_transition(
+            || {
+                order.borrow_mut().push("prevalidate");
+                Ok("prevalidated")
+            },
+            || {
+                order.borrow_mut().push("detach");
+                Ok(())
+            },
+            |prevalidated| {
+                assert_eq!(prevalidated, "prevalidated");
+                order.borrow_mut().push("acquire");
+                Ok("prepared")
+            },
+            |prepared| {
+                assert_eq!(*prepared, "prepared");
+                order.borrow_mut().push("persist_active");
+                Ok(())
+            },
+            |prepared| {
+                assert_eq!(*prepared, "prepared");
+                order.borrow_mut().push("bind_new");
+                Ok(())
+            },
+        );
+
+        assert_eq!(result.unwrap(), "prepared");
+        assert_eq!(
+            *order.borrow(),
+            vec![
+                "prevalidate",
+                "detach",
+                "acquire",
+                "persist_active",
+                "bind_new"
+            ]
+        );
+    }
+
+    #[test]
+    fn account_switch_prevalidation_failure_preserves_old_authority() {
+        let order = RefCell::new(Vec::new());
+        let result: Result<&str, AppResult<StubPayload>> = run_account_switch_transition(
+            || {
+                order.borrow_mut().push("prevalidate");
+                Err::<&str, _>(failure("prevalidate"))
+            },
+            || {
+                order.borrow_mut().push("detach");
+                Ok(())
+            },
+            |_| {
+                order.borrow_mut().push("acquire");
+                Ok("prepared")
+            },
+            |_| {
+                order.borrow_mut().push("persist_active");
+                Ok(())
+            },
+            |_| {
+                order.borrow_mut().push("bind_new");
+                Ok(())
+            },
+        );
+
+        assert!(result.is_err());
+        assert_eq!(*order.borrow(), vec!["prevalidate"]);
+    }
+
+    #[test]
+    fn account_switch_detach_failure_never_acquires_new_authority() {
+        let order = RefCell::new(Vec::new());
+        let result = run_account_switch_transition(
+            || {
+                order.borrow_mut().push("prevalidate");
+                Ok("prevalidated")
+            },
+            || {
+                order.borrow_mut().push("detach");
+                Err(failure("detach"))
+            },
+            |_| {
+                order.borrow_mut().push("acquire");
+                Ok(())
+            },
+            |_| {
+                order.borrow_mut().push("persist_active");
+                Ok(())
+            },
+            |_| {
+                order.borrow_mut().push("bind_new");
+                Ok(())
+            },
+        );
+
+        assert!(result.is_err());
+        assert_eq!(*order.borrow(), vec!["prevalidate", "detach"]);
+    }
+
+    #[test]
+    fn account_switch_acquisition_failure_never_persists_or_binds_new_authority() {
+        let order = RefCell::new(Vec::new());
+        let result: Result<&str, AppResult<StubPayload>> = run_account_switch_transition(
+            || {
+                order.borrow_mut().push("prevalidate");
+                Ok("prevalidated")
+            },
+            || {
+                order.borrow_mut().push("detach");
+                Ok(())
+            },
+            |_| {
+                order.borrow_mut().push("acquire");
+                Err(failure("acquire"))
+            },
+            |_| {
+                order.borrow_mut().push("persist_active");
+                Ok(())
+            },
+            |_| {
+                order.borrow_mut().push("bind_new");
+                Ok(())
+            },
+        );
+
+        assert!(result.is_err());
+        assert_eq!(*order.borrow(), vec!["prevalidate", "detach", "acquire"]);
+    }
+
+    #[test]
+    fn account_switch_persistence_failure_never_binds_new_authority() {
+        let order = RefCell::new(Vec::new());
+        let result = run_account_switch_transition(
+            || {
+                order.borrow_mut().push("prevalidate");
+                Ok("prevalidated")
+            },
+            || {
+                order.borrow_mut().push("detach");
+                Ok(())
+            },
+            |_| {
+                order.borrow_mut().push("acquire");
+                Ok("prepared")
+            },
+            |_| {
+                order.borrow_mut().push("persist_active");
+                Err(failure("persist_active"))
+            },
+            |_| {
+                order.borrow_mut().push("bind_new");
+                Ok(())
+            },
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            *order.borrow(),
+            vec!["prevalidate", "detach", "acquire", "persist_active"]
+        );
+    }
+
+    #[test]
+    fn account_switch_binding_failure_occurs_after_persistence() {
+        let order = RefCell::new(Vec::new());
+        let result = run_account_switch_transition(
+            || {
+                order.borrow_mut().push("prevalidate");
+                Ok("prevalidated")
+            },
+            || {
+                order.borrow_mut().push("detach");
+                Ok(())
+            },
+            |_| {
+                order.borrow_mut().push("acquire");
+                Ok("prepared")
+            },
+            |_| {
+                order.borrow_mut().push("persist_active");
+                Ok(())
+            },
+            |_| {
+                order.borrow_mut().push("bind_new");
+                Err(failure("bind_new"))
+            },
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            *order.borrow(),
+            vec![
+                "prevalidate",
+                "detach",
+                "acquire",
+                "persist_active",
+                "bind_new"
+            ]
+        );
+    }
 }

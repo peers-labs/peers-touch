@@ -240,7 +240,7 @@ Parallel policy:
 |---|---|---|
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
-| F2 Runtime/Stream/Capability/Portability | complete | F1 |
+| F2 Runtime/Stream/Capability/Portability | in progress: Q4 C06 source closure complete; Q5/Q6 not entered | F1 |
 | F3 Context/Resource Intelligence | core complete / C08 unproven | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
@@ -309,7 +309,7 @@ ID/version/SHA-256. Any scope or hash change returns to PLAN review.
 
 | Gate | Candidate-manifest mandatory roles before validation |
 |---|---|
-| `agent-v2-kernel-foundation-e2e` | `cell-results`, `receiver-dom`, `station-readback`, `runtime-events`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `replay`, `cleanup`, `source-identity`, `role-schema-report`, `runner-attestation` |
+| `agent-v2-kernel-foundation-e2e` | `cell-results`, `receiver-dom`, `station-readback`, `runtime-events`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `replay`, `cleanup`, `contract-evidence`, `guard-report`, `source-identity`, `role-schema-report`, `runner-attestation` |
 | `agent-v2-home-command-center-e2e` | `receiver-dom`, `station-readback`, `command-ids`, `projection-revisions`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `replay`, `cleanup`, `source-identity`, `role-schema-report`, `runner-attestation` |
 | `agent-v2-capability-binding-e2e` | `receiver-dom`, `station-readback`, `readiness-snapshots`, `zero-execution`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `replay`, `cleanup`, `source-identity`, `role-schema-report`, `runner-attestation` |
 | `agent-v2-governed-tool-loop-e2e` | `receiver-dom`, `station-readback`, `executor-receipts`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `cleanup`, `replay`, `source-identity`, `role-schema-report`, `runner-attestation` |
@@ -780,6 +780,55 @@ Evidence before product Gate: raw event timestamps/sequences, replay equality,
 provider cancel, zero-execution rejection, two-device isolation, and zero
 unresolved legacy matches. Capability/profile/API/selector readback proves
 P12 and stateless CLI non-advertisement on Desktop and Browser.
+
+**Q4 / MCA-C06 source-closure evidence (2026-09-03)**:
+
+- Station resolves model capabilities only from explicit catalog and
+  actor-scoped model facts. The persisted provenance source version hashes the
+  active runtime profile, provider/model revisions, normalized capability
+  facts, limits, and policy budget; observation time is retained in the full
+  snapshot but excluded from semantic identity.
+- The effective lower-only runtime budget and complete capability snapshot are
+  persisted once on `TurnAttempt` before prompt-side provider work; an
+  idempotent repeat must match the stored snapshot/readiness identity and any
+  overwrite rejects. Main calls, retries, compression summary, and resumed
+  continuations validate the pinned snapshot integrity, current Station source
+  version, and complete provider-request input budget before a provider side
+  effect. Compression summary errors are terminal for that Turn. The
+  ungoverned `FlushMemories`, duplicate inline Knowledge Salvage provider/tool
+  executor, and unused unguarded follow-up provider helper are deleted.
+- Station-owned Tool handlers revalidate the persisted attempt snapshot,
+  current capability source, native-tool capability, and wall/delegation budget
+  after approval and immediately before handler execution. `ToolBatch` persists
+  delegation depth and the restricted toolset; delegated child Turns inherit
+  actor, provider/model, the parent's lower-only budget, and only the
+  intersection of authorized and delegated tools. They use a real persisted
+  child conversation before establishing their own immutable runtime authority.
+- Unsupported explicit thinking, malformed requested budget, delegation depth,
+  streaming, native tools, wall time, input/output tokens, Agent steps,
+  provider attempts, total ToolCalls, and identical ToolCalls fail before the
+  corresponding next provider network or Tool handler execution. Explicit cost
+  budgets reject before provider execution while no authoritative pricing
+  source exists. The provider adapter requires the complete Turn authority
+  tuple and repeats provider/source validation after attempt reservation.
+  Focused tests assert zero provider hooks, zero tool handlers, and zero
+  Turn/Attempt/ToolCall/ToolBatch rows for pre-admission rejection.
+- Desktop model selection consumes only Station `models`; provider/runtime and
+  model capability fallback inference is deleted. Desktop Rust no longer
+  derives or forwards CLI runtime commands from provider names, and the
+  disabled D11 desktop executor worker retains only its fail-closed readiness
+  guard.
+- `go test ./app/subserver/agent/... -count=1 -timeout 120s`, focused Station
+  race tests, Go style, `git diff --check`, scoped C06 old-path detection, and
+  the focused C06 checker test pass. The C06 checker reports
+  `unresolvedCount=0` and `unregisteredMatches=0`; focused Desktop provider
+  projection tests pass 3/3. The final independent source audit reports no
+  in-scope Q4/C06 P0 or P1 findings.
+- Q5/C10, Q6 aggregate F2 checks, and all product/runtime Gates were not entered
+  by this slice. Full Desktop/Rust checks remain independently blocked by
+  pre-existing cross-module contract gaps in the current worktree; the broader
+  old-path unittest likewise fails only on other F1/F2 closures. None of those
+  failures constitute Q4 product evidence.
 
 ### F3 — Context And Resource Intelligence
 
@@ -4402,9 +4451,12 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Expected**: Turn ten recalls pre-compression facts; ContextLedger identifies the compression source/snapshot, retained facts, exact source IDs, token accounting, and typed truncation/omission deterministically.
 - **Failure variant**: Disabled/unauthorized source is absent; ledger redaction exposes no secrets.
 - **Evidence**: Source-detail DOM, ContextLedger/Turn rows, fixed-answer assertions.
-- **Status**: pending; before execution, audit the pre-existing compression
-  session split so one Turn cannot span parent/child conversation replay
-  authority
+- **Status**: implementation-ready for runtime proof. The pre-existing
+  compression session split is removed so one Turn, Attempt, ContextLedger,
+  event stream, and usage record retain one conversation authority. Governed
+  compression rebuilds the same attempt ledger and includes the summary
+  provider call in trace and usage accounting. Focused Station regressions pass;
+  AS-F08 remains `UNPROVEN` until the exact-source G-F run exercises it.
 
 ### AS-F09 Usage, Feedback, And Diagnostic Replay
 - **Precondition**: Terminal turn with context/tool activity.

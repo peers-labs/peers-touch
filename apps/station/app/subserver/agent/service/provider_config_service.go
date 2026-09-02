@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -91,7 +90,7 @@ func (s *ProviderConfigService) Create(ctx context.Context, req ProviderCreateRe
 func newProviderRecord(req ProviderCreateRequest) *persistence.AgentProvider {
 	provider := &persistence.AgentProvider{
 		ID:          uuid.New().String(),
-		ActorPTID:  req.ActorPTID,
+		ActorPTID:   req.ActorPTID,
 		Name:        req.ProviderID,
 		DisplayName: req.DisplayName,
 		BaseURL:     req.BaseURL,
@@ -123,15 +122,7 @@ func providerRecordSupportedByFrozenProfile(provider *persistence.AgentProvider)
 	if provider == nil {
 		return false
 	}
-	if strings.EqualFold(strings.TrimSpace(provider.Protocol), providerRuntimeCLI) {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(provider.RuntimeKind)) {
-	case "", "http":
-		return true
-	default:
-		return false
-	}
+	return ProviderRuntimeAdvertised(provider.RuntimeKind, provider.Protocol)
 }
 
 func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRequest) (*persistence.AgentProvider, error) {
