@@ -31,6 +31,7 @@ import {
   resolveActorIdentity,
 } from '../../store/socialProfileProjection';
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
+import { log } from '../../utils/logger';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
 import { CreateGroupModal } from './CreateGroupModal';
@@ -137,6 +138,7 @@ export function ChatSessionList() {
     getIMConversations,
     updateConversationLocalState,
     hideConversation,
+    restoreConversation,
     loadSessions,
     loadGroups,
   } = useActiveSocialChatSlice((state) => ({
@@ -161,6 +163,7 @@ export function ChatSessionList() {
     getIMConversations: state.getIMConversations,
     updateConversationLocalState: state.updateConversationLocalState,
     hideConversation: state.hideConversation,
+    restoreConversation: state.restoreConversation,
     loadSessions: state.loadSessions,
     loadGroups: state.loadGroups,
   }));
@@ -208,13 +211,16 @@ export function ChatSessionList() {
 
     if (c.kind === 'friend' && c.peerPtid) {
       try {
-        await imServiceV1.messaging.createDirect(c.peerPtid);
-        await loadSessions();
-        const created = getIMConversations().find((conv) => conv.peerPtid === c.peerPtid);
-        if (created) {
-          setSearchText('');
-          handleSelect(created);
-        }
+        const conversation = await imServiceV1.messaging.createDirect(c.peerPtid);
+        setSearchText('');
+        selectSession(conversation.conversationId);
+        restoreConversation('friend', conversation.conversationId);
+        loadSessions().catch((error) => {
+          log.warn('chatSessionList', 'background loadSessions after createDirect failed', {
+            conversationId: conversation.conversationId,
+            error,
+          });
+        });
       } catch (error) {
         presentError(error, {
           mapper: mapChatError,

@@ -2145,6 +2145,23 @@ export interface AuthSessionResponse extends TauriStubPayload {
   login_method?: string;
 }
 
+export interface MessagingAcceptanceInteractionSnapshot {
+  actorPtid: string;
+  conversationId: string;
+  messageId: string;
+  projection: Record<string, unknown> | null;
+  intent: Record<string, unknown> | null;
+  outbox: Record<string, unknown> | null;
+  directSessions: Array<Record<string, unknown>>;
+  commandLedger: Array<Record<string, unknown>>;
+  reactions: Array<Record<string, unknown>>;
+  pins: Array<Record<string, unknown>>;
+  readCursors: Array<Record<string, unknown>>;
+  consumptionCount: number;
+  laneSequence: number;
+  consumerEpoch: number;
+}
+
 export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
 
 export interface AuthLoginInput {
@@ -3123,6 +3140,12 @@ export const api = {
 
   authLogout: () =>
     invokeAuthCommand<void>('auth_logout'),
+
+  acceptanceLogoutWindowSession: (expectedActorPtid: string) =>
+    invokeAuthCommand<{ expected_actor_ptid: string }>(
+      'acceptance_logout_window_session',
+      { expected_actor_ptid: expectedActorPtid },
+    ),
 
   authRestoreSession: () =>
     invokeAuthCommand<void>('auth_restore_session'),
@@ -4824,6 +4847,35 @@ export const api = {
       kind,
       reaction: options.reaction ?? '',
       remove: options.remove ?? false,
+    }),
+
+  messagingAcceptanceInteractionSnapshot: (input: {
+    actorPtid: string;
+    conversationId: string;
+    messageId: string;
+    commandId?: string;
+  }) =>
+    invokeRustData<
+      {
+        expected_actor_ptid: string;
+        conversation_id: string;
+        message_id: string;
+        command_id: string;
+      },
+      MessagingAcceptanceInteractionSnapshot
+    >('messaging_acceptance_interaction_snapshot', {
+      expected_actor_ptid: input.actorPtid,
+      conversation_id: input.conversationId,
+      message_id: input.messageId,
+      command_id: input.commandId ?? '',
+    }),
+
+  messagingAcceptanceCurrentEndpoint: (expectedActorPtid: string) =>
+    invokeRustData<
+      { expected_actor_ptid: string },
+      { actor_ptid: string; device_id: string }
+    >('messaging_acceptance_current_endpoint', {
+      expected_actor_ptid: expectedActorPtid,
     }),
 
   /**

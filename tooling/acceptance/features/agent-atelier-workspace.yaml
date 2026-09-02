@@ -1,0 +1,59 @@
+{
+  "id": "agent-atelier-workspace",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/workspace_handler.go",
+    "apps/station/app/subserver/agent/handler/atelier_projection_handler.go",
+    "apps/station/app/subserver/agent/service/workspace_service.go",
+    "apps/station/app/subserver/agent/service/atelier_projection.go",
+    "apps/station/app/subserver/agent/service/project_state_machine.go",
+    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/services/desktop_api.ts"
+  ],
+  "truth_sources": [
+    "running Station agent API",
+    "agent_workspaces table",
+    "agent_projects table",
+    "agent_artifacts table"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/workspace/load"},
+    {"type": "api", "route": "/agent/workspace/project/create"},
+    {"type": "api", "route": "/agent/workspace/message/send"},
+    {"type": "api", "route": "/agent/workspace/escalation/resolve"},
+    {"type": "api", "route": "/agent/workspace/task/status"},
+    {"type": "api", "route": "/agent/workspace/purge"},
+    {"type": "api", "route": "/agent/workspace/provider/capabilities"},
+    {"type": "api", "route": "/agent/workspace/feedback"},
+    {"type": "api", "route": "/agent/workspace/memory/confirm"},
+    {"type": "api", "route": "/agent/workspace/rerun/confirm"},
+    {"type": "api", "route": "/agent/workspace/artifact/body"}
+  ],
+  "required_gates": ["agent-atelier-e2e"],
+  "acceptance": {
+    "service": [
+      "workspace load initializes or resumes an atelier workspace with its project and artifact state",
+      "project create spawns a new project within the workspace with defined goals and constraints",
+      "message send delivers a user instruction to the workspace agent and triggers execution",
+      "escalation resolve handles agent escalation requests that require user decision",
+      "task status returns the current state of workspace tasks with progress and blockers",
+      "purge cleans up completed or abandoned workspace state and releases resources",
+      "provider capabilities returns available model capabilities for workspace-level decisions",
+      "feedback records user quality signal on workspace outputs",
+      "memory confirm accepts or rejects a proposed memory write from workspace execution",
+      "rerun confirm accepts or rejects a proposed re-execution of a failed step",
+      "artifact body returns the full content of a generated artifact by ID"
+    ],
+    "visible": [
+      "atelier workspace panel in Desktop shows active project with task progress and artifacts",
+      "escalation prompts appear as interactive cards requiring user action",
+      "artifacts are browsable and downloadable from the workspace surface"
+    ]
+  },
+  "negative": [
+    "workspace execution must not write to memory without user confirmation via memory-confirm",
+    "purge must not delete artifacts that are still referenced by active projects",
+    "escalation must block workspace progress until resolved — no silent fallback"
+  ]
+}

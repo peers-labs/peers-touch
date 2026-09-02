@@ -939,6 +939,9 @@ func (s *subServer) handleDeviceRevoke(ctx context.Context, req *chat.RevokeDevi
 	}
 
 	if err := s.deviceStore.Revoke(ctx, subject.ID, req.DeviceId); err != nil {
+		if errors.Is(err, touchactor.ErrDeviceSigningKeyNotFound) {
+			return nil, server.NotFound("device not found")
+		}
 		return nil, server.InternalErrorWithCause("device revoke failed", err)
 	}
 	return &chat.RevokeDeviceResponse{}, nil

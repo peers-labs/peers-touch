@@ -127,6 +127,12 @@ func TestDeviceStoreResolvesOnlyVerifiedSigningKeys(t *testing.T) {
 	); !errors.Is(err, ErrDeviceSigningKeyNotFound) {
 		t.Fatalf("revoked key resolved: %v", err)
 	}
+	if err := store.Revoke(ctx, "alice", "missing-device"); !errors.Is(
+		err,
+		ErrDeviceSigningKeyNotFound,
+	) {
+		t.Fatalf("missing device revoke error=%v, want ErrDeviceSigningKeyNotFound", err)
+	}
 }
 
 func TestDeviceStoreAcceptsVerifiedRemoteProjection(t *testing.T) {

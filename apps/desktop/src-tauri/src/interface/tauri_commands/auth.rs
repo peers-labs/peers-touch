@@ -9,6 +9,8 @@ use crate::infrastructure::window_session_registry::{
     ExclusiveBindingCommit, WindowSessionRegistry,
 };
 use crate::state::AppState;
+#[cfg(feature = "acceptance-webdriver")]
+use serde::Deserialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State, Window};
 
@@ -216,6 +218,78 @@ fn missing_window_session(command: &str) -> AppResult<AuthSessionPayload> {
     )
 }
 
+#[cfg(feature = "acceptance-webdriver")]
+#[derive(Debug, Deserialize)]
+pub struct AcceptanceLogoutWindowSessionInput {
+    pub expected_actor_ptid: String,
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+fn require_acceptance_window_actor(
+    expected_actor_ptid: &str,
+    actual_actor_ptid: &str,
+) -> Result<(), AppResult<AuthSessionPayload>> {
+    let expected = expected_actor_ptid.trim();
+    if !expected.starts_with("ptid:") {
+        return Err(AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "acceptance.chat.expectedActorPtidInvalid",
+            Some(serde_json::json!({
+                "command": "acceptance_logout_window_session",
+                "reason": "expected_actor_ptid_invalid"
+            })),
+        ));
+    }
+    if expected != actual_actor_ptid {
+        return Err(AppResult::fail(
+            ErrorCode::Forbidden,
+            "acceptance.chat.windowActorMismatch",
+            Some(serde_json::json!({
+                "command": "acceptance_logout_window_session",
+                "reason": "window_actor_mismatch"
+            })),
+        ));
+    }
+    Ok(())
+}
+
+fn logout_window_session(
+    state: &Arc<AppState>,
+    app: &AppHandle,
+    window: &Window,
+    expected_actor_ptid: Option<&str>,
+    command: &str,
+) -> AppResult<AuthSessionPayload> {
+    let transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
+    let Some(committed_session) = committed_window_session(state, window) else {
+        return missing_window_session(command);
+    };
+    #[cfg(feature = "acceptance-webdriver")]
+    if let Some(expected_actor_ptid) = expected_actor_ptid {
+        if let Err(error) =
+            require_acceptance_window_actor(expected_actor_ptid, &committed_session.actor.ptid)
+        {
+            return error;
+        }
+    }
+    #[cfg(not(feature = "acceptance-webdriver"))]
+    let _ = expected_actor_ptid;
+    let result =
+        auth_service::auth_logout_during_transition(state, &transition, Some(committed_session));
+    unbind_after(state, window, &result);
+    broadcast_identity(app, IdentityChangeReason::Logout, &result);
+    result
+}
+
 #[tauri::command]
 pub fn auth_login(
     input: AuthLoginInput,
@@ -299,27 +373,24 @@ pub fn auth_logout(
     app: AppHandle,
     window: Window,
 ) -> AppResult<AuthSessionPayload> {
-    let transition = match state.identity_transition.lock() {
-        Ok(guard) => guard,
-        Err(_) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                "Failed to coordinate identity transition",
-                None,
-            )
-        }
-    };
-    let Some(committed_session) = committed_window_session(state.inner(), &window) else {
-        return missing_window_session("auth_logout");
-    };
-    let result = auth_service::auth_logout_during_transition(
+    logout_window_session(state.inner(), &app, &window, None, "auth_logout")
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn acceptance_logout_window_session(
+    input: AcceptanceLogoutWindowSessionInput,
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    window: Window,
+) -> AppResult<AuthSessionPayload> {
+    logout_window_session(
         state.inner(),
-        &transition,
-        Some(committed_session),
-    );
-    unbind_after(state.inner(), &window, &result);
-    broadcast_identity(&app, IdentityChangeReason::Logout, &result);
-    result
+        &app,
+        &window,
+        Some(&input.expected_actor_ptid),
+        "acceptance_logout_window_session",
+    )
 }
 
 #[tauri::command]
@@ -428,6 +499,8 @@ pub fn ensure_station_session(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "acceptance-webdriver")]
+    use super::require_acceptance_window_actor;
     use super::{commit_runtime_binding, rollback_runtime_binding};
     use crate::application::auth::service::PreparedAuthSession;
     use crate::contracts::AuthSessionPayload;
@@ -552,5 +625,23 @@ mod tests {
         let restored = sessions.get("main").expect("old window session restored");
         assert_eq!(restored.actor.ptid, "ptid:v1:actor:old");
         assert_eq!(restored.jwt, "token-old");
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    #[test]
+    fn acceptance_logout_rejects_non_owner_actor() {
+        require_acceptance_window_actor("ptid:v1:actor:alice", "ptid:v1:actor:alice")
+            .expect("matching window actor");
+
+        let mismatch = require_acceptance_window_actor("ptid:v1:actor:alice", "ptid:v1:actor:bob")
+            .expect_err("mismatched window actor");
+        assert_eq!(
+            mismatch
+                .error
+                .expect("mismatch error")
+                .details
+                .expect("mismatch details")["reason"],
+            "window_actor_mismatch"
+        );
     }
 }

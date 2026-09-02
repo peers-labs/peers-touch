@@ -1,0 +1,60 @@
+{
+  "id": "agent-growth-diagnostics",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/growth_handler.go",
+    "apps/station/app/subserver/agent/service/growth_diagnostic_service.go",
+    "apps/station/app/subserver/agent/service/growth_metrics_service.go",
+    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/services/desktop_api.ts"
+  ],
+  "truth_sources": [
+    "running Station agent API",
+    "agent_growth_snapshots table",
+    "agent_growth_feedback table"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/growth/snapshot"},
+    {"type": "api", "route": "/agent/growth/audit"},
+    {"type": "api", "route": "/agent/growth/feedback"},
+    {"type": "api", "route": "/agent/growth/memory-rollback"},
+    {"type": "api", "route": "/agent/growth/snapshots"},
+    {"type": "api", "route": "/agent/growth/snapshots/:id/delete"},
+    {"type": "api", "route": "/agent/growth/freeze"},
+    {"type": "api", "route": "/agent/growth/skill-rollback"},
+    {"type": "api", "route": "/agent/growth/versions"},
+    {"type": "api", "route": "/agent/growth/toggle"},
+    {"type": "api", "route": "/agent/growth/feedback-history"},
+    {"type": "api", "route": "/agent/growth/diagnostic"},
+    {"type": "api", "route": "/agent/growth/clear"}
+  ],
+  "required_gates": ["agent-growth-e2e"],
+  "acceptance": {
+    "service": [
+      "snapshot captures current agent state (memory, skills, config) as a versioned checkpoint",
+      "audit evaluates agent behavior quality against its growth goals and returns a scored report",
+      "feedback records user satisfaction signal tied to a specific turn or interaction",
+      "memory-rollback restores memory state to a previous snapshot version",
+      "snapshots lists all available growth snapshots with timestamps and summaries",
+      "delete removes a specific snapshot permanently",
+      "freeze locks the agent state preventing autonomous growth mutations",
+      "skill-rollback reverts skill configuration to a previous snapshot version",
+      "versions returns the version history of the agent growth state",
+      "toggle enables or disables the autonomous growth system",
+      "feedback-history returns all feedback entries with filtering and pagination",
+      "diagnostic runs a comprehensive health check on the growth system and reports issues",
+      "clear resets growth metrics and feedback without affecting core agent state"
+    ],
+    "visible": [
+      "growth dashboard in Desktop shows current growth score and trend",
+      "feedback buttons are accessible after each agent response",
+      "snapshot timeline is browsable in the agent settings panel"
+    ]
+  },
+  "negative": [
+    "memory-rollback must not affect conversations that occurred after the snapshot",
+    "autonomous growth must not mutate agent state when frozen",
+    "clearing growth data must not delete snapshots that are referenced by active rollback points"
+  ]
+}

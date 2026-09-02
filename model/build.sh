@@ -98,6 +98,17 @@ if [ ! -x "$PROTOC_GEN_ES" ]; then
     exit 0
 fi
 
+TS_TRAILING_NEWLINES=$(mktemp)
+trap 'rm -f "$TS_TRAILING_NEWLINES"' EXIT
+if [ -d "$TS_OUT" ]; then
+    find "$TS_OUT" -type f -name '*_pb.ts' -print0 |
+        while IFS= read -r -d '' file; do
+            REL_PATH="${file#$TS_OUT/}"
+            TRAILING_NEWLINES=$(perl -0ne 'print length($1) if /(\n*)\z/' "$file")
+            printf '%s\t%s\n' "$REL_PATH" "$TRAILING_NEWLINES"
+        done > "$TS_TRAILING_NEWLINES"
+fi
+
 rm -rf "$TS_OUT"
 mkdir -p "$TS_OUT"
 
@@ -111,6 +122,17 @@ for file in $GO_PROTO_FILES; do
         -I"$PROTO_ROOT" \
         "$file"
 done
+
+# Preserve each tracked output's existing file ending. New outputs keep the
+# generator default, while repeated generation remains byte-for-byte stable.
+while IFS=$'\t' read -r relative_path trailing_newlines; do
+    generated_file="$TS_OUT/$relative_path"
+    if [ -f "$generated_file" ]; then
+        TRAILING_NEWLINES="$trailing_newlines" \
+            perl -0pi -e 's/\n*\z/"\n" x $ENV{TRAILING_NEWLINES}/e' \
+            "$generated_file"
+    fi
+done < "$TS_TRAILING_NEWLINES"
 
 echo ""
 echo "=== Proto generation complete (Go + TS) ==="

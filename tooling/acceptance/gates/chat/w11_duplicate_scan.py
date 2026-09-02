@@ -15,8 +15,6 @@ import re
 import sys
 from pathlib import Path
 
-from tooling.acceptance.core.evidence_store import ArtifactSession, source_identity
-
 REPO_ROOT = Path(__file__).resolve().parents[4]
 MANIFEST_PATH = Path(
     os.environ.get(
@@ -132,10 +130,12 @@ def scan_codec_duplicates(target: dict) -> list[str]:
 def main() -> int:
     manifest = load_manifest()
     target = find_target(manifest, "no-duplicate-symbol")
+    report_path = REPO_ROOT / "tooling" / "acceptance" / "reports" / "chat-w11-duplicate-scan.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
 
     if target is None:
         report = {"status": "PASS", "assertions": [{"name": "no-duplicate-target", "passed": True}], "violations": []}
-        write_report(report)
+        report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print("PASS: W11 duplicate-scan (no no-duplicate-symbol target in contract)")
         return 0
 
@@ -148,7 +148,7 @@ def main() -> int:
         "assertions": [{"name": "single-crypto-codec-owner", "passed": not violations}],
         "violations": violations,
     }
-    write_report(report)
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
     if violations:
         print("FAIL: W11 duplicate-contract scan found violations:")
@@ -158,30 +158,6 @@ def main() -> int:
 
     print("PASS: W11 duplicate-contract scan (single crypto/codec owner verified)")
     return 0
-
-
-def write_report(report: dict) -> None:
-    report = {
-        "artifactKind": "acceptance-gate-evidence-report",
-        "gateId": "chat-w11-duplicate-scan",
-        **report,
-    }
-    passed = report["status"] == "PASS"
-    with ArtifactSession(
-        repo_root=REPO_ROOT,
-        gate_id="chat-w11-duplicate-scan",
-        source=source_identity(REPO_ROOT),
-    ) as session:
-        session.write_json(
-            "reports/chat-w11-duplicate-scan.json",
-            report,
-            role="scan-report",
-        )
-        session.complete(
-            status="passed" if passed else "failed",
-            completion_status="DONE" if passed else "PARTIAL",
-            proof_status="PROVEN" if passed else "UNPROVEN",
-        )
 
 
 if __name__ == "__main__":

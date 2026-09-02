@@ -23,9 +23,8 @@ from tooling.acceptance.core import (
     ProvisioningError,
     ProvisioningState,
     RuntimeManifest,
-    ServiceAttestation,
+    StationAttestation,
     blocked_manifest,
-    load_runtime_manifest,
     new_manifest,
 )
 from tooling.acceptance.core.redaction import (
@@ -113,9 +112,6 @@ class CredentialRefTests(unittest.TestCase):
     def test_reference_suffix_is_safe_but_reference_secret_is_redacted(self):
         self.assertFalse(is_sensitive_key("credentialRefs"))
         self.assertFalse(is_sensitive_key("credential_reference"))
-        self.assertFalse(is_sensitive_key("fenceToken"))
-        self.assertFalse(is_sensitive_key("fenceTokens"))
-        self.assertFalse(is_sensitive_key("maxConcurrentAuthorizations"))
         self.assertTrue(is_sensitive_key("credential_reference_secret"))
         value = redact_value(
             {
@@ -137,7 +133,6 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertTrue(contract.profile.identity_match)
         self.assertIn("station", contract.services)
         self.assertTrue(contract.services["station"].required)
-        self.assertEqual(contract.services["station"].kind, "station")
         self.assertEqual(len(contract.credentials), 1)
         self.assertEqual(contract.credentials[0].id, "evidence-leak-canary")
         self.assertTrue(contract.credentials[0].generated_if_missing)
@@ -148,34 +143,6 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.id, "local-desktop-gateway")
         self.assertIn("station", contract.services)
         self.assertIn("desktop-gateway", contract.services)
-        self.assertEqual(contract.fixtures[0].id, "chat-native-actors")
-        self.assertTrue(contract.fixtures[0].authorization_required)
-        self.assertEqual(
-            contract.fixtures[0].authorization_ref,
-            "env:CHAT_ACCEPTANCE_RESET",
-        )
-        self.assertEqual(contract.credentials[0].id, "chat-password")
-        self.assertEqual(
-            contract.credentials[0].source_ref,
-            "fixture:apps/station/app/conf/actor.yml#preset_users",
-        )
-
-    def test_load_mobile_native_contract(self):
-        contract = EnvironmentContract.from_yaml(
-            ENVIRONMENTS_DIR / "mobile-native.yaml"
-        )
-        self.assertEqual(contract.id, "mobile-native")
-        self.assertEqual(
-            {
-                service_id: service.kind
-                for service_id, service in contract.services.items()
-            },
-            {
-                "station-primary": "station",
-                "station-secondary": "station",
-                "relay": "relay",
-            },
-        )
 
     def test_invalid_contract_missing_id_raises(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -217,7 +184,6 @@ class EnvironmentContractTests(unittest.TestCase):
     def test_invalid_nested_contract_entries_fail_parse(self):
         invalid_payloads = (
             '{"id":"bad","services":{"station":"not-an-object"}}',
-            '{"id":"bad","services":{"station":{"required":true}}}',
             '{"id":"bad","fixtures":[{"authorization_required":true}]}',
             '{"id":"bad","credentials":[{"id":"password"}]}',
             '{"id":"bad","cleanup":{"resources":"ports"}}',
@@ -252,36 +218,28 @@ class EnvironmentContractTests(unittest.TestCase):
                 Path(f.name).unlink()
 
 
-class ServiceAttestationTests(unittest.TestCase):
+class StationAttestationTests(unittest.TestCase):
     def test_clean_workspace_flag(self):
-        att = ServiceAttestation(
-            service_id="station",
-            service_kind="station",
+        att = StationAttestation(
             environment_id="test",
-            deployment_environment="local",
-            endpoint="http://127.0.0.1:3000",
+            url="http://127.0.0.1:3000",
             live_commit="abc123def",
             workspace_digest="clean",
-            protocol_digest="sha256:xyz",
+            proto_digest="sha256:xyz",
             artifact_ref=TEST_ARTIFACT_REF,
             produced_at="2026-08-16T12:00:00+00:00",
-            producer="station-deployment",
         )
         self.assertTrue(att.is_clean_workspace)
 
     def test_dirty_workspace_flag(self):
-        att = ServiceAttestation(
-            service_id="station",
-            service_kind="station",
+        att = StationAttestation(
             environment_id="test",
-            deployment_environment="local",
-            endpoint="http://127.0.0.1:3000",
+            url="http://127.0.0.1:3000",
             live_commit="abc123def",
             workspace_digest="sha256:dirty",
-            protocol_digest="sha256:xyz",
+            proto_digest="sha256:xyz",
             artifact_ref=TEST_ARTIFACT_REF,
             produced_at="2026-08-16T12:00:00+00:00",
-            producer="station-deployment",
         )
         self.assertFalse(att.is_clean_workspace)
 
@@ -312,28 +270,6 @@ class RuntimeManifestTests(unittest.TestCase):
             worktree="/tmp/test-worktree",
         )
 
-    def _service(
-        self,
-        service_id: str,
-        service_kind: str = "station",
-    ) -> ServiceAttestation:
-        return ServiceAttestation(
-            service_id=service_id,
-            service_kind=service_kind,
-            environment_id="test",
-            deployment_environment=f"deploy-{service_id}",
-            endpoint=f"http://{service_id}.example",
-            live_commit="abc123",
-            workspace_digest="clean",
-            protocol_digest="sha256:proto",
-            artifact_ref={
-                **TEST_ARTIFACT_REF,
-                "path": f"runtime/services/{service_id}/attestation.json",
-            },
-            produced_at="2026-08-16T12:00:00+00:00",
-            producer=f"{service_kind}-deployment",
-        )
-
     def test_new_manifest_defaults(self):
         m = self._base_manifest()
         self.assertEqual(m.artifact_kind, "acceptance-runtime-manifest")
@@ -342,7 +278,7 @@ class RuntimeManifestTests(unittest.TestCase):
         self.assertEqual(m.state, ProvisioningState.DISCOVERED)
         self.assertFalse(m.is_ready())
         self.assertFalse(m.is_blocked())
-        self.assertEqual(m.services, {})
+        self.assertIsNone(m.station)
         self.assertIsNone(m.blocked_reason)
 
     def test_manifest_is_immutable(self):
@@ -356,7 +292,6 @@ class RuntimeManifestTests(unittest.TestCase):
         required = {
             "artifactKind", "environmentId", "gateId", "runId", "createdAt", "state",
             "source", "profile", "credentialRefs", "clients", "cleanup",
-            "services",
         }
         self.assertTrue(required.issubset(d.keys()), f"missing: {required - d.keys()}")
         self.assertEqual(d["source"]["commit"], "abcdef123456")
@@ -378,76 +313,22 @@ class RuntimeManifestTests(unittest.TestCase):
         self.assertEqual(blocked.source_commit, base.source_commit)
         self.assertEqual(blocked.environment_id, base.environment_id)
 
-    def test_manifest_with_service_attestation(self):
-        att = self._service("station")
-        import dataclasses
-        m = dataclasses.replace(
-            self._base_manifest(),
-            services={"station": att},
-            state=ProvisioningState.FIXTURE_READY,
-        )
-        self.assertTrue(m.is_ready())
-        d = m.to_dict()
-        self.assertNotIn("station", d)
-        self.assertEqual(d["services"]["station"]["liveCommit"], "abc123")
-        self.assertEqual(d["services"]["station"]["kind"], "station")
-
-    def test_manifest_serializes_multiple_services_by_stable_id(self):
-        import dataclasses
-        manifest = dataclasses.replace(
-            self._base_manifest(),
-            services={
-                "station-secondary": self._service("station-secondary"),
-                "relay": self._service("relay", "relay"),
-                "station-primary": self._service("station-primary"),
-            },
-        )
-        services = manifest.to_dict()["services"]
-        self.assertEqual(
-            list(services),
-            ["relay", "station-primary", "station-secondary"],
-        )
-        self.assertEqual(services["relay"]["kind"], "relay")
-
-    def test_manifest_rejects_mismatched_service_key(self):
-        att = ServiceAttestation(
-            service_id="station-primary",
-            service_kind="station",
+    def test_manifest_with_station_attestation(self):
+        att = StationAttestation(
             environment_id="test",
-            deployment_environment="station-two",
-            endpoint="http://127.0.0.1:3000",
+            url="http://127.0.0.1:3000",
             live_commit="abc123",
             workspace_digest="clean",
-            protocol_digest="sha256:proto",
+            proto_digest="sha256:proto",
             artifact_ref=TEST_ARTIFACT_REF,
             produced_at="2026-08-16T12:00:00+00:00",
-            producer="station-deployment",
         )
         import dataclasses
-        manifest = dataclasses.replace(
-            self._base_manifest(),
-            services={"station-secondary": att},
-        )
-        with self.assertRaisesRegex(
-            ProvisioningError,
-            "does not match attestation service id",
-        ):
-            manifest.to_dict()
-
-    def test_load_manifest_rejects_legacy_station_field(self):
-        payload = {
-            **self._base_manifest().to_dict(),
-            "state": ProvisioningState.FIXTURE_READY.value,
-            "station": {"url": "http://station.example"},
-        }
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "manifest.json"
-            path.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaisesRegex(
-                ProvisioningError,
-                "removed singular station field",
-            ):
-                load_runtime_manifest(path, "test-gate")
+        m = dataclasses.replace(self._base_manifest(), station=att, state=ProvisioningState.FIXTURE_READY)
+        self.assertTrue(m.is_ready())
+        d = m.to_dict()
+        self.assertIn("station", d)
+        self.assertEqual(d["station"]["liveCommit"], "abc123")
 
     def test_manifest_with_clients(self):
         import dataclasses

@@ -105,3 +105,26 @@ describe('contacts panel projection subscriptions', () => {
     expect(source).toContain('groupMembers: s.groupMembers');
   });
 });
+
+describe('session search direct conversation selection', () => {
+  const source = readFileSync(new URL('./ChatSessionList.tsx', import.meta.url), 'utf8');
+
+  it('selects the command result before background reconciliation', () => {
+    const createIndex = source.indexOf(
+      'const conversation = await imServiceV1.messaging.createDirect(c.peerPtid);',
+    );
+    const selectIndex = source.indexOf(
+      'selectSession(conversation.conversationId);',
+      createIndex,
+    );
+    const reconcileIndex = source.indexOf(
+      'loadSessions().catch((error) => {',
+      selectIndex,
+    );
+
+    expect(createIndex).toBeGreaterThan(-1);
+    expect(selectIndex).toBeGreaterThan(createIndex);
+    expect(reconcileIndex).toBeGreaterThan(selectIndex);
+    expect(source).not.toContain('await loadSessions();');
+  });
+});
