@@ -8,13 +8,20 @@ import {
   createMobileClientStorageRuntime,
   type MobileClientStorageRuntime,
 } from '../../storage/mobileClientStorage';
+import type {
+  FriendConversationSettings,
+  ChatAttachmentInput,
+  UpdateFriendConversationSettingsInput,
+} from './socialApiTypes';
 import {
-  createSocialApiClient,
-  type FriendConversationSettings,
-  type ChatAttachmentInput,
-  type SocialApiClient,
-  type UpdateFriendConversationSettingsInput,
-} from './socialApi';
+  createSocialGateway,
+  createNotificationGateway,
+  createProfileGateway,
+  unwrapOutcome,
+  type SocialGateway,
+  type NotificationGateway,
+  type ProfileGateway,
+} from '../../services/gateways';
 import {
   federationViewToResult,
   normalizeActorSearchResult,
@@ -80,7 +87,9 @@ export interface SocialState {
   sessionKey: string | null;
   authSession: MobileAuthSession | null;
   currentUserPtid: string | null;
-  api: SocialApiClient | null;
+  socialGateway: SocialGateway | null;
+  notificationGateway: NotificationGateway | null;
+  profileGateway: ProfileGateway | null;
   storage: MobileClientStorageRuntime | null;
   sessions: FriendChatSession[];
   friendRequests: FriendRequest[];
@@ -157,7 +166,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   sessionKey: null,
   authSession: null,
   currentUserPtid: null,
-  api: null,
+  socialGateway: null,
+  notificationGateway: null,
+  profileGateway: null,
   storage: null,
   sessions: [],
   friendRequests: [],
@@ -189,7 +200,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         sessionKey: null,
         authSession: null,
         currentUserPtid: null,
-        api: null,
+        socialGateway: null,
+        notificationGateway: null,
+        profileGateway: null,
         storage: null,
         sessions: [],
         friendRequests: [],
@@ -225,7 +238,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       sessionKey,
       authSession: session,
       currentUserPtid: resolveActorPtid(session),
-      api: createSocialApiClient(session),
+      socialGateway: createSocialGateway(session),
+      notificationGateway: createNotificationGateway(session),
+      profileGateway: createProfileGateway(session),
       storage: createMobileClientStorageRuntime(session),
       sessions: [],
       friendRequests: [],
@@ -276,18 +291,18 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   refreshFriendRequests: async () => {
-    const api = requireApi(get());
-    const payload = await api.listFriendRequests();
-    set({ friendRequests: (payload.requests ?? []).map(normalizeFriendRequest) });
+    const gw = requireSocialGateway(get());
+    const result = unwrapOutcome(await gw.listFriendRequests());
+    set({ friendRequests: result.requests.map(normalizeFriendRequest) });
   },
 
   refreshSessions: async () => {
-    const api = requireApi(get());
-    const payload = await api.listSessions();
+    const gw = requireSocialGateway(get());
+    const result = unwrapOutcome(await gw.listSessions());
     const activeSessionUlid = get().activeSessionUlid;
     const currentUserPtid = get().currentUserPtid;
-    const sessions = (payload.sessions ?? []).map(normalizeSession);
-    set((state) => ({
+    const sessions = result.sessions.map(normalizeSession);
+    set(() => ({
       sessions: activeSessionUlid && currentUserPtid
         ? clearSessionUnreadForActor(sessions, activeSessionUlid, currentUserPtid)
         : sessions,
@@ -295,11 +310,15 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     await Promise.allSettled(sessions.slice(0, 20).map(async (session) => {
       if ((get().messages[session.ulid] ?? []).length > 0) return;
       const inlineLastMessage = session.lastMessage ? normalizeMessage(session.lastMessage) : null;
-      const messages = inlineLastMessage
-        ? [inlineLastMessage]
-        : session.lastMessageUlid
-          ? (await api.listMessages(session.ulid, undefined, 1)).messages?.map(normalizeMessage) ?? []
-          : [];
+      let messages: FriendChatMessage[];
+      if (inlineLastMessage) {
+        messages = [inlineLastMessage];
+      } else if (session.lastMessageUlid) {
+        const msgResult = unwrapOutcome(await gw.listMessages(session.ulid, undefined, 1));
+        messages = msgResult.messages.map(normalizeMessage);
+      } else {
+        messages = [];
+      }
       if (messages.length === 0) return;
       const decrypted = await decryptVisibleMessages(get(), session.ulid, messages);
       if (decrypted.length === 0) return;
@@ -311,8 +330,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   refreshBlockedUsers: async () => {
-    const api = requireApi(get());
-    const blockedUsers = await api.listBlockedUsers();
+    const gw = requireSocialGateway(get());
+    const blockedUsers = unwrapOutcome(await gw.listBlockedUsers());
     set((state) => {
       const nextStatus = { ...state.friendshipStatus };
       blockedUsers.forEach((item) => {
@@ -325,9 +344,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   loadFriendshipStatus: async (targetPtid) => {
     const ptid = targetPtid.trim();
     if (!ptid) return;
-    const api = requireApi(get());
+    const gw = requireSocialGateway(get());
     try {
-      const status = await api.getFriendshipStatus(ptid);
+      const status = unwrapOutcome(await gw.getFriendshipStatus(ptid));
       set((state) => ({
         friendshipStatus: {
           ...state.friendshipStatus,
@@ -343,9 +362,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   blockUser: async (targetPtid) => {
     const ptid = targetPtid.trim();
     if (!ptid) return;
-    const api = requireApi(get());
+    const gw = requireSocialGateway(get());
     try {
-      await api.blockUser(ptid);
+      unwrapOutcome(await gw.blockUser(ptid));
       set((state) => ({
         friendshipStatus: { ...state.friendshipStatus, [ptid]: { targetPtid: ptid, blocked: true } },
         blockedUsers: upsertFriendshipStatus(state.blockedUsers, { targetPtid: ptid, blocked: true }),
@@ -363,9 +382,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   unblockUser: async (targetPtid) => {
     const ptid = targetPtid.trim();
     if (!ptid) return;
-    const api = requireApi(get());
+    const gw = requireSocialGateway(get());
     try {
-      await api.unblockUser(ptid);
+      unwrapOutcome(await gw.unblockUser(ptid));
       set((state) => ({
         friendshipStatus: { ...state.friendshipStatus, [ptid]: { targetPtid: ptid, blocked: false } },
         blockedUsers: state.blockedUsers.filter((item) => item.targetPtid !== ptid),
@@ -378,10 +397,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   refreshConversationSettings: async () => {
-    const api = requireApi(get());
+    const gw = requireSocialGateway(get());
     const sessions = get().sessions;
     const entries = await Promise.allSettled(sessions.map(async (session) => {
-      const settings = await api.getConversationSettings(session.ulid);
+      const settings = unwrapOutcome(await gw.getConversationSettings(session.ulid));
       return [session.ulid, settings] as const;
     }));
     set((state) => {
@@ -394,31 +413,36 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   loadConversationSettings: async (sessionUlid) => {
-    const api = requireApi(get());
-    const settings = await api.getConversationSettings(sessionUlid);
+    const gw = requireSocialGateway(get());
+    const settings = unwrapOutcome(await gw.getConversationSettings(sessionUlid));
     set((state) => ({ conversationSettings: { ...state.conversationSettings, [sessionUlid]: settings } }));
   },
 
   updateConversationSettings: async (sessionUlid, input) => {
-    const api = requireApi(get());
-    const settings = await api.updateConversationSettings(sessionUlid, input);
+    const gw = requireSocialGateway(get());
+    const settings = unwrapOutcome(await gw.updateConversationSettings(sessionUlid, input));
     set((state) => ({ conversationSettings: { ...state.conversationSettings, [sessionUlid]: settings } }));
   },
 
   refreshNotifications: async () => {
-    const api = requireApi(get());
-    const [notificationPayload, unreadCounts] = await Promise.all([api.listNotifications(), api.getUnreadCounts()]);
+    const notifGw = requireNotificationGateway(get());
+    const [notificationResult, unreadResult] = await Promise.all([
+      notifGw.listNotifications(),
+      notifGw.getUnreadCounts(),
+    ]);
+    const notificationData = unwrapOutcome(notificationResult);
+    const unreadCounts = unwrapOutcome(unreadResult);
     set({
-      notifications: (notificationPayload.notifications ?? []).map(normalizeNotification),
-      notificationNextCursor: notificationPayload.nextCursor ?? notificationPayload.next_cursor ?? '',
-      notificationHasMore: Boolean(notificationPayload.nextCursor ?? notificationPayload.next_cursor),
+      notifications: notificationData.notifications.map(normalizeNotification),
+      notificationNextCursor: notificationData.nextCursor,
+      notificationHasMore: Boolean(notificationData.nextCursor),
       unreadCounts: normalizeUnreadCounts(unreadCounts),
     });
   },
 
   markActiveSessionRead: async (sessionUlid, upToUlid) => {
-    const { api, currentUserPtid } = get();
-    if (!api || !currentUserPtid || get().activeSessionUlid !== sessionUlid) return;
+    const { socialGateway, currentUserPtid } = get();
+    if (!socialGateway || !currentUserPtid || get().activeSessionUlid !== sessionUlid) return;
 
     set((state) => ({
       sessions: clearSessionUnreadForActor(state.sessions, sessionUlid, currentUserPtid),
@@ -431,8 +455,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       .filter(Boolean);
 
     await Promise.allSettled([
-      upToUlid ? api.markMessageRead(sessionUlid, upToUlid) : Promise.resolve(),
-      unreadUlids.length ? api.ackMessages(unreadUlids, FRIEND_MESSAGE_STATUS_READ) : Promise.resolve(),
+      upToUlid ? socialGateway.markMessageRead(sessionUlid, upToUlid) : Promise.resolve(),
+      unreadUlids.length ? socialGateway.ackMessages(unreadUlids, FRIEND_MESSAGE_STATUS_READ) : Promise.resolve(),
     ]);
 
     await get().refreshSessions().catch((error) => {
@@ -441,18 +465,18 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   loadMoreNotifications: async () => {
-    const api = requireApi(get());
+    const notifGw = requireNotificationGateway(get());
     const { notificationHasMore, notificationNextCursor } = get();
     if (!notificationHasMore || !notificationNextCursor) return;
 
     set({ loading: true, error: null });
     try {
-      const payload = await api.listNotifications(30, notificationNextCursor);
-      const incoming = (payload.notifications ?? []).map(normalizeNotification);
+      const data = unwrapOutcome(await notifGw.listNotifications(30, notificationNextCursor));
+      const incoming = data.notifications.map(normalizeNotification);
       set((state) => ({
         notifications: mergeNotifications(state.notifications, incoming),
-        notificationNextCursor: payload.nextCursor ?? payload.next_cursor ?? '',
-        notificationHasMore: Boolean(payload.nextCursor ?? payload.next_cursor),
+        notificationNextCursor: data.nextCursor,
+        notificationHasMore: Boolean(data.nextCursor),
         loading: false,
       }));
     } catch (error) {
@@ -461,27 +485,27 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   markNotificationRead: async (notificationId) => {
-    const api = requireApi(get());
-    await api.markNotificationsRead([notificationId]);
+    const notifGw = requireNotificationGateway(get());
+    unwrapOutcome(await notifGw.markNotificationsRead([notificationId]));
     await get().refreshNotifications();
   },
 
   markAllNotificationsRead: async () => {
-    const api = requireApi(get());
-    await api.markAllNotificationsRead();
+    const notifGw = requireNotificationGateway(get());
+    unwrapOutcome(await notifGw.markAllNotificationsRead());
     await get().refreshNotifications();
   },
 
   deleteNotification: async (notificationId) => {
-    const api = requireApi(get());
-    await api.deleteNotifications([notificationId]);
+    const notifGw = requireNotificationGateway(get());
+    unwrapOutcome(await notifGw.deleteNotifications([notificationId]));
     await get().refreshNotifications();
   },
 
   acceptFriendRequest: async (requestId) => {
-    const api = requireApi(get());
+    const gw = requireSocialGateway(get());
     try {
-      const payload = await api.acceptFriendRequest(requestId);
+      const payload = unwrapOutcome(await gw.acceptFriendRequest(requestId));
       set((state) => ({
         friendRequests: state.friendRequests.map((request) =>
           requestKey(request) === requestId
@@ -500,9 +524,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   rejectFriendRequest: async (requestId) => {
-    const api = requireApi(get());
+    const gw = requireSocialGateway(get());
     try {
-      const payload = await api.rejectFriendRequest(requestId);
+      const payload = unwrapOutcome(await gw.rejectFriendRequest(requestId));
       set((state) => ({
         friendRequests: state.friendRequests.map((request) =>
           requestKey(request) === requestId
@@ -518,9 +542,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   sendFriendRequest: async (receiverPtid, message) => {
-    const api = requireApi(get());
+    const gw = requireSocialGateway(get());
     try {
-      await api.sendFriendRequest(receiverPtid, message);
+      unwrapOutcome(await gw.sendFriendRequest(receiverPtid, message));
       await get().refreshFriendRequests();
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -540,10 +564,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
 
   loadMessages: async (sessionUlid) => {
     const state = get();
-    const api = requireApi(state);
+    const gw = requireSocialGateway(state);
     try {
-      const payload = await api.listMessages(sessionUlid);
-      const messages = await decryptVisibleMessages(state, sessionUlid, (payload.messages ?? []).map(normalizeMessage));
+      const result = unwrapOutcome(await gw.listMessages(sessionUlid));
+      const messages = await decryptVisibleMessages(state, sessionUlid, result.messages.map(normalizeMessage));
       set((state) => ({
         messages: { ...state.messages, [sessionUlid]: messages },
       }));
@@ -574,9 +598,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       }
     }
 
-    const api = requireApi(state);
+    const profileGw = requireProfileGateway(state);
     try {
-      const profile = normalizePeerProfile(await api.getPeerProfile(ptid));
+      const profile = unwrapOutcome(await profileGw.getPeerProfile(ptid));
       await state.storage?.repositories.peerProfiles.write(ptid, profile).catch(() => undefined);
       set((prev) => ({
         currentUserProfile: profile,
@@ -602,14 +626,14 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       }
     }
 
-    const api = requireApi(state);
+    const profileGw = requireProfileGateway(state);
     set((prev) => ({
       peerProfileLoading: { ...prev.peerProfileLoading, [ptid]: true },
       peerProfileErrors: { ...prev.peerProfileErrors, [ptid]: null },
     }));
 
     try {
-      const profile = normalizePeerProfile(await api.getPeerProfile(ptid));
+      const profile = unwrapOutcome(await profileGw.getPeerProfile(ptid));
       await state.storage?.repositories.peerProfiles.write(ptid, profile).catch(() => undefined);
       set((prev) => ({
         peerProfiles: { ...prev.peerProfiles, [ptid]: profile },
@@ -626,7 +650,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
 
   sendMessage: async (sessionUlid, content, attachments, messageType) => {
     const state = get();
-    const api = requireApi(state);
+    const gw = requireSocialGateway(state);
     const authSession = requireAuthSession(state);
     const trimmed = content.trim();
     if (!trimmed && !attachments?.length) return;
@@ -642,7 +666,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         messageType,
       });
       const encryptedPayload = await encryptFriendChatPayload(authSession, sessionUlid, receiverPtid, encryptedPlaintext);
-      const payload = await api.sendEncryptedMessage(sessionUlid, receiverPtid, encryptedPayload, encryptedPlaintext.messageType);
+      const payload = unwrapOutcome(await gw.sendEncryptedMessage(sessionUlid, receiverPtid, encryptedPayload, encryptedPlaintext.messageType));
       if (payload.message) {
         const message = applyFriendEncryptedPayloadToMessage(normalizeMessage(payload.message), encryptedPlaintext);
         set((state) => ({
@@ -658,7 +682,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
 
   editMessage: async (sessionUlid, messageUlid, content) => {
     const state = get();
-    const api = requireApi(state);
+    const gw = requireSocialGateway(state);
     const authSession = requireAuthSession(state);
     const trimmed = content.trim();
     if (!trimmed) return;
@@ -670,7 +694,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     try {
       const encryptedPlaintext = createFriendEncryptedChatPayload({ text: trimmed });
       const encryptedPayload = await encryptFriendChatPayload(authSession, sessionUlid, receiverPtid, encryptedPlaintext);
-      await api.editMessage(sessionUlid, messageUlid, encryptedPayload);
+      unwrapOutcome(await gw.editMessage(sessionUlid, messageUlid, encryptedPayload));
       get().applyMessageMutation(sessionUlid, messageUlid, 'EDIT', {
         newContent: trimmed,
         newCiphertext: encryptedPayload,
@@ -684,9 +708,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   recallMessage: async (sessionUlid, messageUlid) => {
-    const api = requireApi(get());
+    const gw = requireSocialGateway(get());
     try {
-      await api.recallMessage(sessionUlid, messageUlid);
+      unwrapOutcome(await gw.recallMessage(sessionUlid, messageUlid));
       get().applyMessageMutation(sessionUlid, messageUlid, 'RECALL', { mutatedTsUnixMs: Date.now() });
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -695,9 +719,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   deleteMessage: async (sessionUlid, messageUlid) => {
-    const api = requireApi(get());
+    const gw = requireSocialGateway(get());
     try {
-      await api.deleteMessage(sessionUlid, messageUlid);
+      unwrapOutcome(await gw.deleteMessage(sessionUlid, messageUlid));
       get().applyMessageMutation(sessionUlid, messageUlid, 'DELETE', { mutatedTsUnixMs: Date.now() });
       await get().refreshSessions();
     } catch (error) {
@@ -721,12 +745,12 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       },
     }));
 
-    const { api, currentUserPtid, activeSessionUlid } = get();
-    if (api && currentUserPtid && normalized.senderPtid !== currentUserPtid) {
+    const { socialGateway, currentUserPtid, activeSessionUlid } = get();
+    if (socialGateway && currentUserPtid && normalized.senderPtid !== currentUserPtid) {
       if (activeSessionUlid === sessionUlid) {
         await get().markActiveSessionRead(sessionUlid, normalized.ulid);
       } else {
-        await api.ackMessages([normalized.ulid], FRIEND_MESSAGE_STATUS_DELIVERED).catch((error) => {
+        await socialGateway.ackMessages([normalized.ulid], FRIEND_MESSAGE_STATUS_DELIVERED).catch((error) => {
           set({ error: normalizeError(error) });
         });
       }
@@ -763,9 +787,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }),
 
   sendTypingState: async (sessionUlid, typing) => {
-    const { api } = get();
-    if (!api || !sessionUlid) return;
-    await api.sendTypingState(sessionUlid, typing).catch(() => {
+    const { socialGateway } = get();
+    if (!socialGateway || !sessionUlid) return;
+    await socialGateway.sendTypingState(sessionUlid, typing).catch(() => {
       // Typing is ephemeral; reconcile and the next pulse heal missed frames.
     });
   },
@@ -776,19 +800,18 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       set({ peopleSearchResults: [], peopleSearchError: null });
       return;
     }
-    const api = requireApi(get());
+    const profileGw = requireProfileGateway(get());
     set({ peopleSearchLoading: true, peopleSearchError: null });
     try {
       const parsed = parseHandleInput(trimmed);
       if (parsed.isFederated && parsed.hasHost) {
-        const view = await api.resolveFederationHandle(parsed.canonical);
-        const result = federationViewToResult(view);
-        set({ peopleSearchResults: result ? [result] : [], peopleSearchLoading: false });
+        const result = unwrapOutcome(await profileGw.resolveFederationHandle(parsed.canonical));
+        set({ peopleSearchResults: result.asSearchResult ? [result.asSearchResult] : [], peopleSearchLoading: false });
         return;
       }
-      const payload = await api.searchActors(parsed.localPart || trimmed);
+      const result = unwrapOutcome(await profileGw.searchActors(parsed.localPart || trimmed));
       set({
-        peopleSearchResults: (payload.items ?? []).map(normalizeActorSearchResult).filter((item) => item.ptid),
+        peopleSearchResults: result.items.filter((item) => item.ptid),
         peopleSearchLoading: false,
       });
     } catch (error) {
@@ -855,11 +878,25 @@ async function readCachedPeerProfile(
   return { profile: cached.envelope.value as PeerProfile, stale: cached.stale };
 }
 
-function requireApi(state: SocialState): SocialApiClient {
-  if (!state.api) {
+function requireSocialGateway(state: SocialState): SocialGateway {
+  if (!state.socialGateway) {
     throw new SocialApiError({ method: 'GET', path: '/social', message: 'mobile.social.notAuthenticated' });
   }
-  return state.api;
+  return state.socialGateway;
+}
+
+function requireNotificationGateway(state: SocialState): NotificationGateway {
+  if (!state.notificationGateway) {
+    throw new SocialApiError({ method: 'GET', path: '/notification', message: 'mobile.social.notAuthenticated' });
+  }
+  return state.notificationGateway;
+}
+
+function requireProfileGateway(state: SocialState): ProfileGateway {
+  if (!state.profileGateway) {
+    throw new SocialApiError({ method: 'GET', path: '/profile', message: 'mobile.social.notAuthenticated' });
+  }
+  return state.profileGateway;
 }
 
 function requireAuthSession(state: SocialState): MobileAuthSession {

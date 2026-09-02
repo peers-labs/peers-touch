@@ -50,6 +50,41 @@ impl MobileError {
             message: message.into(),
         }
     }
+
+    pub fn ledger(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_COMMAND_LEDGER",
+            message: message.into(),
+        }
+    }
+
+    pub fn draft(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_DRAFT_STORE",
+            message: message.into(),
+        }
+    }
+
+    pub fn lifecycle(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_LIFECYCLE",
+            message: message.into(),
+        }
+    }
+
+    pub fn permission(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_PERMISSION",
+            message: message.into(),
+        }
+    }
+
+    pub fn network(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_NETWORK",
+            message: message.into(),
+        }
+    }
 }
 
 impl std::fmt::Display for MobileError {

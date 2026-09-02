@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { AppProviders } from './app/AppProviders';
+import { useLifecyclePhase } from './app/lifecycle';
 import { useMobileI18n } from './app/mobileI18n';
 import { MobileShell } from './components/MobileShell';
 import {
@@ -37,8 +38,22 @@ import { purgeLegacyMobileIdentityStorage } from './storage/mobileClientStorage'
 
 type LaunchState = 'station-selection' | 'access-gate-chain' | 'shell';
 
+/**
+ * MobileAppRoot — root component that owns the launch-state machine.
+ *
+ * The lifecycle kernel (via AppProviders) manages runtime bootstrap/teardown.
+ * This component handles the pre-shell launch flow: station selection,
+ * access gate chain, and then delegates to MobileShell.
+ *
+ * Lifecycle coordination:
+ * - The kernel bootstraps all runtimes before this component mounts.
+ * - Launch state transitions are driven by station and auth outcomes.
+ * - The shell only renders when lifecyclePhase is ACTIVE.
+ */
 function MobileAppRoot() {
   const { t } = useMobileI18n();
+  const lifecyclePhase = useLifecyclePhase();
+
   const [launchState, setLaunchState] = useState<LaunchState>('station-selection');
   const [stationRegistry, setStationRegistry] = useState<StoredStationRegistry>(() => emptyStationRegistry());
   const [stationError, setStationError] = useState<string | null>(null);
@@ -60,7 +75,10 @@ function MobileAppRoot() {
   const stationUrlsKey = stationRegistry.entries.map((entry) => entry.url).join('\n');
   const activeStation = activeStationEntry(stationRegistry);
 
+  // --- Initialization: load station registry and restore session ---
   useEffect(() => {
+    if (lifecyclePhase !== 'ACTIVE') return;
+
     let mounted = true;
     purgeLegacyMobileIdentityStorage();
 
@@ -83,20 +101,23 @@ function MobileAppRoot() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [lifecyclePhase]);
 
+  // --- Clear session when active station changes ---
   useEffect(() => {
     if (!authSession || !activeStation || authSession.stationPeerId === activeStation.stationPeerId) return;
 
     clearSession().catch(() => setAuthSession(null));
   }, [activeStation, authSession, clearSession, setAuthSession]);
 
+  // --- Auto-start access gate chain when session matches station ---
   useEffect(() => {
     if (!authSession || !activeStation || authSession.stationPeerId !== activeStation.stationPeerId) return;
     if (launchState !== 'station-selection') return;
     void startAccessGateChain(authSession);
   }, [activeStation, authSession, launchState]);
 
+  // --- Auto-probe station URLs ---
   useEffect(() => {
     if (launchState !== 'station-selection') return;
 
@@ -106,6 +127,7 @@ function MobileAppRoot() {
     }
   }, [launchState, stationUrlsKey]);
 
+  // --- Load remembered accounts when active station changes ---
   useEffect(() => {
     if (!activeStation) {
       setRememberedAccounts([]);
@@ -280,6 +302,8 @@ function MobileAppRoot() {
       setAuthLoading(false);
     }
   }
+
+  // --- Render based on launch state ---
 
   if (launchState === 'shell') {
     return (

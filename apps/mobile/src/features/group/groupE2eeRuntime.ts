@@ -7,8 +7,12 @@ import {
 
 import type { MobileAuthSession } from '../auth/authSession';
 import { mobileAuthScope } from '../auth/mobileAuthIdentity';
-import type { ChatAttachmentInput } from '../social/socialApi';
-import { createSocialApiClient } from '../social/socialApi';
+import type { ChatAttachmentInput } from '../social/socialApiTypes';
+import {
+  createSocialGateway,
+  unwrapOutcome,
+  type SocialGateway,
+} from '../../services/gateways';
 import { readableErrorMessage } from '../social/socialTypes';
 import { ChatEncryptedMessagePayloadSchema, GroupMessageAttachmentSchema, type ChatEncryptedMessagePayload, type GroupMember, type GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
@@ -36,14 +40,14 @@ export function startGroupE2eeRuntime(
   let cancelled = false;
   let repairing = false;
   const ledger = createGroupSkdmLedger(session);
-  const socialApi = createSocialApiClient(session);
+  const socialGw = createSocialGateway(session);
 
   const canEncryptGroup = async (groupUlid: string): Promise<boolean> => {
     if (cancelled || !groupUlid) return false;
     try {
       const store = getStore();
       const members = await membersForDistribution(store, groupUlid);
-      await distributeSenderKey(session, socialApi, ledger, groupUlid, members);
+      await distributeSenderKey(session, socialGw, ledger, groupUlid, members);
       store.setEncryptionReady(groupUlid, true);
       store.setE2eeError(sendErrorKey(groupUlid), null);
       return true;
@@ -118,7 +122,8 @@ export function startGroupE2eeRuntime(
           messageType,
         });
         const encryptedPayload = await encryptGroupMessagePayload(session, groupUlid, encryptedPlaintext);
-        const payload = await store.api?.sendMessage(groupUlid, encryptedPayload, [], encryptedChatTransportMessageType());
+        const outcome = await store.gateway?.sendMessage(groupUlid, encryptedPayload, [], encryptedChatTransportMessageType());
+        const payload = outcome && outcome.ok ? outcome.data : undefined;
         if (payload?.message) {
           await store.ingestRealtimeMessage(groupUlid, payload.message);
           store.applyDecryptedMessage(groupUlid, payload.message.ulid, encryptedPlaintext);
@@ -137,7 +142,9 @@ export function startGroupE2eeRuntime(
         const ready = await canEncryptGroup(groupUlid);
         if (!ready) return false;
         const encryptedPayload = await encryptGroupMessagePayload(session, groupUlid, createEncryptedChatPayload({ text: plaintext }));
-        await store.api?.editMessage(groupUlid, messageUlid, encryptedPayload);
+        if (store.gateway) {
+          unwrapOutcome(await store.gateway.editMessage(groupUlid, messageUlid, encryptedPayload));
+        }
         store.applyMessageMutation(groupUlid, messageUlid, 'EDIT', {
           newContent: plaintext,
           newCiphertext: encryptedPayload,
@@ -165,7 +172,7 @@ async function membersForDistribution(store: GroupState, groupUlid: string): Pro
 
 async function distributeSenderKey(
   session: MobileAuthSession,
-  socialApi: ReturnType<typeof createSocialApiClient>,
+  socialGw: SocialGateway,
   ledger: GroupSkdmLedger,
   groupUlid: string,
   members: GroupMember[],
@@ -196,10 +203,10 @@ async function distributeSenderKey(
       try {
         const sealedB64 = await sealSkdmEnvelopeForPeer(session, peerPtid, ikPub, skdmBytes);
         const carrier = base64ToBytes(sealedB64);
-        const friendSession = await socialApi.createSession(peerPtid);
+        const friendSession = unwrapOutcome(await socialGw.createSession(peerPtid));
         const sessionUlid = friendSession.session?.ulid;
         if (!sessionUlid) throw new Error(`missing-friend-session:${peerPtid}`);
-        await socialApi.sendSenderKeyDistribution(sessionUlid, peerPtid, carrier);
+        unwrapOutcome(await socialGw.sendSenderKeyDistribution(sessionUlid, peerPtid, carrier));
         await ledger.markSent(target);
       } catch (error) {
         await ledger.markFailed(target, errorMessage(error));

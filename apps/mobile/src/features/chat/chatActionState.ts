@@ -1,5 +1,5 @@
-import type { ChatBackgroundId } from '../social/socialApi';
-import { normalizeChatBackgroundId } from '../social/socialApi';
+import type { ChatBackgroundId } from '../social/socialApiTypes';
+import { normalizeChatBackgroundId } from '../social/socialApiTypes';
 import { createMobileActorStorageRuntime } from '../../storage/mobileClientStorage';
 import type { MobileAuthSession } from '../auth/authSession';
 import {
