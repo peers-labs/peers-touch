@@ -12,7 +12,8 @@ from pathlib import Path
 from ._paths import REPO_ROOT
 from .attestation import source_workspace_digest
 from .errors import BlockedError, ProvisioningError
-from .evidence_store import write_current_artifact
+from .evidence_store import RunHandle, write_current_artifact
+from .launch_context import EphemeralGateLaunchContext
 from .lease import (
     ProfileLease,
     ProfileLeaseUnavailable,
@@ -61,10 +62,48 @@ class EnvironmentProvisioner(ABC):
             tuple[tuple[str, ...], dict[str, str]] | None
         ) = None
         self._credential_preparation_error: Exception | None = None
+        self._evidence_run: RunHandle | None = None
+
+    def bind_evidence_run(self, run: RunHandle) -> None:
+        if self._manifest is not None:
+            raise ProvisioningError(
+                "evidence run must be bound before provisioning starts"
+            )
+        if self._evidence_run is not None and self._evidence_run is not run:
+            raise ProvisioningError(
+                "provisioner is already bound to another evidence run"
+            )
+        self._evidence_run = run
+
+    @property
+    def evidence_run(self) -> RunHandle:
+        if self._evidence_run is None:
+            raise ProvisioningError(
+                "provisioner requires an explicitly bound evidence run"
+            )
+        return self._evidence_run
 
     @abstractmethod
     def provision(self, gate_id: str) -> RuntimeManifest:
         ...
+
+    def create_gate_launch_context(
+        self,
+        *,
+        gate_id: str,
+        evidence_run_id: str,
+        provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext | None:
+        if required_capabilities:
+            raise BlockedError(
+                reason=(
+                    f"Environment {self.environment_id!r} does not provide "
+                    "the Gate's required ephemeral capabilities"
+                ),
+                resource=f"ephemeral-capabilities:{gate_id}",
+            )
+        return None
 
     def cleanup(self) -> tuple[str, ...]:
         failures: list[str] = []
