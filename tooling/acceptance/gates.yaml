@@ -616,6 +616,37 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Validate the Applet managed domain profile against Desktop lifecycle smoothness capability, registry, gate, and latest evidence contracts."
+    },
+    "agent-v2-kernel-foundation-e2e": {
+      "command": "PT_AGENT_V2_CANDIDATE_MANIFEST=$(python3 tooling/acceptance/gates/agent/foundation_scenario_runner.py) && python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-kernel-foundation-e2e",
+      "timeout_seconds": 3600,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "V2 kernel foundation: C01-C10 behavior across 419-cell Gate matrix.",
+      "initial_proof_status": "UNPROVEN",
+      "runtime_matrix": {
+        "id": "modern-chat-agent-v2-runtime-matrix",
+        "version": "2026-08-25.1",
+        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "expected_tuple_count": 419
+      },
+      "required_artifact_roles": [
+        "cell-results",
+        "receiver-dom",
+        "station-readback",
+        "runtime-events",
+        "runtime-attestation-set",
+        "measurement-report",
+        "side-effect-count",
+        "replay",
+        "cleanup",
+        "contract-evidence",
+        "guard-report",
+        "source-identity",
+        "role-schema-report",
+        "runner-attestation"
+      ]
     }
   }
 }
