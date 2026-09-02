@@ -322,6 +322,41 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         ):
             self.load_profile("two")
 
+    def test_builds_client_manifest_from_typed_station_service(self) -> None:
+        clients = [{"runtime": "native-tauri"}, {"runtime": "browser"}]
+
+        result = foundation_scenario_runner._build_client_manifest(
+            {
+                "services": {
+                    "station": {
+                        "kind": "station",
+                        "endpoint": "https://station.example",
+                    }
+                },
+                "clients": clients,
+            }
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "station": {"url": "https://station.example"},
+                "clients": clients,
+            },
+        )
+
+    def test_rejects_legacy_top_level_station_manifest(self) -> None:
+        with self.assertRaisesRegex(
+            foundation_scenario_runner.ScenarioRunnerError,
+            "services.station.endpoint",
+        ):
+            foundation_scenario_runner._build_client_manifest(
+                {
+                    "station": {"url": "https://station.example"},
+                    "clients": [],
+                }
+            )
+
     def test_maps_the_exact_profile_provider_fixture(self) -> None:
         config = foundation_scenario_runner._agent_provider_config(
             {

@@ -167,10 +167,11 @@ def _load_profile_env(manifest: dict[str, Any]) -> dict[str, str]:
 
 def _build_client_manifest(runtime_manifest: dict[str, Any]) -> dict[str, Any]:
     """Build the client manifest consumed by FoundationRuntimePair.from_manifest."""
-    station = runtime_manifest.get("station")
-    if not isinstance(station, Mapping) or not station.get("url"):
+    services = runtime_manifest.get("services")
+    station = services.get("station") if isinstance(services, Mapping) else None
+    if not isinstance(station, Mapping) or not station.get("endpoint"):
         raise ScenarioRunnerError(
-            "runtime manifest must contain station.url"
+            "runtime manifest must contain services.station.endpoint"
         )
     clients = runtime_manifest.get("clients")
     if not isinstance(clients, list):
@@ -178,7 +179,7 @@ def _build_client_manifest(runtime_manifest: dict[str, Any]) -> dict[str, Any]:
             "runtime manifest must contain a clients array"
         )
     return {
-        "station": station,
+        "station": {"url": station["endpoint"]},
         "clients": clients,
     }
 
