@@ -2684,17 +2684,16 @@ class AcceptanceRunTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            redacted_paths, leaked_paths = module.redact_runtime_artifacts(
+            leaked_paths = module.audit_runtime_artifacts(
                 root,
                 (secret,),
             )
             serialized = artifact.read_text(encoding="utf-8")
 
-        self.assertEqual(redacted_paths, [])
         self.assertEqual(leaked_paths, ["roles/receiver-dom.json"])
         self.assertEqual(serialized, original)
 
-    def test_runtime_log_is_registered_after_artifact_redaction(self) -> None:
+    def test_unregistered_secret_artifact_fails_without_mutation(self) -> None:
         module = load_module()
         secret = "runtime-secret-value"
         with tempfile.TemporaryDirectory() as tmp:
@@ -2717,14 +2716,35 @@ class AcceptanceRunTest(unittest.TestCase):
                 (secret,),
             )
             collected = run.collect_existing_artifacts()
+            serialized = artifact.read_text(encoding="utf-8")
             run.close()
 
-        self.assertIn("reports/runtime.json", redacted_paths)
-        self.assertEqual(
-            leaked_paths,
-            ["logs/runtime-gate.log", "reports/runtime.json"],
-        )
+        self.assertEqual(redacted_paths, ["logs/runtime-gate.log"])
+        self.assertEqual(leaked_paths, ["reports/runtime.json"])
+        self.assertIn(secret, serialized)
         self.assertEqual(collected["log"], log_ref)
+
+    def test_unregistered_secret_artifact_discards_active_run(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("runtime-gate", source={})
+            run_dir = run.run_dir
+
+            with self.assertRaisesRegex(
+                EvidenceConflict,
+                "bypassed the immutable artifact writer",
+            ):
+                module.reject_unresolved_secret_artifacts(
+                    run,
+                    ["reports/unregistered.json"],
+                    [],
+                )
+
+            self.assertFalse(run_dir.exists())
 
     def test_build_run_report_deduplicates_review_commands_by_command_text(self) -> None:
         module = load_module()

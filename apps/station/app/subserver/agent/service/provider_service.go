@@ -76,17 +76,20 @@ var apiVersionSuffix = regexp.MustCompile(`(^|/)v\d+$`)
 
 // ProviderCallRequest carries all inputs needed to invoke a single LLM completion.
 type ProviderCallRequest struct {
-	ProviderID      string
-	Model           string
-	SystemPrompt    string
-	Messages        []domain.Message
-	Tools           []*domain.ToolDefinition
-	UserID          string
-	ProviderType    string // "ollama", "openai", "anthropic", or empty for auto-detect
-	Effort          string // reasoning effort: "low" | "medium" | "high"
-	ThinkingMode    domain.ThinkingMode
-	MaxOutputTokens int
-	DeltaSink       ProviderDeltaSink
+	ProviderID                      string
+	Model                           string
+	SystemPrompt                    string
+	Messages                        []domain.Message
+	Tools                           []*domain.ToolDefinition
+	UserID                          string
+	ProviderType                    string // "ollama", "openai", "anthropic", or empty for auto-detect
+	Effort                          string // reasoning effort: "low" | "medium" | "high"
+	ThinkingMode                    domain.ThinkingMode
+	MaxOutputTokens                 int
+	DeltaSink                       ProviderDeltaSink
+	ExpectedProviderConfigVersion   string
+	ExpectedCapabilitySourceVersion string
+	BeforeDispatch                  func(context.Context) error
 }
 
 type ProviderDeltaSink func(ctx context.Context, delta ProviderDelta) error
@@ -190,7 +193,32 @@ func NewProviderService(cachingService *PromptCachingService) *ProviderService {
 // Call loads the provider record, extracts credentials, detects the provider
 // type, and dispatches the request to the matching LLM endpoint.
 func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*ProviderCallResponse, error) {
-
+	if req == nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"provider call request is required",
+			nil,
+		)
+	}
+	authorityFieldCount := 0
+	if req.ExpectedProviderConfigVersion != "" {
+		authorityFieldCount++
+	}
+	if req.ExpectedCapabilitySourceVersion != "" {
+		authorityFieldCount++
+	}
+	if req.BeforeDispatch != nil {
+		authorityFieldCount++
+	}
+	if authorityFieldCount != 0 && authorityFieldCount != 3 {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"provider execution authority is incomplete",
+			nil,
+		)
+	}
 	if req.ProviderID == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 			"provider_id is required", nil)
@@ -200,6 +228,14 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	provider, err := s.loadProvider(ctx, req.ProviderID)
 	if err != nil {
 		return nil, err
+	}
+	if !provider.Enabled {
+		return nil, errcode.New(
+			errcode.AgentProviderDisabled,
+			http.StatusBadRequest,
+			"provider is disabled before execution",
+			nil,
+		)
 	}
 	if strings.EqualFold(strings.TrimSpace(provider.RuntimeKind), providerRuntimeCLI) ||
 		strings.EqualFold(strings.TrimSpace(provider.SourceType), providerRuntimeCLI) {
@@ -220,6 +256,14 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 			"provider protocol is not supported by the active Agent profile", protocolErr)
 	}
+	reasoningSupported := false
+	if req.ExpectedCapabilitySourceVersion != "" {
+		current, authorityErr := validateExpectedProviderAuthority(ctx, req, provider)
+		if authorityErr != nil {
+			return nil, authorityErr
+		}
+		reasoningSupported = current.Capabilities.GetRuntime().GetReasoning()
+	}
 
 	// Step 4 — Resolve model name: prefer request, then fall back to provider default.
 	model := req.Model
@@ -230,9 +274,11 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	if modeErr != nil {
 		return nil, modeErr
 	}
-	thinkingControl := providerThinkingControl(provider.Name, model)
+	if req.ExpectedCapabilitySourceVersion == "" {
+		reasoningSupported = providerThinkingControl(provider.Name, model) != ""
+	}
 	if thinkingMode != domain.ThinkingModeAuto &&
-		(providerType != providerTypeOpenAI || thinkingControl == "") {
+		(providerType != providerTypeOpenAI || !reasoningSupported) {
 		return nil, errcode.New(
 			errcode.AgentInvalidRequest,
 			http.StatusBadRequest,
@@ -244,6 +290,22 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	maxOutputTokens := req.MaxOutputTokens
 	if maxOutputTokens <= 0 {
 		maxOutputTokens = defaultMaxTokens
+	}
+	if req.BeforeDispatch != nil {
+		if err := req.BeforeDispatch(ctx); err != nil {
+			return nil, err
+		}
+		finalProvider, err := s.loadProvider(ctx, req.ProviderID)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := validateExpectedProviderAuthority(
+			ctx,
+			req,
+			finalProvider,
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	logger.Infof(ctx, "provider call: provider_id=%s type=%s model=%s messages=%d",
@@ -310,6 +372,74 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		req.ProviderID, resp.Model, resp.InputTokens, resp.OutputTokens, resp.CacheHit)
 
 	return resp, nil
+}
+
+func validateExpectedProviderAuthority(
+	ctx context.Context,
+	req *ProviderCallRequest,
+	provider *persistence.AgentProvider,
+) (*AdmissionSnapshot, error) {
+	if req == nil ||
+		provider == nil ||
+		strings.TrimSpace(req.UserID) == "" ||
+		strings.TrimSpace(req.ProviderType) == "" ||
+		strings.TrimSpace(req.Model) == "" {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"capability source validation requires actor, provider, and model",
+			nil,
+		)
+	}
+	if fmt.Sprintf("%d", provider.Version) != req.ExpectedProviderConfigVersion ||
+		provider.Name != strings.TrimSpace(req.ProviderType) {
+		return nil, errcode.New(
+			errcode.AgentVersionConflict,
+			http.StatusConflict,
+			"provider execution authority differs from the pinned runtime",
+			nil,
+		)
+	}
+	current, resolveErr := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	).Resolve(ctx, req.UserID, req.ProviderType, req.Model)
+	if resolveErr != nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime capability source changed before execution",
+			resolveErr,
+		)
+	}
+	if current.Capabilities.GetProvenance().GetSourceVersion() !=
+		req.ExpectedCapabilitySourceVersion {
+		return nil, errcode.New(
+			errcode.AgentVersionConflict,
+			http.StatusConflict,
+			"runtime capability source changed before execution",
+			nil,
+		)
+	}
+	if req.DeltaSink != nil &&
+		!current.Capabilities.GetRuntime().GetStreaming() {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"selected runtime does not support streaming",
+			nil,
+		)
+	}
+	if len(req.Tools) > 0 &&
+		!current.Capabilities.GetAgentic().GetNativeTools() {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"selected runtime does not support native tools",
+			nil,
+		)
+	}
+	return current, nil
 }
 
 func providerThinkingControl(providerID string, modelID string) string {
