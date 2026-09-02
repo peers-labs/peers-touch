@@ -8,7 +8,7 @@ import {
 
 import type { MobileAuthSession } from '../auth/authSession';
 import { mobileAuthScope } from '../auth/mobileAuthIdentity';
-import type { ChatAttachmentInput } from './socialApi';
+import type { ChatAttachmentInput } from './socialApiTypes';
 import { EncryptedMessageSchema } from '../../gen/proto/domain/chat/friend_chat_pb';
 import { ChatEncryptedMessagePayloadSchema, GroupMessageAttachmentSchema, type ChatEncryptedMessagePayload } from '../../gen/proto/domain/chat/group_chat_pb';
 import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';

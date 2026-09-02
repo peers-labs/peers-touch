@@ -11,6 +11,7 @@ import {
   applyAuthRuntimeProjection,
   restoreAuthRuntimeProjection,
 } from './authRuntime';
+import { installNativeLifecycleBridge } from './nativeLifecycleBridge';
 
 interface NativeRuntimeEventErrorPayload {
   operation?: string;
@@ -27,6 +28,9 @@ const NATIVE_EVENT_NAMES = [
 export function installMobileNativeEventBridge(): () => void {
   let disposed = false;
   const unlisteners: UnlistenFn[] = [];
+
+  // W7: Install the lifecycle generation bridge listeners
+  const teardownLifecycleBridge = installNativeLifecycleBridge();
 
   NATIVE_EVENT_NAMES.forEach((eventName) => {
     listen<SocialHostEventPayloadLike>(eventName, (event) => {
@@ -85,6 +89,7 @@ export function installMobileNativeEventBridge(): () => void {
 
   return () => {
     disposed = true;
+    teardownLifecycleBridge();
     unlisteners.splice(0).forEach((unlisten) => unlisten());
     document.removeEventListener('visibilitychange', onVisibilityChange);
     window.removeEventListener('focus', onFocus);
