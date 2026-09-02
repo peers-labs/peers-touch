@@ -115,3 +115,64 @@ class BlockedError(ProvisioningError):
         super().__init__(reason)
         self.reason = reason
         self.resource = resource
+
+
+class EphemeralLaunchError(GateError):
+    code = "EPHEMERAL_LAUNCH_ERROR"
+
+    def __init__(self, message: str, *, operation: str = "") -> None:
+        super().__init__(message)
+        self.operation = operation
+
+
+class EphemeralLaunchContextInvalid(EphemeralLaunchError):
+    code = "EPHEMERAL_LAUNCH_CONTEXT_INVALID"
+
+
+class EphemeralLaunchTransportUnsupported(EphemeralLaunchError):
+    code = "EPHEMERAL_LAUNCH_TRANSPORT_UNSUPPORTED"
+
+
+class EphemeralLaunchBindFailed(EphemeralLaunchError):
+    code = "EPHEMERAL_LAUNCH_BIND_FAILED"
+
+
+class EphemeralLaunchHandshakeFailed(EphemeralLaunchError):
+    code = "EPHEMERAL_LAUNCH_HANDSHAKE_FAILED"
+
+
+class EphemeralLaunchProtocolError(EphemeralLaunchError):
+    code = "EPHEMERAL_LAUNCH_PROTOCOL_ERROR"
+
+
+class EphemeralLaunchTimeout(EphemeralLaunchError):
+    code = "EPHEMERAL_LAUNCH_TIMEOUT"
+
+
+class EphemeralCapabilityBlocked(EphemeralLaunchError, BlockedError):
+    code = "EPHEMERAL_CAPABILITY_BLOCKED"
+
+    def __init__(
+        self,
+        reason: str,
+        *,
+        resource: str = "",
+        operation: str = "invoke",
+    ) -> None:
+        EphemeralLaunchError.__init__(self, reason, operation=operation)
+        self.reason = reason
+        self.resource = resource
+
+
+class EphemeralLaunchCleanupFailed(EphemeralLaunchError):
+    code = "EPHEMERAL_LAUNCH_CLEANUP_FAILED"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        operation: str = "",
+        result: object = None,
+    ) -> None:
+        super().__init__(message, operation=operation)
+        self.result = result
