@@ -6,6 +6,7 @@
   },
   "services": {
     "station": {
+      "kind": "station",
       "required": true,
       "ready_action": "station",
       "health_action": "station-check",
@@ -13,6 +14,7 @@
       "attestation_producer": "station-deployment"
     },
     "desktop-gateway": {
+      "kind": "desktop-gateway",
       "required": true,
       "ready_action": "desktop",
       "health_action": "desktop-gateway-check",
@@ -20,8 +22,20 @@
       "attestation_producer": "desktop-deployment"
     }
   },
-  "fixtures": [],
-  "credentials": [],
+  "fixtures": [
+    {
+      "id": "chat-native-actors",
+      "authorization_required": true,
+      "authorization_ref": "env:CHAT_ACCEPTANCE_RESET"
+    }
+  ],
+  "credentials": [
+    {
+      "id": "chat-password",
+      "source_ref": "fixture:apps/station/app/conf/actor.yml#preset_users",
+      "required": true
+    }
+  ],
   "cleanup": {
     "resources": ["processes", "ports", "storage", "sessions"]
   }
