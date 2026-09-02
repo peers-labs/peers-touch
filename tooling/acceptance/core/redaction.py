@@ -55,6 +55,18 @@ def redact_text(text: str) -> str:
     )
 
 
+def redact_text_with_values(
+    text: str,
+    sensitive_values: tuple[str, ...] | list[str] | set[str],
+) -> str:
+    """Redact both pattern-matched secrets and explicit sensitive values from text."""
+    result = redact_text(text)
+    for value in sensitive_values:
+        if value:
+            result = result.replace(value, REDACTED)
+    return result
+
+
 def redact_value(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {
