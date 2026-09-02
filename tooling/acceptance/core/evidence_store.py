@@ -985,12 +985,35 @@ class RunHandle:
         self.state = "ACTIVE"
         self._manifest: dict[str, Any] | None = None
         self._manifest_ref: ArtifactRef | None = None
+        self._redacted_artifacts: set[str] = set()
+        self._redaction_values: tuple[str, ...] = ()
 
     @property
     def manifest_ref(self) -> ArtifactRef:
         if self._manifest_ref is None:
             raise EvidenceManifestInvalid("run manifest is not durable")
         return self._manifest_ref
+
+    @property
+    def redacted_artifacts(self) -> tuple[str, ...]:
+        return tuple(sorted(self._redacted_artifacts))
+
+    def configure_redaction(self, secret_values: tuple[str, ...]) -> None:
+        with self._mutex:
+            if self.state != "ACTIVE":
+                raise EvidenceConflict(
+                    "redaction can only be configured for an active run"
+                )
+            self._redaction_values = tuple(secret_values)
+
+    def discard(self) -> None:
+        with self._mutex:
+            if self.state != "ACTIVE":
+                raise EvidenceConflict("only an active run can be discarded")
+            self._active_lock.release()
+            shutil.rmtree(self.run_dir)
+            _fsync_directory(self.run_dir.parent)
+            self.state = "CLOSED"
 
     def subprocess_environment(
         self,
@@ -1219,7 +1242,7 @@ class RunHandle:
             self.state = "DURABLE"
             return manifest
 
-    def publish_latest(self) -> Path:
+    def publish_latest(self, *, runtime_cell: str = "") -> Path:
         if self.state not in {"DURABLE", "PUBLISHED"}:
             raise EvidenceConflict("latest can only publish a durable manifest")
         if self._manifest is None or self._manifest_ref is None:
