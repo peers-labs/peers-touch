@@ -484,7 +484,7 @@ func (s *AgentPackageService) preflightImport(
 
 	return &agentPackageImportPlan{
 		agentOptions: domain.AgentUpsertOptions{
-			ActorID:      ptid,
+			ActorPTID:    ptid,
 			Name:         name,
 			Title:        pkg.GetAgent().GetTitle(),
 			Description:  pkg.GetAgent().GetDescription(),
@@ -750,7 +750,7 @@ func domainAgentToPackageModel(agent *domain.Agent) *model.Agent {
 		ModelName:    agent.ModelName,
 		Effort:       agent.Effort,
 		Visibility:   visibility,
-		OwnerActorId: agent.OwnerActorID,
+		OwnerActorPtid: agent.OwnerActorPTID,
 		ConfigJson:   agent.ConfigJSON,
 		CreatedAt:    timestamppb.New(agent.CreatedAt),
 		UpdatedAt:    timestamppb.New(agent.UpdatedAt),
