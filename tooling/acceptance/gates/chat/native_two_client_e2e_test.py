@@ -8,6 +8,20 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from tooling.acceptance.core import (
+    ArtifactRef,
+    EvidenceReport,
+    EvidenceStore,
+    GateError,
+    REPO_ROOT,
+)
+from tooling.acceptance.gates.chat.native_two_client_runner import (
+    NativeTwoClientGate,
+)
+from tooling.acceptance.gates.chat.native_support import (
+    NativeClientLifecycleLedger,
+)
+
 
 def load_module() -> Any:
     path = Path(__file__).with_name("native_two_client_e2e.py")
@@ -32,13 +46,40 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         evidence: dict[str, str] = {}
         for actor in ("alice", "bob"):
             for suffix in ("screenshot", "dom", "app-log"):
-                path = self.root / f"{actor}-{suffix}.txt"
-                path.write_text("evidence", encoding="utf-8")
-                evidence[f"{actor}-{suffix}"] = str(path)
+                key = f"{actor}-{suffix}"
+                evidence[key] = self.run.write_bytes(
+                    f"evidence/{key}.txt",
+                    b"evidence",
+                ).to_dict()
+        source = {
+            "worktree": "<repo-root>",
+            "commit": "commit-a",
+            "workspaceDigest": "clean",
+        }
+        station = {
+            "kind": "station",
+            "deploymentEnvironment": "station-test",
+            "endpoint": "http://station",
+            "liveCommit": "commit-a",
+            "workspaceDigest": "clean",
+            "protocolDigest": "d" * 64,
+            "attestationArtifact": {
+                "artifactKind": "acceptance-artifact-ref",
+            },
+        }
+        runtime_cell = SyntheticRuntimeBinding().runtime_identity()
         return {
             "gate": "chat-native-two-client-e2e",
             "status": "PASS",
             "station_url": "http://station",
+            "manifest": {
+                "artifactKind": "acceptance-runtime-manifest",
+                "gateId": self.module.GATE_ID,
+                "runId": "provisioner-run-a",
+                "state": "FIXTURE_READY",
+                "source": source,
+                "services": {"station": station},
+            },
             "runtime": {
                 "runtimeCell": "native-tauri-embedded-webdriver",
                 "journey": "direct-delivered-receipt",
@@ -79,6 +120,156 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
 
     def test_accepts_current_isolated_native_report(self) -> None:
         report = self.valid_report()
+        self.run.write_json(
+            self.module.ENVIRONMENT_MANIFEST_PATH,
+            report["manifest"],
+        )
+        report["manifest"]["runId"] = "substituted-provisioner-run"
+        source_ref = self.run.write_json(
+            self.module.SOURCE_REPORT_PATH,
+            report,
+        )
+
+        with self.assertRaisesRegex(
+            self.module.GateError,
+            "embedded environment manifest",
+        ):
+            self.module.validate_report(
+                report,
+                source_ref=source_ref,
+                store=self.store,
+            )
+
+    def test_rejects_runtime_substitution_and_dirty_source(self) -> None:
+        report = self.valid_report()
+        self.write_environment_manifest(report)
+        report["runtime"]["sourceIdentity"]["runtimeCell"][
+            "cellId"
+        ] = "desktop-macos-native"
+        source_ref = self.run.write_json(
+            self.module.SOURCE_REPORT_PATH,
+            report,
+        )
+        with self.assertRaisesRegex(
+            self.module.GateError,
+            "runtime-cell identity",
+        ):
+            self.module.validate_report(
+                report,
+                source_ref=source_ref,
+                store=self.store,
+            )
+
+        report = self.valid_report()
+        report["runtime"]["sourceIdentity"]["runtimeCell"]["source"][
+            "remoteCheckoutClean"
+        ] = False
+        with self.assertRaisesRegex(
+            self.module.GateError,
+            "stale or dirty",
+        ):
+            self.module.validate_report(
+                report,
+                source_ref=source_ref,
+                store=self.store,
+            )
+
+    def test_rejects_plain_path_cross_run_and_modified_evidence(self) -> None:
+        report = self.valid_report()
+        self.write_environment_manifest(report)
+        report["evidence"]["alice-dom"] = "/tmp/alice.html"
+        source_ref = self.run.write_json(
+            self.module.SOURCE_REPORT_PATH,
+            report,
+        )
+        with self.assertRaises(Exception):
+            self.module.validate_report(
+                report,
+                source_ref=source_ref,
+                store=self.store,
+            )
+
+        report = self.valid_report()
+        other = self.store.begin_run(
+            self.module.GATE_ID,
+            source={"commit": "commit-a", "workspaceDigest": "clean"},
+        )
+        try:
+            report["evidence"]["alice-dom"] = other.write_bytes(
+                "evidence/alice-dom.txt",
+                b"cross-run",
+            ).to_dict()
+            with self.assertRaisesRegex(
+                self.module.GateError,
+                "current Gate run",
+            ):
+                self.module.validate_report(
+                    report,
+                    source_ref=source_ref,
+                    store=self.store,
+                )
+        finally:
+            other.close()
+
+        report = self.valid_report()
+        reference = ArtifactRef.from_dict(
+            report["evidence"]["alice-dom"]
+        )
+        self.store.resolve(reference).write_text(
+            "modified",
+            encoding="utf-8",
+        )
+        with self.assertRaises(Exception):
+            self.module.validate_report(
+                report,
+                source_ref=source_ref,
+                store=self.store,
+            )
+
+    def test_failure_retains_first_boundary_and_cleanup(self) -> None:
+        manifest = {
+            "state": "FIXTURE_READY",
+            "source": {
+                "commit": "commit-a",
+                "workspaceDigest": "clean",
+            },
+            "services": {
+                "station": {
+                    "kind": "station",
+                    "endpoint": "http://station",
+                    "liveCommit": "commit-a",
+                    "workspaceDigest": "clean",
+                    "protocolDigest": "d" * 64,
+                },
+            },
+            "clients": [
+                {
+                    "actor": actor,
+                    "webdriver_port": 4445 + index,
+                    "gateway_port": 3030 + index,
+                    "renderer_port": 14310 + index,
+                    "profile": actor,
+                    "storage_root": f"/tmp/{actor}",
+                }
+                for index, actor in enumerate(("alice", "bob"))
+            ],
+        }
+        actors = {
+            "actors": [
+                {
+                    "role": actor,
+                    "accountRef": f"station-account:{actor}",
+                    "ptid": f"did:pt:{actor}",
+                }
+                for actor in ("alice", "bob")
+            ],
+            "reset": {"authorized": True, "targetVerified": True},
+        }
+        gate = NativeTwoClientGate(
+            manifest=manifest,
+            actor_manifest=actors,
+            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+        )
         with (
             patch.object(self.module, "current_commit", return_value="commit-a"),
             patch.object(
@@ -88,6 +279,196 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             ),
         ):
             self.module.validate_report(report)
+
+    def test_rejects_stale_or_non_native_report(self) -> None:
+        report = self.valid_report()
+        report["runtime"]["runtimeCell"] = "browser"
+        with self.assertRaisesRegex(self.module.GateError, "runtime cell"):
+            self.module.validate_report(report)
+        report = self.valid_report()
+        with (
+            patch.object(self.module, "current_commit", return_value="commit-b"),
+            patch.object(
+                self.module,
+                "current_workspace_digest",
+                return_value="workspace-a",
+            ),
+            self.assertRaisesRegex(self.module.GateError, "commit is stale"),
+        ):
+            self.module.validate_report(report)
+
+    def test_source_identity_rejects_malformed_station_protocol_digest(self) -> None:
+        manifest = self.valid_report()["manifest"]
+        manifest["services"]["station"]["protocolDigest"] = "z" * 64
+        gate = object.__new__(NativeTwoClientGate)
+        gate.manifest = manifest
+        gate.runtime_binding = SyntheticRuntimeBinding()
+        gate.report = EvidenceReport(
+            gate_id=self.module.GATE_ID,
+            status="RUNNING",
+            started_at="2026-08-30T00:00:00Z",
+            duration_ms=0,
+        )
+
+        with self.assertRaisesRegex(
+            GateError,
+            "source_build_runtime_identity",
+        ):
+            gate.source_identity({"build_commit": "commit-a"})
+
+    def test_cleanup_failure_remains_structured(self) -> None:
+        binding = SyntheticRuntimeBinding()
+        binding.cleanup["portsReleased"] = False
+        gate = object.__new__(NativeTwoClientGate)
+        gate.runtime_instances = []
+        gate.client_lifecycles = NativeClientLifecycleLedger()
+        gate.clients = {}
+        gate.client_specs = {}
+        gate.runtime_binding = binding
+        gate.report = EvidenceReport(
+            gate_id=self.module.GATE_ID,
+            status="RUNNING",
+            started_at="2026-08-28T00:00:00Z",
+            duration_ms=0,
+        )
+
+        cleanup = gate.cleanup_clients()
+
+        self.assertFalse(cleanup["portsReleased"])
+        self.assertEqual(
+            gate.report.assertions[-1].name,
+            "resources_released",
+        )
+        self.assertFalse(gate.report.assertions[-1].passed)
+
+    def test_cleanup_exports_remote_log_before_binding_cleanup(self) -> None:
+        log_path = self.root / "alice.log"
+
+        class ExportedLogClient:
+            profile = "alice"
+            gateway_port = 3030
+
+            def __init__(self, path: Path) -> None:
+                self.log_path = path
+
+            def stop(self) -> None:
+                self.log_path.write_text(
+                    "remote native log\n",
+                    encoding="utf-8",
+                )
+
+        client = ExportedLogClient(log_path)
+        gate = object.__new__(NativeTwoClientGate)
+        gate.runtime_instances = [client]
+        gate.client_lifecycles = NativeClientLifecycleLedger()
+        gate.client_lifecycles.register(
+            client,
+            "ptid:v1:actor:alice",
+        )
+        gate.client_lifecycles.mark_live(client)
+        gate.clients = {"alice": client}
+        gate.client_specs = {}
+        gate.runtime_binding = SyntheticRuntimeBinding()
+        gate.report = EvidenceReport(
+            gate_id=self.module.GATE_ID,
+            status="RUNNING",
+            started_at="2026-08-28T00:00:00Z",
+            duration_ms=0,
+        )
+
+        cleanup = gate.cleanup_clients()
+
+        reference = ArtifactRef.from_dict(
+            gate.report.evidence["alice-app-log"]
+        )
+        self.assertEqual(
+            self.store.resolve(reference).read_text(encoding="utf-8"),
+            "remote native log\n",
+        )
+        self.assertFalse(cleanup["cleanupErrors"])
+
+    def test_w8_and_gate_entry_bind_runtime_cell(self) -> None:
+        root = Path(__file__).resolve().parents[4]
+        runner = (
+            root
+            / "tooling/acceptance/gates/chat/native_two_client_runner.py"
+        ).read_text(encoding="utf-8")
+        entry = (
+            root
+            / "tooling/acceptance/gates/chat/native_two_client_entry.py"
+        ).read_text(encoding="utf-8")
+        gates = json.loads(
+            (root / "tooling/acceptance/gates.yaml").read_text(
+                encoding="utf-8"
+            )
+        )["gates"][self.module.GATE_ID]
+        makefile = (
+            root / "tooling/make/acceptance.mk"
+        ).read_text(encoding="utf-8")
+        harness = (
+            root / "apps/desktop/src/acceptance/chat/harness.ts"
+        ).read_text(encoding="utf-8")
+        friend_sync = harness.split(
+            "    async syncFriendSession(",
+            maxsplit=1,
+        )[1].split(
+            "    async createGroup(",
+            maxsplit=1,
+        )[0]
+
+        self.assertNotIn("LocalTauriLauncher", runner)
+        self.assertNotIn("start_authenticated_client", runner)
+        self.assertIn('"hydrateActiveActor"', runner)
+        self.assertIn("self.client_lifecycles", runner)
+        self.assertIn("NativeClientLifecycleLedger", runner)
+        self.assertIn(
+            '"createDirectConversation"',
+            runner.split(
+                "    def open_conversation(",
+                maxsplit=1,
+            )[1].split(
+                "    def prove_direction(",
+                maxsplit=1,
+            )[0],
+        )
+        self.assertIn(
+            "await refreshConversation('friend', sessionUlid)",
+            friend_sync,
+        )
+        self.assertNotIn("conversation.syncFromStation", friend_sync)
+        self.assertIn("resolve_native_desktop_runtime", entry)
+        self.assertEqual(gates["timeout_seconds"], 1800)
+        self.assertEqual(
+            gates["requiredRuntimeCells"],
+            [
+                "desktop-macos-native",
+                "desktop-linux-native",
+                "desktop-windows-native",
+            ],
+        )
+        self.assertIn(
+            "acceptance-chat-native-w8:\n"
+            '\tPT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)"',
+            makefile,
+        )
+        self.assertIn(
+            '--runtime-cell "$(RUNTIME_CELL)"',
+            makefile.split(
+                "acceptance-chat-native-w8:",
+                maxsplit=1,
+            )[1].split(
+                "acceptance-chat-w11:",
+                maxsplit=1,
+            )[0],
+        )
+        self.assertNotIn(
+            "ACCEPTANCE_PLAN ?= tooling/acceptance/reports/",
+            makefile,
+        )
+        self.assertNotIn(
+            '--output "$(ACCEPTANCE_PLAN)"',
+            makefile,
+        )
 
     def test_rejects_stale_or_non_native_report(self) -> None:
         report = self.valid_report()

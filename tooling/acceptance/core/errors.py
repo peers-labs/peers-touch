@@ -74,6 +74,42 @@ class ProvisioningError(RuntimeError):
     pass
 
 
+class ClientBindingError(ProvisioningError):
+    def __init__(
+        self,
+        *,
+        code: str,
+        numeric_code: int,
+        stage: str,
+        client_id: str,
+        binding_role: str,
+        detail: str,
+        result: str = "BLOCKED",
+    ) -> None:
+        super().__init__(
+            f"{code} ({numeric_code}) for client {client_id!r} "
+            f"role {binding_role!r}: {detail}"
+        )
+        self.code = code
+        self.numeric_code = numeric_code
+        self.stage = stage
+        self.client_id = client_id
+        self.binding_role = binding_role
+        self.detail = detail
+        self.result = result
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "numericCode": self.numeric_code,
+            "stage": self.stage,
+            "clientId": self.client_id,
+            "bindingRole": self.binding_role,
+            "detail": self.detail,
+            "result": self.result,
+        }
+
+
 class BlockedError(ProvisioningError):
     def __init__(self, reason: str, resource: str = "") -> None:
         super().__init__(reason)

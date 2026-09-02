@@ -2,7 +2,9 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-06-03 | **Updated**: 2026-08-27
+> **Created**: 2026-06-03 | **Updated**: 2026-09-02
+
+
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -84,7 +86,10 @@ Gate catalog、environment contract 和 Provisioner 必须形成一个可执行�
 | Environment contract | `tooling/acceptance/environments/<environment-id>.yaml` | 文件存在、可解析，且 contract `id` 与文件名/environment 一致 |
 | Provisioner registration | `tooling/acceptance/provisioners/__init__.py` | `_PROVISIONERS` 能按 environment ID 解析 Provisioner class |
 | Gate roles | Domain Provisioner | 注册 Gate 所需 service、actor、client、Fixture 和 credential roles；每个 required service 必须产生 ID/kind 匹配的 attestation |
-| Runtime consumption | Gate runner | durable truth只按`services[service-id]`消费immutable Runtime Manifest；process-local authority只允许使用D-18声明的ephemeral capability client；不得自行部署、猜测primary service、读取legacy `station`或回退环境变量 |
+| Client service bindings | Environment contract | 每个 client 必须显式声明 `required_service_roles`；需要服务时通过 `service_bindings[role]` 引用稳定 service ID 并声明 required kind，无服务依赖时显式声明空列表；不得保存 endpoint 副本 |
+| Runtime consumption | Platform Runtime Binding + Gate runner | Runtime Binding 通过 `create_bound_session(client_id, launch_options)` 分配 launch generation，按每个 required role 从 live connection state 读取 identity，并绑定既有 D-13 runtime-instance identity；每个 role 验证并自动登记 proof 后才返回 session。`launch_options` 必须使用平台 closed schema；Gate 不得传入 generation、任意环境变量、service URL、service identity、legacy `station` 或其他拓扑字段 |
+| Fault transport | Platform Runtime Binding + Domain Gate | Domain Gate 可提供本地 fault proxy，但只能通过 Runtime Binding 获取和应用 opaque `TransportOverrideHandle`；Gate 不得读取 routable proxy URL，override 不得替代 canonical service binding 或 proof |
+| Ephemeral capability consumption | Gate runner | durable truth只按`services[service-id]`消费immutable Runtime Manifest；process-local authority只允许使用D-18声明的ephemeral capability client；不得自行部署、猜测primary service、读取legacy `station`或回退环境变量 |
 
 Native Tauri Gate 还必须通过 `acceptance-driver-build` 产出专用 binary，并通过
 `tooling/acceptance/drivers/tauri.py` 的公开入口解析 binary。具体路径属于 Driver
@@ -154,6 +159,9 @@ Feature / Gate closure，并 fail closed：
 - Domain profile 只能引用 capabilities，不能重新定义 acceptance core。
 - Capability 必须声明业务事实源，不能把 UI/cache/event stream 当成 truth source。
 - Gate 只能产生 evidence，不能承载业务完成语义。
+- 多服务场景必须在 Environment Contract 注入 client-to-service bindings；具体
+  Station/profile/actor 属于业务注入，但 binding parser、validator 和 lookup
+  helper 属于 Acceptance Infra。
 - Unproven scope 必须显式列出，不能用 smoke 代替完整 E2E。
 - Federation 只是第一个 validation domain，不是其它 domain 的模板代码来源。
 - Station Dashboard 是第一个 managed domain 示例；其它普通产品域应复用 onboarding 标准，而不是复制 Federation 的双边互验证语义。

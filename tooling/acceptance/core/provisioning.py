@@ -9,11 +9,44 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from .errors import ProvisioningError
+from .errors import ClientBindingError, ProvisioningError
 from .redaction import redact_value
 
 
 SERVICE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+CLIENT_BINDING_ID_PATTERN = SERVICE_ID_PATTERN
+
+CLIENT_BINDING_ERROR_CODES = {
+    "DUPLICATE_CLIENT_ID": 20101,
+    "DANGLING_SERVICE_REF": 20102,
+    "KIND_MISMATCH": 20103,
+    "MISSING_REQUIRED_BINDING": 20104,
+    "UNEXPECTED_BINDING_ROLE": 20105,
+    "ENDPOINT_COPY_DETECTED": 20106,
+    "BINDING_PROOF_ABSENT": 20201,
+    "LAUNCH_IDENTITY_MISMATCH": 20202,
+    "UNREGISTERED_PROOF_MECHANISM": 20203,
+}
+
+
+def _client_binding_error(
+    code: str,
+    *,
+    client_id: str,
+    binding_role: str = "",
+    detail: str,
+    stage: str = "pre-launch",
+    result: str = "BLOCKED",
+) -> ClientBindingError:
+    return ClientBindingError(
+        code=code,
+        numeric_code=CLIENT_BINDING_ERROR_CODES[code],
+        stage=stage,
+        client_id=client_id,
+        binding_role=binding_role,
+        detail=detail,
+        result=result,
+    )
 
 
 def utc_now() -> str:
@@ -106,12 +139,190 @@ class CleanupRequirement:
 
 
 @dataclass(frozen=True)
+class ClientServiceBinding:
+    service_id: str
+    required_kind: str
+
+
+@dataclass(frozen=True)
+class EnvironmentClient:
+    id: str
+    actor: str
+    runtime: str
+    required_service_roles: tuple[str, ...]
+    service_bindings: dict[str, ClientServiceBinding]
+
+
+def _parse_bound_clients(
+    clients_data: object,
+    services: dict[str, ServiceRequirement],
+    path: Path,
+) -> tuple[EnvironmentClient, ...]:
+    if not isinstance(clients_data, list):
+        raise ProvisioningError(
+            f"invalid environment contract at {path}: clients must be an array"
+        )
+
+    clients: list[EnvironmentClient] = []
+    client_ids: set[str] = set()
+    for raw_client in clients_data:
+        if not isinstance(raw_client, dict):
+            raise ProvisioningError(
+                f"invalid environment contract at {path}: each client must be an object"
+            )
+
+        has_roles = "required_service_roles" in raw_client
+        has_bindings = "service_bindings" in raw_client
+        if not has_roles and not has_bindings:
+            # Unmigrated business-domain clients are outside this plan's D-18 scope.
+            continue
+
+        client_id = str(raw_client.get("id") or "")
+        actor = str(raw_client.get("actor") or "")
+        runtime = str(raw_client.get("runtime") or "")
+        if not CLIENT_BINDING_ID_PATTERN.fullmatch(client_id):
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client_id,
+                detail="client id is missing or invalid",
+            )
+        if client_id in client_ids:
+            raise _client_binding_error(
+                "DUPLICATE_CLIENT_ID",
+                client_id=client_id,
+                detail="client id is duplicated",
+            )
+        if not actor or not runtime:
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client_id,
+                detail="client actor and runtime are required",
+            )
+        if not has_roles or not has_bindings:
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client_id,
+                detail=(
+                    "required_service_roles and service_bindings must be "
+                    "declared together"
+                ),
+            )
+
+        raw_roles = raw_client["required_service_roles"]
+        raw_bindings = raw_client["service_bindings"]
+        if not isinstance(raw_roles, list) or any(
+            not isinstance(role, str)
+            or not CLIENT_BINDING_ID_PATTERN.fullmatch(role)
+            for role in raw_roles
+        ):
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client_id,
+                detail="required_service_roles must contain valid role IDs",
+            )
+        roles = tuple(raw_roles)
+        if len(set(roles)) != len(roles):
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client_id,
+                detail="required_service_roles must not contain duplicates",
+            )
+        if not isinstance(raw_bindings, dict):
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client_id,
+                detail="service_bindings must be an object",
+            )
+
+        binding_roles = set(raw_bindings)
+        required_roles = set(roles)
+        missing_roles = required_roles - binding_roles
+        if missing_roles:
+            missing_role = sorted(missing_roles)[0]
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client_id,
+                binding_role=missing_role,
+                detail="required binding role is missing",
+            )
+        unexpected_roles = binding_roles - required_roles
+        if unexpected_roles:
+            unexpected_role = sorted(unexpected_roles)[0]
+            raise _client_binding_error(
+                "UNEXPECTED_BINDING_ROLE",
+                client_id=client_id,
+                binding_role=unexpected_role,
+                detail="binding role is not declared as required",
+            )
+
+        bindings: dict[str, ClientServiceBinding] = {}
+        for role, raw_binding in raw_bindings.items():
+            if (
+                not isinstance(role, str)
+                or not CLIENT_BINDING_ID_PATTERN.fullmatch(role)
+                or not isinstance(raw_binding, dict)
+            ):
+                raise _client_binding_error(
+                    "MISSING_REQUIRED_BINDING",
+                    client_id=client_id,
+                    binding_role=str(role),
+                    detail="binding role or binding object is invalid",
+                )
+            if set(raw_binding) != {"service_id", "required_kind"}:
+                raise _client_binding_error(
+                    "ENDPOINT_COPY_DETECTED",
+                    client_id=client_id,
+                    binding_role=role,
+                    detail=(
+                        "binding must contain only service_id and required_kind"
+                    ),
+                )
+            service_id = str(raw_binding.get("service_id") or "")
+            required_kind = str(raw_binding.get("required_kind") or "")
+            service = services.get(service_id)
+            if service is None:
+                raise _client_binding_error(
+                    "DANGLING_SERVICE_REF",
+                    client_id=client_id,
+                    binding_role=role,
+                    detail=f"service {service_id!r} is not declared",
+                )
+            if service.kind != required_kind:
+                raise _client_binding_error(
+                    "KIND_MISMATCH",
+                    client_id=client_id,
+                    binding_role=role,
+                    detail=(
+                        f"required kind {required_kind!r} does not match "
+                        f"service kind {service.kind!r}"
+                    ),
+                )
+            bindings[role] = ClientServiceBinding(
+                service_id=service_id,
+                required_kind=required_kind,
+            )
+
+        client_ids.add(client_id)
+        clients.append(
+            EnvironmentClient(
+                id=client_id,
+                actor=actor,
+                runtime=runtime,
+                required_service_roles=roles,
+                service_bindings=bindings,
+            )
+        )
+    return tuple(clients)
+
+
+@dataclass(frozen=True)
 class EnvironmentContract:
     id: str
     profile: ProfileRequirement = field(default_factory=ProfileRequirement)
     services: dict[str, ServiceRequirement] = field(default_factory=dict)
     fixtures: tuple[FixtureRequirement, ...] = ()
     credentials: tuple[CredentialRef, ...] = ()
+    clients: tuple[EnvironmentClient, ...] = ()
     cleanup: CleanupRequirement = field(default_factory=CleanupRequirement)
 
     @classmethod
@@ -131,6 +342,7 @@ class EnvironmentContract:
         services_data = data.get("services") or {}
         fixtures_data = data.get("fixtures") or []
         credentials_data = data.get("credentials") or []
+        clients_data = data.get("clients") or []
         cleanup_data = data.get("cleanup") or {}
         if not isinstance(profile_data, dict):
             raise ProvisioningError(
@@ -195,28 +407,29 @@ class EnvironmentContract:
                 f"invalid environment contract at {path}: cleanup.resources must be strings"
             )
 
+        services = {
+            str(name): ServiceRequirement(
+                kind=str(service["kind"]),
+                required=bool(service.get("required", True)),
+                runtime_identity_required=bool(
+                    service.get("runtime_identity_required", False)
+                ),
+                ready_action=str(service.get("ready_action") or ""),
+                health_action=str(service.get("health_action") or ""),
+                status_action=str(service.get("status_action") or ""),
+                attestation_producer=str(
+                    service.get("attestation_producer") or ""
+                ),
+            )
+            for name, service in services_data.items()
+        }
         return cls(
             id=str(data["id"]),
             profile=ProfileRequirement(
                 required=bool(profile_data.get("required", True)),
                 identity_match=bool(profile_data.get("identity_match", True)),
             ),
-            services={
-                str(name): ServiceRequirement(
-                    kind=str(service["kind"]),
-                    required=bool(service.get("required", True)),
-                    runtime_identity_required=bool(
-                        service.get("runtime_identity_required", False)
-                    ),
-                    ready_action=str(service.get("ready_action") or ""),
-                    health_action=str(service.get("health_action") or ""),
-                    status_action=str(service.get("status_action") or ""),
-                    attestation_producer=str(
-                        service.get("attestation_producer") or ""
-                    ),
-                )
-                for name, service in services_data.items()
-            },
+            services=services,
             fixtures=tuple(
                 FixtureRequirement(
                     id=str(fixture["id"]),
@@ -238,6 +451,7 @@ class EnvironmentContract:
                 )
                 for credential in credentials_data
             ),
+            clients=_parse_bound_clients(clients_data, services, path),
             cleanup=CleanupRequirement(
                 resources=tuple(
                     str(resource)
@@ -414,6 +628,148 @@ class ClientRuntime:
     webdriver_port: int
     profile: str
     storage_root: str
+    id: str = ""
+    required_service_roles: tuple[str, ...] = ()
+    service_bindings: dict[str, ClientServiceBinding] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ClientRuntimeIdentity:
+    runtime: str
+    instance_id: str
+    identity_digest: str
+
+    def __post_init__(self) -> None:
+        if not self.runtime or not self.instance_id:
+            raise ProvisioningError(
+                "client runtime identity requires runtime and instance id"
+            )
+        if re.fullmatch(r"[0-9a-f]{64}", self.identity_digest) is None:
+            raise ProvisioningError(
+                "client runtime identity digest must be lowercase SHA-256"
+            )
+
+
+@dataclass(frozen=True)
+class BindingProofRecord:
+    evidence_run_id: str
+    provisioning_run_id: str
+    environment_id: str
+    gate_id: str
+    client_id: str
+    binding_role: str
+    declared_service_id: str
+    launch_generation: int
+    service_attestation_ref: dict[str, Any]
+    service_attestation_digest: str
+    client_runtime_identity: ClientRuntimeIdentity
+    observed_runtime_identity: str
+    captured_at: str
+    proof_mechanism: str
+    verifier_id: str
+    verifier_source_digest: str
+    verification_status: str = "VERIFIED"
+
+    def to_dict(self) -> dict[str, Any]:
+        return redact_value(
+            {
+                "artifactKind": "client-binding-proof",
+                "evidenceRunId": self.evidence_run_id,
+                "provisioningRunId": self.provisioning_run_id,
+                "environmentId": self.environment_id,
+                "gateId": self.gate_id,
+                "clientId": self.client_id,
+                "bindingRole": self.binding_role,
+                "declaredServiceId": self.declared_service_id,
+                "launchGeneration": self.launch_generation,
+                "serviceAttestationRef": dict(self.service_attestation_ref),
+                "serviceAttestationDigest": self.service_attestation_digest,
+                "clientRuntimeIdentity": {
+                    "runtime": self.client_runtime_identity.runtime,
+                    "instanceId": self.client_runtime_identity.instance_id,
+                    "identityDigest": self.client_runtime_identity.identity_digest,
+                },
+                "observedRuntimeIdentity": self.observed_runtime_identity,
+                "capturedAt": self.captured_at,
+                "proofMechanism": self.proof_mechanism,
+                "verifierId": self.verifier_id,
+                "verifierSourceDigest": self.verifier_source_digest,
+                "verificationStatus": self.verification_status,
+            }
+        )
+
+
+def _validate_runtime_client_bindings(
+    clients: tuple[ClientRuntime, ...],
+    services: dict[str, ServiceAttestation],
+) -> None:
+    bound_clients = [client for client in clients if client.id]
+    if not bound_clients:
+        return
+    if len(bound_clients) != len(clients):
+        legacy_client = next(client for client in clients if not client.id)
+        raise _client_binding_error(
+            "MISSING_REQUIRED_BINDING",
+            client_id=legacy_client.actor,
+            detail="a D-18 manifest cannot mix bound and legacy clients",
+        )
+
+    client_ids: set[str] = set()
+    for client in clients:
+        if not CLIENT_BINDING_ID_PATTERN.fullmatch(client.id):
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client.id,
+                detail="runtime client id is missing or invalid",
+            )
+        if client.id in client_ids:
+            raise _client_binding_error(
+                "DUPLICATE_CLIENT_ID",
+                client_id=client.id,
+                detail="runtime client id is duplicated",
+            )
+        client_ids.add(client.id)
+
+        required_roles = set(client.required_service_roles)
+        binding_roles = set(client.service_bindings)
+        missing_roles = required_roles - binding_roles
+        if missing_roles:
+            missing_role = sorted(missing_roles)[0]
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client.id,
+                binding_role=missing_role,
+                detail="required runtime binding is missing",
+            )
+        unexpected_roles = binding_roles - required_roles
+        if unexpected_roles:
+            unexpected_role = sorted(unexpected_roles)[0]
+            raise _client_binding_error(
+                "UNEXPECTED_BINDING_ROLE",
+                client_id=client.id,
+                binding_role=unexpected_role,
+                detail="runtime binding role is not declared as required",
+            )
+
+        for role, binding in client.service_bindings.items():
+            service = services.get(binding.service_id)
+            if service is None:
+                raise _client_binding_error(
+                    "DANGLING_SERVICE_REF",
+                    client_id=client.id,
+                    binding_role=role,
+                    detail=f"service {binding.service_id!r} is not in the manifest",
+                )
+            if service.service_kind != binding.required_kind:
+                raise _client_binding_error(
+                    "KIND_MISMATCH",
+                    client_id=client.id,
+                    binding_role=role,
+                    detail=(
+                        f"required kind {binding.required_kind!r} does not match "
+                        f"service kind {service.service_kind!r}"
+                    ),
+                )
 
 
 @dataclass(frozen=True)
@@ -440,6 +796,7 @@ class RuntimeManifest:
     blocked_resource: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        _validate_runtime_client_bindings(self.clients, self.services)
         result: dict[str, Any] = {
             "artifactKind": self.artifact_kind,
             "environmentId": self.environment_id,
@@ -612,7 +969,145 @@ def load_runtime_manifest(path: Path, gate_id: str) -> dict[str, Any]:
                 f"runtime manifest service {service_id!r} has invalid "
                 "attestationArtifact"
             )
+    _validate_loaded_runtime_clients(manifest)
     return manifest
+
+
+def _validate_loaded_runtime_clients(
+    manifest: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    raw_clients = manifest.get("clients")
+    if not isinstance(raw_clients, list):
+        raise ProvisioningError("runtime manifest clients must be an array")
+    if any(not isinstance(client, dict) for client in raw_clients):
+        raise ProvisioningError(
+            "runtime manifest clients must contain only objects"
+        )
+
+    d18_clients = [
+        client
+        for client in raw_clients
+        if client.get("id")
+        or client.get("required_service_roles")
+        or client.get("service_bindings")
+    ]
+    if not d18_clients:
+        return {}
+    if len(d18_clients) != len(raw_clients):
+        legacy_client = next(
+            client for client in raw_clients if not client.get("id")
+        )
+        raise _client_binding_error(
+            "MISSING_REQUIRED_BINDING",
+            client_id=str(legacy_client.get("actor") or ""),
+            detail="a D-18 manifest cannot mix bound and legacy clients",
+        )
+
+    services = manifest["services"]
+    clients_by_id: dict[str, dict[str, Any]] = {}
+    for client in d18_clients:
+        client_id = str(client.get("id") or "")
+        if not CLIENT_BINDING_ID_PATTERN.fullmatch(client_id):
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client_id,
+                detail="runtime client id is missing or invalid",
+            )
+        if client_id in clients_by_id:
+            raise _client_binding_error(
+                "DUPLICATE_CLIENT_ID",
+                client_id=client_id,
+                detail="runtime client id is duplicated",
+            )
+
+        raw_roles = client.get("required_service_roles")
+        raw_bindings = client.get("service_bindings")
+        if not isinstance(raw_roles, list) or not isinstance(raw_bindings, dict):
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client_id,
+                detail=(
+                    "required_service_roles and service_bindings are required"
+                ),
+            )
+        roles = {
+            str(role)
+            for role in raw_roles
+            if isinstance(role, str)
+            and CLIENT_BINDING_ID_PATTERN.fullmatch(role)
+        }
+        if len(roles) != len(raw_roles):
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client_id,
+                detail="required_service_roles contain invalid or duplicate roles",
+            )
+
+        binding_roles = set(raw_bindings)
+        missing_roles = roles - binding_roles
+        if missing_roles:
+            missing_role = sorted(missing_roles)[0]
+            raise _client_binding_error(
+                "MISSING_REQUIRED_BINDING",
+                client_id=client_id,
+                binding_role=missing_role,
+                detail="required runtime binding is missing",
+            )
+        unexpected_roles = binding_roles - roles
+        if unexpected_roles:
+            unexpected_role = sorted(unexpected_roles)[0]
+            raise _client_binding_error(
+                "UNEXPECTED_BINDING_ROLE",
+                client_id=client_id,
+                binding_role=unexpected_role,
+                detail="runtime binding role is not declared as required",
+            )
+
+        for role, binding in raw_bindings.items():
+            if (
+                not isinstance(role, str)
+                or not CLIENT_BINDING_ID_PATTERN.fullmatch(role)
+                or not isinstance(binding, dict)
+            ):
+                raise _client_binding_error(
+                    "MISSING_REQUIRED_BINDING",
+                    client_id=client_id,
+                    binding_role=str(role),
+                    detail="runtime binding role or value is invalid",
+                )
+            if set(binding) != {"service_id", "required_kind"}:
+                raise _client_binding_error(
+                    "ENDPOINT_COPY_DETECTED",
+                    client_id=client_id,
+                    binding_role=role,
+                    detail=(
+                        "runtime binding must contain only service_id and "
+                        "required_kind"
+                    ),
+                )
+            service_id = str(binding.get("service_id") or "")
+            required_kind = str(binding.get("required_kind") or "")
+            service = services.get(service_id)
+            if not isinstance(service, dict):
+                raise _client_binding_error(
+                    "DANGLING_SERVICE_REF",
+                    client_id=client_id,
+                    binding_role=role,
+                    detail=f"service {service_id!r} is not in the manifest",
+                )
+            if service.get("kind") != required_kind:
+                raise _client_binding_error(
+                    "KIND_MISMATCH",
+                    client_id=client_id,
+                    binding_role=role,
+                    detail=(
+                        f"required kind {required_kind!r} does not match "
+                        f"service kind {service.get('kind')!r}"
+                    ),
+                )
+        clients_by_id[client_id] = client
+    return clients_by_id
+
 
 
 def require_runtime_service(
@@ -632,3 +1127,168 @@ def require_runtime_service(
             f"{service_kind!r}"
         )
     return service
+
+
+def require_runtime_client_service(
+    manifest: dict[str, Any],
+    client_id: str,
+    binding_role: str,
+) -> tuple[str, dict[str, Any]]:
+    clients = _validate_loaded_runtime_clients(manifest)
+    client = clients.get(client_id)
+    if client is None:
+        raise _client_binding_error(
+            "MISSING_REQUIRED_BINDING",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail="runtime client is not declared",
+        )
+    binding = client["service_bindings"].get(binding_role)
+    if not isinstance(binding, dict):
+        raise _client_binding_error(
+            "MISSING_REQUIRED_BINDING",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail="required runtime binding is missing",
+        )
+    service_id = str(binding["service_id"])
+    service = require_runtime_service(
+        manifest,
+        service_id,
+        str(binding["required_kind"]),
+    )
+    return service_id, service
+
+
+def verify_client_binding_observation(
+    manifest: dict[str, Any],
+    *,
+    evidence_run_id: str,
+    client_id: str,
+    binding_role: str,
+    launch_generation: int,
+    client_runtime_identity: ClientRuntimeIdentity,
+    observed_runtime_identity: str,
+    proof_mechanism: str,
+    registered_mechanisms: frozenset[str],
+    verifier_id: str,
+    verifier_source_digest: str,
+) -> BindingProofRecord:
+    clients = _validate_loaded_runtime_clients(manifest)
+    client = clients.get(client_id)
+    if client is None:
+        raise _client_binding_error(
+            "MISSING_REQUIRED_BINDING",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail="runtime client is not declared",
+        )
+    client_runtime = str(client.get("runtime") or "")
+    if client_runtime_identity.runtime != client_runtime:
+        raise _client_binding_error(
+            "LAUNCH_IDENTITY_MISMATCH",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail=(
+                f"runtime instance {client_runtime_identity.runtime!r} does not "
+                f"match client runtime {client_runtime!r}"
+            ),
+            stage="post-launch",
+        )
+    if launch_generation <= 0:
+        raise _client_binding_error(
+            "BINDING_PROOF_ABSENT",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail="launch generation must be positive",
+            stage="post-launch",
+            result="UNPROVEN",
+        )
+    if proof_mechanism not in registered_mechanisms:
+        raise _client_binding_error(
+            "UNREGISTERED_PROOF_MECHANISM",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail=f"proof mechanism {proof_mechanism!r} is not registered",
+            stage="post-launch",
+        )
+
+    service_id, service = require_runtime_client_service(
+        manifest,
+        client_id,
+        binding_role,
+    )
+    expected_runtime_identity = str(service.get("runtimeIdentity") or "")
+    if not expected_runtime_identity or not observed_runtime_identity:
+        raise _client_binding_error(
+            "BINDING_PROOF_ABSENT",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail="expected and observed runtime identities are required",
+            stage="post-launch",
+            result="UNPROVEN",
+        )
+    if observed_runtime_identity != expected_runtime_identity:
+        raise _client_binding_error(
+            "LAUNCH_IDENTITY_MISMATCH",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail=(
+                f"observed identity {observed_runtime_identity!r} does not "
+                f"match service identity {expected_runtime_identity!r}"
+            ),
+            stage="post-launch",
+        )
+
+    attestation_ref = service.get("attestationArtifact")
+    if not isinstance(attestation_ref, dict):
+        raise _client_binding_error(
+            "BINDING_PROOF_ABSENT",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail="service attestation reference is required",
+            stage="post-launch",
+            result="UNPROVEN",
+        )
+    attestation_digest = str(attestation_ref.get("sha256") or "")
+    if re.fullmatch(r"[0-9a-f]{64}", attestation_digest) is None:
+        raise _client_binding_error(
+            "BINDING_PROOF_ABSENT",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail="service attestation reference requires a SHA-256 digest",
+            stage="post-launch",
+            result="UNPROVEN",
+        )
+    if (
+        not evidence_run_id
+        or not verifier_id
+        or re.fullmatch(r"[0-9a-f]{64}", verifier_source_digest) is None
+    ):
+        raise _client_binding_error(
+            "BINDING_PROOF_ABSENT",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail="evidence run and verifier source identity are required",
+            stage="post-launch",
+            result="UNPROVEN",
+        )
+
+    return BindingProofRecord(
+        evidence_run_id=evidence_run_id,
+        provisioning_run_id=str(manifest.get("runId") or ""),
+        environment_id=str(manifest.get("environmentId") or ""),
+        gate_id=str(manifest.get("gateId") or ""),
+        client_id=client_id,
+        binding_role=binding_role,
+        declared_service_id=service_id,
+        launch_generation=launch_generation,
+        service_attestation_ref=attestation_ref,
+        service_attestation_digest=attestation_digest,
+        client_runtime_identity=client_runtime_identity,
+        observed_runtime_identity=observed_runtime_identity,
+        captured_at=utc_now(),
+        proof_mechanism=proof_mechanism,
+        verifier_id=verifier_id,
+        verifier_source_digest=verifier_source_digest,
+    )

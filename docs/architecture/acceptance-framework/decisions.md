@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-31
+> **Created**: 2026-06-03 | **Updated**: 2026-09-02
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -24,19 +24,19 @@
 | D-10 | Gap Detector 作为跨阶段只读守卫 | accepted |
 | D-11 | Runtime Evidence Store 位于 source tree 之外 | accepted |
 | D-12 | Acceptance Infra 与业务注入使用独立责任平面 | accepted |
-| D-13 | Native Desktop proof 使用 Gate × Runtime Cell 矩阵 | accepted |
+| D-13 | Evidence role applicability 由 runtime matrix row 显式定义 | accepted |
 | D-14 | 远端 Native Cell 使用 SSH 控制面与 loopback WebDriver | accepted |
 | D-15 | Linux Native Cell 使用持久 Xorg 桌面而非 Xvfb | accepted |
 | D-16 | 远端 Cell 通过增量 Git object sync 获取 clean source | accepted |
 | D-17 | Runtime Manifest 使用 typed services map 表达完整服务拓扑 | accepted |
-| D-18 | Gate进程使用EphemeralGateLaunchContext接收非持久化capability | accepted |
+| D-18 | Client 通过 typed binding 引用 Runtime Manifest service | accepted |
 | D-19 | Cleanup后、run finalize前执行只读Evidence Finalizer | accepted |
 
 ---
 
 ## D-01: Capability Graph 是验收架构的一等模型
 
-**Status**: accepted
+**Status**: proposed
 **Date**: 2026-06-03
 
 ### Context
@@ -927,6 +927,227 @@ Acceptance Infra新增domain-neutral `EphemeralGateLaunchContext`：
   内存副本均被物理擦除的声明。
 
 ### Review / Reversal Trigger
+
+若所有 runtime cell 最终都具备同一种真实 receiver surface，可重新评估统一 role；
+不得通过 role 名称泛化或伪造 observation 规避 row-scoped applicability。
+
+---
+
+## D-17: Runtime Manifest 使用 typed services map 表达完整服务拓扑
+
+**Status**: accepted
+**Date**: 2026-08-27 | **Accepted**: 2026-08-27
+
+### Context
+
+原 Runtime Manifest 只有顶层 `station` 字段，无法无损表达 Mobile Acceptance
+要求的 `station-primary`、`station-secondary` 和 `relay`。增加第二个并行字段会让
+同一 Station 同时存在两种表达，并引入读取优先级、双写和证据一致性问题。
+
+### Decision
+
+`EnvironmentContract.services` 与 `RuntimeManifest.services` 是唯一 canonical
+服务拓扑契约。service ID 表示环境中的稳定角色，`kind` 表示服务类型。因此
+`station-primary` 与 `station-secondary` 均使用 `kind: station`，`relay` 使用
+`kind: relay`。
+
+每个 required Environment service 在 manifest 进入 `FIXTURE_READY` 前必须有且只有
+一个 source-bound `ServiceAttestation`。Manifest map key 必须等于 attestation 的
+service ID，kind 必须等于 Environment requirement 的 kind。
+
+删除 legacy 顶层 `station` 字段。Reader 和 writer 禁止 dual-write、alias、按 map
+顺序推断 primary Station 或回退旧字段。单 Station 环境继续使用
+`services.station`。
+
+每份 attestation 使用 service-scoped artifact path：
+`runtime/services/<service-id>/attestation.json`。
+
+### Rationale
+
+服务角色与服务类型分离后，同一 manifest 可以表达多个同类服务和不同类型服务，
+同时保持一个拓扑真源。Service-scoped artifact path 消除同一 run 内多 Station
+attestation 覆盖。
+
+### Alternatives Considered
+
+- 保留 `station` 并新增 `services`：拒绝，会形成 split-brain 和永久兼容债务。
+- 只保留 singular `station`：拒绝，无法证明 Station replacement、跨 Station
+  scope isolation 和 Relay 依赖。
+- 由 Mobile Gate 维护第二份 manifest：拒绝，业务 Gate 不拥有 runtime resource
+  truth。
+
+### Consequences
+
+- 所有 Runtime Manifest producer、consumer、validator 和 test 必须原子迁移。
+- Environment service contract 必须声明 `kind`。
+- 每增加一种 service kind，都必须提供对应 runtime owner 产生的 attestation。
+- 旧 manifest fail closed，不能继续作为 current proof。
+
+### Review / Reversal Trigger
+
+若服务角色无法用稳定 ID 表达，应重新评审 Environment Contract；不得恢复 singular
+字段或引入并行 manifest。
+
+---
+
+## D-18: Client 通过 Typed Binding 引用 Runtime Manifest Service
+
+**Status**: accepted
+**Date**: 2026-09-01
+
+### Context
+
+D-17 已规定 `EnvironmentContract.services` 与 `RuntimeManifest.services` 是唯一服务
+拓扑真源，但 `ClientRuntime` 只描述 actor、runtime、端口、profile 和 storage，
+没有表达客户端依赖哪个 service。
+
+现有消费者因此出现三种私有映射：
+
+- Mobile proof contract 使用 `CLIENT_SERVICE` 常量绑定 client 与
+  `station-primary` / `station-secondary`；
+- Federation prerequisite 使用 authority/follower Station URL 环境变量；
+- Native Desktop Chat runner 从单个默认 Station URL 启动全部 client。
+
+这些实现重复表达同一个拓扑关系，无法由通用 validator 验证，也不能无歧义表达
+“同一 Linux runtime cell 内多个 Desktop client 分别绑定不同 Station”。
+
+### Decision
+
+Environment Contract 的 client declaration 和 Runtime Manifest 的
+`ClientRuntime` 使用同一个 typed `service_bindings` contract：
+
+```yaml
+service_bindings:
+  station:
+    service_id: station-primary
+    required_kind: station
+```
+
+Binding role 是 client-local dependency role；`service_id` 必须引用同一 contract /
+manifest 的 canonical services map；`required_kind` 必须等于目标 service 的 kind。
+Binding 不复制 endpoint、deployment environment、commit、runtime identity 或
+attestation。
+
+Environment Provisioner 负责解析和验证 binding，并将验证后的 edge 写入 immutable
+Runtime Manifest。`ClientRuntime.id` 是 contract 与 manifest 共享的稳定 client
+identity，不能用 actor 代替。Gate 只能通过 client ID + binding role 解析服务，
+不得读取裸 URL、按 map/数组顺序推断、维护业务常量映射或回退 Profile 默认 Station。
+
+**Core and platform boundary**: D-18 adds only `id`,
+`required_service_roles`, and `service_bindings` to the existing
+`ClientRuntime` allocation record. It does not move or redefine port, profile,
+storage, session, device, or platform-isolation fields. Those remain governed
+by D-13 Runtime Cell and existing platform Provisioners. No opaque extension
+bag is introduced.
+
+**Binding proof obligation**: Recording a binding in the Manifest is
+necessary but not sufficient. Every initial launch and restart goes through the
+platform-owned Runtime Binding operation
+`create_bound_session(client_id, launch_options)`. The
+business Gate may provide only fields from the selected Runtime Binding's
+closed, typed, non-topology launch-options contract. Unknown fields, arbitrary
+environment maps, service URL, host, port, service ID, deployment identity,
+commit, and runtime identity are rejected. Runtime Binding resolves bindings
+from the immutable manifest, allocates a monotonic generation for that client,
+launches the client, collects one platform observation for every required
+binding role, and asks the Core verifier to persist one `BindingProofRecord`
+per role before returning the session.
+
+The registered platform observer must read observed identity from the running
+client's live connection state and bind it to the launched runtime instance.
+It cannot derive observed identity from Manifest bindings, launch options,
+environment variables, or ServiceAttestation. Core derives expected identity
+from the referenced ServiceAttestation and computes the verification result. The proof
+binds to a platform-neutral `clientRuntimeIdentity` whose digest covers the
+existing D-13 process, device/session, or browser-session identity; D-18 does
+not redefine that platform payload. The proof contains neither its own
+ArtifactRef nor a Runtime Manifest ArtifactRef. Runtime Binding automatically
+accumulates returned proof refs; Core harness finalization records them in the
+Gate result and requires exact coverage of every
+`(clientId, launchGeneration, requiredRole)` tuple. A missing proof produces
+`BINDING_PROOF_ABSENT`; a mismatch produces `LAUNCH_IDENTITY_MISMATCH`.
+
+**Run-scoped transport override boundary**: A Domain fault proxy is transport
+instrumentation, not a service topology source. It must not appear in
+`service_bindings` or `launch_options`. Runtime Binding may expose a
+Domain-owned local fault endpoint and return an opaque
+`TransportOverrideHandle`; business Gate code can only apply or clear that
+handle and cannot read or forward its routable URL. The handle is scoped to the
+run, client, binding role, and declared service ID, cannot replace canonical
+binding proof, and fails with `TRANSPORT_OVERRIDE_MISMATCH` when any identity
+differs. Domain evidence remains responsible for proxy upstream identity,
+behavior, and cleanup.
+
+**Required service roles**: Each client declares `required_service_roles` —
+the closed set of binding roles it depends on. The validator requires
+`service_bindings.keys()` to equal `required_service_roles` exactly. A client
+must declare the field; omission is invalid. An explicit empty list denotes a
+service-independent client, and empty `service_bindings` is valid only in that
+case.
+
+**Typed failure semantics**: All binding validation failures use closed
+`ClientBindingError` codes with numeric values (20101–20203), failure stage
+(`pre-launch` / `post-launch` / `runtime`), and deterministic result mapping.
+See [data-model.md §3](./data-model.md#3-runtime-resource-manifest) for the
+complete error table and structured error object schema.
+
+**Migration ownership boundary**: Acceptance Infra owns the generic binding
+parser, validator, lookup helper, and `BindingProofRecord` contract. Each
+business Domain (Mobile, Federation, Chat/Native Desktop) owns its own
+migration schedule, decides when to switch its runners/gates from private
+mappings to the generic helper, and deletes its own legacy constants.
+Infra reports unmigrated private mappings as an Acceptance Gap but does not
+execute or schedule business-side migration.
+
+### Rationale
+
+该关系是 runtime resource topology，而不是 Chat、Mobile 或 Federation 业务语义。
+将它放入现有 Environment Contract 与 Runtime Manifest，可以复用 D-07 provisioning
+lifecycle、D-11 immutable evidence、D-13 runtime cells 和 D-17 typed services，
+并让一个 runtime cell 安全运行多个绑定不同 Station 的隔离客户端。
+
+### Alternatives Considered
+
+- 新增 `multi-station-native-desktop` 专属 manifest：拒绝，会复制 D-17 服务拓扑和
+  D-13 client isolation。
+- 在每个 Gate 中传递 Station URL map：拒绝，业务 Gate 会拥有 runtime topology。
+- 保留 Mobile `CLIENT_SERVICE` 并为 Desktop 增加另一份映射：拒绝，形成平台私有
+  contract 和重复 validator。
+- 依赖 client/service 数组顺序：拒绝，顺序不是稳定 identity，无法 fail closed。
+- 把 endpoint 复制进 client record：拒绝，会与 service attestation 形成双真源。
+
+### Consequences
+
+- `EnvironmentContract` 必须通用解析 client declarations，而不是由 Mobile
+  Provisioner 私自读取 raw contract。
+- D-18 leaves existing client allocation and D-13 isolation ownership intact;
+  it adds only stable client identity and service-binding fields.
+- Runtime Binding must use `create_bound_session` for every launch generation
+  and cannot return a session before Core persists a verified binding proof for
+  every required role.
+  Runtime Binding owns generation allocation and proof-ref collection; Gate
+  code owns neither.
+- All validation failures use closed `ClientBindingError` typed codes with
+  numeric values, stage, and result mapping; bare string errors in binding
+  paths are forbidden.
+- `required_service_roles` explicitly declares service dependency; the
+  manifest validator requires exact closure with `service_bindings`; Gate
+  evidence requires one verified proof for every required role in every actual
+  launch generation.
+- 单服务环境中的 client 也必须显式绑定 `services.station`；没有服务依赖的 client
+  可以保持空 binding。
+- 具体 `four`、`fiveArm`、actor、Fixture 和产品断言仍由业务 Domain 注入，不进入
+  Acceptance Core。
+- Infra delivers parser/validator/helper/proof-contract; each Domain migrates
+  its own runners/gates on its own schedule. Infra does not own, plan, or
+  enforce cross-Domain migration order.
+- 旧 manifest 缺少 required client binding 时 fail closed，不能作为 current proof。
+
+### Review / Reversal Trigger
+
+若一个 client 的运行时依赖无法用稳定 role 到 service ID 的有向边表达，应重新评审
+Environment Contract 的资源图；不得恢复裸 URL、隐式默认 Station 或第二份业务
+manifest。
 
 若实现证明anonymous inherited descriptor无法在目标orchestrator平台稳定提供精确
 child ownership、bounded cancellation或secret zeroization，应重新评审platform

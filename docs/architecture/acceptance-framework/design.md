@@ -2,7 +2,9 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-31
+> **Created**: 2026-06-03 | **Updated**: 2026-09-02
+
+
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -59,7 +61,19 @@
 | Linux 最终 Native proof 不需要物理显示器或 Xvfb | `accepted_decision` | D-15; connected QXL evidence | high | Xorg session, native input, focus and screenshot proof |
 | Remote cell 通过增量 Git objects 获取 clean source | `accepted_decision` | D-16; `tooling/scripts/deploy/deploy.sh` | high | remote source/build attestation proof |
 
-### 1.4 Ephemeral Gate Launch Context 证据账本
+### 1.4 多服务客户端绑定证据账本
+
+| Claim | Class | Evidence | Confidence | Missing proof |
+|---|---|---|---|---|
+| Runtime Manifest 已用 typed services map 表达多个同类服务 | `verified_fact` | D-17；`core/provisioning.py::RuntimeManifest.services` | high | none |
+| Runtime Manifest 已记录隔离客户端，但客户端没有服务绑定字段 | `verified_fact` | `core/provisioning.py::ClientRuntime` | high | none |
+| 通用 Environment Contract parser 不消费 `clients` | `verified_fact` | `core/provisioning.py::EnvironmentContract.from_yaml` | high | none |
+| Mobile 通过业务常量维护 client 到 Station 的映射 | `verified_fact` | `gates/mobile/proof_contracts.py::CLIENT_SERVICE` | high | none |
+| Federation prerequisite 通过裸 URL 环境变量表达 authority/follower Station | `verified_fact` | `gates/chat/federated_browser_prereq.py::main` | high | none |
+| Native Desktop Provisioner 已提供同一 runtime cell 内多客户端隔离 | `verified_fact` | `provisioners/home_station.py::_clients`；Linux NDR-W7 evidence | high | multi-service binding |
+| 客户端依赖应成为 Environment Contract 和 Runtime Manifest 的 typed edge | `proposal` | D-18 | high | architecture re-review |
+
+### 1.5 Ephemeral Gate Launch Context 证据账本
 
 | Claim | Class | Evidence | Confidence | Missing proof |
 |---|---|---|---|---|
@@ -70,7 +84,7 @@
 | Python `subprocess.run`把额外参数转交`Popen`，POSIX `Popen`提供`pass_fds`精确继承集合 | `verified_fact` | [Python subprocess](https://docs.python.org/3.14/library/subprocess.html#popen-constructor) | high | project synthetic process test |
 | 一个run-scoped、不可持久化、domain-neutral的capability channel可关闭该边界 | `accepted_decision` | D-18 owner acceptance and closure evidence | high | none |
 
-### 1.5 Post-Cleanup Evidence Finalizer 证据账本
+### 1.6 Post-Cleanup Evidence Finalizer 证据账本
 
 | Claim | Class | Evidence | Confidence | Missing proof |
 |---|---|---|---|---|
@@ -349,6 +363,42 @@ Provisioner 成功后必须输出一次运行的不可变 manifest。Manifest �
   Station 的存在性。
 - Gate 必须按稳定 service ID 选择服务并验证 expected kind，禁止按 map 顺序推断
   primary Station。
+- Environment Contract 可以声明多个隔离 client；每个需要服务的 client 必须用
+  `service_bindings[role]` 指向 `services[service-id]`，并声明 `required_kind`。
+  Client 还必须显式声明 `required_service_roles` 作为 binding 的闭包约束；字段
+  省略非法，无服务依赖必须显式声明空列表。
+- D-18 adds only `id`, `required_service_roles`, and `service_bindings` to the
+  existing `ClientRuntime`. Port, profile, storage, session, device, and
+  platform isolation remain under D-13 Runtime Cell and existing platform
+  Provisioners.
+- Environment Contract 与 Runtime Manifest 必须共享稳定、唯一的 client ID；
+  actor 不是 client identity，同一 actor 可以拥有多个隔离 client / device.
+  Client ID and binding role must match `^[a-z0-9][a-z0-9-]{0,63}$`.
+- Runtime Manifest 只复制已验证的 binding edge，不复制 endpoint。Gate 先按 client
+  ID 取得 binding，再从 canonical services map 解析 endpoint 和 attestation。
+- Binding role 表达客户端依赖，例如 `station` 或 `relay`；它不是
+  service ID，也不得编码 `four`、`fiveArm` 等部署名称。
+- 同一客户端可以绑定多个 service role；多个客户端可以绑定同一个 service ID。
+  缺失引用、悬空引用、kind mismatch、重复 client ID 或未隔离资源都必须在 Gate
+  启动前 fail closed，using closed `ClientBindingError` codes with numeric values,
+  failure stage, and result mapping (not bare strings).
+- Every initial launch and restart uses platform-owned
+  `create_bound_session(client_id, launch_options)`.
+  Runtime Binding resolves the service from the manifest; business Gate code
+  cannot supply topology or launch generation. Each Runtime Binding exposes a
+  closed typed launch-options contract; unknown fields, arbitrary environment
+  maps, and topology-bearing values are rejected. Runtime Binding allocates the
+  generation and reads observed identity from the running client's live
+  connection state; the observation cannot come from launch configuration.
+  It binds the observation to a platform-neutral runtime-instance identity
+  backed by existing D-13 platform identity. Core derives expected runtime
+  identity from the ServiceAttestation and persists one verification per
+  required role. The session returns only after every required role verifies,
+  and Runtime Binding automatically contributes every proof ref to Gate
+  evidence.
+  See [data-model.md §3](./data-model.md#3-runtime-resource-manifest) for
+  proof schema and typed error code table.
+
 - 包含 actor role 到 canonical PTID 的解析结果，但不包含密码、token、PIN 或私钥。
 - 作为 Gate evidence 的 source artifact，并由 validator 校验 freshness。
 - 顶层 singular `station` 已删除；禁止 dual-write、compatibility alias 或 fallback。
@@ -1501,11 +1551,18 @@ Any missing requirement
 - `acceptance-run` 根据 Gate environment 调用对应 Provisioner。
 - Provisioner 调用 profile、deployment、Fixture 和 Driver 的公开入口。
 - Gate 读取 runtime manifest 并验证与 live runtime 一致。
+- Provisioner 从 Environment Contract 解析 client-to-service binding，并在
+  Runtime Manifest 中发布同一组已验证 edge。
+- 一个 Native Desktop runtime cell 运行多个隔离客户端，各客户端绑定不同 Station。
 - Registry 为一个行为变更选择多个 Feature 和 receiver-proof Gates。
 
 禁止：
 
 - Gate 自行猜测 Profile、Station URL、actor PTID 或 credential。
+- Gate 使用业务常量、裸 URL 环境变量、client 数组顺序或默认 Station 推断
+  client-to-service binding。
+- Environment Contract、Runtime Manifest 和 Gate report 分别维护三份客户端服务
+  拓扑，或为迁移保留 compatibility alias / dual-read。
 - Provisioner修改产品断言或降低 Gate 成功条件。
 - Profile 名称不一致时继续运行。
 - 失败后改用 browser shell、mock、API-only、截图或旧 evidence。
@@ -1755,7 +1812,58 @@ domain 的业务接入缺口，也不提供 bypass 参数。
 - Runtime manifest 和 Gate evidence 记录 cell ID、OS/WebView/display identity、
   source commit/digest、binary hash、actor isolation 与 cleanup result。
 
-## 9. Ephemeral Gate Launch Context 架构质量门
+## 9. 多服务客户端绑定架构质量门
+
+- Environment Contract 可以声明两个以上同 kind service，且每个 required service
+  都产生独立 source-bound attestation。
+- 每个需要 Station 的 client 都通过 `service_bindings.station` 引用一个稳定
+  service ID，并在 `required_service_roles` 中声明该 role；引用缺失、目标缺失
+  或 kind mismatch 在启动客户端前 fail closed, using closed `ClientBindingError`
+  codes with numeric values (`DANGLING_SERVICE_REF` 20102,
+  `KIND_MISMATCH` 20103, `MISSING_REQUIRED_BINDING` 20104,
+  `UNEXPECTED_BINDING_ROLE` 20105, `DUPLICATE_CLIENT_ID` 20101,
+  `ENDPOINT_COPY_DETECTED` 20106);
+  bare string errors are forbidden.
+- Runtime Manifest 的 client binding 只能引用同一 manifest 的 services map，
+  不复制 endpoint、deployment environment、commit 或 runtime identity。
+- D-18 does not introduce a platform extension or new isolation attestation;
+  existing D-13 Runtime Cell gates continue proving port, profile, storage,
+  session, actor, and device isolation.
+- Every client launch generation uses `create_bound_session`. Platform code
+  reads observed identity from live client connection state and cannot echo
+  Manifest or launch configuration. Runtime Binding allocates generation,
+  binds each observation to a platform-neutral D-13 runtime-instance identity,
+  and automatically contributes proof refs to Gate evidence. Core derives
+  expected identity from each role's ServiceAttestation and requires exact
+  coverage of every `(clientId, launchGeneration, requiredRole)` tuple before
+  returning the session. Missing proof produces `BINDING_PROOF_ABSENT` (20201);
+  mismatched identity produces `LAUNCH_IDENTITY_MISMATCH` (20202).
+- Each Runtime Binding's launch-options schema is closed. Unknown keys,
+  arbitrary environment maps, and fields carrying URL, host, port, service ID,
+  deployment identity, commit, or runtime identity fail with
+  `ENDPOINT_COPY_DETECTED` (20106).
+- Domain fault injection may use only an opaque run-scoped
+  `TransportOverrideHandle` created and applied by Runtime Binding. The handle
+  cannot enter `service_bindings`, cannot expose its routable URL to Gate code,
+  and cannot replace canonical binding proof. Run/client/role/service mismatch
+  fails with `TRANSPORT_OVERRIDE_MISMATCH` (20107); Domain evidence proves
+  proxy upstream identity, behavior, and cleanup.
+- Gate 通过 client ID 和 binding role 解析服务，不读取 Mobile `CLIENT_SERVICE`
+  常量、Federation authority/follower URL 变量或 Native runner 默认 Station。
+- 同一 Linux runtime cell 可以运行多个隔离 Desktop client 并绑定不同 Station；
+  现有 D-13 isolation gates 继续证明端口、profile、storage、session、actor 和
+  device identity 不共享。
+- Acceptance Infra owns the generic parser, validator, lookup helper, proof
+  contract, and typed error codes. Each business Domain owns its own migration
+  schedule and legacy-constant cleanup; Infra reports unmigrated private
+  mappings as an Acceptance Gap but does not execute cross-Domain migration.
+- Within each Domain, migration is atomic: contract declaration, producer,
+  consumer, proof verifier, and legacy mapping deletion must switch in one
+  change. Cross-Domain migration order is independent.
+- 任一 service、client 或 binding 的 cleanup / attestation 不完整时，环境结果为
+  `BLOCKED/UNPROVEN` 或 cleanup failure，不得降级成部分拓扑 proof。
+
+## 10. Ephemeral Gate Launch Context 架构质量门
 
 - synthetic Provisioner可注册不含业务语义的echo/deny capability，并由独立Gate
   process通过继承channel调用；manifest、environment value、argv、stdout/stderr和
@@ -2107,4 +2215,4 @@ contract。两组都通过之前，D-19 capability不得宣称产品proof closur
   与baseline在同一变更更新。
 - Mobile finalizer对sealed snapshot执行完整19-role、relation、cardinality和payload
   validation；删除旧`gates/mobile/proof_contracts.py`后，tree-wide import scan只指向
-  neutral Mobile contract source。
+  neutral Mobile contract source.

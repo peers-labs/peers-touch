@@ -3,9 +3,8 @@ name: pt-local-dev-env
 description: >
   Set up worktree-isolated local development environment using profiles.
   Use when the user wants to run Desktop, Mobile, or Station locally, or
-  connect to a remote Station. Handles profile creation, configuration,
-  activation, and service lifecycle. After this skill runs, the user only
-  needs `make desktop`, `make mobile`, `make station` to start services.
+  connect to a remote Station. Agents may operate remote Station profiles
+  only; local/compose Station modes are reserved for human developers.
 ---
 
 # Local Dev Environment
@@ -29,13 +28,45 @@ The agent's job is to ensure a **profile** is created, configured correctly for
 the user's scenario, and activated. Once that's done, all `make` commands work
 without any additional flags.
 
+## Agent Station Safety Boundary
+
+Local and compose-managed Station support exists for human developers only.
+AI agents MUST NOT start, restart, probe, test against, or otherwise access a
+Station whose active profile resolves to:
+
+- `PT_STATION_MODE=local` or `PT_STATION_MODE=compose`;
+- `127.0.0.1`, `localhost`, or another loopback Station URL;
+- an empty or unapproved remote deploy environment.
+
+Before an agent runs `make station`, `make station-restart`, `make restart`,
+`make desktop`, `make desktop-web`, `make mobile`, or any test/Acceptance
+command that may ready or access Station, it MUST:
+
+1. Run `make config`.
+2. Resolve the active worktree profile.
+3. Verify `PT_STATION_MODE=remote`.
+4. Verify `PT_STATION_DEPLOY_ENV` is non-empty and matches the user-approved
+   remote node.
+5. Verify `PT_STATION_URL` is non-loopback and matches that same node.
+
+Any missing, ambiguous, local, compose, loopback, or mismatched value is a
+fail-closed stop. The agent must not rely on defaults because the runtime
+scripts default to local/loopback behavior. `make station` is permitted for an
+agent only after this remote-profile preflight; in that case it performs the
+remote deploy/restart/health closure.
+
 ## Core Concepts
 
 ### Profile
 
-A profile is a `.env` file at `.local/dev/profiles/<name>.env`.
-One profile is **active** per worktree (symlinked from `.local/dev/active/<worktree-name>.env`).
-All `make` commands read the active profile automatically.
+A deployable profile is canonically defined in the sibling environment
+repository at `env/peers-touch/<name>/profile.env.example`. The
+`.local/dev/profiles/<name>.env` file is an imported cache and is never the
+authority for a same-named environment-repository profile.
+
+One profile is **active** per worktree. The symlink at
+`.local/dev/active/<worktree-name>.env` selects its name; all `make` commands
+resolve that name back to the canonical environment repository before use.
 
 ### Slot
 
@@ -55,7 +86,8 @@ Default slot = 0.
 
 ### Station Mode
 
-- `local` — `make station` compiles and runs Station from source
+- `local` / `compose` — human-developer-only modes; `make station` runs Station
+  on the current machine. Agents MUST NOT activate or execute these modes.
 - `remote` — `make station` runs the remote ready closure:
   pull code via deploy env, build, restart, then health-check. A remote Station
   profile MUST set `PT_STATION_DEPLOY_ENV`.
@@ -141,7 +173,9 @@ PT_MOBILE_DEFAULT_STATION_URL=http://<host>:<port>
 
 ## Recipes
 
-### Recipe: Local Station + Desktop + Mobile
+### Recipe: Local Station + Desktop + Mobile (Human Only)
+
+This recipe is documentation for human developers. Agents MUST NOT execute it.
 
 ```bash
 make profile-init PROFILE=local-dev SLOT=0
@@ -154,13 +188,10 @@ make mobile    # Starts Mobile
 
 ### Recipe: Remote Station (e.g. 10.37.246.80) + Local Desktop + Mobile
 
-```bash
-make profile-init PROFILE=remote-s1 SLOT=0
-```
-
-Then edit `.local/dev/profiles/remote-s1.env`:
+Define the deployable profile in the sibling environment repository:
 
 ```env
+# env/peers-touch/remote-s1/profile.env.example
 PT_STATION_MODE=remote
 PT_STATION_URL=http://10.37.246.80:18080
 PT_STATION_PORT=18080
@@ -175,7 +206,10 @@ make desktop   # Connects to 10.37.246.80
 make mobile    # Connects to 10.37.246.80
 ```
 
-### Recipe: Second worktree running simultaneously
+### Recipe: Second worktree running simultaneously (Human Local Mode)
+
+This local/compose example is documentation for human developers. Agents must
+instead configure and preflight an approved remote Station profile.
 
 ```bash
 # In worktree-2, use slot=1 to avoid port conflicts
@@ -198,6 +232,43 @@ PT_BOOTSTRAP_NODES=/ip4/10.37.118.48/tcp/4001/p2p/<relay-peer-id>
 
 These variables are passed to Station at startup.
 
+### Recipe: Multi-Station (e.g. cross-Station chat acceptance)
+
+When acceptance scenarios require two Stations (e.g. Alice on station-four,
+Bob on station-five-arm), deploy both using separate profiles:
+
+```bash
+# 1. Create/activate profile for station-four
+make profile-init PROFILE=multi-four SLOT=0
+make profile PROFILE=multi-four
+# Set in env/peers-touch/four/profile.env:
+#   PT_STATION_MODE=remote
+#   PT_STATION_URL=http://10.37.94.156:18132
+#   PT_STATION_DEPLOY_ENV=four
+make station          # Deploy/restart/check station-four
+
+# 2. Switch to profile for station-five-arm
+make profile-init PROFILE=multi-five-arm SLOT=1
+make profile PROFILE=multi-five-arm
+# Set in env/peers-touch/fiveArm/profile.env:
+#   PT_STATION_MODE=remote
+#   PT_STATION_URL=http://<fiveArm-host>:<port>
+#   PT_STATION_DEPLOY_ENV=fiveArm
+make station          # Deploy/restart/check station-five-arm
+
+# 3. Switch back to the acceptance profile and run
+make profile PROFILE=multi-four
+# Acceptance scenarios use service_bindings in manifest to route each client
+```
+
+Both Stations remain running after deploy — `station-dev.sh` in remote mode
+performs deploy/restart/check and returns. The acceptance environment contract
+(`multi-station-linux.yaml`) declares both services and client bindings.
+
+For agent automation: deploy both sequentially (switch profile, `make station`,
+switch profile, `make station`), then run acceptance from either profile.
+`PT_STATION_SKIP_DEPLOY=true` can reuse an already-running Station.
+
 ## Known Remote Stations (from .localenv topology)
 
 | Name | URL | Notes |
@@ -212,12 +283,19 @@ These variables are passed to Station at startup.
 When the user says "set up environment for X" or "I want to debug against Y":
 
 1. **Bootstrap/check existing profiles**: `make profiles`
-2. **Decide**: create new or reuse existing profile
-3. **Create if needed**: `make profile-init <name> SLOT=<n>`
-4. **Edit profile** if non-default config needed (remote station, relay, etc.)
-5. **Activate**: `make profile <name>`
-6. **Verify**: `make config` to confirm
-7. **Report**: tell user they can now `make desktop` / `make mobile` / `make station`
+2. **Select remote only**: reuse a canonical environment-repository profile that sets
+   `PT_STATION_MODE=remote`.
+3. **Create if needed**: add a distinctly named profile and deploy environment
+   under `env/peers-touch/<name>/`; do not repurpose an existing environment
+   name or edit only its `.local` cache.
+4. **Configure**: set the approved remote Station URL and deploy environment in
+   that canonical environment source.
+5. **Activate**: `make profile <name>`.
+6. **Fail-closed preflight**: run `make config` and verify remote mode,
+   non-loopback URL, and approved non-empty deploy environment.
+7. **Execute**: only after preflight may the agent run `make station`,
+   `make desktop`, `make mobile`, or related lifecycle/Acceptance commands.
+8. **Report**: include the resolved mode, Station URL, and deploy environment.
 
 ## Remote Deployment
 
@@ -294,25 +372,31 @@ Source modes:
 ## Important Rules
 
 - `.local/` is its own git repo (gitignored by main repo, versioned separately)
-- Profiles and deploy envs are tracked in `.local/` repo
+- Deployable profiles and deploy envs are authoritative in the sibling `env`
+  repository; `.local/` stores imported caches and runtime state
 - `make profiles` and `make profile <name>` bootstrap missing profiles/deploy envs from the shared `.local/` used by sibling worktrees.
 - Runtime artifacts (pids/logs/data) and active pointers are gitignored within `.local/`
 - Each worktree has its own active profile pointer (keyed by worktree basename)
 - Multiple worktrees share one `.local/` via symlink; pids/logs/data are profile-scoped
 - `make station` is idempotent — if Station is already running, it just confirms
+- Agent use of `make station` is remote-only and requires the safety preflight
+  above. Local/compose Station execution is reserved for human developers.
+- `make desktop`, `make desktop-web`, `make mobile`, and restart targets may
+  ready Station indirectly, so the same agent preflight applies to them.
 - `make desktop` / `make mobile` always ensure Station is ready first
 - Never hardcode station URLs in code — they come from the profile
 - PIDs/logs/data live in `.local/dev/{pids,logs,data}/<profile-name>/`
 
-## .local/ Git Repo
+## `.local/` Runtime Cache
 
-`.local/` is a standalone git repo (main repo gitignores it entirely).
+`.local/` is a standalone git repo used for imported configuration caches and
+runtime state. The sibling `env` repository remains authoritative for every
+same-named deployable profile and deploy environment.
 
-**Tracked** (committed in `.local/` repo):
-- `dev/profiles/*.env` — all profiles
-- `deploy/envs/*.env` — all deploy env configs
+**Cached configuration**:
+- `dev/profiles/*.env` — imported profile cache or human-only local profile
+- `deploy/envs/*.env` — imported deploy-env cache
 - `topology.env` — network topology reference
-- `.gitignore`
 
 **Ignored** (runtime, never committed):
 - `dev/pids/` — PID files per profile
@@ -330,8 +414,10 @@ ln -sfn /path/to/primary-worktree/.local .local
 ```
 
 Each worktree has its own active profile pointer at
-`.local/dev/active/<worktree-basename>.env`, so switching profiles in one
-worktree doesn't affect others.
+`.local/dev/active/<worktree-basename>.env`. The pointer selects a profile
+name; runtime commands load the canonical sibling-environment profile for that
+name when it exists. Switching profiles in one worktree therefore does not
+affect another worktree.
 
 ## Test Accounts
 
