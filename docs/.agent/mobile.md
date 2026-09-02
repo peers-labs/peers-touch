@@ -23,25 +23,25 @@ Do **not** use this file as the place to redefine Mobile architecture, dual-plat
 
 ### Platform Sources
 
-- [Mobile Base](../../docs/client/mobile/base.md)
-- [Mobile Client Lifecycle](../../docs/client/mobile/lifecycle.md)
-- [Native Plugin Layer](../../docs/client/mobile/native-dual-platform.md)
-- [Tauri Mobile Mainline Migration Plan](../../docs/client/mobile/execution-plans/20260531-tauri-mobile-mainline-migration.md)
+- [Mobile Base](../client/mobile/base.md)
+- [Mobile Client Lifecycle](../client/mobile/lifecycle.md)
+- [Native Plugin Layer](../client/mobile/native-dual-platform.md)
+- [Tauri Mobile Mainline Migration Plan](../client/mobile/execution-plans/20260531-tauri-mobile-mainline-migration.md)
 
 ### Topic Sources
 
-- [Applet Container](../../docs/client/mobile/applet-container.md)
-- [Sync Protocol](../../docs/client/mobile/sync-protocol.md)
+- [Applet Container](../client/mobile/applet-container.md)
+- [Sync Protocol](../client/mobile/sync-protocol.md)
 
 ### Specification Sources
 
-- [Mobile Coding Guide](../../docs/global/coding-guide/mobile)
-- [Common Coding Guide](../../docs/global/coding-guide/common)
+- [Mobile Coding Guide](../global/coding-guide/mobile/)
+- [Common Coding Guide](../global/coding-guide/common/)
 
 ### Global Sources
 
-- [Project Architecture](../../docs/global/architecture.md)
-- [Station/Desktop Scope Boundary](../../docs/architecture/boundaries/station-desktop-scope-boundary.md)
+- [Project Architecture](../global/architecture.md)
+- [Station/Desktop Scope Boundary](../architecture/boundaries/station-desktop-scope-boundary.md)
 
 ---
 

@@ -124,7 +124,10 @@ docs/architecture/<module>/
 - PRODUCT / DESIGN 阶段尚无正式执行计划时，不创建占位 `active_work` 行。
 - 执行计划文件创建完成后，才在 `project_memory.md` 的 `active_work`
   登记 repo-relative `plan` 路径、`stage: PLAN`、当前 step、已验证 branch、
-  blocker 与 session 日期。
+  `workspace_id`、`initial_head`、`expected_head`、
+  `worktree_set_digest`、blocker 与 session 日期。首次登记时两个 HEAD
+  字段相同；后续 resume/context compaction 只验证持久值，不重新 capture
+  覆盖 baseline。
 - `pt-context-anchor` 从 `active_work`、计划状态表和证据生成聊天投影；
   不把聊天状态回写为计划中的第二套真源。
 
@@ -162,7 +165,13 @@ docs/architecture/<module>/
 
 1. **更新最近的 README.md** — 确保目录内有链接指向新文件
 2. **更新 `docs/README.md`**（如果是新的真源文档）— 加入 §4 对应层级
-3. **登记 `active_work`** — 仅在正式执行计划已存在后登记
+3. **登记 `active_work`** — 仅在正式执行计划已存在后登记；先通过
+   `tooling/scripts/verify-worktree-binding.py` capture + verify 当前明确选择的
+   worktree，再完整保存 branch、`workspace_id`、`initial_head`、
+   `expected_head` 与 `worktree_set_digest`。Verifier 的 `workspaceId` 与
+   worktree-set digest 分别映射到这两个 snake_case 字段；identity 缺失时
+   返回 `WORKTREE_IDENTITY_UNAVAILABLE`，不一致时返回
+   `WORKTREE_IDENTITY_MISMATCH`
 4. **告知用户正式文档路径** — 在实施前明确列出落盘位置
 
 ---
@@ -237,7 +246,9 @@ docs/architecture/<module>/
 - [ ] 顶部有完整元数据块
 - [ ] 结构清晰（背景/目标/方案/阶段/验收）
 - [ ] 执行计划中没有 `## Context Anchor`
-- [ ] 正式计划创建后才登记 `active_work`，且 plan 路径和 branch 已验证
+- [ ] 正式计划创建后才登记 `active_work`，且 plan 路径、branch、
+      `workspace_id`、`initial_head`、`expected_head` 与
+      `worktree_set_digest` 已验证
 - [ ] 最近 README.md 已更新链接
 - [ ] 已告知用户文档路径
 - [ ] 如有实施阶段，已标注当前状态

@@ -18,7 +18,7 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -89,6 +89,45 @@ def changed_paths(diff_range: str) -> list[str]:
             if line.strip()
         )
     return sorted(paths)
+
+
+def resolve_changed_paths(
+    diff_range: str,
+    explicit_paths: list[str],
+) -> list[str]:
+    if explicit_paths:
+        resolved: set[str] = set()
+        for supplied_path in explicit_paths:
+            path = supplied_path.strip()
+            if not path:
+                continue
+            canonical = PurePosixPath(path)
+            if (
+                canonical.is_absolute()
+                or canonical.as_posix() != path
+                or ".." in canonical.parts
+                or "\\" in path
+            ):
+                raise DetectorError(
+                    "--changed-file must be a canonical repository-relative path: "
+                    f"{path!r}"
+                )
+            resolved.add(path)
+        if not resolved:
+            raise DetectorError(
+                "--changed-file requires at least one non-empty "
+                "repository-relative path"
+            )
+        actual = set(changed_paths(diff_range))
+        if resolved != actual:
+            missing = sorted(actual - resolved)
+            extra = sorted(resolved - actual)
+            raise DetectorError(
+                "--changed-file must exactly match the selected git range: "
+                f"missing={missing}, extra={extra}"
+            )
+        return sorted(resolved)
+    return changed_paths(diff_range)
 
 
 def current_source_identity() -> tuple[str, str]:
@@ -564,6 +603,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--claim", default="Current change is acceptance-ready")
     parser.add_argument("--range", dest="diff_range", default="HEAD")
+    parser.add_argument("--changed-file", action="append", default=[])
     parser.add_argument("--plan")
     parser.add_argument("--run")
     parser.add_argument("--require-gate", action="append", default=[])
@@ -600,7 +640,7 @@ def main() -> int:
             if contract_path.exists():
                 contract = _load_contract(contract_path)
         source_commit, workspace_digest = current_source_identity()
-        paths = changed_paths(args.diff_range)
+        paths = resolve_changed_paths(args.diff_range, args.changed_file)
         report = detect(
             claim=args.claim,
             paths=paths,

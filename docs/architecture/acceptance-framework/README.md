@@ -21,6 +21,10 @@
 - Native Desktop Gate如何在macOS、Linux和Windows runtime cells中独立取证。
 - 多客户端如何通过稳定 service role 显式绑定多 Station / Relay，而不在 Gate
   中拼接 URL 或维护第二份拓扑。
+- Provisioner如何通过不可持久化的launch context向独立Gate进程提供run-scoped
+  capability，而不把secret或raw handle写入manifest、环境变量或Evidence Store。
+- 业务Capability如何声明required evidence finalizer，并在cleanup完成后、
+  Evidence Store run finalize前执行detached只读验证。
 - Federation 与 Acceptance Framework 双边互验证的架构闭环。
 - 新产品域如何按统一标准接入项目级 acceptance。
 
@@ -72,7 +76,7 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | 文档 | 说明 |
 |------|------|
 | [design.md](./design.md) | 架构原则、分层模型、核心契约、Core Runtime 抽象和执行闭环 |
-| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-18） |
+| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-19） |
 | [data-model.md](./data-model.md) | Provisioning、Evidence Store、ArtifactRef、Run Manifest 与状态机 |
 | [module-layout.md](./module-layout.md) | Core Runtime 与 Environment Provisioning 的目标目录、职责和禁止依赖 |
 | [integration.md](./integration.md) | 现有变量/Profile/Fixture/Gate 到 runtime manifest 的映射与影响面 |
@@ -83,6 +87,8 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | [execution-plans/20260816-runtime-provisioning-contract-implementation.md](./execution-plans/20260816-runtime-provisioning-contract-implementation.md) | Runtime Provisioning Contract 实现计划（No Silent Pass 落地） |
 | [execution-plans/20260817-acceptance-evidence-store.md](./execution-plans/20260817-acceptance-evidence-store.md) | Runtime evidence source-tree外迁与atomic Evidence Store执行计划 |
 | [execution-plans/20260817-domain-structural-validation-context-anchor.md](./execution-plans/20260817-domain-structural-validation-context-anchor.md) | Domain structural closure 与 Context Anchor 治理修复计划 |
+| [execution-plans/20260824-native-desktop-runtime-cells.md](./execution-plans/20260824-native-desktop-runtime-cells.md) | macOS/Linux/Windows Native Desktop runtime cells 与远端 Linux proof 计划 |
+| [execution-plans/20260830-ephemeral-gate-launch-context.md](./execution-plans/20260830-ephemeral-gate-launch-context.md) | D-18 non-persisted Provisioner-to-Gate capability handoff 执行计划 |
 
 当前Evidence Store architecture由`D-11`约束：
 
@@ -92,9 +98,36 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 - writer/readers/validators/cleanup共享唯一resolver；
 - source tree只保留code、schemas、templates和intentional fixtures。
 
-当前 Agent V2 runtime matrix 的跨-runtime role applicability 由 accepted `D-13`
-定义；Foundation candidate producer 必须按 row-scoped role policy 运行，不得为
-contract-only 或 guard rows 伪造 DOM/Turn evidence。
+Native Desktop Runtime Cell architecture由accepted `D-13` ~ `D-16`约束：
+
+- 产品 Gate identity 与平台 cell identity 分离；
+- macOS、Linux、Windows evidence 按 cell 独立存储和判定；
+- 远端 embedded WebDriver 只监听 loopback，经 run-scoped SSH tunnel 访问；
+- Linux 使用 connected virtual output + persistent Xorg session，不要求物理显示器，
+  也不以 Xvfb 冒充最终 Native proof。
+
+`EphemeralGateLaunchContext`由accepted `D-18`约束：
+
+- Context只存在于orchestrator内存和受控继承的anonymous capability channel；
+- Runtime Manifest、Evidence Store、命令参数和环境变量不得承载secret或raw handle；
+- Gate进程只获得opaque channel descriptor和非敏感locator；
+- unsupported transport、握手、协议、timeout或cleanup失败均保持产品proof
+  `UNPROVEN`。
+
+Accepted `PostCleanupEvidenceFinalizer` target architecture由`D-19`定义：
+
+- Mobile Capability Graph的protected required-finalizer mapping独立声明需求，Gate
+  Catalog提供匹配执行配置，generated finalizer registration catalog绑定固定entry；
+  任一侧缺失或不匹配时fail closed；
+- cleanup-produced evidence在全部teardown和Infra artifact写入后先形成sealed
+  immutable role-instance snapshot，再在run finalize前接受验证；
+- detached domain finalizer在独立bounded进程中运行，不获得Provisioner或resource
+  authority；Infra只拥有snapshot、调用时序与单调结果合并；
+- controller-store qualification witness只使用canonical P-256 credential，
+  production power controller只使用canonical Ed25519 credential；两类schema
+  禁止cross-decode，因此不建立mutable global key-exclusion authority；
+- D-19 Infra landing前不得用Gate提前验证、让child接管cleanup或声明产品proof
+  closure；实施必须先通过独立执行计划评审。
 
 多服务拓扑当前由 accepted `D-17` 与 `D-18` 共同约束：
 
