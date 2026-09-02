@@ -9,12 +9,17 @@ import random
 import socket
 import subprocess
 import time
-import urllib.request
-from pathlib import Path
 from typing import Any, Callable
 
-from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.core import (
+    AcceptanceGate,
+    ActorRuntime,
+    GateError,
+)
+from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
+from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
+from tooling.acceptance.drivers.tauri import TauriSession
+
 from tooling.acceptance.fixtures.chat_native_reset import (
     deploy_environment,
     duplicate_profile_three_queue_delivery,
@@ -26,15 +31,21 @@ from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
 )
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
+    NativeClientLifecycleLedger,
     async_harness,
     commits_match,
     configure_station,
     current_commit,
     current_workspace_digest,
     enter_chat_page,
-    gateway_command,
+    is_station_authorization_rejection,
+    native_runtime_source_identity,
     read_station_version,
     reset_fixture,
+    runtime_station_service,
+    selected_native_runtime,
+    station_readback as shared_station_readback,
+
     start_authenticated_client,
     stop_client,
     wait_until,
@@ -88,28 +99,19 @@ REQUIRED_ASSERTIONS = {
 }
 
 
-def gateway_command(
-    client: TauriDriver,
-    command: str,
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    request = urllib.request.Request(
-        f"http://127.0.0.1:{client.gateway_port}",
-        data=json.dumps({"cmd": command, "args": args}).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        envelope = json.loads(response.read().decode("utf-8"))
-    if not isinstance(envelope, dict) or envelope.get("ok") is not True:
-        raise GateError(f"{command} failed: {envelope}")
-    data = envelope.get("data")
-    if not isinstance(data, dict):
-        raise GateError(f"{command} returned invalid data")
-    return data
+def selected_runtime() -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    NativeDesktopRuntimeBinding,
+] | None:
+    selected = selected_native_runtime(GATE_ID)
+    if selected is None:
+        return None
+    return selected.manifest, selected.actor_manifest, selected.binding
 
 
-def message_dom_snapshot(client: TauriDriver, message_id: str) -> dict[str, Any] | None:
+def message_dom_snapshot(client: TauriSession, message_id: str) -> dict[str, Any] | None:
+
     value = client.execute_script(
         """
         const id = arguments[0];
@@ -290,14 +292,83 @@ class NativeInteractionsGate(AcceptanceGate):
 
     def __init__(self) -> None:
         super().__init__()
-        self.station_url = os.environ.get(
-            "CHAT_NATIVE_STATION_URL",
-            DEFAULT_STATION,
-        ).rstrip("/")
-        self.tested_commit = current_commit()
-        self.workspace_digest = current_workspace_digest()
+        injected = (manifest, actor_manifest, runtime_binding)
+        if any(value is not None for value in injected) and not all(
+            value is not None for value in injected
+        ):
+            raise GateError(
+                "runtime manifest, actor manifest, and runtime binding "
+                "must be injected together"
+            )
+        selected_cell = os.environ.get(
+            "PT_ACCEPTANCE_RUNTIME_CELL",
+            "",
+        ).strip()
+        if selected_cell and runtime_binding is None:
+            raise GateError(
+                "selected runtime cell requires injected runtime resources"
+            )
+        if (
+            runtime_binding is not None
+            and runtime_binding.cell_id != selected_cell
+        ):
+            raise GateError(
+                "injected runtime binding does not match "
+                "PT_ACCEPTANCE_RUNTIME_CELL"
+            )
+        self.runtime_binding = runtime_binding
+        self.manifest = manifest or {}
+        self.actor_manifest = actor_manifest or {}
+        self.client_specs: dict[str, dict[str, Any]] = {}
+        self.actor_specs: dict[str, dict[str, Any]] = {}
+        if self.runtime_binding is not None:
+            source = self.manifest.get("source")
+            station = runtime_station_service(self.manifest)
+            self.station_url = str(station.get("endpoint") or "").rstrip("/")
+            self.client_specs = {
+                str(client.get("actor")): client
+                for client in self.manifest.get("clients", [])
+                if isinstance(client, dict)
+            }
+            self.actor_specs = {
+                str(actor.get("role")): actor
+                for actor in self.actor_manifest.get("actors", [])
+                if isinstance(actor, dict)
+            }
+            if not self.station_url:
+                raise GateError("runtime manifest Station URL is required")
+            if set(self.client_specs) != set(ACTORS):
+                raise GateError(
+                    "runtime manifest must allocate isolated Alice, Bob, "
+                    "and Charlie clients"
+                )
+            if set(self.actor_specs) != set(ACTORS):
+                raise GateError(
+                    "actor manifest must contain canonical Alice, Bob, "
+                    "and Charlie identities"
+                )
+            self.report.manifest = self.manifest
+        else:
+            self.station_url = os.environ.get(
+                "CHAT_NATIVE_STATION_URL",
+                DEFAULT_STATION,
+            ).rstrip("/")
+        source = self.manifest.get("source")
+        self.tested_commit = (
+            str(source.get("commit") or "")
+            if isinstance(source, dict)
+            else current_commit()
+        )
+        self.workspace_digest = (
+            str(source.get("workspaceDigest") or "")
+            if isinstance(source, dict)
+            else current_workspace_digest()
+        )
         self.steps: list[dict[str, Any]] = []
-        self.clients: dict[str, TauriDriver] = {}
+        self.clients: dict[str, TauriSession] = {}
+        self.runtime_instances: list[TauriSession] = []
+        self.client_lifecycles = NativeClientLifecycleLedger()
+
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
         self.conversations: dict[str, str] = {}
@@ -361,22 +432,112 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         enter_chat_page(client)
 
-    def drain(self, actor: str) -> None:
-        try:
-            gateway_command(
-                self.clients[actor], "messaging_dispatch", {"batch_limit": 50}
+    def create_authenticated_client(
+        self,
+        actor: str,
+        *,
+        restore_session: bool = False,
+        restored_from: TauriSession | None = None,
+    ) -> tuple[TauriSession, str]:
+        if self.runtime_binding is None:
+            return start_authenticated_client(
+                actor,
+                CLIENT_PORTS[actor],
+                self.station_url,
             )
-        except Exception:
-            pass
-        try:
-            gateway_command(
-                self.clients[actor], "messaging_drain", {"batch_limit": 100}
+        client = self.runtime_binding.create_bound_session(
+            actor,
+            NativeLaunchOptions(
+                window_slot=ACTORS.index(actor),
+                window_count=len(ACTORS),
+            ),
+        )
+        self.runtime_instances.append(client)
+        expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
+        self.client_lifecycles.register(client, expected_ptid)
+        if restored_from is not None:
+            self.client_lifecycles.transfer_preserved_session(
+                restored_from,
+                client,
             )
-        except Exception:
-            pass
+        try:
+            client.start()
+            self.client_lifecycles.mark_live(client)
+            client.wait_for_acceptance_harness(30)
+            if restore_session:
+                self.wait_for_realtime_device(client, expected_ptid)
+                ptid = expected_ptid
+                self.client_lifecycles.mark_authenticated(client)
+            else:
+                configure_station(client, self.station_url)
+                account_ref = str(
+                    self.actor_specs[actor].get("accountRef") or ""
+                )
+                login = async_harness(
+                    client,
+                    "loginWithPassword",
+                    {
+                        "account": account_ref.removeprefix("station-account:"),
+                        "password": DEV_ACCOUNT_PASSWORD,
+                    },
+                    timeout=30,
+                )
+                if not (login or {}).get("authenticated"):
+                    raise GateError(f"{actor} login did not authenticate")
+                self.client_lifecycles.mark_authenticated(client)
+                hydration = async_harness(
+                    client,
+                    "hydrateActiveActor",
+                    {},
+                    timeout=30,
+                )
+                ptid = str((hydration or {}).get("actorPtid") or "")
+                if ptid != expected_ptid:
+                    raise GateError(
+                        f"{actor} login identity mismatch: "
+                        f"expected={expected_ptid} actual={ptid}"
+                    )
+            if not client.get_current_url().startswith("tauri://localhost"):
+                raise GateError(
+                    f"{actor} is not running in native Tauri WebView: "
+                    f"{client.get_current_url()}"
+                )
+            return client, ptid
+        except Exception as error:
+            cleanup_errors = self.client_lifecycles.release(client)
+            if cleanup_errors and hasattr(error, "add_note"):
+                error.add_note(
+                    "Native interactions launch cleanup also failed: "
+                    f"{json.dumps(cleanup_errors, sort_keys=True)}"
+                )
+            raise
+
+    def wait_for_realtime_device(
+        self,
+        client: TauriSession,
+        expected_ptid: str,
+    ) -> dict[str, Any]:
+        return wait_until(
+            lambda: (
+                device
+                if (
+                    device := async_harness(
+                        client,
+                        "getRealtimeDevice",
+                        {},
+                        timeout=10,
+                    )
+                )
+                and str(device.get("actorPtid") or "") == expected_ptid
+                and str(device.get("deviceId") or "")
+                else None
+            ),
+            f"restored identity {expected_ptid}",
+            timeout=60,
+        )
+
 
     def sync(self, actor: str, kind: str, conversation_id: str) -> None:
-        self.drain(actor)
         method = "syncFriendSession" if kind == "friend" else "syncGroup"
         key = "sessionUlid" if kind == "friend" else "groupUlid"
         async_harness(self.clients[actor], method, {key: conversation_id})
@@ -388,7 +549,6 @@ class NativeInteractionsGate(AcceptanceGate):
         conversation_id: str,
         message_id: str,
     ) -> dict[str, Any] | None:
-        self.drain(actor)
         value = async_harness(
             self.clients[actor],
             "interactionProjection",
@@ -410,7 +570,6 @@ class NativeInteractionsGate(AcceptanceGate):
         reply_to: str = "",
         thread_root: str = "",
     ) -> dict[str, Any]:
-        self.drain(actor)
         result = async_harness(
             self.clients[actor],
             "sendInteractionMessage",
@@ -424,7 +583,6 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         if not isinstance(result, dict) or not result.get("messageId"):
             raise GateError(f"{kind} send returned no message identity")
-        self.drain(actor)
         return result
 
     def expect_rejected(self, action: Callable[[], Any], description: str) -> None:
@@ -441,15 +599,21 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id: str,
         command_id: str = "",
     ) -> dict[str, Any]:
-        return gateway_command(
+        result = async_harness(
             self.clients[actor],
-            "messaging_acceptance_interaction_snapshot",
+            "engineInteractionSnapshot",
             {
-                "conversation_id": conversation_id,
-                "message_id": message_id,
-                "command_id": command_id,
+                "actorPtid": self.ptids[actor],
+                "conversationId": conversation_id,
+                "messageId": message_id,
+                "commandId": command_id,
             },
         )
+        if not isinstance(result, dict):
+            raise GateError(
+                "engineInteractionSnapshot returned invalid evidence"
+            )
+        return result
 
     def prove_lifecycle(
         self,
@@ -1261,8 +1425,12 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id: str,
         actor: str,
     ) -> None:
-        self.drain(actor)
-        before_station = station_readback(conversation_id, message_id)
+        before_station = station_readback(
+            self.station_url,
+            conversation_id,
+            message_id,
+        )
+
         event_ids = {
             str(event.get("eventId") or "")
             for event in before_station.get("authorityEvents") or []
@@ -1515,11 +1683,6 @@ class NativeInteractionsGate(AcceptanceGate):
             proxy.disarm()
 
             def dispatch_until_submitted() -> dict[str, Any] | None:
-                gateway_command(
-                    self.clients["alice"],
-                    "messaging_dispatch",
-                    {},
-                )
                 snapshot = self.engine_snapshot(
                     "alice",
                     conversation_id,
@@ -1641,13 +1804,19 @@ class NativeInteractionsGate(AcceptanceGate):
         *,
         stop_existing: bool = True,
     ) -> None:
-        old = self.clients[actor]
+        predecessor = self.clients[actor]
+
         if stop_existing:
             stop_client(old)
         client, ptid = start_authenticated_client(
             actor,
-            CLIENT_PORTS[actor],
-            self.station_url,
+            restore_session=self.runtime_binding is not None,
+            restored_from=(
+                predecessor
+                if self.runtime_binding is not None
+                else None
+            ),
+
         )
         self.register_driver(client)
         if ptid != self.ptids[actor]:
@@ -1659,6 +1828,14 @@ class NativeInteractionsGate(AcceptanceGate):
         self.clients[actor] = client
         enter_chat_page(client)
         self.sync(actor, kind, conversation_id)
+
+    def stop_client_for_restart(self, actor: str) -> None:
+        client = self.clients[actor]
+        if self.runtime_binding is None:
+            stop_client(client)
+            return
+        self.client_lifecycles.stop_preserving_session(client)
+
 
     def prove_restart_convergence(
         self,
@@ -1741,16 +1918,15 @@ class NativeInteractionsGate(AcceptanceGate):
                 STEP_TIMEOUT,
             )
 
-        removed = gateway_command(
+        removed = async_harness(
             self.clients["alice"],
-            "messaging_membership_transition",
+            "removeGroupMember",
             {
-                "conversation_id": conversation_id,
-                "action": "remove_actor",
-                "target_ptid": self.ptids["charlie"],
+                "groupUlid": conversation_id,
+                "memberPtid": self.ptids["charlie"],
             },
         )
-        if not removed:
+        if not isinstance(removed, dict) or removed.get("success") is not True:
             raise GateError("Charlie Group removal did not succeed")
         before_denied = station_readback(conversation_id, message_id)
         self.expect_rejected(
@@ -1852,7 +2028,13 @@ class NativeInteractionsGate(AcceptanceGate):
             or (revoked or {}).get("deviceId") != self.device_ids["bob"]
         ):
             raise GateError("Bob current-device revocation did not succeed")
-        before_denied = station_readback(conversation_id, message_id)
+        before_denied = station_readback(
+            self.station_url,
+            conversation_id,
+            message_id,
+        )
+        rejection = ""
+
         try:
             async_harness(
                 self.clients["bob"],
@@ -1866,13 +2048,21 @@ class NativeInteractionsGate(AcceptanceGate):
                     "remove": False,
                 },
             )
-        except Exception:
-            pass
-        self.drain("bob")
+        except GateError as error:
+            rejection = str(error)
+        if not is_station_authorization_rejection(rejection):
+            raise GateError(
+                "revoked Bob device did not receive an authorization "
+                f"rejection for metadata interaction: {rejection or 'accepted'}"
+            )
 
         def denied_reaction_absent_after_settle() -> bool:
-            self.drain("bob")
-            snapshot = station_readback(conversation_id, message_id)
+            snapshot = station_readback(
+                self.station_url,
+                conversation_id,
+                message_id,
+            )
+
             events = snapshot.get("events") or []
             for event in events:
                 command_id = str(event.get("commandId") or "")
@@ -1885,43 +2075,30 @@ class NativeInteractionsGate(AcceptanceGate):
             "revoked-device denied reaction produces no Authority event",
             STEP_TIMEOUT,
         )
-        after_denied = station_readback(conversation_id, message_id)
+        after_denied = station_readback(
+            self.station_url,
+            conversation_id,
+            message_id,
+        )
+        authority_event_count_before = len(before_denied.get("events") or [])
+        authority_event_count_after = len(after_denied.get("events") or [])
+        self.station_evidence["direct.revoked"] = after_denied
+        self.assert_condition(
+            "revoked_device_denied",
+            bool(rejection)
+            and authority_event_count_after == authority_event_count_before,
+            json.dumps(
+                {
+                    "deviceId": self.device_ids["bob"],
+                    "submissionRejected": True,
+                    "authorityEventCountBefore": authority_event_count_before,
+                    "authorityEventCountAfter": authority_event_count_after,
+                },
+                sort_keys=True,
 
-        async_harness(
-            self.clients["alice"],
-            "submitMetadataInteraction",
-            {
-                "conversationId": conversation_id,
-                "kind": "friend",
-                "messageId": message_id,
-                "interaction": "reaction",
-                "reaction": "✅",
-                "remove": False,
-            },
-        )
-        wait_until(
-            lambda: (
-                snapshot
-                if (
-                    snapshot := self.projection(
-                        "alice",
-                        "friend",
-                        conversation_id,
-                        message_id,
-                    )
-                )
-                and any(
-                    r.get("emoji") == "✅"
-                    for r in (snapshot.get("reactions") or [])
-                )
-                else None
             ),
-            "Alice post-revocation Direct interaction",
-            STEP_TIMEOUT,
         )
-        after_allowed = station_readback(conversation_id, message_id)
-        self.station_evidence["direct.revoked"] = after_allowed
-        self.assert_condition("revoked_device_denied", True)
+
 
     def restart_station(self) -> None:
         try:
@@ -1942,6 +2119,96 @@ class NativeInteractionsGate(AcceptanceGate):
     def port_is_free(port: int) -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
             return connection.connect_ex(("127.0.0.1", port)) != 0
+
+    def cleanup_clients(self) -> dict[str, Any]:
+        cleanup_errors: list[dict[str, str]] = []
+        if self.runtime_binding is not None:
+            cleanup_errors.extend(self.client_lifecycles.release_all())
+        else:
+            for client in reversed(tuple(self.clients.values())):
+                try:
+                    stop_client(client)
+                except Exception as stop_error:
+                    cleanup_errors.append(
+                        {
+                            "resource": f"client-stop:{client.profile}",
+                            "error": str(stop_error),
+                        }
+                    )
+
+        if self.runtime_binding is not None:
+            try:
+                cleanup = self.runtime_binding.finalize_cleanup(
+                    self.runtime_instances,
+                    self.client_specs,
+                )
+            except Exception as error:
+                cleanup = {
+                    "ports": [],
+                    "portsReleased": False,
+                    "processesReleased": False,
+                    "storageReleased": False,
+                    "logsReleased": False,
+                    "cleanupErrors": [
+                        {
+                            "resource": "runtime-binding",
+                            "error": str(error),
+                        }
+                    ],
+                }
+            binding_errors = cleanup.get("cleanupErrors")
+            if isinstance(binding_errors, list):
+                cleanup_errors.extend(
+                    error
+                    for error in binding_errors
+                    if isinstance(error, dict)
+                )
+            cleanup["cleanupErrors"] = cleanup_errors
+            released = (
+                bool(cleanup.get("portsReleased"))
+                and bool(cleanup.get("processesReleased"))
+                and bool(cleanup.get("storageReleased"))
+                and bool(cleanup.get("logsReleased"))
+                and not cleanup_errors
+            )
+            cleanup["allPortsReleased"] = bool(
+                cleanup.get("portsReleased")
+            )
+            cleanup["clientsStopped"] = sorted(self.clients)
+        else:
+            ports = sorted(
+                {
+                    port
+                    for client in self.clients.values()
+                    for port in (client.port, client.gateway_port)
+                }
+            )
+            released = bool(
+                wait_until(
+                    lambda: all(self.port_is_free(port) for port in ports),
+                    "Native interaction client port release",
+                    30,
+                    0.25,
+                )
+            )
+            cleanup = {
+                "ports": ports,
+                "allPortsReleased": released,
+                "clientsStopped": sorted(self.clients),
+                "cleanupErrors": cleanup_errors,
+            }
+            released = released and not cleanup_errors
+
+        self.cleanup_evidence = cleanup
+        self.report.runtime["steps"] = self.steps
+        self.report.runtime["cleanup"] = cleanup
+        self.assert_condition(
+            "resources_released",
+            released,
+            json.dumps(cleanup, sort_keys=True),
+        )
+        return cleanup
+
 
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
@@ -2033,7 +2300,11 @@ class NativeInteractionsGate(AcceptanceGate):
                 "messaging_create_group",
                 {
                     "name": f"acceptance-{time.time_ns()}",
-                    "member_ptids": [self.ptids["bob"], self.ptids["charlie"]],
+                    "memberPtids": [
+                        self.ptids["bob"],
+                        self.ptids["charlie"],
+                    ],
+
                 },
             )
             group_id = str((group or {}).get("conversation_id") or "")

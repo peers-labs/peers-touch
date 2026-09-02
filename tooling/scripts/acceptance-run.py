@@ -47,6 +47,18 @@ CONTEXT_GATE_INHERITED_ENV_KEYS = (
 )
 
 
+def source_identity_drift(
+    expected: dict[str, str],
+    observed: dict[str, str],
+) -> dict[str, dict[str, str]] | None:
+    if observed == expected:
+        return None
+    return {
+        "expected": expected,
+        "observed": observed,
+    }
+
+
 @contextlib.contextmanager
 def run_environment(environment: dict[str, str]):
     keys = (
