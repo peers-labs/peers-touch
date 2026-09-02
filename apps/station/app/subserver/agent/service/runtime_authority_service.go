@@ -111,6 +111,12 @@ func (s *TurnService) persistRuntimeAuthority(
 			nil,
 		)
 	}
+	if err := validateRuntimeCapabilityProvenance(
+		admission.Capabilities,
+		time.Now().UTC(),
+	); err != nil {
+		return err
+	}
 	if readiness.GetPtid() != config.ActorID ||
 		readiness.GetAgentId() != config.AgentID ||
 		readiness.GetRuntimeSnapshotId() != admission.SnapshotID {
@@ -239,14 +245,59 @@ func (s *TurnService) persistRuntimeAuthority(
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"hash turn attempt runtime snapshot", err)
 		}
-		result := tx.Model(&persistence.TurnAttempt{}).
+		var persistedAttempt persistence.TurnAttempt
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Table("agent_turn_attempts AS attempts").
+			Select("attempts.*").
+			Joins("JOIN agent_turns AS turns ON turns.id = attempts.turn_id").
 			Where(
-				"id = ? AND turn_id IN (?)",
+				"attempts.id = ? AND turns.conversation_id = ?",
 				config.AttemptID,
-				tx.Model(&persistence.AgentTurn{}).
-					Select("id").
-					Where("conversation_id = ?", conversation.ID),
+				conversation.ID,
 			).
+			First(&persistedAttempt).Error; err != nil {
+			return errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"turn attempt does not belong to the admitted conversation",
+				err,
+			)
+		}
+		if len(persistedAttempt.RuntimeSnapshot) > 0 {
+			persistedSnapshot, err := persistence.UnmarshalRuntimeSnapshot(
+				persistedAttempt.RuntimeSnapshot,
+			)
+			if err != nil {
+				return errcode.New(
+					errcode.AgentInvalidSourceState,
+					http.StatusConflict,
+					"persisted turn attempt runtime authority is invalid",
+					err,
+				)
+			}
+			persistedHash, err := runtimeSnapshotHash(persistedSnapshot)
+			if err != nil ||
+				persistedAttempt.RuntimeSnapshotHash != persistedHash {
+				return errcode.New(
+					errcode.AgentInvalidSourceState,
+					http.StatusConflict,
+					"persisted turn attempt runtime authority failed integrity validation",
+					err,
+				)
+			}
+			if persistedHash != snapshotHash ||
+				persistedAttempt.ReadinessSnapshotID != readiness.GetSnapshotId() {
+				return errcode.New(
+					errcode.AgentVersionConflict,
+					http.StatusConflict,
+					"turn attempt runtime authority is immutable",
+					nil,
+				)
+			}
+			return nil
+		}
+		result := tx.Model(&persistence.TurnAttempt{}).
+			Where("id = ? AND runtime_snapshot IS NULL", config.AttemptID).
 			Updates(map[string]interface{}{
 				"runtime_snapshot":      encodedSnapshot,
 				"runtime_snapshot_hash": snapshotHash,
@@ -264,10 +315,202 @@ func (s *TurnService) persistRuntimeAuthority(
 	})
 }
 
+func (s *TurnService) validatePinnedRuntimeAuthority(
+	ctx context.Context,
+	config *TurnConfig,
+) error {
+	if config == nil ||
+		strings.TrimSpace(config.AttemptID) == "" ||
+		strings.TrimSpace(config.ActorID) == "" ||
+		strings.TrimSpace(config.Provider) == "" ||
+		strings.TrimSpace(config.Model) == "" {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"provider execution requires a pinned runtime authority",
+			nil,
+		)
+	}
+	if s.admissionResolver == nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime admission authority is unavailable for provider execution",
+			nil,
+		)
+	}
+
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	var attempt persistence.TurnAttempt
+	query := db.WithContext(ctx).
+		Table("agent_turn_attempts AS attempts").
+		Select("attempts.*").
+		Joins("JOIN agent_turns AS turns ON turns.id = attempts.turn_id").
+		Joins("JOIN agent_conversations AS conversations ON conversations.id = turns.conversation_id").
+		Where(
+			"attempts.id = ? AND attempts.turn_id = ? AND conversations.ptid = ?",
+			config.AttemptID,
+			config.TurnID,
+			config.ActorID,
+		).
+		First(&attempt)
+	if query.Error != nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"pinned runtime attempt is unavailable for provider execution",
+			query.Error,
+		)
+	}
+	pinned, err := persistence.UnmarshalRuntimeSnapshot(attempt.RuntimeSnapshot)
+	if err != nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"pinned runtime snapshot is invalid",
+			err,
+		)
+	}
+	pinnedHash, err := runtimeSnapshotHash(pinned)
+	if err != nil || strings.TrimSpace(attempt.RuntimeSnapshotHash) == "" ||
+		attempt.RuntimeSnapshotHash != pinnedHash {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"pinned runtime snapshot integrity check failed",
+			err,
+		)
+	}
+	if err := validateRuntimeCapabilityProvenance(
+		pinned.GetCapabilities(),
+		time.Now().UTC(),
+	); err != nil {
+		return err
+	}
+	if pinned.GetRuntimeKind() != model.RuntimeKind_RUNTIME_KIND_DIRECT_MODEL ||
+		pinned.GetProviderId() != config.Provider ||
+		pinned.GetModelId() != config.Model ||
+		pinned.GetRuntimeProfileId() != modernChatAgentProfileID {
+		return errcode.New(
+			errcode.AgentVersionConflict,
+			http.StatusConflict,
+			"provider execution runtime tuple differs from the pinned snapshot",
+			nil,
+		)
+	}
+	if config.RuntimeBudget == nil ||
+		!proto.Equal(config.RuntimeBudget, pinned.GetBudget()) {
+		return errcode.New(
+			errcode.AgentVersionConflict,
+			http.StatusConflict,
+			"provider execution budget differs from the pinned snapshot",
+			nil,
+		)
+	}
+
+	current, err := s.admissionResolver.Resolve(
+		ctx,
+		config.ActorID,
+		config.Provider,
+		config.Model,
+	)
+	if err != nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime capability source is unavailable before provider execution",
+			err,
+		)
+	}
+	if err := validateRuntimeCapabilityProvenance(
+		current.Capabilities,
+		time.Now().UTC(),
+	); err != nil {
+		return err
+	}
+	pinnedSemanticHash, err := runtimeCapabilitySemanticHash(pinned.GetCapabilities())
+	if err != nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"failed to hash pinned runtime capabilities",
+			err,
+		)
+	}
+	currentSemanticHash, err := runtimeCapabilitySemanticHash(current.Capabilities)
+	if err != nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"failed to hash current runtime capabilities",
+			err,
+		)
+	}
+	if current.ProviderConfigVersion != pinned.GetProviderConfigVersion() ||
+		current.SnapshotID != pinned.GetCapabilities().GetSnapshotId() ||
+		currentSemanticHash != pinnedSemanticHash {
+		return errcode.New(
+			errcode.AgentVersionConflict,
+			http.StatusConflict,
+			"runtime capability provenance is stale",
+			nil,
+		)
+	}
+	config.ProviderConfigVersion = pinned.GetProviderConfigVersion()
+	config.CapabilitySourceVersion = pinned.GetCapabilities().GetProvenance().GetSourceVersion()
+	return nil
+}
+
+func validateRuntimeCapabilityProvenance(
+	snapshot *model.RuntimeCapabilitySnapshot,
+	now time.Time,
+) error {
+	if snapshot == nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime capability provenance is incomplete",
+			nil,
+		)
+	}
+	provenance := snapshot.GetProvenance()
+	if provenance == nil ||
+		provenance.GetDiscoverySource() != runtimeCapabilityDiscoverySource ||
+		strings.TrimSpace(provenance.GetSourceVersion()) == "" ||
+		provenance.GetObservedAt() == nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime capability provenance is incomplete",
+			nil,
+		)
+	}
+	if err := provenance.GetObservedAt().CheckValid(); err != nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime capability observation timestamp is invalid",
+			err,
+		)
+	}
+	if provenance.GetObservedAt().AsTime().After(now) {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime capability observation timestamp is in the future",
+			nil,
+		)
+	}
+	return nil
+}
+
 func loadAgentConfigVersionTx(tx *gorm.DB, ptid string, agentID string) (int64, error) {
 	var agent persistence.Agent
 	if err := tx.Select("version").
-		Where("id = ? AND owner_actor_id = ?", agentID, ptid).
+		Where("id = ? AND owner_actor_ptid = ?", agentID, ptid).
 		First(&agent).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return 0, errcode.New(
