@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peers.touch/schemas/agent-v2/proof-set.schema.json",
+  "title": "Agent V2 Exact Seven Gate Proof Set",
+  "type": "object",
+  "required": ["artifactKind", "schemaVersion", "proofStatus", "sourceIdentity", "runtimeMatrix", "gateProofs", "createdAt"],
+  "properties": {
+    "artifactKind": {"const": "agent-v2-proof-set"},
+    "schemaVersion": {"const": 1},
+    "proofStatus": {"const": "PROVEN"},
+    "sourceIdentity": {"type": "object"},
+    "runtimeMatrix": {"type": "object"},
+    "gateProofs": {"type": "array", "minItems": 7, "maxItems": 7},
+    "createdAt": {"type": "string", "minLength": 1}
+  }
+}

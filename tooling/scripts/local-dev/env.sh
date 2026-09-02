@@ -4,9 +4,9 @@
 #
 # Profile resolution:
 #   1. PT_DEV_PROFILE_FILE env var (explicit override)
-#   2. Profile name from .local/dev/profile (one word, e.g. "two")
-#   3. Source profile from the env repo (sibling: ../env/peers-touch/<name>/profile.env.example)
-#   4. Fallback: .local/dev/profiles/<name>.env (local copy, for offline or legacy use)
+#   2. Profile name from the worktree-specific active symlink
+#   3. Canonical profile from the sibling env repo
+#   4. Worktree-active local profile when no canonical env profile exists
 #
 # Env repo discovery: sibling convention — env repo at $PROJECT_ROOT/../env
 #
@@ -24,11 +24,11 @@ export WORKTREE_ID
 PROFILE_FILE="${PT_DEV_PROFILE_FILE:-}"
 
 if [[ -z "$PROFILE_FILE" ]]; then
-  PROFILE_SELECTOR="$LOCAL_DEV_DIR/profile"
-  if [[ ! -f "$PROFILE_SELECTOR" ]]; then
-    echo "[ERROR] No profile configured for this worktree."
-    echo "        Create .local/dev/profile containing the profile name."
-    echo "        Example: echo 'one' > .local/dev/profile"
+  ACTIVE_PROFILE="$LOCAL_DEV_DIR/active/$WORKTREE_ID.env"
+  if [[ ! -L "$ACTIVE_PROFILE" ]]; then
+    echo "[ERROR] No worktree-specific active profile for '$WORKTREE_ID'."
+    echo "        Run: make profiles"
+    echo "        Then: make profile <name>"
     local_env_repo="$(cd "$PROJECT_ROOT/.." && pwd)/env"
     if [[ -d "$local_env_repo/peers-touch" ]]; then
       echo "        Available (from env repo):"
@@ -37,22 +37,24 @@ if [[ -z "$PROFILE_FILE" ]]; then
     exit 1
   fi
 
-  PROFILE_NAME="$(cat "$PROFILE_SELECTOR" | tr -d '[:space:]')"
-  if [[ -z "$PROFILE_NAME" ]]; then
-    echo "[ERROR] .local/dev/profile is empty. Write a profile name (e.g. 'one' or 'two')."
+  active_target="$(readlink "$ACTIVE_PROFILE")"
+  active_filename="$(basename "$active_target")"
+  if [[ "$active_filename" != *.env ]]; then
+    echo "[ERROR] Active profile target must end in .env: $active_target"
     exit 1
   fi
+  PROFILE_NAME="${active_filename%.env}"
 
   ENV_REPO="$(cd "$PROJECT_ROOT/.." && pwd)/env"
 
   if [[ -f "$ENV_REPO/peers-touch/${PROFILE_NAME}/profile.env.example" ]]; then
     PROFILE_FILE="$ENV_REPO/peers-touch/${PROFILE_NAME}/profile.env.example"
-  elif [[ -f "$LOCAL_DEV_DIR/profiles/${PROFILE_NAME}.env" ]]; then
-    PROFILE_FILE="$LOCAL_DEV_DIR/profiles/${PROFILE_NAME}.env"
+  elif [[ -f "$ACTIVE_PROFILE" ]]; then
+    PROFILE_FILE="$ACTIVE_PROFILE"
   else
     echo "[ERROR] Profile '${PROFILE_NAME}' not found."
     echo "        Checked: $ENV_REPO/peers-touch/${PROFILE_NAME}/profile.env.example"
-    echo "        Checked: $LOCAL_DEV_DIR/profiles/${PROFILE_NAME}.env"
+    echo "        Checked: $ACTIVE_PROFILE"
     if [[ -d "$ENV_REPO/peers-touch" ]]; then
       echo ""
       echo "        Available profiles in env repo:"
@@ -66,6 +68,11 @@ fi
 source "$PROFILE_FILE"
 
 : "${PT_DEV_PROFILE:?PT_DEV_PROFILE not set in profile}"
+
+if [[ -n "${PROFILE_NAME:-}" && "$PT_DEV_PROFILE" != "$PROFILE_NAME" ]]; then
+  echo "[ERROR] Active profile identity mismatch: selected=$PROFILE_NAME declared=$PT_DEV_PROFILE"
+  exit 1
+fi
 
 export PROJECT_ROOT
 export LOCAL_DEV_DIR

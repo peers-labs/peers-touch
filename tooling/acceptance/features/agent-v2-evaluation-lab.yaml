@@ -1,0 +1,35 @@
+{
+  "id": "agent-v2-evaluation-lab",
+  "status": "active",
+  "initial_proof_status": "UNPROVEN",
+  "product_area": "agent",
+  "owners": [
+    "model/domain/agent/evaluation.proto",
+    "apps/station/app/subserver/agent/**/evaluation*",
+    "apps/desktop/src/store/evaluation.ts",
+    "apps/desktop/src/pages/EvaluationPage.tsx"
+  ],
+  "truth_sources": [
+    "Station benchmark, dataset, case, run, attempt, result, target snapshot, cancellation, and metrics records"
+  ],
+  "visible_surfaces": [
+    {"type": "native-tauri", "surface": "Evaluation Lab draft, run, cancel, retry, result, and recovery states"},
+    {"type": "station-readback", "surface": "Evaluation run, case result, metrics, and lineage"}
+  ],
+  "required_gates": ["agent-v2-evaluation-lab-e2e"],
+  "acceptance": {
+    "service": [
+      "evaluation uses the canonical Agent Turn kernel and durable Station lifecycle",
+      "duplicate scheduling, cancellation races, retry, restart, retention, and actor isolation preserve unique lineage"
+    ],
+    "visible": [
+      "the user can run durable cases, cancel or retry, inspect metrics, and recover after restart",
+      "partial and failed outcomes expose exact terminal case lineage"
+    ]
+  },
+  "negative": [
+    "localStorage runs or quick completion must not prove Evaluation",
+    "retry must not mutate the terminal parent run or its metrics",
+    "missing TurnTrace, metrics lineage, replay, or cleanup keeps the Gate UNPROVEN"
+  ]
+}
