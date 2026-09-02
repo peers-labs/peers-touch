@@ -145,7 +145,7 @@ def _remote_command(
 def _load_bound_environment(
     runtime_manifest: Mapping[str, Any],
     repo_root: Path,
-) -> tuple[dict[str, str], dict[str, str], str, str, str]:
+) -> tuple[dict[str, str], dict[str, str], str, str, str, str]:
     if os.environ.get("PT_AGENT_V2_ALLOW_STATION_RESTART") != "1":
         raise FoundationStationRestartError(
             "PT_AGENT_V2_ALLOW_STATION_RESTART=1 is required for AS-F06"
@@ -153,10 +153,11 @@ def _load_bound_environment(
 
     profile = runtime_manifest.get("profile")
     source = runtime_manifest.get("source")
-    station = runtime_manifest.get("station")
+    services = runtime_manifest.get("services")
+    station = services.get("station") if isinstance(services, Mapping) else None
     if not all(isinstance(value, Mapping) for value in (profile, source, station)):
         raise FoundationStationRestartError(
-            "AS-F06 runtime manifest is missing profile/source/station identity"
+            "AS-F06 runtime manifest is missing profile/source/service identity"
         )
     assert isinstance(profile, Mapping)
     assert isinstance(source, Mapping)
@@ -184,7 +185,7 @@ def _load_bound_environment(
             "AS-F06 profile two is not bound to station-two"
         )
 
-    station_url = str(station.get("url") or "").rstrip("/")
+    station_url = str(station.get("endpoint") or "").rstrip("/")
     expected_url = profile_env.get("PT_STATION_URL", "").rstrip("/")
     health_url = profile_env.get("PT_STATION_HEALTH_URL", "").strip()
     parsed = urllib.parse.urlparse(station_url)
@@ -203,7 +204,7 @@ def _load_bound_environment(
     source_workspace_digest = str(source.get("workspaceDigest") or "")
     live_commit = str(station.get("liveCommit") or "")
     station_workspace_digest = str(station.get("workspaceDigest") or "")
-    proto_digest = str(station.get("protoDigest") or "")
+    proto_digest = str(station.get("protocolDigest") or "")
     if source_workspace_digest != "clean" or station_workspace_digest != "clean":
         raise FoundationStationRestartError(
             "AS-F06 requires clean source and Station workspace digests"
@@ -216,7 +217,14 @@ def _load_bound_environment(
         raise FoundationStationRestartError(
             "AS-F06 runtime manifest proto identity differs from source"
         )
-    return profile_env, deployment_env, station_url, health_url, source_commit
+    return (
+        profile_env,
+        deployment_env,
+        station_url,
+        health_url,
+        source_commit,
+        proto_digest,
+    )
 
 
 def _container_snapshot(
@@ -313,6 +321,7 @@ def restart_foundation_station(
         station_url,
         health_url,
         source_commit,
+        proto_digest,
     ) = _load_bound_environment(runtime_manifest, repo_root)
     before_version = _station_version(station_url)
     before_commit = str(before_version.get("build_commit") or "")
@@ -455,7 +464,7 @@ def restart_foundation_station(
         "deploymentEnvironment": EXPECTED_DEPLOYMENT,
         "stationUrlHash": _sha256(station_url),
         "sourceCommit": source_commit,
-        "protoDigest": str(runtime_manifest["station"]["protoDigest"]),
+        "protoDigest": proto_digest,
         "containerId": before["containerId"],
         "imageId": before["imageId"],
         "imageRef": before["imageRef"],
