@@ -1,0 +1,50 @@
+{
+  "id": "agent-core-chat-loop",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler.go",
+    "apps/station/app/subserver/agent/application/service.go",
+    "apps/station/app/subserver/agent/infrastructure/repo.go",
+    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/services/eventStream.ts"
+  ],
+  "truth_sources": [
+    "running Station agent API",
+    "configured provider with valid API key",
+    "agent_conversations",
+    "agent_messages"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/chat/send"},
+    {"type": "api", "route": "/agent/chat/messages"},
+    {"type": "sse", "route": "/agent/chat/stream"}
+  ],
+  "required_gates": ["agent-core-chat-e2e"],
+  "acceptance": {
+    "service": [
+      "a user can send a message to a configured agent and receive a streaming response",
+      "the streamed response is persisted as a complete message after stream ends",
+      "the conversation history lists both user and assistant messages in order",
+      "multi-turn conversations maintain context window across sequential messages",
+      "the system prompt and agent persona are injected into every turn context",
+      "token usage is tracked per turn and accumulated per conversation",
+      "the turn reaches a terminal state (completed|cancelled|failed) within the provider timeout"
+    ],
+    "visible": [
+      "the streaming response renders incrementally in the Desktop conversation surface",
+      "the final message is visible in the conversation after stream completion",
+      "a typing indicator appears between send and first chunk arrival",
+      "token count and model name are displayed on completed assistant messages",
+      "conversation history is scrollable and loads older messages on demand",
+      "copy and regenerate actions are visible in the primary action bar without expanding a dropdown"
+    ]
+  },
+  "negative": [
+    "streaming delivery must not be reported as complete until the final chunk is received",
+    "agent chat must not function without at least one provider configured with a valid API key",
+    "sending a message while a turn is still streaming must queue or reject — never corrupt the active stream",
+    "empty messages must not be sendable",
+    "the conversation must not grow unbounded — context window compression must engage before token limit"
+  ]
+}

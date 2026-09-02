@@ -1,0 +1,35 @@
+{
+  "id": "agent-v2-capability-binding",
+  "status": "active",
+  "initial_proof_status": "UNPROVEN",
+  "product_area": "agent",
+  "owners": [
+    "model/domain/agent/capability.proto",
+    "apps/station/app/subserver/agent/**/capability*",
+    "apps/desktop/src/runtimes/agentCapabilityRuntime.ts",
+    "apps/desktop/src/pages/AgentProfilePage.tsx"
+  ],
+  "truth_sources": [
+    "Station capability manifest, binding, readiness, and compatibility revisions"
+  ],
+  "visible_surfaces": [
+    {"type": "native-tauri", "surface": "Agent capability inventory and binding controls"},
+    {"type": "station-readback", "surface": "Manifest, binding, and readiness records"}
+  ],
+  "required_gates": ["agent-v2-capability-binding-e2e"],
+  "acceptance": {
+    "service": [
+      "binding uses one versioned manifest and authoritative readiness source",
+      "stale, incompatible, deleted, or version-conflicting requests reject before execution"
+    ],
+    "visible": [
+      "the user can inspect what an Agent can use and why a target is unavailable",
+      "binding state and compatibility rejection match Station readback"
+    ]
+  },
+  "negative": [
+    "labels, embedded chatConfig arrays, or local store state must not prove binding",
+    "rejected compatibility paths must produce zero execution",
+    "missing readiness snapshots or zero-execution evidence keeps the Gate UNPROVEN"
+  ]
+}

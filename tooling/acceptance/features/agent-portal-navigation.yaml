@@ -1,0 +1,31 @@
+{
+  "id": "agent-portal-navigation",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/desktop/src/store/portal.ts",
+    "apps/desktop/src/components/portal/PortalPanel.tsx",
+    "apps/desktop/src/components/portal/PortalHeader.tsx",
+    "apps/desktop/src/components/portal/views/"
+  ],
+  "truth_sources": [
+    "Desktop Portal navigation state machine"
+  ],
+  "visible_surfaces": [
+    {"type": "native-tauri", "route": "#/agent", "surface": "Agent conversation Portal panel"}
+  ],
+  "required_gates": ["agent-native-portal-navigation-e2e"],
+  "acceptance": {
+    "visible": [
+      "opening two different Portal views creates a visible navigation stack",
+      "Back returns to the previous Portal view without closing the panel",
+      "Close clears the stack and hides the panel",
+      "collapse and reopen preserve the existing stack until explicit close"
+    ]
+  },
+  "negative": [
+    "store inspection without native visible-state assertions must not pass",
+    "a single open panel state must not prove Back semantics",
+    "explicit close must not preserve a stale Portal stack"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peers.touch/schemas/agent-v2/validator-attestation.schema.json",
+  "title": "Agent V2 Validator Attestation",
+  "type": "object",
+  "required": ["artifactKind", "schema", "role", "gateId", "runId", "producer", "candidateManifest", "validatedAt"],
+  "properties": {
+    "artifactKind": {"const": "agent-v2-validator-attestation"},
+    "schema": {"type": "object"},
+    "role": {"const": "validator-attestation"},
+    "gateId": {"type": "string", "minLength": 1},
+    "runId": {"type": "string", "minLength": 1},
+    "producer": {"type": "object"},
+    "candidateManifest": {"type": "object"},
+    "validatedAt": {"type": "string", "minLength": 1}
+  }
+}
