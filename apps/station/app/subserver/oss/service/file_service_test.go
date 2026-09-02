@@ -1093,7 +1093,8 @@ func TestCompleteUpload_IdempotentOnExistingKey(t *testing.T) {
 func TestSaveRandom_DatedKeys(t *testing.T) {
 	_, _, _, svc := newSvc(t, KeyStrategyRandom, "local")
 
-	f, h := makePart(t, "img.png", []byte("ignored"))
+	body := []byte("ignored")
+	f, h := makePart(t, "img.png", body)
 	m, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
 	if err != nil {
 		t.Fatalf("SaveFile: %v", err)
@@ -1101,8 +1102,9 @@ func TestSaveRandom_DatedKeys(t *testing.T) {
 	if strings.HasPrefix(m.Key, "cas/") {
 		t.Fatalf("random strategy should not produce cas/ keys, got %q", m.Key)
 	}
-	if m.Sha256 != "" {
-		t.Fatalf("random strategy must leave Sha256 empty, got %q", m.Sha256)
+	sum := sha256.Sum256(body)
+	if m.Sha256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("random strategy Sha256 = %q, want uploaded content hash", m.Sha256)
 	}
 }
 

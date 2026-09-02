@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tag } from '@lobehub/ui';
 import { theme } from 'antd';
@@ -13,15 +13,12 @@ import { OpStatusTray } from '../components/OpStatusTray';
 import { InterventionBar } from '../components/chat/InterventionBar';
 import { ChatTerminalPanel } from '../components/chat/ChatTerminalPanel';
 import { TerminalToggleButton } from '../components/chat/TerminalToggleButton';
+import { TurnQueueTray } from '../components/chat/TurnQueueTray';
 
 export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void; narrow?: boolean }) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const messages = useChatStore((s) => s.messages);
-  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
-  const sessions = useChatStore((s) => s.sessions);
-  const selectSession = useChatStore((s) => s.selectSession);
-  const loadSessions = useChatStore((s) => s.loadSessions);
   const agents = useAgentStore((s) => s.agents);
   const selectedAgent = useAgentStore((s) => s.selectedAgent);
 
@@ -35,21 +32,6 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
   const selectedAgentData = agents.find((a) => a.name === selectedAgent);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNarrow = narrow ?? false;
-
-  useEffect(() => {
-    if (!selectedAgent) return;
-    if (currentSessionKey.startsWith('draft:')) return;
-    const isTransientKey = !sessions.some((s) => s.key === currentSessionKey);
-    if (!isTransientKey) return;
-    const existing = sessions.find((s) => s.agent_name === selectedAgent);
-    if (existing) {
-      selectSession(existing.key);
-    }
-  }, [currentSessionKey, selectSession, selectedAgent, sessions]);
-
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions, selectedAgent]);
 
   const contentWidth = isNarrow ? 'calc(100% - 28px)' : 'min(620px, calc(100% - 36px))';
   const hasMessages = messages.length > 0;
@@ -117,8 +99,9 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
               )}
               {!isNarrow && (
                 <button
+                  data-pt-agent-portal-toggle
                   type="button"
-                  title="Toggle panel"
+                  title={t('agent.portal.toggle')}
                   onClick={() => usePortalStore.getState().toggle()}
                   style={{ border: 0, background: 'transparent', color: token.colorTextTertiary, cursor: 'pointer', padding: 2, display: 'inline-flex', alignItems: 'center', borderRadius: 6 }}
                 >
@@ -200,6 +183,7 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
           </div>
 
           <div style={{ width: contentWidth, margin: '0 auto 18px', flexShrink: 0 }}>
+            <TurnQueueTray />
             <div style={{ marginBottom: 8 }}>
               <OpStatusTray />
             </div>

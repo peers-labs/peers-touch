@@ -50,12 +50,12 @@ Actor Isolated Environment Plane
 
 Actor environment: actor_id#type=user
         │
-        ├─ /home/peers/.peers/
+        ├─ <runtime-home>/.peers/
         │    ├─ credentials/
         │    ├─ runtime/
         │    └─ logs/
-        ├─ /home/peers/workspaces/{workspace_ref_hash}/
-        └─ /home/peers/tmp/
+        ├─ <runtime-home>/workspaces/{workspace_ref_hash}/
+        └─ <runtime-home>/tmp/
 ```
 
 能力依赖关系：
@@ -169,7 +169,7 @@ It does not know why the environment is used. It only ensures the environment ex
 Workspace service prepares actor-scoped workspace paths:
 
 ```text
-/home/peers/workspaces/{workspace_ref_hash}/
+<runtime-home>/workspaces/{workspace_ref_hash}/
 ```
 
 Initial scope:

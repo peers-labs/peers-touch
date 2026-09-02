@@ -83,7 +83,7 @@ Prototype Portal 内部提供 `desktop` / `mobile` / `dashboard` 站点切换。
     "id": "peers-ai-agent",
     "label": "peers-ai-agent",
     "branch": "peers-ai-agent",
-    "worktreePath": "/Users/bytedance/Documents/Projects/peers-touch/peers-ai-agent",
+    "worktreePath": "<repo-root>",
     "sites": {
       "desktop": "http://localhost:3200/",
       "mobile": "http://localhost:3201/",

@@ -4,7 +4,7 @@
 > 不作为当前 Desktop 账号、OAuth 或多账号切换实现真源。
 > 若与现状冲突，以 `docs/README.md`、`docs/client/desktop/base.md`、`docs/client/desktop/global-context-kernel.md`、`docs/global/coding-guide/desktop/service-api.md` 为准。
 
-> **Workspace:** /Users/bytedance/Documents/Projects/peers-touch/peers-touch
+> **Workspace:** <repo-root>
 
 ---
 
@@ -1755,7 +1755,7 @@ Error: received error while streaming: {"type":"server_error","code":"server_err
 ## User
 不用 CREATE SCHEMA IF 啊，这太重了！操， 
  你那一堆判断是啥东西，有必要在业务代码里维护这么重的东西吗 
- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/app/subserver/ai_chat/aichat.go#L60-64`
+ `apps/station/app/subserver/ai_chat/aichat.go#L60-64`
 
 ## User
 apps/desktop/src/applets 
@@ -2325,7 +2325,7 @@ appletInvoke: <T = any>(id: string, capability: string, action?: string, params?
 ```
 
 **编译验证**
-- 在 `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri` 执行 `cargo check` 已通过，exit code = 0。
+- 在 `apps/desktop/src-tauri` 执行 `cargo check` 已通过，exit code = 0。
 
 已完成改造，`desktop applet` 运行已切到 **Lynx Host 组件**，并移除了旧的 `iframe + postMessage` 分发链路，同时保持 pin/open 导航逻辑不变并通过类型检查。
 
@@ -2340,7 +2340,7 @@ appletInvoke: <T = any>(id: string, capability: string, action?: string, params?
 **关键代码片段**
 
 ```tsx
-// /Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/applet/LynxContainer.tsx
+// apps/desktop/src/applet/LynxContainer.tsx
 return (
   <LynxHost
     appletId={appletId}
@@ -2362,7 +2362,7 @@ return (
 ```
 
 ```tsx
-// /Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/applet/LynxHost.tsx
+// apps/desktop/src/applet/LynxHost.tsx
 host.setAttribute('src', src)
 host.setAttribute('applet-id', appletId)
 host.setAttribute('title', title || appletId)
@@ -2374,7 +2374,7 @@ return createElement('lynx-host', { ref: hostRef, style })
 ```
 
 ```ts
-// /Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/applet/AppletManager.ts
+// apps/desktop/src/applet/AppletManager.ts
 load: {
   type: item.load?.type || 'lynx',
   entry: item.load?.entry || item.main || 'index.html',
@@ -2493,7 +2493,7 @@ private invokeAPI(api: string, params: any = {}): Promise<any> {
 - 更新脚本 [package.json](../../../apps/desktop/package.json#L6-L15)，新增 `test:applet` 便于定向执行。
 
 ```ts
-// /Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/applet/AppletManager.test.ts
+// apps/desktop/src/applet/AppletManager.test.ts
 it('rejects invalid manifest/index payload', () => {
   const invalidManifest = createValidManifest('Bad_ID')
   const manifestCheck = parseAppletInfoV2(invalidManifest, 'index.applets[0]')
@@ -2520,7 +2520,7 @@ it('refuses to load invalid applet from index', async () => {
 ```
 
 ```json
-// /Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/package.json
+// apps/desktop/package.json
 {
   "scripts": {
     "test": "vitest run",
@@ -2562,7 +2562,7 @@ it('refuses to load invalid applet from index', async () => {
 
 **代码片段**
 ```ts
-// /Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/applet/schema.ts
+// apps/desktop/src/applet/schema.ts
 const LOAD_TYPES = new Set<AppletLoadType>(['lynx'])
 ...
 if (!LOAD_TYPES.has(loadType as AppletLoadType)) {
@@ -2571,7 +2571,7 @@ if (!LOAD_TYPES.has(loadType as AppletLoadType)) {
 ```
 
 ```ts
-// /Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/applet/AppletManager.test.ts
+// apps/desktop/src/applet/AppletManager.test.ts
 it('rejects iframe load type to enforce no-iframe runtime', () => {
   const iframeManifest = {
     ...createValidManifest('legacy-iframe'),
@@ -2607,22 +2607,22 @@ it('rejects iframe load type to enforce no-iframe runtime', () => {
   - [SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx#L790-L793)
 
 **涉及文件（本次与 ReactNode 冲突修复相关）**
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/package.json`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/SettingsPage.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/ChannelsPage.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/UserProfilePopover.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/SearchPage.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/ChatPage.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/CronJobDrawer.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/NotesPage.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/AgentProfilePage.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/ProviderDetail.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/ChatInput.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/AgentSidebar.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/SkillAppletSelector.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/ProviderMenu.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/MessageBubble.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/MessageCard.tsx`
+- `apps/desktop/package.json`
+- `apps/desktop/src/pages/SettingsPage.tsx`
+- `apps/desktop/src/pages/ChannelsPage.tsx`
+- `apps/desktop/src/components/UserProfilePopover.tsx`
+- `apps/desktop/src/pages/SearchPage.tsx`
+- `apps/desktop/src/pages/ChatPage.tsx`
+- `apps/desktop/src/components/CronJobDrawer.tsx`
+- `apps/desktop/src/pages/NotesPage.tsx`
+- `apps/desktop/src/pages/AgentProfilePage.tsx`
+- `apps/desktop/src/components/settings/ProviderDetail.tsx`
+- `apps/desktop/src/components/ChatInput.tsx`
+- `apps/desktop/src/components/AgentSidebar.tsx`
+- `apps/desktop/src/components/SkillAppletSelector.tsx`
+- `apps/desktop/src/components/settings/ProviderMenu.tsx`
+- `apps/desktop/src/components/MessageBubble.tsx`
+- `apps/desktop/src/components/MessageCard.tsx`
 
 **示例代码**
 ```tsx
@@ -2735,32 +2735,32 @@ pnpm check
   参考：[agent-pilot/api.ts](../../../packages/applets/agent-pilot/src/api.ts#L1-L11), [remote-cli/api.ts](../../../packages/applets/remote-cli/src/api.ts#L1-L8), [web-search/api.ts](../../../packages/applets/web-search/src/api.ts#L38-L44)
 
 **修改文件（本次任务）**
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applet-sdk/src/index.ts`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applet-sdk/src/types.ts`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/build.js`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/agent-pilot/src/index.ts`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/agent-pilot/src/Page.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/agent-pilot/src/api.ts`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/index.ts`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/api.ts`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/AgentChat.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/ConnectDialog.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/Page.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/ServerManager.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/Settings.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/Terminal.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/components/BuilderPanel.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/components/MessageComposer.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/vite-env.d.ts`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/web-search/src/index.ts`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/web-search/src/api.ts`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/web-search/src/Page.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/web-search/src/Settings.tsx`
-- `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/web-search/src/components/MessageComposer.tsx`
+- `packages/applet-sdk/src/index.ts`
+- `packages/applet-sdk/src/types.ts`
+- `packages/applets/build.js`
+- `packages/applets/agent-pilot/src/index.ts`
+- `packages/applets/agent-pilot/src/Page.tsx`
+- `packages/applets/agent-pilot/src/api.ts`
+- `packages/applets/remote-cli/src/index.ts`
+- `packages/applets/remote-cli/src/api.ts`
+- `packages/applets/remote-cli/src/AgentChat.tsx`
+- `packages/applets/remote-cli/src/ConnectDialog.tsx`
+- `packages/applets/remote-cli/src/Page.tsx`
+- `packages/applets/remote-cli/src/ServerManager.tsx`
+- `packages/applets/remote-cli/src/Settings.tsx`
+- `packages/applets/remote-cli/src/Terminal.tsx`
+- `packages/applets/remote-cli/src/components/BuilderPanel.tsx`
+- `packages/applets/remote-cli/src/components/MessageComposer.tsx`
+- `packages/applets/remote-cli/src/vite-env.d.ts`
+- `packages/applets/web-search/src/index.ts`
+- `packages/applets/web-search/src/api.ts`
+- `packages/applets/web-search/src/Page.tsx`
+- `packages/applets/web-search/src/Settings.tsx`
+- `packages/applets/web-search/src/components/MessageComposer.tsx`
 
 **关键代码片段**
 ```ts
-// /Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applet-sdk/src/index.ts
+// packages/applet-sdk/src/index.ts
 public invoke<T = unknown>(api: string, params: Record<string, unknown> = {}): Promise<T> {
   return this.invokeAPI(api, params)
 }
@@ -2774,14 +2774,14 @@ export function registerApplet(definition: AppletRegistration): AppletRegistrati
 ```
 
 ```ts
-// /Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/agent-pilot/src/api.ts
+// packages/applets/agent-pilot/src/api.ts
 function appletAction<T>(action: string, params?: Record<string, unknown>): Promise<T> {
   return sdk.invoke<T>('applets_action', { id: ID, action, params });
 }
 ```
 
 ```ts
-// /Users/bytedance/Documents/Projects/peers-touch/peers-touch/packages/applets/remote-cli/src/Terminal.tsx
+// packages/applets/remote-cli/src/Terminal.tsx
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';

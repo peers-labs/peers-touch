@@ -1,0 +1,56 @@
+{
+  "id": "agent-memory-system",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/memory_handler.go",
+    "apps/station/app/subserver/agent/service/memory_service.go",
+    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/services/desktop_api.ts"
+  ],
+  "truth_sources": [
+    "running Station agent API",
+    "agent_memories table",
+    "embedding vector store"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/memory"},
+    {"type": "api", "route": "/agent/memory/:id"},
+    {"type": "api", "route": "/agent/memory/:id/delete"},
+    {"type": "api", "route": "/agent/memory/:id/update"},
+    {"type": "api", "route": "/agent/memory/search"},
+    {"type": "api", "route": "/agent/memory/persona"},
+    {"type": "api", "route": "/agent/memory/stats"},
+    {"type": "api", "route": "/agent/memory/events"},
+    {"type": "api", "route": "/agent/memory/export"},
+    {"type": "api", "route": "/agent/memory/import"},
+    {"type": "api", "route": "/agent/memory/embedding-status"},
+    {"type": "api", "route": "/agent/memory/reembed"}
+  ],
+  "required_gates": ["agent-memory-e2e"],
+  "acceptance": {
+    "service": [
+      "list returns all memories for an agent with pagination and category filtering",
+      "get returns a single memory entry with its full content, metadata, and embedding status",
+      "delete removes a memory entry and its associated embedding vector",
+      "update modifies memory content and triggers re-embedding if content changed",
+      "search performs semantic similarity search against embedded memories and returns ranked results",
+      "persona returns the synthesized persona summary derived from accumulated memories",
+      "stats returns memory count, embedding coverage, and storage usage",
+      "events returns the memory mutation log in chronological order",
+      "export serializes all memories to a portable format",
+      "import ingests an exported memory set and triggers bulk embedding",
+      "embedding-status reports which memories are embedded, pending, or failed",
+      "reembed forces re-embedding of specified memories or all memories"
+    ],
+    "visible": [
+      "memory panel in Desktop displays categorized memory entries with search",
+      "persona summary is visible in the agent profile surface"
+    ]
+  },
+  "negative": [
+    "search must not return results from a different agent's memory space",
+    "import must not overwrite existing memories without explicit user confirmation",
+    "reembed must not block the agent chat loop while processing"
+  ]
+}

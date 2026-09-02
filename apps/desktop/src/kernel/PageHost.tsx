@@ -87,6 +87,28 @@ export function PageHost({ page, fallback }: PageHostProps): ReactElement {
   const activePageIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // #region debug-point C:page-mount-sequence
+    void fetch('http://127.0.0.1:7777/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'post-login-update-loop',
+        runId: 'post-fix',
+        hypothesisId: 'C',
+        location: 'kernel/PageHost.tsx:mounted-state',
+        msg: '[DEBUG] PageHost mounted state',
+        data: {
+          activePageId,
+          activePageKey,
+          mounted: Array.from(mounted),
+          page,
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [activePageId, activePageKey, mounted, page]);
+
+  useEffect(() => {
     markRouteRequested(page, {
       registered: isRegistered,
       descriptorId: activeDescriptor?.id,

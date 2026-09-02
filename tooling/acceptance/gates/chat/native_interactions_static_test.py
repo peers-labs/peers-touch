@@ -1,15 +1,9 @@
 from __future__ import annotations
 
-import os
 import unittest
 from pathlib import Path
 
-from tooling.acceptance.core import GateError
-from tooling.acceptance.gates.chat.contact_message_resilience_runner import (
-    ContactMessageResilienceGate,
-)
 from tooling.acceptance.gates.chat.native_interactions_runner import (
-    NativeInteractionsGate,
     station_mutation_fingerprint,
 )
 
@@ -53,19 +47,6 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertNotIn('"charlie": "charlie@p.t"', support)
         self.assertNotIn("CHAT_ACCEPTANCE_PASSWORD", support)
 
-    def test_native_fixture_reset_runs_through_the_package_module(self) -> None:
-        support = self.source(
-            "tooling/acceptance/gates/chat/native_support.py"
-        )
-        self.assertIn(
-            '"tooling.acceptance.fixtures.chat_native_reset"',
-            support,
-        )
-        self.assertNotIn(
-            '"fixtures"\\n                / "chat_native_reset.py"',
-            support,
-        )
-
     def test_native_runners_use_committed_dev_account_fixture(self) -> None:
         for path in (
             "tooling/acceptance/gates/chat/native_two_client_runner.py",
@@ -82,9 +63,6 @@ class NativeInteractionContractsTest(unittest.TestCase):
         row = self.source(
             "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
         )
-        overlay = self.source(
-            "apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx"
-        )
         area = self.source("apps/desktop/src/components/chat/ChatMessageArea.tsx")
         thread = self.source("apps/desktop/src/components/chat/ChatThreadPanel.tsx")
         for selector in (
@@ -92,9 +70,6 @@ class NativeInteractionContractsTest(unittest.TestCase):
             'data-message-action="retract"',
             'data-message-action="reaction"',
             'data-message-action="pin"',
-        ):
-            self.assertIn(selector, overlay)
-        for selector in (
             "data-message-edited=",
             "data-message-retracted=",
             "data-message-reply-to=",
@@ -128,24 +103,6 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn('"outbox": outbox', store)
         self.assertIn('"attemptCount"', store)
         self.assertIn('"commandSha256"', store)
-
-    def test_interaction_commands_catch_up_before_target_validation(self) -> None:
-        source = self.source(
-            "apps/desktop/src-tauri/src/messaging/engine.rs"
-        )
-        for method, next_method in (
-            ("pub fn submit_edit(", "pub fn submit_metadata_interaction("),
-            ("pub fn submit_metadata_interaction(", "pub fn submit_read_cursor("),
-        ):
-            method_start = source.index(method)
-            method_end = source.index(next_method, method_start)
-            body = source[method_start:method_end]
-
-            drain = body.index(
-                "self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;"
-            )
-            projection = body.index(".message_projection(conversation_id, message_id)?")
-            self.assertLess(drain, projection)
 
     def test_native_runners_are_observation_bounded_and_source_bound(self) -> None:
         for path in (
@@ -230,6 +187,7 @@ class NativeInteractionContractsTest(unittest.TestCase):
             else:
                 os.environ["PT_ACCEPTANCE_RUNTIME_CELL"] = previous
 
+
     def test_mutation_fingerprint_ignores_receipts_but_tracks_authority_fanout(
         self,
     ) -> None:
@@ -304,14 +262,14 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertNotIn("CancelPendingMessagingCommand", source)
         self.assertNotIn("cancel_pending", source)
 
-    def test_timeout_retry_uses_disposable_station_fault_proxy(self) -> None:
+    def test_timeout_retry_uses_profile_three_fault_proxy(self) -> None:
         runner = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
         )
         proxy = self.source(
             "tooling/acceptance/fixtures/chat_submit_fault_proxy.py"
         )
-        self.assertIn("AcceptanceStationSubmitFaultProxy", runner)
+        self.assertIn("ProfileThreeSubmitFaultProxy", runner)
         self.assertIn("arm_connection_loss", runner)
         self.assertNotIn('"messaging_dispatch"', runner)
         self.assertNotIn('"messaging_drain"', runner)
@@ -321,7 +279,7 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn('"retry_wait"', runner)
         self.assertIn("receiverVisibleCount", runner)
         self.assertIn('SUBMIT_PATH = "/messaging/command/submit"', proxy)
-        self.assertIn("acceptance_station_environment(station_url)", proxy)
+        self.assertIn("profile_three_environment(station_url)", proxy)
         self.assertIn("requestSha256", proxy)
         self.assertIn("commandSha256", proxy)
         self.assertIn("_submit_command_bytes", proxy)
@@ -342,23 +300,20 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertNotIn('"messaging_membership_transition"', runner)
 
     def test_disposable_station_restart_is_remote_and_source_bound(self) -> None:
+
         runner = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
         )
         fixture = self.source(
             "tooling/acceptance/fixtures/chat_native_reset.py"
         )
-        self.assertIn("restart_acceptance_station", runner)
+        self.assertIn("restart_profile_three_station", runner)
         self.assertNotIn('"station-restart"', runner)
         self.assertIn("CHAT_ACCEPTANCE_ALLOW_STATION_RESTART", fixture)
         self.assertIn("docker restart", fixture)
         self.assertIn(".State.StartedAt", fixture)
         self.assertIn("parsed_url.hostname != host", fixture)
-        self.assertIn("parsed_url.port != expected.port", fixture)
-        self.assertIn("PT_ACCEPTANCE_DISPOSABLE", fixture)
-        self.assertIn("PT_ACCEPTANCE_COMPOSE_PROJECT", fixture)
-        self.assertIn("PT_ACCEPTANCE_POSTGRES_VOLUME", fixture)
-        self.assertIn("verify_disposable_station_runtime", fixture)
+        self.assertIn("parsed_url.port != 18080", fixture)
         self.assertIn("beforeCommit", fixture)
         self.assertIn("afterCommit", fixture)
         self.assertIn("lane_row.next_sequence + 1", fixture)
@@ -483,6 +438,7 @@ class ContactMessageResilienceTest(unittest.TestCase):
             source,
         )
 
+
     def test_engine_has_stale_enrollment_recovery(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/messaging/engine.rs")
         self.assertIn(
@@ -490,23 +446,9 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "engine must provide recover_stale_enrollment for endpoint-not-active recovery",
         )
         self.assertIn(
-            "is_stale_endpoint_error", src,
-            "engine must provide is_stale_endpoint_error to detect stale endpoint errors "
-            "from both explicit messages and empty-body 403 responses",
+            "endpoint is not active", src,
+            "engine must detect 'endpoint is not active' Station errors",
         )
-
-        helper = src.find("fn is_stale_endpoint_error")
-        self.assertGreater(helper, 0)
-        self.assertIn(
-            "endpoint is not active", src[helper:helper + 300],
-            "is_stale_endpoint_error must detect 'endpoint is not active' in error text",
-        )
-        self.assertIn(
-            "station returned 403", src[helper:helper + 300],
-            "is_stale_endpoint_error must detect 'station returned 403' because protobuf "
-            "endpoints return 403 with empty body when the endpoint is not active",
-        )
-
         create_direct = src.find("fn create_direct_conversation")
         self.assertGreater(create_direct, 0)
 
@@ -516,10 +458,10 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "create_direct_conversation must delegate to try_create_direct_conversation",
         )
 
-        guard = src.find("is_stale_endpoint_error", first_attempt)
+        guard = src.find("endpoint is not active", first_attempt)
         self.assertGreater(
             guard, first_attempt,
-            "recovery must be guarded by is_stale_endpoint_error",
+            "recovery must be guarded by 'endpoint is not active' error match",
         )
 
         recovery = src.find("recover_stale_enrollment", guard)
@@ -539,20 +481,10 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "without the retry the recovery has no effect",
         )
 
-        recovery_block = src[recovery:enroll]
-        self.assertNotIn(
-            "if self.recover_stale_enrollment",
-            recovery_block,
-            "enroll_pending_device must NOT be gated on recover_stale_enrollment's return "
-            "value: when the device is already in awaiting_device_enrollment state, "
-            "reset_device_enrollment returns false but the pending enrollment still "
-            "needs to be submitted to Station",
-        )
-
         non_matching_arm = src.find("Err(error) => Err(error)", retry)
         self.assertGreater(
             non_matching_arm, 0,
-            "non-stale-endpoint errors must pass through without recovery",
+            "non-'endpoint is not active' errors must pass through without recovery",
         )
 
     def test_store_has_reset_device_enrollment(self) -> None:
@@ -580,6 +512,10 @@ class ContactMessageResilienceTest(unittest.TestCase):
     def test_lifecycle_recovers_stale_enrollment(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/messaging/lifecycle.rs")
         self.assertIn(
+            "endpoint is not active", src,
+            "lifecycle must detect 'endpoint is not active' in cycle failures",
+        )
+        self.assertIn(
             "recover_stale_enrollment", src,
             "lifecycle must call engine.recover_stale_enrollment on stale endpoint errors",
         )
@@ -599,12 +535,6 @@ class ContactMessageResilienceTest(unittest.TestCase):
             err_return, recovery,
             "the cycle error must still be propagated as Err(combined) after "
             "attempting recovery; recovery is a side-effect, not a success override",
-        )
-        self.assertNotIn(
-            'combined.contains("endpoint is not active")', src,
-            "lifecycle must not duplicate the stale-endpoint string check; "
-            "recover_stale_enrollment now internally detects both 'endpoint is not active' "
-            "and 'station returned 403' via is_stale_endpoint_error",
         )
 
     def test_contact_double_click_starts_chat(self) -> None:

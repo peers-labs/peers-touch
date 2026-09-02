@@ -11,11 +11,12 @@ import (
 var defaultCatalogYAML []byte
 
 type CatalogModel struct {
-	ID            string `yaml:"id"`
-	DisplayName   string `yaml:"display_name"`
-	Type          string `yaml:"type"`
-	Enabled       bool   `yaml:"enabled"`
-	ContextWindow int    `yaml:"context_window"`
+	ID              string `yaml:"id"`
+	DisplayName     string `yaml:"display_name"`
+	Type            string `yaml:"type"`
+	Enabled         bool   `yaml:"enabled"`
+	ContextWindow   int    `yaml:"context_window"`
+	ThinkingControl string `yaml:"thinking_control"`
 }
 
 type CatalogProvider struct {
@@ -68,4 +69,17 @@ func Find(id string) *CatalogProvider {
 		}
 	}
 	return nil
+}
+
+// SetForTesting replaces the catalog registry with the given providers.
+// It must only be called from tests. Callers should defer RestoreForTesting
+// to avoid polluting other tests.
+func SetForTesting(providers []CatalogProvider) {
+	catalogOnce.Do(func() {}) // ensure sync.Once is spent
+	catalogRegistry = providers
+}
+
+// RestoreForTesting reloads the catalog from the embedded default YAML.
+func RestoreForTesting() {
+	loadCatalog()
 }

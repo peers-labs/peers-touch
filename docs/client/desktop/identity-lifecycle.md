@@ -58,8 +58,14 @@ authenticated
   -> accountCacheRefreshing
   -> authenticated(ready with reconciliation substates)
 authenticated
-  -> revoked | accountGate(logout)
+  -> revoked | loggingOut
+loggingOut
+  -> accountGate(logout)
 ```
+
+`loggingOut` projects to the non-interactive `resuming` shell. It must not
+mount the account gate or start account projection reads until teardown has
+completed.
 
 The reducer stores substate on authenticated phases:
 
@@ -156,6 +162,8 @@ Runtime code must not branch on raw booleans such as
 - `authenticatedPendingCompletion` may refresh profile/account data, but it
   must not expose the business shell until `LOGIN_COMPLETED`.
 - `ready` without a valid session is invalid.
+- `loggingOut` must not start auth-gate account projection reads; the runtime
+  enters `accountGate(logout)` only after session teardown completes.
 - Every transition into an authenticated actor must be represented as an
   `IdentityAuthenticatedEdge`.
 - Boot restore decisions must go through `IdentityBootResolution`.

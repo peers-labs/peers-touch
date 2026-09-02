@@ -1327,7 +1327,6 @@ func newGateAtelierRuntime() *gateAtelierRuntime {
 	promptCachingSvc := agentservice.NewPromptCachingService()
 	providerSvc := agentservice.NewProviderService(promptCachingSvc)
 	credentialPoolSvc := agentservice.NewCredentialPoolService()
-	contextReferenceSvc := agentservice.NewContextReferenceService()
 	delegationSvc := agentservice.NewDelegationService()
 	toolRegistrySvc := agentservice.NewToolRegistryService(memorySvc, skillSvc)
 	convSvc := agentservice.NewConversationService()
@@ -1348,7 +1347,6 @@ func newGateAtelierRuntime() *gateAtelierRuntime {
 		compressionSvc,
 		providerSvc,
 		credentialPoolSvc,
-		contextReferenceSvc,
 		delegationSvc,
 		toolRegistrySvc,
 		reviewSvc,

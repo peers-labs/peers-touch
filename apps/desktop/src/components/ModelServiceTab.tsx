@@ -11,10 +11,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Alert, toast } from '@lobehub/ui';
 import { Typography, theme } from 'antd';
-import { api, type ModelServiceConfig, type ModelRef, type AvailableModel } from '../services/desktop_api';
+import { api, type ModelServiceConfig, type ModelRef } from '../services/desktop_api';
 import { ModelSelect } from './ModelSelect';
 import { SettingsContainer } from './settings/SettingsLayout';
 import { useTranslation } from 'react-i18next';
+import { log } from '../utils/logger';
+import { useAgentStore } from '../store/agent';
 
 const { Title, Text } = Typography;
 
@@ -31,21 +33,20 @@ export function ModelServiceTab() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [config, setConfig] = useState<ModelServiceConfig>({});
-  const [models, setModels] = useState<AvailableModel[]>([]);
   const [loading, setLoading] = useState(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const models = useAgentStore((state) => state.availableModels);
+  const modelsLoading = useAgentStore((state) => state.loading);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([
-      api.listModelConfig(),
-      api.listAvailableModels(),
-    ])
-      .then(([cfgMap, modelsResp]) => {
+    api.listModelConfig()
+      .then((cfgMap) => {
         setConfig(cfgMap as ModelServiceConfig);
-        setModels(modelsResp.models || []);
       })
-      .catch(() => {})
+      .catch((err) => {
+        log.error('model-service', 'Failed to load model service config', err);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -64,7 +65,7 @@ export function ModelServiceTab() {
     });
   }, []);
 
-  if (loading) {
+  if (loading || (modelsLoading && models.length === 0)) {
     return (
       <Flexbox align="center" justify="center" style={{ padding: 40 }}>
         <Text type="secondary">{t('provider.modelService.loading')}</Text>

@@ -297,6 +297,19 @@ impl MessagingEngine {
         &self.endpoint
     }
 
+    pub fn actor_device_identity(&self) -> Arc<ActorDeviceIdentity> {
+        self.mls_manager.actor_identity()
+    }
+
+    pub fn device_signing_identity(
+        &self,
+    ) -> Result<Option<(String, ed25519_dalek::SigningKey)>, String> {
+        let Some((seed, key_id)) = self.store.device_signing_seed()? else {
+            return Ok(None);
+        };
+        Ok(Some((key_id, ed25519_dalek::SigningKey::from_bytes(&seed))))
+    }
+
     pub fn store(&self) -> &MessagingStore {
         self.store.as_ref()
     }
@@ -1630,6 +1643,13 @@ impl EngineRegistry {
             .lock()
             .map_err(|_| "messaging engine registry lock poisoned".to_string())
             .map(|engines| engines.get(profile_id).cloned())
+    }
+
+    pub fn profile_ids(&self) -> Result<Vec<String>, String> {
+        self.engines
+            .lock()
+            .map_err(|_| "messaging engine registry lock poisoned".to_string())
+            .map(|engines| engines.keys().cloned().collect())
     }
 
     pub fn activate_profile(

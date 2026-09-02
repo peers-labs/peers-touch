@@ -41,10 +41,10 @@
 
 ### AS-05: Regenerate assistant message
 - **Precondition**: Completed assistant message exists, not currently streaming
-- **Action**: User clicks regenerate
+- **Action**: User clicks regenerate directly from the primary message action bar without expanding the more-actions menu
 - **Expected**: Old assistant message marked as replaced, new streaming message appears
 - **Failure variant**: Stream errors → new message shows error state with retry option
-- **Evidence**: New message ID appears with `loading: true` then transitions to content
+- **Evidence**: Primary action DOM contains `data-pt-message-action="regenerate"` before the more-actions menu opens; new message ID appears with `loading: true` then transitions to content
 - **Status**: pending
 
 ### AS-06: Retry failed message

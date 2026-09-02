@@ -184,7 +184,6 @@ gate_order:
   - messaging-platform-contract
   - desktop-check
   - chat-native-visible-static
-  - chat-native-product-closure-e2e
   - chat-native-two-client-e2e
   - chat-native-interactions-e2e
   - chat-contact-message-resilience-e2e

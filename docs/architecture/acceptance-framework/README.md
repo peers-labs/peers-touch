@@ -83,7 +83,6 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | [execution-plans/20260816-runtime-provisioning-contract-implementation.md](./execution-plans/20260816-runtime-provisioning-contract-implementation.md) | Runtime Provisioning Contract 实现计划（No Silent Pass 落地） |
 | [execution-plans/20260817-acceptance-evidence-store.md](./execution-plans/20260817-acceptance-evidence-store.md) | Runtime evidence source-tree外迁与atomic Evidence Store执行计划 |
 | [execution-plans/20260817-domain-structural-validation-context-anchor.md](./execution-plans/20260817-domain-structural-validation-context-anchor.md) | Domain structural closure 与 Context Anchor 治理修复计划 |
-| [execution-plans/20260824-native-desktop-runtime-cells.md](./execution-plans/20260824-native-desktop-runtime-cells.md) | macOS/Linux/Windows Native Desktop runtime cells 与远端 Linux proof 计划 |
 
 当前Evidence Store architecture由`D-11`约束：
 
@@ -93,13 +92,9 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 - writer/readers/validators/cleanup共享唯一resolver；
 - source tree只保留code、schemas、templates和intentional fixtures。
 
-Native Desktop Runtime Cell architecture由accepted `D-13` ~ `D-16`约束：
-
-- 产品 Gate identity 与平台 cell identity 分离；
-- macOS、Linux、Windows evidence 按 cell 独立存储和判定；
-- 远端 embedded WebDriver 只监听 loopback，经 run-scoped SSH tunnel 访问；
-- Linux 使用 connected virtual output + persistent Xorg session，不要求物理显示器，
-  也不以 Xvfb 冒充最终 Native proof。
+当前 Agent V2 runtime matrix 的跨-runtime role applicability 由 accepted `D-13`
+定义；Foundation candidate producer 必须按 row-scoped role policy 运行，不得为
+contract-only 或 guard rows 伪造 DOM/Turn evidence。
 
 多服务拓扑当前由 accepted `D-17` 与 `D-18` 共同约束：
 
