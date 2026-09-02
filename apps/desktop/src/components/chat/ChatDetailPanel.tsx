@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, toast } from '@lobehub/ui';
@@ -34,16 +29,8 @@ import {
   X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl } from '../../store/socialChat';
-import {
-  projectGroupAvatarSlots,
-  resolveActorIdentity,
-} from '../../store/socialProfileProjection';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
-import {
-  CHAT_BACKGROUND_OPTIONS,
-  projectDesktopIMMessages,
-  type DesktopIMMessageProjection,
-} from '../../store/socialProjection';
+import { CHAT_BACKGROUND_OPTIONS, type DesktopIMMessageProjection } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';
@@ -55,7 +42,6 @@ import {
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useMessagingAttachmentUrl } from './AttachmentItem';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
-import { SquareAvatar } from '../common/SquareAvatar';
 import { getGroupMemberControlState } from './chatGroupPermissions';
 import { presentError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
@@ -138,8 +124,6 @@ function MemberAvatar({ member, size = 32 }: { member: GroupMemberDisplay; size?
   const { token } = theme.useToken();
   return (
     <Flexbox
-      data-chat-avatar-ptid={member.ptid}
-      data-chat-avatar-src={member.avatar || ''}
       align="center"
       justify="center"
       style={{
@@ -154,15 +138,15 @@ function MemberAvatar({ member, size = 32 }: { member: GroupMemberDisplay; size?
         overflow: 'hidden',
       }}
     >
-      <SquareAvatar
-        remoteUrl={member.avatar}
-        name={member.displayName}
-        size={size}
-        radius={Math.round(size * 0.32)}
-        style={{ display: 'block' }}
-      >
-        {getInitial(member.displayName)}
-      </SquareAvatar>
+      {member.avatar ? (
+        <img
+          src={member.avatar}
+          alt={member.displayName}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      ) : (
+        getInitial(member.displayName)
+      )}
     </Flexbox>
   );
 }
@@ -263,27 +247,11 @@ function DetailSection({ title, children, gap = 8 }: { title?: string; children:
   );
 }
 
-function Toggle({
-  action,
-  checked,
-  disabled = false,
-  onChange,
-}: {
-  action: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (v: boolean) => void;
-}) {
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   const { token } = theme.useToken();
   return (
     <button
-      data-chat-conversation-action={action}
-      data-chat-conversation-action-state={checked ? 'on' : 'off'}
       type="button"
-      disabled={disabled}
-      aria-busy={disabled}
-      aria-checked={checked}
-      role="switch"
       onClick={() => onChange(!checked)}
       style={{
         appearance: 'none',
@@ -292,8 +260,7 @@ function Toggle({
         borderRadius: 10,
         border: 'none',
         padding: 2,
-        cursor: disabled ? 'wait' : 'pointer',
-        opacity: disabled ? 0.6 : 1,
+        cursor: 'pointer',
         background: checked ? token.colorPrimary : token.colorFillSecondary,
         transition: 'background 0.2s',
         flexShrink: 0,
@@ -319,29 +286,21 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [previewFailed, setPreviewFailed] = useState(false);
-  const { src: openUrl, openState, resolve } = useMessagingAttachmentUrl(
+  const { src: openUrl, resolve } = useMessagingAttachmentUrl(
     item.attachment,
     item.kind === 'media',
   );
   const previewUrl = openUrl;
   const filename = item.attachment.filename?.trim() || t('chat.social.detail.unnamedAttachment');
   const sizeLabel = formatChatAttachmentSize(item.attachment.size);
-  const hasAttachmentIdentity = Boolean(
+  const canOpen = Boolean(
     (item.attachment as DetailAttachment & { attachmentId?: string }).attachmentId
       || item.attachment.cid?.startsWith('messaging:'),
   );
-  const canOpen = hasAttachmentIdentity && openState !== 'pending';
   const isMedia = item.kind === 'media';
-  const openStateLabel = openState === 'pending'
-    ? t('chat.social.messageArea.attachmentStateDownloading')
-    : openState === 'error'
-      ? t('chat.social.messageArea.attachmentDownloadFailed')
-      : '';
-  const tooltip = openStateLabel || (
-    hasAttachmentIdentity
-      ? t('chat.social.detail.openAttachment')
-      : t('chat.social.detail.attachmentUnavailable')
-  );
+  const tooltip = canOpen
+    ? t('chat.social.detail.openAttachment')
+    : t('chat.social.detail.attachmentUnavailable');
   const Icon = item.isImage ? ImageIcon : item.isVideo ? Film : FileText;
 
   useEffect(() => {
@@ -352,7 +311,6 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
   }, [previewUrl, item.attachment.cid]);
 
   const handleOpen = async () => {
-    if (openState === 'pending') return;
     const resolved = openUrl ?? await resolve();
     if (resolved) window.open(resolved, '_blank');
   };
@@ -362,10 +320,6 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
       <Tooltip title={tooltip}>
         <span style={{ display: 'inline-flex' }}>
           <button
-            data-chat-detail-attachment={item.id}
-            data-chat-detail-attachment-kind={item.kind}
-            data-chat-detail-attachment-open-state={openState}
-            aria-busy={openState === 'pending'}
             type="button"
             disabled={!canOpen}
             onClick={handleOpen}
@@ -410,11 +364,6 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
               <Text ellipsis style={{ fontSize: 11, fontWeight: 600, maxWidth: '100%' }}>
                 {filename}
               </Text>
-              {openStateLabel ? (
-                <Text type={openState === 'error' ? 'danger' : 'secondary'} ellipsis style={{ fontSize: 10 }}>
-                  {openStateLabel}
-                </Text>
-              ) : null}
               <Flexbox horizontal align="center" justify="space-between" gap={4}>
                 <Text type="secondary" ellipsis style={{ fontSize: 10, minWidth: 0 }}>
                   {sizeLabel || t('chat.social.detail.mediaAttachment')}
@@ -432,10 +381,6 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
     <Tooltip title={tooltip}>
       <span style={{ display: 'block', width: '100%' }}>
         <button
-          data-chat-detail-attachment={item.id}
-          data-chat-detail-attachment-kind={item.kind}
-          data-chat-detail-attachment-open-state={openState}
-          aria-busy={openState === 'pending'}
           type="button"
           disabled={!canOpen}
           onClick={handleOpen}
@@ -472,7 +417,7 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
                 {filename}
               </Text>
               <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-                {openStateLabel || sizeLabel || t('chat.social.detail.fileAttachment')}
+                {sizeLabel || t('chat.social.detail.fileAttachment')}
               </Text>
             </Flexbox>
             {canOpen ? <ExternalLink size={13} style={{ color: token.colorTextTertiary, flexShrink: 0 }} /> : null}
@@ -484,13 +429,11 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
 }
 
 function DetailAttachmentSection({
-  kind,
   title,
   emptyLabel,
   items,
   limit,
 }: {
-  kind: 'media' | 'files';
   title: string;
   emptyLabel: string;
   items: DetailAttachmentItem[];
@@ -503,11 +446,7 @@ function DetailAttachmentSection({
   const isFileSection = visibleItems[0]?.kind === 'file';
 
   return (
-    <Flexbox
-      data-chat-detail-attachments={kind}
-      data-chat-detail-attachment-count={items.length}
-      gap={8}
-    >
+    <Flexbox gap={8}>
       <Flexbox horizontal align="center" justify="space-between">
         <Text strong style={{ fontSize: 13 }}>{title}</Text>
         {hiddenCount > 0 ? (
@@ -578,16 +517,42 @@ function getFriendPeerAvatar(session: FriendChatSession | undefined, currentUser
   return session.participantBAvatar || session.participantAAvatar || '';
 }
 
+function getFriendPeerDisplayProfile(
+  session: FriendChatSession,
+  currentUserPtid: string | null,
+): { did: string; name: string; avatar: string } | null {
+  if (currentUserPtid && session.participantAPtid === currentUserPtid) {
+    return {
+      did: session.participantBPtid || '',
+      name: session.participantBDisplayName?.trim() || '',
+      avatar: session.participantBAvatar || '',
+    };
+  }
+  if (currentUserPtid && session.participantBPtid === currentUserPtid) {
+    return {
+      did: session.participantAPtid || '',
+      name: session.participantADisplayName?.trim() || '',
+      avatar: session.participantAAvatar || '',
+    };
+  }
+  return {
+    did: session.participantBPtid || session.participantAPtid || '',
+    name: session.participantBDisplayName?.trim() || session.participantADisplayName?.trim() || '',
+    avatar: session.participantBAvatar || session.participantAAvatar || '',
+  };
+}
+
 export function ChatDetailPanel() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, groupMembers,
-    setShowDetail, loadSessions, loadGroups, loadMessages,
+    setShowDetail, loadSessions, loadGroupMembers, loadGroups, loadMessages,
     loadConversationPreviews, selectGroup,
     conversationLocalState, updateConversationLocalState,
-    getIMConversations, messages,
+    getIMConversations,
+    getIMMessages,
     encryptionEnabled,
     ownFingerprint,
     currentUserPtid,
@@ -605,6 +570,7 @@ export function ChatDetailPanel() {
     groupMembers: s.groupMembers,
     setShowDetail: s.setShowDetail,
     loadSessions: s.loadSessions,
+    loadGroupMembers: s.loadGroupMembers,
     loadGroups: s.loadGroups,
     loadMessages: s.loadMessages,
     loadConversationPreviews: s.loadConversationPreviews,
@@ -612,7 +578,7 @@ export function ChatDetailPanel() {
     conversationLocalState: s.conversationLocalState,
     updateConversationLocalState: s.updateConversationLocalState,
     getIMConversations: s.getIMConversations,
-    messages: s.messages,
+    getIMMessages: s.getIMMessages,
     encryptionEnabled: s.encryptionEnabled,
     ownFingerprint: s.ownFingerprint,
     currentUserPtid: s.currentUserPtid,
@@ -636,7 +602,6 @@ export function ChatDetailPanel() {
     : undefined;
   const groupAvatarUrl = groupAvatarRemoteUrl(activeGroup)
     || (activeConversation?.avatar || '');
-  const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
 
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [showAllMembers, setShowAllMembers] = useState(false);
@@ -649,8 +614,6 @@ export function ChatDetailPanel() {
   const [editingMyNickname, setEditingMyNickname] = useState(false);
   const [editMyNicknameValue, setEditMyNicknameValue] = useState('');
   const [historyActionPending, setHistoryActionPending] = useState(false);
-  const [conversationActionPending, setConversationActionPending] = useState<string | null>(null);
-  const [backgroundRetryPath, setBackgroundRetryPath] = useState<string | null>(null);
   const [historyNow, setHistoryNow] = useState(Date.now());
 
   const peerPtid = !isGroup
@@ -659,8 +622,32 @@ export function ChatDetailPanel() {
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
   const myGroupMember = currentUserPtid ? members.find((member) => member.ptid === currentUserPtid) : undefined;
   const myGroupNickname = myGroupMember?.nickname?.trim() || '';
-  const sourceMembers: GroupMemberLike[] = useMemo(
-    () => members.length > 0
+  const memberProfiles = useMemo(() => {
+    const profiles = new Map<string, { name: string; avatar: string }>();
+    if (currentUserPtid) {
+      profiles.set(currentUserPtid, {
+        name: currentUserProfile?.displayName?.trim() || currentUserProfile?.username?.trim() || '',
+        avatar: currentUserProfile?.avatar || '',
+      });
+    }
+    sessions.forEach((session) => {
+      const peerProfile = getFriendPeerDisplayProfile(session, currentUserPtid);
+      if (peerProfile?.did && peerProfile.name) {
+        profiles.set(peerProfile.did, { name: peerProfile.name, avatar: peerProfile.avatar });
+      }
+    });
+    for (const [did, profile] of Object.entries(peerProfiles)) {
+      if (profile && !profiles.has(did)) {
+        profiles.set(did, {
+          name: profile.display_name?.trim() || profile.username?.trim() || '',
+          avatar: profile.avatar || '',
+        });
+      }
+    }
+    return profiles;
+  }, [currentUserPtid, currentUserProfile, sessions, peerProfiles]);
+  const displayMembers: GroupMemberDisplay[] = useMemo(() => {
+    const sourceMembers: GroupMemberLike[] = members.length > 0
       ? members
       : activeGroup?.ownerPtid
         ? [{
@@ -669,54 +656,20 @@ export function ChatDetailPanel() {
             role: GroupRole.OWNER,
             muted: false,
           }]
-        : [],
-    [activeGroup?.ownerPtid, members],
-  );
-  const displayMembers: GroupMemberDisplay[] = useMemo(() => {
+        : [];
     return sourceMembers.map((member) => {
-      const profile = resolveActorIdentity({
-        ptid: member.ptid,
-        currentUserPtid,
-        currentUserProfile,
-        peerProfiles,
-        sessions,
-        nickname: member.nickname,
-        fallbackName: t('chat.social.detail.unknownMember'),
-      });
-      const stationName = peerProfiles[member.ptid]?.display_name?.trim()
-        || peerProfiles[member.ptid]?.username?.trim()
-        || '';
+      const nickname = member.nickname?.trim() || '';
+      const profile = memberProfiles.get(member.ptid);
+      const profileName = profile?.name?.trim() || '';
+      const displayName = nickname || profileName || t('chat.social.detail.unknownMember');
       return {
         ...member,
-        displayName: profile.displayName,
-        subtitle: member.nickname?.trim() && stationName && member.nickname.trim() !== stationName
-          ? stationName
-          : undefined,
-        avatar: profile.avatarUrl,
+        displayName,
+        subtitle: nickname && profileName && nickname !== profileName ? profileName : undefined,
+        avatar: profile?.avatar || '',
       };
     });
-  }, [
-    currentUserPtid,
-    currentUserProfile,
-    peerProfiles,
-    sessions,
-    sourceMembers,
-    t,
-  ]);
-  const groupAvatarMembers = useMemo(
-    () => projectGroupAvatarSlots(
-      sourceMembers,
-      (ptid, nickname) => resolveActorIdentity({
-        ptid,
-        currentUserPtid,
-        currentUserProfile,
-        peerProfiles,
-        sessions,
-        nickname,
-      }),
-    ),
-    [currentUserPtid, currentUserProfile, peerProfiles, sessions, sourceMembers],
-  );
+  }, [activeGroup?.ownerPtid, memberProfiles, members, t]);
   const memberDisplayByDid = useMemo(
     () => new Map(displayMembers.map((member) => [member.ptid, member])),
     [displayMembers],
@@ -764,14 +717,7 @@ export function ChatDetailPanel() {
   const peerIsOnline = peerPtid in peerOnline ? peerOnline[peerPtid] : null;
   const localStateKey = activeUlid ? `${activeTab}:${activeUlid}` : '';
   const activeLocalState = localStateKey ? conversationLocalState[localStateKey] : undefined;
-  const activeMessages = useMemo(
-    () => (
-      activeUlid
-        ? projectDesktopIMMessages(activeTab, activeUlid, messages[activeUlid] ?? [])
-        : []
-    ),
-    [activeTab, activeUlid, messages],
-  );
+  const activeMessages = activeUlid ? getIMMessages(activeTab, activeUlid) : [];
   const clearHistoryClearedAt = Number(activeLocalState?.clearedAt || 0);
   const clearHistoryExpiresAt = clearHistoryClearedAt > 0
     ? clearHistoryClearedAt + HISTORY_RESTORE_WINDOW_MS
@@ -795,30 +741,9 @@ export function ChatDetailPanel() {
     return () => window.clearInterval(timer);
   }, [clearHistoryClearedAt, clearHistoryExpiresAt, historyNow]);
 
-  const runConversationAction = async (
-    action: string,
-    patch: Parameters<typeof updateConversationLocalState>[2],
-  ): Promise<boolean> => {
-    if (!activeUlid || conversationActionPending) return false;
-    setConversationActionPending(action);
-    try {
-      await updateConversationLocalState(activeTab, activeUlid, patch);
-      return true;
-    } catch (error) {
-      log.error('chat', 'conversation action failed', {
-        action,
-        kind: activeTab,
-        ulid: activeUlid,
-        error,
-      });
-      presentError(error, {
-        mapper: mapChatError,
-        context: { operation: 'conversationAction' },
-      });
-      return false;
-    } finally {
-      setConversationActionPending(null);
-    }
+  const updateActiveLocalState = (patch: Parameters<typeof updateConversationLocalState>[2]) => {
+    if (!activeUlid) return;
+    void updateConversationLocalState(activeTab, activeUlid, patch).catch(() => undefined);
   };
 
   const applyHistoryClearedAt = async (clearedAt: number) => {
@@ -868,7 +793,7 @@ export function ChatDetailPanel() {
     const nextNickname = editMyNicknameValue.trim();
     try {
       await api.groupChatUpdateNickname(activeUlid, nextNickname);
-      await loadGroups();
+      await loadGroupMembers(activeUlid);
       toast.success(t('chat.social.detail.myNicknameUpdated'));
     } catch (error) {
       log.error('chat', 'update group nickname failed', { groupUlid: activeUlid, error });
@@ -902,42 +827,27 @@ export function ChatDetailPanel() {
     }
   };
 
-  const handleUploadBackgroundImage = async (filePath: string) => {
+  const handleUploadBackgroundImage = async () => {
     if (!activeUlid) return;
-    if (conversationActionPending) return;
-    setBackgroundRetryPath(filePath);
-    setConversationActionPending('background-image');
-    try {
-      const uploaded = await api.ossUploadLocalFile({
-        file_path: filePath,
-        bucket: 'personal',
-        visibility: 'private',
-        chat_session_id: null,
-      });
-      await updateConversationLocalState(activeTab, activeUlid, { backgroundImage: uploaded.cid });
-      setBackgroundRetryPath(null);
-      toast.success(t('chat.social.detail.backgroundImageUpdated'));
-    } catch (error) {
-      log.error('chat', 'update chat background image failed', { kind: activeTab, ulid: activeUlid, error });
-      presentError(error, {
-        mapper: mapChatError,
-        context: { operation: 'conversationAction' },
-      });
-    } finally {
-      setConversationActionPending(null);
-    }
-  };
-
-  const handleSelectBackgroundImage = async () => {
-    if (conversationActionPending) return;
     let filePath: string;
     try {
       filePath = await api.pickImageFile();
     } catch {
       return;
     }
-    Modal.destroyAll();
-    await handleUploadBackgroundImage(filePath);
+    try {
+      const uploaded = await api.ossUploadLocalFile({
+        file_path: filePath,
+        bucket: 'chat-backgrounds',
+        visibility: 'private',
+        chat_session_id: null,
+      });
+      await updateConversationLocalState(activeTab, activeUlid, { backgroundImage: uploaded.cid });
+      toast.success(t('chat.social.detail.backgroundImageUpdated'));
+    } catch (error) {
+      log.error('chat', 'update chat background image failed', { kind: activeTab, ulid: activeUlid, error });
+      toast.error(t('chat.social.detail.backgroundImageUpdateFailed'));
+    }
   };
 
   const confirmClearHistory = () => {
@@ -1028,7 +938,7 @@ export function ChatDetailPanel() {
     if (!activeUlid || !member.ptid) return;
     try {
       await api.groupChatUpdateMember(activeUlid, member.ptid, input);
-      await loadGroups();
+      await loadGroupMembers(activeUlid);
       toast.success(t('chat.social.detail.updateMemberSuccess'));
     } catch (error) {
       log.error('chat', 'update group member failed', { groupUlid: activeUlid, ptid: member.ptid, input, error });
@@ -1066,7 +976,7 @@ export function ChatDetailPanel() {
       onOk: async () => {
         try {
           await api.groupChatTransferOwnership(activeUlid, member.ptid);
-          await loadGroups();
+          await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
           toast.success(t('chat.social.detail.transferOwnerSuccess'));
         } catch (error) {
           log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerPtid: member.ptid, error });
@@ -1148,57 +1058,35 @@ export function ChatDetailPanel() {
         <Flexbox gap={12}>
           <Text type="secondary">{t('chat.social.detail.backgroundDesc')}</Text>
           <Select
-            data-chat-background-select
             value={activeLocalState?.background || 'default'}
             options={CHAT_BACKGROUND_OPTIONS.map((value) => ({
               value,
               label: t(`chat.social.background.${value}`),
             }))}
             onChange={(value) => {
-              void runConversationAction('background', { background: value }).then((updated) => {
-                if (updated) Modal.destroyAll();
-              });
+              updateActiveLocalState({ background: value });
+              Modal.destroyAll();
             }}
-            disabled={Boolean(conversationActionPending)}
             style={{ width: '100%' }}
           />
           <Button
-            data-chat-background-upload
             block
             icon={<ImageIcon size={14} />}
-            loading={conversationActionPending === 'background-image'}
             onClick={() => {
-              void handleSelectBackgroundImage();
+              Modal.destroyAll();
+              void handleUploadBackgroundImage();
             }}
           >
             {t('chat.social.detail.uploadBackgroundImage')}
           </Button>
-          {backgroundRetryPath ? (
-            <Button
-              data-chat-background-retry
-              block
-              loading={conversationActionPending === 'background-image'}
-              onClick={() => {
-                Modal.destroyAll();
-                void handleUploadBackgroundImage(backgroundRetryPath);
-              }}
-            >
-              {t('chat.social.detail.retryBackgroundImage')}
-            </Button>
-          ) : null}
           {activeLocalState?.backgroundImage ? (
             <Button
-              data-chat-background-clear
               block
               type="text"
               danger
-              loading={conversationActionPending === 'background-image-clear'}
               onClick={() => {
-                void runConversationAction('background-image-clear', {
-                  backgroundImage: '',
-                }).then((updated) => {
-                  if (updated) Modal.destroyAll();
-                });
+                updateActiveLocalState({ backgroundImage: '' });
+                Modal.destroyAll();
               }}
             >
               {t('chat.social.detail.clearBackgroundImage')}
@@ -1212,13 +1100,17 @@ export function ChatDetailPanel() {
   };
 
   useEffect(() => {
+    if (isGroup && activeUlid) {
+      loadGroupMembers(activeUlid);
+    }
+  }, [isGroup, activeUlid, loadGroupMembers]);
+
+  useEffect(() => {
     setShowAllMembers(false);
     setMemberManagerOpen(false);
     setInviteModalOpen(false);
     setInviteDids([]);
     setEditingName(false);
-    setConversationActionPending(null);
-    setBackgroundRetryPath(null);
     setEditingMyNickname(false);
   }, [activeUlid]);
 
@@ -1232,15 +1124,6 @@ export function ChatDetailPanel() {
 
   return (
     <Flexbox
-      data-chat-detail-panel="open"
-      data-chat-detail-conversation={activeUlid}
-      data-chat-detail-muted={activeLocalState?.muted ? 'true' : 'false'}
-      data-chat-detail-pinned={activeLocalState?.sticky ? 'true' : 'false'}
-      data-chat-detail-background={activeLocalState?.background || 'default'}
-      data-chat-detail-background-image={activeLocalState?.backgroundImage || ''}
-      data-chat-detail-cleared-at={String(activeLocalState?.clearedAt || 0)}
-      data-chat-detail-action-pending={conversationActionPending || ''}
-      data-chat-detail-background-retry={backgroundRetryPath ? 'true' : 'false'}
       style={{
         width: 320,
         maxWidth: '100%',
@@ -1302,7 +1185,10 @@ export function ChatDetailPanel() {
               >
                 <GroupSquareAvatar
                   remoteUrl={groupAvatarUrl || undefined}
-                  members={groupAvatarMembers}
+                  members={members.slice(0, 4).map((m) => {
+                    const p = memberProfiles.get(m.ptid);
+                    return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
+                  })}
                   name={displayName}
                   size={72}
                   radius={18}
@@ -1390,26 +1276,6 @@ export function ChatDetailPanel() {
             />
           </Flexbox>
         )}
-
-        <Flexbox
-          data-chat-station="authority"
-          data-chat-station-id={authorityStationId}
-          data-chat-station-state={authorityStationId ? 'available' : 'unavailable'}
-          horizontal
-          align="center"
-          justify="center"
-          style={{ padding: '0 16px 10px', minWidth: 0 }}
-        >
-          <Text
-            type="secondary"
-            ellipsis={authorityStationId ? { tooltip: authorityStationId } : false}
-            style={{ maxWidth: '100%', fontSize: 11 }}
-          >
-            {authorityStationId
-              ? t('chat.social.detail.authorityStation', { station: authorityStationId })
-              : t('chat.social.detail.authorityStationUnavailable')}
-          </Text>
-        </Flexbox>
 
         {isGroup ? (
           <DetailSection title={t('chat.social.detail.permissionLabel')} gap={10}>
@@ -1538,12 +1404,8 @@ export function ChatDetailPanel() {
               <Text style={{ fontSize: 13 }}>{t('chat.social.detail.muteNotifications')}</Text>
             </Flexbox>
             <Toggle
-              action="mute"
               checked={Boolean(activeLocalState?.muted)}
-              disabled={conversationActionPending === 'mute'}
-              onChange={(v) => {
-                void runConversationAction('mute', { muted: v });
-              }}
+              onChange={(v) => updateActiveLocalState({ muted: v })}
             />
           </Flexbox>
           <Flexbox horizontal align="center" justify="space-between">
@@ -1552,20 +1414,15 @@ export function ChatDetailPanel() {
               <Text style={{ fontSize: 13 }}>{t('chat.social.detail.pinConversation')}</Text>
             </Flexbox>
             <Toggle
-              action="pin"
               checked={Boolean(activeLocalState?.sticky)}
-              disabled={conversationActionPending === 'pin'}
-              onChange={(v) => {
-                void runConversationAction('pin', { sticky: v });
-              }}
+              onChange={(v) => updateActiveLocalState({ sticky: v })}
             />
           </Flexbox>
           <Flexbox
-            data-chat-conversation-action="background"
             horizontal
             align="center"
             justify="space-between"
-            style={{ cursor: conversationActionPending ? 'wait' : 'pointer' }}
+            style={{ cursor: 'pointer' }}
             onClick={openBackgroundModal}
           >
             <Flexbox horizontal align="center" gap={8}>
@@ -1592,14 +1449,12 @@ export function ChatDetailPanel() {
         {/* Shared Content section */}
         <DetailSection title={t('chat.social.detail.sharedContent')}>
           <DetailAttachmentSection
-            kind="media"
             title={t('chat.social.detail.mediaWithCount', { count: mediaAttachments.length })}
             emptyLabel={t('chat.social.detail.mediaEmpty')}
             items={mediaAttachments}
             limit={RECENT_MEDIA_LIMIT}
           />
           <DetailAttachmentSection
-            kind="files"
             title={t('chat.social.detail.filesWithCount', { count: fileAttachments.length })}
             emptyLabel={t('chat.social.detail.filesEmpty')}
             items={fileAttachments}
@@ -1655,7 +1510,6 @@ export function ChatDetailPanel() {
         {/* Danger zone */}
         <DetailSection title={t('chat.social.detail.dangerZone')}>
           <Button
-            data-chat-history-action="clear"
             type="text"
             danger
             icon={<Trash2 size={14} />}
@@ -1670,7 +1524,6 @@ export function ChatDetailPanel() {
           {canRestoreHistory ? (
             <Flexbox gap={4}>
               <Button
-                data-chat-history-action="restore"
                 type="text"
                 icon={<RotateCcw size={14} />}
                 style={{ justifyContent: 'flex-start', height: 36 }}
