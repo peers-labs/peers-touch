@@ -4816,10 +4816,16 @@ async function runFoundationActiveMutationConflictScenario(input: {
     const receiverBeforeReload = {
       conflictVisible: conflictElement.getClientRects().length > 0,
       conflictText: conflictElement.textContent?.trim() ?? '',
-      expectedConflictText: i18n.t('agent.errors.activeMutationConflict'),
+      expectedConflictText: i18n.t(
+        'agent.errors.activeMutationConflict',
+        { ns: 'agent' },
+      ),
       reloadVisible: reloadElement.getClientRects().length > 0,
       reloadText: reloadElement.textContent?.trim() ?? '',
-      expectedReloadText: i18n.t('agent.recovery.reloadLatest'),
+      expectedReloadText: i18n.t(
+        'agent.recovery.reloadLatest',
+        { ns: 'agent' },
+      ),
     };
     await reportActiveMutationConflictDebug('receiver-observed', {
       locale: i18n.language,

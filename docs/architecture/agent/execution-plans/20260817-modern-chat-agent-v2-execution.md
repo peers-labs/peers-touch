@@ -4384,6 +4384,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   redacted surface ownership, selector visibility, save state, locale, and
   actual-versus-expected text equality before any receiver behavior change.
   Foundation remains `PARTIAL / UNPROVEN`.
+- Diagnostic exact-source run
+  `20260902T070303965649Z-71a64c78ea7a07f259ca547edd9753f8`
+  on `b717ccac3b7f99b656fa8be3c647886e7ba3564e` confirms the product
+  conflict surface is correct: the disposable Agent owns the visible profile,
+  save state is `conflict`, and both recovery selectors are visible. The tuple
+  requested English, but AS-F06 had left the client locale in `zh-CN`; the
+  producer also resolved expected strings without the Agent namespace, so both
+  expectations remained raw locale keys. The correction applies and verifies
+  locale before every non-AS-F06 direct tuple and resolves receiver
+  expectations through the Agent namespace. Source identity, redaction, and
+  cleanup passed; runtime comparison remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

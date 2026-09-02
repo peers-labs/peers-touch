@@ -29,10 +29,19 @@
 
 ## Log Evidence
 - Exact-source run
-  `20260831T214308436370Z-db73b14299793ff96cf7ac6b37e29e1c`
-  on `6539fbc2a` failed only
+  `20260902T070303965649Z-71a64c78ea7a07f259ca547edd9753f8`
+  on `b717ccac3b7f99b656fa8be3c647886e7ba3564e` failed only
   `localizedRecoveryVisible` for Browser English.
 - Exact source, redaction, and cleanup passed.
+- Debug lines 1-2 prove the disposable Agent, profile surface, exact rejection,
+  save state, and both selectors were correct and visible. The tuple requested
+  English, but the runtime locale remained `zh-CN`; both expected strings were
+  unresolved global i18n keys rather than Agent-namespace translations.
 
 ## Verification Conclusion
-Pending runtime instrumentation.
+Hypothesis D is confirmed. Hypotheses A, B, C, and E are rejected. The
+Foundation direct probe did not apply each tuple's locale after AS-F06 left the
+client in Chinese, and the producer called global `i18n.t` without the `agent`
+namespace. The correction applies and verifies locale before every non-AS-F06
+direct probe, and resolves both expected strings from the Agent namespace.
+Instrumentation remains active for post-fix comparison.
