@@ -98,6 +98,46 @@ an isolated, non-architectural task as ad hoc with a temporary acceptance
 checklist. Architecture migrations and cross-layer refactors must stop with
 `EXECUTION_BLOCKED_BY_PLAN`; they may not proceed ad hoc.
 
+## Immutable Worktree Binding
+
+A skill source path identifies instructions only. It does not select an
+execution worktree. The current verified worktree remains bound for the entire
+execution slice.
+
+Before execution dispatch and before any edit:
+
+1. Require one explicitly selected current worktree. If multiple candidate
+   roots are visible and none is explicit, stop for clarification; never infer
+   the worktree from the skill, plan, branch name, or repository proximity.
+2. From that exact root, capture the candidate identity with
+   `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --capture`.
+3. Reconcile the captured identity with every identity recorded by `active_work`, the
+   formal plan, and the latest Context Anchor.
+4. From the same root, immediately verify the captured identity with
+   `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --branch '<branch>' --workspace-id '<workspaceId>' --head '<expected-head>' --worktree-set-digest '<digest>'`,
+   then bind its canonical root, branch, `workspaceId`, initial HEAD, expected
+   HEAD, and worktree-set digest. Materialized values must each be one POSIX
+   shell-safe argument.
+5. Treat a missing verifier or unresolved field as
+   `WORKTREE_IDENTITY_UNAVAILABLE`. Treat a mismatch, wrong invocation
+   directory, or later drift as `WORKTREE_IDENTITY_MISMATCH`. Both stop without
+   automatic `cd`, checkout, branch switch, or selection of another worktree.
+
+All mutating tool calls require the bound canonical root as explicit `workdir`;
+file mutation tools use absolute paths beneath that root. Every subagent brief
+includes the immutable binding, and each subagent runs the verifier against it
+before writing.
+
+Re-verify after resume or context compaction and before status, readiness,
+handoff, or completion claims. The initial HEAD remains the audit baseline;
+expected HEAD may refresh only after an explicitly authorized commit, rebase,
+or merge. The worktree-set digest may refresh only after an explicitly
+requested worktree operation. Resume and context compaction verify persisted
+values; they never recapture current Git state as a replacement baseline.
+Never run `git switch`, `git checkout`, `git worktree add`,
+`git worktree remove`, or `git worktree prune`, and never create a worktree,
+unless the user explicitly requested that exact operation.
+
 ## Escalation Decision Logic
 
 The agent self-drives execution. It escalates to the user only when the decision
@@ -126,7 +166,10 @@ Rules:
 - Never ask "can I proceed to the next step?" — proceed if completion criteria are met.
 - Never ask "is this design OK?" as a blanket confirmation — validate it yourself against architecture sources.
 - When escalating, ask ONE specific question with concrete options, not an open-ended "what do you think?"
-- The only natural external gate is PR review (git workflow). All other stage transitions are self-judged.
+- Stage review and approval gates are governed by `pt-god-view` and the owning
+  stage skill. Within an already approved EXECUTE stage, the agent self-drives
+  implementation decisions that are derivable from accepted sources; it does
+  not self-approve a stage transition.
 
 ## Standing Directive
 
@@ -152,12 +195,13 @@ the user only says "继续" / "continue" without repeating the details:
 
 ### 0. Validate Stage Preconditions
 
-Before any code edit, verify:
+Before any code edit, first satisfy `Immutable Worktree Binding`, then verify:
 
 - Product status is accepted/active where product design is required.
 - Architecture status is accepted/active where architecture is required.
 - A formal execution plan exists and is approved.
-- A matching `active_work` entry points to that plan and the verified branch.
+- A matching `active_work` entry points to that plan and matches the verified
+  branch, `workspaceId`, expected HEAD, and worktree-set digest.
 - Requested work maps to a plan workstream/task ID.
 - Dependencies for that task are complete.
 - Required cutover, deletion, gates, and evidence are defined.
@@ -227,8 +271,11 @@ independent units and check whether they can run concurrently:
 - Fan out independent units to parallel subagents (e.g. per module, per file
   group, per domain, per worktree). Dependent units stay sequential.
 - Every subagent brief MUST inherit the same `Plan Source`, `In Scope` /
-  `Out of Scope`, target layer/module, and the No-Patch rule, so subagents
-  converge on the planned architecture instead of each inventing a local design.
+  `Out of Scope`, target layer/module, No-Patch rule, canonical root, branch,
+  `workspaceId`, initial HEAD, expected HEAD, and worktree-set digest.
+  Subagents verify that immutable binding before writes, so they converge on
+  the planned architecture in the same worktree instead of inventing a local
+  design.
 - Give each subagent its own acceptance/verification command so it self-checks.
 - After subagents return, run a **reconcile pass**: check for conflicting edits,
   duplicated abstractions, and interface mismatches at the seams before
@@ -264,11 +311,18 @@ independent units and check whether they can run concurrently:
 
 Invoke `pt-context-anchor`:
 
-1. before the first tracked edit;
+1. after worktree-binding verification and before the first tracked edit;
 2. when a workstream or step starts;
 3. immediately after verification passes or fails;
 4. when worktree, branch, scope, blocker, or decision changes;
 5. before progress/readiness reports and session handoff.
+
+The Anchor worktree fields record `<worktree-name> (<repo-root>)`, verified
+branch, `workspaceId`, initial HEAD, expected/verified HEAD, and worktree-set
+digest. A bare `<repo-root>` is invalid. Never persist a developer or CI
+user-home absolute path. Any identity mismatch stops with
+`WORKTREE_IDENTITY_MISMATCH`; do not synchronize a drifting identity into the
+plan or Anchor as if it were valid.
 
 Update `active_work`, todos, dashboards, and chat only after the durable plan
 Anchor is synchronized.
@@ -325,6 +379,11 @@ a `## Context Anchor` section to the execution plan.
 
 Never:
 
+- Select an execution worktree from the skill source path.
+- Continue after `WORKTREE_IDENTITY_MISMATCH` or repair it with implicit
+  directory, branch, or worktree operations.
+- Mutate without the explicit bound `workdir`, or let a subagent write before
+  verifying the inherited binding.
 - Execute an architecture migration from `design.md` alone.
 - Author missing architecture decisions while coding.
 - Continue after `DESIGN_AMENDMENT_REQUIRED` or `PRODUCT_AMENDMENT_REQUIRED`
