@@ -1,0 +1,13 @@
+{
+  "gateId": "mobile-native-access-e2e",
+  "finalizerId": "mobile.native.oauth-cleanup-evidence",
+  "requirementMappingDigest": "e84d0b993838124e0c76b3940255ad1c4574a32f8f88adfd373a922edbd41bef",
+  "registryFilePath": "tooling/acceptance/gates/mobile/finalizer-registry.json",
+  "registryFileDigest": "37ea1bfa6ea1ac1205c56be9b82eba0b902d883891a28c19db403b3901909fe9",
+  "contractSchemaPath": "tooling/acceptance/gates/mobile/proof-contract.schema.json",
+  "contractSchemaDigest": "d66c997d2ec3ecd38dd2dc6f03add1ad02fb4f540f026b7e81d265140a67a162",
+  "entrypointSourcePath": "tooling/acceptance/gates/mobile/cleanup_evidence_finalizer.py",
+  "entrypointSourceDigest": "460132dfcdb03f7e2c4cc183a897cf91c4d7d721c1ac4ce86a6789cd748aa37f",
+  "generatorSourcePath": "tooling/acceptance/gates/mobile/cleanup_evidence_roles.py",
+  "generatorSourceDigest": "6e228ccf5e27c690a04b42234187d5b4a44af83ceb4f0aad74899b5f4ff015ef"
+}

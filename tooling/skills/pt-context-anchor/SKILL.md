@@ -44,54 +44,49 @@ Resolve each field from its owner instead of applying one global precedence:
 
 | Field | Owner |
 |---|---|
-| Worktree and branch | Actual Git state |
+| Worktree, branch, and `workspaceId` | Worktree binding verifier and actual Git state |
+| Initial HEAD, expected HEAD, and worktree-set digest | Persisted `active_work` binding, verified against actual Git state |
 | Product and architecture decisions | Accepted source documents |
 | Plan path, stage, current step, blocked flag, last session | `active_work` |
 | Main task and scope | Formal execution plan |
 | Progress, last completed, blocker detail, decisions | Plan status table or linked tracking source |
 | Overall progress ratio | Count of done/total workstreams from the plan status table; must not be guessed |
 | Evidence | Named commands and repository evidence |
-| Deployment node for runtime entities | Verified profile, environment manifest, deployment status, or runtime evidence |
 | Chat Anchor | Projection of the sources above |
 
 Any disagreement blocks progress reporting until reconciled. Never choose the
 most convenient value or reconstruct state from conversation memory.
-
-### Deployment Node Attribution
-
-Whenever an Anchor says that an agent will inspect, use, mutate, clean up, or
-otherwise operate an environment-bound entity, it MUST identify the deployment
-node that owns that entity. This includes databases, logs, processes,
-containers, ports, storage roots, caches, queues, services, and Evidence Store
-artifacts.
-
-- Use the verified logical deployment name plus host or endpoint when it is
-  non-secret, for example `station-two (10.37.118.48)` or
-  `local workstation (peers-ai-agent)`.
-- Qualify each entity at first mention in `Action and reason`, `Evidence`,
-  `Next action`, or `Blockers / decisions`; do not write ambiguous phrases such
-  as "the database", "remote logs", or "clean storage".
-- Add a `Deployment nodes` field to the Anchor and map each referenced entity
-  to its node. Use `Not applicable` only when no environment-bound entity is
-  referenced.
-- If the node cannot be verified, write `UNKNOWN`, mark the operation blocked,
-  and resolve the deployment identity before acting.
 
 ## Required Active Work Schema
 
 ```markdown
 ## active_work
 
-| id | plan | stage | current_step | branch | blocked | last_session |
-|----|------|-------|--------------|--------|---------|--------------|
-| 1 | docs/.../execution-plans/example.md | EXECUTE | Step 2 | feat/example | false | YYYY-MM-DD |
+| id | plan | stage | current_step | branch | workspace_id | initial_head | expected_head | worktree_set_digest | blocked | last_session |
+|----|------|-------|--------------|--------|--------------|--------------|---------------|---------------------|---------|--------------|
+| 1 | docs/.../execution-plans/example.md | EXECUTE | Step 2 | feat/example | 0123456789abcdef | `<full-head>` | `<full-head>` | `<sha256>` | false | YYYY-MM-DD |
 ```
 
 Rules:
 
 - `plan` is repository-relative and must resolve to a formal execution plan.
 - A row is created only after the plan file exists.
-- `branch` must match verified Git state.
+- `branch`, `workspace_id`, `expected_head`, and `worktree_set_digest` must
+  match verified Git state.
+- `initial_head` is immutable. On initial registration, `expected_head` equals
+  `initial_head`.
+- Resume and context compaction verify persisted identity. They never replace
+  the persisted baseline by capturing current Git state again.
+- A legacy row missing any binding field cannot resume. It may be migrated
+  exactly once only after the user explicitly authorizes that row's migration
+  and identifies its worktree. Require the recorded plan to exist and the
+  recorded branch to match, capture the current identity once, then atomically
+  append an immutable `active_work_binding_migrations` audit row and populate
+  `workspace_id`, `initial_head`, `expected_head`, and
+  `worktree_set_digest`; both HEAD fields equal the captured HEAD. Missing
+  authorization, mismatch, ambiguity, or partial persistence returns
+  `WORKTREE_IDENTITY_UNAVAILABLE`. This is an explicit baseline migration, not
+  resume recapture.
 - `stage`, `current_step`, and `blocked` must agree with the plan/tracking state.
 - Completed work remains addressable with `stage: complete` until explicitly archived.
 
@@ -104,13 +99,15 @@ Every user-facing Context Anchor is one fenced `markdown` block exactly like:
 **Context Anchor**
 - **Main task**:
 - **Current task**:
-- **Worktree / branch**:
+- **Worktree / branch / workspace**:
+- **Initial HEAD**:
+- **Expected / verified HEAD**:
+- **Worktree-set digest**:
 - **Stage / step**:
 - **Overall progress**: <done>/<total> workstreams (<percentage>%)
 - **Progress**:
 - **Action and reason**:
 - **Evidence**:
-- **Deployment nodes**:
 - **Next action**:
 - **Blockers / decisions**:
 - **Tracking document**:
@@ -121,9 +118,12 @@ The block is mandatory for tracked-work status, resume, handoff, progress,
 blocker, readiness, and session-close responses. It must be the final section
 of the response.
 
-Use repository-relative paths inside the block. Do not split, quote, render as
-a table, wrap in a widget, or omit worktree, branch, evidence, deployment
-nodes, next action, or tracking document.
+Render the worktree as `<worktree-name> (<repo-root>)`, for example
+`peers-social (<repo-root>)`, and include the verified branch, `workspaceId`,
+both full HEAD values, and worktree-set digest. A bare `<repo-root>` is
+ambiguous and invalid. Do not split, quote, render as a table, wrap in a widget,
+persist a user-home absolute path, or omit identity, evidence, next action, or
+tracking document.
 
 ## Workflow
 
@@ -136,30 +136,34 @@ nodes, next action, or tracking document.
 
 ### 2. Verify Physical Context
 
-Run from the intended worktree:
+For a new tracked-work row, capture once from the explicitly selected worktree
+root, persist all binding fields, and immediately verify them:
 
 ```bash
-pwd
-git rev-parse --show-toplevel
-git branch --show-current
-git status --short
+python3 tooling/scripts/verify-worktree-binding.py \
+  --root '<absolute-root>' \
+  --capture
+
+python3 tooling/scripts/verify-worktree-binding.py \
+  --root '<absolute-root>' \
+  --branch '<branch>' \
+  --workspace-id '<workspaceId>' \
+  --head '<expected-head>' \
+  --worktree-set-digest '<digest>'
 ```
 
-The actual root and branch must match the selected work. Preserve unrelated
-dirty files. Persist repository paths as `<repo-root>` or repo-relative paths,
-never a developer or CI home-directory path.
+Both commands run with the selected root as their actual working directory.
+Each materialized value is one POSIX shell-safe argument.
+For resume, handoff, or context compaction, skip capture and verify the persisted
+branch, `workspace_id`, `expected_head`, and `worktree_set_digest` directly.
+The verified root, branch, and `workspaceId` must match the selected work.
+Preserve unrelated dirty files. Persist repository paths as `<repo-root>` or
+repo-relative paths, never a developer or CI home-directory path.
+Unavailable identity stops with `WORKTREE_IDENTITY_UNAVAILABLE`; any root,
+branch, workspace, expected HEAD, or worktree-set mismatch stops with
+`WORKTREE_IDENTITY_MISMATCH`.
 
-### 3. Verify Deployment Nodes
-
-1. Inventory every environment-bound entity mentioned by the planned action,
-   current evidence, blocker, or next action.
-2. Resolve each entity to a deployment node from the active profile,
-   environment manifest, deployment status, or runtime evidence.
-3. Record the logical node name and non-secret host or endpoint.
-4. Stop before operating any entity whose node is unknown or conflicts across
-   sources.
-
-### 4. Derive And Reconcile
+### 3. Derive And Reconcile
 
 1. Read objective and scope from the plan.
 2. Read progress and evidence from its status table or tracking source.
@@ -167,7 +171,7 @@ never a developer or CI home-directory path.
 4. Reconcile stale fields before reporting or executing.
 5. Mark absent proof `UNPROVEN`; do not infer success.
 
-### 5. Synchronize Meaningful Changes
+### 4. Synchronize Meaningful Changes
 
 After a step, stage, branch, blocker, decision, or evidence change:
 
@@ -178,7 +182,7 @@ After a step, stage, branch, blocker, decision, or evidence change:
 
 Anchor synchronization never completes a task by itself.
 
-### 6. Handoff And Resume
+### 5. Handoff And Resume
 
 At handoff, record the last completed evidence, exact current action, one
 dependency-ready next action, blockers, and decisions. At resume, verify Git
@@ -197,9 +201,9 @@ state and reconcile sources before continuing from that next action.
 - Frontmatter name matches `pt-context-anchor`.
 - A matching `active_work` row and readable plan exist before Anchor output.
 - The execution plan contains no `## Context Anchor` section.
-- Actual Git root and branch were verified.
+- Actual Git root, branch, `workspaceId`, expected HEAD, and worktree-set digest
+  were verified against the persisted binding; initial HEAD remained unchanged.
 - Progress and evidence match plan/tracking sources.
-- Every referenced runtime entity identifies its verified deployment node.
 - Evidence distinguishes `PASS`, `FAIL`, `NOT RUN`, and `UNPROVEN`.
 - The chat Anchor is one final fenced `markdown` block.
 - `git diff --check -- tooling/skills AGENTS.md` passes.
@@ -211,11 +215,10 @@ Never:
 - create an Anchor before a formal plan and `active_work` row exist;
 - write a Context Anchor section into an execution plan;
 - reconstruct tracked state from chat history;
+- recapture current Git state as a new baseline during resume or compaction;
 - continue after a worktree or branch mismatch;
 - use chat, todos, or dashboards as durable truth;
 - copy an Anchor across worktrees without verification;
 - claim completion from summaries or missing evidence;
 - persist absolute user-home paths, transient command logs, or secrets;
-- refer to a database, log, process, container, port, storage root, cache,
-  queue, service, or Evidence Store artifact without its deployment node;
 - use an Anchor to bypass product, architecture, plan, or review gates.

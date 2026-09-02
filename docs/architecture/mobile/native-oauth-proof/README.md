@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-29 | **Updated**: 2026-08-29
+> **Created**: 2026-08-29 | **Updated**: 2026-08-30
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`, `apps/station/app/subserver/oauth/`, `tooling/acceptance/`
 
@@ -28,10 +28,14 @@
 
 ## 2. Background
 
-W2-E1 已证明 iOS Simulator 与 Android Emulator 的 Tauri App、native callback、
-WebView Harness、restart、fail-closed 和 cleanup 路径。W2-E2 仍不能执行完整
-MS-AG03，因为当前实现只声明 browser ownership、只验证外部 app artifact 路径存在，
-只读取 Mobile projection，并将十个负向 physical cells 标记为 `UNSUPPORTED`。
+在2026-08-29 initial baseline中，W2-E1 已证明 iOS Simulator 与 Android Emulator 的
+Tauri App、native callback、WebView Harness、restart、fail-closed 和 cleanup 路径；
+W2-E2 当时仍不能执行完整MS-AG03，因为实现只声明 browser ownership、只验证外部 app
+artifact路径存在、只读取Mobile projection，并将十个负向physical cells标记为
+`UNSUPPORTED`。这些source缺口此后已由E2-0至E2-4和E2-5 partial implementation关闭；
+当前live status只由
+`../execution-plans/20260829-mobile-native-oauth-proof.md` §14拥有；本README不维护
+第二份状态，不能从本段历史基线或下文导航摘要推断。
 
 这些缺口不是 Gate 脚本细节。它们涉及谁可以构造负向业务前置状态、谁能证明
 Station 持久化结果、provider browser 状态如何隔离，以及运行中的 app 如何绑定
@@ -72,7 +76,11 @@ Station 持久化结果、provider browser 状态如何隔离，以及运行中�
 
 MOP-D01..MOP-D04 and this architecture module were accepted by the Owner on
 2026-08-29. MOP-D03-A and MOP-D04-A passed independent review with no P0/P1 and
-were accepted on 2026-08-29. E2-0A froze the amended contracts, and W2-E2-B
-completed the E2-1 build-provenance and E2-3 resource-lease source closures.
-W2-E2-D / E2-5 is dependency-ready but not started. MS-AG03 and W2 readiness
-remain blocked/unproven until physical evidence passes.
+were accepted on 2026-08-29. E2-0A froze the amended contracts. D-19
+architecture and its Infra execution plan are accepted; the additions across
+this module remain target-state contracts until generic Infra lands and the
+Mobile amendment passes independent review. A later
+fixed-commit audit reopened W2-E2-B / E2-1 and E2-3; remediation and independent
+review have closed those source dependencies. W2-E2-D / E2-5 now remains
+blocked by active D-19 Infra landing and the later Mobile amendment. MS-AG03
+and W2 readiness remain blocked/unproven until physical evidence passes.
