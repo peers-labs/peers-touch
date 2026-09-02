@@ -96,20 +96,20 @@ func (s *AgentService) createAgentTx(
 	}
 	now := time.Now()
 	record := persistence.Agent{
-		ID:           generateID("agent"),
-		Name:         name,
-		Title:        strings.TrimSpace(options.Title),
-		Description:  strings.TrimSpace(options.Description),
-		ProviderID:   strings.TrimSpace(options.ProviderID),
-		ModelName:    strings.TrimSpace(options.ModelName),
-		Effort:       strings.TrimSpace(options.Effort),
-		ThinkingMode: string(thinkingMode),
-		Visibility:   string(normalizeAgentVisibility(options.Visibility)),
+		ID:             generateID("agent"),
+		Name:           name,
+		Title:          strings.TrimSpace(options.Title),
+		Description:    strings.TrimSpace(options.Description),
+		ProviderID:     strings.TrimSpace(options.ProviderID),
+		ModelName:      strings.TrimSpace(options.ModelName),
+		Effort:         strings.TrimSpace(options.Effort),
+		ThinkingMode:   string(thinkingMode),
+		Visibility:     string(normalizeAgentVisibility(options.Visibility)),
 		OwnerActorPTID: actorID,
-		ConfigJSON:   options.ConfigJSON,
-		Version:      1,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ConfigJSON:     options.ConfigJSON,
+		Version:        1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := tx.WithContext(ctx).Create(&record).Error; err != nil {
 		logger.Errorf(ctx, "failed to create agent: actor_ptid=%s err=%v", actorID, err)
@@ -399,19 +399,19 @@ func persistenceAgentToDomain(record *persistence.Agent) domain.Agent {
 		thinkingMode = domain.ThinkingModeAuto
 	}
 	return domain.Agent{
-		AgentID:      record.ID,
-		Name:         record.Name,
-		Title:        record.Title,
-		Description:  record.Description,
-		ProviderID:   record.ProviderID,
-		ModelName:    record.ModelName,
-		Effort:       record.Effort,
-		ThinkingMode: thinkingMode,
-		Visibility:   domain.AgentVisibility(record.Visibility),
+		AgentID:        record.ID,
+		Name:           record.Name,
+		Title:          record.Title,
+		Description:    record.Description,
+		ProviderID:     record.ProviderID,
+		ModelName:      record.ModelName,
+		Effort:         record.Effort,
+		ThinkingMode:   thinkingMode,
+		Visibility:     domain.AgentVisibility(record.Visibility),
 		OwnerActorPTID: record.OwnerActorPTID,
-		ConfigJSON:   record.ConfigJSON,
-		Version:      record.Version,
-		CreatedAt:    record.CreatedAt,
-		UpdatedAt:    record.UpdatedAt,
+		ConfigJSON:     record.ConfigJSON,
+		Version:        record.Version,
+		CreatedAt:      record.CreatedAt,
+		UpdatedAt:      record.UpdatedAt,
 	}
 }

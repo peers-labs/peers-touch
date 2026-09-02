@@ -211,7 +211,7 @@ const foundationF06ReplayingScenarios = new Set<string>();
 
 function authenticatedFoundationActorPtid(): string {
   const user = useSessionStore.getState().currentUser;
-  const actorPtid = user?.ptid?.trim() || user?.actorId.trim() || '';
+  const actorPtid = user?.actorPtid.trim() || '';
   if (!actorPtid) {
     throw new Error('agent.acceptance.authenticatedActorMissing');
   }
@@ -3156,9 +3156,7 @@ async function observeFoundationRecoveryFailure(
     failureWaitError = error instanceof Error ? error.message : String(error);
   }
   const authenticatedPtid =
-    useSessionStore.getState().currentUser?.ptid?.trim()
-    || useSessionStore.getState().currentUser?.actorId.trim()
-    || '';
+    useSessionStore.getState().currentUser?.actorPtid.trim() || '';
   const active = useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
   const recoveryActorPtid = active?.actorId ?? '';
   const base = {
@@ -3274,9 +3272,7 @@ async function exerciseFoundationDurableReload(
     'foundationF06ObservedRecoveryFailure',
   );
   const authenticatedPtid =
-    useSessionStore.getState().currentUser?.ptid?.trim()
-    || useSessionStore.getState().currentUser?.actorId.trim()
-    || '';
+    useSessionStore.getState().currentUser?.actorPtid.trim() || '';
   const active = useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
   if (
     !active
@@ -6237,13 +6233,15 @@ export function installAcceptanceHarness(): void {
       }
 
       const user = useSessionStore.getState().currentUser;
-      if (user?.actorId) {
-        await installAuthenticatedCriticalRuntimes(user.actorId);
+      if (user?.actorPtid) {
+        await installAuthenticatedCriticalRuntimes(user.actorPtid);
       }
-      await installDeferredAppRuntimeProjections();
+      if (user?.actorPtid) {
+        await installDeferredAppRuntimeProjections(user.actorPtid);
+      }
       return {
-        authenticated: Boolean(user?.actorId),
-        actorId: user?.actorId ?? null,
+        authenticated: Boolean(user?.actorPtid),
+        actorId: user?.actorPtid ?? null,
       };
     },
 
@@ -6288,7 +6286,7 @@ export function installAcceptanceHarness(): void {
     async navigateToAgent() {
       // Ensure agent-capability and agent-topic runtimes are bootstrapped
       // (normally triggered by PageHost when navigating to AgentChatPage)
-      const actorId = useSessionStore.getState().currentUser?.actorId ?? null;
+      const actorId = useSessionStore.getState().currentUser?.actorPtid ?? null;
       for (const runtimeId of ['agent-capability', 'agent-topic', 'agent-tool']) {
         installRuntime(runtimeId);
         await bootstrapRuntime(runtimeId, actorId);
@@ -6424,7 +6422,7 @@ export function installAcceptanceHarness(): void {
 
       return {
         authenticated: sessionState.authenticated,
-        actorId: sessionState.currentUser?.actorId ?? null,
+        actorId: sessionState.currentUser?.actorPtid ?? null,
         identityState: identityRuntime.getSnapshot().lifecycle.state,
         currentSessionKey: chatState.currentSessionKey,
         messageCount: chatState.messages.length,
@@ -7455,7 +7453,7 @@ export function installAcceptanceHarness(): void {
               watermarkTerminal: watermark?.terminal ?? false,
               watermarkCursor: watermark?.cursor ?? 0,
               sessionAuthenticated: session.authenticated,
-              sessionActorPresent: Boolean(session.currentUser?.actorId),
+              sessionActorPresent: Boolean(session.currentUser?.actorPtid),
             }),
           );
         }

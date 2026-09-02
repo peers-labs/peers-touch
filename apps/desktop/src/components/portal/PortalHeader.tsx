@@ -16,6 +16,7 @@ function viewTitle(view: PortalView | null, t: (key: string) => string): string 
   if (!view || view.type === 'artifacts') return t('agent.portal.artifacts');
   if (view.type === 'artifactDetail') return view.artifact.title || t('agent.portal.artifact');
   if (view.type === 'toolDetail') return t('agent.portal.toolDetail');
+  if (view.type === 'turnDetails') return t('agent.portal.turnDetails');
   if (view.type === 'thread') return t('agent.portal.thread');
   if (view.type === 'topicComments') return t('agent.portal.topicComments');
   if (view.type === 'workingFiles') return t('agent.working.files');

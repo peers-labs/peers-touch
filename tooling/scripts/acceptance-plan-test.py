@@ -180,6 +180,23 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertNotIn("chat-native-two-client-e2e", selected)
         self.assertIn("chat-desktop-gateway-e2e", selected)
 
+    def test_agent_tool_surfaces_select_governed_tool_and_foundation_gates(
+        self,
+    ) -> None:
+        for path in (
+            "apps/desktop/src/components/messages/AssistantMessage.tsx",
+            "apps/desktop/src/components/messages/actions/types.ts",
+            "apps/desktop/src/store/streaming/handler.ts",
+        ):
+            with self.subTest(path=path):
+                selected = self.selected_ids(path)
+                self.assertIn("agent-v2-governed-tool-loop-e2e", selected)
+
+        selected = self.selected_ids(
+            "apps/desktop/src/store/streaming/handler.ts"
+        )
+        self.assertIn("agent-v2-kernel-foundation-e2e", selected)
+
     def test_proto_only_change_does_not_select_native_two_client(self) -> None:
         selected = self.selected_ids("model/domain/chat/receipt.proto")
         self.assertNotIn("chat-native-two-client-e2e", selected)

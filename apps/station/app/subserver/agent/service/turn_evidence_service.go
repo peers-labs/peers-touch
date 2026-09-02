@@ -14,6 +14,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 )
@@ -261,32 +262,27 @@ func loadDiagnosticAttempts(
 }
 
 func diagnosticContextLedger(record *persistence.TurnAttempt) (*model.ContextLedger, error) {
-	ledger := &model.ContextLedger{
-		ContextLedgerId: "context:" + record.ID,
-		TurnId:          record.TurnID,
-		AttemptId:       record.ID,
-	}
 	if strings.TrimSpace(record.ContextLedger) == "" {
-		return ledger, nil
+		return &model.ContextLedger{
+			ContextLedgerId: "context:" + record.ID,
+			TurnId:          record.TurnID,
+			AttemptId:       record.ID,
+		}, nil
 	}
-	var segments []ContextSegment
-	if err := json.Unmarshal([]byte(record.ContextLedger), &segments); err != nil {
+	var ledger model.ContextLedger
+	if err := protojson.Unmarshal([]byte(record.ContextLedger), &ledger); err != nil {
 		return nil, err
 	}
-	ledger.Segments = make([]*model.ContextSegment, 0, len(segments))
-	for index, segment := range segments {
-		ledger.Segments = append(ledger.Segments, &model.ContextSegment{
-			SegmentId:       fmt.Sprintf("%s:%d", ledger.ContextLedgerId, index+1),
-			Type:            segment.Type,
-			SourceRefs:      redactDiagnosticRefs(segment.SourceRefs),
-			ContentHash:     segment.ContentHash,
-			EstimatedTokens: uint64(max(segment.EstimatedTokens, 0)),
-			Decision:        segment.Decision,
-			DecisionReason:  redactDiagnosticText(segment.DecisionReason),
-		})
-		ledger.EstimatedInputTokens += uint64(max(segment.EstimatedTokens, 0))
+	if ledger.GetContextLedgerId() == "" ||
+		ledger.GetTurnId() != record.TurnID ||
+		ledger.GetAttemptId() != record.ID {
+		return nil, fmt.Errorf("context ledger identity does not match persisted attempt")
 	}
-	return ledger, nil
+	for _, segment := range ledger.Segments {
+		segment.SourceRefs = redactDiagnosticRefs(segment.GetSourceRefs())
+		segment.DecisionReason = redactDiagnosticText(segment.GetDecisionReason())
+	}
+	return &ledger, nil
 }
 
 func decodeTurnUsage(encoded json.RawMessage) (*model.TurnUsage, error) {
