@@ -43,7 +43,6 @@ interface SessionStore {
   accessSubmitLogin: (attemptId: string, account: string, password: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
-  activateAuthenticatedSession: (response: AuthSessionResponse) => void;
   activateAppletLaunchSession: (user: CurrentUser) => void;
   /** Update the current actor profile projection after identity reconciliation. */
   updateProfile: (profile: Partial<Pick<CurrentUser, 'name' | 'email' | 'avatarUrl'>>) => void;
@@ -64,24 +63,6 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
     loginProvider: provider,
   };
 }
-
-// #region debug-point F-I:foundation-cleanup-logout
-function reportFoundationCleanupLogout(stage: string): void {
-  if (typeof fetch !== 'function') return;
-  void fetch('http://127.0.0.1:7777/event', {
-    method: 'POST',
-    body: JSON.stringify({
-      sessionId: 'as-f07-revision-flow',
-      runId: 'pre-fix-logout',
-      hypothesisId: 'F-I',
-      location: 'session.ts:logout',
-      msg: `[DEBUG] ${stage}`,
-      data: {},
-      ts: Date.now(),
-    }),
-  }).catch(() => {});
-}
-// #endregion
 
 // ── Store ──
 
@@ -124,9 +105,9 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     });
   },
 
-  loginWithOAuth: async (loopbackSessionId: string) => {
+  loginWithOAuth: async (_providerId: string) => {
     markLocalIdentityAction();
-    const resp = await api.ensureStationSession(loopbackSessionId);
+    const resp = await api.ensureStationSession();
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
       reason: 'oauth_bridge',
@@ -155,36 +136,21 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
 
   logout: async () => {
     markLocalIdentityAction();
-    reportFoundationCleanupLogout('cleanup-logout-started');
-    await runIdentityPipeline({
-      reason: 'logout',
-      actorPtid: null,
-      loginMethod: null,
-    });
-    reportFoundationCleanupLogout('cleanup-identity-pipeline-finished');
     try {
       await api.realtimeStreamStop();
     } catch {
       // noop
     }
-    reportFoundationCleanupLogout('cleanup-realtime-stop-finished');
     try {
       await api.authLogout();
     } catch {
       // Best-effort: if the session is already expired/revoked, still clear local state.
     }
-    reportFoundationCleanupLogout('cleanup-auth-logout-finished');
-  },
-
-  activateAuthenticatedSession: (response) => {
-    const method = response.login_method || 'password';
-    const isOAuth = method !== 'password';
-    const user = userFromAuthResponse(
-      response,
-      isOAuth ? 'oauth' : 'password',
-      isOAuth ? method : undefined,
-    );
-    set({ currentUser: user, authenticated: !!user, restoring: false });
+    await runIdentityPipeline({
+      reason: 'logout',
+      actorPtid: null,
+      loginMethod: null,
+    });
   },
 
   activateAppletLaunchSession: (user) => {

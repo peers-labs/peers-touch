@@ -11,7 +11,6 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sys
@@ -27,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+from tooling.acceptance.finalizers import (  # noqa: E402
+    load_finalizer_bindings,
+    load_strict_json_object,
+)
 ACCEPTANCE_ROOT = REPO_ROOT / "tooling" / "acceptance"
 CAPABILITIES_DIR = ACCEPTANCE_ROOT / "capabilities"
 FEATURES_DIR = ACCEPTANCE_ROOT / "features"
@@ -51,19 +54,8 @@ INFRA_DOMAINS = {"delivery-quality"}
 
 
 def load_json_or_yaml(path: Path) -> dict:
-    """Load a file as JSON first; fall back to YAML if JSON fails."""
-    text = path.read_text(encoding="utf-8")
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    # Fallback: try PyYAML
-    try:
-        import yaml
-        return yaml.safe_load(text) or {}
-    except ImportError:
-        logger.error("File %s is not valid JSON and PyYAML is not available.", path)
-        sys.exit(1)
+    """Load an authority-bearing JSON document without lossy decoding."""
+    return load_strict_json_object(path, str(path))
 
 
 # ---------------------------------------------------------------------------
@@ -109,18 +101,18 @@ def load_features() -> dict:
 def has_evidence_for_gate(
     gate_id: str,
     gate_definition: dict | None = None,
+    finalizer_binding: Any | None = None,
 ) -> bool:
     """Return whether the canonical latest run durably proves the Gate."""
     from tooling.acceptance.core import (
         ArtifactRef,
-        CellProofState,
-        CellResult,
+        CanonicalResultTuple,
         EvidenceError,
         EvidenceStore,
-        aggregate_matrix,
+        PlatformCellResult,
+        PlatformMatrixResult,
         source_identity,
     )
-
     try:
         store = EvidenceStore.from_environment(repo_root=REPO_ROOT)
         current_source = source_identity(REPO_ROOT)
@@ -213,6 +205,16 @@ def has_evidence_for_gate(
             ):
                 return False
 
+            requires_finalizer = (
+                isinstance(gate_definition, dict)
+                and "evidenceFinalizer" in gate_definition
+            )
+            if requires_finalizer:
+                # W1/W2 define contracts and registration only. W3/W7 own the
+                # authoritative finalization reader, so legacy latest manifests
+                # must remain UNPROVEN until that cutover is complete.
+                return False
+
             source_reference = None
             if environment_proof:
                 if (
@@ -260,24 +262,23 @@ def has_evidence_for_gate(
         if not required_cells:
             return manifest_proves(store.latest(gate_id))
 
-        cell_results: dict[str, CellResult] = {}
+        cell_results: dict[str, PlatformCellResult] = {}
         for cell_id in required_cells:
             manifest = store.latest(gate_id, runtime_cell=cell_id)
             if not manifest_proves(manifest, expected_cell=cell_id):
                 return False
-            cell_results[cell_id] = CellResult(
+            cell_results[cell_id] = PlatformCellResult(
                 cell_id=cell_id,
-                proof_state=CellProofState.PROVEN,
                 source_commit=current_source["commit"],
-                run_id=str(manifest["runId"]),
+                result_tuple=CanonicalResultTuple.PassedDoneProven,
             )
-        matrix = aggregate_matrix(
+        matrix = PlatformMatrixResult.create(
             gate_id,
             current_source["commit"],
             required_cells,
             cell_results,
         )
-        return matrix.get("proofStatus") == "PROVEN"
+        return matrix.result_tuple is CanonicalResultTuple.PassedDoneProven
     except (EvidenceError, KeyError, OSError, TypeError, ValueError):
         return False
 
@@ -291,6 +292,7 @@ def analyze_feature(
     feature_id: str,
     feature_data: dict,
     registered_gates: dict[str, dict],
+    finalizer_bindings: dict[str, Any] | None = None,
 ) -> dict:
     """
     Analyze a single feature and determine its coverage state.
@@ -303,7 +305,11 @@ def analyze_feature(
     proven = [
         g
         for g in registered
-        if has_evidence_for_gate(g, registered_gates[g])
+        if has_evidence_for_gate(
+            g,
+            registered_gates[g],
+            (finalizer_bindings or {}).get(g),
+        )
     ]
 
     if not required_gates:
@@ -328,6 +334,7 @@ def build_domain_report(
     capabilities: list,
     features: dict,
     registered_gates: dict[str, dict],
+    finalizer_bindings: dict[str, Any] | None = None,
 ) -> dict:
     """
     Build per-domain feature analysis.
@@ -355,7 +362,12 @@ def build_domain_report(
 
     for fid, fdata in features.items():
         domain = feature_domain_map.get(fid, "unknown")
-        analysis = analyze_feature(fid, fdata, registered_gates)
+        analysis = analyze_feature(
+            fid,
+            fdata,
+            registered_gates,
+            finalizer_bindings,
+        )
 
         if domain in INFRA_DOMAINS:
             infra_features.append(analysis)
@@ -493,6 +505,9 @@ def main() -> int:
 
     # Load data
     registered_gates = load_registered_gates()
+    finalizer_bindings = dict(
+        load_finalizer_bindings(ACCEPTANCE_ROOT, registered_gates)
+    )
     capabilities = load_capabilities()
     features = load_features()
 
@@ -505,7 +520,12 @@ def main() -> int:
     logger.info("Loaded %d features", len(features))
 
     # Build analysis
-    domain_features, infra_features = build_domain_report(capabilities, features, registered_gates)
+    domain_features, infra_features = build_domain_report(
+        capabilities,
+        features,
+        registered_gates,
+        finalizer_bindings,
+    )
 
     # Generate report
     report = generate_report(domain_features, infra_features)

@@ -789,11 +789,7 @@ pub fn update_group(
     Ok(update_group_response_to_value(&resp))
 }
 
-pub fn group_invite(
-    token: &str,
-    group_ulid: &str,
-    member_ptids: &[String],
-) -> StationResult<Value> {
+pub fn group_invite(token: &str, group_ulid: &str, member_ptids: &[String]) -> StationResult<Value> {
     let req = model::chat::InviteToGroupRequest {
         group_ulid: group_ulid.to_string(),
         invitee_ptids: member_ptids.to_vec(),

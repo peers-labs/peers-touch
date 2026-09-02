@@ -12,14 +12,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from tooling.acceptance.core import ArtifactRef, EvidenceStore
-
-
+from tooling.acceptance.core import ArtifactRef, CanonicalResultTuple, EvidenceStore
 def load_module() -> Any:
     script = Path(__file__).with_name("acceptance-coverage-report.py")
     spec = importlib.util.spec_from_file_location(
@@ -49,10 +47,29 @@ class AcceptanceCoverageEvidenceTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    def test_rejects_duplicate_gate_catalog_keys(self) -> None:
+        gates_path = self.worktree / "gates.yaml"
+        gates_path.write_text(
+            '{"gates":{"finalizer-gate":{"evidenceFinalizer":{},'
+            '"evidenceFinalizer":{}}}}',
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ValueError, "duplicate key"):
+            self.module.load_json_or_yaml(gates_path)
+
+        gates_path.write_text(
+            '{"gates":{"finalizer-gate":{"timeout_seconds":-1e999}}}',
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "invalid number"):
+            self.module.load_json_or_yaml(gates_path)
+
     def _has_evidence(
         self,
         gate_id: str,
         gate_definition: dict[str, Any] | None = None,
+        finalizer_binding: Any | None = None,
     ) -> bool:
         with patch.object(
             self.module,
@@ -69,6 +86,7 @@ class AcceptanceCoverageEvidenceTest(unittest.TestCase):
             return self.module.has_evidence_for_gate(
                 gate_id,
                 gate_definition,
+                finalizer_binding,
             )
 
     def _publish_run(
@@ -78,6 +96,7 @@ class AcceptanceCoverageEvidenceTest(unittest.TestCase):
         result: dict[str, Any],
         runtime_cell: str | None = None,
         include_secret_scan: bool = True,
+        include_seal: bool = False,
     ) -> Path:
         store = EvidenceStore(
             self.artifact_root,
@@ -111,6 +130,12 @@ class AcceptanceCoverageEvidenceTest(unittest.TestCase):
             report_payload,
             role="report",
         )
+        if include_seal:
+            run.write_json(
+                "reports/finalizer-seal.json",
+                {"artifactKind": "acceptance-finalizer-seal"},
+                role="finalizer-seal",
+            )
         if finalized_result.get("tier") == "env-evidence":
             finalized_result.setdefault("evidenceGateId", gate_id)
             finalized_result.setdefault(
@@ -433,6 +458,45 @@ class AcceptanceCoverageEvidenceTest(unittest.TestCase):
         )
 
         self.assertTrue(self._has_evidence("synthetic-gate"))
+
+    def test_required_finalizer_rejects_missing_finalization_record(self) -> None:
+        self._publish_run(
+            "synthetic-gate",
+            result={
+                "status": "passed",
+                "completionStatus": "DONE",
+                "proofStatus": "PROVEN",
+            },
+        )
+
+        self.assertFalse(
+            self._has_evidence(
+                "synthetic-gate",
+                {"evidenceFinalizer": {"id": "synthetic.finalizer"}},
+                Mock(),
+            )
+        )
+
+    def test_required_finalizer_remains_unproven_before_authority_cutover(
+        self,
+    ) -> None:
+        self._publish_run(
+            "synthetic-gate",
+            result={
+                "status": "passed",
+                "completionStatus": "DONE",
+                "proofStatus": "PROVEN",
+                "evidenceFinalization": {"record": "validated separately"},
+            },
+            include_seal=True,
+        )
+        self.assertFalse(
+            self._has_evidence(
+                "synthetic-gate",
+                {"evidenceFinalizer": {"id": "synthetic.finalizer"}},
+                Mock(),
+            )
+        )
 
 
 if __name__ == "__main__":

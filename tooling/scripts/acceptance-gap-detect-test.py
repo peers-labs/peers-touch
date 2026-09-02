@@ -7,6 +7,7 @@ import importlib.util
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).with_name("acceptance-gap-detect.py")
@@ -30,6 +31,83 @@ def proven_result(gate_id: str) -> dict[str, Any]:
 
 
 class AcceptanceGapDetectorTests(unittest.TestCase):
+    def test_explicit_changed_paths_define_exact_scope(self) -> None:
+        with patch.object(
+            MODULE,
+            "changed_paths",
+            return_value=[
+                "tooling/acceptance/core/launch_context.py",
+                "tooling/scripts/acceptance-run.py",
+            ],
+        ):
+            paths = MODULE.resolve_changed_paths(
+                "HEAD",
+                [
+                    "tooling/acceptance/core/launch_context.py",
+                    "tooling/acceptance/core/launch_context.py",
+                    " tooling/scripts/acceptance-run.py ",
+                    "",
+                ],
+            )
+
+        self.assertEqual(
+            paths,
+            [
+                "tooling/acceptance/core/launch_context.py",
+                "tooling/scripts/acceptance-run.py",
+            ],
+        )
+
+    def test_explicit_changed_paths_reject_empty_scope(self) -> None:
+        with self.assertRaisesRegex(
+            MODULE.DetectorError,
+            "at least one non-empty",
+        ):
+            MODULE.resolve_changed_paths("HEAD", ["", "  "])
+
+    def test_explicit_changed_paths_reject_noncanonical_paths(self) -> None:
+        invalid_paths = (
+            "/tmp/outside.py",
+            "../outside.py",
+            "tooling/../outside.py",
+            "./tooling/scripts/acceptance-run.py",
+            "tooling//scripts/acceptance-run.py",
+            r"tooling\scripts\acceptance-run.py",
+        )
+
+        for path in invalid_paths:
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(
+                    MODULE.DetectorError,
+                    "canonical repository-relative path",
+                ):
+                    MODULE.resolve_changed_paths("HEAD", [path])
+
+    def test_explicit_changed_paths_reject_incomplete_or_extra_scope(self) -> None:
+        actual = [
+            "tooling/acceptance/core/launch_context.py",
+            "tooling/scripts/acceptance-run.py",
+        ]
+        cases = (
+            (
+                ["tooling/acceptance/core/launch_context.py"],
+                "missing=\\['tooling/scripts/acceptance-run.py'\\], extra=\\[\\]",
+            ),
+            (
+                [*actual, "tooling/scripts/not-in-range.py"],
+                "missing=\\[\\], extra=\\['tooling/scripts/not-in-range.py'\\]",
+            ),
+        )
+
+        for supplied, expected_error in cases:
+            with self.subTest(supplied=supplied):
+                with patch.object(MODULE, "changed_paths", return_value=actual):
+                    with self.assertRaisesRegex(
+                        MODULE.DetectorError,
+                        expected_error,
+                    ):
+                        MODULE.resolve_changed_paths("HEAD", supplied)
+
     def test_stale_plan_paths_fail_closed(self) -> None:
         report = MODULE.detect(
             claim="Runtime provisioning is ready to merge",

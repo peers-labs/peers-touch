@@ -1,0 +1,14 @@
+{
+  "id": "mobile-station-trust",
+  "status": "active",
+  "product_area": "mobile",
+  "owners": ["model/domain/actor/**", "apps/mobile/src/features/station/**", "apps/mobile/src-tauri/src/commands/station.rs"],
+  "truth_sources": ["signed Station identity handshake", "PTID-only ActorRef"],
+  "visible_surfaces": [{"type": "mobile", "route": "station-selection"}],
+  "required_gates": ["mobile-contract-static", "mobile-identity-contract", "mobile-native-access-e2e"],
+  "acceptance": {
+    "product_assertions": ["MS-PA01", "MS-PA16", "MS-PA25"],
+    "visible": ["user can add, verify, remove, replace, and recover a Station without cross-scope data reuse"]
+  },
+  "negative": ["URL must not become Station identity", "numeric actor identity must not cross process boundaries"]
+}

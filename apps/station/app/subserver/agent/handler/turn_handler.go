@@ -13,18 +13,13 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"net/http"
 	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
-	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -33,92 +28,39 @@ type TurnHandlers struct {
 	toolRegistry    *service.ToolRegistryService
 	chatTaskService *service.ChatTaskService
 	convService     *service.ConversationService
-	admission       *service.TurnAdmissionService
 }
 
-func RejectLegacyTurnKnowledge(next server.EndpointHandler) server.EndpointHandler {
-	return func(ctx context.Context, req server.Request, resp server.Response) error {
-		if hasLegacyTurnKnowledge(req.Header()["Content-Type"], req.Body()) {
-			resp.SetHeader("Content-Type", "application/json")
-			resp.WriteHeader(http.StatusBadRequest)
-			_, _ = resp.Write([]byte(
-				`{"code":"AGENT_4001","error":"request-supplied Knowledge resources are forbidden"}`,
-			))
-			return nil
-		}
-		return next(ctx, req, resp)
-	}
-}
-
-func hasLegacyTurnKnowledge(contentType string, body []byte) bool {
-	if strings.Contains(strings.ToLower(contentType), "protobuf") {
-		for len(body) > 0 {
-			number, wireType, tagSize := protowire.ConsumeTag(body)
-			if tagSize < 0 {
-				return false
-			}
-			body = body[tagSize:]
-			fieldSize := protowire.ConsumeFieldValue(number, wireType, body)
-			if fieldSize < 0 {
-				return false
-			}
-			if number == 13 {
-				return true
-			}
-			body = body[fieldSize:]
-		}
-		return false
-	}
-
-	var payload map[string]json.RawMessage
-	if json.Unmarshal(body, &payload) != nil {
-		return false
-	}
-	for _, key := range []string{"knowledge_resources", "knowledgeResources"} {
-		raw, ok := payload[key]
-		if !ok {
-			continue
-		}
-		trimmed := strings.TrimSpace(string(raw))
-		if trimmed != "" && trimmed != "null" && trimmed != "[]" {
-			return true
-		}
-	}
-	return false
-}
-
-type cancelTurnRequest struct {
-	TurnID string `json:"turn_id"`
+type localToolResultRequest struct {
+	TurnID  string `json:"turn_id"`
+	CallID  string `json:"call_id"`
+	Content string `json:"content"`
+	IsError bool   `json:"is_error"`
 }
 
 func NewTurnHandlers(turnService *service.TurnService, toolRegistry *service.ToolRegistryService, chatTaskService *service.ChatTaskService, convService *service.ConversationService) *TurnHandlers {
 	return &TurnHandlers{turnService: turnService, toolRegistry: toolRegistry, chatTaskService: chatTaskService, convService: convService}
 }
 
-func (h *TurnHandlers) SetAdmissionService(admission *service.TurnAdmissionService) {
-	h.admission = admission
-}
-
 // beginChatTaskStep ensures the Station-owned Chat root task for the conversation
 // and opens an execution step for the incoming user message. It returns the
 // task/step ids so the caller can bind them to the turn and close them out.
-func (h *TurnHandlers) beginChatTaskStep(ctx context.Context, req *model.ExecuteTurnRequest) (taskID, stepID string, err error) {
+func (h *TurnHandlers) beginChatTaskStep(ctx context.Context, req *model.ExecuteTurnRequest) (taskID, stepID string) {
 	if h.chatTaskService == nil {
-		return "", "", nil
+		return "", ""
 	}
-	actorID := subjectActorID(ctx)
-	if actorID == "" {
-		return "", "", nil
+	actorPTID := subjectActorPTID(ctx)
+	if actorPTID == "" {
+		return "", ""
 	}
-	taskID, err = h.chatTaskService.EnsureChatTask(ctx, actorID, req.GetAgentId(), req.GetConversationId(), req.GetUserInput())
+	taskID, err := h.chatTaskService.EnsureChatTask(ctx, actorPTID, req.GetAgentId(), req.GetConversationId(), req.GetUserInput())
 	if err != nil {
-		return "", "", err
+		return "", ""
 	}
 	stepID, err = h.chatTaskService.BeginChatStep(ctx, taskID, req.GetAgentId(), req.GetUserInput())
 	if err != nil {
-		return taskID, "", err
+		return taskID, ""
 	}
-	return taskID, stepID, nil
+	return taskID, stepID
 }
 
 func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.ExecuteTurnRequest) (*model.ExecuteTurnResponse, error) {
@@ -126,38 +68,14 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400,
 			"agent_id and user_input are required", nil))
 	}
-	if err := validateFrozenDirectModelRequest(req); err != nil {
-		return nil, toHandlerError(err)
-	}
 
-	createdConversation := false
-	if strings.TrimSpace(req.GetConversationId()) == "" && len(req.GetAttachments()) > 0 {
-		return nil, toHandlerError(errcode.NewAttachmentRejected("conversation_scope_required"))
-	}
 	if strings.TrimSpace(req.GetConversationId()) == "" && h.convService != nil {
-		ptid := subjectActorID(ctx)
-		conv, err := h.convService.CreateConversation(ctx, req.GetAgentId(), ptid, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
+		actorPTID := subjectActorPTID(ctx)
+		conv, err := h.convService.CreateConversation(ctx, req.GetAgentId(), actorPTID, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
 		if err != nil {
 			return nil, toHandlerError(err)
 		}
 		req.ConversationId = conv.ConversationID
-		createdConversation = true
-	} else if h.convService != nil {
-		ptid := subjectActorID(ctx)
-		existing, getErr := h.convService.GetConversation(ctx, ptid, req.GetConversationId())
-		if getErr != nil || existing == nil {
-			if len(req.GetAttachments()) > 0 {
-				if preflightErr := h.turnService.PreflightAttachments(ctx, ptid, req); preflightErr != nil {
-					return nil, toHandlerError(preflightErr)
-				}
-			}
-			conv, createErr := h.convService.CreateConversationWithID(ctx, req.GetConversationId(), req.GetAgentId(), ptid, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
-			if createErr != nil {
-				return nil, toHandlerError(createErr)
-			}
-			createdConversation = true
-			req.ConversationId = conv.ConversationID
-		}
 	}
 
 	if req.GetConversationId() == "" {
@@ -165,65 +83,35 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 			"conversation_id is required", nil))
 	}
 
-	config, err := h.turnConfigFromRequest(ctx, req, nil)
-	if err != nil {
-		return nil, toHandlerError(err)
-	}
-	var admission *model.TurnAdmission
-	if h.admission != nil {
-		admissionResult, admissionErr := h.admission.Admit(ctx, subjectActorID(ctx), req)
-		if admissionErr != nil {
-			if createdConversation {
-				if cleanupErr := h.convService.ArchiveConversation(
-					ctx,
-					subjectActorID(ctx),
-					req.GetConversationId(),
-					true,
-					1,
-				); cleanupErr != nil {
-					logger.Errorf(ctx, "failed to remove unadmitted Agent conversation: conversation_id=%s err=%v", req.GetConversationId(), cleanupErr)
-				}
-			}
-			return nil, toHandlerError(admissionErr)
-		}
-		admission = admissionResult
-		if admission.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
-			return &model.ExecuteTurnResponse{Admission: admission}, nil
-		}
-		config.PrecreatedTurnID = admission.GetTurnId()
-		config.TurnID = admission.GetTurnId()
-	}
-	taskID, stepID, taskErr := h.beginChatTaskStep(ctx, req)
+	config := h.turnConfigFromRequest(ctx, req, nil)
+	taskID, stepID := h.beginChatTaskStep(ctx, req)
 	config.TaskID = taskID
 	config.StepID = stepID
-	if taskErr != nil {
-		if admission != nil {
-			taskErr = h.turnService.SettleAdmittedTurnAfterError(
-				context.WithoutCancel(ctx),
-				config,
-				admission.GetTurnId(),
-				"failed to prepare admitted chat task",
-				taskErr,
-			)
-		}
-		return nil, toHandlerError(taskErr)
-	}
 
 	turn, err := h.turnService.ExecuteTurn(ctx, config, req.GetUserInput())
 	if err != nil {
+		if h.chatTaskService != nil && stepID != "" {
+			_ = h.chatTaskService.FailChatStep(ctx, taskID, stepID, err.Error())
+		}
 		return nil, toHandlerError(err)
 	}
 
+	if h.chatTaskService != nil && stepID != "" {
+		turnID := ""
+		if turn != nil {
+			turnID = turn.TurnID
+		}
+		_ = h.chatTaskService.FinishChatStep(ctx, taskID, stepID, turnID, "")
+	}
+
 	return &model.ExecuteTurnResponse{
-		Turn:      domainTurnToProto(turn),
-		TaskId:    taskID,
-		Admission: admission,
+		Turn:   domainTurnToProto(turn),
+		TaskId: taskID,
 	}, nil
 }
 
 func (h *TurnHandlers) HandleListTurnTraces(ctx context.Context, req *model.ListTurnTracesRequest) (*model.ListTurnTracesResponse, error) {
 	entries, total, err := h.turnService.ListTurnTraces(ctx, domain.TurnTraceListOptions{
-		Ptid:           subjectActorID(ctx),
 		AgentID:        req.GetAgentId(),
 		ConversationID: req.GetConversationId(),
 		Page:           int(req.GetPage()),
@@ -244,22 +132,11 @@ func (h *TurnHandlers) HandleListTurnTraces(ctx context.Context, req *model.List
 }
 
 func (h *TurnHandlers) HandleGetTurnTrace(ctx context.Context, req *model.GetTurnTraceRequest) (*model.GetTurnTraceResponse, error) {
-	entry, err := h.turnService.GetTurnTrace(ctx, subjectActorID(ctx), req.GetTraceId(), req.GetTurnId())
+	entry, err := h.turnService.GetTurnTrace(ctx, req.GetTraceId(), req.GetTurnId())
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
 	return &model.GetTurnTraceResponse{Entry: domainTurnTraceEntryToProto(entry)}, nil
-}
-
-func (h *TurnHandlers) HandleExportTurnDiagnostics(
-	ctx context.Context,
-	req *model.ExportTurnDiagnosticsRequest,
-) (*model.ExportTurnDiagnosticsResponse, error) {
-	replay, err := h.turnService.ExportTurnDiagnostics(ctx, subjectActorID(ctx), req.GetTurnId())
-	if err != nil {
-		return nil, toHandlerError(err)
-	}
-	return &model.ExportTurnDiagnosticsResponse{Replay: replay}, nil
 }
 
 func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.Request, resp server.Response) error {
@@ -269,7 +146,7 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 	resp.SetHeader("X-Accel-Buffering", "no")
 
 	var input model.ExecuteTurnRequest
-	if err := decodeExecuteTurnRequest(req.Body(), &input); err != nil {
+	if err := json.Unmarshal(req.Body(), &input); err != nil {
 		_ = writeTurnStreamEvent(resp, "error", map[string]any{
 			"type":  "error",
 			"error": "invalid turn stream request",
@@ -284,52 +161,32 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		})
 		return nil
 	}
-	if err := validateFrozenDirectModelRequest(&input); err != nil {
-		_ = writeTurnStreamEvent(resp, "error", map[string]any{
-			"type":  "error",
-			"error": err.Error(),
-		})
-		return nil
-	}
-	turnID := service.NewTurnID()
 
-	createdConversation := false
-	if strings.TrimSpace(input.GetConversationId()) == "" && len(input.GetAttachments()) > 0 {
-		_ = writeTurnStreamEvent(resp, "error", map[string]any{
-			"type":  "error",
-			"error": errcode.NewAttachmentRejected("conversation_scope_required").Error(),
-		})
-		return nil
-	}
 	if strings.TrimSpace(input.GetConversationId()) == "" && h.convService != nil {
-		ptid := subjectActorID(ctx)
-		conv, err := h.convService.CreateConversation(ctx, input.GetAgentId(), ptid, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
+		actorPTID := subjectActorPTID(ctx)
+		conv, err := h.convService.CreateConversation(ctx, input.GetAgentId(), actorPTID, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
 		if err != nil {
 			_ = writeTurnStreamEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
 			return nil
 		}
 		input.ConversationId = conv.ConversationID
-		createdConversation = true
+		_ = writeTurnStreamEvent(resp, "conversation_created", map[string]any{
+			"type":            "conversation_created",
+			"conversation_id": conv.ConversationID,
+		})
 	} else if h.convService != nil {
-		ptid := subjectActorID(ctx)
-		existing, getErr := h.convService.GetConversation(ctx, ptid, input.GetConversationId())
+		actorPTID := subjectActorPTID(ctx)
+		existing, getErr := h.convService.GetConversation(ctx, input.GetConversationId())
 		if getErr != nil || existing == nil {
-			if len(input.GetAttachments()) > 0 {
-				if preflightErr := h.turnService.PreflightAttachments(ctx, ptid, &input); preflightErr != nil {
-					_ = writeTurnStreamEvent(resp, "error", map[string]any{
-						"type":  "error",
-						"error": preflightErr.Error(),
-					})
-					return nil
-				}
-			}
-			conv, err := h.convService.CreateConversationWithID(ctx, input.GetConversationId(), input.GetAgentId(), ptid, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
+			conv, err := h.convService.CreateConversationWithID(ctx, input.GetConversationId(), input.GetAgentId(), actorPTID, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
 			if err != nil {
 				_ = writeTurnStreamEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
 				return nil
 			}
-			input.ConversationId = conv.ConversationID
-			createdConversation = true
+			_ = writeTurnStreamEvent(resp, "conversation_created", map[string]any{
+				"type":            "conversation_created",
+				"conversation_id": conv.ConversationID,
+			})
 		}
 	}
 
@@ -341,142 +198,37 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		return nil
 	}
 
-	var admission *model.TurnAdmission
-	if h.admission != nil {
-		var err error
-		admission, err = h.admission.Admit(
-			ctx,
-			subjectActorID(ctx),
-			&input,
-			turnID,
-		)
-		if err != nil {
-			if createdConversation {
-				if cleanupErr := h.convService.ArchiveConversation(
-					ctx,
-					subjectActorID(ctx),
-					input.GetConversationId(),
-					true,
-					1,
-				); cleanupErr != nil {
-					logger.Errorf(ctx, "failed to remove unadmitted Agent conversation: conversation_id=%s err=%v", input.GetConversationId(), cleanupErr)
-				}
-			}
-			_ = writeTurnStreamEvent(resp, "error", map[string]any{
-				"type":  "error",
-				"error": err.Error(),
-			})
-			return nil
-		}
-		if admission.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
-			event := "admission_replayed"
-			if admission.GetStatus() == model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED {
-				event = "queued"
-			}
-			_ = writeTurnStreamEvent(resp, event, map[string]any{
-				"type":      event,
-				"admission": admission,
-			})
-			return nil
-		}
-		turnID = admission.GetTurnId()
-	}
-	if err := exposeTurnStreamIdentity(resp, turnID); err != nil {
-		if admission == nil {
-			return err
-		}
-		return h.turnService.SettleAdmittedTurnAfterError(
-			context.WithoutCancel(ctx),
-			&service.TurnConfig{
-				AgentID:        input.GetAgentId(),
-				ConversationID: input.GetConversationId(),
-			},
-			turnID,
-			"failed to expose admitted turn stream identity",
-			err,
-		)
-	}
-	if createdConversation && admission != nil {
-		if err := h.writePersistedTurnStreamEvent(ctx, resp, "conversation_created", turnID, input.GetConversationId(), input.GetAgentId(), map[string]any{
-			"type":            "conversation_created",
-			"conversation_id": input.GetConversationId(),
-		}); err != nil {
-			return h.turnService.SettleAdmittedTurnAfterError(
-				context.WithoutCancel(ctx),
-				&service.TurnConfig{
-					AgentID:        input.GetAgentId(),
-					ConversationID: input.GetConversationId(),
-				},
-				turnID,
-				"failed to flush admitted conversation event",
-				err,
-			)
-		}
-	}
-
 	events := make(chan service.TurnEvent, 32)
 	done := make(chan turnStreamResult, 1)
-	config, configErr := h.turnConfigFromRequest(ctx, &input, func(_ context.Context, event service.TurnEvent) {
+	config := h.turnConfigFromRequest(ctx, &input, func(eventCtx context.Context, event service.TurnEvent) {
 		select {
 		case events <- event:
-		case <-ctx.Done():
+		case <-eventCtx.Done():
 		}
 	})
-	if configErr != nil {
-		if admission != nil {
-			configErr = h.turnService.SettleAdmittedTurnAfterError(
-				context.WithoutCancel(ctx),
-				&service.TurnConfig{
-					AgentID:        input.GetAgentId(),
-					ConversationID: input.GetConversationId(),
-				},
-				turnID,
-				"failed to construct admitted turn configuration",
-				configErr,
-			)
-		}
-		if writeErr := writeTurnStreamEvent(resp, "error", map[string]any{
-			"type":  "error",
-			"error": configErr.Error(),
-		}); writeErr != nil {
-			return errors.Join(configErr, writeErr)
-		}
-		return nil
-	}
-	config.TurnID = turnID
-	if admission != nil {
-		config.PrecreatedTurnID = turnID
-	}
-	taskID, stepID, taskErr := h.beginChatTaskStep(ctx, &input)
+	taskID, stepID := h.beginChatTaskStep(ctx, &input)
 	config.TaskID = taskID
 	config.StepID = stepID
-	if taskErr != nil {
-		if admission != nil {
-			taskErr = h.turnService.SettleAdmittedTurnAfterError(
-				context.WithoutCancel(ctx),
-				config,
-				turnID,
-				"failed to prepare admitted chat task",
-				taskErr,
-			)
-		}
-		if writeErr := writeTurnStreamEvent(resp, "error", map[string]any{
-			"type":  "error",
-			"error": taskErr.Error(),
-		}); writeErr != nil {
-			return errors.Join(taskErr, writeErr)
-		}
-		return nil
-	}
-	turnCtx, releaseTurn := h.turnService.RegisterTurn(context.WithoutCancel(ctx), turnID)
-	config.ExecutionContext = turnCtx
 
 	go func() {
-		defer releaseTurn()
-
-		turn, err := h.turnService.ExecuteTurn(turnCtx, config, input.GetUserInput())
+		turn, err := h.turnService.ExecuteTurn(ctx, config, input.GetUserInput())
+		if h.chatTaskService != nil && stepID != "" {
+			if err != nil {
+				_ = h.chatTaskService.FailChatStep(ctx, taskID, stepID, err.Error())
+			} else {
+				turnID := ""
+				if turn != nil {
+					turnID = turn.TurnID
+				}
+				_ = h.chatTaskService.FinishChatStep(ctx, taskID, stepID, turnID, "")
+			}
+		}
+		var suggestions []string
+		if err == nil && turn != nil {
+			suggestions = h.turnService.GenerateFollowUpSuggestions(ctx, config, input.GetUserInput(), turn.FinalResponse)
+		}
+		done <- turnStreamResult{turn: domainTurnToProto(turn), taskID: taskID, err: err, suggestions: suggestions}
 		close(events)
-		done <- turnStreamResult{turn: domainTurnToProto(turn), err: err}
 	}()
 
 	for {
@@ -486,19 +238,21 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 				events = nil
 				continue
 			}
-			if err := writeTurnStreamEvent(resp, event.Type, event); err != nil {
-				return nil
-			}
+			_ = writeTurnStreamEvent(resp, event.Type, event)
 		case result := <-done:
-			if err := drainTurnStreamEvents(resp, events); err != nil {
-				return nil
-			}
 			if result.err != nil {
+				_ = writeTurnStreamEvent(resp, "error", map[string]any{
+					"type":  "error",
+					"error": result.err.Error(),
+				})
 				return nil
 			}
-			if result.turn != nil && result.turn.GetStatus() == model.TurnStatus_TURN_STATUS_RUNNING {
-				return nil
-			}
+			_ = writeTurnStreamEvent(resp, "done", map[string]any{
+				"type":        "done",
+				"turn":        result.turn,
+				"task_id":     result.taskID,
+				"suggestions": result.suggestions,
+			})
 			return nil
 		case <-ctx.Done():
 			return nil
@@ -506,68 +260,32 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 	}
 }
 
-func exposeTurnStreamIdentity(resp server.Response, turnID string) error {
-	resp.SetHeader("X-Agent-Turn-ID", strings.TrimSpace(turnID))
-	return resp.Flush()
-}
-
-func drainTurnStreamEvents(resp server.Response, events <-chan service.TurnEvent) error {
-	for events != nil {
-		select {
-		case event, ok := <-events:
-			if !ok {
-				return nil
-			}
-			if err := writeTurnStreamEvent(resp, event.Type, event); err != nil {
-				return err
-			}
-		default:
-			return nil
-		}
-	}
-	return nil
-}
-
-func (h *TurnHandlers) writePersistedTurnStreamEvent(
-	ctx context.Context,
-	resp server.Response,
-	event string,
-	turnID string,
-	conversationID string,
-	agentID string,
-	payload map[string]any,
-) error {
-	payload["turnId"] = turnID
-	payload["conversationId"] = conversationID
-	payload["agentId"] = agentID
-	if h.convService != nil && conversationID != "" && turnID != "" {
-		seq, err := h.convService.PersistTurnEvent(ctx, conversationID, turnID, event, payload)
-		if err != nil {
-			return err
-		}
-		payload["seq"] = seq
-	}
-	return writeTurnStreamEvent(resp, event, payload)
-}
-
-func decodeExecuteTurnRequest(body []byte, request *model.ExecuteTurnRequest) error {
-	return (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(body, request)
-}
-
-func (h *TurnHandlers) HandleCancelTurn(ctx context.Context, req server.Request, resp server.Response) error {
+func (h *TurnHandlers) HandleLocalToolResult(ctx context.Context, req server.Request, resp server.Response) error {
 	resp.SetHeader("Content-Type", "application/json")
-	var input cancelTurnRequest
-	if err := json.Unmarshal(req.Body(), &input); err != nil || strings.TrimSpace(input.TurnID) == "" {
+
+	var input localToolResultRequest
+	if err := json.Unmarshal(req.Body(), &input); err != nil {
 		resp.WriteHeader(400)
-		_, _ = resp.Write([]byte(`{"ok":false,"error":"turn_id is required"}`))
+		_, _ = resp.Write([]byte(`{"ok":false,"error":"invalid local tool result request"}`))
 		return nil
 	}
-	status, err := h.turnService.RequestCancelTurn(ctx, subjectActorID(ctx), input.TurnID)
-	if err != nil {
-		return toHandlerError(err)
+	if input.TurnID == "" || input.CallID == "" {
+		resp.WriteHeader(400)
+		_, _ = resp.Write([]byte(`{"ok":false,"error":"turn_id and call_id are required"}`))
+		return nil
 	}
-	out, _ := json.Marshal(map[string]any{"ok": true, "turn_id": input.TurnID, "status": status})
-	_, _ = resp.Write(out)
+	if err := h.turnService.SubmitLocalToolResult(service.LocalToolResult{
+		TurnID:  input.TurnID,
+		CallID:  input.CallID,
+		Content: input.Content,
+		IsError: input.IsError,
+	}); err != nil {
+		resp.WriteHeader(404)
+		_, _ = resp.Write([]byte(`{"ok":false,"error":"local tool waiter not found"}`))
+		return nil
+	}
+
+	_, _ = resp.Write([]byte(`{"ok":true}`))
 	return nil
 }
 
@@ -586,15 +304,9 @@ func (h *TurnHandlers) HandleQuickCompletion(ctx context.Context, req server.Req
 		return nil
 	}
 
-	config, configErr := h.turnConfigFromRequest(ctx, &model.ExecuteTurnRequest{
+	config := h.turnConfigFromRequest(ctx, &model.ExecuteTurnRequest{
 		AgentId: input.AgentID,
 	}, nil)
-	if configErr != nil {
-		resp.WriteHeader(http.StatusBadRequest)
-		out, _ := json.Marshal(map[string]any{"ok": false, "error": configErr.Error()})
-		_, _ = resp.Write(out)
-		return nil
-	}
 
 	content, err := h.turnService.QuickCompletion(ctx, config, input.Prompt)
 	if err != nil {
@@ -610,15 +322,13 @@ func (h *TurnHandlers) HandleQuickCompletion(ctx context.Context, req server.Req
 }
 
 type turnStreamResult struct {
-	turn *model.Turn
-	err  error
+	turn        *model.Turn
+	taskID      string
+	err         error
+	suggestions []string
 }
 
-func (h *TurnHandlers) turnConfigFromRequest(
-	ctx context.Context,
-	req *model.ExecuteTurnRequest,
-	sink service.TurnEventSink,
-) (*service.TurnConfig, error) {
+func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.ExecuteTurnRequest, sink service.TurnEventSink) *service.TurnConfig {
 	contextWindowSize := int(req.GetContextWindowSize())
 	if contextWindowSize <= 0 {
 		contextWindowSize = 128000
@@ -629,55 +339,83 @@ func (h *TurnHandlers) turnConfigFromRequest(
 		maxRetries = 3
 	}
 
-	actorID := subjectActorID(ctx)
-	var requestedBudgetJSON json.RawMessage
-	if req.GetRequestedBudget() != nil {
-		encoded, err := protojson.Marshal(req.GetRequestedBudget())
-		if err != nil {
-			return nil, errcode.New(
-				errcode.AgentInvalidRequest,
-				http.StatusBadRequest,
-				"encode requested runtime budget",
-				err,
-			)
-		}
-		requestedBudgetJSON = encoded
-	}
+	actorPTID := subjectActorPTID(ctx)
 
 	return &service.TurnConfig{
-		AgentID:                   req.GetAgentId(),
-		ActorID:                   actorID,
-		ConversationID:            req.GetConversationId(),
-		Identity:                  req.GetIdentity(),
-		AgentConfigPrompt:         req.GetAgentConfigPrompt(),
-		AvailableTools:            h.toolRegistry.ToolNames(),
-		ContextWindowSize:         contextWindowSize,
-		MaxRetries:                maxRetries,
-		Provider:                  req.GetProvider(),
-		Model:                     req.GetModel(),
-		Effort:                    req.GetEffort(),
-		ThinkingMode:              domain.ThinkingMode(req.GetThinkingMode()),
-		ClientCapabilitySessionID: req.GetClientCapabilitySessionId(),
-		RequestedBudgetJSON:       requestedBudgetJSON,
-		Attachments:               req.GetAttachments(),
-		EventSink:                 sink,
-		MemoryDisabled:            req.GetMemoryDisabled(),
-	}, nil
+		AgentID:            req.GetAgentId(),
+		ActorPTID:          actorPTID,
+		ConversationID:     req.GetConversationId(),
+		Identity:           req.GetIdentity(),
+		AgentConfigPrompt:  req.GetAgentConfigPrompt(),
+		Platform:           req.GetPlatform(),
+		AvailableTools:     h.toolRegistry.ToolNames(),
+		ContextWindowSize:  contextWindowSize,
+		MaxRetries:         maxRetries,
+		Provider:           req.GetProvider(),
+		Model:              req.GetModel(),
+		Effort:             req.GetEffort(),
+		WorkspaceRoot:      req.GetWorkspaceRoot(),
+		KnowledgeResources: knowledgeResourcesFromRequest(req),
+		EventSink:          sink,
+		// CLI execution fields — pass through from proto request.
+		CliCommand:     req.GetCliCommand(),
+		RuntimeBackend: req.GetRuntimeBackend(),
+		AllowedRoots:   req.GetAllowedRoots(),
+		MemoryDisabled: req.GetMemoryDisabled(),
+	}
 }
 
-func validateFrozenDirectModelRequest(req *model.ExecuteTurnRequest) error {
-	if req == nil {
-		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			"turn request is required", nil)
+func knowledgeResourcesFromRequest(req *model.ExecuteTurnRequest) []domain.KnowledgeResource {
+	resources := req.GetKnowledgeResources()
+	if len(resources) == 0 {
+		return nil
 	}
-	provider := strings.ToLower(strings.TrimSpace(req.GetProvider()))
-	switch provider {
-	case "trae-cli", "codex-cli", "claude-cli", "cursor-cli",
-		"trae", "codex", "claude", "cursor":
-		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			"CLI runtimes are not supported by the active Agent profile", nil)
+	out := make([]domain.KnowledgeResource, 0, len(resources))
+	for _, resource := range resources {
+		if resource.GetSource() == "" {
+			continue
+		}
+		out = append(out, domain.KnowledgeResource{
+			ResourceID: resource.GetResourceId(),
+			AgentID:    resource.GetAgentId(),
+			Type:       knowledgeResourceTypeFromProto(resource.GetType()),
+			Title:      resource.GetTitle(),
+			Source:     resource.GetSource(),
+			Policy:     knowledgeResourcePolicyFromProto(resource.GetPolicy()),
+			Status:     resource.GetStatus().String(),
+		})
 	}
-	return nil
+	return out
+}
+
+func knowledgeResourceTypeFromProto(value model.KnowledgeResourceType) domain.KnowledgeResourceType {
+	switch value {
+	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_FOLDER:
+		return domain.KnowledgeResourceTypeFolder
+	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_PROJECT:
+		return domain.KnowledgeResourceTypeProject
+	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_URL:
+		return domain.KnowledgeResourceTypeURL
+	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_NOTEBOOK:
+		return domain.KnowledgeResourceTypeNotebook
+	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_WORKSPACE:
+		return domain.KnowledgeResourceTypeWorkspace
+	default:
+		return domain.KnowledgeResourceTypeDocument
+	}
+}
+
+func knowledgeResourcePolicyFromProto(value model.KnowledgeResourcePolicy) domain.KnowledgeResourcePolicy {
+	switch value {
+	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_AUTO:
+		return domain.KnowledgeResourcePolicyAuto
+	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_ALWAYS:
+		return domain.KnowledgeResourcePolicyAlways
+	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_DISABLED:
+		return domain.KnowledgeResourcePolicyDisabled
+	default:
+		return domain.KnowledgeResourcePolicyManual
+	}
 }
 
 func writeTurnStreamEvent(resp server.Response, event string, payload any) error {
@@ -691,7 +429,7 @@ func writeTurnStreamEvent(resp server.Response, event string, payload any) error
 	if _, err := resp.Write([]byte("data: " + string(data) + "\n\n")); err != nil {
 		return err
 	}
-	return resp.Flush()
+	return nil
 }
 
 func domainTurnToProto(t *domain.Turn) *model.Turn {
@@ -718,7 +456,7 @@ func domainTurnToProto(t *domain.Turn) *model.Turn {
 
 func domainTurnStatusToProto(s domain.TurnStatus) model.TurnStatus {
 	switch s {
-	case domain.TurnStatusRunning, domain.TurnStatusWaitingLocalTool:
+	case domain.TurnStatusRunning:
 		return model.TurnStatus_TURN_STATUS_RUNNING
 	case domain.TurnStatusCompleted:
 		return model.TurnStatus_TURN_STATUS_COMPLETED
@@ -726,8 +464,6 @@ func domainTurnStatusToProto(s domain.TurnStatus) model.TurnStatus {
 		return model.TurnStatus_TURN_STATUS_FAILED
 	case domain.TurnStatusInterrupted:
 		return model.TurnStatus_TURN_STATUS_INTERRUPTED
-	case domain.TurnStatusCancelled:
-		return model.TurnStatus_TURN_STATUS_CANCELLED
 	default:
 		return model.TurnStatus_TURN_STATUS_UNSPECIFIED
 	}

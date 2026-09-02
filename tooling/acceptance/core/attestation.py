@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import urllib.error
 import urllib.request
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ from .evidence_store import (
     current_artifact_ref,
     write_current_artifact,
 )
-from .provisioning import StationAttestation, utc_now
+from .provisioning import ServiceAttestation, utc_now
 
 
 def commits_match(actual: str, expected: str) -> bool:
@@ -70,8 +71,8 @@ def source_workspace_digest(root: Path) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
-def read_station_version(station_url: str) -> dict[str, Any]:
-    url = f"{station_url.rstrip('/')}/app-meta/version"
+def read_service_version(service_url: str) -> dict[str, Any]:
+    url = f"{service_url.rstrip('/')}/app-meta/version"
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=8) as response:
@@ -94,6 +95,33 @@ def read_station_version(station_url: str) -> dict[str, Any]:
             resource=f"station-identity:{url}",
         )
     return version
+
+
+def read_service_runtime_identity(service_url: str) -> str:
+    url = f"{service_url.rstrip('/')}/sub-bootstrap/info"
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (
+        urllib.error.URLError,
+        OSError,
+        TimeoutError,
+        json.JSONDecodeError,
+    ) as error:
+        raise BlockedError(
+            reason=f"Service runtime identity is unavailable at {url}: {error}",
+            resource=f"service-identity:{url}",
+        ) from error
+    data = payload.get("data") if isinstance(payload, dict) else None
+    identity = data if isinstance(data, dict) else payload
+    peer_id = str(identity.get("peer_id") or "") if isinstance(identity, dict) else ""
+    if not peer_id:
+        raise BlockedError(
+            reason=f"Service runtime identity at {url} has no peer_id",
+            resource=f"service-identity:{url}",
+        )
+    return peer_id
 
 
 def _load_env(path: Path) -> dict[str, str]:
@@ -201,30 +229,68 @@ def produce_station_attestation(
     *,
     environment_id: str,
     run_id: str,
+    service_id: str,
     station_url: str,
     profile_env: dict[str, str],
-) -> StationAttestation:
-    version = read_station_version(station_url)
+    require_runtime_identity: bool = False,
+) -> ServiceAttestation:
+    return produce_service_attestation(
+        environment_id=environment_id,
+        run_id=run_id,
+        service_id=service_id,
+        service_kind="station",
+        endpoint=station_url,
+        mode=profile_env.get("PT_STATION_MODE", "local"),
+        deployment_environment=profile_env.get("PT_STATION_DEPLOY_ENV", ""),
+        producer="station-deployment",
+        require_runtime_identity=require_runtime_identity,
+    )
+
+
+def produce_service_attestation(
+    *,
+    environment_id: str,
+    run_id: str,
+    service_id: str,
+    service_kind: str,
+    endpoint: str,
+    mode: str,
+    deployment_environment: str,
+    producer: str,
+    require_runtime_identity: bool = False,
+) -> ServiceAttestation:
+    del run_id
+    version = read_service_version(endpoint)
     live_commit = str(version.get("build_commit") or "")
     build_time = str(version.get("build_time") or "")
+    runtime_identity = str(
+        version.get("peer_id")
+        or version.get("station_peer_id")
+        or version.get("service_id")
+        or ""
+    )
+    if require_runtime_identity and not runtime_identity:
+        runtime_identity = read_service_runtime_identity(endpoint)
     if live_commit.lower() in {"", "unknown"}:
         raise BlockedError(
             reason=(
-                f"Station at {station_url} does not expose a stable build_commit"
+                f"Service {service_id!r} at {endpoint} does not expose "
+                "a stable build_commit"
             ),
-            resource=f"station-identity:{station_url}",
+            resource=f"service-identity:{service_id}",
         )
 
-    mode = profile_env.get("PT_STATION_MODE", "local")
-    deploy_environment = profile_env.get("PT_STATION_DEPLOY_ENV", "")
     if mode == "remote":
-        if not deploy_environment:
+        if not deployment_environment:
             raise BlockedError(
-                reason="Remote Station profile is missing PT_STATION_DEPLOY_ENV",
-                resource="profile:PT_STATION_DEPLOY_ENV",
+                reason=(
+                    f"Remote service {service_id!r} is missing its deployment "
+                    "environment"
+                ),
+                resource=f"service-deployment:{service_id}",
             )
         deployed_commit, workspace_digest, proto_digest = _remote_source_identity(
-            deploy_environment
+            deployment_environment
         )
     else:
         deployed_commit, workspace_digest, proto_digest = _local_source_identity()
@@ -232,33 +298,49 @@ def produce_station_attestation(
     if not commits_match(live_commit, deployed_commit):
         raise BlockedError(
             reason=(
-                f"Live Station commit {live_commit} does not match deployment "
+                f"Live service {service_id!r} commit {live_commit} does not match deployment "
                 f"commit {deployed_commit}"
             ),
-            resource=f"station-attestation:{station_url}",
+            resource=f"service-attestation:{service_id}",
         )
     if workspace_digest != "clean":
         raise BlockedError(
-            reason="Station deployment workspace is dirty",
-            resource=f"station-attestation:{station_url}",
+            reason=f"Service {service_id!r} deployment workspace is dirty",
+            resource=f"service-attestation:{service_id}",
         )
 
     produced_at = utc_now()
-    payload = StationAttestation(
+    payload = ServiceAttestation(
+        service_id=service_id,
+        service_kind=service_kind,
         environment_id=environment_id,
-        url=station_url.rstrip("/"),
+        deployment_environment=deployment_environment or "local",
+        endpoint=endpoint.rstrip("/"),
         live_commit=deployed_commit,
         workspace_digest=workspace_digest,
-        proto_digest=proto_digest,
+        protocol_digest=proto_digest,
         artifact_ref={},
         produced_at=produced_at,
+        producer=producer,
         build_time=build_time,
-    ).to_dict()
-    relative_path = "runtime/station-attestation.json"
+        runtime_identity=runtime_identity,
+    )
+    return persist_service_attestation(payload)
+
+
+def persist_service_attestation(
+    attestation: ServiceAttestation,
+) -> ServiceAttestation:
+    relative_path = (
+        f"runtime/services/{attestation.service_id}/attestation.json"
+    )
     try:
         write_current_artifact(
             relative_path,
-            (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+            (
+                json.dumps(attestation.to_dict(), indent=2, sort_keys=True)
+                + "\n"
+            ).encode("utf-8"),
             repo_root=REPO_ROOT,
         )
         artifact_ref = current_artifact_ref(
@@ -268,13 +350,7 @@ def produce_station_attestation(
         )
     except ProvisioningError:
         raise
-    return StationAttestation(
-        environment_id=environment_id,
-        url=station_url.rstrip("/"),
-        live_commit=deployed_commit,
-        workspace_digest=workspace_digest,
-        proto_digest=proto_digest,
+    return replace(
+        attestation,
         artifact_ref=artifact_ref.to_dict(),
-        produced_at=produced_at,
-        build_time=build_time,
     )

@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use crate::application::agent_workspace::{self, WorkspaceCleanScope};
 use crate::contracts::{
-    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentSelectInput,
-    AgentUpdateInput, AgentWorkspaceCleanInput, AgentWorkspaceInfoInput, StubPayload,
+    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentPackageExportInput,
+    AgentPackageImportInput, AgentSearchInput, AgentSelectInput, AgentUpdateInput,
+    AgentWorkspaceCleanInput, AgentWorkspaceInfoInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 
@@ -16,15 +17,10 @@ fn actor_ptid_for_cmd(state: &State<'_, Arc<AppState>>, window: &Window) -> Stri
     session_resolver::ptid_for_window(state.inner(), window).unwrap_or_default()
 }
 
-fn token_for_cmd(state: &State<'_, Arc<AppState>>, window: &Window) -> String {
-    session_resolver::token_for_window(state.inner(), window).unwrap_or_default()
-}
-
 #[tauri::command]
 pub fn agents_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
-    let token = token_for_cmd(&state, &window);
-    application_agents::agents_list(&actor_ptid, &token)
+    application_agents::agents_list(&actor_ptid)
 }
 
 #[tauri::command]
@@ -72,8 +68,7 @@ pub fn agents_get(
     input: AgentIdInput,
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
-    let token = token_for_cmd(&state, &window);
-    application_agents::agents_get(&actor_ptid, &token, input)
+    application_agents::agents_get(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -83,8 +78,7 @@ pub fn agents_create(
     input: AgentCreateInput,
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
-    let token = token_for_cmd(&state, &window);
-    application_agents::agents_create(&actor_ptid, &token, input)
+    application_agents::agents_create(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -94,8 +88,7 @@ pub fn agents_update(
     input: AgentUpdateInput,
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
-    let token = token_for_cmd(&state, &window);
-    application_agents::agents_update(&actor_ptid, &token, input)
+    application_agents::agents_update(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -105,8 +98,7 @@ pub fn agents_delete(
     input: AgentIdInput,
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
-    let token = token_for_cmd(&state, &window);
-    application_agents::agents_delete(&actor_ptid, &token, input)
+    application_agents::agents_delete(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -116,8 +108,7 @@ pub fn agents_duplicate(
     input: AgentDuplicateInput,
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
-    let token = token_for_cmd(&state, &window);
-    application_agents::agents_duplicate(&actor_ptid, &token, input)
+    application_agents::agents_duplicate(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -148,6 +139,16 @@ pub fn agents_search(
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
     application_agents::agents_search(&actor_ptid, input)
+}
+
+#[tauri::command]
+pub fn agents_list_sessions(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: AgentIdInput,
+) -> AppResult<StubPayload> {
+    let actor_ptid = actor_ptid_for_cmd(&state, &window);
+    application_agents::agents_list_sessions(&actor_ptid, input)
 }
 
 #[tauri::command]

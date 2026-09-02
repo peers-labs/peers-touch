@@ -6,6 +6,7 @@
   },
   "services": {
     "station": {
+      "kind": "station",
       "required": true,
       "ready_action": "station",
       "health_action": "station-check",
@@ -13,6 +14,7 @@
       "attestation_producer": "station-deployment"
     },
     "desktop-gateway": {
+      "kind": "desktop-gateway",
       "required": true,
       "ready_action": "desktop",
       "health_action": "desktop-gateway-check",
