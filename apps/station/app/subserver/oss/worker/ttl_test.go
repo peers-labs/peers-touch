@@ -183,11 +183,11 @@ func TestTTLSweeper_RunOnce_DeletesExpiredAndAudits(t *testing.T) {
 	files := newFakeFiles()
 	files.seed(
 		// Expired — should be swept.
-		&ossmodel.FileMeta{ID: "f-1", Key: "k1", BucketID: "b1", OwnerActorID: "a", Size: 100, ExpiresAt: &yesterday},
+		&ossmodel.FileMeta{ID: "f-1", Key: "k1", BucketID: "b1", OwnerPTID: "a", Size: 100, ExpiresAt: &yesterday},
 		// Not expired — left alone.
-		&ossmodel.FileMeta{ID: "f-2", Key: "k2", BucketID: "b1", OwnerActorID: "a", Size: 50, ExpiresAt: &tomorrow},
+		&ossmodel.FileMeta{ID: "f-2", Key: "k2", BucketID: "b1", OwnerPTID: "a", Size: 50, ExpiresAt: &tomorrow},
 		// No expiry → never reaped.
-		&ossmodel.FileMeta{ID: "f-3", Key: "k3", BucketID: "b1", OwnerActorID: "a", Size: 25, ExpiresAt: nil},
+		&ossmodel.FileMeta{ID: "f-3", Key: "k3", BucketID: "b1", OwnerPTID: "a", Size: 25, ExpiresAt: nil},
 	)
 	buckets := newFakeBuckets()
 	blobs := newFakeBlobs()
@@ -238,7 +238,7 @@ func TestTTLSweeper_RunOnce_DeletesExpiredAndAudits(t *testing.T) {
 	if r.Action != ossmodel.AuditActionDelete || r.Outcome != ossmodel.AuditOutcomeOK || r.Reason != "ttl" {
 		t.Errorf("audit row mismatch: %+v", r)
 	}
-	if r.FileID != "f-1" || r.FileKey != "k1" || r.SizeBytes != 100 || r.ActorID != "a" {
+	if r.FileID != "f-1" || r.FileKey != "k1" || r.SizeBytes != 100 || r.ActorPTID != "a" {
 		t.Errorf("audit row payload mismatch: %+v", r)
 	}
 }

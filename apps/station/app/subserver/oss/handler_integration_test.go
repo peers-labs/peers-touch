@@ -171,7 +171,7 @@ func seedBucket(t *testing.T, db *gorm.DB, owner string) string {
 	bucketID := "bk-" + owner
 	now := time.Now().UTC()
 	if err := db.Create(&ossmodel.Bucket{
-		ID: bucketID, Name: "chat", OwnerActorID: owner,
+		ID: bucketID, Name: "chat", OwnerPTID: owner,
 		Kind: "system", SystemKey: "chat", DefaultVisibility: "chat",
 		QuotaBytes: 1 << 30, UsedBytes: 0, ObjectCount: 0,
 		CreatedAt: now, UpdatedAt: now,
@@ -190,7 +190,7 @@ func seedFile(t *testing.T, db *gorm.DB, owner, bucketID, key string, size int64
 	id := "f-" + key
 	if err := db.Create(&ossmodel.FileMeta{
 		ID: id, Key: key, Name: "n", BucketID: bucketID,
-		OwnerActorID: owner, Visibility: vis, Backend: "local",
+		OwnerPTID: owner, Visibility: vis, Backend: "local",
 		Size: size, CreatedAt: now,
 	}).Error; err != nil {
 		t.Fatalf("seed file %s: %v", key, err)
@@ -432,8 +432,8 @@ func TestIntegration_CrossActor_OperationsForbidden(t *testing.T) {
 	if err := db.Where("id = ?", fileID).Take(&afterAttempts).Error; err != nil {
 		t.Fatalf("read alice file after cross-actor attempts: %v", err)
 	}
-	if afterAttempts.OwnerActorID != alice {
-		t.Errorf("owner mutated by bob: got %q", afterAttempts.OwnerActorID)
+	if afterAttempts.OwnerPTID != alice {
+		t.Errorf("owner mutated by bob: got %q", afterAttempts.OwnerPTID)
 	}
 	if afterAttempts.Visibility != "chat" {
 		t.Errorf("visibility mutated by bob: got %q", afterAttempts.Visibility)

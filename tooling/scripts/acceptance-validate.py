@@ -70,6 +70,7 @@ ALLOWED_GATE_ENVIRONMENTS = {
     "home-station",
     "local-desktop-gateway",
     "local-desktop-web-gateway",
+    "mobile-native",
     "native-tauri-embedded-webdriver",
 }
 

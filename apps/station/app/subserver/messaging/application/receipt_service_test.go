@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,8 +139,19 @@ func TestSubmitActorReadAtomicallyPersistsAndQueuesCursor(t *testing.T) {
 		t.Fatalf("queued read cursor items = %d, want 2", len(queued))
 	}
 	for _, item := range queued {
-		if len(item.EventID) != 64 || item.EventID != queued[0].EventID {
-			t.Fatalf("queued event ID = %q, want shared 64-character digest %q", item.EventID, queued[0].EventID)
+		const prefix = "read:"
+		if !strings.HasPrefix(item.EventID, prefix) {
+			t.Fatalf("queued event ID = %q, want %q prefix", item.EventID, prefix)
+		}
+		digest := strings.TrimPrefix(item.EventID, prefix)
+		if len(digest) != 56 {
+			t.Fatalf("queued event digest length = %d, want 56", len(digest))
+		}
+		if _, err := hex.DecodeString(digest); err != nil {
+			t.Fatalf("queued event digest = %q, want hexadecimal: %v", digest, err)
+		}
+		if item.EventID != queued[0].EventID {
+			t.Fatalf("queued event ID = %q, want shared ID %q", item.EventID, queued[0].EventID)
 		}
 		var received chat.ActorReadCursor
 		if err := proto.Unmarshal(item.OpaquePayload, &received); err != nil {

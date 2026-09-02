@@ -24,7 +24,7 @@ const OUTPUT_DIR = path.resolve(
 
 interface CohortManifest {
   cohortId: string;
-  expectedActorId: string;
+  expectedActorPtid: string;
   warmupRuns: number;
   postWarmupSamplesPerScenario: number;
   runtimes: PerformanceRuntime[];
@@ -91,7 +91,7 @@ test.describe('P0c3 evidence collection', () => {
     const preflight = await runtimePreflight(
       tauriPage,
       EXPECTED_RUNTIME,
-      cohort.expectedActorId,
+      cohort.expectedActorPtid,
     );
     expect(preflight.runtime).toBe(EXPECTED_RUNTIME);
 
@@ -147,7 +147,7 @@ test.describe('P0c3 evidence collection', () => {
       collectedAt: new Date().toISOString(),
       runtime: EXPECTED_RUNTIME,
       profile: cohort.profile,
-      actualActorId: preflight.actualActorId,
+      actualActorPtid: preflight.actualActorPtid,
       station: cohort.station,
       buildRevision: cohort.buildRevision,
       warmupRuns: warmup,

@@ -72,7 +72,7 @@ INV-6: No invoke in click-frame (must defer to afterFirstPaint lane)
 
 ### 3.2 Scheduler Lane Contract
 
-Exact interface from [design.md §3.2](../../../../docs/architecture/frontend-runtime/design.md#L107-L115):
+Exact interface from [design.md §3.2](../design.md#L107-L115):
 
 ```typescript
 interface FrontendScheduler {
@@ -105,7 +105,7 @@ Rules (from design.md):
 
 ### 3.4 Security & Logging Constraints
 
-Per [first-principles.md](../../../../docs/global/first-principles.md):
+Per [first-principles.md](../../../global/first-principles.md):
 
 - **No debug logs**: Scheduler, InvokeThrottler, and kernel modules MUST NOT use `console.log`, `print`, or equivalent in production paths. Use domain-specific loggers only.
 - **No secrets in telemetry**: Telemetry events must not contain tokens, passwords, secret keys, or PII. Error telemetry includes context + error code but never credential material.

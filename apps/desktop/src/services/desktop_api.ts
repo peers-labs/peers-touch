@@ -37,7 +37,6 @@ import {
   LeaveGroupResponseSchema,
   TransferGroupOwnershipResponseSchema,
   DissolveGroupResponseSchema,
-  GetGroupMembersResponseSchema,
   RemoveMemberResponseSchema,
   UpdateMemberResponseSchema,
   RecallGroupMessageResponseSchema,
@@ -248,7 +247,7 @@ export interface GroupChatFederatedActorInput {
 }
 
 interface GroupChatFederatedActorWireInput {
-  actor_did: string;
+  actor_ptid: string;
   home_station_peer_id: string;
   home_station_domain?: string;
   federated_handle?: string;
@@ -574,7 +573,7 @@ function normalizeGroupChatFederatedActors(
     return undefined;
   }
   return actors.map((actor) => ({
-    actor_did: actor.ptid,
+    actor_ptid: actor.ptid,
     home_station_peer_id: actor.homeStationPeerId,
     home_station_domain: actor.homeStationDomain,
     federated_handle: actor.federatedHandle,
@@ -656,7 +655,7 @@ export type PresenceTrigger =
 
 /** Payload emitted by Rust on `presence:transition` Tauri events. */
 export interface PresenceTransitionEvent {
-  actor_id: string;
+  actor_ptid: string;
   from: 'offline' | 'online';
   to: 'offline' | 'online';
   trigger: PresenceTrigger;
@@ -678,7 +677,7 @@ export interface OssUploadLocalFileInput {
   chat_session_id?: string | null;
 }
 
-export interface AgentUploadAttachmentBytesInput {
+export interface OssUploadAttachmentBytesInput {
   filename: string;
   mime_type: string;
   bytes: number[];
@@ -697,6 +696,8 @@ export interface AgentAttachmentRefInput {
   expires_at: string;
   extracted_content_ref: string;
 }
+
+export type AgentUploadAttachmentBytesInput = OssUploadAttachmentBytesInput;
 
 /**
  * Payload returned by `oss_upload_local_file` /
@@ -826,7 +827,7 @@ export interface OssFileMeta {
   mime: string;
   backend: string;
   bucket_id: string;
-  owner_actor_id: string;
+  owner_actor_ptid: string;
   visibility: OssVisibility | string;
   chat_session_id?: string;
   expires_at?: string | null;
@@ -1321,8 +1322,8 @@ export interface AppletStoreBundleStorage {
 }
 
 export interface AppletStoreInstallState {
-  actorId?: string;
-  actor_id?: string;
+  actorPtid?: string;
+  actor_ptid?: string;
   deviceId?: string;
   device_id?: string;
   appletId?: string;
@@ -2137,13 +2138,29 @@ export interface SettingsGetPayload extends TauriStubPayload {
 }
 
 export interface AuthSessionResponse extends TauriStubPayload {
-  actor_id?: string;
-  ptid?: string;
+  actor_ptid: string | null;
   name?: string;
   email?: string;
   avatar_url?: string;
   avatar_local_path?: string;
   login_method?: string;
+}
+
+export interface MessagingAcceptanceInteractionSnapshot {
+  actorPtid: string;
+  conversationId: string;
+  messageId: string;
+  projection: Record<string, unknown> | null;
+  intent: Record<string, unknown> | null;
+  outbox: Record<string, unknown> | null;
+  directSessions: Array<Record<string, unknown>>;
+  commandLedger: Array<Record<string, unknown>>;
+  reactions: Array<Record<string, unknown>>;
+  pins: Array<Record<string, unknown>>;
+  readCursors: Array<Record<string, unknown>>;
+  consumptionCount: number;
+  laneSequence: number;
+  consumerEpoch: number;
 }
 
 export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
@@ -3280,7 +3297,7 @@ export interface AppletInvokeInput {
 export interface AppletProductWindowLaunchContext {
   enabled: boolean;
   appletId?: string;
-  actorId?: string;
+  actorPtid?: string;
   name?: string;
   email?: string;
   loginMethod?: string;
@@ -3547,14 +3564,20 @@ export const api = {
   authLogout: () =>
     invokeAuthCommand<void>('auth_logout'),
 
+  acceptanceLogoutWindowSession: (expectedActorPtid: string) =>
+    invokeAuthCommand<{ expected_actor_ptid: string }>(
+      'acceptance_logout_window_session',
+      { expected_actor_ptid: expectedActorPtid },
+    ),
+
   authRestoreSession: () =>
     invokeAuthCommand<void>('auth_restore_session'),
 
   authValidateToken: (input: AuthValidateTokenInput) =>
     invokeAuthCommand<AuthValidateTokenInput>('auth_validate_token', input),
 
-  ensureStationSession: () =>
-    invokeAuthCommand<void>('ensure_station_session'),
+  ensureStationSession: (sessionId: string) =>
+    invokeAuthCommand<OAuthLoopbackPollInput>('ensure_station_session', { session_id: sessionId }),
 
   settingsGet: (input: SettingsGetInput) =>
     invokeRustCommand<SettingsGetInput, SettingsGetPayload>('settings_get', input),
@@ -3586,10 +3609,10 @@ export const api = {
   profileGet: () =>
     invokeRustDataFromStatus<void, AccountProfile>('profile_get'),
 
-  // Fetch a peer actor's public profile by DID (numeric actor id).
+  // Fetch a peer actor's public profile by canonical PTID.
   // Used by Contacts/Chat detail panels to render rich peer profile cards.
-  peerProfileGet: (did: string) =>
-    invokeRustDataFromStatus<{ did: string }, AccountProfile>('peer_profile_get', { did }),
+  peerProfileGet: (actorPtid: string) =>
+    invokeRustDataFromStatus<{ actor_ptid: string }, AccountProfile>('peer_profile_get', { actor_ptid: actorPtid }),
 
   profileUpdate: (input: ProfileUpdateInput) =>
     invokeRustDataFromStatus<ProfileUpdateInput, AccountProfile>('profile_update', input),
@@ -3661,6 +3684,12 @@ export const api = {
   ossUploadLocalFile: (input: OssUploadLocalFileInput) =>
     invokeRustDataFromStatus<OssUploadLocalFileInput, OssAttachmentUploaded>(
       'oss_upload_local_file',
+      input,
+    ),
+
+  ossUploadAttachmentBytes: (input: OssUploadAttachmentBytesInput) =>
+    invokeRustDataFromStatus<OssUploadAttachmentBytesInput, OssAttachmentUploaded>(
+      'oss_upload_attachment_bytes',
       input,
     ),
 
@@ -4186,7 +4215,7 @@ export const api = {
     invokeRustDataFromStatus<void, { account: AccountIdentity | null }>('account_get_active').then((r) => r.account),
 
   accountSwitch: (id: string) =>
-    invokeRustDataFromStatus<AccountIdInput, { ok: boolean }>('account_switch', { id }),
+    invokeAuthCommand<AccountIdInput>('account_switch', { id }),
 
   accountUpsertOAuth: (input: AccountUpsertOAuthInput) =>
     invokeRustDataFromStatus<AccountUpsertOAuthInput, { ok: boolean; active_account_id: string }>('account_upsert_oauth', input),
@@ -5148,6 +5177,8 @@ export const api = {
       status: 'pending' | 'completed' | 'failed' | 'expired';
       callback_url?: string;
       error?: string;
+      account_id?: string;
+      actor_id?: string;
     }>(
       'oauth2_poll_loopback',
       { session_id: sessionId },
@@ -5320,14 +5351,26 @@ export const api = {
   // ── Actor API ──
 
   actorSearchActors: async (query: string) => {
-    const data = await invokeRustDataFromStatus<{ q: string }, { items: any[]; total: number }>(
+    const data = await invokeRustDataFromStatus<
+      { q: string },
+      {
+        items: Array<{
+          actorPtid: string;
+          username: string;
+          displayName: string;
+          email?: string;
+          avatar?: string;
+        }>;
+        total: number;
+      }
+    >(
       'actor_search_actors', { q: query },
     );
     return { items: data?.items || [], total: data?.total || 0 };
   },
 
   actorGetMyProfile: async () => {
-    const data = await invokeRustDataFromStatus<void, { id: string; displayName: string; username: string; avatar: string }>(
+    const data = await invokeRustDataFromStatus<void, { actorPtid: string; displayName: string; username: string; avatar: string }>(
       'actor_get_my_profile',
     );
     return data;
@@ -5417,13 +5460,13 @@ export const api = {
    * contract and the per-window device id semantics.
    */
   realtimeStreamStart: () =>
-    invokeRustDataFromStatus<void, { actor_id: string; device_id: string }>(
+    invokeRustDataFromStatus<void, { actor_ptid: string; device_id: string }>(
       'realtime_stream_start',
     ),
 
   /** Cancel the realtime SSE consumer for the current actor. */
   realtimeStreamStop: () =>
-    invokeRustDataFromStatus<void, { actor_id: string | null }>('realtime_stream_stop'),
+    invokeRustDataFromStatus<void, { actor_ptid: string | null }>('realtime_stream_stop'),
 
   /**
    * Publish one WebRTC signaling event onto the recipient's realtime
@@ -5437,21 +5480,21 @@ export const api = {
    * Station never decrypts the payload.
    */
   realtimeSignalSend: (
-    recipientActorId: string,
+    recipientActorPtid: string,
     sessionUlid: string,
     kind: RealtimeCallSignalKind,
     payloadB64: string,
   ) =>
     invokeRustDataFromStatus<
       {
-        recipient_actor_id: string;
+        recipient_actor_ptid: string;
         session_ulid: string;
         kind: string;
         payload_b64: string;
       },
       Record<string, unknown>
     >('realtime_signal_send', {
-      recipient_actor_id: recipientActorId,
+      recipient_actor_ptid: recipientActorPtid,
       session_ulid: sessionUlid,
       kind,
       payload_b64: payloadB64,
@@ -5521,6 +5564,35 @@ export const api = {
       remove: options.remove ?? false,
     }),
 
+  messagingAcceptanceInteractionSnapshot: (input: {
+    actorPtid: string;
+    conversationId: string;
+    messageId: string;
+    commandId?: string;
+  }) =>
+    invokeRustData<
+      {
+        expected_actor_ptid: string;
+        conversation_id: string;
+        message_id: string;
+        command_id: string;
+      },
+      MessagingAcceptanceInteractionSnapshot
+    >('messaging_acceptance_interaction_snapshot', {
+      expected_actor_ptid: input.actorPtid,
+      conversation_id: input.conversationId,
+      message_id: input.messageId,
+      command_id: input.commandId ?? '',
+    }),
+
+  messagingAcceptanceCurrentEndpoint: (expectedActorPtid: string) =>
+    invokeRustData<
+      { expected_actor_ptid: string },
+      { actor_ptid: string; device_id: string }
+    >('messaging_acceptance_current_endpoint', {
+      expected_actor_ptid: expectedActorPtid,
+    }),
+
   /**
    * Seal a WebRTC signaling plaintext (canonical JSON for SDP /
    * candidate / hangup) into the standalone signaling envelope
@@ -5574,13 +5646,13 @@ export const api = {
   groupChatCreateGroup: (
     name: string,
     description?: string,
-    memberDids?: string[],
+    memberPtids?: string[],
     initialFederatedMembers?: GroupChatFederatedActorInput[],
   ) =>
     invokeRustProto('group_chat_create_group', CreateGroupResponseSchema, {
       name,
       description,
-      member_dids: memberDids,
+      member_ptids: memberPtids,
       initial_federated_members: normalizeGroupChatFederatedActors(initialFederatedMembers),
     }),
 
@@ -5595,8 +5667,8 @@ export const api = {
       avatar_cid: avatarCid,
     }),
 
-  groupChatInviteToGroup: (groupUlid: string, memberDids: string[]) =>
-    invokeRustProto('group_chat_invite_to_group', InviteToGroupResponseSchema, { group_ulid: groupUlid, member_dids: memberDids }),
+  groupChatInviteToGroup: (groupUlid: string, memberPtids: string[]) =>
+    invokeRustProto('group_chat_invite_to_group', InviteToGroupResponseSchema, { group_ulid: groupUlid, member_ptids: memberPtids }),
 
   groupChatAddFederatedMember: (groupUlid: string, member: GroupChatFederatedActorInput) =>
     invokeRustDataFromStatus<{
@@ -5613,25 +5685,22 @@ export const api = {
   groupChatLeaveGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_leave_group', LeaveGroupResponseSchema, { group_ulid: groupUlid }),
 
-  groupChatTransferOwnership: (groupUlid: string, nextOwnerDid: string) =>
+  groupChatTransferOwnership: (groupUlid: string, nextOwnerPtid: string) =>
     invokeRustProto('group_chat_transfer_ownership', TransferGroupOwnershipResponseSchema, {
       group_ulid: groupUlid,
-      next_owner_did: nextOwnerDid,
+      next_owner_ptid: nextOwnerPtid,
     }),
 
   groupChatDissolveGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_dissolve_group', DissolveGroupResponseSchema, { group_ulid: groupUlid }),
 
-  groupChatGetMembers: (groupUlid: string, limit?: number, offset?: number) =>
-    invokeRustProto('group_chat_get_members', GetGroupMembersResponseSchema, { group_ulid: groupUlid, limit, offset }),
+  groupChatRemoveMember: (groupUlid: string, memberPtid: string) =>
+    invokeRustProto('group_chat_remove_member', RemoveMemberResponseSchema, { group_ulid: groupUlid, member_ptid: memberPtid }),
 
-  groupChatRemoveMember: (groupUlid: string, memberDid: string) =>
-    invokeRustProto('group_chat_remove_member', RemoveMemberResponseSchema, { group_ulid: groupUlid, member_did: memberDid }),
-
-  groupChatUpdateMember: (groupUlid: string, memberDid: string, input: { role?: number; muted?: boolean; mutedUntilUnixMs?: number }) =>
+  groupChatUpdateMember: (groupUlid: string, memberPtid: string, input: { role?: number; muted?: boolean; mutedUntilUnixMs?: number }) =>
     invokeRustProto('group_chat_update_member', UpdateMemberResponseSchema, {
       group_ulid: groupUlid,
-      member_did: memberDid,
+      member_ptid: memberPtid,
       ...(input.role !== undefined ? { role: input.role } : {}),
       ...(input.muted !== undefined ? { muted: input.muted } : {}),
       ...(input.mutedUntilUnixMs !== undefined ? { muted_until_unix_ms: input.mutedUntilUnixMs } : {}),
@@ -5709,11 +5778,11 @@ export const api = {
       bundle,
     ),
 
-  keyExchangeFetchBundle: (did: string, deviceId?: string, homeStationPeerId?: string) =>
-    invokeRustDataFromStatus<{ did: string; device_id?: string; home_station_peer_id?: string }, KeyExchangeFetchBundlesResponse>(
+  keyExchangeFetchBundle: (ptid: string, deviceId?: string, homeStationPeerId?: string) =>
+    invokeRustDataFromStatus<{ ptid: string; device_id?: string; home_station_peer_id?: string }, KeyExchangeFetchBundlesResponse>(
       'key_exchange_fetch_bundle',
       {
-        did,
+        ptid,
         ...(deviceId != null && deviceId !== '' ? { device_id: deviceId } : {}),
         ...(homeStationPeerId != null && homeStationPeerId !== '' ? { home_station_peer_id: homeStationPeerId } : {}),
       },
@@ -5738,8 +5807,8 @@ export const api = {
 
   // ── Friend Request (social domain) ──
 
-  socialFriendRequestSend: (receiverDid: string, message?: string) =>
-    invokeRustProto('social_friend_request_send', SendFriendRequestResponseSchema, { receiver_did: receiverDid, message }),
+  socialFriendRequestSend: (receiverPtid: string, message?: string) =>
+    invokeRustProto('social_friend_request_send', SendFriendRequestResponseSchema, { receiver_ptid: receiverPtid, message }),
 
   socialFriendRequestAccept: (requestId: string) =>
     invokeRustProto('social_friend_request_accept', AcceptFriendRequestResponseSchema, { request_id: requestId }),
@@ -5891,7 +5960,7 @@ export interface CryptoKeyBundlePayload {
 
 /** One device-published bundle from Station (`FetchKeyBundleResponse.bundles`). */
 export interface KeyExchangeWireBundle {
-  did: string;
+  ptid: string;
   device_id: string;
   ik_pub: string;
   /** SHA-256 hex over raw IK bytes; added by the desktop stub (not on wire proto). */
@@ -5907,7 +5976,7 @@ export interface KeyExchangeFetchBundlesResponse {
   bundles: KeyExchangeWireBundle[];
 }
 
-/** Most recently published bundle for a DID (server returns `published_at` desc). */
+/** Most recently published bundle for a PTID (server returns `published_at` desc). */
 export function pickLatestKeyExchangeBundle(
   res: KeyExchangeFetchBundlesResponse | null | undefined,
 ): KeyExchangeWireBundle | undefined {
@@ -5917,8 +5986,8 @@ export function pickLatestKeyExchangeBundle(
 
 export interface FriendRequestData {
   id: string;
-  senderId: string;
-  receiverId: string;
+  senderPtid: string;
+  receiverPtid: string;
   status: number;
   message: string;
   createdAt: string;
@@ -5927,8 +5996,8 @@ export interface FriendRequestData {
 
 export interface NotificationData {
   id: string;
-  recipientId: string;
-  actorId: string;
+  recipientPtid: string;
+  actorPtid: string;
   type: number;
   category: number;
   status: number;
@@ -5962,7 +6031,7 @@ export interface NotificationUnreadCountsResponse {
 }
 
 export interface NotificationPreferenceData {
-  actorId: string;
+  actorPtid: string;
   category: number;
   enabled: boolean;
   pushEnabled: boolean;

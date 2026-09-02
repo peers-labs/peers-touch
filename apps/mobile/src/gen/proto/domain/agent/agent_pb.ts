@@ -398,6 +398,11 @@ export type Conversation = Message<"peers_touch.model.agent.v1.Conversation"> & 
   agentId: string;
 
   /**
+   * @generated from field: string actor_ptid = 3;
+   */
+  actorPtid: string;
+
+  /**
    * @generated from field: string title = 4;
    */
   title: string;
@@ -696,9 +701,9 @@ export type Agent = Message<"peers_touch.model.agent.v1.Agent"> & {
   visibility: AgentVisibility;
 
   /**
-   * @generated from field: string owner_actor_id = 9;
+   * @generated from field: string owner_actor_ptid = 9;
    */
-  ownerActorId: string;
+  ownerActorPtid: string;
 
   /**
    * @generated from field: string config_json = 10;

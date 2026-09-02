@@ -65,11 +65,11 @@ func (s *ChatTaskService) getDB(ctx context.Context) (*gorm.DB, error) {
 
 // EnsureChatTask returns the root TaskRun id for a conversation, creating it on
 // first use. The unique index on conversation_id guarantees a single root task.
-func (s *ChatTaskService) EnsureChatTask(ctx context.Context, actorID, agentID, conversationID, title string) (string, error) {
-	actorID = strings.TrimSpace(actorID)
+func (s *ChatTaskService) EnsureChatTask(ctx context.Context, actorPTID, agentID, conversationID, title string) (string, error) {
+	actorPTID = strings.TrimSpace(actorPTID)
 	conversationID = strings.TrimSpace(conversationID)
-	if actorID == "" || conversationID == "" {
-		return "", errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id and conversation_id are required", nil)
+	if actorPTID == "" || conversationID == "" {
+		return "", errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_ptid and conversation_id are required", nil)
 	}
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -91,7 +91,7 @@ func (s *ChatTaskService) EnsureChatTask(ctx context.Context, actorID, agentID, 
 		Title:          strings.TrimSpace(title),
 		Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		OwnerActorID:   actorID,
+		OwnerActorPTID: actorPTID,
 		ConversationID: conversationID,
 		CreatedAt:      now,
 		StartedAt:      now,

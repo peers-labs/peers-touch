@@ -710,6 +710,13 @@ pub struct OAuthLoopbackPollInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnsureStationSessionInput {
+    pub session_id: String,
+    pub account_id: String,
+    pub actor_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatListInput {
     pub limit: Option<u32>,
     pub offset: Option<u32>,
@@ -751,7 +758,7 @@ pub struct KeyExchangeFetchInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatCreateSessionInput {
-    pub participant_did: String,
+    pub participant_ptid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -819,7 +826,7 @@ pub struct ChatScopeCursorSetInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendRequestSendInput {
-    pub receiver_did: String,
+    pub receiver_ptid: String,
     pub message: Option<String>,
 }
 

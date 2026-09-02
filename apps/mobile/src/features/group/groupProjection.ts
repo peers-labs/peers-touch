@@ -53,7 +53,7 @@ export function projectMobileGroupIMConversation(conversation: GroupConversation
       ? {
         content: conversation.lastMessage.content || conversation.lastMessage.attachments?.[0]?.filename || '',
         type: Number(conversation.lastMessage.type ?? 1),
-        senderId: conversation.lastMessage.senderDid ?? '',
+        senderPtid: conversation.lastMessage.senderPtid ?? '',
       }
       : undefined,
   });
@@ -67,7 +67,7 @@ export function projectMobileGroupIMMessage(
     id: message.ulid ?? '',
     conversationKind: 'group',
     conversationId,
-    senderId: message.senderDid ?? '',
+    senderPtid: message.senderPtid ?? '',
     type: Number(message.type ?? 1),
     content: message.content,
     attachments: message.attachments ?? [],

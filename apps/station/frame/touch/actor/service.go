@@ -70,7 +70,7 @@ func GetActorByEmail(ctx context.Context, email string) (*db.Actor, error) {
 	return &actor, nil
 }
 
-// GetActorByPTID retrieves an actor by their PTID (Peers-Touch ID / DID)
+// GetActorByPTID retrieves an actor by their PTID (Peers-Touch ID / PTID)
 func GetActorByPTID(ctx context.Context, ptid string) (*db.Actor, error) {
 	rds, err := store.GetRDS(ctx)
 	if err != nil {

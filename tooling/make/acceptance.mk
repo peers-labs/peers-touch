@@ -1,13 +1,14 @@
 # ─── Acceptance Framework ───────────────────────────────────────
 
 .PHONY: acceptance-plan acceptance-run acceptance-run-ci acceptance-run-local-evidence \
-        acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate \
-        acceptance-infra-validate \
+        acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-infra-validate acceptance-validate \
         acceptance-driver-build acceptance-driver-smoke \
+        acceptance-cell-ready acceptance-cell-status acceptance-cell-logs acceptance-cell-stop \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-desktop-gateway \
         acceptance-chat-native-static acceptance-chat-native-two-client \
-        acceptance-chat-native-interactions acceptance-chat-native-typing \
+        acceptance-chat-native-interactions acceptance-chat-native-product-closure \
+        acceptance-chat-native-typing \
         acceptance-chat-native-multi-device acceptance-chat-native-recovery \
         acceptance-chat-native-group-mls acceptance-chat-native-w8 \
         acceptance-chat-contact-message-resilience \
@@ -32,9 +33,11 @@
         federation-dashboard-operational-drilldown federation-desktop-gateway-smoke
 
 ACCEPTANCE_RANGE ?= HEAD
-ACCEPTANCE_PLAN ?= tooling/acceptance/reports/latest-plan.json
-ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),--plan $(ACCEPTANCE_PLAN))
+ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),)
 ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
+CELL ?= desktop-linux-native
+CELL_GATE ?= runtime-cell-preflight
+RUNTIME_CELL ?= desktop-macos-native
 
 acceptance-driver-build:
 	VITE_ACCEPTANCE_HARNESS=1 pnpm --dir apps/desktop run build
@@ -49,8 +52,24 @@ acceptance-driver-build:
 acceptance-driver-smoke:
 	python3 -m tooling.acceptance.drivers.tauri
 
+acceptance-cell-ready:
+	python3 tooling/scripts/acceptance-cell.py ready \
+		--cell "$(CELL)" \
+		--gate "$(CELL_GATE)"
+
+acceptance-cell-status:
+	python3 tooling/scripts/acceptance-cell.py status --cell "$(CELL)"
+
+acceptance-cell-logs:
+	python3 tooling/scripts/acceptance-cell.py logs --cell "$(CELL)"
+
+acceptance-cell-stop:
+	python3 tooling/scripts/acceptance-cell.py stop --cell "$(CELL)"
+
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)"
+	python3 tooling/scripts/acceptance-plan.py \
+		--root tooling/acceptance \
+		--range "$(ACCEPTANCE_RANGE)"
 
 acceptance-run:
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
@@ -71,9 +90,12 @@ acceptance-report:
 	python3 tooling/scripts/acceptance-report.py
 
 acceptance:
-	$(if $(PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)")
+	$(if $(PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)")
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 	python3 tooling/scripts/acceptance-report.py
+
+acceptance-infra-validate:
+	python3 tooling/scripts/acceptance-validate.py --infra
 
 acceptance-validate:
 	python3 tooling/scripts/acceptance-validate.py $(if $(DOMAIN),--domain $(DOMAIN),)
@@ -112,28 +134,57 @@ acceptance-chat-native-static:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-visible-static
 
 acceptance-chat-native-two-client:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-two-client-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-two-client-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-interactions:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-interactions-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-interactions-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
+
+acceptance-chat-native-product-closure:
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-product-closure-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-typing:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-typing-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-typing-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-multi-device:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-multi-device-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-multi-device-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-recovery:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-recovery-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-recovery-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-group-mls:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-group-mls-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-group-mls-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-contact-message-resilience:
-	python3 tooling/scripts/acceptance-run.py --gate chat-contact-message-resilience-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-contact-message-resilience-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-w8:
-	python3 tooling/scripts/acceptance-run.py \
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--runtime-cell "$(RUNTIME_CELL)" \
 		--gate chat-native-two-client-e2e \
 		--gate chat-native-interactions-e2e \
 		--gate chat-native-typing-e2e \
@@ -146,8 +197,10 @@ acceptance-chat-w11:
 		--contract tooling/acceptance/closures/messaging-w11.yaml \
 		--output tooling/acceptance/plans/chat-w11-closure.json \
 		--manifest-output tooling/acceptance/reports/w11-contract-manifest.json
-	python3 tooling/scripts/acceptance-run.py \
-		--plan tooling/acceptance/plans/chat-w11-closure.json
+	PT_ACCEPTANCE_RUNTIME_CELL="desktop-linux-native" \
+		python3 tooling/scripts/acceptance-run.py \
+		--plan tooling/acceptance/plans/chat-w11-closure.json \
+		--runtime-cell "desktop-linux-native"
 
 acceptance-desktop-anchor-inventory:
 	python3 tooling/scripts/acceptance-run.py --gate desktop-anchor-inventory-gate

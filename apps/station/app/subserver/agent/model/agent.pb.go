@@ -3022,9 +3022,9 @@ func (x *Agent) GetVisibility() AgentVisibility {
 	return AgentVisibility_AGENT_VISIBILITY_UNSPECIFIED
 }
 
-func (x *Agent) GetOwnerActorId() string {
+func (x *Agent) GetOwnerActorPtid() string {
 	if x != nil {
-		return x.OwnerActorId
+		return x.OwnerActorPtid
 	}
 	return ""
 }
@@ -13303,8 +13303,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x06effort\x18\a \x01(\tR\x06effort\x12K\n" +
 	"\n" +
 	"visibility\x18\b \x01(\x0e2+.peers_touch.model.agent.v1.AgentVisibilityR\n" +
-	"visibility\x12$\n" +
-	"\x0eowner_actor_id\x18\t \x01(\tR\fownerActorId\x12\x1f\n" +
+	"visibility\x12(\n" +
+	"\x10owner_actor_ptid\x18\t \x01(\tR\x0eownerActorPtid\x12\x1f\n" +
 	"\vconfig_json\x18\n" +
 	" \x01(\tR\n" +
 	"configJson\x129\n" +

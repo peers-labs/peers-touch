@@ -545,16 +545,16 @@ type atelierMilestoneRecord struct {
 
 func (s *AtelierProjectionService) LoadWorkspace(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *LoadAtelierWorkspaceRequest,
 ) (*AtelierProjectionSnapshot, error) {
 	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to open agent db", err)
 	}
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID = strings.TrimSpace(actorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	if req == nil {
 		req = &LoadAtelierWorkspaceRequest{}
@@ -570,7 +570,7 @@ func (s *AtelierProjectionService) LoadWorkspace(
 
 	var taskRecords []persistence.CollaborationTask
 	if err := db.WithContext(ctx).
-		Where("goal_owner_id = ?", actorID).
+		Where("goal_owner_ptid = ?", actorPTID).
 		Order("created_at DESC").
 		Limit(pageSize).
 		Find(&taskRecords).Error; err != nil {
@@ -608,7 +608,7 @@ func (s *AtelierProjectionService) LoadWorkspace(
 
 func (s *AtelierProjectionService) CreateProjectFromGoal(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *CreateAtelierProjectFromGoalRequest,
 ) (*AtelierProjectionSnapshot, error) {
 	if err := enforce_canvas_single_agent_readiness(); err != nil {
@@ -617,9 +617,9 @@ func (s *AtelierProjectionService) CreateProjectFromGoal(
 	if s.orchestrationService == nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "orchestration service is not configured", nil)
 	}
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID = strings.TrimSpace(actorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	if req == nil {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "request is required", nil)
@@ -667,7 +667,7 @@ func (s *AtelierProjectionService) CreateProjectFromGoal(
 			return nil, err
 		}
 	}
-	task, _, err := s.orchestrationService.CreateCollaborationTask(ctx, actorID, &model.CreateCollaborationTaskRequest{
+	task, _, err := s.orchestrationService.CreateCollaborationTask(ctx, actorPTID, &model.CreateCollaborationTaskRequest{
 		Title:        goal,
 		Description:  goal,
 		EngineType:   engineType,
@@ -678,7 +678,7 @@ func (s *AtelierProjectionService) CreateProjectFromGoal(
 	if err != nil {
 		return nil, err
 	}
-	return s.LoadWorkspace(ctx, actorID, &LoadAtelierWorkspaceRequest{SelectedTaskID: task.GetTaskId()})
+	return s.LoadWorkspace(ctx, actorPTID, &LoadAtelierWorkspaceRequest{SelectedTaskID: task.GetTaskId()})
 }
 
 func atelierEngineTypeFromFlowID(flowID string) (model.CollaborationEngineType, error) {
@@ -798,15 +798,15 @@ func atelierProviderPlanFromCreateRequest(agentIDs []string, run AtelierRunTarge
 
 func (s *AtelierProjectionService) SendMessage(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *SendAtelierMessageRequest,
 ) (*AtelierProjectionSnapshot, error) {
 	if s.orchestrationService == nil || s.orchestrationService.eventWriter == nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "orchestration event writer is not configured", nil)
 	}
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID = strings.TrimSpace(actorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	if req == nil {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "request is required", nil)
@@ -820,18 +820,18 @@ func (s *AtelierProjectionService) SendMessage(
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "text is required", nil)
 	}
 
-	task, err := loadOwnedAtelierTask(ctx, actorID, taskID)
+	task, err := loadOwnedAtelierTask(ctx, actorPTID, taskID)
 	if err != nil {
 		return nil, err
 	}
-	agentID := atelierFirstNonEmpty(firstAgentID(taskRecordToProto(task).GetMeta()), actorID)
+	agentID := atelierFirstNonEmpty(firstAgentID(taskRecordToProto(task).GetMeta()), actorPTID)
 	payload := map[string]interface{}{
 		"source":         "atelier.message.send",
 		"block_kind":     "user",
 		"text":           text,
 		"result_summary": text,
 		"task_id":        taskID,
-		"actor_id":       actorID,
+		"actor_ptid":     actorPTID,
 	}
 	s.orchestrationService.eventWriter.Publish(
 		ctx,
@@ -843,12 +843,12 @@ func (s *AtelierProjectionService) SendMessage(
 		"",
 		map[string]string{"atelier_source": "message.send"},
 	)
-	return s.LoadWorkspace(ctx, actorID, &LoadAtelierWorkspaceRequest{SelectedTaskID: taskID})
+	return s.LoadWorkspace(ctx, actorPTID, &LoadAtelierWorkspaceRequest{SelectedTaskID: taskID})
 }
 
 func (s *AtelierProjectionService) ResolveDecision(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *ResolveAtelierDecisionRequest,
 ) (*AtelierProjectionSnapshot, error) {
 	if err := enforce_canvas_single_agent_readiness(); err != nil {
@@ -857,9 +857,9 @@ func (s *AtelierProjectionService) ResolveDecision(
 	if s.orchestrationService == nil || s.orchestrationService.eventWriter == nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "orchestration event writer is not configured", nil)
 	}
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID = strings.TrimSpace(actorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	if req == nil {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "request is required", nil)
@@ -876,11 +876,11 @@ func (s *AtelierProjectionService) ResolveDecision(
 	if choice == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "choice is required", nil)
 	}
-	task, err := loadOwnedAtelierTask(ctx, actorID, taskID)
+	task, err := loadOwnedAtelierTask(ctx, actorPTID, taskID)
 	if err != nil {
 		return nil, err
 	}
-	agentID := atelierFirstNonEmpty(firstAgentID(taskRecordToProto(task).GetMeta()), actorID)
+	agentID := atelierFirstNonEmpty(firstAgentID(taskRecordToProto(task).GetMeta()), actorPTID)
 	payload := map[string]interface{}{
 		"source":              "atelier.escalation.resolve",
 		"block_kind":          "decision_resolved",
@@ -888,13 +888,13 @@ func (s *AtelierProjectionService) ResolveDecision(
 		"block_id":            blockID,
 		"choice":              choice,
 		"task_id":             taskID,
-		"actor_id":            actorID,
+		"actor_ptid":          actorPTID,
 		"description":         fmt.Sprintf("用户选择：%s", choice),
 		"resume_payload_json": mustJSON(map[string]string{"choice": choice, "block_id": blockID}),
 	}
 	if _, _, err := s.orchestrationService.ResolveCollaborationInterrupt(
 		ctx,
-		actorID,
+		actorPTID,
 		agentID,
 		taskID,
 		"atelier.escalation.resolve",
@@ -902,17 +902,17 @@ func (s *AtelierProjectionService) ResolveDecision(
 	); err != nil {
 		return nil, err
 	}
-	return s.LoadWorkspace(ctx, actorID, &LoadAtelierWorkspaceRequest{SelectedTaskID: taskID})
+	return s.LoadWorkspace(ctx, actorPTID, &LoadAtelierWorkspaceRequest{SelectedTaskID: taskID})
 }
 
 func (s *AtelierProjectionService) SetTaskStatus(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *SetAtelierTaskStatusRequest,
 ) (*AtelierProjectionSnapshot, error) {
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID = strings.TrimSpace(actorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	if req == nil {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "request is required", nil)
@@ -925,7 +925,7 @@ func (s *AtelierProjectionService) SetTaskStatus(
 	if status != strings.TrimSpace(req.Status) {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "status must be active, archived, or deleted", nil)
 	}
-	task, err := loadOwnedAtelierTask(ctx, actorID, taskID)
+	task, err := loadOwnedAtelierTask(ctx, actorPTID, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -939,21 +939,21 @@ func (s *AtelierProjectionService) SetTaskStatus(
 	}
 	if err := db.WithContext(ctx).
 		Model(&persistence.CollaborationTask{}).
-		Where("id = ? AND goal_owner_id = ?", taskID, actorID).
+		Where("id = ? AND goal_owner_ptid = ?", taskID, actorPTID).
 		Update("meta_json", string(nextMeta)).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to update Atelier task status", err)
 	}
-	return s.LoadWorkspace(ctx, actorID, &LoadAtelierWorkspaceRequest{SelectedTaskID: taskID})
+	return s.LoadWorkspace(ctx, actorPTID, &LoadAtelierWorkspaceRequest{SelectedTaskID: taskID})
 }
 
 func (s *AtelierProjectionService) PurgeTask(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *PurgeAtelierTaskRequest,
 ) (*AtelierProjectionSnapshot, error) {
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID = strings.TrimSpace(actorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	if req == nil {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "request is required", nil)
@@ -962,7 +962,7 @@ func (s *AtelierProjectionService) PurgeTask(
 	if taskID == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "taskId is required", nil)
 	}
-	task, err := loadOwnedAtelierTask(ctx, actorID, taskID)
+	task, err := loadOwnedAtelierTask(ctx, actorPTID, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -974,22 +974,22 @@ func (s *AtelierProjectionService) PurgeTask(
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to open agent db", err)
 	}
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return purgeAtelierTaskRecordsTx(ctx, tx, actorID, taskID)
+		return purgeAtelierTaskRecordsTx(ctx, tx, actorPTID, taskID)
 	}); err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to purge Atelier task", err)
 	}
-	return s.LoadWorkspace(ctx, actorID, &LoadAtelierWorkspaceRequest{})
+	return s.LoadWorkspace(ctx, actorPTID, &LoadAtelierWorkspaceRequest{})
 }
 
 func (s *AtelierProjectionService) ProviderCapabilities(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *ListAtelierProviderCapabilitiesRequest,
 ) (*AtelierProviderCapabilitiesResponse, error) {
-	if strings.TrimSpace(actorID) == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	if strings.TrimSpace(actorPTID) == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
-	if err := s.recordAtelierFullE2EProviderRuntimeEvidence(ctx, actorID, req); err != nil {
+	if err := s.recordAtelierFullE2EProviderRuntimeEvidence(ctx, actorPTID, req); err != nil {
 		return nil, err
 	}
 	return &AtelierProviderCapabilitiesResponse{
@@ -1028,7 +1028,7 @@ func (s *AtelierProjectionService) ProviderCapabilities(
 
 func (s *AtelierProjectionService) recordAtelierFullE2EProviderRuntimeEvidence(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *ListAtelierProviderCapabilitiesRequest,
 ) error {
 	outputPath := strings.TrimSpace(os.Getenv(atelierFullE2EProviderRuntimeEvidenceEnv))
@@ -1048,7 +1048,7 @@ func (s *AtelierProjectionService) recordAtelierFullE2EProviderRuntimeEvidence(
 	if err != nil {
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to open agent db", err)
 	}
-	run, ok, err := loadAtelierFullE2EProviderRuntimeRun(ctx, db, actorID, req.TaskID)
+	run, ok, err := loadAtelierFullE2EProviderRuntimeRun(ctx, db, actorPTID, req.TaskID)
 	if err != nil {
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to inspect Atelier provider runtime evidence", err)
 	}
@@ -1078,14 +1078,14 @@ func (s *AtelierProjectionService) recordAtelierFullE2EProviderRuntimeEvidence(
 func loadAtelierFullE2EProviderRuntimeRun(
 	ctx context.Context,
 	db *gorm.DB,
-	actorID string,
+	actorPTID string,
 	taskID string,
 ) (*persistence.DirectRun, bool, error) {
 	query := db.WithContext(ctx).
 		Table("agent_direct_runs").
 		Select("agent_direct_runs.*").
 		Joins("JOIN agent_collaboration_tasks ON agent_collaboration_tasks.id = agent_direct_runs.task_id").
-		Where("agent_collaboration_tasks.goal_owner_id = ?", strings.TrimSpace(actorID)).
+		Where("agent_collaboration_tasks.goal_owner_ptid = ?", strings.TrimSpace(actorPTID)).
 		Where("agent_direct_runs.state = ?", "succeeded").
 		Where("agent_direct_runs.source = ?", collaborationProviderPlanSourceDirectRun)
 	if strings.TrimSpace(taskID) != "" {
@@ -1210,15 +1210,15 @@ func atelierDirectRunHasCheckpoint(ctx context.Context, db *gorm.DB, taskID stri
 
 func (s *AtelierProjectionService) SubmitFeedback(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *SubmitAtelierFeedbackRequest,
 ) (*SubmitAtelierFeedbackResponse, error) {
 	if s.orchestrationService == nil || s.orchestrationService.eventWriter == nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "orchestration event writer is not configured", nil)
 	}
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID = strings.TrimSpace(actorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	if req == nil {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "request is required", nil)
@@ -1235,11 +1235,11 @@ func (s *AtelierProjectionService) SubmitFeedback(
 	if signal == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "signal must be positive, negative, copy, or regenerate", nil)
 	}
-	task, err := loadOwnedAtelierTask(ctx, actorID, taskID)
+	task, err := loadOwnedAtelierTask(ctx, actorPTID, taskID)
 	if err != nil {
 		return nil, err
 	}
-	agentID := atelierFirstNonEmpty(firstAgentID(taskRecordToProto(task).GetMeta()), actorID)
+	agentID := atelierFirstNonEmpty(firstAgentID(taskRecordToProto(task).GetMeta()), actorPTID)
 	feedbackID := generateID("feedback")
 	memoryStatus, memoryReason, memoryFeeds := atelierFeedbackMemoryCandidatePolicy(signal)
 	memoryRequiresConfirmation := memoryStatus == "candidate"
@@ -1261,7 +1261,7 @@ func (s *AtelierProjectionService) SubmitFeedback(
 		"block_id":                     blockID,
 		"signal":                       signal,
 		"comment":                      strings.TrimSpace(req.Comment),
-		"actor_id":                     actorID,
+		"actor_ptid":                   actorPTID,
 		"memory_candidate_status":      memoryStatus,
 		"memory_candidate_reason":      memoryReason,
 		"memory_candidate_feeds":       memoryFeeds,
@@ -1304,7 +1304,7 @@ func (s *AtelierProjectionService) SubmitFeedback(
 
 func (s *AtelierProjectionService) ConfirmMemoryCandidate(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *ConfirmAtelierMemoryCandidateRequest,
 ) (*ConfirmAtelierMemoryCandidateResponse, error) {
 	if s.memoryService == nil {
@@ -1313,9 +1313,9 @@ func (s *AtelierProjectionService) ConfirmMemoryCandidate(
 	if s.orchestrationService == nil || s.orchestrationService.eventWriter == nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "orchestration event writer is not configured", nil)
 	}
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID = strings.TrimSpace(actorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	if req == nil {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "request is required", nil)
@@ -1328,7 +1328,7 @@ func (s *AtelierProjectionService) ConfirmMemoryCandidate(
 	if feedbackID == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "feedbackId is required", nil)
 	}
-	task, err := loadOwnedAtelierTask(ctx, actorID, taskID)
+	task, err := loadOwnedAtelierTask(ctx, actorPTID, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -1347,7 +1347,7 @@ func (s *AtelierProjectionService) ConfirmMemoryCandidate(
 	}
 	var existing persistence.Memory
 	if err := db.WithContext(ctx).
-		Where("agent_id = ? AND source_turn_id = ? AND source = ?", actorID, feedbackID, domain.MemorySourceReview).
+		Where("agent_id = ? AND source_turn_id = ? AND source = ?", actorPTID, feedbackID, domain.MemorySourceReview).
 		First(&existing).Error; err == nil {
 		return &ConfirmAtelierMemoryCandidateResponse{
 			Accepted:    true,
@@ -1364,7 +1364,7 @@ func (s *AtelierProjectionService) ConfirmMemoryCandidate(
 	}
 	content := atelierMemoryCandidateContent(task, payload)
 	memory, err := s.memoryService.AddMemory(ctx, domain.MemoryItem{
-		AgentID:      actorID,
+		AgentID:      actorPTID,
 		Target:       domain.MemoryTargetMemory,
 		Layer:        domain.MemoryLayerExperience,
 		Content:      content,
@@ -1376,7 +1376,7 @@ func (s *AtelierProjectionService) ConfirmMemoryCandidate(
 	if err != nil {
 		return nil, err
 	}
-	agentID := atelierFirstNonEmpty(firstAgentID(taskRecordToProto(task).GetMeta()), actorID)
+	agentID := atelierFirstNonEmpty(firstAgentID(taskRecordToProto(task).GetMeta()), actorPTID)
 	s.orchestrationService.eventWriter.Publish(
 		ctx,
 		agentID,
@@ -1386,7 +1386,7 @@ func (s *AtelierProjectionService) ConfirmMemoryCandidate(
 			"block_kind":                       "memory_candidate_confirmed",
 			"task_id":                          taskID,
 			"feedback_id":                      feedbackID,
-			"actor_id":                         actorID,
+			"actor_ptid":                       actorPTID,
 			"memory_id":                        memory.MemoryID,
 			"memory_candidate_status":          "confirmed",
 			"memory_confirmation_required":     false,
@@ -1415,7 +1415,7 @@ func (s *AtelierProjectionService) ConfirmMemoryCandidate(
 
 func (s *AtelierProjectionService) ConfirmRerun(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *ConfirmAtelierRerunRequest,
 ) (*ConfirmAtelierRerunResponse, error) {
 	if err := enforce_canvas_single_agent_readiness(); err != nil {
@@ -1432,9 +1432,9 @@ func (s *AtelierProjectionService) confirmRerunAfterCanvasReadiness(
 	if s.orchestrationService == nil || s.orchestrationService.eventWriter == nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "orchestration event writer is not configured", nil)
 	}
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID = strings.TrimSpace(actorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	if req == nil {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "request is required", nil)
@@ -1447,7 +1447,7 @@ func (s *AtelierProjectionService) confirmRerunAfterCanvasReadiness(
 	if feedbackID == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "feedbackId is required", nil)
 	}
-	task, err := loadOwnedAtelierTask(ctx, actorID, taskID)
+	task, err := loadOwnedAtelierTask(ctx, actorPTID, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -1479,11 +1479,11 @@ func (s *AtelierProjectionService) confirmRerunAfterCanvasReadiness(
 			Started:     atelierBoolValue(confirmed, "rerun_started"),
 		}, nil
 	}
-	rerunTask, _, started, err := s.orchestrationService.createConfirmedFeedbackRerun(ctx, db, actorID, task, feedbackID, payload)
+	rerunTask, _, started, err := s.orchestrationService.createConfirmedFeedbackRerun(ctx, db, actorPTID, task, feedbackID, payload)
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create Atelier rerun task", err)
 	}
-	agentID := atelierFirstNonEmpty(firstAgentID(taskRecordToProto(task).GetMeta()), actorID)
+	agentID := atelierFirstNonEmpty(firstAgentID(taskRecordToProto(task).GetMeta()), actorPTID)
 	s.orchestrationService.eventWriter.Publish(
 		ctx,
 		agentID,
@@ -1493,7 +1493,7 @@ func (s *AtelierProjectionService) confirmRerunAfterCanvasReadiness(
 			"block_kind":                    "rerun_confirmed",
 			"task_id":                       taskID,
 			"feedback_id":                   feedbackID,
-			"actor_id":                      actorID,
+			"actor_ptid":                    actorPTID,
 			"rerun_task_id":                 rerunTask.ID,
 			"rerun_intent_status":           "confirmed",
 			"rerun_confirmation_required":   false,
@@ -1526,7 +1526,7 @@ func (s *AtelierProjectionService) confirmRerunAfterCanvasReadiness(
 func (s *OrchestrationService) createConfirmedFeedbackRerun(
 	ctx context.Context,
 	db *gorm.DB,
-	actorID string,
+	actorPTID string,
 	sourceTask *persistence.CollaborationTask,
 	feedbackID string,
 	feedbackPayload map[string]interface{},
@@ -1538,7 +1538,7 @@ func (s *OrchestrationService) createConfirmedFeedbackRerun(
 	var rerunNodes []persistence.CollaborationTaskNode
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var txErr error
-		rerunTask, rerunNodes, txErr = cloneAtelierFeedbackRerunTaskTx(ctx, tx, actorID, sourceTask, feedbackID, feedbackPayload)
+		rerunTask, rerunNodes, txErr = cloneAtelierFeedbackRerunTaskTx(ctx, tx, actorPTID, sourceTask, feedbackID, feedbackPayload)
 		return txErr
 	}); err != nil {
 		return persistence.CollaborationTask{}, nil, false, err
@@ -1548,7 +1548,7 @@ func (s *OrchestrationService) createConfirmedFeedbackRerun(
 	s.publishTaskCreated(ctx, taskProto, nodeProtos)
 	started := s.agentService != nil && s.turnService != nil
 	if started {
-		s.startTaskExecution(actorID, rerunTask, rerunNodes, "atelier-feedback-rerun")
+		s.startTaskExecution(actorPTID, rerunTask, rerunNodes, "atelier-feedback-rerun")
 	}
 	return rerunTask, rerunNodes, started, nil
 }
@@ -1556,7 +1556,7 @@ func (s *OrchestrationService) createConfirmedFeedbackRerun(
 func cloneAtelierFeedbackRerunTaskTx(
 	ctx context.Context,
 	tx *gorm.DB,
-	actorID string,
+	actorPTID string,
 	sourceTask *persistence.CollaborationTask,
 	feedbackID string,
 	feedbackPayload map[string]interface{},
@@ -1564,7 +1564,7 @@ func cloneAtelierFeedbackRerunTaskTx(
 	var locked persistence.CollaborationTask
 	if err := tx.WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ? AND goal_owner_id = ?", sourceTask.ID, strings.TrimSpace(actorID)).
+		Where("id = ? AND goal_owner_ptid = ?", sourceTask.ID, strings.TrimSpace(actorPTID)).
 		First(&locked).Error; err != nil {
 		return persistence.CollaborationTask{}, nil, err
 	}
@@ -1586,7 +1586,7 @@ func cloneAtelierFeedbackRerunTaskTx(
 	rerunMeta["rerun_source_feedback_id"] = strings.TrimSpace(feedbackID)
 	rerunMeta["rerun_source_block_id"] = atelierStringValue(feedbackPayload, "block_id")
 	rerunMeta["rerun_source_signal"] = atelierStringValue(feedbackPayload, "signal")
-	rerunMeta["rerun_requested_by"] = strings.TrimSpace(actorID)
+	rerunMeta["rerun_requested_by"] = strings.TrimSpace(actorPTID)
 	rerunMeta["rerun_confirmed_at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	rerunMeta["agent_ids"] = mustJSONString(agentIDs)
 	rerunMeta["desktop_agent_ids"] = mustJSONString(agentIDs)
@@ -1596,20 +1596,20 @@ func cloneAtelierFeedbackRerunTaskTx(
 	now := time.Now()
 	metaJSON, _ := json.Marshal(rerunMeta)
 	rerunTask := persistence.CollaborationTask{
-		ID:           generateID("collab"),
-		Title:        locked.Title,
-		Description:  locked.Description,
-		EngineType:   locked.EngineType,
-		Status:       int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		GoalOwnerID:  strings.TrimSpace(actorID),
-		WorkspaceID:  locked.WorkspaceID,
-		BudgetTokens: locked.BudgetTokens,
-		BudgetMoney:  locked.BudgetMoney,
-		BudgetTimeMs: locked.BudgetTimeMs,
-		MetaJSON:     string(metaJSON),
-		CreatedAt:    now,
-		StartedAt:    now,
-		EndedAt:      now,
+		ID:            generateID("collab"),
+		Title:         locked.Title,
+		Description:   locked.Description,
+		EngineType:    locked.EngineType,
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		GoalOwnerPTID: strings.TrimSpace(actorPTID),
+		WorkspaceID:   locked.WorkspaceID,
+		BudgetTokens:  locked.BudgetTokens,
+		BudgetMoney:   locked.BudgetMoney,
+		BudgetTimeMs:  locked.BudgetTimeMs,
+		MetaJSON:      string(metaJSON),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	nodes := buildCollaborationTaskNodes(
 		rerunTask.ID,
@@ -1667,12 +1667,12 @@ func atelierRerunProviderPlanTx(ctx context.Context, tx *gorm.DB, taskID string,
 
 func (s *AtelierProjectionService) FetchArtifactBody(
 	ctx context.Context,
-	actorID string,
+	actorPTID string,
 	req *FetchAtelierArtifactBodyRequest,
 ) (*FetchAtelierArtifactBodyResponse, error) {
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID = strings.TrimSpace(actorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	if req == nil {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "request is required", nil)
@@ -1693,7 +1693,7 @@ func (s *AtelierProjectionService) FetchArtifactBody(
 	if bodyRef != canonicalBodyRef {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "bodyRef must match artifact://<taskId>/<artifactId>/body", nil)
 	}
-	if _, err := loadOwnedAtelierTask(ctx, actorID, taskID); err != nil {
+	if _, err := loadOwnedAtelierTask(ctx, actorPTID, taskID); err != nil {
 		return nil, err
 	}
 	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
@@ -1888,7 +1888,7 @@ func loadAtelierDirectRunBudgetUsage(ctx context.Context, db *gorm.DB, taskID st
 	return usage, nil
 }
 
-func purgeAtelierTaskRecordsTx(ctx context.Context, tx *gorm.DB, actorID string, taskID string) error {
+func purgeAtelierTaskRecordsTx(ctx context.Context, tx *gorm.DB, actorPTID string, taskID string) error {
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
 		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "task_id is required", nil)
@@ -1959,7 +1959,7 @@ func purgeAtelierTaskRecordsTx(ctx context.Context, tx *gorm.DB, actorID string,
 			return err
 		}
 	}
-	return tx.WithContext(ctx).Where("id = ? AND goal_owner_id = ?", taskID, strings.TrimSpace(actorID)).Delete(&persistence.CollaborationTask{}).Error
+	return tx.WithContext(ctx).Where("id = ? AND goal_owner_ptid = ?", taskID, strings.TrimSpace(actorPTID)).Delete(&persistence.CollaborationTask{}).Error
 }
 
 func BuildAtelierProjectionSnapshot(
@@ -2379,14 +2379,14 @@ func loadAtelierProjectPersistenceByTask(ctx context.Context, db *gorm.DB, taskI
 	return result, nil
 }
 
-func loadOwnedAtelierTask(ctx context.Context, actorID, taskID string) (*persistence.CollaborationTask, error) {
+func loadOwnedAtelierTask(ctx context.Context, actorPTID, taskID string) (*persistence.CollaborationTask, error) {
 	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to open agent db", err)
 	}
 	var task persistence.CollaborationTask
 	if err := db.WithContext(ctx).
-		Where("id = ? AND goal_owner_id = ?", taskID, actorID).
+		Where("id = ? AND goal_owner_ptid = ?", taskID, actorPTID).
 		First(&task).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "Atelier task not found", err)

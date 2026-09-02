@@ -1,3 +1,20 @@
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
+
+import {
+  verifyStationIdentityProof,
+  type VerifiedStationIdentity,
+} from '../../services/mobileCommands';
+import {
+  StationIdentityRequestSchema,
+  StationIdentityResponseSchema,
+} from '../../gen/proto/domain/peer/station_identity_pb';
+
+const REQUIRED_STATION_CAPABILITIES = [
+  'access-gate',
+  'actor-ptid',
+  'station-identity',
+] as const;
+
 export interface StationProbeResult {
   url: string;
   online: boolean;
@@ -38,6 +55,54 @@ export async function probeStation(url: string): Promise<StationProbeResult> {
     const detail = `${baseUrl} → ${raw}`;
     return { url: baseUrl, online: false, label: extractStationLabel(baseUrl), checkedAt, error: detail };
   }
+}
+
+export async function verifyStationIdentity(url: string): Promise<VerifiedStationIdentity> {
+  const requestedOrigin = canonicalOrigin(url);
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const request = create(StationIdentityRequestSchema, { challenge });
+  const response = await fetch(`${requestedOrigin}/sub-bootstrap/station-identity`, {
+    method: 'POST',
+    redirect: 'error',
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/x-protobuf',
+      'Content-Type': 'application/x-protobuf',
+    },
+    body: toBinary(StationIdentityRequestSchema, request),
+  });
+  if (!response.ok) {
+    throw new Error('mobile.launch.stationIdentityUnavailable');
+  }
+
+  const proof = fromBinary(
+    StationIdentityResponseSchema,
+    new Uint8Array(await response.arrayBuffer()),
+  );
+  const verified = await verifyStationIdentityProof({
+    requestedOrigin,
+    challenge: Array.from(challenge),
+    statementBytes: Array.from(proof.statementBytes),
+    hostPublicKey: Array.from(proof.hostPublicKey),
+    signature: Array.from(proof.signature),
+    requiredCapabilities: [...REQUIRED_STATION_CAPABILITIES],
+  });
+  if (!verified.stationPeerId.trim() || !verified.canonicalOrigin.trim()) {
+    throw new Error('mobile.launch.stationIdentityInvalid');
+  }
+  return {
+    ...verified,
+    stationPeerId: verified.stationPeerId.trim(),
+    canonicalOrigin: verified.canonicalOrigin.replace(/\/+$/, ''),
+  };
+}
+
+function canonicalOrigin(value: string): string {
+  const parsed = new URL(value);
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error('mobile.launch.stationIdentityInvalid');
+  }
+  return parsed.origin;
 }
 
 async function extractLabelFromResponse(response: Response, fallbackUrl: string): Promise<string> {

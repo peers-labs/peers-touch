@@ -49,7 +49,6 @@ let criticalInstallInFlight: {
 } | null = null;
 
 const DEFERRED_APP_RUNTIME_IDS = [
-  socialRuntime.id,
   searchRuntime.id,
   settingsRuntime.id,
   federationRuntime.id,
@@ -76,6 +75,7 @@ export function installAppRuntime(): void {
   installIdentityChangedBridge();
   installNavigationBadgeProjection();
 
+  installRuntime(socialRuntime.id);
   installRuntime(appletsRuntime.id);
   void bootstrapRuntime(appletsRuntime.id, null);
 
@@ -88,13 +88,15 @@ export function installAppRuntime(): void {
   log.info('appRuntime', 'early runtime installed');
 }
 
-export function installDeferredAppRuntimeProjections(): Promise<void> {
+export function installDeferredAppRuntimeProjections(actorPtid: string): Promise<void> {
   if (deferredInstalled) return Promise.resolve();
   if (deferredInstallInFlight) return deferredInstallInFlight;
 
   installAppRuntime();
 
   deferredInstallInFlight = (async () => {
+    await bootstrapRuntime(socialRuntime.id, actorPtid);
+
     const installedRuntimes: string[] = [];
     for (const runtimeId of DEFERRED_APP_RUNTIME_IDS) {
       installRuntime(runtimeId);

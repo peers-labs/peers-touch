@@ -157,7 +157,7 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 	// Auth middleware (RequireJWT) is applied in Handlers() if
 	// authProvider is set. We additionally require a subject — the
 	// JWT must resolve to a known actor — because every upload
-	// debits a per-actor bucket and writes an `OwnerActorID` row.
+	// debits a per-actor bucket and writes an `OwnerPTID` row.
 	if s.authProvider == nil {
 		writeUploadAuthError(w, "auth_required")
 		return
@@ -198,7 +198,7 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	attr := service.UploadAttribution{
-		ActorID:       subject.ID,
+		ActorPTID:     subject.ID,
 		BucketName:    strings.TrimSpace(r.FormValue("bucket")),
 		Visibility:    strings.TrimSpace(r.FormValue("visibility")),
 		ChatSessionID: strings.TrimSpace(r.FormValue("chat_session_id")),
@@ -327,7 +327,7 @@ func (s *ossSubServer) handlePresignUpload(w http.ResponseWriter, r *http.Reques
 	}
 
 	attr := service.UploadAttribution{
-		ActorID:       subject.ID,
+		ActorPTID:     subject.ID,
 		BucketName:    strings.TrimSpace(req.Bucket),
 		Visibility:    strings.TrimSpace(req.Visibility),
 		ChatSessionID: strings.TrimSpace(req.ChatSessionID),
@@ -407,7 +407,7 @@ func (s *ossSubServer) handleUploadComplete(w http.ResponseWriter, r *http.Reque
 	}
 
 	attr := service.UploadAttribution{
-		ActorID:       subject.ID,
+		ActorPTID:     subject.ID,
 		BucketName:    strings.TrimSpace(req.Bucket),
 		Visibility:    strings.TrimSpace(req.Visibility),
 		ChatSessionID: strings.TrimSpace(req.ChatSessionID),
@@ -551,7 +551,7 @@ func (s *ossSubServer) federationOutboundEnabled() bool {
 //     owned by the JWT subject; absent that, falls back to the
 //     oldest row for the key (only useful for `public` reads).
 //  3. Run `checkRead` against the meta's Visibility and the caller's
-//     subject DID. Denials are recorded in `oss_audit` with a
+//     subject PTID. Denials are recorded in `oss_audit` with a
 //     stable `Reason` so the dashboard can graph patterns.
 //  4. On allow, the existing presigned-redirect / stream pipeline
 //     takes over.
@@ -635,7 +635,7 @@ func (s *ossSubServer) handleFileGet(w http.ResponseWriter, r *http.Request) {
 }
 
 // optionalSubjectID validates the optional Bearer JWT and returns
-// the subject DID, or an empty string when no token is present /
+// the subject PTID, or an empty string when no token is present /
 // the token is malformed / the token is a federation peer JWT
 // rather than a local user JWT. It deliberately does NOT 401 —
 // public files must be served without authentication.
@@ -663,7 +663,7 @@ func (s *ossSubServer) optionalSubjectID(r *http.Request) string {
 }
 
 // tryPeerToken extracts and verifies an inbound federation JWT, if
-// present. Returns (actorDID, peerStationID) on success and ("", "")
+// present. Returns (actorPTID, peerStationID) on success and ("", "")
 // otherwise — verify failures are intentionally silent because
 // a malformed peer token must not deny a public file fetch.
 //
@@ -731,7 +731,7 @@ func isFederationToken(bearer string) bool {
 // GET. Resolution order:
 //
 //  1. `?owner=` query param (federation case — peer station passes
-//     the originating actor DID alongside the file key);
+//     the originating actor PTID alongside the file key);
 //  2. JWT subject (the most common case — actor reads their own row);
 //  3. fall through to FindByKey (oldest row), which only succeeds
 //     for `public` visibility because the audience check rejects
@@ -767,7 +767,7 @@ func (s *ossSubServer) lookupFileMeta(ctx context.Context, key, subjectID, reque
 // dashboard groups by (action, outcome, reason) so the schema
 // change to add new "denied actions" would only obscure the
 // underlying GET vs PUT distinction.
-func (s *ossSubServer) recordAudit(ctx context.Context, meta *ossdb.FileMeta, actorID, peerStationID, reason string) {
+func (s *ossSubServer) recordAudit(ctx context.Context, meta *ossdb.FileMeta, actorPTID, peerStationID, reason string) {
 	if s.auditRepo == nil {
 		return
 	}
@@ -776,7 +776,7 @@ func (s *ossSubServer) recordAudit(ctx context.Context, meta *ossdb.FileMeta, ac
 		FileKey:       meta.Key,
 		FileID:        meta.ID,
 		BucketID:      meta.BucketID,
-		ActorID:       actorID,
+		ActorPTID:     actorPTID,
 		PeerStationID: peerStationID,
 		SizeBytes:     meta.Size,
 		Outcome:       ossdb.AuditOutcomeDenied,
@@ -848,12 +848,12 @@ func (s *ossSubServer) handleMetaGet(ctx context.Context, req *ossmodel.GetFileM
 
 	return &ossmodel.GetFileMetaResponse{
 		Meta: &ossmodel.FileMeta{
-			Key:         meta.Key,
-			Filename:    meta.Name,
-			MimeType:    meta.Mime,
-			Size:        meta.Size,
-			UploaderDid: "",
-			UploadedAt:  timestamppb.New(meta.CreatedAt),
+			Key:          meta.Key,
+			Filename:     meta.Name,
+			MimeType:     meta.Mime,
+			Size:         meta.Size,
+			UploaderPtid: "",
+			UploadedAt:   timestamppb.New(meta.CreatedAt),
 		},
 	}, nil
 }

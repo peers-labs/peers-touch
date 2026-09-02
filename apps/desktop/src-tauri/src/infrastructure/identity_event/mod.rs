@@ -1,12 +1,5 @@
-// PR-1 stop-bleeding: broadcast identity changes so every window in the
-// process (and every dev-server tab driven by the same backend) refreshes
-// its in-memory caches. The frontend listens for `auth:identity-changed`
-// and triggers a reload pipeline.
-//
-// This module is intentionally tiny — the long-term plan (M3/PR-3) is a
-// per-window session registry that obsoletes broadcast-everywhere reloads.
-// For now we accept the heavy hammer because it is the only correct fix
-// while every command still reads from one shared AppState.session.
+// Broadcast PTID-scoped identity changes so every renderer closes its
+// identity projection through the frontend lifecycle pipeline.
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -26,7 +19,7 @@ pub enum IdentityChangeReason {
 #[derive(Debug, Clone, Serialize)]
 pub struct IdentityChangedPayload {
     pub reason: IdentityChangeReason,
-    pub actor_id: Option<String>,
+    pub actor_ptid: Option<String>,
     pub login_method: Option<String>,
     /// The device type that originated this identity change.
     /// Used by the frontend to filter events from a different device type
@@ -53,13 +46,13 @@ mod tests {
     fn payload_serialises_to_snake_case_reason() {
         let json = serde_json::to_string(&IdentityChangedPayload {
             reason: IdentityChangeReason::OauthBridge,
-            actor_id: Some("123".to_string()),
+            actor_ptid: Some("ptid:test:alice".to_string()),
             login_method: Some("oauth".to_string()),
             device_type: Some("desktop-native".to_string()),
         })
         .expect("serialize");
         assert!(json.contains("\"reason\":\"oauth_bridge\""));
-        assert!(json.contains("\"actor_id\":\"123\""));
+        assert!(json.contains("\"actor_ptid\":\"ptid:test:alice\""));
         assert!(json.contains("\"device_type\":\"desktop-native\""));
     }
 }

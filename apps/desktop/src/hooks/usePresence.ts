@@ -89,13 +89,13 @@ export function usePresence(): void {
         startedActorRef.current = null;
         return;
       }
-      const actorId = authenticated ? currentUser?.actorId || null : null;
-      if (!actorId) {
+      const actorPtid = authenticated ? currentUser?.actorPtid || null : null;
+      if (!actorPtid) {
         startedActorRef.current = null;
         return;
       }
-      if (startedActorRef.current === actorId) return;
-      startedActorRef.current = actorId;
+      if (startedActorRef.current === actorPtid) return;
+      startedActorRef.current = actorPtid;
       fire('app_launch');
       // Open the unified realtime SSE stream on the same edge. Presence
       // flips are carried by StreamEvent.PresenceFlip on this channel.

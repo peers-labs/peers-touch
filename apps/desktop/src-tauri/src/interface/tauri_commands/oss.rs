@@ -90,7 +90,7 @@ pub struct OssResolveUrlInput {
     /// renderers calling for purely-public local files may omit
     /// it; foreign-origin URIs need it for federation to succeed.
     #[serde(default)]
-    pub actor_did: String,
+    pub actor_ptid: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -292,13 +292,13 @@ pub fn oss_upload_local_file(
     )
 }
 
-#[tauri::command]
-pub fn oss_upload_agent_attachment_bytes(
+fn upload_attachment_bytes(
     input: OssUploadAttachmentBytesInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
+    state: &Arc<AppState>,
+    window: &Window,
+    consumer: &str,
 ) -> AppResult<StubPayload> {
-    let token = match require_token(state.inner(), &window) {
+    let token = match require_token(state, window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -306,26 +306,51 @@ pub fn oss_upload_agent_attachment_bytes(
         return AppResult::fail(ErrorCode::InvalidArgument, "bytes is required", None);
     }
     let filename = safe_temp_filename(input.filename.as_str());
-    let temp_path = std::env::temp_dir().join(format!("peers-agent-{}-{}", Ulid::new(), filename));
+    let temp_path =
+        std::env::temp_dir().join(format!("peers-{consumer}-{}-{filename}", Ulid::new()));
     if let Err(error) = std::fs::write(&temp_path, input.bytes) {
         return AppResult::fail(
             ErrorCode::InternalError,
-            format!("write temp Agent attachment: {error}"),
+            format!("write temp {consumer} attachment: {error}"),
             None,
         );
     }
-    let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "Agent attachment");
+    let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "byte attachment");
 
     let mime_override = input.mime_type.trim();
     let result = application_oss::upload_agent_attachment(
         temp_path.to_string_lossy().as_ref(),
         &token,
-        &input.conversation_id,
-        &filename,
-        mime_override,
+        consumer,
+        bucket,
+        visibility,
+        chat_sid,
+        if mime_override.is_empty() {
+            None
+        } else {
+            Some(mime_override)
+        },
     );
     cleanup.remove_now();
     result
+}
+
+#[tauri::command]
+pub fn oss_upload_attachment_bytes(
+    input: OssUploadAttachmentBytesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    upload_attachment_bytes(input, state.inner(), &window, "local_file_bytes")
+}
+
+#[tauri::command]
+pub fn oss_upload_agent_attachment_bytes(
+    input: OssUploadAttachmentBytesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    upload_attachment_bytes(input, state.inner(), &window, "agent")
 }
 
 #[cfg(target_os = "macos")]
@@ -937,7 +962,7 @@ pub fn oss_resolve_url(
     // best-effort and let the application layer decide whether the
     // current request actually needs it.
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_oss::oss_resolve_url(&input.uri, &token, &input.actor_did)
+    application_oss::oss_resolve_url(&input.uri, &token, &input.actor_ptid)
 }
 
 #[tauri::command]

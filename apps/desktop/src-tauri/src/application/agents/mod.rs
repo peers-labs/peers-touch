@@ -1,6 +1,7 @@
+use crate::application::security::redact_secret_like_values;
 use crate::contracts::{
-    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentSelectInput,
-    AgentUpdateInput, StubPayload,
+    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentPackageExportInput,
+    AgentPackageImportInput, AgentSearchInput, AgentSelectInput, AgentUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::actor_bucket::actor_bucket_id;
@@ -13,8 +14,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_AGENT_NAME: &str = "assistant";
+const AGENT_PACKAGE_SCHEMA: &str = "peers.agent.package.v1";
 
 #[derive(Clone)]
 struct AgentRecord {
@@ -39,8 +42,8 @@ struct AgentStoreFile {
 }
 
 impl AgentStore {
-    fn load(actor_id: &str) -> Self {
-        let path = match agent_store_path(actor_id) {
+    fn load(actor_ptid: &str) -> Self {
+        let path = match agent_store_path(actor_ptid) {
             Ok(path) => path,
             Err(error) => {
                 tracing::warn!(error = %error, "Failed to resolve agent store path; using seeded store");
@@ -130,6 +133,21 @@ impl AgentStore {
                 .collect(),
         }
     }
+
+    fn next_agent_id(&self) -> String {
+        let next = self
+            .agents
+            .iter()
+            .filter_map(|item| item.id.strip_prefix("agent-")?.parse::<usize>().ok())
+            .max()
+            .unwrap_or(0)
+            + 1;
+        format!("agent-{next}")
+    }
+
+    fn next_sort_order(&self) -> i64 {
+        self.agents.iter().map(agent_sort_order).max().unwrap_or(-1) + 1
+    }
 }
 
 struct AgentStores {
@@ -146,25 +164,28 @@ fn agent_stores() -> &'static Mutex<AgentStores> {
     })
 }
 
-fn with_agent_app_result<F>(actor_id: &str, f: F) -> AppResult<StubPayload>
+fn with_agent_app_result<F>(actor_ptid: &str, f: F) -> AppResult<StubPayload>
 where
     F: FnOnce(&mut AgentStore) -> AppResult<StubPayload>,
 {
-    with_agent_store(actor_id, false, f)
+    with_agent_store(actor_ptid, false, f)
 }
 
-fn with_agent_mutation<F>(actor_id: &str, f: F) -> AppResult<StubPayload>
+fn with_agent_mutation<F>(actor_ptid: &str, f: F) -> AppResult<StubPayload>
 where
     F: FnOnce(&mut AgentStore) -> AppResult<StubPayload>,
 {
-    with_agent_store(actor_id, true, f)
+    with_agent_store(actor_ptid, true, f)
 }
 
-fn with_agent_store<F>(actor_id: &str, persist: bool, f: F) -> AppResult<StubPayload>
+fn with_agent_store<F>(actor_ptid: &str, persist: bool, f: F) -> AppResult<StubPayload>
 where
     F: FnOnce(&mut AgentStore) -> AppResult<StubPayload>,
 {
-    let key = actor_bucket_id(actor_id);
+    let key = match actor_bucket_id(actor_ptid) {
+        Ok(key) => key,
+        Err(error) => return invalid_argument(error),
+    };
     let mut stores = match agent_stores().lock() {
         Ok(g) => g,
         Err(e) => return store_lock_error(e),
@@ -172,10 +193,10 @@ where
     let store = stores
         .buckets
         .entry(key)
-        .or_insert_with(|| AgentStore::load(actor_id));
+        .or_insert_with(|| AgentStore::load(actor_ptid));
     let result = f(store);
     if persist && result.ok {
-        if let Err(error) = persist_store(actor_id, store) {
+        if let Err(error) = persist_store(actor_ptid, store) {
             return persist_error(error);
         }
     }
@@ -326,7 +347,7 @@ fn station_agent(token: &str, agent_id: &str) -> Result<Value, station_client::S
 }
 
 fn create_station_agent(
-    actor_id: &str,
+    actor_ptid: &str,
     token: &str,
     data: Value,
     command: &str,
@@ -340,27 +361,30 @@ fn create_station_agent(
     ) {
         Ok(result) => {
             let agent = station_agent_to_desktop(result.get("agent").cloned().unwrap_or(result));
-            let _ = agents_list(actor_id, token);
+            let _ = agents_list(actor_ptid, token);
             success_payload(command, agent)
         }
         Err(error) => station_failure(error, "Failed to create Agent"),
     }
 }
 
-fn replace_station_projection(actor_id: &str, agents: &[Value]) -> Result<(), String> {
+fn replace_station_projection(actor_ptid: &str, agents: &[Value]) -> Result<(), String> {
     let records = agents
         .iter()
         .cloned()
         .filter_map(record_from_value)
         .collect::<Vec<_>>();
-    let key = actor_bucket_id(actor_id);
+    let key = match actor_bucket_id(actor_ptid) {
+        Ok(key) => key,
+        Err(error) => return Err(error.to_string()),
+    };
     let mut stores = agent_stores()
         .lock()
         .map_err(|error| format!("failed to acquire Agent projection: {error}"))?;
     let store = stores
         .buckets
         .entry(key)
-        .or_insert_with(|| AgentStore::load(actor_id));
+        .or_insert_with(|| AgentStore::load(actor_ptid));
     store.agents = records;
     if !store
         .agents
@@ -378,7 +402,7 @@ fn replace_station_projection(actor_id: &str, agents: &[Value]) -> Result<(), St
     }
     mark_default_agent(&mut store.agents, &store.default_agent);
     sort_agent_records(&mut store.agents);
-    persist_store(actor_id, store)
+    persist_store(actor_ptid, store)
 }
 
 fn invalid_argument(message: &str) -> AppResult<StubPayload> {
@@ -403,8 +427,8 @@ fn persist_error(error: impl std::fmt::Display) -> AppResult<StubPayload> {
     )
 }
 
-fn agent_store_path(actor_id: &str) -> Result<PathBuf, String> {
-    let scope = crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id));
+fn agent_store_path(actor_ptid: &str) -> Result<PathBuf, String> {
+    let scope = crate::infrastructure::local_scope::user_scope_for_actor_ptid(actor_ptid);
     storage::app_file_path(
         "desktop",
         StorageKind::Data,
@@ -413,8 +437,8 @@ fn agent_store_path(actor_id: &str) -> Result<PathBuf, String> {
     .map_err(|error| format!("failed to resolve agent store path: {error:?}"))
 }
 
-fn persist_store(actor_id: &str, store: &AgentStore) -> Result<(), String> {
-    let path = agent_store_path(actor_id)?;
+fn persist_store(actor_ptid: &str, store: &AgentStore) -> Result<(), String> {
+    let path = agent_store_path(actor_ptid)?;
     let content = serde_json::to_string_pretty(&store.to_file())
         .map_err(|error| format!("failed to serialize agent store: {error}"))?;
     storage::write_string_atomic(&path, &content)
@@ -580,7 +604,223 @@ fn set_default_agent(store: &mut AgentStore, name: String) {
     mark_default_agent(&mut store.agents, &name);
 }
 
-pub fn agents_list(actor_id: &str, token: &str) -> AppResult<StubPayload> {
+// --- Agent package export/import helpers (from master) ---
+
+fn now_rfc3339() -> String {
+    let unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs() as i64;
+    let dt =
+        time::OffsetDateTime::from_unix_timestamp(unix).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
+    dt.format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
+}
+
+fn unique_agent_name(store: &AgentStore, requested: &str) -> String {
+    let base = requested.trim();
+    let base = if base.is_empty() {
+        DEFAULT_AGENT_NAME
+    } else {
+        base
+    };
+    if !store.agents.iter().any(|item| agent_name(item) == base) {
+        return base.to_string();
+    }
+    for index in 2..1000 {
+        let candidate = format!("{base} {index}");
+        if !store
+            .agents
+            .iter()
+            .any(|item| agent_name(item) == candidate)
+        {
+            return candidate;
+        }
+    }
+    format!("{base} {}", now_rfc3339())
+}
+
+fn sanitize_chat_config_for_export(
+    chat_config: &mut Value,
+    include_local_paths: bool,
+    redactions: &mut Vec<String>,
+) {
+    if include_local_paths {
+        return;
+    }
+    if let Some(workspace) = chat_config
+        .get_mut("workspace")
+        .and_then(Value::as_object_mut)
+    {
+        if workspace
+            .get("root")
+            .and_then(Value::as_str)
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false)
+        {
+            workspace.insert("root".to_string(), json!(""));
+            redactions.push("agent.chatConfig.workspace.root".to_string());
+        }
+    }
+}
+
+fn is_shareable_knowledge_resource(resource: &Value) -> bool {
+    matches!(
+        resource.get("type").and_then(Value::as_str),
+        Some("url") | Some("notebook")
+    )
+}
+
+fn sanitize_knowledge_resources_for_export(
+    data: &mut Value,
+    include_local_paths: bool,
+    redactions: &mut Vec<String>,
+) {
+    if include_local_paths {
+        return;
+    }
+    let Some(raw) = data.get("knowledgeResources").and_then(Value::as_str) else {
+        return;
+    };
+    let Ok(parsed) = serde_json::from_str::<Value>(raw) else {
+        return;
+    };
+    let Some(resources) = parsed.as_array() else {
+        return;
+    };
+    let shareable = resources
+        .iter()
+        .filter(|resource| is_shareable_knowledge_resource(resource))
+        .cloned()
+        .collect::<Vec<_>>();
+    if shareable.len() != resources.len() {
+        redactions.push("agent.knowledgeResources.localSources".to_string());
+    }
+    if let Some(obj) = data.as_object_mut() {
+        let knowledge_json = serde_json::to_string(&shareable).unwrap_or_else(|_| "[]".to_string());
+        obj.insert("knowledgeResources".to_string(), json!(knowledge_json));
+    }
+}
+
+fn sanitize_agent_for_export(
+    record: &AgentRecord,
+    include_local_paths: bool,
+) -> (Value, Value, Vec<String>) {
+    let mut data = record.data.clone();
+    let mut redactions = Vec::new();
+    sanitize_knowledge_resources_for_export(&mut data, include_local_paths, &mut redactions);
+
+    let chat_config = data
+        .get("chatConfig")
+        .and_then(Value::as_str)
+        .and_then(|value| serde_json::from_str::<Value>(value).ok())
+        .unwrap_or_else(|| json!({}));
+    let mut chat_config = chat_config;
+    sanitize_chat_config_for_export(&mut chat_config, include_local_paths, &mut redactions);
+    redact_secret_like_values(&mut data, "agent", &mut redactions);
+    redact_secret_like_values(&mut chat_config, "chatBehavior", &mut redactions);
+
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert("chatConfig".to_string(), json!(chat_config.to_string()));
+        obj.remove("params");
+        obj.remove("toolsAllow");
+        obj.remove("toolsDeny");
+        obj.remove("toolsProfile");
+        obj.insert("isDefault".to_string(), json!(false));
+        obj.remove("pinned");
+        obj.remove("favorite");
+        obj.remove("sortOrder");
+    }
+
+    (data, chat_config, redactions)
+}
+
+fn package_agent_data(record: &AgentRecord, include_local_paths: bool) -> Value {
+    let (data, chat_config, redactions) = sanitize_agent_for_export(record, include_local_paths);
+    json!({
+        "schemaVersion": AGENT_PACKAGE_SCHEMA,
+        "exportedAt": now_rfc3339(),
+        "source": {
+            "agentId": record.id,
+            "name": data.get("name").cloned().unwrap_or_else(|| json!(DEFAULT_AGENT_NAME)),
+            "packageType": "agent",
+            "exportedFrom": "desktop",
+            "sharePolicy": {
+                "includeLocalPaths": include_local_paths,
+                "secrets": "redacted"
+            },
+            "redactions": redactions
+        },
+        "agent": data,
+        "providerPreset": {
+            "provider": data.get("provider").cloned().unwrap_or_else(|| json!("")),
+            "model": data.get("model").cloned().unwrap_or_else(|| json!(""))
+        },
+        "bindings": {
+            "mcpServers": chat_config.get("mcpServers").cloned().unwrap_or_else(|| json!([])),
+            "tools": chat_config.get("tools").cloned().unwrap_or_else(|| json!([])),
+            "skills": chat_config.get("skills").cloned().unwrap_or_else(|| json!([]))
+        },
+        "opening": {
+            "message": data.get("openingMessage").cloned().unwrap_or_else(|| json!("")),
+            "questions": data.get("openingQuestions").cloned().unwrap_or_else(|| json!(""))
+        },
+        "chatBehavior": chat_config
+    })
+}
+
+fn agent_data_from_package(package: Value) -> Result<Value, String> {
+    let schema = package
+        .get("schemaVersion")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if schema != AGENT_PACKAGE_SCHEMA {
+        return Err(format!("unsupported agent package schema: {schema}"));
+    }
+    let agent = package
+        .get("agent")
+        .cloned()
+        .ok_or_else(|| "agent package is missing agent".to_string())?;
+    if !agent.is_object() {
+        return Err("agent package agent must be an object".to_string());
+    }
+    Ok(agent)
+}
+
+fn prepare_imported_agent(
+    store: &AgentStore,
+    mut data: Value,
+    id: String,
+    name: Option<String>,
+) -> Value {
+    if let Some(obj) = data.as_object_mut() {
+        let requested = name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                obj.get("name")
+                    .and_then(Value::as_str)
+                    .map(|value| value.to_string())
+            })
+            .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
+        obj.insert("id".to_string(), json!(id));
+        obj.insert(
+            "name".to_string(),
+            json!(unique_agent_name(store, &requested)),
+        );
+        obj.insert("isDefault".to_string(), json!(false));
+        obj.insert("sortOrder".to_string(), json!(store.next_sort_order()));
+        obj.insert("createdAt".to_string(), json!(now_rfc3339()));
+        obj.insert("updatedAt".to_string(), json!(now_rfc3339()));
+    }
+    normalize_agent_value(data)
+}
+
+// --- Public API: Station-backed CRUD ---
+
+pub fn agents_list(actor_ptid: &str, token: &str) -> AppResult<StubPayload> {
     if let Err(error) = require_token(token) {
         return error;
     }
@@ -602,10 +842,10 @@ pub fn agents_list(actor_id: &str, token: &str) -> AppResult<StubPayload> {
         .cloned()
         .map(station_agent_to_desktop)
         .collect::<Vec<_>>();
-    if let Err(error) = replace_station_projection(actor_id, &agents) {
+    if let Err(error) = replace_station_projection(actor_ptid, &agents) {
         return persist_error(error);
     }
-    with_agent_app_result(actor_id, |store| {
+    with_agent_app_result(actor_ptid, |store| {
         success_payload(
             "agents_list",
             json!({
@@ -617,8 +857,8 @@ pub fn agents_list(actor_id: &str, token: &str) -> AppResult<StubPayload> {
     })
 }
 
-pub fn agents_get_selected(actor_id: &str) -> AppResult<StubPayload> {
-    with_agent_app_result(actor_id, |store| {
+pub fn agents_get_selected(actor_ptid: &str) -> AppResult<StubPayload> {
+    with_agent_app_result(actor_ptid, |store| {
         success_payload(
             "agents_get_selected",
             json!({ "selectedAgent": store.selected_agent }),
@@ -626,12 +866,12 @@ pub fn agents_get_selected(actor_id: &str) -> AppResult<StubPayload> {
     })
 }
 
-pub fn agents_set_selected(actor_id: &str, input: AgentSelectInput) -> AppResult<StubPayload> {
+pub fn agents_set_selected(actor_ptid: &str, input: AgentSelectInput) -> AppResult<StubPayload> {
     let name = input.name.trim();
     if name.is_empty() {
         return invalid_argument("name is required");
     }
-    with_agent_mutation(actor_id, |store| {
+    with_agent_mutation(actor_ptid, |store| {
         if !store.agents.iter().any(|item| agent_name(item) == name) {
             return AppResult::fail(ErrorCode::NotFound, "Agent not found", None);
         }
@@ -643,8 +883,8 @@ pub fn agents_set_selected(actor_id: &str, input: AgentSelectInput) -> AppResult
     })
 }
 
-pub fn agents_get_default(actor_id: &str) -> AppResult<StubPayload> {
-    with_agent_app_result(actor_id, |store| {
+pub fn agents_get_default(actor_ptid: &str) -> AppResult<StubPayload> {
+    with_agent_app_result(actor_ptid, |store| {
         let agent = store
             .agents
             .iter()
@@ -660,11 +900,11 @@ pub fn agents_get_default(actor_id: &str) -> AppResult<StubPayload> {
     })
 }
 
-pub fn agents_set_default(actor_id: &str, input: AgentIdInput) -> AppResult<StubPayload> {
+pub fn agents_set_default(actor_ptid: &str, input: AgentIdInput) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
-    with_agent_mutation(actor_id, |store| {
+    with_agent_mutation(actor_ptid, |store| {
         let Some(agent) = store.agents.iter().find(|item| item.id == input.id) else {
             return AppResult::fail(ErrorCode::NotFound, "Agent not found", None);
         };
@@ -674,7 +914,7 @@ pub fn agents_set_default(actor_id: &str, input: AgentIdInput) -> AppResult<Stub
     })
 }
 
-pub fn agents_get(_actor_id: &str, token: &str, input: AgentIdInput) -> AppResult<StubPayload> {
+pub fn agents_get(_actor_ptid: &str, token: &str, input: AgentIdInput) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
@@ -688,18 +928,18 @@ pub fn agents_get(_actor_id: &str, token: &str, input: AgentIdInput) -> AppResul
 }
 
 pub fn agents_create(
-    actor_id: &str,
+    actor_ptid: &str,
     token: &str,
     input: AgentCreateInput,
 ) -> AppResult<StubPayload> {
     if let Err(error) = require_token(token) {
         return error;
     }
-    create_station_agent(actor_id, token, input.data, "agents_create")
+    create_station_agent(actor_ptid, token, input.data, "agents_create")
 }
 
 pub fn agents_update(
-    actor_id: &str,
+    actor_ptid: &str,
     token: &str,
     input: AgentUpdateInput,
 ) -> AppResult<StubPayload> {
@@ -730,14 +970,14 @@ pub fn agents_update(
     ) {
         Ok(result) => {
             let updated = station_agent_to_desktop(result.get("agent").cloned().unwrap_or(result));
-            let _ = agents_list(actor_id, token);
+            let _ = agents_list(actor_ptid, token);
             success_payload("agents_update", updated)
         }
         Err(error) => station_failure(error, "Failed to update Agent"),
     }
 }
 
-pub fn agents_delete(actor_id: &str, token: &str, input: AgentIdInput) -> AppResult<StubPayload> {
+pub fn agents_delete(actor_ptid: &str, token: &str, input: AgentIdInput) -> AppResult<StubPayload> {
     tracing::info!(command = "agents_delete", agent_id = %input.id, "Deleting agent");
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
@@ -753,7 +993,7 @@ pub fn agents_delete(actor_id: &str, token: &str, input: AgentIdInput) -> AppRes
         Some(&json!({"agent_id": input.id})),
     ) {
         Ok(_) => {
-            let _ = agents_list(actor_id, token);
+            let _ = agents_list(actor_ptid, token);
             success_payload("agents_delete", json!({"ok": true}))
         }
         Err(error) => station_failure(error, "Failed to delete Agent"),
@@ -761,7 +1001,7 @@ pub fn agents_delete(actor_id: &str, token: &str, input: AgentIdInput) -> AppRes
 }
 
 pub fn agents_duplicate(
-    actor_id: &str,
+    actor_ptid: &str,
     token: &str,
     input: AgentDuplicateInput,
 ) -> AppResult<StubPayload> {
@@ -783,14 +1023,53 @@ pub fn agents_duplicate(
         obj.remove("createdAt");
         obj.remove("updatedAt");
     }
-    create_station_agent(actor_id, token, data, "agents_duplicate")
+    create_station_agent(actor_ptid, token, data, "agents_duplicate")
 }
 
-pub fn agents_search(actor_id: &str, input: AgentSearchInput) -> AppResult<StubPayload> {
+// --- Export / Import (local projection only, from master) ---
+
+pub fn agents_export_package(
+    actor_ptid: &str,
+    input: AgentPackageExportInput,
+) -> AppResult<StubPayload> {
+    if input.id.trim().is_empty() {
+        return invalid_argument("id is required");
+    }
+    with_agent_app_result(actor_ptid, |store| {
+        let Some(agent) = store.agents.iter().find(|item| item.id == input.id) else {
+            return AppResult::fail(ErrorCode::NotFound, "Agent not found", None);
+        };
+        success_payload(
+            "agents_export_package",
+            json!({ "package": package_agent_data(agent, input.include_local_paths) }),
+        )
+    })
+}
+
+pub fn agents_import_package(
+    actor_ptid: &str,
+    input: AgentPackageImportInput,
+) -> AppResult<StubPayload> {
+    let data = match agent_data_from_package(input.package) {
+        Ok(data) => data,
+        Err(error) => return AppResult::fail(ErrorCode::InvalidArgument, error, None),
+    };
+    with_agent_mutation(actor_ptid, |store| {
+        let id = store.next_agent_id();
+        let data = prepare_imported_agent(store, data, id.clone(), input.name);
+        store.agents.push(AgentRecord {
+            id,
+            data: data.clone(),
+        });
+        success_payload("agents_import_package", data)
+    })
+}
+
+pub fn agents_search(actor_ptid: &str, input: AgentSearchInput) -> AppResult<StubPayload> {
     if input.q.trim().is_empty() {
         return invalid_argument("q is required");
     }
-    with_agent_app_result(actor_id, |store| {
+    with_agent_app_result(actor_ptid, |store| {
         let q = input.q.to_lowercase();
         let agents = store
             .agents

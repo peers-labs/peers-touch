@@ -282,9 +282,7 @@ pub fn encrypt(
 ) -> Result<DrCiphertextWire, DrError> {
     // If we have no send chain, perform a DH ratchet step.
     if state.send_chain_key.is_none() {
-        let peer = state
-            .peer_pub
-            .ok_or(DrError::UninitializedReceive)?;
+        let peer = state.peer_pub.ok_or(DrError::UninitializedReceive)?;
 
         // Generate new DH keypair.
         let new_priv = StaticSecret::random_from_rng(&mut OsRng);
@@ -371,8 +369,8 @@ pub fn decrypt(
             && sk.counter == wire.n_send
         {
             let aad = build_aad(&state.session_id, wire.version, &wire.sender_dh, aad_extra);
-            let cipher = Aes256Gcm::new_from_slice(&sk.message_key)
-                .map_err(|_| DrError::AeadFailure)?;
+            let cipher =
+                Aes256Gcm::new_from_slice(&sk.message_key).map_err(|_| DrError::AeadFailure)?;
             let plain = cipher
                 .decrypt(
                     Nonce::from_slice(&wire.nonce),
@@ -430,9 +428,7 @@ pub fn decrypt(
         st.send_chain_key = None;
     }
 
-    let mut recv_ck = st
-        .recv_chain_key
-        .ok_or(DrError::UninitializedReceive)?;
+    let mut recv_ck = st.recv_chain_key.ok_or(DrError::UninitializedReceive)?;
 
     // Check for counter regression on same peer chain.
     if same_peer && wire.n_send < st.n_recv {

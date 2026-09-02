@@ -17,7 +17,7 @@ func NewMessageService() *MessageService { return &MessageService{msgRepo: repo.
 type AppendReq struct {
 	ULID       string
 	ConvID     string
-	SenderDID  string
+	SenderPtid string
 	TS         int64
 	Type       string
 	ParentID   string
@@ -27,7 +27,7 @@ type AppendReq struct {
 }
 
 func (s *MessageService) Append(ctx context.Context, req *AppendReq) (*m.Message, error) {
-	msg := &m.Message{ULID: req.ULID, ConvID: req.ConvID, SenderDID: req.SenderDID, TS: req.TS, Type: m.MessageType(req.Type), ParentID: req.ParentID, ThreadID: req.ThreadID, ContentCID: req.ContentCID}
+	msg := &m.Message{ULID: req.ULID, ConvID: req.ConvID, SenderPtid: req.SenderPtid, TS: req.TS, Type: m.MessageType(req.Type), ParentID: req.ParentID, ThreadID: req.ThreadID, ContentCID: req.ContentCID}
 	if req.TTLMillis > 0 {
 		msg.TTLAt = time.UnixMilli(req.TTLMillis)
 	}

@@ -31,9 +31,8 @@ pub fn agent_execute_turn(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::agent_execute_turn(input, &token, &actor_id)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_agent_turn::agent_execute_turn(input, &token, &actor_ptid)
 }
 
 #[tauri::command]
@@ -47,8 +46,8 @@ pub fn agent_execute_turn_stream(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
-    if ptid.is_empty() {
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    if actor_ptid.is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authenticated PTID required", None);
     }
     let stream_id = input
@@ -60,7 +59,7 @@ pub fn agent_execute_turn_stream(
         .unwrap_or_else(|| format!("agent-turn-{}", ulid::Ulid::new()));
     let window_label = window.label().to_string();
     let cancellation =
-        application_agent_turn::register_agent_turn_live_stream(&window_label, &ptid, &stream_id);
+        application_agent_turn::register_agent_turn_live_stream(&window_label, &actor_ptid, &stream_id);
     let stream_id_for_task = stream_id.clone();
     tauri::async_runtime::spawn_blocking(move || {
         application_agent_turn::agent_execute_turn_stream(
@@ -68,7 +67,7 @@ pub fn agent_execute_turn_stream(
             stream_id_for_task.clone(),
             input,
             token,
-            ptid,
+            actor_ptid,
             cancellation,
         );
     });

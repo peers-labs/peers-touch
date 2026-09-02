@@ -15,7 +15,7 @@ import (
 //     private-followed-followers.
 //   - MemberOfCircles: which circles is this viewer a member of → drives
 //     CIRCLE audience visibility AND the HOME timeline merge of circle
-//     posts. Membership is keyed by DID; we resolve the viewer's DID
+//     posts. Membership is keyed by PTID; we resolve the viewer's PTID
 //     via ActorResolver. P1 uses a no-op resolver so this set is
 //     effectively empty until P3 wires the real resolver.
 //   - MemberOfGroups: which chat groups is this viewer a member of →
@@ -35,54 +35,44 @@ import (
 // to see — a worse failure mode than a 5xx.
 func buildViewer(
 	ctx context.Context,
-	viewerID uint64,
+	viewerPTID string,
 	repos *infrastructure.Repos,
-	resolveDID func(context.Context, uint64) (string, error),
 	groups domain.GroupMembershipChecker,
 ) (domain.Viewer, error) {
-	if viewerID == 0 {
+	if viewerPTID == "" {
 		return domain.Viewer{}, nil
 	}
 
-	var v domain.Viewer
-	v.ActorID = viewerID
+	v := domain.Viewer{ActorPTID: viewerPTID}
 
-	if resolveDID != nil {
-		did, err := resolveDID(ctx, viewerID)
-		if err != nil {
-			return domain.Viewer{}, err
-		}
-		v.ActorDID = did
-	}
-
-	followingIDs, err := repos.Follows.FollowingActorIDs(ctx, viewerID)
+	followingPTIDs, err := repos.Follows.FollowingActorPTIDs(ctx, viewerPTID)
 	if err != nil {
 		return domain.Viewer{}, err
 	}
-	blockedFollowing, err := blockedActorIDs(ctx, repos, viewerID, followingIDs)
+	blockedFollowing, err := blockedActorPTIDs(ctx, repos, viewerPTID, followingPTIDs)
 	if err != nil {
 		return domain.Viewer{}, err
 	}
-	if len(followingIDs) > 0 {
-		v.Following = make(map[uint64]struct{}, len(followingIDs))
-		for _, id := range followingIDs {
-			if blockedFollowing[id] {
+	if len(followingPTIDs) > 0 {
+		v.Following = make(map[string]struct{}, len(followingPTIDs))
+		for _, ptid := range followingPTIDs {
+			if blockedFollowing[ptid] {
 				continue
 			}
-			v.Following[id] = struct{}{}
+			v.Following[ptid] = struct{}{}
 		}
 	}
 	if len(blockedFollowing) > 0 {
-		v.BlockedActors = make(map[uint64]struct{}, len(blockedFollowing))
-		for id, blocked := range blockedFollowing {
+		v.BlockedActors = make(map[string]struct{}, len(blockedFollowing))
+		for ptid, blocked := range blockedFollowing {
 			if blocked {
-				v.BlockedActors[id] = struct{}{}
+				v.BlockedActors[ptid] = struct{}{}
 			}
 		}
 	}
 
-	if v.ActorDID != "" {
-		circleIDs, err := repos.Circles.MembershipsForViewer(ctx, v.ActorDID)
+	if v.ActorPTID != "" {
+		circleIDs, err := repos.Circles.MembershipsForViewer(ctx, v.ActorPTID)
 		if err != nil {
 			return domain.Viewer{}, err
 		}
@@ -95,7 +85,7 @@ func buildViewer(
 	}
 
 	if groups != nil {
-		groupIDs, err := groups.MembershipsForViewer(ctx, viewerID)
+		groupIDs, err := groups.MembershipsForViewer(ctx, viewerPTID)
 		if err != nil {
 			return domain.Viewer{}, err
 		}
@@ -112,27 +102,26 @@ func buildViewer(
 
 func buildViewerForAuthors(
 	ctx context.Context,
-	viewerID uint64,
+	viewerPTID string,
 	repos *infrastructure.Repos,
-	resolveDID func(context.Context, uint64) (string, error),
 	groups domain.GroupMembershipChecker,
-	authorIDs []uint64,
+	authorPTIDs []string,
 ) (domain.Viewer, error) {
-	viewer, err := buildViewer(ctx, viewerID, repos, resolveDID, groups)
+	viewer, err := buildViewer(ctx, viewerPTID, repos, groups)
 	if err != nil {
 		return domain.Viewer{}, err
 	}
-	if err := markBlockedAuthors(ctx, &viewer, repos, authorIDs); err != nil {
+	if err := markBlockedAuthors(ctx, &viewer, repos, authorPTIDs); err != nil {
 		return domain.Viewer{}, err
 	}
 	return viewer, nil
 }
 
-func markBlockedAuthors(ctx context.Context, viewer *domain.Viewer, repos *infrastructure.Repos, authorIDs []uint64) error {
-	if viewer == nil || viewer.ActorID == 0 || len(authorIDs) == 0 {
+func markBlockedAuthors(ctx context.Context, viewer *domain.Viewer, repos *infrastructure.Repos, authorPTIDs []string) error {
+	if viewer == nil || viewer.ActorPTID == "" || len(authorPTIDs) == 0 {
 		return nil
 	}
-	blocked, err := blockedActorIDs(ctx, repos, viewer.ActorID, authorIDs)
+	blocked, err := blockedActorPTIDs(ctx, repos, viewer.ActorPTID, authorPTIDs)
 	if err != nil {
 		return err
 	}
@@ -140,35 +129,35 @@ func markBlockedAuthors(ctx context.Context, viewer *domain.Viewer, repos *infra
 		return nil
 	}
 	if viewer.BlockedActors == nil {
-		viewer.BlockedActors = make(map[uint64]struct{}, len(blocked))
+		viewer.BlockedActors = make(map[string]struct{}, len(blocked))
 	}
-	for id, isBlocked := range blocked {
+	for ptid, isBlocked := range blocked {
 		if isBlocked {
-			viewer.BlockedActors[id] = struct{}{}
-			delete(viewer.Following, id)
+			viewer.BlockedActors[ptid] = struct{}{}
+			delete(viewer.Following, ptid)
 		}
 	}
 	return nil
 }
 
-func blockedActorIDs(ctx context.Context, repos *infrastructure.Repos, actorID uint64, peerIDs []uint64) (map[uint64]bool, error) {
-	if repos == nil || repos.Blocks == nil || actorID == 0 || len(peerIDs) == 0 {
-		return map[uint64]bool{}, nil
+func blockedActorPTIDs(ctx context.Context, repos *infrastructure.Repos, actorPTID string, peerPTIDs []string) (map[string]bool, error) {
+	if repos == nil || repos.Blocks == nil || actorPTID == "" || len(peerPTIDs) == 0 {
+		return map[string]bool{}, nil
 	}
-	unique := make([]uint64, 0, len(peerIDs))
-	seen := make(map[uint64]struct{}, len(peerIDs))
-	for _, id := range peerIDs {
-		if id == 0 || id == actorID {
+	unique := make([]string, 0, len(peerPTIDs))
+	seen := make(map[string]struct{}, len(peerPTIDs))
+	for _, ptid := range peerPTIDs {
+		if ptid == "" || ptid == actorPTID {
 			continue
 		}
-		if _, ok := seen[id]; ok {
+		if _, ok := seen[ptid]; ok {
 			continue
 		}
-		seen[id] = struct{}{}
-		unique = append(unique, id)
+		seen[ptid] = struct{}{}
+		unique = append(unique, ptid)
 	}
 	if len(unique) == 0 {
-		return map[uint64]bool{}, nil
+		return map[string]bool{}, nil
 	}
-	return repos.Blocks.BlockedActorIDs(ctx, actorID, unique)
+	return repos.Blocks.BlockedActorPTIDs(ctx, actorPTID, unique)
 }

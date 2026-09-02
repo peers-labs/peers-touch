@@ -16,7 +16,7 @@ const conversations = projectIMConversations([
     lastActivityMs: 2000,
     unread: 3,
     muted: true,
-    preview: { content: 'hello', type: 1, senderId: 'alice' },
+    preview: { content: 'hello', type: 1, senderPtid: 'alice' },
   },
   {
     kind: 'group',
@@ -25,7 +25,7 @@ const conversations = projectIMConversations([
     lastActivityMs: 3000,
     unread: 2,
     alertEnabled: true,
-    preview: { content: 'ship it', type: 1, senderId: 'bob' },
+    preview: { content: 'ship it', type: 1, senderPtid: 'bob' },
   },
 ]);
 
@@ -145,7 +145,7 @@ const messages = projectIMMessages([
     id: 'm-2',
     conversationKind: 'group',
     conversationId: 'group-1',
-    senderId: 'bob',
+    senderPtid: 'bob',
     type: 1,
     content: 'group',
     sentAtMs: 20,
@@ -155,7 +155,7 @@ const messages = projectIMMessages([
     id: 'm-1',
     conversationKind: 'friend',
     conversationId: 'session-1',
-    senderId: 'alice',
+    senderPtid: 'alice',
     type: 1,
     content: 'friend',
     sentAtMs: 10,

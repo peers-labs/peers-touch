@@ -18,31 +18,31 @@ const (
 )
 
 type Agent struct {
-	AgentID      string
-	Name         string
-	Title        string
-	Description  string
-	ProviderID   string
-	ModelName    string
-	Effort       string
-	ThinkingMode ThinkingMode
-	Visibility   AgentVisibility
-	OwnerActorID string
-	ConfigJSON   string
-	Version      int64
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	AgentID        string
+	Name           string
+	Title          string
+	Description    string
+	ProviderID     string
+	ModelName      string
+	Effort         string
+	ThinkingMode   ThinkingMode
+	Visibility     AgentVisibility
+	OwnerActorPTID string
+	ConfigJSON     string
+	Version        int64
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type AgentListOptions struct {
-	ActorID    string
+	ActorPTID  string
 	Visibility AgentVisibility
 	Page       int
 	PageSize   int
 }
 
 type AgentUpsertOptions struct {
-	ActorID      string
+	ActorPTID    string
 	AgentID      string
 	Name         string
 	Title        string

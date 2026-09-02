@@ -23,7 +23,7 @@ func NewModelConfigService() *ModelConfigService {
 }
 
 type ModelCreateRequest struct {
-	ActorID          string
+	ActorPTID        string
 	ProviderID       string
 	ModelID          string
 	DisplayName      string
@@ -33,7 +33,7 @@ type ModelCreateRequest struct {
 }
 
 type ModelUpdateRequest struct {
-	ActorID     string
+	ActorPTID   string
 	ProviderID  string
 	ModelID     string
 	Version     int64
@@ -41,7 +41,7 @@ type ModelUpdateRequest struct {
 	Enabled     *bool
 }
 
-func (s *ModelConfigService) List(ctx context.Context, actorID, providerID string) ([]persistence.AgentModel, error) {
+func (s *ModelConfigService) List(ctx context.Context, actorPTID, providerID string) ([]persistence.AgentModel, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func (s *ModelConfigService) List(ctx context.Context, actorID, providerID strin
 
 	var models []persistence.AgentModel
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND provider_id = ?", actorID, providerID).
+		Where("actor_ptid = ? AND provider_id = ?", actorPTID, providerID).
 		Order("created_at ASC").
 		Find(&models).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -67,14 +67,14 @@ func (s *ModelConfigService) Create(ctx context.Context, req ModelCreateRequest)
 
 	var existing persistence.AgentModel
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND provider_id = ? AND model_id = ?", req.ActorID, req.ProviderID, req.ModelID).
+		Where("actor_ptid = ? AND provider_id = ? AND model_id = ?", req.ActorPTID, req.ProviderID, req.ModelID).
 		First(&existing).Error; err == nil {
 		return &existing, nil
 	}
 
 	model := persistence.AgentModel{
 		ID:               uuid.New().String(),
-		ActorID:          req.ActorID,
+		ActorPTID:        req.ActorPTID,
 		ProviderID:       req.ProviderID,
 		ModelID:          req.ModelID,
 		DisplayName:      req.DisplayName,
@@ -89,7 +89,7 @@ func (s *ModelConfigService) Create(ctx context.Context, req ModelCreateRequest)
 			"failed to create model", err)
 	}
 
-	logger.Infof(ctx, "model created: actor=%s, provider=%s, model=%s", req.ActorID, req.ProviderID, req.ModelID)
+	logger.Infof(ctx, "model created: actor_ptid=%s, provider=%s, model=%s", req.ActorPTID, req.ProviderID, req.ModelID)
 	return &model, nil
 }
 
@@ -101,7 +101,7 @@ func (s *ModelConfigService) Update(ctx context.Context, req ModelUpdateRequest)
 
 	var model persistence.AgentModel
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND provider_id = ? AND model_id = ?", req.ActorID, req.ProviderID, req.ModelID).
+		Where("actor_ptid = ? AND provider_id = ? AND model_id = ?", req.ActorPTID, req.ProviderID, req.ModelID).
 		First(&model).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,
@@ -136,7 +136,7 @@ func (s *ModelConfigService) Update(ctx context.Context, req ModelUpdateRequest)
 
 	model.Version++
 	logger.Infof(ctx, "model updated: actor=%s, provider=%s, model=%s, version=%d",
-		req.ActorID, req.ProviderID, req.ModelID, model.Version)
+		req.ActorPTID, req.ProviderID, req.ModelID, model.Version)
 	return &model, nil
 }
 

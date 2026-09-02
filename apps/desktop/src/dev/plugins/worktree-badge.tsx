@@ -112,7 +112,7 @@ function WorktreeBadge() {
           />
           {user && (
             <>
-              <Row label="actor" value={user.actorId} color="#ff8" />
+              <Row label="actor" value={user.actorPtid} color="#ff8" />
               <Row label="name" value={user.name || '—'} color="#ff8" />
               <Row label="email" value={user.email || '—'} color="#ff8" />
               <Row label="method" value={user.loginMethod} color="#aaa" />

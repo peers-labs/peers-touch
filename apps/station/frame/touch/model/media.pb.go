@@ -334,7 +334,7 @@ func (x *UploadMediaResponse) GetAudienceKeyEnvelopes() []*AudienceKeyEnvelope {
 
 type AudienceKeyEnvelope struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RecipientDid  string                 `protobuf:"bytes,1,opt,name=recipient_did,json=recipientDid,proto3" json:"recipient_did,omitempty"`
+	RecipientPtid string                 `protobuf:"bytes,1,opt,name=recipient_ptid,json=recipientPtid,proto3" json:"recipient_ptid,omitempty"`
 	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	KeyId         string                 `protobuf:"bytes,3,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
 	EncryptedKey  []byte                 `protobuf:"bytes,4,opt,name=encrypted_key,json=encryptedKey,proto3" json:"encrypted_key,omitempty"`
@@ -373,9 +373,9 @@ func (*AudienceKeyEnvelope) Descriptor() ([]byte, []int) {
 	return file_domain_social_media_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *AudienceKeyEnvelope) GetRecipientDid() string {
+func (x *AudienceKeyEnvelope) GetRecipientPtid() string {
 	if x != nil {
-		return x.RecipientDid
+		return x.RecipientPtid
 	}
 	return ""
 }
@@ -674,9 +674,9 @@ const file_domain_social_media_proto_rawDesc = "" +
 	"\x06status\x18\b \x01(\x0e22.peers_touch.model.social.v1.MediaProcessingStatusR\x06status\x12`\n" +
 	"\x10media_encryption\x18\t \x01(\v25.peers_touch.model.common.v1.EncryptedMediaDescriptorR\x0fmediaEncryption\x12f\n" +
 	"\x16audience_key_envelopes\x18\n" +
-	" \x03(\v20.peers_touch.model.social.v1.AudienceKeyEnvelopeR\x14audienceKeyEnvelopes\"\xa9\x01\n" +
-	"\x13AudienceKeyEnvelope\x12#\n" +
-	"\rrecipient_did\x18\x01 \x01(\tR\frecipientDid\x12\x1b\n" +
+	" \x03(\v20.peers_touch.model.social.v1.AudienceKeyEnvelopeR\x14audienceKeyEnvelopes\"\xab\x01\n" +
+	"\x13AudienceKeyEnvelope\x12%\n" +
+	"\x0erecipient_ptid\x18\x01 \x01(\tR\rrecipientPtid\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x15\n" +
 	"\x06key_id\x18\x03 \x01(\tR\x05keyId\x12#\n" +
 	"\rencrypted_key\x18\x04 \x01(\fR\fencryptedKey\x12\x14\n" +

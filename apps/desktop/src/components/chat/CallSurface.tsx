@@ -50,7 +50,7 @@ const END_REASON_KEY: Record<CallEndReason, string | null> = {
 
 interface ActivePeer {
   myDid: string;
-  peerDid: string;
+  peerPtid: string;
   snapshot: CallSnapshot;
 }
 
@@ -78,7 +78,7 @@ export function CallSurface() {
   // Subscribe once. Snapshot in == snapshot in state; we filter
   // terminal states (idle/ended) by clearing `active`.
   useEffect(() => {
-    callP2p.setOnCall((myDid, peerDid, snapshot) => {
+    callP2p.setOnCall((myDid, peerPtid, snapshot) => {
       if (snapshot.state === 'idle' || snapshot.state === 'ended') {
         // Surface a distinct, localized result for non-trivial endings
         // (declined / missed / busy / permission / network). A clean
@@ -87,10 +87,10 @@ export function CallSurface() {
           const key = END_REASON_KEY[snapshot.endReason];
           if (key) toast.error(t(key));
         }
-        setActive((cur) => (cur && cur.peerDid === peerDid ? null : cur));
+        setActive((cur) => (cur && cur.peerPtid === peerPtid ? null : cur));
         return;
       }
-      setActive({ myDid, peerDid, snapshot });
+      setActive({ myDid, peerPtid, snapshot });
     });
     return () => {
       callP2p.setOnCall(null);
@@ -148,12 +148,12 @@ export function CallSurface() {
   }, [active?.snapshot.localStream, active?.snapshot.remoteStream]);
 
   if (!active) return null;
-  const { myDid, peerDid, snapshot } = active;
+  const { myDid, peerPtid, snapshot } = active;
   const isVideo = snapshot.mediaKind === 'video';
 
   const handleAccept = async () => {
     try {
-      await callP2p.acceptCall(myDid, peerDid);
+      await callP2p.acceptCall(myDid, peerPtid);
     } catch (error) {
       log.warn('callSurface', 'accept failed', error);
       toast.error(t('chat.social.call.mediaDenied'));
@@ -161,22 +161,22 @@ export function CallSurface() {
   };
 
   const handleDecline = () => {
-    callP2p.rejectCall(myDid, peerDid).catch(() => {});
+    callP2p.rejectCall(myDid, peerPtid).catch(() => {});
   };
 
   const handleHangup = () => {
-    callP2p.endCall(myDid, peerDid).catch(() => {});
+    callP2p.endCall(myDid, peerPtid).catch(() => {});
   };
 
   const handleSwitchAudio = (deviceId: string) => {
-    callP2p.switchAudioDevice(myDid, peerDid, deviceId).catch((error) => {
+    callP2p.switchAudioDevice(myDid, peerPtid, deviceId).catch((error) => {
       log.warn('callSurface', 'switch mic failed', error);
       toast.error(t('chat.social.call.deviceSwitchFailed'));
     });
   };
 
   const handleSwitchVideo = (deviceId: string) => {
-    callP2p.switchVideoDevice(myDid, peerDid, deviceId).catch((error) => {
+    callP2p.switchVideoDevice(myDid, peerPtid, deviceId).catch((error) => {
       log.warn('callSurface', 'switch camera failed', error);
       toast.error(t('chat.social.call.deviceSwitchFailed'));
     });
@@ -214,7 +214,7 @@ export function CallSurface() {
             })}
           </Title>
           <Text type="secondary" ellipsis style={{ maxWidth: 280 }}>
-            {t('chat.social.call.incomingFrom', { from: peerDid })}
+            {t('chat.social.call.incomingFrom', { from: peerPtid })}
           </Text>
           <Flexbox horizontal gap={12} style={{ marginTop: 8 }}>
             <Button
@@ -378,7 +378,7 @@ export function CallSurface() {
       <Flexbox style={{ padding: 12 }} gap={8}>
         <Flexbox horizontal align="center" justify="space-between">
           <Text strong ellipsis style={{ maxWidth: 200 }}>
-            {peerDid}
+            {peerPtid}
           </Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
             {isActive
@@ -398,7 +398,7 @@ export function CallSurface() {
                 shape="circle"
                 size="large"
                 icon={snapshot.micMuted ? <MicOff size={18} /> : <Mic size={18} />}
-                onClick={() => callP2p.toggleMic(myDid, peerDid, !snapshot.micMuted)}
+                onClick={() => callP2p.toggleMic(myDid, peerPtid, !snapshot.micMuted)}
               />
             </Tooltip>
           )}
@@ -409,7 +409,7 @@ export function CallSurface() {
                 shape="circle"
                 size="large"
                 icon={snapshot.cameraOff ? <CameraOff size={18} /> : <Camera size={18} />}
-                onClick={() => callP2p.toggleCamera(myDid, peerDid, !snapshot.cameraOff)}
+                onClick={() => callP2p.toggleCamera(myDid, peerPtid, !snapshot.cameraOff)}
               />
             </Tooltip>
           )}

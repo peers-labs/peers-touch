@@ -1200,7 +1200,7 @@ pub fn skills_market_detail(input: SkillMarketDetailInput) -> AppResult<StubPayl
 }
 
 pub fn skills_market_install(
-    actor_id: &str,
+    actor_ptid: &str,
     input: SkillMarketDetailInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -1246,7 +1246,7 @@ pub fn skills_market_install(
     match skill.package_type.as_deref().unwrap_or("skill") {
         "agent" => {
             return install_agent_market_package(
-                actor_id,
+                actor_ptid,
                 token,
                 target_agent_id,
                 market_id,
@@ -1400,7 +1400,7 @@ fn install_plugin_market_package(
 }
 
 fn install_agent_market_package(
-    actor_id: &str,
+    actor_ptid: &str,
     token: &str,
     target_agent_id: String,
     market_id: String,
@@ -1463,7 +1463,7 @@ fn install_agent_market_package(
         return success_payload("skills_market_install", outcome.payload);
     };
 
-    if !agents::agents_list(actor_id, token).ok {
+    if !agents::agents_list(actor_ptid, token).ok {
         return AppResult::fail(
             ErrorCode::InternalError,
             "Failed to refresh Agent projection after package import",
@@ -1581,7 +1581,7 @@ fn install_mcp_market_package(
 }
 
 pub fn skills_market_uninstall(
-    actor_id: &str,
+    actor_ptid: &str,
     input: SkillMarketDetailInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -1620,7 +1620,7 @@ pub fn skills_market_uninstall(
 
     if package_type == "agent" {
         let result = agents::agents_delete(
-            actor_id,
+            actor_ptid,
             token,
             AgentIdInput {
                 id: record.skill_id.clone(),

@@ -190,7 +190,7 @@ export function CircleManageView() {
                       type="link"
                       danger
                       onClick={() =>
-                        removeCircleMember(id, m.actorDid).catch((err) =>
+                        removeCircleMember(id, m.actorPtid).catch((err) =>
                           message.error(String(err)),
                         )
                       }
@@ -199,7 +199,7 @@ export function CircleManageView() {
                     </Button>,
                   ]}
                 >
-                  <Text style={{ fontSize: 13 }}>{m.actorDid}</Text>
+                  <Text style={{ fontSize: 13 }}>{m.actorPtid}</Text>
                 </List.Item>
               )}
               locale={{

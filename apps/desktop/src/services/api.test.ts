@@ -780,7 +780,7 @@ describe('api group admin bridge', () => {
     expect(invoke).toHaveBeenCalledWith('group_chat_transfer_ownership', {
       input: {
         group_ulid: 'group-1',
-        next_owner_did: 'did:peer:next-owner',
+        next_owner_ptid: 'did:peer:next-owner',
       },
     })
   })

@@ -37,9 +37,9 @@ func NewProviderHandlers(
 }
 
 func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.ListProvidersRequest) (*model.ListProvidersResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 
-	userProviders, err := h.providerConfig.List(ctx, actorID)
+	userProviders, err := h.providerConfig.List(ctx, actorPTID)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -101,7 +101,7 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 		for _, m := range models {
 			catalogIDs[m.Id] = true
 		}
-		dbModels, err := h.modelConfig.List(ctx, actorID, cp.ID)
+		dbModels, err := h.modelConfig.List(ctx, actorPTID, cp.ID)
 		if err != nil {
 			return nil, toHandlerError(err)
 		}
@@ -159,7 +159,7 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 			continue
 		}
 		p := providerToProto(&up)
-		dbModels, err := h.modelConfig.List(ctx, actorID, up.Name)
+		dbModels, err := h.modelConfig.List(ctx, actorPTID, up.Name)
 		if err != nil {
 			return nil, toHandlerError(err)
 		}
@@ -179,10 +179,10 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 }
 
 func (h *ProviderHandlers) HandleProviderCreate(ctx context.Context, req *model.CreateProviderRequest) (*model.CreateProviderResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 
 	provider, err := h.providerConfig.Create(ctx, service.ProviderCreateRequest{
-		ActorID:     actorID,
+		ActorPTID:   actorPTID,
 		ProviderID:  req.GetProviderId(),
 		DisplayName: req.GetDisplayName(),
 		BaseURL:     req.GetBaseUrl(),
@@ -197,11 +197,11 @@ func (h *ProviderHandlers) HandleProviderCreate(ctx context.Context, req *model.
 }
 
 func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.GetProviderRequest) (*model.GetProviderResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 	providerID := req.GetProviderId()
 
 	cp := catalog.Find(providerID)
-	userProviders, _ := h.providerConfig.List(ctx, actorID)
+	userProviders, _ := h.providerConfig.List(ctx, actorPTID)
 	var userMatch *persistence.AgentProvider
 	for i := range userProviders {
 		if userProviders[i].Name == providerID {
@@ -258,7 +258,7 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 		for _, m := range models {
 			catalogIDs[m.Id] = true
 		}
-		dbModels, err := h.modelConfig.List(ctx, actorID, providerID)
+		dbModels, err := h.modelConfig.List(ctx, actorPTID, providerID)
 		if err != nil {
 			return nil, toHandlerError(err)
 		}
@@ -314,7 +314,7 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 	}
 
 	p := providerToProto(userMatch)
-	dbModels, err := h.modelConfig.List(ctx, actorID, userMatch.Name)
+	dbModels, err := h.modelConfig.List(ctx, actorPTID, userMatch.Name)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -331,10 +331,10 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 }
 
 func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.UpdateProviderRequest) (*model.UpdateProviderResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 	providerID := req.GetProviderId()
 
-	userProviders, _ := h.providerConfig.List(ctx, actorID)
+	userProviders, _ := h.providerConfig.List(ctx, actorPTID)
 	var existing *persistence.AgentProvider
 	for i := range userProviders {
 		if userProviders[i].Name == providerID {
@@ -348,7 +348,7 @@ func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.
 
 	if existing != nil {
 		provider, err = h.providerConfig.Update(ctx, service.ProviderUpdateRequest{
-			ActorID:     actorID,
+			ActorPTID:   actorPTID,
 			ProviderID:  providerID,
 			Version:     req.GetVersion(),
 			DisplayName: req.DisplayName,
@@ -375,7 +375,7 @@ func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.
 		}
 
 		provider, err = h.providerConfig.Create(ctx, service.ProviderCreateRequest{
-			ActorID:     actorID,
+			ActorPTID:   actorPTID,
 			ProviderID:  providerID,
 			DisplayName: displayName,
 			BaseURL:     baseURL,
@@ -384,7 +384,7 @@ func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.
 		})
 		if err == nil && !enabled {
 			provider, err = h.providerConfig.Update(ctx, service.ProviderUpdateRequest{
-				ActorID:    actorID,
+				ActorPTID:  actorPTID,
 				ProviderID: providerID,
 				Version:    provider.Version,
 				Enabled:    &enabled,
@@ -398,7 +398,7 @@ func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.
 	if kv := req.GetKeyVaults(); kv != "" {
 		if apiKey := parseKeyVaultAPIKey(kv); apiKey != "" {
 			_, _ = h.credentialCfg.Set(ctx, service.CredentialSetRequest{
-				ActorID:    actorID,
+				ActorPTID:  actorPTID,
 				ProviderID: providerID,
 				APIKey:     apiKey,
 			})
@@ -453,10 +453,10 @@ func providerAdvertisedByFrozenProfile(runtimeKind, protocol string) bool {
 }
 
 func (h *ProviderHandlers) HandleProviderDelete(ctx context.Context, req *model.DeleteProviderRequest) (*model.DeleteProviderResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 
 	if err := h.providerConfig.Delete(ctx, service.ProviderDeleteRequest{
-		ActorID:    actorID,
+		ActorPTID:  actorPTID,
 		ProviderID: req.GetProviderId(),
 		Version:    req.GetVersion(),
 	}); err != nil {
@@ -499,7 +499,7 @@ func (h *ProviderHandlers) HandleModelList(ctx context.Context, req *model.ListM
 }
 
 func (h *ProviderHandlers) HandleModelCreate(ctx context.Context, req *model.CreateModelRequest) (*model.CreateModelResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 	providerID := req.GetProviderId()
 	modelID := req.GetModelId()
 
@@ -510,12 +510,12 @@ func (h *ProviderHandlers) HandleModelCreate(ctx context.Context, req *model.Cre
 		return nil, server.NewHandlerError(http.StatusBadRequest, "model_id is required")
 	}
 
-	if err := h.ensureProviderRecord(ctx, actorID, providerID); err != nil {
+	if err := h.ensureProviderRecord(ctx, actorPTID, providerID); err != nil {
 		return nil, toHandlerError(err)
 	}
 
 	m, err := h.modelConfig.Create(ctx, service.ModelCreateRequest{
-		ActorID:       actorID,
+		ActorPTID:     actorPTID,
 		ProviderID:    providerID,
 		ModelID:       modelID,
 		DisplayName:   req.GetDisplayName(),
@@ -526,16 +526,16 @@ func (h *ProviderHandlers) HandleModelCreate(ctx context.Context, req *model.Cre
 		return nil, toHandlerError(err)
 	}
 
-	_ = h.providerConfig.UnhideModel(ctx, actorID, providerID, modelID)
+	_ = h.providerConfig.UnhideModel(ctx, actorPTID, providerID, modelID)
 
 	return &model.CreateModelResponse{Model: modelToProto(m)}, nil
 }
 
 func (h *ProviderHandlers) HandleModelUpdate(ctx context.Context, req *model.UpdateModelRequest) (*model.UpdateModelResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 
 	m, err := h.modelConfig.Update(ctx, service.ModelUpdateRequest{
-		ActorID:     actorID,
+		ActorPTID:   actorPTID,
 		ProviderID:  req.GetProviderId(),
 		ModelID:     req.GetModelId(),
 		Version:     req.GetVersion(),
@@ -550,13 +550,13 @@ func (h *ProviderHandlers) HandleModelUpdate(ctx context.Context, req *model.Upd
 }
 
 func (h *ProviderHandlers) HandleCredentialSet(ctx context.Context, req *model.SetCredentialRequest) (*model.SetCredentialResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorID(ctx)
 	if req.GetProviderId() == "" || req.GetApiKey() == "" {
 		return nil, server.NewHandlerError(http.StatusBadRequest, "provider_id and api_key are required")
 	}
 
 	status, err := h.credentialCfg.Set(ctx, service.CredentialSetRequest{
-		ActorID:    actorID,
+		ActorPTID:  actorPTID,
 		ProviderID: req.GetProviderId(),
 		APIKey:     req.GetApiKey(),
 	})
@@ -568,10 +568,10 @@ func (h *ProviderHandlers) HandleCredentialSet(ctx context.Context, req *model.S
 }
 
 func (h *ProviderHandlers) HandleCredentialDelete(ctx context.Context, req *model.DeleteCredentialRequest) (*model.DeleteCredentialResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 
 	if err := h.credentialCfg.Delete(ctx, service.CredentialDeleteRequest{
-		ActorID:    actorID,
+		ActorPTID:  actorPTID,
 		ProviderID: req.GetProviderId(),
 		Version:    req.GetVersion(),
 	}); err != nil {
@@ -582,9 +582,9 @@ func (h *ProviderHandlers) HandleCredentialDelete(ctx context.Context, req *mode
 }
 
 func (h *ProviderHandlers) HandleCredentialStatus(ctx context.Context, req *model.GetCredentialStatusRequest) (*model.GetCredentialStatusResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 
-	status, err := h.credentialCfg.Status(ctx, actorID, req.GetProviderId())
+	status, err := h.credentialCfg.Status(ctx, actorPTID, req.GetProviderId())
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -593,9 +593,9 @@ func (h *ProviderHandlers) HandleCredentialStatus(ctx context.Context, req *mode
 }
 
 func (h *ProviderHandlers) HandleCredentialResolve(ctx context.Context, req *model.ResolveCredentialRequest) (*model.ResolveCredentialResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 
-	resolved, err := h.credentialCfg.Resolve(ctx, actorID, req.GetProviderId())
+	resolved, err := h.credentialCfg.Resolve(ctx, actorPTID, req.GetProviderId())
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -611,17 +611,17 @@ func (h *ProviderHandlers) HandleCredentialResolve(ctx context.Context, req *mod
 }
 
 func (h *ProviderHandlers) HandleModelHide(ctx context.Context, req *model.HideModelRequest) (*model.HideModelResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 	if req.GetProviderId() == "" || req.GetModelId() == "" {
 		return nil, server.NewHandlerError(http.StatusBadRequest, "provider_id and model_id required")
 	}
 
 	providerID := req.GetProviderId()
-	if err := h.ensureProviderRecord(ctx, actorID, providerID); err != nil {
+	if err := h.ensureProviderRecord(ctx, actorPTID, providerID); err != nil {
 		return nil, toHandlerError(err)
 	}
 
-	if err := h.providerConfig.HideModel(ctx, actorID, providerID, req.GetModelId()); err != nil {
+	if err := h.providerConfig.HideModel(ctx, actorPTID, providerID, req.GetModelId()); err != nil {
 		return nil, toHandlerError(err)
 	}
 
@@ -629,9 +629,9 @@ func (h *ProviderHandlers) HandleModelHide(ctx context.Context, req *model.HideM
 }
 
 func (h *ProviderHandlers) HandleModelHiddenList(ctx context.Context, req *model.GetHiddenModelsRequest) (*model.GetHiddenModelsResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 
-	hidden, err := h.providerConfig.GetHiddenModels(ctx, actorID, req.GetProviderId())
+	hidden, err := h.providerConfig.GetHiddenModels(ctx, actorPTID, req.GetProviderId())
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -684,7 +684,7 @@ func providerToProto(p *persistence.AgentProvider) *model.AgentProviderInfo {
 func modelToProto(m *persistence.AgentModel) *model.AgentModelInfo {
 	return &model.AgentModelInfo{
 		Id:          m.ID,
-		ActorId:     m.ActorID,
+		ActorPtid:   m.ActorPTID,
 		ProviderId:  m.ProviderID,
 		ModelId:     m.ModelID,
 		DisplayName: m.DisplayName,
@@ -736,8 +736,8 @@ func parseKeyVaultAPIKey(kv string) string {
 // ensureProviderRecord creates a DB record for the provider if one doesn't
 // exist yet. This handles the first-activation case for catalog providers
 // that appear enabled by default but have no user-specific DB state.
-func (h *ProviderHandlers) ensureProviderRecord(ctx context.Context, actorID, providerID string) error {
-	providers, _ := h.providerConfig.List(ctx, actorID)
+func (h *ProviderHandlers) ensureProviderRecord(ctx context.Context, actorPTID, providerID string) error {
+	providers, _ := h.providerConfig.List(ctx, actorPTID)
 	for i := range providers {
 		if providers[i].Name == providerID {
 			return nil
@@ -755,7 +755,7 @@ func (h *ProviderHandlers) ensureProviderRecord(ctx context.Context, actorID, pr
 	}
 
 	_, err := h.providerConfig.Create(ctx, service.ProviderCreateRequest{
-		ActorID:     actorID,
+		ActorPTID:   actorPTID,
 		ProviderID:  providerID,
 		DisplayName: displayName,
 		BaseURL:     baseURL,

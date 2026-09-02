@@ -172,7 +172,15 @@ def _parse_scalar(value: str) -> Any:
 def validate_contract(contract: dict[str, Any], gate_defs: dict[str, Any]) -> list[str]:
     errors: list[str] = []
 
-    required_fields = {"version", "workstream", "deliverables", "gate_order"}
+    required_fields = {
+        "version",
+        "workstream",
+        "claimed_runtime_cell",
+        "canonical_range",
+        "retained_gates",
+        "deliverables",
+        "gate_order",
+    }
     for field in required_fields:
         if field not in contract:
             errors.append(f"contract missing required field: {field}")
@@ -222,6 +230,37 @@ def validate_contract(contract: dict[str, Any], gate_defs: dict[str, Any]) -> li
         if gid not in gate_defs:
             errors.append(f"gate_order references unknown gate: {gid!r}")
 
+    claimed_runtime_cell = contract.get("claimed_runtime_cell")
+    if not isinstance(claimed_runtime_cell, str) or not claimed_runtime_cell:
+        errors.append("contract must declare a claimed_runtime_cell")
+    else:
+        for gid in gate_order:
+            required_cells = gate_defs.get(gid, {}).get(
+                "requiredRuntimeCells",
+                [],
+            )
+            if required_cells and claimed_runtime_cell not in required_cells:
+                errors.append(
+                    f"gate {gid!r} does not support claimed runtime cell "
+                    f"{claimed_runtime_cell!r}"
+                )
+
+    canonical_range = contract.get("canonical_range")
+    if not isinstance(canonical_range, str) or "..." not in canonical_range:
+        errors.append("contract must declare a canonical three-dot Git range")
+
+    retained_gates = contract.get("retained_gates")
+    if (
+        not isinstance(retained_gates, list)
+        or not retained_gates
+        or any(not isinstance(gate_id, str) or not gate_id for gate_id in retained_gates)
+    ):
+        errors.append("contract must declare non-empty retained_gates")
+    else:
+        for gate_id in retained_gates:
+            if gate_id not in gate_defs:
+                errors.append(f"retained Gate {gate_id!r} is not defined")
+
     closure_gates_in_order = {g for g in gate_order if g in CLOSURE_GATE_IDS}
     if not closure_gates_in_order:
         errors.append(
@@ -239,24 +278,27 @@ def generate_plan(contract: dict[str, Any], gate_defs: dict[str, Any]) -> dict[s
     selected_gates = []
     for gid in gate_order:
         gdef = gate_defs[gid]
-        selected_gates.append(
-            {
-                "id": gid,
-                "command": gdef["command"],
-                "timeout_seconds": gdef.get("timeout_seconds", 600),
-                "environment": gdef.get("environment", "local"),
-                "provisioner": gdef.get("provisioner", ""),
-                "tier": gdef.get("tier", "local-evidence"),
-                "description": gdef.get("description", ""),
-                "required_by": [f"closure:{contract['workstream']}"],
-            }
-        )
+        planned_gate = {
+            "id": gid,
+            "command": gdef["command"],
+            "timeout_seconds": gdef.get("timeout_seconds", 600),
+            "environment": gdef.get("environment", "local"),
+            "provisioner": gdef.get("provisioner", ""),
+            "tier": gdef.get("tier", "local-evidence"),
+            "description": gdef.get("description", ""),
+            "required_by": [f"closure:{contract['workstream']}"],
+        }
+        required_cells = gdef.get("requiredRuntimeCells")
+        if required_cells:
+            planned_gate["requiredRuntimeCells"] = required_cells
+        selected_gates.append(planned_gate)
 
     return {
         "version": 1,
         "plan": f"closure-{contract['workstream'].lower()}",
         "description": contract.get("description", ""),
         "closure_contract": contract["id"] if "id" in contract else contract["workstream"],
+        "claimed_runtime_cell": contract["claimed_runtime_cell"],
         "selected_gates": selected_gates,
     }
 
@@ -270,6 +312,9 @@ def generate_manifest(contract: dict[str, Any]) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "version": 1,
         "workstream": contract["workstream"],
+        "claimed_runtime_cell": contract["claimed_runtime_cell"],
+        "canonical_range": contract["canonical_range"],
+        "retained_gates": contract["retained_gates"],
         "scan_targets": {},
     }
 

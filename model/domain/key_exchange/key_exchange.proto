@@ -22,9 +22,9 @@ message UploadKeyBundleRequest {
 
 message UploadKeyBundleResponse {}
 
-// One logical device publish for a DID (may share the DID across installs).
+// One logical device publish for a PTID (may share the PTID across installs).
 message KeyBundle {
-  string did = 1;
+  string ptid = 1;
   // Stable per-install id from the publisher; empty string means legacy row
   // (server key "legacy" is mapped to "").
   string device_id = 2;
@@ -39,10 +39,10 @@ message KeyBundle {
   repeated int32 opk_ids = 10;
 }
 
-// Fetch another actor's key bundles by DID.
+// Fetch another actor's key bundles by PTID.
 message FetchKeyBundleRequest {
-  string did = 1;
-  // When empty, return all bundles for the DID. When set, only that device_id
+  string ptid = 1;
+  // When empty, return all bundles for the PTID. When set, only that device_id
   // (after server-side normalization matching upload).
   string device_id = 2;
   // Optional Station peer id for federated lookup. When present and different
@@ -67,7 +67,7 @@ message ReplenishOpksResponse {}
 
 // Count remaining one-time prekeys.
 message OpkCountRequest {
-  string device_id = 1; // empty => legacy bucket for this DID.
+  string device_id = 1; // empty => legacy bucket for this PTID.
 }
 
 message OpkCountResponse {

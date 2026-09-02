@@ -24,7 +24,7 @@ func RequireJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(ctx c
 			authHeader := r.Header.Get("Authorization")
 
 			if len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-				logger.Warnf(ctx, "[RequireJWT] Missing or invalid Bearer token format")
+				logger.Warn(ctx, "[RequireJWT] credentials rejected: missing or invalid bearer format")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(401)
 				w.Write([]byte(`{"code":"auth_required","error":"authentication required"}`))
@@ -32,11 +32,11 @@ func RequireJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(ctx c
 			}
 
 			token := authHeader[7:]
-			logger.Debugf(ctx, "[RequireJWT] Token extracted, validating...")
+			logger.Debug(ctx, "[RequireJWT] credential validation started")
 
 			subject, err := p.Validate(ctx, token)
 			if err != nil {
-				logger.Warnf(ctx, "[RequireJWT] Token validation failed: %v", err)
+				logger.Warn(ctx, "[RequireJWT] credentials rejected: validation failed")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(401)
 				w.Write([]byte(`{"code":"token_invalid","error":"authentication required"}`))
@@ -46,7 +46,7 @@ func RequireJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(ctx c
 			if sessValidator != nil && subject.SessionID != "" {
 				valid, reason := sessValidator.CheckSessionValid(ctx, subject.SessionID)
 				if !valid {
-					logger.Warnf(ctx, "[RequireJWT] Session %s rejected: %s (user=%s)", subject.SessionID, reason, subject.ID)
+					logger.Warn(ctx, "[RequireJWT] credentials rejected: session invalid")
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(401)
 					w.Write([]byte(`{"code":"session_revoked","error":"session has been revoked","reason":"` + reason + `"}`))
@@ -54,7 +54,7 @@ func RequireJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(ctx c
 				}
 			}
 
-			logger.Infof(ctx, "[RequireJWT] Token valid, subject: %s, session: %s", subject.ID, subject.SessionID)
+			logger.Info(ctx, "[RequireJWT] authentication succeeded")
 
 			ctxWithSubject := coreauth.WithSubject(r.Context(), subject)
 			next.ServeHTTP(w, r.WithContext(ctxWithSubject))

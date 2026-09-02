@@ -31,26 +31,26 @@ func (s *AgentService) ListAgents(ctx context.Context, options domain.AgentListO
 	if err != nil {
 		return nil, 0, err
 	}
-	actorID := strings.TrimSpace(options.ActorID)
-	if actorID == "" {
-		return nil, 0, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID := strings.TrimSpace(options.ActorPTID)
+	if actorPTID == "" {
+		return nil, 0, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	page, pageSize := normalizePage(options.Page, options.PageSize)
 	query := db.WithContext(ctx).Model(&persistence.Agent{}).
-		Where("owner_actor_id = ? OR visibility = ?", actorID, string(domain.AgentVisibilityWorkspace))
+		Where("owner_actor_ptid = ? OR visibility = ?", actorPTID, string(domain.AgentVisibilityWorkspace))
 	if options.Visibility != "" {
 		query = query.Where("visibility = ?", string(normalizeAgentVisibility(options.Visibility)))
 	}
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		logger.Errorf(ctx, "failed to count agents: actor_id=%s err=%v", actorID, err)
+		logger.Errorf(ctx, "failed to count agents: actor_ptid=%s err=%v", actorPTID, err)
 		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to count agents", err)
 	}
 
 	var records []persistence.Agent
 	if err := query.Order("updated_at DESC").Limit(pageSize).Offset((page - 1) * pageSize).Find(&records).Error; err != nil {
-		logger.Errorf(ctx, "failed to list agents: actor_id=%s err=%v", actorID, err)
+		logger.Errorf(ctx, "failed to list agents: actor_ptid=%s err=%v", actorPTID, err)
 		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to list agents", err)
 	}
 	agents := make([]domain.Agent, 0, len(records))
@@ -60,8 +60,8 @@ func (s *AgentService) ListAgents(ctx context.Context, options domain.AgentListO
 	return agents, total, nil
 }
 
-func (s *AgentService) GetAgent(ctx context.Context, actorID, agentID string) (*domain.Agent, error) {
-	record, err := s.getVisibleAgent(ctx, actorID, agentID)
+func (s *AgentService) GetAgent(ctx context.Context, actorPTID, agentID string) (*domain.Agent, error) {
+	record, err := s.getVisibleAgent(ctx, actorPTID, agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (s *AgentService) createAgentTx(
 	tx *gorm.DB,
 	options domain.AgentUpsertOptions,
 ) (*domain.Agent, error) {
-	actorID := strings.TrimSpace(options.ActorID)
+	actorID := strings.TrimSpace(options.ActorPTID)
 	if actorID == "" {
 		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
 	}
@@ -105,14 +105,14 @@ func (s *AgentService) createAgentTx(
 		Effort:       strings.TrimSpace(options.Effort),
 		ThinkingMode: string(thinkingMode),
 		Visibility:   string(normalizeAgentVisibility(options.Visibility)),
-		OwnerActorID: actorID,
+		OwnerActorPTID: actorID,
 		ConfigJSON:   options.ConfigJSON,
 		Version:      1,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
 	if err := tx.WithContext(ctx).Create(&record).Error; err != nil {
-		logger.Errorf(ctx, "failed to create agent: actor_id=%s err=%v", actorID, err)
+		logger.Errorf(ctx, "failed to create agent: actor_ptid=%s err=%v", actorID, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create agent", err)
 	}
 	agent := persistenceAgentToDomain(&record)
@@ -127,7 +127,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 	var updatedAgent domain.Agent
 	var casLostResourceID string
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		record, loadErr := getOwnedAgentWithDB(ctx, tx, options.ActorID, options.AgentID)
+		record, loadErr := getOwnedAgentWithDB(ctx, tx, options.ActorPTID, options.AgentID)
 		if loadErr != nil {
 			return loadErr
 		}
@@ -169,10 +169,10 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 			"updated_at":    now,
 		}
 		result := tx.Model(&persistence.Agent{}).
-			Where("id = ? AND owner_actor_id = ? AND version = ?", record.ID, options.ActorID, record.Version).
+			Where("id = ? AND owner_actor_ptid = ? AND version = ?", record.ID, options.ActorPTID, record.Version).
 			Updates(updates)
 		if result.Error != nil {
-			logger.Errorf(ctx, "failed to update agent: actor_id=%s agent_id=%s err=%v", options.ActorID, options.AgentID, result.Error)
+			logger.Errorf(ctx, "failed to update agent: actor_ptid=%s agent_id=%s err=%v", options.ActorPTID, options.AgentID, result.Error)
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to update agent", result.Error)
 		}
 		if result.RowsAffected != 1 {
@@ -182,15 +182,15 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 			return nil
 		}
 		rebase := tx.Model(&persistence.AgentCapabilityBinding{}).
-			Where("ptid = ? AND agent_id = ? AND tombstoned_at IS NULL", options.ActorID, record.ID).
+			Where("ptid = ? AND agent_id = ? AND tombstoned_at IS NULL", options.ActorPTID, record.ID).
 			Updates(map[string]interface{}{
 				"agent_version": nextVersion,
 				"revision":      gorm.Expr("revision + 1"),
 				"updated_at":    now,
 			})
 		if rebase.Error != nil {
-			logger.Errorf(ctx, "failed to rebase agent capability bindings: actor_id=%s agent_id=%s err=%v",
-				options.ActorID, options.AgentID, rebase.Error)
+			logger.Errorf(ctx, "failed to rebase agent capability bindings: actor_ptid=%s agent_id=%s err=%v",
+				options.ActorPTID, options.AgentID, rebase.Error)
 			return errcode.New(
 				errcode.AgentInternal,
 				http.StatusInternalServerError,
@@ -198,7 +198,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 				rebase.Error,
 			)
 		}
-		if err := tx.Where("id = ? AND owner_actor_id = ?", record.ID, options.ActorID).
+		if err := tx.Where("id = ? AND owner_actor_ptid = ?", record.ID, options.ActorPTID).
 			First(record).Error; err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to re-read agent after update", err)
 		}
@@ -209,10 +209,10 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 		return nil, err
 	}
 	if casLostResourceID != "" {
-		actualRevision, loadErr := loadAuthoritativeAgentRevision(ctx, db, options.ActorID, casLostResourceID)
+		actualRevision, loadErr := loadAuthoritativeAgentRevision(ctx, db, options.ActorPTID, casLostResourceID)
 		if loadErr != nil {
-			logger.Errorf(ctx, "failed to load agent revision after CAS conflict: actor_id=%s agent_id=%s err=%v",
-				options.ActorID, options.AgentID, loadErr)
+			logger.Errorf(ctx, "failed to load agent revision after CAS conflict: actor_ptid=%s agent_id=%s err=%v",
+				options.ActorPTID, options.AgentID, loadErr)
 			return nil, errcode.New(
 				errcode.AgentInternal,
 				http.StatusInternalServerError,
@@ -226,51 +226,51 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 		Reason:       domain.AgentAuthorityInvalidationAgentUpdated,
 		AgentID:      updatedAgent.AgentID,
 		AgentVersion: uint64(updatedAgent.Version),
-	}, updatedAgent.OwnerActorID)
+	}, updatedAgent.OwnerActorPTID)
 	return &updatedAgent, nil
 }
 
-func (s *AgentService) DeleteAgent(ctx context.Context, actorID, agentID string) error {
+func (s *AgentService) DeleteAgent(ctx context.Context, actorPTID, agentID string) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
 	}
-	record, err := s.getOwnedAgent(ctx, actorID, agentID)
+	record, err := s.getOwnedAgent(ctx, actorPTID, agentID)
 	if err != nil {
 		return err
 	}
 	if err := db.WithContext(ctx).Delete(record).Error; err != nil {
-		logger.Errorf(ctx, "failed to delete agent: actor_id=%s agent_id=%s err=%v", actorID, agentID, err)
+		logger.Errorf(ctx, "failed to delete agent: actor_ptid=%s agent_id=%s err=%v", actorPTID, agentID, err)
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to delete agent", err)
 	}
 	return nil
 }
 
-func (s *AgentService) getVisibleAgent(ctx context.Context, actorID, agentID string) (*persistence.Agent, error) {
+func (s *AgentService) getVisibleAgent(ctx context.Context, actorPTID, agentID string) (*persistence.Agent, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	actorID = strings.TrimSpace(actorID)
+	actorPTID = strings.TrimSpace(actorPTID)
 	agentID = strings.TrimSpace(agentID)
-	if actorID == "" || agentID == "" {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id and agent_id are required", nil)
+	if actorPTID == "" || agentID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_ptid and agent_id are required", nil)
 	}
 	var record persistence.Agent
 	err = db.WithContext(ctx).
-		Where("id = ? AND (owner_actor_id = ? OR visibility = ?)", agentID, actorID, string(domain.AgentVisibilityWorkspace)).
+		Where("id = ? AND (owner_actor_ptid = ? OR visibility = ?)", agentID, actorPTID, string(domain.AgentVisibilityWorkspace)).
 		First(&record).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "agent not found", err)
 	}
 	if err != nil {
-		logger.Errorf(ctx, "failed to get visible agent: actor_id=%s agent_id=%s err=%v", actorID, agentID, err)
+		logger.Errorf(ctx, "failed to get visible agent: actor_ptid=%s agent_id=%s err=%v", actorPTID, agentID, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to get agent", err)
 	}
 	return &record, nil
 }
 
-func (s *AgentService) getOwnedAgent(ctx context.Context, actorID, agentID string) (*persistence.Agent, error) {
+func (s *AgentService) getOwnedAgent(ctx context.Context, actorPTID, agentID string) (*persistence.Agent, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -286,8 +286,8 @@ func getOwnedAgentWithDB(
 ) (*persistence.Agent, error) {
 	actorID = strings.TrimSpace(actorID)
 	agentID = strings.TrimSpace(agentID)
-	if actorID == "" || agentID == "" {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id and agent_id are required", nil)
+	if actorPTID == "" || agentID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_ptid and agent_id are required", nil)
 	}
 	var record persistence.Agent
 	err := db.WithContext(ctx).Where("id = ?", agentID).First(&record).Error
@@ -295,10 +295,10 @@ func getOwnedAgentWithDB(
 		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "agent not found", err)
 	}
 	if err != nil {
-		logger.Errorf(ctx, "failed to get owned agent: actor_id=%s agent_id=%s err=%v", actorID, agentID, err)
+		logger.Errorf(ctx, "failed to get owned agent: actor_ptid=%s agent_id=%s err=%v", actorPTID, agentID, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to get agent", err)
 	}
-	if record.OwnerActorID != actorID {
+	if record.OwnerActorPTID != actorPTID {
 		return nil, errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden, "agent mutation requires owner", nil)
 	}
 	return &record, nil
@@ -316,7 +316,7 @@ func loadAuthoritativeAgentRevision(
 	err := db.WithContext(ctx).
 		Model(&persistence.Agent{}).
 		Select("version").
-		Where("id = ? AND owner_actor_id = ?", strings.TrimSpace(agentID), strings.TrimSpace(actorID)).
+		Where("id = ? AND owner_actor_ptid = ?", strings.TrimSpace(agentID), strings.TrimSpace(actorID)).
 		Take(&record).Error
 	if err != nil {
 		return 0, err
@@ -342,7 +342,7 @@ func (s *AgentService) publishAuthorityInvalidation(
 			"agent_id": payload.AgentID,
 		},
 	}); err != nil {
-		logger.Errorf(ctx, "failed to publish agent authority invalidation: actor_id=%s agent_id=%s err=%v",
+		logger.Errorf(ctx, "failed to publish agent authority invalidation: actor_ptid=%s agent_id=%s err=%v",
 			actorID, payload.AgentID, err)
 	}
 }
@@ -408,7 +408,7 @@ func persistenceAgentToDomain(record *persistence.Agent) domain.Agent {
 		Effort:       record.Effort,
 		ThinkingMode: thinkingMode,
 		Visibility:   domain.AgentVisibility(record.Visibility),
-		OwnerActorID: record.OwnerActorID,
+		OwnerActorPTID: record.OwnerActorPTID,
 		ConfigJSON:   record.ConfigJSON,
 		Version:      record.Version,
 		CreatedAt:    record.CreatedAt,

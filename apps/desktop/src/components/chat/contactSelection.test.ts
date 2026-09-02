@@ -10,12 +10,13 @@ import {
 function conversation(
   id: string,
   kind: 'friend' | 'group',
-  peerDid?: string,
+  peerPtid?: string,
 ): DesktopIMConversationProjection {
   return {
     id,
     kind,
-    peerDid,
+    authorityStationId: 'station-authority',
+    peerPtid,
     title: id,
     avatar: '',
     lastActivityMs: 0,
@@ -37,7 +38,7 @@ describe('findContactConversation', () => {
   it('does not treat a peer PTID as a conversation ID', () => {
     const selection: ContactSelection = {
       kind: 'friend',
-      peerDid: 'ptid:bob',
+      peerPtid: 'ptid:bob',
       displayName: 'Bob',
     };
 
@@ -47,7 +48,7 @@ describe('findContactConversation', () => {
   it('resolves an accepted contact after its direct conversation exists', () => {
     const selection: ContactSelection = {
       kind: 'friend',
-      peerDid: 'ptid:alice',
+      peerPtid: 'ptid:alice',
       displayName: 'Alice',
     };
 
@@ -74,7 +75,7 @@ describe('findContactConversation', () => {
     )).toEqual({
       kind: 'friend',
       conversationId: 'dm-1',
-      peerDid: 'ptid:alice',
+      peerPtid: 'ptid:alice',
       displayName: 'Alice',
       avatar: 'avatar',
     });
@@ -88,7 +89,7 @@ describe('findContactConversation', () => {
       conversations,
     )).toEqual({
       kind: 'friend',
-      peerDid: 'ptid:bob',
+      peerPtid: 'ptid:bob',
       displayName: 'Bob',
       avatar: undefined,
     });
@@ -102,5 +103,28 @@ describe('contacts panel projection subscriptions', () => {
     expect(source).toContain('conversationRecords: s.conversations');
     expect(source).toContain('conversationMembers: s.conversationMembers');
     expect(source).toContain('groupMembers: s.groupMembers');
+  });
+});
+
+describe('session search direct conversation selection', () => {
+  const source = readFileSync(new URL('./ChatSessionList.tsx', import.meta.url), 'utf8');
+
+  it('selects the command result before background reconciliation', () => {
+    const createIndex = source.indexOf(
+      'const conversation = await imServiceV1.messaging.createDirect(c.peerPtid);',
+    );
+    const selectIndex = source.indexOf(
+      'selectSession(conversation.conversationId);',
+      createIndex,
+    );
+    const reconcileIndex = source.indexOf(
+      'loadSessions().catch((error) => {',
+      selectIndex,
+    );
+
+    expect(createIndex).toBeGreaterThan(-1);
+    expect(selectIndex).toBeGreaterThan(createIndex);
+    expect(reconcileIndex).toBeGreaterThan(selectIndex);
+    expect(source).not.toContain('await loadSessions();');
   });
 });

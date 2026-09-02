@@ -1,4 +1,5 @@
 import type { MobileAuthSession } from '../auth/authSession';
+import { mobileAuthScopeKey } from '../auth/mobileAuthIdentity';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import type { MessageMutationKind } from './socialProjection';
 import type { FriendChatMessage } from './socialTypes';
@@ -15,9 +16,9 @@ interface RealtimeHandlers {
     kind: MessageMutationKind,
     payload: { newContent: string; newCiphertext: Uint8Array<ArrayBufferLike>; mutatedTsUnixMs: number },
   ) => void;
-  onTyping: (sessionUlid: string, fromActorId: string, typing: boolean) => void;
-  onPresence: (actorId: string, online: boolean) => void;
-  onGroupMembership: (groupUlid: string, actorDid: string, kind: GroupMembershipKind) => void;
+  onTyping: (sessionUlid: string, fromActorPtid: string, typing: boolean) => void;
+  onPresence: (ptid: string, online: boolean) => void;
+  onGroupMembership: (groupUlid: string, actorPtid: string, kind: GroupMembershipKind) => void;
   onSettingsChanged: (conversationKind: 'friend' | 'group', containerUlid: string) => void;
   onResync: () => void;
 }
@@ -32,7 +33,7 @@ export async function startRealtimeStream(
     headers: {
       Accept: 'text/event-stream',
       Authorization: `Bearer ${session.accessToken}`,
-      'X-Device-ID': `mobile-web-${session.sessionId}`,
+      'X-Device-ID': `mobile-web-${mobileAuthScopeKey(session)}`,
     },
     signal,
   });
@@ -75,15 +76,15 @@ function dispatchWireEvents(chunk: string, handlers: RealtimeHandlers) {
       return;
     }
     if (event.kind === 'typing') {
-      handlers.onTyping(event.sessionUlid, event.fromActorId, event.typing);
+      handlers.onTyping(event.sessionUlid, event.fromActorPtid, event.typing);
       return;
     }
     if (event.kind === 'presence') {
-      handlers.onPresence(event.actorId, event.online);
+      handlers.onPresence(event.ptid, event.online);
       return;
     }
     if (event.kind === 'group-membership') {
-      handlers.onGroupMembership(event.groupUlid, event.actorDid, event.membershipKind);
+      handlers.onGroupMembership(event.groupUlid, event.actorPtid, event.membershipKind);
       return;
     }
     if (event.kind === 'settings-changed') {

@@ -25,13 +25,13 @@ func NewCredentialConfigService() *CredentialConfigService {
 }
 
 type CredentialSetRequest struct {
-	ActorID    string
+	ActorPTID  string
 	ProviderID string
 	APIKey     string
 }
 
 type CredentialDeleteRequest struct {
-	ActorID    string
+	ActorPTID  string
 	ProviderID string
 	Version    int64
 }
@@ -53,7 +53,7 @@ func (s *CredentialConfigService) Set(ctx context.Context, req CredentialSetRequ
 		return nil, err
 	}
 
-	if strings.TrimSpace(req.ActorID) == "" || strings.TrimSpace(req.ProviderID) == "" {
+	if strings.TrimSpace(req.ActorPTID) == "" || strings.TrimSpace(req.ProviderID) == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 			"actor_id and provider_id are required", nil)
 	}
@@ -66,7 +66,7 @@ func (s *CredentialConfigService) Set(ctx context.Context, req CredentialSetRequ
 	if err != nil {
 		return nil, err
 	}
-	logger.Infof(ctx, "credential set: actor=%s, provider=%s, version=%d", req.ActorID, req.ProviderID, status.Version)
+	logger.Infof(ctx, "credential set: actor_ptid=%s, provider=%s, version=%d", req.ActorPTID, req.ProviderID, status.Version)
 	return status, nil
 }
 
@@ -81,7 +81,7 @@ func (s *CredentialConfigService) setWithDB(
 		now := time.Now()
 
 		var providerRecord persistence.AgentProvider
-		query := tx.Where("actor_id = ? AND name = ?", req.ActorID, req.ProviderID).
+		query := tx.Where("actor_ptid = ? AND name = ?", req.ActorPTID, req.ProviderID).
 			First(&providerRecord)
 		if query.Error != nil {
 			if query.Error != gorm.ErrRecordNotFound {
@@ -90,7 +90,7 @@ func (s *CredentialConfigService) setWithDB(
 			}
 
 			providerRecord = *newProviderRecord(ProviderCreateRequest{
-				ActorID:    req.ActorID,
+				ActorPTID: req.ActorPTID,
 				ProviderID: req.ProviderID,
 			})
 			if providerRecord.SourceType != "catalog" {
@@ -122,7 +122,7 @@ func (s *CredentialConfigService) setWithDB(
 		}
 		cred := persistence.Credential{
 			ID:       poolID,
-			ActorID:  req.ActorID,
+			ActorPTID: req.ActorPTID,
 			Provider: req.ProviderID,
 			AuthType: "api_key",
 			Source:   "auth_store",
@@ -130,7 +130,7 @@ func (s *CredentialConfigService) setWithDB(
 			Version:  1,
 		}
 		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "actor_id"}, {Name: "provider"}},
+			Columns: []clause.Column{{Name: "actor_ptid"}, {Name: "provider"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{
 				"id":         poolID,
 				"status":     "active",
@@ -143,7 +143,7 @@ func (s *CredentialConfigService) setWithDB(
 		}
 
 		var current persistence.Credential
-		if err := tx.Where("actor_id = ? AND provider = ?", req.ActorID, req.ProviderID).
+		if err := tx.Where("actor_ptid = ? AND provider = ?", req.ActorPTID, req.ProviderID).
 			First(&current).Error; err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"failed to read credential after set", err)
@@ -172,7 +172,7 @@ func (s *CredentialConfigService) Delete(ctx context.Context, req CredentialDele
 
 	var cred persistence.Credential
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND provider = ?", req.ActorID, req.ProviderID).
+		Where("actor_ptid = ? AND provider = ?", req.ActorPTID, req.ProviderID).
 		First(&cred).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return errcode.New(errcode.AgentNotFound, http.StatusNotFound,
@@ -192,12 +192,12 @@ func (s *CredentialConfigService) Delete(ctx context.Context, req CredentialDele
 			"failed to delete credential", err)
 	}
 
-	logger.Infof(ctx, "credential deleted: actor=%s, provider=%s", req.ActorID, req.ProviderID)
+	logger.Infof(ctx, "credential deleted: actor_ptid=%s, provider=%s", req.ActorPTID, req.ProviderID)
 	return nil
 }
 
 // Status returns credential status without exposing the actual key value.
-func (s *CredentialConfigService) Status(ctx context.Context, actorID, providerID string) (*CredentialStatusResponse, error) {
+func (s *CredentialConfigService) Status(ctx context.Context, actorPTID, providerID string) (*CredentialStatusResponse, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -205,7 +205,7 @@ func (s *CredentialConfigService) Status(ctx context.Context, actorID, providerI
 
 	var cred persistence.Credential
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND provider = ?", actorID, providerID).
+		Where("actor_ptid = ? AND provider = ?", actorPTID, providerID).
 		First(&cred).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return &CredentialStatusResponse{
@@ -236,7 +236,7 @@ type CredentialResolveResponse struct {
 
 // Resolve returns the actual credentials for an authenticated actor's provider.
 // Only the owning actor can resolve their own credentials.
-func (s *CredentialConfigService) Resolve(ctx context.Context, actorID, providerID string) (*CredentialResolveResponse, error) {
+func (s *CredentialConfigService) Resolve(ctx context.Context, actorPTID, providerID string) (*CredentialResolveResponse, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -244,7 +244,7 @@ func (s *CredentialConfigService) Resolve(ctx context.Context, actorID, provider
 
 	var provider persistence.AgentProvider
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND name = ?", actorID, providerID).
+		Where("actor_ptid = ? AND name = ?", actorPTID, providerID).
 		First(&provider).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,

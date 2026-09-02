@@ -121,8 +121,7 @@ message DelegationResult {
 message Conversation {
   string conversation_id = 1;
   string agent_id = 2;
-  reserved 3;
-  reserved "user_id";
+  string actor_ptid = 3;
   string title = 4;
   string description = 5;
   string provider_id = 6;
@@ -196,7 +195,7 @@ message Agent {
   string model_name = 6;
   string effort = 7;
   AgentVisibility visibility = 8;
-  string owner_actor_id = 9;
+  string owner_actor_ptid = 9;
   string config_json = 10;
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp updated_at = 12;

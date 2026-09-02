@@ -4,12 +4,16 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/session"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	actoridentity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -91,7 +95,7 @@ type AuthResult struct {
 
 // TokenInfo represents information extracted from a validated token
 type TokenInfo struct {
-	ActorID   uint64    `json:"user_id"`
+	ActorPTID string    `json:"ptid"`
 	Email     string    `json:"email"`
 	ExpiresAt time.Time `json:"expires_at"`
 	IssuedAt  time.Time `json:"issued_at"`
@@ -147,13 +151,97 @@ func (s *AuthService) ValidateToken(ctx context.Context, token string) (*TokenIn
 
 // SessionLoginResult contains the result of a successful login with session
 type SessionLoginResult struct {
-	AccessToken   string                 `json:"access_token"`
-	RefreshToken  string                 `json:"refresh_token"`
-	TokenType     string                 `json:"token_type"`
-	ExpiresAt     time.Time              `json:"expires_at"`
-	SessionID     string                 `json:"session_id"`
-	User          map[string]interface{} `json:"user"`
-	KickedSession bool                   `json:"kicked_session,omitempty"` // True if another session was kicked
+	AccessToken   string    `json:"access_token"`
+	RefreshToken  string    `json:"refresh_token"`
+	TokenType     string    `json:"token_type"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	SessionID     string    `json:"session_id"`
+	Actor         *db.Actor `json:"-"`
+	KickedSession bool      `json:"kicked_session,omitempty"` // True if another session was kicked
+}
+
+// OAuthSessionBinding is the immutable authorization metadata persisted with a
+// candidate-keyed session before credential delivery is acknowledged.
+type OAuthSessionBinding struct {
+	CandidateID            string
+	AccessAttemptID        string
+	StationPeerID          string
+	AccessDecisionRevision uint64
+	DeviceID               string
+	LifecycleGeneration    uint64
+}
+
+// PrepareOAuthSession creates bearer material and its inactive persistent
+// session row without writing either. The OAuth finalizer owns the surrounding
+// database transaction and encrypts the returned LoginResponse before commit.
+func PrepareOAuthSession(
+	ctx context.Context,
+	actor *db.Actor,
+	binding OAuthSessionBinding,
+	now time.Time,
+) (*session.SessionRecord, *model.LoginResponse, error) {
+	if actor == nil {
+		return nil, nil, errors.New("cannot prepare OAuth session without actor")
+	}
+	ptid := strings.TrimSpace(actor.PTID)
+	if _, err := actoridentity.Parse(ptid); err != nil {
+		return nil, nil, fmt.Errorf("cannot prepare OAuth session for actor without valid PTID: %w", err)
+	}
+	if strings.TrimSpace(binding.CandidateID) == "" ||
+		strings.TrimSpace(binding.AccessAttemptID) == "" ||
+		strings.TrimSpace(binding.StationPeerID) == "" ||
+		strings.TrimSpace(binding.DeviceID) == "" ||
+		binding.LifecycleGeneration == 0 ||
+		binding.AccessDecisionRevision == 0 {
+		return nil, nil, errors.New("OAuth session binding is incomplete")
+	}
+
+	sessionID, err := generateSessionID()
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate OAuth session ID: %w", err)
+	}
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{
+		SubjectID:  ptid,
+		SessionID:  sessionID,
+		Attributes: map[string]string{"email": actor.Email},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("issue OAuth session credential: %w", err)
+	}
+
+	expiresAt := now.Add(DefaultSessionDuration)
+	record := &session.SessionRecord{
+		SessionID:              sessionID,
+		UserID:                 actor.ID,
+		Email:                  actor.Email,
+		DeviceType:             session.DeviceTypeMobile,
+		OAuthCandidateID:       binding.CandidateID,
+		AccessAttemptID:        binding.AccessAttemptID,
+		StationPeerID:          binding.StationPeerID,
+		AccessDecisionRevision: binding.AccessDecisionRevision,
+		DeviceID:               binding.DeviceID,
+		LifecycleGeneration:    binding.LifecycleGeneration,
+		AuthMethod:             "oauth",
+		CreatedAt:              now,
+		ExpiresAt:              expiresAt,
+		LastActiveAt:           now,
+		Revoked:                true,
+		RevokedReason:          "credential_delivery_pending",
+	}
+	return record, &model.LoginResponse{
+		Tokens: &model.AuthTokens{
+			Token:       token.Value,
+			AccessToken: token.Value,
+			TokenType:   token.Type,
+			ExpiresAt:   token.ExpiresAt.Format(time.RFC3339),
+		},
+		SessionId: sessionID,
+		ActorRef: &model.ActorRef{
+			Ptid: ptid,
+			Kind: model.ActorKind_ACTOR_KIND_PERSON,
+		},
+	}, nil
 }
 
 func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, userAgent, deviceType string) (*SessionLoginResult, error) {
@@ -176,6 +264,14 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 // IssueTokenAndSession creates a JWT token + session for an already-authenticated Actor.
 // extraData is merged into session.Data (e.g. {"auth_method": "oauth_bridge"}).
 func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAgent, deviceType string, extraData map[string]interface{}) (*SessionLoginResult, error) {
+	if actor == nil {
+		return nil, errors.New("cannot issue session without actor")
+	}
+	ptid := strings.TrimSpace(actor.PTID)
+	if _, err := actoridentity.Parse(ptid); err != nil {
+		return nil, fmt.Errorf("cannot issue session for actor without valid PTID: %w", err)
+	}
+
 	sessionID, err := generateSessionID()
 	if err != nil {
 		return nil, err
@@ -187,7 +283,7 @@ func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAg
 
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{
-		SubjectID:  fmt.Sprintf("%d", actor.ID),
+		SubjectID:  ptid,
 		SessionID:  sessionID,
 		Attributes: map[string]string{"email": actor.Email},
 	})
@@ -223,15 +319,8 @@ func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAg
 		TokenType:     token.Type,
 		ExpiresAt:     token.ExpiresAt,
 		SessionID:     sessionID,
+		Actor:         actor,
 		KickedSession: kickedCount > 0,
-		User: map[string]interface{}{
-			"id":           actor.ID,
-			"actor_id":     actor.ID,
-			"name":         actor.PreferredUsername,
-			"display_name": actor.Name,
-			"email":        actor.Email,
-			"username":     actor.PreferredUsername,
-		},
 	}, nil
 }
 

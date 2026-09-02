@@ -8,8 +8,7 @@ import { normalizeDecision, type AccessDecision } from '../services/accessGate';
 
 // TODO(unified-actor): align with AccountIdentity (desktop_api) for cross-layer consistency.
 export interface CurrentUser {
-  actorId: string;
-  ptid?: string;
+  actorPtid: string;
   name: string;
   email: string;
   /** Remote avatar URL. The single piece of avatar state the frontend tracks;
@@ -32,7 +31,7 @@ interface SessionStore {
   restoring: boolean;
 
   reset: () => void;
-  hydrate: (actorId: string) => Promise<void>;
+  hydrate: (actorPtid: string) => Promise<void>;
 
   loginWithPassword: (account: string, password: string) => Promise<void>;
   loginWithOAuth: (providerId: string) => Promise<void>;
@@ -44,6 +43,7 @@ interface SessionStore {
   accessSubmitLogin: (attemptId: string, account: string, password: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
+  activateAuthenticatedSession: (response: AuthSessionResponse) => void;
   activateAppletLaunchSession: (user: CurrentUser) => void;
   /** Update the current actor profile projection after identity reconciliation. */
   updateProfile: (profile: Partial<Pick<CurrentUser, 'name' | 'email' | 'avatarUrl'>>) => void;
@@ -54,10 +54,9 @@ interface SessionStore {
 // ── Helpers (exported for tests; mapping mirrors `restoreSession`) ──
 
 function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'password' | 'oauth', provider?: string): CurrentUser | null {
-  if (!resp.actor_id) return null;
+  if (!resp.actor_ptid?.startsWith('ptid:')) return null;
   return {
-    actorId: resp.actor_id,
-    ptid: resp.ptid || resp.actor_id,
+    actorPtid: resp.actor_ptid,
     name: resp.name || '',
     email: resp.email || '',
     avatarUrl: resp.avatar_url || undefined,
@@ -100,7 +99,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     const resp = await api.authLogin({ account, password });
     await runIdentityPipeline({
       reason: 'login',
-      actorId: resp.actor_id ?? null,
+      actorPtid: resp.actor_ptid ?? null,
       loginMethod: 'password',
     });
   },
@@ -120,18 +119,18 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     const resp = await api.accessSubmitLogin({ attempt_id: attemptId, account, password });
     await runIdentityPipeline({
       reason: 'login',
-      actorId: resp.actor_id ?? null,
+      actorPtid: resp.actor_ptid ?? null,
       loginMethod: 'password',
     });
   },
 
-  loginWithOAuth: async (_providerId: string) => {
+  loginWithOAuth: async (loopbackSessionId: string) => {
     markLocalIdentityAction();
-    const resp = await api.ensureStationSession();
+    const resp = await api.ensureStationSession(loopbackSessionId);
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
       reason: 'oauth_bridge',
-      actorId: resp.actor_id ?? null,
+      actorPtid: resp.actor_ptid ?? null,
       loginMethod: method,
     });
   },
@@ -159,7 +158,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     reportFoundationCleanupLogout('cleanup-logout-started');
     await runIdentityPipeline({
       reason: 'logout',
-      actorId: null,
+      actorPtid: null,
       loginMethod: null,
     });
     reportFoundationCleanupLogout('cleanup-identity-pipeline-finished');
@@ -175,6 +174,17 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       // Best-effort: if the session is already expired/revoked, still clear local state.
     }
     reportFoundationCleanupLogout('cleanup-auth-logout-finished');
+  },
+
+  activateAuthenticatedSession: (response) => {
+    const method = response.login_method || 'password';
+    const isOAuth = method !== 'password';
+    const user = userFromAuthResponse(
+      response,
+      isOAuth ? 'oauth' : 'password',
+      isOAuth ? method : undefined,
+    );
+    set({ currentUser: user, authenticated: !!user, restoring: false });
   },
 
   activateAppletLaunchSession: (user) => {
@@ -203,8 +213,8 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   },
 }));
 
-export function currentAuthenticatedActorId(): string | null {
+export function currentAuthenticatedActorPtid(): string | null {
   const session = useSessionStore.getState();
   if (!session.authenticated) return null;
-  return session.currentUser?.ptid || session.currentUser?.actorId || null;
+  return session.currentUser?.actorPtid ?? null;
 }

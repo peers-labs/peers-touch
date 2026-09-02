@@ -23,6 +23,9 @@ def proven_result(gate_id: str) -> dict[str, Any]:
         "status": "passed",
         "completionStatus": "DONE",
         "proofStatus": "PROVEN",
+        "sourceArtifact": {"path": f"reports/{gate_id}.json"},
+        "sourceArtifactKind": "acceptance-gate-evidence-report",
+        "evidenceGateId": gate_id,
     }
 
 
@@ -54,6 +57,93 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
                 "tooling/acceptance/core/provisioner.py",
             ],
         )
+
+    def test_supplied_plan_cannot_filter_canonical_exact_range_gates(
+        self,
+    ) -> None:
+        report = MODULE.detect(
+            claim="Acceptance plan is complete",
+            paths=["tooling/acceptance/core/provisioner.py"],
+            plan={
+                "changed_paths": [
+                    "tooling/acceptance/core/provisioner.py",
+                ],
+                "selected_gates": ["acceptance-plan-self"],
+            },
+            canonical_plan={
+                "changed_paths": [
+                    "tooling/acceptance/core/provisioner.py",
+                ],
+                "selected_gates": [
+                    "acceptance-plan-self",
+                    "acceptance-runtime-provisioning-self",
+                ],
+            },
+            run={
+                "results": [
+                    proven_result("acceptance-plan-self"),
+                ],
+            },
+            required_gates=[],
+        )
+
+        self.assertEqual(report["proofState"], "UNPROVEN")
+        invalid = next(
+            item
+            for item in report["gaps"]
+            if item["gapType"] == "ACCEPTANCE_GAP_DETECTOR_INPUT_INVALID"
+        )
+        self.assertEqual(
+            invalid["evidence"][0]["missingCanonicalGates"],
+            ["acceptance-runtime-provisioning-self"],
+        )
+
+    def test_supplied_plan_may_add_gates_to_canonical_exact_range(
+        self,
+    ) -> None:
+        report = MODULE.detect(
+            claim="Acceptance plan is complete",
+            paths=["tooling/acceptance/core/provisioner.py"],
+            plan={
+                "changed_paths": [
+                    "tooling/acceptance/core/provisioner.py",
+                ],
+                "selected_gates": [
+                    "acceptance-plan-self",
+                    "acceptance-runtime-provisioning-self",
+                    "manual-review-gate",
+                ],
+            },
+            canonical_plan={
+                "changed_paths": [
+                    "tooling/acceptance/core/provisioner.py",
+                ],
+                "selected_gates": [
+                    "acceptance-plan-self",
+                    "acceptance-runtime-provisioning-self",
+                ],
+            },
+            run={
+                "results": [
+                    proven_result("acceptance-plan-self"),
+                    proven_result("acceptance-runtime-provisioning-self"),
+                    proven_result("manual-review-gate"),
+                ],
+            },
+            required_gates=[],
+        )
+
+        self.assertEqual(report["proofState"], "PROVEN")
+        self.assertEqual(report["gaps"], [])
+
+    def test_canonical_exact_range_plan_uses_acceptance_planner(self) -> None:
+        canonical = MODULE.canonical_plan_for_paths(
+            ["tooling/acceptance/core/provisioner.py"]
+        )
+
+        selected = set(MODULE.gate_entries(canonical))
+        self.assertIn("acceptance-plan-self", selected)
+        self.assertIn("acceptance-runtime-provisioning-self", selected)
 
     def test_proven_local_gate_has_no_gap(self) -> None:
         report = MODULE.detect(
@@ -173,6 +263,44 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
         self.assertEqual(
             report["gaps"][0]["gapType"],
             "RUNTIME_MANIFEST_MISSING",
+        )
+
+    def test_environment_gate_rejects_noncanonical_evidence_kind(self) -> None:
+        gate_id = "chat-native-two-client-e2e"
+        result = proven_result(gate_id)
+        result["sourceArtifactKind"] = "forged-kind"
+        result["manifest"] = {
+            "state": "FIXTURE_READY",
+            "runId": "run-current",
+            "source": {
+                "commit": "current-head",
+                "workspaceDigest": "clean",
+            },
+        }
+
+        report = MODULE.detect(
+            claim="Native receipt delivery is proven",
+            paths=[],
+            plan={
+                "selected_gates": [
+                    {
+                        "id": gate_id,
+                        "environment": "home-station",
+                        "tier": "env-evidence",
+                        "provisioner": "home-station",
+                    }
+                ]
+            },
+            run={"results": [result]},
+            required_gates=[],
+            source_commit="current-head",
+            workspace_digest="clean",
+        )
+
+        self.assertEqual(report["proofState"], "UNPROVEN")
+        self.assertEqual(
+            report["gaps"][0]["gapType"],
+            "GATE_EVIDENCE_UNPROVEN",
         )
 
     def test_stale_runtime_manifest_is_rejected(self) -> None:

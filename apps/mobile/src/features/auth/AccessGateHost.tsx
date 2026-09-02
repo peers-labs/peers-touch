@@ -1,13 +1,23 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Input, Typography } from 'antd';
-import { ArrowLeft, KeyRound, LockKeyhole, Server, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Code2, Globe2, KeyRound, LockKeyhole, Server, ShieldAlert } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import logo from '../../assets/logo.png';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import {
+  cancelOAuth,
+  oauthPhaseMessageKey,
+  refreshOAuthStatus,
+  retryOAuthBrowser,
+  startOAuth,
+  useAuthRuntime,
+  type MobileOAuthProvider,
+} from '../../runtimes/authRuntime';
+import {
   accessDecisionMessage,
   isAccessBlocked,
+  isAccessGranted,
   isInviteCodeGate,
   isLoginGate,
   parseGateFields,
@@ -36,13 +46,14 @@ export function AccessGateHost({
   loading: boolean;
   rememberedAccounts: RememberedLoginAccount[];
   onBack: () => void;
-  onLogin: (input: Omit<StationLoginInput, 'stationUrl'>) => Promise<void>;
+  onLogin: (input: Omit<StationLoginInput, 'stationPeerId' | 'stationUrl'>) => Promise<void>;
   onInviteCode: (code: string) => Promise<void>;
 }) {
   const { t } = useMobileI18n();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
+  const oauth = useAuthRuntime();
 
   const ready = Boolean(decision);
   const blocked = isAccessBlocked(decision);
@@ -53,7 +64,10 @@ export function AccessGateHost({
   // login gate keeps its purpose-built credential form. When no gate is named
   // we default to the login form so the legacy flow is unaffected.
   const showInviteCode = ready && !blocked && isInviteCodeGate(currentGate);
-  const showLogin = ready && !blocked && (isLoginGate(currentGate) || !currentGate);
+  const showLogin = ready
+    && !blocked
+    && !isAccessGranted(decision)
+    && (isLoginGate(currentGate) || !currentGate);
 
   const inviteFields = parseGateFields(currentGate);
   const inviteFieldLabel = inviteFields[0]?.label;
@@ -78,6 +92,23 @@ export function AccessGateHost({
     await onInviteCode(inviteCode.trim());
     setInviteCode('');
   }
+
+  async function submitOAuth(provider: MobileOAuthProvider) {
+    if (!showLogin || loading || !decision?.attemptId) return;
+    await startOAuth({
+      provider,
+      stationUrl,
+      accessAttemptId: decision.attemptId,
+      gateId: currentGate?.gateId || 'auth.login',
+    });
+  }
+
+  const oauthBusy = ['starting', 'callback_received', 'exchanging', 'credential_delivery'].includes(oauth.phase);
+  const oauthVisible = Boolean(oauth.errorKey)
+    || (oauth.phase !== 'idle' && oauth.phase !== 'cancelled');
+  const oauthMessage = oauth.errorKey
+    ? t(oauth.errorKey)
+    : t(oauthPhaseMessageKey(oauth.phase));
 
   const headerCopy = !ready
     ? t('mobile.auth.preparing')
@@ -173,6 +204,60 @@ export function AccessGateHost({
               onChange={(event) => setPassword(event.target.value)}
               onPressEnter={submitLogin}
             />
+            <div className="auth-oauth-divider" role="separator">
+              <span>{t('mobile.auth.oauthOr')}</span>
+            </div>
+            <div className="auth-oauth-providers" aria-label={t('mobile.auth.oauthProviders')}>
+              <Button
+                icon={<Code2 size={17} />}
+                loading={oauthBusy && oauth.provider === 'github'}
+                disabled={loading || oauthBusy}
+                onClick={() => submitOAuth('github')}
+              >
+                {t('mobile.auth.oauthGithub')}
+              </Button>
+              <Button
+                icon={<Globe2 size={17} />}
+                loading={oauthBusy && oauth.provider === 'google'}
+                disabled={loading || oauthBusy}
+                onClick={() => submitOAuth('google')}
+              >
+                {t('mobile.auth.oauthGoogle')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {oauthVisible ? (
+          <div className={`auth-oauth-state auth-oauth-state-${oauth.phase}`} role={oauth.errorKey ? 'alert' : 'status'}>
+            <Text type={oauth.errorKey ? 'danger' : 'secondary'}>{oauthMessage}</Text>
+            <div className="auth-oauth-recovery">
+              {oauth.recovery === 'retry-provider' ? (
+                <Button size="small" onClick={() => void retryOAuthBrowser()}>
+                  {t('mobile.auth.oauthRetryProvider')}
+                </Button>
+              ) : null}
+              {oauth.recovery === 'check-status' ? (
+                <Button size="small" onClick={() => void refreshOAuthStatus()}>
+                  {t('mobile.auth.oauthCheckStatus')}
+                </Button>
+              ) : null}
+              {oauth.recovery === 'restart' ? (
+                <Button size="small" onClick={() => void cancelOAuth()}>
+                  {t('mobile.auth.oauthRestart')}
+                </Button>
+              ) : null}
+              {oauth.recovery === 'change-station' ? (
+                <Button size="small" onClick={onBack}>
+                  {t('mobile.auth.changeStation')}
+                </Button>
+              ) : null}
+              {oauth.phase === 'awaiting_provider' ? (
+                <Button size="small" onClick={() => void cancelOAuth()}>
+                  {t('mobile.auth.oauthCancel')}
+                </Button>
+              ) : null}
+            </div>
           </div>
         ) : null}
 

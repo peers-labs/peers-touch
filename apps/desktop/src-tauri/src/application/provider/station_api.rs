@@ -25,7 +25,7 @@ where
 pub struct StationProvider {
     pub id: String,
     #[serde(default)]
-    pub actor_id: String,
+    pub actor_ptid: String,
     pub name: String,
     #[serde(default)]
     pub display_name: String,
@@ -46,7 +46,7 @@ pub struct StationProvider {
 pub struct StationModel {
     pub id: String,
     #[serde(default)]
-    pub actor_id: String,
+    pub actor_ptid: String,
     pub provider_id: String,
     pub model_id: String,
     pub display_name: String,

@@ -26,7 +26,7 @@ func NewAgentHandlers(agentService *service.AgentService, eventBus domain.EventB
 
 func (h *AgentHandlers) HandleListAgents(ctx context.Context, req *model.ListAgentsRequest) (*model.ListAgentsResponse, error) {
 	agents, total, err := h.agentService.ListAgents(ctx, domain.AgentListOptions{
-		ActorID:    subjectActorID(ctx),
+		ActorPTID:  subjectActorPTID(ctx),
 		Visibility: protoAgentVisibilityToDomain(req.GetVisibility()),
 		Page:       int(req.GetPage()),
 		PageSize:   int(req.GetPageSize()),
@@ -45,7 +45,7 @@ func (h *AgentHandlers) HandleListAgents(ctx context.Context, req *model.ListAge
 }
 
 func (h *AgentHandlers) HandleGetAgent(ctx context.Context, req *model.GetAgentRequest) (*model.GetAgentResponse, error) {
-	agent, err := h.agentService.GetAgent(ctx, subjectActorID(ctx), req.GetAgentId())
+	agent, err := h.agentService.GetAgent(ctx, subjectActorPTID(ctx), req.GetAgentId())
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -55,7 +55,7 @@ func (h *AgentHandlers) HandleGetAgent(ctx context.Context, req *model.GetAgentR
 func (h *AgentHandlers) HandleCreateAgent(ctx context.Context, req *model.CreateAgentRequest) (*model.CreateAgentResponse, error) {
 	configJSON := mergeConfigExtras(req.GetConfigJson(), "", "")
 	agent, err := h.agentService.CreateAgent(ctx, domain.AgentUpsertOptions{
-		ActorID:      subjectActorID(ctx),
+		ActorPTID:    subjectActorID(ctx),
 		Name:         req.GetName(),
 		Title:        req.GetTitle(),
 		Description:  req.GetDescription(),
@@ -135,7 +135,7 @@ func (h *AgentHandlers) HandleCreateAgentRaw(ctx context.Context, req server.Req
 		visibility = domain.AgentVisibilityWorkspace
 	}
 	agent, err := h.agentService.CreateAgent(ctx, domain.AgentUpsertOptions{
-		ActorID:      subjectActorID(ctx),
+		ActorPTID:    subjectActorID(ctx),
 		Name:         body.Name,
 		Title:        body.Title,
 		Description:  body.Description,
@@ -181,26 +181,26 @@ func domainAgentToMap(agent *domain.Agent) map[string]interface{} {
 		return nil
 	}
 	return map[string]interface{}{
-		"agent_id":       agent.AgentID,
-		"name":           agent.Name,
-		"title":          agent.Title,
-		"description":    agent.Description,
-		"provider_id":    agent.ProviderID,
-		"model_name":     agent.ModelName,
-		"effort":         agent.Effort,
-		"thinking_mode":  agent.ThinkingMode,
-		"visibility":     agent.Visibility,
-		"owner_actor_id": agent.OwnerActorID,
-		"config_json":    agent.ConfigJSON,
-		"version":        agent.Version,
-		"created_at":     agent.CreatedAt,
-		"updated_at":     agent.UpdatedAt,
+		"agent_id":         agent.AgentID,
+		"name":             agent.Name,
+		"title":            agent.Title,
+		"description":      agent.Description,
+		"provider_id":      agent.ProviderID,
+		"model_name":       agent.ModelName,
+		"effort":           agent.Effort,
+		"thinking_mode":    agent.ThinkingMode,
+		"visibility":       agent.Visibility,
+		"owner_actor_ptid": agent.OwnerActorPTID,
+		"config_json":      agent.ConfigJSON,
+		"version":          agent.Version,
+		"created_at":       agent.CreatedAt,
+		"updated_at":       agent.UpdatedAt,
 	}
 }
 
 func (h *AgentHandlers) HandleUpdateAgent(ctx context.Context, req *model.UpdateAgentRequest) (*model.UpdateAgentResponse, error) {
 	agent, err := h.agentService.UpdateAgent(ctx, domain.AgentUpsertOptions{
-		ActorID:      subjectActorID(ctx),
+		ActorPTID:    subjectActorID(ctx),
 		AgentID:      req.GetAgentId(),
 		Name:         req.GetName(),
 		Title:        req.GetTitle(),
@@ -221,10 +221,10 @@ func (h *AgentHandlers) HandleUpdateAgent(ctx context.Context, req *model.Update
 }
 
 func (h *AgentHandlers) HandleDeleteAgent(ctx context.Context, req *model.DeleteAgentRequest) (*model.DeleteAgentResponse, error) {
-	if err := h.agentService.DeleteAgent(ctx, subjectActorID(ctx), req.GetAgentId()); err != nil {
+	if err := h.agentService.DeleteAgent(ctx, subjectActorPTID(ctx), req.GetAgentId()); err != nil {
 		return nil, toHandlerError(err)
 	}
-	h.publishAgentEvent(ctx, domain.EventTypeAgentDeleted, &domain.Agent{AgentID: req.GetAgentId(), OwnerActorID: subjectActorID(ctx)})
+	h.publishAgentEvent(ctx, domain.EventTypeAgentDeleted, &domain.Agent{AgentID: req.GetAgentId(), OwnerActorPTID: subjectActorPTID(ctx)})
 	return &model.DeleteAgentResponse{Success: true}, nil
 }
 
@@ -236,7 +236,8 @@ func (h *AgentHandlers) publishAgentEvent(ctx context.Context, eventType domain.
 		EventID:    fmt.Sprintf("evt-%d", time.Now().UnixNano()),
 		EventType:  string(eventType),
 		OccurredAt: time.Now(),
-		ActorID:    agent.OwnerActorID,
+		ActorPTID:  agent.OwnerActorPTID,
+		AgentID:    agent.AgentID,
 		Payload:    domainAgentToProto(agent),
 		Metadata: map[string]string{
 			"agent_id": agent.AgentID,
@@ -244,12 +245,17 @@ func (h *AgentHandlers) publishAgentEvent(ctx context.Context, eventType domain.
 	})
 }
 
-func subjectActorID(ctx context.Context) string {
+func subjectActorPTID(ctx context.Context) string {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return ""
 	}
 	return subject.ID
+}
+
+// subjectActorID is an alias for subjectActorPTID, retained for V2 call sites.
+func subjectActorID(ctx context.Context) string {
+	return subjectActorPTID(ctx)
 }
 
 func protoAgentVisibilityToDomain(visibility model.AgentVisibility) domain.AgentVisibility {
@@ -271,19 +277,19 @@ func domainAgentToProto(agent *domain.Agent) *model.Agent {
 		return nil
 	}
 	return &model.Agent{
-		AgentId:      agent.AgentID,
-		Name:         agent.Name,
-		Title:        agent.Title,
-		Description:  agent.Description,
-		ProviderId:   agent.ProviderID,
-		ModelName:    agent.ModelName,
-		Effort:       agent.Effort,
-		ThinkingMode: string(agent.ThinkingMode),
-		Visibility:   domainAgentVisibilityToProto(agent.Visibility),
-		OwnerActorId: agent.OwnerActorID,
-		ConfigJson:   agent.ConfigJSON,
-		Version:      agent.Version,
-		CreatedAt:    timestamppb.New(agent.CreatedAt),
-		UpdatedAt:    timestamppb.New(agent.UpdatedAt),
+		AgentId:        agent.AgentID,
+		Name:           agent.Name,
+		Title:          agent.Title,
+		Description:    agent.Description,
+		ProviderId:     agent.ProviderID,
+		ModelName:      agent.ModelName,
+		Effort:         agent.Effort,
+		ThinkingMode:   string(agent.ThinkingMode),
+		Visibility:     domainAgentVisibilityToProto(agent.Visibility),
+		OwnerActorPtid: agent.OwnerActorPTID,
+		ConfigJson:     agent.ConfigJSON,
+		Version:        agent.Version,
+		CreatedAt:      timestamppb.New(agent.CreatedAt),
+		UpdatedAt:      timestamppb.New(agent.UpdatedAt),
 	}
 }

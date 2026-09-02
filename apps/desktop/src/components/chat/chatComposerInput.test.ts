@@ -223,10 +223,10 @@ describe('social host event helpers', () => {
 describe('chat surface projection helpers', () => {
   const base = Date.UTC(2026, 0, 1, 10, 0, 0);
   const messages = [
-    { ulid: 'root', senderDid: 'a', content: 'root', sentAtMs: base },
-    { ulid: 'reply-1', senderDid: 'b', content: 'reply', replyToUlid: 'root', sentAtMs: base + 60_000 },
-    { ulid: 'late', senderDid: 'a', content: 'late', sentAtMs: base + 12 * 60_000 },
-    { ulid: 'tomorrow', senderDid: 'b', content: 'next day', sentAtMs: base + 24 * 60 * 60_000 },
+    { ulid: 'root', senderPtid: 'a', content: 'root', sentAtMs: base },
+    { ulid: 'reply-1', senderPtid: 'b', content: 'reply', replyToUlid: 'root', sentAtMs: base + 60_000 },
+    { ulid: 'late', senderPtid: 'a', content: 'late', sentAtMs: base + 12 * 60_000 },
+    { ulid: 'tomorrow', senderPtid: 'b', content: 'next day', sentAtMs: base + 24 * 60 * 60_000 },
   ];
 
   it('projects date separators and timeline gaps from message timestamps', () => {
@@ -250,7 +250,7 @@ describe('chat surface projection helpers', () => {
   it('counts loaded thread replies by shared thread root semantics', () => {
     expect(countChatThreadReplies([
       ...messages,
-      { ulid: 'thread-1', senderDid: 'b', content: 'thread reply', threadRootUlid: 'root', sentAtMs: base + 90_000 },
+      { ulid: 'thread-1', senderPtid: 'b', content: 'thread reply', threadRootUlid: 'root', sentAtMs: base + 90_000 },
     ], 'root')).toBe(1);
   });
 });
@@ -297,10 +297,10 @@ describe('chat conversation surface helpers', () => {
 
 describe('chat thread surface helpers', () => {
   const currentMessages: ChatMessageLike[] = [
-    { ulid: 'root', senderDid: 'a', content: 'root' },
-    { ulid: 'inline-reply', senderDid: 'b', content: 'inline reply', replyToUlid: 'root' },
-    { ulid: 'thread-reply', senderDid: 'b', content: 'thread reply', threadRootUlid: 'root' },
-    { ulid: 'other', senderDid: 'c', content: 'other' },
+    { ulid: 'root', senderPtid: 'a', content: 'root' },
+    { ulid: 'inline-reply', senderPtid: 'b', content: 'inline reply', replyToUlid: 'root' },
+    { ulid: 'thread-reply', senderPtid: 'b', content: 'thread reply', threadRootUlid: 'root' },
+    { ulid: 'other', senderPtid: 'c', content: 'other' },
   ];
 
   it('uses loaded thread replies when available', () => {
@@ -308,8 +308,8 @@ describe('chat thread surface helpers', () => {
       rootUlid: 'root',
       currentMessages,
       loadedThreadMessages: [
-        { ulid: 'root', senderDid: 'a', content: 'loaded root' },
-        { ulid: 'loaded-reply', senderDid: 'b', content: 'loaded reply', threadRootUlid: 'root' },
+        { ulid: 'root', senderPtid: 'a', content: 'loaded root' },
+        { ulid: 'loaded-reply', senderPtid: 'b', content: 'loaded reply', threadRootUlid: 'root' },
       ],
     });
 
@@ -333,12 +333,12 @@ describe('chat thread surface helpers', () => {
     const preview = collectChatThreadPreviewMessages({
       rootUlid: 'root',
       currentMessages: [
-        { ulid: 'root', senderDid: 'a', content: 'root', sentAtMs: 1 },
-        { ulid: 'inline-reply', senderDid: 'b', content: 'inline reply', replyToUlid: 'root', sentAtMs: 2 },
-        { ulid: 'late-thread', senderDid: 'b', content: 'late', threadRootUlid: 'root', sentAtMs: 4 },
+        { ulid: 'root', senderPtid: 'a', content: 'root', sentAtMs: 1 },
+        { ulid: 'inline-reply', senderPtid: 'b', content: 'inline reply', replyToUlid: 'root', sentAtMs: 2 },
+        { ulid: 'late-thread', senderPtid: 'b', content: 'late', threadRootUlid: 'root', sentAtMs: 4 },
       ],
       loadedThreadMessages: [
-        { ulid: 'early-thread', senderDid: 'b', content: 'early', threadRootUlid: 'root', sentAtMs: 3 },
+        { ulid: 'early-thread', senderPtid: 'b', content: 'early', threadRootUlid: 'root', sentAtMs: 3 },
       ],
       resolveTimestampMs: (message) => Number((message as { sentAtMs?: number }).sentAtMs ?? 0),
     });
@@ -349,7 +349,7 @@ describe('chat thread surface helpers', () => {
   it('collects the latest root preview replies and keeps them readable in timestamp order', () => {
     const threadReplies = Array.from({ length: 12 }, (_, index) => ({
       ulid: `thread-${index + 1}`,
-      senderDid: 'b',
+      senderPtid: 'b',
       content: `reply ${index + 1}`,
       threadRootUlid: 'root',
       sentAtMs: index + 1,
@@ -358,7 +358,7 @@ describe('chat thread surface helpers', () => {
     const preview = collectChatThreadPreviewMessages({
       rootUlid: 'root',
       currentMessages: [
-        { ulid: 'root', senderDid: 'a', content: 'root', sentAtMs: 0 },
+        { ulid: 'root', senderPtid: 'a', content: 'root', sentAtMs: 0 },
         ...threadReplies,
       ],
       resolveTimestampMs: (message) => Number((message as { sentAtMs?: number }).sentAtMs ?? 0),
@@ -380,8 +380,8 @@ describe('chat thread surface helpers', () => {
   });
 
   it('uses the selected reply target before falling back to the root', () => {
-    const root = { ulid: 'root', senderDid: 'a', content: 'root' };
-    const target = { ulid: 'reply', senderDid: 'b', content: 'reply' };
+    const root = { ulid: 'root', senderPtid: 'a', content: 'root' };
+    const target = { ulid: 'reply', senderPtid: 'b', content: 'reply' };
 
     expect(chatThreadReplyTargetUlid(root, target)).toBe('reply');
     expect(chatThreadReplyTargetUlid(root, null)).toBe('root');
@@ -505,8 +505,8 @@ describe('chat presence and notification reducer helpers', () => {
         { a: 'alice', aOnline: false, b: 'chris', bOnline: true },
       ],
       (item) => [
-        { actorId: item.a, online: item.aOnline },
-        { actorId: item.b, online: item.bOnline },
+        { actorPtid: item.a, online: item.aOnline },
+        { actorPtid: item.b, online: item.bOnline },
       ],
     );
 
@@ -546,8 +546,8 @@ describe('chat presence and notification reducer helpers', () => {
 
     const sessions = [{
       ulid: 's1',
-      participantADid: 'alice',
-      participantBDid: 'bob',
+      participantAPtid: 'alice',
+      participantBPtid: 'bob',
       unreadCountA: 4,
       unreadCountB: 2,
     }];

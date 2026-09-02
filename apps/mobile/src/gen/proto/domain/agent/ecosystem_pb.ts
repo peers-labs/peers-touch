@@ -851,4 +851,3 @@ export type ListCustomPluginsResponse = Message<"domain.agent.ListCustomPluginsR
  */
 export const ListCustomPluginsResponseSchema: GenMessage<ListCustomPluginsResponse> = /*@__PURE__*/
   messageDesc(file_domain_agent_ecosystem, 34);
-

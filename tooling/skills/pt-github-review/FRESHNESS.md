@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-08-17
-covered_docs_hash: 87c9caec2cfb0f14f7435098f39eb026ddc56d7d29ed2cc156ec2b6cd5cb3000
+last_verified_at: 2026-08-30
+covered_docs_hash: 4b225df0490da847920c86477896f8de6afb5cce819a3e900aae3e7ed1619424
 
 covered_docs:
   - AGENTS.md
@@ -27,3 +27,12 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+The 2026-08-29 refresh covers execution-status and evidence updates under the
+Acceptance framework. It does not change review behavior, so no `SKILL.md`
+change or additional review fixture is required.
+
+The 2026-08-30 refresh covers the exact-source Native Desktop evidence rules
+and Mobile OAuth foundation merged through PRs #100 and #101. The corresponding
+runtime identity requirements are present in `pt-github-review/SKILL.md`; no
+additional review fixture is required.

@@ -1,9 +1,7 @@
 package infrastructure
 
 import (
-	"context"
-
-	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"gorm.io/gorm"
 )
 
@@ -20,6 +18,7 @@ type Repos struct {
 	Comments      domain.CommentRepository
 	Reactions     domain.ReactionRepository
 	Circles       domain.CircleRepository
+	Stats         domain.MomentsStatsRepository
 
 	// Follows is the broader follow-graph repo used by RelationshipService.
 	// The narrower `domain.FollowRepository` interface is satisfied by
@@ -27,25 +26,26 @@ type Repos struct {
 	Follows    FollowRepository
 	Blocks     BlockGraphRepository
 	Moderation domain.StationModerationRepository
+	Identity   *ActorIdentity
 }
 
-// NewRepos constructs every repo against the supplied *gorm.DB. The
-// `resolveDID` function is the actor-id → DID resolver used by the
-// private-post repo's CUSTOM_DENY fast path. P1 wires the no-op
-// default (returns ""); P3 plugs in a real implementation when chat /
-// actor surfaces ratify the API.
-func NewRepos(gdb *gorm.DB, resolveDID func(context.Context, uint64) (string, error)) *Repos {
+// NewRepos constructs every repository and persistence adapter against the
+// supplied database. Actor identity translation stays inside this layer.
+func NewRepos(gdb *gorm.DB) *Repos {
+	identity := NewActorIdentity(gdb)
 	grants := NewAudienceGrantRepository(gdb)
 	return &Repos{
 		PublicPosts:   NewPublicPostRepository(gdb),
-		PrivatePosts:  NewPrivatePostRepository(gdb, grants, resolveDID),
+		PrivatePosts:  NewPrivatePostRepository(gdb, grants),
 		Deliveries:    NewMomentDeliveryRepository(gdb),
 		AudienceGrant: grants,
 		Comments:      NewCommentRepository(gdb),
 		Reactions:     NewReactionRepository(gdb),
 		Circles:       NewCircleRepository(gdb),
+		Stats:         NewMomentsStatsRepository(gdb, identity),
 		Follows:       NewFollowRepository(gdb),
 		Blocks:        NewBlockGraphRepository(gdb),
 		Moderation:    NewStationModerationRepository(gdb),
+		Identity:      identity,
 	}
 }

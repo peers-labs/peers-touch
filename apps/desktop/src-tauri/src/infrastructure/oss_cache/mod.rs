@@ -334,11 +334,11 @@ pub fn capabilities_invalidate(origin: &str) {
 /// callers should re-key any persistent state on `host` rather than the
 /// origin they queried.
 pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheError> {
-    if let Some(cached) = capabilities_lookup(origin) {
+    let normalized = canonical_bound_origin(origin);
+    if let Some(cached) = capabilities_lookup(&normalized) {
         return Ok(cached);
     }
-    let normalized = canonical_bound_origin(origin);
-    if normalized.is_empty() {
+    if normalized.is_empty() || normalized == "self" {
         return Err(OssCacheError::InvalidUri(
             "bound station origin is empty".into(),
         ));
@@ -352,7 +352,7 @@ pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheErro
     let mut caps: OssCapabilities = resp
         .json()
         .map_err(|e| OssCacheError::Decode(e.to_string()))?;
-    caps.host = canonical_origin_with_bound(&caps.host, &normalized);
+    caps.host = canonical_capability_host(&normalized, &caps.host);
 
     if let Ok(mut m) = caps_map().write() {
         m.insert(normalized.clone(), caps.clone());
@@ -364,6 +364,24 @@ pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheErro
         }
     }
     Ok(caps)
+}
+
+fn canonical_bound_origin(origin: &str) -> String {
+    let normalized = normalize_origin(origin);
+    if normalized.is_empty() || normalized == "self" {
+        normalize_origin(&station_client::station_base_url())
+    } else {
+        normalized
+    }
+}
+
+fn canonical_capability_host(request_origin: &str, advertised_host: &str) -> String {
+    let advertised = normalize_origin(advertised_host);
+    if advertised.is_empty() || advertised == "self" {
+        normalize_origin(request_origin)
+    } else {
+        advertised
+    }
 }
 
 // ── attachment file cache ───────────────────────────────────────────
@@ -437,15 +455,21 @@ pub fn attachment_invalidate(uri: &OssUri) -> Result<(), OssCacheError> {
 /// Bound-station origin only (i.e. the URI was minted by the same
 /// station this client is talking to). For the federated path
 /// (URI's origin ≠ bound station), use `attachment_ensure_federated`.
+/// `bearer` carries the current local session for private and
+/// chat-scoped objects; public objects also accept an empty token.
 pub fn attachment_ensure(
     uri: &OssUri,
     signed_query: Option<&str>,
     bearer: Option<&str>,
 ) -> Result<PathBuf, OssCacheError> {
-    if let Some(path) = attachment_lookup(uri) {
+    let canonical_uri = OssUri {
+        origin: canonical_bound_origin(&uri.origin),
+        key: uri.key.clone(),
+    };
+    if let Some(path) = attachment_lookup(&canonical_uri) {
         return Ok(path);
     }
-    let caps = capabilities_ensure(&uri.origin)?;
+    let caps = capabilities_ensure(&canonical_uri.origin)?;
     if caps.signed_url && signed_query.is_none() {
         return Err(OssCacheError::Network(
             "endpoint requires signed url, none supplied".into(),
@@ -460,8 +484,8 @@ pub fn attachment_ensure(
         signed_query,
     )?;
 
-    let bytes = http_get_bytes(url.as_str(), bearer)?;
-    write_to_cache(uri, &bytes)
+    let bytes = http_get_bytes(&url, bearer)?;
+    write_to_cache(&canonical_uri, &bytes)
 }
 
 /// Federation-aware download. Used when the OSS URI's origin is a
@@ -486,12 +510,12 @@ pub fn attachment_ensure(
 ///      hit `attachment_lookup` and skip the round-trip.
 ///
 /// `home_token` is the desktop user's HS256 JWT for the bound
-/// station; `home_actor_did` is the same caller's DID, embedded in
+/// station; `home_actor_ptid` is the same caller's PTID, embedded in
 /// the foreign GET as `&owner=…`. Both are required.
 pub fn attachment_ensure_federated(
     uri: &OssUri,
     home_token: &str,
-    home_actor_did: &str,
+    home_actor_ptid: &str,
 ) -> Result<PathBuf, OssCacheError> {
     if home_token.trim().is_empty() {
         return Err(OssCacheError::FederationAuthRequired);
@@ -557,14 +581,14 @@ pub fn attachment_ensure_federated(
     // Step 3 — fetch bytes with the peer JWT. We append `&owner=…`
     // so the foreign FileMeta resolution lands on the right row;
     // `lookupFileMeta` honours this query param when present.
-    let url = build_file_url(
-        &foreign_caps.host,
-        &file_endpoint,
-        &uri.key,
-        Some(home_actor_did),
-        None,
-    )?;
-    let bytes = http_get_bytes(url.as_str(), Some(token.as_str()))?;
+    let url = format!(
+        "{}{}?key={}&owner={}",
+        foreign_caps.host.trim_end_matches('/'),
+        file_endpoint,
+        urlencode(&uri.key),
+        urlencode(home_actor_ptid),
+    );
+    let bytes = http_get_bytes(&url, Some(token.as_str()));
 
     // Step 4 — write through the same cache layout as the
     // non-federated path. The renderer cannot distinguish federated
@@ -1253,6 +1277,22 @@ mod tests {
         // Pick a literally-impossible origin so we never collide with
         // a misconfigured PEERS_STATION_URL.
         assert!(!is_bound_station("https://this-is-foreign.example.invalid"));
+    }
+
+    #[test]
+    fn capability_self_host_resolves_to_requested_station_origin() {
+        assert_eq!(
+            canonical_capability_host("http://station.example:18080", "self"),
+            "http://station.example:18080"
+        );
+        assert_eq!(
+            canonical_capability_host("http://station.example:18080/", ""),
+            "http://station.example:18080"
+        );
+        assert_eq!(
+            canonical_capability_host("http://station.example:18080", "https://cdn.example.test/"),
+            "https://cdn.example.test"
+        );
     }
 
     // ── error mapping ─────────────────────────────────────────────

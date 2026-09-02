@@ -99,6 +99,12 @@ resolve_env_repo() {
       return 0
     fi
   fi
+  local sibling_env
+  sibling_env="$(dirname "$PROJECT_ROOT")/env"
+  if [[ -d "$sibling_env/peers-touch" ]]; then
+    echo "$sibling_env"
+    return 0
+  fi
   return 1
 }
 
@@ -148,11 +154,16 @@ case "$cmd" in
     fi
     ensure_local_assets
     src="$PROFILES_DIR/$name.env"
-    if [[ ! -f "$src" ]]; then
+    env_repo=""
+    if resolved="$(resolve_env_repo)"; then
+      env_repo="$resolved"
+    fi
+    if [[ -n "$env_repo" && -f "$env_repo/peers-touch/$name/profile.env.example" ]]; then
+      import_profile_from_env_repo "$name" "$env_repo"
+      src="$PROFILES_DIR/$name.env"
+    elif [[ ! -f "$src" ]]; then
       echo "[INFO] Profile '$name' not found locally. Attempting import from env repo..."
-      env_repo=""
-      if resolved="$(resolve_env_repo)"; then
-        env_repo="$resolved"
+      if [[ -n "$env_repo" ]]; then
         echo "[INFO] Using env repo: $env_repo"
       else
         echo ""
@@ -190,9 +201,7 @@ case "$cmd" in
       echo "        Regenerate or repair the profile before activation."
       exit 1
     fi
-    # Write profile name for env.sh resolution
-    echo "$name" > "$LOCAL_DEV_DIR/profile"
-    # Legacy symlink: active/<worktree-id>.env → ../profiles/<name>.env
+    # The worktree-specific symlink is the only active-profile selector.
     ln -sfn "../profiles/$name.env" "$ACTIVE_FILE"
     echo "[OK] Active profile: $name (worktree: $WORKTREE_ID)"
     echo ""

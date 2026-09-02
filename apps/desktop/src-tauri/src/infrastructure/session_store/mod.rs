@@ -1,8 +1,4 @@
-//! On-disk per-local-account session blobs under `auth/sessions/`.
-//!
-//! This replaces the legacy single-file `auth/session.json` and
-//! `auth/station_session.json` so concurrent processes do not clobber each
-//! other's tokens.
+//! PTID-keyed session blobs under `auth/sessions/{ptid}.json`.
 //!
 //! TODO: Move raw token storage to the OS keyring (or keyring + PIN) and use
 //! this module only for non-secret metadata, aligning with
@@ -25,7 +21,7 @@ pub enum SessionSource {
 /// A persisted session record written to `auth/sessions/{account_id}.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PersistedSession {
-    pub actor_id: String,
+    pub actor_ptid: String,
     pub token: String,
     pub saved_at: u64,
     pub source: SessionSource,
@@ -65,43 +61,29 @@ fn now_unix_secs() -> u64 {
 }
 
 fn sessions_dir() -> Result<PathBuf, SessionStoreError> {
-    let station_scope = crate::infrastructure::local_scope::active_station_scope();
+    storage::app_file_path("desktop", StorageKind::Data, &["auth", "sessions"])
+        .map_err(SessionStoreError::from)
+}
+
+fn session_file_path(actor_ptid: &str) -> Result<PathBuf, SessionStoreError> {
+    let file_name = format!("{}.json", storage::resolve_user_scope(actor_ptid));
     storage::app_file_path(
         "desktop",
         StorageKind::Data,
-        &["auth", "sessions", &station_scope],
+        &["auth", "sessions", &file_name],
     )
     .map_err(SessionStoreError::from)
 }
 
-/// Returns the on-disk path for a given local account id.
-fn session_file_path(account_id: &str) -> Result<PathBuf, SessionStoreError> {
-    let station_scope = crate::infrastructure::local_scope::active_station_scope();
-    let file_name = format!("{}.json", storage::resolve_user_scope(Some(account_id)));
-    storage::app_file_path(
-        "desktop",
-        StorageKind::Data,
-        &["auth", "sessions", &station_scope, &file_name],
-    )
-    .map_err(SessionStoreError::from)
-}
-
-/// Persists a token for `account_id`, replacing any previous blob for that account.
-pub fn save(
-    account_id: &str,
-    actor_id: &str,
-    token: &str,
-    source: SessionSource,
-) -> Result<(), SessionStoreError> {
-    if account_id.trim().is_empty() {
-        return Err(SessionStoreError::Serde("account_id is empty".to_string()));
+pub fn save(actor_ptid: &str, token: &str, source: SessionSource) -> Result<(), SessionStoreError> {
+    if !actor_ptid.trim().starts_with("ptid:") {
+        return Err(SessionStoreError::Serde(
+            "canonical actor_ptid is required".to_string(),
+        ));
     }
-    if actor_id.trim().is_empty() {
-        return Err(SessionStoreError::Serde("actor_id is empty".to_string()));
-    }
-    let path = session_file_path(account_id)?;
+    let path = session_file_path(actor_ptid)?;
     let payload = PersistedSession {
-        actor_id: actor_id.to_string(),
+        actor_ptid: actor_ptid.to_string(),
         token: token.to_string(),
         saved_at: now_unix_secs(),
         source,
@@ -111,30 +93,30 @@ pub fn save(
     storage::write_string_atomic(&path, &json).map_err(SessionStoreError::from)
 }
 
-/// Loads the persisted session for `account_id`, if present and valid JSON.
-pub fn load(account_id: &str) -> Option<PersistedSession> {
-    if account_id.trim().is_empty() {
+pub fn load(actor_ptid: &str) -> Option<PersistedSession> {
+    if !actor_ptid.trim().starts_with("ptid:") {
         return None;
     }
-    let path = session_file_path(account_id).ok()?;
+    let path = session_file_path(actor_ptid).ok()?;
     let raw = fs::read_to_string(path).ok()?;
     serde_json::from_str(&raw).ok()
 }
 
-/// Deletes the persisted session file for `account_id`, if it exists.
-pub fn delete(account_id: &str) -> Result<(), SessionStoreError> {
-    if account_id.trim().is_empty() {
-        return Ok(());
+pub fn delete(actor_ptid: &str) -> Result<(), SessionStoreError> {
+    if !actor_ptid.trim().starts_with("ptid:") {
+        return Err(SessionStoreError::Serde(
+            "canonical actor_ptid is required".to_string(),
+        ));
     }
-    let path = session_file_path(account_id)?;
+    let path = session_file_path(actor_ptid)?;
     if path.exists() {
         fs::remove_file(&path).map_err(|e| SessionStoreError::Io(e.to_string()))?;
     }
     Ok(())
 }
 
-/// Returns distinct `actor_id` values from all well-formed session blobs.
-pub fn list_actor_ids() -> Vec<String> {
+/// Returns distinct `actor_ptid` values from all well-formed session blobs.
+pub fn list_actor_ptids() -> Vec<String> {
     let dir = match sessions_dir() {
         Ok(d) => d,
         Err(_) => return Vec::new(),
@@ -152,109 +134,14 @@ pub fn list_actor_ids() -> Vec<String> {
             continue;
         };
         if let Ok(s) = serde_json::from_str::<PersistedSession>(&raw) {
-            if !s.actor_id.is_empty() {
-                out.push(s.actor_id);
+            if !s.actor_ptid.is_empty() {
+                out.push(s.actor_ptid);
             }
         }
     }
     out.sort();
     out.dedup();
     out
-}
-
-#[derive(Deserialize)]
-struct LegacyPasswordSession {
-    actor_id: String,
-    token: String,
-}
-
-/// Migrates legacy `auth/session.json` and `auth/station_session.json` into
-/// per-actor files. Returns the number of successfully migrated records.
-/// Malformed legacy files are skipped with a warning (files are not deleted).
-pub fn migrate_legacy() -> Result<usize, SessionStoreError> {
-    let mut migrated: usize = 0;
-
-    let legacy_password =
-        storage::app_file_path("desktop", StorageKind::Data, &["auth", "session.json"])?;
-    if legacy_password.exists() {
-        match fs::read_to_string(&legacy_password) {
-            Ok(raw) => match serde_json::from_str::<LegacyPasswordSession>(&raw) {
-                Ok(v) => {
-                    if !v.actor_id.is_empty() && !v.token.is_empty() {
-                        let account_id =
-                            crate::infrastructure::local_scope::account_id_for_password_actor(
-                                &v.actor_id,
-                            );
-                        save(&account_id, &v.actor_id, &v.token, SessionSource::Password)?;
-                        migrated += 1;
-                        if let Err(e) = fs::remove_file(&legacy_password) {
-                            tracing::warn!(path = %legacy_password.display(), error = %e, "session_store: failed to remove legacy session.json");
-                        }
-                    } else {
-                        tracing::warn!(
-                            path = %legacy_password.display(),
-                            "session_store: legacy session.json has empty fields; leaving file in place"
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e,
-                        path = %legacy_password.display(),
-                        "session_store: could not parse legacy session.json; skipping"
-                    );
-                }
-            },
-            Err(e) => {
-                tracing::warn!(error = %e, path = %legacy_password.display(), "session_store: could not read legacy session.json; skipping");
-            }
-        }
-    }
-
-    let legacy_station = storage::app_file_path(
-        "desktop",
-        StorageKind::Data,
-        &["auth", "station_session.json"],
-    )?;
-    if legacy_station.exists() {
-        match fs::read_to_string(&legacy_station) {
-            Ok(raw) => {
-                // Legacy shape: { "actor_id", "token" } (no saved_at / source)
-                let parsed: Result<serde_json::Value, _> = serde_json::from_str(&raw);
-                match parsed.ok().and_then(|v| {
-                    let actor_id = v.get("actor_id")?.as_str()?.to_string();
-                    let token = v.get("token")?.as_str()?.to_string();
-                    if actor_id.is_empty() || token.is_empty() {
-                        return None;
-                    }
-                    Some((actor_id, token))
-                }) {
-                    Some((actor_id, token)) => {
-                        let account_id =
-                            crate::infrastructure::local_scope::account_id_for_password_actor(
-                                &actor_id,
-                            );
-                        save(&account_id, &actor_id, &token, SessionSource::OauthBridge)?;
-                        migrated += 1;
-                        if let Err(e) = fs::remove_file(&legacy_station) {
-                            tracing::warn!(path = %legacy_station.display(), error = %e, "session_store: failed to remove legacy station_session.json");
-                        }
-                    }
-                    None => {
-                        tracing::warn!(
-                            path = %legacy_station.display(),
-                            "session_store: could not parse legacy station_session.json; skipping"
-                        );
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, path = %legacy_station.display(), "session_store: could not read legacy station_session.json; skipping");
-            }
-        }
-    }
-
-    Ok(migrated)
 }
 
 #[cfg(test)]
@@ -286,59 +173,29 @@ mod tests {
     #[test]
     fn save_load_delete_round_trip() {
         with_temp_storage_root(|| {
-            let account_id = "station:scope:password:actor-save-load-1";
-            let aid = "actor-save-load-1";
-            save(account_id, aid, "tok-abc", SessionSource::Password).expect("save");
-            let s = load(account_id).expect("load");
-            assert_eq!(s.actor_id, aid);
+            let ptid = "ptid:test:actor-save-load-1";
+            save(ptid, "tok-abc", SessionSource::Password).expect("save");
+            let s = load(ptid).expect("load");
+            assert_eq!(s.actor_ptid, ptid);
             assert_eq!(s.token, "tok-abc");
             assert_eq!(s.source, SessionSource::Password);
 
-            delete(account_id).expect("delete");
-            assert!(load(account_id).is_none());
+            delete(ptid).expect("delete");
+            assert!(load(ptid).is_none());
         });
     }
 
     #[test]
-    fn list_actor_ids_aggregates_files() {
+    fn list_actor_ptids_aggregates_files() {
         with_temp_storage_root(|| {
-            save(
-                "station:scope:password:a-1",
-                "a-1",
-                "t1",
-                SessionSource::Password,
-            )
-            .unwrap();
-            save(
-                "station:scope:oauth:b-2",
-                "b-2",
-                "t2",
-                SessionSource::OauthBridge,
-            )
-            .unwrap();
-            let mut ids = list_actor_ids();
+            save("ptid:test:a-1", "t1", SessionSource::Password).unwrap();
+            save("ptid:test:b-2", "t2", SessionSource::OauthBridge).unwrap();
+            let mut ids = list_actor_ptids();
             ids.sort();
-            assert_eq!(ids, vec!["a-1".to_string(), "b-2".to_string()]);
-        });
-    }
-
-    #[test]
-    fn migrate_legacy_password_file() {
-        with_temp_storage_root(|| {
-            let legacy =
-                storage::app_file_path("desktop", StorageKind::Data, &["auth", "session.json"])
-                    .expect("path");
-            fs::create_dir_all(legacy.parent().unwrap()).expect("mkdir auth");
-            fs::write(&legacy, r#"{"actor_id":"legacy-a","token":"legacy-tok"}"#)
-                .expect("write legacy");
-            let n = migrate_legacy().expect("migrate");
-            assert_eq!(n, 1);
-            assert!(!legacy.exists());
-            let account_id =
-                crate::infrastructure::local_scope::account_id_for_password_actor("legacy-a");
-            let p = load(&account_id).expect("loaded");
-            assert_eq!(p.token, "legacy-tok");
-            assert_eq!(p.source, SessionSource::Password);
+            assert_eq!(
+                ids,
+                vec!["ptid:test:a-1".to_string(), "ptid:test:b-2".to_string()]
+            );
         });
     }
 }

@@ -10,13 +10,6 @@ import type { ActorRef } from "../actor/actor_pb";
 import { file_domain_actor_actor } from "../actor/actor_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
-import type { Message } from "@bufbuild/protobuf";
-
-/**
- * Describes the file domain/agent/turn_stream.proto.
- */
-export const file_domain_agent_turn_stream: GenFile = /*@__PURE__*/
-  fileDesc("Ch5kb21haW4vYWdlbnQvdHVybl9zdHJlYW0ucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxIrUJCg9UdXJuU3RyZWFtRXZlbnQSPQoEdHlwZRgBIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TdHJlYW1FdmVudFR5cGUSDwoHdHVybl9pZBgCIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAyABKAkSEAoIYWdlbnRfaWQYBCABKAkSEAoIc2VxdWVuY2UYBSABKAQSEAoIZXZlbnRfaWQYBiABKAkSLwoLb2NjdXJyZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjcKBHRleHQYCiABKAsyJy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXh0UGF5bG9hZEgAEj8KCHRoaW5raW5nGAsgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVGhpbmtpbmdQYXlsb2FkSAASQAoJdG9vbF9jYWxsGAwgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVG9vbENhbGxQYXlsb2FkSAASRAoLdG9vbF9yZXN1bHQYDSABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ub29sUmVzdWx0UGF5bG9hZEgAElkKFnRvb2xfYXBwcm92YWxfcmVxdWlyZWQYDiABKAsyNy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ub29sQXBwcm92YWxSZXF1aXJlZFBheWxvYWRIABI/Cghwcm9ncmVzcxgPIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlByb2dyZXNzUGF5bG9hZEgAEjkKBWltYWdlGBAgASgLMigucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuSW1hZ2VQYXlsb2FkSAASVgoUY29udmVyc2F0aW9uX2NyZWF0ZWQYESABKAsyNi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Db252ZXJzYXRpb25DcmVhdGVkUGF5bG9hZEgAEjkKBWVycm9yGBIgASgLMigucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXJyb3JQYXlsb2FkSAASNwoEZG9uZRgTIAEoCzInLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkRvbmVQYXlsb2FkSAASWQoWdG9vbF9hcHByb3ZhbF9kZWNpc2lvbhgUIAEoCzI3LnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRvb2xBcHByb3ZhbERlY2lzaW9uUGF5bG9hZEgAEkEKCWNhbmNlbGxlZBgVIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkNhbmNlbGxlZFBheWxvYWRIABI8CghzbmFwc2hvdBgWIAEoCzIoLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TbmFwc2hvdEgAEkYKDGNhdGNodXBfZG9uZRgXIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkNhdGNodXBEb25lUGF5bG9hZEgAQgkKB3BheWxvYWQiWwoXU3RyZWFtVHVybkV2ZW50c1JlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEg8KB3R1cm5faWQYAiABKAkSFgoOYWZ0ZXJfc2VxdWVuY2UYAyABKAQi8AEKDFR1cm5TbmFwc2hvdBIPCgd0dXJuX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRIQCghhZ2VudF9pZBgDIAEoCRI2CgZzdGF0dXMYBCABKA4yJi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UdXJuU3RhdHVzEgwKBHRleHQYBSABKAkSFQoNbGFzdF9zZXF1ZW5jZRgGIAEoBBIXCg90ZXJtaW5hbF9yZWFzb24YByABKAkSLgoKdXBkYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiIgoQQ2FuY2VsbGVkUGF5bG9hZBIOCgZyZWFzb24YASABKAkiKwoSQ2F0Y2h1cERvbmVQYXlsb2FkEhUKDWxhc3Rfc2VxdWVuY2UYASABKAQiGwoLVGV4dFBheWxvYWQSDAoEdGV4dBgBIAEoCSItCg9UaGlua2luZ1BheWxvYWQSDAoEdGV4dBgBIAEoCRIMCgRkb25lGAIgASgIIkgKD1Rvb2xDYWxsUGF5bG9hZBIUCgx0b29sX2NhbGxfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhcmd1bWVudHMYAyABKAkiOQoRVG9vbFJlc3VsdFBheWxvYWQSFAoMdG9vbF9jYWxsX2lkGAEgASgJEg4KBnJlc3VsdBgCIAEoCSKJAgobVG9vbEFwcHJvdmFsUmVxdWlyZWRQYXlsb2FkEhMKC2FwcHJvdmFsX2lkGAEgASgJEhEKCXRvb2xfbmFtZRgCIAEoCRITCgtzZXJ2ZXJfbmFtZRgDIAEoCRIRCglhcmd1bWVudHMYBCABKAkSDgoGc291cmNlGAUgASgJEhQKDHRvb2xfY2FsbF9pZBgGIAEoCRITCgtkZWNpc2lvbl9pZBgHIAEoCRIZChFkZWNpc2lvbl9yZXZpc2lvbhgIIAEoBBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxwYXlsb2FkX2hhc2gYCiABKAkiogIKG1Rvb2xBcHByb3ZhbERlY2lzaW9uUGF5bG9hZBITCgthcHByb3ZhbF9pZBgBIAEoCRIUCgx0b29sX2NhbGxfaWQYAiABKAkSEwoLZGVjaXNpb25faWQYAyABKAkSGQoRZGVjaXNpb25fcmV2aXNpb24YBCABKAQSEAoIYXBwcm92ZWQYBSABKAgSNwoJYWN0b3JfcmVmGAYgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWYSLgoKZGVjaWRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFwoPaWRlbXBvdGVuY3lfa2V5GAggASgJEhQKDHBheWxvYWRfaGFzaBgJIAEoCSIgCg9Qcm9ncmVzc1BheWxvYWQSDQoFc3RhZ2UYASABKAkiGwoMSW1hZ2VQYXlsb2FkEgsKA3VybBgBIAEoCSI1ChpDb252ZXJzYXRpb25DcmVhdGVkUGF5bG9hZBIXCg9jb252ZXJzYXRpb25faWQYASABKAki4gEKDEVycm9yUGF5bG9hZBINCgVlcnJvchgBIAEoCRISCgplcnJvcl90eXBlGAIgASgJEhIKCmxvY2FsZV9rZXkYAyABKAkSEQoJcmV0cnlhYmxlGAQgASgIEhAKCHRlcm1pbmFsGAUgASgIEkYKB2RldGFpbHMYBiADKAsyNS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FcnJvclBheWxvYWQuRGV0YWlsc0VudHJ5Gi4KDERldGFpbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBInwKC0RvbmVQYXlsb2FkEg8KB3Rhc2tfaWQYASABKAkSPQoMdHVybl9zdW1tYXJ5GAIgASgLMicucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVHVyblN1bW1hcnkSHQoVZm9sbG93X3VwX3N1Z2dlc3Rpb25zGAMgAygJIq0BCgtUdXJuU3VtbWFyeRIPCgd0dXJuX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRIQCghhZ2VudF9pZBgDIAEoCRISCgp1c2VyX2lucHV0GAQgASgJEhYKDmZpbmFsX3Jlc3BvbnNlGAUgASgJEjYKBnN0YXR1cxgGIAEoDjImLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TdGF0dXMqlwUKE1R1cm5TdHJlYW1FdmVudFR5cGUSJgoiVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9VTlNQRUNJRklFRBAAEh8KG1RVUk5fU1RSRUFNX0VWRU5UX1RZUEVfVEVYVBABEiMKH1RVUk5fU1RSRUFNX0VWRU5UX1RZUEVfVEhJTktJTkcQAhIkCiBUVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfQ0FMTBADEiYKIlRVUk5fU1RSRUFNX0VWRU5UX1RZUEVfVE9PTF9SRVNVTFQQBBIxCi1UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfQVBQUk9WQUxfUkVRVUlSRUQQBhIxCi1UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfQVBQUk9WQUxfREVDSVNJT04QBxIjCh9UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1BST0dSRVNTEAgSIAocVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9JTUFHRRAJEi8KK1RVUk5fU1RSRUFNX0VWRU5UX1RZUEVfQ09OVkVSU0FUSU9OX0NSRUFURUQQChIgChxUVVJOX1NUUkVBTV9FVkVOVF9UWVBFX0VSUk9SEAsSHwobVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9ET05FEAwSJAogVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9DQU5DRUxMRUQQDRIjCh9UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1NOQVBTSE9UEA4SJwojVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9DQVRDSFVQX0RPTkUQDyIECAUQBSopVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9MT0NBTF9UT09MX1JFUVVFU1RCS1pJZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9hZ2VudC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_domain_agent_agent, file_domain_actor_actor, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.TurnStreamEvent
@@ -58,92 +51,6 @@ export type TurnStreamEvent = Message<"peers_touch.model.agent.v1.TurnStreamEven
   occurredAt?: Timestamp | undefined;
 
   /**
-   * @generated from oneof peers_touch.model.agent.v1.TurnStreamEvent.payload
-   */
-  payload: {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.TextPayload text = 10;
-     */
-    value: TextPayload;
-    case: "text";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.ThinkingPayload thinking = 11;
-     */
-    value: ThinkingPayload;
-    case: "thinking";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.ToolCallPayload tool_call = 12;
-     */
-    value: ToolCallPayload;
-    case: "toolCall";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.ToolResultPayload tool_result = 13;
-     */
-    value: ToolResultPayload;
-    case: "toolResult";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.ToolApprovalRequiredPayload tool_approval_required = 14;
-     */
-    value: ToolApprovalRequiredPayload;
-    case: "toolApprovalRequired";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.ProgressPayload progress = 15;
-     */
-    value: ProgressPayload;
-    case: "progress";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.ImagePayload image = 16;
-     */
-    value: ImagePayload;
-    case: "image";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.ConversationCreatedPayload conversation_created = 17;
-     */
-    value: ConversationCreatedPayload;
-    case: "conversationCreated";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.ErrorPayload error = 18;
-     */
-    value: ErrorPayload;
-    case: "error";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.DonePayload done = 19;
-     */
-    value: DonePayload;
-    case: "done";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.ToolApprovalDecisionPayload tool_approval_decision = 20;
-     */
-    value: ToolApprovalDecisionPayload;
-    case: "toolApprovalDecision";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.CancelledPayload cancelled = 21;
-     */
-    value: CancelledPayload;
-    case: "cancelled";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.TurnSnapshot snapshot = 22;
-     */
-    value: TurnSnapshot;
-    case: "snapshot";
-  } | {
-    /**
-     * @generated from field: peers_touch.model.agent.v1.CatchupDonePayload catchup_done = 23;
-     */
-    value: CatchupDonePayload;
-    case: "catchupDone";
   } | { case: undefined; value?: undefined };
 };
 
@@ -268,21 +175,6 @@ export const CatchupDonePayloadSchema: GenMessage<CatchupDonePayload> = /*@__PUR
   messageDesc(file_domain_agent_turn_stream, 4);
 
 /**
- * @generated from message peers_touch.model.agent.v1.TextPayload
- */
-export type TextPayload = Message<"peers_touch.model.agent.v1.TextPayload"> & {
-  /**
-   * @generated from field: string text = 1;
-   */
-  text: string;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.TextPayload.
- * Use `create(TextPayloadSchema)` to create a new message.
- */
-export const TextPayloadSchema: GenMessage<TextPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 5);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ThinkingPayload
@@ -408,71 +300,6 @@ export type ToolApprovalRequiredPayload = Message<"peers_touch.model.agent.v1.To
    * @generated from field: string payload_hash = 10;
    */
   payloadHash: string;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.ToolApprovalRequiredPayload.
- * Use `create(ToolApprovalRequiredPayloadSchema)` to create a new message.
- */
-export const ToolApprovalRequiredPayloadSchema: GenMessage<ToolApprovalRequiredPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 9);
-
-/**
- * @generated from message peers_touch.model.agent.v1.ToolApprovalDecisionPayload
- */
-export type ToolApprovalDecisionPayload = Message<"peers_touch.model.agent.v1.ToolApprovalDecisionPayload"> & {
-  /**
-   * @generated from field: string approval_id = 1;
-   */
-  approvalId: string;
-
-  /**
-   * @generated from field: string tool_call_id = 2;
-   */
-  toolCallId: string;
-
-  /**
-   * @generated from field: string decision_id = 3;
-   */
-  decisionId: string;
-
-  /**
-   * @generated from field: uint64 decision_revision = 4;
-   */
-  decisionRevision: bigint;
-
-  /**
-   * @generated from field: bool approved = 5;
-   */
-  approved: boolean;
-
-  /**
-   * @generated from field: peers_touch.model.actor.v1.ActorRef actor_ref = 6;
-   */
-  actorRef?: ActorRef | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp decided_at = 7;
-   */
-  decidedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: string idempotency_key = 8;
-   */
-  idempotencyKey: string;
-
-  /**
-   * @generated from field: string payload_hash = 9;
-   */
-  payloadHash: string;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.ToolApprovalDecisionPayload.
- * Use `create(ToolApprovalDecisionPayloadSchema)` to create a new message.
- */
-export const ToolApprovalDecisionPayloadSchema: GenMessage<ToolApprovalDecisionPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 10);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ProgressPayload
@@ -558,14 +385,6 @@ export type ErrorPayload = Message<"peers_touch.model.agent.v1.ErrorPayload"> & 
    * @generated from field: map<string, string> details = 6;
    */
   details: { [key: string]: string };
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.ErrorPayload.
- * Use `create(ErrorPayloadSchema)` to create a new message.
- */
-export const ErrorPayloadSchema: GenMessage<ErrorPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 14);
 
 /**
  * @generated from message peers_touch.model.agent.v1.DonePayload
@@ -666,6 +485,11 @@ export enum TurnStreamEventType {
   TOOL_RESULT = 4,
 
   /**
+   * @generated from enum value: TURN_STREAM_EVENT_TYPE_LOCAL_TOOL_REQUEST = 5;
+   */
+  LOCAL_TOOL_REQUEST = 5,
+
+  /**
    * @generated from enum value: TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_REQUIRED = 6;
    */
   TOOL_APPROVAL_REQUIRED = 6,
@@ -714,11 +538,3 @@ export enum TurnStreamEventType {
    * @generated from enum value: TURN_STREAM_EVENT_TYPE_CATCHUP_DONE = 15;
    */
   CATCHUP_DONE = 15,
-}
-
-/**
- * Describes the enum peers_touch.model.agent.v1.TurnStreamEventType.
- */
-export const TurnStreamEventTypeSchema: GenEnum<TurnStreamEventType> = /*@__PURE__*/
-  enumDesc(file_domain_agent_turn_stream, 0);
-

@@ -24,7 +24,7 @@ const SESSION_KICKED_EVENT = 'auth:session-kicked';
 
 interface RustKickedPayload {
   reason?: 'takeover' | 'revoked' | string;
-  actor_id?: string | null;
+  actor_ptid?: string | null;
   details?: {
     device_type?: string | null;
     [key: string]: unknown;
