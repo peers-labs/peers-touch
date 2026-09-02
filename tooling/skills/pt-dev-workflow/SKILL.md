@@ -143,20 +143,35 @@ Maintained as a table — one row per in-flight task:
 ```markdown
 ## active_work
 
-| id | plan | stage | current_step | branch | blocked | last_session |
-|----|------|-------|--------------|--------|---------|--------------|
-| 1 | docs/.../20260723-phase1-station-api.md | EXECUTE | Step 1 | main | false | 2026-07-23 |
+| id | plan | stage | current_step | branch | workspace_id | initial_head | expected_head | worktree_set_digest | blocked | last_session |
+|----|------|-------|--------------|--------|--------------|--------------|---------------|---------------------|---------|--------------|
+| 1 | docs/.../20260723-phase1-station-api.md | EXECUTE | Step 1 | main | 0123456789abcdef | `<full-head>` | `<full-head>` | `<sha256>` | false | 2026-07-23 |
 ```
 
 **Update rules:**
 - PRODUCT/DESIGN work without a formal execution plan has no row and no Context Anchor
-- Plan creation → register the repo-relative plan path with `stage: PLAN`
+- Plan creation → capture and verify the selected worktree once, then register
+  the repo-relative plan path with `stage: PLAN`, branch, `workspace_id`,
+  immutable `initial_head`, initially equal `expected_head`, and
+  `worktree_set_digest`
 - Stage transition → update `stage` + `current_step`
 - Session end → update `last_session`
 - All phases complete → set `stage: complete`
 - Branch merged with remaining phases → update `branch` to merge target
 - User says "close this" → set `stage: complete`
 - Stale (>14 days idle) → ask user on next session
+- Resume/context compaction → verify persisted identity; never recapture it as a
+  replacement baseline
+- Explicitly authorized commit/rebase/merge → refresh only `expected_head`
+- Explicitly requested worktree operation → refresh only
+  `worktree_set_digest`
+
+Capture and verification use
+`tooling/scripts/verify-worktree-binding.py`. Its `workspaceId` output maps to
+`workspace_id`, and its worktree-set digest maps to
+`worktree_set_digest`. Missing identity stops with
+`WORKTREE_IDENTITY_UNAVAILABLE`; drift stops with
+`WORKTREE_IDENTITY_MISMATCH`.
 
 ### Execution plan status table
 
@@ -179,7 +194,9 @@ When resuming a previous session:
 
 1. Read `active_work` from project memory
 2. Read the referenced execution plan
-3. Invoke `pt-context-anchor` and verify actual worktree/branch
+3. Invoke `pt-context-anchor` and verify actual worktree identity against the
+   persisted branch, `workspace_id`, `expected_head`, and
+   `worktree_set_digest`
 4. Reconcile the plan status table with `active_work`
 5. Emit the required fenced chat projection
 6. Dispatch to the correct stage skill

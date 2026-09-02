@@ -1,0 +1,1 @@
+"""Mobile Acceptance Gates."""

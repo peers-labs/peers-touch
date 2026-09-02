@@ -12,7 +12,8 @@ from pathlib import Path
 from ._paths import REPO_ROOT
 from .attestation import source_workspace_digest
 from .errors import BlockedError, ProvisioningError
-from .evidence_store import write_current_artifact
+from .evidence_store import RunHandle, write_current_artifact
+from .launch_context import EphemeralGateLaunchContext
 from .lease import (
     ProfileLease,
     ProfileLeaseUnavailable,
@@ -56,10 +57,53 @@ class EnvironmentProvisioner(ABC):
         self.contract = contract
         self._manifest: RuntimeManifest | None = None
         self._cleanup_handlers: list[tuple[str, Callable[[], None]]] = []
+        self._resolved_credential_values: tuple[str, ...] = ()
+        self._prepared_credentials: (
+            tuple[tuple[str, ...], dict[str, str]] | None
+        ) = None
+        self._credential_preparation_error: Exception | None = None
+        self._evidence_run: RunHandle | None = None
+
+    def bind_evidence_run(self, run: RunHandle) -> None:
+        if self._manifest is not None:
+            raise ProvisioningError(
+                "evidence run must be bound before provisioning starts"
+            )
+        if self._evidence_run is not None and self._evidence_run is not run:
+            raise ProvisioningError(
+                "provisioner is already bound to another evidence run"
+            )
+        self._evidence_run = run
+
+    @property
+    def evidence_run(self) -> RunHandle:
+        if self._evidence_run is None:
+            raise ProvisioningError(
+                "provisioner requires an explicitly bound evidence run"
+            )
+        return self._evidence_run
 
     @abstractmethod
     def provision(self, gate_id: str) -> RuntimeManifest:
         ...
+
+    def create_gate_launch_context(
+        self,
+        *,
+        gate_id: str,
+        evidence_run_id: str,
+        provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext | None:
+        if required_capabilities:
+            raise BlockedError(
+                reason=(
+                    f"Environment {self.environment_id!r} does not provide "
+                    "the Gate's required ephemeral capabilities"
+                ),
+                resource=f"ephemeral-capabilities:{gate_id}",
+            )
+        return None
 
     def cleanup(self) -> tuple[str, ...]:
         failures: list[str] = []
@@ -77,6 +121,88 @@ class EnvironmentProvisioner(ABC):
 
     def register_cleanup(self, name: str, handler: Callable[[], None]) -> None:
         self._cleanup_handlers.append((name, handler))
+
+    @property
+    def resolved_credential_values(self) -> tuple[str, ...]:
+        """Return in-memory values resolved by this provisioner instance."""
+        return self._resolved_credential_values
+
+    def prepare_credentials(
+        self,
+    ) -> tuple[tuple[str, ...], dict[str, str]]:
+        """Resolve credentials once, before any runtime artifact is written."""
+        if self._credential_preparation_error is not None:
+            raise self._credential_preparation_error
+        if self._prepared_credentials is None:
+            try:
+                refs, values = self._resolve_credentials()
+            except Exception as error:
+                self._credential_preparation_error = error
+                raise
+            self._prepared_credentials = (refs, dict(values))
+        refs, values = self._prepared_credentials
+        return refs, dict(values)
+
+    def _remember_resolved_credentials(
+        self,
+        refs: tuple[str, ...],
+        values: dict[str, str],
+        *,
+        sensitive: bool = True,
+    ) -> tuple[tuple[str, ...], dict[str, str]]:
+        if sensitive:
+            short_ids = sorted(
+                credential_id
+                for credential_id, value in values.items()
+                if len(value) < 4
+            )
+            if short_ids:
+                raise BlockedError(
+                    reason=(
+                        "Resolved credentials are too short for safe evidence "
+                        f"redaction: {', '.join(short_ids)}"
+                    ),
+                    resource="credential-values",
+                )
+            self._resolved_credential_values = tuple(
+                value for value in values.values() if value
+            )
+        else:
+            self._resolved_credential_values = ()
+        return refs, values
+
+    def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
+        refs: list[str] = []
+        values: dict[str, str] = {}
+        self._resolved_credential_values = ()
+        for credential in self.contract.credentials:
+            try:
+                value = credential.resolve()
+            except Exception as error:
+                raise BlockedError(
+                    reason=(
+                        f"Cannot resolve credential {credential.id} from "
+                        f"{credential.source_ref}: {error}"
+                    ),
+                    resource=f"credential-ref:{credential.source_ref}",
+                ) from error
+            if len(value) < 4:
+                raise BlockedError(
+                    reason=(
+                        f"Credential {credential.id} from "
+                        f"{credential.source_ref} is too short for safe "
+                        "evidence redaction"
+                    ),
+                    resource=f"credential-ref:{credential.source_ref}",
+                )
+            refs.append(credential.source_ref)
+            values[credential.id] = value
+            self._resolved_credential_values = tuple(
+                resolved
+                for resolved in values.values()
+                if resolved
+            )
+        return self._remember_resolved_credentials(tuple(refs), values)
 
     def acquire_profile_lease(self, resource: str, owner: str) -> None:
         lease = ProfileLease(resource, owner)
@@ -135,6 +261,11 @@ class EnvironmentProvisioner(ABC):
                 host=environment.get("PT_DEPLOY_HOST", ""),
                 user=environment.get("PT_DEPLOY_USER", ""),
                 deploy_path=environment.get("PT_DEPLOY_PATH", ""),
+                port=int(environment.get("PT_DEPLOY_SSH_PORT", "22")),
+                known_hosts_file=environment.get(
+                    "PT_DEPLOY_KNOWN_HOSTS_FILE",
+                    "",
+                ),
             )
             lease.acquire()
         except (ValueError, RemoteGitSourceLeaseUnavailable) as error:
@@ -263,6 +394,35 @@ class EnvironmentProvisioner(ABC):
         return blocked
 
     def _ready(self, manifest: RuntimeManifest) -> RuntimeManifest:
+        for service_id, requirement in self.contract.services.items():
+            if not requirement.required:
+                continue
+            attestation = manifest.services.get(service_id)
+            if attestation is None:
+                raise BlockedError(
+                    reason=(
+                        f"Required service {service_id!r} has no runtime attestation"
+                    ),
+                    resource=f"service-attestation:{service_id}",
+                )
+            if attestation.service_kind != requirement.kind:
+                raise BlockedError(
+                    reason=(
+                        f"Service {service_id!r} kind {attestation.service_kind!r} "
+                        f"does not match contract kind {requirement.kind!r}"
+                    ),
+                    resource=f"service-attestation:{service_id}",
+                )
+            if (
+                requirement.runtime_identity_required
+                and not attestation.runtime_identity
+            ):
+                raise BlockedError(
+                    reason=(
+                        f"Service {service_id!r} has no stable runtime identity"
+                    ),
+                    resource=f"service-identity:{service_id}",
+                )
         ready = dataclasses.replace(
             manifest,
             state=ProvisioningState.FIXTURE_READY,
