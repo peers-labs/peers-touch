@@ -976,12 +976,12 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("await bootstrapRuntime(runtimeId, actorId)", app_runtime)
         self.assertIn("criticalInstallInFlight?.actorId === actorId", app_runtime)
         self.assertIn(
-            "await installAuthenticatedCriticalRuntimes(user.actorId)",
+            "await installAuthenticatedCriticalRuntimes(user.actorPtid)",
             harness,
         )
         self.assertIn("tearDownSessionRuntimes()", runtime_hook)
         self.assertIn(
-            "installIdleRuntimes(actorId, CRITICAL_SESSION_RUNTIME_IDS)",
+            "installIdleRuntimes(actorPtid, CRITICAL_SESSION_RUNTIME_IDS)",
             runtime_hook,
         )
         self.assertIn(

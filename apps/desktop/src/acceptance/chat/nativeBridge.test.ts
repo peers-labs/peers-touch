@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import type {
-  AuthSessionResponse,
-  MessagingAcceptanceInteractionSnapshot,
-} from '../../services/desktop_api';
+import type { AuthSessionResponse } from '../../services/desktop_api';
 import type {
   MessagingConversationProjection,
   MessagingProjection,
 } from '../../services/im-service-contract';
-import { createNativeAcceptanceBridge } from './nativeBridge';
+import {
+  createNativeAcceptanceBridge,
+  type MessagingAcceptanceInteractionSnapshot,
+} from './nativeBridge';
 
 const ACTOR_PTID = 'ptid:v1:actor:alice';
 

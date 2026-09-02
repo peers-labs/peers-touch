@@ -12,7 +12,7 @@ import {
 import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
 import { useAgentTopicStore } from './agentTopics';
-import { currentAuthenticatedActorId } from './session';
+import { currentAuthenticatedActorPtid } from './session';
 import {
   conversationIdFromAgentDraftKey,
   createAgentDraftKey,
@@ -113,6 +113,25 @@ export interface AgentSendLifecycle {
   onRejected?: () => void;
 }
 
+export type BudgetExhaustionKind =
+  | 'tool_calls'
+  | 'wall_time'
+  | 'attempts'
+  | 'agent_steps'
+  | 'input_tokens'
+  | 'output_tokens'
+  | 'attachments'
+  | 'cost'
+  | 'unknown';
+
+export interface BudgetNotice {
+  kind: BudgetExhaustionKind;
+  reason: string;
+  limit?: string;
+  consumed?: string;
+  localeKey: string;
+}
+
 export interface RecoveredTurnTerminal {
   status: 'completed' | 'cancelled' | 'failed' | 'interrupted';
   reason?: string;
@@ -160,6 +179,7 @@ export interface ChatMessage {
   queued?: boolean;
   queueEntryId?: string;
   queuePosition?: number;
+  budgetNotice?: BudgetNotice;
 }
 
 const agentChatCache = getDesktopAgentChatCache();
@@ -174,8 +194,6 @@ function cachedConversationToSession(conversation: CachedAgentConversation): Ses
     model_override: conversation.modelName,
     created_at: conversation.createdAt,
     updated_at: conversation.updatedAt,
-    version: conversation.version,
-    active_branch_message_id: conversation.activeBranchMessageId,
   };
 }
 
@@ -313,7 +331,8 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     || source.replacementOf
     || source.replacedBy
     || source.errorDetail
-    || source.resolution;
+    || source.resolution
+    || source.budgetNotice;
   const merged = hasCot ? {
     ...target,
     toolCalls: target.toolCalls ?? source.toolCalls,
@@ -331,6 +350,7 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
       targetOwnsTerminal ? target.errorDetail : target.errorDetail ?? source.errorDetail,
     resolution:
       targetOwnsTerminal ? target.resolution : target.resolution ?? source.resolution,
+    budgetNotice: target.budgetNotice ?? source.budgetNotice,
   } : target;
   if (!source.terminalStatus || targetOwnsTerminal) return merged;
   return {
@@ -1474,7 +1494,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         });
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
-      currentAuthenticatedActorId() || '',
+      currentAuthenticatedActorPtid() || '',
     );
 
     set((state) => {

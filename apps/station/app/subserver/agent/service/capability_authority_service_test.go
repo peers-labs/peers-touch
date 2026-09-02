@@ -446,7 +446,7 @@ func TestCapabilityBackfillReconcilesAllAcceptedSourcesDeterministically(t *test
 	}
 	if err := service.db.Create(&persistence.EcosystemCustomPlugin{
 		ID: "plugin-1", Name: "Rejected", Endpoint: "https://example.invalid",
-		OwnerActorID: "ptid:person:owner", Enabled: true,
+		OwnerActorPTID: "ptid:person:owner", Enabled: true,
 	}).Error; err != nil {
 		t.Fatalf("seed rejected plugin: %v", err)
 	}
@@ -1516,12 +1516,12 @@ func seedCapabilityAuthorityAgent(
 ) {
 	t.Helper()
 	if err := db.Create(&persistence.Agent{
-		ID:           agentID,
-		Name:         "Test Agent",
-		OwnerActorID: ptid,
-		ThinkingMode: "auto",
-		Visibility:   "private",
-		Version:      version,
+		ID:             agentID,
+		Name:           "Test Agent",
+		OwnerActorPTID: ptid,
+		ThinkingMode:   "auto",
+		Visibility:     "private",
+		Version:        version,
 	}).Error; err != nil {
 		t.Fatalf("seed agent: %v", err)
 	}

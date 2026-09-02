@@ -119,7 +119,7 @@ func TestTurnAdmissionRejectsAttachmentBeforePersistence(t *testing.T) {
 	seedAdmissionConversation(t, db)
 	svc := newTurnAdmissionServiceWithDB(db)
 	providerCalls := 0
-	svc.SetAttachmentPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
+	svc.SetRequestPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
 		return attachmentRejected("attachment checksum mismatch")
 	})
 	request := admissionRequest("attachment-rejected", "inspect")
@@ -149,12 +149,49 @@ func TestTurnAdmissionRejectsAttachmentBeforePersistence(t *testing.T) {
 	}
 }
 
+func TestTurnAdmissionRejectsInputOverflowBeforePersistence(t *testing.T) {
+	db := openTurnAdmissionDB(t, "turn_admission_input_overflow")
+	seedAdmissionConversation(t, db)
+	svc := newTurnAdmissionServiceWithDB(db)
+	svc.SetRequestPreflight(func(
+		context.Context,
+		string,
+		*model.ExecuteTurnRequest,
+	) error {
+		return runtimeBudgetExhaustedWithDetails(
+			maxInputTokensExhaustedReason,
+			"1",
+			"2",
+		)
+	})
+
+	if _, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("input-overflow", "oversized"),
+	); err == nil {
+		t.Fatal("expected input overflow rejection")
+	}
+	for name, record := range map[string]interface{}{
+		"turn":    &persistence.AgentTurn{},
+		"attempt": &persistence.TurnAttempt{},
+	} {
+		var count int64
+		if err := db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("input overflow persisted %d %s rows", count, name)
+		}
+	}
+}
+
 func TestTurnAdmissionReplaysBeforeAttachmentRevalidation(t *testing.T) {
 	db := openTurnAdmissionDB(t, "turn_admission_attachment_replay")
 	seedAdmissionConversation(t, db)
 	svc := newTurnAdmissionServiceWithDB(db)
 	preflightCalls := 0
-	svc.SetAttachmentPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
+	svc.SetRequestPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
 		preflightCalls++
 		if preflightCalls > 1 {
 			return attachmentRejected("attachment expired after admission")
@@ -318,7 +355,7 @@ func TestTurnAdmissionCancelsQueuedEntryWhenAttachmentExpiresBeforeDequeue(t *te
 	seedAdmissionConversation(t, db)
 	svc := newTurnAdmissionServiceWithDB(db)
 	reject := false
-	svc.SetAttachmentPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
+	svc.SetRequestPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
 		if reject {
 			return attachmentRejected("attachment expired before dequeue")
 		}

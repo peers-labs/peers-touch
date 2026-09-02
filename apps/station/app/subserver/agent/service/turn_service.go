@@ -9,17 +9,14 @@
 // 2026-04-11 — Phase 4: integrated ToolRegistryService into processToolCalls,
 //   replacing [tool_not_implemented] placeholder with central dispatch.
 //   Implemented recursive delegation executor using scoped mini turn-loop.
-// 2026-04-11 — Phase 5: runCompression now performs Knowledge Salvage via
-//   FlushMemories() before compression, and executes an LLM call to produce
-//   an actual summary from the compression prompt. Added executeSummaryLLM().
+// 2026-04-11 — Phase 5: runCompression executes an LLM call to produce an
+//   actual summary from the compression prompt. Added executeSummaryLLM().
 // 2026-04-11 — Phase 6: integrated ReviewService into Step 9 nudge evaluation.
 //   TurnService now holds a *ReviewService and delegates background review
 //   triggering to it after updating nudge counters.
-// 2026-04-11 — Phase 7: Compression Session Split and MemoryProvider lifecycle
-//   hooks. Added splitSession() to mark the old conversation as "compressed"
-//   and create a child conversation post-compression. Added memoryProvider()
-//   helper. Integrated on_turn_start, on_pre_compress, sync_turn, on_delegation
-//   hooks into the turn loop for external memory backend synchronisation.
+// 2026-04-11 — Phase 7: MemoryProvider lifecycle hooks. Added memoryProvider()
+//   helper and integrated on_turn_start, on_pre_compress, sync_turn, and
+//   on_delegation hooks into the turn loop for external memory synchronisation.
 // 2026-04-11 — P1 Bug Fixes:
 //   (1) NudgeState data race: replaced direct field access with thread-safe
 //       IncrementTurnCounter / IncrementIterCounter methods.
@@ -51,6 +48,8 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -83,14 +82,18 @@ type TurnConfig struct {
 	AgentConfigPrompt         string
 	Platform                  string
 	AvailableTools            []string
+	RestrictedTools           []string
 	ContextWindowSize         int
 	MaxRetries                int
 	Provider                  string
 	Model                     string
+	ProviderConfigVersion     string
+	CapabilitySourceVersion   string
 	Effort                    string // reasoning effort: "low" | "medium" | "high"
 	ThinkingMode              domain.ThinkingMode
 	FallbackModel             string // Alternate model for billing/model_not_found fallback recovery.
 	WorkspaceRoot             string
+	WorkspaceReference        string
 	AuthorizedCapabilities    *AuthorizedCapabilitySet
 	PrecreatedTurnID          string
 	ExistingTurnID            string
@@ -103,6 +106,7 @@ type TurnConfig struct {
 	ClientCapabilitySessionID string
 	RequestedBudgetJSON       json.RawMessage
 	RuntimeBudget             *model.RuntimeBudget
+	RuntimeCapabilities       *model.RuntimeCapabilitySnapshot
 	Attachments               []*model.AgentAttachmentRef
 	AdmittedAttachments       []AdmittedAttachment
 	RotationStrategy          domain.RotationStrategy
@@ -117,6 +121,8 @@ type TurnConfig struct {
 	AttemptID string
 
 	MemoryDisabled bool // When true, L3 memory snapshot is skipped in prompt assembly.
+	promptAssembly *PromptAssemblyResult
+	currentInput   string
 }
 
 type TurnEventSink func(ctx context.Context, event TurnEvent)
@@ -179,6 +185,11 @@ type continuationProviderCall func(
 	string,
 	[]domain.Message,
 ) (string, []ProviderToolCall, []domain.ProviderCallRecord, bool, error)
+
+type turnProviderCall func(
+	context.Context,
+	*ProviderCallRequest,
+) (*ProviderCallResponse, error)
 
 type executionLifecycle struct {
 	ctx       context.Context
@@ -269,6 +280,7 @@ type TurnService struct {
 	turnAdmission        *TurnAdmissionService
 	attachmentAdmission  *AttachmentAdmissionService
 	resumeProviderCall   continuationProviderCall
+	providerCall         turnProviderCall
 }
 
 func (s *TurnService) SetAdmissionResolver(r *RuntimeAdmissionResolver) {
@@ -289,12 +301,12 @@ func (s *TurnService) SetAttachmentAdmissionService(admission *AttachmentAdmissi
 	s.attachmentAdmission = admission
 }
 
-func (s *TurnService) PreflightAttachments(
+func (s *TurnService) PreflightTurn(
 	ctx context.Context,
 	actorID string,
 	request *model.ExecuteTurnRequest,
 ) error {
-	if request == nil || len(request.GetAttachments()) == 0 {
+	if request == nil {
 		return nil
 	}
 	config, err := s.queuedTurnConfig(actorID, request, "")
@@ -325,6 +337,16 @@ func (s *TurnService) PreflightAttachments(
 	)
 	if err != nil {
 		return err
+	}
+	if err := validateInputBudgetBeforePersistence(
+		s.compression,
+		effectiveBudget,
+		request.GetUserInput(),
+	); err != nil {
+		return err
+	}
+	if len(request.GetAttachments()) == 0 {
+		return nil
 	}
 	_, err = s.attachmentAdmission.Admit(
 		ctx,
@@ -360,7 +382,7 @@ func NewTurnService(
 	growthMetrics *GrowthMetricsService,
 	convService *ConversationService,
 ) *TurnService {
-	return &TurnService{
+	service := &TurnService{
 		errorClassifier:  errorClassifier,
 		memoryService:    memoryService,
 		skillService:     skillService,
@@ -377,6 +399,10 @@ func NewTurnService(
 		liveResumeBroker: NewLiveResumeBroker(),
 		activeTurnCancel: make(map[string]activeTurnRegistration),
 	}
+	if providerService != nil {
+		service.providerCall = providerService.Call
+	}
+	return service
 }
 
 func (s *TurnService) SetLiveResumeBroker(broker *LiveResumeBroker) {
@@ -1160,6 +1186,15 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	if admitErr != nil {
 		return nil, settleAdmissionFailure("runtime admission rejected", admitErr)
 	}
+	if capabilityErr := validateTurnRuntimeCapabilities(
+		config,
+		runtimeSnapshot.Capabilities,
+	); capabilityErr != nil {
+		return nil, settleAdmissionFailure(
+			"runtime capability rejected before execution",
+			capabilityErr,
+		)
+	}
 	config.RuntimeBudget, err = effectiveRuntimeBudget(
 		runtimeSnapshot.Budget,
 		config.RequestedBudgetJSON,
@@ -1168,6 +1203,25 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		return nil, settleAdmissionFailure("runtime budget rejected", err)
 	}
 	runtimeSnapshot.Budget = cloneRuntimeBudget(config.RuntimeBudget)
+	config.RuntimeCapabilities = proto.Clone(
+		runtimeSnapshot.Capabilities,
+	).(*model.RuntimeCapabilitySnapshot)
+	if maxDepth := config.RuntimeBudget.GetMaxDelegationDepth(); maxDepth > 0 &&
+		uint32(config.Depth) > maxDepth {
+		budgetErr := runtimeBudgetExhausted(
+			maxDelegationDepthExhaustedReason,
+			maxDepth,
+			uint32(config.Depth),
+		)
+		return nil, settleAdmissionFailure(maxDelegationDepthExhaustedReason, budgetErr)
+	}
+	if err := validateInputBudgetBeforePersistence(
+		s.compression,
+		config.RuntimeBudget,
+		userInput,
+	); err != nil {
+		return nil, settleAdmissionFailure(maxInputTokensExhaustedReason, err)
+	}
 	admittedAttachments, attachmentErr := s.attachmentAdmission.Admit(
 		ctx,
 		config.ActorID,
@@ -1268,7 +1322,19 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	if err != nil {
 		return nil, settleRunningFailure("failed to load authorized capability set", err)
 	}
-	config.AvailableTools = config.AuthorizedCapabilities.ToolNames()
+	config.AvailableTools = restrictAuthorizedToolNames(
+		config.AuthorizedCapabilities.ToolNames(),
+		config.RestrictedTools,
+	)
+	if err := validateAuthorizedRuntimeCapabilities(
+		config.AvailableTools,
+		runtimeSnapshot.Capabilities,
+	); err != nil {
+		return nil, settleRunningFailure(
+			"runtime tool capability rejected before execution",
+			err,
+		)
+	}
 	trace.CapabilitySnapshotID = config.AuthorizedCapabilities.SnapshotID
 
 	logger.Infof(ctx, "turn started: turn_id=%s agent_id=%s conversation_id=%s provider=%s",
@@ -1305,8 +1371,28 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		}
 	}
 
+	// Step 5 — Load conversation messages.
+	messages, err := s.loadMessages(ctx, config.ConversationID)
+	if err != nil {
+		return nil, settleRunningFailure("failed to load conversation messages", err)
+	}
+	if config.ContextBranchHeadID != "" {
+		messages = projectMessageBranch(messages, config.ContextBranchHeadID)
+	}
+
 	processedInput := userInput
-	assemblyResult, err := s.promptAssembly.Assemble(
+	// Replace the last user message content with the reference-expanded version
+	// so the provider receives the enriched input.
+	if processedInput != userInput && len(messages) > 0 {
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role == domain.MessageRoleUser {
+				messages[i].Content = processedInput
+				break
+			}
+		}
+	}
+
+	assemblyResult, err := s.promptAssembly.AssembleTurnContext(
 		ctx,
 		config.AgentID,
 		config.Identity,
@@ -1316,6 +1402,12 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		db,
 		config.AuthorizedCapabilities,
 		config.MemoryDisabled,
+		PromptAssemblyContext{
+			TurnID:             turnID,
+			ConversationID:     config.ConversationID,
+			Messages:           messages,
+			WorkspaceReference: config.WorkspaceReference,
+		},
 	)
 	if err != nil {
 		assemblyErr := errcode.New(
@@ -1347,26 +1439,6 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		}
 	}
 
-	// Step 5 — Load conversation messages.
-	messages, err := s.loadMessages(ctx, config.ConversationID)
-	if err != nil {
-		return nil, settleRunningFailure("failed to load conversation messages", err)
-	}
-	if config.ContextBranchHeadID != "" {
-		messages = projectMessageBranch(messages, config.ContextBranchHeadID)
-	}
-
-	// Replace the last user message content with the reference-expanded version
-	// so the provider receives the enriched input.
-	if processedInput != userInput && len(messages) > 0 {
-		for i := len(messages) - 1; i >= 0; i-- {
-			if messages[i].Role == domain.MessageRoleUser {
-				messages[i].Content = processedInput
-				break
-			}
-		}
-	}
-
 	toolDefinitions := s.toolDefinitions(config.AvailableTools)
 	toolSchemaSegment, toolDefinitionTokens, err := toolSchemaContextSegment(
 		config.AuthorizedCapabilities,
@@ -1393,10 +1465,52 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		turnID, estimatedTokens, config.ContextWindowSize, shouldCompress)
 
 	if shouldCompress {
-		messages, err = s.runCompression(ctx, config, turnID, trace, assemblyResult, messages)
+		var summaryCall *domain.ProviderCallRecord
+		messages, summaryCall, err = s.runCompression(
+			ctx,
+			config,
+			turnID,
+			trace,
+			assemblyResult,
+			messages,
+			processedInput,
+		)
+		if summaryCall != nil {
+			trace.ProviderCalls = append(trace.ProviderCalls, *summaryCall)
+		}
 		if err != nil {
+			terminalCtx := context.WithoutCancel(ctx)
+			if usageErr := s.persistAttemptUsage(
+				terminalCtx,
+				turnID,
+				config.AttemptID,
+				trace,
+			); usageErr != nil {
+				err = errors.Join(err, fmt.Errorf(
+					"persist compression-attempt usage: %w",
+					usageErr,
+				))
+			}
+			if traceErr := s.saveTurnTrace(terminalCtx, trace); traceErr != nil {
+				err = errors.Join(err, fmt.Errorf(
+					"persist compression-attempt trace: %w",
+					traceErr,
+				))
+			}
 			return nil, settleRunningFailure("context compression failed", err)
 		}
+	}
+	estimatedTokens = s.compression.EstimateTokens(messages) +
+		assemblyResult.InjectedTokens +
+		int(toolDefinitionTokens)
+	if maxInputTokens := config.RuntimeBudget.GetMaxInputTokens(); maxInputTokens > 0 &&
+		uint64(estimatedTokens) > maxInputTokens {
+		budgetErr := runtimeBudgetExhaustedWithDetails(
+			maxInputTokensExhaustedReason,
+			fmt.Sprintf("%d", maxInputTokens),
+			fmt.Sprintf("%d", estimatedTokens),
+		)
+		return nil, settleRunningFailure(maxInputTokensExhaustedReason, budgetErr)
 	}
 	if toolSchemaSegment != nil {
 		assemblyResult.Segments = append(
@@ -1418,35 +1532,34 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			}
 		}
 	}
+	sortContextSegments(assemblyResult.Segments)
 
 	// Persist ContextLedger to TurnAttempt (MCA-D04).
 	if config.AttemptID != "" {
-		ledgerJSON, ledgerErr := json.Marshal(assemblyResult.Segments)
-		if ledgerErr != nil {
-			cause := errcode.New(
-				errcode.AgentInternal,
-				http.StatusInternalServerError,
-				"encode turn attempt context ledger",
+		contextLedger, ledgerBuildErr := buildContextLedger(
+			config,
+			turnID,
+			assemblyResult,
+			uint64(max(estimatedTokens, 0)),
+		)
+		if ledgerBuildErr != nil {
+			return nil, settleRunningFailure(
+				"failed to build turn attempt context ledger",
+				ledgerBuildErr,
+			)
+		}
+		if ledgerErr := s.persistContextLedger(
+			ctx,
+			contextLedger,
+		); ledgerErr != nil {
+			return nil, settleRunningFailure(
+				"failed to persist turn attempt context ledger",
 				ledgerErr,
 			)
-			return nil, settleRunningFailure("failed to encode turn attempt context ledger", cause)
-		}
-		db, dbErr := s.getDB(ctx)
-		if dbErr != nil {
-			return nil, settleRunningFailure("failed to open context ledger store", dbErr)
-		}
-		if updateErr := db.WithContext(ctx).Model(&persistence.TurnAttempt{}).
-			Where("id = ?", config.AttemptID).
-			Update("context_ledger", string(ledgerJSON)).Error; updateErr != nil {
-			cause := errcode.New(
-				errcode.AgentInternal,
-				http.StatusInternalServerError,
-				"persist turn attempt context ledger",
-				updateErr,
-			)
-			return nil, settleRunningFailure("failed to persist turn attempt context ledger", cause)
 		}
 	}
+	config.promptAssembly = assemblyResult
+	config.currentInput = processedInput
 	// Attachment bytes are admission-only transient data until a provider
 	// adapter has an explicit native image/file mapping. Never persist them.
 	config.AdmittedAttachments = nil
@@ -1456,6 +1569,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	// without its corresponding trace.
 	if err := s.saveTurnTrace(ctx, trace); err != nil {
 		return nil, settleRunningFailure("failed to checkpoint turn trace before provider call", err)
+	}
+	if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
+		return nil, settleRunningFailure("runtime capability provenance is stale", err)
 	}
 
 	// Step 7 — Credential lease + provider call with error recovery loop.
@@ -1468,7 +1584,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	assistantResponse, providerToolCalls, providerCalls, streamed, err := s.providerCallWithRetry(
 		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages,
 	)
-	trace.ProviderCalls = providerCalls
+	trace.ProviderCalls = append(trace.ProviderCalls, providerCalls...)
 	if err != nil {
 		terminalCtx := context.WithoutCancel(ctx)
 		if usageErr := s.persistAttemptUsage(terminalCtx, turnID, config.AttemptID, trace); usageErr != nil {
@@ -1505,6 +1621,14 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	// Step 8 — Tool call iteration loop.
+	if len(providerToolCalls) > 0 {
+		if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
+			return nil, settleRunningFailure(
+				"runtime capability provenance changed before tool dispatch",
+				err,
+			)
+		}
+	}
 	toolIterations, paused, err := s.processToolCalls(
 		ctx,
 		config,
@@ -1720,9 +1844,14 @@ func (s *TurnService) runCompression(
 	trace *domain.TurnTrace,
 	assemblyResult *PromptAssemblyResult,
 	messages []domain.Message,
-) ([]domain.Message, error) {
+	currentInput string,
+) ([]domain.Message, *domain.ProviderCallRecord, error) {
 
 	trace.CompressionTriggered = true
+
+	if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
+		return nil, nil, fmt.Errorf("validate runtime before pre-compression hook: %w", err)
+	}
 
 	// MemoryProvider hook: on_pre_compress — let external backend archive before eviction.
 	if mp := s.memoryProvider(); mp != nil {
@@ -1731,20 +1860,11 @@ func (s *TurnService) runCompression(
 		}
 	}
 
-	// Step 1 — Knowledge Salvage: flush important context to memory before compression.
-	// 2026-04-11 — Fix: pass config.Provider instead of relying on hardcoded "openai"
-	//   inside FlushMemories, so flush works with any configured provider type.
-	if flushErr := s.memoryService.FlushMemories(ctx, config.AgentID, messages, s.providerService, s.credentialPool, s.toolRegistry, config.Provider); flushErr != nil {
-		logger.Warnf(ctx, "compression: flush_memories failed (non-fatal): turn_id=%s err=%v", turnID, flushErr)
-	} else {
-		logger.Infof(ctx, "compression: flush_memories completed, turn_id=%s", turnID)
-	}
-
-	// Step 2 — Execute compression (prune + split + build summary prompt).
+	// Step 1 — Execute compression (prune + split + build summary prompt).
 	compResult, compErr := s.compression.Compress(ctx, messages, config.ContextWindowSize)
 	if compErr != nil {
 		logger.Errorf(ctx, "compression failed: turn_id=%s err=%v", turnID, compErr)
-		return nil, errcode.New(
+		return nil, nil, errcode.New(
 			errcode.AgentCompressionFailed,
 			http.StatusInternalServerError,
 			"context compression failed",
@@ -1755,11 +1875,20 @@ func (s *TurnService) runCompression(
 	trace.CompressionBefore = compResult.TokensBefore
 	trace.CompressionAfter = compResult.TokensAfter
 
-	// Step 3 — Execute LLM summary call if summary prompt was generated.
+	// Step 2 — Execute LLM summary call if summary prompt was generated.
+	var summaryCall *domain.ProviderCallRecord
 	if compResult.Summary != "" {
-		summaryText, summaryErr := s.executeSummaryLLM(ctx, config, compResult.Summary)
+		summaryText, callRecord, summaryErr := s.executeSummaryLLM(
+			ctx,
+			config,
+			compResult.Summary,
+		)
+		summaryCall = callRecord
 		if summaryErr != nil {
-			logger.Warnf(ctx, "compression: summary LLM call failed (non-fatal): turn_id=%s err=%v", turnID, summaryErr)
+			return nil, summaryCall, fmt.Errorf(
+				"compression summary provider call failed: %w",
+				summaryErr,
+			)
 		} else {
 			// Prepend summary as a system message to the compressed messages.
 			summaryMsg := domain.Message{
@@ -1783,48 +1912,385 @@ func (s *TurnService) runCompression(
 	// Rebuild system prompt with fresh snapshot after compression.
 	db, dbErr := s.getDB(ctx)
 	if dbErr != nil {
-		return nil, fmt.Errorf("open post-compression prompt store: %w", dbErr)
+		return nil, summaryCall, fmt.Errorf(
+			"open post-compression prompt store: %w",
+			dbErr,
+		)
 	}
 	if len(messages) == 0 {
-		return nil, errcode.New(
+		return nil, summaryCall, errcode.New(
 			errcode.AgentCompressionFailed,
 			http.StatusInternalServerError,
 			"context compression produced no messages",
 			nil,
 		)
 	}
-	freshAssembly, freshErr := s.promptAssembly.Assemble(
+	freshAssembly, freshErr := s.promptAssembly.AssembleTurnContext(
 		ctx,
 		config.AgentID,
 		config.Identity,
 		config.AgentConfigPrompt,
 		config.AvailableTools,
-		messages[len(messages)-1].Content,
+		currentInput,
 		db,
 		config.AuthorizedCapabilities,
 		config.MemoryDisabled,
+		PromptAssemblyContext{
+			TurnID:             turnID,
+			ConversationID:     config.ConversationID,
+			Messages:           messages,
+			WorkspaceReference: config.WorkspaceReference,
+		},
 	)
 	if freshErr != nil {
-		logger.Warnf(ctx, "post-compression prompt reassembly failed: turn_id=%s err=%v", turnID, freshErr)
-	} else {
-		*assemblyResult = *freshAssembly
-		trace.MemorySnapshotHash = freshAssembly.MemorySnapshotHash
-		trace.SkillIndexHash = freshAssembly.SkillIndexHash
-		trace.KnowledgeChunks = freshAssembly.KnowledgeChunks
+		return nil, summaryCall, fmt.Errorf(
+			"reassemble governed context after compression: %w",
+			freshErr,
+		)
+	}
+	freshAssembly.Segments = append(
+		freshAssembly.Segments,
+		contextSegmentsNotRebuiltByPromptAssembly(assemblyResult.Segments)...,
+	)
+	sortContextSegments(freshAssembly.Segments)
+	*assemblyResult = *freshAssembly
+	trace.MemorySnapshotHash = freshAssembly.MemorySnapshotHash
+	trace.SkillIndexHash = freshAssembly.SkillIndexHash
+	trace.KnowledgeChunks = freshAssembly.KnowledgeChunks
+
+	return messages, summaryCall, nil
+}
+
+func contextSegmentsNotRebuiltByPromptAssembly(
+	segments []ContextSegment,
+) []ContextSegment {
+	var preserved []ContextSegment
+	for _, segment := range segments {
+		switch segment.Type {
+		case model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_TOOL_SCHEMA,
+			model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_ATTACHMENT:
+			preserved = append(preserved, segment)
+		}
+	}
+	return preserved
+}
+
+func contextSegmentForSkillBody(skill *domain.SkillManifest) ContextSegment {
+	if skill == nil {
+		return ContextSegment{
+			Type:           model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_SKILL_BODY,
+			Decision:       model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED,
+			DecisionReason: "skill_body_unavailable",
+		}
+	}
+	content := strings.TrimSpace(skill.Content)
+	decision := model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED
+	decisionReason := ""
+	if content == "" {
+		decision = model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED
+		decisionReason = "skill_body_empty"
 	}
 
-	// Step 4 — Session Split: mark old conversation as compressed, create
-	// a child conversation linked via parent_session_id.
-	oldConvID := config.ConversationID
-	newConvID, splitErr := s.splitSession(ctx, config)
-	if splitErr != nil {
-		logger.Warnf(ctx, "compression: session split failed (non-fatal): turn_id=%s err=%v", turnID, splitErr)
-	} else {
-		config.ConversationID = newConvID
-		logger.Infof(ctx, "compression: session split completed, turn_id=%s old_conv=%s new_conv=%s", turnID, oldConvID, newConvID)
+	return ContextSegment{
+		Type:    model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_SKILL_BODY,
+		Content: content,
+		SourceRefs: []string{fmt.Sprintf(
+			"skill:%s:version=%d",
+			skill.SkillID,
+			skill.Version,
+		)},
+		ContentHash:     sha256Hex(content),
+		EstimatedTokens: estimateTokens(content),
+		Decision:        decision,
+		DecisionReason:  decisionReason,
+	}
+}
+
+func sortContextSegments(segments []ContextSegment) {
+	sort.SliceStable(segments, func(left, right int) bool {
+		return segments[left].Type < segments[right].Type
+	})
+}
+
+func redactedContextSegments(segments []ContextSegment) []ContextSegment {
+	redacted := make([]ContextSegment, len(segments))
+	for index := range segments {
+		redacted[index] = segments[index]
+		redacted[index].Content = ""
+		redacted[index].KnowledgeChunks = nil
+		redacted[index].IncludeInSystemPrompt = false
 	}
 
-	return messages, nil
+	return redacted
+}
+
+const contextLedgerPromptVersion = "v1"
+
+func buildContextLedger(
+	config *TurnConfig,
+	turnID string,
+	assembly *PromptAssemblyResult,
+	estimatedInputTokens uint64,
+) (*model.ContextLedger, error) {
+	if config == nil || assembly == nil || strings.TrimSpace(config.AttemptID) == "" {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"context ledger requires turn configuration and prompt assembly",
+			nil,
+		)
+	}
+	ledgerID := "context:" + config.AttemptID
+	segments := contextLedgerSegments(ledgerID, assembly.Segments)
+	var reservedOutputTokens uint64
+	if config.RuntimeBudget != nil {
+		reservedOutputTokens = config.RuntimeBudget.GetMaxOutputTokens()
+	}
+	var modelContextWindow uint64
+	if config.RuntimeCapabilities != nil && config.RuntimeCapabilities.GetLimits() != nil {
+		modelContextWindow = config.RuntimeCapabilities.GetLimits().GetContextTokens()
+	}
+	if modelContextWindow == 0 && config.ContextWindowSize > 0 {
+		modelContextWindow = uint64(config.ContextWindowSize)
+	}
+	ledger := &model.ContextLedger{
+		ContextLedgerId:      ledgerID,
+		TurnId:               turnID,
+		AttemptId:            config.AttemptID,
+		Segments:             segments,
+		EstimatedInputTokens: estimatedInputTokens,
+		ReservedOutputTokens: reservedOutputTokens,
+		ModelContextWindow:   modelContextWindow,
+		PromptHash:           "",
+		PromptVersion:        contextLedgerPromptVersion,
+	}
+	promptHash, err := contextLedgerHash(ledger)
+	if err != nil {
+		return nil, err
+	}
+	ledger.PromptHash = promptHash
+	return ledger, nil
+}
+
+func contextLedgerSegments(
+	ledgerID string,
+	segments []ContextSegment,
+) []*model.ContextSegment {
+	ordered := append([]ContextSegment(nil), segments...)
+	sortContextSegments(ordered)
+	redacted := redactedContextSegments(ordered)
+	result := make([]*model.ContextSegment, 0, len(redacted))
+	for index, segment := range redacted {
+		result = append(result, contextLedgerSegment(ledgerID, index, segment))
+	}
+	return result
+}
+
+func contextLedgerSegment(
+	ledgerID string,
+	index int,
+	segment ContextSegment,
+) *model.ContextSegment {
+	return &model.ContextSegment{
+		SegmentId:       fmt.Sprintf("%s:%d", ledgerID, index+1),
+		Type:            segment.Type,
+		SourceRefs:      redactDiagnosticRefs(segment.SourceRefs),
+		ContentHash:     segment.ContentHash,
+		EstimatedTokens: uint64(max(segment.EstimatedTokens, 0)),
+		Decision:        segment.Decision,
+		DecisionReason:  redactDiagnosticText(segment.DecisionReason),
+	}
+}
+
+func contextLedgerHash(ledger *model.ContextLedger) (string, error) {
+	canonical := proto.Clone(ledger).(*model.ContextLedger)
+	canonical.PromptHash = ""
+	encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(canonical)
+	if err != nil {
+		return "", errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"encode canonical context ledger",
+			err,
+		)
+	}
+	return sha256Hex(string(encoded)), nil
+}
+
+func (s *TurnService) persistContextLedger(
+	ctx context.Context,
+	ledger *model.ContextLedger,
+) error {
+	if ledger == nil || strings.TrimSpace(ledger.GetAttemptId()) == "" {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"context ledger requires an attempt ID",
+			nil,
+		)
+	}
+	ledgerJSON, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(ledger)
+	if err != nil {
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"encode turn attempt context ledger",
+			err,
+		)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	result := db.WithContext(ctx).
+		Model(&persistence.TurnAttempt{}).
+		Where("id = ?", ledger.GetAttemptId()).
+		Update("context_ledger", string(ledgerJSON))
+	if result.Error != nil {
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"persist turn attempt context ledger",
+			result.Error,
+		)
+	}
+	if result.RowsAffected != 1 {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"context ledger attempt is unavailable",
+			nil,
+		)
+	}
+
+	return nil
+}
+
+func (s *TurnService) upsertContextLedgerSegment(
+	ctx context.Context,
+	attemptID string,
+	segment ContextSegment,
+) error {
+	if strings.TrimSpace(attemptID) == "" {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"context ledger segment requires an attempt ID",
+			nil,
+		)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var attempt persistence.TurnAttempt
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "context_ledger").
+			First(&attempt, "id = ?", attemptID).Error; err != nil {
+			return errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"load context ledger attempt",
+				err,
+			)
+		}
+		if strings.TrimSpace(attempt.ContextLedger) == "" {
+			return errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"context ledger envelope is unavailable",
+				nil,
+			)
+		}
+		var ledger model.ContextLedger
+		if err := protojson.Unmarshal([]byte(attempt.ContextLedger), &ledger); err != nil {
+			return errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"decode persisted context ledger",
+				err,
+			)
+		}
+		candidate := contextLedgerSegment(
+			ledger.GetContextLedgerId(),
+			len(ledger.GetSegments()),
+			segment,
+		)
+		replaced := false
+		for index := range ledger.Segments {
+			if ledger.Segments[index].GetType() == candidate.GetType() &&
+				protoContextSegmentSourceKey(ledger.Segments[index]) ==
+					protoContextSegmentSourceKey(candidate) {
+				candidate.SegmentId = ledger.Segments[index].GetSegmentId()
+				ledger.Segments[index] = candidate
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			ledger.Segments = append(ledger.Segments, candidate)
+		}
+		sort.SliceStable(ledger.Segments, func(left, right int) bool {
+			return ledger.Segments[left].GetType() < ledger.Segments[right].GetType()
+		})
+		for index := range ledger.Segments {
+			ledger.Segments[index].SegmentId = fmt.Sprintf(
+				"%s:%d",
+				ledger.GetContextLedgerId(),
+				index+1,
+			)
+		}
+		ledger.EstimatedInputTokens = contextLedgerEstimatedInputTokens(
+			ledger.GetSegments(),
+		)
+		promptHash, err := contextLedgerHash(&ledger)
+		if err != nil {
+			return err
+		}
+		ledger.PromptHash = promptHash
+		encoded, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&ledger)
+		if err != nil {
+			return errcode.New(
+				errcode.AgentInternal,
+				http.StatusInternalServerError,
+				"encode updated context ledger",
+				err,
+			)
+		}
+		if err := tx.Model(&persistence.TurnAttempt{}).
+			Where("id = ?", attemptID).
+			Update("context_ledger", string(encoded)).Error; err != nil {
+			return errcode.New(
+				errcode.AgentInternal,
+				http.StatusInternalServerError,
+				"update context ledger segment",
+				err,
+			)
+		}
+
+		return nil
+	})
+}
+
+func protoContextSegmentSourceKey(segment *model.ContextSegment) string {
+	if segment == nil || len(segment.GetSourceRefs()) == 0 {
+		return ""
+	}
+
+	return segment.GetSourceRefs()[0]
+}
+
+func contextLedgerEstimatedInputTokens(segments []*model.ContextSegment) uint64 {
+	var total uint64
+	for _, segment := range segments {
+		if segment != nil &&
+			segment.GetDecision() != model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED {
+			total += segment.GetEstimatedTokens()
+		}
+	}
+	return total
 }
 
 // ---------------------------------------------------------------------------
@@ -1835,14 +2301,22 @@ func (s *TurnService) runCompression(
 // concise summary from the given summary prompt. The summary prompt is
 // produced by CompressionService.Compress and contains the conversation
 // text to summarize along with formatting instructions.
-func (s *TurnService) executeSummaryLLM(ctx context.Context, config *TurnConfig, summaryPrompt string) (string, error) {
+func (s *TurnService) executeSummaryLLM(
+	ctx context.Context,
+	config *TurnConfig,
+	summaryPrompt string,
+) (string, *domain.ProviderCallRecord, error) {
+	if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
+		return "", nil, err
+	}
 	credential, err := s.credentialPool.Lease(ctx, config.ActorID, config.Provider, domain.RotationRoundRobin)
 	if err != nil {
-		return "", fmt.Errorf("no credential for summary: %w", err)
+		return "", nil, fmt.Errorf("no credential for summary: %w", err)
 	}
 	defer s.credentialPool.Release(ctx, credential.CredentialID)
 
-	resp, err := s.providerService.Call(ctx, &ProviderCallRequest{
+	callStart := time.Now()
+	resp, err := s.callProviderWithRuntimeAuthority(ctx, config, &ProviderCallRequest{
 		ProviderID:   credential.CredentialID,
 		Model:        config.Model,
 		SystemPrompt: "You are a summarization assistant. Produce a concise structured summary.",
@@ -1850,15 +2324,163 @@ func (s *TurnService) executeSummaryLLM(ctx context.Context, config *TurnConfig,
 			Role:    domain.MessageRoleUser,
 			Content: summaryPrompt,
 		}},
-		ProviderType: config.Provider,
-		Effort:       config.Effort,
-		ThinkingMode: config.ThinkingMode,
+		ProviderType:    config.Provider,
+		Effort:          config.Effort,
+		ThinkingMode:    config.ThinkingMode,
+		MaxOutputTokens: int(config.RuntimeBudget.GetMaxOutputTokens()),
 	})
+	callRecord := &domain.ProviderCallRecord{
+		Provider:     config.Provider,
+		Model:        config.Model,
+		Latency:      time.Since(callStart),
+		CredentialID: credential.CredentialID,
+	}
+	if resp != nil {
+		callRecord.InputTokens = resp.InputTokens
+		callRecord.OutputTokens = resp.OutputTokens
+		callRecord.CacheHit = resp.CacheHit
+		if resp.Model != "" {
+			callRecord.Model = resp.Model
+		}
+	}
 	if err != nil {
-		return "", err
+		return "", callRecord, err
 	}
 
-	return resp.Content, nil
+	return resp.Content, callRecord, nil
+}
+
+func (s *TurnService) callProviderWithRuntimeAuthority(
+	ctx context.Context,
+	config *TurnConfig,
+	request *ProviderCallRequest,
+) (*ProviderCallResponse, error) {
+	if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
+		return nil, err
+	}
+	if request == nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"provider call request is required",
+			nil,
+		)
+	}
+	if s.providerCall == nil && s.providerService == nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"provider execution service is unavailable",
+			nil,
+		)
+	}
+	if err := validateProviderRequestInputBudget(
+		s.compression,
+		config.RuntimeBudget,
+		request,
+	); err != nil {
+		return nil, err
+	}
+	if config.RuntimeBudget == nil || config.RuntimeBudget.MaxCost != nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"provider cost budget is unsupported without an authoritative pricing source",
+			nil,
+		)
+	}
+	request.UserID = config.ActorID
+	request.ExpectedProviderConfigVersion = config.ProviderConfigVersion
+	request.ExpectedCapabilitySourceVersion = config.CapabilitySourceVersion
+	request.BeforeDispatch = func(dispatchCtx context.Context) error {
+		return s.reserveProviderAttempt(dispatchCtx, config)
+	}
+	var response *ProviderCallResponse
+	var err error
+	if s.providerCall != nil {
+		response, err = s.providerCall(ctx, request)
+	} else {
+		response, err = s.providerService.Call(ctx, request)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if response != nil &&
+		response.OutputTokens > int(config.RuntimeBudget.GetMaxOutputTokens()) {
+		return response, runtimeBudgetExhaustedWithDetails(
+			maxOutputTokensExhaustedReason,
+			fmt.Sprintf("%d", config.RuntimeBudget.GetMaxOutputTokens()),
+			fmt.Sprintf("%d", response.OutputTokens),
+		)
+	}
+	return response, nil
+}
+
+func (s *TurnService) reserveProviderAttempt(
+	ctx context.Context,
+	config *TurnConfig,
+) error {
+	if config == nil || config.RuntimeBudget == nil ||
+		strings.TrimSpace(config.TurnID) == "" {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"provider attempt requires a turn-scoped runtime budget",
+			nil,
+		)
+	}
+	maxAttempts := config.RuntimeBudget.GetMaxAttempts()
+	if maxAttempts == 0 {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"provider attempt budget is unavailable",
+			nil,
+		)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	result := db.WithContext(ctx).
+		Model(&persistence.AgentTurn{}).
+		Where(
+			"id = ? AND provider_attempt_count < ?",
+			config.TurnID,
+			maxAttempts,
+		).
+		UpdateColumn(
+			"provider_attempt_count",
+			gorm.Expr("provider_attempt_count + 1"),
+		)
+	if result.Error != nil {
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"reserve provider attempt",
+			result.Error,
+		)
+	}
+	if result.RowsAffected == 1 {
+		return nil
+	}
+
+	var turn persistence.AgentTurn
+	if err := db.WithContext(ctx).
+		Select("id", "provider_attempt_count").
+		First(&turn, "id = ?", config.TurnID).Error; err != nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"provider attempt turn is unavailable",
+			err,
+		)
+	}
+	return runtimeBudgetExhausted(
+		maxAttemptsExhaustedReason,
+		maxAttempts,
+		turn.ProviderAttemptCount,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -1868,50 +2490,6 @@ func (s *TurnService) executeSummaryLLM(ctx context.Context, config *TurnConfig,
 // memoryProvider returns the external MemoryProvider if one is attached, or nil.
 func (s *TurnService) memoryProvider() domain.MemoryProvider {
 	return s.memoryService.GetMemoryProvider()
-}
-
-// ---------------------------------------------------------------------------
-// splitSession — compression session split
-// ---------------------------------------------------------------------------
-
-// splitSession marks the current conversation as "compressed" and creates a
-// new child conversation linked via ParentID. This implements Session Split
-// from the architecture spec (Session Split -> Rebuild System Prompt).
-func (s *TurnService) splitSession(ctx context.Context, config *TurnConfig) (string, error) {
-	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
-	if err != nil {
-		return "", fmt.Errorf("split session: db access failed: %w", err)
-	}
-
-	// Mark the old conversation as compressed.
-	if err := db.Model(&persistence.Conversation{}).
-		Where("id = ?", config.ConversationID).
-		Updates(map[string]interface{}{
-			"status":     "compressed",
-			"updated_at": time.Now(),
-		}).Error; err != nil {
-		return "", fmt.Errorf("split session: failed to mark old conversation: %w", err)
-	}
-
-	// Create a new child conversation inheriting the parent's settings.
-	newID := generateID("conv")
-	parentID := config.ConversationID
-	newConv := persistence.Conversation{
-		ID:         newID,
-		AgentID:    config.AgentID,
-		Ptid:       config.ActorID,
-		Title:      "Continued (post-compression)",
-		ProviderID: config.Provider,
-		Status:     "active",
-		ParentID:   &parentID,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
-	}
-	if err := db.Create(&newConv).Error; err != nil {
-		return "", fmt.Errorf("split session: failed to create child conversation: %w", err)
-	}
-
-	return newID, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1934,6 +2512,10 @@ func (s *TurnService) providerCallWithRetry(
 	maxRetries := config.MaxRetries
 	if maxRetries <= 0 {
 		maxRetries = 3
+	}
+	if maxAttempts := int(config.RuntimeBudget.GetMaxAttempts()); maxAttempts > 0 &&
+		maxRetries+1 > maxAttempts {
+		maxRetries = maxAttempts - 1
 	}
 
 	var providerCalls []domain.ProviderCallRecord
@@ -1965,12 +2547,8 @@ func (s *TurnService) providerCallWithRetry(
 			return "", nil, providerCalls, false, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 				"provider is required in turn config", nil)
 		}
-
-		// Turn-time revalidation: verify provider and model are valid before execution.
-		if attempt == 0 {
-			if revalErr := s.revalidateProviderState(ctx, config.ActorID, providerID, config.Model); revalErr != nil {
-				return "", nil, providerCalls, false, revalErr
-			}
+		if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
+			return "", nil, providerCalls, false, err
 		}
 
 		// Lease a credential for the provider.
@@ -1992,15 +2570,16 @@ func (s *TurnService) providerCallWithRetry(
 
 		callStart := time.Now()
 
-		resp, callErr := s.providerService.Call(ctx, &ProviderCallRequest{
-			ProviderID:   credential.CredentialID,
-			Model:        config.Model,
-			SystemPrompt: systemPrompt,
-			Messages:     messages,
-			Tools:        toolDefinitions,
-			ProviderType: config.Provider,
-			Effort:       config.Effort,
-			ThinkingMode: config.ThinkingMode,
+		resp, callErr := s.callProviderWithRuntimeAuthority(ctx, config, &ProviderCallRequest{
+			ProviderID:      credential.CredentialID,
+			Model:           config.Model,
+			SystemPrompt:    systemPrompt,
+			Messages:        messages,
+			Tools:           toolDefinitions,
+			ProviderType:    config.Provider,
+			Effort:          config.Effort,
+			ThinkingMode:    config.ThinkingMode,
+			MaxOutputTokens: int(config.RuntimeBudget.GetMaxOutputTokens()),
 			DeltaSink: func(deltaCtx context.Context, delta ProviderDelta) error {
 				return s.emitTurnEvent(deltaCtx, config, turnID, TurnEvent{
 					Type:  delta.Type,
@@ -2040,6 +2619,9 @@ func (s *TurnService) providerCallWithRetry(
 		if errors.Is(callErr, errTurnEventPersistence) {
 			return "", nil, providerCalls, false, callErr
 		}
+		if _, exhausted := runtimeBudgetExhaustionReason(callErr); exhausted {
+			return "", nil, providerCalls, false, callErr
+		}
 
 		// Success path.
 		if callErr == nil && resp != nil {
@@ -2077,25 +2659,66 @@ func (s *TurnService) providerCallWithRetry(
 		// Recovery: trigger compression on context overflow.
 		if classified.ShouldCompress && !trace.CompressionTriggered {
 			logger.Infof(ctx, "error recovery: triggering compression, turn_id=%s", turnID)
-			compResult, compErr := s.compression.Compress(ctx, messages, config.ContextWindowSize)
-			if compErr == nil {
-				trace.CompressionTriggered = true
-				trace.CompressionBefore = compResult.TokensBefore
-				trace.CompressionAfter = compResult.TokensAfter
-				messages = compResult.Messages
-			} else {
-				logger.Errorf(ctx, "error recovery compression failed: turn_id=%s err=%v", turnID, compErr)
+			if config.promptAssembly == nil {
+				return "", nil, providerCalls, false, errcode.New(
+					errcode.AgentInvalidSourceState,
+					http.StatusConflict,
+					"context overflow recovery requires the governed prompt assembly",
+					callErr,
+				)
+			}
+			compressedMessages, summaryCall, compErr := s.runCompression(
+				ctx,
+				config,
+				turnID,
+				trace,
+				config.promptAssembly,
+				messages,
+				config.currentInput,
+			)
+			if summaryCall != nil {
+				providerCalls = append(providerCalls, *summaryCall)
+			}
+			if compErr != nil {
+				return "", nil, providerCalls, false, fmt.Errorf(
+					"governed context overflow recovery failed: %w",
+					compErr,
+				)
+			}
+			messages = compressedMessages
+			systemPrompt = config.promptAssembly.SystemPrompt
+			estimatedInputTokens := s.compression.EstimateTokens(messages) +
+				config.promptAssembly.InjectedTokens +
+				int(trace.ToolDefinitionTokens)
+			ledger, ledgerErr := buildContextLedger(
+				config,
+				turnID,
+				config.promptAssembly,
+				uint64(max(estimatedInputTokens, 0)),
+			)
+			if ledgerErr != nil {
+				return "", nil, providerCalls, false, fmt.Errorf(
+					"rebuild compressed ContextLedger: %w",
+					ledgerErr,
+				)
+			}
+			if ledgerErr := s.persistContextLedger(ctx, ledger); ledgerErr != nil {
+				return "", nil, providerCalls, false, fmt.Errorf(
+					"persist compressed ContextLedger: %w",
+					ledgerErr,
+				)
 			}
 		}
 
-		// Recovery: fallback to alternate model on billing/model_not_found errors.
-		// Fix 2026-04-11: ShouldFallback was classified but never acted on,
-		// causing billing and model_not_found errors to exhaust retries instead
-		// of switching to the configured fallback model.
+		// A fallback model is a different runtime tuple and must be admitted as
+		// a new attempt instead of mutating the pinned authority in place.
 		if classified.ShouldFallback && config.FallbackModel != "" && config.Model != config.FallbackModel {
-			logger.Infof(ctx, "error recovery: falling back to model %s, turn_id=%s reason=%s",
-				config.FallbackModel, turnID, classified.Reason.String())
-			config.Model = config.FallbackModel
+			return "", nil, providerCalls, false, errcode.New(
+				errcode.AgentVersionConflict,
+				http.StatusConflict,
+				"provider fallback requires a new runtime admission",
+				callErr,
+			)
 		}
 
 		// Non-retryable errors terminate the loop immediately.
@@ -2191,6 +2814,185 @@ const (
 	preparedTakeoverReconcileInterval = 5 * time.Second
 )
 
+func validateTurnRuntimeCapabilities(
+	config *TurnConfig,
+	snapshot *model.RuntimeCapabilitySnapshot,
+) error {
+	if snapshot == nil ||
+		snapshot.GetInput() == nil ||
+		snapshot.GetOutput() == nil ||
+		snapshot.GetRuntime() == nil ||
+		!snapshot.GetInput().GetText() ||
+		!snapshot.GetOutput().GetText() ||
+		!snapshot.GetRuntime().GetStreaming() {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"selected runtime does not declare required chat capabilities",
+			nil,
+		)
+	}
+	if config != nil &&
+		config.ThinkingMode == domain.ThinkingModeEnabled &&
+		!snapshot.GetRuntime().GetReasoning() {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"selected runtime does not support explicit thinking mode",
+			nil,
+		)
+	}
+	return nil
+}
+
+func validateAuthorizedRuntimeCapabilities(
+	availableTools []string,
+	snapshot *model.RuntimeCapabilitySnapshot,
+) error {
+	if len(availableTools) == 0 {
+		return nil
+	}
+	if snapshot == nil ||
+		snapshot.GetAgentic() == nil ||
+		!snapshot.GetAgentic().GetNativeTools() {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"selected runtime does not support authorized tools",
+			nil,
+		)
+	}
+	return nil
+}
+
+func validateInputBudgetBeforePersistence(
+	compression *CompressionService,
+	budget *model.RuntimeBudget,
+	userInput string,
+) error {
+	if budget == nil || budget.GetMaxInputTokens() == 0 {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime input budget is unavailable",
+			nil,
+		)
+	}
+	message := domain.Message{
+		Role:    domain.MessageRoleUser,
+		Content: userInput,
+	}
+	actualTokens := len(userInput)/4 + 10
+	if compression != nil {
+		actualTokens = compression.EstimateTokens([]domain.Message{message})
+	}
+	if uint64(actualTokens) <= budget.GetMaxInputTokens() {
+		return nil
+	}
+	return runtimeBudgetExhaustedWithDetails(
+		maxInputTokensExhaustedReason,
+		fmt.Sprintf("%d", budget.GetMaxInputTokens()),
+		fmt.Sprintf("%d", actualTokens),
+	)
+}
+
+func validateProviderRequestInputBudget(
+	compression *CompressionService,
+	budget *model.RuntimeBudget,
+	request *ProviderCallRequest,
+) error {
+	if request == nil {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"provider call request is required",
+			nil,
+		)
+	}
+	if budget == nil || budget.GetMaxInputTokens() == 0 {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime input budget is unavailable",
+			nil,
+		)
+	}
+	messages := make([]domain.Message, 0, len(request.Messages)+1)
+	if request.SystemPrompt != "" {
+		messages = append(messages, domain.Message{
+			Role:    domain.MessageRoleSystem,
+			Content: request.SystemPrompt,
+		})
+	}
+	messages = append(messages, request.Messages...)
+	actualTokens := 0
+	if compression != nil {
+		actualTokens = compression.EstimateTokens(messages)
+	} else {
+		for _, message := range messages {
+			actualTokens += len(message.Content)/4 + 10
+		}
+	}
+	actualTokens += int(estimateToolDefinitionTokens(request.Tools))
+	if uint64(actualTokens) <= budget.GetMaxInputTokens() {
+		return nil
+	}
+	return runtimeBudgetExhaustedWithDetails(
+		maxInputTokensExhaustedReason,
+		fmt.Sprintf("%d", budget.GetMaxInputTokens()),
+		fmt.Sprintf("%d", actualTokens),
+	)
+}
+
+func validateProviderToolCallsBeforePersistence(
+	config *TurnConfig,
+	toolCalls []toolCallEntry,
+) error {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+	if config == nil {
+		return capabilityStateError(
+			"provider returned ToolCalls without an admitted turn",
+			nil,
+		)
+	}
+	for _, toolCall := range toolCalls {
+		if len(config.RestrictedTools) > 0 &&
+			!containsStr(config.RestrictedTools, toolCall.ToolName) {
+			return capabilityStateError(
+				"provider returned a ToolCall outside the delegated tool set",
+				nil,
+			)
+		}
+	}
+	if config.RuntimeCapabilities == nil ||
+		config.RuntimeCapabilities.GetAgentic() == nil ||
+		!config.RuntimeCapabilities.GetAgentic().GetNativeTools() {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"provider returned ToolCalls for a runtime without native Tool support",
+			nil,
+		)
+	}
+	for _, toolCall := range toolCalls {
+		if config.AuthorizedCapabilities == nil {
+			return capabilityStateError(
+				"provider returned a ToolCall without an admitted capability set",
+				nil,
+			)
+		}
+		if _, ok := config.AuthorizedCapabilities.Tool(toolCall.ToolName); !ok {
+			return capabilityStateError(
+				"tool is not authorized by the admitted capability set",
+				nil,
+			)
+		}
+	}
+	return nil
+}
+
 // processToolCalls parses tool_calls from the assistant response, executes
 // them (including delegation), appends results as tool-role messages,
 // re-invokes the provider, and loops until the assistant stops producing
@@ -2229,8 +3031,19 @@ func (s *TurnService) processToolCalls(
 		if len(toolCalls) == 0 {
 			break
 		}
+		if maxSteps := budget.GetMaxAgentSteps(); maxSteps > 0 &&
+			uint32(iterations) >= maxSteps {
+			return iterations, false, runtimeBudgetExhausted(
+				maxAgentStepsExhaustedReason,
+				maxSteps,
+				uint32(iterations),
+			)
+		}
 		if exhaustion := budgetState.admit(budget, toolCalls); exhaustion != nil {
 			return iterations, false, exhaustion
+		}
+		if err := validateProviderToolCallsBeforePersistence(config, toolCalls); err != nil {
+			return iterations, false, err
 		}
 
 		iterations++
@@ -2326,6 +3139,8 @@ func (s *TurnService) processToolCalls(
 			Iteration:                 uint32(iterations),
 			MaxRetries:                uint32(config.MaxRetries),
 			ContextWindowSize:         uint32(config.ContextWindowSize),
+			DelegationDepth:           uint32(config.Depth),
+			RestrictedTools:           append([]string(nil), config.RestrictedTools...),
 			TaskID:                    config.TaskID,
 			StepID:                    config.StepID,
 			ClientCapabilitySessionID: config.ClientCapabilitySessionID,
@@ -2348,8 +3163,13 @@ func (s *TurnService) processToolCalls(
 }
 
 const (
+	maxAttemptsExhaustedReason           = "max_attempts_exhausted"
 	maxToolCallsExhaustedReason          = "max_tool_calls_exhausted"
 	maxIdenticalToolCallsExhaustedReason = "max_identical_tool_calls_exhausted"
+	maxAgentStepsExhaustedReason         = "max_agent_steps_exhausted"
+	maxDelegationDepthExhaustedReason    = "max_delegation_depth_exhausted"
+	maxInputTokensExhaustedReason        = "max_input_tokens_exhausted"
+	maxOutputTokensExhaustedReason       = "max_output_tokens_exhausted"
 	wallTimeExhaustedReason              = "wall_time_exhausted"
 )
 
@@ -2503,6 +3323,9 @@ func effectiveRuntimeBudget(
 	if len(requestedJSON) == 0 || string(requestedJSON) == "null" || string(requestedJSON) == "{}" {
 		return effective, nil
 	}
+	if err := validateExplicitRuntimeBudgetValues(requestedJSON); err != nil {
+		return nil, err
+	}
 	var requested model.RuntimeBudget
 	if err := protojson.Unmarshal(requestedJSON, &requested); err != nil {
 		return nil, errcode.New(
@@ -2510,6 +3333,14 @@ func effectiveRuntimeBudget(
 			http.StatusBadRequest,
 			"requested runtime budget is invalid",
 			err,
+		)
+	}
+	if effective.MaxCost != nil || requested.MaxCost != nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime cost budget is unsupported without an authoritative pricing source",
+			nil,
 		)
 	}
 	effective.MaxAttempts = lowerPositiveLimit(effective.MaxAttempts, requested.MaxAttempts)
@@ -2530,12 +3361,51 @@ func effectiveRuntimeBudget(
 		effective.MaxAttachmentBytes,
 		requested.MaxAttachmentBytes,
 	)
-	if requested.MaxCost != nil && *requested.MaxCost > 0 &&
-		(effective.MaxCost == nil || *requested.MaxCost < *effective.MaxCost) {
-		value := *requested.MaxCost
-		effective.MaxCost = &value
-	}
 	return effective, nil
+}
+
+func validateExplicitRuntimeBudgetValues(requestedJSON json.RawMessage) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(requestedJSON, &fields); err != nil || fields == nil {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"requested runtime budget must be a JSON object",
+			err,
+		)
+	}
+	for _, aliases := range [][]string{
+		{"maxAttempts", "max_attempts"},
+		{"maxAgentSteps", "max_agent_steps"},
+		{"maxToolCalls", "max_tool_calls"},
+		{"maxIdenticalToolCalls", "max_identical_tool_calls"},
+		{"maxDelegationDepth", "max_delegation_depth"},
+		{"wallTimeMs", "wall_time_ms"},
+		{"maxInputTokens", "max_input_tokens"},
+		{"maxOutputTokens", "max_output_tokens"},
+		{"maxAttachmentBytes", "max_attachment_bytes"},
+		{"maxCost", "max_cost"},
+	} {
+		for _, name := range aliases {
+			raw, exists := fields[name]
+			if !exists || string(raw) == "null" {
+				continue
+			}
+			number, err := strconv.ParseFloat(
+				strings.Trim(string(raw), `"`),
+				64,
+			)
+			if err == nil && number <= 0 {
+				return errcode.New(
+					errcode.AgentInvalidRequest,
+					http.StatusBadRequest,
+					fmt.Sprintf("requested runtime budget %s must be greater than zero", name),
+					nil,
+				)
+			}
+		}
+	}
+	return nil
 }
 
 func marshalRequestedRuntimeBudget(
@@ -2737,50 +3607,106 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 			First(&batch).Error; err != nil {
 			return fmt.Errorf("load Station tool batch %s: %w", claim.ToolBatchID, err)
 		}
-		config := &TurnConfig{
-			ActorID:        claim.ActorID,
-			AgentID:        batch.AgentID,
-			ConversationID: batch.ConversationID,
-			TaskID:         batch.TaskID,
-			StepID:         batch.StepID,
+		config, attemptStartedAt, err := s.loadToolBatchRuntimeConfig(
+			ctx,
+			db,
+			&batch,
+		)
+		if err != nil {
+			if _, completeErr := s.toolDispatch.CompleteStationToolExecution(
+				ctx,
+				claim,
+				"",
+				err,
+			); completeErr != nil {
+				return errors.Join(err, completeErr)
+			}
+			return err
+		}
+		toolCtx, cancelRuntimeBudget := withRuntimeBudgetDeadline(
+			ctx,
+			config.RuntimeBudget,
+			attemptStartedAt,
+		)
+		if err := executionContextError(toolCtx); err != nil {
+			cancelRuntimeBudget()
+			if _, completeErr := s.toolDispatch.CompleteStationToolExecution(
+				context.WithoutCancel(ctx),
+				claim,
+				"",
+				err,
+			); completeErr != nil {
+				return errors.Join(err, completeErr)
+			}
+			return err
+		}
+		if err := s.validatePinnedRuntimeAuthority(toolCtx, config); err != nil {
+			cancelRuntimeBudget()
+			if _, completeErr := s.toolDispatch.CompleteStationToolExecution(
+				context.WithoutCancel(ctx),
+				claim,
+				"",
+				err,
+			); completeErr != nil {
+				return errors.Join(err, completeErr)
+			}
+			return err
+		}
+		if err := validateAuthorizedRuntimeCapabilities(
+			config.AvailableTools,
+			config.RuntimeCapabilities,
+		); err != nil {
+			cancelRuntimeBudget()
+			if _, completeErr := s.toolDispatch.CompleteStationToolExecution(
+				context.WithoutCancel(ctx),
+				claim,
+				"",
+				err,
+			); completeErr != nil {
+				return errors.Join(err, completeErr)
+			}
+			return err
 		}
 		call := toolCallEntry{
 			ToolName:  claim.ToolName,
 			Arguments: string(claim.BoundedArguments),
 		}
 		var output string
-		var executionErr error
-		switch call.ToolName {
-		case "station_human_decision_resume":
-			output, executionErr = s.executeStationHumanDecisionResumeTool(
-				ctx,
-				config,
-				claim.TurnID,
-				call,
-			)
-		case "delegate_task":
-			output, executionErr = s.executeDelegation(
-				ctx,
-				claim.TurnID,
-				call,
-				config,
-			)
-		default:
-			result := s.toolRegistry.Dispatch(
-				ctx,
-				&domain.ToolCallMeta{
-					AgentID:        batch.AgentID,
-					ConversationID: batch.ConversationID,
-					TurnID:         claim.TurnID,
-				},
-				call.ToolName,
-				call.Arguments,
-			)
-			output = result.Content
-			if result.IsError {
-				executionErr = errors.New(result.Content)
+		executionErr := validateStationToolBudgetBeforeExecution(config, call)
+		if executionErr == nil {
+			switch call.ToolName {
+			case "station_human_decision_resume":
+				output, executionErr = s.executeStationHumanDecisionResumeTool(
+					toolCtx,
+					config,
+					claim.TurnID,
+					call,
+				)
+			case "delegate_task":
+				output, executionErr = s.executeDelegation(
+					toolCtx,
+					claim.TurnID,
+					call,
+					config,
+				)
+			default:
+				result := s.toolRegistry.Dispatch(
+					toolCtx,
+					&domain.ToolCallMeta{
+						AgentID:        batch.AgentID,
+						ConversationID: batch.ConversationID,
+						TurnID:         claim.TurnID,
+					},
+					call.ToolName,
+					call.Arguments,
+				)
+				output = result.Content
+				if result.IsError {
+					executionErr = errors.New(result.Content)
+				}
 			}
 		}
+		cancelRuntimeBudget()
 		if _, err := s.toolDispatch.CompleteStationToolExecution(
 			ctx,
 			claim,
@@ -2790,6 +3716,132 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 			return err
 		}
 	}
+}
+
+func (s *TurnService) loadToolBatchRuntimeConfig(
+	ctx context.Context,
+	db *gorm.DB,
+	batch *persistence.ToolBatch,
+) (*TurnConfig, time.Time, error) {
+	if db == nil || batch == nil {
+		return nil, time.Time{}, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"Station tool execution requires a persisted tool batch",
+			nil,
+		)
+	}
+	var attempt persistence.TurnAttempt
+	if err := db.WithContext(ctx).
+		Where("id = ? AND turn_id = ?", batch.AttemptID, batch.TurnID).
+		First(&attempt).Error; err != nil {
+		return nil, time.Time{}, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"Station tool execution requires a persisted runtime attempt",
+			err,
+		)
+	}
+	pinned, err := persistence.UnmarshalRuntimeSnapshot(attempt.RuntimeSnapshot)
+	if err != nil || pinned == nil {
+		return nil, time.Time{}, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"Station tool execution runtime snapshot is invalid",
+			err,
+		)
+	}
+	if pinned.GetProviderId() != batch.Provider ||
+		pinned.GetModelId() != batch.Model ||
+		pinned.GetThinkingMode() != batch.ThinkingMode {
+		return nil, time.Time{}, errcode.New(
+			errcode.AgentVersionConflict,
+			http.StatusConflict,
+			"Station tool batch runtime tuple differs from its pinned attempt",
+			nil,
+		)
+	}
+	contextTokens := pinned.GetCapabilities().GetLimits().GetContextTokens()
+	if contextTokens == 0 || contextTokens > math.MaxInt32 {
+		return nil, time.Time{}, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"Station tool execution has an invalid pinned context limit",
+			nil,
+		)
+	}
+	config := &TurnConfig{
+		TurnID:                    batch.TurnID,
+		AttemptID:                 batch.AttemptID,
+		ActorID:                   batch.ActorID,
+		AgentID:                   batch.AgentID,
+		ConversationID:            batch.ConversationID,
+		TaskID:                    batch.TaskID,
+		StepID:                    batch.StepID,
+		Provider:                  pinned.GetProviderId(),
+		Model:                     pinned.GetModelId(),
+		ThinkingMode:              domain.ThinkingMode(pinned.GetThinkingMode()),
+		Effort:                    batch.Effort,
+		MaxRetries:                int(batch.MaxRetries),
+		ContextWindowSize:         int(contextTokens),
+		ClientCapabilitySessionID: batch.CapabilitySessionID,
+		RuntimeBudget:             cloneRuntimeBudget(pinned.GetBudget()),
+		Depth:                     int(batch.DelegationDepth),
+	}
+	if len(batch.RestrictedToolsJSON) > 0 {
+		if err := json.Unmarshal(
+			batch.RestrictedToolsJSON,
+			&config.RestrictedTools,
+		); err != nil {
+			return nil, time.Time{}, errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"Station tool batch restricted tool set is invalid",
+				err,
+			)
+		}
+	}
+	if pinned.GetCapabilities() != nil {
+		config.RuntimeCapabilities = proto.Clone(
+			pinned.GetCapabilities(),
+		).(*model.RuntimeCapabilitySnapshot)
+	}
+	config.AuthorizedCapabilities, err = LoadAuthorizedCapabilitySet(ctx, db, config)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	config.AvailableTools = restrictAuthorizedToolNames(
+		config.AuthorizedCapabilities.ToolNames(),
+		config.RestrictedTools,
+	)
+	return config, attempt.StartedAt, nil
+}
+
+func validateStationToolBudgetBeforeExecution(
+	config *TurnConfig,
+	call toolCallEntry,
+) error {
+	if config == nil || config.RuntimeBudget == nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"Station tool execution requires a persisted runtime budget",
+			nil,
+		)
+	}
+	if call.ToolName != "delegate_task" {
+		return nil
+	}
+	nextDepth := uint32(config.Depth + 1)
+	maxDepth := config.RuntimeBudget.GetMaxDelegationDepth()
+	if maxDepth > 0 && nextDepth > maxDepth {
+		return runtimeBudgetExhausted(
+			maxDelegationDepthExhaustedReason,
+			maxDepth,
+			nextDepth,
+		)
+	}
+	return nil
 }
 
 func (s *TurnService) settleBlockedToolBatches(ctx context.Context) error {
@@ -3072,46 +4124,18 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		return true, fmt.Errorf("turn %s is not waiting for a local tool", turnRecord.ID)
 	}
 
-	config := &TurnConfig{
-		TurnID:                    batch.TurnID,
-		AgentID:                   batch.AgentID,
-		ActorID:                   batch.ActorID,
-		ConversationID:            batch.ConversationID,
-		ContextWindowSize:         int(batch.ContextWindowSize),
-		MaxRetries:                int(batch.MaxRetries),
-		Provider:                  batch.Provider,
-		Model:                     batch.Model,
-		Effort:                    batch.Effort,
-		ThinkingMode:              domain.ThinkingMode(batch.ThinkingMode),
-		ClientCapabilitySessionID: batch.CapabilitySessionID,
-		TaskID:                    batch.TaskID,
-		StepID:                    batch.StepID,
-		AttemptID:                 batch.AttemptID,
-	}
-	config.AuthorizedCapabilities, err = LoadAuthorizedCapabilitySet(ctx, db, config)
-	if err != nil {
-		return true, err
-	}
-	config.AvailableTools = config.AuthorizedCapabilities.ToolNames()
-	config.RuntimeBudget, err = s.loadPinnedRuntimeBudget(
+	config, attemptStartedAt, err := s.loadToolBatchRuntimeConfig(
 		ctx,
 		db,
-		batch.AttemptID,
+		&batch,
 	)
 	if err != nil {
 		return true, err
 	}
-	var attempt persistence.TurnAttempt
-	if err := db.WithContext(ctx).
-		Select("started_at").
-		Where("id = ?", batch.AttemptID).
-		First(&attempt).Error; err != nil {
-		return true, fmt.Errorf("load continuation attempt deadline anchor: %w", err)
-	}
 	ctx, cancelRuntimeBudget := withRuntimeBudgetDeadline(
 		ctx,
 		config.RuntimeBudget,
-		attempt.StartedAt,
+		attemptStartedAt,
 	)
 	defer cancelRuntimeBudget()
 	settleExpiredContinuation := func(operationErr error) (bool, error) {
@@ -3204,10 +4228,15 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		}
 		return true, exhaustion
 	}
+	if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
+		return true, err
+	}
 
 	providerCall := s.resumeProviderCall
 	if providerCall == nil {
 		providerCall = s.providerCallWithRetry
+	} else if err := s.reserveProviderAttempt(ctx, config); err != nil {
+		return true, err
 	}
 	nextResponse, providerToolCalls, providerCalls, _, callErr := providerCall(
 		ctx,
@@ -3251,6 +4280,11 @@ func (s *TurnService) ResumeReadyToolContinuation(
 			return true, errors.Join(callErr, settleErr)
 		}
 		return true, fmt.Errorf("continue provider after tool batch: %w", callErr)
+	}
+	if len(providerToolCalls) > 0 {
+		if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
+			return true, err
+		}
 	}
 
 	toolIterations, paused, processErr := s.processToolCalls(
@@ -3372,6 +4406,26 @@ func (s *TurnService) loadPinnedRuntimeBudget(
 	db *gorm.DB,
 	attemptID string,
 ) (*model.RuntimeBudget, error) {
+	snapshot, err := s.loadPinnedRuntimeSnapshot(ctx, db, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot.GetBudget() == nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"persisted runtime snapshot has no runtime budget",
+			nil,
+		)
+	}
+	return cloneRuntimeBudget(snapshot.GetBudget()), nil
+}
+
+func (s *TurnService) loadPinnedRuntimeSnapshot(
+	ctx context.Context,
+	db *gorm.DB,
+	attemptID string,
+) (*model.RuntimeSnapshot, error) {
 	var attempt persistence.TurnAttempt
 	if err := db.WithContext(ctx).
 		Select("runtime_snapshot").
@@ -3393,15 +4447,15 @@ func (s *TurnService) loadPinnedRuntimeBudget(
 			err,
 		)
 	}
-	if snapshot == nil || snapshot.GetBudget() == nil {
+	if snapshot == nil {
 		return nil, errcode.New(
 			errcode.AgentInvalidSourceState,
 			http.StatusConflict,
-			"persisted runtime snapshot has no runtime budget",
+			"persisted runtime snapshot is unavailable",
 			nil,
 		)
 	}
-	return cloneRuntimeBudget(snapshot.GetBudget()), nil
+	return snapshot, nil
 }
 
 func (s *TurnService) applyPinnedRuntimeExecutionPolicy(
@@ -3537,6 +4591,25 @@ func (s *TurnService) recordToolOutcome(
 			Name string `json:"name"`
 		}
 		if json.Unmarshal([]byte(tc.Arguments), &viewArgs) == nil && viewArgs.Name != "" {
+			if s.skillService == nil {
+				return errcode.New(
+					errcode.AgentInvalidSourceState,
+					http.StatusConflict,
+					"skill_view completed without a Station Skill service",
+					nil,
+				)
+			}
+			manifest, err := s.skillService.GetSkill(ctx, config.AgentID, viewArgs.Name)
+			if err != nil {
+				return fmt.Errorf("load activated Skill body for ContextLedger: %w", err)
+			}
+			if err := s.upsertContextLedgerSegment(
+				ctx,
+				config.AttemptID,
+				contextSegmentForSkillBody(manifest),
+			); err != nil {
+				return fmt.Errorf("persist activated Skill body in ContextLedger: %w", err)
+			}
 			seen := false
 			for _, skillName := range trace.SkillsLoaded {
 				if skillName == viewArgs.Name {
@@ -3722,22 +4795,21 @@ func (s *TurnService) executeDelegation(
 	// The child inherits the parent's provider/model settings but receives a
 	// restricted toolset and incremented depth counter.
 	executor := func(execCtx context.Context, t *domain.DelegationTask, toolset []string) (*domain.DelegationResult, error) {
-
-		childConfig := &TurnConfig{
-			AgentID:           config.AgentID,
-			ConversationID:    fmt.Sprintf("%s_child_%s", config.ConversationID, t.TaskID),
-			Identity:          config.Identity,
-			AgentConfigPrompt: config.AgentConfigPrompt,
-			AvailableTools:    toolset,
-			ContextWindowSize: config.ContextWindowSize,
-			MaxRetries:        config.MaxRetries,
-			Provider:          config.Provider,
-			Model:             config.Model,
-			Effort:            config.Effort,
-			ThinkingMode:      config.ThinkingMode,
-			FallbackModel:     config.FallbackModel,
-			RotationStrategy:  config.RotationStrategy,
-			Depth:             config.Depth + 1,
+		childConversationID, err := s.createDelegatedConversation(
+			execCtx,
+			config,
+		)
+		if err != nil {
+			return nil, err
+		}
+		childConfig, err := delegatedTurnConfig(
+			config,
+			t,
+			toolset,
+			childConversationID,
+		)
+		if err != nil {
+			return nil, err
 		}
 
 		childInput := fmt.Sprintf("You are a delegated sub-agent. Your task:\n\n%s\n\n"+
@@ -3780,6 +4852,129 @@ func (s *TurnService) executeDelegation(
 
 	resultJSON, _ := json.Marshal(results)
 	return string(resultJSON), nil
+}
+
+func delegatedTurnConfig(
+	parent *TurnConfig,
+	task *domain.DelegationTask,
+	toolset []string,
+	childConversationID string,
+) (*TurnConfig, error) {
+	if parent == nil ||
+		task == nil ||
+		parent.RuntimeBudget == nil ||
+		strings.TrimSpace(childConversationID) == "" {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"delegation requires parent authority and a persisted child conversation",
+			nil,
+		)
+	}
+	inheritedBudget, err := marshalRequestedRuntimeBudget(parent.RuntimeBudget)
+	if err != nil {
+		return nil, fmt.Errorf("encode inherited delegation budget: %w", err)
+	}
+	return &TurnConfig{
+		ActorID:             parent.ActorID,
+		AgentID:             parent.AgentID,
+		ConversationID:      childConversationID,
+		Identity:            parent.Identity,
+		AgentConfigPrompt:   parent.AgentConfigPrompt,
+		AvailableTools:      append([]string(nil), toolset...),
+		RestrictedTools:     append([]string(nil), toolset...),
+		ContextWindowSize:   parent.ContextWindowSize,
+		MaxRetries:          parent.MaxRetries,
+		Provider:            parent.Provider,
+		Model:               parent.Model,
+		Effort:              parent.Effort,
+		ThinkingMode:        parent.ThinkingMode,
+		FallbackModel:       parent.FallbackModel,
+		RotationStrategy:    parent.RotationStrategy,
+		RequestedBudgetJSON: inheritedBudget,
+		Depth:               task.Depth,
+	}, nil
+}
+
+func restrictAuthorizedToolNames(
+	authorized []string,
+	restricted []string,
+) []string {
+	if len(restricted) == 0 {
+		return append([]string(nil), authorized...)
+	}
+	allowed := make(map[string]struct{}, len(restricted))
+	for _, name := range restricted {
+		if normalized := strings.TrimSpace(name); normalized != "" {
+			allowed[normalized] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(authorized))
+	for _, name := range authorized {
+		if _, ok := allowed[name]; ok {
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
+func (s *TurnService) createDelegatedConversation(
+	ctx context.Context,
+	parentConfig *TurnConfig,
+) (string, error) {
+	if parentConfig == nil ||
+		strings.TrimSpace(parentConfig.ActorID) == "" ||
+		strings.TrimSpace(parentConfig.AgentID) == "" ||
+		strings.TrimSpace(parentConfig.ConversationID) == "" {
+		return "", errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"delegation requires an actor-owned parent conversation",
+			nil,
+		)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return "", err
+	}
+	var parent persistence.Conversation
+	if err := db.WithContext(ctx).
+		Where(
+			"id = ? AND ptid = ? AND agent_id = ?",
+			parentConfig.ConversationID,
+			parentConfig.ActorID,
+			parentConfig.AgentID,
+		).
+		First(&parent).Error; err != nil {
+		return "", errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"delegation parent conversation is unavailable",
+			err,
+		)
+	}
+	childID := generateID("conv")
+	parentID := parent.ID
+	child := &persistence.Conversation{
+		ID:          childID,
+		AgentID:     parent.AgentID,
+		Ptid:        parent.Ptid,
+		Title:       parent.Title,
+		Description: parent.Description,
+		ProviderID:  parent.ProviderID,
+		ModelName:   parent.ModelName,
+		Status:      "active",
+		ParentID:    &parentID,
+		ConfigJSON:  append(json.RawMessage(nil), parent.ConfigJSON...),
+		Meta:        append(json.RawMessage(nil), parent.Meta...),
+		Version:     1,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	if err := db.WithContext(ctx).Create(child).Error; err != nil {
+		return "", fmt.Errorf("persist delegated child conversation: %w", err)
+	}
+	return childID, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -5330,42 +6525,6 @@ func turnTerminalPersistenceError(operation string, cause error) error {
 // Internal: getDB
 // ---------------------------------------------------------------------------
 
-// revalidateProviderState checks that the provider and model exist, are enabled,
-// and belong to the requesting actor before turn execution begins.
-func (s *TurnService) revalidateProviderState(ctx context.Context, actorPTID, providerID, modelID string) error {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return err
-	}
-
-	var provider persistence.AgentProvider
-	if err := db.WithContext(ctx).
-		Where("actor_ptid = ? AND name = ?", actorPTID, providerID).
-		First(&provider).Error; err != nil {
-		return errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
-			fmt.Sprintf("provider %q not found for actor", providerID), err)
-	}
-
-	if !provider.Enabled {
-		return errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
-			fmt.Sprintf("provider %q is disabled", providerID), nil)
-	}
-
-	if modelID != "" {
-		var model persistence.AgentModel
-		if err := db.WithContext(ctx).
-			Where("actor_ptid = ? AND provider_id = ? AND model_id = ?", actorPTID, providerID, modelID).
-			First(&model).Error; err == nil {
-			if !model.Enabled {
-				return errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
-					fmt.Sprintf("model %q is disabled for provider %q", modelID, providerID), nil)
-			}
-		}
-	}
-
-	return nil
-}
-
 func (s *TurnService) getDB(ctx context.Context) (*gorm.DB, error) {
 	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
 	if err != nil {
@@ -5466,54 +6625,4 @@ func (s *TurnService) QuickCompletion(ctx context.Context, config *TurnConfig, p
 		return "", err
 	}
 	return resp.Content, nil
-}
-
-// GenerateFollowUpSuggestions uses the same provider/model as the agent to
-// produce a short list of follow-up questions the user might ask next.
-// Returns nil on any failure (graceful degradation — done event still sends).
-func (s *TurnService) GenerateFollowUpSuggestions(ctx context.Context, config *TurnConfig, userInput string, assistantResponse string) []string {
-	if config.Provider == "" || config.Model == "" {
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	prompt := fmt.Sprintf(
-		"Based on this conversation, suggest exactly 3 brief follow-up questions the user might ask next. "+
-			"Return ONLY a JSON array of 3 strings, no other text.\n\n"+
-			"User: %s\n\nAssistant: %s",
-		truncate(userInput, 500),
-		truncate(assistantResponse, 1000),
-	)
-
-	resp, err := s.providerService.Call(ctx, &ProviderCallRequest{
-		ProviderID:   config.Provider,
-		Model:        config.Model,
-		SystemPrompt: "You generate follow-up question suggestions. Always respond with a JSON array of exactly 3 short questions.",
-		Messages:     []domain.Message{{Role: "user", Content: prompt}},
-		UserID:       config.ActorID,
-		Effort:       "low",
-	})
-	if err != nil {
-		logger.Warnf(ctx, "follow-up suggestion generation failed: %v", err)
-		return nil
-	}
-
-	var suggestions []string
-	content := strings.TrimSpace(resp.Content)
-	if idx := strings.Index(content, "["); idx >= 0 {
-		content = content[idx:]
-	}
-	if idx := strings.LastIndex(content, "]"); idx >= 0 {
-		content = content[:idx+1]
-	}
-	if err := json.Unmarshal([]byte(content), &suggestions); err != nil {
-		logger.Warnf(ctx, "follow-up suggestion parse failed: %v", err)
-		return nil
-	}
-	if len(suggestions) > 3 {
-		suggestions = suggestions[:3]
-	}
-	return suggestions
 }

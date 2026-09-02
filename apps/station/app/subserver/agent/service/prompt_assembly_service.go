@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -58,6 +57,26 @@ type ContextSegment struct {
 	// KnowledgeChunks is populated only for KNOWLEDGE segments to avoid
 	// a second retrieval call in the assembler.
 	KnowledgeChunks []domain.KnowledgeChunkReference
+	// IncludeInSystemPrompt distinguishes system instructions from ledger-only
+	// provider inputs such as history and the current user message.
+	IncludeInSystemPrompt bool `json:"-"`
+}
+
+// SkillBodyContext identifies an activated Station-owned skill body.
+type SkillBodyContext struct {
+	SkillID string
+	Name    string
+	Version int
+	Content string
+}
+
+// PromptAssemblyContext carries immutable turn inputs owned by TurnService.
+type PromptAssemblyContext struct {
+	TurnID             string
+	ConversationID     string
+	Messages           []domain.Message
+	SkillBodies        []SkillBodyContext
+	WorkspaceReference string
 }
 
 // PromptAssemblyResult contains the assembled system prompt plus the typed
@@ -83,6 +102,7 @@ type promptBuildInput struct {
 	db                *gorm.DB
 	authorized        *AuthorizedCapabilitySet
 	memoryDisabled    bool
+	turnContext       PromptAssemblyContext
 }
 
 // segmentProcessor produces zero or more context segments.
@@ -98,11 +118,13 @@ func (identityProcessor) process(in *promptBuildInput) ([]ContextSegment, error)
 		return nil, nil
 	}
 	return []ContextSegment{{
-		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_IDENTITY,
-		Content:         in.identity,
-		ContentHash:     sha256Hex(in.identity),
-		EstimatedTokens: estimateTokens(in.identity),
-		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		Type:                  model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_IDENTITY,
+		Content:               in.identity,
+		ContentHash:           sha256Hex(in.identity),
+		EstimatedTokens:       estimateTokens(in.identity),
+		Decision:              model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		SourceRefs:            []string{"agent:" + in.agentID + ":identity"},
+		IncludeInSystemPrompt: true,
 	}}, nil
 }
 
@@ -138,12 +160,13 @@ func (guidanceProcessor) process(in *promptBuildInput) ([]ContextSegment, error)
 	}
 	content := strings.Join(parts, "\n\n")
 	return []ContextSegment{{
-		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_POLICY,
-		Content:         content,
-		SourceRefs:      sourceRefs,
-		ContentHash:     sha256Hex(content),
-		EstimatedTokens: estimateTokens(content),
-		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		Type:                  model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_POLICY,
+		Content:               content,
+		SourceRefs:            sourceRefs,
+		ContentHash:           sha256Hex(content),
+		EstimatedTokens:       estimateTokens(content),
+		Decision:              model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		IncludeInSystemPrompt: true,
 	}}, nil
 }
 
@@ -168,12 +191,13 @@ func (p memoryProcessor) process(in *promptBuildInput) ([]ContextSegment, error)
 
 	content := formatMemorySnapshot(snapshot)
 	return []ContextSegment{{
-		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MEMORY,
-		Content:         content,
-		SourceRefs:      []string{fmt.Sprintf("memory:agent=%s", in.agentID)},
-		ContentHash:     sha256Hex(content),
-		EstimatedTokens: estimateTokens(content),
-		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		Type:                  model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MEMORY,
+		Content:               content,
+		SourceRefs:            []string{fmt.Sprintf("memory:agent=%s", in.agentID)},
+		ContentHash:           sha256Hex(content),
+		EstimatedTokens:       estimateTokens(content),
+		Decision:              model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		IncludeInSystemPrompt: true,
 	}}, nil
 }
 
@@ -206,16 +230,105 @@ func (p skillsProcessor) process(in *promptBuildInput) ([]ContextSegment, error)
 	}
 
 	return []ContextSegment{{
-		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_SKILL_INDEX,
-		Content:         skillIndex,
-		SourceRefs:      []string{fmt.Sprintf("skills:agent=%s:count=%d", in.agentID, skillCount)},
-		ContentHash:     sha256Hex(skillIndex),
-		EstimatedTokens: estimateTokens(skillIndex),
+		Type:                  model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_SKILL_INDEX,
+		Content:               skillIndex,
+		SourceRefs:            []string{fmt.Sprintf("skills:agent=%s:count=%d", in.agentID, skillCount)},
+		ContentHash:           sha256Hex(skillIndex),
+		EstimatedTokens:       estimateTokens(skillIndex),
+		Decision:              model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		IncludeInSystemPrompt: true,
+	}}, nil
+}
+
+// skillBodyProcessor emits activated Station-owned skill bodies.
+type skillBodyProcessor struct{}
+
+func (skillBodyProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
+	segments := make([]ContextSegment, 0, len(in.turnContext.SkillBodies))
+	for _, skill := range in.turnContext.SkillBodies {
+		content := strings.TrimSpace(skill.Content)
+		if content == "" {
+			continue
+		}
+		sourceID := strings.TrimSpace(skill.SkillID)
+		if sourceID == "" {
+			sourceID = strings.TrimSpace(skill.Name)
+		}
+		segments = append(segments, ContextSegment{
+			Type:                  model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_SKILL_BODY,
+			Content:               content,
+			SourceRefs:            []string{fmt.Sprintf("skill:%s:version=%d", sourceID, skill.Version)},
+			ContentHash:           sha256Hex(content),
+			EstimatedTokens:       estimateTokens(content),
+			Decision:              model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+			IncludeInSystemPrompt: true,
+		})
+	}
+
+	return segments, nil
+}
+
+// historyProcessor accounts for non-summary messages before the current input.
+type historyProcessor struct{}
+
+func (historyProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
+	var lines []string
+	var sourceRefs []string
+	for _, message := range in.turnContext.Messages {
+		if isCurrentInputMessage(message, in.turnContext.TurnID) ||
+			message.Role == domain.MessageRoleSystem {
+			continue
+		}
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s: %s", message.Role, content))
+		sourceRefs = append(sourceRefs, messageSourceRef(in.turnContext.ConversationID, message))
+	}
+	if len(lines) == 0 {
+		return nil, nil
+	}
+	content := strings.Join(lines, "\n")
+
+	return []ContextSegment{{
+		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_HISTORY,
+		Content:         content,
+		SourceRefs:      sourceRefs,
+		ContentHash:     sha256Hex(content),
+		EstimatedTokens: estimateTokens(content),
 		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
 	}}, nil
 }
 
-// configPromptProcessor emits L5 Agent Config Prompt.
+// summaryProcessor accounts for compression summaries separately from history.
+type summaryProcessor struct{}
+
+func (summaryProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
+	var segments []ContextSegment
+	for _, message := range in.turnContext.Messages {
+		if message.Role != domain.MessageRoleSystem {
+			continue
+		}
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		segments = append(segments, ContextSegment{
+			Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_SUMMARY,
+			Content:         content,
+			SourceRefs:      []string{messageSourceRef(in.turnContext.ConversationID, message)},
+			ContentHash:     sha256Hex(content),
+			EstimatedTokens: estimateTokens(content),
+			Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_SUMMARIZED,
+			DecisionReason:  "conversation_history_compressed",
+		})
+	}
+
+	return segments, nil
+}
+
+// configPromptProcessor emits the Agent configuration prompt.
 type configPromptProcessor struct{}
 
 func (configPromptProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
@@ -223,11 +336,13 @@ func (configPromptProcessor) process(in *promptBuildInput) ([]ContextSegment, er
 		return nil, nil
 	}
 	return []ContextSegment{{
-		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MODEL_FACTS,
-		Content:         in.agentConfigPrompt,
-		ContentHash:     sha256Hex(in.agentConfigPrompt),
-		EstimatedTokens: estimateTokens(in.agentConfigPrompt),
-		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		Type:                  model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MODEL_FACTS,
+		Content:               in.agentConfigPrompt,
+		SourceRefs:            []string{"agent:" + in.agentID + ":config"},
+		ContentHash:           sha256Hex(in.agentConfigPrompt),
+		EstimatedTokens:       estimateTokens(in.agentConfigPrompt),
+		Decision:              model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		IncludeInSystemPrompt: true,
 	}}, nil
 }
 
@@ -256,24 +371,56 @@ func (p knowledgeProcessor) process(in *promptBuildInput) ([]ContextSegment, err
 	}
 
 	return []ContextSegment{{
-		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_KNOWLEDGE,
-		Content:         result.PromptBlock,
-		SourceRefs:      refs,
-		ContentHash:     sha256Hex(result.PromptBlock),
-		EstimatedTokens: estimateTokens(result.PromptBlock),
-		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
-		KnowledgeChunks: result.Chunks,
+		Type:                  model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_KNOWLEDGE,
+		Content:               result.PromptBlock,
+		SourceRefs:            refs,
+		ContentHash:           sha256Hex(result.PromptBlock),
+		EstimatedTokens:       estimateTokens(result.PromptBlock),
+		Decision:              model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		KnowledgeChunks:       result.Chunks,
+		IncludeInSystemPrompt: true,
 	}}, nil
 }
 
-// timestampProcessor emits L7 Timestamp.
-type timestampProcessor struct{}
+// workspaceReferenceProcessor emits only an opaque Station-owned workspace
+// reference. Local paths are rejected and never copied into the ledger.
+type workspaceReferenceProcessor struct{}
 
-func (timestampProcessor) process(_ *promptBuildInput) ([]ContextSegment, error) {
-	content := fmt.Sprintf("Current time: %s", time.Now().UTC().Format(time.RFC3339))
+func (workspaceReferenceProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
+	reference := strings.TrimSpace(in.turnContext.WorkspaceReference)
+	if reference == "" {
+		return nil, nil
+	}
+	if isLocalWorkspacePath(reference) {
+		return []ContextSegment{{
+			Type:           model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_WORKSPACE_REFERENCE,
+			Decision:       model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED,
+			DecisionReason: "local_path_not_authorized",
+		}}, nil
+	}
+	content := fmt.Sprintf("Workspace reference: %s", reference)
+
+	return []ContextSegment{{
+		Type:                  model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_WORKSPACE_REFERENCE,
+		Content:               content,
+		SourceRefs:            []string{"workspace:" + reference},
+		ContentHash:           sha256Hex(content),
+		EstimatedTokens:       estimateTokens(content),
+		Decision:              model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		IncludeInSystemPrompt: true,
+	}}, nil
+}
+
+// currentInputProcessor records the actual user input for this turn.
+type currentInputProcessor struct{}
+
+func (currentInputProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
+	content := in.userInput
+
 	return []ContextSegment{{
 		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_CURRENT_INPUT,
 		Content:         content,
+		SourceRefs:      []string{"turn:" + in.turnContext.TurnID + ":input"},
 		ContentHash:     sha256Hex(content),
 		EstimatedTokens: estimateTokens(content),
 		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
@@ -301,11 +448,15 @@ func NewPromptAssemblyService(memSvc *MemoryService, skillSvc *SkillService) *Pr
 		processors: []segmentProcessor{
 			identityProcessor{},
 			guidanceProcessor{},
+			configPromptProcessor{},
 			memoryProcessor{memoryService: memSvc},
 			skillsProcessor{skillService: skillSvc},
-			configPromptProcessor{},
+			skillBodyProcessor{},
+			historyProcessor{},
+			summaryProcessor{},
 			knowledgeProcessor{retrieval: knowledgeRetrieval},
-			timestampProcessor{},
+			workspaceReferenceProcessor{},
+			currentInputProcessor{},
 		},
 	}
 }
@@ -323,6 +474,33 @@ func (s *PromptAssemblyService) Assemble(
 	authorized *AuthorizedCapabilitySet,
 	memoryDisabled bool,
 ) (*PromptAssemblyResult, error) {
+	return s.AssembleTurnContext(
+		ctx,
+		agentID,
+		identity,
+		agentConfigPrompt,
+		availableTools,
+		userInput,
+		db,
+		authorized,
+		memoryDisabled,
+		PromptAssemblyContext{},
+	)
+}
+
+// AssembleTurnContext assembles the complete typed context for one attempt.
+func (s *PromptAssemblyService) AssembleTurnContext(
+	ctx context.Context,
+	agentID string,
+	identity string,
+	agentConfigPrompt string,
+	availableTools []string,
+	userInput string,
+	db *gorm.DB,
+	authorized *AuthorizedCapabilitySet,
+	memoryDisabled bool,
+	turnContext PromptAssemblyContext,
+) (*PromptAssemblyResult, error) {
 
 	input := &promptBuildInput{
 		ctx:               ctx,
@@ -334,6 +512,7 @@ func (s *PromptAssemblyService) Assemble(
 		db:                db,
 		authorized:        authorized,
 		memoryDisabled:    memoryDisabled,
+		turnContext:       turnContext,
 	}
 
 	var segments []ContextSegment
@@ -349,7 +528,9 @@ func (s *PromptAssemblyService) Assemble(
 		}
 		for _, seg := range procs {
 			segments = append(segments, seg)
-			if seg.Decision == model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED && seg.Content != "" {
+			if seg.Decision == model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED &&
+				seg.IncludeInSystemPrompt &&
+				seg.Content != "" {
 				layers = append(layers, seg.Content)
 			}
 			switch seg.Type {
@@ -380,6 +561,29 @@ func (s *PromptAssemblyService) Assemble(
 		InjectedTokens:     len(systemPrompt) / 4,
 		KnowledgeChunks:    knowledgeChunks,
 	}, nil
+}
+
+func isCurrentInputMessage(message domain.Message, turnID string) bool {
+	return message.Role == domain.MessageRoleUser &&
+		strings.TrimSpace(turnID) != "" &&
+		message.TurnID == turnID
+}
+
+func messageSourceRef(conversationID string, message domain.Message) string {
+	if message.MessageID != "" {
+		return "message:" + message.MessageID
+	}
+	return fmt.Sprintf("conversation:%s:sequence=%d", conversationID, message.Seq)
+}
+
+func isLocalWorkspacePath(reference string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(reference))
+	return strings.HasPrefix(normalized, "/") ||
+		strings.HasPrefix(normalized, "~/") ||
+		strings.HasPrefix(normalized, "file:") ||
+		(len(normalized) >= 3 &&
+			normalized[1] == ':' &&
+			(normalized[2] == '\\' || normalized[2] == '/'))
 }
 
 func countSkillsFromRef(refs []string) int {

@@ -6,15 +6,12 @@
 //   Added optional MemoryProvider field with SetMemoryProvider and notifyProvider:
 //   after every successful Add/Replace/Remove the external provider is notified
 //   asynchronously (panic-safe, never fails the parent operation).
-// 2026-04-11 — Added FlushMemories(): Knowledge Salvage step that sends a
-//   restricted LLM call (max 4 iterations, memory tool only) to review the
-//   conversation and save high-value context before context compression.
 // 2026-04-11 — Added GetMemoryProvider(): exposes the currently attached
 //   external MemoryProvider so TurnService can invoke lifecycle hooks.
 // 2026-04-11 — Memory Rollback & Freeze: added TakeSnapshot, ListSnapshots,
 //   RollbackToSnapshot, DeleteMemoryByID, FreezeMemory for "dumbed-down agent"
-//   recovery. Added frozen-entry guards in Replace and Remove. Added automatic
-//   snapshot-taking before each mutation (Add/Replace/Remove) and before flush.
+//   recovery. Added frozen-entry guards in Replace and Remove and automatic
+//   snapshot-taking before each mutation (Add/Replace/Remove).
 // 2026-04-11 — Growth Metrics Integration: injected GrowthMetricsService dependency,
 //   emit RecordEvent on Add (memory_created), Replace (memory_replaced), Remove (memory_removed).
 
@@ -1736,176 +1733,6 @@ func (s *MemoryService) BuildSnapshot(ctx context.Context, agentID string) (*dom
 }
 
 // ---------------------------------------------------------------------------
-// FlushMemories — Knowledge Salvage before context compression
-// ---------------------------------------------------------------------------
-// Added: 2026-04-11 — Knowledge Salvage step: sends a restricted LLM call
-//   (max 4 iterations, memory tool only) to review the conversation and save
-//   high-value context to persistent memory before it gets compressed away.
-
-const (
-	flushMaxIterations = 4
-	flushSystemPrompt  = "You are a memory flush agent. Your only job is to review the conversation and save important information using the memory tool."
-	flushUserPrompt    = "Context compression is about to occur. The middle portion of this conversation will be summarized and individual messages will be dropped.\n\n" +
-		"Review the conversation and save any important information that should be remembered long-term using the memory tool. Focus on:\n" +
-		"- User preferences or requirements not yet saved\n" +
-		"- Technical decisions or constraints discovered\n" +
-		"- Project-specific patterns or conventions\n" +
-		"- Any facts that would be costly to re-discover\n\n" +
-		"Do NOT save information that is already in your memory.\n" +
-		"Do NOT save transient/procedural details (e.g. \"user asked me to fix X\")."
-)
-
-// FlushMemories performs Knowledge Salvage before context compression.
-// It sends a restricted LLM call (max 4 iterations, memory tool only) to
-// review the conversation and save high-value context to persistent memory
-// before it gets compressed away.
-//
-// All errors are logged but never fail the parent compression flow — the
-// method returns nil after logging so that compression can proceed.
-//
-// 2026-04-11 — Fix: accept providerType parameter instead of hardcoding
-//
-//	"openai". This allows flush to work with any configured provider
-//	(Anthropic, Ollama, etc.).
-func (s *MemoryService) FlushMemories(
-	ctx context.Context,
-	agentID string,
-	messages []domain.Message,
-	providerService *ProviderService,
-	credentialPool *CredentialPoolService,
-	toolRegistry *ToolRegistryService,
-	providerType string,
-) error {
-
-	// Take a pre-flush snapshot so memory state can be rolled back if the
-	// flush introduces bad data.
-	s.takeSnapshotQuiet(ctx, agentID, "flush", nil)
-
-	// Lease a credential for the flush LLM call (use first available via round-robin).
-	credential, err := credentialPool.Lease(ctx, agentID, providerType, domain.RotationRoundRobin)
-	if err != nil {
-		logger.Warnf(ctx, "flush_memories: credential lease failed, skipping: agent_id=%s err=%v", agentID, err)
-		return nil
-	}
-	defer credentialPool.Release(ctx, credential.CredentialID)
-
-	// Build the message list: conversation history + flush instruction as last user message.
-	flushMessages := make([]domain.Message, 0, len(messages)+1)
-	flushMessages = append(flushMessages, messages...)
-	flushMessages = append(flushMessages, domain.Message{
-		Role:    domain.MessageRoleUser,
-		Content: flushUserPrompt,
-	})
-
-	// Iterative loop: up to flushMaxIterations rounds of tool calls.
-	for iteration := 0; iteration < flushMaxIterations; iteration++ {
-
-		resp, callErr := providerService.Call(ctx, &ProviderCallRequest{
-			ProviderID:   credential.CredentialID,
-			Model:        "", // use provider default
-			SystemPrompt: flushSystemPrompt,
-			Messages:     flushMessages,
-			ProviderType: providerType,
-		})
-		if callErr != nil {
-			logger.Warnf(ctx, "flush_memories: provider call failed at iteration %d, stopping: agent_id=%s err=%v",
-				iteration, agentID, callErr)
-			return nil
-		}
-
-		// Parse tool calls from the response (same <tool_call>...</tool_call> XML format).
-		toolCalls := parseFlushToolCalls(resp.Content)
-		if len(toolCalls) == 0 {
-			logger.Infof(ctx, "flush_memories: no more tool calls at iteration %d, done: agent_id=%s", iteration, agentID)
-			return nil
-		}
-
-		// Execute only "memory" tool calls; ignore all non-memory tools.
-		meta := &domain.ToolCallMeta{AgentID: agentID}
-		executedAny := false
-
-		for _, tc := range toolCalls {
-			if tc.name != "memory" {
-				logger.Infof(ctx, "flush_memories: ignoring non-memory tool call %q: agent_id=%s", tc.name, agentID)
-				continue
-			}
-
-			result := toolRegistry.Dispatch(ctx, meta, tc.name, tc.arguments)
-			executedAny = true
-
-			if result.IsError {
-				logger.Warnf(ctx, "flush_memories: memory tool error: agent_id=%s err=%s", agentID, result.Content)
-			} else {
-				logger.Infof(ctx, "flush_memories: memory tool success: agent_id=%s result=%s", agentID, result.Content)
-			}
-		}
-
-		if !executedAny {
-			logger.Infof(ctx, "flush_memories: no memory tool calls at iteration %d, done: agent_id=%s", iteration, agentID)
-			return nil
-		}
-
-		// Append assistant response and a synthetic tool result for the next iteration.
-		flushMessages = append(flushMessages, domain.Message{
-			Role:    domain.MessageRoleAssistant,
-			Content: resp.Content,
-		})
-		flushMessages = append(flushMessages, domain.Message{
-			Role:    domain.MessageRoleTool,
-			Content: "[memory] Tool calls executed. Continue reviewing or stop if done.",
-		})
-	}
-
-	logger.Infof(ctx, "flush_memories: reached max iterations (%d): agent_id=%s", flushMaxIterations, agentID)
-	return nil
-}
-
-// flushToolCall holds a parsed tool call from a flush LLM response.
-type flushToolCall struct {
-	name      string
-	arguments string
-}
-
-// parseFlushToolCalls extracts <tool_call>...</tool_call> entries from an LLM
-// response string. Mirrors the same XML-based format used in TurnService.
-func parseFlushToolCalls(response string) []flushToolCall {
-	var calls []flushToolCall
-
-	const openTag = "<tool_call>"
-	const closeTag = "</tool_call>"
-
-	remaining := response
-	for {
-		openIdx := strings.Index(remaining, openTag)
-		if openIdx < 0 {
-			break
-		}
-
-		closeIdx := strings.Index(remaining[openIdx:], closeTag)
-		if closeIdx < 0 {
-			break
-		}
-
-		jsonStr := remaining[openIdx+len(openTag) : openIdx+closeIdx]
-
-		var parsed struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		}
-		if err := json.Unmarshal([]byte(jsonStr), &parsed); err == nil && parsed.Name != "" {
-			calls = append(calls, flushToolCall{
-				name:      parsed.Name,
-				arguments: string(parsed.Arguments),
-			})
-		}
-
-		remaining = remaining[openIdx+closeIdx+len(closeTag):]
-	}
-
-	return calls
-}
-
-// ---------------------------------------------------------------------------
 // Memory Snapshot & Rollback — "dumbed-down agent" recovery path
 // ---------------------------------------------------------------------------
 
@@ -1920,7 +1747,7 @@ func (s *MemoryService) takeSnapshotQuiet(ctx context.Context, agentID, trigger 
 }
 
 // TakeSnapshot records a point-in-time snapshot of all memories for the given agent.
-// Called automatically before mutations and before compression flush.
+// Called automatically before memory mutations.
 func (s *MemoryService) TakeSnapshot(ctx context.Context, agentID, trigger string, turnID *string) error {
 	db, err := s.getDB(ctx)
 	if err != nil {

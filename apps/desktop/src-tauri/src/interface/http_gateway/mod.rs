@@ -29,14 +29,15 @@ use crate::state::AppState;
 // -------------------------------------------------------------------------
 use crate::application::account as app_account;
 use crate::application::admin as app_admin;
+use crate::application::agent_growth as app_agent_growth;
 use crate::application::agent_orchestration as app_agent_orchestration;
 use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
 use crate::application::applet_store as app_applet_store;
 use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
+use crate::application::capability_authority as app_capability_authority;
 use crate::application::channels as app_channels;
-use crate::application::chat as app_chat;
 use crate::application::chat_storage;
 use crate::application::cron as app_cron;
 use crate::application::federation as app_federation;
@@ -51,6 +52,7 @@ use crate::application::oauth2 as app_oauth2;
 use crate::application::oss as app_oss;
 use crate::application::profile as app_profile;
 use crate::application::provider as app_provider;
+use crate::application::runtime_evidence as app_runtime_evidence;
 use crate::application::search as app_search;
 use crate::application::settings as app_settings;
 use crate::application::skills as app_skills;
@@ -62,7 +64,7 @@ use crate::application::tts as app_tts;
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
 use crate::interface::tauri_commands::oss::{
-    safe_temp_filename, validate_oss_upload_scope, OssUploadAttachmentBytesInput,
+    safe_temp_filename, OssKeyInput, OssResolveUrlInput, OssUploadAttachmentBytesInput,
 };
 use crate::model;
 use prost::Message;
@@ -227,6 +229,15 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &G
         return;
     }
 
+    if request.url() == "/agent/turn/stream" {
+        handle_agent_stream_proxy(request, state, "/sub-agent/agent/turn/stream");
+        return;
+    }
+    if request.url() == "/agent/turn/events" {
+        handle_agent_stream_proxy(request, state, "/sub-agent/agent/conversation/events");
+        return;
+    }
+
     // Read body
     let mut body = String::new();
     if let Err(e) = request.as_reader().read_to_string(&mut body) {
@@ -272,6 +283,94 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &G
         .with_status_code(200)
         .with_header(content_type_json())
         .with_header(cors_origin());
+    let _ = request.respond(response);
+}
+
+fn handle_agent_stream_proxy(
+    mut request: tiny_http::Request,
+    state: &AppState,
+    station_path: &'static str,
+) {
+    let Some(token) = http_gateway_bearer_token(state) else {
+        let response = tiny_http::Response::from_string(
+            json!({"ok": false, "error": "authentication required"}).to_string(),
+        )
+        .with_status_code(401)
+        .with_header(content_type_json())
+        .with_header(cors_origin());
+        let _ = request.respond(response);
+        return;
+    };
+    let mut body = String::new();
+    if request.as_reader().read_to_string(&mut body).is_err() {
+        let response = tiny_http::Response::from_string("invalid stream request")
+            .with_status_code(400)
+            .with_header(cors_origin());
+        let _ = request.respond(response);
+        return;
+    }
+    let client = match reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            let response = tiny_http::Response::from_string(error.to_string())
+                .with_status_code(500)
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+    let upstream = client
+        .post(format!(
+            "{}{}",
+            station_client::station_base_url(),
+            station_path
+        ))
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::ACCEPT, "text/event-stream")
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(body)
+        .send();
+    let upstream = match upstream {
+        Ok(response) => response,
+        Err(error) => {
+            let response = tiny_http::Response::from_string(error.to_string())
+                .with_status_code(502)
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+    let status = upstream.status().as_u16();
+    let turn_id_header = upstream
+        .headers()
+        .get("x-agent-turn-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| format!("X-Agent-Turn-ID: {value}").parse().ok());
+    let mut response_headers = vec![
+        "Content-Type: text/event-stream; charset=utf-8"
+            .parse()
+            .unwrap(),
+        "Cache-Control: no-cache".parse().unwrap(),
+        "Access-Control-Expose-Headers: X-Agent-Turn-ID"
+            .parse()
+            .unwrap(),
+        cors_origin(),
+    ];
+    if let Some(header) = turn_id_header {
+        response_headers.push(header);
+    }
+    let response = tiny_http::Response::new(
+        tiny_http::StatusCode(status),
+        response_headers,
+        upstream,
+        None,
+        None,
+    );
     let _ = request.respond(response);
 }
 
@@ -712,18 +811,6 @@ fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> 
         ));
     }
 
-    let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_oss_upload_scope(
-        input.bucket.as_str(),
-        vis.as_str(),
-        &input.chat_session_id,
-    ) {
-        Ok(scope) => scope,
-        Err(error) => return to_json(error),
-    };
-    let bucket = bucket.to_string();
-    let visibility = visibility.to_string();
-    let chat_sid = chat_sid.map(str::to_string);
     let filename = safe_temp_filename(input.filename.as_str());
     let mime_override = input.mime_type.trim().to_string();
     let temp_path = std::env::temp_dir().join(format!("peers-agent-{}-{}", Ulid::new(), filename));
@@ -737,18 +824,12 @@ fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> 
     }
     let cleanup = app_oss::TempFileCleanup::new(temp_path.clone(), "HTTP Agent attachment");
 
-    let result = app_oss::upload_attachment_with_mime(
+    let result = app_oss::upload_agent_attachment(
         temp_path.to_string_lossy().as_ref(),
         &token,
-        "agent",
-        bucket.as_str(),
-        visibility.as_str(),
-        chat_sid.as_deref(),
-        if mime_override.is_empty() {
-            None
-        } else {
-            Some(mime_override.as_str())
-        },
+        &input.conversation_id,
+        &filename,
+        &mime_override,
     );
     cleanup.remove_now();
     to_json(result)
@@ -2024,6 +2105,28 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         "oss_upload_agent_attachment_bytes" => {
             dispatch_oss_upload_agent_attachment_bytes(args, state)
         }
+        "oss_resolve_url" => {
+            let input = match parse_args::<OssResolveUrlInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_oss::oss_resolve_url(&input.uri, &token, &actor_ptid))
+        }
+        "oss_delete_file" => {
+            let input = match parse_args::<OssKeyInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(app_oss::oss_delete_file(&token, &input.key))
+        }
 
         // =================================================================
         // Actor (state-dependent, proto-based)
@@ -2176,96 +2279,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_settings::settings_set(state, input))
         }
         "settings_reset" => to_json(app_settings::settings_reset(state)),
-
-        // =================================================================
-        // Chat (no state)
-        // =================================================================
-        "chat_list_conversations" => to_json(app_chat::chat_list_conversations("")),
-        "chat_list_messages" => {
-            let input = match parse_args::<ChatListMessagesInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_list_messages("", input))
-        }
-        "chat_send_message" => {
-            let input = match parse_args::<ChatSendMessageInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_send_message("", input))
-        }
-        "chat_mark_read" => {
-            let input = match parse_args::<ChatMarkReadInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_mark_read("", input))
-        }
-        "chat_delete_conversation" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_delete_conversation("", input))
-        }
-        "chat_rename_conversation" => {
-            let input = match parse_args::<ChatRenameConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_rename_conversation("", input))
-        }
-        "chat_duplicate_conversation" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_duplicate_conversation("", input))
-        }
-        "chat_smart_rename_conversation" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_smart_rename_conversation("", input))
-        }
-        "chat_set_conversation_model" => {
-            let input = match parse_args::<ChatSetConversationModelInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_set_conversation_model("", input))
-        }
-        "chat_delete_message" => {
-            let input = match parse_args::<ChatMessageInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_delete_message("", input))
-        }
-        "chat_update_message" => {
-            let input = match parse_args::<ChatUpdateMessageInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_update_message("", input))
-        }
-        "chat_stop" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_stop("", input))
-        }
-        // chat_completion_once: blocking call (originally async in tauri, runs sync here)
-        "chat_completion_once" => {
-            let input = match parse_args::<ChatCompletionInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_completion_once("", "", input))
-        }
 
         // Note: legacy `timeline_*` dev-HTTP routes were removed in P2. The
         // new `social_*` Tauri commands target proto-typed responses and
@@ -2798,33 +2811,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agents::agents_duplicate("", input))
         }
-        "agents_export_package" => {
-            let input = match parse_args::<AgentPackageExportInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_agents::agents_export_package("", input))
-        }
-        "agents_import_package" => {
-            let input = match parse_args::<AgentPackageImportInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_agents::agents_import_package("", input))
-        }
         "agents_search" => {
             let input = match parse_args::<AgentSearchInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
             to_json(app_agents::agents_search("", input))
-        }
-        "agents_list_sessions" => {
-            let input = match parse_args::<AgentIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_agents::agents_list_sessions("", input))
         }
         "agent_conversation_list" => {
             let input = match parse_args::<AgentConversationListInput>(args) {
@@ -2870,6 +2862,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agent_turn::agent_conversation_messages(input, &token))
         }
+        "agent_conversation_update" => {
+            let input = match parse_args::<AgentConversationUpdateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_conversation_update(input, &token))
+        }
         "agent_conversation_archive" => {
             let input = match parse_args::<AgentConversationArchiveInput>(args) {
                 Ok(v) => v,
@@ -2880,6 +2883,72 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_turn::agent_conversation_archive(input, &token))
+        }
+        "agent_conversation_restore" => {
+            let input = match parse_args::<AgentConversationRestoreInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_conversation_restore(input, &token))
+        }
+        "agent_retry_turn" => {
+            let input = match parse_args::<AgentRetryTurnInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_retry_turn(input, &token))
+        }
+        "agent_regenerate_turn" => {
+            let input = match parse_args::<AgentRegenerateTurnInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_regenerate_turn(input, &token))
+        }
+        "agent_edit_and_resend" => {
+            let input = match parse_args::<AgentEditAndResendInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_edit_and_resend(input, &token))
+        }
+        "agent_select_active_branch" => {
+            let input = match parse_args::<AgentSelectActiveBranchInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_select_active_branch(input, &token))
+        }
+        "agent_tombstone_message" => {
+            let input = match parse_args::<AgentTombstoneMessageInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_tombstone_message(input, &token))
         }
         "agent_execute_turn" => {
             let input = match parse_args::<AgentExecuteTurnInput>(args) {
@@ -2908,7 +2977,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 .filter(|value| !value.is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("agent-turn-{}", Ulid::new()));
-            let cancel_flag = app_agent_turn::register_agent_turn_stream(&stream_id);
+            let cancellation =
+                app_agent_turn::register_agent_turn_live_stream("http-gateway", "", &stream_id);
             let stream_id_for_task = stream_id.clone();
             let app_for_task = match runtime.app_handle("agent_execute_turn_stream") {
                 Ok(app_handle) => app_handle,
@@ -2921,21 +2991,57 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     input,
                     token,
                     "".to_string(),
-                    cancel_flag,
+                    cancellation,
                 );
-                app_agent_turn::unregister_agent_turn_stream(&stream_id_for_task);
             });
             to_json(AppResult::success(StubPayload {
                 command: "agent_execute_turn_stream".to_string(),
                 status: json!({ "stream_id": stream_id }).to_string(),
             }))
         }
-        "agent_cancel_turn_stream" => {
+        "agent_cancel_turn" => {
             let input = match parse_args::<AgentTurnStreamCancelInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agent_turn::cancel_agent_turn_stream(&input.stream_id))
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::cancel_agent_turn(&input.turn_id, &token))
+        }
+        "agent_turn_queue_list" => {
+            let input = match parse_args::<AgentTurnQueueListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_queue_list(input, &token))
+        }
+        "agent_turn_queue_cancel" => {
+            let input = match parse_args::<AgentTurnQueueCancelInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_queue_cancel(input, &token))
+        }
+        "agent_submit_tool_decision" => {
+            let input = match parse_args::<AgentToolDecisionIntentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::submit_tool_decision(input, &token))
         }
         "agent_turn_trace_list" => {
             let input = match parse_args::<AgentTurnTraceListInput>(args) {
@@ -2959,12 +3065,115 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agent_turn::agent_turn_trace_get(input, &token))
         }
-        "agent_resolve_local_tool_request" => {
-            let input = match parse_args::<AgentLocalToolRequestInput>(args) {
+        "agent_turn_diagnostics_export" => {
+            let input = match parse_args::<AgentTurnDiagnosticsInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agent_turn::agent_resolve_local_tool_request(input))
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_diagnostics_export(input, &token))
+        }
+        "agent_runtime_profile_effective" => {
+            let input = match parse_args::<AgentRuntimeProfileInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::effective_runtime_profile(
+                input, &token,
+            ))
+        }
+        "agent_capability_manifest_list" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityManifestListInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_manifests(input, &token))
+        }
+        "agent_capability_binding_list" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingListInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_bindings(input, &token))
+        }
+        "agent_capability_binding_upsert" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingUpsertInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::upsert_binding(input, &token))
+        }
+        "agent_capability_binding_delete" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingDeleteInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::delete_binding(input, &token))
+        }
+        "agent_capability_readiness" => {
+            let input = match parse_args::<app_capability_authority::CapabilityReadinessInput>(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::readiness(input, &token))
+        }
+        "agent_package_export" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::export_agent_package(
+                input, &token,
+            ))
+        }
+        "agent_package_import" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::import_agent_package(
+                input, &token,
+            ))
         }
         "agent_collaboration_create" => {
             let input = match parse_args::<AgentCollaborationCreateInput>(args) {
@@ -3032,7 +3241,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ))
         }
         "agent_collaboration_resume_task" => {
-            let input = match parse_args::<AgentCollaborationCancelTaskInput>(args) {
+            let input = match parse_args::<AgentCollaborationResumeTaskInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
@@ -3040,7 +3249,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_orchestration::agent_collaboration_cancel_task(
+            to_json(app_agent_orchestration::agent_collaboration_resume_task(
                 input, &token,
             ))
         }
@@ -7145,6 +7354,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            let conversation_id = args
+                .get("conversation_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
             let member_ptids: Vec<String> = args
                 .get("member_ptids")
                 .and_then(|v| v.as_array())
@@ -7154,30 +7368,79 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         .collect()
                 })
                 .unwrap_or_default();
-            if member_ptids.is_empty() {
+            if conversation_id.is_empty() || name.is_empty() || member_ptids.is_empty() {
                 return to_json(AppResult::<Value>::fail(
                     ErrorCode::InvalidArgument,
-                    "member_ptids required",
+                    "conversation_id, name, and members are required",
                     None,
                 ));
             }
-            let conversation_id = format!("g-{}", ulid::Ulid::new().to_string().to_lowercase());
             match engine.create_group_conversation(&token, &conversation_id, &name, &member_ptids) {
-                Ok(id) => {
+                Ok(prepared) => {
                     let now_unix_ms = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as i64;
                     let retry_policy = crate::messaging::CommandRetryPolicy {
                         initial_delay_ms: 1000,
-                        maximum_delay_ms: 30000,
+                        maximum_delay_ms: 300_000,
                     };
-                    let _ = engine.dispatch_command_once(&token, now_unix_ms, retry_policy);
-                    let _ = engine.drain_once(&token, 100);
-                    let _ = state.messaging_engines.wake_profile(&account_id);
+                    let progress = match engine.dispatch_command_once(
+                        &token,
+                        now_unix_ms,
+                        retry_policy,
+                    ) {
+                        Ok(progress) => progress,
+                        Err(error) => {
+                            tracing::warn!(
+                                command_id = %prepared.command_id,
+                                conversation_id = %prepared.conversation_id,
+                                error = %error,
+                                "browser messaging group dispatch assist failed after durable preparation"
+                            );
+                            crate::messaging::CommandDispatchProgress::Idle
+                        }
+                    };
+                    if let Err(error) = engine.drain_once(&token, 100) {
+                        tracing::warn!(
+                            command_id = %prepared.command_id,
+                            conversation_id = %prepared.conversation_id,
+                            error = %error,
+                            "browser messaging group drain assist failed after durable preparation"
+                        );
+                    }
+                    if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+                        tracing::warn!(
+                            command_id = %prepared.command_id,
+                            conversation_id = %prepared.conversation_id,
+                            error = %error,
+                            "browser messaging group lifecycle wake failed after durable preparation"
+                        );
+                    }
+                    let projection_ready = match engine.conversations() {
+                        Ok(conversations) => conversations.iter().any(|conversation| {
+                            conversation.conversation_id == prepared.conversation_id
+                        }),
+                        Err(error) => {
+                            tracing::warn!(
+                                command_id = %prepared.command_id,
+                                conversation_id = %prepared.conversation_id,
+                                error = %error,
+                                "browser messaging group projection read failed after durable preparation"
+                            );
+                            false
+                        }
+                    };
+                    let creation_state =
+                        crate::interface::tauri_commands::messaging::group_creation_state(
+                            &progress,
+                            &prepared.command_id,
+                            projection_ready,
+                        );
                     to_json(AppResult::success(json!({
-                        "conversation_id": id,
-                        "state": "created",
+                        "conversation_id": prepared.conversation_id,
+                        "command_id": prepared.command_id,
+                        "state": creation_state,
                     })))
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
@@ -7287,24 +7550,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             match engine.conversations() {
                 Ok(conversations) => {
-                    let items: Vec<Value> = conversations
+                    let items = conversations
                         .iter()
-                        .map(|c| {
-                            json!({
-                                "conversation_id": c.conversation_id,
-                                "authority_station_id": c.authority_station_id,
-                                "kind": c.kind,
-                                "name": c.name,
-                                "owner_ptid": c.owner_ptid,
-                                "member_ptids": c.member_ptids,
-                                "membership_epoch": c.membership_epoch,
-                                "mls_epoch": c.mls_epoch,
-                                "active": c.active,
-                                "updated_at_unix_ms": c.updated_at_unix_ms,
-                            })
+                        .map(|conversation| {
+                            crate::interface::tauri_commands::messaging::
+                                conversation_projection_json(&engine, conversation)
                         })
-                        .collect();
-                    to_json(AppResult::success(json!({ "conversations": items })))
+                        .collect::<Result<Vec<_>, _>>();
+                    match items {
+                        Ok(items) => to_json(AppResult::success(json!({ "conversations": items }))),
+                        Err(error) => to_json(AppResult::<Value>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        )),
+                    }
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
@@ -7374,7 +7634,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string(),
-                    member_ptids: Vec::new(),
+                    members: Vec::new(),
                     membership_epoch: conv
                         .get("membership_epoch")
                         .and_then(|v| v.as_str())

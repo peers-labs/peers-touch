@@ -924,6 +924,7 @@
   "agent.portal.artifacts": "Artifacts",
   "agent.portal.artifact": "Artifact",
   "agent.portal.toolDetail": "Tool Detail",
+  "agent.portal.turnDetails": "Turn details",
   "agent.portal.thread": "Thread",
   "agent.portal.topicComments": "Comments",
   "agent.portal.back": "Back",

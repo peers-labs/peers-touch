@@ -34,12 +34,12 @@ pub mod peers_touch {
 }
 
 use interface::tauri_commands::{
-    account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
-    applets, auth, channels, chat, conversation, cron, crypto, desktop_capture, federation,
-    frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice, key_exchange, mcp,
-    memory, messaging as messaging_commands, messaging_recovery, mls, model_config, notebook,
-    notification, oauth2, oss, presence, profile, provider, realtime, search, settings, skills,
-    skills_market, social, station, system, tools, tts,
+    account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_scheduler,
+    agent_turn, agents, applets, auth, capability_authority, channels, conversation, cron, crypto,
+    desktop_capture, federation, frontend_log, frontend_telemetry, group_chat, host_events, i18n,
+    ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery, mls,
+    model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
+    runtime_evidence, search, settings, skills, skills_market, social, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -53,6 +53,9 @@ fn main() {
     tracing::info!("Launching Tauri application");
 
     let app_state = Arc::new(ctx.app_state);
+    let capability_worker_supervisor = Arc::new(
+        application::desktop_executor_worker::CapabilityWorkerSupervisor::new(app_state.clone()),
+    );
 
     let presence_supervisor = Arc::new(application::presence::PresenceSupervisor::new());
     let actor_device_identity = Arc::new(domain::actor_device_identity::ActorDeviceIdentity::new());
@@ -69,6 +72,7 @@ fn main() {
 
     builder
         .manage(app_state)
+        .manage(capability_worker_supervisor)
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
         .manage(presence_supervisor)
         .manage(actor_device_identity)
@@ -125,6 +129,15 @@ fn main() {
             #[cfg(debug_assertions)]
             interface::http_gateway::start(Arc::clone(state.inner()), app.handle().clone());
             application::desktop_executor_worker::start(Arc::clone(state.inner()));
+            let capability_supervisor = app
+                .state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
+            if capability_supervisor.starts_automatically() {
+                capability_supervisor.start().map_err(|error| {
+                    std::io::Error::other(format!(
+                        "start client capability supervisor: {error}"
+                    ))
+                })?;
+            }
             if let Err(e) = state.i18n.deploy_builtin_packs(&resource_dir) {
                 tracing::error!(error = %e, "Failed to deploy built-in i18n packs");
             }
@@ -182,20 +195,6 @@ fn main() {
             settings::settings_set,
             settings::settings_reset,
             desktop_capture::chat_screenshot_shortcut_register,
-            chat::chat_list_conversations,
-            chat::chat_list_messages,
-            chat::chat_send_message,
-            chat::chat_mark_read,
-            chat::chat_delete_conversation,
-            chat::chat_rename_conversation,
-            chat::chat_duplicate_conversation,
-            chat::chat_smart_rename_conversation,
-            chat::chat_set_conversation_model,
-            chat::chat_delete_message,
-            chat::chat_update_message,
-            chat::chat_stop,
-            chat::chat_completion_once,
-            chat::chat_completion_stream,
             social::social_create_moment,
             social::social_get_moment,
             social::social_delete_moment,
@@ -271,28 +270,75 @@ fn main() {
             agents::agents_update,
             agents::agents_delete,
             agents::agents_duplicate,
-            agents::agents_export_package,
-            agents::agents_import_package,
             agents::agents_search,
-            agents::agents_list_sessions,
             agent_turn::agent_execute_turn,
             agent_turn::agent_execute_turn_stream,
             agent_turn::agent_cancel_turn_stream,
+            agent_turn::agent_disconnect_turn_stream,
+            agent_turn::agent_cancel_turn,
+            agent_turn::agent_replay_turn_stream,
+            agent_turn::agent_cancel_turn_replay_stream,
+            agent_turn::agent_turn_queue_list,
+            agent_turn::agent_turn_queue_cancel,
             agent_turn::agent_turn_trace_list,
             agent_turn::agent_turn_trace_get,
-            agent_turn::agent_resolve_local_tool_request,
-            agent_turn::agent_decide_tool_approval,
+            agent_turn::agent_turn_diagnostics_export,
+            agent_turn::agent_submit_tool_decision,
+            runtime_evidence::agent_runtime_profile_effective,
+            capability_authority::agent_capability_manifest_list,
+            capability_authority::agent_capability_binding_list,
+            capability_authority::agent_capability_binding_upsert,
+            capability_authority::agent_capability_binding_delete,
+            capability_authority::agent_capability_readiness,
+            capability_authority::agent_knowledge_descriptor_create,
+            capability_authority::agent_knowledge_descriptor_update,
+            capability_authority::agent_knowledge_descriptor_list,
+            capability_authority::agent_knowledge_descriptor_tombstone,
+            capability_authority::agent_package_export,
+            capability_authority::agent_package_import,
+            runtime_evidence::agent_capability_sessions,
+            runtime_evidence::agent_browser_capability_session_open,
+            runtime_evidence::agent_browser_capability_session_close,
+            runtime_evidence::agent_runtime_activity_station,
+            runtime_evidence::agent_runtime_activity_local,
+            runtime_evidence::agent_capability_session_snapshot,
             agent_turn::agent_conversation_list,
             agent_turn::agent_conversation_get,
             agent_turn::agent_conversation_create,
             agent_turn::agent_conversation_messages,
+            agent_turn::agent_conversation_update,
             agent_turn::agent_conversation_archive,
+            agent_turn::agent_conversation_restore,
+            agent_turn::agent_retry_turn,
+            agent_turn::agent_regenerate_turn,
+            agent_turn::agent_edit_and_resend,
+            agent_turn::agent_select_active_branch,
+            agent_turn::agent_tombstone_message,
+            agent_turn::agent_thread_create,
+            agent_turn::agent_thread_list,
+            agent_turn::agent_thread_messages,
+            agent_turn::agent_group_create,
+            agent_turn::agent_group_update,
+            agent_turn::agent_group_delete,
+            agent_turn::agent_group_list,
+            agent_turn::topic_comment_create,
+            agent_turn::topic_comment_delete,
+            agent_turn::topic_comment_list,
+            agent_turn::agent_task_create,
+            agent_turn::agent_task_list,
+            agent_turn::agent_task_status,
+            agent_turn::agent_task_delete,
+            agent_turn::agent_task_subtask_add,
+            agent_turn::agent_task_subtask_complete,
+            agent_turn::agent_message_translate,
             agent_orchestration::agent_collaboration_create,
             agent_orchestration::agent_collaboration_get,
             agent_orchestration::agent_collaboration_list,
             agent_orchestration::agent_collaboration_list_events,
             agent_orchestration::agent_collaboration_subscribe,
             agent_orchestration::agent_collaboration_cancel_stream,
+            agent_events::agent_events_subscribe,
+            agent_events::agent_events_cancel,
             agent_orchestration::agent_collaboration_cancel_task,
             agent_orchestration::agent_collaboration_resume_task,
             agent_orchestration::agent_collaboration_submit_node_result,
@@ -654,6 +700,14 @@ fn main() {
                 }
             }
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                let capability_supervisor = app
+                    .state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
+                if let Err(error) = capability_supervisor.shutdown() {
+                    tracing::warn!(
+                        error = %error,
+                        "client capability supervisor shutdown failed"
+                    );
+                }
                 let state = app.state::<Arc<state::AppState>>();
                 if let Err(error) = state.messaging_engines.deactivate_all() {
                     tracing::warn!(

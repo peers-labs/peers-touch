@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -439,17 +438,11 @@ func catalogProviderAdvertisedByFrozenProfile(cp catalog.CatalogProvider) bool {
 }
 
 func runtimeAdvertisedByFrozenProfile(runtimeKind string) bool {
-	switch strings.ToLower(strings.TrimSpace(runtimeKind)) {
-	case "", "http":
-		return true
-	default:
-		return false
-	}
+	return service.ProviderRuntimeAdvertised(runtimeKind, "openai-compatible")
 }
 
 func providerAdvertisedByFrozenProfile(runtimeKind, protocol string) bool {
-	return !strings.EqualFold(strings.TrimSpace(protocol), "cli") &&
-		runtimeAdvertisedByFrozenProfile(runtimeKind)
+	return service.ProviderRuntimeAdvertised(runtimeKind, protocol)
 }
 
 func (h *ProviderHandlers) HandleProviderDelete(ctx context.Context, req *model.DeleteProviderRequest) (*model.DeleteProviderResponse, error) {

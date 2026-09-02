@@ -45,7 +45,7 @@ export VITE_PORT=3000
 | `dev-clean.sh` | 推荐 | 清理开发进程 | 建议重启开发环境前执行 |
 | `dev-testnet-desktops.sh` | 可用 | 启动 testnet Desktop 多实例 | 支持 macOS 默认 Bash；通常通过 `make testnet-desktop NODES="a b"` 调用 |
 | `generate-mobile-brand-assets.py` | 可用 | 生成 Mobile 品牌资源 | 生成 App 内透明 wordmark；系统图标从 Desktop `icon-source.png` 裁掉外圈并保留源图主体占比，再同步生成 Tauri icon、iOS AppIcon 与 Android launcher icons |
-| `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 输出到 `apps/mobile/src/gen/proto` |
+| `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 通过临时目录生成，只替换真实变化并统一新文件/变化文件的 EOF |
 | `verify-worktree-binding.py` | 推荐 | capture/verify 当前执行 worktree 的 fail-closed identity | 校验 canonical root、branch、`workspaceId`、expected HEAD 与 worktree-set digest；必须从被绑定 root 运行 |
 | `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard | 覆盖 wrong cwd、detached HEAD、identity drift、持久 schema 与 synthetic worktree-set digest 变化，不创建真实 worktree |
 | `check-social-runtime-boundaries.sh` | 可用 | 校验双端社交 Runtime 边界 | 禁止页面/组件直接拥有社交实时流、reconcile、长期 freshness |
@@ -54,7 +54,7 @@ export VITE_PORT=3000
 | `apps/desktop/scripts/check-social-wire-contract.sh` | 可用 | 校验 Desktop 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
 | `review/run.sh` | 推荐 | 运行 Code Review Framework 门禁 | 统一调用变更路由、硬规则、知识库匹配、Review Skill 保鲜检查；也可通过 `make review` 使用 |
 | `review/route-change.sh` | 推荐 | 将 git diff 映射到 Review profiles | 输出每类变更需要关注的规则和验证命令 |
-| `review/hard-rules.sh` | 推荐 | 自动拦截 Review 铁律违规 | 检查 debug 语句、泄密、生成物手改、mock API、硬编码 UI 文案、静默吞错 |
+| `review/hard-rules.sh` | 推荐 | 自动拦截 Review 铁律违规 | 检查 debug 语句、泄密、生成物手改、mock API、硬编码 UI 文案、静默吞错；无 Proto diff 时仅允许与隔离目录内 canonical Mobile Web regeneration 完全一致的生成物变更 |
 | `review/knowledge-match.sh` | 推荐 | 匹配 `docs/knowledge/` 的 `owns:` | 输出 PR 必读 invariant / pitfall / playbook，并支持 strict 新鲜度校验 |
 | `review/skill-check.sh` | 推荐 | 校验 Review Skill 完整性与新鲜度 | 检查 skill 结构、上游文档 hash、golden fixtures 和危险指令 |
 | `review/submit-pipeline.sh` | 推荐 | 用户请求提交 MR/PR 时的提交前质量流水线 | 通过 `make review-submit REVIEW_BASE=<base>` 调用；生成 quality evidence 并运行 review/acceptance gates |

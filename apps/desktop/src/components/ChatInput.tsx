@@ -4,7 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { ActionIcon } from '@lobehub/ui';
 import { Dropdown, Input, theme } from 'antd';
 import type { MenuProps } from 'antd';
-import { ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Square } from 'lucide-react';
+import { AlertTriangle, ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
@@ -22,6 +22,7 @@ import { MentionPopup } from './chat/MentionPopup';
 import { MentionTagBar } from './chat/MentionTag';
 import type { AvailableModel, Agent } from '../services/desktop_api';
 import { ProviderIcon } from './settings/ProviderIcon';
+import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
 
 const COMPOSER_COLORS = {
   border: '#d1d1d1',
@@ -87,6 +88,11 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     disabled: isStreaming,
     fallbackName: t('chat.input.attachmentFallbackName'),
   });
+  const currentModelId = selectedModel || defaultModel;
+  const modelInfo =
+    availableModels.find((model) => model.id === currentModelId && (!selectedProviderId || model.provider_id === selectedProviderId)) ||
+    availableModels.find((model) => model.id === currentModelId);
+  const capabilityWarning = selectAgentCapabilityWarning(modelInfo, readyAttachments);
 
   useEffect(() => {
     const previousKey = prevSessionKeyRef.current;
@@ -138,7 +144,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if ((!text && readyAttachments.length === 0) || isStreaming || uploading || failed) return;
+    if ((!text && readyAttachments.length === 0) || isStreaming || uploading || failed || capabilityWarning?.blocking) return;
     sendMessage(text, toComposerAttachments(), {
       onAccepted: () => {
         setInput('');
@@ -147,7 +153,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
       },
     });
-  }, [input, readyAttachments.length, isStreaming, uploading, failed, sendMessage, toComposerAttachments, clearDrafts, clearMentions]);
+  }, [input, readyAttachments.length, isStreaming, uploading, failed, capabilityWarning, sendMessage, toComposerAttachments, clearDrafts, clearMentions]);
 
   // Scan the draft for "@" triggers whenever it changes, driving the popup.
   const handleInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -202,12 +208,8 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     event.target.value = '';
   }, [addFiles]);
 
-  const currentModelId = selectedModel || defaultModel;
-  const modelInfo =
-    availableModels.find((model) => model.id === currentModelId && (!selectedProviderId || model.provider_id === selectedProviderId)) ||
-    availableModels.find((model) => model.id === currentModelId);
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
-  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading || failed;
+  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading || failed || Boolean(capabilityWarning?.blocking);
 
   const modelDisplayName = modelInfo?.display_name || modelInfo?.id || currentModelId;
   const modelLabel = modelInfo
@@ -327,6 +329,26 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         <div style={{ color: token.colorError, fontSize: 12 }}>
           {t(readinessErrorKey)}
         </div>
+      )}
+
+      {capabilityWarning && (
+        <Flexbox
+          data-agent-capability-warning={capabilityWarning.kind}
+          horizontal
+          align="center"
+          gap={6}
+          style={{
+            color: token.colorWarningText,
+            background: token.colorWarningBg,
+            border: `1px solid ${token.colorWarningBorder}`,
+            borderRadius: token.borderRadiusSM,
+            fontSize: 12,
+            padding: '6px 8px',
+          }}
+        >
+          <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+          <span>{t(capabilityWarning.messageKey)}</span>
+        </Flexbox>
       )}
 
       <MentionTagBar />

@@ -39,7 +39,8 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 tmp_files="$(mktemp)"
-trap 'rm -f "$tmp_files"' EXIT
+generated_verify_root=""
+trap 'rm -f "$tmp_files"; [[ -z "$generated_verify_root" ]] || rm -rf "$generated_verify_root"' EXIT
 
 if [[ -n "$fixture_dir" ]]; then
   find "$fixture_dir" -type f | sed "s#^\./##" > "$tmp_files"
@@ -68,6 +69,19 @@ if [[ -z "$fixture_dir" ]]; then
     esac
   done < "$tmp_files"
 fi
+
+canonical_mobile_web_output=""
+prepare_canonical_mobile_web_output() {
+  if [[ -n "$canonical_mobile_web_output" ]]; then
+    return 0
+  fi
+  generated_verify_root="$(mktemp -d)"
+  canonical_mobile_web_output="$generated_verify_root/proto"
+  if ! PT_MOBILE_WEB_PROTO_OUT="$canonical_mobile_web_output" \
+    tooling/scripts/proto-gen-mobile.sh web >/dev/null 2>&1; then
+    return 1
+  fi
+}
 
 failures=0
 
@@ -126,7 +140,19 @@ while IFS= read -r file; do
   case "$file" in
     *.pb.go|*.pb.dart|*.pb.rs|*/gen/proto/*|*/src/gen/proto/*)
       if [[ "$has_proto_source_change" -ne 1 ]]; then
-        report_failure "generated-file-edit" "$file appears to be generated; update proto source and regenerate instead"
+        case "$file" in
+          apps/mobile/src/gen/proto/*)
+            generated_relative="${file#apps/mobile/src/gen/proto/}"
+            if ! prepare_canonical_mobile_web_output \
+              || [[ ! -f "$canonical_mobile_web_output/$generated_relative" ]] \
+              || ! cmp -s "$file" "$canonical_mobile_web_output/$generated_relative"; then
+              report_failure "generated-file-edit" "$file does not match verifiable canonical regeneration"
+            fi
+            ;;
+          *)
+            report_failure "generated-file-edit" "$file appears to be generated; update proto source and regenerate instead"
+            ;;
+        esac
       fi
       ;;
   esac

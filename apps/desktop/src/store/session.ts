@@ -43,6 +43,7 @@ interface SessionStore {
   accessSubmitLogin: (attemptId: string, account: string, password: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
+  activateAuthenticatedSession: (response: AuthSessionResponse) => void;
   activateAppletLaunchSession: (user: CurrentUser) => void;
   /** Update the current actor profile projection after identity reconciliation. */
   updateProfile: (profile: Partial<Pick<CurrentUser, 'name' | 'email' | 'avatarUrl'>>) => void;
@@ -136,21 +137,31 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
 
   logout: async () => {
     markLocalIdentityAction();
-    try {
-      await api.realtimeStreamStop();
-    } catch {
-      // noop
-    }
+    let cleanupError: unknown;
     try {
       await api.authLogout();
-    } catch {
-      // Best-effort: if the session is already expired/revoked, still clear local state.
+    } catch (error) {
+      cleanupError = error;
     }
     await runIdentityPipeline({
       reason: 'logout',
       actorPtid: null,
       loginMethod: null,
     });
+    if (cleanupError) {
+      throw cleanupError;
+    }
+  },
+
+  activateAuthenticatedSession: (response) => {
+    const method = response.login_method || 'password';
+    const isOAuth = method !== 'password';
+    const user = userFromAuthResponse(
+      response,
+      isOAuth ? 'oauth' : 'password',
+      isOAuth ? method : undefined,
+    );
+    set({ currentUser: user, authenticated: Boolean(user), restoring: false });
   },
 
   activateAppletLaunchSession: (user) => {

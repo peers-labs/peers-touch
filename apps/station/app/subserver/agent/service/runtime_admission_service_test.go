@@ -4,32 +4,62 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-func TestModelInputCapabilitiesRequireExplicitDatabaseFlags(t *testing.T) {
+func TestParseModelCapabilityFlagsRequiresExplicitDatabaseFacts(t *testing.T) {
 	tests := []struct {
-		name      string
-		raw       string
-		wantImage bool
-		wantFile  bool
+		name string
+		raw  string
+		want runtimeCapabilityFacts
 	}{
-		{name: "chat streaming only", raw: `["chat","streaming"]`},
-		{name: "explicit image and file", raw: `["chat","image","file"]`, wantImage: true, wantFile: true},
-		{name: "explicit map", raw: `{"vision":true,"pdf":true}`, wantImage: true, wantFile: true},
-		{name: "unknown malformed", raw: `{`},
+		{
+			name: "explicit list",
+			raw:  `["chat","streaming","vision","tools"]`,
+			want: runtimeCapabilityFacts{
+				"text-input":   true,
+				"streaming":    true,
+				"image-input":  true,
+				"native-tools": true,
+			},
+		},
+		{
+			name: "explicit map preserves false override",
+			raw:  `{"vision":true,"pdf":true,"parallel_tools":false}`,
+			want: runtimeCapabilityFacts{
+				"image-input":    true,
+				"file-input":     true,
+				"parallel-tools": false,
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			image, file := modelInputCapabilities([]byte(test.raw))
-			if image != test.wantImage || file != test.wantFile {
-				t.Fatalf("capabilities image=%v file=%v, want image=%v file=%v", image, file, test.wantImage, test.wantFile)
+			got, err := parseModelCapabilityFlags([]byte(test.raw))
+			if err != nil {
+				t.Fatalf("parse capability flags: %v", err)
+			}
+			if len(got) != len(test.want) {
+				t.Fatalf("capability count=%d, want %d: %+v", len(got), len(test.want), got)
+			}
+			for capabilityID, want := range test.want {
+				if got[capabilityID] != want {
+					t.Fatalf("capability %q=%v, want %v", capabilityID, got[capabilityID], want)
+				}
 			}
 		})
+	}
+}
+
+func TestParseModelCapabilityFlagsRejectsMalformedAuthority(t *testing.T) {
+	if _, err := parseModelCapabilityFlags([]byte(`{`)); err == nil {
+		t.Fatal("malformed capability authority must fail closed")
 	}
 }
 
@@ -61,7 +91,14 @@ func setupTestCatalog() func() {
 			RuntimeKind: "http",
 			ShowAPIKey:  &showAPIKey,
 			Models: []catalog.CatalogModel{
-				{ID: "test-model", DisplayName: "Test Model", Type: "chat", Enabled: true, ContextWindow: 128000},
+				{
+					ID:            "test-model",
+					DisplayName:   "Test Model",
+					Type:          "chat",
+					Enabled:       true,
+					ContextWindow: 128000,
+					Capabilities:  []string{"text-input", "text-output", "streaming", "structured-output", "native-tools"},
+				},
 				{ID: "disabled-model", DisplayName: "Disabled", Type: "chat", Enabled: false, ContextWindow: 8192},
 				{ID: "embed-model", DisplayName: "Embed", Type: "embedding", Enabled: true, ContextWindow: 8192},
 			},
@@ -74,7 +111,7 @@ func seedTestProvider(t *testing.T, db *gorm.DB, actorID, name string, enabled b
 	t.Helper()
 	provider := persistence.AgentProvider{
 		ID:          generateID("prov"),
-		ActorID:     actorID,
+		ActorPTID:   actorID,
 		Name:        name,
 		Enabled:     true,
 		Protocol:    "openai-compatible",
@@ -89,6 +126,40 @@ func seedTestProvider(t *testing.T, db *gorm.DB, actorID, name string, enabled b
 			Where("id = ?", provider.ID).
 			Update("enabled", false).Error; err != nil {
 			t.Fatalf("disable provider: %v", err)
+		}
+	}
+}
+
+func seedTestModel(
+	t *testing.T,
+	db *gorm.DB,
+	actorPTID string,
+	providerID string,
+	modelID string,
+	enabled bool,
+	contextWindow int,
+	capabilities string,
+) {
+	t.Helper()
+	modelRecord := &persistence.AgentModel{
+		ID:               generateID("model"),
+		ActorPTID:        actorPTID,
+		ProviderID:       providerID,
+		ModelID:          modelID,
+		DisplayName:      "Database Model",
+		Enabled:          true,
+		ContextWindow:    contextWindow,
+		CapabilitiesJSON: json.RawMessage(capabilities),
+		Version:          1,
+	}
+	if err := db.Create(modelRecord).Error; err != nil {
+		t.Fatalf("seed model: %v", err)
+	}
+	if !enabled {
+		if err := db.Model(&persistence.AgentModel{}).
+			Where("id = ?", modelRecord.ID).
+			Update("enabled", false).Error; err != nil {
+			t.Fatalf("disable model: %v", err)
 		}
 	}
 }
@@ -230,6 +301,17 @@ func TestRuntimeAdmissionResolveSuccess(t *testing.T) {
 	if snapshot.Capabilities.Limits.ContextTokens != 128000 {
 		t.Fatalf("expected context tokens 128000, got %d", snapshot.Capabilities.Limits.ContextTokens)
 	}
+	provenance := snapshot.Capabilities.GetProvenance()
+	if provenance.GetDiscoverySource() != runtimeCapabilityDiscoverySource ||
+		provenance.GetSourceVersion() == "" ||
+		provenance.GetObservedAt() == nil {
+		t.Fatalf("runtime capability provenance is incomplete: %+v", provenance)
+	}
+	if !snapshot.Capabilities.GetRuntime().GetStreaming() ||
+		!snapshot.Capabilities.GetOutput().GetStructured() ||
+		!snapshot.Capabilities.GetAgentic().GetNativeTools() {
+		t.Fatalf("catalog capability facts were not projected: %+v", snapshot.Capabilities)
+	}
 }
 
 func TestRuntimeAdmissionSnapshotIDIsDeterministic(t *testing.T) {
@@ -258,13 +340,298 @@ func TestRuntimeAdmissionSnapshotIDIsDeterministic(t *testing.T) {
 
 func TestRuntimeAdmissionSnapshotIDChangesWithInputCapabilities(t *testing.T) {
 	budget := defaultRuntimeBudget(128000)
-	withoutImage := buildCapabilitySnapshot("provider-1", "model-1", 128000, nil, false, false)
-	withImage := buildCapabilitySnapshot("provider-1", "model-1", 128000, nil, true, false)
+	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	withoutImage := buildCapabilitySnapshot(
+		"provider-1",
+		"model-1",
+		128000,
+		nil,
+		nil,
+		runtimeCapabilityFacts{"text-input": true, "text-output": true},
+		"cap-src-1",
+		observedAt,
+	)
+	withImage := buildCapabilitySnapshot(
+		"provider-1",
+		"model-1",
+		128000,
+		nil,
+		nil,
+		runtimeCapabilityFacts{
+			"text-input":  true,
+			"text-output": true,
+			"image-input": true,
+		},
+		"cap-src-1",
+		observedAt,
+	)
 
-	first := computeSnapshotID("actor-1", "provider-1", "model-1", withoutImage, budget)
-	second := computeSnapshotID("actor-1", "provider-1", "model-1", withImage, budget)
+	first, err := computeSnapshotID("actor-1", "provider-1", "model-1", withoutImage, budget)
+	if err != nil {
+		t.Fatalf("hash snapshot without image: %v", err)
+	}
+	second, err := computeSnapshotID("actor-1", "provider-1", "model-1", withImage, budget)
+	if err != nil {
+		t.Fatalf("hash snapshot with image: %v", err)
+	}
 	if first == second {
 		t.Fatal("snapshot ID must change when model input capabilities change")
+	}
+}
+
+func TestRuntimeAdmissionSnapshotIDChangesWithCapabilitySourceVersion(t *testing.T) {
+	budget := defaultRuntimeBudget(128000)
+	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	facts := runtimeCapabilityFacts{"text-input": true, "text-output": true}
+	firstSnapshot := buildCapabilitySnapshot(
+		"provider-1", "model-1", 128000, nil, nil, facts, "cap-src-1", observedAt,
+	)
+	secondSnapshot := buildCapabilitySnapshot(
+		"provider-1", "model-1", 128000, nil, nil, facts, "cap-src-2", observedAt,
+	)
+
+	first, err := computeSnapshotID("actor-1", "provider-1", "model-1", firstSnapshot, budget)
+	if err != nil {
+		t.Fatalf("hash first snapshot: %v", err)
+	}
+	second, err := computeSnapshotID("actor-1", "provider-1", "model-1", secondSnapshot, budget)
+	if err != nil {
+		t.Fatalf("hash second snapshot: %v", err)
+	}
+	if first == second {
+		t.Fatal("snapshot ID must change when capability source version changes")
+	}
+}
+
+func TestRuntimeAdmissionDoesNotInferReasoningFromModelName(t *testing.T) {
+	snapshot := buildCapabilitySnapshot(
+		"provider-1",
+		"o3-reasoning-model",
+		128000,
+		nil,
+		nil,
+		runtimeCapabilityFacts{"text-input": true, "text-output": true},
+		"cap-src-explicit",
+		time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
+	)
+	if snapshot.GetRuntime().GetReasoning() {
+		t.Fatal("reasoning capability must not be inferred from the model name")
+	}
+}
+
+func TestRuntimeCapabilitySnapshotUsesCatalogProviderProtocol(t *testing.T) {
+	provider := &catalog.CatalogProvider{
+		ID:          "ollama",
+		Protocol:    "ollama",
+		RuntimeKind: "http",
+	}
+	snapshot := buildCapabilitySnapshot(
+		"ollama",
+		"local-model",
+		8192,
+		provider,
+		nil,
+		runtimeCapabilityFacts{"text-input": true, "text-output": true},
+		"cap-src-ollama",
+		time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
+	)
+	resolutions := runtimeCapabilityResolution(snapshot)
+	if resolutions["protocol"] !=
+		model.RuntimeCapabilityResolution_RUNTIME_CAPABILITY_RESOLUTION_NATIVE {
+		t.Fatalf("catalog protocol resolution = %s", resolutions["protocol"])
+	}
+	for _, resolution := range snapshot.GetResolution() {
+		if resolution.GetCapabilityId() == "protocol" &&
+			resolution.GetReasonCode() != "ollama" {
+			t.Fatalf("catalog protocol reason = %q, want ollama", resolution.GetReasonCode())
+		}
+	}
+}
+
+func TestDefaultRuntimeBudgetNeverExceedsSmallContextWindow(t *testing.T) {
+	for _, contextWindow := range []int32{2, 4096, 8192, 16383} {
+		budget := defaultRuntimeBudget(contextWindow)
+		total := budget.GetMaxInputTokens() + budget.GetMaxOutputTokens()
+		if total > uint64(contextWindow) || budget.GetMaxOutputTokens() == 0 {
+			t.Fatalf(
+				"context window %d produced input/output budget %d/%d",
+				contextWindow,
+				budget.GetMaxInputTokens(),
+				budget.GetMaxOutputTokens(),
+			)
+		}
+	}
+	if budget := defaultRuntimeBudget(0); budget.GetMaxInputTokens() == 0 ||
+		budget.GetMaxOutputTokens() == 0 {
+		t.Fatalf("unknown context window produced an unbounded zero budget: %+v", budget)
+	}
+}
+
+func TestResolveModelCapabilityFactsAppliesDatabaseOverrides(t *testing.T) {
+	catalogModel := &catalog.CatalogModel{
+		Type:            "chat",
+		ThinkingControl: "ark",
+		Capabilities:    []string{"streaming", "native-tools"},
+	}
+	databaseModel := &persistence.AgentModel{
+		CapabilitiesJSON: json.RawMessage(
+			`{"streaming":false,"vision":true,"parallel_tools":true}`,
+		),
+	}
+	facts, err := resolveModelCapabilityFacts(catalogModel, databaseModel)
+	if err != nil {
+		t.Fatalf("resolve capability facts: %v", err)
+	}
+	if facts["streaming"] ||
+		!facts["reasoning"] ||
+		!facts["image-input"] ||
+		!facts["parallel-tools"] ||
+		!facts["text-input"] ||
+		!facts["text-output"] {
+		t.Fatalf("database capability overrides were not applied: %+v", facts)
+	}
+}
+
+func TestRuntimeCapabilitySourceVersionUsesNormalizedFactsAndAuthorityVersions(t *testing.T) {
+	provider := &persistence.AgentProvider{Version: 3}
+	firstModel := &persistence.AgentModel{
+		Version:          7,
+		ContextWindow:    128000,
+		CapabilitiesJSON: json.RawMessage(`["vision","streaming"]`),
+	}
+	secondModel := &persistence.AgentModel{
+		Version:          7,
+		ContextWindow:    128000,
+		CapabilitiesJSON: json.RawMessage(`["streaming","vision"]`),
+	}
+	facts := runtimeCapabilityFacts{
+		"text-input":  true,
+		"text-output": true,
+		"image-input": true,
+		"streaming":   true,
+	}
+	budget := defaultRuntimeBudget(128000)
+
+	first, err := runtimeCapabilitySourceVersion(
+		nil,
+		nil,
+		provider,
+		firstModel,
+		facts,
+		128000,
+		budget,
+	)
+	if err != nil {
+		t.Fatalf("hash first capability source: %v", err)
+	}
+	second, err := runtimeCapabilitySourceVersion(
+		nil,
+		nil,
+		provider,
+		secondModel,
+		facts,
+		128000,
+		budget,
+	)
+	if err != nil {
+		t.Fatalf("hash reordered capability source: %v", err)
+	}
+	if first != second {
+		t.Fatalf("equivalent capability facts changed source version: %s != %s", first, second)
+	}
+
+	secondModel.Version++
+	changed, err := runtimeCapabilitySourceVersion(
+		nil,
+		nil,
+		provider,
+		secondModel,
+		facts,
+		128000,
+		budget,
+	)
+	if err != nil {
+		t.Fatalf("hash changed capability source: %v", err)
+	}
+	if first == changed {
+		t.Fatal("model authority version must change capability source version")
+	}
+}
+
+func TestRuntimeCapabilityResolutionClassifiesUnsupportedFacts(t *testing.T) {
+	snapshot := buildCapabilitySnapshot(
+		"provider-1",
+		"model-1",
+		128000,
+		nil,
+		nil,
+		runtimeCapabilityFacts{"text-input": true, "text-output": true},
+		"cap-src-1",
+		time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
+	)
+	resolutions := runtimeCapabilityResolution(snapshot)
+	if resolutions["text-input"] !=
+		model.RuntimeCapabilityResolution_RUNTIME_CAPABILITY_RESOLUTION_NATIVE {
+		t.Fatalf("text input resolution = %s", resolutions["text-input"])
+	}
+	if resolutions["image-input"] !=
+		model.RuntimeCapabilityResolution_RUNTIME_CAPABILITY_RESOLUTION_REJECTED {
+		t.Fatalf("image input resolution = %s", resolutions["image-input"])
+	}
+}
+
+func TestProviderAdvertisementRequiresImplementedProtocol(t *testing.T) {
+	for _, test := range []struct {
+		protocol string
+		want     bool
+	}{
+		{protocol: "openai-compatible", want: true},
+		{protocol: "openai", want: true},
+		{protocol: "anthropic", want: true},
+		{protocol: "ollama", want: true},
+		{protocol: "gemini", want: false},
+		{protocol: "cli", want: false},
+		{protocol: "", want: false},
+	} {
+		if got := ProviderRuntimeAdvertised("http", test.protocol); got != test.want {
+			t.Fatalf(
+				"provider protocol %q advertised=%v, want %v",
+				test.protocol,
+				got,
+				test.want,
+			)
+		}
+	}
+}
+
+func TestAdvertisedCatalogModelsDeclareRuntimeCapabilities(t *testing.T) {
+	for _, provider := range catalog.List() {
+		if !catalogProviderAdvertised(provider) {
+			continue
+		}
+		for _, catalogModel := range provider.Models {
+			if !catalogModel.Enabled || catalogModel.Type != "chat" {
+				continue
+			}
+			facts, err := resolveModelCapabilityFacts(&catalogModel, nil)
+			if err != nil {
+				t.Fatalf(
+					"resolve catalog capability facts for %s/%s: %v",
+					provider.ID,
+					catalogModel.ID,
+					err,
+				)
+			}
+			if len(catalogModel.Capabilities) == 0 ||
+				!facts["text-input"] ||
+				!facts["text-output"] {
+				t.Fatalf(
+					"advertised catalog model %s/%s lacks explicit text capability facts",
+					provider.ID,
+					catalogModel.ID,
+				)
+			}
+		}
 	}
 }
 
@@ -307,5 +674,36 @@ func TestRuntimeAdmissionListAvailableModelsExcludesUnconfigured(t *testing.T) {
 	}
 	if len(models) != 0 {
 		t.Fatalf("expected 0 models for unconfigured provider, got %d", len(models))
+	}
+}
+
+func TestRuntimeAdmissionListAvailableModelsAppliesDatabaseOverride(t *testing.T) {
+	restore := setupTestCatalog()
+	defer restore()
+	db := openAdmissionTestDB(t, "admission_list_database_override")
+
+	keyVaults, _ := json.Marshal(map[string]string{"api_key": "test-key"})
+	seedTestProvider(t, db, "actor-1", "test-provider", true, string(keyVaults))
+	seedTestModel(
+		t,
+		db,
+		"actor-1",
+		"test-provider",
+		"test-model",
+		false,
+		64000,
+		`{"streaming":true}`,
+	)
+
+	resolver := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
+	models, err := resolver.ListAvailableModels(context.Background(), "actor-1")
+	if err != nil {
+		t.Fatalf("list available models: %v", err)
+	}
+	if len(models) != 0 {
+		t.Fatalf("disabled database override left catalog model selectable: %+v", models)
 	}
 }

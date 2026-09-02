@@ -11,12 +11,13 @@ import (
 var defaultCatalogYAML []byte
 
 type CatalogModel struct {
-	ID              string `yaml:"id"`
-	DisplayName     string `yaml:"display_name"`
-	Type            string `yaml:"type"`
-	Enabled         bool   `yaml:"enabled"`
-	ContextWindow   int    `yaml:"context_window"`
-	ThinkingControl string `yaml:"thinking_control"`
+	ID              string   `yaml:"id"`
+	DisplayName     string   `yaml:"display_name"`
+	Type            string   `yaml:"type"`
+	Enabled         bool     `yaml:"enabled"`
+	ContextWindow   int      `yaml:"context_window"`
+	ThinkingControl string   `yaml:"thinking_control"`
+	Capabilities    []string `yaml:"capabilities"`
 }
 
 type CatalogProvider struct {

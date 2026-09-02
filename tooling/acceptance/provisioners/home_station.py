@@ -73,7 +73,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 ) from error
             refs.append(credential.source_ref)
             values[credential.id] = value
-        return tuple(refs), values
+        return self._remember_resolved_credentials(tuple(refs), values)
 
     def _clients(
         self,
@@ -261,6 +261,17 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     "in the approved profile"
                 ),
                 resource="credential-ref:profile:CHAT_NATIVE_DEMO_PASSWORD",
+            )
+        provider_api_key = profile_env.get("PT_AGENT_PROVIDER_API_KEY", "")
+        if provider_api_key:
+            values = {
+                f"prepared-{index}": value
+                for index, value in enumerate(self.resolved_credential_values)
+            }
+            values["PT_AGENT_PROVIDER_API_KEY"] = provider_api_key
+            self._remember_resolved_credentials(
+                AGENT_V2_CREDENTIAL_REFS,
+                values,
             )
         _, _, actor_ref = produce_actor_manifest(
             environment_id=self.environment_id,

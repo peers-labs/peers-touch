@@ -75,6 +75,8 @@ type ToolBatchProposal struct {
 	Iteration                 uint32
 	MaxRetries                uint32
 	ContextWindowSize         uint32
+	DelegationDepth           uint32
+	RestrictedTools           []string
 	TaskID                    string
 	StepID                    string
 	ClientCapabilitySessionID string
@@ -527,6 +529,10 @@ func (s *ToolDispatchService) proposeBatch(
 		if deadline.IsZero() {
 			deadline = now.Add(defaultToolDeadline)
 		}
+		restrictedToolsJSON, err := marshalRestrictedTools(proposal.RestrictedTools)
+		if err != nil {
+			return internalToolError("encode restricted tool set", err)
+		}
 
 		batch := &persistence.ToolBatch{
 			ID:                  proposal.ToolBatchID,
@@ -543,6 +549,8 @@ func (s *ToolDispatchService) proposeBatch(
 			Iteration:           proposal.Iteration,
 			MaxRetries:          proposal.MaxRetries,
 			ContextWindowSize:   proposal.ContextWindowSize,
+			DelegationDepth:     proposal.DelegationDepth,
+			RestrictedToolsJSON: restrictedToolsJSON,
 			TaskID:              proposal.TaskID,
 			StepID:              proposal.StepID,
 			CapabilitySessionID: proposal.ClientCapabilitySessionID,
@@ -660,6 +668,10 @@ func loadToolBatchProposalReplayTx(
 	proposal ToolBatchProposal,
 	batch *persistence.ToolBatch,
 ) ([]ProposalDecision, error) {
+	restrictedToolsJSON, err := marshalRestrictedTools(proposal.RestrictedTools)
+	if err != nil {
+		return nil, internalToolError("encode restricted tool set replay", err)
+	}
 	if batch == nil ||
 		batch.ID != proposal.ToolBatchID ||
 		batch.ActorID != proposal.ActorID ||
@@ -675,6 +687,8 @@ func loadToolBatchProposalReplayTx(
 		batch.Iteration != proposal.Iteration ||
 		batch.MaxRetries != proposal.MaxRetries ||
 		batch.ContextWindowSize != proposal.ContextWindowSize ||
+		batch.DelegationDepth != proposal.DelegationDepth ||
+		string(batch.RestrictedToolsJSON) != string(restrictedToolsJSON) ||
 		batch.TaskID != proposal.TaskID ||
 		batch.StepID != proposal.StepID ||
 		batch.CapabilitySessionID != proposal.ClientCapabilitySessionID ||
@@ -715,6 +729,13 @@ func loadToolBatchProposalReplayTx(
 		decisions = append(decisions, proposalDecisionFromRecord(record))
 	}
 	return decisions, nil
+}
+
+func marshalRestrictedTools(values []string) ([]byte, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(values)
 }
 
 func toolProposalMatchesRecord(

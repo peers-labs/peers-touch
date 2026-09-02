@@ -511,6 +511,8 @@ func TestToolDispatchServiceProposeAuthorizedBatchFailsClosed(t *testing.T) {
 
 func TestTurnServiceExecutesAuthorizedStationToolExactlyOnce(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
+	restore := setupTestCatalog()
+	t.Cleanup(restore)
 	proposal := fixture.authorizedProposalForOwner(
 		t,
 		"station-auto",
@@ -519,6 +521,10 @@ func TestTurnServiceExecutesAuthorizedStationToolExactlyOnce(t *testing.T) {
 		true,
 		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION,
 	)
+	proposal.Provider = "test-provider"
+	proposal.Model = "test-model"
+	proposal.DelegationDepth = 2
+	resolver := fixture.seedPinnedRuntimeAuthority(t, proposal, 2)
 	if _, err := fixture.service.ProposeAuthorizedBatch(
 		context.Background(),
 		proposal,
@@ -541,8 +547,9 @@ func TestTurnServiceExecutesAuthorizedStationToolExactlyOnce(t *testing.T) {
 		},
 	})
 	turnService := &TurnService{
-		toolDispatch: fixture.service,
-		toolRegistry: registry,
+		toolDispatch:      fixture.service,
+		toolRegistry:      registry,
+		admissionResolver: resolver,
 	}
 	if err := turnService.executeReadyStationTools(context.Background()); err != nil {
 		t.Fatalf("execute Station tool: %v", err)
@@ -611,8 +618,165 @@ func TestTurnServiceExecutesAuthorizedStationToolExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestTurnServiceRejectsStaleStationToolBeforeHandlerExecution(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	restore := setupTestCatalog()
+	t.Cleanup(restore)
+	proposal := fixture.authorizedProposalForOwner(
+		t,
+		"station-stale",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION,
+	)
+	proposal.Provider = "test-provider"
+	proposal.Model = "test-model"
+	proposal.DelegationDepth = 1
+	resolver := fixture.seedPinnedRuntimeAuthority(t, proposal, 1)
+	if _, err := fixture.service.ProposeAuthorizedBatch(
+		context.Background(),
+		proposal,
+	); err != nil {
+		t.Fatalf("propose Station tool: %v", err)
+	}
+	if err := fixture.db.Model(&persistence.AgentProvider{}).
+		Where("actor_ptid = ? AND name = ?", fixture.actorID, proposal.Provider).
+		Update("version", 2).Error; err != nil {
+		t.Fatalf("advance provider capability source: %v", err)
+	}
+
+	executionCount := 0
+	registry := NewToolRegistryService(nil, nil)
+	registry.Register(&domain.ToolDefinition{
+		Name:       proposal.Calls[0].ToolName,
+		JSONSchema: []byte(`{"type":"object"}`),
+		Handler: func(
+			context.Context,
+			*domain.ToolCallMeta,
+			json.RawMessage,
+		) (*domain.ToolResult, error) {
+			executionCount++
+			return &domain.ToolResult{Content: "unexpected"}, nil
+		},
+	})
+	turnService := &TurnService{
+		toolDispatch:      fixture.service,
+		toolRegistry:      registry,
+		admissionResolver: resolver,
+	}
+	if err := turnService.executeReadyStationTools(context.Background()); err == nil {
+		t.Fatal("expected stale Station tool authority rejection")
+	}
+	if executionCount != 0 {
+		t.Fatalf("stale Station tool executed handler %d times", executionCount)
+	}
+	var call persistence.ToolCall
+	if err := fixture.db.Where(
+		"tool_call_id = ?",
+		proposal.Calls[0].ToolCallID,
+	).First(&call).Error; err != nil {
+		t.Fatalf("load rejected Station tool call: %v", err)
+	}
+	if call.Status != persistence.ToolCallStatusFailed {
+		t.Fatalf("stale Station tool status = %q, want failed", call.Status)
+	}
+}
+
+func (f toolDispatchFixture) seedPinnedRuntimeAuthority(
+	t *testing.T,
+	proposal ToolBatchProposal,
+	delegationDepth uint32,
+) *RuntimeAdmissionResolver {
+	t.Helper()
+	if err := f.db.AutoMigrate(
+		&persistence.AgentProvider{},
+		&persistence.AgentModel{},
+		&persistence.AgentTurn{},
+	); err != nil {
+		t.Fatalf("migrate Station tool runtime authority: %v", err)
+	}
+	seedTestProvider(
+		t,
+		f.db,
+		f.actorID,
+		proposal.Provider,
+		true,
+		`{"api_key":"test-key"}`,
+	)
+	resolver := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
+	admission, err := resolver.Resolve(
+		context.Background(),
+		f.actorID,
+		proposal.Provider,
+		proposal.Model,
+	)
+	if err != nil {
+		t.Fatalf("resolve Station tool runtime authority: %v", err)
+	}
+	snapshot := newDirectRuntimeSnapshot(
+		admission,
+		"1",
+		domain.ThinkingModeDisabled,
+	)
+	encoded, err := persistence.MarshalRuntimeSnapshot(snapshot)
+	if err != nil {
+		t.Fatalf("encode Station tool runtime authority: %v", err)
+	}
+	snapshotHash, err := runtimeSnapshotHash(snapshot)
+	if err != nil {
+		t.Fatalf("hash Station tool runtime authority: %v", err)
+	}
+	conversation := &persistence.Conversation{
+		ID:        proposal.ConversationID,
+		AgentID:   proposal.AgentID,
+		Ptid:      f.actorID,
+		Title:     "Station tool authority",
+		Status:    "active",
+		CreatedAt: f.now,
+		UpdatedAt: f.now,
+	}
+	if err := f.db.Create(conversation).Error; err != nil {
+		t.Fatalf("seed Station tool conversation: %v", err)
+	}
+	if err := f.db.Create(&persistence.AgentTurn{
+		ID:             proposal.TurnID,
+		ConversationID: proposal.ConversationID,
+		AgentID:        proposal.AgentID,
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      f.now,
+	}).Error; err != nil {
+		t.Fatalf("seed Station tool turn: %v", err)
+	}
+	if err := f.db.Create(&persistence.TurnAttempt{
+		ID:                  proposal.AttemptID,
+		TurnID:              proposal.TurnID,
+		AttemptIndex:        1,
+		Status:              string(domain.TurnStatusWaitingLocalTool),
+		ReadinessSnapshotID: proposal.ReadinessSnapshotID,
+		RuntimeSnapshot:     encoded,
+		RuntimeSnapshotHash: snapshotHash,
+		StartedAt:           f.now,
+	}).Error; err != nil {
+		t.Fatalf("seed Station tool attempt: %v", err)
+	}
+	if proposal.DelegationDepth != delegationDepth {
+		t.Fatalf(
+			"Station tool delegation depth = %d, want %d",
+			proposal.DelegationDepth,
+			delegationDepth,
+		)
+	}
+	return resolver
+}
+
 func TestStationToolPolicyBlocksExecutionUntilApproved(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
+	restore := setupTestCatalog()
+	t.Cleanup(restore)
 	proposal := fixture.authorizedProposalForOwner(
 		t,
 		"station-manual",
@@ -621,6 +785,9 @@ func TestStationToolPolicyBlocksExecutionUntilApproved(t *testing.T) {
 		true,
 		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION,
 	)
+	proposal.Provider = "test-provider"
+	proposal.Model = "test-model"
+	resolver := fixture.seedPinnedRuntimeAuthority(t, proposal, 0)
 	decisions, err := fixture.service.ProposeAuthorizedBatch(
 		context.Background(),
 		proposal,
@@ -644,8 +811,9 @@ func TestStationToolPolicyBlocksExecutionUntilApproved(t *testing.T) {
 		},
 	})
 	turnService := &TurnService{
-		toolDispatch: fixture.service,
-		toolRegistry: registry,
+		toolDispatch:      fixture.service,
+		toolRegistry:      registry,
+		admissionResolver: resolver,
 	}
 	if err := turnService.executeReadyStationTools(context.Background()); err != nil {
 		t.Fatalf("execute unapproved Station tool: %v", err)
@@ -854,7 +1022,7 @@ func (f toolDispatchFixture) authorizedProposalForOwner(
 		ToolBatchID: "batch-" + suffix, ConversationID: "conversation-1", AgentID: binding.AgentID,
 		Provider: "provider-1", Model: "model-1", ThinkingMode: string(domain.ThinkingModeDisabled),
 		MaxRetries: 3, ContextWindowSize: 128000,
-		ClientCapabilitySessionID: f.session.GetCapabilitySessionId(), ReadinessSnapshotID: snapshotID,
+		ClientCapabilitySessionID: selectedSessionID, ReadinessSnapshotID: snapshotID,
 		Deadline: f.now.Add(time.Minute),
 		Calls: []AuthorizedToolProposal{{
 			ToolCallID: "tool-call-" + suffix, ToolName: toolName,
@@ -1659,6 +1827,11 @@ func TestTurnServiceProcessToolCallsPausesAfterDurableDispatch(t *testing.T) {
 		ClientCapabilitySessionID: fixture.session.GetCapabilitySessionId(),
 		AttemptID:                 proposal.AttemptID,
 		TurnID:                    proposal.TurnID,
+		RuntimeCapabilities: &model.RuntimeCapabilitySnapshot{
+			Agentic: &model.RuntimeAgenticCapabilities{NativeTools: true},
+		},
+		RestrictedTools: []string{"local_file_read"},
+		Depth:           2,
 	}
 	authorized, err := LoadAuthorizedCapabilitySet(
 		context.Background(),
@@ -1703,6 +1876,20 @@ func TestTurnServiceProcessToolCallsPausesAfterDurableDispatch(t *testing.T) {
 	if batch.CapabilitySessionID != fixture.session.GetCapabilitySessionId() {
 		t.Fatalf("capability session was not frozen on batch: %+v", batch)
 	}
+	if batch.DelegationDepth != uint32(config.Depth) {
+		t.Fatalf(
+			"delegation depth was not frozen on batch: got=%d want=%d",
+			batch.DelegationDepth,
+			config.Depth,
+		)
+	}
+	var restrictedTools []string
+	if err := json.Unmarshal(batch.RestrictedToolsJSON, &restrictedTools); err != nil {
+		t.Fatalf("decode frozen restricted tools: %v", err)
+	}
+	if len(restrictedTools) != 1 || restrictedTools[0] != "local_file_read" {
+		t.Fatalf("restricted tools were not frozen on batch: %v", restrictedTools)
+	}
 	var call persistence.ToolCall
 	if err := fixture.db.First(&call, "tool_batch_id = ?", batch.ID).Error; err != nil {
 		t.Fatalf("load governed tool call: %v", err)
@@ -1730,7 +1917,27 @@ func TestTurnServiceProcessToolCallsPausesAfterDurableDispatch(t *testing.T) {
 }
 
 func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
+	restore := setupTestCatalog()
+	defer restore()
 	fixture := newToolDispatchFixture(t)
+	if err := fixture.db.AutoMigrate(
+		&persistence.AgentProvider{},
+		&persistence.AgentModel{},
+	); err != nil {
+		t.Fatalf("migrate continuation runtime authority: %v", err)
+	}
+	seedTestProvider(
+		t,
+		fixture.db,
+		fixture.actorID,
+		"test-provider",
+		true,
+		`{"api_key":"test-key"}`,
+	)
+	admissionResolver := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
 	now := fixture.now
 	authority := fixture.authorizedProposal(
 		t,
@@ -1739,6 +1946,8 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
 		true,
 	)
+	authority.Provider = "test-provider"
+	authority.Model = "test-model"
 	conversation := &persistence.Conversation{
 		ID:        "conversation-1",
 		AgentID:   "agent-1",
@@ -1758,14 +1967,32 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 		StartedAt:      now,
 	}
 	pinnedBudget := &model.RuntimeBudget{
+		MaxAttempts:           3,
 		MaxToolCalls:          7,
 		MaxIdenticalToolCalls: 2,
 	}
-	runtimeSnapshot, err := persistence.MarshalRuntimeSnapshot(&model.RuntimeSnapshot{
-		Budget: pinnedBudget,
-	})
+	admission, err := admissionResolver.Resolve(
+		context.Background(),
+		fixture.actorID,
+		authority.Provider,
+		authority.Model,
+	)
+	if err != nil {
+		t.Fatalf("resolve continuation runtime authority: %v", err)
+	}
+	pinnedSnapshot := newDirectRuntimeSnapshot(
+		admission,
+		"1",
+		domain.ThinkingModeDisabled,
+	)
+	pinnedSnapshot.Budget = pinnedBudget
+	runtimeSnapshot, err := persistence.MarshalRuntimeSnapshot(pinnedSnapshot)
 	if err != nil {
 		t.Fatalf("encode pinned runtime budget: %v", err)
+	}
+	snapshotHash, err := runtimeSnapshotHash(pinnedSnapshot)
+	if err != nil {
+		t.Fatalf("hash pinned runtime snapshot: %v", err)
 	}
 	attempt := &persistence.TurnAttempt{
 		ID:                  "attempt-1",
@@ -1774,6 +2001,7 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 		Status:              string(domain.TurnStatusWaitingLocalTool),
 		ReadinessSnapshotID: authority.ReadinessSnapshotID,
 		RuntimeSnapshot:     runtimeSnapshot,
+		RuntimeSnapshotHash: snapshotHash,
 		StartedAt:           now,
 	}
 	if err := fixture.db.Create(conversation).Error; err != nil {
@@ -1835,8 +2063,9 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 	resumedThinkingMode := domain.ThinkingMode("")
 	var resumedBudget *model.RuntimeBudget
 	service := &TurnService{
-		toolDispatch: fixture.service,
-		nudgeState:   domain.NewNudgeState(),
+		toolDispatch:      fixture.service,
+		nudgeState:        domain.NewNudgeState(),
+		admissionResolver: admissionResolver,
 		resumeProviderCall: func(
 			_ context.Context,
 			config *TurnConfig,
@@ -1897,10 +2126,28 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 }
 
 func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing.T) {
+	restore := setupTestCatalog()
+	defer restore()
 	fixture := newToolDispatchFixture(t)
-	if err := fixture.db.AutoMigrate(&persistence.TaskRun{}); err != nil {
+	if err := fixture.db.AutoMigrate(
+		&persistence.TaskRun{},
+		&persistence.AgentProvider{},
+		&persistence.AgentModel{},
+	); err != nil {
 		t.Fatalf("migrate chat task run: %v", err)
 	}
+	seedTestProvider(
+		t,
+		fixture.db,
+		fixture.actorID,
+		"test-provider",
+		true,
+		`{"api_key":"test-key"}`,
+	)
+	admissionResolver := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
 
 	authority := fixture.authorizedProposal(
 		t,
@@ -1909,6 +2156,8 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
 		true,
 	)
+	authority.Provider = "test-provider"
+	authority.Model = "test-model"
 	authority.TaskID = "task-lifecycle-cancel"
 	authority.StepID = "step-lifecycle-cancel"
 	conversation := &persistence.Conversation{
@@ -1929,11 +2178,33 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		Status:         string(domain.TurnStatusWaitingLocalTool),
 		StartedAt:      fixture.now,
 	}
-	runtimeSnapshot, err := persistence.MarshalRuntimeSnapshot(&model.RuntimeSnapshot{
-		Budget: &model.RuntimeBudget{MaxToolCalls: 7, MaxIdenticalToolCalls: 2},
-	})
+	pinnedBudget := &model.RuntimeBudget{
+		MaxAttempts:           3,
+		MaxToolCalls:          7,
+		MaxIdenticalToolCalls: 2,
+	}
+	admission, err := admissionResolver.Resolve(
+		context.Background(),
+		fixture.actorID,
+		authority.Provider,
+		authority.Model,
+	)
+	if err != nil {
+		t.Fatalf("resolve lifecycle runtime authority: %v", err)
+	}
+	pinnedSnapshot := newDirectRuntimeSnapshot(
+		admission,
+		"1",
+		domain.ThinkingModeDisabled,
+	)
+	pinnedSnapshot.Budget = pinnedBudget
+	runtimeSnapshot, err := persistence.MarshalRuntimeSnapshot(pinnedSnapshot)
 	if err != nil {
 		t.Fatalf("encode runtime snapshot: %v", err)
+	}
+	snapshotHash, err := runtimeSnapshotHash(pinnedSnapshot)
+	if err != nil {
+		t.Fatalf("hash runtime snapshot: %v", err)
 	}
 	attempt := &persistence.TurnAttempt{
 		ID:                  authority.AttemptID,
@@ -1942,13 +2213,14 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		Status:              string(domain.TurnStatusWaitingLocalTool),
 		ReadinessSnapshotID: authority.ReadinessSnapshotID,
 		RuntimeSnapshot:     runtimeSnapshot,
+		RuntimeSnapshotHash: snapshotHash,
 		StartedAt:           fixture.now,
 	}
 	task := &persistence.TaskRun{
 		TaskID:         authority.TaskID,
 		Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		OwnerActorID:   fixture.actorID,
+		OwnerActorPTID: fixture.actorID,
 		ConversationID: authority.ConversationID,
 		CreatedAt:      fixture.now,
 		StartedAt:      fixture.now,
@@ -2011,8 +2283,9 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 
 	providerStarted := make(chan struct{})
 	service := &TurnService{
-		toolDispatch: fixture.service,
-		nudgeState:   domain.NewNudgeState(),
+		toolDispatch:      fixture.service,
+		nudgeState:        domain.NewNudgeState(),
+		admissionResolver: admissionResolver,
 		resumeProviderCall: func(
 			ctx context.Context,
 			_ *TurnConfig,
@@ -2034,7 +2307,11 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 	}) {
 		t.Fatal("continuation worker was rejected before shutdown")
 	}
-	<-providerStarted
+	select {
+	case <-providerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("continuation provider did not start")
+	}
 	stopCtx, cancelStop := context.WithTimeout(context.Background(), time.Second)
 	defer cancelStop()
 	if err := service.StopExecutionLifecycle(stopCtx); err != nil {
@@ -2124,7 +2401,7 @@ func TestChatTaskServicePreservesDurableToolContinuation(t *testing.T) {
 			TaskID:         steps[0].TaskID,
 			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-			OwnerActorID:   fixture.actorID,
+			OwnerActorPTID: fixture.actorID,
 			ConversationID: "conversation-waiting-receipt",
 			CreatedAt:      fixture.now,
 			StartedAt:      fixture.now,
@@ -2134,7 +2411,7 @@ func TestChatTaskServicePreservesDurableToolContinuation(t *testing.T) {
 			TaskID:         steps[1].TaskID,
 			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-			OwnerActorID:   fixture.actorID,
+			OwnerActorPTID: fixture.actorID,
 			ConversationID: "conversation-ready-continuation",
 			CreatedAt:      fixture.now,
 			StartedAt:      fixture.now,
@@ -2144,7 +2421,7 @@ func TestChatTaskServicePreservesDurableToolContinuation(t *testing.T) {
 			TaskID:         steps[2].TaskID,
 			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-			OwnerActorID:   fixture.actorID,
+			OwnerActorPTID: fixture.actorID,
 			ConversationID: "conversation-reconciliation-required",
 			CreatedAt:      fixture.now,
 			StartedAt:      fixture.now,

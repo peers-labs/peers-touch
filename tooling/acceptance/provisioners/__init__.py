@@ -4,6 +4,7 @@ from tooling.acceptance.core import (
     EnvironmentContract,
     EnvironmentProvisioner,
     ProvisioningError,
+    RuntimeCellLifecycle,
 )
 
 from .home_station import HomeStationProvisioner
@@ -29,10 +30,17 @@ def get_provisioner(contract: EnvironmentContract) -> EnvironmentProvisioner:
     return provisioner_class(contract)
 
 
+def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
+    raise ProvisioningError(
+        f"runtime-cell lifecycle is not implemented for {cell_id!r}"
+    )
+
+
 __all__ = [
     "HomeStationProvisioner",
     "LocalDesktopGatewayProvisioner",
     "MobileNativeProvisioner",
     "MobileSimulatorProvisioner",
     "get_provisioner",
+    "get_runtime_cell_lifecycle",
 ]

@@ -11,6 +11,7 @@ type AgentTurn struct {
 	AdmissionPayloadHash string     `gorm:"not null;type:varchar(64);default:''"`
 	UserInput            *string    `gorm:"type:text"`
 	FinalResponse        *string    `gorm:"type:text"`
+	ProviderAttemptCount uint32     `gorm:"not null;default:0"`
 	ToolIterations       int        `gorm:"not null;default:0"`
 	Status               string     `gorm:"not null;type:varchar(20);default:'running'"`
 	TerminalReason       string     `gorm:"not null;type:varchar(100);default:''"`

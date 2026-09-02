@@ -86,6 +86,10 @@ export function markLocalIdentityAction(): void {
   localIdentityActionPending = true;
 }
 
+export function clearLocalIdentityAction(): void {
+  localIdentityActionPending = false;
+}
+
 let installed = false;
 
 const DEBUG_FORCE_RELOAD =

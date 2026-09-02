@@ -136,6 +136,9 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 	}
 	if strings.TrimSpace(req.GetConversationId()) == "" && h.convService != nil {
 		ptid := subjectActorID(ctx)
+		if preflightErr := h.turnService.PreflightTurn(ctx, ptid, req); preflightErr != nil {
+			return nil, toHandlerError(preflightErr)
+		}
 		conv, err := h.convService.CreateConversation(ctx, req.GetAgentId(), ptid, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
 		if err != nil {
 			return nil, toHandlerError(err)
@@ -146,10 +149,8 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 		ptid := subjectActorID(ctx)
 		existing, getErr := h.convService.GetConversation(ctx, ptid, req.GetConversationId())
 		if getErr != nil || existing == nil {
-			if len(req.GetAttachments()) > 0 {
-				if preflightErr := h.turnService.PreflightAttachments(ctx, ptid, req); preflightErr != nil {
-					return nil, toHandlerError(preflightErr)
-				}
+			if preflightErr := h.turnService.PreflightTurn(ctx, ptid, req); preflightErr != nil {
+				return nil, toHandlerError(preflightErr)
 			}
 			conv, createErr := h.convService.CreateConversationWithID(ctx, req.GetConversationId(), req.GetAgentId(), ptid, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
 			if createErr != nil {
@@ -303,6 +304,13 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 	}
 	if strings.TrimSpace(input.GetConversationId()) == "" && h.convService != nil {
 		ptid := subjectActorID(ctx)
+		if preflightErr := h.turnService.PreflightTurn(ctx, ptid, &input); preflightErr != nil {
+			_ = writeTurnStreamEvent(resp, "error", map[string]any{
+				"type":  "error",
+				"error": preflightErr.Error(),
+			})
+			return nil
+		}
 		conv, err := h.convService.CreateConversation(ctx, input.GetAgentId(), ptid, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
 		if err != nil {
 			_ = writeTurnStreamEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
@@ -314,14 +322,12 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		ptid := subjectActorID(ctx)
 		existing, getErr := h.convService.GetConversation(ctx, ptid, input.GetConversationId())
 		if getErr != nil || existing == nil {
-			if len(input.GetAttachments()) > 0 {
-				if preflightErr := h.turnService.PreflightAttachments(ctx, ptid, &input); preflightErr != nil {
-					_ = writeTurnStreamEvent(resp, "error", map[string]any{
-						"type":  "error",
-						"error": preflightErr.Error(),
-					})
-					return nil
-				}
+			if preflightErr := h.turnService.PreflightTurn(ctx, ptid, &input); preflightErr != nil {
+				_ = writeTurnStreamEvent(resp, "error", map[string]any{
+					"type":  "error",
+					"error": preflightErr.Error(),
+				})
+				return nil
 			}
 			conv, err := h.convService.CreateConversationWithID(ctx, input.GetConversationId(), input.GetAgentId(), ptid, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
 			if err != nil {

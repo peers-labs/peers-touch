@@ -69,6 +69,17 @@ class SensitiveKeyTests(unittest.TestCase):
             "public_key",
             "publicKeys",
             "authorization_url_ref",
+            "contextTokens",
+            "fencing_token",
+            "idempotencyKeyHash",
+            "localeKey",
+            "maxOutputTokens",
+            "process-port-secret-canary",
+            "runtimeTupleKey",
+            "scenarioKey",
+            "secretLeakCount",
+            "tokenAccountingPresent",
+            "tokenUsage",
         )
 
         for key in safe_keys:

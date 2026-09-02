@@ -17,7 +17,6 @@ import {
   type RecoveredTurnTerminal,
   useChatStore,
 } from '../store/chat';
-import { useSessionStore } from '../store/session';
 import { log } from '../utils/logger';
 
 const RECOVERY_STORAGE_KEY = 'agent-turn-recovery';
@@ -796,10 +795,7 @@ export const chatRuntime: RuntimeDescriptor = {
   async bootstrap(nextActorId) {
     if (!nextActorId) return;
     const bootstrapSequence = ++actorBootstrapSequence;
-    const sessionUser = useSessionStore.getState().currentUser;
-    const recoveryActorId = sessionUser?.actorId === nextActorId
-      ? sessionUser.ptid || nextActorId
-      : nextActorId;
+    const recoveryActorId = nextActorId;
     actorId = recoveryActorId;
     useAgentTurnRecoveryStore.getState().beginActor(recoveryActorId);
     const preservedFailedConversations = new Set(

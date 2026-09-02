@@ -28,6 +28,13 @@
       "paths": ["apps/desktop/src-tauri/src/application/chat"]
     },
     {
+      "id": "desktop-legacy-chat-provider-call",
+      "closures": ["C01", "C02"],
+      "disposition": "deleted-authority",
+      "pattern": "provider_remote::chat_completion",
+      "paths": ["apps/desktop/src-tauri/src/application/chat/mod.rs"]
+    },
+    {
       "id": "browser-one-shot-agent-turn",
       "closures": ["C05"],
       "disposition": "deleted-authority",
@@ -109,7 +116,7 @@
       "id": "desktop-split-replay-transport",
       "closures": ["C05"],
       "disposition": "deleted-authority",
-      "pattern": "replayAgentConversationEvents|agent_replay_conversation_events|replay_conversation_events_stream|replayStarted",
+      "pattern": "replayAgentConversationEvents|agent_replay_conversation_events|replay_conversation_events_stream",
       "paths": [
         "apps/desktop/src/services/desktop_api.ts",
         "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
@@ -170,6 +177,52 @@
         "apps/station/app/subserver/agent/service/provider_service.go",
         "apps/station/app/subserver/agent/service/turn_service.go",
         "apps/station/app/subserver/agent/service/orchestration_service.go"
+      ]
+    },
+    {
+      "id": "station-runtime-capability-name-inference",
+      "closures": ["C06"],
+      "disposition": "deleted-authority",
+      "pattern": "strings\\.Contains\\(strings\\.ToLower\\(modelID\\)|station-admission-resolver|SourceVersion:\\s*\"v1\"|dbModels,\\s*_",
+      "paths": [
+        "apps/station/app/subserver/agent/service/runtime_admission_service.go"
+      ]
+    },
+    {
+      "id": "station-provider-enabled-only-revalidation",
+      "closures": ["C06"],
+      "disposition": "deleted-authority",
+      "pattern": "revalidateProviderState",
+      "paths": [
+        "apps/station/app/subserver/agent/service/turn_service.go"
+      ]
+    },
+    {
+      "id": "station-ungoverned-memory-flush",
+      "closures": ["C06"],
+      "disposition": "deleted-authority",
+      "pattern": "FlushMemories|flushMaxIterations|parseFlushToolCalls|runKnowledgeSalvage|knowledgeSalvageMaxIterations",
+      "paths": [
+        "apps/station/app/subserver/agent/service/memory_service.go",
+        "apps/station/app/subserver/agent/service/turn_service.go"
+      ]
+    },
+    {
+      "id": "station-delegation-synthetic-conversation",
+      "closures": ["C06"],
+      "disposition": "deleted-authority",
+      "pattern": "ConversationID:\\s+fmt\\.Sprintf\\(\"%s_child_%s\"",
+      "paths": [
+        "apps/station/app/subserver/agent/service/turn_service.go"
+      ]
+    },
+    {
+      "id": "station-unguarded-follow-up-provider-call",
+      "closures": ["C06"],
+      "disposition": "deleted-authority",
+      "pattern": "GenerateFollowUpSuggestions",
+      "paths": [
+        "apps/station/app/subserver/agent/service/turn_service.go"
       ]
     },
     {

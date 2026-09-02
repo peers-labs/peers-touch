@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   }>,
   replayOnEvents: [] as Array<(event: StreamEvent) => void>,
   replayOnErrors: [] as Array<(error: Error) => void>,
-  sessionUser: null as { actorId: string; ptid?: string } | null,
   subscribers: new Map<string, Set<(payload: unknown) => void>>(),
 }));
 
@@ -89,12 +88,6 @@ vi.mock('../store/chat', () => ({
       applyRecoveredTurnEvent: mocks.applyRecoveredTurnEvent,
       reconcileRecoveredTurn: mocks.reconcileRecoveredTurn,
     }),
-  },
-}));
-
-vi.mock('../store/session', () => ({
-  useSessionStore: {
-    getState: () => ({ currentUser: mocks.sessionUser }),
   },
 }));
 
@@ -177,7 +170,6 @@ describe('chatRuntime Agent turn recovery', () => {
     mocks.replayInputs.length = 0;
     mocks.replayOnEvents.length = 0;
     mocks.replayOnErrors.length = 0;
-    mocks.sessionUser = null;
     mocks.subscribers.clear();
     chatRuntime.install();
   });
@@ -530,13 +522,9 @@ describe('chatRuntime Agent turn recovery', () => {
     expect(mocks.applyRecoveredTurnEvent).not.toHaveBeenCalled();
   });
 
-  it('uses canonical PTID when the session also carries an internal actor id', async () => {
-    mocks.sessionUser = {
-      actorId: 'internal-actor-42',
-      ptid: 'ptid:person:alice',
-    };
+  it('uses the canonical PTID supplied by the runtime kernel', async () => {
     mocks.readValue.mockResolvedValueOnce({});
-    await chatRuntime.bootstrap('internal-actor-42');
+    await chatRuntime.bootstrap('ptid:person:alice');
 
     eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
       streamId: 'stream-ptid',
