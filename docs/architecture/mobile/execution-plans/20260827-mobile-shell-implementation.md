@@ -1106,7 +1106,7 @@ Closure-level negative coverage:
 | W6D Recovery and degraded-state closure | pending | — |
 | W7 Native lifecycle and platform closure | pending | — |
 | W8 Atomic old-path deletion | pending | — |
-| W9 Native Acceptance and readiness audit | pending | — |
+| W9 Native Acceptance and readiness audit | in progress | `tmp/evidence/mobile-shell/W9/readiness-audit.md`; W9 audit executed 2026-09-03; 195 mobile gate unit tests PASS; identity-contract gate FAIL (DID alias in relationship_schema.go); all 14 plan gates UNPROVEN (no native run); acceptance runner blocked by missing `transports.ssh` module and `redact_text_with_values` function; 0/27 MS-PA and 0/11 MS-AG proven; readiness verdict UNPROVEN |
 
 ## 12. Risks And Escalation
 
