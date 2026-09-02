@@ -1616,6 +1616,14 @@ def acceptance_exit_code(
     return 0
 
 
+def candidate_artifacts_required(
+    result: dict[str, Any],
+    *,
+    candidate_mode: bool,
+) -> bool:
+    return candidate_mode and result.get("status") == "passed"
+
+
 def main() -> int:
     from tooling.acceptance.core import (
         EvidenceConflict,
@@ -2293,7 +2301,10 @@ def main() -> int:
                 result["sampleEmissionAllowed"] = False
 
             result = enrich_result_with_run_artifacts(result, gate_run)
-            if candidate_mode:
+            if candidate_artifacts_required(
+                result,
+                candidate_mode=candidate_mode,
+            ):
                 contract = load_agent_v2_contract()
                 emit_agent_v2_candidate_metadata(
                     gate_run,

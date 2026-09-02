@@ -4444,6 +4444,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   locale before every non-AS-F06 direct tuple and resolves receiver
   expectations through the Agent namespace. Source identity, redaction, and
   cleanup passed; runtime comparison remains pending.
+- Exact-source preflight
+  `20260902T224210349678Z-27b40c6908c8231bd6ed6e43bc94ce3c`
+  on `d2f93f9072b7c0e2175d625724c9f9cc77b95a51` verified the clean
+  local/Station commit, workspace, protocol, and remote profile `two`
+  identities, then rejected `station-two:18080` before fixture mutation because
+  it is a protected non-disposable target. Cleanup passed. Candidate mode
+  incorrectly rewrote that provisioning `BLOCKED` result to `FAILED` while
+  checking roles that cannot exist before product execution; the local runner
+  correction now preserves `BLOCKED / UNPROVEN` and performs candidate-role
+  validation only after a passed Gate. G-F remains `PARTIAL / UNPROVEN`
+  pending the replacement checkpoint and the same non-destructive preflight.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

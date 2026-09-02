@@ -2535,6 +2535,30 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(report["proofStatus"], "UNPROVEN")
         self.assertEqual(module.acceptance_exit_code(report), 2)
 
+    def test_candidate_artifacts_are_required_only_after_gate_success(self) -> None:
+        module = load_module()
+
+        self.assertTrue(
+            module.candidate_artifacts_required(
+                {"status": "passed"},
+                candidate_mode=True,
+            )
+        )
+        for status in ("blocked", "failed", "dry-run"):
+            with self.subTest(status=status):
+                self.assertFalse(
+                    module.candidate_artifacts_required(
+                        {"status": status},
+                        candidate_mode=True,
+                    )
+                )
+        self.assertFalse(
+            module.candidate_artifacts_required(
+                {"status": "passed"},
+                candidate_mode=False,
+            )
+        )
+
     def test_unexpected_provisioning_error_is_structured_failed_result(self) -> None:
         module = load_module()
         result = module.provisioning_failure_result(
