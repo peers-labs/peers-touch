@@ -24,7 +24,6 @@ interface NotificationStore {
   nextCursor: string;
   pollTimer: ReturnType<typeof setInterval> | null;
 
-  reset: () => void;
   loadNotifications: () => Promise<void>;
   loadMore: () => Promise<void>;
   refreshUnreadCounts: () => Promise<void>;
@@ -35,36 +34,23 @@ interface NotificationStore {
   stopPolling: () => void;
 }
 
-const initialNotificationState = {
-  notifications: [] as NotificationData[],
+export const useNotificationStore = createDesktopStore<NotificationStore>('notification', (set, get) => ({
+  notifications: [],
   unreadTotal: 0,
-  unreadByCategory: {} as Record<number, number>,
+  unreadByCategory: {},
   loading: false,
   hasMore: false,
   nextCursor: '',
-  pollTimer: null as ReturnType<typeof setInterval> | null,
-};
-
-export const useNotificationStore = createDesktopStore<NotificationStore>('notification', (set, get) => ({
-  ...initialNotificationState,
-
-  reset: () => {
-    const { pollTimer } = get();
-    if (pollTimer) clearInterval(pollTimer);
-    set({ ...initialNotificationState });
-  },
+  pollTimer: null,
 
   loadNotifications: async () => {
-    const actorPtid = currentAuthenticatedActorPtid();
-    if (!actorPtid) {
+    if (!currentAuthenticatedActorPtid()) {
       set({ loading: false });
       return;
     }
     set({ loading: true });
     try {
       const resp = await api.notificationList(undefined, undefined, undefined, 20);
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
-
       set({
         notifications: (resp.notifications || []).slice(0, MAX_ITEMS),
         unreadTotal: resp.unreadCount || 0,
@@ -73,7 +59,6 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
         loading: false,
       });
     } catch (err) {
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
       if (isUnauthorizedError(err)) {
         set({ loading: false });
         return;
@@ -84,16 +69,13 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
   },
 
   loadMore: async () => {
-    const actorPtid = currentAuthenticatedActorPtid();
-    if (!actorPtid) return;
+    if (!currentAuthenticatedActorPtid()) return;
     const { nextCursor, loading, hasMore } = get();
     if (loading || !hasMore || !nextCursor) return;
 
     set({ loading: true });
     try {
       const resp = await api.notificationList(undefined, undefined, nextCursor, 20);
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
-
       set((prev) => ({
         notifications: mergeChatNotifications(prev.notifications, resp.notifications || [], {
           resolveCreatedAt: notificationCreatedAtMs,
@@ -104,7 +86,6 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
         loading: false,
       }));
     } catch (err) {
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
       if (isUnauthorizedError(err)) {
         set({ loading: false });
         return;
@@ -115,51 +96,40 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
   },
 
   refreshUnreadCounts: async () => {
-    const actorPtid = currentAuthenticatedActorPtid();
-    if (!actorPtid) {
+    if (!currentAuthenticatedActorPtid()) {
       set({ unreadTotal: 0, unreadByCategory: {} });
       return;
     }
     try {
       const resp: NotificationUnreadCountsResponse = await api.notificationUnreadCounts();
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
-
       set({
         unreadTotal: resp.total || 0,
         unreadByCategory: resp.byCategory || {},
       });
     } catch (err) {
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
       if (isUnauthorizedError(err)) return;
       // Silently ignore — will retry on next poll
     }
   },
 
   markRead: async (ids: string[]) => {
-    const actorPtid = currentAuthenticatedActorPtid();
-    if (!actorPtid) return;
+    if (!currentAuthenticatedActorPtid()) return;
     try {
       await api.notificationMarkRead(ids);
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
-
       set((prev) => ({
         notifications: applyChatNotificationsRead(prev.notifications, ids, NOTIFICATION_STATUS_READ, new Date().toISOString()),
         unreadTotal: Math.max(0, prev.unreadTotal - countUnreadTargets(prev.notifications, ids)),
       }));
     } catch (err) {
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
       if (isUnauthorizedError(err)) return;
       log.error('notification', 'Failed to mark notifications read', err);
     }
   },
 
   markAllRead: async (category?: number) => {
-    const actorPtid = currentAuthenticatedActorPtid();
-    if (!actorPtid) return;
+    if (!currentAuthenticatedActorPtid()) return;
     try {
       await api.notificationMarkAllRead(category);
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
-
       set((prev) => ({
         notifications: applyAllChatNotificationsRead(
           prev.notifications,
@@ -173,25 +143,20 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
           : {},
       }));
     } catch (err) {
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
       if (isUnauthorizedError(err)) return;
       log.error('notification', 'Failed to mark all notifications read', err);
     }
   },
 
   deleteNotifications: async (ids: string[]) => {
-    const actorPtid = currentAuthenticatedActorPtid();
-    if (!actorPtid) return;
+    if (!currentAuthenticatedActorPtid()) return;
     try {
       await api.notificationDelete(ids);
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
-
       set((prev) => ({
         notifications: deleteChatNotifications(prev.notifications, ids),
       }));
-      void get().refreshUnreadCounts();
+      get().refreshUnreadCounts();
     } catch (err) {
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
       if (isUnauthorizedError(err)) return;
       log.error('notification', 'Failed to delete notifications', err);
     }
