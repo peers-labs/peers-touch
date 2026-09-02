@@ -1,0 +1,103 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const selectedAgent = vi.hoisted(() => ({
+  id: 'agent-canonical-id',
+  name: 'Agent Display Name',
+}));
+
+const agentState = vi.hoisted(() => ({
+  agents: [selectedAgent],
+  selectedAgent: selectedAgent.name,
+}));
+
+const currentSession = vi.hoisted(() => ({
+  id: 'current-session',
+  key: 'current-session',
+  agent_name: selectedAgent.id,
+  title: 'Current session',
+  message_count: 1,
+  created_at: '2026-08-28T00:00:00.000Z',
+  updated_at: '2026-08-28T00:00:00.000Z',
+}));
+
+const firstTopic = vi.hoisted(() => ({
+  id: 'first-topic',
+  key: 'first-topic',
+  agent_name: selectedAgent.id,
+  title: 'First topic',
+  message_count: 0,
+  created_at: '2026-08-27T00:00:00.000Z',
+  updated_at: '2026-08-27T00:00:00.000Z',
+  titleState: 'manual' as const,
+}));
+
+const loadTopicsForAgent = vi.hoisted(() => vi.fn());
+const mergeSessions = vi.hoisted(() => vi.fn());
+const bootstrapSession = vi.hoisted(() => vi.fn());
+const syncTurnQueue = vi.hoisted(() => vi.fn());
+const selectSession = vi.hoisted(() => vi.fn());
+
+vi.mock('../store/agent', () => ({
+  useAgentStore: {
+    getState: () => agentState,
+    subscribe: vi.fn(),
+  },
+}));
+
+vi.mock('../store/agentTopics', () => ({
+  useAgentTopicStore: {
+    getState: () => ({
+      loadTopicsForAgent,
+      resetProjection: vi.fn(),
+      upsertTopics: vi.fn(),
+    }),
+  },
+}));
+
+vi.mock('../store/chat', () => ({
+  useChatStore: {
+    getState: () => ({
+      sessions: [currentSession],
+      currentSessionKey: currentSession.key,
+      mergeSessions,
+      bootstrapSession,
+      syncTurnQueue,
+      selectSession,
+      newSession: vi.fn(),
+    }),
+  },
+}));
+
+vi.mock('../store/sessionGroups', () => ({
+  useSessionGroupStore: {
+    getState: () => ({ loadGroups: vi.fn() }),
+  },
+}));
+
+vi.mock('../utils/logger', () => ({
+  log: {
+    info: vi.fn(),
+  },
+}));
+
+import { agentTopicRuntime } from './agentTopicRuntime';
+
+describe('agentTopicRuntime', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    loadTopicsForAgent.mockResolvedValue([firstTopic]);
+    bootstrapSession.mockResolvedValue(undefined);
+    syncTurnQueue.mockResolvedValue(undefined);
+    selectSession.mockResolvedValue(undefined);
+  });
+
+  it('preserves and synchronizes the current canonical Agent session during reconcile', async () => {
+    await agentTopicRuntime.reconcile?.('test');
+
+    expect(loadTopicsForAgent).toHaveBeenCalledWith(selectedAgent.id, 'test');
+    expect(mergeSessions).toHaveBeenCalledWith([firstTopic]);
+    expect(bootstrapSession).toHaveBeenCalledOnce();
+    expect(syncTurnQueue).toHaveBeenCalledWith(currentSession.key);
+    expect(selectSession).not.toHaveBeenCalled();
+  });
+});

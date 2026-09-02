@@ -13,6 +13,8 @@
 
 import { EVENT } from '../kernel/events/catalog';
 import { eventBus } from '../kernel/events/bus';
+import { isBrowserGatewayRuntime } from '../kernel/gateway';
+import { log } from '../utils/logger';
 import type {
   SessionRevokedPayload,
   SessionRevokedReason,
@@ -23,6 +25,10 @@ const SESSION_KICKED_EVENT = 'auth:session-kicked';
 interface RustKickedPayload {
   reason?: 'takeover' | 'revoked' | string;
   actor_ptid?: string | null;
+  details?: {
+    device_type?: string | null;
+    [key: string]: unknown;
+  } | null;
 }
 
 function normaliseReason(reason: string | undefined): SessionRevokedReason {
@@ -59,6 +65,22 @@ export async function installSessionKickBridge(): Promise<() => void> {
     const handle = await mod.listen<RustKickedPayload>(
       SESSION_KICKED_EVENT,
       (event) => {
+        // MCA-D19 multi-device: If Station's revocation response specifies a
+        // target device_type that differs from the current client, skip the
+        // revocation. This prevents a browser login from kicking the native
+        // client when multi-device sessions are enabled.
+        const targetDeviceType = event.payload?.details?.device_type ?? null;
+        if (targetDeviceType) {
+          const currentDeviceType = isBrowserGatewayRuntime() ? 'desktop-browser' : 'desktop-native';
+          if (targetDeviceType !== currentDeviceType) {
+            log.info('sessionKick', 'ignoring session-kicked for different device type', {
+              targetDeviceType,
+              currentDeviceType,
+            });
+            return;
+          }
+        }
+
         const reason = normaliseReason(event.payload?.reason);
         const payload: SessionRevokedPayload = { reason };
         eventBus.publish(EVENT.AUTH_SESSION_REVOKED, payload);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tag } from '@lobehub/ui';
 import { theme } from 'antd';
@@ -13,8 +13,8 @@ import {
   Workflow,
 } from 'lucide-react';
 import type { ToolCallInfo, DelegationTaskInfo } from '../../store/chat';
-import { useChatStore } from '../../store/chat';
 import { usePortalStore } from '../../store/portal';
+import { logToolDecisionFailure, submitAgentToolDecision, toolRuntime } from '../../runtimes/toolRuntime';
 import { useTranslation } from 'react-i18next';
 
 // --- Delegation helpers ---
@@ -91,12 +91,50 @@ export function DelegationResultsBlock({ results }: { results: DelegationTaskInf
 
 // --- Single tool call row ---
 
-export function ToolCallItem({ tool, messageId }: { tool: ToolCallInfo; messageId?: string }) {
+export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallInfo; messageId?: string }) {
   const [expanded, setExpanded] = useState(false);
+  const [submittingDecision, setSubmittingDecision] = useState(false);
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const decideToolApproval = useChatStore((state) => state.decideToolApproval);
+  const projection = useSyncExternalStore(
+    toolRuntime.subscribe,
+    () => toolRuntime.getProjection(sourceTool.id),
+    () => undefined,
+  );
+  const sourceIsTerminal = sourceTool.status === 'success' ||
+    sourceTool.status === 'error' ||
+    sourceTool.status === 'denied' ||
+    sourceTool.status === 'cancelled';
+  const useProjection = projection &&
+    !sourceIsTerminal &&
+    projection.decisionRevision >= (sourceTool.decisionRevision ?? 0);
+  const tool: ToolCallInfo = useProjection
+    ? {
+      ...sourceTool,
+      id: projection.toolCallId,
+      name: projection.toolName,
+      args: projection.arguments,
+      result: projection.result,
+      pending: projection.pending,
+      status: projection.status,
+      progress: projection.progress,
+      progressPct: projection.progressPct,
+      approvalId: projection.approvalId,
+      serverName: projection.serverName,
+      source: projection.source,
+      approvalActor: projection.approvalActor,
+      approvedAt: projection.decidedAt,
+      decisionId: projection.decisionId,
+      decisionRevision: projection.decisionRevision,
+      payloadHash: projection.payloadHash,
+      error: projection.error || projection.decisionErrorCode,
+      delegationResults: projection.delegationResults,
+    }
+    : sourceTool;
   const approvalRequired = tool.status === 'approval_required' && !!tool.approvalId;
+  const canSubmitDecision = approvalRequired &&
+    tool.decisionRevision !== undefined &&
+    !submittingDecision;
   const denied = tool.status === 'denied' || tool.status === 'error';
   const status = tool.status || (tool.pending ? 'pending' : 'success');
   const statusColor = status === 'success' || status === 'approved'
@@ -207,9 +245,13 @@ export function ToolCallItem({ tool, messageId }: { tool: ToolCallInfo; messageI
           {approvalRequired && tool.approvalId && (
             <Flexbox horizontal gap={8} style={{ marginBottom: 8 }}>
               <button
+                disabled={!canSubmitDecision}
                 onClick={(event) => {
                   event.stopPropagation();
-                  void decideToolApproval(tool.approvalId!, true);
+                  setSubmittingDecision(true);
+                  void submitAgentToolDecision(tool.id, true)
+                    .catch((error: unknown) => logToolDecisionFailure(tool.id, error))
+                    .finally(() => setSubmittingDecision(false));
                 }}
                 style={{
                   padding: '4px 10px',
@@ -224,9 +266,13 @@ export function ToolCallItem({ tool, messageId }: { tool: ToolCallInfo; messageI
                 {t('chat.message.toolCall.approve')}
               </button>
               <button
+                disabled={!canSubmitDecision}
                 onClick={(event) => {
                   event.stopPropagation();
-                  void decideToolApproval(tool.approvalId!, false);
+                  setSubmittingDecision(true);
+                  void submitAgentToolDecision(tool.id, false)
+                    .catch((error: unknown) => logToolDecisionFailure(tool.id, error))
+                    .finally(() => setSubmittingDecision(false));
                 }}
                 style={{
                   padding: '4px 10px',

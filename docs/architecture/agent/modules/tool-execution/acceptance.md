@@ -1,7 +1,9 @@
 # P1-M1: Tool Execution Runtime — Acceptance (S2/S4)
 
 > **Module**: P1-M1 Tool Execution Runtime
-> **Status**: complete (deterministic pass, functional pending GUI)
+> **Status**: superseded by `docs/architecture/agent/modern-chat-agent/acceptance-matrix.md`
+> **Historical note**: the local Web/Rust approval path documented below was
+> deleted by MCA-D19 G1-E and is not current product evidence.
 
 ---
 

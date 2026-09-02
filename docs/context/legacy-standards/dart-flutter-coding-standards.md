@@ -70,10 +70,10 @@ if (condition) doSomething();
 
 ```dart
 // ✅ CORRECT: Package imports for lib/ files
-import 'package:peers_touch_desktop/features/home/view/home_page.dart';
+import 'package:peers_touch_desktop/features<home>/home_page.dart';
 
 // ❌ WRONG: Relative imports
-import '../features/home/view/home_page.dart';
+import '../features<home>/home_page.dart';
 ```
 
 ### Deprecated APIs

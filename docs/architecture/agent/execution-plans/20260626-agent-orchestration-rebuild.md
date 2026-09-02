@@ -23,7 +23,7 @@
 ## 2. Worktree
 
 ```
-<workspace-root>/peers-ai-agent
+<repo-root>
 ```
 
 ---

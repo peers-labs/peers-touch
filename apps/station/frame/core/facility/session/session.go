@@ -197,3 +197,16 @@ func (m *Manager) CheckValid(ctx context.Context, sessionID string) (bool, strin
 func (m *Manager) CheckSessionValid(ctx context.Context, sessionID string) (bool, string) {
 	return m.CheckValid(ctx, sessionID)
 }
+
+// ResolveSessionDeviceType satisfies coreauth.SessionDeviceTypeResolver.
+// It returns the device_type stored on the session record, or empty string
+// if the underlying store does not support the lookup.
+func (m *Manager) ResolveSessionDeviceType(ctx context.Context, sessionID string) string {
+	type deviceTypeResolver interface {
+		ResolveSessionDeviceType(ctx context.Context, sessionID string) string
+	}
+	if resolver, ok := m.store.(deviceTypeResolver); ok {
+		return resolver.ResolveSessionDeviceType(ctx, sessionID)
+	}
+	return ""
+}

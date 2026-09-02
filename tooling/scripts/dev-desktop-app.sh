@@ -42,6 +42,7 @@ ensure_desktop_vite_ready "$DESKTOP_DIR" "$WEB_PORT" "$GATEWAY_PORT" "$PROFILE"
 
 # ── 3. Desktop Rust BFF (via Tauri — includes App window) ────
 cd "$DESKTOP_DIR"
+export PT_CLIENT_SURFACE=desktop
 ensure_desktop_rust_ready "$DESKTOP_DIR" "$GATEWAY_PORT" "$PROFILE" "$WEB_PORT"
 
 # ── banner ────────────────────────────────────────────────────

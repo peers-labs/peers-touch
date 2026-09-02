@@ -22,8 +22,9 @@
 //          `file://` path the WebView can load via `convertFileSrc`.
 //        * For backends that require signed URLs we return the absolute
 //          HTTPS endpoint and let the renderer fetch directly. The
-//          caller is responsible for supplying any signing material;
-//          the resolver never holds Station credentials.
+//          caller is responsible for supplying any signing material.
+//        * Bound-station mirrors forward the active session bearer so
+//          actor-private objects pass the Station's read policy.
 //
 // Both functions are deliberately blocking — Tauri commands run on a
 // worker thread and our station_client helpers are blocking too.
@@ -38,11 +39,15 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
+use ulid::Ulid;
 
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::oss_cache::{self, OssCacheError, OssUri};
 use crate::infrastructure::station_client;
+
+const AGENT_ATTACHMENT_MAX_BYTES: u64 = 10 * 1024 * 1024;
 
 /// Result returned by `upload_attachment` to the frontend. The shape
 /// mirrors `MessageAttachment` / `ImageAttachment` proto fields so the
@@ -75,6 +80,19 @@ pub struct ChatAttachmentUploaded {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentAttachmentUploaded {
+    pub attachment_id: String,
+    pub object_ref: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
+    pub checksum: String,
+    pub filename: String,
+    pub authorization_scope: String,
+    pub expires_at: String,
+    pub extracted_content_ref: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OssResolved {
     /// Local cached file path (when the file has been mirrored to disk)
     /// or `None` when only a remote URL is available.
@@ -92,7 +110,7 @@ pub struct OssResolved {
     pub key: String,
 }
 
-const INLINE_IMAGE_MAX_BYTES: u64 = 8 * 1024 * 1024;
+const INLINE_ATTACHMENT_MAX_BYTES: u64 = 10 * 1024 * 1024;
 
 fn validate_upload_source(file_path: &str) -> Result<std::fs::Metadata, String> {
     if file_path.trim().is_empty() {
@@ -207,7 +225,9 @@ pub fn upload_attachment_with_mime(
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| guess_mime_from_path(file_path));
 
-    if let Some(c) = caps.as_ref() {
+    // The presigned contract does not yet carry bucket or visibility. Restrict
+    // it to public uploads so private/chat objects cannot lose their scope.
+    if let Some(c) = caps.as_ref().filter(|_| visibility == "public") {
         if c.supports_presigned_upload(file_size) {
             // TODO(post-merge): the presigned fast path doesn't yet
             // propagate `bucket`, `visibility`, or `chat_session_id`.
@@ -327,6 +347,173 @@ pub fn upload_attachment_with_mime(
     })
 }
 
+pub fn upload_agent_attachment(
+    file_path: &str,
+    token: &str,
+    conversation_id: &str,
+    filename: &str,
+    mime_type: &str,
+) -> AppResult<StubPayload> {
+    let conversation_id = conversation_id.trim();
+    if conversation_id.is_empty() || conversation_id.starts_with("draft:") {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "agent.errors.attachmentRejected",
+            None,
+        );
+    }
+    let mime_type = mime_type.trim().to_ascii_lowercase();
+    let filename = filename.trim();
+    if filename.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "agent.errors.attachmentRejected",
+            None,
+        );
+    }
+    if mime_type != "image/png" && mime_type != "application/pdf" {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "agent.errors.attachmentRejected",
+            None,
+        );
+    }
+    if !agent_attachment_content_matches(file_path, &mime_type) {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "agent.errors.attachmentRejected",
+            None,
+        );
+    }
+
+    let uploaded_result = upload_attachment_with_mime(
+        file_path,
+        token,
+        "agent",
+        "personal",
+        "private",
+        None,
+        Some(mime_type.as_str()),
+    );
+    if !uploaded_result.ok {
+        return uploaded_result;
+    }
+
+    let uploaded =
+        match uploaded_result.data.as_ref().and_then(|payload| {
+            serde_json::from_str::<ChatAttachmentUploaded>(&payload.status).ok()
+        }) {
+            Some(uploaded) => uploaded,
+            None => {
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    "agent.errors.attachmentRejected",
+                    None,
+                );
+            }
+        };
+    if uploaded.mime_type.trim().to_ascii_lowercase() != mime_type
+        || uploaded.size <= 0
+        || uploaded.size as u64 > AGENT_ATTACHMENT_MAX_BYTES
+    {
+        cleanup_agent_attachment_object(token, &uploaded.key);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "agent.errors.attachmentRejected",
+            None,
+        );
+    }
+
+    let checksum = uploaded.sha256.trim().trim_start_matches("sha256:");
+    if checksum.len() != 64 || !checksum.chars().all(|value| value.is_ascii_hexdigit()) {
+        cleanup_agent_attachment_object(token, &uploaded.key);
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "agent.errors.attachmentRejected",
+            None,
+        );
+    }
+
+    let expires_at = match (OffsetDateTime::now_utc() + Duration::hours(24)).format(&Rfc3339) {
+        Ok(value) => value,
+        Err(error) => {
+            cleanup_agent_attachment_object(token, &uploaded.key);
+            tracing::error!(error = %error, "Failed to format Agent attachment expiry");
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "agent.errors.attachmentRejected",
+                None,
+            );
+        }
+    };
+    let patch_result = oss_patch_file(
+        token,
+        &uploaded.key,
+        &PatchFileBody {
+            visibility: Some("private".to_string()),
+            bucket: Some("personal".to_string()),
+            filename: Some(filename.to_string()),
+            expires_at: Some(expires_at.clone()),
+            ..PatchFileBody::default()
+        },
+    );
+    if !patch_result.ok {
+        cleanup_agent_attachment_object(token, &uploaded.key);
+        return AppResult::fail(
+            patch_result
+                .error
+                .as_ref()
+                .map(|error| error.code)
+                .unwrap_or(ErrorCode::InternalError),
+            "agent.errors.attachmentRejected",
+            None,
+        );
+    }
+
+    let attachment = AgentAttachmentUploaded {
+        attachment_id: Ulid::new().to_string(),
+        object_ref: format!("oss:{}", uploaded.key),
+        mime_type: uploaded.mime_type,
+        size_bytes: uploaded.size.max(0) as u64,
+        checksum: format!("sha256:{}", checksum.to_ascii_lowercase()),
+        filename: filename.to_string(),
+        authorization_scope: format!("conversation:{conversation_id}"),
+        expires_at,
+        extracted_content_ref: String::new(),
+    };
+    AppResult::success(StubPayload {
+        command: "oss_upload_agent_attachment_bytes".to_string(),
+        status: serde_json::to_string(&attachment).unwrap_or_else(|_| "{}".to_string()),
+    })
+}
+
+fn agent_attachment_content_matches(file_path: &str, mime_type: &str) -> bool {
+    let metadata = match std::fs::metadata(file_path) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    if metadata.len() == 0 || metadata.len() > AGENT_ATTACHMENT_MAX_BYTES {
+        return false;
+    }
+    let mut signature = [0_u8; 8];
+    let read = match File::open(file_path).and_then(|mut file| file.read(&mut signature)) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    match mime_type {
+        "image/png" => read >= signature.len() && signature == [137, 80, 78, 71, 13, 10, 26, 10],
+        "application/pdf" => read >= 5 && &signature[..5] == b"%PDF-",
+        _ => false,
+    }
+}
+
+fn cleanup_agent_attachment_object(token: &str, key: &str) {
+    let cleanup = oss_delete_file(token, key);
+    if !cleanup.ok {
+        tracing::warn!(object_ref = %format!("oss:{key}"), "Failed to clean up rejected Agent attachment");
+    }
+}
+
 /// Resolve an OSS URI into renderer-displayable form.
 ///
 /// Decision tree:
@@ -358,7 +545,8 @@ pub fn oss_resolve_url(
     home_token: &str,
     home_actor_ptid: &str,
 ) -> AppResult<StubPayload> {
-    let uri = match OssUri::parse(input) {
+    let normalized_input = normalize_oss_resolution_input(input);
+    let uri = match OssUri::parse(normalized_input) {
         Ok(u) => u,
         Err(e) => {
             return AppResult::fail(
@@ -434,7 +622,9 @@ pub fn oss_resolve_url(
     };
 
     success(OssResolved {
-        data_url: local_path.as_deref().and_then(data_url_for_cached_image),
+        data_url: local_path
+            .as_deref()
+            .and_then(data_url_for_cached_attachment),
         local_path,
         url,
         host: caps.host,
@@ -442,13 +632,27 @@ pub fn oss_resolve_url(
     })
 }
 
-fn data_url_for_cached_image(path: &str) -> Option<String> {
+fn normalize_oss_resolution_input(input: &str) -> &str {
+    if input.starts_with("oss://") {
+        input
+    } else {
+        input.strip_prefix("oss:").unwrap_or(input)
+    }
+}
+
+fn data_url_for_cached_attachment(path: &str) -> Option<String> {
     let meta = std::fs::metadata(path).ok()?;
-    if !meta.is_file() || meta.len() == 0 || meta.len() > INLINE_IMAGE_MAX_BYTES {
+    if !meta.is_file() || meta.len() == 0 || meta.len() > INLINE_ATTACHMENT_MAX_BYTES {
         return None;
     }
     let bytes = std::fs::read(path).ok()?;
-    let mime = image_mime_from_bytes(&bytes)?;
+    let mime = image_mime_from_bytes(&bytes).or_else(|| {
+        if bytes.starts_with(b"%PDF-") {
+            Some("application/pdf")
+        } else {
+            None
+        }
+    })?;
     Some(format!("data:{};base64,{}", mime, B64.encode(bytes)))
 }
 
@@ -872,10 +1076,14 @@ pub fn oss_list_my_files(token: &str, query: &ListMyFilesQuery) -> AppResult<Stu
 }
 
 pub fn oss_delete_file(token: &str, key: &str) -> AppResult<StubPayload> {
-    if key.trim().is_empty() {
+    let key = match agent_attachment_object_key(key) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    if key.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "key is required", None);
     }
-    let key_owned = key.trim().to_string();
+    let key_owned = key;
     let params: [(&str, String); 1] = [("key", key_owned.clone())];
 
     match station_client::request_json_auth(
@@ -894,6 +1102,24 @@ pub fn oss_delete_file(token: &str, key: &str) -> AppResult<StubPayload> {
             e.into_app_result("Failed to delete file")
         }
     }
+}
+
+fn agent_attachment_object_key(key_or_ref: &str) -> Result<String, AppResult<StubPayload>> {
+    let value = key_or_ref.trim();
+    let key = value.strip_prefix("oss:").unwrap_or(value).trim();
+    if key.is_empty()
+        || key.starts_with('/')
+        || key.contains('\\')
+        || key.contains("://")
+        || key.contains("..")
+    {
+        return Err(AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "agent.errors.invalidAttachmentReference",
+            None,
+        ));
+    }
+    Ok(key.to_string())
 }
 
 pub fn oss_restore_file(token: &str, key: &str) -> AppResult<StubPayload> {
@@ -1061,9 +1287,37 @@ fn json_payload(command: &'static str, value: &Value) -> AppResult<StubPayload> 
 
 #[cfg(test)]
 mod tests {
-    use super::validate_upload_source;
+    use super::{agent_attachment_content_matches, normalize_oss_resolution_input, validate_upload_source};
     use std::path::PathBuf;
     use ulid::Ulid;
+
+    #[test]
+    fn agent_attachment_content_requires_matching_signature() {
+        let path =
+            std::env::temp_dir().join(format!("peers-agent-signature-{}", ulid::Ulid::new()));
+        std::fs::write(&path, [137, 80, 78, 71, 13, 10, 26, 10, 1]).unwrap();
+        assert!(agent_attachment_content_matches(
+            path.to_string_lossy().as_ref(),
+            "image/png"
+        ));
+        assert!(!agent_attachment_content_matches(
+            path.to_string_lossy().as_ref(),
+            "application/pdf"
+        ));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn opaque_agent_ref_does_not_break_federated_oss_uri() {
+        assert_eq!(
+            normalize_oss_resolution_input("oss:cas/aa/object.png"),
+            "cas/aa/object.png"
+        );
+        assert_eq!(
+            normalize_oss_resolution_input("oss://station.example/cas/aa/object.png"),
+            "oss://station.example/cas/aa/object.png"
+        );
+    }
 
     struct TestDirectory(PathBuf);
 

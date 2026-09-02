@@ -10,6 +10,13 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 const DEFAULT_AGENT_ID: &str = "assistant";
+const SKILL_LIST_PATH: &str = "/sub-agent/agent/skill/list";
+const SKILL_GET_PATH: &str = "/sub-agent/agent/skill/get";
+const SKILL_INSTALL_PATH: &str = "/sub-agent/agent/skill/install";
+const SKILL_UPDATE_PATH: &str = "/sub-agent/agent/skill/update";
+const SKILL_DELETE_PATH: &str = "/sub-agent/agent/skill/delete";
+const SKILL_VERSIONS_PATH: &str = "/sub-agent/agent/growth/skill/versions";
+const SKILL_ROLLBACK_PATH: &str = "/sub-agent/agent/growth/skill/rollback";
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
@@ -295,7 +302,7 @@ fn list_station_skills(
     };
     station_client::request_proto::<model::agent::ListSkillsRequest, model::agent::ListSkillsResponse>(
         Method::POST,
-        "/agent/skill/list",
+        SKILL_LIST_PATH,
         token,
         None,
         Some(&req),
@@ -365,7 +372,7 @@ pub fn skills_get(input: SkillIdInput, token: &str) -> AppResult<StubPayload> {
         model::agent::GetSkillResponse,
     >(
         Method::GET,
-        "/agent/skill/get",
+        SKILL_GET_PATH,
         token,
         Some(&[
             ("skill_id", req.skill_id.clone()),
@@ -423,13 +430,8 @@ pub fn skills_create(input: SkillCreateInput, token: &str) -> AppResult<StubPayl
     match station_client::request_proto::<
         model::agent::InstallSkillRequest,
         model::agent::InstallSkillResponse,
-    >(
-        Method::POST,
-        "/agent/skill/install",
-        token,
-        None,
-        Some(&req),
-    ) {
+    >(Method::POST, SKILL_INSTALL_PATH, token, None, Some(&req))
+    {
         Ok(resp) => success_payload(
             "skills_create",
             json!({
@@ -463,7 +465,7 @@ pub fn skills_update(input: SkillUpdateInput, token: &str) -> AppResult<StubPayl
     match station_client::request_proto::<
         model::agent::UpdateSkillRequest,
         model::agent::UpdateSkillResponse,
-    >(Method::POST, "/agent/skill/update", token, None, Some(&req))
+    >(Method::POST, SKILL_UPDATE_PATH, token, None, Some(&req))
     {
         Ok(resp) => {
             let skill = resp.skill.map(|item| manifest_list_json(&item));
@@ -491,7 +493,7 @@ pub fn skills_delete(input: SkillIdInput, token: &str) -> AppResult<StubPayload>
     match station_client::request_proto::<
         model::agent::DeleteSkillRequest,
         model::agent::DeleteSkillResponse,
-    >(Method::POST, "/agent/skill/delete", token, None, Some(&req))
+    >(Method::POST, SKILL_DELETE_PATH, token, None, Some(&req))
     {
         Ok(resp) => success_payload("skills_delete", json!({ "ok": resp.success })),
         Err(err) => station_error("skills_delete", err),
@@ -554,6 +556,24 @@ mod tests {
         assert_eq!(agent_id(None), "assistant");
         assert_eq!(agent_id(Some("  ".to_string())), "assistant");
         assert_eq!(agent_id(Some("agent-1".to_string())), "agent-1");
+    }
+
+    #[test]
+    fn skill_station_paths_target_agent_subserver() {
+        for path in [
+            SKILL_LIST_PATH,
+            SKILL_GET_PATH,
+            SKILL_INSTALL_PATH,
+            SKILL_UPDATE_PATH,
+            SKILL_DELETE_PATH,
+            SKILL_VERSIONS_PATH,
+            SKILL_ROLLBACK_PATH,
+        ] {
+            assert!(
+                path.starts_with("/sub-agent/agent/"),
+                "skill route must target the Agent subserver: {path}"
+            );
+        }
     }
 
     #[test]
@@ -647,13 +667,8 @@ pub fn skills_versions(input: SkillVersionsInput, token: &str) -> AppResult<Stub
         ("limit", limit),
         ("offset", offset),
     ];
-    match station_client::request_json(
-        Method::GET,
-        "/agent/growth/skill/versions",
-        token,
-        Some(&query),
-        None,
-    ) {
+    match station_client::request_json(Method::GET, SKILL_VERSIONS_PATH, token, Some(&query), None)
+    {
         Ok(resp) => success_payload("skills_versions", normalize_versions_response(resp)),
         Err(err) => station_error("skills_versions", err),
     }
@@ -671,13 +686,7 @@ pub fn skills_rollback(input: SkillRollbackInput, token: &str) -> AppResult<Stub
         "skill_id": input.id,
         "target_version": input.target_version,
     });
-    match station_client::request_json(
-        Method::POST,
-        "/agent/growth/skill/rollback",
-        token,
-        None,
-        Some(body),
-    ) {
+    match station_client::request_json(Method::POST, SKILL_ROLLBACK_PATH, token, None, Some(body)) {
         Ok(resp) => success_payload("skills_rollback", normalize_rollback_response(resp)),
         Err(err) => station_error("skills_rollback", err),
     }

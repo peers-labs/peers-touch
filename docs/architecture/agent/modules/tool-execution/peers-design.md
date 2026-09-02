@@ -2,8 +2,11 @@
 
 > **Module**: P1-M1 Tool Execution Runtime
 > **Step**: S2 — Peers Design
-> **Status**: draft
+> **Status**: superseded by `docs/architecture/agent/modern-chat-agent/`
 > **Depends on**: P0 streaming runtime (tool_call/tool_result events already flow)
+> **Historical note**: `local_tool_request`, Web approval/execution, and
+> `/turn/local-tool-result` were deleted by MCA-D19 G1-E. Do not implement this
+> draft as current architecture.
 
 ---
 
