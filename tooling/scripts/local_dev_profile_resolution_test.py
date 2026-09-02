@@ -24,6 +24,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         shutil.copy2(SCRIPT_DIR / "env.sh", scripts / "env.sh")
         shutil.copy2(SCRIPT_DIR / "config.sh", scripts / "config.sh")
         shutil.copy2(SCRIPT_DIR / "profile.sh", scripts / "profile.sh")
+        shutil.copy2(SCRIPT_DIR / "redact-env.sh", scripts / "redact-env.sh")
         self.config_script = scripts / "config.sh"
         self.profile_script = scripts / "profile.sh"
 
@@ -46,6 +47,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
                     "PT_DEV_PROFILE=three",
                     "PT_STATION_MODE=remote",
                     "PT_STATION_URL=http://canonical.example:18080",
+                    "PT_API_TOKEN=canonical-secret-token",
                     "",
                 )
             ),
@@ -90,6 +92,8 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         )
         self.assertNotIn("stale-cache.example", output)
         self.assertNotIn("wrong-shared-profile", output)
+        self.assertIn("PT_API_TOKEN=[REDACTED]", output)
+        self.assertNotIn("canonical-secret-token", output)
 
     def test_explicit_profile_override_remains_authoritative(self) -> None:
         override = Path(self.temp_dir.name) / "override.env"
