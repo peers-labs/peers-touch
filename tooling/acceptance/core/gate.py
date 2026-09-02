@@ -15,21 +15,13 @@ from .harness import call_async_harness
 
 class AcceptanceGate(ABC):
     gate_id: str = ""
-    phase: str = ""
-    bom: tuple[str, ...] = ()
-    spec: tuple[str, ...] = ()
     report_path: Optional[Path] = None
     evidence_dir: Optional[Path] = None
 
     def __init__(self) -> None:
         if not self.gate_id:
             raise GateError(f"Gate subclass {type(self).__name__} must define gate_id")
-        self.report: EvidenceReport = new_report(
-            self.gate_id,
-            phase=self.phase or None,
-            bom=self.bom,
-            spec=self.spec,
-        )
+        self.report: EvidenceReport = new_report(self.gate_id)
         self._start_time: float = 0.0
         self._drivers: list[BaseDriver] = []
 
