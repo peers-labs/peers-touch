@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peers.touch/schemas/agent-v2/runtime-attestation-set.schema.json",
+  "title": "Agent V2 Runtime Attestation Set",
+  "type": "object",
+  "required": ["artifactKind", "schema", "role", "gateId", "runId", "sourceIdentity", "runtimeMatrix", "tuples", "oracle", "observedAt"],
+  "properties": {
+    "artifactKind": {"const": "agent-v2-runtime-attestation-set"},
+    "schema": {"type": "object"},
+    "role": {"const": "runtime-attestation-set"},
+    "gateId": {"type": "string", "minLength": 1},
+    "runId": {"type": "string", "minLength": 1},
+    "sourceIdentity": {"type": "object"},
+    "runtimeMatrix": {"type": "object"},
+    "tuples": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "gate", "row", "platform", "runtime", "cell", "locale", "ordering", "sample_id",
+          "attestationProfile", "stationProfile", "networkPath", "machine",
+          "coldWarmState", "observedAt"
+        ],
+        "properties": {
+          "attestationProfile": {
+            "enum": [
+              "direct_runtime",
+              "direct_runtime_no_local_capability",
+              "contract_only",
+              "orchestration_guard",
+              "non_advertised"
+            ]
+          },
+          "actorIdentityHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "conversationRuntimeBinding": {
+            "type": "object",
+            "required": [
+              "runtimeKind", "providerId", "modelId", "runtimeProfileId",
+              "externalSessionId", "externalSessionEpoch", "runtimeHomeRefHash",
+              "capabilitySnapshotHash", "configSnapshotHash", "boundAt"
+            ]
+          },
+          "runtimeSnapshot": {
+            "type": "object",
+            "required": [
+              "runtimeKind", "providerId", "modelId", "runtimeProfileId",
+              "capabilities", "providerConfigVersion", "agentConfigVersion",
+              "externalSessionId", "externalSessionEpoch", "thinkingMode"
+            ],
+            "properties": {
+              "thinkingMode": {
+                "enum": ["auto", "enabled", "disabled"]
+              },
+              "capabilities": {
+                "type": "object",
+                "required": [
+                  "input", "output", "runtime", "agentic", "limits",
+                  "resolution", "provenance"
+                ]
+              }
+            }
+          },
+          "turnAttempt": {
+            "type": "object",
+            "required": [
+              "attemptId", "turnId", "index", "contextLedgerId",
+              "capabilityReadinessSnapshotId", "status",
+              "runtimeSnapshotHash"
+            ]
+          },
+          "toolCallBinding": {
+            "type": "object",
+            "required": [
+              "toolCallId", "turnId", "attemptId",
+              "capabilityId", "capabilityVersion", "bindingId",
+              "bindingRevision", "readinessSnapshotId",
+              "selectedDeviceId", "selectedLeaseId",
+              "sideEffectReceiptId"
+            ]
+          },
+          "clientSession": {
+            "type": "object",
+            "required": [
+              "capabilitySessionId", "actorIdHash", "deviceId",
+              "platform", "capabilities", "expiresAt",
+              "connectionId", "leaseId"
+            ],
+            "properties": {
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "capabilityId", "schemaVersion", "permission",
+                    "constraints"
+                  ],
+                  "properties": {
+                    "constraints": {
+                      "type": "object",
+                      "required": [
+                        "maxRequestBytes", "maxResultBytes",
+                        "allowedResourceKinds"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "contractAttestation": {
+            "type": "object",
+            "required": [
+              "contractId", "contractHash", "platform",
+              "toolchain", "roundTripStatus"
+            ]
+          },
+          "guardAttestation": {
+            "type": "object",
+            "required": [
+              "guardId", "sourceInventoryHash", "violationCount"
+            ]
+          },
+          "capabilityInventoryAttestation": {
+            "type": "object",
+            "required": [
+              "inventoryHash", "surfaceId", "zeroExecutionCount"
+            ]
+          },
+          "stationProfile": {"type": "string", "minLength": 1},
+          "desktopMode": {"type": "string", "minLength": 1},
+          "networkPath": {"type": "string", "minLength": 1},
+          "machine": {"type": "string", "minLength": 1},
+          "coldWarmState": {"enum": ["cold", "warm", "neutral", "contract"]},
+          "observedAt": {"type": "string", "minLength": 1}
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "attestationProfile": {"const": "direct_runtime"},
+              "clientSession": {
+                "properties": {
+                  "capabilities": {"minItems": 1}
+                }
+              }
+            },
+            "required": [
+              "actorIdentityHash", "conversationRuntimeBinding",
+              "runtimeSnapshot", "turnAttempt", "toolCallBinding",
+              "clientSession", "desktopMode"
+            ]
+          },
+          {
+            "properties": {
+              "attestationProfile": {
+                "const": "direct_runtime_no_local_capability"
+              },
+              "clientSession": {
+                "properties": {
+                  "platform": {"const": "browser"},
+                  "capabilities": {"maxItems": 0}
+                }
+              }
+            },
+            "required": [
+              "actorIdentityHash", "conversationRuntimeBinding",
+              "runtimeSnapshot", "turnAttempt", "clientSession", "desktopMode"
+            ],
+            "not": {
+              "required": ["toolCallBinding"]
+            }
+          },
+          {
+            "properties": {
+              "attestationProfile": {"const": "contract_only"}
+            },
+            "required": ["contractAttestation"],
+            "not": {
+              "anyOf": [
+                {"required": ["conversationRuntimeBinding"]},
+                {"required": ["turnAttempt"]},
+                {"required": ["toolCallBinding"]},
+                {"required": ["clientSession"]}
+              ]
+            }
+          },
+          {
+            "properties": {
+              "attestationProfile": {"const": "orchestration_guard"}
+            },
+            "required": ["guardAttestation"],
+            "not": {
+              "anyOf": [
+                {"required": ["conversationRuntimeBinding"]},
+                {"required": ["turnAttempt"]},
+                {"required": ["toolCallBinding"]},
+                {"required": ["clientSession"]}
+              ]
+            }
+          },
+          {
+            "properties": {
+              "attestationProfile": {"const": "non_advertised"}
+            },
+            "required": ["capabilityInventoryAttestation"],
+            "not": {
+              "anyOf": [
+                {"required": ["conversationRuntimeBinding"]},
+                {"required": ["turnAttempt"]},
+                {"required": ["toolCallBinding"]}
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "oracle": {
+      "type": "object",
+      "required": ["assertionId", "status", "expectedTupleCount"],
+      "properties": {
+        "assertionId": {"type": "string", "minLength": 1},
+        "status": {"const": "passed"},
+        "expectedTupleCount": {"type": "integer", "minimum": 1}
+      }
+    },
+    "observedAt": {"type": "string", "minLength": 1}
+  }
+}

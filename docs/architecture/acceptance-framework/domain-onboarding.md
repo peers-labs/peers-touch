@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-06-03 | **Updated**: 2026-08-27
+> **Created**: 2026-06-03 | **Updated**: 2026-08-17
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -83,8 +83,8 @@ Gate catalog、environment contract 和 Provisioner 必须形成一个可执行�
 | Provisioner binding | `tooling/acceptance/gates.yaml` | 设置 `"provisioner": "<environment-id>"`，且必须与 `environment` 完全一致 |
 | Environment contract | `tooling/acceptance/environments/<environment-id>.yaml` | 文件存在、可解析，且 contract `id` 与文件名/environment 一致 |
 | Provisioner registration | `tooling/acceptance/provisioners/__init__.py` | `_PROVISIONERS` 能按 environment ID 解析 Provisioner class |
-| Gate roles | Domain Provisioner | 注册 Gate 所需 service、actor、client、Fixture 和 credential roles；每个 required service 必须产生 ID/kind 匹配的 attestation |
-| Runtime consumption | Gate runner | 只按 `services[service-id]` 消费 Provisioner 生成的 immutable Runtime Manifest，不自行部署、猜测 primary service、读取 legacy `station` 或回退环境变量 |
+| Gate roles | Domain Provisioner | 注册 Gate 所需 actor、client、Fixture 和 credential roles；不需要的资源必须显式为空而不是由 Gate 猜测 |
+| Runtime consumption | Gate runner | 只消费 Provisioner 生成的 immutable Runtime Manifest，不自行部署、猜测身份或回退环境变量 |
 
 Native Tauri Gate 还必须通过 `acceptance-driver-build` 产出专用 binary，并通过
 `tooling/acceptance/drivers/tauri.py` 的公开入口解析 binary。具体路径属于 Driver
@@ -180,5 +180,5 @@ Feature / Gate closure，并 fail closed：
 | `federation` | `active` | `project_validation_domain` | 首个复杂验证域，用于双边互验证 |
 | `station-dashboard` | `active` | `managed_domain` | 首个普通产品域，验证 onboarding 标准可泛化 |
 | `chat` | `active` | `managed_domain` | 首个用户主路径 domain，覆盖 persistence / Station runtime message flow / live realtime delivery / realtime typed contract / Desktop typed surface |
-| `mobile` | `active` | `managed_domain` | 结构接入完成；iOS/Android native product proof 在对应 environment Gates 通过前保持 `UNPROVEN` |
+| `mobile` | `planned` | `not_onboarded` | 待补 mobile-web / Tauri mobile / native plugin boundaries |
 | `applet` | `active` | `managed_domain` | Domain 契约和 local lifecycle Gate 已接入；Python Core wrapper、原生可见流程和 Mobile 仍为未完成/未证明范围 |
