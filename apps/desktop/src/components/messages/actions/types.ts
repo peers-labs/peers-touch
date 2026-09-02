@@ -22,6 +22,8 @@ export interface MessageActionContext {
   onDelete: () => void;
   onRegenerate: () => void;
   onRetry: () => void;
+  onRetryRecovery: () => void;
+  onReloadSnapshot: () => void;
   onBranch: () => void;
   onContinue: () => void;
   onDeleteAndRegenerate: () => void;
@@ -29,4 +31,5 @@ export interface MessageActionContext {
   onThread: () => void;
   onReadAloud: () => void;
   onExport: () => void;
+  onForward: () => void;
 }

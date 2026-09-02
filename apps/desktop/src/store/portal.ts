@@ -13,6 +13,7 @@ export type PortalView =
 
 interface PortalState {
   expanded: boolean;
+  portalStack: PortalView[];
   activeView: PortalView | null;
 }
 
@@ -25,54 +26,92 @@ interface PortalActions {
   openWorkingFiles: (sessionKey: string) => void;
   openWorkingProgress: () => void;
   openAgentOverview: (agentId: string) => void;
+  goBack: () => void;
+  collapse: () => void;
   close: () => void;
   toggle: () => void;
 }
 
 export const usePortalStore = createDesktopStore<PortalState & PortalActions>(
   'portal',
-  (set) => ({
-    expanded: false,
-    activeView: null,
+  (set) => {
+    const pushPortalView = (view: PortalView) => {
+      set((state) => {
+        const current = state.portalStack[state.portalStack.length - 1];
+        const portalStack = current?.type === view.type
+          ? [...state.portalStack.slice(0, -1), view]
+          : [...state.portalStack, view];
 
-    openArtifact: (artifact: MessageArtifact) => {
-      set({ expanded: true, activeView: { type: 'artifactDetail', artifact } });
-    },
+        return { expanded: true, portalStack, activeView: view };
+      });
+    };
 
-    openArtifacts: (messageId?: string) => {
-      set({ expanded: true, activeView: { type: 'artifacts', messageId } });
-    },
+    return {
+      expanded: false,
+      portalStack: [],
+      activeView: null,
 
-    openToolDetail: (messageId: string, toolCallId: string) => {
-      set({ expanded: true, activeView: { type: 'toolDetail', messageId, toolCallId } });
-    },
+      openArtifact: (artifact: MessageArtifact) => {
+        pushPortalView({ type: 'artifactDetail', artifact });
+      },
 
-    openThread: (sessionKey: string, sourceMessageId: string) => {
-      set({ expanded: true, activeView: { type: 'thread', sessionKey, sourceMessageId } });
-    },
+      openArtifacts: (messageId?: string) => {
+        pushPortalView({ type: 'artifacts', messageId });
+      },
 
-    openTopicComments: (topicKey: string) => {
-      set({ expanded: true, activeView: { type: 'topicComments', topicKey } });
-    },
+      openToolDetail: (messageId: string, toolCallId: string) => {
+        pushPortalView({ type: 'toolDetail', messageId, toolCallId });
+      },
 
-    openWorkingFiles: (sessionKey: string) => {
-      set({ expanded: true, activeView: { type: 'workingFiles', sessionKey } });
-    },
+      openThread: (sessionKey: string, sourceMessageId: string) => {
+        pushPortalView({ type: 'thread', sessionKey, sourceMessageId });
+      },
 
-    openWorkingProgress: () => {
-      set({ expanded: true, activeView: { type: 'workingProgress' } });
-    },
+      openTopicComments: (topicKey: string) => {
+        pushPortalView({ type: 'topicComments', topicKey });
+      },
 
-    openAgentOverview: (agentId: string) => {
-      set({ expanded: true, activeView: { type: 'agentOverview', agentId } });
-    },
+      openWorkingFiles: (sessionKey: string) => {
+        pushPortalView({ type: 'workingFiles', sessionKey });
+      },
 
-    close: () => {
-      set({ expanded: false, activeView: null });
-    },
+      openWorkingProgress: () => {
+        pushPortalView({ type: 'workingProgress' });
+      },
 
-    toggle: () => {
-      set((state) => ({ expanded: !state.expanded }));
-    },
-  }),
+      openAgentOverview: (agentId: string) => {
+        pushPortalView({ type: 'agentOverview', agentId });
+      },
+
+      goBack: () => {
+        set((state) => {
+          if (state.portalStack.length <= 1) {
+            return { expanded: false, portalStack: [], activeView: null };
+          }
+          const portalStack = state.portalStack.slice(0, -1);
+          return {
+            portalStack,
+            activeView: portalStack[portalStack.length - 1] ?? null,
+          };
+        });
+      },
+
+      collapse: () => {
+        set({ expanded: false });
+      },
+
+      close: () => {
+        set({ expanded: false, portalStack: [], activeView: null });
+      },
+
+      toggle: () => {
+        set((state) => {
+          if (state.expanded) return { expanded: false };
+          if (state.portalStack.length > 0) return { expanded: true };
+          const view: PortalView = { type: 'artifacts' };
+          return { expanded: true, portalStack: [view], activeView: view };
+        });
+      },
+    };
+  },
 );

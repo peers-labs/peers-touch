@@ -1,0 +1,638 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "domain/agent/agent.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+enum CapabilitySourceKind {
+  CAPABILITY_SOURCE_KIND_UNSPECIFIED = 0;
+  CAPABILITY_SOURCE_KIND_BUILTIN_TOOL = 1;
+  CAPABILITY_SOURCE_KIND_MCP = 2;
+  CAPABILITY_SOURCE_KIND_CONNECTOR = 3;
+  CAPABILITY_SOURCE_KIND_SKILL = 4;
+  CAPABILITY_SOURCE_KIND_KNOWLEDGE = 5;
+  CAPABILITY_SOURCE_KIND_CLIENT_NATIVE = 6;
+}
+
+enum CapabilityAvailability {
+  CAPABILITY_AVAILABILITY_UNSPECIFIED = 0;
+  CAPABILITY_AVAILABILITY_AVAILABLE = 1;
+  CAPABILITY_AVAILABILITY_DEGRADED = 2;
+  CAPABILITY_AVAILABILITY_UNAVAILABLE = 3;
+  CAPABILITY_AVAILABILITY_BLOCKED = 4;
+}
+
+enum CapabilityReadinessState {
+  CAPABILITY_READINESS_STATE_UNSPECIFIED = 0;
+  CAPABILITY_READINESS_STATE_READY = 1;
+  CAPABILITY_READINESS_STATE_DEGRADED = 2;
+  CAPABILITY_READINESS_STATE_UNAVAILABLE = 3;
+  CAPABILITY_READINESS_STATE_BLOCKED = 4;
+  CAPABILITY_READINESS_STATE_UNKNOWN = 5;
+}
+
+enum CapabilityApprovalPolicy {
+  CAPABILITY_APPROVAL_POLICY_UNSPECIFIED = 0;
+  CAPABILITY_APPROVAL_POLICY_MANUAL = 1;
+  CAPABILITY_APPROVAL_POLICY_ALLOW_LIST = 2;
+  CAPABILITY_APPROVAL_POLICY_AUTO = 3;
+  CAPABILITY_APPROVAL_POLICY_DENY = 4;
+}
+
+enum CapabilityOperationStatus {
+  CAPABILITY_OPERATION_STATUS_UNSPECIFIED = 0;
+  CAPABILITY_OPERATION_STATUS_PENDING = 1;
+  CAPABILITY_OPERATION_STATUS_DISPATCHED = 2;
+  CAPABILITY_OPERATION_STATUS_RUNNING = 3;
+  CAPABILITY_OPERATION_STATUS_DISCONNECTED = 4;
+  CAPABILITY_OPERATION_STATUS_RECONNECTING = 5;
+  CAPABILITY_OPERATION_STATUS_CANCELLING = 6;
+  CAPABILITY_OPERATION_STATUS_SETTLING_CLEANUP = 7;
+  CAPABILITY_OPERATION_STATUS_SUCCEEDED = 8;
+  CAPABILITY_OPERATION_STATUS_CANCELLED = 9;
+  CAPABILITY_OPERATION_STATUS_TIMED_OUT = 10;
+  CAPABILITY_OPERATION_STATUS_FAILED = 11;
+  CAPABILITY_OPERATION_STATUS_CLEANUP_FAILED = 12;
+  CAPABILITY_OPERATION_STATUS_UNKNOWN_SIDE_EFFECT = 13;
+}
+
+enum CapabilityOperationErrorCode {
+  CAPABILITY_OPERATION_ERROR_CODE_UNSPECIFIED = 0;
+  CAPABILITY_OPERATION_ERROR_CODE_EXECUTOR_UNAVAILABLE = 1;
+  CAPABILITY_OPERATION_ERROR_CODE_LEASE_EXPIRED = 2;
+  CAPABILITY_OPERATION_ERROR_CODE_CANCELLED = 3;
+  CAPABILITY_OPERATION_ERROR_CODE_TIMEOUT = 4;
+  CAPABILITY_OPERATION_ERROR_CODE_DISCONNECTED = 5;
+  CAPABILITY_OPERATION_ERROR_CODE_CLEANUP_FAILED = 6;
+  CAPABILITY_OPERATION_ERROR_CODE_UNKNOWN_SIDE_EFFECT = 7;
+  CAPABILITY_OPERATION_ERROR_CODE_STALE_FENCE = 8;
+  CAPABILITY_OPERATION_ERROR_CODE_ACTOR_MISMATCH = 9;
+  CAPABILITY_OPERATION_ERROR_CODE_DEVICE_MISMATCH = 10;
+  CAPABILITY_OPERATION_ERROR_CODE_SESSION_MISMATCH = 11;
+  CAPABILITY_OPERATION_ERROR_CODE_PAYLOAD_MISMATCH = 12;
+}
+
+enum CapabilityCatalogErrorCode {
+  CAPABILITY_CATALOG_ERROR_CODE_UNSPECIFIED = 0;
+  CAPABILITY_CATALOG_ERROR_CODE_MANIFEST_MISSING = 1;
+  CAPABILITY_CATALOG_ERROR_CODE_MANIFEST_VERSION_STALE = 2;
+  CAPABILITY_CATALOG_ERROR_CODE_SCHEMA_INVALID = 3;
+}
+
+enum CapabilityBindingErrorCode {
+  CAPABILITY_BINDING_ERROR_CODE_UNSPECIFIED = 0;
+  CAPABILITY_BINDING_ERROR_CODE_VERSION_CONFLICT = 1;
+  CAPABILITY_BINDING_ERROR_CODE_CAPABILITY_UNAVAILABLE = 2;
+  CAPABILITY_BINDING_ERROR_CODE_POLICY_INVALID = 3;
+}
+
+enum RuntimeAdvertisementState {
+  RUNTIME_ADVERTISEMENT_STATE_UNSPECIFIED = 0;
+  RUNTIME_ADVERTISEMENT_STATE_READY = 1;
+  RUNTIME_ADVERTISEMENT_STATE_DEGRADED = 2;
+  RUNTIME_ADVERTISEMENT_STATE_NOT_ADVERTISED = 3;
+  RUNTIME_ADVERTISEMENT_STATE_BLOCKED = 4;
+}
+
+enum ConnectorResourceStatus {
+  CONNECTOR_RESOURCE_STATUS_UNSPECIFIED = 0;
+  CONNECTOR_RESOURCE_STATUS_READY = 1;
+  CONNECTOR_RESOURCE_STATUS_EXPIRED = 2;
+  CONNECTOR_RESOURCE_STATUS_SCOPE_DENIED = 3;
+  CONNECTOR_RESOURCE_STATUS_REMOVED = 4;
+  CONNECTOR_RESOURCE_STATUS_MANIFEST_STALE = 5;
+}
+
+enum ConnectorErrorCode {
+  CONNECTOR_ERROR_CODE_UNSPECIFIED = 0;
+  CONNECTOR_ERROR_CODE_OAUTH_EXPIRED = 1;
+  CONNECTOR_ERROR_CODE_SCOPE_DENIED = 2;
+  CONNECTOR_ERROR_CODE_RESOURCE_REMOVED = 3;
+  CONNECTOR_ERROR_CODE_MANIFEST_STALE = 4;
+}
+
+enum KnowledgeResourceKind {
+  KNOWLEDGE_RESOURCE_KIND_UNSPECIFIED = 0;
+  KNOWLEDGE_RESOURCE_KIND_DOCUMENT = 1;
+  KNOWLEDGE_RESOURCE_KIND_FOLDER = 2;
+  KNOWLEDGE_RESOURCE_KIND_PROJECT = 3;
+  KNOWLEDGE_RESOURCE_KIND_URL_SNAPSHOT = 4;
+  KNOWLEDGE_RESOURCE_KIND_NOTEBOOK = 5;
+  KNOWLEDGE_RESOURCE_KIND_WORKSPACE = 6;
+}
+
+enum KnowledgeResourceAvailability {
+  KNOWLEDGE_RESOURCE_AVAILABILITY_UNSPECIFIED = 0;
+  KNOWLEDGE_RESOURCE_AVAILABILITY_READY = 1;
+  KNOWLEDGE_RESOURCE_AVAILABILITY_INDEXING = 2;
+  KNOWLEDGE_RESOURCE_AVAILABILITY_UNAVAILABLE = 3;
+  KNOWLEDGE_RESOURCE_AVAILABILITY_TOMBSTONED = 4;
+}
+
+message CapabilityDisplayMetadata {
+  string name = 1;
+  string description = 2;
+  string icon_ref = 3;
+}
+
+message CapabilityManifest {
+  string capability_id = 1;
+  string version = 2;
+  CapabilitySourceKind source_kind = 3;
+  string source_instance_id = 4;
+  CapabilityDisplayMetadata display_metadata = 5;
+  string input_schema_ref = 6;
+  string output_schema_ref = 7;
+  ToolExecutionOwner execution_owner = 8;
+  repeated string required_runtime_capabilities = 9;
+  string risk_class = 10;
+  CapabilityApprovalPolicy default_approval_policy = 11;
+  string secret_boundary = 12;
+  CapabilityAvailability availability = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp retired_at = 15;
+  string retired_by_ptid = 16;
+  string retirement_reason = 17;
+  string owner_ptid = 18;
+}
+
+message AgentCapabilityBinding {
+  string binding_id = 1;
+  string ptid = 2;
+  string agent_id = 3;
+  string capability_id = 4;
+  string capability_version = 5;
+  bool enabled = 6;
+  CapabilityApprovalPolicy approval_policy = 7;
+  uint64 expected_agent_version = 8;
+  uint64 revision = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  google.protobuf.Timestamp tombstoned_at = 11;
+  string tombstoned_by_ptid = 12;
+  string tombstone_reason = 13;
+}
+
+message CapabilityReadiness {
+  string capability_id = 1;
+  string capability_version = 2;
+  string binding_id = 3;
+  uint64 binding_revision = 4;
+  CapabilityReadinessState state = 5;
+  string authority = 6;
+  string reason_code = 7;
+}
+
+message CapabilityReadinessSnapshot {
+  string snapshot_id = 1;
+  string ptid = 2;
+  string agent_id = 3;
+  string runtime_snapshot_id = 4;
+  RuntimeCapabilitySnapshot model_capabilities = 5;
+  repeated string binding_revisions = 6;
+  repeated string connection_revisions = 7;
+  optional string selected_client_session_id = 8;
+  repeated CapabilityReadiness capabilities = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp expires_at = 11;
+}
+
+message EffectiveRuntimeAdvertisement {
+  RuntimeKind runtime_kind = 1;
+  string runtime_id = 2;
+  RuntimeAdvertisementState state = 3;
+  string reason_code = 4;
+}
+
+message EffectiveRuntimeProfileSnapshot {
+  string snapshot_id = 1;
+  string ptid = 2;
+  string agent_id = 3;
+  string profile_id = 4;
+  uint64 profile_revision = 5;
+  string readiness_snapshot_id = 6;
+  repeated EffectiveRuntimeAdvertisement runtimes = 7;
+  google.protobuf.Timestamp observed_at = 8;
+}
+
+message RuntimeActivityCounters {
+  uint64 runtime_bindings_created = 1;
+  uint64 external_sessions_created = 2;
+  uint64 runtime_homes_created = 3;
+  uint64 processes_started = 4;
+  uint64 workspaces_created = 5;
+}
+
+message RuntimeActivitySnapshot {
+  string snapshot_id = 1;
+  string owner = 2;
+  string owner_instance_id = 3;
+  string ptid = 4;
+  RuntimeKind runtime_kind = 5;
+  string runtime_id = 6;
+  string counter_epoch = 7;
+  RuntimeActivityCounters counters = 8;
+  google.protobuf.Timestamp observed_at = 9;
+}
+
+message CapabilityOperationError {
+  CapabilityOperationErrorCode code = 1;
+  bool retryable = 2;
+  string recovery_action = 3;
+}
+
+message CapabilityOperation {
+  string operation_id = 1;
+  string idempotency_key = 2;
+  string payload_hash = 3;
+  string ptid = 4;
+  string capability_id = 5;
+  string capability_version = 6;
+  string target_device_id = 7;
+  string capability_session_id = 8;
+  string executor_lease_id = 9;
+  string operation_kind = 10;
+  CapabilityOperationStatus status = 11;
+  uint32 attempt = 12;
+  uint64 attempt_epoch = 13;
+  uint64 fencing_token = 14;
+  uint64 revision = 15;
+  google.protobuf.Timestamp deadline = 16;
+  uint64 last_event_sequence = 17;
+  google.protobuf.Timestamp cancel_requested_at = 18;
+  google.protobuf.Timestamp cancel_ack_at = 19;
+  CapabilityOperationStatus desired_terminal_outcome = 20;
+  string cleanup_lease_id = 21;
+  uint64 cleanup_epoch = 22;
+  uint64 cleanup_fencing_token = 23;
+  google.protobuf.Timestamp cleanup_deadline = 24;
+  google.protobuf.Timestamp side_effect_started_at = 25;
+  uint32 progress_percent = 26;
+  string progress_message = 27;
+  string result_ref = 28;
+  CapabilityOperationError error = 29;
+  string cleanup_outcome = 30;
+  google.protobuf.Timestamp created_at = 31;
+  google.protobuf.Timestamp updated_at = 32;
+  google.protobuf.Timestamp terminal_at = 33;
+  bytes bounded_arguments = 34;
+  string external_idempotency_key = 35;
+  uint64 dispatch_sequence = 36;
+}
+
+message CapabilityOperationEvent {
+  string operation_id = 1;
+  uint64 attempt_epoch = 2;
+  uint64 sequence = 3;
+  CapabilityOperationStatus status = 4;
+  uint64 fencing_token = 5;
+  uint32 progress_percent = 6;
+  string result_ref = 7;
+  CapabilityOperationError error = 8;
+  google.protobuf.Timestamp occurred_at = 9;
+}
+
+message ConnectorToolManifestRef {
+  string capability_id = 1;
+  string capability_version = 2;
+}
+
+message ConnectorResourceManifest {
+  string ptid = 1;
+  string connector_id = 2;
+  string oauth_connection_id = 3;
+  uint64 connection_revision = 4;
+  string resource_id = 5;
+  string resource_version = 6;
+  repeated string scopes = 7;
+  repeated ConnectorToolManifestRef tool_manifests = 8;
+  ConnectorResourceStatus status = 9;
+  google.protobuf.Timestamp expires_at = 10;
+}
+
+message KnowledgeStationContentRef {
+  string content_ref = 1;
+}
+
+message KnowledgeClientResourceRef {
+  string opaque_resource_ref = 1;
+  string required_capability_id = 2;
+  string required_capability_version = 3;
+  string device_id = 4;
+  string integrity_hash = 5;
+}
+
+message KnowledgeResourceDescriptor {
+  string resource_id = 1;
+  string ptid = 2;
+  uint64 revision = 3;
+  KnowledgeResourceKind resource_kind = 4;
+  oneof locator {
+    KnowledgeStationContentRef station_content_ref = 5;
+    KnowledgeClientResourceRef client_resource_ref = 6;
+  }
+  string content_hash = 7;
+  string index_revision = 8;
+  KnowledgeResourceAvailability availability = 9;
+  string reason_code = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  google.protobuf.Timestamp tombstoned_at = 13;
+  string title = 14;
+  string tombstoned_by_ptid = 15;
+  string tombstone_reason = 16;
+}
+
+message CreateKnowledgeResourceDescriptorRequest {
+  KnowledgeResourceKind resource_kind = 1;
+  oneof source {
+    bytes station_content = 2;
+    KnowledgeClientResourceRef client_resource_ref = 3;
+  }
+  string idempotency_key = 4;
+  string title = 5;
+}
+
+message CreateKnowledgeResourceDescriptorResponse {
+  KnowledgeResourceDescriptor descriptor = 1;
+  CapabilityManifest manifest = 2;
+}
+
+message UpdateKnowledgeResourceDescriptorRequest {
+  string resource_id = 1;
+  uint64 expected_revision = 2;
+  KnowledgeResourceKind resource_kind = 3;
+  oneof source {
+    bytes station_content = 4;
+    KnowledgeClientResourceRef client_resource_ref = 5;
+  }
+  string idempotency_key = 6;
+  string title = 7;
+}
+
+message UpdateKnowledgeResourceDescriptorResponse {
+  KnowledgeResourceDescriptor descriptor = 1;
+  CapabilityManifest manifest = 2;
+}
+
+message ListKnowledgeResourceDescriptorsRequest {
+  bool include_tombstoned = 1;
+  string cursor = 2;
+  uint32 page_size = 3;
+}
+
+message ListKnowledgeResourceDescriptorsResponse {
+  repeated KnowledgeResourceDescriptor descriptors = 1;
+  string next_cursor = 2;
+}
+
+message TombstoneKnowledgeResourceDescriptorRequest {
+  string resource_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+  string reason = 4;
+}
+
+message TombstoneKnowledgeResourceDescriptorResponse {
+  KnowledgeResourceDescriptor descriptor = 1;
+  CapabilityManifest manifest = 2;
+}
+
+message AgentPackageBindingRef {
+  string capability_id = 1;
+  string capability_version = 2;
+  bool enabled = 3;
+  CapabilityApprovalPolicy approval_policy = 4;
+}
+
+message AgentPackageKnowledgeResource {
+  string package_resource_id = 1;
+  KnowledgeResourceKind resource_kind = 2;
+  string title = 3;
+  bytes station_content = 4;
+  string content_hash = 5;
+  string index_revision = 6;
+}
+
+message AgentPackageDocument {
+  string schema_version = 1;
+  Agent agent = 2;
+  repeated AgentPackageBindingRef bindings = 3;
+  repeated AgentPackageKnowledgeResource knowledge_resources = 4;
+}
+
+message AgentPackageUnresolvedDependency {
+  string package_resource_id = 1;
+  string capability_id = 2;
+  string capability_version = 3;
+  string reason_code = 4;
+}
+
+message ExportAgentPackageRequest {
+  string agent_id = 1;
+}
+
+message ExportAgentPackageResponse {
+  AgentPackageDocument package = 1;
+  repeated AgentPackageUnresolvedDependency unresolved_dependencies = 2;
+}
+
+message ImportAgentPackageRequest {
+  AgentPackageDocument package = 1;
+  string name = 2;
+  string idempotency_key = 3;
+}
+
+message ImportAgentPackageResponse {
+  Agent agent = 1;
+  repeated AgentPackageUnresolvedDependency unresolved_dependencies = 2;
+}
+
+message ListCapabilityManifestsRequest {
+  repeated CapabilitySourceKind source_kinds = 1;
+}
+
+message ListCapabilityManifestsResponse {
+  repeated CapabilityManifest manifests = 1;
+}
+
+message RetireCapabilityManifestRequest {
+  string capability_id = 1;
+  string version = 2;
+  string idempotency_key = 3;
+  string reason = 4;
+}
+
+message RetireCapabilityManifestResponse {
+  CapabilityManifest manifest = 1;
+}
+
+message ListAgentCapabilityBindingsRequest {
+  string agent_id = 1;
+}
+
+message ListAgentCapabilityBindingsResponse {
+  repeated AgentCapabilityBinding bindings = 1;
+}
+
+message UpsertAgentCapabilityBindingRequest {
+  AgentCapabilityBinding binding = 1;
+  string idempotency_key = 2;
+  uint64 expected_binding_revision = 3;
+}
+
+message UpsertAgentCapabilityBindingResponse {
+  AgentCapabilityBinding binding = 1;
+}
+
+message DeleteAgentCapabilityBindingRequest {
+  string binding_id = 1;
+  uint64 expected_binding_revision = 2;
+  string idempotency_key = 3;
+  string reason = 4;
+}
+
+message DeleteAgentCapabilityBindingResponse {
+  AgentCapabilityBinding binding = 1;
+}
+
+message GetCapabilityReadinessRequest {
+  string agent_id = 1;
+  string runtime_snapshot_id = 2;
+  optional string client_capability_session_id = 3;
+}
+
+message GetCapabilityReadinessResponse {
+  CapabilityReadinessSnapshot snapshot = 1;
+}
+
+message GetEffectiveRuntimeProfileRequest {
+  string agent_id = 1;
+}
+
+message GetEffectiveRuntimeProfileResponse {
+  EffectiveRuntimeProfileSnapshot snapshot = 1;
+}
+
+message GetRuntimeActivityRequest {
+  RuntimeKind runtime_kind = 1;
+  string runtime_id = 2;
+}
+
+message GetRuntimeActivityResponse {
+  RuntimeActivitySnapshot snapshot = 1;
+}
+
+message StartCapabilityOperationRequest {
+  string capability_id = 1;
+  string capability_version = 2;
+  string operation_kind = 3;
+  string target_device_id = 4;
+  string capability_session_id = 5;
+  bytes bounded_arguments = 6;
+  string idempotency_key = 7;
+  google.protobuf.Timestamp deadline = 8;
+}
+
+message StartCapabilityOperationResponse {
+  CapabilityOperation operation = 1;
+}
+
+message CancelCapabilityOperationRequest {
+  string operation_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message CancelCapabilityOperationResponse {
+  CapabilityOperation operation = 1;
+}
+
+message GetCapabilityOperationRequest {
+  string operation_id = 1;
+}
+
+message GetCapabilityOperationResponse {
+  CapabilityOperation operation = 1;
+}
+
+message ReportCapabilityOperationEventRequest {
+  CapabilityOperationEvent event = 1;
+  string target_device_id = 2;
+  string capability_session_id = 3;
+  string executor_lease_id = 4;
+  string cleanup_lease_id = 5;
+  uint64 cleanup_epoch = 6;
+  uint64 cleanup_fencing_token = 7;
+  string cleanup_outcome = 8;
+  ClientCapabilityCommandProof command_proof = 9;
+}
+
+message ReportCapabilityOperationEventResponse {
+  CapabilityOperation operation = 1;
+  bool replayed = 2;
+}
+
+message ReconcileCapabilityOperationRequest {
+  string operation_id = 1;
+  uint64 after_sequence = 2;
+}
+
+message ReconcileCapabilityOperationResponse {
+  CapabilityOperation operation = 1;
+  repeated CapabilityOperationEvent events = 2;
+}
+
+message PullCapabilityOperationsRequest {
+  string capability_session_id = 1;
+  string device_id = 2;
+  uint64 after_sequence = 3;
+  uint32 limit = 4;
+  ClientCapabilityCommandProof command_proof = 5;
+}
+
+message PullCapabilityOperationsResponse {
+  repeated CapabilityOperation operations = 1;
+  uint64 last_sequence = 2;
+  ClientCapabilityCommandErrorCode error_code = 3;
+}
+
+message TakeOverCapabilityOperationRequest {
+  reserved 5;
+  reserved "executor_lease_id";
+  string operation_id = 1;
+  uint64 expected_revision = 2;
+  string target_device_id = 3;
+  string capability_session_id = 4;
+  bool cleanup_only = 6;
+  string external_idempotency_key = 7;
+  ClientCapabilityCommandProof command_proof = 8;
+}
+
+message TakeOverCapabilityOperationResponse {
+  CapabilityOperation operation = 1;
+}
+
+message TakeOverCapabilityCleanupRequest {
+  reserved 5;
+  reserved "cleanup_lease_id";
+  string operation_id = 1;
+  uint64 expected_cleanup_epoch = 2;
+  string target_device_id = 3;
+  string capability_session_id = 4;
+  ClientCapabilityCommandProof command_proof = 6;
+}
+
+message TakeOverCapabilityCleanupResponse {
+  CapabilityOperation operation = 1;
+}
+
+message ListConnectorResourceManifestsRequest {
+  string connector_id = 1;
+}
+
+message ListConnectorResourceManifestsResponse {
+  repeated ConnectorResourceManifest manifests = 1;
+}

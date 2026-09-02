@@ -31,6 +31,7 @@ import { AgentIconTile } from '../agent/AgentIconTile';
 import { ProviderIcon } from '../settings/ProviderIcon';
 import { useTranslation } from 'react-i18next';
 import { MessageActionBar } from '../messages';
+import { ForwardMessageModal } from './ForwardMessageModal';
 import { ToolCallsBlock } from './ToolCallCard';
 import { ThinkingIndicator } from './ThinkingBlock';
 import { chatMarkdownProps } from './markdownConfig';
@@ -186,6 +187,9 @@ function DiagnosticsBlock({
   const failedTools = toolCalls.filter((tool) => tool.status === 'error' || tool.status === 'denied').length;
   const pendingTools = toolCalls.filter((tool) => tool.pending || tool.status === 'approval_required').length;
   const failedDelegations = delegationResults.filter((item) => item.status === 'failed' || item.status === 'timeout').length;
+  const presentedError = message.error
+    ? t(message.error, { defaultValue: message.error })
+    : undefined;
   const hasRuntimeDiagnostics = !!message.thinking || !!message.error || !!message.processDuration || toolCalls.length > 0 || knowledgeChunks.length > 0 || delegationResults.length > 0;
   const hasDiagnostics = hasRuntimeDiagnostics;
 
@@ -226,7 +230,7 @@ function DiagnosticsBlock({
           {message.error && (
             <Flexbox gap={3}>
               <span style={{ fontSize: 12, fontWeight: 600, color: token.colorErrorText }}>{t('chat.message.diagnostics.error')}</span>
-              <span style={{ fontSize: 12, color: token.colorErrorText }}>{message.error}</span>
+              <span style={{ fontSize: 12, color: token.colorErrorText }}>{presentedError}</span>
             </Flexbox>
           )}
           {message.thinking && (
@@ -312,8 +316,12 @@ interface AssistantMessageProps {
 export function AssistantMessage({ message, onOpenArtifact }: AssistantMessageProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
+  const presentedError = message.error
+    ? t(message.error, { defaultValue: message.error })
+    : undefined;
   const [hovered, setHovered] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
 
   const branchFromMessage = useChatStore(s => s.branchFromMessage);
   const continueGeneration = useChatStore(s => s.continueGeneration);
@@ -321,10 +329,22 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const deleteMessage = useChatStore(s => s.deleteMessage);
   const regenerateMessage = useChatStore(s => s.regenerateMessage);
   const retryMessage = useChatStore(s => s.retryMessage);
+  const retryTurnRecovery = useChatStore(s => s.retryTurnRecovery);
+  const reloadTurnSnapshot = useChatStore(s => s.reloadTurnSnapshot);
   const sendMessage = useChatStore(s => s.sendMessage);
   const translateMessage = useChatStore(s => s.translateMessage);
   const openThread = usePortalStore(s => s.openThread);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
+  const operation = useChatStore((state) => {
+    const current = state.operations[state.currentSessionKey];
+    if (
+      current?.assistantMessageId === message.id
+      || (message.turnId && current?.turnId === message.turnId)
+    ) {
+      return current;
+    }
+    return undefined;
+  });
   const agents = useAgentStore(s => s.agents);
   const availableModels = useAgentStore(s => s.availableModels);
   const selectedAgent = useAgentStore(s => s.selectedAgent);
@@ -361,6 +381,14 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     retryMessage(message.id);
   }, [retryMessage, message.id]);
 
+  const handleRetryRecovery = useCallback(() => {
+    retryTurnRecovery(currentSessionKey);
+  }, [currentSessionKey, retryTurnRecovery]);
+
+  const handleReloadSnapshot = useCallback(() => {
+    void reloadTurnSnapshot(currentSessionKey);
+  }, [currentSessionKey, reloadTurnSnapshot]);
+
   const handleDelAndRegenerate = useCallback(() => {
     deleteAndRegenerateMessage(message.id);
   }, [deleteAndRegenerateMessage, message.id]);
@@ -387,6 +415,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
 
   return (
     <Flexbox
+      data-pt-agent-message="assistant"
+      data-pt-agent-message-id={message.id}
       id={`agent-message-${message.id}`}
       align="flex-start"
       gap={8}
@@ -468,7 +498,18 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           )}
 
           {/* Content area */}
-          {message.loading && !message.content && !(message.toolCalls && message.toolCalls.length > 0) ? (
+          {message.queued ? (
+            <Flexbox
+              data-pt-agent-message-queued
+              horizontal
+              align="center"
+              gap={8}
+              style={{ color: token.colorTextSecondary, fontSize: 13 }}
+            >
+              <Tag>{t('chat.queue.position', { position: message.queuePosition })}</Tag>
+              <span>{t('chat.queue.waiting')}</span>
+            </Flexbox>
+          ) : message.loading && !message.content && !(message.toolCalls && message.toolCalls.length > 0) ? (
             <ThinkingIndicator token={token} />
           ) : collapsed ? (
             <div
@@ -556,7 +597,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             >
               <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ flex: 1 }}>
-                <div>{message.error}</div>
+                <div>{presentedError}</div>
                 {message.resolution && (
                   <Button
                     type="primary"
@@ -616,12 +657,14 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             message,
             isStreaming: !!message.loading,
             isCurrentSession: true,
-            operation: undefined,
+            operation,
             onCopy: handleCopy,
             onEdit: () => { /* Assistant messages do not support inline edit */ },
             onDelete: handleDelete,
             onRegenerate: handleRegenerate,
             onRetry: handleRetry,
+            onRetryRecovery: handleRetryRecovery,
+            onReloadSnapshot: handleReloadSnapshot,
             onBranch: handleBranch,
             onContinue: () => continueGeneration(message.id),
             onDeleteAndRegenerate: handleDelAndRegenerate,
@@ -638,6 +681,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                 void navigator.clipboard.writeText(exported);
               }
             },
+            onForward: () => setForwardOpen(true),
           }}
           style={{
             alignSelf: 'flex-start',
@@ -647,6 +691,11 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           }}
         />
       )}
+      <ForwardMessageModal
+        open={forwardOpen}
+        messages={[message]}
+        onClose={() => setForwardOpen(false)}
+      />
     </Flexbox>
   );
 }

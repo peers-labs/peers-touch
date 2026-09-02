@@ -28,7 +28,7 @@ export async function openAgentChatSession(agent: Agent, options: OpenAgentChatS
     return topic;
   }
 
-  const topics = await topicStore.loadTopicsForAgent(agent.id, options.reason || 'open-agent-chat');
+  const topics = topicStore.getTopicsForAgent(agent.id);
   if (topics.length > 0) {
     await chatStore.selectSession(topics[0].key, topics[0]);
     return topics[0];

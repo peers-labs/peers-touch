@@ -5,13 +5,24 @@ import { useSocialChatStore } from '../store/socialChat';
 import { useNotificationStore } from '../store/notification';
 import { useNavigationBadgeStore } from '../store/navigationBadges';
 import { useAccountIdentityStore } from '../store/accountIdentity';
+import { useChatStore } from '../store/chat';
 import { useSidebarStore } from '../store/sidebar';
 import { useGlobalContextStore } from '../kernel/global-context/store';
+import { closeBrowserCapabilitySession } from '../runtimes/agentCapabilityRuntime';
+import { toolRuntime } from '../runtimes/toolRuntime';
 import { createDesktopClientStorageRuntime } from '../storage/desktopClientStorage';
+
+registerIdentityHandler('close-browser-capability-session', async (payload) => {
+  if (payload.reason === 'logout' || payload.reason === 'revoked') {
+    await closeBrowserCapabilitySession();
+  }
+});
 
 registerIdentityHandler('clear-zustand-stores', async (payload) => {
   const currentActorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
-  if (payload.reason === 'logout' || currentActorPtid !== payload.actorPtid) {
+  if (payload.reason === 'logout' || payload.reason === 'revoked' || currentActorPtid !== payload.actorPtid) {
+    useChatStore.getState().reset();
+    toolRuntime.reset();
     useSessionStore.getState().reset();
     useSocialChatStore.getState().reset();
     useNotificationStore.getState().reset();
@@ -35,7 +46,7 @@ registerIdentityHandler('clear-client-storage-caches', async (payload) => {
 });
 
 registerIdentityHandler('refresh-current-session', async (payload) => {
-  if (payload.reason === 'logout' || payload.reason === 'switch') {
+  if (payload.reason === 'logout' || payload.reason === 'revoked' || payload.reason === 'switch') {
     return;
   }
   try {

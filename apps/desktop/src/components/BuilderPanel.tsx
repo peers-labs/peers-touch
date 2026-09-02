@@ -148,10 +148,13 @@ export function BuilderPanel({
   const agents = useAgentStore(s => s.agents);
   const defaultModel = useAgentStore(s => s.defaultModel);
   const selectedModel = useAgentStore(s => s.selectedModel);
-  const selectedProviderId = useAgentStore(s => s.selectedProviderId);
   const availableModels = useAgentStore(s => s.availableModels);
   const setSelectedModel = useAgentStore(s => s.setSelectedModel);
   const sessions = useChatStore(s => s.sessions);
+  const selectedAgent = useMemo(
+    () => agents.find((candidate) => candidate.name === currentAgent),
+    [agents, currentAgent],
+  );
 
   const currentModelId = selectedModel || defaultModel;
   const currentModelLabel = useMemo(() => {
@@ -175,6 +178,19 @@ export function BuilderPanel({
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || loading || disabled) return;
+    if (!selectedAgent) {
+      const now = Date.now();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `a-${now}`,
+          role: 'assistant',
+          content: t('agent.builder.error', { error: t('agent.profile.notFound') }),
+          timestamp: now,
+        },
+      ]);
+      return;
+    }
 
     const now = Date.now();
     const userMsg: ChatMessage = { id: `u-${now}`, role: 'user', content: text, timestamp: now };
@@ -184,14 +200,19 @@ export function BuilderPanel({
     setInput('');
     setLoading(true);
 
-    const modelOverride = selectedModel && selectedModel !== defaultModel ? selectedModel : undefined;
     let assistantContent = '';
-    let modelName = modelOverride || '';
+    let modelName = '';
     const controller = executeAgentTurn(
-      buildScopedBuilderRequest(text, contextPayload),
-      scopedSessionKey,
-      currentAgent,
+      {
+        client_idempotency_key: crypto.randomUUID(),
+        conversation_id: sessionKey,
+        agent_id: selectedAgent.id,
+        user_input: buildScopedBuilderRequest(text, contextPayload),
+      },
       (event) => {
+        if (event.event === 'conversation_created' && typeof event.data?.conversation_id === 'string') {
+          setSessionKey(event.data.conversation_id);
+        }
         if (event.event === 'text') {
           const delta = typeof event.data?.content === 'string' ? event.data.content : '';
           if (delta) assistantContent += delta;
@@ -217,12 +238,17 @@ export function BuilderPanel({
         setLoading(false);
         abortRef.current = null;
       },
-      undefined,
-      modelOverride,
-      selectedProviderId || undefined,
     );
     abortRef.current = controller;
-  }, [input, loading, disabled, scopedSessionKey, currentAgent, contextPayload, selectedModel, defaultModel, selectedProviderId]);
+  }, [
+    input,
+    loading,
+    disabled,
+    selectedAgent,
+    sessionKey,
+    contextPayload,
+    t,
+  ]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();

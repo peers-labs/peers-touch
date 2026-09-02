@@ -31,12 +31,14 @@ use crate::state::AppState;
 // -------------------------------------------------------------------------
 use crate::application::account as app_account;
 use crate::application::admin as app_admin;
+use crate::application::agent_growth as app_agent_growth;
 use crate::application::agent_orchestration as app_agent_orchestration;
 use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
 use crate::application::applet_store as app_applet_store;
 use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
+use crate::application::capability_authority as app_capability_authority;
 use crate::application::channels as app_channels;
 use crate::application::chat as app_chat;
 use crate::application::chat_storage;
@@ -53,6 +55,7 @@ use crate::application::oauth2 as app_oauth2;
 use crate::application::oss as app_oss;
 use crate::application::profile as app_profile;
 use crate::application::provider as app_provider;
+use crate::application::runtime_evidence as app_runtime_evidence;
 use crate::application::search as app_search;
 use crate::application::settings as app_settings;
 use crate::application::skills as app_skills;
@@ -258,6 +261,16 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &G
         return;
     }
 
+    // Agent turn SSE stream proxy — forwards to Station as-is
+    if request.url() == "/agent/turn/stream" {
+        handle_agent_stream_proxy(request, state, "/sub-agent/agent/turn/stream");
+        return;
+    }
+    if request.url() == "/agent/turn/events" {
+        handle_agent_stream_proxy(request, state, "/sub-agent/agent/conversation/events");
+        return;
+    }
+
     // Read body
     let mut body = String::new();
     if let Err(e) = request.as_reader().read_to_string(&mut body) {
@@ -309,6 +322,98 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &G
 // -------------------------------------------------------------------------
 // /avatar route
 // -------------------------------------------------------------------------
+
+// -------------------------------------------------------------------------
+// Agent stream proxy — forwards SSE requests to Station
+// -------------------------------------------------------------------------
+
+fn handle_agent_stream_proxy(
+    mut request: tiny_http::Request,
+    state: &AppState,
+    station_path: &'static str,
+) {
+    let Some(token) = http_gateway_bearer_token(state) else {
+        let response = tiny_http::Response::from_string(
+            json!({"ok": false, "error": "authentication required"}).to_string(),
+        )
+        .with_status_code(401)
+        .with_header(content_type_json())
+        .with_header(cors_origin());
+        let _ = request.respond(response);
+        return;
+    };
+    let mut body = String::new();
+    if request.as_reader().read_to_string(&mut body).is_err() {
+        let response = tiny_http::Response::from_string("invalid stream request")
+            .with_status_code(400)
+            .with_header(cors_origin());
+        let _ = request.respond(response);
+        return;
+    }
+    let client = match reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            let response = tiny_http::Response::from_string(error.to_string())
+                .with_status_code(500)
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+    let upstream = client
+        .post(format!(
+            "{}{}",
+            station_client::station_base_url(),
+            station_path
+        ))
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::ACCEPT, "text/event-stream")
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(body)
+        .send();
+    let upstream = match upstream {
+        Ok(response) => response,
+        Err(error) => {
+            let response = tiny_http::Response::from_string(error.to_string())
+                .with_status_code(502)
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+    let status = upstream.status().as_u16();
+    let turn_id_header = upstream
+        .headers()
+        .get("x-agent-turn-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| format!("X-Agent-Turn-ID: {value}").parse().ok());
+    let mut response_headers = vec![
+        "Content-Type: text/event-stream; charset=utf-8"
+            .parse()
+            .unwrap(),
+        "Cache-Control: no-cache".parse().unwrap(),
+        "Access-Control-Expose-Headers: X-Agent-Turn-ID"
+            .parse()
+            .unwrap(),
+        cors_origin(),
+    ];
+    if let Some(header) = turn_id_header {
+        response_headers.push(header);
+    }
+    let response = tiny_http::Response::new(
+        tiny_http::StatusCode(status),
+        response_headers,
+        upstream,
+        None,
+        None,
+    );
+    let _ = request.respond(response);
+}
 
 fn handle_avatar_get(request: tiny_http::Request, url: &str) {
     let remote_url = match parse_avatar_query(url) {
@@ -7760,6 +7865,286 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     None,
                 )),
             }
+        }
+
+        // =================================================================
+        // Agent V2 — Capability Authority, Runtime Evidence, Growth
+        // =================================================================
+        "agent_runtime_profile_effective" => {
+            let input = match parse_args::<AgentRuntimeProfileInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::effective_runtime_profile(
+                input, &token,
+            ))
+        }
+        "agent_capability_manifest_list" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityManifestListInput>(args) {
+                    Ok(value) => value,
+                    Err(error) => return error,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_manifests(input, &token))
+        }
+        "agent_capability_binding_list" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingListInput>(args) {
+                    Ok(value) => value,
+                    Err(error) => return error,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_bindings(input, &token))
+        }
+        "agent_capability_binding_upsert" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingUpsertInput>(args) {
+                    Ok(value) => value,
+                    Err(error) => return error,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::upsert_binding(input, &token))
+        }
+        "agent_capability_binding_delete" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingDeleteInput>(args) {
+                    Ok(value) => value,
+                    Err(error) => return error,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::delete_binding(input, &token))
+        }
+        "agent_knowledge_descriptor_create" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::create_knowledge_descriptor(
+                input, &token,
+            ))
+        }
+        "agent_knowledge_descriptor_update" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::update_knowledge_descriptor(
+                input, &token,
+            ))
+        }
+        "agent_knowledge_descriptor_list" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_knowledge_descriptors(
+                input, &token,
+            ))
+        }
+        "agent_knowledge_descriptor_tombstone" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::tombstone_knowledge_descriptor(
+                input, &token,
+            ))
+        }
+        "agent_package_export" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::export_agent_package(
+                input, &token,
+            ))
+        }
+        "agent_package_import" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::import_agent_package(
+                input, &token,
+            ))
+        }
+        "agent_capability_readiness" => {
+            let input = match parse_args::<app_capability_authority::CapabilityReadinessInput>(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::readiness(input, &token))
+        }
+        "agent_capability_sessions" => {
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::station_capability_sessions(&token))
+        }
+        "agent_browser_capability_session_open" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let app = match runtime.app_handle("agent_browser_capability_session_open") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(app_runtime_evidence::open_browser_capability_session(
+                supervisor.inner(),
+            ))
+        }
+        "agent_browser_capability_session_close" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let app = match runtime.app_handle("agent_browser_capability_session_close") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(app_runtime_evidence::close_browser_capability_session(
+                supervisor.inner(),
+            ))
+        }
+        "agent_runtime_activity_station" => {
+            let input = match parse_args::<AgentRuntimeActivityInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::station_runtime_activity(
+                input, &token,
+            ))
+        }
+        "agent_runtime_activity_local" => {
+            let input = match parse_args::<AgentRuntimeActivityInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::local_runtime_activity(input, &token))
+        }
+        "agent_capability_session_snapshot" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let app = match runtime.app_handle("agent_capability_session_snapshot") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            if args.get("negativeControl").is_some() {
+                let input = match parse_args::<
+                    app_runtime_evidence::AgentCapabilitySessionSnapshotInput,
+                >(args)
+                {
+                    Ok(input) => input,
+                    Err(error) => return error,
+                };
+                let Some(negative_control) = input.negative_control else {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        "agent.capabilityNegativeControlInvalid",
+                        None,
+                    ));
+                };
+                return to_json(app_runtime_evidence::capability_negative_control(
+                    negative_control,
+                    supervisor.inner(),
+                ));
+            }
+            match supervisor.snapshot() {
+                Ok(snapshot) => {
+                    to_json(app_runtime_evidence::capability_session_snapshot(snapshot))
+                }
+                Err(error) => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InternalError,
+                    "agent.capabilitySessionSnapshotFailed",
+                    Some(json!({ "cause": error })),
+                )),
+            }
+        }
+        "agent_submit_feedback" => {
+            let input = match parse_args::<app_agent_growth::AgentFeedbackInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_submit_feedback(input, &token))
+        }
+        "agent_list_turn_feedback" => {
+            let input = match parse_args::<app_agent_growth::AgentTurnFeedbackListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_list_turn_feedback(input, &token))
         }
 
         // =================================================================

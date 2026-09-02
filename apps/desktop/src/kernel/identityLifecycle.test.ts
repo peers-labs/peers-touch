@@ -112,6 +112,26 @@ describe('identity lifecycle state machine', () => {
     expect(identityPhaseAllowsReady(revoked)).toBe(false);
   });
 
+  it('keeps logout outside the auth gate until session teardown completes', () => {
+    const authenticated = identityReducer(
+      { kind: 'booting', reason: 'renderer_reload' },
+      { type: 'SESSION_RESTORED', source: 'restore', user },
+    );
+    const loggingOut = identityReducer(authenticated, {
+      type: 'LOGOUT_REQUESTED',
+    });
+    const accountGate = identityReducer(loggingOut, {
+      type: 'ACCOUNT_GATE_READY',
+      reason: 'logout',
+    });
+
+    expect(loggingOut).toEqual({ kind: 'loggingOut' });
+    expect(identityPhaseAllowsReady(loggingOut)).toBe(false);
+    expect(identityPhaseNeedsAuthGate(loggingOut)).toBe(false);
+    expect(accountGate).toEqual({ kind: 'accountGate', reason: 'logout' });
+    expect(identityPhaseNeedsAuthGate(accountGate)).toBe(true);
+  });
+
   it('tracks profile and account cache substates inside authenticated phase', () => {
     const authenticated = identityReducer(
       { kind: 'booting', reason: 'renderer_reload' },

@@ -75,6 +75,7 @@ describe('logger background lane', () => {
           access_token: 'sensitive-value-b',
           operation: 'login',
         },
+        key_vaults: JSON.stringify({ api_key: 'sensitive-value-c' }),
       },
     });
 
@@ -94,9 +95,11 @@ describe('logger background lane', () => {
           access_token: '[redacted]',
           operation: 'login',
         },
+        key_vaults: '[redacted]',
       },
     });
     expect(entry.data).not.toContain(rawPassword);
     expect(entry.data).not.toContain('sensitive-value-b');
+    expect(entry.data).not.toContain('sensitive-value-c');
   });
 });

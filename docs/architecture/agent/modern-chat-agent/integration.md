@@ -1,8 +1,8 @@
 # Modern Chat Agent — Integration
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-07-30
+> **Created**: 2026-07-30 | **Updated**: 2026-08-25
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -59,6 +59,8 @@ Downstream consumers:
 | `application/mcp/` and `application/tools/` | Device-local capability execution |
 | `application/agent_orchestration/` | Agent Canvas bridge, downstream of the single-Agent kernel |
 | `interface/http_gateway/` | Browser gateway to the same Station business contracts |
+| `domain/actor_device_identity.rs` | Existing actor/device Ed25519 identity used to sign terminal recovery proof |
+| `infrastructure/station_client.rs` | Typed per-device protobuf transport for lease and receipt APIs |
 
 ### Desktop Web
 
@@ -80,12 +82,17 @@ Downstream consumers:
 | Desktop in-memory `application/chat::ChatStore` | Station Agent conversation/message APIs | Delete |
 | Browser gateway one-shot chat path | Sequenced Station SSE gateway | Remove from interactive Agent chat |
 | `workspace_root` and client-submitted execution fields | Station config plus opaque client/Station resource refs | Delete from shared turn authority |
+| Raw local path/handle flow without a client resource registry | Encrypted actor/device-scoped opaque resource-ref registry | Delete before C08/C07 proof |
 | Desktop-specific local tool names/owner/guidance | Platform-neutral ClientCapabilitySession contract | Replace |
 | Local durable Agent definition/config files | Station AgentDefinition | Delete shared-state fields; retain local UI preference only |
 | Flat retry/regenerate mutation | Station message lineage and branch selection | Replace |
 | Metadata-only attachment turn path | Canonical opaque AttachmentRef | Replace |
 | Unsequenced ephemeral stream assumptions | TurnEvent cursor/replay/snapshot | Replace |
 | Phase labels that redefine P0-P2 | `MODERN_CHAT_AGENT_V1` capability IDs | Replace in revised plan |
+| Web `decideToolApproval` plus direct Rust invocation | `toolRuntime` decision projection plus Station-issued fenced envelope | Delete Web execution authority |
+| Rust approval registry/waiter and direct Web-to-waiter command | Client capability envelope consumer plus durable receipt ledger | Deleted in G1-E |
+| Station `LocalToolBroker` and `/turn/local-tool-result` continuation | ToolDispatch outbox, receipt/result acceptance, and unique turn continuation | Deleted in G1-E |
+| Client-only diagnostic export and feedback state | Station exact-turn redacted replay and immutable feedback/usage | Delete after readback evidence passes |
 
 ## 4. Document Reconciliation
 
@@ -148,7 +155,7 @@ budget, and evaluation contracts defined here.
 The current execution plan remains blocked. After design acceptance it must be
 rewritten to:
 
-- Trace to `MCA-D01` through `MCA-D13`.
+- Trace to `MCA-D01` through `MCA-D18`.
 - Prioritize single-Agent context, continuity, budgets, capability, and
   evaluation before collaboration.
 - Remove multi-Agent implementation from the plan and use Agent Canvas as a
@@ -218,6 +225,17 @@ Every runtime has:
 - Idempotent install/teardown.
 - No overlapping ownership.
 
+Under accepted `MCA-D08A`, Desktop message-action cutover is all-or-nothing.
+The legacy
+`updateMessage`, `deleteMessage`, destructive regenerate, and duplicated-topic
+branch construction are removed only when Desktop Web and Rust consume the
+canonical Station commands `RetryTurn`, `RegenerateTurn`, `EditAndResend`,
+`SelectActiveBranch`, and `TombstoneMessage`.
+
+The client may retain rebuildable message/branch caches and optimistic pending
+command state. It must not retain a writable message body, active branch,
+tombstone, idempotency result, or conversation revision as independent truth.
+
 Pages render these projections and do not fetch durable business state on mount.
 
 ## 8. Compatibility Policy
@@ -250,22 +268,169 @@ Architecture acceptance requires evidence plans for:
 If a runtime kind lacks evidence, the capability profile must mark it
 unsupported rather than silently partial.
 
-## 10. Integration Review Questions
+### 9.1 C07 Fenced Execution Cutover
 
-1. Is stateful external Agent runtime support required for the first accepted
-   capability profile, or should the first profile support Direct Model only?
-2. What event retention window and text-checkpoint compaction policy satisfy
-   replay without excessive storage?
-3. Which cost facts are authoritative when a provider does not report cost?
-4. Which local capabilities require mandatory approval regardless of user
-   preference?
-5. What retention policy applies to message branches, runtime homes, traces,
-   and diagnostic evidence?
-6. When multiple user devices are online, what explicit selection policy
-   chooses the client capability session for a privileged local request?
+The `MCA-D19` core and `MCA-D19A` recovery semantics are accepted.
+`MCA-D19B` device-possession proof was accepted after G1-A verified that JWT
+binds actor only and `X-Device-ID` is an ordinary header. Until D19A/B are
+implemented proto-first through Station, G1-C, C07/C09, and G-F remain blocked
+or `UNPROVEN`.
 
-These are review decisions. They must be resolved before execution planning,
-not silently chosen by implementation.
+The cutover is atomic at the authority boundary:
+
+1. Model proto defines decision command/ack, targeted execution envelope,
+   Station-resolved replay policy, lease renew/revoke, signed recovery proof,
+   signed capability command proof, split deadlines, and receipt/result
+   identities from `data-model.md §8.9`.
+2. Station `TurnService` routes every client-owned ToolCall through
+   `ToolDispatchService`; it cannot execute a device-local tool directly.
+3. Station commits decision revision, claim, dispatch sequence, and outbox
+   envelope plus one recovery credential/nonce record before delivery.
+4. Desktop Rust consumes only Station-issued targeted envelopes, persists
+   `PREPARED`, resolves opaque refs locally, executes according to the pinned
+   replay policy, and submits the typed receipt/result.
+5. Station commits each immutable ToolCall result once. The final successful
+   member of a provider-response batch atomically creates the single
+   `(turn_id, attempt_id, tool_batch_id)` continuation.
+6. Desktop Web `toolRuntime` projects proposal/decision/result and submits only
+   user decision commands.
+7. A durable Station continuation worker claims and completes that continuation;
+   restart reclaims only pre-emission or provider-idempotent work.
+8. A matching PREPARED attempt may submit a device-signed terminal recovery
+   after lease loss or execution deadline, but only before reconciliation
+   deadline. Recovery cannot execute, pull, renew, or continue.
+9. Externally idempotent PREPARED work may execute after restart only after
+   Station CAS-takes over the existing claim, increments its fence, binds a
+   current matching lease, invalidates the prior recovery credential, and
+   emits a new targeted envelope with the exact original idempotency key.
+   Original execution deadline remains authoritative; resource-bearing
+   takeover fails closed until cross-session resource rebind is designed.
+10. Only after the new path passes duplicate, stale, crash, replay, cancel,
+   revoke, restart, and readback checks are the old Web/Rust/Station paths
+   deleted.
+
+Required negative evidence:
+
+- duplicate/stale decision cannot dispatch;
+- duplicate execution envelope cannot create a second side effect;
+- mismatched actor/device/session/lease revision/claim/fence/payload/execution
+  deadline rejects before side effects;
+- expired/revoked lease cannot pull or begin PREPARED; renew requires
+  same-scope CAS and cannot mutate capabilities or signing key;
+- lease registration cannot choose actor, device, lease/session ID, revision,
+  or expiry; Station derives/issues them and caps TTL;
+- actor JWT plus `X-Device-ID` is insufficient for device authority; every
+  capability command verifies the current actor-device signature before lease,
+  pull, outbox, or result access;
+- active receipt and terminal recovery use separate endpoints and proof modes;
+  neither endpoint may downgrade to the other's authority;
+- recovery remains available after actor JWT/capability-session revoke, but
+  only through persisted credential scope and the current unrevoked device key;
+- identical signed write replay returns the same durable outcome, while nonce
+  reuse with another command/body rejects;
+- post-deadline terminal settlement requires matching PREPARED, valid
+  credential scope/nonce/device signature, and live reconciliation deadline;
+- Desktop restart cannot execute from a persisted PREPARED row or recovery
+  credential; external-idempotency replay requires a new Station-issued fence
+  under a current matching lease;
+- takeover reuses the exact external idempotency key, never extends the
+  execution deadline, invalidates prior recovery authority, and rejects
+  resource-bearing replay without an accepted cross-session rebind contract;
+- duplicate signed recovery returns the original acknowledgement while a
+  conflicting digest consumes no second result;
+- late valid APPLIED recovery records the side-effect fact but cannot reopen a
+  cancelled/expired Turn or blocked ToolBatch;
+- device signing-key revoke invalidates recovery and settles unresolved work as
+  unknown without redispatch;
+- client cannot upgrade replay policy or substitute an external idempotency key;
+- duplicate result cannot append another continuation;
+- multiple ToolCalls from one provider response create one continuation only
+  after every member is `APPLIED`;
+- denied, expired, cancelled, failed, or unknown-side-effect batches create no
+  automatic continuation;
+- ambiguous non-idempotent post-emission continuation crashes require
+  reconciliation and are not replayed automatically;
+- non-idempotent crash after `PREPARED` becomes `UNKNOWN_SIDE_EFFECT`;
+- no portable contract or Station record contains a local path;
+- opaque refs resolve only through the Desktop encrypted actor/device registry
+  and are deleted after settlement/expiry;
+- no Web-to-native execution command remains;
+- old-path scanner reports zero unresolved C07/C09 matches.
+
+Operational defaults for the current v1 implementation are a five-minute
+capability lease, two-minute default execution deadline, ten-minute
+reconciliation window after execution deadline, and 60-second command-proof
+clock-skew allowance. Station owns these bounded policies; clients cannot
+extend them.
+
+The cutover is fail-closed:
+
+- pre-D19B active leases are revoked and clients must register again with
+  device proof;
+- the old `deadline` value becomes `execution_deadline`;
+- historical terminal results remain immutable;
+- historical PREPARED work without a persisted recovery credential settles as
+  `UNKNOWN_SIDE_EFFECT` without redispatch or continuation;
+- no recovery credential or signing proof is synthesized during migration.
+
+### 9.2 Conditional Runtime Non-Advertisement Proof
+
+MCA-D19D integrates through production read-only paths:
+
+```text
+Desktop/Browser receiver
+  -> Station effective runtime profile snapshot
+  -> Station runtime activity snapshot
+  -> Desktop Rust local activity snapshot (Desktop cell only)
+  -> before/after identity and monotonic-delta validation
+```
+
+Station handlers derive the actor from authentication and return the effective
+profile/readiness snapshot plus actor-scoped activity counters. Desktop Rust
+returns only its current actor/device/boot-scoped local counters through the
+controlled BFF. Web may display or forward these projections but cannot mutate
+counters or synthesize advertisement state.
+
+The Browser Gate provisions a distinct browser profile, storage root, port set,
+and session. It reads the same Station snapshots and proves selector absence
+from its own DOM. It does not borrow Native DOM or Desktop-local process
+counters.
+
+Cutover requirements:
+
+1. Proto contracts land before Station, Rust, Web Harness, or Acceptance
+   adapters.
+2. Station explicitly evaluates P12 and registered CLI candidates as
+   `NOT_ADVERTISED` under the frozen profile.
+3. Station and Desktop counter owners increment at the actual side-effect
+   boundaries, never inside Acceptance code.
+4. The XR-4 adapter captures immutable before/after snapshots and rejects
+   identity, revision, epoch, or counter regression.
+5. Old provider-list and TurnTrace-only proof code is deleted rather than kept
+   as a fallback.
+6. P12/CLI remain unavailable; this cutover proves non-advertisement and does
+   not activate either runtime.
+
+## 10. Resolved Integration Policies
+
+1. Direct Model is required. Stateful external Agent runtime remains
+   optional-advertised and cannot block the required profile.
+2. Semantic events and terminal snapshots remain durable under their owning
+   Turn retention. Text deltas may compact after terminal snapshot; replay uses
+   snapshot plus retained semantic tail. No fixed time window may discard the
+   only reconstructable state.
+3. Provider-reported usage/cost is authoritative. Missing provider cost remains
+   `unknown`; estimates are optional labeled projections, never billing truth.
+4. Destructive writes, external side effects, credential/secret access,
+   privilege expansion, and high-risk local capabilities always require policy
+   approval. Read-only bounded calls may use an accepted allow-list policy.
+5. Message branches, traces, Evaluation results, runtime homes, bindings,
+   manifests, and Connector resources follow `data-model.md §6` lifecycle,
+   tombstone, and deletion rules.
+6. Privileged local work requires explicit device/session selection. The
+   selected capability session is pinned in the readiness snapshot and
+   ToolCall/operation. Low-risk work may auto-select only when exactly one
+   compatible session exists and policy explicitly allows it.
 
 ## 11. Measurement Protocol
 
@@ -314,6 +479,12 @@ product and architecture amendments.
 | MCA-A12 | Usage/feedback/diagnostics | Usage and feedback persist; redacted export reconstructs the turn |
 | MCA-A13 | Actor/device isolation | Two actors and two devices cannot cross-read state, credentials, runtime homes, or resource refs |
 | MCA-A14 | Future Mobile contract | Mobile can use all Station capabilities and cleanly reject unsupported Desktop-only local capabilities |
+| MCA-A15 | Home Chat/Task/restart | Home submits canonical Chat/Task commands and restores the same accepted work after restart |
+| MCA-A16 | Capability bind/reject | Binding reads back one manifest version; incompatible runtime rejects before execution |
+| MCA-A17 | MCP lifecycle | Install/test/invoke/cancel/reconnect cleans process, port, and secret state |
+| MCA-A18 | Connector invocation | OAuth resource becomes a manifest, binding, ToolCall, result, and expiry recovery |
+| MCA-A19 | Governed Tool loop | Decision/execution/result are exactly once under duplicate delivery and replay |
+| MCA-A20 | Evaluation lifecycle | Dataset/run/cancel/retry/result/metrics survive restart and remain actor-isolated |
 
 Surface evidence must include the visible interaction, Station readback, and
 trace/runtime evidence. A screenshot alone is not a pass.
@@ -334,18 +505,54 @@ This is the authoritative starting point for the next planning job.
 | MCA-C08 Attachments/resources | D04, D05, D13 | attachment/resource refs | Station storage/context plus client capability kernel | Upload/composer foundations exist | Opaque refs, extraction, auth, model gate | Metadata/local-path payload | A08, A13-A14 |
 | MCA-C09 Evaluation/evidence | D10, D12 | usage, feedback, diagnostic export | Station trace/evaluation | Trace/growth foundations exist | Unified outcomes, fixed cases, replay export | Screenshot-only claims | A12 |
 | MCA-C10 Client portability | D01, D05, D07, D13 | client capability session | Shared client contract plus platform kernels | Desktop and Mobile Tauri kernels exist | Portable bridge, platform capability registry, Mobile contract test | `desktop-rust` shared semantics | A11, A13-A14 |
+| MCA-C11 Home work projection | D14 | `HomeWorkProjection` | Station Home Projection + Desktop `homeRuntime` | Home pinned/recent UI and Station topic/task services exist | Revisioned partial/stale projection and canonical Chat/Task handoff | Page-derived recents/Brief truth | A15 |
+| MCA-C12 Capability manifest/binding | D15 | `CapabilityManifest`, `AgentCapabilityBinding`, readiness snapshot | Station capability catalog/binding/admission | Tool registry and source-specific stores/bindings exist | One versioned catalog, compatibility and atomic consumer cutover | Tool/MCP/Connector split inventories and config JSON truth | A16, A19 |
+| MCA-C13 Capability operation/MCP | D13, D16 | `CapabilityOperation`, client capability request/result | Station operation + Desktop capability manager | Desktop MCP CRUD/test/execute exists | Durable operation, leases, cancel/reconnect and cleanup | Client-only operation terminal state | A17, A19 |
+| MCA-C14 Connector resource tools | D15, D17 | `ConnectorResourceManifest`, Tool manifest/binding | OAuth owner + Station Connector Manifest/Tool services | OAuth mount/sync lifecycle exists | Scoped resource/version manifests, invocation and expiry recovery | enabled tool names as readiness | A18-A19 |
+| MCA-C15 Evaluation aggregate | D10, D18 | benchmark/dataset/case/run/attempt/result | Station Evaluation + canonical TurnService | Station dataset CRUD and Desktop Evaluation UI exist | Durable run/result/cancel/retry/metrics/restart | localStorage and `quickCompletion` Evaluation | A20 |
+
+### 13.1 V2 Deletion And Retention Closure
+
+| Closure | Delete/retire | Retain/replace |
+|---|---|---|
+| C11 | `HomePage`-owned durable recents/Brief/readiness aggregation | `homeRuntime` projection backed by Station revision |
+| C12 | Embedded Tool/Skill/Knowledge/MCP/Connector binding arrays as authoritative config; parallel readiness selectors | Versioned manifests, Agent bindings, readiness snapshots |
+| C13 | Client-only operation terminal/progress state and unleased executor dispatch | Station `CapabilityOperation`; local MCP configuration/process remains client-owned |
+| C14 | Connector `enabledTools`/labels as readiness or binding identity | OAuth connection owner + Connector resource manifests + Agent bindings |
+| C15 | Evaluation localStorage datasets/runs/results and Evaluation `quickCompletion` execution | Station Evaluation aggregate using canonical Turn/Trace |
+
+Accepted C12 Knowledge closure (`MCA-D15K`):
+
+1. Import legacy Agent Knowledge JSON into actor-scoped descriptor revisions;
+   the legacy data is read-only migration input.
+2. Publish one immutable Knowledge manifest version per descriptor revision and
+   create/reconcile bindings with exact Agent version and binding revision.
+3. Switch Profile, package, prompt assembly, retrieval, and trace attribution
+   to descriptor/manifest/binding/readiness contracts.
+4. Reject non-empty request-supplied Knowledge fields before provider or
+   retrieval work.
+5. Delete legacy Knowledge binding routes, config writes, request fields, and
+   Station local-path/turn-time URL retrieval.
+6. Prove disabled-resource omission, actor isolation, stale revision rejection,
+   local-resource session fencing, package dependency failure, and restart
+   readback before removing the migration reader.
+
+Entity deletion, tombstone, historical snapshot, and cleanup rules are governed
+by `data-model.md §6`; implementation plans must prove both tree-wide consumer
+cutover and runtime resource cleanup.
 
 Locator rules:
 
 1. The execution plan creates at least one internally complete closure for
-   every `MCA-Cxx` row.
+   every `MCA-C01` through `MCA-C15` row.
 2. Every task cites its `MCA-Cxx`, `MCA-Dxx`, target owner, deletion obligation,
    deterministic gate, and evidence path.
 3. Work not mapped to a locator row is out of scope or requires a design
    amendment.
 4. A row is complete only when its acceptance scenarios pass and its deletion
    obligation is proven by tree-wide search.
-5. The Agent module is complete only when all required `MCA-Cxx` rows are
+5. The Agent module is complete only when all required `MCA-C01` through
+   `MCA-C15` rows are
    complete; file counts or “code exists” do not count.
 
 ## 14. Planning Handoff Query
@@ -361,7 +568,7 @@ The next planning job must begin by reading:
 It must output a traceability report answering:
 
 ```text
-For each MCA-Cxx:
+For each MCA-C01 through MCA-C15:
   current repository assets
   target execution closure
   dependency predecessors

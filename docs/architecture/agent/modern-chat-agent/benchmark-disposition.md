@@ -1,8 +1,8 @@
 # Modern Chat Agent — Benchmark Disposition
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-07-30
+> **Created**: 2026-07-30 | **Updated**: 2026-08-17
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -48,6 +48,9 @@ Disposition meanings:
 | MCA-B20 | Cloud/local sandbox runs code and generates files | LobeHub Sandbox guide; Peers-Touch workspace isolation | Produce real results safely | adapt | Execution target and isolation must be explicit; never imply a sandbox when none exists |
 | MCA-B21 | Marketplace/community enables one-click Agent and capability installation | LobeHub Agent/Skills guides; Peers-Touch Capabilities guide | Faster discovery | defer | Trust and federation governance require separate product design |
 | MCA-B22 | Multi-Agent teams and orchestration run inside chat | LobeHub Agent teams; Peers-Touch Orchestra/A2A | Delegate complex work | defer | Single-Agent readiness is a prerequisite; Agent Canvas owns this product |
+| MCA-B23 | Home combines pinned Agents, scoped recents, Chat/Task input, Brief/Needs You, running tasks, and explicit loading/error/empty/retry states | LobeHub `features/Home/*`, `store/home/*`, `features/HomeInbox/*` | Resume or start consequential work from one place | adapt | Use Station Agent/topic/task/capability truth; exclude promotional portrait, commercial recommendations, Community, and generation modes |
+| MCA-B24 | Tool/MCP/Connector inventory is filtered by surface/runtime ownership and connected to governed invocation | LobeHub source `1056cdf32b4e`: `features/ProfileEditor/profileToolVisibility.ts#getVisibleProfileToolIds`, `store/tool/slices/connector/action.ts#mountConnectorToAgent`, `store/tool/slices/mcpStore/action.ts#installMCPPlugin`, `features/Conversation/store/slices/tool/action.ts#approveToolCall` | Know what the Agent can use and why before sending | adapt | Collapse duplicate stores into one Peers capability manifest/binding/policy projection; add authoritative model/runtime compatibility before admission; Station remains authority |
+| MCA-B25 | Evaluation Lab exposes benchmark, dataset, test case, run, cancel, retry/resume, result, metrics, and experiment workflows | LobeHub `routes/(main)/eval/*`, `store/eval/*`, `services/agentEval.ts`, database `agentEvals.ts` | Compare Agent quality with durable, inspectable evidence | adapt | Required V2 loop includes benchmark/dataset/test-case/run/result/cancel/retry/restart; experiments and broad import formats do not block the first Peers loop |
 
 ## 3. Rejected Benchmark Behaviors
 
@@ -70,6 +73,8 @@ The benchmark pass covers the required first-profile concerns:
 - Capability transparency, usage, feedback, and diagnostics.
 - Optional external Agent and artifact behavior.
 
-Image generation, voice, marketplaces, sharing, scheduled tasks, channels, and
-multi-Agent orchestration remain explicitly deferred rather than silently
+Home Command Center, unified capability governance, and Evaluation Lab are V2
+required scope. Image generation is unsupported. Video and server-side audio
+generation, Mobile UI, commercial marketplace/community behavior, and
+multi-Agent collaboration remain explicitly deferred rather than silently
 omitted.

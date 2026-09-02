@@ -51,6 +51,7 @@ import { SettingsPage } from './Settings';
 import { T } from './theme';
 import { ToastHost } from '../../shared/Toast';
 import { ModernChatReview } from '../../features/modern-chat-agent/src/ModernChatReview';
+import { V2ProductReview } from '../../features/modern-chat-agent/src/V2ProductReview';
 
 /** An installed applet (mirrors RuntimeAppletInfo.manifest + status). */
 interface AppletInfo {
@@ -627,7 +628,8 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
     ? ''
     : new URLSearchParams(window.location.search).get('state') ?? '';
   const showModernChatReview = modernChatState.startsWith('modern-');
-  const defaultPage = showModernChatReview ? 'agent' : initialPage ?? 'applets';
+  const showV2ProductReview = modernChatState.startsWith('v2-');
+  const defaultPage = showModernChatReview || showV2ProductReview ? 'agent' : initialPage ?? 'applets';
   const [page, setPage] = useState(defaultPage);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [visitedAgentSurfaces, setVisitedAgentSurfaces] = useState<Set<AgentSurfaceId>>(() => {
@@ -682,11 +684,20 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
     body = (
       <AgentChatPage
         onOpenOrchestration={() => navigate('agent-orchestration')}
+        profileOpen={false}
         onOpenProfile={() => navigate('agent-profile')}
+        onCloseProfile={() => navigate('agent')}
       />
     );
   } else if (page === 'agent-profile') {
-    body = <AgentProfilePage onOpenOrchestration={() => navigate('agent-orchestration')} />;
+    body = (
+      <AgentChatPage
+        onOpenOrchestration={() => navigate('agent-orchestration')}
+        profileOpen
+        onOpenProfile={() => navigate('agent-profile')}
+        onCloseProfile={() => navigate('agent')}
+      />
+    );
   } else if (page === 'agent-orchestration') {
     body = <AgentCanvasPage embedded onBack={() => navigate('agent')} />;
   } else if (page === 'settings') {
@@ -758,7 +769,9 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
                     data-agent-surface="agent"
                     style={{ position: 'absolute', inset: 0, display: page === 'agent' || page === 'agent-profile' ? 'block' : 'none' }}
                   >
-                    {showModernChatReview ? (
+                    {showV2ProductReview ? (
+                      <V2ProductReview initialState={modernChatState} />
+                    ) : showModernChatReview ? (
                       <ModernChatReview initialState={modernChatState} withTopicRail />
                     ) : (
                       <AgentChatPage

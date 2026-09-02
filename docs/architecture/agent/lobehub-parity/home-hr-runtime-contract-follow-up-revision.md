@@ -38,15 +38,15 @@ product parity.
 
 | Area | Source Path | Contract Captured |
 | --- | --- | --- |
-| Home layout lifetime | `external/lobehub/src/routes/(main)/home/_layout/index.tsx` | `Activity` keeps Home layout alive after first activation; Home hides inactive DOM while preserving state. |
-| Recent hydration | `external/lobehub/src/routes/(main)/home/_layout/RecentHydration.tsx` | Recents initialize as a Home runtime side effect, not a one-off visual list. |
-| Sidebar body | `external/lobehub/src/routes/(main)/home/_layout/Body/index.tsx` | Workspace-scoped sidebar order, hidden sections, expanded keys, page size, context menu and customize sidebar. |
-| Agent sidebar | `external/lobehub/src/routes/(main)/home/_layout/Body/Agent/index.tsx` | Agent list loading/revalidation and create/config group actions are sidebar runtime states. |
-| Agent select | `external/lobehub/src/routes/(main)/home/features/AgentSelect/index.tsx`; `external/lobehub/src/routes/(main)/home/features/AgentSelect/useResolvedHomeAgentId.ts` | Loading skeleton, retry, selected-agent persistence, stale id fallback and agent config preheat. |
-| Input area | `external/lobehub/src/routes/(main)/home/features/InputArea/index.tsx` | Home ChatInput binds active agent, server-config banners, input config loading, drag upload and model/provider selectors. |
-| Send path | `external/lobehub/src/routes/(main)/home/features/InputArea/useSend.ts` | Empty-input daily hint send, agent/group/write/research branches, config hydration before send, isolated topic route push/replace, cleanup after send. |
+| Home layout lifetime | `external/lobehub/src/routes/(main)<home>/index.tsx` | `Activity` keeps Home layout alive after first activation; Home hides inactive DOM while preserving state. |
+| Recent hydration | `external/lobehub/src/routes/(main)<home>/RecentHydration.tsx` | Recents initialize as a Home runtime side effect, not a one-off visual list. |
+| Sidebar body | `external/lobehub/src/routes/(main)<home>/Body/index.tsx` | Workspace-scoped sidebar order, hidden sections, expanded keys, page size, context menu and customize sidebar. |
+| Agent sidebar | `external/lobehub/src/routes/(main)<home>/Body/Agent/index.tsx` | Agent list loading/revalidation and create/config group actions are sidebar runtime states. |
+| Agent select | `external/lobehub/src/routes/(main)<home>/AgentSelect/index.tsx`; `external/lobehub/src/routes/(main)<home>/AgentSelect/useResolvedHomeAgentId.ts` | Loading skeleton, retry, selected-agent persistence, stale id fallback and agent config preheat. |
+| Input area | `external/lobehub/src/routes/(main)<home>/InputArea/index.tsx` | Home ChatInput binds active agent, server-config banners, input config loading, drag upload and model/provider selectors. |
+| Send path | `external/lobehub/src/routes/(main)<home>/InputArea/useSend.ts` | Empty-input daily hint send, agent/group/write/research branches, config hydration before send, isolated topic route push/replace, cleanup after send. |
 | ChatInput runtime | `external/lobehub/src/features/ChatInput/store/initialState.ts`; `external/lobehub/src/features/ChatInput/store/action.ts` | History, completion, slash placement, draft clear, focus restore, stop/send disabled behavior and input completion recovery. |
-| Recents | `external/lobehub/src/routes/(main)/home/features/Recents/index.tsx` | Login gate, SWR revalidate, error-before-skeleton retry, page size, move/hide section and all-recents drawer. |
+| Recents | `external/lobehub/src/routes/(main)<home>/Recents/index.tsx` | Login gate, SWR revalidate, error-before-skeleton retry, page size, move/hide section and all-recents drawer. |
 | Agent home / topics | `external/lobehub/src/features/AgentHome/**`; `external/lobehub/src/store/session/**`; `external/lobehub/src/store/chat/slices/topic/**` | Home entry links into agent/topic runtime rather than owning durable session truth. |
 
 ## 3. Revision Scope

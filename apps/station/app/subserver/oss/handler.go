@@ -215,9 +215,8 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 	// subserver under a non-default prefix (avatar / header upload
 	// today, more tomorrow) compose the absolute URL themselves.
 	// `cid` is the federated URI chat clients should embed in
-	// `MessageAttachment.cid`. `sha256` is non-empty only when the
-	// CAS strategy is active — clients use it to verify integrity
-	// on download.
+	// `CreateImagePostRequest.image_ids` (Moments). `sha256` is the content
+	// integrity digest for both random and CAS key strategies.
 	resp := map[string]any{
 		"key":      meta.Key,
 		"cid":      cid,

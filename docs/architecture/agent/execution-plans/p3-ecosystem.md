@@ -87,6 +87,12 @@ Rationale: Quick wins first (M7, M6), then the highest-value ecosystem features 
 - Search + filter by category
 - Social: favorites, likes (future)
 
+**Future data-plane closure**:
+- Ship at least one governed default marketplace source so first use is not empty.
+- Replace the current URL-to-JSON convention with an explicit Git repository/branch contract or an official/federated catalog API.
+- Define publisher identity, signature, trust/risk, version, revoke, and federation ownership.
+- Add source-bound Acceptance for default source discovery, synchronization, visible catalog data, install readback, uninstall, and cleanup.
+
 **Depends on**: Existing skills_market, agent package import
 
 ---
@@ -183,7 +189,7 @@ Rationale: Quick wins first (M7, M6), then the highest-value ecosystem features 
 |---|--------|-------|------|-------|
 | M7 | Topic Comments | ✅ S5 交付 | 2026-08-14 | localStorage persistence, Portal view, sidebar menu entry |
 | M6 | Home Page | ✅ S5 交付 | 2026-08-14 | Dedicated landing page, recent topics, pinned agents, quick actions |
-| M2 | Marketplace / Discovery | ✅ S5 交付 | 2026-08-14 | Unified discover page (agents/skills/MCP), search, clone/install |
+| M2 | Marketplace / Discovery | 🟨 UI/本地目录已交付；数据供应待做 | 2026-08-14 | Unified page、JSON index source 与安装分发已实现；默认可信 source、官方/联邦 catalog 和治理进入未来工作 |
 | M1 | Agent Groups | ✅ S5 交付 | 2026-08-14 | Group CRUD, member management, orchestration mode, localStorage v1 |
 | M5 | Notebook / Pages | ✅ S5 交付 | 2026-08-14 | Notebook store layer over existing NotesPage, locale keys |
 | M3 | Custom Plugins | ✅ S5 交付 | 2026-08-14 | Plugin authoring UI, JSON Schema, test panel, auth config |

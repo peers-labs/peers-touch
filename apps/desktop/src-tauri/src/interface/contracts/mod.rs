@@ -13,6 +13,10 @@ pub struct AuthLoginInput {
     pub account: String,
     pub password: String,
     pub base_url: Option<String>,
+    /// Device type sent to Station for session scoping.
+    /// When omitted, callers inject a transport-specific default:
+    /// Tauri commands → "desktop-native", HTTP gateway → "desktop-browser".
+    pub device_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,62 +33,6 @@ pub struct SettingsGetInput {
 pub struct SettingsSetInput {
     pub key: String,
     pub value: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatListMessagesInput {
-    pub conversation_id: String,
-    pub cursor: Option<String>,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatSendMessageInput {
-    pub conversation_id: String,
-    pub content: String,
-    pub client_message_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatCompletionInput {
-    pub session_id: String,
-    pub provider_id: Option<String>,
-    pub model: Option<String>,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMarkReadInput {
-    pub conversation_id: String,
-    pub message_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatConversationInput {
-    pub conversation_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatRenameConversationInput {
-    pub conversation_id: String,
-    pub title: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatSetConversationModelInput {
-    pub conversation_id: String,
-    pub model: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatUpdateMessageInput {
-    pub message_id: String,
-    pub content: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessageInput {
-    pub message_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,7 +99,6 @@ pub struct ProviderUpdateInput {
     pub key_vaults: Option<String>,
     pub config_json: Option<String>,
     pub runtime_kind: Option<String>,
-    pub cli_command: Option<String>,
     pub protocol: Option<String>,
     #[serde(default)]
     pub version: i64,
@@ -172,7 +119,6 @@ pub struct ProviderCreateInput {
     pub key_vaults: String,
     pub config_json: String,
     pub runtime_kind: Option<String>,
-    pub cli_command: Option<String>,
     pub protocol: Option<String>,
 }
 
@@ -608,19 +554,6 @@ pub struct AgentUpdateInput {
 pub struct AgentDuplicateInput {
     pub id: String,
     pub name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentPackageExportInput {
-    pub id: String,
-    #[serde(default, rename = "include_local_paths", alias = "includeLocalPaths")]
-    pub include_local_paths: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentPackageImportInput {
-    pub package: serde_json::Value,
-    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

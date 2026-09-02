@@ -1588,7 +1588,7 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertIn("- Sample emission allowed: `False`", markdown)
         self.assertIn("desktop-performance-matrix-gate", markdown)
 
-    def test_acceptance_exit_code_requires_proven_done_sample_allowed(self) -> None:
+    def test_acceptance_exit_code_preserves_legacy_proven_semantics(self) -> None:
         module = load_module()
         proven_report = module.build_run_report(
             "tooling/acceptance/reports/latest-plan.json",
@@ -1621,8 +1621,41 @@ class AcceptanceRunTest(unittest.TestCase):
             ],
         )
 
+        self.assertEqual(proven_report["proofStatus"], "PROVEN")
+        self.assertEqual(proven_report["results"][0]["proofStatus"], "PROVEN")
+        self.assertEqual(
+            proven_report["resultTraceabilityState"]["proofStatus"],
+            "PROVEN",
+        )
         self.assertEqual(module.acceptance_exit_code(proven_report), 0)
         self.assertEqual(module.acceptance_exit_code(unproven_report), 1)
+
+    def test_acceptance_exit_code_accepts_candidate_in_explicit_mode(self) -> None:
+        module = load_module()
+        report = module.build_run_report(
+            "tooling/acceptance/reports/latest-plan.json",
+            [
+                {
+                    "id": "agent-v2-kernel-foundation-e2e",
+                    "status": "passed",
+                    "completionStatus": "DONE",
+                    "proofStatus": "CANDIDATE",
+                    "sampleEmissionAllowed": True,
+                }
+            ],
+            candidate_mode=True,
+        )
+        self.assertEqual(report["proofStatus"], "CANDIDATE")
+        self.assertEqual(report["results"][0]["proofStatus"], "CANDIDATE")
+        self.assertEqual(
+            report["resultTraceabilityState"]["proofStatus"],
+            "CANDIDATE",
+        )
+        self.assertEqual(
+            module.acceptance_exit_code(report, candidate_mode=True),
+            0,
+        )
+        self.assertEqual(module.acceptance_exit_code(report), 1)
 
     def test_blocked_result_is_distinct_from_failed_and_exits_two(self) -> None:
         module = load_module()
@@ -1770,6 +1803,70 @@ class AcceptanceRunTest(unittest.TestCase):
         )
         self.assertIn(canary, serialized)
         self.assertIn('"count": 1', serialized)
+
+    def test_registered_artifact_is_scanned_but_never_rewritten(self) -> None:
+        module = load_module()
+        secret = "registered-secret-value"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = root / "roles" / "receiver-dom.json"
+            artifact.parent.mkdir(parents=True)
+            original = json.dumps({"message": secret}) + "\n"
+            artifact.write_text(original, encoding="utf-8")
+            role_dir = root / ".artifact-roles"
+            role_dir.mkdir()
+            (role_dir / "receiver-dom.json").write_text(
+                json.dumps(
+                    {
+                        "role": "receiver-dom",
+                        "artifact": {
+                            "path": "roles/receiver-dom.json",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            redacted_paths, leaked_paths = module.redact_runtime_artifacts(
+                root,
+                (secret,),
+            )
+            serialized = artifact.read_text(encoding="utf-8")
+
+        self.assertEqual(redacted_paths, [])
+        self.assertEqual(leaked_paths, ["roles/receiver-dom.json"])
+        self.assertEqual(serialized, original)
+
+    def test_runtime_log_is_registered_after_artifact_redaction(self) -> None:
+        module = load_module()
+        secret = "runtime-secret-value"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("runtime-gate", source={})
+            artifact = run.run_dir / "reports" / "runtime.json"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(
+                json.dumps({"password": secret}),
+                encoding="utf-8",
+            )
+
+            log_ref, redacted_paths, leaked_paths = module.finalize_runtime_log(
+                run,
+                "runtime-gate",
+                f"password={secret}",
+                (secret,),
+            )
+            collected = run.collect_existing_artifacts()
+            run.close()
+
+        self.assertIn("reports/runtime.json", redacted_paths)
+        self.assertEqual(
+            leaked_paths,
+            ["logs/runtime-gate.log", "reports/runtime.json"],
+        )
+        self.assertEqual(collected["log"], log_ref)
 
     def test_build_run_report_deduplicates_review_commands_by_command_text(self) -> None:
         module = load_module()

@@ -6,12 +6,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/env.sh"
 
 check_pid() {
-  local name="$1" file="$2"
+  local name="$1" file="$2" expected="$3"
   if [[ -f "$file" ]]; then
-    local pid
+    local pid command
     pid="$(cat "$file" 2>/dev/null || true)"
     if [[ -n "$pid" ]] && ps -p "$pid" >/dev/null 2>&1; then
-      echo "  $name: running (PID $pid)"
+      command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+      if [[ -n "$expected" && "$command" != *"$expected"* ]]; then
+        echo "  $name: stopped (stale PID reused by another process)"
+      else
+        echo "  $name: running (PID $pid)"
+      fi
     else
       echo "  $name: stopped (stale PID file)"
     fi
@@ -35,13 +40,13 @@ if curl -fsS -m 2 "${PT_STATION_URL:-http://127.0.0.1:18080}/api/oauth/providers
 else
   echo "  Ready: no"
 fi
-check_pid "PID" "$PT_DEV_PIDS/station.pid"
+check_pid "PID" "$PT_DEV_PIDS/station.pid" "$PT_DEV_DATA/station-conf/peers-sqlite.yml"
 echo "  Log  : $PT_DEV_LOGS/station.log"
 echo ""
 echo "Relay:"
 echo "  Mode : ${PT_RELAY_MODE:-remote}"
 echo "  URL  : ${PT_RELAY_URL:-<not set>}"
-check_pid "PID" "$PT_DEV_PIDS/relay.pid"
+check_pid "PID" "$PT_DEV_PIDS/relay.pid" "$PROJECT_ROOT"
 echo ""
 echo "Desktop:"
 echo "  App gateway : :${PT_DESKTOP_APP_GATEWAY_PORT:-3030}"

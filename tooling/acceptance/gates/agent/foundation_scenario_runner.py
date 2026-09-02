@@ -201,6 +201,19 @@ def _make_direct_probe(
                     "AS-F06 direct probe requires restart orchestration"
                 )
             return f06_coordinator.capture(probe_input)
+        locale = client.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(locale, Mapping)
+            or locale.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                f"direct probe locale did not converge for "
+                f"{probe_input.cell}/{probe_input.sample_id}"
+            )
         result = client.harness(
             "foundationDirectProbe",
             {

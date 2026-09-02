@@ -30,8 +30,6 @@ type ToolCallMeta struct {
 	AgentID        string
 	ConversationID string
 	TurnID         string
-	Platform       string
-	WorkspaceRoot  string
 }
 
 // ToolResult is the structured return from a tool handler.

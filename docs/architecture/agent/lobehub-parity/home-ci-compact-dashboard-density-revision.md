@@ -15,8 +15,8 @@
 LobeHub's compact Home dashboard. `EVID-011-CI-pre` tightens that default Home
 review surface using the LobeHub source structure:
 
-- `external/lobehub/src/routes/(main)/home/index.tsx`
-- `external/lobehub/src/routes/(main)/home/features/index.tsx`
+- `external/lobehub/src/routes/(main)<home>`
+- `external/lobehub/src/routes/(main)<home>/index.tsx`
 - `external/lobehub/src/features/DailyBrief/BriefCard.tsx`
 - `external/lobehub/src/features/RecommendTaskTemplates/TaskTemplateCard.tsx`
 - `external/lobehub/src/features/RecommendTaskTemplates/ConnectorAuthRow.tsx`

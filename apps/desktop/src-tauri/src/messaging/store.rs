@@ -5279,6 +5279,25 @@ impl MessagingStore {
         }
     }
 
+    pub fn device_signing_seed(&self) -> Result<Option<([u8; 32], String)>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT device_signing_seed, signing_key_id
+                 FROM messaging_device_identity WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .map(|(seed, key_id)| {
+                let seed: [u8; 32] = seed
+                    .try_into()
+                    .map_err(|_| "device signing seed is not 32 bytes".to_string())?;
+                Ok((seed, key_id))
+            })
+            .transpose()
+    }
+
     pub fn has_prekey_bundle(&self) -> Result<bool, String> {
         self.connection()?
             .query_row(

@@ -8,6 +8,6 @@ export function registerAgentChatPage(): void {
     factory: () => <AgentChatPageContainer />,
     preload: 'idle',
     keepAlive: 'forever',
-    runtimes: ['agentCapability', 'agentTopic', 'social'],
+    runtimes: ['agent-capability', 'agent-topic', 'agent-chat', 'agent-tool', 'social'],
   });
 }

@@ -107,6 +107,7 @@ export function MentionPopup({ onSelect, anchorTop, anchorLeft }: MentionPopupPr
 
   return (
     <Flexbox
+      data-pt-agent-mention-popup
       ref={listRef}
       style={{
         position: 'absolute',
@@ -134,6 +135,7 @@ export function MentionPopup({ onSelect, anchorTop, anchorLeft }: MentionPopupPr
       ) : (
         filteredAgents.map((agent, index) => (
           <Flexbox
+            data-pt-agent-mention-option={agent.id}
             key={agent.id}
             horizontal
             align="center"

@@ -12,6 +12,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app/middlewares/server/recovery"
 	hz "github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/protocol/http1/resp"
 	"github.com/google/uuid"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -389,7 +390,8 @@ func (r *hertzRequestWithContext) GetHertzContext() interface{} {
 
 // hertzResponse adapts Hertz RequestContext to server.Response
 type hertzResponse struct {
-	ctx *app.RequestContext
+	ctx       *app.RequestContext
+	streaming bool
 }
 
 func (r *hertzResponse) Header() map[string]string {
@@ -405,7 +407,23 @@ func (r *hertzResponse) SetHeader(key, value string) {
 }
 
 func (r *hertzResponse) Write(b []byte) (int, error) {
+	r.prepareStreaming()
 	return r.ctx.Write(b)
+}
+
+func (r *hertzResponse) prepareStreaming() {
+	if r.streaming || string(r.ctx.Response.Header.ContentType()) != "text/event-stream" {
+		return
+	}
+	r.ctx.Response.Header.Set("Transfer-Encoding", "chunked")
+	r.ctx.SetStatusCode(http.StatusOK)
+	r.ctx.Response.HijackWriter(resp.NewChunkedBodyWriter(&r.ctx.Response, r.ctx.GetWriter()))
+	r.streaming = true
+}
+
+func (r *hertzResponse) Flush() error {
+	r.prepareStreaming()
+	return r.ctx.Flush()
 }
 
 func (r *hertzResponse) WriteHeader(statusCode int) {

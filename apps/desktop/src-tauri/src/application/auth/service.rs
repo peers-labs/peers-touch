@@ -100,7 +100,14 @@ pub(crate) fn validate_pin_session_token(
 pub(crate) fn takeover_station_session_token(
     token: &str,
 ) -> Result<String, station_client::StationClientError> {
-    let body = json!({ "device_type": "desktop" });
+    takeover_station_session_token_for_device(token, "desktop-native")
+}
+
+pub(crate) fn takeover_station_session_token_for_device(
+    token: &str,
+    device_type: &str,
+) -> Result<String, station_client::StationClientError> {
+    let body = json!({ "device_type": device_type });
     let resp = station_client::request_json_auth(
         reqwest::Method::POST,
         "/actor/session/takeover",
@@ -608,6 +615,7 @@ fn submit_login_gate(
     attempt_id: &str,
     account: &str,
     password: &str,
+    device_type: &str,
 ) -> Result<Value, AppResult<AuthSessionPayload>> {
     let data = access_post::<AuthSessionPayload>(
         "/actor/access/submit",
@@ -618,7 +626,7 @@ fn submit_login_gate(
             "login": {
                 "email": account,
                 "password": password,
-                "device_type": "desktop"
+                "device_type": device_type
             }
         }),
         ErrorCode::Unauthorized,
@@ -720,7 +728,13 @@ pub(crate) fn prepare_access_submit_login_during_transition(
     if let Err(error) = validate_login_input(&input.account, &input.password) {
         return Err(map_domain_error(error));
     }
-    let data = match submit_login_gate(&input.attempt_id, &input.account, &input.password) {
+    let device_type = input.device_type.as_deref().unwrap_or("desktop-native");
+    let data = match submit_login_gate(
+        &input.attempt_id,
+        &input.account,
+        &input.password,
+        device_type,
+    ) {
         Ok(data) => data,
         Err(error) => return Err(error),
     };
@@ -753,6 +767,9 @@ pub(crate) fn prepare_auth_login_during_transition(
         return Err(map_domain_error(error));
     }
 
+    // Resolve device_type: callers may override; default is "desktop-native".
+    let device_type = input.device_type.as_deref().unwrap_or("desktop-native");
+
     let attempt = match start_access_attempt::<AuthSessionPayload>() {
         Ok(decision) => decision,
         Err(error) => {
@@ -764,7 +781,7 @@ pub(crate) fn prepare_auth_login_during_transition(
                 tracing::info!(
                     "access-gate endpoint not found (404), falling back to direct /actor/login"
                 );
-                return direct_login_fallback(&input.account, &input.password, state, transition);
+                return direct_login_fallback(&input.account, &input.password, state, device_type, transition);
             }
             return Err(error);
         }
@@ -777,7 +794,7 @@ pub(crate) fn prepare_auth_login_during_transition(
             Some(attempt),
         ));
     }
-    let data = match submit_login_gate(&attempt_id, &input.account, &input.password) {
+    let data = match submit_login_gate(&attempt_id, &input.account, &input.password, device_type) {
         Ok(data) => data,
         Err(error) => return Err(error),
     };
@@ -790,12 +807,13 @@ fn direct_login_fallback(
     account: &str,
     password: &str,
     state: &AppState,
+    device_type: &str,
     transition: &MutexGuard<'_, ()>,
 ) -> PreparedAuthResult {
     let body = json!({
         "email": account,
         "password": password,
-        "device_type": "desktop"
+        "device_type": device_type
     });
     let resp = match station_client::post_json_no_auth("/actor/login", body) {
         Ok(resp) => resp,
@@ -1550,7 +1568,126 @@ pub(crate) fn verify_session_with_station(
         None,
     )
     .map(|_| ())
-    .map_err(|error| error.into_app_result("Session validation failed"))
+}
+
+fn station_verification_rejects_session(error: &station_client::StationClientError) -> bool {
+    matches!(
+        &error.kind,
+        station_client::StationClientErrorKind::SessionRevoked
+            | station_client::StationClientErrorKind::HttpStatus(401)
+    )
+}
+
+fn handle_session_verification_failure(
+    state: &AppState,
+    error: station_client::StationClientError,
+) -> AppResult<AuthSessionPayload> {
+    if station_verification_rejects_session(&error) {
+        let _ = clear_session(state);
+    } else {
+        tracing::warn!(
+            error_kind = ?error.kind,
+            "session validation unavailable; retaining local session"
+        );
+    }
+    error.into_app_result("Session validation failed")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infrastructure::i18n::I18nService;
+    use crate::infrastructure::storage::{StorageKind, StorageLayout};
+    use std::collections::HashMap;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_state(name: &str) -> (AppState, std::path::PathBuf) {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("auth-service-{name}-{stamp}"));
+        let mut dirs = HashMap::new();
+        for kind in [
+            StorageKind::Config,
+            StorageKind::Data,
+            StorageKind::Cache,
+            StorageKind::Logs,
+            StorageKind::Runtime,
+            StorageKind::Temp,
+        ] {
+            let path = root.join(kind.as_str());
+            std::fs::create_dir_all(&path).expect("test storage directory should be created");
+            dirs.insert(kind, path);
+        }
+        let config_dir = dirs
+            .get(&StorageKind::Config)
+            .expect("test config directory should exist")
+            .clone();
+        let state = AppState::new(
+            StorageLayout {
+                app_name: format!("auth-service-{name}"),
+                root_source: "test".to_string(),
+                root: root.clone(),
+                dirs,
+            },
+            I18nService::new(&config_dir),
+        );
+        let mut session = state.session.lock().expect("session should lock");
+        session.actor_id = Some("actor-test".to_string());
+        session.token = Some("token-test".to_string());
+        drop(session);
+        (state, root)
+    }
+
+    #[test]
+    fn transient_station_failure_preserves_local_session() {
+        let (state, root) = test_state("network");
+        let error = station_client::StationClientError::new(
+            station_client::StationClientErrorKind::Network,
+            "station unavailable",
+            None,
+        );
+
+        let result = handle_session_verification_failure(&state, error);
+
+        assert!(!result.ok);
+        let session = state.session.lock().expect("session should lock");
+        assert_eq!(session.actor_id.as_deref(), Some("actor-test"));
+        assert_eq!(session.token.as_deref(), Some("token-test"));
+        drop(session);
+        drop(state);
+        std::fs::remove_dir_all(root).expect("test storage should be removed");
+    }
+
+    #[test]
+    fn explicit_session_rejection_clears_local_session() {
+        let (state, root) = test_state("revoked");
+        let revoked = station_client::StationClientError::session_revoked(
+            r#"{"code":"session_revoked","reason":"kicked"}"#,
+        );
+
+        let result = handle_session_verification_failure(&state, revoked);
+
+        assert!(!result.ok);
+        let session = state.session.lock().expect("session should lock");
+        assert!(session.actor_id.is_none());
+        assert!(session.token.is_none());
+        drop(session);
+        drop(state);
+        std::fs::remove_dir_all(root).expect("test storage should be removed");
+    }
+
+    #[test]
+    fn unauthorized_station_response_rejects_local_session() {
+        let error = station_client::StationClientError::new(
+            station_client::StationClientErrorKind::HttpStatus(401),
+            "unauthorized",
+            None,
+        );
+
+        assert!(station_verification_rejects_session(&error));
+    }
 }
 
 #[cfg(test)]

@@ -76,9 +76,7 @@ Agent (agent.proto)
   │
   ├── AgentChatConfig        (agent_config.proto)  ── 聊天配置
   ├── AgentModelParams       (agent_config.proto)  ── 模型参数
-  ├── AgentKnowledgeBinding  (agent_config.proto)  ── 知识绑定
-  ├── AgentSkillBinding      (agent_config.proto)  ── Skill 绑定
-  ├── AgentMcpBinding        (agent_config.proto)  ── MCP 绑定
+  ├── AgentCapabilityBinding (capability.proto)    ── Knowledge / Skill / MCP / Tool 统一绑定
   ├── AgentVoiceConfig       (agent_config.proto)  ── 语音配置
   ├── AgentToolProfile       (agent_config.proto)  ── 工具配置
   │
@@ -92,6 +90,11 @@ Agent (agent.proto)
   │
   └── GrowthSnapshot         (agent.proto)         ── 成长快照
 ```
+
+MCA-D15/MCA-D15K 已取代 `agent_config.proto` 中分裂的 Knowledge / Skill /
+MCP binding API。历史 join tables 仅供迁移读取；新写入、readiness 与 Turn
+admission 统一使用 versioned Manifest、`AgentCapabilityBinding` 和 immutable
+readiness snapshot。
 
 ---
 

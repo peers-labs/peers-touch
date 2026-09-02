@@ -10,7 +10,7 @@ interface MessageListProps {
 
 export function MessageList({ scrollRef }: MessageListProps) {
   const messages = useChatStore((s) => s.messages);
-  const sendMessage = useChatStore((s) => s.sendMessage);
+  const fillComposer = useChatStore((s) => s.fillComposer);
   const isAtBottomRef = useRef(true);
   const prevCountRef = useRef(messages.length);
 
@@ -76,7 +76,7 @@ export function MessageList({ scrollRef }: MessageListProps) {
             {isFollowUp ? (
               <FollowUpChips
                 suggestions={lastMessage.followUpSuggestions!}
-                onSelect={sendMessage}
+                onSelect={fillComposer}
               />
             ) : (
               <MessageBubble message={messages[virtualItem.index]} />

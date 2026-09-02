@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { create } from '@bufbuild/protobuf';
 import { Flexbox } from 'react-layout-kit';
 import { SearchBar } from '@lobehub/ui';
 import {
@@ -33,7 +34,6 @@ import {
   Globe,
   X,
   BookOpen,
-  Upload,
 } from 'lucide-react';
 import { useAgentStore } from '../store/agent';
 import {
@@ -47,17 +47,33 @@ import {
   api,
   executeAgentTurn,
   type Agent,
-  type AgentKnowledgeResource,
-  type AgentKnowledgeResourceType,
   type Memory,
   parseAgentChatConfig,
-  parseAgentKnowledgeResources,
 } from '../services/desktop_api';
+import {
+  CapabilityReadinessState,
+  CapabilitySourceKind,
+  CreateKnowledgeResourceDescriptorRequestSchema,
+  KnowledgeResourceAvailability,
+  KnowledgeResourceKind,
+  TombstoneKnowledgeResourceDescriptorRequestSchema,
+  type AgentCapabilityBinding,
+  type CapabilityManifest,
+  type CapabilityReadiness,
+  type KnowledgeResourceDescriptor,
+} from '../gen/proto/domain/agent/capability_pb';
 import { ModelSelect } from '../components/ModelSelect';
 import { AgentSettingsModal } from '../components/AgentSettingsModal';
 import { BuilderPanel } from '../components/BuilderPanel';
 import { AgentIconTile } from '../components/agent/AgentIconTile';
-import { useSkillStore } from '../store/skill';
+import {
+  selectAgentCapabilityBindingsBySource,
+  selectAgentCapabilityReadinessBySource,
+  selectCapabilityManifestsBySource,
+  selectKnowledgeResourceDescriptors,
+  useAgentCapabilityStore,
+  type AgentCapabilityState,
+} from '../store/agentCapabilities';
 import { AgentConnectorsPanel } from '../components/agent/AgentConnectorsPanel';
 import { EVENT, eventBus } from '../kernel/events';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
@@ -316,6 +332,7 @@ function AgentWorkbenchHero({
             style={{ border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 8, background: token.colorBgContainer }}
           />
           <ActionIcon
+            data-pt-agent-profile-back
             icon={ArrowLeft}
             title={t('agent.profile.backToAgent')}
             aria-label={t('agent.profile.backToAgent')}
@@ -482,14 +499,322 @@ function InfoRow({ label, value }: { label: string; value?: ReactNode }) {
   );
 }
 
-
-
-function normalizeStringList(values?: string[]): string[] {
-  if (!Array.isArray(values)) return [];
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+interface CapabilitySourceProjection {
+  manifests: CapabilityManifest[];
+  bindings: AgentCapabilityBinding[];
+  readiness: CapabilityReadiness[];
 }
 
+interface BoundCapabilityProjection {
+  manifest: CapabilityManifest;
+  binding: AgentCapabilityBinding;
+  readiness?: CapabilityReadiness;
+}
 
+interface BoundKnowledgeProjection extends BoundCapabilityProjection {
+  descriptor: KnowledgeResourceDescriptor;
+}
+
+interface ProfileCapabilityProjection {
+  tools: CapabilitySourceProjection;
+  mcp: CapabilitySourceProjection;
+  skills: CapabilitySourceProjection;
+  knowledge: CapabilitySourceProjection;
+  knowledgeDescriptors: KnowledgeResourceDescriptor[];
+  pendingMutations: AgentCapabilityState['pendingMutations'];
+  upsertBinding: AgentCapabilityState['upsertBinding'];
+  deleteBinding: AgentCapabilityState['deleteBinding'];
+  createKnowledgeDescriptor: AgentCapabilityState['createKnowledgeDescriptor'];
+  tombstoneKnowledgeDescriptor: AgentCapabilityState['tombstoneKnowledgeDescriptor'];
+}
+
+const EMPTY_CAPABILITY_BINDINGS: AgentCapabilityBinding[] = [];
+
+function createProfileCapabilitySelector(agentId: string) {
+  let manifestsReference: CapabilityManifest[] | undefined;
+  let knowledgeDescriptorsReference: KnowledgeResourceDescriptor[] | undefined;
+  let bindingsReference: AgentCapabilityBinding[] | undefined;
+  let readinessReference: AgentCapabilityState['readinessByAgentId'][string];
+  let pendingMutationsReference: AgentCapabilityState['pendingMutations'] | undefined;
+  let projection: ProfileCapabilityProjection | undefined;
+
+  return (state: AgentCapabilityState): ProfileCapabilityProjection => {
+    const bindings = state.bindingsByAgentId[agentId] ?? EMPTY_CAPABILITY_BINDINGS;
+    const readiness = state.readinessByAgentId[agentId];
+    if (
+      projection
+      && manifestsReference === state.manifests
+      && knowledgeDescriptorsReference === state.knowledgeDescriptors
+      && bindingsReference === bindings
+      && readinessReference === readiness
+      && pendingMutationsReference === state.pendingMutations
+    ) {
+      return projection;
+    }
+
+    const source = (sourceKind: CapabilitySourceKind): CapabilitySourceProjection => ({
+      manifests: selectCapabilityManifestsBySource(state, sourceKind),
+      bindings: selectAgentCapabilityBindingsBySource(state, agentId, sourceKind),
+      readiness: selectAgentCapabilityReadinessBySource(state, agentId, sourceKind),
+    });
+    const builtinTools = source(CapabilitySourceKind.BUILTIN_TOOL);
+    const clientTools = source(CapabilitySourceKind.CLIENT_NATIVE);
+    manifestsReference = state.manifests;
+    knowledgeDescriptorsReference = state.knowledgeDescriptors;
+    bindingsReference = bindings;
+    readinessReference = readiness;
+    pendingMutationsReference = state.pendingMutations;
+    projection = {
+      tools: {
+        manifests: [...builtinTools.manifests, ...clientTools.manifests],
+        bindings: [...builtinTools.bindings, ...clientTools.bindings],
+        readiness: [...builtinTools.readiness, ...clientTools.readiness],
+      },
+      mcp: source(CapabilitySourceKind.MCP),
+      skills: source(CapabilitySourceKind.SKILL),
+      knowledge: source(CapabilitySourceKind.KNOWLEDGE),
+      knowledgeDescriptors: selectKnowledgeResourceDescriptors(state),
+      pendingMutations: state.pendingMutations,
+      upsertBinding: state.upsertBinding,
+      deleteBinding: state.deleteBinding,
+      createKnowledgeDescriptor: state.createKnowledgeDescriptor,
+      tombstoneKnowledgeDescriptor: state.tombstoneKnowledgeDescriptor,
+    };
+    return projection;
+  };
+}
+
+function capabilityManifestKey(capabilityId: string, version: string): string {
+  return `${capabilityId}\u0000${version}`;
+}
+
+function enabledCapabilityBindings(
+  bindings: AgentCapabilityBinding[],
+): AgentCapabilityBinding[] {
+  return bindings.filter((binding) => binding.enabled && !binding.tombstonedAt);
+}
+
+function manifestForBinding(
+  manifests: CapabilityManifest[],
+  binding: AgentCapabilityBinding,
+): CapabilityManifest | undefined {
+  return manifests.find(
+    (manifest) =>
+      manifest.capabilityId === binding.capabilityId
+      && manifest.version === binding.capabilityVersion,
+  );
+}
+
+function readinessForBinding(
+  readiness: CapabilityReadiness[],
+  binding: AgentCapabilityBinding,
+): CapabilityReadiness | undefined {
+  return readiness.find(
+    (item) =>
+      item.bindingId === binding.bindingId
+      && item.bindingRevision === binding.revision,
+  );
+}
+
+function boundCapabilityProjections(
+  source: CapabilitySourceProjection,
+): BoundCapabilityProjection[] {
+  return enabledCapabilityBindings(source.bindings).flatMap((binding) => {
+    const manifest = manifestForBinding(source.manifests, binding);
+    if (!manifest) return [];
+    return [{
+      manifest,
+      binding,
+      readiness: readinessForBinding(source.readiness, binding),
+    }];
+  });
+}
+
+export function boundKnowledgeProjections(
+  source: CapabilitySourceProjection,
+  descriptors: KnowledgeResourceDescriptor[],
+): BoundKnowledgeProjection[] {
+  const descriptorsById = new Map(
+    descriptors.map((descriptor) => [descriptor.resourceId, descriptor]),
+  );
+  return source.bindings
+    .filter((binding) => !binding.tombstonedAt)
+    .flatMap((binding) => {
+      const manifest = manifestForBinding(source.manifests, binding);
+      const descriptor = manifest
+        ? descriptorsById.get(manifest.sourceInstanceId)
+        : undefined;
+      if (!manifest || !descriptor || descriptor.tombstonedAt) return [];
+      return [{
+        descriptor,
+        manifest,
+        binding,
+        readiness: readinessForBinding(source.readiness, binding),
+      }];
+    });
+}
+
+type KnowledgeCapabilityActions = Pick<
+  AgentCapabilityState,
+  | 'createKnowledgeDescriptor'
+  | 'upsertBinding'
+  | 'deleteBinding'
+  | 'tombstoneKnowledgeDescriptor'
+>;
+
+export async function bindStationKnowledgeDocument(
+  actions: KnowledgeCapabilityActions,
+  input: {
+    agentId: string;
+    expectedAgentVersion: number | bigint;
+    title: string;
+    content: string;
+    idempotencyKey: () => string;
+    resolveManifest: (
+      descriptor: KnowledgeResourceDescriptor,
+    ) => CapabilityManifest | undefined;
+  },
+): Promise<void> {
+  const descriptor = await actions.createKnowledgeDescriptor(create(
+    CreateKnowledgeResourceDescriptorRequestSchema,
+    {
+      resourceKind: KnowledgeResourceKind.DOCUMENT,
+      source: {
+        case: 'stationContent',
+        value: new TextEncoder().encode(input.content),
+      },
+      idempotencyKey: input.idempotencyKey(),
+      title: input.title,
+    },
+  ));
+  const manifest = input.resolveManifest(descriptor);
+  if (!manifest) {
+    throw new Error('agent.profile.knowledge.manifestMissing');
+  }
+  await actions.upsertBinding({
+    agentId: input.agentId,
+    capabilityId: manifest.capabilityId,
+    capabilityVersion: manifest.version,
+    enabled: true,
+    approvalPolicy: manifest.defaultApprovalPolicy,
+    expectedAgentVersion: input.expectedAgentVersion,
+    expectedBindingRevision: 0n,
+    idempotencyKey: input.idempotencyKey(),
+  });
+}
+
+export async function setKnowledgeBindingEnabled(
+  actions: KnowledgeCapabilityActions,
+  agentVersion: number | bigint,
+  binding: AgentCapabilityBinding,
+  enabled: boolean,
+  idempotencyKey: string,
+): Promise<void> {
+  await actions.upsertBinding({
+    bindingId: binding.bindingId,
+    agentId: binding.agentId,
+    capabilityId: binding.capabilityId,
+    capabilityVersion: binding.capabilityVersion,
+    enabled,
+    approvalPolicy: binding.approvalPolicy,
+    expectedAgentVersion: agentVersion,
+    expectedBindingRevision: binding.revision,
+    idempotencyKey,
+  });
+}
+
+export async function removeOwnedKnowledgeResource(
+  actions: KnowledgeCapabilityActions,
+  descriptor: KnowledgeResourceDescriptor,
+  binding: AgentCapabilityBinding,
+  idempotencyKey: () => string,
+): Promise<void> {
+  await actions.deleteBinding({
+    agentId: binding.agentId,
+    bindingId: binding.bindingId,
+    expectedBindingRevision: binding.revision,
+    idempotencyKey: idempotencyKey(),
+    reason: 'agent_profile_knowledge_unbound',
+  });
+  await actions.tombstoneKnowledgeDescriptor(create(
+    TombstoneKnowledgeResourceDescriptorRequestSchema,
+    {
+      resourceId: descriptor.resourceId,
+      expectedRevision: descriptor.revision,
+      idempotencyKey: idempotencyKey(),
+      reason: 'agent_profile_knowledge_removed',
+    },
+  ));
+}
+
+function capabilityLabel(manifest: CapabilityManifest): string {
+  return (
+    manifest.displayMetadata?.name.trim()
+    || manifest.sourceInstanceId.trim()
+    || manifest.capabilityId
+  );
+}
+
+function CapabilityReadinessTag({
+  readiness,
+}: {
+  readiness?: CapabilityReadiness;
+}) {
+  const { t } = useTranslation('agent');
+  const state = readiness?.state ?? CapabilityReadinessState.UNKNOWN;
+  if (state === CapabilityReadinessState.READY) {
+    return <Tag color="success" style={{ margin: 0 }}>{t('agent.profile.enabled')}</Tag>;
+  }
+  if (state === CapabilityReadinessState.DEGRADED) {
+    return <Tag color="warning" style={{ margin: 0 }}>{t('agent.profile.degradation.partial')}</Tag>;
+  }
+  if (
+    state === CapabilityReadinessState.UNAVAILABLE
+    || state === CapabilityReadinessState.BLOCKED
+  ) {
+    return <Tag color="error" style={{ margin: 0 }}>{t('agent.profile.degradation.unavailable')}</Tag>;
+  }
+  return <Tag style={{ margin: 0 }}>{t('agent.profile.unknown')}</Tag>;
+}
+
+function knowledgeResourceKindKey(
+  kind: KnowledgeResourceKind,
+): 'document' | 'folder' | 'project' | 'url' | 'notebook' | 'workspace' | 'unknown' {
+  switch (kind) {
+    case KnowledgeResourceKind.DOCUMENT:
+      return 'document';
+    case KnowledgeResourceKind.FOLDER:
+      return 'folder';
+    case KnowledgeResourceKind.PROJECT:
+      return 'project';
+    case KnowledgeResourceKind.URL_SNAPSHOT:
+      return 'url';
+    case KnowledgeResourceKind.NOTEBOOK:
+      return 'notebook';
+    case KnowledgeResourceKind.WORKSPACE:
+      return 'workspace';
+    default:
+      return 'unknown';
+  }
+}
+
+function KnowledgeAvailabilityTag({
+  availability,
+}: {
+  availability: KnowledgeResourceAvailability;
+}) {
+  const { t } = useTranslation('agent');
+  if (availability === KnowledgeResourceAvailability.READY) {
+    return <Tag color="success" style={{ margin: 0 }}>{t('agent.profile.knowledge.status.indexed')}</Tag>;
+  }
+  if (availability === KnowledgeResourceAvailability.INDEXING) {
+    return <Tag color="processing" style={{ margin: 0 }}>{t('agent.profile.knowledge.status.pending_index')}</Tag>;
+  }
+  if (availability === KnowledgeResourceAvailability.TOMBSTONED) {
+    return <Tag style={{ margin: 0 }}>{t('agent.profile.knowledge.status.tombstoned')}</Tag>;
+  }
+  return <Tag color="error" style={{ margin: 0 }}>{t('agent.profile.degradation.unavailable')}</Tag>;
+}
 
 
 
@@ -811,7 +1136,6 @@ const ACTIVITY_TRACE_REFRESH_EVENTS = new Set([
   'tool_result',
   'tool_approval_required',
   'tool_approval_decision',
-  'local_tool_request',
   'error',
   'done',
 ]);
@@ -956,12 +1280,13 @@ export function AgentProfilePage({
   const availableModels = useAgentStore(s => s.availableModels);
   const loadAgents = useAgentStore(s => s.loadAgents);
   const updateAgentProfile = useAgentStore(s => s.updateAgentProfile);
-  const updateKnowledgeResources = useAgentStore(s => s.updateKnowledgeResources);
-  const loadModels = useAgentStore(s => s.loadModels);
+  const reloadAgentProfile = useAgentStore(s => s.reloadAgentProfile);
+  const createAgent = useAgentStore(s => s.createAgent);
   const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
-  const setAgentSurface = useAgentStore(s => s.setAgentSurface);
   const agentRosterOpen = useAgentStore(s => s.agentRosterOpen);
   const setAgentRosterOpen = useAgentStore(s => s.setAgentRosterOpen);
+  const saveStateByAgentId = useAgentStore(s => s.saveStateByAgentId);
+  const agentPendingMutations = useAgentStore(s => s.pendingMutations);
 
   const [profileAgentName, setProfileAgentName] = useState(agentName);
   const agentListOpen = agentRosterOpen;
@@ -989,24 +1314,31 @@ export function AgentProfilePage({
   const soulSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const agentsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const systemPromptSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const skills = useSkillStore(s => s.skills);
-  const builtins = useSkillStore(s => s.builtins);
-  const loadSkills = useSkillStore(s => s.loadSkills);
   const activityMessages = useChatStore((state) => state.messages);
   const activityCurrentSessionKey = useChatStore((state) => state.currentSessionKey);
   const activitySessions = useChatStore((state) => state.sessions);
+  const capabilitySelector = useMemo(
+    () => createProfileCapabilitySelector(agent?.id ?? ''),
+    [agent?.id],
+  );
+  const capabilityProjection = useAgentCapabilityStore(capabilitySelector);
+  const enabledSkillBindings = useMemo(
+    () => enabledCapabilityBindings(capabilityProjection.skills.bindings),
+    [capabilityProjection.skills.bindings],
+  );
   const skillOptions = useMemo(
-    () => [
-      ...builtins.map((skill) => ({
-        value: skill.identifier,
-        label: `${skill.name} · ${t('agent.profile.skills.builtin')}`,
+    () => capabilityProjection.skills.manifests
+      .filter((manifest) => !manifest.retiredAt)
+      .map((manifest) => ({
+        value: capabilityManifestKey(manifest.capabilityId, manifest.version),
+        label: capabilityLabel(manifest),
       })),
-      ...skills.map((skill) => ({
-        value: skill.id,
-        label: skill.metaTitle || skill.name,
-      })),
-    ],
-    [builtins, skills, t],
+    [capabilityProjection.skills.manifests],
+  );
+  const selectedSkillManifestKeys = useMemo(
+    () => enabledSkillBindings.map((binding) =>
+      capabilityManifestKey(binding.capabilityId, binding.capabilityVersion)),
+    [enabledSkillBindings],
   );
   const filteredProfileAgents = useMemo(() => {
     const query = agentSearch.trim().toLowerCase();
@@ -1028,25 +1360,6 @@ export function AgentProfilePage({
     });
     onBack?.();
   }, [onBack, setSelectedAgent, t]);
-
-  const skillLabelByValue = useMemo(() => {
-    const labels = new Map<string, string>();
-    for (const skill of builtins) {
-      labels.set(skill.identifier, skill.name);
-    }
-    for (const skill of skills) {
-      const label = skill.metaTitle || skill.name;
-      labels.set(skill.id, label);
-      labels.set(skill.identifier, label);
-    }
-    return labels;
-  }, [builtins, skills]);
-
-  useEffect(() => {
-    loadAgents();
-    loadModels();
-    loadSkills();
-  }, [loadAgents, loadModels, loadSkills]);
 
   // Refresh agent data when Agent Builder modifies the agent
   useEffect(() => {
@@ -1259,11 +1572,6 @@ export function AgentProfilePage({
       try {
         const updated = await updateAgentProfile(agent.id, { model: modelId || '', provider: providerId });
         setAgent(updated);
-        if (modelId) {
-          await api.setModelConfig(`agent:${agent.name}`, { provider: providerId, model: modelId });
-        } else {
-          await api.deleteModelConfig(`agent:${agent.name}`);
-        }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('agent.profile.failedToUpdateModel');
         antMessage.error(message);
@@ -1283,9 +1591,6 @@ export function AgentProfilePage({
           model: shouldClearModel ? '' : agent.model,
         });
         setAgent(updated);
-        if (shouldClearModel) {
-          await api.deleteModelConfig(`agent:${agent.name}`);
-        }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('agent.profile.failedToUpdateModel');
         antMessage.error(message);
@@ -1340,6 +1645,17 @@ export function AgentProfilePage({
     [agent, updateAgentProfile, t],
   );
 
+  const handleReloadLatest = useCallback(async () => {
+    if (!agent) return;
+    try {
+      const reloaded = await reloadAgentProfile(agent.id);
+      setAgent(reloaded);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+      antMessage.error(message);
+    }
+  }, [agent, reloadAgentProfile, t]);
+
   const handleSettingsSaved = useCallback(
     (updated: Agent) => {
       setAgent(updated);
@@ -1352,7 +1668,9 @@ export function AgentProfilePage({
   const handleCreateAgent = useCallback(async () => {
     const suffix = Date.now().toString(36);
     try {
-      const created = await api.createAgent({
+      // First-class store createAgent (C5): persists + merges roster + selects +
+      // sets profile surface. Profile-local editing state is seeded from result.
+      const created = await createAgent({
         name: `agent-${suffix}`,
         title: t('agent.profile.identityTitlePlaceholder'),
         description: '',
@@ -1363,7 +1681,6 @@ export function AgentProfilePage({
         visibility: 'private',
         workspaceMode: 'agent',
       });
-      setAgentSurface(created.name, 'profile');
       setProfileAgentName(created.name);
       setAgent(created);
       setSoulMd(created.soulMd || '');
@@ -1371,141 +1688,198 @@ export function AgentProfilePage({
       setAgentsMd(created.agentsMd || '');
       setAgentsMdDirty(false);
       window.history.pushState(null, '', `#/agent-profile/${encodeURIComponent(created.name)}`);
-      await loadAgents();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
       antMessage.error(message);
     }
-  }, [loadAgents, setAgentSurface, t]);
+  }, [createAgent, t]);
 
   const handleBoundSkillsChange = useCallback(
     async (values: string[]) => {
       if (!agent) return;
-      const config = parseAgentChatConfig(agent);
+      const selectedKeys = new Set(values);
+      const currentKeys = new Set(selectedSkillManifestKeys);
+      const additions = capabilityProjection.skills.manifests.filter((manifest) =>
+        selectedKeys.has(capabilityManifestKey(manifest.capabilityId, manifest.version))
+        && !currentKeys.has(capabilityManifestKey(manifest.capabilityId, manifest.version)));
+      const removals = enabledSkillBindings.filter((binding) =>
+        !selectedKeys.has(capabilityManifestKey(
+          binding.capabilityId,
+          binding.capabilityVersion,
+        )));
       try {
-        const updated = await api.updateAgent(agent.id, {
-          chatConfig: JSON.stringify({
-            ...config,
-            skills: normalizeStringList(values),
+        await Promise.all([
+          ...additions.map((manifest) => {
+            const existingBinding = capabilityProjection.skills.bindings.find(
+              (binding) =>
+                binding.capabilityId === manifest.capabilityId
+                && binding.capabilityVersion === manifest.version
+                && !binding.tombstonedAt,
+            );
+            return capabilityProjection.upsertBinding({
+              bindingId: existingBinding?.bindingId,
+              agentId: agent.id,
+              capabilityId: manifest.capabilityId,
+              capabilityVersion: manifest.version,
+              enabled: true,
+              approvalPolicy: manifest.defaultApprovalPolicy,
+              expectedAgentVersion: agent.version,
+              expectedBindingRevision: existingBinding?.revision ?? 0n,
+              idempotencyKey: crypto.randomUUID(),
+            });
           }),
-        });
-        setAgent(updated);
-        await loadAgents();
+          ...removals.map((binding) => capabilityProjection.deleteBinding({
+            agentId: agent.id,
+            bindingId: binding.bindingId,
+            expectedBindingRevision: binding.revision,
+            idempotencyKey: crypto.randomUUID(),
+            reason: 'agent_profile_skill_unbound',
+          })),
+        ]);
         antMessage.success(t('agent.profile.skills.boundUpdated'));
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
         antMessage.error(message);
       }
     },
-    [agent, loadAgents, t],
+    [
+      agent,
+      capabilityProjection,
+      enabledSkillBindings,
+      selectedSkillManifestKeys,
+      t,
+    ],
   );
 
-  const knowledgeResources = useMemo(() => {
-    if (!agent) return [];
-    return parseAgentKnowledgeResources(agent);
-  }, [agent]);
+  const knowledgeCapabilityProjections = useMemo(
+    () => boundKnowledgeProjections(
+      capabilityProjection.knowledge,
+      capabilityProjection.knowledgeDescriptors,
+    ),
+    [
+      capabilityProjection.knowledge,
+      capabilityProjection.knowledgeDescriptors,
+    ],
+  );
 
   const handleAddKnowledgeResource = useCallback(
-    async (type: AgentKnowledgeResourceType, source: string, title?: string) => {
-      if (!agent || !source.trim()) return;
-      const newResource: AgentKnowledgeResource = {
-        id: `knowledge:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-        type,
-        title: title?.trim() || source.trim().split('/').pop() || source.trim(),
-        source: source.trim(),
-        policy: 'manual',
-        status: 'bound',
-      };
-      const updated = [...knowledgeResources, newResource];
+    async (
+      type: KnowledgeResourceKind,
+      content: string,
+      title?: string,
+    ): Promise<boolean> => {
+      if (!agent || !content.trim()) return false;
+      if (type !== KnowledgeResourceKind.DOCUMENT) {
+        antMessage.warning(t('agent.profile.knowledge.clientLocalUnavailable'));
+        return false;
+      }
       try {
-        await updateKnowledgeResources(agent.id, updated);
+        await bindStationKnowledgeDocument(capabilityProjection, {
+          agentId: agent.id,
+          expectedAgentVersion: agent.version,
+          title: title?.trim() || t('agent.profile.knowledge.untitledDocument'),
+          content: content.trim(),
+          idempotencyKey: () => crypto.randomUUID(),
+          resolveManifest: (descriptor) => {
+            const state = useAgentCapabilityStore.getState();
+            return selectCapabilityManifestsBySource(
+              state,
+              CapabilitySourceKind.KNOWLEDGE,
+              descriptor.resourceId,
+            ).find(
+              (manifest) =>
+                manifest.version === descriptor.revision.toString()
+                && !manifest.retiredAt,
+            );
+          },
+        });
         antMessage.success(t('agent.profile.knowledge.added'));
+        return true;
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        const message = err instanceof Error
+          && err.message === 'agent.profile.knowledge.manifestMissing'
+          ? t(err.message)
+          : err instanceof Error
+            ? err.message
+            : t('agent.profile.failedToSave');
         antMessage.error(message);
+        return false;
       }
     },
-    [agent, knowledgeResources, updateKnowledgeResources, t],
+    [agent, capabilityProjection, t],
   );
 
   const handleRemoveKnowledgeResource = useCallback(
-    async (resourceId: string) => {
+    async (resource: BoundKnowledgeProjection) => {
       if (!agent) return;
-      const updated = knowledgeResources.filter((r) => r.id !== resourceId);
       try {
-        await updateKnowledgeResources(agent.id, updated);
+        await removeOwnedKnowledgeResource(
+          capabilityProjection,
+          resource.descriptor,
+          resource.binding,
+          () => crypto.randomUUID(),
+        );
         antMessage.success(t('agent.profile.knowledge.removed'));
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
         antMessage.error(message);
       }
     },
-    [agent, knowledgeResources, updateKnowledgeResources, t],
+    [agent, capabilityProjection, t],
   );
 
   const handleToggleKnowledgeResource = useCallback(
-    async (resourceId: string) => {
+    async (resource: BoundKnowledgeProjection) => {
       if (!agent) return;
-      const updated = knowledgeResources.map((r) =>
-        r.id === resourceId
-          ? { ...r, policy: (r.policy === 'disabled' ? 'manual' : 'disabled') as typeof r.policy }
-          : r,
-      );
       try {
-        await updateKnowledgeResources(agent.id, updated);
+        await setKnowledgeBindingEnabled(
+          capabilityProjection,
+          agent.version,
+          resource.binding,
+          !resource.binding.enabled,
+          crypto.randomUUID(),
+        );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
         antMessage.error(message);
       }
     },
-    [agent, knowledgeResources, updateKnowledgeResources, t],
+    [agent, capabilityProjection, t],
   );
 
   const [knowledgeAddOpen, setKnowledgeAddOpen] = useState(false);
-  const [knowledgeAddType, setKnowledgeAddType] = useState<AgentKnowledgeResourceType>('document');
-  const [knowledgeAddSource, setKnowledgeAddSource] = useState('');
+  const [knowledgeAddType, setKnowledgeAddType] = useState<KnowledgeResourceKind>(
+    KnowledgeResourceKind.DOCUMENT,
+  );
+  const [knowledgeAddContent, setKnowledgeAddContent] = useState('');
   const [knowledgeAddTitle, setKnowledgeAddTitle] = useState('');
 
-  const handleKnowledgeAddSubmit = useCallback(() => {
-    if (!knowledgeAddSource.trim()) {
-      antMessage.error(t('agent.profile.knowledge.sourceRequired'));
+  const handleKnowledgeAddSubmit = useCallback(async () => {
+    if (!knowledgeAddContent.trim()) {
+      antMessage.error(t('agent.profile.knowledge.contentRequired'));
       return;
     }
-    handleAddKnowledgeResource(knowledgeAddType, knowledgeAddSource, knowledgeAddTitle);
-    setKnowledgeAddSource('');
+    const added = await handleAddKnowledgeResource(
+      knowledgeAddType,
+      knowledgeAddContent,
+      knowledgeAddTitle,
+    );
+    if (!added) return;
+    setKnowledgeAddContent('');
     setKnowledgeAddTitle('');
     setKnowledgeAddOpen(false);
-  }, [knowledgeAddType, knowledgeAddSource, knowledgeAddTitle, handleAddKnowledgeResource, t]);
-
-  const handleKnowledgePickFile = useCallback(async () => {
-    try {
-      const path = await api.ossPickLocalFile();
-      if (path) {
-        const filename = path.split('/').pop() || path;
-        handleAddKnowledgeResource('document', path, filename);
-      }
-    } catch {
-      // user cancelled
-    }
-  }, [handleAddKnowledgeResource]);
-
-  const handleKnowledgePickFolder = useCallback(async () => {
-    try {
-      const path = await api.ossPickLocalFolder();
-      if (path) {
-        const dirname = path.split('/').pop() || path;
-        handleAddKnowledgeResource('folder', path, dirname);
-      }
-    } catch {
-      // user cancelled
-    }
-  }, [handleAddKnowledgeResource]);
+  }, [
+    knowledgeAddType,
+    knowledgeAddContent,
+    knowledgeAddTitle,
+    handleAddKnowledgeResource,
+    t,
+  ]);
 
   const handleInlineRewriteDescription = useCallback(async () => {
     if (!agent) return;
     const intent = agent.description?.trim() || agent.title || agent.name;
     setDescriptionGenerating(true);
-    const sessionKey = `agent_description:${agent.id}`;
     const prompt = [
       'Rewrite this Agent description for A2A routing.',
       'Return one concise sentence only. Do not include markdown or quotes.',
@@ -1515,11 +1889,18 @@ export function AgentProfilePage({
     let content = '';
 
     try {
+      const builderAgent = agents.find((candidate) => candidate.name === 'agent-builder');
+      if (!builderAgent) {
+        throw new Error(t('agent.profile.notFound'));
+      }
       await new Promise<void>((resolve, reject) => {
         executeAgentTurn(
-          prompt,
-          sessionKey,
-          'agent-builder',
+          {
+            client_idempotency_key: crypto.randomUUID(),
+            conversation_id: '',
+            agent_id: builderAgent.id,
+            user_input: prompt,
+          },
           (event) => {
             if (event.event === 'text') content += event.data?.content || '';
           },
@@ -1539,7 +1920,7 @@ export function AgentProfilePage({
     } finally {
       setDescriptionGenerating(false);
     }
-  }, [agent, loadAgents, t]);
+  }, [agent, agents, loadAgents, t]);
 
 
 
@@ -1618,10 +1999,17 @@ export function AgentProfilePage({
 
   const chatConfig = parseAgentChatConfig(agent);
   const workspaceRoot = chatConfig.workspace?.root?.trim();
-  const mcpServers = chatConfig.mcpServers || [];
-  const boundTools = chatConfig.tools || [];
-  const boundSkills = chatConfig.skills || [];
-  const boundSkillLabels = boundSkills.map((skill) => skillLabelByValue.get(skill) || skill);
+  const boundTools = boundCapabilityProjections(capabilityProjection.tools);
+  const boundMcpServers = boundCapabilityProjections(capabilityProjection.mcp);
+  const boundSkills = boundCapabilityProjections(capabilityProjection.skills);
+  const boundCapabilities = [...boundTools, ...boundMcpServers, ...boundSkills];
+  const capabilityBindingsReady =
+    boundCapabilities.length > 0
+    && boundCapabilities.every(
+      ({ readiness }) => readiness?.state === CapabilityReadinessState.READY,
+    );
+  const capabilityMutationPending =
+    Object.keys(capabilityProjection.pendingMutations).length > 0;
   const activityCurrentSession = activitySessions.find((session) => session.key === activityCurrentSessionKey);
   const isCurrentAgentActivitySession =
     activityCurrentSession?.agent_name === agent.name || activityCurrentSession?.agent_name === agent.id;
@@ -1654,7 +2042,6 @@ export function AgentProfilePage({
     ? availableModels.filter((model) => model.provider_id === selectedProviderId)
     : availableModels;
   const modelLabel = selectedModel?.display_name || agent.model || t('agent.profile.defaultModel');
-  const hasLocalToolBindings = boundTools.length > 0 || mcpServers.length > 0 || boundSkills.length > 0;
   const activeTabLabel = t(TAB_KEYS.find((tab) => tab.key === activeTab)?.labelKey || ACTIVITY_TAB_KEYS.find((tab) => tab.key === activeTab)?.labelKey || 'agent.profile.tab.prompt');
   const builderContextSummary = [
     {
@@ -1668,10 +2055,10 @@ export function AgentProfilePage({
       value: t('agent.profile.bindingSummary', {
         tools: boundTools.length,
         skills: boundSkills.length,
-        mcp: mcpServers.length,
-        knowledge: knowledgeResources.length,
+        mcp: boundMcpServers.length,
+        knowledge: knowledgeCapabilityProjections.length,
       }),
-      ready: hasLocalToolBindings,
+      ready: capabilityBindingsReady,
       targetTab: 'capabilities' as ProfileTab,
     },
     {
@@ -1705,16 +2092,24 @@ export function AgentProfilePage({
       search_mode: chatConfig.searchMode || '',
     },
     bindings: {
-      tools: boundTools,
-      mcp_servers: mcpServers,
-      skills: boundSkills,
+      tools: boundTools.map(({ manifest }) => manifest.sourceInstanceId),
+      mcp_servers: boundMcpServers.map(({ manifest }) => manifest.sourceInstanceId),
+      skills: boundSkills.map(({ manifest }) => manifest.sourceInstanceId),
     },
   };
   const activeMode = ACTIVITY_TAB_KEYS.some((tab) => tab.key === activeTab) ? 'activity' : 'configure';
   const visibleTabs = activeMode === 'activity' ? ACTIVITY_TAB_KEYS : TAB_KEYS;
+  const saveState = saveStateByAgentId[agent.id] || 'idle';
+  const conflictReloading = Boolean(
+    agentPendingMutations[`agent-profile-reload:${agent.id}`],
+  );
 
   return (
-    <Flexbox horizontal style={{ height: '100%', width: '100%', minWidth: 0, overflow: 'auto' }}>
+    <Flexbox
+      data-pt-agent-profile={agent.id}
+      horizontal
+      style={{ height: '100%', width: '100%', minWidth: 0, overflow: 'auto' }}
+    >
       {!embedded && <aside
         style={{
           width: agentListOpen ? 230 : 48,
@@ -2090,6 +2485,44 @@ export function AgentProfilePage({
                 ]}
               />
             </div>
+            <Flexbox
+              data-pt-agent-profile-conflict={
+                saveState === 'conflict' ? agent.id : undefined
+              }
+              data-pt-agent-profile-save-state={saveState}
+              horizontal
+              align="center"
+              justify="flex-end"
+              gap={8}
+              style={{ marginTop: -6, marginBottom: 10 }}
+            >
+              <Tag
+                color={
+                  saveState === 'failed' || saveState === 'conflict'
+                    ? 'red'
+                    : saveState === 'saving'
+                      ? 'blue'
+                      : 'default'
+                }
+              >
+                {saveState === 'conflict'
+                  ? t('agent.errors.activeMutationConflict')
+                  : t(`agent.profile.saveState.${saveState}`)}
+              </Tag>
+              {saveState === 'conflict' && (
+                <Button
+                  data-pt-agent-profile-reload={agent.id}
+                  data-pt-agent-profile-reload-latest={agent.id}
+                  type="link"
+                  size="small"
+                  loading={conflictReloading}
+                  onClick={handleReloadLatest}
+                  style={{ height: 24, paddingInline: 4 }}
+                >
+                  {t('agent.recovery.reloadLatest')}
+                </Button>
+              )}
+            </Flexbox>
 
             {/* ── Prototype-aligned mode switch: Configure vs Activity ── */}
             <Flexbox
@@ -2135,6 +2568,7 @@ export function AgentProfilePage({
             <div style={{ display: 'flex', gap: 4, flexShrink: 0, borderBottom: `1px solid ${token.colorBorderSecondary}`, marginBottom: 12, flexWrap: 'wrap' }}>
               {visibleTabs.map((tab) => (
                 <div
+                  data-pt-agent-profile-tab={tab.key}
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
                   style={{
@@ -2345,20 +2779,22 @@ export function AgentProfilePage({
                     <Flexbox gap={8} style={{ minHeight: 0 }}>
                       <Select
                         mode="multiple"
-                        value={boundSkills}
+                        value={selectedSkillManifestKeys}
                         onChange={handleBoundSkillsChange}
                         options={skillOptions}
+                        disabled={capabilityMutationPending}
+                        loading={capabilityMutationPending}
                         placeholder={t('agent.profile.skills.bindPlaceholder')}
                         optionFilterProp="label"
                         style={{ width: '100%' }}
                       />
-                      {boundSkillLabels.length === 0 ? (
+                      {boundSkills.length === 0 ? (
                         <Empty description={t('agent.profile.empty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
                       ) : (
                         <Flexbox gap={6} style={{ overflow: 'auto', paddingRight: 2 }}>
-                          {boundSkillLabels.map((skill) => (
+                          {boundSkills.map(({ binding, manifest, readiness }) => (
                             <Flexbox
-                              key={skill}
+                              key={binding.bindingId}
                               horizontal
                               align="center"
                               gap={10}
@@ -2371,8 +2807,8 @@ export function AgentProfilePage({
                               }}
                             >
                               <span style={{ width: 26, height: 26, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: token.colorPrimaryBg, color: token.colorPrimary, fontWeight: 800 }}>#</span>
-                              <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{skill}</span>
-                              <Tag style={{ margin: 0 }}>{t('agent.profile.enabled')}</Tag>
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{capabilityLabel(manifest)}</span>
+                              <CapabilityReadinessTag readiness={readiness} />
                             </Flexbox>
                           ))}
                         </Flexbox>
@@ -2395,12 +2831,12 @@ export function AgentProfilePage({
                     )}
                   >
                     <Flexbox gap={6} style={{ minHeight: 0, overflow: 'auto' }}>
-                      {boundTools.length === 0 && mcpServers.length === 0 ? (
+                      {boundTools.length === 0 && boundMcpServers.length === 0 ? (
                         <Empty description={t('agent.profile.mcpEmpty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
                       ) : null}
-                      {boundTools.map((tool) => (
+                      {boundTools.map(({ binding, manifest, readiness }) => (
                         <Flexbox
-                          key={`tool-${tool}`}
+                          key={binding.bindingId}
                           horizontal
                           align="center"
                           gap={10}
@@ -2413,13 +2849,14 @@ export function AgentProfilePage({
                           }}
                         >
                           <Wrench size={15} color={token.colorTextTertiary} />
-                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tool}</span>
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{capabilityLabel(manifest)}</span>
                           <Tag style={{ margin: 0 }}>{t('agent.profile.tag.tool')}</Tag>
+                          <CapabilityReadinessTag readiness={readiness} />
                         </Flexbox>
                       ))}
-                      {mcpServers.map((server) => (
+                      {boundMcpServers.map(({ binding, manifest, readiness }) => (
                         <Flexbox
-                          key={`mcp-${server}`}
+                          key={binding.bindingId}
                           horizontal
                           align="center"
                           gap={10}
@@ -2432,8 +2869,9 @@ export function AgentProfilePage({
                           }}
                         >
                           <Cpu size={15} color={token.colorTextTertiary} />
-                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{server}</span>
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{capabilityLabel(manifest)}</span>
                           <Tag style={{ margin: 0 }}>{t('agent.profile.tag.mcp')}</Tag>
+                          <CapabilityReadinessTag readiness={readiness} />
                         </Flexbox>
                       ))}
                     </Flexbox>
@@ -2445,24 +2883,7 @@ export function AgentProfilePage({
                     action={(
                       <Flexbox horizontal gap={6} align="center">
                         <Button
-                          size="small"
-                          icon={<Upload size={14} />}
-                          onClick={handleKnowledgePickFile}
-                          title={t('agent.profile.knowledge.pickFile')}
-                          style={{ height: 32, padding: '0 12px' }}
-                        >
-                          {t('agent.profile.knowledge.pickFile')}
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={<FolderOpen size={14} />}
-                          onClick={handleKnowledgePickFolder}
-                          title={t('agent.profile.knowledge.pickFolder')}
-                          style={{ height: 32, padding: '0 12px' }}
-                        >
-                          {t('agent.profile.knowledge.pickFolder')}
-                        </Button>
-                        <Button
+                          data-pt-agent-knowledge-add-toggle
                           size="small"
                           icon={<Plus size={14} />}
                           onClick={() => setKnowledgeAddOpen(!knowledgeAddOpen)}
@@ -2493,18 +2914,19 @@ export function AgentProfilePage({
                             style={{ width: 130 }}
                             size="small"
                             options={[
-                              { value: 'document', label: t('agent.profile.knowledge.type.document') },
-                              { value: 'folder', label: t('agent.profile.knowledge.type.folder') },
-                              { value: 'project', label: t('agent.profile.knowledge.type.project') },
-                              { value: 'url', label: t('agent.profile.knowledge.type.url') },
-                              { value: 'notebook', label: t('agent.profile.knowledge.type.notebook') },
-                              { value: 'workspace', label: t('agent.profile.knowledge.type.workspace') },
+                              { value: KnowledgeResourceKind.DOCUMENT, label: t('agent.profile.knowledge.type.document') },
+                              { value: KnowledgeResourceKind.FOLDER, label: t('agent.profile.knowledge.type.folder') },
+                              { value: KnowledgeResourceKind.PROJECT, label: t('agent.profile.knowledge.type.project') },
+                              { value: KnowledgeResourceKind.URL_SNAPSHOT, label: t('agent.profile.knowledge.type.url') },
+                              { value: KnowledgeResourceKind.NOTEBOOK, label: t('agent.profile.knowledge.type.notebook') },
+                              { value: KnowledgeResourceKind.WORKSPACE, label: t('agent.profile.knowledge.type.workspace') },
                             ]}
                           />
                           <Input
-                            value={knowledgeAddSource}
-                            onChange={(e) => setKnowledgeAddSource(e.target.value)}
-                            placeholder={t('agent.profile.knowledge.sourcePlaceholder')}
+                            data-pt-agent-knowledge-source
+                            value={knowledgeAddContent}
+                            onChange={(e) => setKnowledgeAddContent(e.target.value)}
+                            placeholder={t('agent.profile.knowledge.contentPlaceholder')}
                             size="small"
                             style={{ flex: 1 }}
                             onPressEnter={handleKnowledgeAddSubmit}
@@ -2512,6 +2934,7 @@ export function AgentProfilePage({
                         </Flexbox>
                         <Flexbox horizontal gap={8} align="center">
                           <Input
+                            data-pt-agent-knowledge-title
                             value={knowledgeAddTitle}
                             onChange={(e) => setKnowledgeAddTitle(e.target.value)}
                             placeholder={t('agent.profile.knowledge.titlePlaceholder')}
@@ -2519,25 +2942,32 @@ export function AgentProfilePage({
                             style={{ flex: 1 }}
                             onPressEnter={handleKnowledgeAddSubmit}
                           />
-                          <Button size="small" type="primary" onClick={handleKnowledgeAddSubmit}>
+                          <Button
+                            data-pt-agent-knowledge-submit
+                            size="small"
+                            type="primary"
+                            onClick={handleKnowledgeAddSubmit}
+                          >
                             {t('agent.profile.knowledge.add')}
                           </Button>
                         </Flexbox>
                       </Flexbox>
                     )}
                     <Flexbox gap={6} style={{ minHeight: 0, overflow: 'auto' }}>
-                      {knowledgeResources.length === 0 ? (
+                      {knowledgeCapabilityProjections.length === 0 ? (
                         <Empty description={t('agent.profile.knowledge.empty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
                       ) : (
-                        knowledgeResources.map((resource) => {
-                          const isDisabled = resource.policy === 'disabled';
-                          const ResourceIcon = resource.type === 'url' ? Globe
-                            : resource.type === 'folder' || resource.type === 'project' || resource.type === 'workspace' ? FolderOpen
-                            : resource.type === 'notebook' ? BookOpen
+                        knowledgeCapabilityProjections.map((resource) => {
+                          const isDisabled = !resource.binding.enabled;
+                          const kind = knowledgeResourceKindKey(resource.descriptor.resourceKind);
+                          const ResourceIcon = kind === 'url' ? Globe
+                            : kind === 'folder' || kind === 'project' || kind === 'workspace' ? FolderOpen
+                            : kind === 'notebook' ? BookOpen
                             : FileText;
                           return (
                             <Flexbox
-                              key={resource.id}
+                              data-pt-agent-knowledge-resource={resource.descriptor.resourceId}
+                              key={resource.binding.bindingId}
                               horizontal
                               align="center"
                               gap={10}
@@ -2552,14 +2982,16 @@ export function AgentProfilePage({
                             >
                               <ResourceIcon size={15} color={token.colorTextTertiary} />
                               <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {resource.title}
+                                {resource.descriptor.title}
                               </span>
                               <Tag style={{ margin: 0 }}>
-                                {t(`agent.profile.knowledge.type.${resource.type}`)}
+                                {t(`agent.profile.knowledge.type.${kind}`)}
                               </Tag>
+                              <KnowledgeAvailabilityTag availability={resource.descriptor.availability} />
                               <button
+                                data-pt-agent-knowledge-policy={resource.descriptor.resourceId}
                                 type="button"
-                                onClick={() => handleToggleKnowledgeResource(resource.id)}
+                                onClick={() => handleToggleKnowledgeResource(resource)}
                                 title={isDisabled ? t('agent.profile.knowledge.policy.manual') : t('agent.profile.knowledge.policy.disabled')}
                                 style={{
                                   width: 28,
@@ -2579,8 +3011,9 @@ export function AgentProfilePage({
                                 {isDisabled ? t('agent.profile.knowledge.policy.disabled') : t('agent.profile.knowledge.status.bound')}
                               </button>
                               <button
+                                data-pt-agent-knowledge-remove={resource.descriptor.resourceId}
                                 type="button"
-                                onClick={() => handleRemoveKnowledgeResource(resource.id)}
+                                onClick={() => handleRemoveKnowledgeResource(resource)}
                                 title={t('agent.profile.knowledge.remove')}
                                 style={{
                                   width: 24,

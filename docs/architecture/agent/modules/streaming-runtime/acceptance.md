@@ -2,7 +2,9 @@
 
 > **Module**: P0-M1 Streaming Runtime
 > **Derived from**: peers-design.md (Run Lifecycle State Machine, Section 5)
-> **Status**: draft
+> **Status**: superseded by `docs/architecture/agent/modern-chat-agent/acceptance-matrix.md`
+> **Historical note**: scenarios using `local_tool_request` or a Rust approval
+> waiter are not valid MCA-D19 evidence.
 
 ---
 

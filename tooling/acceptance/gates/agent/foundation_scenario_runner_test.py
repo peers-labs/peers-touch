@@ -30,15 +30,20 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
 class DirectProbeHarnessClient:
     def __init__(self, *, mismatch: bool = False) -> None:
         self.mismatch = mismatch
+        self.locales: list[str] = []
 
     def harness(
         self,
-        _method: str,
+        method: str,
         payload: dict[str, object] | None = None,
         timeout: float = 120,
     ) -> dict[str, object]:
         del timeout
         request = payload or {}
+        if method == "setFoundationLocale":
+            locale = str(request["locale"])
+            self.locales.append(locale)
+            return {"locale": locale}
         probe = DirectRuntimeProbeInput(
             platform=str(request["platform"]),
             locale=str(request["locale"]),
@@ -60,13 +65,17 @@ class DirectProbeHarnessClient:
 class TimeoutCaptureHarnessClient:
     def __init__(self) -> None:
         self.timeout = 0.0
+        self.locale = ""
 
     def harness(
         self,
-        _method: str,
-        _payload: dict[str, object] | None = None,
+        method: str,
+        payload: dict[str, object] | None = None,
         timeout: float = 120,
     ) -> dict[str, object]:
+        if method == "setFoundationLocale":
+            self.locale = str((payload or {})["locale"])
+            return {"locale": self.locale}
         self.timeout = timeout
         raise RuntimeError("captured timeout")
 
@@ -693,11 +702,11 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             sample_id="sample-001",
         )
 
-        result = foundation_scenario_runner._make_direct_probe(
-            DirectProbeHarnessClient()
-        )(probe_input)
+        client = DirectProbeHarnessClient()
+        result = foundation_scenario_runner._make_direct_probe(client)(probe_input)
 
         self.assertTrue(result["assertions"]["autoPolicyExecutedOnce"])
+        self.assertEqual(client.locales, ["en"])
 
     def test_direct_probe_rejects_harness_assertion_drift(self) -> None:
         probe_input = DirectRuntimeProbeInput(
@@ -727,6 +736,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "captured timeout"):
             foundation_scenario_runner._make_direct_probe(client)(probe_input)
 
+        self.assertEqual(client.locale, "en")
         self.assertEqual(client.timeout, 900)
 
     def test_as_f06_closes_each_tuple_around_its_own_restart(self) -> None:

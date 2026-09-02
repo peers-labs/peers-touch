@@ -277,7 +277,7 @@ fn run_once(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().unwrap_or_default();
-        if session_revocation::emit_if_session_revoked(app, status.as_u16(), &body) {
+        if session_revocation::emit_if_session_revoked(app, token, status.as_u16(), &body) {
             return Ok(());
         }
         return Err(format!("station returned {status}: {body}"));

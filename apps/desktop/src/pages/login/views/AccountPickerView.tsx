@@ -135,6 +135,7 @@ export const AccountPickerView = memo(function AccountPickerView({
         style={{ width: '100%', marginTop: 16, height: 40, borderRadius: 12, fontSize: 13 }}
         icon={<LogIn size={14} />}
         onClick={onAddAccount}
+        data-login-add-account
       >
         {t('auth.accountPicker.addAccount')}
       </Button>

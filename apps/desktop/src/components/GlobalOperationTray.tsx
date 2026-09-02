@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon } from '@lobehub/ui';
-import { MessageSquare, Square } from 'lucide-react';
+import { MessageSquare, RefreshCw, Square } from 'lucide-react';
 import { theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
+import { useSessionStore } from '../store/session';
 import { eventBus, EVENT } from '../kernel/events';
 import { ActivityGlyph } from './chat/ActivityGlyph';
 
@@ -27,6 +28,7 @@ export function GlobalOperationTray() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const operations = useChatStore((s) => s.operations);
+  const authenticated = useSessionStore((s) => s.authenticated);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const stopOperation = useChatStore((s) => s.stopOperation);
   const selectSession = useChatStore((s) => s.selectSession);
@@ -49,11 +51,12 @@ export function GlobalOperationTray() {
     };
   }, [running.length]);
 
-  if (running.length === 0) return null;
+  if (!authenticated || running.length === 0) return null;
 
   const op = running[running.length - 1];
   const elapsed = formatElapsed(Math.max(0, now - op.startedAt));
   const isCurrent = op.sessionKey === currentSessionKey;
+  const isReconciling = op.runState === 'reconciling';
 
   if (isCurrent) return null;
 
@@ -70,6 +73,7 @@ export function GlobalOperationTray() {
 
   return (
     <Flexbox
+      data-pt-agent-background-operation-status={op.runState}
       horizontal
       align="center"
       gap={10}
@@ -85,18 +89,26 @@ export function GlobalOperationTray() {
         maxWidth: 320,
         padding: '10px 12px',
         borderRadius: 14,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorBgElevated,
+        border: `1px solid ${isReconciling ? token.colorWarningBorder : token.colorBorderSecondary}`,
+        background: isReconciling ? token.colorWarningBg : token.colorBgElevated,
         boxShadow: hovered ? token.boxShadow : token.boxShadowSecondary,
         cursor: 'pointer',
         transform: hovered ? 'translateY(-2px)' : 'translateY(0)',
         transition: 'transform 0.18s ease, box-shadow 0.18s ease',
       }}
     >
-      <ActivityGlyph color={token.colorPrimary} size={20} />
+      {isReconciling ? (
+        <RefreshCw
+          aria-hidden
+          size={18}
+          style={{ color: token.colorWarning, flexShrink: 0 }}
+        />
+      ) : (
+        <ActivityGlyph color={token.colorPrimary} size={20} />
+      )}
       <Flexbox style={{ minWidth: 0, flex: 1 }}>
         <span
-          key={phraseIndex}
+          key={isReconciling ? 'reconciling' : phraseIndex}
           style={{
             fontSize: 13,
             color: token.colorText,
@@ -107,10 +119,14 @@ export function GlobalOperationTray() {
             animation: 'ptGlobalTrayPhrase 0.4s ease',
           }}
         >
-          {t(PHRASE_KEYS[phraseIndex])}
+          {isReconciling
+            ? t('chat.tray.reconciling')
+            : t(PHRASE_KEYS[phraseIndex])}
         </span>
         <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
-          {elapsed} · {t('chat.tray.runningInBackground')}
+          {isReconciling
+            ? t('chat.tray.reconcilingDetail')
+            : `${elapsed} · ${t('chat.tray.runningInBackground')}`}
         </span>
       </Flexbox>
       <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
@@ -121,6 +137,7 @@ export function GlobalOperationTray() {
           style={{ borderRadius: 8, color: token.colorTextSecondary }}
         />
         <ActionIcon
+          data-pt-agent-stop
           icon={Square}
           title={t('chat.input.stop')}
           size={{ blockSize: 28, size: 13 }}

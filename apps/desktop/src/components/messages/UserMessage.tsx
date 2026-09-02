@@ -8,6 +8,7 @@ import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
 import { chatMarkdownProps } from './markdownConfig';
 import { MessageActionBar } from '../messages';
+import { ForwardMessageModal } from './ForwardMessageModal';
 import { MessageAttachments } from './MessageAttachments';
 import { useTranslation } from 'react-i18next';
 import { timeAgo, fullTime } from './shared';
@@ -27,6 +28,7 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
+  const [forwardOpen, setForwardOpen] = useState(false);
   const editRef = useRef<{ focus: (options?: { cursor?: string }) => void; blur: () => void; nativeElement: HTMLTextAreaElement } | null>(null);
 
   const branchFromMessage = useChatStore(s => s.branchFromMessage);
@@ -73,6 +75,8 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
 
   return (
     <Flexbox
+      data-pt-agent-message="user"
+      data-pt-agent-message-id={message.id}
       id={`agent-message-${message.id}`}
       align="flex-end"
       gap={8}
@@ -230,6 +234,8 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
             onDelete: handleDelete,
             onRegenerate: () => { /* Not applicable for user messages */ },
             onRetry: () => { /* Not applicable for user messages */ },
+            onRetryRecovery: () => { /* Not applicable for user messages */ },
+            onReloadSnapshot: () => { /* Not applicable for user messages */ },
             onBranch: handleBranch,
             onContinue: () => { /* Not applicable for user messages */ },
             onDeleteAndRegenerate: () => { /* Not applicable for user messages */ },
@@ -237,6 +243,7 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
             onThread: () => { /* Not applicable for user messages */ },
             onReadAloud: () => { /* Not applicable for user messages */ },
             onExport: () => { /* Not applicable for user messages */ },
+            onForward: () => setForwardOpen(true),
           }}
           style={{
             alignSelf: 'flex-end',
@@ -246,6 +253,11 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
           }}
         />
       )}
+      <ForwardMessageModal
+        open={forwardOpen}
+        messages={[message]}
+        onClose={() => setForwardOpen(false)}
+      />
     </Flexbox>
   );
 }

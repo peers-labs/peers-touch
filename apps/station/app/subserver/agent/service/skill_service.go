@@ -24,6 +24,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
@@ -374,7 +375,22 @@ func (s *SkillService) DeleteSkillByID(ctx context.Context, agentID, skillID str
 // BuildSkillIndex generates a system prompt skills index block with
 // conditional activation filtering based on platform and tool availability.
 // Returns the formatted index string, the count of activated skills, and any error.
-func (s *SkillService) BuildSkillIndex(ctx context.Context, agentID, platform string, availableTools []string) (string, int, error) {
+func (s *SkillService) BuildSkillIndex(ctx context.Context, agentID string, availableTools []string) (string, int, error) {
+	return s.BuildAuthorizedSkillIndex(ctx, agentID, availableTools, nil)
+}
+
+func (s *SkillService) BuildAuthorizedSkillIndex(
+	ctx context.Context,
+	agentID string,
+	availableTools []string,
+	authorized *AuthorizedCapabilitySet,
+) (string, int, error) {
+	if authorized == nil {
+		return "", 0, capabilityStateError(
+			"authorized capability set is required for Skill prompt assembly",
+			nil,
+		)
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		logger.Errorf(ctx, "skill index build failed (db): agent_id=%s, err=%v", agentID, err)
@@ -408,9 +424,18 @@ func (s *SkillService) BuildSkillIndex(ctx context.Context, agentID, platform st
 	var entries []indexEntry
 
 	for _, row := range rows {
+		capability, ok := authorized.Source(
+			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_SKILL,
+			row.Name,
+		)
+		if !ok ||
+			capability.Manifest.GetCapabilityId() != "skill:"+row.ID ||
+			capability.Manifest.GetVersion() != fmt.Sprintf("%d", row.Version) {
+			continue
+		}
 		manifest := s.toManifest(&row)
 
-		if !s.matchesPlatform(manifest.Platforms, platform) {
+		if len(manifest.Platforms) > 0 {
 			continue
 		}
 
@@ -626,22 +651,6 @@ func (s *SkillService) fuzzyFind(content, target string) int {
 	}
 
 	return -1
-}
-
-// matchesPlatform returns true if the skill should be active on the given platform.
-// An empty platforms list means the skill is available on all platforms.
-func (s *SkillService) matchesPlatform(platforms []string, current string) bool {
-	if len(platforms) == 0 {
-		return true
-	}
-
-	for _, p := range platforms {
-		if strings.EqualFold(p, current) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // isFallbackSatisfied returns true if all fallback tools are already available,
