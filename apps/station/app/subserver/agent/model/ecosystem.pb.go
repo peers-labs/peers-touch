@@ -503,7 +503,7 @@ type TopicComment struct {
 	TopicKey      string                 `protobuf:"bytes,2,opt,name=topic_key,json=topicKey,proto3" json:"topic_key,omitempty"`
 	Content       string                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
 	CreatedAt     string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	AuthorId      string                 `protobuf:"bytes,5,opt,name=author_id,json=authorId,proto3" json:"author_id,omitempty"`
+	AuthorPtid    string                 `protobuf:"bytes,5,opt,name=author_ptid,json=authorPtid,proto3" json:"author_ptid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -566,9 +566,9 @@ func (x *TopicComment) GetCreatedAt() string {
 	return ""
 }
 
-func (x *TopicComment) GetAuthorId() string {
+func (x *TopicComment) GetAuthorPtid() string {
 	if x != nil {
-		return x.AuthorId
+		return x.AuthorPtid
 	}
 	return ""
 }
@@ -1964,14 +1964,15 @@ const file_domain_agent_ecosystem_proto_rawDesc = "" +
 	"\x18DeleteAgentGroupResponse\"\x18\n" +
 	"\x16ListAgentGroupsRequest\"K\n" +
 	"\x17ListAgentGroupsResponse\x120\n" +
-	"\x06groups\x18\x01 \x03(\v2\x18.domain.agent.AgentGroupR\x06groups\"\x91\x01\n" +
+	"\x06groups\x18\x01 \x03(\v2\x18.domain.agent.AgentGroupR\x06groups\"\xa0\x01\n" +
 	"\fTopicComment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttopic_key\x18\x02 \x01(\tR\btopicKey\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\tR\acontent\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x04 \x01(\tR\tcreatedAt\x12\x1b\n" +
-	"\tauthor_id\x18\x05 \x01(\tR\bauthorId\"R\n" +
+	"created_at\x18\x04 \x01(\tR\tcreatedAt\x12\x1f\n" +
+	"\vauthor_ptid\x18\x05 \x01(\tR\n" +
+	"authorPtidR\tauthor_id\"R\n" +
 	"\x19CreateTopicCommentRequest\x12\x1b\n" +
 	"\ttopic_key\x18\x01 \x01(\tR\btopicKey\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\tR\acontent\"R\n" +

@@ -137,6 +137,13 @@ Example:
 8. **UI Identity first** — For any UI/UX design, visual refactor, screenshot review, layout issue, button/style issue, or client UI code change, first read `docs/client/common/ux-design-methodology.md`, `docs/client/common/ui-identity/README.md`, and the closest module contract under `docs/client/common/ui-identity/modules/`. Do not rely on ad-hoc component-library defaults.
 9. **Service coordination first** — For cross-service issues (relay mount, DHT bootstrap, federation resolve failures, Station↔Relay↔Desktop connectivity), consult `docs/architecture/service-coordination.md` before debugging. It defines the dependency DAG, credential lifecycle, and troubleshooting index.
 10. **Acceptance Infra ownership first** — Acceptance Core, planner, validator, runner, Evidence Store, lifecycle, and framework tooling work MUST use `pt-acceptance-infra-engineering`. Infra defines and validates injection contracts; it MUST NOT create, repair, weaken, or complete business Domain injection. Business Acceptance onboarding and proof remain with `pt-acceptance-engineering`.
+11. **Execution worktree binding first** — A skill source path selects
+    instructions, never the execution worktree. Before dispatch and before the
+    first edit, bind the explicitly selected current worktree through
+    `tooling/scripts/verify-worktree-binding.py` and resolve its canonical root,
+    branch, `workspaceId`, initial HEAD, expected HEAD, and worktree-set digest.
+    The verified binding remains immutable unless the user explicitly
+    authorizes one of the refresh operations defined in §13.5.1.
 
 ---
 
@@ -171,7 +178,11 @@ Use domain-specific loggers only (see platform docs for specifics).
 - Use `<repo-root>`, `<workspace-root>`, `<runtime-home>`, or `$HOME` only when
   a portable placeholder is semantically required.
 - Runtime worktree verification may use the real absolute path, but persisted
-  Context Anchors record `<repo-root>` plus the verified branch.
+  plans and Context Anchors record `<worktree-name> (<repo-root>)` rather than
+  the absolute root. The logical worktree name is mandatory so `<repo-root>`
+  cannot make multiple worktrees indistinguishable. A Context Anchor's
+  worktree identity also includes the verified branch, `workspaceId`, initial
+  HEAD, expected/verified HEAD, and worktree-set digest.
 
 ### No Mocking
 
@@ -337,6 +348,7 @@ Current project skills:
 |-------|---------|
 | `pt-dev-workflow` | Drive a complete development task from planning to PR |
 | `pt-god-view` | God view: explicitly invoked to show global work status, route to correct stage skill, manage work lifecycle |
+| `pt-trae-goal-orchestrator` | Select one bounded Goal Slice from stage-owned ready work and build a TRAE-only focus/persistence envelope with parallel ownership, evidence, reconciliation, and next-slice handoff |
 | `pt-acceptance-infra-engineering` | Optimize and audit Acceptance Infra while enforcing the responsibility firewall against business Domain injection |
 | `pt-acceptance-engineering` | Deterministically add, complete, upgrade, or audit Acceptance contracts, runtime scenarios, gates, and evidence |
 | `pt-acceptance-gap-detector` | Enforce "No Silent Pass" iron law — detect 25+ bypass patterns (mocks, stale evidence, single-actor, hardcoded creds, downgraded gates) before marking any claim proven |
@@ -416,40 +428,107 @@ Any non-trivial development task (cross-module, new feature, architecture change
    - Mixed requests MUST be split. Infra reports business gaps as `BUSINESS_INJECTION_REQUIRED`; it does not implement them.
 7. **Anchor creation boundary**: PRODUCT/DESIGN work without a formal execution plan is not tracked work and has no Context Anchor. After `pt-plan-and-document` creates the plan, register `active_work`; only then may `pt-context-anchor` emit a chat projection.
 
+#### 13.5.1 Execution Worktree Binding Contract
+
+This contract is fail-closed and applies before stage dispatch, execution,
+edits, status claims, and completion claims.
+
+1. The path used to load a skill is only the instruction source. It MUST NOT
+   select, replace, or imply an execution worktree. The current verified
+   worktree remains bound.
+2. If the current worktree is ambiguous, including when the session exposes
+   multiple candidate roots without one explicit selection, stop and ask the
+   user to identify the worktree. Do not infer it from a skill path, plan path,
+   branch name, or nearby repository.
+3. From the explicitly selected current worktree root, capture its identity:
+   `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --capture`.
+4. Reconcile the captured identity with every worktree identity present in
+   `active_work`, the formal plan, and the latest Context Anchor. Any mismatch,
+   or any later root, branch, HEAD, `workspaceId`, or worktree-set drift,
+   returns `WORKTREE_IDENTITY_MISMATCH` and stops. Do not repair a mismatch by
+   automatically changing directories, switching branches, or selecting a
+   different worktree.
+5. From the same root, immediately verify all captured values:
+   `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --branch '<branch>' --workspace-id '<workspaceId>' --head '<expected-head>' --worktree-set-digest '<digest>'`.
+   Every materialized value must be one POSIX shell-safe argument.
+   Bind the verified canonical root, branch, `workspaceId`, initial HEAD,
+   expected HEAD, and worktree-set digest. On first registration, expected HEAD
+   equals initial HEAD. A missing verifier or unresolved field is
+   `WORKTREE_IDENTITY_UNAVAILABLE`; a wrong invocation directory, identity
+   mismatch, or later drift is `WORKTREE_IDENTITY_MISMATCH`. Both stop work.
+6. Every mutating tool call must carry the bound canonical root as its explicit
+   `workdir`. File mutation tools must use absolute paths beneath that same
+   root. Subagents inherit the complete immutable binding and must run the
+   verifier against it before writing.
+7. Re-run the verifier after resume or context compaction and before every
+   status, readiness, handoff, or completion report.
+8. The initial HEAD remains the audit baseline. Expected HEAD may refresh only
+   after a commit, rebase, or merge that the user explicitly authorized. The
+   worktree-set digest may refresh only after the exact worktree operation the
+   user explicitly requested. Resume and context compaction verify the persisted
+   values; they MUST NOT recapture current Git state as a replacement baseline.
+9. Do not run `git switch`, `git checkout`, `git worktree add`,
+   `git worktree remove`, or `git worktree prune`, and do not create a
+   worktree, unless the user explicitly requested that exact operation.
+
+Legacy `active_work` rows created before the binding fields existed cannot
+resume directly. They may be migrated exactly once only after the user
+explicitly authorizes that row's migration and identifies its worktree. The
+agent must verify that the legacy `plan` exists and its recorded `branch`
+matches the selected worktree, capture the current identity once, and
+atomically:
+
+1. append an immutable row under `## active_work_binding_migrations` containing
+   the work ID, migration date, prior branch, captured `workspace_id`,
+   baseline HEAD, worktree-set digest, and authorization reference;
+2. populate the legacy row with that captured `workspace_id`,
+   `initial_head`, `expected_head`, and `worktree_set_digest`, with both HEAD
+   fields equal to the captured HEAD.
+
+This explicit migration establishes a new auditable baseline; it is not resume
+recapture. Missing authorization, plan mismatch, branch mismatch, ambiguous
+worktree selection, or a partial registry write remains
+`WORKTREE_IDENTITY_UNAVAILABLE` and blocks execution.
+
 ### 13.6 Session Continuity Protocol
 
 **This protocol is triggered explicitly via `pt-god-view` skill, not automatically on every session start.**
 
 When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状态" / "resume" etc.):
 
-1. Read `project_memory.md` → check `active_work` registry.
-2. Open the referenced plan and verify its `Context Anchor` through `pt-context-anchor`.
-3. If one entry with `stage != complete`:
+1. Resolve and verify the execution worktree binding per §13.5.1.
+2. Read `project_memory.md` → check `active_work` registry.
+3. Open the referenced plan and verify its `Context Anchor` through `pt-context-anchor`.
+4. If one entry with `stage != complete`:
    - Report in one sentence: current plan, stage, step.
    - Suggest the next action (which skill to invoke).
    - Wait for user confirmation.
-4. If multiple entries with `stage != complete`:
+5. If multiple entries with `stage != complete`:
    - List all active entries (plan name, stage, branch).
    - Ask: "Which work do you want to continue?"
    - Wait for user selection.
-5. If all entries are `complete` or registry is empty → offer to start new task.
-6. Dispatch to the correct stage skill per §13.5.
+6. If all entries are `complete` or registry is empty → offer to start new task.
+7. Dispatch to the correct stage skill per §13.5.
 
 **active_work registry schema** (maintained in `project_memory.md`):
 
 ```markdown
 ## active_work
 
-| id | plan | stage | current_step | branch | blocked | last_session |
-|----|------|-------|--------------|--------|---------|--------------|
-| 1 | docs/.../execution-plans/20260723-phase1.md | EXECUTE | Step 3 | main | false | 2026-07-23 |
-| 2 | docs/.../federation-phase2.md | PLAN | — | feat/federation | false | 2026-07-22 |
+| id | plan | stage | current_step | branch | workspace_id | initial_head | expected_head | worktree_set_digest | blocked | last_session |
+|----|------|-------|--------------|--------|--------------|--------------|---------------|---------------------|---------|--------------|
+| 1 | docs/.../execution-plans/20260723-phase1.md | EXECUTE | Step 3 | main | 0123456789abcdef | `<full-head>` | `<full-head>` | `<sha256>` | false | 2026-07-23 |
+| 2 | docs/.../federation-phase2.md | PLAN | — | feat/federation | fedcba9876543210 | `<full-head>` | `<full-head>` | `<sha256>` | false | 2026-07-22 |
 ```
 
 **Lifecycle rules:**
 
 - **New pre-plan work** → run PRODUCT/DESIGN without an Anchor; do not create a placeholder row or fabricate a plan path.
 - **Plan created** → append a row with the repository-relative plan path and `stage: PLAN`.
+- **Worktree binding created** → record the verified `workspace_id`,
+  `initial_head`, `expected_head`, and `worktree_set_digest`; initially both
+  HEAD fields are identical. Never derive identity from a skill path or copy it
+  from another worktree.
 - **Stage transition** → update `stage` + `current_step` in corresponding row.
 - **Session end** → update `last_session` date.
 - **Branch merged** → if all phases complete, set `stage: complete`; if subsequent phases remain, update `branch` to target branch (e.g. `main`).
@@ -460,6 +539,10 @@ Context Anchor rules:
 
 - `active_work` is the durable current-state index; the plan and linked tracking artifacts own scope, detailed progress, and evidence.
 - Execution plans MUST NOT contain a `## Context Anchor` section.
+- The chat projection records `<worktree-name> (<repo-root>)`, verified branch,
+  `workspaceId`, initial HEAD, expected/verified HEAD, and worktree-set digest.
+  It never persists a developer or CI user-home absolute path or an ambiguous
+  bare `<repo-root>`.
 - Tracked-work status, resume, handoff, blocker, readiness, and close responses end with the single fenced chat projection required by `pt-context-anchor`.
 
 ---

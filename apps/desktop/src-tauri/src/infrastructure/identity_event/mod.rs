@@ -21,10 +21,6 @@ pub struct IdentityChangedPayload {
     pub reason: IdentityChangeReason,
     pub actor_ptid: Option<String>,
     pub login_method: Option<String>,
-    /// The device type that originated this identity change.
-    /// Used by the frontend to filter events from a different device type
-    /// (e.g. browser login should not kick native session in multi-device mode).
-    pub device_type: Option<String>,
 }
 
 pub fn emit(app: &AppHandle, payload: IdentityChangedPayload) {
@@ -48,11 +44,9 @@ mod tests {
             reason: IdentityChangeReason::OauthBridge,
             actor_ptid: Some("ptid:test:alice".to_string()),
             login_method: Some("oauth".to_string()),
-            device_type: Some("desktop-native".to_string()),
         })
         .expect("serialize");
         assert!(json.contains("\"reason\":\"oauth_bridge\""));
         assert!(json.contains("\"actor_ptid\":\"ptid:test:alice\""));
-        assert!(json.contains("\"device_type\":\"desktop-native\""));
     }
 }

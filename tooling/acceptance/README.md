@@ -14,10 +14,39 @@ run for a changed path, and which artifacts should be produced for human review.
 - `gates.yaml` defines gate commands, timeouts, environments, tiers, and artifact expectations.
 - `features/` contains product feature contracts.
 - `gates/` contains stable cross-system acceptance implementations.
+- [`gates/mobile/README.md`](./gates/mobile/README.md) records the Mobile
+  native E2E driver selection, Desktop comparison, hybrid context model, and
+  simulator-versus-physical proof boundary.
 - `playbooks/` explains how agents should run, diagnose, and preserve acceptance flows.
+- Runtime manifests use typed `services[service-id]` as the only service
+  topology. Every required service must carry an ID/kind-matched source-bound
+  attestation; the removed top-level `station` field is invalid.
 - `desktop-performance-cohort.json` is the canonical P0c-3 profile, account,
   dataset, window, warmup, build, runtime, and scenario manifest.
 - `reports/` stores local or CI acceptance artifacts and is ignored by git.
+
+## Ephemeral Gate Launch Context
+
+Context-enabled Gates declare canonical `argv` plus
+`ephemeralCapabilities` in `gates.yaml`. The Environment Provisioner keeps
+secrets and raw resource handles in the parent process and returns an
+`EphemeralGateLaunchContext` whose registered handlers exactly match the
+declared capabilities. The runner binds the context to workspace, Gate,
+Evidence Store run, and provisioning run identities, then launches the child
+with `shell=False`, `close_fds=True`, and the exact anonymous channel
+descriptor in `pass_fds`.
+
+The child uses `EphemeralGateClient.from_environment()` only to consume the
+non-secret descriptor locator and run identities. Secrets, keys, tokens,
+subjects, raw device identifiers, and endpoint addresses must not enter the
+environment, argv, Runtime Manifest, filesystem, captured output, or Evidence
+Store. Context cleanup always quiesces before runtime-cell and Provisioner
+cleanup, closes handlers afterward, and reports quarantine/zeroization
+failures as Infra failures. Gates without `ephemeralCapabilities` retain their
+existing launch path. Every launch, request, and cleanup timeout must be
+positive and finite. One monotonic request deadline bounds child and broker
+frame reads and every nested parent-side operation, including Appium transport
+and response-body acquisition.
 
 ## Federation Bootstrap Loop
 

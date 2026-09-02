@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-29
+> **Created**: 2026-08-27 | **Updated**: 2026-08-30
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -53,7 +53,7 @@ runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原�
 | [design.md](./design.md) | Architecture boundaries and contracts |
 | [decisions.md](./decisions.md) | ADR-lite decisions |
 | [data-model.md](./data-model.md) | State and Proto mapping |
-| [integration.md](./integration.md) | Current implementation Gap and impact |
+| [integration.md](./integration.md) | Initial implementation gap and target impact |
 | [module-layout.md](./module-layout.md) | Target module ownership |
 | [native-oauth-proof/README.md](./native-oauth-proof/README.md) | W2-E2 physical OAuth Fixture, Station proof, browser lease and build provenance amendment |
 | [prototype/README.md](./prototype/README.md) | Confirmed prototype reference |
@@ -78,5 +78,8 @@ architecture were accepted by the Owner on 2026-08-27. The W2-E2 physical OAuth
 proof amendment, MOP-D01..MOP-D04 and focused execution plan were accepted on
 2026-08-29. W2-E2-A, W2-E2-B, W2-E2-C and W2-E2-FREEZE are complete, covering
 E2-0 through E2-4. MOP-D03-A/MOP-D04-A passed independent review with no P0/P1
-and were accepted on 2026-08-29. W2-E2-D / E2-5 is dependency-ready but not
-started; E2-6 remains blocked on physical resources.
+and were accepted on 2026-08-29. D-19 architecture and its independently
+reviewed Infra execution plan are accepted; Infra execution is active.
+W2-E2-D / E2-5 remains blocked by D-19 Infra landing and the later reviewed
+Mobile injection/remediation amendment. E2-6 remains `UNPROVEN` and must not
+start before those source closures pass.

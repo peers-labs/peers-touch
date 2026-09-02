@@ -2,15 +2,19 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-29 | **Updated**: 2026-08-29
+> **Created**: 2026-08-29 | **Updated**: 2026-08-30
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`, `apps/station/app/subserver/oauth/`, `tooling/acceptance/`
 
 ---
 
-## 1. Current-To-Target Mapping
+## 1. Initial-To-Target Mapping — 2026-08-29
 
-| Concern | Current state | Target owner/contract |
+This table records the baseline used to define the architecture. It is not a
+live implementation-status ledger; current closure state is owned by
+`execution-plans/20260829-mobile-native-oauth-proof.md` §14.
+
+| Concern | Initial state | Target owner/contract |
 |---|---|---|
 | Negative variant inventory | Ten physical cells are `UNSUPPORTED` in `native_e2e.py` | Mobile Gate consumes executable Fixture/input contracts |
 | Fixture authority | Actor reset only; no OAuth negative-state owner | Station-internal adapter under deployment-owned `MobileOAuthFixtureLease` |
@@ -95,7 +99,7 @@ Owns:
 |---|---|---|---|
 | success | Provider/browser lease + actor Fixture | native browser -> OS callback -> Rust -> Station | Station snapshot + Mobile projection |
 | cancel | Mobile runtime | production cancel command | Station snapshot + secure-storage absence |
-| following-gate | Station Fixture adapter prepares real invite gate | provider callback -> inactive candidate -> real invite submission -> finalizer | before/intermediate/final Station snapshots |
+| following-gate | Station Fixture adapter prepares real invite gate | provider callback -> inactive candidate -> real invite submission -> Station session finalizer | before/intermediate/final Station snapshots |
 | expiry | Station Fixture adapter conditionally expires awaiting row | real callback/status path | expired Station state; zero active session |
 | replay | After one real OS callback is claimed, Rust uses its volatile handle for a different callback | production Rust callback validator/coordinator | typed replay; one consume; at most one candidate/session |
 | provider mismatch | Rust negative-input adapter changes only provider discriminator in memory | production validator/Station binding checks | unchanged original attempt; zero candidate/session |
@@ -207,17 +211,29 @@ No compatibility alias or dual read path is retained after cutover.
 
 ## 8. Acceptance Framework Boundary
 
-No generic Acceptance Infra amendment is required by this design:
+D-18 and accepted D-19 are explicit generic Acceptance Infra dependencies;
+D-19 implementation remains active:
 
-- existing Environment/Provisioner/RuntimeManifest extension points carry the
-  Mobile-specific artifacts;
-- existing Evidence Store carries immutable references and hashes;
-- existing cleanup and blocked semantics remain authoritative.
+- D-18 carries process-local Mobile capability without persisting authority;
+- D-19 generic Infra must validate and execute the Mobile-owned
+  `mobile.native.oauth-final-roles` requirement for
+  `mobile-native-access-e2e`, seal the complete role-instance inventory after
+  cleanup, and run the detached Mobile validator before publish; Infra does not
+  author that business requirement or validator;
+- RuntimeManifest remains durable runtime truth, while Evidence Store owns the
+  sealed snapshot and one-shot manifest lifecycle.
 
-If implementation proves that Mobile cannot express a required artifact or
-lease without changing generic schema/lifecycle behavior, it must emit
-`ACCEPTANCE_INFRA_REQUIRED` and split that work. Mobile code must not modify
-Acceptance Core to make its own Gate pass.
+Mobile owns Artifact Role, discriminator/path/payload identity and relation
+semantics in the neutral Mobile contract module. Mobile code must not embed
+those semantics into Acceptance Core or move cleanup/authority into the Gate
+child.
+Before the atomic D-19 activation, `mobile-native-access-e2e` must have a
+fail-closed publication interlock that rejects pre-cleanup `PROVEN`. The
+interlock remains permanent: it is satisfied only when the Capability
+requirement, matching Catalog config, current gate-scoped enforcement
+generation, generated registration and post-cleanup Evidence Finalizer outcome all validate.
+The Mobile cutover activates those inputs atomically; it does not delete or
+bypass the guard. The guard is not a fallback validator or a second proof path.
 
 ## 9. Current Impact Surface
 
@@ -244,7 +260,10 @@ This list is not an execution plan and does not authorize edits.
 | Station proof snapshot | MS-PA03, MS-PA17, MS-PA25 | MS-AG03 |
 | Provider/browser/device leases | MS-PA03 | MS-AG03 |
 | Build provenance + fresh-install/runtime identity | MS-PA03, MS-PA25 | MS-AG01, MS-AG03 |
+| D-19 sealed post-cleanup 19-role snapshot | MS-PA03, MS-PA17, MS-PA25 | accepted target `mobile.native.oauth-final-roles`; Infra/Mobile landing pending |
+| D-19 monotonic final publication | MS-PA03, MS-PA17, MS-PA25 | D-19-aware Evidence Store latest validation |
 
 MOP-D03-A and MOP-D04-A passed independent review with no P0/P1 and were
-accepted on 2026-08-29. Execution planning must place the E2-0 contract
-amendment before E2-1/E2-3 implementation.
+accepted on 2026-08-29. The completed execution order placed the E2-0 contract
+amendment before E2-1/E2-3 implementation; current open work is listed in the
+focused W2-E2 plan §14.

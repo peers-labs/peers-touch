@@ -419,11 +419,15 @@ profile:
   name: <profile>
   slot: <slot>
 services:
-  station:
-    mode: <local|remote|none>
-    url: <url>
-    expected_commit: <commit-or-not-applicable>
-    health_check: <command-or-url>
+  <service-id>:
+    kind: <station|relay|other-registered-kind>
+    deployment_environment: <environment>
+    endpoint: <redacted-safe-url>
+    runtime_identity: <live-service-identity>
+    live_commit: <commit>
+    workspace_digest: <clean-or-digest>
+    protocol_digest: <digest>
+    attestation_artifact: <artifact-ref>
   relay:
     required: <true|false>
 clients:
@@ -463,6 +467,8 @@ Do not commit concrete secrets or transient local paths.
 ### Exit Criteria
 
 - Every Gate resource has an owner, source, acquisition method, and cleanup.
+- Every required service has exactly one ID/kind-matched attestation in
+  `RuntimeManifest.services`; legacy singular `station` is invalid.
 - Every actor has isolated runtime identity and storage where required.
 - Fixture reset authorization and target verification are explicit.
 - Evidence can identify the source build, runtime, actor, and receiver.

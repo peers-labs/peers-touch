@@ -18,7 +18,383 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+class GateLaunchContractTests(unittest.TestCase):
+    def test_rejects_duplicate_gate_catalog_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            gates_path = Path(temp_dir) / "gates.yaml"
+            gates_path.write_text(
+                '{"gates":{"finalizer-gate":{"evidenceFinalizer":{},'
+                '"evidenceFinalizer":{}}}}',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "duplicate key"):
+                MODULE.load(gates_path)
+
+            gates_path.write_text(
+                '{"gates":{"finalizer-gate":{"timeout_seconds":1e999}}}',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RuntimeError, "invalid number"):
+                MODULE.load(gates_path)
+
+    def test_accepts_each_canonical_launch_form(self) -> None:
+        MODULE.validate_gate_catalog(
+            {
+                "legacy-gate": {
+                    "command": "python3 legacy_gate.py",
+                    "environment": "local",
+                    "tier": "ci-cheap",
+                },
+                "context-gate": {
+                    "argv": ["python3", "-m", "example.gate"],
+                    "ephemeralCapabilities": [
+                        "example.echo",
+                        "example.deny",
+                    ],
+                    "environment": "local",
+                    "tier": "ci-cheap",
+                },
+            },
+            {"legacy-gate", "context-gate"},
+        )
+
+    def test_rejects_invalid_launch_forms(self) -> None:
+        cases = [
+            (
+                {},
+                "exactly one of command or argv",
+            ),
+            (
+                {"command": "true", "argv": ["true"]},
+                "exactly one of command or argv",
+            ),
+            (
+                {"command": ""},
+                "command must be a non-empty string",
+            ),
+            (
+                {"argv": []},
+                "argv must be a non-empty list of non-empty strings",
+            ),
+            (
+                {"argv": ["python3", ""]},
+                "argv must be a non-empty list of non-empty strings",
+            ),
+        ]
+
+        for launch, expected_error in cases:
+            with self.subTest(launch=launch):
+                with self.assertRaisesRegex(RuntimeError, expected_error):
+                    MODULE.validate_gate_catalog(
+                        {
+                            "invalid-gate": {
+                                **launch,
+                                "environment": "local",
+                                "tier": "ci-cheap",
+                            }
+                        },
+                        {"invalid-gate"},
+                    )
+
+    def test_rejects_invalid_ephemeral_capabilities(self) -> None:
+        cases = [
+            (
+                {
+                    "command": "true",
+                    "ephemeralCapabilities": ["example.echo"],
+                },
+                "ephemeralCapabilities requires argv",
+            ),
+            (
+                {
+                    "argv": ["true"],
+                    "ephemeralCapabilities": [],
+                },
+                "unique, non-empty list of non-empty strings",
+            ),
+            (
+                {
+                    "argv": ["true"],
+                    "ephemeralCapabilities": ["example.echo", "example.echo"],
+                },
+                "unique, non-empty list of non-empty strings",
+            ),
+            (
+                {
+                    "argv": ["true"],
+                    "ephemeralCapabilities": ["example.echo", 1],
+                },
+                "unique, non-empty list of non-empty strings",
+            ),
+            (
+                {
+                    "argv": ["node", "gate.js"],
+                    "ephemeralCapabilities": ["example.echo"],
+                },
+                "requires a Python module, script, or -c argv",
+            ),
+        ]
+
+        for launch, expected_error in cases:
+            with self.subTest(launch=launch):
+                with self.assertRaisesRegex(RuntimeError, expected_error):
+                    MODULE.validate_gate_catalog(
+                        {
+                            "invalid-gate": {
+                                **launch,
+                                "environment": "local",
+                                "tier": "ci-cheap",
+                            }
+                        },
+                        {"invalid-gate"},
+                    )
+
+    def test_argv_gate_participates_in_inheritance_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            module_path = (
+                repo_root
+                / "tooling"
+                / "acceptance"
+                / "gates"
+                / "example"
+                / "gate.py"
+            )
+            module_path.parent.mkdir(parents=True)
+            module_path.write_text("def main():\n    return 0\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "ACCEPTANCE_GATE_CONTRACT_VIOLATION",
+            ):
+                MODULE.validate_gate_inheritance(
+                    repo_root,
+                    {
+                        "context-gate": {
+                            "argv": [
+                                "python3",
+                                "-m",
+                                "tooling.acceptance.gates.example.gate",
+                            ]
+                        }
+                    },
+                    {"context-gate"},
+                )
+
+
+class FinalizerContractTests(unittest.TestCase):
+    def test_no_declaration_and_no_config_is_not_required(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            acceptance_root = Path(temp_dir)
+            (acceptance_root / "capabilities").mkdir()
+
+            self.assertEqual(
+                MODULE.validate_finalizer_contracts(acceptance_root, {}),
+                {},
+            )
+
+    def test_rejects_catalog_config_without_protected_mapping(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            acceptance_root = Path(temp_dir)
+            (acceptance_root / "capabilities").mkdir()
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "has no protected requiredEvidenceFinalizers mapping",
+            ):
+                MODULE.validate_finalizer_contracts(
+                    acceptance_root,
+                    {
+                        "synthetic-gate": {
+                            "evidenceFinalizer": {
+                                "id": "synthetic.finalizer",
+                                "timeoutSeconds": 30,
+                                "inputByteLimit": 4096,
+                            }
+                        }
+                    },
+                )
+
+
 class DomainContractClosureTests(unittest.TestCase):
+    SOURCE = {
+        "commit": "current-head",
+        "workspaceDigest": "clean",
+        "canonicalWorktreeHash": "0123456789abcdef",
+    }
+
+    def setUp(self) -> None:
+        source_patch = mock.patch.object(
+            MODULE,
+            "source_identity",
+            return_value=self.SOURCE,
+        )
+        source_patch.start()
+        self.addCleanup(source_patch.stop)
+
+    def latest_store(self, content: str) -> mock.Mock:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        run_path = Path(temp_dir.name) / "run.json"
+        run_path.write_text(content, encoding="utf-8")
+        store = mock.Mock()
+        store.latest_artifact_ref.return_value = object()
+        store.resolve.return_value = run_path
+        return store
+
+    def test_current_results_fail_closed_on_non_authoritative_json(self) -> None:
+        store = self.latest_store(
+            json.dumps({"source": self.SOURCE, "results": []})
+        )
+        source = json.dumps(self.SOURCE, separators=(",", ":"))
+        invalid_results = (
+            f'{{"source":{source},"results":['
+            '{"id":"gate","status":"failed","status":"passed"}]}',
+            f'{{"source":{source},"results":['
+            '{"id":"gate","status":"passed","duration":NaN}]}',
+            f'{{"source":{source},"results":['
+            '{"id":"gate","status":"passed"},'
+            '{"id":"gate","status":"failed"}]}',
+            f'{{"source":{source},"results":'
+            '{"id":"gate","status":"passed"}}',
+        )
+
+        for current_results in invalid_results:
+            with (
+                self.subTest(current_results=current_results),
+                mock.patch.dict(
+                    MODULE.os.environ,
+                    {"PT_ACCEPTANCE_CURRENT_RESULTS": current_results},
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "invalid current Acceptance results",
+                ):
+                    MODULE.latest_passed_gates(store, "", False)
+
+    def test_current_results_reject_stale_source_identity(self) -> None:
+        store = self.latest_store(
+            json.dumps({"source": self.SOURCE, "results": []})
+        )
+        current_results = json.dumps(
+            {
+                "source": {
+                    **self.SOURCE,
+                    "commit": "stale-head",
+                },
+                "results": [],
+            }
+        )
+
+        with (
+            mock.patch.dict(
+                MODULE.os.environ,
+                {"PT_ACCEPTANCE_CURRENT_RESULTS": current_results},
+            ),
+            self.assertRaisesRegex(
+                RuntimeError,
+                "current Acceptance results source does not match current source",
+            ),
+        ):
+            MODULE.latest_passed_gates(store, "", False)
+
+    def test_latest_results_fail_closed_on_non_authoritative_json(self) -> None:
+        for latest_run in (
+            '{"results":[{"id":"gate","status":"failed","status":"passed"}]}',
+            '{"results":[{"id":"gate","status":"passed","duration":NaN}]}',
+        ):
+            with self.subTest(latest_run=latest_run):
+                store = self.latest_store(latest_run)
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "invalid latest Acceptance run",
+                ):
+                    MODULE.latest_passed_gates(store, "", False)
+
+    def test_latest_results_reject_stale_source_identity(self) -> None:
+        store = self.latest_store(
+            json.dumps(
+                {
+                    "source": {
+                        **self.SOURCE,
+                        "commit": "stale-head",
+                    },
+                    "results": [
+                        {
+                            "id": "stale-gate",
+                            "status": "passed",
+                            "completionStatus": "DONE",
+                            "proofStatus": "PROVEN",
+                        }
+                    ],
+                }
+            )
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "latest Acceptance run source does not match current source",
+        ):
+            MODULE.latest_passed_gates(store, "", True)
+
+    def test_current_results_admit_only_unique_proven_gate_results(self) -> None:
+        store = self.latest_store(
+            json.dumps(
+                {
+                    "source": self.SOURCE,
+                    "results": [
+                        {
+                            "id": "superseded-gate",
+                            "status": "passed",
+                            "completionStatus": "DONE",
+                            "proofStatus": "PROVEN",
+                        }
+                    ]
+                }
+            )
+        )
+        current_results = json.dumps(
+            {
+                "source": self.SOURCE,
+                "results": [
+                    {
+                        "id": "proven-gate",
+                        "status": "passed",
+                        "completionStatus": "DONE",
+                        "proofStatus": "PROVEN",
+                        "duration_seconds": 0.125,
+                    },
+                    {
+                        "id": "partial-gate",
+                        "status": "passed",
+                        "completionStatus": "PARTIAL",
+                        "proofStatus": "UNPROVEN",
+                    },
+                    {
+                        "id": "dry-run-gate",
+                        "status": "dry-run",
+                    },
+                    {
+                        "id": "superseded-gate",
+                        "status": "failed",
+                        "completionStatus": "PARTIAL",
+                        "proofStatus": "UNPROVEN",
+                    },
+                ],
+            }
+        )
+
+        with mock.patch.dict(
+            MODULE.os.environ,
+            {"PT_ACCEPTANCE_CURRENT_RESULTS": current_results},
+        ):
+            self.assertEqual(
+                MODULE.latest_passed_gates(store, "", False),
+                {"proven-gate"},
+            )
+
     def test_infra_validation_selects_only_core_self_validation(self) -> None:
         with mock.patch.object(
             MODULE,

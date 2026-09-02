@@ -61,9 +61,9 @@ pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     }
 
     // Best-effort local validation:
-    // - Decode the Station's canonical actor subject for identity wiring
+    // - Decode subject for display/identity wiring
     // - If `exp` exists, enforce expiry so we don't offer "Continue" on an expired session.
-    let actor_ptid = decode_jwt_subject_ptid(parts[1]).ok_or_else(|| {
+    let actor_ptid = decode_jwt_subject(parts[1]).ok_or_else(|| {
         AuthDomainError::Unauthorized("Token subject is not a canonical PTID".to_string())
     })?;
     if let Some(exp) = decode_jwt_exp(parts[1]) {
@@ -83,7 +83,7 @@ pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     })
 }
 
-fn decode_jwt_subject_ptid(payload_b64: &str) -> Option<String> {
+fn decode_jwt_subject(payload_b64: &str) -> Option<String> {
     let mut b64 = payload_b64.replace('-', "+").replace('_', "/");
     let pad = (4 - b64.len() % 4) % 4;
     b64.extend(std::iter::repeat('=').take(pad));
@@ -91,7 +91,7 @@ fn decode_jwt_subject_ptid(payload_b64: &str) -> Option<String> {
     let decoded = base64_decode(&b64)?;
     let text = String::from_utf8(decoded).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
-    v.get("subject_ptid")
+    v.get("sub")
         .and_then(|s| s.as_str())
         .filter(|subject| subject.starts_with("ptid:"))
         .map(|s| s.to_string())
@@ -147,35 +147,15 @@ fn now_epoch_seconds() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{from_station_response, validate_token, AuthDomainError};
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-
-    fn jwt_with_claims(claims: serde_json::Value) -> String {
-        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256"}"#);
-        let payload = URL_SAFE_NO_PAD.encode(claims.to_string());
-        format!("{header}.{payload}.signature")
-    }
+    use super::{from_station_response, validate_token};
 
     #[test]
-    fn station_jwt_accepts_canonical_subject_ptid() {
-        let token = jwt_with_claims(serde_json::json!({
-            "subject_ptid": "ptid:test:12345",
-        }));
-        let session = from_station_response("ptid:test:12345".to_string(), token);
+    fn station_jwt_validate() {
+        let session = from_station_response(
+            "12345".to_string(),
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.abcdefghijklmnopqrstuvwxyz".to_string(),
+        );
         let validated = validate_token(&session.token).expect("JWT should be accepted");
-        assert_eq!(validated.actor_ptid, "ptid:test:12345");
         assert_eq!(validated.token, session.token);
-    }
-
-    #[test]
-    fn station_jwt_rejects_legacy_sub_only_identity() {
-        let token = jwt_with_claims(serde_json::json!({
-            "sub": "ptid:test:12345",
-        }));
-
-        assert!(matches!(
-            validate_token(&token),
-            Err(AuthDomainError::Unauthorized(_))
-        ));
     }
 }

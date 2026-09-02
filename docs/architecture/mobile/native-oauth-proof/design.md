@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-29 | **Updated**: 2026-08-29
+> **Created**: 2026-08-29 | **Updated**: 2026-08-30
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`, `apps/station/app/subserver/oauth/`, `tooling/acceptance/`
 
@@ -11,7 +11,7 @@
 ## 1. Core Principles
 
 1. **Product path remains real**：Fixture 只准备前置状态或无效输入，真实
-   Mobile Rust、Station OAuth、Access Gate 和 session finalizer 仍处理结果。
+   Mobile Rust、Station OAuth、Access Gate 和 Station session finalizer 仍处理结果。
 2. **Station proves Station truth**：OAuth attempt、candidate、envelope、session
    和 Access Attempt 的结论来自 Station deployment-owned proof producer。
 3. **Provision before proof**：build、device、browser、account、Fixture 和 cleanup
@@ -28,18 +28,17 @@
 | Station 已持久化 Access Attempt、OAuth Attempt、candidate、envelope 和 candidate-keyed session | `verified_fact` | `apps/station/frame/touch/model/db/access_gate.go`; `apps/station/frame/core/facility/session/db_store.go` | high | physical runtime snapshot |
 | callback claim 是 conditional one-row consume，binding mismatch 在 provider exchange 前拒绝 | `verified_fact` | `apps/station/app/subserver/oauth/repository.go` | high | physical negative cells |
 | OAuth status 可能 re-evaluate/finalize，因此不是只读 proof API | `verified_fact` | `apps/station/app/subserver/oauth/service.go::Status` | high | deployment-owned read-only proof |
-| 当前 Gate 的 “Station readback” 实际来自 Mobile projection | `verified_fact` | `tooling/acceptance/gates/mobile/native_e2e.py::_verify_access_readback` | high | Station proof artifact |
-| 十个 required physical negative cells 当前为 unsupported | `verified_fact` | `tooling/acceptance/gates/mobile/native_e2e.py::REQUIRED_ACCESS_VARIANTS` | high | trusted Fixture/input contract |
-| browser session fields 只被解析并复制，没有 acquire/readback/release 行为 | `verified_fact` | `tooling/acceptance/provisioners/mobile_native.py` | high | browser lease implementation |
-| physical app artifact 当前只验证文件存在 | `verified_fact` | `tooling/acceptance/provisioners/mobile_native.py::preflight_mobile_native_inputs` | high | build attestation/runtime identity |
-| `physical-device-lease` 只有 Artifact Role，没有 typed payload schema | `verified_fact` | `tooling/acceptance/gates/mobile/proof_contracts.py`; `proof-contract.schema.json` | high | MOP-D03-A |
-| `mobile-lease-outcome` 只有 role/cardinality，不能证明 terminal fence、baseline restore 或 quarantine | `verified_fact` | `tooling/acceptance/gates/mobile/proof_contracts.py::_validate_lease_outcomes` | high | MOP-D03-A |
-| fresh-install 与 installed-build identity 只有 Artifact Role，没有 typed payload/correlation contract | `verified_fact` | `tooling/acceptance/gates/mobile/proof-contract.schema.json` | high | MOP-D04-A |
+| Gate已通过parent-owned Station Fixture capability读取authoritative snapshot | `verified_fact` | `tooling/acceptance/gates/mobile/native_e2e.py`; `tooling/acceptance/provisioners/mobile_native.py` | high | physical runtime proof |
+| 16个required physical variants均有executable scenario | `verified_fact` | `tooling/acceptance/gates/mobile/native_e2e.py::REQUIRED_ACCESS_VARIANTS` | high | physical runtime proof |
+| browser/account/device/Fixture leases已接入统一acquire、heartbeat与terminal outcome | `verified_fact` | `tooling/acceptance/provisioners/mobile_native.py`; `mobile_resource_lease.py` | high | final cleanup-order remediation |
+| physical app artifact具有source-bound build attestation、fresh-install与runtime identity contract | `verified_fact` | `mobile_native_build.py`; `native_e2e.py` | high | physical install/run proof |
+| physical-device lease与terminal outcome已有typed payload schema | `verified_fact` | `tooling/acceptance/gates/mobile/proof_contracts.py`; `proof-contract.schema.json` | high | D-19 neutral contract migration |
+| 完整19-role validation仍早于cleanup-produced evidence | `verified_fact` | `native_e2e.py`; Mobile Plan §14.4 | high | accepted D-19 Infra landing and Mobile amendment |
 | Apple `codesign` 的 `CDHash` 是当前系统选用且截断为 20 bytes 的 CandidateCDHash，不是完整 SHA-256 digest | `verified_fact` | [Apple TN3126](https://developer.apple.com/documentation/Technotes/tn3126-inside-code-signing-hashes) | high | MOP-D04-A |
 | Cargo `--frozen` 等价于 `--locked` + `--offline`；Gradle 与 pnpm 的 `--offline` 在 cache miss 时失败 | `verified_fact` | [Cargo CLI](https://doc.rust-lang.org/cargo/commands/cargo.html); [Gradle dependency cache](https://docs.gradle.org/current/userguide/dependency_caching.html#sec:controlling-dependency-caching-command-line); [pnpm install](https://pnpm.io/cli/install) | high | MOP-D04-A |
-| Station internal adapter 可在不增加公网测试端点的情况下提供受限 Fixture/proof | `proposal` | MOP-D01、MOP-D02 | medium | Owner review + implementation evidence |
-| 两个 provider account lease 加四个独占 browser-profile lease 足以避免 cross-client session 混用 | `proposal` | MOP-D03 | medium | physical provider preflight |
-| build attestation、双嵌入 identity、fresh install 和 runtime readback 可闭合 source provenance | `proposal` | MOP-D04 | high | physical install/run evidence |
+| Station internal adapter 可在不增加公网测试端点的情况下提供受限 Fixture/proof | `accepted_decision` | MOP-D01、MOP-D02 | medium | implementation evidence |
+| 两个 provider account lease 加四个独占 browser-profile lease 足以避免 cross-client session 混用 | `accepted_decision` | MOP-D03 | medium | physical provider preflight |
+| build attestation、双嵌入 identity、fresh install 和 runtime readback 可闭合 source provenance | `accepted_decision` | MOP-D04 | high | physical install/run evidence |
 | typed physical-device lease + immutable terminal outcome closes lease ownership without persisting UDID/serial | `accepted_decision` | MOP-D03-A | high | implementation evidence |
 | tool-native offline controls + sanitized environment + typed install/runtime artifacts close source provenance | `accepted_decision` | MOP-D04-A | high | implementation evidence |
 
@@ -88,7 +87,7 @@ Appium Driver
   -> real native browser
   -> OS deep link
   -> Mobile Rust OAuth coordinator
-  -> Station OAuth + Access Gate + session finalizer
+  -> Station OAuth + Access Gate + Station session finalizer
       |
       +-------------------------------+
       |                               |
@@ -98,10 +97,22 @@ DOM / AX / screenshot         read-only authoritative snapshot
       |                               |
       +---------------+---------------+
                       v
-              Mobile MS-AG03 Gate
+	      Mobile MS-AG03 Gate primary result
                       |
                       v
-             immutable Evidence Store
+	      parent cleanup evidence production
+	                      |
+	                      v
+	      Evidence Store sealed 19-role snapshot
+	                      |
+	                      v
+	      post-cleanup Mobile Evidence Finalizer (read-only)
+	                      |
+	                      v
+	      Evidence Store monotonic merge
+	                      |
+	                      v
+	      immutable manifest + verified latest
 ```
 
 ## 5. Sources Of Truth And Ownership
@@ -115,7 +126,10 @@ DOM / AX / screenshot         read-only authoritative snapshot
 | Browser session | physical device browser profile | browser-profile lease owner | provider Driver |
 | Build source identity | canonical source snapshot | Mobile build owner | Provisioner, runtime Harness |
 | Build artifact identity | inspected IPA/APK bytes | Mobile build owner | Appium Driver |
-| Proof judgment | Feature/Capability/Gate contracts | Mobile Acceptance Gate | reviewer |
+| Mobile proof semantics | neutral Mobile contract (roles, cardinality, relations, payload schemas) | Mobile Acceptance Domain owner | Gate, post-cleanup Evidence Finalizer |
+| Primary behavior observations | pre-cleanup Gate result and ArtifactRefs | Mobile Acceptance Gate | Runner, post-cleanup Evidence Finalizer |
+| Sealed evidence instance | Evidence Store snapshot | Evidence Store until seal; immutable afterward | post-cleanup Evidence Finalizer, Evidence Store manifest finalization |
+| Final published judgment (accepted D-19 target; landing active) | immutable manifest selected by verified latest pointer | Evidence Store through monotonic merge of primary result and read-only Evidence Finalizer outcome | reviewer |
 
 Acceptance Core supplies generic profile/source exclusion leases, manifests,
 ArtifactRefs and lifecycle. Those process-scoped locks do not satisfy MOP-D03.
@@ -487,6 +501,16 @@ DISCOVERED
 
 Any state -> CLEANING -> QUARANTINED
   when cleanup, identity, source, or lease verification fails
+
+D-19 accepted target evidence lifecycle after all resource owners are terminal;
+generic Infra implementation remains in progress:
+  PRIMARY_RESULT
+    -> CLEANUP_EVIDENCE_COMPLETE
+    -> ARTIFACTS_SEALED
+    -> FINALIZER_RUNNING
+    -> MANIFEST_DURABLE
+    -> LATEST_RESOLVED
+       (authoritative only when latest points to this manifest)
 ```
 
 Rules:
@@ -557,4 +581,8 @@ The design is satisfied only when:
   symbols are absent;
 - Mobile visible evidence and Station proof agree for each variant;
 - secret/redaction audit and reverse-order cleanup pass;
+- accepted D-19 target seals the complete post-cleanup 19-role snapshot,
+  executes the
+  detached Mobile validator once, and allows Evidence Store to publish
+  `PROVEN` only after the monotonic merge remains successful;
 - missing physical resources leave MS-AG03 `UNPROVEN`.

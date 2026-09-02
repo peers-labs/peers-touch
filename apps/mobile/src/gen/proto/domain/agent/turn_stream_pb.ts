@@ -6,10 +6,13 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { TurnStatus } from "./agent_pb";
 import { file_domain_agent_agent } from "./agent_pb";
-import type { ActorRef } from "../actor/actor_pb";
-import { file_domain_actor_actor } from "../actor/actor_pb";
-import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { Message } from "@bufbuild/protobuf";
+
+/**
+ * Describes the file domain/agent/turn_stream.proto.
+ */
+export const file_domain_agent_turn_stream: GenFile = /*@__PURE__*/
+  fileDesc("Ch5kb21haW4vYWdlbnQvdHVybl9zdHJlYW0ucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxIrwGCg9UdXJuU3RyZWFtRXZlbnQSPQoEdHlwZRgBIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TdHJlYW1FdmVudFR5cGUSDwoHdHVybl9pZBgCIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAyABKAkSEAoIYWdlbnRfaWQYBCABKAkSNwoEdGV4dBgKIAEoCzInLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRleHRQYXlsb2FkSAASPwoIdGhpbmtpbmcYCyABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UaGlua2luZ1BheWxvYWRIABJACgl0b29sX2NhbGwYDCABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ub29sQ2FsbFBheWxvYWRIABJECgt0b29sX3Jlc3VsdBgNIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRvb2xSZXN1bHRQYXlsb2FkSAASWQoWdG9vbF9hcHByb3ZhbF9yZXF1aXJlZBgOIAEoCzI3LnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRvb2xBcHByb3ZhbFJlcXVpcmVkUGF5bG9hZEgAEj8KCHByb2dyZXNzGA8gASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuUHJvZ3Jlc3NQYXlsb2FkSAASOQoFaW1hZ2UYECABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5JbWFnZVBheWxvYWRIABJWChRjb252ZXJzYXRpb25fY3JlYXRlZBgRIAEoCzI2LnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkNvbnZlcnNhdGlvbkNyZWF0ZWRQYXlsb2FkSAASOQoFZXJyb3IYEiABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FcnJvclBheWxvYWRIABI3CgRkb25lGBMgASgLMicucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRG9uZVBheWxvYWRIAEIJCgdwYXlsb2FkIhsKC1RleHRQYXlsb2FkEgwKBHRleHQYASABKAkiLQoPVGhpbmtpbmdQYXlsb2FkEgwKBHRleHQYASABKAkSDAoEZG9uZRgCIAEoCCJICg9Ub29sQ2FsbFBheWxvYWQSFAoMdG9vbF9jYWxsX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJYXJndW1lbnRzGAMgASgJIjkKEVRvb2xSZXN1bHRQYXlsb2FkEhQKDHRvb2xfY2FsbF9pZBgBIAEoCRIOCgZyZXN1bHQYAiABKAkifQobVG9vbEFwcHJvdmFsUmVxdWlyZWRQYXlsb2FkEhMKC2FwcHJvdmFsX2lkGAEgASgJEhEKCXRvb2xfbmFtZRgCIAEoCRITCgtzZXJ2ZXJfbmFtZRgDIAEoCRIRCglhcmd1bWVudHMYBCABKAkSDgoGc291cmNlGAUgASgJIiAKD1Byb2dyZXNzUGF5bG9hZBINCgVzdGFnZRgBIAEoCSIbCgxJbWFnZVBheWxvYWQSCwoDdXJsGAEgASgJIjUKGkNvbnZlcnNhdGlvbkNyZWF0ZWRQYXlsb2FkEhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCSIxCgxFcnJvclBheWxvYWQSDQoFZXJyb3IYASABKAkSEgoKZXJyb3JfdHlwZRgCIAEoCSJ8CgtEb25lUGF5bG9hZBIPCgd0YXNrX2lkGAEgASgJEj0KDHR1cm5fc3VtbWFyeRgCIAEoCzInLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TdW1tYXJ5Eh0KFWZvbGxvd191cF9zdWdnZXN0aW9ucxgDIAMoCSKtAQoLVHVyblN1bW1hcnkSDwoHdHVybl9pZBgBIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAiABKAkSEAoIYWdlbnRfaWQYAyABKAkSEgoKdXNlcl9pbnB1dBgEIAEoCRIWCg5maW5hbF9yZXNwb25zZRgFIAEoCRI2CgZzdGF0dXMYBiABKA4yJi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UdXJuU3RhdHVzKqEEChNUdXJuU3RyZWFtRXZlbnRUeXBlEiYKIlRVUk5fU1RSRUFNX0VWRU5UX1RZUEVfVU5TUEVDSUZJRUQQABIfChtUVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RFWFQQARIjCh9UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RISU5LSU5HEAISJAogVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9UT09MX0NBTEwQAxImCiJUVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfUkVTVUxUEAQSLQopVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9MT0NBTF9UT09MX1JFUVVFU1QQBRIxCi1UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfQVBQUk9WQUxfUkVRVUlSRUQQBhIxCi1UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfQVBQUk9WQUxfREVDSVNJT04QBxIjCh9UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1BST0dSRVNTEAgSIAocVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9JTUFHRRAJEi8KK1RVUk5fU1RSRUFNX0VWRU5UX1RZUEVfQ09OVkVSU0FUSU9OX0NSRUFURUQQChIgChxUVVJOX1NUUkVBTV9FVkVOVF9UWVBFX0VSUk9SEAsSHwobVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9ET05FEAxCS1pJZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9hZ2VudC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_domain_agent_agent]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.TurnStreamEvent
@@ -36,21 +39,68 @@ export type TurnStreamEvent = Message<"peers_touch.model.agent.v1.TurnStreamEven
   agentId: string;
 
   /**
-   * @generated from field: uint64 sequence = 5;
+   * @generated from oneof peers_touch.model.agent.v1.TurnStreamEvent.payload
    */
-  sequence: bigint;
-
-  /**
-   * @generated from field: string event_id = 6;
-   */
-  eventId: string;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp occurred_at = 7;
-   */
-  occurredAt?: Timestamp | undefined;
-
-  /**
+  payload: {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.TextPayload text = 10;
+     */
+    value: TextPayload;
+    case: "text";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.ThinkingPayload thinking = 11;
+     */
+    value: ThinkingPayload;
+    case: "thinking";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.ToolCallPayload tool_call = 12;
+     */
+    value: ToolCallPayload;
+    case: "toolCall";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.ToolResultPayload tool_result = 13;
+     */
+    value: ToolResultPayload;
+    case: "toolResult";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.ToolApprovalRequiredPayload tool_approval_required = 14;
+     */
+    value: ToolApprovalRequiredPayload;
+    case: "toolApprovalRequired";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.ProgressPayload progress = 15;
+     */
+    value: ProgressPayload;
+    case: "progress";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.ImagePayload image = 16;
+     */
+    value: ImagePayload;
+    case: "image";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.ConversationCreatedPayload conversation_created = 17;
+     */
+    value: ConversationCreatedPayload;
+    case: "conversationCreated";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.ErrorPayload error = 18;
+     */
+    value: ErrorPayload;
+    case: "error";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.DonePayload done = 19;
+     */
+    value: DonePayload;
+    case: "done";
   } | { case: undefined; value?: undefined };
 };
 
@@ -62,119 +112,21 @@ export const TurnStreamEventSchema: GenMessage<TurnStreamEvent> = /*@__PURE__*/
   messageDesc(file_domain_agent_turn_stream, 0);
 
 /**
- * @generated from message peers_touch.model.agent.v1.StreamTurnEventsRequest
+ * @generated from message peers_touch.model.agent.v1.TextPayload
  */
-export type StreamTurnEventsRequest = Message<"peers_touch.model.agent.v1.StreamTurnEventsRequest"> & {
+export type TextPayload = Message<"peers_touch.model.agent.v1.TextPayload"> & {
   /**
-   * @generated from field: string conversation_id = 1;
-   */
-  conversationId: string;
-
-  /**
-   * @generated from field: string turn_id = 2;
-   */
-  turnId: string;
-
-  /**
-   * @generated from field: uint64 after_sequence = 3;
-   */
-  afterSequence: bigint;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.StreamTurnEventsRequest.
- * Use `create(StreamTurnEventsRequestSchema)` to create a new message.
- */
-export const StreamTurnEventsRequestSchema: GenMessage<StreamTurnEventsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 1);
-
-/**
- * @generated from message peers_touch.model.agent.v1.TurnSnapshot
- */
-export type TurnSnapshot = Message<"peers_touch.model.agent.v1.TurnSnapshot"> & {
-  /**
-   * @generated from field: string turn_id = 1;
-   */
-  turnId: string;
-
-  /**
-   * @generated from field: string conversation_id = 2;
-   */
-  conversationId: string;
-
-  /**
-   * @generated from field: string agent_id = 3;
-   */
-  agentId: string;
-
-  /**
-   * @generated from field: peers_touch.model.agent.v1.TurnStatus status = 4;
-   */
-  status: TurnStatus;
-
-  /**
-   * @generated from field: string text = 5;
+   * @generated from field: string text = 1;
    */
   text: string;
-
-  /**
-   * @generated from field: uint64 last_sequence = 6;
-   */
-  lastSequence: bigint;
-
-  /**
-   * @generated from field: string terminal_reason = 7;
-   */
-  terminalReason: string;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp updated_at = 8;
-   */
-  updatedAt?: Timestamp | undefined;
 };
 
 /**
- * Describes the message peers_touch.model.agent.v1.TurnSnapshot.
- * Use `create(TurnSnapshotSchema)` to create a new message.
+ * Describes the message peers_touch.model.agent.v1.TextPayload.
+ * Use `create(TextPayloadSchema)` to create a new message.
  */
-export const TurnSnapshotSchema: GenMessage<TurnSnapshot> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 2);
-
-/**
- * @generated from message peers_touch.model.agent.v1.CancelledPayload
- */
-export type CancelledPayload = Message<"peers_touch.model.agent.v1.CancelledPayload"> & {
-  /**
-   * @generated from field: string reason = 1;
-   */
-  reason: string;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.CancelledPayload.
- * Use `create(CancelledPayloadSchema)` to create a new message.
- */
-export const CancelledPayloadSchema: GenMessage<CancelledPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 3);
-
-/**
- * @generated from message peers_touch.model.agent.v1.CatchupDonePayload
- */
-export type CatchupDonePayload = Message<"peers_touch.model.agent.v1.CatchupDonePayload"> & {
-  /**
-   * @generated from field: uint64 last_sequence = 1;
-   */
-  lastSequence: bigint;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.CatchupDonePayload.
- * Use `create(CatchupDonePayloadSchema)` to create a new message.
- */
-export const CatchupDonePayloadSchema: GenMessage<CatchupDonePayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 4);
-
-/**
+export const TextPayloadSchema: GenMessage<TextPayload> = /*@__PURE__*/
+  messageDesc(file_domain_agent_turn_stream, 1);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ThinkingPayload
@@ -196,7 +148,7 @@ export type ThinkingPayload = Message<"peers_touch.model.agent.v1.ThinkingPayloa
  * Use `create(ThinkingPayloadSchema)` to create a new message.
  */
 export const ThinkingPayloadSchema: GenMessage<ThinkingPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 6);
+  messageDesc(file_domain_agent_turn_stream, 2);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ToolCallPayload
@@ -223,7 +175,7 @@ export type ToolCallPayload = Message<"peers_touch.model.agent.v1.ToolCallPayloa
  * Use `create(ToolCallPayloadSchema)` to create a new message.
  */
 export const ToolCallPayloadSchema: GenMessage<ToolCallPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 7);
+  messageDesc(file_domain_agent_turn_stream, 3);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ToolResultPayload
@@ -245,7 +197,7 @@ export type ToolResultPayload = Message<"peers_touch.model.agent.v1.ToolResultPa
  * Use `create(ToolResultPayloadSchema)` to create a new message.
  */
 export const ToolResultPayloadSchema: GenMessage<ToolResultPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 8);
+  messageDesc(file_domain_agent_turn_stream, 4);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ToolApprovalRequiredPayload
@@ -275,31 +227,14 @@ export type ToolApprovalRequiredPayload = Message<"peers_touch.model.agent.v1.To
    * @generated from field: string source = 5;
    */
   source: string;
+};
 
-  /**
-   * @generated from field: string tool_call_id = 6;
-   */
-  toolCallId: string;
-
-  /**
-   * @generated from field: string decision_id = 7;
-   */
-  decisionId: string;
-
-  /**
-   * @generated from field: uint64 decision_revision = 8;
-   */
-  decisionRevision: bigint;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 9;
-   */
-  expiresAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: string payload_hash = 10;
-   */
-  payloadHash: string;
+/**
+ * Describes the message peers_touch.model.agent.v1.ToolApprovalRequiredPayload.
+ * Use `create(ToolApprovalRequiredPayloadSchema)` to create a new message.
+ */
+export const ToolApprovalRequiredPayloadSchema: GenMessage<ToolApprovalRequiredPayload> = /*@__PURE__*/
+  messageDesc(file_domain_agent_turn_stream, 5);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ProgressPayload
@@ -316,7 +251,7 @@ export type ProgressPayload = Message<"peers_touch.model.agent.v1.ProgressPayloa
  * Use `create(ProgressPayloadSchema)` to create a new message.
  */
 export const ProgressPayloadSchema: GenMessage<ProgressPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 11);
+  messageDesc(file_domain_agent_turn_stream, 6);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ImagePayload
@@ -333,7 +268,7 @@ export type ImagePayload = Message<"peers_touch.model.agent.v1.ImagePayload"> & 
  * Use `create(ImagePayloadSchema)` to create a new message.
  */
 export const ImagePayloadSchema: GenMessage<ImagePayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 12);
+  messageDesc(file_domain_agent_turn_stream, 7);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ConversationCreatedPayload
@@ -350,7 +285,7 @@ export type ConversationCreatedPayload = Message<"peers_touch.model.agent.v1.Con
  * Use `create(ConversationCreatedPayloadSchema)` to create a new message.
  */
 export const ConversationCreatedPayloadSchema: GenMessage<ConversationCreatedPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 13);
+  messageDesc(file_domain_agent_turn_stream, 8);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ErrorPayload
@@ -365,26 +300,14 @@ export type ErrorPayload = Message<"peers_touch.model.agent.v1.ErrorPayload"> & 
    * @generated from field: string error_type = 2;
    */
   errorType: string;
+};
 
-  /**
-   * @generated from field: string locale_key = 3;
-   */
-  localeKey: string;
-
-  /**
-   * @generated from field: bool retryable = 4;
-   */
-  retryable: boolean;
-
-  /**
-   * @generated from field: bool terminal = 5;
-   */
-  terminal: boolean;
-
-  /**
-   * @generated from field: map<string, string> details = 6;
-   */
-  details: { [key: string]: string };
+/**
+ * Describes the message peers_touch.model.agent.v1.ErrorPayload.
+ * Use `create(ErrorPayloadSchema)` to create a new message.
+ */
+export const ErrorPayloadSchema: GenMessage<ErrorPayload> = /*@__PURE__*/
+  messageDesc(file_domain_agent_turn_stream, 9);
 
 /**
  * @generated from message peers_touch.model.agent.v1.DonePayload
@@ -411,7 +334,7 @@ export type DonePayload = Message<"peers_touch.model.agent.v1.DonePayload"> & {
  * Use `create(DonePayloadSchema)` to create a new message.
  */
 export const DonePayloadSchema: GenMessage<DonePayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 15);
+  messageDesc(file_domain_agent_turn_stream, 10);
 
 /**
  * @generated from message peers_touch.model.agent.v1.TurnSummary
@@ -453,7 +376,7 @@ export type TurnSummary = Message<"peers_touch.model.agent.v1.TurnSummary"> & {
  * Use `create(TurnSummarySchema)` to create a new message.
  */
 export const TurnSummarySchema: GenMessage<TurnSummary> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 16);
+  messageDesc(file_domain_agent_turn_stream, 11);
 
 /**
  * @generated from enum peers_touch.model.agent.v1.TurnStreamEventType
@@ -523,18 +446,10 @@ export enum TurnStreamEventType {
    * @generated from enum value: TURN_STREAM_EVENT_TYPE_DONE = 12;
    */
   DONE = 12,
+}
 
-  /**
-   * @generated from enum value: TURN_STREAM_EVENT_TYPE_CANCELLED = 13;
-   */
-  CANCELLED = 13,
-
-  /**
-   * @generated from enum value: TURN_STREAM_EVENT_TYPE_SNAPSHOT = 14;
-   */
-  SNAPSHOT = 14,
-
-  /**
-   * @generated from enum value: TURN_STREAM_EVENT_TYPE_CATCHUP_DONE = 15;
-   */
-  CATCHUP_DONE = 15,
+/**
+ * Describes the enum peers_touch.model.agent.v1.TurnStreamEventType.
+ */
+export const TurnStreamEventTypeSchema: GenEnum<TurnStreamEventType> = /*@__PURE__*/
+  enumDesc(file_domain_agent_turn_stream, 0);
