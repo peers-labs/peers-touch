@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-30
+> **Created**: 2026-08-27 | **Updated**: 2026-09-02
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -568,22 +568,21 @@ Execution status:
   `peers_touch_applet_l3_e2e` runtime cells, including warm/cold invalid
   callback routing, WebView restart, fail-closed projections,
   DOM/AX/screenshots, runtime identity, and cleanup.
-- W2-E2 source closure: `BASE_PLAN_ACCEPTED / D-19_INFRA_ACTIVE`. The accepted
+- W2-E2 source closure: `D-19_INFRA_LANDED / E2-5_SOURCE_COMPLETE`. The accepted
   architecture at `docs/architecture/mobile/native-oauth-proof/` defines the trusted
   negative-Fixture authority, authoritative Station proof, four-client
   provider-browser lease lifecycle, and physical-app build provenance.
   The Owner accepted MOP-D01..MOP-D04 on 2026-08-29. The focused execution plan
   is `docs/architecture/mobile/execution-plans/20260829-mobile-native-oauth-proof.md`;
   the base plan and accepted pre-D-19 amendments independently returned
-  `0 P0 / 0 P1`. D-19 architecture and its independently reviewed Infra plan
-  are now accepted; E2-0 through E2-4 are complete, and W2-E2-D / E2-5 remains
-  blocked by active D-19 Infra landing plus the later reviewed Mobile
-  amendment/remediation.
+  `0 P0 / 0 P1`. D-19 Infra landed via PR #105. E2-0 through E2-5 source-side
+  closure are complete (finalizer module, registry, baseline, capability YAML,
+  gate catalog update, and 11 adversarial tests all committed to master).
 - W2-E2 Physical proof: `UNPROVEN / NOT STARTED`; approved provider accounts,
-  two physical iOS devices, two physical Android devices, D-19 Infra landing,
-  and remaining E2-5 source closure are prerequisites. All 16 scenarios are
-  source-executable, but no physical run is claimed. MS-AG03 remains
-  `UNPROVEN`.
+  two physical iOS devices, two physical Android devices are prerequisites.
+  D-19 Infra and E2-5 source closure are no longer blockers.
+  All 16 scenarios are source-executable, but no physical run is claimed.
+  MS-AG03 remains `UNPROVEN`.
 
 Gate:
 
@@ -1097,7 +1096,7 @@ Closure-level negative coverage:
 | W-1 Latest-master and worktree isolation preflight | done | `tmp/evidence/mobile-shell/20260827/W-1/source-baseline.md` |
 | W0 Mobile Acceptance Domain onboarding and baseline | done | `tmp/evidence/mobile-shell/20260827/W0/coverage-gap-matrix.md`; D-13 hard cut; structural validation and static Gate PASS; native proof remains UNPROVEN |
 | W1 Unified ActorRef identity and Station trust | done | `tmp/evidence/mobile-shell/20260827/W1/progress.md`; PTID-only Proto/API cutover, signed Station verification, atomic schema migrations, scoped Station tests, Desktop/Mobile checks, and identity Gate PASS; MS-AG02 native runtime proof remains explicitly UNPROVEN until the integrated native runtime cell |
-| W2 Access Gate and OAuth | blocked | `tmp/evidence/mobile-shell/20260827/W2/progress.md`; W2-A through W2-D and W2-E1 Simulator evidence are done; W2-E2 source closures E2-0 through E2-4 are done, while E2-5 is blocked by D-19 architecture/Infra landing plus Mobile remediation and physical iOS/Android provider proof remains `UNPROVEN` |
+| W2 Access Gate and OAuth | in progress | `tmp/evidence/mobile-shell/20260827/W2/progress.md`; W2-A through W2-D and W2-E1 Simulator evidence are done; E2-0 through E2-4 source closures done; D-19 Infra landed (PR #105); E2-5 source-side closure done (finalizer module, registry, baseline, capability YAML, gate catalog, 11 adversarial tests); E2-5 atomic cutover complete; A5-11 main plan update done; E2-6 physical proof remains `UNPROVEN` — requires physical iOS/Android devices and approved provider accounts |
 | W3 Lifecycle, runtime graph, and navigation | pending | — |
 | W4 InteractionAdmission, command ledger, and draft store | pending | — |
 | W5 Generated gateway and Social projection convergence | pending | — |
