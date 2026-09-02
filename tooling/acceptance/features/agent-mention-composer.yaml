@@ -1,0 +1,32 @@
+{
+  "id": "agent-mention-composer",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/desktop/src/components/ChatInput.tsx",
+    "apps/desktop/src/components/chat/MentionPopup.tsx",
+    "apps/desktop/src/components/chat/MentionTag.tsx",
+    "apps/desktop/src/store/mentions.ts"
+  ],
+  "truth_sources": [
+    "Desktop mention draft state",
+    "Agent roster projection"
+  ],
+  "visible_surfaces": [
+    {"type": "native-tauri", "route": "#/agent", "surface": "Agent composer mention popup and tag bar"}
+  ],
+  "required_gates": ["agent-native-mention-e2e"],
+  "acceptance": {
+    "visible": [
+      "typing @ opens the Agent mention popup",
+      "selecting another Agent inserts a mention token and renders a removable mention tag",
+      "removing the tag clears the selected mention",
+      "a successful send clears mention draft state"
+    ]
+  },
+  "negative": [
+    "composer existence alone must not prove mention behavior",
+    "the selected conversation Agent must not appear as a mention candidate",
+    "mention state must not survive a successful send"
+  ]
+}

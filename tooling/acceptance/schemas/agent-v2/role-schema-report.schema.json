@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peers.touch/schemas/agent-v2/role-schema-report.schema.json",
+  "title": "Agent V2 Role Schema Report",
+  "type": "object",
+  "required": ["artifactKind", "schema", "role", "gateId", "runId", "schemas"],
+  "properties": {
+    "artifactKind": {"const": "agent-v2-role-schema-report"},
+    "schema": {"type": "object"},
+    "role": {"const": "role-schema-report"},
+    "gateId": {"type": "string", "minLength": 1},
+    "runId": {"type": "string", "minLength": 1},
+    "schemas": {"type": "object", "minProperties": 1}
+  }
+}

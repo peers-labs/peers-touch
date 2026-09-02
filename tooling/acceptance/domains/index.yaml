@@ -19,11 +19,11 @@
     },
     {
       "id": "mobile",
-      "status": "active",
-      "profile": "tooling/acceptance/domains/mobile.yaml",
-      "capabilities": "tooling/acceptance/capabilities/mobile.yaml",
-      "coverage": "managed_domain",
-      "notes": "Structurally onboarded managed domain. Native iOS/Android product journeys remain UNPROVEN until the mobile-native environment Gates pass."
+      "status": "planned",
+      "profile": "",
+      "capabilities": "",
+      "coverage": "not_onboarded",
+      "notes": "Needs mobile-web, Tauri mobile runtime, native plugin, and device/simulator acceptance boundaries."
     },
     {
       "id": "applet",
@@ -40,6 +40,14 @@
       "capabilities": "tooling/acceptance/capabilities/station-dashboard.yaml",
       "coverage": "managed_domain",
       "notes": "Second product domain. It validates project-level acceptance onboarding without becoming an acceptance validation domain."
+    },
+    {
+      "id": "agent",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/agent.yaml",
+      "capabilities": "tooling/acceptance/capabilities/agent.yaml",
+      "coverage": "managed_domain",
+      "notes": "Modern Chat Agent domain. Station is the sole runtime/stream authority. Covers ContextLedger, ToolCall state machine, attachments, diagnostics, budgets, and Desktop surface."
     }
   ]
 }

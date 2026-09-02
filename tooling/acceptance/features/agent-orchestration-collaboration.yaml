@@ -1,0 +1,52 @@
+{
+  "id": "agent-orchestration-collaboration",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/orchestration_handler.go",
+    "apps/station/app/subserver/agent/service/orchestration_service.go",
+    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/services/desktop_api.ts"
+  ],
+  "truth_sources": [
+    "running Station agent API",
+    "agent_collaborations table",
+    "agent_collaboration_events table"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/orchestration/collaboration/create"},
+    {"type": "api", "route": "/agent/orchestration/collaboration/:id"},
+    {"type": "api", "route": "/agent/orchestration/collaborations"},
+    {"type": "api", "route": "/agent/orchestration/collaboration/:id/events"},
+    {"type": "api", "route": "/agent/orchestration/collaboration/:id/cancel"},
+    {"type": "api", "route": "/agent/orchestration/collaboration/:id/resume"},
+    {"type": "api", "route": "/agent/orchestration/collaboration/:id/node-submit"},
+    {"type": "api", "route": "/agent/orchestration/executor/claim"},
+    {"type": "api", "route": "/agent/orchestration/executor/heartbeat"},
+    {"type": "api", "route": "/agent/orchestration/executor/release"}
+  ],
+  "required_gates": ["agent-orchestration-e2e"],
+  "acceptance": {
+    "service": [
+      "create initializes a multi-agent collaboration with a defined graph of agent nodes and edges",
+      "get returns collaboration state including node statuses, current executor, and progress",
+      "list returns all collaborations for the user with status filtering",
+      "events returns the ordered event log of a collaboration including node transitions",
+      "cancel terminates a running collaboration and releases all executor claims",
+      "resume restarts a paused or failed collaboration from its last successful node",
+      "node-submit delivers the output of a completed node and triggers downstream execution",
+      "executor-claim acquires exclusive execution rights for a pending node",
+      "heartbeat extends the executor lease and reports progress",
+      "release relinquishes execution rights allowing another executor to claim"
+    ],
+    "visible": [
+      "collaboration graph visualization shows node states and data flow in Desktop",
+      "active collaborations appear in the agent workspace with progress indicators"
+    ]
+  },
+  "negative": [
+    "a node must not execute without a valid executor claim",
+    "cancellation must not leave executors in a claimed-but-orphaned state",
+    "expired heartbeats must trigger automatic release of the executor claim"
+  ]
+}

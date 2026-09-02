@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peers.touch/schemas/agent-v2/source-identity.schema.json",
+  "title": "Agent V2 Source Identity",
+  "type": "object",
+  "required": ["artifactKind", "schema", "role", "gateId", "runId", "sourceIdentity", "runtimeMatrix"],
+  "properties": {
+    "artifactKind": {"const": "agent-v2-source-identity"},
+    "schema": {"type": "object"},
+    "role": {"const": "source-identity"},
+    "gateId": {"type": "string", "minLength": 1},
+    "runId": {"type": "string", "minLength": 1},
+    "sourceIdentity": {"type": "object"},
+    "runtimeMatrix": {"type": "object"}
+  }
+}

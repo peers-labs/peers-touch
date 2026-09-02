@@ -1,0 +1,42 @@
+{
+  "id": "agent-offline-queue-recovery",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/offline_queue_handler.go",
+    "apps/station/app/subserver/agent/service/offline_queue_service.go",
+    "apps/desktop/src/services/offlineQueue.ts"
+  ],
+  "truth_sources": [
+    "Station offline_queue_operations table",
+    "Desktop local queue persistence",
+    "Station sync reconciliation state"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/offline/enqueue"},
+    {"type": "api", "route": "/agent/offline/pending"},
+    {"type": "api", "route": "/agent/offline/ack"},
+    {"type": "api", "route": "/agent/offline/sync"},
+    {"type": "api", "route": "/agent/offline/conflict/resolve"}
+  ],
+  "required_gates": ["agent-offline-queue-e2e"],
+  "acceptance": {
+    "service": [
+      "a message sent while offline is enqueued locally and delivered when connectivity resumes",
+      "pending operations are listed in order with their retry count and status",
+      "acknowledging an operation removes it from the pending queue",
+      "sync reconciles local and server state without data loss",
+      "conflicting operations surface a resolution prompt to the user"
+    ],
+    "visible": [
+      "the Desktop UI shows a queued indicator for messages sent offline",
+      "queued messages transition to delivered state when sync completes",
+      "conflict resolution UI allows user to choose server or local version"
+    ]
+  },
+  "negative": [
+    "offline operations must not silently drop messages",
+    "sync must not duplicate messages that were already acknowledged",
+    "conflict resolution must not auto-resolve without user decision when both versions differ"
+  ]
+}

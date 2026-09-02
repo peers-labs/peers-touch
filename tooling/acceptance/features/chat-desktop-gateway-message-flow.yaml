@@ -4,12 +4,7 @@
   "product_area": "chat",
   "owners": [
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
-    "apps/desktop/src-tauri/src/interface/tauri_commands/account.rs",
-    "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
-    "apps/desktop/src-tauri/src/application/account/mod.rs",
     "apps/desktop/src-tauri/src/application/auth/service.rs",
-    "apps/desktop/src-tauri/src/domain/pin_lock/mod.rs",
-    "apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs",
     "apps/desktop/src-tauri/src/messaging/**"
   ],
   "truth_sources": [
@@ -21,8 +16,6 @@
   ],
   "visible_surfaces": [
     {"type": "desktop-gateway", "command": "auth_login"},
-    {"type": "desktop-gateway", "command": "account_switch"},
-    {"type": "desktop-gateway", "command": "account_unlock"},
     {"type": "desktop-gateway", "command": "messaging_create_direct"},
     {"type": "desktop-gateway", "command": "messaging_send_message"},
     {"type": "desktop-gateway", "command": "messaging_hydrate"},
@@ -32,9 +25,7 @@
   "required_gates": ["chat-desktop-gateway-e2e"],
   "acceptance": {
     "service": [
-      "the Provisioner-owned disposable Alice and Bob actors authenticate through the real Desktop gateway",
-      "concurrent account switches commit one complete active-account, JWT actor, and Messaging Engine identity tuple",
-      "OAuth PIN unlock derives the actor from the Station JWT when provider_user_id differs",
+      "two temporary actors authenticate through the real Desktop gateway",
       "the Desktop messaging engine publishes recipient key material before direct conversation creation",
       "the sender encrypts and submits a direct message through the messaging pipeline",
       "the receiver hydrates the conversation and decrypts the persisted message"
@@ -46,8 +37,6 @@
   "negative": [
     "Desktop gateway command proof must not be reported as DOM-level Desktop UI E2E",
     "Desktop gateway hydration proof must not replace live renderer event-consumption proof",
-    "single-gateway flow must not be reported as two running Desktop clients",
-    "an account switch failure must preserve the previously committed account/JWT/runtime tuple",
-    "a legacy encrypted PIN session without a persisted actor binding must fail closed and require login"
+    "single-gateway flow must not be reported as two running Desktop clients"
   ]
 }

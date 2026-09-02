@@ -1,0 +1,36 @@
+{
+  "id": "agent-event-stream",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/event_stream_handler.go",
+    "apps/station/app/subserver/agent/service/event_stream_service.go",
+    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/services/desktop_api.ts"
+  ],
+  "truth_sources": [
+    "running Station agent API",
+    "SSE connection lifecycle"
+  ],
+  "visible_surfaces": [
+    {"type": "sse", "route": "/agent/events/subscribe"}
+  ],
+  "required_gates": ["agent-event-stream-e2e"],
+  "acceptance": {
+    "service": [
+      "SSE subscribe establishes a persistent server-sent events connection for real-time agent updates",
+      "events include conversation updates, turn progress, task state changes, and growth notifications",
+      "connection supports automatic reconnection with last-event-id for resumption without duplicates",
+      "events are scoped to the authenticated user and their agent instances"
+    ],
+    "visible": [
+      "Desktop receives real-time updates without polling when the event stream is connected",
+      "connection status indicator reflects SSE health in the agent workspace"
+    ]
+  },
+  "negative": [
+    "the event stream must not deliver events belonging to other users",
+    "reconnection must not replay already-acknowledged events",
+    "event stream failure must not block or crash the agent chat loop"
+  ]
+}
