@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-08-30
+> **Created**: 2026-08-17 | **Updated**: 2026-09-03
 > **Owner**: Peers-Touch Agent Team
 > **Plan gate**: `OWNER_APPROVED_EXECUTION`
 > **Entry gate**: Owner accepted MCA-D19A/D19B/D19C into the main Goal G1 task on 2026-08-22
@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260830T162124124250Z-d80b623b486ff157036d4f6beafbf873` on `06eeb9dce` advanced through AS-F04/AS-F06 and exposed a Browser AS-F07 retry conflict after a cancelled Turn persisted completed tool-call message evidence; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | blocked at protected reset boundary: exact-source preflight on `c22b6dd84bf0fda72bf9352c1ed9eecc79e5b56b` preserved `BLOCKED / UNPROVEN`, rejected `fixture-target:station-two` before mutation, and completed cleanup; `DESTRUCTIVE_RESET_APPROVAL_REQUIRED` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
