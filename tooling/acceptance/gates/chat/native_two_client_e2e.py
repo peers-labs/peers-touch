@@ -15,6 +15,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     current_commit,
     current_workspace_digest,
 )
+from tooling.acceptance.gates.chat.native_support import runtime_station_service
 
 
 SOURCE_REPORT = Path(
