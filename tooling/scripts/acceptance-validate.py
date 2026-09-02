@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -19,8 +20,13 @@ from tooling.acceptance.core import (
     EnvironmentContract,
     EvidenceStore,
     RUN_GATE_ENV,
+    source_identity,
 )
 from tooling.acceptance.core.errors import EvidenceManifestInvalid, ProvisioningError
+from tooling.acceptance.finalizers import (
+    load_strict_json_object,
+    loads_strict_json_value,
+)
 from tooling.acceptance.provisioners import get_provisioner
 
 ALLOWED_GATE_TIERS = {
@@ -45,7 +51,10 @@ ALLOWED_GATE_ENVIRONMENTS = {
 def load(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise RuntimeError(f"required acceptance file is missing: {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return load_strict_json_object(path, str(path))
+    except ValueError as error:
+        raise RuntimeError(str(error)) from error
 
 
 def require(condition: bool, message: str) -> None:
@@ -64,6 +73,27 @@ def load_capabilities(root: Path) -> dict[str, dict[str, Any]]:
             capabilities[capability_id] = capability
     require(capabilities, f"no capabilities found under {capability_dir}")
     return capabilities
+
+
+def validate_finalizer_contracts(
+    acceptance_root: Path,
+    gate_defs: dict[str, Any],
+) -> dict[str, Any]:
+    has_catalog_config = any(
+        isinstance(gate, dict) and "evidenceFinalizer" in gate
+        for gate in gate_defs.values()
+    )
+    has_capability_declaration = any(
+        "finalizerRegistry" in load(path)
+        or "requiredEvidenceFinalizers" in load(path)
+        for path in sorted((acceptance_root / "capabilities").glob("*.yaml"))
+    )
+    if not has_catalog_config and not has_capability_declaration:
+        return {}
+
+    from tooling.acceptance.finalizers import load_finalizer_bindings
+
+    return dict(load_finalizer_bindings(acceptance_root, gate_defs))
 
 
 def run_plan_for_paths(repo_root: Path, acceptance_root: Path, paths: list[str]) -> dict[str, Any]:
@@ -109,7 +139,7 @@ def validate_gate_catalog(
     )
     for gate_id in sorted(required_gate_ids):
         gate = gate_defs[gate_id]
-        require(gate.get("command"), f"{gate_id}: gate command is required")
+        validate_gate_launch(gate_id, gate)
         environment = gate.get("environment", "local")
         tier = gate.get("tier")
         require(environment in ALLOWED_GATE_ENVIRONMENTS, f"{gate_id}: invalid environment {environment!r}")
@@ -123,6 +153,76 @@ def validate_gate_catalog(
             require(environment == "local", f"{gate_id}: CI tier gates must use local environment")
 
 
+def validate_gate_launch(gate_id: str, gate: dict[str, Any]) -> None:
+    has_command = "command" in gate
+    has_argv = "argv" in gate
+    require(
+        has_command != has_argv,
+        f"{gate_id}: gate must define exactly one of command or argv",
+    )
+
+    if has_command:
+        command = gate["command"]
+        require(
+            isinstance(command, str) and bool(command.strip()),
+            f"{gate_id}: gate command must be a non-empty string",
+        )
+    else:
+        argv = gate["argv"]
+        require(
+            isinstance(argv, list)
+            and bool(argv)
+            and all(
+                isinstance(argument, str) and bool(argument)
+                for argument in argv
+            ),
+            f"{gate_id}: gate argv must be a non-empty list of non-empty strings",
+        )
+
+    if "ephemeralCapabilities" not in gate:
+        return
+
+    capabilities = gate["ephemeralCapabilities"]
+    require(
+        isinstance(capabilities, list)
+        and bool(capabilities)
+        and all(
+            isinstance(capability, str) and bool(capability)
+            for capability in capabilities
+        )
+        and len(set(capabilities)) == len(capabilities),
+        f"{gate_id}: ephemeralCapabilities must be a unique, non-empty list "
+        "of non-empty strings",
+    )
+    require(has_argv, f"{gate_id}: ephemeralCapabilities requires argv")
+    require(
+        isinstance(argv, list) and is_supported_context_argv(argv),
+        f"{gate_id}: ephemeralCapabilities requires a Python module, "
+        "script, or -c argv",
+    )
+
+
+def is_supported_context_argv(argv: list[str]) -> bool:
+    if len(argv) < 2 or not re.fullmatch(
+        r"python(?:\d+(?:\.\d+)*)?",
+        Path(argv[0]).name,
+    ):
+        return False
+    if argv[1] == "-m":
+        return len(argv) >= 3 and bool(
+            re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", argv[2])
+        )
+    if argv[1] == "-c":
+        return len(argv) >= 3
+    return not argv[1].startswith("-") and Path(argv[1]).suffix == ".py"
+
+
+def gate_launch_arguments(gate: dict[str, Any]) -> list[str]:
+    if "argv" in gate:
+        return list(gate["argv"])
+    return str(gate["command"]).split()
+
+
 def validate_gate_inheritance(
     repo_root: Path,
     gate_defs: dict[str, Any],
@@ -131,10 +231,9 @@ def validate_gate_inheritance(
     """I1: Gates using python3 -m must contain an AcceptanceGate subclass."""
     violations: list[str] = []
     for gate_id in sorted(required_gate_ids & gate_defs.keys()):
-        command = str(gate_defs[gate_id].get("command", ""))
-        if "python3 -m" not in command and "python3 -c" not in command:
+        parts = gate_launch_arguments(gate_defs[gate_id])
+        if "-m" not in parts and "-c" not in parts:
             continue
-        parts = command.split()
         try:
             module_index = parts.index("-m") + 1
         except ValueError:
@@ -171,10 +270,9 @@ def validate_gate_import_isolation(
     gate_files: dict[str, tuple[Path, str]] = {}
 
     for gate_id in sorted(required_gate_ids & gate_defs.keys()):
-        command = str(gate_defs[gate_id].get("command", ""))
-        if "python3 -m" not in command:
+        parts = gate_launch_arguments(gate_defs[gate_id])
+        if "-m" not in parts:
             continue
-        parts = command.split()
         try:
             module_index = parts.index("-m") + 1
         except ValueError:
@@ -411,31 +509,90 @@ def latest_passed_gates(
     current_gate_id: str,
     require_run: bool,
 ) -> set[str]:
+    def proven_gate_ids(
+        results: object,
+        *,
+        label: str,
+    ) -> set[str]:
+        if not isinstance(results, list):
+            raise RuntimeError(f"invalid {label}")
+        proven: set[str] = set()
+        seen: set[str] = set()
+        for index, result in enumerate(results):
+            if not isinstance(result, dict):
+                raise RuntimeError(f"invalid {label} entry at index {index}")
+            gate_id = result.get("id")
+            status = result.get("status")
+            if not isinstance(gate_id, str) or not gate_id:
+                raise RuntimeError(f"invalid {label} id at index {index}")
+            if gate_id in seen:
+                raise RuntimeError(
+                    f"invalid {label}: duplicate id {gate_id}"
+                )
+            seen.add(gate_id)
+            if status not in {"passed", "dry-run", "failed", "blocked"}:
+                raise RuntimeError(f"invalid {label} status at index {index}")
+            if (
+                status == "passed"
+                and result.get("completionStatus") == "DONE"
+                and result.get("proofStatus") == "PROVEN"
+            ):
+                proven.add(gate_id)
+        return proven
+
     latest_missing = False
     try:
-        run = store.read_json(
+        latest_run_path = store.resolve(
             store.latest_artifact_ref("acceptance-run", "run")
+        )
+        run = load_strict_json_object(
+            latest_run_path,
+            "latest Acceptance run",
         )
     except EvidenceManifestInvalid:
         latest_missing = True
         run = {}
-    passed = {
-        result.get("id", "")
-        for result in run.get("results", [])
-        if result.get("status") in {"passed", "dry-run"}
-    }
+    except ValueError as error:
+        raise RuntimeError("invalid latest Acceptance run") from error
+    passed = proven_gate_ids(
+        run.get("results", []),
+        label="latest Acceptance results",
+    )
+    if run and run.get("source") != source_identity(REPO_ROOT):
+        raise RuntimeError(
+            "latest Acceptance run source does not match current source"
+        )
     current_results = os.environ.get("PT_ACCEPTANCE_CURRENT_RESULTS", "")
     if current_results:
         try:
-            in_progress_results = json.loads(current_results)
-        except json.JSONDecodeError as error:
+            current_envelope = loads_strict_json_value(
+                current_results,
+                "current Acceptance results",
+            )
+        except ValueError as error:
             raise RuntimeError("invalid current Acceptance results") from error
-        passed.update(
-            result.get("id", "")
+        if (
+            not isinstance(current_envelope, dict)
+            or set(current_envelope) != {"source", "results"}
+            or current_envelope.get("source") != source_identity(REPO_ROOT)
+        ):
+            raise RuntimeError(
+                "current Acceptance results source does not match current source"
+            )
+        in_progress_results = current_envelope["results"]
+        current_proven = proven_gate_ids(
+            in_progress_results,
+            label="current Acceptance results",
+        )
+        current_gate_ids = {
+            result.get("id")
             for result in in_progress_results
             if isinstance(result, dict)
-            and result.get("status") in {"passed", "dry-run"}
-        )
+            and isinstance(result.get("id"), str)
+            and result.get("id")
+        }
+        passed.difference_update(current_gate_ids)
+        passed.update(current_proven)
     if require_run and latest_missing and not current_results:
         raise EvidenceManifestInvalid("Acceptance run evidence is required")
     if current_gate_id:
@@ -531,6 +688,7 @@ def validate_domain(
     capabilities = load_capabilities(acceptance_root)
     features = [load(path) for path in sorted((acceptance_root / "features").glob("*.yaml"))]
     gate_defs = load(acceptance_root / "gates.yaml").get("gates", {})
+    validate_finalizer_contracts(acceptance_root, gate_defs)
 
     selected = []
     for capability_id in domain.get("capabilities", []):
@@ -582,6 +740,7 @@ def validate_infra(
         for path in sorted((acceptance_root / "features").glob("*.yaml"))
     ]
     gate_defs = load(acceptance_root / "gates.yaml").get("gates", {})
+    validate_finalizer_contracts(acceptance_root, gate_defs)
     required_gates = validate_domain_contract_closure(
         acceptance_root,
         "acceptance-infra",

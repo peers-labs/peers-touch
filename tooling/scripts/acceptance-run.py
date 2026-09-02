@@ -12,14 +12,13 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
-AGGREGATE_SOURCE_ENV = "PT_ACCEPTANCE_AGGREGATE_SOURCE"
 RESULT_TRACEABILITY_FIELDS = (
     "sourceArtifact",
     "sourceArtifactKind",
@@ -27,6 +26,24 @@ RESULT_TRACEABILITY_FIELDS = (
     "sourceBom",
     "sourceSpec",
     "sourceGate",
+)
+CONTEXT_GATE_INHERITED_ENV_KEYS = (
+    "COMSPEC",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "PATH",
+    "PATHEXT",
+    "PYTHONHOME",
+    "PYTHONIOENCODING",
+    "PYTHONPATH",
+    "PYTHONUTF8",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "TZ",
+    "WINDIR",
 )
 
 
@@ -51,7 +68,6 @@ def run_environment(environment: dict[str, str]):
         "PT_ACCEPTANCE_RUN_ID",
         "PT_ACCEPTANCE_REDACTION_VALUES",
         "PT_ACCEPTANCE_RUNTIME_CELL",
-        AGGREGATE_SOURCE_ENV,
     )
     previous = {key: os.environ.get(key) for key in keys}
     for key in keys:
@@ -67,6 +83,20 @@ def run_environment(environment: dict[str, str]):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def context_gate_subprocess_environment(
+    gate_run: Any,
+    source: Mapping[str, str],
+) -> dict[str, str]:
+    inherited = {
+        key: source[key]
+        for key in CONTEXT_GATE_INHERITED_ENV_KEYS
+        if source.get(key)
+    }
+    environment = gate_run.subprocess_environment(inherited)
+    environment.pop("PT_ACCEPTANCE_REDACTION_VALUES", None)
+    return environment
 
 
 def environment_provisioner(environment_id: str) -> Any | None:
@@ -253,10 +283,18 @@ def persist_provisioner_cleanup_result(
     completed_resources: tuple[str, ...],
     cleanup_error: str,
     secret_values: tuple[str, ...],
+    environment_cleanup_status: str = "not-required",
+    environment_cleanup_error: str = "",
     runtime_cell: str = "",
     runtime_cell_cleanup_status: str = "not-required",
     runtime_cell_cleanup: dict[str, Any] | None = None,
     runtime_cell_cleanup_error: str = "",
+    launch_context_quiesce_status: str = "not-required",
+    launch_context_close_status: str = "not-required",
+    launch_context_cleanup: dict[str, Any] | None = None,
+    launch_context_cleanup_error: str = "",
+    gate_process_cleanup_status: str = "not-required",
+    gate_process_cleanup_error: str = "",
 ) -> dict[str, Any]:
     payload = {
         "artifactKind": "acceptance-provisioner-cleanup-result",
@@ -272,10 +310,18 @@ def persist_provisioner_cleanup_result(
         ),
         "completedResources": list(completed_resources),
         "error": cleanup_error,
+        "environmentCleanupStatus": environment_cleanup_status,
+        "environmentCleanupError": environment_cleanup_error,
         "runtimeCell": runtime_cell or None,
         "runtimeCellCleanupStatus": runtime_cell_cleanup_status,
         "runtimeCellCleanup": runtime_cell_cleanup,
         "runtimeCellCleanupError": runtime_cell_cleanup_error,
+        "launchContextQuiesceStatus": launch_context_quiesce_status,
+        "launchContextCloseStatus": launch_context_close_status,
+        "launchContextCleanup": launch_context_cleanup,
+        "launchContextCleanupError": launch_context_cleanup_error,
+        "gateProcessCleanupStatus": gate_process_cleanup_status,
+        "gateProcessCleanupError": gate_process_cleanup_error,
     }
     redacted_payload, _ = redact_runtime_value(payload, secret_values)
     return gate_run.write_json(
@@ -404,6 +450,80 @@ def runtime_cell_failure_result(
     return result
 
 
+def ephemeral_launch_failure_result(
+    *,
+    gate_id: str,
+    command: str,
+    environment: str,
+    tier: str,
+    error: Exception,
+    duration_seconds: float,
+) -> dict[str, Any]:
+    from tooling.acceptance.core import (
+        BlockedError,
+        EphemeralLaunchCleanupFailed,
+        EphemeralLaunchError,
+    )
+    from tooling.acceptance.core.redaction import redact_text
+
+    cleanup_failed = isinstance(error, EphemeralLaunchCleanupFailed)
+    blocked = isinstance(error, (BlockedError, EphemeralLaunchError)) and not cleanup_failed
+    result = {
+        "id": gate_id,
+        "command": command,
+        "environment": environment,
+        "tier": tier,
+        "status": "blocked" if blocked else "failed",
+        "exit_code": None,
+        "duration_seconds": duration_seconds,
+        "completionStatus": "BLOCKED" if blocked else "PARTIAL",
+        "proofStatus": "UNPROVEN",
+        "reason": redact_text(str(error)),
+        "errorType": type(error).__name__,
+        "sourceArtifact": "tooling/acceptance/gates.yaml",
+        "sourceArtifactKind": "acceptance-gate-catalog",
+        "sourcePhase": (
+            "Ephemeral Gate Launch Cleanup"
+            if cleanup_failed
+            else "Ephemeral Gate Launch"
+        ),
+        "sourceBom": ["EGLC-W3"],
+        "sourceSpec": ["D-18"],
+        "sourceGate": (
+            "Context-enabled Gates must bind an exact run-scoped capability "
+            "channel before product Gate execution"
+        ),
+    }
+    if cleanup_failed:
+        result["cleanupStatus"] = "failed"
+        result["cleanupError"] = redact_text(str(error))
+        result["launchContextCleanup"] = ephemeral_cleanup_payload(
+            getattr(error, "result", None)
+        )
+    elif isinstance(error, BlockedError):
+        result["blockedReason"] = redact_text(error.reason)
+        result["blockedResource"] = redact_text(error.resource)
+    elif blocked:
+        result["blockedReason"] = redact_text(str(error))
+        result["blockedResource"] = f"ephemeral-launch-context:{gate_id}"
+    return result
+
+
+def ephemeral_cleanup_payload(value: Any) -> dict[str, Any] | None:
+    from tooling.acceptance.core import EphemeralCleanupResult
+
+    if not isinstance(value, EphemeralCleanupResult):
+        return None
+    return {
+        "descriptorsClosed": value.descriptors_closed,
+        "brokerStopped": value.broker_stopped,
+        "handlersClosed": value.handlers_closed,
+        "secretsZeroized": value.secrets_zeroized,
+        "quarantinedCapabilities": list(value.quarantined_capabilities),
+        "errors": list(value.errors),
+    }
+
+
 def load_plan(
     path: Path | None,
     store: Any,
@@ -432,10 +552,75 @@ def load_gate_definitions(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8")).get("gates", {})
 
 
+def gate_launch_fields(gate_id: str, definition: dict[str, Any]) -> dict[str, Any]:
+    has_command = "command" in definition
+    has_argv = "argv" in definition
+    if has_command == has_argv:
+        raise SystemExit(
+            f"{gate_id}: gate must define exactly one of command or argv"
+        )
+    if has_command:
+        command = definition["command"]
+        if not isinstance(command, str) or not command.strip():
+            raise SystemExit(f"{gate_id}: gate command must be a non-empty string")
+        launch: dict[str, Any] = {"command": command}
+    else:
+        argv = definition["argv"]
+        if (
+            not isinstance(argv, list)
+            or not argv
+            or any(not isinstance(argument, str) or not argument for argument in argv)
+        ):
+            raise SystemExit(
+                f"{gate_id}: gate argv must be a non-empty list of non-empty strings"
+            )
+        launch = {"argv": list(argv)}
+
+    capabilities = definition.get("ephemeralCapabilities")
+    if capabilities is not None:
+        if (
+            not isinstance(capabilities, list)
+            or not capabilities
+            or any(
+                not isinstance(capability, str) or not capability
+                for capability in capabilities
+            )
+            or len(set(capabilities)) != len(capabilities)
+        ):
+            raise SystemExit(
+                f"{gate_id}: ephemeralCapabilities must be a unique, non-empty "
+                "list of non-empty strings"
+            )
+        if not has_argv:
+            raise SystemExit(f"{gate_id}: ephemeralCapabilities requires argv")
+        if not is_supported_context_argv(argv):
+            raise SystemExit(
+                f"{gate_id}: ephemeralCapabilities requires a Python module, "
+                "script, or -c argv"
+            )
+        launch["ephemeralCapabilities"] = list(capabilities)
+    return launch
+
+
+def is_supported_context_argv(argv: list[str]) -> bool:
+    if len(argv) < 2 or not re.fullmatch(
+        r"python(?:\d+(?:\.\d+)*)?",
+        Path(argv[0]).name,
+    ):
+        return False
+    if argv[1] == "-m":
+        return len(argv) >= 3 and bool(
+            re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", argv[2])
+        )
+    if argv[1] == "-c":
+        return len(argv) >= 3
+    return not argv[1].startswith("-") and Path(argv[1]).suffix == ".py"
+
+
 def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": gate_id,
-        "command": definition["command"],
+        **gate_launch_fields(gate_id, definition),
         "timeout_seconds": definition.get("timeout_seconds", 600),
         "environment": definition.get("environment", "local"),
         "provisioner": definition.get("provisioner", ""),
@@ -444,6 +629,66 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
         "description": definition.get("description", ""),
         "required_by": ["manual"],
     }
+
+
+def gate_launch_display(gate: dict[str, Any]) -> str:
+    if "command" in gate:
+        return str(gate["command"])
+    return json.dumps(gate["argv"], ensure_ascii=False)
+
+
+def prepare_gate_launch_context(
+    *,
+    gate: dict[str, Any],
+    gate_run: Any,
+    provisioner: Any,
+    manifest: dict[str, Any] | None,
+) -> tuple[Any, str]:
+    from tooling.acceptance.core import (
+        BlockedError,
+        EphemeralGateLaunchContext,
+        EphemeralLaunchContextInvalid,
+    )
+
+    required_capabilities = tuple(gate.get("ephemeralCapabilities", ()))
+    if not required_capabilities:
+        raise EphemeralLaunchContextInvalid(
+            "launch context preparation requires capabilities",
+            operation="prepare",
+        )
+    gate_id = str(gate["id"])
+    if provisioner is None or manifest is None:
+        raise BlockedError(
+            reason=(
+                f"Gate {gate_id!r} requires ephemeral capabilities but has no "
+                "ready Environment Provisioner"
+            ),
+            resource=f"ephemeral-capabilities:{gate_id}",
+        )
+    provisioning_run_id = manifest.get("runId")
+    if not isinstance(provisioning_run_id, str) or not provisioning_run_id:
+        raise BlockedError(
+            reason=(
+                f"Gate {gate_id!r} cannot bind ephemeral capabilities without "
+                "a provisioning run identity"
+            ),
+            resource=f"provisioning-run:{gate_id}",
+        )
+    context = provisioner.create_gate_launch_context(
+        gate_id=gate_id,
+        evidence_run_id=gate_run.run_id,
+        provisioning_run_id=provisioning_run_id,
+        required_capabilities=required_capabilities,
+    )
+    if not isinstance(context, EphemeralGateLaunchContext):
+        raise BlockedError(
+            reason=(
+                f"Environment {provisioner.environment_id!r} did not create "
+                f"the required launch context for Gate {gate_id!r}"
+            ),
+            resource=f"ephemeral-capabilities:{gate_id}",
+        )
+    return context, provisioning_run_id
 
 
 def plan_gate_from_entry(entry: Any, definitions: dict[str, Any]) -> dict[str, Any]:
@@ -459,7 +704,19 @@ def plan_gate_from_entry(entry: Any, definitions: dict[str, Any]) -> dict[str, A
     if gate_id not in definitions:
         raise SystemExit(f"gate {gate_id!r} is missing from gate definitions")
     gate = gate_from_definition(gate_id, definitions[gate_id])
-    gate.update(entry)
+    for field in (
+        "command",
+        "argv",
+        "ephemeralCapabilities",
+    ):
+        if field in entry and entry[field] != gate.get(field):
+            raise SystemExit(
+                f"plan gate {gate_id!r} has stale or conflicting {field}"
+            )
+    if "timeout_seconds" in entry:
+        gate["timeout_seconds"] = entry["timeout_seconds"]
+    if "required_by" in entry:
+        gate["required_by"] = entry["required_by"]
     return gate
 
 
@@ -1174,10 +1431,9 @@ def main() -> int:
             Path(args.plan) if args.plan else None,
             store,
         )
-        aggregate_source = source_identity(REPO_ROOT)
         aggregate_run = store.begin_run(
             "acceptance-run",
-            source=aggregate_source,
+            source=source_identity(REPO_ROOT),
         )
     except EvidenceError as error:
         print(
@@ -1202,7 +1458,7 @@ def main() -> int:
     try:
         for gate in gates:
             gate_id = gate["id"]
-            command = gate["command"]
+            command = gate_launch_display(gate)
             timeout = int(gate.get("timeout_seconds") or 600)
             environment = gate.get("environment", "local")
             tier = gate.get("tier", "local-evidence")
@@ -1227,21 +1483,12 @@ def main() -> int:
                 )
                 continue
 
-            gate_source = source_identity(REPO_ROOT)
-            source_drift = source_identity_drift(
-                aggregate_source,
-                gate_source,
-            )
             gate_run = store.begin_run(
                 gate_id,
-                source=gate_source,
+                source=source_identity(REPO_ROOT),
             )
             active_gate_run = gate_run
             gate_env = gate_run.subprocess_environment(os.environ.copy())
-            gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
-                aggregate_source,
-                sort_keys=True,
-            )
             if runtime_cell:
                 gate_env["PT_ACCEPTANCE_RUNTIME_CELL"] = runtime_cell
             provisioner = None
@@ -1262,31 +1509,20 @@ def main() -> int:
             runtime_cell_cleanup_status = "not-required"
             runtime_cell_cleanup: dict[str, Any] | None = None
             runtime_cell_cleanup_error = ""
+            launch_context = None
+            launch_binding = None
+            launch_context_quiesce_status = "not-required"
+            launch_context_close_status = "not-required"
+            launch_context_cleanup: dict[str, Any] | None = None
+            launch_context_cleanup_error = ""
+            gate_process_cleanup_status = "not-required"
+            gate_process_cleanup_error = ""
+            resource_cleanup_allowed = True
             cleanup_artifact: dict[str, Any] | None = None
             result: dict[str, Any] | None = None
             provisioner_id = str(gate.get("provisioner") or "")
-            if source_drift is not None:
-                output_text = (
-                    "Acceptance source drifted before Gate execution; "
-                    "the Gate was not started.\n"
-                )
-                result = {
-                    "id": gate_id,
-                    "command": command,
-                    "environment": environment,
-                    "runtimeCell": runtime_cell or None,
-                    "tier": tier,
-                    "status": "failed",
-                    "exit_code": None,
-                    "duration_seconds": 0,
-                    "completionStatus": "PARTIAL",
-                    "proofStatus": "UNPROVEN",
-                    "sampleEmissionAllowed": False,
-                    "reason": "aggregate source drift before Gate execution",
-                    "sourceDrift": source_drift,
-                }
             try:
-                if result is None and provisioner_id:
+                if provisioner_id:
                     if provisioner_id != environment:
                         raise SystemExit(
                             f"gate {gate_id!r} provisioner {provisioner_id!r} "
@@ -1297,6 +1533,7 @@ def main() -> int:
                         preparation_error: Exception | None = None
                         with run_environment(gate_env):
                             provisioner = environment_provisioner(provisioner_id)
+                            provisioner.bind_evidence_run(gate_run)
                             try:
                                 provisioner.prepare_credentials()
                             except Exception as error:
@@ -1392,15 +1629,55 @@ def main() -> int:
                             f"state={runtime_cell_manifest.get('state')}"
                         )
 
+                if result is None and gate.get("ephemeralCapabilities"):
+                    try:
+                        (
+                            launch_context,
+                            provisioning_run_id,
+                        ) = prepare_gate_launch_context(
+                            gate=gate,
+                            gate_run=gate_run,
+                            provisioner=provisioner,
+                            manifest=manifest,
+                        )
+                        launch_context.seal(
+                            workspace_id=gate_run.store.workspace_id,
+                            gate_id=gate_id,
+                            evidence_run_id=gate_run.run_id,
+                            provisioning_run_id=provisioning_run_id,
+                        )
+                        launch_binding = launch_context.bind_child()
+                        launch_context.activate()
+                    except Exception as error:
+                        output_text = (
+                            "Ephemeral launch preparation failed: "
+                            f"{type(error).__name__}: {error}\n"
+                        )
+                        result = ephemeral_launch_failure_result(
+                            gate_id=gate_id,
+                            command=command,
+                            environment=environment,
+                            tier=tier,
+                            error=error,
+                            duration_seconds=round(time.time() - started, 3),
+                        )
+
                 if result is None:
-                    gate_env = gate_run.subprocess_environment(os.environ.copy())
+                    if gate.get("ephemeralCapabilities"):
+                        gate_env = context_gate_subprocess_environment(
+                            gate_run,
+                            os.environ,
+                        )
+                    else:
+                        gate_env = gate_run.subprocess_environment(
+                            os.environ.copy()
+                        )
                     gate_env["PT_ACCEPTANCE_CURRENT_RESULTS"] = json.dumps(
-                        results,
+                        {
+                            "source": aggregate_run.source,
+                            "results": results,
+                        },
                         ensure_ascii=False,
-                    )
-                    gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
-                        aggregate_source,
-                        sort_keys=True,
                     )
                     if manifest_path is not None:
                         gate_env["PT_ACCEPTANCE_RUNTIME_MANIFEST"] = str(
@@ -1413,15 +1690,36 @@ def main() -> int:
                             runtime_cell_manifest_path
                         )
                     try:
-                        completed = subprocess.run(
-                            command,
-                            shell=True,
-                            text=True,
-                            capture_output=True,
-                            timeout=timeout,
-                            env=gate_env,
-                            cwd=REPO_ROOT,
-                        )
+                        if "argv" in gate:
+                            from tooling.acceptance.core import (
+                                GateLaunchSpec,
+                                GateProcessLauncher,
+                            )
+
+                            completed = GateProcessLauncher(
+                                cwd=str(REPO_ROOT),
+                                environment=gate_env,
+                            ).run(
+                                GateLaunchSpec(
+                                    argv=tuple(gate["argv"]),
+                                    timeout_seconds=timeout,
+                                    required_capabilities=tuple(
+                                        gate.get("ephemeralCapabilities", ())
+                                    ),
+                                ),
+                                launch_binding,
+                            )
+                            gate_process_cleanup_status = "passed"
+                        else:
+                            completed = subprocess.run(
+                                command,
+                                shell=True,
+                                text=True,
+                                capture_output=True,
+                                timeout=timeout,
+                                env=gate_env,
+                                cwd=REPO_ROOT,
+                            )
                         output_text = completed.stdout + completed.stderr
                         exit_code = completed.returncode
                     except subprocess.TimeoutExpired as error:
@@ -1434,8 +1732,58 @@ def main() -> int:
                             stderr.decode() if isinstance(stderr, bytes) else stderr
                         )
                         output_text += f"\nGate timed out after {timeout} seconds\n"
+                    except Exception as error:
+                        from tooling.acceptance.core import (
+                            EphemeralLaunchCleanupFailed,
+                            EphemeralLaunchError,
+                            EphemeralLaunchTimeout,
+                        )
+
+                        if not isinstance(error, EphemeralLaunchError):
+                            raise
+                        timed_out = isinstance(error, EphemeralLaunchTimeout)
+                        if isinstance(error, EphemeralLaunchCleanupFailed):
+                            gate_process_cleanup_status = "failed"
+                            gate_process_cleanup_error = str(error)
+                        elif timed_out:
+                            gate_process_cleanup_status = "passed"
+                        output_text = (
+                            f"Ephemeral Gate launch failed: "
+                            f"{type(error).__name__}: {error}\n"
+                        )
+                        result = ephemeral_launch_failure_result(
+                            gate_id=gate_id,
+                            command=command,
+                            environment=environment,
+                            tier=tier,
+                            error=error,
+                            duration_seconds=round(time.time() - started, 3),
+                        )
             finally:
-                if runtime_cell_lifecycle is not None:
+                if launch_context is not None:
+                    try:
+                        launch_context.quiesce()
+                        launch_context_quiesce_status = "passed"
+                    except Exception as error:
+                        launch_context_quiesce_status = "failed"
+                        launch_context_cleanup_error = str(error)
+                        launch_context_cleanup = ephemeral_cleanup_payload(
+                            getattr(error, "result", None)
+                        )
+                        resource_cleanup_allowed = bool(
+                            launch_context_cleanup
+                            and launch_context_cleanup.get(
+                                "quarantinedCapabilities"
+                            )
+                        )
+                        output_text += (
+                            "\nLaunch-context quiesce failed: "
+                            f"{error}\n"
+                        )
+                if (
+                    runtime_cell_lifecycle is not None
+                    and resource_cleanup_allowed
+                ):
                     try:
                         with run_environment(gate_env):
                             runtime_cell_cleanup = (
@@ -1449,7 +1797,15 @@ def main() -> int:
                             "\nRuntime-cell cleanup failed: "
                             f"{error}\n"
                         )
-                if provisioner is not None:
+                elif runtime_cell_lifecycle is not None:
+                    runtime_cell_cleanup_status = (
+                        "deferred-unfenced-authority"
+                    )
+                    runtime_cell_cleanup_error = (
+                        "runtime-cell cleanup deferred because launch-context "
+                        "authority was not fenced"
+                    )
+                if provisioner is not None and resource_cleanup_allowed:
                     try:
                         with run_environment(gate_run.subprocess_environment(os.environ.copy())):
                             cleanup_completed_resources = provisioner.cleanup()
@@ -1458,9 +1814,69 @@ def main() -> int:
                         environment_cleanup_status = "failed"
                         environment_cleanup_error = str(error)
                         output_text += f"\nProvisioning cleanup failed: {error}\n"
+                elif provisioner is not None:
+                    environment_cleanup_status = (
+                        "deferred-unfenced-authority"
+                    )
+                    environment_cleanup_error = (
+                        "Provisioner cleanup deferred because launch-context "
+                        "authority was not fenced"
+                    )
+                if (
+                    launch_context is not None
+                    and (
+                        launch_context_quiesce_status == "passed"
+                        or resource_cleanup_allowed
+                    )
+                ):
+                    channel_error = launch_context.channel_error
+                    blocked_error = launch_context.blocked_error
+                    try:
+                        close_result = launch_context.close()
+                        launch_context_cleanup = ephemeral_cleanup_payload(
+                            close_result
+                        )
+                        launch_context_close_status = "passed"
+                    except Exception as error:
+                        launch_context_close_status = "failed"
+                        launch_context_cleanup = ephemeral_cleanup_payload(
+                            getattr(error, "result", None)
+                        )
+                        if launch_context_cleanup_error:
+                            launch_context_cleanup_error += f"; {error}"
+                        else:
+                            launch_context_cleanup_error = str(error)
+                        output_text += (
+                            "\nLaunch-context close failed: "
+                            f"{error}\n"
+                        )
+                    terminal_error = channel_error or blocked_error
+                    if terminal_error is not None:
+                        result = ephemeral_launch_failure_result(
+                            gate_id=gate_id,
+                            command=command,
+                            environment=environment,
+                            tier=tier,
+                            error=terminal_error,
+                            duration_seconds=round(time.time() - started, 3),
+                        )
+                        terminal_errors = tuple(
+                            candidate
+                            for candidate in (channel_error, blocked_error)
+                            if candidate is not None
+                        )
+                        result["launchContextTerminalErrors"] = [
+                            {
+                                "code": error.code,
+                                "type": type(error).__name__,
+                            }
+                            for error in terminal_errors
+                        ]
                 cleanup_failures = tuple(
                     error
                     for error in (
+                        gate_process_cleanup_error,
+                        launch_context_cleanup_error,
                         runtime_cell_cleanup_error,
                         environment_cleanup_error,
                     )
@@ -1470,23 +1886,20 @@ def main() -> int:
                     cleanup_status = "failed"
                     cleanup_error = "; ".join(cleanup_failures)
                 elif (
-                    runtime_cell_cleanup_status == "passed"
+                    gate_process_cleanup_status == "passed"
+                    or launch_context_close_status == "passed"
+                    or launch_context_quiesce_status == "passed"
+                    or runtime_cell_cleanup_status == "passed"
                     or environment_cleanup_status == "passed"
                 ):
                     cleanup_status = "passed"
 
-            source_drift_after = source_identity_drift(
-                aggregate_source,
-                source_identity(REPO_ROOT),
-            )
-            if source_drift_after is not None:
-                source_drift = source_drift or source_drift_after
-                output_text += (
-                    "\nAcceptance source drifted during aggregate execution; "
-                    "the Gate cannot contribute exact-source proof.\n"
-                )
-
-            if provisioner is not None or runtime_cell_lifecycle is not None:
+            if (
+                provisioner is not None
+                or runtime_cell_lifecycle is not None
+                or launch_context is not None
+                or gate_process_cleanup_status != "not-required"
+            ):
                 cleanup_artifact = persist_provisioner_cleanup_result(
                     gate_run=gate_run,
                     gate_id=gate_id,
@@ -1496,10 +1909,20 @@ def main() -> int:
                     completed_resources=cleanup_completed_resources,
                     cleanup_error=cleanup_error,
                     secret_values=runtime_secrets,
+                    environment_cleanup_status=environment_cleanup_status,
+                    environment_cleanup_error=environment_cleanup_error,
                     runtime_cell=runtime_cell,
                     runtime_cell_cleanup_status=runtime_cell_cleanup_status,
                     runtime_cell_cleanup=runtime_cell_cleanup,
                     runtime_cell_cleanup_error=runtime_cell_cleanup_error,
+                    launch_context_quiesce_status=(
+                        launch_context_quiesce_status
+                    ),
+                    launch_context_close_status=launch_context_close_status,
+                    launch_context_cleanup=launch_context_cleanup,
+                    launch_context_cleanup_error=launch_context_cleanup_error,
+                    gate_process_cleanup_status=gate_process_cleanup_status,
+                    gate_process_cleanup_error=gate_process_cleanup_error,
                 )
 
             output_text = redact_runtime_text(output_text, runtime_secrets)
@@ -1577,12 +2000,15 @@ def main() -> int:
             if cleanup_error:
                 result["cleanupError"] = cleanup_error
                 result["status"] = "failed"
-            if source_drift is not None:
-                result["sourceDrift"] = source_drift
-                result["status"] = "failed"
                 result["completionStatus"] = "PARTIAL"
                 result["proofStatus"] = "UNPROVEN"
-                result["sampleEmissionAllowed"] = False
+                if gate_process_cleanup_error:
+                    result["errorType"] = "EphemeralLaunchCleanupFailed"
+                    result["sourcePhase"] = "Gate Process Cleanup"
+                elif launch_context_cleanup_error:
+                    result["errorType"] = "EphemeralLaunchCleanupFailed"
+                    result["sourcePhase"] = "Ephemeral Gate Launch Cleanup"
+                    result["launchContextCleanup"] = launch_context_cleanup
 
             result = enrich_result_with_run_artifacts(result, gate_run)
             finalized_runtime = dict(manifest or {})

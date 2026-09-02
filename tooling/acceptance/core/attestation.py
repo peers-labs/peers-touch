@@ -19,11 +19,6 @@ from .evidence_store import (
 from .provisioning import ServiceAttestation, utc_now
 
 
-WORKSPACE_DIGEST_EXCLUDED_PATHS = frozenset(
-    {"docs/architecture/acceptance-framework/coverage-report.md"}
-)
-
-
 def commits_match(actual: str, expected: str) -> bool:
     return (
         len(actual) >= 7
@@ -33,29 +28,10 @@ def commits_match(actual: str, expected: str) -> bool:
 
 
 def source_proto_digest(root: Path) -> str:
-    completed = subprocess.run(
-        [
-            "git",
-            "ls-files",
-            "-z",
-            "--",
-            "model/domain",
-            "apps/desktop/src/gen/proto",
-            "apps/station",
-        ],
-        cwd=root,
-        capture_output=True,
-        check=True,
-    )
     paths = [
-        root / relative.decode()
-        for relative in completed.stdout.split(b"\0")
-        if relative
-        and (
-            relative.endswith(b".proto")
-            or relative.endswith(b"_pb.ts")
-            or relative.endswith(b".pb.go")
-        )
+        *(root / "model" / "domain").rglob("*.proto"),
+        *(root / "apps" / "desktop" / "src" / "gen" / "proto").rglob("*.ts"),
+        *(root / "apps" / "station").rglob("*.pb.go"),
     ]
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix()):
@@ -68,12 +44,8 @@ def source_proto_digest(root: Path) -> str:
 
 
 def source_workspace_digest(root: Path) -> str:
-    excluded_pathspecs = [
-        f":(exclude){path}"
-        for path in sorted(WORKSPACE_DIGEST_EXCLUDED_PATHS)
-    ]
     diff = subprocess.run(
-        ["git", "diff", "--binary", "HEAD", "--", ".", *excluded_pathspecs],
+        ["git", "diff", "--binary", "HEAD"],
         cwd=root,
         capture_output=True,
         check=True,
@@ -84,11 +56,7 @@ def source_workspace_digest(root: Path) -> str:
         capture_output=True,
         check=True,
     ).stdout.split(b"\0")
-    paths = sorted(
-        path
-        for path in untracked
-        if path and path.decode() not in WORKSPACE_DIGEST_EXCLUDED_PATHS
-    )
+    paths = sorted(path for path in untracked if path)
     if not diff and not paths:
         return "clean"
 
@@ -168,10 +136,6 @@ def _load_env(path: Path) -> dict[str, str]:
 
 
 def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
-    # Import lazily to preserve the core -> transport dependency boundary during
-    # package initialization; the SSH transport itself imports core error types.
-    from ..transports import SshTarget, SshTransport
-
     environment_path = (
         REPO_ROOT / ".local" / "deploy" / "envs" / f"{deploy_environment}.env"
     )
@@ -193,25 +157,6 @@ def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
             resource=f"station-deployment:{deploy_environment}",
         )
 
-    try:
-        target = SshTarget(
-            host=host,
-            user=user,
-            port=int(environment.get("PT_DEPLOY_SSH_PORT", "22")),
-            known_hosts_file=environment.get(
-                "PT_DEPLOY_KNOWN_HOSTS_FILE",
-                "",
-            ),
-        )
-    except (ValueError, ProvisioningError) as error:
-        raise BlockedError(
-            reason=(
-                f"Station deployment SSH contract is invalid for "
-                f"{deploy_environment}: {error}"
-            ),
-            resource=f"station-deployment:{deploy_environment}",
-        ) from error
-
     digest_script = (
         "import hashlib,pathlib;"
         "r=pathlib.Path('.').resolve();"
@@ -232,8 +177,21 @@ def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
         "if test -z \"$status\"; then echo clean; else echo dirty; fi && "
         f"python3 -c {shlex.quote(digest_script)}"
     )
-    completed = SshTransport(target).run_argv(
-        ["sh", "-lc", remote_command],
+    completed = subprocess.run(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "StrictHostKeyChecking=no",
+            f"{user}@{host}",
+            remote_command,
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
         timeout=30,
         check=False,
     )
