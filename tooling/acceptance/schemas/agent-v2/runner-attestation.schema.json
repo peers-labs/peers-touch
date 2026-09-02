@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peers.touch/schemas/agent-v2/runner-attestation.schema.json",
+  "title": "Agent V2 Runner Attestation",
+  "type": "object",
+  "required": ["artifactKind", "schema", "role", "gateId", "runId", "producer", "candidateOnly"],
+  "properties": {
+    "artifactKind": {"const": "agent-v2-runner-attestation"},
+    "schema": {"type": "object"},
+    "role": {"const": "runner-attestation"},
+    "gateId": {"type": "string", "minLength": 1},
+    "runId": {"type": "string", "minLength": 1},
+    "producer": {"type": "object"},
+    "candidateOnly": {"const": true}
+  }
+}

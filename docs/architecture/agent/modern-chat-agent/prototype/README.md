@@ -2,7 +2,7 @@
 
 > **Status**: confirmed
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-07-30
+> **Created**: 2026-07-30 | **Updated**: 2026-08-17
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -71,6 +71,23 @@ The Modern Chat review path uses Peers Agent terminology and explicitly labels
 Station authority. Historical benchmark product copy and marketing do not
 define this product model.
 
+## V2 Product Review Surface
+
+The V2 review is mounted in the same visible Desktop Shell and adds the
+required Home, unified capability, and Evaluation surfaces:
+
+| Area | URL query | Contract coverage | Tangible interaction |
+|---|---|---|---|
+| Home default | `?state=v2-home-default` | MCA-V2-H01 / P3 / V2-J01 / Phase 2 | Switch Chat/Task, submit mock accepted intent, inspect Brief/Needs You and recents |
+| Home failure | `?state=v2-home-error` | Home failure/recovery FSM | Retry readiness without replacing accepted data |
+| Home dark | `?state=v2-home-default-dark` | Theme and hierarchy | Verify dark token adaptation |
+| Capability | `?state=v2-capability` | MCA-V2-T01-T04/M01/C01/O01 / V2-J02 | Select Tool/MCP/Connector, review approval, approve/deny, run/cancel/retry |
+| Evaluation | `?state=v2-evaluation` | MCA-V2-E01 / E1 / V2-J06 / Phase 7 | Configure run, start, cancel, project authoritative cancellation, retry, restore |
+
+The surface uses LobeUI `ActionIcon`, `react-layout-kit`, antd tokens/components,
+and lucide icons. It contains no backend calls and cannot prove Station
+persistence or runtime behavior.
+
 ## Focused Revision Verification
 
 - `pnpm --filter @peers-touch/prototype-portal build`: PASS.
@@ -91,6 +108,25 @@ define this product model.
 - L3 exposed and verified one correction: attachment readiness is now derived
   from the parent attachment collection after changing to a compatible model.
 
+V2 focused verification:
+
+- Shell production build: PASS.
+- L1 source gate: PASS for Home default/loading/empty/error/stale; capability
+  checking/binding/bound/ready/approval/running/denied/expired/timed-out/
+  cancelled/disconnected/incompatible/reconnecting/failed/succeeded; and
+  Evaluation draft/pending/running/cancelling/cancelled/completed/partial/
+  failed/retrying/restoring.
+- L2 visual gate: PASS for 21 states across Home, Capability, and Evaluation,
+  including desktop/narrow, light/dark, failure, disconnect, stale, cancelled,
+  completed, and restoring coverage. Runtime evidence is outside the source tree under
+  `<acceptance-artifact-root>/<workspace-id>/prototype-v2-product-review/<run-id>/`.
+- L3 dynamic gate: PASS through the visible Desktop Shell for stale Home
+  preserving accepted work while blocking submission; incompatible capability
+  blocking invocation; Connector disconnect→reconnect; editable Evaluation
+  draft→pending→running→cancelling→cancelled; completed metrics; and
+  restoring→Station readback projection.
+- Browser console warnings/errors: 0. V2 review root horizontal overflow: 0.
+
 ## L2 Evidence Index
 
 | File | State | Key visible elements |
@@ -108,19 +144,17 @@ define this product model.
 
 ## Ledger Status
 
-`ready-for-owner-review`
+`confirmed`
 
 The Peers product prototype is independently registered as
-`modern-chat-agent`. L1 source, L2 visual evidence, and L3 dynamic interaction
-gates all pass. The historical benchmark prototype does not satisfy or block
-this product gate; only the focused Modern Chat review and Owner decision
-apply.
+`modern-chat-agent`. V1 and focused V2 L1/L2/L3 evidence are available. Owner
+confirmed the prototype on 2026-08-17; the historical benchmark prototype does
+not satisfy or block this product gate.
 
 ## Remaining Gate Items
 
-- Owner visual review of L2 screenshots in `evidence-l2/`.
-- Owner confirmation to mark prototype `confirmed`.
-- Independent PRODUCT review pass (P4 gate).
+- Independent PRODUCT review: PASS (`PRODUCT_READY_FOR_ARCHITECTURE`,
+  2026-08-17).
 - Prototype evidence cannot prove persistence, actor isolation, runtime
   cleanup, or product E2E (that is EXECUTE stage work, not prototype work).
 - Artifact behavior (MCA-P13) is optional and deferred per approved product decision.

@@ -26,13 +26,13 @@ The plan follows:
 Implementation work for this rebuild is done in:
 
 ```text
-/Users/bytedance/Documents/Projects/peers-touch/peers-ai-agent
+<repo-root>
 ```
 
 Reference implementation:
 
 ```text
-/Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub
+external/lobehub
 ```
 
 The reference is read-only. Peers-Touch implementation must preserve Peers-Touch architecture boundaries.

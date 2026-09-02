@@ -9,6 +9,7 @@ pub enum ErrorCode {
     Forbidden,
     NotFound,
     Conflict,
+    AgentCanvasSingleAgentNotReady,
     InternalError,
 }
 

@@ -23,7 +23,7 @@
 ## 2. Worktree
 
 ```
-/Users/bytedance/Documents/Projects/peers-touch/peers-ai-agent
+<repo-root>
 ```
 
 ---
