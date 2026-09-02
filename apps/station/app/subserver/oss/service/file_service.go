@@ -171,6 +171,13 @@ type FileService interface {
 	ListMyFiles(ctx context.Context, ownerPTID string, req ListMyFilesRequest) (*ListMyFilesResult, error)
 }
 
+// AttachmentReader is the narrow cross-subserver contract for consuming an
+// actor-owned object. The implementation resolves metadata by (owner, key)
+// before opening bytes and enforces a caller-provided read bound.
+type AttachmentReader interface {
+	ReadOwnedFile(ctx context.Context, ownerActorID, key string, maxBytes uint64) (*ossmodel.FileMeta, []byte, error)
+}
+
 // DeleteResult is what the handler echoes back on a successful
 // (or idempotent) DELETE. `AlreadyDeleted` is true when the row
 // was already in the soft-delete state — the handler emits
@@ -460,6 +467,15 @@ func (s *fileService) SaveFile(ctx context.Context, attr UploadAttribution, file
 }
 
 func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, res *resolved, file multipart.File, header *multipart.FileHeader) (*ossmodel.FileMeta, error) {
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return nil, err
+	}
+	sum := hex.EncodeToString(hasher.Sum(nil))
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
 	rnd, _ := touchutil.RandomString(16)
 	ext := filepath.Ext(header.Filename)
 	mt := detectMime(ext)
@@ -482,7 +498,7 @@ func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, re
 	}
 
 	if s.blobs != nil {
-		if _, terr := s.blobs.Touch(ctx, s.backendName, key, header.Size, ""); terr != nil {
+		if _, terr := s.blobs.Touch(ctx, s.backendName, key, header.Size, sum); terr != nil {
 			_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
 			_ = s.backend.Delete(ctx, key)
 			return nil, terr
@@ -497,6 +513,7 @@ func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, re
 		Mime:          mt,
 		Backend:       s.backendName,
 		Path:          fullPath,
+		Sha256:        sum,
 		BucketID:      res.bucket.ID,
 		OwnerPTID:     attr.ActorPTID,
 		Visibility:    res.visibility,
@@ -932,6 +949,48 @@ func (s *fileService) GetFileMeta(ctx context.Context, key string) (*ossmodel.Fi
 	return s.repo.FindByKey(ctx, key)
 }
 
+func (s *fileService) ReadOwnedFile(
+	ctx context.Context,
+	ownerActorID string,
+	key string,
+	maxBytes uint64,
+) (*ossmodel.FileMeta, []byte, error) {
+	owner := strings.TrimSpace(ownerActorID)
+	key = strings.TrimSpace(key)
+	if owner == "" {
+		return nil, nil, ErrActorRequired
+	}
+	if key == "" || maxBytes == 0 {
+		return nil, nil, errors.New("oss: bounded owner read requires key and max_bytes")
+	}
+
+	meta, err := s.repo.FindByOwnerKey(ctx, owner, key)
+	if err != nil {
+		return nil, nil, err
+	}
+	if meta == nil || meta.OwnerActorID != owner || meta.DeletedAt != nil {
+		return nil, nil, ErrFileNotFound
+	}
+	if meta.Size < 0 || uint64(meta.Size) > maxBytes {
+		return nil, nil, ossrepo.ErrQuotaExceeded
+	}
+
+	reader, _, _, err := s.backend.Open(ctx, key, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer reader.Close()
+
+	body, err := io.ReadAll(io.LimitReader(reader, int64(maxBytes)+1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if uint64(len(body)) > maxBytes || int64(len(body)) != meta.Size {
+		return nil, nil, errors.New("oss: object body exceeds bound or size metadata")
+	}
+	return meta, body, nil
+}
+
 // DeleteFile is the owner-only soft-delete path. Ordering:
 //
 //  1. Resolve the live (owner, key) row. Missing → ErrFileNotFound;
@@ -1144,7 +1203,6 @@ func (s *fileService) PatchFile(ctx context.Context, ownerPTID, key string, req 
 	} else if strings.TrimSpace(newSession) == "" {
 		return nil, ErrChatSessionRequired
 	}
-
 	// --- Stage 2: bucket move (same-actor only) -----------------
 	prevBucket := row.BucketID
 	newBucket := prevBucket

@@ -112,9 +112,7 @@ class ProfileRequirement:
 
 @dataclass(frozen=True)
 class ServiceRequirement:
-    kind: str
     required: bool = True
-    runtime_identity_required: bool = False
     ready_action: str = ""
     health_action: str = ""
     status_action: str = ""
@@ -356,13 +354,6 @@ class EnvironmentContract:
             raise ProvisioningError(
                 f"invalid environment contract at {path}: each service must be an object"
             )
-        if any(
-            not str(service.get("kind") or "").strip()
-            for service in services_data.values()
-        ):
-            raise ProvisioningError(
-                f"invalid environment contract at {path}: each service requires kind"
-            )
         if not isinstance(fixtures_data, list) or any(
             not isinstance(fixture, dict) or not fixture.get("id")
             for fixture in fixtures_data
@@ -462,82 +453,35 @@ class EnvironmentContract:
 
 
 @dataclass(frozen=True)
-class ServiceAttestation:
-    service_id: str
-    service_kind: str
+class StationAttestation:
     environment_id: str
-    deployment_environment: str
-    endpoint: str
+    url: str
     live_commit: str
     workspace_digest: str
-    protocol_digest: str
+    proto_digest: str
     artifact_ref: dict[str, Any]
     produced_at: str
-    producer: str
+    producer: str = "station-deployment"
     build_time: str = ""
-    runtime_identity: str = ""
-
-    def __post_init__(self) -> None:
-        if not SERVICE_ID_PATTERN.fullmatch(self.service_id):
-            raise ProvisioningError(
-                f"invalid runtime service id: {self.service_id!r}"
-            )
-        if not SERVICE_ID_PATTERN.fullmatch(self.service_kind):
-            raise ProvisioningError(
-                f"invalid runtime service kind: {self.service_kind!r}"
-            )
-        if not self.endpoint:
-            raise ProvisioningError(
-                f"runtime service {self.service_id!r} requires an endpoint"
-            )
-        if not self.deployment_environment:
-            raise ProvisioningError(
-                f"runtime service {self.service_id!r} requires a deployment environment"
-            )
-        if not self.producer:
-            raise ProvisioningError(
-                f"runtime service {self.service_id!r} requires an attestation producer"
-            )
 
     @property
     def is_clean_workspace(self) -> bool:
         return self.workspace_digest == "clean"
 
     def to_dict(self) -> dict[str, Any]:
-        payload = {
-            "artifactKind": "service-deployment-attestation",
+        return {
+            "artifactKind": "station-deployment-attestation",
             "capturedAt": self.produced_at,
-            "serviceId": self.service_id,
-            "serviceKind": self.service_kind,
             "environmentId": self.environment_id,
-            "deploymentEnvironment": self.deployment_environment,
-            "endpoint": self.endpoint,
             "commit": self.live_commit,
             "workspaceDigest": self.workspace_digest,
-            "protocolDigest": self.protocol_digest,
+            "protoDigest": self.proto_digest,
             "producer": self.producer,
             "liveMetadata": {
                 "buildCommit": self.live_commit,
                 "buildTime": self.build_time,
             },
         }
-        if self.runtime_identity:
-            payload["runtimeIdentity"] = self.runtime_identity
-        return payload
-
-    def to_manifest_dict(self) -> dict[str, Any]:
-        payload = {
-            "kind": self.service_kind,
-            "deploymentEnvironment": self.deployment_environment,
-            "endpoint": self.endpoint,
-            "liveCommit": self.live_commit,
-            "protocolDigest": self.protocol_digest,
-            "workspaceDigest": self.workspace_digest,
-            "attestationArtifact": dict(self.artifact_ref),
-        }
-        if self.runtime_identity:
-            payload["runtimeIdentity"] = self.runtime_identity
-        return payload
 
     def write(self, path: Path) -> Path:
         return write_immutable_json(path, self.to_dict())
@@ -786,7 +730,7 @@ class RuntimeManifest:
     profile_requested: str
     profile_resolved: str
     profile_slot: int
-    services: dict[str, ServiceAttestation] = field(default_factory=dict)
+    station: StationAttestation | None = None
     actor_manifest_ref: dict[str, Any] | None = None
     credential_refs: tuple[str, ...] = ()
     clients: tuple[ClientRuntime, ...] = ()
@@ -814,7 +758,6 @@ class RuntimeManifest:
                 "resolvedName": self.profile_resolved,
                 "slot": self.profile_slot,
             },
-            "services": {},
             "credentialRefs": list(self.credential_refs),
             "clients": [asdict(client) for client in self.clients],
             "cleanup": {
@@ -822,17 +765,13 @@ class RuntimeManifest:
                 "resources": list(self.cleanup_resources),
             },
         }
-        if self.services:
-            for service_id, attestation in self.services.items():
-                if service_id != attestation.service_id:
-                    raise ProvisioningError(
-                        "runtime manifest service key "
-                        f"{service_id!r} does not match attestation service id "
-                        f"{attestation.service_id!r}"
-                    )
-            result["services"] = {
-                service_id: attestation.to_manifest_dict()
-                for service_id, attestation in sorted(self.services.items())
+        if self.station is not None:
+            result["station"] = {
+                "url": self.station.url,
+                "liveCommit": self.station.live_commit,
+                "protoDigest": self.station.proto_digest,
+                "workspaceDigest": self.station.workspace_digest,
+                "attestationArtifact": dict(self.station.artifact_ref),
             }
         if self.actor_manifest_ref:
             result["actorManifest"] = dict(self.actor_manifest_ref)

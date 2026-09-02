@@ -21,13 +21,15 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/handler"
 	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
-	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
+	ossservice "github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
@@ -36,15 +38,25 @@ import (
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
+	"gorm.io/gorm"
 )
 
 var _ server.Subserver = (*agentSubServer)(nil)
 
+type ossFileServiceProvider interface {
+	FileService() ossservice.FileService
+}
+
 type agentSubServer struct {
-	opts       *Options
-	addrs      []string
-	status     server.Status
-	jwtWrapper server.Wrapper
+	opts            *Options
+	addrs           []string
+	status          server.Status
+	jwtWrapper      server.Wrapper
+	turnService     *service.TurnService
+	chatTaskService *service.ChatTaskService
+	deviceKeys      *touchactor.DeviceStore
+	agentDB         *gorm.DB
 }
 
 func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -64,9 +76,41 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	if err = persistence.MigrateAgentMessages(rds); err != nil {
 		return err
 	}
+	if err = persistence.MigrateTurnEvents(rds); err != nil {
+		return err
+	}
+	if err = persistence.MigrateConversations(rds); err != nil {
+		return err
+	}
+	if err = persistence.MigrateFencedClientExecution(rds); err != nil {
+		return err
+	}
 	if err = rds.AutoMigrate(persistence.AllModels()...); err != nil {
 		return err
 	}
+	if err = service.MigrateRuntimeSnapshotThinkingModes(rds); err != nil {
+		return err
+	}
+	if err = persistence.MigrateTurnEvidence(rds); err != nil {
+		return err
+	}
+	s.agentDB = rds
+	capabilityBackfillRegistry := service.NewToolRegistryService(nil, nil)
+	service.RegisterSessionSearchTool(
+		capabilityBackfillRegistry,
+		service.NewSessionSearchService(),
+	)
+	if _, err = service.NewCapabilityBackfillService(
+		rds,
+		capabilityBackfillRegistry,
+	).Run(ctx); err != nil {
+		return err
+	}
+	identityRDS, err := store.GetRDS(ctx)
+	if err != nil {
+		return err
+	}
+	s.deviceKeys = touchactor.NewDeviceStore(identityRDS)
 
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
@@ -77,11 +121,48 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 }
 
 func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error {
+	workerCtx := ctx
+	if s.turnService != nil {
+		workerCtx = s.turnService.SetExecutionLifecycle(ctx)
+	}
+	if s.chatTaskService != nil {
+		if err := s.chatTaskService.RecoverRunningChatTasks(workerCtx); err != nil {
+			if s.turnService != nil {
+				_ = s.turnService.StopExecutionLifecycle(context.Background())
+			}
+			return err
+		}
+	}
+	if s.turnService != nil {
+		serverOptions := server.GetOptions()
+		if serverOptions != nil {
+			if ossSubserver := serverOptions.SubserverInstances["oss"]; ossSubserver != nil {
+				if provider, ok := ossSubserver.(ossFileServiceProvider); ok {
+					reader, _ := provider.FileService().(ossservice.AttachmentReader)
+					s.turnService.SetAttachmentAdmissionService(
+						service.NewAttachmentAdmissionService(reader),
+					)
+				}
+			}
+		}
+		if !s.turnService.RunExecutionWorker(s.turnService.RunToolContinuationWorker) ||
+			!s.turnService.RunExecutionWorker(s.turnService.RunTurnQueueWorker) {
+			_ = s.turnService.StopExecutionLifecycle(context.Background())
+			return fmt.Errorf("start Agent execution workers: lifecycle is stopping")
+		}
+	}
 	s.status = server.StatusRunning
 	return nil
 }
 
 func (s *agentSubServer) Stop(ctx context.Context) error {
+	s.status = server.StatusStopping
+	if s.turnService != nil {
+		if err := s.turnService.StopExecutionLifecycle(ctx); err != nil {
+			s.status = server.StatusError
+			return err
+		}
+	}
 	s.status = server.StatusStopped
 	return nil
 }
@@ -98,6 +179,7 @@ func (s *agentSubServer) Address() server.SubserverAddress {
 
 func (s *agentSubServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
+	deviceIDWrapper := serverwrapper.DeviceID()
 	jwtWrapper := s.jwtWrapper
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
@@ -113,7 +195,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	agentSvc := service.NewAgentService()
 	memorySvc := service.NewMemoryService(growthMetricsSvc, memoryServiceOptionsFromConfig()...)
 	workspaceSvc := service.NewWorkspaceService()
-	configSvc := service.NewAgentConfigService()
 	offlineQueueSvc := service.NewOfflineQueueService()
 	eventStreamSvc := service.NewEventStreamService(eventBus)
 	skillsGuardSvc := service.NewSkillsGuardService()
@@ -125,8 +206,12 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// Phase 3 services.
 	promptCachingSvc := service.NewPromptCachingService()
 	providerSvc := service.NewProviderService(promptCachingSvc)
+	providerConfigSvc := service.NewProviderConfigService()
+	modelConfigSvc := service.NewModelConfigService()
+	credentialConfigSvc := service.NewCredentialConfigService()
+	admissionResolver := service.NewRuntimeAdmissionResolver(providerConfigSvc, modelConfigSvc)
+	runtimeEvidenceSvc := service.NewRuntimeEvidenceService()
 	credentialPoolSvc := service.NewCredentialPoolService()
-	contextReferenceSvc := service.NewContextReferenceService()
 	delegationSvc := service.NewDelegationService()
 
 	// Phase 4: Tool Registry — central dispatch for memory, skills, delegation.
@@ -158,7 +243,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		compressionSvc,
 		providerSvc,
 		credentialPoolSvc,
-		contextReferenceSvc,
 		delegationSvc,
 		toolRegistrySvc,
 		reviewSvc,
@@ -166,12 +250,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		convSvc,
 	)
 	turnSvc.SetEventBus(eventBus)
-
-	// CLI executor: enables routing turns to local CLI processes (e.g. codex, trae, claude).
-	// WorkspaceManager creates per-session git worktrees for isolation.
-	cliWorkspaceMgr := cli.NewWorkspaceManager("")
-	cliExec := cli.NewCliExecutor(cliWorkspaceMgr)
-	turnSvc.SetCliExecutor(cliExec)
 
 	// Dogfood self-verification service.
 	dogfoodSvc := service.NewDogfoodService(memorySvc, skillSvc, growthMetricsSvc)
@@ -186,14 +264,19 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// Chat root task: Station owns the Chat surface as a long-lived task so a
 	// turn outlives the client connection. Reclaim interrupted steps on boot.
 	chatTaskSvc := service.NewChatTaskService(eventBus)
-	chatTaskSvc.RecoverRunningChatTasks(context.Background())
 
 	agentHandlers := handler.NewAgentHandlers(agentSvc, eventBus)
 	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc, chatTaskSvc, convSvc)
+	turnAdmissionSvc := service.NewTurnAdmissionService()
+	turnHandlers.SetAdmissionService(turnAdmissionSvc)
+	turnSvc.SetTurnAdmissionService(turnAdmissionSvc)
+	turnAdmissionSvc.SetAttachmentPreflight(turnSvc.PreflightAttachments)
+	turnQueueHandlers := handler.NewTurnQueueHandlers(turnAdmissionSvc)
 	convHandlers := handler.NewConversationHandlers(convSvc, turnSvc)
+	revisionHandlers := handler.NewRevisionHandlers(service.NewRevisionService(convSvc, turnSvc))
+	threadHandlers := handler.NewThreadHandlers(service.NewThreadService())
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)
 	workspaceHandlers := handler.NewWorkspaceHandlers(workspaceSvc)
-	configHandlers := handler.NewAgentConfigHandlers(configSvc)
 	offlineQueueHandlers := handler.NewOfflineQueueHandlers(offlineQueueSvc)
 	eventStreamHandlers := handler.NewEventStreamHandlers(eventStreamSvc)
 	skillHandlers := handler.NewSkillHandlers(skillSvc)
@@ -207,12 +290,54 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// M11: Ecosystem handlers — localStorage→Station migration.
 	ecosystemSvc := service.NewEcosystemService()
 	ecosystemHandlers := handler.NewEcosystemHandlers(ecosystemSvc)
+	agentTaskHandlers := handler.NewAgentTaskHandlers(service.NewAgentTaskService())
 
 	providerHandlers := handler.NewProviderHandlers(
-		service.NewProviderConfigService(service.NewCLIAdapterRegistry()),
-		service.NewModelConfigService(),
-		service.NewCredentialConfigService(),
+		providerConfigSvc,
+		modelConfigSvc,
+		credentialConfigSvc,
+		admissionResolver,
 	)
+	runtimeEvidenceHandlers := handler.NewRuntimeEvidenceHandlers(
+		runtimeEvidenceSvc,
+	)
+	turnSvc.SetAdmissionResolver(admissionResolver)
+
+	// F4: Durable tool dispatch service with policy and fencing.
+	proofSvc := service.NewClientCapabilityProofService(
+		s.deviceKeys,
+		actorPTIDResolverAdapter{},
+		func() time.Time { return time.Now().UTC() },
+	)
+	toolDispatchSvc := service.NewToolDispatchService()
+	toolDispatchSvc.SetCapabilityProofService(proofSvc)
+	capabilityAuthoritySvc := service.NewCapabilityAuthorityService(s.agentDB)
+	capabilityAuthoritySvc.SetEventBus(eventBus)
+	capabilityReadinessSvc := service.NewCapabilityAuthorityReadinessService(
+		capabilityAuthoritySvc,
+		agentSvc,
+		admissionResolver,
+	)
+	capabilityReadinessSvc.SetCapabilitySessionResolver(toolDispatchSvc)
+	capabilityAuthorityHandlers := handler.NewCapabilityAuthorityHandlers(
+		capabilityAuthoritySvc,
+		capabilityReadinessSvc,
+	)
+	knowledgeDescriptorSvc := service.NewKnowledgeResourceService(s.agentDB, capabilityAuthoritySvc)
+	knowledgeDescriptorHandlers := handler.NewKnowledgeDescriptorHandlers(knowledgeDescriptorSvc)
+	agentPackageHandlers := handler.NewAgentPackageHandlers(
+		service.NewAgentPackageService(
+			s.agentDB,
+			agentSvc,
+			knowledgeDescriptorSvc,
+			capabilityAuthoritySvc,
+		),
+	)
+	turnSvc.SetToolDispatch(toolDispatchSvc)
+	turnSvc.SetCapabilityReadiness(capabilityReadinessSvc)
+	turnSvc.SetChatTaskService(chatTaskSvc)
+	s.turnService = turnSvc
+	s.chatTaskService = chatTaskSvc
 
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
@@ -221,24 +346,55 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-create", "/agent/create", server.POST, agentHandlers.HandleCreateAgentRaw, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-update", "/agent/update", server.POST, agentHandlers.HandleUpdateAgent, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-delete", "/agent/delete", server.POST, agentHandlers.HandleDeleteAgent, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-package-export", "/agent/package/export", server.POST, agentPackageHandlers.HandleExport, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-package-import", "/agent/package/import", server.POST, agentPackageHandlers.HandleImport, logIDWrapper, jwtWrapper),
 
-		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("agent-turn-stream", "/agent/turn/stream", server.POST, turnHandlers.HandleExecuteTurnStream, logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("agent-turn-local-tool-result", "/agent/turn/local-tool-result", server.POST, turnHandlers.HandleLocalToolResult, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),
+		server.NewHTTPHandler("agent-turn-stream", "/agent/turn/stream", server.POST, turnHandlers.HandleExecuteTurnStream, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),
+		server.NewHTTPHandler("agent-turn-cancel", "/agent/turn/cancel", server.POST, turnHandlers.HandleCancelTurn, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-queue-list", "/agent/turn/queue/list", server.POST, turnQueueHandlers.HandleListQueuedTurns, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-queue-cancel", "/agent/turn/queue/cancel", server.POST, turnQueueHandlers.HandleCancelQueuedTurn, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-tool-decision", "/agent/tool/decision", server.POST, turnHandlers.HandleSubmitToolDecision, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-lease-register", "/agent/capability/lease/register", server.POST, turnHandlers.HandleRegisterClientCapabilityLease, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-session-list", "/agent/capability/session/list", server.POST, turnHandlers.HandleListClientCapabilitySessions, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-lease-renew", "/agent/capability/lease/renew", server.POST, turnHandlers.HandleRenewClientCapabilityLease, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-lease-revoke", "/agent/capability/lease/revoke", server.POST, turnHandlers.HandleRevokeClientCapabilityLease, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-requests-pull", "/agent/capability/requests/pull", server.POST, turnHandlers.HandlePullClientCapabilityRequests, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-receipt", "/agent/capability/receipt", server.POST, turnHandlers.HandleSubmitClientCapabilityReceipt, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-receipt-recover", "/agent/capability/receipt/recover", server.POST, turnHandlers.HandleSubmitClientCapabilityRecoveryReceipt, logIDWrapper),
+		server.NewTypedHandler("agent-capability-manifest-list", "/agent/capability/manifest/list", server.POST, capabilityAuthorityHandlers.HandleListManifests, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-manifest-retire", "/agent/capability/manifest/retire", server.POST, capabilityAuthorityHandlers.HandleRetireManifest, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-binding-list", "/agent/capability/binding/list", server.POST, capabilityAuthorityHandlers.HandleListBindings, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-binding-upsert", "/agent/capability/binding/upsert", server.POST, capabilityAuthorityHandlers.HandleUpsertBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-binding-delete", "/agent/capability/binding/delete", server.POST, capabilityAuthorityHandlers.HandleDeleteBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-knowledge-descriptor-create", "/agent/knowledge/descriptor/create", server.POST, knowledgeDescriptorHandlers.HandleCreate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-knowledge-descriptor-update", "/agent/knowledge/descriptor/update", server.POST, knowledgeDescriptorHandlers.HandleUpdate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-knowledge-descriptor-list", "/agent/knowledge/descriptor/list", server.POST, knowledgeDescriptorHandlers.HandleList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-knowledge-descriptor-tombstone", "/agent/knowledge/descriptor/tombstone", server.POST, knowledgeDescriptorHandlers.HandleTombstone, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-quick-completion", "/agent/quick-completion", server.POST, turnHandlers.HandleQuickCompletion, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-list", "/agent/turn/trace/list", server.POST, turnHandlers.HandleListTurnTraces, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-diagnostics-export", "/agent/turn/diagnostics/export", server.POST, turnHandlers.HandleExportTurnDiagnostics, logIDWrapper, jwtWrapper),
 
 		server.NewHTTPHandler("agent-conversation-list", "/agent/conversation/list", server.POST, convHandlers.HandleListConversations, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-get", "/agent/conversation/get", server.POST, convHandlers.HandleGetConversation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-create", "/agent/conversation/create", server.POST, convHandlers.HandleCreateConversation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-update", "/agent/conversation/update", server.POST, convHandlers.HandleUpdateConversation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-archive", "/agent/conversation/archive", server.POST, convHandlers.HandleArchiveConversation, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-conversation-restore", "/agent/conversation/restore", server.POST, convHandlers.HandleRestoreConversation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-messages", "/agent/conversation/messages", server.POST, convHandlers.HandleListMessages, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-message-translate", "/agent/conversation/message/translate", server.POST, convHandlers.HandleSetMessageTranslation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-events", "/agent/conversation/events", server.POST, convHandlers.HandleStreamConversationEvents, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-retry", "/agent/turn/retry", server.POST, revisionHandlers.HandleRetryTurn, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-regenerate", "/agent/turn/regenerate", server.POST, revisionHandlers.HandleRegenerateTurn, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-message-edit-resend", "/agent/message/edit-resend", server.POST, revisionHandlers.HandleEditAndResend, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-conversation-select-branch", "/agent/conversation/select-branch", server.POST, revisionHandlers.HandleSelectActiveBranch, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-message-tombstone", "/agent/message/tombstone", server.POST, revisionHandlers.HandleTombstoneMessage, logIDWrapper, jwtWrapper),
 
-		server.NewTypedHandler("agent-provider-verify-cli", "/agent/provider/verify-cli", server.POST, providerHandlers.HandleVerifyCli, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-provider-fetch-cli-models", "/agent/provider/fetch-cli-models", server.POST, providerHandlers.HandleFetchCliModels, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-thread-create", "/agent/thread/create", server.POST, threadHandlers.HandleCreateThread, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-thread-list", "/agent/thread/list", server.POST, threadHandlers.HandleListThreads, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-thread-messages", "/agent/thread/messages", server.POST, threadHandlers.HandleListThreadMessages, logIDWrapper, jwtWrapper),
+
 		server.NewTypedHandler("agent-provider-list", "/agent/provider/list", server.POST, providerHandlers.HandleProviderList, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-get", "/agent/provider/get", server.POST, providerHandlers.HandleProviderGet, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-create", "/agent/provider/create", server.POST, providerHandlers.HandleProviderCreate, logIDWrapper, jwtWrapper),
@@ -254,6 +410,9 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-credential-resolve", "/agent/credential/resolve", server.POST, providerHandlers.HandleCredentialResolve, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-hide", "/agent/provider/model/hide", server.POST, providerHandlers.HandleModelHide, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-hidden-list", "/agent/provider/model/hidden", server.POST, providerHandlers.HandleModelHiddenList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-runtime-profile-effective", "/agent/runtime/profile/effective", server.POST, runtimeEvidenceHandlers.HandleEffectiveRuntimeProfile, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-runtime-activity", "/agent/runtime/activity", server.POST, runtimeEvidenceHandlers.HandleRuntimeActivity, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-readiness", "/agent/capability/readiness", server.POST, capabilityAuthorityHandlers.HandleReadiness, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-collaboration-create", "/agent/collaboration/create", server.POST, orchestrationHandlers.HandleCreateCollaborationTask, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-get", "/agent/collaboration/get", server.POST, orchestrationHandlers.HandleGetCollaborationTask, logIDWrapper, jwtWrapper),
@@ -309,19 +468,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-workspace-commit", "/workspace/commit", server.POST, workspaceHandlers.HandleCommitChanges, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-workspace-delete-files", "/workspace/delete-files", server.POST, workspaceHandlers.HandleDeleteFiles, logIDWrapper, jwtWrapper),
 
-		server.NewTypedHandler("agent-config-knowledge-list", "/config/knowledge/list", server.POST, configHandlers.HandleListKnowledgeBindings, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-config-knowledge-create", "/config/knowledge/create", server.POST, configHandlers.HandleCreateKnowledgeBinding, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-config-knowledge-update", "/config/knowledge/update", server.POST, configHandlers.HandleUpdateKnowledgeBinding, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-config-knowledge-delete", "/config/knowledge/delete", server.POST, configHandlers.HandleDeleteKnowledgeBinding, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-config-skill-list", "/config/skill/list", server.POST, configHandlers.HandleListSkillBindings, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-config-skill-create", "/config/skill/create", server.POST, configHandlers.HandleCreateSkillBinding, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-config-skill-update", "/config/skill/update", server.POST, configHandlers.HandleUpdateSkillBinding, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-config-skill-delete", "/config/skill/delete", server.POST, configHandlers.HandleDeleteSkillBinding, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-config-mcp-list", "/config/mcp/list", server.POST, configHandlers.HandleListMcpBindings, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-config-mcp-create", "/config/mcp/create", server.POST, configHandlers.HandleCreateMcpBinding, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-config-mcp-update", "/config/mcp/update", server.POST, configHandlers.HandleUpdateMcpBinding, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-config-mcp-delete", "/config/mcp/delete", server.POST, configHandlers.HandleDeleteMcpBinding, logIDWrapper, jwtWrapper),
-
 		server.NewTypedHandler("agent-offline-queue-enqueue", "/offline-queue/enqueue", server.POST, offlineQueueHandlers.HandleEnqueue, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-list", "/offline-queue/list", server.POST, offlineQueueHandlers.HandleListPending, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-list-get", "/offline-queue/list", server.GET, offlineQueueHandlers.HandleListPending, logIDWrapper, jwtWrapper),
@@ -342,6 +488,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-growth-snapshot", "/agent/growth/snapshot", server.POST, growthHandlers.HandleGetGrowthSnapshot, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-audit", "/agent/growth/audit", server.GET, growthHandlers.HandleGetAuditLog, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-feedback", "/agent/growth/feedback", server.POST, growthHandlers.HandleRecordFeedback, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-growth-feedback-turn-list", "/agent/growth/feedback/turn/list", server.POST, growthHandlers.HandleListTurnFeedback, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-memory-rollback", "/agent/growth/memory/rollback", server.POST, growthHandlers.HandleMemoryRollback, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-memory-snapshots", "/agent/growth/memory/snapshots", server.GET, growthHandlers.HandleListMemorySnapshots, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-memory-delete", "/agent/growth/memory/delete", server.POST, growthHandlers.HandleDeleteMemory, logIDWrapper, jwtWrapper),
@@ -384,6 +531,14 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("ecosystem-plugin-update", "/agent/ecosystem/plugin/update", server.POST, ecosystemHandlers.HandleUpdateCustomPlugin, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("ecosystem-plugin-delete", "/agent/ecosystem/plugin/delete", server.POST, ecosystemHandlers.HandleDeleteCustomPlugin, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("ecosystem-plugin-list", "/agent/ecosystem/plugin/list", server.POST, ecosystemHandlers.HandleListCustomPlugins, logIDWrapper, jwtWrapper),
+
+		// Agent Tasks: user-created single-agent task lifecycle (O3).
+		server.NewHTTPHandler("agent-task-create", "/agent/task/create", server.POST, agentTaskHandlers.HandleCreateTask, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-task-list", "/agent/task/list", server.POST, agentTaskHandlers.HandleListTasks, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-task-status", "/agent/task/status", server.POST, agentTaskHandlers.HandleUpdateTaskStatus, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-task-delete", "/agent/task/delete", server.POST, agentTaskHandlers.HandleDeleteTask, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-task-subtask-add", "/agent/task/subtask/add", server.POST, agentTaskHandlers.HandleAddSubtask, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-task-subtask-complete", "/agent/task/subtask/complete", server.POST, agentTaskHandlers.HandleCompleteSubtask, logIDWrapper, jwtWrapper),
 	}
 	return prefixHandlers(s.opts.Path, handlers)
 }

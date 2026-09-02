@@ -46,10 +46,15 @@ else
 fi
 
 # ── 2. Vite (frontend dev server) ────────────────────────────
+if [[ "${PT_DESKTOP_E2E:-false}" == "true" ]]; then
+  export VITE_ACCEPTANCE_HARNESS=1
+  export VITE_RUNTIME_EVIDENCE_HARNESS=1
+fi
 ensure_desktop_vite_ready "$DESKTOP_DIR" "$WEB_PORT" "$GATEWAY_PORT" "$PROFILE"
 
-# ── 3. Desktop Rust BFF (headless — window hidden) ───────────
+# ── 3. Desktop Rust BFF (headless — no WebView renderer) ─────
 cd "$DESKTOP_DIR"
+export PT_CLIENT_SURFACE=browser
 ensure_desktop_rust_ready "$DESKTOP_DIR" "$GATEWAY_PORT" "$PROFILE" "$WEB_PORT" --headless
 
 # ── banner ────────────────────────────────────────────────────

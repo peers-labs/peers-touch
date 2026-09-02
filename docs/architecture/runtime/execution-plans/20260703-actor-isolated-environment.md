@@ -162,7 +162,7 @@ This lifecycle ends at a ready environment. It does not execute business command
   - Station workspace service / workspace references.
 - 交付：
   - `PrepareWorkspace(environment_id, workspace_ref)`.
-  - path convention: `/home/peers/workspaces/{workspace_ref_hash}`.
+  - path convention: `<runtime-home>/workspaces/{workspace_ref_hash}`.
   - workspace mount record.
   - initial clone/snapshot strategy.
 - 验收：

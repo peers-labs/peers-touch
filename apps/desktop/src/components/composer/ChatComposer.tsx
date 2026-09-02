@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { theme } from 'antd';
 
 import { useChatStore, type ChatComposerAttachment } from '../../store/chat';
-import { useAgentStore } from '../../store/agent';
 import { useAgentAttachmentDrafts, AGENT_ATTACHMENT_ACCEPT } from './useAgentAttachmentDrafts';
 import { AttachmentStage } from './AttachmentStage';
 import { ComposerTextarea } from './ComposerTextarea';
@@ -39,12 +39,13 @@ export function ChatComposer({
   const topicDraftRef = useRef<Record<string, string>>({});
   const prevSessionKeyRef = useRef('');
   const { t } = useTranslation('chat');
+  const { token } = theme.useToken();
 
   const sendMessage = useChatStore(s => s.sendMessage);
   const stopStreaming = useChatStore(s => s.stopStreaming);
   const isStreaming = useChatStore(s => s.isStreaming);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
-  const loadModels = useAgentStore(s => s.loadModels);
+  const readinessErrorKey = useChatStore(s => s.readinessErrorKey);
 
   const {
     drafts,
@@ -54,14 +55,12 @@ export function ChatComposer({
     addFiles,
     clearDrafts,
     removeDraft,
+    retryDraft,
   } = useAgentAttachmentDrafts({
     conversationId: currentSessionKey,
     disabled: isStreaming,
     fallbackName: t('chat.input.attachmentFallbackName'),
   });
-
-  // Load available models on mount
-  useEffect(() => { loadModels(); }, [loadModels]);
 
   // Persist draft text per session key
   useEffect(() => {
@@ -88,10 +87,10 @@ export function ChatComposer({
   // Convert ready attachments to the ChatComposerAttachment shape expected by store
   const toComposerAttachments = useCallback((): ChatComposerAttachment[] =>
     readyAttachments.map((attachment) => ({
-      cid: attachment.cid,
+      cid: attachment.object_ref,
       filename: attachment.filename,
       mime_type: attachment.mime_type,
-      size: attachment.size,
+      size: attachment.size_bytes,
       attachment,
     })),
   [readyAttachments]);
@@ -100,12 +99,15 @@ export function ChatComposer({
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if ((!text && readyAttachments.length === 0) || isStreaming || uploading) return;
-    sendMessage(text, toComposerAttachments());
-    setInput('');
-    clearDrafts();
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [input, readyAttachments.length, isStreaming, uploading, sendMessage, toComposerAttachments, clearDrafts]);
+    if ((!text && readyAttachments.length === 0) || isStreaming || uploading || failed) return;
+    sendMessage(text, toComposerAttachments(), {
+      onAccepted: () => {
+        setInput('');
+        clearDrafts(false);
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      },
+    });
+  }, [input, readyAttachments.length, isStreaming, uploading, failed, sendMessage, toComposerAttachments, clearDrafts]);
 
   // Insert text at end of textarea (used by slash action)
   const insertText = useCallback((text: string) => {
@@ -146,7 +148,13 @@ export function ChatComposer({
         gap: 8,
       }}
     >
-      <AttachmentStage drafts={drafts} onRemove={removeDraft} />
+      <AttachmentStage drafts={drafts} onRemove={removeDraft} onRetry={retryDraft} />
+
+      {readinessErrorKey && (
+        <div style={{ color: token.colorError, fontSize: 12 }}>
+          {t(readinessErrorKey)}
+        </div>
+      )}
 
       <ComposerTextarea
         value={input}

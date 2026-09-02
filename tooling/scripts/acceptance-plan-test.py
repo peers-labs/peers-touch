@@ -175,6 +175,20 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertIn("acceptance-plan-self", selected)
         self.assertIn("acceptance-runtime-provisioning-self", selected)
 
+    def test_agent_replay_and_identity_owners_select_stream_resilience(self) -> None:
+        for path in (
+            "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
+            "apps/desktop/src/components/OpStatusTray.tsx",
+            "apps/desktop/src/kernel/identityRuntime.ts",
+            "apps/desktop/src/services/identityHandlers.ts",
+            "apps/desktop/src/store/chatOperationEvent.test.ts",
+        ):
+            with self.subTest(path=path):
+                self.assertIn(
+                    "agent-stream-resilience-e2e",
+                    self.selected_ids(path),
+                )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

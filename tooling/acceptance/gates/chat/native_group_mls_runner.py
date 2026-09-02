@@ -7,6 +7,7 @@ import json
 import os
 import random
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from tooling.acceptance.core import (
@@ -21,28 +22,30 @@ from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     DEV_ACCOUNT_PASSWORD,
     NativeClientLifecycleLedger,
+
     async_harness,
-    cleanup_preserving_primary_failure,
     commits_match,
-    configure_station,
     current_commit,
     current_workspace_digest,
     enter_chat_page,
     message_snapshot,
-    native_runtime_source_identity,
     read_station_version,
     reset_fixture,
     runtime_station_service,
     selected_native_runtime,
+
     start_authenticated_client,
     stop_client,
     wait_until,
-    verify_runtime_fixture_ready,
 )
 
 
-
-REPORT_PATH = None
+REPORT_PATH = Path(
+    os.environ.get(
+        "CHAT_NATIVE_GROUP_MLS_REPORT",
+        str(REPORTS_DIR / "chat-native-group-mls-run.json"),
+    )
+)
 CLIENT_PORTS = {"alice": 4445, "bob": 4446, "charlie": 4450}
 ACTORS = ("alice", "bob", "charlie")
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
@@ -70,36 +73,12 @@ SELECTORS = {
 }
 
 
-def selected_runtime() -> tuple[
-    dict[str, Any],
-    dict[str, Any],
-    NativeDesktopRuntimeBinding,
-] | None:
-    selected = selected_native_runtime(NativeGroupMlsGate.gate_id)
-    if selected is None:
-        return None
-    return selected.manifest, selected.actor_manifest, selected.binding
-
-
 class NativeGroupMlsGate(AcceptanceGate):
     gate_id = "chat-native-group-mls-e2e"
-    phase = "MP-W07"
-    bom = ("MP-G05", "MP-G06", "MP-G09")
-    spec = ("chat-native-visible-clients",)
     report_path = REPORT_PATH
-    evidence_dir = (
-        REPORT_PATH.parent / "chat-native-group-mls-evidence"
-        if REPORT_PATH is not None
-        else None
-    )
+    evidence_dir = REPORT_PATH.parent / "chat-native-group-mls-evidence"
 
-    def __init__(
-        self,
-        *,
-        manifest: dict[str, Any] | None = None,
-        actor_manifest: dict[str, Any] | None = None,
-        runtime_binding: NativeDesktopRuntimeBinding | None = None,
-    ) -> None:
+    def __init__(self) -> None:
         super().__init__()
         injected = (manifest, actor_manifest, runtime_binding)
         if any(value is not None for value in injected) and not all(
@@ -178,21 +157,9 @@ class NativeGroupMlsGate(AcceptanceGate):
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
         self.client_lifecycles = NativeClientLifecycleLedger()
+
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
-        self.report.station_url = self.station_url
-        self.report.runtime.update(
-            {
-                "runtimeCell": (
-                    runtime_binding.cell_id
-                    if runtime_binding is not None
-                    else "native-tauri-embedded-webdriver"
-                ),
-                "journey": "mls-group-add-send-remove",
-                "steps": self.steps,
-                "cleanup": {},
-            }
-        )
 
     def step(
         self,
@@ -304,6 +271,7 @@ class NativeGroupMlsGate(AcceptanceGate):
                 f"{actor} is not running in native Tauri WebView: "
                 f"{client.get_current_url()}"
             )
+
         self.clients[actor] = client
         self.ptids[actor] = ptid
         device = async_harness(client, "getRealtimeDevice", {})
@@ -314,7 +282,7 @@ class NativeGroupMlsGate(AcceptanceGate):
         self.report.add_actor(
             ActorRuntime(
                 name=actor,
-                runtime=self.runtime_binding.cell_id,
+                runtime="native-tauri-embedded-webdriver",
                 port=client.port,
                 gateway_port=client.gateway_port,
                 profile=client.profile,
@@ -428,6 +396,7 @@ class NativeGroupMlsGate(AcceptanceGate):
                 f"{json.dumps(cleanup, sort_keys=True)}"
             )
         return cleanup
+
 
     def create_group(self) -> str:
         alice = self.clients["alice"]
@@ -543,6 +512,7 @@ class NativeGroupMlsGate(AcceptanceGate):
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
 
+        self.report.station_url = self.station_url
         version = self.step(
             "station.identity",
             lambda: read_station_version(self.station_url),
@@ -554,18 +524,12 @@ class NativeGroupMlsGate(AcceptanceGate):
                 f"station={live_commit or 'missing'} client={self.tested_commit}"
             )
 
-        source_identity = self.source_identity(version)
         self.step(
             "fixture.reset",
-            (
-                self.verify_fixture_ready
-                if self.runtime_binding is not None
-                else lambda: reset_fixture(("alice", "bob", "charlie"))
-            ),
+            lambda: reset_fixture(("alice", "bob", "charlie")),
         )
         order = list(ACTORS)
         random.SystemRandom().shuffle(order)
-        cleanup: dict[str, Any] = {}
         try:
             for actor in order:
                 self.step(
@@ -628,32 +592,25 @@ class NativeGroupMlsGate(AcceptanceGate):
                 self.save_dom(self.clients[actor], actor)
                 self.save_app_log(self.clients[actor], actor)
         finally:
-            cleanup = cleanup_preserving_primary_failure(
-                self.cleanup_clients,
-                self.report,
-                "Native group MLS",
-            )
-            self.report.runtime["steps"] = self.steps
+            for client in self.clients.values():
+                try:
+                    stop_client(client)
+                except Exception:
+                    client.stop()
 
         assertion_names = {assertion.name for assertion in self.report.assertions}
         missing = REQUIRED_ASSERTIONS - assertion_names
         if missing:
             raise GateError(f"required assertions are missing: {sorted(missing)}")
         return {
-            "runtimeCell": (
-                self.runtime_binding.cell_id
-                if self.runtime_binding is not None
-                else "native-tauri-embedded-webdriver"
-            ),
+            "runtimeCell": "native-tauri-embedded-webdriver",
             "journey": "mls-group-add-send-remove",
             "testedCommit": self.tested_commit,
             "testedWorkspaceDigest": self.workspace_digest,
             "stationLive": version,
-            "sourceIdentity": source_identity,
             "launchOrder": order,
             "groupId": group_id,
             "steps": self.steps,
-            "cleanup": cleanup,
             "clients": {
                 actor: {
                     "ptid": self.ptids[actor],
@@ -668,19 +625,5 @@ class NativeGroupMlsGate(AcceptanceGate):
         }
 
 
-def main() -> int:
-    runtime = selected_runtime()
-    gate = (
-        NativeGroupMlsGate()
-        if runtime is None
-        else NativeGroupMlsGate(
-            manifest=runtime[0],
-            actor_manifest=runtime[1],
-            runtime_binding=runtime[2],
-        )
-    )
-    return gate.execute()
-
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(NativeGroupMlsGate().execute())

@@ -53,6 +53,20 @@ class DevRuntimePortIsolationTest(unittest.TestCase):
         self.assertIn('\\"identifier\\"', src)
         self.assertIn("${bundle_id}", src)
 
+    def test_browser_rust_bff_does_not_create_a_tauri_renderer(self) -> None:
+        src = self.source("tooling/scripts/_ensure-desktop-rust.sh")
+        self.assertEqual(
+            src.count('\\"windows\\":[{\\"create\\":false}]'),
+            2,
+            "Both Browser BFF configurations must remain rendererless",
+        )
+        self.assertNotIn(
+            '\\"windows\\":[{\\"visible\\":false}]',
+            src,
+            "A hidden WebView still boots the Desktop frontend and competes "
+            "with the Browser gateway for session ownership",
+        )
+
     def test_distinct_worktrees_produce_distinct_ports(self) -> None:
         worktrees = [
             "peers-group-chat",

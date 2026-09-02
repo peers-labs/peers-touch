@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon } from '@lobehub/ui';
-import { Square } from 'lucide-react';
+import { RefreshCw, Square } from 'lucide-react';
 import { theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
@@ -27,13 +27,17 @@ export function OpStatusTray() {
   const { t } = useTranslation('chat');
   const isStreaming = useChatStore((s) => s.isStreaming);
   const streamingStartedAt = useChatStore((s) => s.streamingStartedAt);
+  const runState = useChatStore(
+    (s) => s.operations[s.currentSessionKey]?.runState ?? 'idle',
+  );
   const stopStreaming = useChatStore((s) => s.stopStreaming);
+  const isReconciling = runState === 'reconciling';
 
   const [now, setNow] = useState(() => Date.now());
   const [phraseIndex, setPhraseIndex] = useState(0);
 
   useEffect(() => {
-    if (!isStreaming) return;
+    if (!isStreaming || isReconciling) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     const phraseTimer = window.setInterval(() => {
       setPhraseIndex((prev) => (prev + 1) % PHRASE_KEYS.length);
@@ -42,7 +46,7 @@ export function OpStatusTray() {
       window.clearInterval(timer);
       window.clearInterval(phraseTimer);
     };
-  }, [isStreaming]);
+  }, [isReconciling, isStreaming]);
 
   const elapsed = useMemo(() => {
     if (!streamingStartedAt) return '00:00';
@@ -53,6 +57,7 @@ export function OpStatusTray() {
 
   return (
     <Flexbox
+      data-pt-agent-operation-status={runState}
       horizontal
       align="center"
       gap={10}
@@ -61,23 +66,38 @@ export function OpStatusTray() {
         minHeight: 40,
         padding: '6px 12px',
         borderRadius: 12,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorFillQuaternary,
+        border: `1px solid ${isReconciling ? token.colorWarningBorder : token.colorBorderSecondary}`,
+        background: isReconciling ? token.colorWarningBg : token.colorFillQuaternary,
         boxSizing: 'border-box',
       }}
     >
-      <ActivityGlyph color={token.colorPrimary} size={18} />
+      {isReconciling ? (
+        <RefreshCw
+          aria-hidden
+          size={17}
+          style={{ color: token.colorWarning, flexShrink: 0 }}
+        />
+      ) : (
+        <ActivityGlyph color={token.colorPrimary} size={18} />
+      )}
       <span
-        key={phraseIndex}
+        key={isReconciling ? 'reconciling' : phraseIndex}
         style={{
           fontSize: 13,
-          color: token.colorTextSecondary,
+          color: isReconciling ? token.colorText : token.colorTextSecondary,
           fontWeight: 500,
           animation: 'ptTrayPhrase 0.4s ease',
         }}
       >
-        {t(PHRASE_KEYS[phraseIndex])}
+        {isReconciling
+          ? t('chat.tray.reconciling')
+          : t(PHRASE_KEYS[phraseIndex])}
       </span>
+      {isReconciling && (
+        <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
+          {t('chat.tray.reconcilingDetail')}
+        </span>
+      )}
       <span
         style={{
           fontFamily: 'monospace',
@@ -90,6 +110,7 @@ export function OpStatusTray() {
       </span>
       <div style={{ flex: 1 }} />
       <ActionIcon
+        data-pt-agent-stop
         icon={Square}
         onClick={stopStreaming}
         title={t('chat.input.stop')}

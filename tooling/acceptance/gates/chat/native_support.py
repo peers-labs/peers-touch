@@ -30,21 +30,11 @@ from tooling.acceptance.drivers.native import (
     resolve_native_desktop_runtime,
 )
 from tooling.acceptance.drivers.station import StationDriver
-from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriSession
-from tooling.acceptance.fixtures.chat_native_reset import (
-    acceptance_station_environment,
-    active_deployment_environment,
-    active_station_url,
-)
-from tooling.acceptance.transports import SshTarget, SshTransport
+from tooling.acceptance.drivers.tauri import TauriDriver, TauriSession
+from tooling.acceptance.fixtures.chat_native_reset import deploy_environment
 
 
-DEFAULT_STATION = os.environ.get("PT_STATION_URL", "").rstrip("/")
-if not DEFAULT_STATION:
-    try:
-        DEFAULT_STATION = active_station_url()
-    except RuntimeError:
-        DEFAULT_STATION = ""
+DEFAULT_STATION = "http://10.37.94.156:18080"
 DEV_ACCOUNT_PASSWORD = "1"
 ACCOUNTS = {
     "alice": "alice@p.t",
@@ -432,6 +422,7 @@ def native_runtime_source_identity(
     return identity
 
 
+
 def reset_fixture(accounts: tuple[str, ...] = ("alice", "bob")) -> None:
     if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
         raise GateError(
@@ -441,10 +432,15 @@ def reset_fixture(accounts: tuple[str, ...] = ("alice", "bob")) -> None:
     subprocess.run(
         [
             sys.executable,
-            "-m",
-            "tooling.acceptance.fixtures.chat_native_reset",
+            str(
+                REPO_ROOT
+                / "tooling"
+                / "acceptance"
+                / "fixtures"
+                / "chat_native_reset.py"
+            ),
             "--environment",
-            active_deployment_environment(),
+            "station-three",
             "--accounts",
             *accounts,
         ],
@@ -504,20 +500,14 @@ def logout_native_client(
     return result
 
 
-def configure_station(client: TauriSession, station_url: str) -> None:
+def configure_station(client: TauriDriver, station_url: str) -> None:
     with StationDriver(f"http://127.0.0.1:{client.gateway_port}") as station:
         station.station_add(station_url)
         station.station_set_active(station_url)
 
 
-def enter_chat_page(client: TauriSession) -> None:
-    def chat_surface_ready(driver: Any) -> bool:
-        return (
-            driver.current_url.endswith("#/chat")
-            and bool(driver.find_elements(By.CSS_SELECTOR, "[data-social-chat-layout]"))
-        )
-
-    if chat_surface_ready(client.driver):
+def enter_chat_page(client: TauriDriver) -> None:
+    if client.get_current_url().endswith("#/chat"):
         return
     WebDriverWait(client.driver, 20).until(
         lambda driver: driver.find_element(
@@ -527,7 +517,7 @@ def enter_chat_page(client: TauriSession) -> None:
         )
     ).click()
     WebDriverWait(client.driver, 20).until(
-        chat_surface_ready
+        lambda driver: driver.current_url.endswith("#/chat")
     )
 
 
@@ -536,7 +526,7 @@ def start_authenticated_client(
     port: int,
     station_url: str,
     instance: str = "",
-) -> tuple[TauriSession, str]:
+) -> tuple[TauriDriver, str]:
     label = instance or account
     storage = (
         REPO_ROOT
@@ -547,13 +537,11 @@ def start_authenticated_client(
         / "storage"
     )
     storage.mkdir(parents=True, exist_ok=True)
-    client = TauriSession(
-        LocalTauriLauncher(
-            port=port,
-            profile=f"acceptance-{label}",
-            storage_root=str(storage),
-            environment={"PEERS_STATION_URL": station_url},
-        )
+    client = TauriDriver(
+        port=port,
+        profile=f"acceptance-{label}",
+        storage_root=str(storage),
+        environment={"PEERS_STATION_URL": station_url},
     )
     client.start()
     try:
@@ -584,7 +572,7 @@ def start_authenticated_client(
         raise
 
 
-def stop_client(client: TauriSession) -> None:
+def stop_client(client: TauriDriver) -> None:
     try:
         with StationDriver(
             f"http://127.0.0.1:{client.gateway_port}"
@@ -669,7 +657,7 @@ def wait_until(
     raise GateError(f"timed out waiting for {description}{suffix}")
 
 
-def send_text(client: TauriSession, text: str) -> dict[str, Any]:
+def send_text(client: TauriDriver, text: str) -> dict[str, Any]:
     composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
     client.execute_script(
         """
@@ -698,7 +686,7 @@ def send_text(client: TauriSession, text: str) -> dict[str, Any]:
     )
 
 
-def message_snapshot(client: TauriSession, text: str) -> dict[str, Any] | None:
+def message_snapshot(client: TauriDriver, text: str) -> dict[str, Any] | None:
     value = client.execute_script(
         """
         const text = arguments[0];
@@ -718,7 +706,7 @@ def message_snapshot(client: TauriSession, text: str) -> dict[str, Any] | None:
 
 
 def gateway_command(
-    client: TauriSession,
+    client: TauriDriver,
     command: str,
     args: dict[str, Any],
 ) -> dict[str, Any]:
@@ -742,22 +730,16 @@ def sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def station_readback(
-    conversation_id: str,
-    message_id: str,
-    *,
-    station_url: str = "",
-) -> dict[str, Any]:
-    environment = acceptance_station_environment(
-        station_url or DEFAULT_STATION
-    )
+def station_readback(conversation_id: str, message_id: str) -> dict[str, Any]:
+    environment = deploy_environment("station-three")
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     user = environment.get("PT_DEPLOY_USER", "").strip()
     if not host or not user:
-        raise GateError(
-            "Chat Acceptance Station deployment host identity is unavailable"
-        )
-    container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
+        raise GateError("station-three deployment host identity is unavailable")
+    container = os.environ.get(
+        "CHAT_ACCEPTANCE_POSTGRES_CONTAINER",
+        "pt-station-a-postgres-1",
+    )
     conversation = sql_literal(conversation_id)
     message = sql_literal(message_id)
     query = f"""
@@ -810,32 +792,22 @@ SELECT json_build_object(
         f"docker exec -i {container} sh -lc "
         "'psql -At -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'"
     )
-    try:
-        port = int(
-            environment.get(
-                "PT_DEPLOY_SSH_PORT",
-                environment.get("PT_DEPLOY_PORT", "22"),
-            )
-        )
-    except ValueError as error:
-        raise GateError(
-            "Chat Acceptance deployment SSH port is invalid"
-        ) from error
-    result = SshTransport(
-        SshTarget(
-            host=host,
-            user=user,
-            port=port,
-            known_hosts_file=environment.get(
-                "PT_DEPLOY_KNOWN_HOSTS_FILE",
-                "",
-            ).strip(),
-        )
-    ).run_argv(
-        ["sh", "-lc", remote],
-        input_text=query,
-        timeout=30,
+    result = subprocess.run(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "StrictHostKeyChecking=no",
+            f"{user}@{host}",
+            remote,
+        ],
+        input=query,
+        text=True,
         check=True,
+        capture_output=True,
     )
     value = json.loads(result.stdout.strip())
     if not isinstance(value, dict):

@@ -4,7 +4,7 @@
 > 不作为当前 Desktop 账号、OAuth 或多账号切换实现真源。
 > 若与现状冲突，以 `docs/README.md`、`docs/client/desktop/base.md`、`docs/client/desktop/global-context-kernel.md`、`docs/global/coding-guide/desktop/service-api.md` 为准。
 
-> **Workspace:** <workspace-root>/peers-touch
+> **Workspace:** <repo-root>
 
 ---
 

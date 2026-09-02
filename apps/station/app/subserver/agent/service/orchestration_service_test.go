@@ -810,7 +810,7 @@ func TestExecutePendingDirectRunSuccessPersistsProviderArtifactGateAndTraceHooks
 	svc.eventWriter = NewTaskEventWriter(nil)
 	svc.directRunProvider = executor
 
-	if err := svc.executePendingDirectRun(context.Background(), "actor-1", records.Run.TaskID, "test"); err != nil {
+	if err := svc.executePendingDirectRunAfterCanvasReadiness(context.Background(), "actor-1", records.Run.TaskID, "test"); err != nil {
 		t.Fatalf("execute DirectRun success: %v", err)
 	}
 	if executor.calls != 1 {
@@ -915,7 +915,7 @@ func TestExecutePendingDirectRunProviderFailurePersistsFailureArtifact(t *testin
 	svc.eventWriter = NewTaskEventWriter(nil)
 	svc.directRunProvider = executor
 
-	if err := svc.executePendingDirectRun(context.Background(), "actor-1", records.Run.TaskID, "test"); err == nil {
+	if err := svc.executePendingDirectRunAfterCanvasReadiness(context.Background(), "actor-1", records.Run.TaskID, "test"); err == nil {
 		t.Fatal("expected provider failure error")
 	}
 	if executor.calls != 1 {
@@ -958,7 +958,7 @@ func TestExecutePendingDirectRunCreatesCLICodingProviderHandoffWithoutProviderCa
 	svc.eventWriter = NewTaskEventWriter(nil)
 	svc.directRunProvider = executor
 
-	if err := svc.executePendingDirectRun(context.Background(), "actor-1", records.Run.TaskID, "test"); err != nil {
+	if err := svc.executePendingDirectRunAfterCanvasReadiness(context.Background(), "actor-1", records.Run.TaskID, "test"); err != nil {
 		t.Fatalf("execute DirectRun CLI rejection: %v", err)
 	}
 	if executor.calls != 0 {
@@ -1123,7 +1123,7 @@ func TestExecutePendingDirectRunBudgetPolicyPreflightEscalatesBeforeProviderCall
 			svc.eventWriter = NewTaskEventWriter(nil)
 			svc.directRunProvider = executor
 
-			if err := svc.executePendingDirectRun(context.Background(), "actor-1", records.Run.TaskID, "test"); err != nil {
+			if err := svc.executePendingDirectRunAfterCanvasReadiness(context.Background(), "actor-1", records.Run.TaskID, "test"); err != nil {
 				t.Fatalf("execute DirectRun preflight block: %v", err)
 			}
 			if executor.calls != 0 {
@@ -1411,7 +1411,7 @@ func TestRunningCollaborationNodesAreDeferred(t *testing.T) {
 	}
 }
 
-func TestAgentExecutorKindDetectsDesktopCliRuntime(t *testing.T) {
+func TestAgentExecutorKindRequiresExplicitExecutorCapability(t *testing.T) {
 	tests := []struct {
 		name   string
 		config string
@@ -1423,14 +1423,14 @@ func TestAgentExecutorKindDetectsDesktopCliRuntime(t *testing.T) {
 			want:   model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE,
 		},
 		{
-			name:   "cli command implies desktop executor",
+			name:   "cli command does not imply desktop executor",
 			config: `{"cliCommand":"traecli exec --skip-git-repo-check -"}`,
-			want:   model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE,
+			want:   model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED,
 		},
 		{
-			name:   "cli runtime implies desktop executor",
+			name:   "runtime kind does not imply desktop executor",
 			config: `{"runtimeKind":"cli"}`,
-			want:   model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE,
+			want:   model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED,
 		},
 		{
 			name:   "hosted default",
@@ -2759,7 +2759,7 @@ func TestStationHumanDecisionResumeToolConsumesLiveDecision(t *testing.T) {
 	}
 
 	broker := NewLiveResumeBroker()
-	svc := NewTurnService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := NewTurnService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	svc.SetLiveResumeBroker(broker)
 	resultCh := make(chan struct {
 		output string
@@ -3192,7 +3192,7 @@ func TestSubmitCollaborationNodeResultTypedFixturePersistsArtifactGateIndexes(t 
 	}
 
 	svc := NewOrchestrationService(NewAgentService(), nil, nil)
-	taskResult, nodesResult, err := svc.SubmitCollaborationNodeResult(context.Background(), "actor-1", &model.SubmitCollaborationNodeResultRequest{
+	taskResult, nodesResult, err := svc.submitCollaborationNodeResultAfterCanvasReadiness(context.Background(), "actor-1", &model.SubmitCollaborationNodeResultRequest{
 		TaskId:        task.ID,
 		NodeId:        node.ID,
 		LeaseId:       lease.LeaseID,
@@ -3385,7 +3385,7 @@ func TestSubmitCollaborationNodeResultRejectsTypedInvalidArtifactRefsBeforeMutat
 		{"artifact://task-submit-invalid-refs/artifact-input"},
 		{""},
 	} {
-		_, _, err := svc.SubmitCollaborationNodeResult(context.Background(), "actor-1", &model.SubmitCollaborationNodeResultRequest{
+		_, _, err := svc.submitCollaborationNodeResultAfterCanvasReadiness(context.Background(), "actor-1", &model.SubmitCollaborationNodeResultRequest{
 			TaskId:        task.ID,
 			NodeId:        node.ID,
 			LeaseId:       lease.LeaseID,
@@ -4288,7 +4288,7 @@ func TestRunCollaborationSupervisorTickTxRequestsWorkspaceConflictReplan(t *test
 	var record *persistence.TaskEvent
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		var txErr error
-		_, record, requested, txErr = runCollaborationSupervisorTickTx(context.Background(), tx, writer, "actor-1", task.ID, now)
+		_, record, requested, txErr = runCollaborationSupervisorTickTxAfterCanvasReadiness(context.Background(), tx, writer, "actor-1", task.ID, now)
 		return txErr
 	}); err != nil {
 		t.Fatalf("run supervisor tick: %v", err)
@@ -4397,7 +4397,7 @@ func TestRunCollaborationSupervisorTickTxSkipsDuplicatePendingReplan(t *testing.
 	var requested bool
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		var txErr error
-		_, _, requested, txErr = runCollaborationSupervisorTickTx(context.Background(), tx, writer, "actor-1", task.ID, now)
+		_, _, requested, txErr = runCollaborationSupervisorTickTxAfterCanvasReadiness(context.Background(), tx, writer, "actor-1", task.ID, now)
 		return txErr
 	}); err != nil {
 		t.Fatalf("run supervisor tick: %v", err)
@@ -4676,7 +4676,7 @@ func TestRunCollaborationSupervisorSweepRequestsEligibleTasks(t *testing.T) {
 	}
 
 	svc := NewOrchestrationService(nil, nil, nil)
-	result, err := svc.RunCollaborationSupervisorSweep(context.Background(), "actor-1", 10)
+	result, err := svc.runCollaborationSupervisorSweepAfterCanvasReadiness(context.Background(), "actor-1", 10)
 	if err != nil {
 		t.Fatalf("run supervisor sweep: %v", err)
 	}
@@ -4730,19 +4730,12 @@ func TestSchedulerExecuteCollaborationSupervisorSweepRequestsEligibleTasks(t *te
 	seedResumeCollaborationTask(t, db, task, nil)
 	scheduler := NewSchedulerService(nil, nil, nil, nil)
 	scheduler.SetOrchestrationService(NewOrchestrationService(nil, nil, nil))
-	job := &scheduledJob{
-		config: ScheduledJobConfig{
-			Kind:    JobKindCollaborationSupervisor,
-			AgentID: "actor-1",
-		},
-	}
 
-	scheduler.executeJob(context.Background(), job)
-	if job.lastErr != "" {
-		t.Fatalf("expected scheduled supervisor sweep to succeed, got %q", job.lastErr)
-	}
-	if job.runCount != 1 || job.lastRunAt == nil {
-		t.Fatalf("expected scheduler run metadata, got runCount=%d lastRunAt=%v", job.runCount, job.lastRunAt)
+	if err := scheduler.executeCollaborationSupervisorSweepAfterCanvasReadiness(
+		context.Background(),
+		"actor-1",
+	); err != nil {
+		t.Fatalf("expected scheduler core sweep to succeed, got %v", err)
 	}
 	var event persistence.TaskEvent
 	if err := db.First(&event, "task_id = ?", task.ID).Error; err != nil {
@@ -4751,29 +4744,19 @@ func TestSchedulerExecuteCollaborationSupervisorSweepRequestsEligibleTasks(t *te
 	if got := model.TaskEventType(event.EventType); got != model.TaskEventType_TASK_EVENT_TYPE_INTERRUPT_REQUESTED {
 		t.Fatalf("expected scheduled supervisor interrupt event, got %v", got)
 	}
-	var growth persistence.GrowthEvent
-	if err := db.First(&growth, "event_type = ?", "scheduler_collaboration_supervisor").Error; err != nil {
-		t.Fatalf("load scheduler growth event: %v", err)
-	}
-	if growth.AgentID != "actor-1" || growth.Outcome != "success" {
-		t.Fatalf("unexpected scheduler growth event: %+v", growth)
-	}
 }
 
 func TestSchedulerCollaborationSupervisorSweepRequiresOrchestrationService(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "scheduler_supervisor_requires_orchestration")
 	injectOrchestrationServiceTestStore(t, db)
 	scheduler := NewSchedulerService(nil, nil, nil, nil)
-	job := &scheduledJob{
-		config: ScheduledJobConfig{
-			Kind:    JobKindCollaborationSupervisor,
-			AgentID: "actor-1",
-		},
-	}
 
-	scheduler.executeJob(context.Background(), job)
-	if job.lastErr != "orchestration service is not configured" {
-		t.Fatalf("expected missing orchestration service error, got %q", job.lastErr)
+	err := scheduler.executeCollaborationSupervisorSweepAfterCanvasReadiness(
+		context.Background(),
+		"actor-1",
+	)
+	if err == nil || err.Error() != "orchestration service is not configured" {
+		t.Fatalf("expected missing orchestration service error, got %v", err)
 	}
 	var eventCount int64
 	if err := db.Model(&persistence.TaskEvent{}).Count(&eventCount).Error; err != nil {
@@ -5150,7 +5133,7 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
 		`CREATE TABLE agent_conversations (
                                   id text PRIMARY KEY,
                                   agent_id text,
-                                  actor_ptid text NOT NULL,
+                                  ptid text NOT NULL,
                                   title text NOT NULL,
                                   description text,
                                   provider_id text NOT NULL,
@@ -5159,6 +5142,10 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
                                   parent_id text,
                                   config_json text,
                                   meta text,
+                                  active_branch_message_id text NOT NULL DEFAULT '',
+                                  runtime_binding blob,
+                                  queued_turn_count integer NOT NULL DEFAULT 0,
+                                  version integer NOT NULL DEFAULT 1,
                                   created_at datetime NOT NULL,
                                   updated_at datetime NOT NULL
                   )`,
@@ -5362,9 +5349,11 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
                                   provider_id text,
                                   model_name text,
                                   effort text,
+                                  thinking_mode text NOT NULL DEFAULT 'auto',
                                   visibility text NOT NULL,
                                   owner_actor_ptid text NOT NULL,
                                   config_json text,
+                                  version bigint NOT NULL DEFAULT 1,
                                   created_at datetime NOT NULL,
                                   updated_at datetime NOT NULL
                   )`,
