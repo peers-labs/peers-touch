@@ -905,6 +905,281 @@ fn verify_session_with_station(token: &str) -> Result<(), AppResult<AuthSessionP
         token,
         None,
     )
-    .map(|_| ())
     .map_err(|error| error.into_app_result("Session validation failed"))
+}
+
+fn station_verification_rejects_session(error: &station_client::StationClientError) -> bool {
+    matches!(
+        &error.kind,
+        station_client::StationClientErrorKind::SessionRevoked
+            | station_client::StationClientErrorKind::HttpStatus(401)
+    )
+}
+
+fn handle_session_verification_failure(
+    state: &AppState,
+    error: station_client::StationClientError,
+) -> AppResult<AuthSessionPayload> {
+    if station_verification_rejects_session(&error) {
+        let _ = clear_session(state);
+    } else {
+        tracing::warn!(
+            error_kind = ?error.kind,
+            "session validation unavailable; retaining local session"
+        );
+    }
+    error.into_app_result("Session validation failed")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        restore_account_session_state, run_required_logout_cleanup, validate_pin_session_token,
+        PreparedAuthSession,
+    };
+    use crate::contracts::AuthSessionPayload;
+    use crate::error::ErrorCode;
+    use crate::infrastructure::auth_identity::{AccountIdentity, AccountIdentityState};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    use std::cell::Cell;
+
+    fn jwt_for_actor(actor_ptid: &str) -> String {
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(
+            serde_json::json!({
+                "subject_ptid": actor_ptid,
+                "exp": u64::MAX,
+            })
+            .to_string(),
+        );
+        format!("{header}.{payload}.signature")
+    }
+
+    #[test]
+    fn restored_takeover_reactivates_durable_account_session() {
+        let state = AccountIdentityState {
+            active_account_id: None,
+            accounts: vec![
+                AccountIdentity {
+                    id: "station:account-old".to_string(),
+                    has_session: true,
+                    ..AccountIdentity::default()
+                },
+                AccountIdentity {
+                    id: "station:account-restored".to_string(),
+                    has_session: false,
+                    ..AccountIdentity::default()
+                },
+            ],
+        };
+
+        let restored = restore_account_session_state(state, "station:account-restored")
+            .expect("restored account should remain durable");
+
+        assert_eq!(
+            restored.active_account_id.as_deref(),
+            Some("station:account-restored")
+        );
+        assert!(!restored.accounts[0].has_session);
+        assert!(restored.accounts[1].has_session);
+    }
+
+    #[test]
+    fn caller_fallback_does_not_replace_prepared_restore_state() {
+        let prepared_state = restore_account_session_state(
+            AccountIdentityState {
+                active_account_id: None,
+                accounts: vec![AccountIdentity {
+                    id: "station:account-restored".to_string(),
+                    has_session: false,
+                    ..AccountIdentity::default()
+                }],
+            },
+            "station:account-restored",
+        )
+        .expect("restore state should be prepared");
+        let prepared = PreparedAuthSession {
+            payload: AuthSessionPayload {
+                command: "auth_restore_session".to_string(),
+                status: "restored".to_string(),
+                actor_ptid: Some("ptid:restored".to_string()),
+                session_token: Some("token".to_string()),
+                name: None,
+                email: None,
+                avatar_url: None,
+                avatar_local_path: None,
+                login_method: None,
+            },
+            account_id: "station:account-restored".to_string(),
+            actor_ptid: "ptid:restored".to_string(),
+            token: "token".to_string(),
+            revoked_previous_actor_sessions: true,
+            identity_state: Some(prepared_state),
+        };
+        let stale_fallback = AccountIdentityState {
+            active_account_id: None,
+            accounts: vec![AccountIdentity {
+                id: "station:account-restored".to_string(),
+                has_session: false,
+                ..AccountIdentity::default()
+            }],
+        };
+
+        let prepared = prepared
+            .with_fallback_active_identity_state(stale_fallback)
+            .expect("prepared restore state should remain valid");
+        let committed = prepared
+            .identity_state
+            .expect("prepared restore state must win over caller fallback");
+
+        assert_eq!(
+            committed.active_account_id.as_deref(),
+            Some("station:account-restored")
+        );
+        assert!(committed.accounts[0].has_session);
+    }
+
+    #[test]
+    fn pin_unlock_uses_jwt_actor_when_oauth_provider_user_differs() {
+        let account_id = "station:scope:github:provider-user-123";
+        let token = jwt_for_actor("ptid:v1:actor:canonical-456");
+
+        let session = validate_pin_session_token(
+            account_id,
+            account_id,
+            Some("ptid:v1:actor:canonical-456"),
+            &token,
+        )
+        .expect("JWT actor should be authoritative");
+
+        assert_eq!(session.actor_ptid, "ptid:v1:actor:canonical-456");
+        assert_ne!(session.actor_ptid, "provider-user-123");
+    }
+
+    #[test]
+    fn pin_unlock_rejects_legacy_session_without_actor_binding() {
+        let account_id = "station:scope:github:provider-user-123";
+        let token = jwt_for_actor("ptid:v1:actor:canonical-456");
+
+        for persisted_actor_ptid in [None, Some("")] {
+            let error = match validate_pin_session_token(
+                account_id,
+                account_id,
+                persisted_actor_ptid,
+                &token,
+            ) {
+                Ok(_) => panic!("legacy PIN session must require a fresh login"),
+                Err(error) => error,
+            };
+
+            assert_eq!(
+                error
+                    .error
+                    .and_then(|error| error.details)
+                    .and_then(|details| details.get("reason").cloned()),
+                Some(serde_json::json!("persisted_actor_missing"))
+            );
+        }
+    }
+
+    #[test]
+    fn logout_cleanup_succeeds_only_after_all_required_operations() {
+        let durable_session_clear_called = Cell::new(false);
+        let messaging_deactivation_called = Cell::new(false);
+
+        let result = run_required_logout_cleanup(
+            "station:account",
+            |_| {
+                durable_session_clear_called.set(true);
+                Ok(())
+            },
+            |_| {
+                messaging_deactivation_called.set(true);
+                Ok(())
+            },
+        );
+
+        assert!(result.is_ok());
+        assert!(durable_session_clear_called.get());
+        assert!(messaging_deactivation_called.get());
+    }
+
+    #[test]
+    fn logout_cleanup_fails_when_durable_session_clear_fails() {
+        let messaging_deactivation_called = Cell::new(false);
+
+        let result = run_required_logout_cleanup(
+            "station:account",
+            |_| Err("identity store write failed".to_string()),
+            |_| {
+                messaging_deactivation_called.set(true);
+                Ok(())
+            },
+        );
+
+        assert!(messaging_deactivation_called.get());
+        assert_logout_cleanup_failure(
+            result,
+            &[("durable_session_clear", "identity store write failed")],
+        );
+    }
+
+    #[test]
+    fn logout_cleanup_fails_when_messaging_deactivation_fails() {
+        let durable_session_clear_called = Cell::new(false);
+
+        let result = run_required_logout_cleanup(
+            "station:account",
+            |_| {
+                durable_session_clear_called.set(true);
+                Ok(())
+            },
+            |_| Err("worker stop failed".to_string()),
+        );
+
+        assert!(durable_session_clear_called.get());
+        assert_logout_cleanup_failure(
+            result,
+            &[("messaging_engine_deactivation", "worker stop failed")],
+        );
+    }
+
+    #[test]
+    fn logout_cleanup_reports_all_required_operation_failures() {
+        let result = run_required_logout_cleanup(
+            "station:account",
+            |_| Err("identity store write failed".to_string()),
+            |_| Err("worker stop failed".to_string()),
+        );
+
+        assert_logout_cleanup_failure(
+            result,
+            &[
+                ("durable_session_clear", "identity store write failed"),
+                ("messaging_engine_deactivation", "worker stop failed"),
+            ],
+        );
+    }
+
+    fn assert_logout_cleanup_failure(
+        result: Result<(), crate::error::AppResult<AuthSessionPayload>>,
+        expected_failures: &[(&str, &str)],
+    ) {
+        let failure = result.expect_err("logout cleanup must fail closed");
+        assert!(!failure.ok);
+        assert!(failure.data.is_none());
+        let error = failure.error.expect("typed logout error is required");
+        assert_eq!(error.code, ErrorCode::InternalError);
+        let details = error.details.expect("logout failure details are required");
+        assert_eq!(details["command"], "auth_logout");
+        assert_eq!(details["reason"], "logout_cleanup_failed");
+        let failures = details["failures"]
+            .as_array()
+            .expect("logout operation failures are required");
+        assert_eq!(failures.len(), expected_failures.len());
+        for (actual, (operation, message)) in failures.iter().zip(expected_failures) {
+            assert_eq!(actual["operation"], *operation);
+            assert_eq!(actual["message"], *message);
+        }
+    }
 }
