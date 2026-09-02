@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +31,123 @@ RESULT_TRACEABILITY_FIELDS = (
     "sourceSpec",
     "sourceGate",
 )
+
+AGENT_V2_SCHEMA_ROOT = REPO_ROOT / "tooling/acceptance/schemas/agent-v2"
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_agent_v2_contract() -> dict[str, Any]:
+    return json.loads(
+        (AGENT_V2_SCHEMA_ROOT / "contract.json").read_text(encoding="utf-8")
+    )
+
+
+def schema_descriptor(
+    contract: dict[str, Any],
+    schema_name: str,
+) -> dict[str, Any]:
+    definition = contract["schemas"][schema_name]
+    schema_path = AGENT_V2_SCHEMA_ROOT / definition["file"]
+    return {
+        "id": definition["id"],
+        "version": definition["version"],
+        "sha256": sha256_file(schema_path),
+    }
+
+
+def matrix_identity(contract: dict[str, Any]) -> dict[str, Any]:
+    matrix = dict(contract["matrix"])
+    source_path = REPO_ROOT / matrix.pop("source")
+    if not source_path.is_file() or sha256_file(source_path) != matrix["sha256"]:
+        raise RuntimeError("reviewed Agent V2 runtime matrix hash mismatch")
+    return matrix
+
+
+def write_explicit_json(path_value: str, value: dict[str, Any]) -> None:
+    from tooling.acceptance.core import validate_external_output_path
+
+    path = validate_external_output_path(path_value, repo_root=REPO_ROOT)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def emit_agent_v2_candidate_metadata(
+    gate_run: Any,
+    gate_id: str,
+    source: dict[str, Any],
+) -> None:
+    contract = load_agent_v2_contract()
+    gate_contract = contract["gates"].get(gate_id)
+    if gate_contract is None:
+        raise RuntimeError(f"{gate_id}: missing Agent V2 proof contract")
+    matrix = matrix_identity(contract)
+    source_schema = schema_descriptor(contract, "source-identity")
+    runner_schema = schema_descriptor(contract, "runner-attestation")
+    gate_run.write_json(
+        "proof/source-identity.json",
+        {
+            "artifactKind": "agent-v2-source-identity",
+            "schema": source_schema,
+            "role": "source-identity",
+            "gateId": gate_id,
+            "runId": gate_run.run_id,
+            "sourceIdentity": source,
+            "runtimeMatrix": matrix,
+        },
+        role="source-identity",
+        redact=False,
+    )
+    gate_run.write_json(
+        "proof/runner-attestation.json",
+        {
+            "artifactKind": "agent-v2-runner-attestation",
+            "schema": runner_schema,
+            "role": "runner-attestation",
+            "gateId": gate_id,
+            "runId": gate_run.run_id,
+            "producer": {
+                "kind": "runner",
+                "processId": os.getpid(),
+                "invocationId": secrets.token_hex(16),
+            },
+            "candidateOnly": True,
+            "attestedAt": utc_now(),
+        },
+        role="runner-attestation",
+        redact=False,
+    )
+    role_schemas: dict[str, Any] = {}
+    for role in gate_contract["roles"]:
+        schema_name = (
+            role
+            if role in contract["schemas"]
+            else "evidence-role"
+        )
+        role_schemas[role] = schema_descriptor(contract, schema_name)
+    report_schema = schema_descriptor(contract, "role-schema-report")
+    gate_run.write_json(
+        "proof/role-schema-report.json",
+        {
+            "artifactKind": "agent-v2-role-schema-report",
+            "schema": report_schema,
+            "role": "role-schema-report",
+            "gateId": gate_id,
+            "runId": gate_run.run_id,
+            "schemas": role_schemas,
+        },
+        role="role-schema-report",
+        redact=False,
+    )
 
 
 def source_identity_drift(

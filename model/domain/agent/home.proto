@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+enum HomeProjectionFreshness {
+  HOME_PROJECTION_FRESHNESS_UNSPECIFIED = 0;
+  HOME_PROJECTION_FRESHNESS_FRESH = 1;
+  HOME_PROJECTION_FRESHNESS_PARTIAL = 2;
+  HOME_PROJECTION_FRESHNESS_STALE = 3;
+}
+
+enum HomeWorkKind {
+  HOME_WORK_KIND_UNSPECIFIED = 0;
+  HOME_WORK_KIND_CHAT = 1;
+  HOME_WORK_KIND_TASK = 2;
+}
+
+enum HomeTaskStatus {
+  HOME_TASK_STATUS_UNSPECIFIED = 0;
+  HOME_TASK_STATUS_PENDING = 1;
+  HOME_TASK_STATUS_RUNNING = 2;
+  HOME_TASK_STATUS_NEEDS_USER = 3;
+  HOME_TASK_STATUS_COMPLETED = 4;
+  HOME_TASK_STATUS_FAILED = 5;
+  HOME_TASK_STATUS_CANCELLED = 6;
+}
+
+enum HomeErrorCode {
+  HOME_ERROR_CODE_UNSPECIFIED = 0;
+  HOME_ERROR_CODE_PROJECTION_STALE = 1;
+  HOME_ERROR_CODE_SLICE_UNAVAILABLE = 2;
+  HOME_ERROR_CODE_READINESS_UNRESOLVED = 3;
+  HOME_ERROR_CODE_REVISION_CONFLICT = 4;
+}
+
+message HomePinnedAgent {
+  string agent_id = 1;
+  string display_name = 2;
+  string avatar_ref = 3;
+  string readiness_snapshot_id = 4;
+}
+
+message HomeRecentWork {
+  string work_id = 1;
+  HomeWorkKind kind = 2;
+  string agent_id = 3;
+  string title = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message HomeReadiness {
+  string agent_id = 1;
+  string runtime_snapshot_id = 2;
+  string readiness_snapshot_id = 3;
+  string state = 4;
+  repeated string reason_codes = 5;
+}
+
+message HomeBriefItem {
+  string brief_id = 1;
+  string source_ref = 2;
+  string title = 3;
+  string summary = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message HomeNeedsUserItem {
+  string item_id = 1;
+  string source_ref = 2;
+  string title = 3;
+  string action_kind = 4;
+  string action_ref = 5;
+}
+
+message HomeTaskProjection {
+  string task_id = 1;
+  string agent_id = 2;
+  string title = 3;
+  HomeTaskStatus status = 4;
+  uint32 progress_percent = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message HomeCapabilitySummary {
+  string capability_id = 1;
+  string capability_version = 2;
+  string display_name = 3;
+  string readiness_state = 4;
+  string reason_code = 5;
+}
+
+message HomeSliceError {
+  string slice_id = 1;
+  HomeErrorCode code = 2;
+  bool retryable = 3;
+  string recovery_action = 4;
+}
+
+message HomeWorkProjection {
+  string ptid = 1;
+  uint64 revision = 2;
+  google.protobuf.Timestamp generated_at = 3;
+  HomeProjectionFreshness freshness = 4;
+  repeated HomePinnedAgent pinned_agents = 5;
+  repeated HomeRecentWork recent_work = 6;
+  repeated HomeReadiness readiness = 7;
+  repeated HomeBriefItem brief_items = 8;
+  repeated HomeNeedsUserItem needs_user_items = 9;
+  repeated HomeTaskProjection active_tasks = 10;
+  repeated HomeCapabilitySummary capability_summaries = 11;
+  repeated HomeSliceError slice_errors = 12;
+}
+
+message GetHomeWorkProjectionRequest {
+  uint64 after_revision = 1;
+}
+
+message GetHomeWorkProjectionResponse {
+  HomeWorkProjection projection = 1;
+}
+
+message SubmitHomeChatCommandRequest {
+  string agent_id = 1;
+  string input = 2;
+  string runtime_profile_id = 3;
+  string client_idempotency_key = 4;
+  optional string conversation_id = 5;
+}
+
+message SubmitHomeChatCommandResponse {
+  string conversation_id = 1;
+  string turn_id = 2;
+  uint64 projection_revision = 3;
+}
+
+message SubmitHomeTaskCommandRequest {
+  string agent_id = 1;
+  string input = 2;
+  string runtime_profile_id = 3;
+  string client_idempotency_key = 4;
+}
+
+message SubmitHomeTaskCommandResponse {
+  string task_id = 1;
+  uint64 projection_revision = 2;
+}

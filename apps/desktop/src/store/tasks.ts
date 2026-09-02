@@ -1,11 +1,11 @@
-// Task store — manages agent task lifecycle and persistence.
-//
-// v1 persists to localStorage. Station integration deferred to M11.
+// Task store — manages agent task lifecycle. Station-backed (O3): create /
+// status transitions (start/pause/cancel/complete/fail) / delete / subtasks
+// persist to Station via the agent task API; the list is refreshed from Station
+// truth after each mutation. Replaces the prior localStorage store.
 
 import { createDesktopStore } from './createDesktopStore';
 import { log } from '../utils/logger';
-
-const STORAGE_KEY = 'peers-ai-agent-tasks';
+import { api, type StationAgentTaskRow } from '../services/desktop_api';
 
 export type TaskStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type TaskPriority = 'low' | 'medium' | 'high';
@@ -46,196 +46,151 @@ interface TaskState {
   tasks: AgentTask[];
   activeTaskId: string | null;
 
-  loadTasks: () => void;
-  createTask: (input: TaskCreateInput) => string;
-  updateTask: (taskId: string, updates: Partial<AgentTask>) => void;
-  deleteTask: (taskId: string) => void;
-  startTask: (taskId: string) => void;
-  pauseTask: (taskId: string) => void;
-  cancelTask: (taskId: string) => void;
-  completeTask: (taskId: string, result?: string) => void;
-  failTask: (taskId: string, error: string) => void;
-  addSubtask: (taskId: string, title: string) => void;
-  completeSubtask: (taskId: string, subtaskId: string) => void;
+  loadTasks: () => Promise<void>;
+  createTask: (input: TaskCreateInput) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
+  startTask: (taskId: string) => Promise<void>;
+  pauseTask: (taskId: string) => Promise<void>;
+  cancelTask: (taskId: string) => Promise<void>;
+  completeTask: (taskId: string, result?: string) => Promise<void>;
+  failTask: (taskId: string, error: string) => Promise<void>;
+  addSubtask: (taskId: string, title: string) => Promise<void>;
+  completeSubtask: (taskId: string, subtaskId: string) => Promise<void>;
   setActiveTask: (taskId: string | null) => void;
   getTasksForAgent: (agentId: string) => AgentTask[];
   getActiveTasks: () => AgentTask[];
 }
 
-function generateId(): string {
-  return `task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+// Maps a Station task row (snake_case) into the UI AgentTask shape.
+function rowToTask(row: StationAgentTaskRow): AgentTask {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description || '',
+    agentId: row.agent_id,
+    status: row.status as TaskStatus,
+    priority: (row.priority || 'medium') as TaskPriority,
+    progress: row.progress || 0,
+    subtasks: (row.subtasks || []).map((s) => ({
+      id: s.id,
+      title: s.title,
+      status: s.status as AgentSubtask['status'],
+      completedAt: s.completed_at,
+    })),
+    topicKey: row.topic_key || undefined,
+    createdAt: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at).getTime(),
+    completedAt: row.completed_at ? new Date(row.completed_at).getTime() : undefined,
+    result: row.result || undefined,
+    error: row.error || undefined,
+  };
 }
 
-function generateSubtaskId(): string {
-  return `sub_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
+export const useTaskStore = createDesktopStore<TaskState>('tasks', (set, get) => {
+  // Drive a Station status transition then refresh the list from Station truth.
+  const transitionStatus = async (
+    taskId: string,
+    status: TaskStatus,
+    extra?: { result?: string; error?: string },
+  ) => {
+    try {
+      await api.updateAgentTaskStatusRemote({
+        id: taskId,
+        status,
+        result: extra?.result,
+        error: extra?.error,
+      });
+      await get().loadTasks();
+      log.info('tasks', 'Task status updated', { taskId, status });
+    } catch (error) {
+      log.error('tasks', 'Failed to update task status', { taskId, status, error });
+    }
+  };
 
-function persistTasks(tasks: AgentTask[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-  } catch (error) {
-    log.error('tasks', 'Failed to persist tasks to localStorage', { error });
-  }
-}
+  return {
+    tasks: [],
+    activeTaskId: null,
 
-function loadFromStorage(): AgentTask[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as AgentTask[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed;
-  } catch (error) {
-    log.error('tasks', 'Failed to load tasks from localStorage', { error });
-    return [];
-  }
-}
+    loadTasks: async () => {
+      try {
+        const rows = await api.listAgentTasksRemote();
+        set({ tasks: rows.map(rowToTask) });
+        log.info('tasks', 'Tasks loaded from Station', { count: rows.length });
+      } catch (error) {
+        log.error('tasks', 'Failed to load tasks from Station', { error });
+      }
+    },
 
-function computeProgress(subtasks: AgentSubtask[]): number {
-  if (subtasks.length === 0) return 0;
-  const completed = subtasks.filter((s) => s.status === 'completed').length;
-  return Math.round((completed / subtasks.length) * 100);
-}
+    createTask: async (input: TaskCreateInput) => {
+      try {
+        await api.createAgentTaskRemote({
+          title: input.title,
+          description: input.description,
+          agent_id: input.agentId,
+          priority: input.priority,
+          topic_key: input.topicKey,
+        });
+        await get().loadTasks();
+      } catch (error) {
+        log.error('tasks', 'Failed to create task', { error });
+      }
+    },
 
-export const useTaskStore = createDesktopStore<TaskState>('tasks', (set, get) => ({
-  tasks: [],
-  activeTaskId: null,
+    deleteTask: async (taskId) => {
+      try {
+        await api.deleteAgentTaskRemote(taskId);
+        const activeTaskId = get().activeTaskId === taskId ? null : get().activeTaskId;
+        set({ activeTaskId });
+        await get().loadTasks();
+      } catch (error) {
+        log.error('tasks', 'Failed to delete task', { taskId, error });
+      }
+    },
 
-  loadTasks: () => {
-    const tasks = loadFromStorage();
-    set({ tasks });
-    log.info('tasks', 'Tasks loaded from storage', { count: tasks.length });
-  },
+    startTask: async (taskId) => {
+      await transitionStatus(taskId, 'running');
+    },
 
-  createTask: (input: TaskCreateInput) => {
-    const now = Date.now();
-    const task: AgentTask = {
-      id: generateId(),
-      title: input.title,
-      description: input.description,
-      agentId: input.agentId,
-      status: 'pending',
-      priority: input.priority,
-      progress: 0,
-      subtasks: [],
-      topicKey: input.topicKey,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const next = [...get().tasks, task];
-    set({ tasks: next });
-    persistTasks(next);
-    log.info('tasks', 'Task created', { id: task.id, title: task.title, agentId: task.agentId });
-    return task.id;
-  },
+    pauseTask: async (taskId) => {
+      await transitionStatus(taskId, 'paused');
+    },
 
-  updateTask: (taskId, updates) => {
-    const next = get().tasks.map((t) =>
-      t.id === taskId ? { ...t, ...updates, updatedAt: Date.now() } : t,
-    );
-    set({ tasks: next });
-    persistTasks(next);
-    log.info('tasks', 'Task updated', { taskId, updates: Object.keys(updates) });
-  },
+    cancelTask: async (taskId) => {
+      await transitionStatus(taskId, 'cancelled');
+    },
 
-  deleteTask: (taskId) => {
-    const next = get().tasks.filter((t) => t.id !== taskId);
-    const activeTaskId = get().activeTaskId === taskId ? null : get().activeTaskId;
-    set({ tasks: next, activeTaskId });
-    persistTasks(next);
-    log.info('tasks', 'Task deleted', { taskId });
-  },
+    completeTask: async (taskId, result) => {
+      await transitionStatus(taskId, 'completed', { result });
+    },
 
-  startTask: (taskId) => {
-    const next = get().tasks.map((t) =>
-      t.id === taskId ? { ...t, status: 'running' as const, updatedAt: Date.now() } : t,
-    );
-    set({ tasks: next });
-    persistTasks(next);
-    log.info('tasks', 'Task started', { taskId });
-  },
+    failTask: async (taskId, error) => {
+      await transitionStatus(taskId, 'failed', { error });
+    },
 
-  pauseTask: (taskId) => {
-    const next = get().tasks.map((t) =>
-      t.id === taskId ? { ...t, status: 'paused' as const, updatedAt: Date.now() } : t,
-    );
-    set({ tasks: next });
-    persistTasks(next);
-    log.info('tasks', 'Task paused', { taskId });
-  },
+    addSubtask: async (taskId, title) => {
+      try {
+        await api.addAgentSubtaskRemote({ task_id: taskId, title });
+        await get().loadTasks();
+      } catch (error) {
+        log.error('tasks', 'Failed to add subtask', { taskId, error });
+      }
+    },
 
-  cancelTask: (taskId) => {
-    const next = get().tasks.map((t) =>
-      t.id === taskId ? { ...t, status: 'cancelled' as const, updatedAt: Date.now() } : t,
-    );
-    set({ tasks: next });
-    persistTasks(next);
-    log.info('tasks', 'Task cancelled', { taskId });
-  },
+    completeSubtask: async (taskId, subtaskId) => {
+      try {
+        await api.completeAgentSubtaskRemote({ task_id: taskId, subtask_id: subtaskId });
+        await get().loadTasks();
+      } catch (error) {
+        log.error('tasks', 'Failed to complete subtask', { taskId, subtaskId, error });
+      }
+    },
 
-  completeTask: (taskId, result) => {
-    const now = Date.now();
-    const next = get().tasks.map((t) =>
-      t.id === taskId
-        ? { ...t, status: 'completed' as const, progress: 100, result, completedAt: now, updatedAt: now }
-        : t,
-    );
-    set({ tasks: next });
-    persistTasks(next);
-    log.info('tasks', 'Task completed', { taskId });
-  },
+    setActiveTask: (taskId) => {
+      set({ activeTaskId: taskId });
+    },
 
-  failTask: (taskId, error) => {
-    const now = Date.now();
-    const next = get().tasks.map((t) =>
-      t.id === taskId
-        ? { ...t, status: 'failed' as const, error, updatedAt: now }
-        : t,
-    );
-    set({ tasks: next });
-    persistTasks(next);
-    log.error('tasks', 'Task failed', { taskId, error });
-  },
+    getTasksForAgent: (agentId) => get().tasks.filter((t) => t.agentId === agentId),
 
-  addSubtask: (taskId, title) => {
-    const subtask: AgentSubtask = {
-      id: generateSubtaskId(),
-      title,
-      status: 'pending',
-    };
-    const next = get().tasks.map((t) => {
-      if (t.id !== taskId) return t;
-      const subtasks = [...t.subtasks, subtask];
-      return { ...t, subtasks, progress: computeProgress(subtasks), updatedAt: Date.now() };
-    });
-    set({ tasks: next });
-    persistTasks(next);
-    log.info('tasks', 'Subtask added', { taskId, subtaskId: subtask.id });
-  },
-
-  completeSubtask: (taskId, subtaskId) => {
-    const now = Date.now();
-    const next = get().tasks.map((t) => {
-      if (t.id !== taskId) return t;
-      const subtasks = t.subtasks.map((s) =>
-        s.id === subtaskId ? { ...s, status: 'completed' as const, completedAt: now } : s,
-      );
-      return { ...t, subtasks, progress: computeProgress(subtasks), updatedAt: now };
-    });
-    set({ tasks: next });
-    persistTasks(next);
-    log.info('tasks', 'Subtask completed', { taskId, subtaskId });
-  },
-
-  setActiveTask: (taskId) => {
-    set({ activeTaskId: taskId });
-  },
-
-  getTasksForAgent: (agentId) => {
-    return get().tasks.filter((t) => t.agentId === agentId);
-  },
-
-  getActiveTasks: () => {
-    return get().tasks.filter((t) => t.status === 'running' || t.status === 'pending');
-  },
-}));
+    getActiveTasks: () => get().tasks.filter((t) => t.status === 'running' || t.status === 'pending'),
+  };
+});

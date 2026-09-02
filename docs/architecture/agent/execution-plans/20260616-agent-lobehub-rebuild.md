@@ -26,7 +26,7 @@ The plan follows:
 Implementation work for this rebuild is done in:
 
 ```text
-<workspace-root>/peers-ai-agent
+<repo-root>
 ```
 
 Reference implementation:

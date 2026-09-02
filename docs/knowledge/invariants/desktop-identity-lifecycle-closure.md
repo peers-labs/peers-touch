@@ -31,6 +31,11 @@ registry rows, or shell/avatar identity MUST flow through
 popovers, and settings panels MUST NOT independently patch profile/account/avatar
 state as their own freshness mechanism.
 
+Logout MUST enter a non-ready, non-auth-gate lifecycle phase before clearing
+the session mirror and must project the non-interactive `resuming` shell.
+Auth-gate account projection reads may begin only after the Rust session and
+local runtime teardown completes.
+
 ## Why this is non-negotiable
 
 Desktop identity is visible in multiple places at once: account picker,
@@ -55,6 +60,7 @@ valid session.
 
 - `rg "syncUserProfile\\(\\).*catch\\(\\(\\) => \\{\\}\\)" apps/desktop/src` — must return zero hits for identity lifecycle paths.
 - `rg "PROFILE_SYNC_STARTED|ACCOUNT_CACHE_REFRESH_STARTED" apps/desktop/src/kernel/identityLifecycle.ts apps/desktop/src/kernel/identityRuntime.ts` — must show reducer events and runtime dispatches.
+- `cd apps/desktop && pnpm run test -- identityLifecycle useAppLifecycle` — must prove `LOGOUT_REQUESTED` blocks session revalidation and auth-gate reads until teardown completes.
 - `cd apps/desktop && pnpm run test -- identityLifecycle useAppLifecycle` — must pass.
 - `cd apps/desktop && pnpm run check` — must pass.
 - Manual acceptance: password login, PIN unlock, account switch, and renderer reload must all refresh `session.currentUser`, `accountIdentity`, and `knownAccounts` through the same authenticated-edge reconciliation closure.

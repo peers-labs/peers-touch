@@ -151,6 +151,7 @@ pub fn account_switch(
                     .data
                     .as_ref()
                     .and_then(|data| data.login_method.clone()),
+                device_type: Some("desktop-native".to_string()),
             },
         );
     }
@@ -432,6 +433,7 @@ pub fn account_unlock(
             reason: IdentityChangeReason::Unlock,
             actor_ptid: Some(session.actor_ptid),
             login_method: p_method,
+            device_type: Some("desktop-native".to_string()),
         },
     );
 

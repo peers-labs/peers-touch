@@ -7,6 +7,7 @@ export function createOperation(params: {
   type: OperationType;
   assistantMessageId: string;
   abortController: AbortController;
+  streamGeneration?: number;
 }): Operation {
   return {
     id: `op-${Date.now()}-${operationCounter++}`,
@@ -16,6 +17,7 @@ export function createOperation(params: {
     runState: 'streaming',
     assistantMessageId: params.assistantMessageId,
     abortController: params.abortController,
+    streamGeneration: params.streamGeneration,
     startedAt: Date.now(),
   };
 }
@@ -68,7 +70,10 @@ export function resumeOperation(op: Operation): Operation {
 }
 
 export function isTerminalState(state: RunState): boolean {
-  return state === 'completed' || state === 'failed' || state === 'cancelled';
+  return state === 'completed'
+    || state === 'failed'
+    || state === 'cancelled'
+    || state === 'interrupted';
 }
 
 export function isActiveOperation(op: Operation | undefined): boolean {
