@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import subprocess
 import time
 import urllib.request
@@ -16,13 +17,29 @@ from typing import Any, Callable
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
-from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPO_ROOT, REPORTS_DIR
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.core import (
+    AcceptanceGate,
+    ActorRuntime,
+    ArtifactRef,
+    EvidenceStore,
+    GateError,
+    REPO_ROOT,
+    REPORTS_DIR,
+)
+from tooling.acceptance.core.provisioning import load_runtime_manifest
+from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
+from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
+from tooling.acceptance.drivers.tauri import TauriDriver, TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
+    DEV_ACCOUNT_PASSWORD,
+    NativeClientLifecycleLedger,
     async_harness,
+    configure_station,
+    commits_match,
     enter_chat_page,
     reset_fixture,
+    runtime_station_service,
     start_authenticated_client,
     stop_client,
 )
@@ -175,14 +192,47 @@ class NativeTwoClientGate(AcceptanceGate):
 
     def __init__(self) -> None:
         super().__init__()
-        self.station_url = os.environ.get(
-            "CHAT_NATIVE_STATION_URL",
-            DEFAULT_STATION,
-        ).rstrip("/")
-        self.tested_commit = current_commit()
-        self.workspace_digest = current_workspace_digest()
+        self.manifest = manifest
+        self.actor_manifest = actor_manifest
+        self.runtime_binding = runtime_binding
+        if manifest is not None:
+            station = runtime_station_service(manifest)
+            self.station_url = str(station.get("endpoint") or "").rstrip("/")
+            if not self.station_url:
+                raise GateError("runtime manifest Station URL is required")
+            self.client_specs = {
+                str(client.get("actor")): client
+                for client in manifest.get("clients", [])
+                if isinstance(client, dict)
+            }
+            self.actor_specs = {
+                str(actor.get("role")): actor
+                for actor in actor_manifest.get("actors", [])
+                if isinstance(actor, dict)
+            }
+            if set(self.client_specs) != {"alice", "bob"}:
+                raise GateError(
+                    "runtime manifest must allocate isolated Alice and Bob clients"
+                )
+            if set(self.actor_specs) != {"alice", "bob"}:
+                raise GateError(
+                    "actor manifest must contain canonical Alice and Bob identities"
+                )
+            self.tested_commit = current_commit()
+            self.workspace_digest = current_workspace_digest()
+        else:
+            self.station_url = os.environ.get(
+                "CHAT_NATIVE_STATION_URL",
+                DEFAULT_STATION,
+            ).rstrip("/")
+            self.tested_commit = current_commit()
+            self.workspace_digest = current_workspace_digest()
+            self.client_specs: dict[str, dict[str, Any]] = {}
+            self.actor_specs: dict[str, dict[str, Any]] = {}
         self.steps: list[dict[str, Any]] = []
-        self.clients: dict[str, TauriDriver] = {}
+        self.clients: dict[str, TauriSession] = {}
+        self.runtime_instances: list[TauriSession] = []
+        self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
 
@@ -216,13 +266,160 @@ class NativeTwoClientGate(AcceptanceGate):
         )
         return value
 
-    def start_client(self, actor: str) -> None:
-        client, ptid = start_authenticated_client(
-            actor,
-            CLIENT_PORTS[actor],
-            self.station_url,
+    def verify_fixture_ready(self) -> bool:
+        reset = self.actor_manifest.get("reset")
+        if (
+            self.manifest.get("state") != "FIXTURE_READY"
+            or not isinstance(reset, dict)
+            or reset.get("authorized") is not True
+            or reset.get("targetVerified") is not True
+        ):
+            raise GateError(
+                "runtime manifest fixture is not reset and verified"
+            )
+        return True
+
+    def source_identity(
+        self,
+        station_live: dict[str, Any],
+    ) -> dict[str, Any]:
+        source = self.manifest.get("source")
+        station = runtime_station_service(self.manifest)
+        runtime_cell = self.runtime_binding.runtime_identity()
+        binary = self.runtime_binding.binary_identity()
+        identity = {
+            "orchestrator": source,
+            "station": station,
+            "stationLive": station_live,
+            "runtimeCell": runtime_cell,
+            "binary": binary,
+        }
+        self.report.runtime.update(
+            {
+                "runtimeCellRunId": runtime_cell.get("runId"),
+                "sourceIdentity": identity,
+            }
         )
-        self.register_driver(client)
+        source_commit = str(
+            source.get("commit") if isinstance(source, dict) else ""
+        )
+        station_commit = str(
+            station.get("liveCommit")
+            if isinstance(station, dict)
+            else ""
+        )
+        cell_source = (
+            runtime_cell.get("source")
+            if isinstance(runtime_cell, dict)
+            else None
+        )
+        binary_sha256 = str(binary.get("sha256") or "")
+        remote_source_valid = (
+            self.runtime_binding.cell_id != "desktop-linux-native"
+            or (
+                isinstance(cell_source, dict)
+                and cell_source.get("remoteCheckoutClean") is True
+                and re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(cell_source.get("remoteSourceDigest") or ""),
+                )
+                is not None
+            )
+        )
+        self.assert_condition(
+            "source_build_runtime_identity",
+            isinstance(source, dict)
+            and bool(source_commit)
+            and source.get("workspaceDigest") == "clean"
+            and isinstance(station, dict)
+            and station.get("workspaceDigest") == "clean"
+            and station_commit == source_commit
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(station.get("protocolDigest") or ""),
+            )
+            is not None
+            and commits_match(
+                str(station_live.get("build_commit") or ""),
+                source_commit,
+            )
+            and isinstance(runtime_cell, dict)
+            and runtime_cell.get("cellId")
+            == self.runtime_binding.cell_id
+            and runtime_cell.get("gateId") == self.gate_id
+            and bool(runtime_cell.get("runId"))
+            and runtime_cell.get("state") == "LEASED"
+            and isinstance(cell_source, dict)
+            and cell_source.get("commit") == source_commit
+            and cell_source.get("workspaceDigest") == "clean"
+            and remote_source_valid
+            and binary.get("sourceCommit") == source_commit
+            and re.fullmatch(r"[0-9a-f]{64}", binary_sha256) is not None
+            and cell_source.get("binarySha256") == binary_sha256,
+            json.dumps(identity, sort_keys=True),
+        )
+        return identity
+
+    def start_client(self, actor: str) -> None:
+        if self.runtime_binding is not None:
+            spec = self.client_specs[actor]
+            client = self.runtime_binding.create_bound_session(
+                actor,
+                NativeLaunchOptions(
+                    window_slot=("alice", "bob").index(actor),
+                    window_count=2,
+                ),
+            )
+            self.runtime_instances.append(client)
+            expected_ptid = str(
+                self.actor_specs[actor].get("ptid") or ""
+            )
+            self.client_lifecycles.register(client, expected_ptid)
+            client.start()
+            self.client_lifecycles.mark_live(client)
+            self.register_driver(client)
+            client.wait_for_acceptance_harness(30)
+            configure_station(client, self.station_url)
+            account_ref = str(
+                self.actor_specs[actor].get("accountRef") or ""
+            )
+            account = account_ref.removeprefix("station-account:")
+            login = async_harness(
+                client,
+                "loginWithPassword",
+                {
+                    "account": account,
+                    "password": DEV_ACCOUNT_PASSWORD,
+                },
+                timeout=30,
+            )
+            if not (login or {}).get("authenticated"):
+                raise GateError(f"{actor} login did not authenticate")
+            self.client_lifecycles.mark_authenticated(client)
+            hydration = async_harness(
+                client,
+                "hydrateActiveActor",
+                {},
+                timeout=30,
+            )
+            ptid = str((hydration or {}).get("actorPtid") or "")
+            if ptid != expected_ptid:
+                raise GateError(
+                    f"{actor} login identity mismatch: "
+                    f"expected={expected_ptid} actual={ptid}"
+                )
+            if not client.get_current_url().startswith("tauri://localhost"):
+                raise GateError(
+                    f"{actor} is not running in native Tauri WebView: "
+                    f"{client.get_current_url()}"
+                )
+        else:
+            client, ptid = start_authenticated_client(
+                actor,
+                CLIENT_PORTS[actor],
+                self.station_url,
+            )
+            self.register_driver(client)
         self.clients[actor] = client
         self.ptids[actor] = ptid
         device = async_harness(client, "getRealtimeDevice", {})
@@ -322,6 +519,58 @@ class NativeTwoClientGate(AcceptanceGate):
         self.save_screenshot(client, actor)
         self.save_dom(client, actor)
         self.save_app_log(client, actor)
+
+    def cleanup_clients(self) -> dict[str, Any]:
+        cleanup_errors = self.client_lifecycles.release_all()
+
+        for actor, client in self.clients.items():
+            if not self.save_app_log(client, actor):
+                cleanup_errors.append(
+                    {
+                        "resource": f"log:{client.profile}",
+                        "error": "Native client log was not exported",
+                    }
+                )
+
+        try:
+            cleanup = self.runtime_binding.finalize_cleanup(
+                self.runtime_instances,
+                self.client_specs,
+            )
+        except Exception as error:
+            cleanup = {
+                "portsReleased": False,
+                "processesReleased": False,
+                "storageReleased": False,
+                "logsReleased": False,
+                "cleanupErrors": [
+                    {
+                        "resource": "runtime-binding",
+                        "error": str(error),
+                    }
+                ],
+            }
+        binding_errors = cleanup.get("cleanupErrors")
+        if isinstance(binding_errors, list):
+            cleanup_errors.extend(
+                error
+                for error in binding_errors
+                if isinstance(error, dict)
+            )
+        cleanup["cleanupErrors"] = cleanup_errors
+        cleanup_passed = (
+            bool(cleanup.get("portsReleased"))
+            and bool(cleanup.get("processesReleased"))
+            and bool(cleanup.get("storageReleased"))
+            and bool(cleanup.get("logsReleased"))
+            and not cleanup_errors
+        )
+        self.report.add_assertion(
+            "resources_released",
+            cleanup_passed,
+            json.dumps(cleanup, sort_keys=True),
+        )
+        return cleanup
 
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":

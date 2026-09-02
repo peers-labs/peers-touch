@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-31
+> **Created**: 2026-06-03 | **Updated**: 2026-09-02
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -19,6 +19,8 @@
 - Agent 如何在普通开发任务中发现并上报 Acceptance 责任缺口。
 - Runtime evidence如何在source tree之外隔离、持久化、引用和清理。
 - Native Desktop Gate如何在macOS、Linux和Windows runtime cells中独立取证。
+- 多客户端如何通过稳定 service role 显式绑定多 Station / Relay，而不在 Gate
+  中拼接 URL 或维护第二份拓扑。
 - Provisioner如何通过不可持久化的launch context向独立Gate进程提供run-scoped
   capability，而不把secret或raw handle写入manifest、环境变量或Evidence Store。
 - 业务Capability如何声明required evidence finalizer，并在cleanup完成后、
@@ -64,6 +66,8 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 9. 非 local Gate 必须通过 Environment Provisioning Contract 形成 runtime manifest 后才能执行。
 10. 缺少 contract、resource 或 evidence 时必须结构化上报并保持 `UNPROVEN`，禁止 silent pass。
 11. 跨平台 Native 声明必须由 Gate × Runtime Cell 矩阵证明，任何平台不得替代另一平台。
+12. 多服务环境中的每个客户端必须通过 typed service binding 选择依赖服务，禁止
+    通过客户端顺序、裸 URL 或业务常量推断 Station。
 
 ---
 
@@ -124,6 +128,12 @@ Accepted `PostCleanupEvidenceFinalizer` target architecture由`D-19`定义：
   禁止cross-decode，因此不建立mutable global key-exclusion authority；
 - D-19 Infra landing前不得用Gate提前验证、让child接管cleanup或声明产品proof
   closure；实施必须先通过独立执行计划评审。
+
+多服务拓扑当前由 accepted `D-17` 与 `D-18` 共同约束：
+
+- `EnvironmentContract.services` 与 `RuntimeManifest.services` 保持唯一服务拓扑真源；
+- 客户端只通过 stable service ID 绑定依赖，不保存第二份 endpoint；
+- Mobile、Federation 与 Native Desktop 的私有客户端—Station 映射必须迁移后删除。
 
 ---
 
