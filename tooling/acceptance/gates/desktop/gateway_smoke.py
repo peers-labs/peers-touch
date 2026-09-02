@@ -11,14 +11,53 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
-from tooling.acceptance.core import AcceptanceGate  # noqa: E402
+from tooling.acceptance.core import (  # noqa: E402
+    AcceptanceGate,
+    GateError,
+    ProvisioningError,
+    load_runtime_manifest,
+    require_runtime_service,
+)
 from tooling.acceptance.drivers.chrome import ChromeDriver  # noqa: E402
 from tooling.acceptance.drivers.station import StationDriver  # noqa: E402
 
 
-DEFAULT_URL = "http://localhost:3210/"
-DEFAULT_GATEWAY = "http://127.0.0.1:3030"
-DEFAULT_STATION = "http://10.37.94.156:18180"
+GATE_ID = "federation-desktop-gateway-smoke"
+
+
+def runtime_endpoints(manifest: dict[str, Any]) -> tuple[str, str, str]:
+    clients = manifest.get("clients")
+    if not isinstance(clients, list) or len(clients) != 1:
+        raise GateError("runtime manifest requires one Desktop gateway client")
+    client = clients[0]
+    gateway_port = client.get("gateway_port")
+    renderer_port = client.get("renderer_port")
+    if not isinstance(gateway_port, int) or gateway_port <= 0:
+        raise GateError("runtime manifest Desktop gateway port is invalid")
+    if not isinstance(renderer_port, int) or renderer_port <= 0:
+        raise GateError("runtime manifest Desktop renderer port is invalid")
+
+    try:
+        station = require_runtime_service(manifest, "station", "station")
+    except ProvisioningError as error:
+        raise GateError(str(error)) from error
+    station_url = station.get("endpoint")
+    if not isinstance(station_url, str) or not station_url.strip():
+        raise GateError("runtime manifest Station URL is required")
+    return (
+        f"http://localhost:{renderer_port}/",
+        f"http://127.0.0.1:{gateway_port}",
+        station_url.rstrip("/"),
+    )
+
+
+def configured_runtime_endpoints() -> tuple[str, str, str]:
+    manifest_path = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
+    if not manifest_path:
+        raise GateError("PT_ACCEPTANCE_RUNTIME_MANIFEST is required")
+    return runtime_endpoints(
+        load_runtime_manifest(Path(manifest_path), GATE_ID)
+    )
 
 
 def station_status(data: dict[str, Any]) -> dict[str, Any]:
@@ -31,18 +70,13 @@ def station_status(data: dict[str, Any]) -> dict[str, Any]:
 
 
 class DesktopGatewaySmokeGate(AcceptanceGate):
-    gate_id = "federation-desktop-gateway-smoke"
+    gate_id = GATE_ID
+    phase = "WS-6"
+    bom = ("desktop-federation-context-surface",)
+    spec = ("desktop-federation-surfaces",)
 
     def run(self) -> dict[str, Any]:
-        target_url = os.environ.get("FEDERATION_DESKTOP_VISUAL_URL", DEFAULT_URL)
-        gateway_url = os.environ.get(
-            "FEDERATION_SMOKE_DESKTOP_GATEWAY",
-            DEFAULT_GATEWAY,
-        ).rstrip("/")
-        expected_station = os.environ.get(
-            "FEDERATION_SMOKE_DESKTOP_STATION",
-            DEFAULT_STATION,
-        ).rstrip("/")
+        target_url, gateway_url, expected_station = configured_runtime_endpoints()
 
         station = StationDriver(gateway_url)
         self.register_driver(station)
