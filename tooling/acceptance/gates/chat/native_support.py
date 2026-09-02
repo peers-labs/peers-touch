@@ -3,28 +3,433 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 import urllib.request
-from typing import Any, Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Literal
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
-from tooling.acceptance.core import GateError, REPO_ROOT, call_async_harness
+from tooling.acceptance.core import (
+    ArtifactRef,
+    EvidenceStore,
+    GateError,
+    ProvisioningError,
+    REPO_ROOT,
+    call_async_harness,
+    require_runtime_service,
+)
+from tooling.acceptance.core.provisioning import load_runtime_manifest
+from tooling.acceptance.drivers.native import (
+    NativeDesktopRuntimeBinding,
+    resolve_native_desktop_runtime,
+)
 from tooling.acceptance.drivers.station import StationDriver
-from tooling.acceptance.drivers.tauri import TauriDriver
-from tooling.acceptance.fixtures.chat_native_reset import deploy_environment
+from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriSession
+from tooling.acceptance.fixtures.chat_native_reset import (
+    acceptance_station_environment,
+    active_deployment_environment,
+    active_station_url,
+)
+from tooling.acceptance.transports import SshTarget, SshTransport
 
 
-DEFAULT_STATION = "http://10.37.94.156:18080"
+DEFAULT_STATION = os.environ.get("PT_STATION_URL", "").rstrip("/")
+if not DEFAULT_STATION:
+    try:
+        DEFAULT_STATION = active_station_url()
+    except RuntimeError:
+        DEFAULT_STATION = ""
 DEV_ACCOUNT_PASSWORD = "1"
 ACCOUNTS = {
     "alice": "alice@p.t",
     "bob": "bob@p.t",
     "charlie": "carol@p.t",
 }
+
+
+def runtime_station_service(manifest: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return require_runtime_service(manifest, "station", "station")
+    except ProvisioningError as error:
+        raise GateError(str(error)) from error
+
+
+@dataclass(frozen=True)
+class SelectedNativeRuntime:
+    manifest: dict[str, Any]
+    actor_manifest: dict[str, Any]
+    binding: NativeDesktopRuntimeBinding
+
+
+NativeProcessState = Literal[
+    "starting",
+    "live",
+    "stopped_preserved",
+    "stopped",
+]
+NativeAuthState = Literal[
+    "none",
+    "restoring",
+    "authenticated",
+    "revoked",
+    "logged_out",
+]
+NativeDeviceState = Literal["active", "revoked"]
+
+
+@dataclass
+class NativeClientLifecycle:
+    client: TauriSession
+    expected_actor_ptid: str
+    process_state: NativeProcessState = "starting"
+    auth_state: NativeAuthState = "none"
+    device_state: NativeDeviceState = "active"
+    successor_client_id: int | None = None
+
+
+class NativeClientLifecycleLedger:
+    def __init__(self) -> None:
+        self.records: list[NativeClientLifecycle] = []
+        self._by_client_id: dict[int, NativeClientLifecycle] = {}
+
+    def register(
+        self,
+        client: TauriSession,
+        expected_actor_ptid: str,
+    ) -> NativeClientLifecycle:
+        if not expected_actor_ptid.startswith("ptid:"):
+            raise GateError(
+                "native client lifecycle requires canonical actor PTID"
+            )
+        record = NativeClientLifecycle(client, expected_actor_ptid)
+        self.records.append(record)
+        self._by_client_id[id(client)] = record
+        return record
+
+    def _record(self, client: TauriSession) -> NativeClientLifecycle:
+        record = self._by_client_id.get(id(client))
+        if record is None:
+            raise GateError(
+                f"native client lifecycle is unregistered: {client.profile}"
+            )
+        return record
+
+    def mark_live(self, client: TauriSession) -> None:
+        self._record(client).process_state = "live"
+
+    def mark_restoring(self, client: TauriSession) -> None:
+        self._record(client).auth_state = "restoring"
+
+    def mark_authenticated(self, client: TauriSession) -> None:
+        self._record(client).auth_state = "authenticated"
+
+    def mark_auth_revoked(self, client: TauriSession) -> None:
+        self._record(client).auth_state = "revoked"
+
+    def mark_device_revoked(self, client: TauriSession) -> None:
+        self._record(client).device_state = "revoked"
+
+    def transfer_preserved_session(
+        self,
+        predecessor: TauriSession,
+        successor: TauriSession,
+    ) -> None:
+        predecessor_record = self._record(predecessor)
+        successor_record = self._record(successor)
+        if predecessor_record.process_state != "stopped_preserved":
+            raise GateError(
+                "native session transfer requires a preserved predecessor"
+            )
+        if (
+            predecessor_record.expected_actor_ptid
+            != successor_record.expected_actor_ptid
+        ):
+            raise GateError(
+                "native session transfer actor PTID mismatch"
+            )
+        predecessor_record.successor_client_id = id(successor)
+        successor_record.auth_state = "restoring"
+
+    def stop_preserving_session(self, client: TauriSession) -> None:
+        record = self._record(client)
+        client.stop(preserve_state=True)
+        record.process_state = "stopped_preserved"
+
+    def release(self, client: TauriSession) -> list[dict[str, str]]:
+        record = self._record(client)
+        if record.process_state == "stopped":
+            return []
+        if record.process_state == "stopped_preserved":
+            successor = self._by_client_id.get(
+                record.successor_client_id or -1
+            )
+            if successor is None or successor.auth_state not in {
+                "authenticated",
+                "revoked",
+                "logged_out",
+            }:
+                return [
+                    {
+                        "resource": f"session:{client.profile}",
+                        "error": (
+                            "preserved native session has no verified "
+                            "successor"
+                        ),
+                    }
+                ]
+            return []
+
+        errors: list[dict[str, str]] = []
+        if record.auth_state in {"authenticated", "restoring"}:
+            try:
+                process_alive = client.is_alive()
+            except Exception as error:
+                process_alive = False
+                errors.append(
+                    {
+                        "resource": f"session:{client.profile}",
+                        "error": (
+                            "failed to inspect authenticated native window: "
+                            f"{error}"
+                        ),
+                    }
+                )
+            if not process_alive:
+                if not errors:
+                    errors.append(
+                        {
+                            "resource": f"session:{client.profile}",
+                            "error": (
+                                "authenticated native window terminated before "
+                                "logout"
+                            ),
+                        }
+                    )
+            else:
+                try:
+                    logout_native_client(
+                        client,
+                        record.expected_actor_ptid,
+                    )
+                    record.auth_state = "logged_out"
+                except Exception as error:
+                    errors.append(
+                        {
+                            "resource": f"session:{client.profile}",
+                            "error": str(error),
+                        }
+                    )
+
+        try:
+            client.stop()
+            record.process_state = "stopped"
+        except Exception as error:
+            errors.append(
+                {
+                    "resource": f"client:{client.profile}",
+                    "error": str(error),
+                }
+            )
+        return errors
+
+    def release_all(self) -> list[dict[str, str]]:
+        errors: list[dict[str, str]] = []
+        for record in reversed(self.records):
+            errors.extend(self.release(record.client))
+        return errors
+
+
+def selected_native_runtime(gate_id: str) -> SelectedNativeRuntime | None:
+    cell_id = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL", "").strip()
+    if not cell_id:
+        return None
+    raw_path = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
+    if not raw_path:
+        raise GateError(
+            "PT_ACCEPTANCE_RUNTIME_MANIFEST is required when "
+            "PT_ACCEPTANCE_RUNTIME_CELL is selected"
+        )
+    manifest = load_runtime_manifest(Path(raw_path), gate_id)
+    actor_ref = manifest.get("actorManifest")
+    if not isinstance(actor_ref, dict):
+        raise GateError("runtime manifest actorManifest is required")
+    actors = EvidenceStore.from_environment(
+        repo_root=REPO_ROOT,
+        worktree=REPO_ROOT,
+    ).read_json(ArtifactRef.from_dict(actor_ref))
+    if actors.get("artifactKind") != "acceptance-actor-manifest":
+        raise GateError("runtime actor manifest has invalid artifact kind")
+    source = manifest.get("source")
+    source_commit = str(
+        source.get("commit") if isinstance(source, dict) else ""
+    )
+    if not source_commit:
+        raise GateError("runtime manifest source commit is required")
+    return SelectedNativeRuntime(
+        manifest=manifest,
+        actor_manifest=actors,
+        binding=resolve_native_desktop_runtime(
+            cell_id,
+            gate_id=gate_id,
+            source_commit=source_commit,
+        ),
+    )
+
+
+def verify_runtime_fixture_ready(
+    manifest: dict[str, Any],
+    actor_manifest: dict[str, Any],
+) -> None:
+    reset = actor_manifest.get("reset")
+    if (
+        manifest.get("state") != "FIXTURE_READY"
+        or not isinstance(reset, dict)
+        or reset.get("authorized") is not True
+        or reset.get("targetVerified") is not True
+    ):
+        raise GateError("runtime manifest fixture is not reset and verified")
+
+
+def cleanup_preserving_primary_failure(
+    cleanup: Callable[[], dict[str, Any]],
+    report: Any,
+    context: str,
+) -> dict[str, Any]:
+    primary_error = sys.exc_info()[1]
+    try:
+        return cleanup()
+    except Exception as cleanup_error:
+        if primary_error is None:
+            raise
+        failure = {
+            "resource": "cleanup",
+            "error": str(cleanup_error),
+        }
+        report.runtime["cleanupFailure"] = failure
+        if hasattr(primary_error, "add_note"):
+            primary_error.add_note(
+                f"{context} cleanup also failed: {cleanup_error}"
+            )
+        cleanup_evidence = report.runtime.get("cleanup")
+        return (
+            cleanup_evidence
+            if isinstance(cleanup_evidence, dict)
+            else {"cleanupErrors": [failure]}
+        )
+
+
+def native_runtime_source_identity(
+    *,
+    gate_id: str,
+    manifest: dict[str, Any],
+    runtime_binding: NativeDesktopRuntimeBinding,
+    station_live: dict[str, Any],
+) -> dict[str, Any]:
+    source = manifest.get("source")
+    station = runtime_station_service(manifest)
+    runtime_cell = runtime_binding.runtime_identity()
+    binary = runtime_binding.binary_identity()
+    cell_source = (
+        runtime_cell.get("source")
+        if isinstance(runtime_cell, dict)
+        else None
+    )
+    platform = (
+        runtime_cell.get("platform")
+        if isinstance(runtime_cell, dict)
+        else None
+    )
+    transport = (
+        runtime_cell.get("transport")
+        if isinstance(runtime_cell, dict)
+        else None
+    )
+    source_commit = str(
+        source.get("commit") if isinstance(source, dict) else ""
+    )
+    station_commit = str(
+        station.get("liveCommit") if isinstance(station, dict) else ""
+    )
+    binary_sha256 = str(binary.get("sha256") or "")
+    linux_runtime_valid = (
+        runtime_binding.cell_id != "desktop-linux-native"
+        or (
+            isinstance(cell_source, dict)
+            and cell_source.get("remoteCheckoutClean") is True
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(cell_source.get("remoteSourceDigest") or ""),
+            )
+            is not None
+            and isinstance(platform, dict)
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(platform.get("imageDigest") or ""),
+            )
+            is not None
+            and isinstance(transport, dict)
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(transport.get("hostIdentitySha256") or ""),
+            )
+            is not None
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(transport.get("hostKeySha256") or ""),
+            )
+            is not None
+        )
+    )
+    identity = {
+        "orchestrator": source,
+        "station": station,
+        "stationLive": station_live,
+        "runtimeCell": runtime_cell,
+        "binary": binary,
+    }
+    valid = (
+        isinstance(source, dict)
+        and bool(source_commit)
+        and source.get("workspaceDigest") == "clean"
+        and isinstance(station, dict)
+        and station.get("workspaceDigest") == "clean"
+        and station_commit == source_commit
+        and re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(station.get("protocolDigest") or ""),
+        )
+        is not None
+        and commits_match(
+            str(station_live.get("build_commit") or ""),
+            source_commit,
+        )
+        and isinstance(runtime_cell, dict)
+        and runtime_cell.get("artifactKind")
+        == "acceptance-runtime-cell-manifest"
+        and runtime_cell.get("cellId") == runtime_binding.cell_id
+        and runtime_cell.get("gateId") == gate_id
+        and bool(runtime_cell.get("runId"))
+        and runtime_cell.get("state") == "LEASED"
+        and isinstance(cell_source, dict)
+        and cell_source.get("commit") == source_commit
+        and cell_source.get("workspaceDigest") == "clean"
+        and linux_runtime_valid
+        and binary.get("sourceCommit") == source_commit
+        and re.fullmatch(r"[0-9a-f]{64}", binary_sha256) is not None
+        and cell_source.get("binarySha256") == binary_sha256
+    )
+    if not valid:
+        raise GateError(
+            "runtime source identity mismatch: "
+            f"{json.dumps(identity, sort_keys=True)}"
+        )
+    return identity
 
 
 def reset_fixture(accounts: tuple[str, ...] = ("alice", "bob")) -> None:
@@ -36,15 +441,10 @@ def reset_fixture(accounts: tuple[str, ...] = ("alice", "bob")) -> None:
     subprocess.run(
         [
             sys.executable,
-            str(
-                REPO_ROOT
-                / "tooling"
-                / "acceptance"
-                / "fixtures"
-                / "chat_native_reset.py"
-            ),
+            "-m",
+            "tooling.acceptance.fixtures.chat_native_reset",
             "--environment",
-            "station-three",
+            active_deployment_environment(),
             "--accounts",
             *accounts,
         ],
@@ -68,14 +468,56 @@ def async_harness(
     )
 
 
-def configure_station(client: TauriDriver, station_url: str) -> None:
+def is_station_authorization_rejection(error: BaseException | str) -> bool:
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in (
+            "endpoint is not active",
+            "sender unauthorized",
+            "forbidden",
+            "status 403",
+            "station returned 403",
+        )
+    )
+
+
+def logout_native_client(
+    client: TauriSession,
+    actor_ptid: str,
+) -> dict[str, Any]:
+    result = async_harness(
+        client,
+        "logout",
+        {"actorPtid": actor_ptid},
+        timeout=30,
+    )
+    if (
+        not isinstance(result, dict)
+        or result.get("actorPtid") != actor_ptid
+        or result.get("status") != "logged_out"
+    ):
+        raise GateError(
+            "native window logout returned invalid lifecycle evidence: "
+            f"{result}"
+        )
+    return result
+
+
+def configure_station(client: TauriSession, station_url: str) -> None:
     with StationDriver(f"http://127.0.0.1:{client.gateway_port}") as station:
         station.station_add(station_url)
         station.station_set_active(station_url)
 
 
-def enter_chat_page(client: TauriDriver) -> None:
-    if client.get_current_url().endswith("#/chat"):
+def enter_chat_page(client: TauriSession) -> None:
+    def chat_surface_ready(driver: Any) -> bool:
+        return (
+            driver.current_url.endswith("#/chat")
+            and bool(driver.find_elements(By.CSS_SELECTOR, "[data-social-chat-layout]"))
+        )
+
+    if chat_surface_ready(client.driver):
         return
     WebDriverWait(client.driver, 20).until(
         lambda driver: driver.find_element(
@@ -85,7 +527,7 @@ def enter_chat_page(client: TauriDriver) -> None:
         )
     ).click()
     WebDriverWait(client.driver, 20).until(
-        lambda driver: driver.current_url.endswith("#/chat")
+        chat_surface_ready
     )
 
 
@@ -94,7 +536,7 @@ def start_authenticated_client(
     port: int,
     station_url: str,
     instance: str = "",
-) -> tuple[TauriDriver, str]:
+) -> tuple[TauriSession, str]:
     label = instance or account
     storage = (
         REPO_ROOT
@@ -105,20 +547,18 @@ def start_authenticated_client(
         / "storage"
     )
     storage.mkdir(parents=True, exist_ok=True)
-    client = TauriDriver(
-        port=port,
-        profile=f"acceptance-{label}",
-        storage_root=str(storage),
-        environment={"PEERS_STATION_URL": station_url},
+    client = TauriSession(
+        LocalTauriLauncher(
+            port=port,
+            profile=f"acceptance-{label}",
+            storage_root=str(storage),
+            environment={"PEERS_STATION_URL": station_url},
+        )
     )
     client.start()
     try:
         client.wait_for_acceptance_harness(30)
         configure_station(client, station_url)
-        with StationDriver(
-            f"http://127.0.0.1:{client.gateway_port}"
-        ) as station:
-            station.auth_logout()
         login = async_harness(
             client,
             "loginWithPassword",
@@ -128,7 +568,7 @@ def start_authenticated_client(
             },
             timeout=30,
         )
-        ptid = str((login or {}).get("actorId") or "")
+        ptid = str((login or {}).get("actorPtid") or "")
         if not (login or {}).get("authenticated") or not ptid.startswith("ptid:"):
             raise GateError(
                 f"{account} login did not return canonical PTID: {login}"
@@ -144,7 +584,7 @@ def start_authenticated_client(
         raise
 
 
-def stop_client(client: TauriDriver) -> None:
+def stop_client(client: TauriSession) -> None:
     try:
         with StationDriver(
             f"http://127.0.0.1:{client.gateway_port}"
@@ -229,7 +669,7 @@ def wait_until(
     raise GateError(f"timed out waiting for {description}{suffix}")
 
 
-def send_text(client: TauriDriver, text: str) -> dict[str, Any]:
+def send_text(client: TauriSession, text: str) -> dict[str, Any]:
     composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
     client.execute_script(
         """
@@ -258,7 +698,7 @@ def send_text(client: TauriDriver, text: str) -> dict[str, Any]:
     )
 
 
-def message_snapshot(client: TauriDriver, text: str) -> dict[str, Any] | None:
+def message_snapshot(client: TauriSession, text: str) -> dict[str, Any] | None:
     value = client.execute_script(
         """
         const text = arguments[0];
@@ -278,7 +718,7 @@ def message_snapshot(client: TauriDriver, text: str) -> dict[str, Any] | None:
 
 
 def gateway_command(
-    client: TauriDriver,
+    client: TauriSession,
     command: str,
     args: dict[str, Any],
 ) -> dict[str, Any]:
@@ -302,16 +742,22 @@ def sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def station_readback(conversation_id: str, message_id: str) -> dict[str, Any]:
-    environment = deploy_environment("station-three")
+def station_readback(
+    conversation_id: str,
+    message_id: str,
+    *,
+    station_url: str = "",
+) -> dict[str, Any]:
+    environment = acceptance_station_environment(
+        station_url or DEFAULT_STATION
+    )
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     user = environment.get("PT_DEPLOY_USER", "").strip()
     if not host or not user:
-        raise GateError("station-three deployment host identity is unavailable")
-    container = os.environ.get(
-        "CHAT_ACCEPTANCE_POSTGRES_CONTAINER",
-        "pt-station-a-postgres-1",
-    )
+        raise GateError(
+            "Chat Acceptance Station deployment host identity is unavailable"
+        )
+    container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
     conversation = sql_literal(conversation_id)
     message = sql_literal(message_id)
     query = f"""
@@ -364,22 +810,32 @@ SELECT json_build_object(
         f"docker exec -i {container} sh -lc "
         "'psql -At -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'"
     )
-    result = subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{user}@{host}",
-            remote,
-        ],
-        input=query,
-        text=True,
+    try:
+        port = int(
+            environment.get(
+                "PT_DEPLOY_SSH_PORT",
+                environment.get("PT_DEPLOY_PORT", "22"),
+            )
+        )
+    except ValueError as error:
+        raise GateError(
+            "Chat Acceptance deployment SSH port is invalid"
+        ) from error
+    result = SshTransport(
+        SshTarget(
+            host=host,
+            user=user,
+            port=port,
+            known_hosts_file=environment.get(
+                "PT_DEPLOY_KNOWN_HOSTS_FILE",
+                "",
+            ).strip(),
+        )
+    ).run_argv(
+        ["sh", "-lc", remote],
+        input_text=query,
+        timeout=30,
         check=True,
-        capture_output=True,
     )
     value = json.loads(result.stdout.strip())
     if not isinstance(value, dict):

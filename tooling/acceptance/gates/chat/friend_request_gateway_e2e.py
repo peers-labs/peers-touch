@@ -234,7 +234,7 @@ def main() -> int:
     for fr in requests_list:
         if not isinstance(fr, dict):
             continue
-        sender = str(fr.get("sender_did") or fr.get("sender_id") or fr.get("from_actor_id") or "")
+        sender = str(fr.get("sender_ptid") or "")
         if sender == actor_a.actor_id:
             request_id = str(fr.get("id") or fr.get("request_id") or fr.get("ulid") or "")
             break

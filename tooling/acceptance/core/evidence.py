@@ -44,6 +44,9 @@ class EvidenceReport:
     status: str
     started_at: str
     duration_ms: int
+    phase: Optional[str] = None
+    bom: list[str] = field(default_factory=list)
+    spec: list[str] = field(default_factory=list)
     runtime: dict[str, Any] = field(default_factory=dict)
     actors: dict[str, ActorRuntime] = field(default_factory=dict)
     assertions: list[AssertionResult] = field(default_factory=list)
@@ -112,9 +115,15 @@ class EvidenceReport:
                     f"actor {key!r} must be ActorRuntime or a mapping, got {type(actor).__name__}"
                 )
 
+        passed = self.status == "PASS"
         report = {
+            "artifactKind": "acceptance-gate-evidence-report",
             "gate": self.gate_id,
+            "gateId": self.gate_id,
             "status": self.status,
+            "completionStatus": "DONE" if passed else "PARTIAL",
+            "proofStatus": "PROVEN" if passed else "UNPROVEN",
+            "sampleEmissionAllowed": passed,
             "started_at": self.started_at,
             "duration_ms": self.duration_ms,
             "station_url": self.station_url,
@@ -126,6 +135,12 @@ class EvidenceReport:
             "error_type": self.error_type,
             "manifest": self.manifest,
         }
+        if self.phase:
+            report["phase"] = self.phase
+        if self.bom:
+            report["bom"] = self.bom
+        if self.spec:
+            report["spec"] = self.spec
         return redact_value(report)
 
     def write(self, report_path: Optional[Path] = None) -> Path:
@@ -148,10 +163,19 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def new_report(gate_id: str) -> EvidenceReport:
+def new_report(
+    gate_id: str,
+    *,
+    phase: str | None = None,
+    bom: tuple[str, ...] = (),
+    spec: tuple[str, ...] = (),
+) -> EvidenceReport:
     return EvidenceReport(
         gate_id=gate_id,
         status="RUNNING",
         started_at=now_iso(),
         duration_ms=0,
+        phase=phase,
+        bom=list(bom),
+        spec=list(spec),
     )

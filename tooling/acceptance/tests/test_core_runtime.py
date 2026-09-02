@@ -20,6 +20,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core import (
     AcceptanceGate,
+    AppLaunchMetadata,
     ActorRuntime,
     BaseDriver,
     BaseFixture,
@@ -31,7 +32,12 @@ from tooling.acceptance.core import (
     REPO_ROOT as CORE_REPO_ROOT,
 )
 from tooling.acceptance.core.redaction import REDACTED
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.drivers.tauri import (
+    LocalTauriLauncher,
+    ProvisionedTauriLauncher,
+    TauriDriver,
+    TauriSession,
+)
 
 
 class MockDriver(DomDriver):
@@ -119,9 +125,42 @@ class EvidenceSchemaTests(unittest.TestCase):
         report.status = "PASS"
         report.duration_ms = 1500
         d = report.to_dict()
-        required = {"gate", "status", "started_at", "duration_ms", "runtime",
-                    "actors", "assertions", "evidence", "error", "station_url", "error_type"}
+        required = {
+            "artifactKind",
+            "gate",
+            "status",
+            "completionStatus",
+            "proofStatus",
+            "sampleEmissionAllowed",
+            "started_at",
+            "duration_ms",
+            "runtime",
+            "actors",
+            "assertions",
+            "evidence",
+            "error",
+            "station_url",
+            "error_type",
+        }
         self.assertTrue(required.issubset(d.keys()), f"missing fields: {required - d.keys()}")
+        self.assertEqual(d["artifactKind"], "acceptance-gate-evidence-report")
+        self.assertEqual(d["completionStatus"], "DONE")
+        self.assertEqual(d["proofStatus"], "PROVEN")
+        self.assertTrue(d["sampleEmissionAllowed"])
+
+    def test_report_serializes_declared_traceability(self):
+        report = new_report(
+            "environment-gate",
+            phase="workstream",
+            bom=("GATE-01",),
+            spec=("feature-contract",),
+        )
+
+        serialized = report.to_dict()
+
+        self.assertEqual(serialized["phase"], "workstream")
+        self.assertEqual(serialized["bom"], ["GATE-01"])
+        self.assertEqual(serialized["spec"], ["feature-contract"])
 
     def test_report_writes_valid_json(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -406,12 +445,8 @@ class BaseDriverAbstractInterfaceTests(unittest.TestCase):
 
 
 class TauriDriverAttachTests(unittest.TestCase):
-    def test_connect_attaches_without_launching_or_owning_a_process(self):
-        driver = TauriDriver(
-            app_binary="/tmp/not-launched",
-            port=4555,
-            storage_root="/tmp/external-storage",
-        )
+    def test_connect_attaches_to_endpoint_without_local_runtime_inputs(self):
+        driver = TauriDriver(host="127.0.0.1", port=4555)
         session = MagicMock()
 
         def connect_session() -> None:
@@ -426,10 +461,212 @@ class TauriDriverAttachTests(unittest.TestCase):
         ):
             self.assertIs(driver.connect(timeout=7), session)
 
-        wait.assert_called_once_with(4555, 7)
-        self.assertIsNone(driver._process)
+        wait.assert_called_once_with("127.0.0.1", 4555, 7)
+        self.assertFalse(hasattr(driver, "app_binary"))
+        self.assertFalse(hasattr(driver, "storage_root"))
+        self.assertFalse(hasattr(driver, "process_id"))
         driver.stop()
         session.quit.assert_called_once()
+
+    def test_driver_stop_only_closes_webdriver_session(self):
+        driver = TauriDriver(port=4555)
+        session = MagicMock()
+        driver._driver = session
+
+        driver.stop()
+        driver.stop()
+
+        session.quit.assert_called_once()
+
+    def test_driver_rejects_non_loopback_endpoint(self):
+        with self.assertRaisesRegex(ValueError, "loopback"):
+            TauriDriver(host="10.37.246.80", port=4555)
+
+
+class TauriLauncherSessionTests(unittest.TestCase):
+    def test_local_launcher_owns_process_log_and_temporary_storage(self):
+        process = MagicMock()
+        process.pid = 8123
+        process.poll.return_value = None
+        with patch(
+            "tooling.acceptance.drivers.tauri.subprocess.Popen",
+            return_value=process,
+        ):
+            launcher = LocalTauriLauncher(
+                app_binary="/tmp/peers-touch-desktop",
+                port=4555,
+                gateway_port=3030,
+                profile="acceptance-local",
+            )
+            storage_root = Path(launcher.storage_root)
+            metadata = launcher.start()
+
+            self.assertEqual(metadata.process_id, 8123)
+            self.assertTrue(storage_root.exists())
+            self.assertIsNotNone(metadata.log_path)
+
+            launcher.stop()
+            launcher.stop()
+
+            process.terminate.assert_called_once()
+            self.assertFalse(storage_root.exists())
+
+    def test_local_launcher_preserves_restart_state_until_final_release(self):
+        process = MagicMock()
+        process.pid = 8123
+        process.poll.return_value = None
+        with patch(
+            "tooling.acceptance.drivers.tauri.subprocess.Popen",
+            return_value=process,
+        ):
+            launcher = LocalTauriLauncher(
+                app_binary="/tmp/peers-touch-desktop",
+                port=4555,
+                gateway_port=3030,
+                profile="acceptance-local",
+            )
+            storage_root = Path(launcher.storage_root)
+            launcher.start()
+
+            launcher.stop(preserve_state=True)
+            self.assertTrue(storage_root.exists())
+
+            launcher.stop()
+            self.assertFalse(storage_root.exists())
+
+    def test_provisioned_launcher_releases_owned_runtime_once(self):
+        release = MagicMock()
+        launcher = ProvisionedTauriLauncher(
+            AppLaunchMetadata(
+                webdriver_host="127.0.0.1",
+                webdriver_port=4555,
+                gateway_port=3030,
+                profile="linux-cell",
+                storage_root="/cell/storage",
+                process_id=42,
+                log_path=Path("/cell/app.log"),
+            ),
+            release=release,
+        )
+
+        self.assertEqual(launcher.start().process_id, 42)
+        launcher.stop()
+        launcher.stop()
+
+        release.assert_called_once_with(preserve_state=False)
+        self.assertFalse(launcher.is_alive())
+
+    def test_provisioned_launcher_releases_process_but_preserves_restart_state(self):
+        release = MagicMock()
+        launcher = ProvisionedTauriLauncher(
+            AppLaunchMetadata(
+                webdriver_host="127.0.0.1",
+                webdriver_port=4555,
+                gateway_port=3030,
+                profile="linux-cell",
+                storage_root="/cell/storage",
+                process_id=42,
+            ),
+            release=release,
+        )
+
+        launcher.start()
+        launcher.stop(preserve_state=True)
+        launcher.stop()
+
+        release.assert_called_once_with(preserve_state=True)
+
+    def test_provisioned_launcher_rejects_non_loopback_webdriver(self):
+        with self.assertRaisesRegex(ValueError, "loopback"):
+            ProvisionedTauriLauncher(
+                AppLaunchMetadata(
+                    webdriver_host="10.37.246.80",
+                    webdriver_port=4555,
+                    gateway_port=3030,
+                    profile="linux-cell",
+                    storage_root="/cell/storage",
+                )
+            )
+
+    def test_session_stops_webdriver_before_launcher_without_double_cleanup(self):
+        events: list[str] = []
+        launcher = MagicMock()
+        launcher.metadata = AppLaunchMetadata(
+            webdriver_host="127.0.0.1",
+            webdriver_port=4555,
+            gateway_port=3030,
+            profile="acceptance-local",
+            storage_root="/tmp/storage",
+        )
+        launcher.start.side_effect = lambda: (
+            events.append("launcher.start") or launcher.metadata
+        )
+        launcher.stop.side_effect = lambda: events.append("launcher.stop")
+        launcher.is_alive.return_value = True
+        webdriver_client = MagicMock()
+        webdriver_client.start.side_effect = lambda: events.append("driver.start")
+        webdriver_client.stop.side_effect = lambda: events.append("driver.stop")
+        webdriver_client.is_alive.return_value = True
+
+        with patch(
+            "tooling.acceptance.drivers.tauri.TauriDriver",
+            return_value=webdriver_client,
+        ):
+            session = TauriSession(launcher)
+            session.start()
+            session.stop()
+            session.stop()
+
+        self.assertEqual(
+            events,
+            ["launcher.start", "driver.start", "driver.stop", "launcher.stop"],
+        )
+
+    def test_session_preserves_launcher_state_for_restart(self):
+        launcher = MagicMock()
+        launcher.metadata = AppLaunchMetadata(
+            webdriver_host="127.0.0.1",
+            webdriver_port=4555,
+            gateway_port=3030,
+            profile="acceptance-local",
+            storage_root="/tmp/storage",
+        )
+        launcher.start.return_value = launcher.metadata
+        webdriver_client = MagicMock()
+
+        with patch(
+            "tooling.acceptance.drivers.tauri.TauriDriver",
+            return_value=webdriver_client,
+        ):
+            session = TauriSession(launcher)
+            session.start()
+            session.stop(preserve_state=True)
+
+        webdriver_client.stop.assert_called_once()
+        launcher.stop.assert_called_once_with(preserve_state=True)
+
+    def test_session_releases_launcher_when_webdriver_connect_fails(self):
+        launcher = MagicMock()
+        launcher.metadata = AppLaunchMetadata(
+            webdriver_host="127.0.0.1",
+            webdriver_port=4555,
+            gateway_port=3030,
+            profile="acceptance-local",
+            storage_root="/tmp/storage",
+        )
+        launcher.start.return_value = launcher.metadata
+        webdriver_client = MagicMock()
+        webdriver_client.start.side_effect = RuntimeError("connect failed")
+
+        with patch(
+            "tooling.acceptance.drivers.tauri.TauriDriver",
+            return_value=webdriver_client,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "connect failed"):
+                TauriSession(launcher).start()
+
+        webdriver_client.stop.assert_called_once()
+        launcher.stop.assert_called_once()
 
 
 class FixtureInterfaceTests(unittest.TestCase):
@@ -476,33 +713,14 @@ class HarnessBridgeTests(unittest.TestCase):
             call_async_harness(BadDriver(), "anything", {}, namespace="chat")
         self.assertIn("non-dict", str(ctx.exception))
 
-    def test_call_async_harness_updates_instance_transport_timeout(self):
-        mock_driver = MockDriver()
-        mock_driver.set_script_timeout = MagicMock()
-        mock_driver.command_executor = MagicMock()
-        mock_driver.command_executor._client_config.timeout = 120
-
-        call_async_harness(
-            mock_driver,
-            "anything",
-            {},
-            namespace="agent",
-            script_timeout=300,
-        )
-
-        mock_driver.set_script_timeout.assert_called_once_with(300)
-        self.assertEqual(
-            mock_driver.command_executor._client_config.timeout,
-            305,
-        )
-        mock_driver.command_executor.set_timeout.assert_not_called()
-
 
 class TauriDriverContractTests(unittest.TestCase):
     def test_tauri_driver_inherits_basedriver(self):
-        from tooling.acceptance.drivers import TauriDriver
+        from tooling.acceptance.drivers import TauriDriver, TauriSession
         self.assertTrue(issubclass(TauriDriver, BaseDriver))
         self.assertTrue(issubclass(TauriDriver, DomDriver))
+        self.assertTrue(issubclass(TauriSession, BaseDriver))
+        self.assertTrue(issubclass(TauriSession, DomDriver))
 
     def test_old_api_present_on_new_tauri_driver(self):
         from tooling.acceptance.drivers.tauri import TauriDriver
@@ -513,6 +731,15 @@ class TauriDriverContractTests(unittest.TestCase):
         for m in old_api_methods:
             self.assertTrue(hasattr(TauriDriver, m) or hasattr(TauriDriver, m),
                             f"TauriDriver missing legacy method {m}")
+
+    def test_business_gates_use_composed_tauri_session(self):
+        gate_root = CORE_REPO_ROOT / "tooling" / "acceptance" / "gates"
+        direct_driver_users = [
+            str(path.relative_to(CORE_REPO_ROOT))
+            for path in gate_root.rglob("*.py")
+            if "TauriDriver" in path.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(direct_driver_users, [])
 
     def test_script_timeout_covers_native_renderer_transitions(self):
         from tooling.acceptance.drivers.tauri import SCRIPT_TIMEOUT

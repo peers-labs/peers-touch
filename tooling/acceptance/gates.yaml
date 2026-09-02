@@ -16,7 +16,7 @@
       "description": "Validate only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection."
     },
     "acceptance-runtime-provisioning-self": {
-      "command": "python3 -m unittest tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py",
+      "command": "python3 -m unittest tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
@@ -30,58 +30,113 @@
       "description": "Validate that acceptance-run preserves source artifact diagnostics, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata in latest-run evidence."
     },
     "chat-native-visible-static": {
-      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
+      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate W8 native runner fail-closed evidence, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey."
+      "description": "Validate native runner fail-closed evidence, MP-W13 no-bypass DOM actions, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey."
     },
     "chat-native-two-client-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_runner && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_entry && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
       "timeout_seconds": 1800,
       "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext plus DELIVERED receipt visibility."
     },
     "chat-native-interactions-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_interactions_runner",
       "timeout_seconds": 3600,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run isolated Native Direct and Group clients and prove reply/thread, author-only edit/retract, reaction, pin, read, offline, replay and restart convergence with Station and Engine durable readback."
+    },
+    "chat-native-product-closure-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.native_product_closure_entry",
+      "timeout_seconds": 3600,
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run Alice and Bob through real Native Chat DOM actions and prove transcript, thread, reaction, toolbar geometry, identity, Station attribution, settings/background, attachment conservation, restart and cleanup."
     },
     "chat-contact-message-resilience-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.contact_message_resilience_runner",
       "timeout_seconds": 600,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Prove that clicking the contact Message button opens the chat view immediately even when createDirect fails, and the error is presented within the open view."
     },
     "chat-native-typing-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
       "timeout_seconds": 1800,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run isolated Native Direct and Group clients and prove authenticated ephemeral typing start, stop, session switch, disconnect and TTL cleanup without durable lane or history writes."
     },
     "chat-native-multi-device-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_multi_device_runner",
       "timeout_seconds": 1800,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run visible native direct-message acceptance with one recipient actor on two isolated devices."
     },
     "chat-native-recovery-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_recovery_runner",
       "timeout_seconds": 2400,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run visible native reinstall and 24-word recovery history-restore acceptance."
     },
     "chat-native-group-mls-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_group_mls_runner",
       "timeout_seconds": 2400,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run visible native three-device MLS add, send, remove, restart, and recovery acceptance."
     },
@@ -163,16 +218,18 @@
       "description": "Validate the unified messaging platform ownership, protocol, queue, and crypto contracts."
     },
     "chat-desktop-gateway-e2e": {
-      "command": "python3 tooling/acceptance/gates/chat/desktop_gateway_e2e.py",
+      "command": "python3 -m tooling.acceptance.gates.chat.desktop_gateway_e2e",
       "timeout_seconds": 600,
       "environment": "local-desktop-gateway",
+      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
-      "description": "Run a real Desktop HTTP gateway flow proving MLS/E2EE direct conversation creation, message delivery, hydration, and decryption."
+      "description": "Run a real Desktop HTTP gateway flow proving atomic multi-account identity transitions, JWT-bound PIN unlock, legacy PIN fail-closed behavior, and MLS/E2EE direct conversation delivery."
     },
     "chat-federated-browser-prereq": {
       "command": "python3 tooling/acceptance/gates/chat/federated_browser_prereq.py",
       "timeout_seconds": 120,
       "environment": "home-station",
+      "provisioner": "home-station",
       "tier": "env-evidence",
       "description": "Validate live deployed federated browser prerequisites: distinct authority/follower Stations, healthy Relay, discoverable Station peer IDs, and optional Desktop gateway Station binding."
     },
@@ -196,13 +253,6 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Prove two Desktop dev-runtime instances can run simultaneously with distinct gateway ports, storage roots, and profiles without port or PID conflicts."
-    },
-    "agent-message-actions-static": {
-      "command": "cd apps/desktop && pnpm exec vitest run src/store/messageActions.test.ts",
-      "timeout_seconds": 120,
-      "environment": "local",
-      "tier": "ci-cheap",
-      "description": "Validate role-specific message action placement, including Regenerate as a primary completed-assistant action."
     },
     "applet-desktop-lifecycle-smoothness": {
       "command": "pnpm applet:desktop-lifecycle-smoothness-gate",
@@ -243,6 +293,7 @@
       "command": "python3 tooling/acceptance/gates/desktop/gateway_smoke.py",
       "timeout_seconds": 600,
       "environment": "local-desktop-gateway",
+      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Validate Desktop gateway active Station and collect render diagnostics."
     },
@@ -428,6 +479,114 @@
       "tier": "local-evidence",
       "description": "Validate the Station Dashboard managed domain profile against project-wide acceptance contracts and latest gate evidence."
     },
+    "mobile-contract-static": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.contract_static",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate Mobile Acceptance IDs, typed service topology, and contract wiring without claiming native product behavior."
+    },
+    "mobile-identity-contract": {
+      "command": "python3 tooling/acceptance/gates/mobile/identity_contract.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the PTID-only ActorRef hard cut and signed Station identity Proto contract."
+    },
+    "mobile-hard-cut-static": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.contract_static --hard-cut",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate final Mobile identity, lifecycle, persistence, gateway, and retired-path deletion contracts."
+    },
+    "mobile-simulator-access-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_e2e",
+      "timeout_seconds": 2400,
+      "environment": "mobile-simulator",
+      "provisioner": "mobile-simulator",
+      "tier": "env-evidence",
+      "description": "Prove iOS Simulator and Android emulator launch, native callback routing, restart, and fail-closed behavior without claiming physical-device MS-AG03 or provider success."
+    },
+    "mobile-native-access-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario access",
+      "timeout_seconds": 1800,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove Station trust, Access Gate, OAuth, and Station replacement on isolated iOS and Android clients."
+    },
+    "mobile-native-lifecycle-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario lifecycle",
+      "timeout_seconds": 1800,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove Mobile launch, resume, revocation, Station change, logout, generation fencing, and teardown."
+    },
+    "mobile-native-recovery-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario recovery",
+      "timeout_seconds": 2400,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove command outcome convergence, restart recovery, overload, and encrypted draft restoration."
+    },
+    "mobile-native-recovery-ui-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario recovery-ui",
+      "timeout_seconds": 1800,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove receiver-visible recovery, capacity, identity mismatch, revocation, and deferred states."
+    },
+    "mobile-native-social-convergence-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario social-convergence",
+      "timeout_seconds": 2400,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove shared Mobile Social ingress and Station-backed projection convergence across actors and Stations."
+    },
+    "mobile-native-chat-contacts-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario chat-contacts",
+      "timeout_seconds": 2400,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove Chat, Contacts, and Group receiver journeys with authoritative readback."
+    },
+    "mobile-native-moments-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario moments",
+      "timeout_seconds": 2400,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove Moments feed, publish, reaction, comment, reply, rollback, and draft recovery."
+    },
+    "mobile-native-settings-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario settings",
+      "timeout_seconds": 1800,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove account and device settings ownership, persistence, conflict, and readback."
+    },
+    "mobile-native-platform-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario platform",
+      "timeout_seconds": 2400,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "tier": "env-evidence",
+      "description": "Prove iOS and Android accessibility, localization, performance, permission, and cleanup contracts."
+    },
+    "mobile-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain mobile --require-proven",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the Mobile managed domain against contract, native runtime, evidence, and unproven-scope rules."
+    },
     "chat-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain chat --require-proven",
       "timeout_seconds": 600,
@@ -441,493 +600,6 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Validate the Applet managed domain profile against Desktop lifecycle smoothness capability, registry, gate, and latest evidence contracts."
-    },
-    "station-agent-unit": {
-      "command": "cd apps/station && go test ./app/subserver/agent/...",
-      "timeout_seconds": 600,
-      "environment": "local",
-      "tier": "ci-cheap",
-      "description": "Run Station Agent subserver unit tests: turn service, tool dispatch, attachment service, prompt assembly, persistence."
-    },
-    "desktop-rust-check": {
-      "command": "cd apps/desktop/src-tauri && cargo check",
-      "timeout_seconds": 600,
-      "environment": "local",
-      "tier": "ci-cheap",
-      "description": "Run Desktop Rust cargo check for agent_turn, http_gateway, contracts, and tauri commands."
-    },
-    "agent-contract-static": {
-      "command": "python3 -m unittest tooling.acceptance.gates.agent.agent_contract_test tooling.acceptance.gates.agent.agent_native_static_test",
-      "timeout_seconds": 120,
-      "environment": "local",
-      "tier": "ci-cheap",
-      "description": "Validate Agent module structural contracts: ToolCall state machine, fencing, redaction, dead-code removal, opaque refs, event protocol, and native E2E selector bindings."
-    },
-    "agent-native-turn-static": {
-      "command": "python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test",
-      "timeout_seconds": 120,
-      "environment": "local",
-      "tier": "ci-cheap",
-      "description": "Validate Agent native runner fail-closed evidence, selector bindings, Make launch, and cleanup contracts without launching a live journey."
-    },
-    "agent-native-turn-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py",
-      "timeout_seconds": 1800,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Run visible native Agent turn delivery from the provisioned One-profile runtime manifest: login, navigate, send, and verify streamed response."
-    },
-    "agent-domain-validation": {
-      "command": "python3 tooling/scripts/acceptance-validate.py --domain agent --require-proven",
-      "timeout_seconds": 600,
-      "environment": "local",
-      "tier": "local-evidence",
-      "description": "Validate the Agent managed domain profile against station turn, context intelligence, tool authority, attachments, diagnostics, and desktop surface contracts."
-    },
-    "agent-core-lifecycle-native-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey core-lifecycle",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "P0 agent lifecycle: auto-create, select, send, receive, topic, update."
-    },
-    "agent-conversation-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey conversation",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Conversation CRUD: create, list, archive, delete, context-window management."
-    },
-    "agent-provider-credential-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey provider",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Provider credential lifecycle: add, validate, rotate, revoke."
-    },
-    "agent-memory-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey memory",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Memory lifecycle: write, retrieve, summarize, evict."
-    },
-    "agent-skill-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey skill",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Skill lifecycle: register, bind, unbind, invoke, version."
-    },
-    "agent-growth-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey growth",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Growth diagnostics: metric collection, report, recommendation."
-    },
-    "agent-orchestration-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey orchestration",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Multi-agent orchestration: delegation, handoff, collaboration."
-    },
-    "agent-thread-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey thread",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Thread branching: create, branch, merge, fork, navigation."
-    },
-    "agent-ecosystem-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey ecosystem",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Ecosystem: publish, discover, install, rate, federation sharing."
-    },
-    "agent-task-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey task",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Task management: create, assign, progress, complete, cancel, retry."
-    },
-    "agent-scheduler-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey scheduler",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Scheduler: create, trigger, pause, resume, delete, cron."
-    },
-    "agent-quick-completion-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey quick-completion",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Quick completion: trigger, streaming response, inline acceptance."
-    },
-    "agent-event-stream-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey event-stream",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Event stream: connect, subscribe, consume, reconnect, backpressure."
-    },
-    "agent-atelier-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey atelier",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Atelier workspace: create, artifact management, collaboration."
-    },
-    "agent-offline-queue-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey offline-queue",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Offline queue: enqueue, list pending, ack, sync, conflict resolution."
-    },
-    "agent-revision-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey revision",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Revision: retry, regenerate, edit-resend, branch select, tombstone."
-    },
-    "agent-workspace-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey workspace",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Workspace: CRUD, file management, diff, commit, OSS."
-    },
-    "agent-stream-resilience-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey stream-resilience",
-      "timeout_seconds": 1800,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Run the isolated One-profile native R6 journey: active turn, transport fault, visible reconciling, cursor replay without duplicate projection, logout teardown, auth-gate isolation, re-login Station readback, and cleanup."
-    },
-    "agent-attachment-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey attachment",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Attachment: upload, attach, type-gate, download, capability check."
-    },
-    "agent-capability-transparency-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey capability-transparency",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Capability transparency: query, real-time update, UI reflection."
-    },
-    "agent-dogfood-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey dogfood",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Dogfood: run scenarios, tier selection, report, non-mutation."
-    },
-    "agent-translation-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey translation",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Translation: translate, clear, persist, reload."
-    },
-    "agent-follow-up-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey follow-up",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Follow-up suggestions: generation, delivery, fill-not-send, disappear-on-type."
-    },
-    "agent-topic-comments-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey topic-comments",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Topic comments: create, list, delete, immutability, cascade."
-    },
-    "agent-native-mention-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey mention",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Mention: popup, selection, tag removal, send cleanup."
-    },
-    "agent-native-knowledge-binding-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey knowledge-binding",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Knowledge binding: add, disable/re-enable, remove, Station readback."
-    },
-    "agent-native-connector-lifecycle-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey connector-lifecycle",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Connector lifecycle: OAuth entry, mount, tool sync, readback, unmount."
-    },
-    "agent-native-message-forward-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey message-forward",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Message forward: modal selection, target conversation, transcript visibility."
-    },
-    "agent-native-portal-navigation-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey portal-navigation",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Portal navigation: push, back, collapse/reopen, explicit close."
-    },
-    "agent-v2-kernel-foundation-e2e": {
-      "command": "PT_AGENT_V2_CANDIDATE_MANIFEST=$(python3 tooling/acceptance/gates/agent/foundation_scenario_runner.py) && python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-kernel-foundation-e2e",
-      "timeout_seconds": 3600,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "V2 kernel foundation: C01-C10 behavior across 419-cell Gate matrix.",
-      "initial_proof_status": "UNPROVEN",
-      "runtime_matrix": {
-        "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
-        "expected_tuple_count": 419
-      },
-      "required_artifact_roles": [
-        "cell-results",
-        "receiver-dom",
-        "station-readback",
-        "runtime-events",
-        "runtime-attestation-set",
-        "measurement-report",
-        "side-effect-count",
-        "replay",
-        "cleanup",
-        "contract-evidence",
-        "guard-report",
-        "source-identity",
-        "role-schema-report",
-        "runner-attestation"
-      ]
-    },
-    "agent-v2-home-command-center-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-home-command-center-e2e",
-      "timeout_seconds": 600,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "V2 Home Command Center: submission, projection, restart, stale, recovery.",
-      "initial_proof_status": "UNPROVEN",
-      "runtime_matrix": {
-        "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
-        "expected_tuple_count": 33
-      },
-      "required_artifact_roles": [
-        "receiver-dom",
-        "station-readback",
-        "command-ids",
-        "projection-revisions",
-        "runtime-attestation-set",
-        "measurement-report",
-        "side-effect-count",
-        "replay",
-        "cleanup",
-        "source-identity",
-        "role-schema-report",
-        "runner-attestation"
-      ]
-    },
-    "agent-v2-capability-binding-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-capability-binding-e2e",
-      "timeout_seconds": 600,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "V2 capability binding: inventory, binding, compatibility, deletion, rejection.",
-      "initial_proof_status": "UNPROVEN",
-      "runtime_matrix": {
-        "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
-        "expected_tuple_count": 69
-      },
-      "required_artifact_roles": [
-        "receiver-dom",
-        "station-readback",
-        "readiness-snapshots",
-        "zero-execution",
-        "runtime-attestation-set",
-        "measurement-report",
-        "side-effect-count",
-        "replay",
-        "cleanup",
-        "source-identity",
-        "role-schema-report",
-        "runner-attestation"
-      ]
-    },
-    "agent-v2-governed-tool-loop-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-governed-tool-loop-e2e",
-      "timeout_seconds": 600,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "V2 governed tool loop: exactly-once approval, execution, terminal, replay, recovery.",
-      "initial_proof_status": "UNPROVEN",
-      "runtime_matrix": {
-        "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
-        "expected_tuple_count": 86
-      },
-      "required_artifact_roles": [
-        "receiver-dom",
-        "station-readback",
-        "executor-receipts",
-        "runtime-attestation-set",
-        "measurement-report",
-        "side-effect-count",
-        "cleanup",
-        "replay",
-        "source-identity",
-        "role-schema-report",
-        "runner-attestation"
-      ]
-    },
-    "agent-v2-mcp-lifecycle-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-mcp-lifecycle-e2e",
-      "timeout_seconds": 600,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "V2 MCP lifecycle: install, test, invoke, cancel, reconnect, race, cleanup.",
-      "initial_proof_status": "UNPROVEN",
-      "runtime_matrix": {
-        "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
-        "expected_tuple_count": 41
-      },
-      "required_artifact_roles": [
-        "receiver-dom",
-        "station-readback",
-        "executor-receipts",
-        "process-port-secret-canary",
-        "runtime-attestation-set",
-        "measurement-report",
-        "side-effect-count",
-        "cleanup",
-        "replay",
-        "source-identity",
-        "role-schema-report",
-        "runner-attestation"
-      ]
-    },
-    "agent-v2-connector-invocation-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-connector-invocation-e2e",
-      "timeout_seconds": 600,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "V2 connector invocation: OAuth resource-to-manifest-to-governed-invocation.",
-      "initial_proof_status": "UNPROVEN",
-      "runtime_matrix": {
-        "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
-        "expected_tuple_count": 37
-      },
-      "required_artifact_roles": [
-        "receiver-dom",
-        "station-readback",
-        "oauth-resource-manifest",
-        "provider-revoke",
-        "runtime-attestation-set",
-        "measurement-report",
-        "side-effect-count",
-        "cleanup",
-        "replay",
-        "source-identity",
-        "role-schema-report",
-        "runner-attestation"
-      ]
-    },
-    "agent-v2-evaluation-lab-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-evaluation-lab-e2e",
-      "timeout_seconds": 600,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "V2 Evaluation Lab: durable run, cancellation, retry, restart, metrics, retention.",
-      "initial_proof_status": "UNPROVEN",
-      "runtime_matrix": {
-        "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
-        "expected_tuple_count": 57
-      },
-      "required_artifact_roles": [
-        "receiver-dom",
-        "station-readback",
-        "turn-trace",
-        "metrics-lineage",
-        "runtime-attestation-set",
-        "measurement-report",
-        "side-effect-count",
-        "cleanup",
-        "replay",
-        "source-identity",
-        "role-schema-report",
-        "runner-attestation"
-      ]
-    },
-    "agent-core-chat-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey core-chat",
-      "timeout_seconds": 300,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Core chat loop: send, stream, persist, multi-turn, terminal state."
     }
   }
 }
