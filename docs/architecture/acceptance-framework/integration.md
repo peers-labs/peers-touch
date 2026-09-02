@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-08-15 | **Updated**: 2026-08-17
+> **Created**: 2026-08-15 | **Updated**: 2026-09-02
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/core/`
 
@@ -43,11 +43,11 @@
 |---|---|---|---|
 | `gates.yaml.environment` | 只有标签，没有 acquisition contract | Acceptance Provisioning Registry | environment contract |
 | active `.local` Profile | 文件名与内部 identity 可漂移 | Local Dev Environment | validated profile identity |
-| `make station` / `station-status` | 能 ready/check，但不产出 Gate 可消费的完整 attestation | Station deployment/runtime | station attestation |
+| `make station` / `station-status` | 能 ready/check，但不产出 Gate 可消费的完整 attestation | Station deployment/runtime | service-scoped Station attestation |
 | `CHAT_NATIVE_*_PTID` | 由调用方手工提供 | Chat Fixture | actor manifest |
 | `CHAT_NATIVE_DEMO_PASSWORD` | 来源未声明且 runner 有默认值 | approved credential source | credential reference |
-| `CHAT_NATIVE_STATION_ATTESTATION` | runner 只消费，没有生产者 | Station deployment/runtime | source-bound attestation artifact |
-| `CHAT_NATIVE_STATION_URL` | Profile 与 Gate 使用不同变量 | Environment Provisioner | runtime manifest station URL |
+| `CHAT_NATIVE_STATION_ATTESTATION` | runner 只消费，没有生产者 | Station deployment/runtime | source-bound service attestation artifact |
+| `CHAT_NATIVE_STATION_URL` | Profile 与 Gate 使用不同变量 | Environment Provisioner | `runtime manifest.services.station.endpoint` |
 | Gateway/Native ports | runner 局部计算，缺少统一 preflight record | Environment Provisioner + Driver | client isolation manifest |
 | Gate failure text log | 缺少 source-bound preflight identity | Provisioner/Gate Runner | structured blocked artifact |
 
@@ -104,6 +104,73 @@ Runtime report中对其它artifact的引用必须normalize为`ArtifactRef`。用
 `--input/--output`可接受explicit filesystem path，但default必须来自Evidence Store；
 test-only path不能成为production fallback。
 
+### 1.5 Native Desktop Runtime Cell 目标映射
+
+> 本节由 accepted D-13 ~ D-16 约束。
+
+| 当前输入或行为 | 当前问题 | 目标 Owner | 目标 contract/artifact |
+|---|---|---|---|
+| `gates.yaml.environment` 单值 | 无法表达同一 Gate 的 macOS/Linux/Windows proof matrix | Acceptance Infra | optional `requiredRuntimeCells` schema + matrix result |
+| `TauriDriver._launch_app()` | 本机 launch 与 W3C client 耦合 | Acceptance Infra | launcher-neutral `TauriDriver` |
+| `127.0.0.1:<port>` | 默认等同 orchestrator localhost | Acceptance Infra | run-scoped endpoint/tunnel lease |
+| macOS AppKit/CoreGraphics methods 位于 Chat runner | 平台机制污染业务 Gate | Desktop platform injection | `NativeDesktopAdapter` |
+| 本机 `.local/acceptance/bin` | 无远端 source/binary identity | Desktop platform injection | source staging + binary attestation |
+| `deploy.sh` 内嵌 source push/fetch | Git 增量同步能力与 Station/Relay role lifecycle 耦合 | Deployment/Acceptance Infra | role-neutral remote source-sync contract |
+| 本机 process/storage cleanup | 无远端 crash/SSH disconnect 回收 | Acceptance Infra + cell injection | remote lease + TTL reaper + cleanup audit |
+| 单个 Gate result | 无 runtime cell identity，可能跨平台冒充 | Acceptance Infra | `(gateId, cellId, sourceCommit)` result |
+
+目标调用链：
+
+```text
+Gate Catalog
+  -> Environment Contract
+  -> required Runtime Cell Contract
+  -> Runtime Cell lease
+  -> incremental Git object sync + exact commit checkout
+  -> exact-source remote build with persistent caches
+  -> remote app + loopback embedded WebDriver
+  -> run-scoped SSH tunnel
+  -> local TauriDriver + remote NativeDesktopAdapter
+  -> unchanged business Gate assertions
+  -> local immutable Evidence Store
+  -> remote reverse-order cleanup
+```
+
+平台 adapter mapping：
+
+| Cell | WebView | Native input/window backend | Platform-only evidence |
+|---|---|---|---|
+| `desktop-macos-native` | WKWebView | AppKit + CoreGraphics + Accessibility | Spaces、frontmost PID、AX focus |
+| `desktop-linux-native` | WebKitGTK | X11 XTest + EWMH | active window、stack/point owner、X11 focus |
+| `desktop-windows-native` | WebView2 | Win32 `SendInput` + UI Automation | foreground HWND、process/window ownership |
+
+Business Gate 只能依赖 adapter interface。平台实现不得 import Chat Gate，也不得改变
+selector、actor journey、timeout budget 或 success assertion。
+
+### 1.6 Linux Candidate Cell Preflight Baseline
+
+Linux cell 必须通过以下 fail-closed preflight：
+
+- x86_64 Linux host kernel 与 working container runtime；
+- digest-pinned supported Linux userland image；
+- cell userland 内具备 Tauri 当前锁定依赖所需的 WebKitGTK 4.1
+  development/runtime packages；
+- connected virtual or physical output、固定 geometry、persistent Xorg session；
+- dedicated GUI identity、DBus session、keyring 与 user runtime directory；
+- Node/pnpm、Rust/Cargo、Python 和 native build dependencies；
+- SSH host-key pinning、loopback tunnel capability 与 passwordless non-interactive
+  lifecycle commands；
+- repository source staging、clean commit check、remote digest 与 binary SHA-256；
+- 首次传输完整 Git objects、后续仅传缺失 objects；不得传输 `node_modules`、Cargo
+  target 或完整 worktree；
+- X11 XTest input、EWMH focus/window stack 与 desktop screenshot probes；
+- remote process/port/storage/session lease cleanup。
+
+候选机缺少任一项时输出 `ACCEPTANCE_GATE_BLOCKED_BY_ENVIRONMENT`。不得混装其它
+发行版的软件包、回退 Xvfb、改用 browser shell 或省略 Native input proof。宿主
+发行版不需要升级；host kernel、container image digest 与 cell userland 必须分别
+attest。
+
 ---
 
 ## 2. 影响面分析
@@ -130,6 +197,21 @@ test-only path不能成为production fallback。
 | `tooling/scripts/acceptance-*.py` | 原子迁移 | defaults通过Evidence Store，explicit fixture paths保留 |
 | Domain/capability/feature contracts | schema migration | physical report paths改为logical identities |
 | Make/review/quality/skills/docs | consumer migration | 输出与读取命令解析canonical root |
+| `tooling/acceptance/core/provisioning.py` | 架构扩展 | Runtime Cell contract、manifest、matrix identity、Environment client declaration、`ClientRuntime.service_bindings` 与 service reference validation |
+| `tooling/acceptance/core/provisioner.py` | 架构扩展 | cell lease、transport lifecycle、disconnect/cancel cleanup |
+| `tooling/acceptance/provisioners/mobile_native.py` | 去私有化迁移 | 使用通用 client contract，不再自行解析 raw `clients` |
+| `tooling/acceptance/gates/mobile/proof_contracts.py` | 删除重复拓扑 | 删除 `CLIENT_SERVICE`，从 Runtime Manifest binding 解析 Station |
+| `tooling/acceptance/gates/chat/federated_browser_prereq.py` | 删除重复拓扑 | authority/follower client 通过 service binding 解析，不再用裸 URL 表达拓扑 |
+| Native Desktop Runtime Binding 与 Chat runner | 多服务扩展 | Runtime Binding 按 client ID 与 binding role 启动并验证 session；Chat runner 不再注入 Station URL |
+| `tooling/acceptance/core/drivers/launcher.py` | 新增通用契约 | launcher metadata 与 start/stop/alive 资源所有权 |
+| `tooling/acceptance/drivers/tauri.py` | 职责拆分 | 纯 W3C client 与 local/provisioned launcher 解耦，由 TauriSession 组合并支持 forwarded loopback endpoint |
+| `tooling/acceptance/drivers/native/` | 新增平台注入 | macOS/Linux/Windows input、focus、window observation adapters |
+| `tooling/acceptance/transports/ssh.py` | 新增通用 Infra | host verification、bounded command、port forwarding、cancel |
+| `tooling/scripts/deploy/source-sync.sh` | 从现有 deploy 提取 | role-neutral Git object push/fetch、exact checkout 与 source lease |
+| `tooling/acceptance/runtime-cells/*.yaml` | 新增平台注入 | 非敏感 cell capability contracts |
+| `tooling/acceptance/provisioners/native_desktop_*.py` | 新增平台注入 | 各 Desktop OS 的 session/build/process/cleanup lifecycle |
+| `tooling/scripts/acceptance-run.py` | 架构扩展 | Gate × cell expansion、per-cell result 与 aggregate proof |
+| Native business runners | 依赖反转 | 删除平台 API，改为消费 `NativeDesktopAdapter` |
 
 ### 2.2 不受影响的代码
 
@@ -139,6 +221,8 @@ test-only path不能成为production fallback。
 - Applet 业务代码
 - Chat 产品业务逻辑；本设计不修复 `DELIVERED` receipt
 - Gate 产品成功标准；不得因 provisioning 改造而降低
+- Chat actor journey、selector、message/attachment assertion 与 first-failed-boundary
+  纪律
 - CI/CD 调用的 Make target 名称
 
 ### 2.3 必须删除或禁止保留的旧路径
@@ -159,6 +243,20 @@ Native Chat 目标态只认 provisioning artifact；credential value 仅按 mani
 
 Evidence Store迁移同样禁止dual-write、symlink compatibility、legacy resolver或
 write failure后的source-tree fallback。
+
+Native runtime cell 迁移禁止：
+
+- 保留 Chat runner 内的 AppKit/CoreGraphics 分支并旁挂 Linux 分支；
+- 把 Linux WebDriver DOM click 当成 X11 Native input；
+- 将远端 embedded WebDriver 绑定到非 loopback address；
+- 在 repository contract 中硬编码 host、username、password 或 key path；
+- 使用其它平台 evidence 填充缺失 cell；
+- SSH disconnect 后遗留 app、tunnel、port、storage 或 GUI lease。
+- 通过 rsync/tar overlay 把 dirty 或 untracked source 注入最终 proof。
+- Mobile `CLIENT_SERVICE`、Federation authority/follower URL map 与 Native runner
+  default-Station 推断并存。
+- client record 复制 Station endpoint、deployment、commit 或 attestation。
+- Gate 从 Profile、环境变量、client/service 顺序或业务常量恢复缺失 binding。
 
 ---
 
@@ -211,6 +309,99 @@ write failure后的source-tree fallback。
 - 旧 ad-hoc 环境变量不是长期公共 API；迁移后由 runtime manifest 取代。
 - 缺少 provisioning artifact 时行为从文本失败升级为结构化 `BLOCKED/UNPROVEN`，
   不得伪装为 Gate 产品失败。
+
+### Runtime Manifest Service Topology Hard Cut
+
+所有 Runtime Manifest producer、consumer、validator、test 和 Gate helper 必须原子
+迁移到 `services[service-id]`：
+
+- Environment Contract 为每个 service role 声明 `kind`。
+- Station 与 Relay runtime owner 产生 kind-aware attestation。
+- Artifact 路径为
+  `runtime/services/<service-id>/attestation.json`。
+- Provisioner 在进入 `FIXTURE_READY` 前验证 required service ID 和 kind 闭包。
+- 缺失、重复、kind mismatch 或 legacy 顶层 `station` 都 fail closed。
+
+禁止 compatibility reader、dual-write period、按顺序选择第一台 Station，或由 Mobile
+Gate 创建第二份业务 manifest。
+
+### Client-To-Service Binding Hard Cut
+
+D-18 在 D-17 services map 上增加 typed dependency edge，不增加第二份服务拓扑：
+
+- Environment Contract 通用解析 client declarations 与 `service_bindings`。
+  Client must explicitly declare `required_service_roles`; omission is invalid,
+  and a service-independent client must declare an explicit empty list.
+- D-18 adds only `id`, `required_service_roles`, and `service_bindings` to the
+  existing `ClientRuntime`; D-13 continues to own platform allocation and
+  isolation fields.
+- `ClientRuntime.service_bindings[role]` 只保存 `service_id` 和
+  `required_kind`。
+- Provisioner 在启动客户端前验证 client ID 唯一、service 引用存在及 kind 一致,
+  using closed `ClientBindingError` codes with numeric values and stage;
+  bare string errors forbidden.
+- Every initial launch and restart uses
+  `create_bound_session(client_id, launch_options)`. Runtime Binding allocates
+  the client's monotonic launch generation, resolves the service from the
+  immutable manifest, launches the client, and reads observed identity for each
+  required role from live client connection state. It binds observations to a
+  platform-neutral identity backed by existing D-13 runtime identity, asks Core
+  to persist one verified `BindingProofRecord` per role, and automatically
+  contributes the proof refs to Gate evidence before returning the session.
+  Gate code cannot supply generation, service URL, or service identity.
+- `launch_options` is a closed typed contract owned by each Runtime Binding.
+  Unknown fields, arbitrary environment maps, and topology-bearing values fail
+  before launch with `ENDPOINT_COPY_DETECTED`.
+- Existing Chat fault-replay paths migrate from extracting
+  `RuntimeEndpoint.url` and calling `configure_station(...)` to opaque
+  `TransportOverrideHandle` application through Runtime Binding. This is an
+  atomic Chat Domain cutover: the proxy remains Domain-owned, its routable
+  endpoint stays inside Runtime Binding, and proxy evidence continues proving
+  upstream identity, fault behavior, and cleanup.
+- Runtime Manifest consumer 使用唯一 lookup helper：
+  `client ID -> binding role -> service ID -> ServiceAttestation`。
+- 具体环境只注入稳定 service ID、profile/deployment reference、client role 和
+  Fixture；host、port、commit 与 runtime identity 来自对应 service attestation。
+
+**Migration ownership boundary** (Acceptance Infra responsibility firewall):
+
+Acceptance Infra delivers:
+- Generic binding parser, validator, and lookup helper in `core/provisioning.py`
+- `BindingProofRecord` contract and closed `ClientBindingError` typed codes
+- Core binding verifier that derives expected identity from ServiceAttestation
+
+Each business Domain independently owns:
+- Its own migration schedule (when to switch runners/gates to the generic helper)
+- Deletion of its own legacy constants (`CLIENT_SERVICE`, authority/follower
+  URLs, default-Station inference)
+- Platform observation mechanism used by its Runtime Binding
+
+**Intra-Domain atomic cutover gate**: Within each Domain, the following must
+switch in one atomic change (same commit):
+1. Environment Contract client `required_service_roles` and `service_bindings`
+2. Runtime Binding switching to `create_bound_session`
+3. All Gate consumers stopping topology injection and consuming bound sessions
+4. Fault-injection consumers switching from routable proxy URLs to opaque
+   `TransportOverrideHandle`
+5. Deletion of the Domain's legacy private mapping constants
+6. Removal of any fallback to old fields, Profile defaults, or array order
+
+A partial migration must fail the Domain's structural gate. The execution plan
+must inventory each Domain's consumers and define tree-wide zero-reference
+checks for its legacy mappings; D-18 does not add a runtime enforcement mode.
+
+Cross-Domain migration order is independent. Infra's obligation is that the
+generic helper is available and correct before any Domain begins migration.
+
+迁移后各 Domain 必须删除各自的遗留映射：
+
+- Mobile Domain: `gates/mobile/proof_contracts.py::CLIENT_SERVICE`
+- Federation Domain: Gate 用于表达 topology 的 authority/follower Station URL 读取
+- Chat/Native Desktop Domain: runner 对所有 client 使用单个默认 Station 的假设
+- 所有 Domain: 从旧字段、Profile 默认值或数组顺序恢复 binding 的兼容逻辑
+
+该 hard cut 不改变 Chat、Mobile 或 Federation 产品断言。具体 `four`、`fiveArm`
+拓扑与回执、恢复、故障注入场景属于业务 Domain injection，在独立执行计划中接入。
 
 D-11 compatibility boundary：
 
