@@ -91,9 +91,15 @@ from .launch_context import (
     EphemeralGateLaunchContext,
     EphemeralGateClient,
 )
+from .result_contracts import (
+    ResultContractError,
+    CanonicalResultTuple,
+    PlatformCellResult,
+    PlatformMatrixResult,
+    fold_result_tuples,
+)
 from .runtime_cell import (
     RuntimeCellState,
-    CellProofState,
     RuntimeCellLifecycle,
     TransportContract,
     DisplayContract,
@@ -108,8 +114,6 @@ from .runtime_cell import (
     CellSourceIdentity,
     CellAdapterIdentity,
     RuntimeCellManifest,
-    CellResult,
-    aggregate_matrix,
     parse_required_runtime_cells,
 )
 
@@ -184,8 +188,12 @@ __all__ = [
     "GateProcessLauncher",
     "EphemeralGateLaunchContext",
     "EphemeralGateClient",
+    "ResultContractError",
+    "CanonicalResultTuple",
+    "PlatformCellResult",
+    "PlatformMatrixResult",
+    "fold_result_tuples",
     "RuntimeCellState",
-    "CellProofState",
     "RuntimeCellLifecycle",
     "TransportContract",
     "DisplayContract",
@@ -200,8 +208,6 @@ __all__ = [
     "CellSourceIdentity",
     "CellAdapterIdentity",
     "RuntimeCellManifest",
-    "CellResult",
-    "aggregate_matrix",
     "parse_required_runtime_cells",
     "ARTIFACT_ROOT_ENV",
     "RUN_GATE_ENV",

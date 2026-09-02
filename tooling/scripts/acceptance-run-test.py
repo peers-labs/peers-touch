@@ -610,6 +610,16 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertNotIn("SYNTHETIC_SECRET", child_environment)
         self.assertNotIn("resolved-secret", json.dumps(child_environment))
         self.assertEqual(
+            json.loads(child_environment["PT_ACCEPTANCE_CURRENT_RESULTS"]),
+            {
+                "source": {
+                    "commit": "abc123",
+                    "workspaceDigest": "clean",
+                },
+                "results": [],
+            },
+        )
+        self.assertEqual(
             events,
             [
                 "evidence-run-bound",

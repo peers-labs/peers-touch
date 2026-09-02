@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-01
-covered_docs_hash: 10057c38905bf7ed85ade653738b98f1e2e1848fa754687c1b75bb7b93e4140f
+last_verified_at: 2026-09-02
+covered_docs_hash: 2d90713b352b6d7bbaee7832a541849cfe710425788978231d56a03c897fe1b9
 
 covered_docs:
   - AGENTS.md
@@ -98,3 +98,13 @@ commands. It also requires complete, idempotent closure evidence for Mobile
 resource-lease broker, ledger, descriptor, and authentication-key owners, and
 requires governing-source manifests to be regenerated from current pack-local
 bytes before review input is sealed.
+
+## 2026-09-02 Review
+
+D-19 introduces canonical result algebra, protected evidence-finalizer
+registration, and finalization-aware proof admission. Review must verify strict
+JSON decoding for every authority-bearing input, exact executable source
+identity without module/package shadowing, and rejection of required-finalizer
+`PROVEN` manifests whose finalization record, identity digests, finalizer ID, or
+published tuple does not match the protected binding. Dedicated planner,
+validator, registry, and coverage regressions own these checks.

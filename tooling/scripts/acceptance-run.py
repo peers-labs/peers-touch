@@ -1661,7 +1661,10 @@ def main() -> int:
                             os.environ.copy()
                         )
                     gate_env["PT_ACCEPTANCE_CURRENT_RESULTS"] = json.dumps(
-                        results,
+                        {
+                            "source": aggregate_run.source,
+                            "results": results,
+                        },
                         ensure_ascii=False,
                     )
                     if manifest_path is not None:

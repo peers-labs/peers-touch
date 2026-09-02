@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-08-15 | **Updated**: 2026-08-27
+> **Created**: 2026-08-15 | **Updated**: 2026-08-31
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/core/`
 
@@ -104,7 +104,72 @@ Runtime report中对其它artifact的引用必须normalize为`ArtifactRef`。用
 `--input/--output`可接受explicit filesystem path，但default必须来自Evidence Store；
 test-only path不能成为production fallback。
 
----
+### 1.5 Native Desktop Runtime Cell 目标映射
+
+> 本节由 accepted D-13 ~ D-16 约束。
+
+| 当前输入或行为 | 当前问题 | 目标 Owner | 目标 contract/artifact |
+|---|---|---|---|
+| `gates.yaml.environment` 单值 | 无法表达同一 Gate 的 macOS/Linux/Windows proof matrix | Acceptance Infra | optional `requiredRuntimeCells` schema + matrix result |
+| `TauriDriver._launch_app()` | 本机 launch 与 W3C client 耦合 | Acceptance Infra | launcher-neutral `TauriDriver` |
+| `127.0.0.1:<port>` | 默认等同 orchestrator localhost | Acceptance Infra | run-scoped endpoint/tunnel lease |
+| macOS AppKit/CoreGraphics methods 位于 Chat runner | 平台机制污染业务 Gate | Desktop platform injection | `NativeDesktopAdapter` |
+| 本机 `.local/acceptance/bin` | 无远端 source/binary identity | Desktop platform injection | source staging + binary attestation |
+| `deploy.sh` 内嵌 source push/fetch | Git 增量同步能力与 Station/Relay role lifecycle 耦合 | Deployment/Acceptance Infra | role-neutral remote source-sync contract |
+| 本机 process/storage cleanup | 无远端 crash/SSH disconnect 回收 | Acceptance Infra + cell injection | remote lease + TTL reaper + cleanup audit |
+| 单个 Gate result | 无 runtime cell identity，可能跨平台冒充 | Acceptance Infra | `(gateId, cellId, sourceCommit)` result |
+
+目标调用链：
+
+```text
+Gate Catalog
+  -> Environment Contract
+  -> required Runtime Cell Contract
+  -> Runtime Cell lease
+  -> incremental Git object sync + exact commit checkout
+  -> exact-source remote build with persistent caches
+  -> remote app + loopback embedded WebDriver
+  -> run-scoped SSH tunnel
+  -> local TauriDriver + remote NativeDesktopAdapter
+  -> unchanged business Gate assertions
+  -> local immutable Evidence Store
+  -> remote reverse-order cleanup
+```
+
+平台 adapter mapping：
+
+| Cell | WebView | Native input/window backend | Platform-only evidence |
+|---|---|---|---|
+| `desktop-macos-native` | WKWebView | AppKit + CoreGraphics + Accessibility | Spaces、frontmost PID、AX focus |
+| `desktop-linux-native` | WebKitGTK | X11 XTest + EWMH | active window、stack/point owner、X11 focus |
+| `desktop-windows-native` | WebView2 | Win32 `SendInput` + UI Automation | foreground HWND、process/window ownership |
+
+Business Gate 只能依赖 adapter interface。平台实现不得 import Chat Gate，也不得改变
+selector、actor journey、timeout budget 或 success assertion。
+
+### 1.6 Linux Candidate Cell Preflight Baseline
+
+Linux cell 必须通过以下 fail-closed preflight：
+
+- x86_64 Linux host kernel 与 working container runtime；
+- digest-pinned supported Linux userland image；
+- cell userland 内具备 Tauri 当前锁定依赖所需的 WebKitGTK 4.1
+  development/runtime packages；
+- connected virtual or physical output、固定 geometry、persistent Xorg session；
+- dedicated GUI identity、DBus session、keyring 与 user runtime directory；
+- Node/pnpm、Rust/Cargo、Python 和 native build dependencies；
+- SSH host-key pinning、loopback tunnel capability 与 passwordless non-interactive
+  lifecycle commands；
+- repository source staging、clean commit check、remote digest 与 binary SHA-256；
+- 首次传输完整 Git objects、后续仅传缺失 objects；不得传输 `node_modules`、Cargo
+  target 或完整 worktree；
+- X11 XTest input、EWMH focus/window stack 与 desktop screenshot probes；
+- remote process/port/storage/session lease cleanup。
+
+候选机缺少任一项时输出 `ACCEPTANCE_GATE_BLOCKED_BY_ENVIRONMENT`。不得混装其它
+发行版的软件包、回退 Xvfb、改用 browser shell 或省略 Native input proof。宿主
+发行版不需要升级；host kernel、container image digest 与 cell userland 必须分别
+attest。
 
 ### 1.7 Ephemeral Gate Launch Context 初始到目标映射（D-18落地前基线）
 
@@ -173,10 +238,25 @@ Provisioner prepares durable resources
 | `tooling/acceptance/registry.yaml` | 契约修正 | receipt 等 receiver-visible 路径选择 Native two-client Gate |
 | `tooling/skills/pt-acceptance-gap-detector/` | 新增只读守卫 | 检测遗漏并分派，不实施修复 |
 | `tooling/acceptance/core/_paths.py` | hard replace | 只保留repo/config paths；runtime artifact path迁入Evidence Store |
+| `tooling/acceptance/core/result_contracts.py` | 新增neutral pure contract | 唯一拥有canonical result tuple、cell/matrix schema与fold；不得依赖Evidence Store/finalizer |
 | `tooling/acceptance/core/evidence_store.py` | 新增唯一owner | root/run/ref/manifest/latest/cleanup |
 | `tooling/scripts/acceptance-*.py` | 原子迁移 | defaults通过Evidence Store，explicit fixture paths保留 |
 | Domain/capability/feature contracts | schema migration | physical report paths改为logical identities |
 | Make/review/quality/skills/docs | consumer migration | 输出与读取命令解析canonical root |
+| `tooling/acceptance/core/provisioning.py` | 架构扩展 | Runtime Cell contract、manifest、matrix identity 与 typed states |
+| `tooling/acceptance/core/provisioner.py` | 架构扩展 | cell lease、transport lifecycle、disconnect/cancel cleanup |
+| `tooling/acceptance/core/drivers/launcher.py` | 新增通用契约 | launcher metadata 与 start/stop/alive 资源所有权 |
+| `tooling/acceptance/drivers/tauri.py` | 职责拆分 | 纯 W3C client 与 local/provisioned launcher 解耦，由 TauriSession 组合并支持 forwarded loopback endpoint |
+| `tooling/acceptance/drivers/native/` | 新增平台注入 | macOS/Linux/Windows input、focus、window observation adapters |
+| `tooling/acceptance/transports/ssh.py` | 新增通用 Infra | host verification、bounded command、port forwarding、cancel |
+| `tooling/scripts/deploy/source-sync.sh` | 从现有 deploy 提取 | role-neutral Git object push/fetch、exact checkout 与 source lease |
+| `tooling/acceptance/runtime-cells/*.yaml` | 新增平台注入 | 非敏感 cell capability contracts |
+| `tooling/acceptance/provisioners/native_desktop_*.py` | 新增平台注入 | 各 Desktop OS 的 session/build/process/cleanup lifecycle |
+| `tooling/scripts/acceptance-run.py` | 架构扩展 | Gate × cell expansion、per-cell result 与 aggregate proof |
+| `tooling/scripts/acceptance-run.py` | 架构扩展 | D-18 context seal/bind、argv spawn与context-first cleanup |
+| `tooling/acceptance/core/launch_context.py` | 新增通用Infra | ephemeral capability registry、anonymous channel、typed client与生命周期 |
+| `tooling/acceptance/core/provisioner.py` | 小幅接口扩展 | 可选创建launch context；默认无context，不改变已有Provisioner |
+| Native business runners | 依赖反转 | 删除平台 API，改为消费 `NativeDesktopAdapter` |
 
 ### 2.2 不受影响的代码
 
@@ -186,6 +266,8 @@ Provisioner prepares durable resources
 - Applet 业务代码
 - Chat 产品业务逻辑；本设计不修复 `DELIVERED` receipt
 - Gate 产品成功标准；不得因 provisioning 改造而降低
+- Chat actor journey、selector、message/attachment assertion 与 first-failed-boundary
+  纪律
 - CI/CD 调用的 Make target 名称
 
 ### 2.3 必须删除或禁止保留的旧路径
@@ -206,6 +288,27 @@ Native Chat 目标态只认 provisioning artifact；credential value 仅按 mani
 
 Evidence Store迁移同样禁止dual-write、symlink compatibility、legacy resolver或
 write failure后的source-tree fallback。
+
+Native runtime cell 迁移禁止：
+
+- 保留 Chat runner 内的 AppKit/CoreGraphics 分支并旁挂 Linux 分支；
+- 把 Linux WebDriver DOM click 当成 X11 Native input；
+- 将远端 embedded WebDriver 绑定到非 loopback address；
+- 在 repository contract 中硬编码 host、username、password 或 key path；
+- 使用其它平台 evidence 填充缺失 cell；
+- SSH disconnect 后遗留 app、tunnel、port、storage 或 GUI lease。
+- 通过 rsync/tar overlay 把 dirty 或 untracked source 注入最终 proof。
+
+Ephemeral launch context迁移禁止：
+
+- 将provider correlation key、raw device identifier、provider subject、token或
+  broker endpoint写入Runtime Manifest、environment value、argv、filesystem、
+  Evidence Store或日志；
+- 以localhost/TCP/Unix pathname service替代anonymous inherited channel；
+- Gate重新解析Profile、重新获取device/account/browser lease或创建第二个broker；
+- 为兼容旧Gate同时保留constructor broker注入和channel broker两套authority；
+- 携带context时继续使用`shell=True`，或允许Gate grandchild继承descriptor；
+- transport不支持、handshake失败、timeout或cleanup失败时降级执行产品Gate。
 
 ---
 
@@ -292,3 +395,297 @@ D-18 compatibility boundary：
 - POSIX inherited descriptor是首个backend，不代表Windows支持；缺少安全backend时
   对应host保持`BLOCKED/UNPROVEN`；
 - Gate ID、产品assertion、evidence role和现有cleanup resource identity保持稳定。
+
+D-19 accepted target compatibility boundary：
+
+- Mobile-owned `capabilities/mobile.yaml` protected required-finalizer mapping独立声明required
+  finalizer并通过repository-relative `finalizerRegistry.path`与
+  `finalizerRegistry.protectedBaseline`显式定位generated finalizer registration
+  catalog和reviewed baseline；
+  declaration还绑定baseline digest。Gate Catalog只声明ID与执行limit，不接受第二个
+  `required`字段。Generic resolver不得接受CLI/environment/Gate覆盖。未迁移的Gate才
+  允许required-finalizer mapping、registration-catalog pointer与Gate Catalog
+  execution config同时缺省；
+- required finalizer ID必须通过Capability-owned required-finalizer mapping、Gate
+  Catalog execution config与generated finalizer registration catalog三方validation；
+  任一missing/mismatch在publish前fail closed；
+- D-19 Infra landing必须先把`CanonicalResultTuple`、`PlatformCellResult`、
+  `PlatformMatrixResult`及唯一fold落到neutral pure `core/result_contracts.py`，再让
+  `core/runtime_cell.py`的aggregate及每个nested cell只导入该真源：
+  旧`proofStatus=PARTIAL|BLOCKED|FAILED`不得保留，
+  completion与proof必须分别投影；在全部nested/aggregate source migration和回归测试
+  完成前，platform matrix只属diagnostic，不能进入authoritative resolution；
+- Evidence Store以bounded `activate_finalizer_enforcement()`和immutable generation
+  records管理cutover；D-19-aware `begin_run`与activation共享gate cleanup lock。
+  Mobile source cutover前先安装永久publication interlock；reader/writer只按durable
+  interlock/pending/sentinel/current dispatch，不读取Capability Graph或worktree。
+  D-19 Infra先把artifact CLI、planner/runner aggregate与readiness reporter全部切到
+  closed `AuthoritativeLatestResolution`并冻结source inventory digest；interlock存在
+  后legacy mode、bare manifest、raw latest和free-form legacy verifier output均不能
+  进入project-owned proof claim。每个final claim sink从read到emit持有shared
+  claim-admission lock并在emit前复验current authority；interlock/activation持有
+  exclusive lock。首次install前，sole `ProofAdmissionCoordinator`必须重启claim
+  execution environment、暂停新job并以PID/start/executable/source identity registry
+  证明`activeJobs=()`；process-table inference不构成quiescence proof。Darwin/Linux
+  environment identity是closed tagged union；每个job必须是
+  `NO_CHILD_NO_SESSION_CHANGE_V1` trusted leaf emitter，完整source closure拒绝process
+  creation、shell/process wrapper、`setsid`/`setpgid`、same-PID `exec*`、
+  `spawn*`/`popen`、dynamic symbol resolution和native extension。V1仅允许source-only Python interpreted claim emitter，并持久化
+  scanner source、exact rule registry、完整inspected source nodes与empty findings的
+  closed `ForbiddenProcessApiScan`。Scanner entrypoint/source closure固定，emitter
+  禁止import，只接收restricted builtin mapping与canonical-JSON facade，不暴露
+  filesystem/import/dynamic-code/descriptor capability；digest-bound AST只允许
+  direct `canonical_json.encode|decode` call-target形式的`Attribute`。Fixed
+  non-claim wrapper独占lease FD，不向claim传递该FD或descriptor-control capability，
+  只在private channel捕获output并consume leaf wait；coordinator consume wrapper wait、
+  durability-profile sync immutable completion，再在publish lock内重解并逐字节匹配
+  expected authority。随后先durable publish emission intent，再以deterministic key调用
+  bounded idempotent sink；payload固定为base64-framed exact JCS
+  `ClaimEmitterOutput` bytes及其raw SHA-256，收到并持久化stable acknowledgement后才视为external
+  emission完成；lost ACK只能重放同一key/bytes。Linux另由epoch PID
+  namespace约束。Normal completion要求leaf wait及empty exact group enumeration，
+  process group本身不被视为descendant containment。首次Darwin epoch要求在claim
+  consumer source cutover后、mandatory reboot前持久化boot observation，并由
+  source/runtime-bound helper证明boot UUID/time均变化；每个后续Darwin epoch也必须
+  由environment typed ref解析exact prior observation、绑定supervisor boot UUID，再
+  通过新的before-observation、reboot与after-observation关闭，process absence或
+  shutdown intent不能替代。首次Linux epoch使用独立legacy identity和
+  同样的source-cutover后mandatory reboot boot-boundary proof；后续Linux epoch
+  绑定PID-namespace device/inode与init PID/start；同host build/kernel必须在
+  allocation前以sacrificial child证明`pidfd_open + waitid(P_PIDFD, WEXITED)`，
+  并保存同一pidfd lease的pre/post raw poll masks；pre-wait必须有`POLLIN`、无
+  `POLLHUP/POLLERR/POLLNVAL`，post-wait必须有`POLLHUP`且仍无error bits，所有
+  derived flags都由raw mask精确计算；unsupported host fail closed；epoch supervisor在job release前
+  打开pidfd，作为sole wait-capable parent、保持default `SIGCHLD`且禁止
+  `SA_NOCLDWAIT`，持有同一non-transferable lease直至
+  `POLLIN + waitid(P_PIDFD)`。Supervisor crash要求reboot-boundary recovery；
+  graceful termination证明零存活process，不声称namespace pins已全部销毁；
+  Inventory由fixed
+  `ALL_TRACKED_ACCEPTANCE_CLAIM_SOURCES` rule覆盖同一commit中
+  `tooling/acceptance/**`、`tooling/scripts/acceptance-*`、exact
+  `quality-evidence.py`/`_acceptance_artifacts.py`与全部repository-local transitive
+  imports及statically resolved subprocess/shell/Make/CI-local helpers；全仓
+  tracked source/configuration files再执行language-neutral reverse
+  caller/importer/includer fixed-point，间接Node/Rust/Go/Python/shell/Make/CI wrapper
+  也进入digest；unsupported grammar、unresolved dynamic edge或closure外claim
+  consumer拒绝，不由plan/caller选择。Classifier使用唯一ordered
+  precedence/valid-pair table；每个non-data edge必须resolve唯一target node并与其
+  grammar/interpreter pair逐项相等；
+  Interlock install与generation activation都必须经过Evidence Store local interactive
+  CLI授权：kernel-derived principal、controlling TTY、real/effective UID、
+  `authoritySourceCommit`中的canonical accepted D-19 document path/raw hash、
+  action-specific expected state和domain-separated challenge全部进入closed
+  authorization。Source commit必须等于clean current HEAD，整个canonical worktree
+  必须无tracked/untracked drift，isolated authority entrypoint不得加载
+  ignored/untracked/dynamic source。Command以`python3 -I -S -E -B`运行fixed bootstrap；
+  bootstrap在加入repo root前验证自身，再以AST import closure与runtime loaded-module
+  probe拒绝site/native/inventory外dependency；只允许`tooling`和
+  `tooling.acceptance`作为single-location repository namespace package；
+  project module只由source-only loader读取verified tracked `.py` bytes，repository
+  bytecode cache存在即fail closed；
+  proof-admission及activation digests从同一commit
+  重算，禁止stale approval与其它source inputs组合；任一失败
+  在durable write前返回`NO_MUTATION`。Interlock与activation intent嵌入该authorization
+  并由各自digest覆盖；authorization及每个maintenance request还绑定
+  supervisor/worker/Python/stdlib `maintenanceRuntimeDigest`并与live READY逐项比较；
+  power-controller trust使用独立two-phase local interactive protocol：phase one以
+  同样的kernel principal、TTY、clean HEAD和canonical accepted-D-19 approval校验
+  public material，只创建绑定`crashFixtureId + qualificationRunId`且one-shot consumed的
+  non-authoritative candidate；bootstrap boot observation只绑定该finite context；
+  phase two绑定successful manifest/backend并用该backend先发布predecessor-keyed
+  immutable transition reservation（内含frozen promotion intent），再consume
+  candidate并发布exact active anchor、immutable generation record与CAS current
+  selector；revocation同样先reserve predecessor key，再发布intent/revocation/
+  generation并CAS current。
+  Requalification/key rotation从exact current digest发布predecessor-linked generation
+  `N+1`；revocation发布immutable record并把current推进到不授权的`REVOKED`状态；
+  rollback、stale CAS与sibling successor失败。Crash recovery只能完成frozen
+  transition bytes。Normal expectation只接受current active anchor，
+  fixture不能创建或替换authority；
+  operator确认后先由`AUTHORITY_RUNTIME_PERSISTER`使用gate/temp FDs发布
+  content-addressed runtime refs；只有`AUTHORITY_RUNTIME_DURABLE`允许继续interlock、
+  activation或abort mutation；所有nested refs、persist request与外层authority/abort
+  authorization ID必须相等。Final-path publish前I/O/timeout/worker-process失败返回
+  `NO_MUTATION`；任一publish attempt后的同类failure或ACK不确定返回
+  `AUTHORITY_RUNTIME_MAY_BE_DURABLE`与
+  `FINALIZER_AUTHORITY_RUNTIME_IO_FAILED`，retry验证完整expected set并重放backend；
+  每个transition绑定同一`ProofAuthorityDurabilityProfile`。Linux执行file/directory
+  fsync；Darwin仅允许local APFS，并执行file `F_FULLFSYNC`、directory fsync及
+  same-volume sync-anchor `F_FULLFSYNC`。Unsupported filesystem/primitive、
+  cross-device state、profile drift或capability evidence缺失均在mutation前
+  `NO_MUTATION`。Capability evidence通过fixed-path content-addressed refs解析
+  closed manifest、每个interruption-point power-cut trace、recovery result和probe
+  runtime。Profile只绑定reboot-stable volume identity；每次operation从opened FD派生
+  live mount binding。Boot observation携带并复验profile/live mount，kernel helper
+  entrypoint/source closure/runtime ref固定；每个power command的signed receipt与
+  arm receipt在fixture mutation前独立持久化，signed append-only controller journal
+  以hash-bound token执行
+  `ACCEPTED -> ARMED -> EXECUTION_STARTED -> ACTION_DISPATCHED -> EXECUTED`
+  一次性状态机；每个command
+  使用独立lock与deterministic singleton head，controller restart使全部nonterminal
+  prior-epoch command失效且不得resume/re-execute；permanent close-on-exec runtime
+  lock由no-child controller单独持有整个epoch并在power action前复验；independently
+  qualified controller backend/locality/contention/epoch lease必须匹配同一external
+  controller host、完整live mount及实际opened `.runtime.lock` device/inode，且不得与
+  interrupted target environment混同；`core/power_controller.py`唯一拥有external
+  runtime/key/store/journal/actuator，该controller store在trust promotion前独立通过
+  closed OS-specific physical power-loss durability profile；bootstrap candidate只携带
+  finite prequalification store identity，qualification由无production authority的独立
+  witness执行；其canonical P-256 key必须先由candidate-local immutable owner
+  authorization限定为qualification-only，并签署case/run/environment-bound的
+  phase-tagged before/interruption/after/recovery evidence；production controller
+  只接受canonical Ed25519 credential，两个closed schema禁止cross-decode或key
+  conversion，因此不依赖mutable global exclusion registry；witness authorization、
+  candidate creation与promotion在Gate publish lock下按各自bootstrap/qualified
+  durability boundary发布；case PASS只接受signed recovery中的
+  observed state/hash；current-epoch
+  duplicate可重放，prior terminal只read-only lookup，prior nonterminal拒绝；
+  transition resolution携带exact target但始终禁止external action，只有独立
+  `EXECUTE_POWER_ACTION`对current `EXECUTION_STARTED` head先durably claim
+  `ACTION_DISPATCHED`，再由lock-owning in-process operation执行一次power；dispatch
+  entry与head必须先完成qualified file/directory及Darwin anchor durability barriers；
+  unheaded dispatch只允许原still-live call持有Core生成的non-serializable
+  process-memory capability，并以exact request digest、expected head、command lock和
+  process/epoch重算匹配persisted digest后adopt，随后继续其唯一一次actuator
+  call；caller/later request不得获得该capability；process restart创建新epoch并拒绝
+  prior nonterminal；durable dispatch uncertain retry与其它
+  invalid current head/edge请求均typed reject；dispatch-state classification优先于
+  stale-head，所有rejection绑定exact request operation/digest/epoch/expected identity；
+  cancellation使用accepted-origin与armed-origin两个closed journal variant；
+  physical/VM interruption使用disjoint controller-kind variants且三个receipt refs与
+  domain digests、arm command/epoch/token identity逐项相等；bootstrap/active
+  qualification分别使用`QUALIFICATION_BOOT_OBSERVATION`/`BOOT_OBSERVATION` refs；
+  arm signature使用explicit domain-wrapped RFC 8785 UTF-8 bytes；
+  Interlock install在publish lock内匹配exact expected legacy latest，并由closed
+  maintenance result区分`NO_MUTATION`、`INTERLOCK_MAY_BE_DURABLE`与
+  `INTERLOCK_DURABLE`；
+  Activation在cleanup+publish locks内捕获prior pointer，冻结timestamp/source commit
+  并把完整candidate enforcement record写入pending；该pending是不可逆authority cutoff，
+  retry只能逐字节完成同一frozen intent。Interlock lost-ACK retry只接受原authorization
+  和marker bytes，并在重新fsync marker file与directory后才报告durable；activation
+  pending前失败重新授权，pending后retry必须由同一kernel
+  principal重新确认原challenge，禁止替换authorization或rebase expected state。
+  Equal existing pending/generation/sentinel/current/manifest也必须重新fsync file与
+  containing directory后才能推进下一durable transition；
+  Pending同时冻结canonical current pointer；
+  reader验证其schema/digest并resolve exact immutable generation record。首次cutover
+  还发布永久activation sentinel；sentinel存在而current缺失时fail closed。首个generation
+  记录pending前legacy latest或null，后续generation记录pending前current generation
+  latest，生效后都只作diagnostic。已加载legacy runner不受新锁控制但只能
+  写非权威legacy namespace。D-19 publish/read改用
+  `finalizer-enforcement/latest/<generation>.json`；legacy top-level或旧generation
+  latest永不进入current-generation authority，后续accepted baseline变化创建新generation；
+- Requirement按Gate ID唯一，不在Feature间复制。Mobile requirement绑定
+  `mobile-native-access-e2e`，并由
+  `tooling/acceptance/contracts/mobile/native_oauth.protected.json`冻结；删除/修改mapping必须经过新的
+  architecture decision并更新reviewed baseline；
+- activation/preflight读取current-worktree protected paths后，run allocation把
+  canonical mapping和每个protected source exact bytes复制为immutable requirement-record
+  ArtifactRefs；historical reader只消费这些refs和sealed executable bundle；
+- finalizer在Gate、runtime-cell、Provisioner与launch-context cleanup以及全部Infra
+  artifact写入和secret audit之后执行，但早于manifest finalize/publish；
+- Evidence Store在跨进程finalization lock内先由bounded snapshot-materializer完成全部
+  payload读取、hash与digest，再通过durable marker一次seal排序后的
+  `roleName + discriminator + ArtifactRef + payloadDigest` snapshot；finalizer与
+  manifest finalize必须消费同一snapshot digest，seal后禁止任何artifact/role write
+  或snapshot mutation；
+- finalizer运行在独立bounded进程，只接收typed identity、Runtime Manifest
+  ArtifactRef、snapshot-bound bounded JSON payload、sealed refs/hash和frozen
+  primary status/digest，只返回validated role-instance IDs，不接收完整primary result、
+  Provisioner、authority、artifact root或绝对路径；
+- `FinalizerInput`以`finalizerInputDigest`覆盖invocation/context/snapshot，所有重复
+  enforcement/run/source/runtime/snapshot/primary字段必须逐项相等；child/Core outcome
+  持久化同一digest；sealed marker的`sealDigest`覆盖包括`sealedAt`的完整对象；
+- canonical pre-merge primary result只由parent持久化到sealed marker/finalization
+  record，历史reader从该mapping重算digest和merge，不从published tuple反推；
+- Runtime Manifest ref必须属于snapshot，其payload source identity必须与Store-owned
+  `RunHandle.source`、snapshot和context逐项相等；
+- preflight通过supervised `BUNDLE_PREPARER`一次捕获protected sources并绑定
+  process-local capture；allocation只消费该capture一次，持久化包含Core bootstrap、
+  validator、contract和schema的canonical executable bundle；prepare/parse/expand服从固定
+  file-count、path、manifest、entry、expanded-byte、temporary-storage和wall-time
+  hard limits。相同bytes写入Evidence Store并展开到owner-only temporary directory，
+  ArtifactRef、bundle digest和逐文件hash必须相等；historical reader从persisted
+  source ArtifactRefs按`pt-finalizer-bundle-v1`重建bundle并复验raw hash，不从运行中
+  的worktree直接import；
+- preflight用独立supervised `RUNTIME_CAPTURE`生成无run-ref measurement和process-local
+  runtime capture；canonical `pt-finalizer-runtime-bundle-v1`以fixed magic、JCS
+  manifest和ordered length-prefixed file bytes定义exact bundle hash。Allocation持久化
+  supervisor/Python/compiler/FILE-stdlib refs后才构造final runtime identity，历史reader
+  从这些refs重建bundle并复验hash，不读取host当前runtime。Caller只提供closed
+  supervisor/Python/compiler/FILE-stdlib `RuntimePathInput`；loaded-image
+  logical/origin identity由worker loader probe独占枚举；
+- Infra bootstrap closure固定为pure `core/finalization_contracts.py`、isolated
+  `core/finalizer_worker.py`与native `core/finalization_supervisor.c`；Mobile
+  registration只列business sources，business finalizer不得transitively import
+  Evidence Store；
+- seal-time artifact materialization由Evidence Store-owned native setup在timer
+  保护下按ArtifactRef打开regular-file FDs、关闭directory FD，再交给不加载domain code
+  的generic parser完成；business finalizer不接收任何artifact FD。两段worker和
+  finalizer都由run allocation前已完成`READY` handshake的native POSIX deadline
+  supervisor执行，unsupported host fail closed；
+- supervisor FD protocol按worker kind绑定ordered descriptor roles：
+  maintenance/materializer各一个directory FD，bundle preparer两个固定顺序FD，
+  runtime capture一个temporary-directory FD，finalizer零FD；每个claim绑定sender-side
+  device/inode/type和logical owner digest，
+  independent request-identity digest绑定kind/claims，receiver逐项`fstat`等值；
+  count/order/object mismatch关闭全部duplicates并fail closed；
+- stream channel只接受closed `SupervisorControlFrame` union，SCM_RIGHTS datagram只
+  接受identity-correlated `DescriptorTransferFrame`；worker matrix精确绑定
+  kind/request/results/descriptors，active cancel使用request/ack pair，frame
+  identity/digest与legal sequence逐帧验证；`WORKER_READY`不携带第二个request digest；
+- finalizer失败只能降低成功结果，不能覆盖已有primary failure或升级结果；
+- pre-seal finalizer failure同样通过固定merge matrix处理：primary success降级，已有
+  failed/blocked tuple、reason和source trace保持不变；
+- preflight token绑定live supervisor session/runtime identity，allocation在cleanup lock
+  内复验同一process handle、control channel与liveness；supervisor failure必须完成
+  `FAILED -> CLOSING -> CLOSED`和reap后才允许降级publication；
+- immutable manifest使用atomic no-replace；generation latest使用D-11 ordered atomic
+  replace，旧candidate lost-ACK retry只能得到`SUPERSEDED`，不能覆盖新pointer；
+- maintenance request/result由exhaustive operation-specific matrix绑定，任何
+  cross-operation result在解释status前拒绝；durable boundary与continuation只按固定
+  transition table推进；interlock install具有独立
+  `NO_MUTATION / INTERLOCK_MAY_BE_DURABLE / INTERLOCK_DURABLE` result，invalid delete
+  request/state使用
+  zero-delta `NO_MUTATION` rejection；
+- abort delete retry从durable FAILED event读取continuation digest/token；每个batch在
+  首个delete前先durably写`DELETE_BATCH_STARTED`并绑定exact immutable plan range，
+  event后、terminal前crash只可重放该range，且只有range内missing entry可视为先前
+  authorized progress。Tombstone root是deletion plan的explicit final entry并由该range
+  授权，不存在implicit root delete。Present entries必须同时匹配
+  type/device/inode；regular file额外匹配byteLength并计入byte budget，directory
+  byteLength必须为null。Symlink/socket/FIFO/device等其它type整体拒绝，不得省略。
+  全部entry必须与tombstone root同device；v1 destructive delete只支持Linux
+  `RESOLVE_NO_XDEV`。Darwin/其它POSIX在authorization/rename/delete前返回
+  CLI-owned `AbortSealedPreflightRejected/NO_MUTATION`与
+  `ABORT_SEALED_DELETE_UNSUPPORTED`，不启动maintenance worker，也不以`st_dev`
+  近似mount identity。
+  Existing equal event重新fsync file与directory后才能
+  继续mutation。Tombstone rename retry重新验证directory identity并fsync source/
+  destination parents；每个delete batch在terminal event前fsync全部modified surviving
+  parents，root unlink后fsync`aborted-runs`。Corrupt requirement/seal保留为forensic orphan，v1不提供绕过identity
+  proof的delete reason。Events以sequence/previous digest形成单一chain，continuation
+  使用plan index而非mutable directory offset；plan由
+  gate-scoped fixed-path `AbortControlArtifactRef`解析，不使用run ArtifactRef；
+  每个event还携带从`authorized.json`逐字节复制的immutable
+  `AbortEventAuthorizationProjection`；任一operator/reason/workspace/run/snapshot/
+  requirement/challenge substitution都使chain失效；
+- `abort-sealed` authorization只由local interactive Evidence Store CLI在影响面展示和
+  controlling-TTY digest challenge后签发；kernel effective UID和closed reason code
+  进入durable identity，retry必须精确匹配。Abort命令使用同一source-only authority
+  bootstrap，并把clean source/claim closure和full maintenance runtime绑定进
+  authorization及每个event；
+- finalizer在当前live RunHandle中只执行一次；runner crash不续跑、不补写manifest、
+  不恢复publish；unpointed manifest不是权威proof，普通retention/delete拒绝sealed
+  incomplete run；唯一删除入口`abort-sealed`获取active lock后等待Core watchdog
+  ceiling加5秒grace，持久化append-only authorization event，将run原子rename到
+  `aborted-runs/` tombstone，再递归删除并写`DELETED/FAILED` event；所有阶段持有
+  bounded gate-scoped abort lock，run-local locks只在run path仍存在时需要；
+- Mobile在neutral business-contract module拥有冻结Artifact Role与validator；
+  Provisioner、Gate和finalizer共同消费该唯一真源。该迁移属于post-acceptance Mobile
+  E2-5 amendment，不属于D-19 Infra closure；旧Python module、JSON schema、tests、
+  docs与全部imports在同一原子变更中切换并删除旧路径，不保留re-export；
+- `tooling/acceptance/contracts/mobile/finalizers.yaml`由canonical Mobile contract确定性生成；CI
+  byte-compare重生成结果，protected baseline绑定required mapping、registration、
+  contract/schema与entrypoint digests，避免第二个可编辑role或mapping真源；
+- Infra不包含Mobile role或业务断言，也不得direct-import Mobile validator。

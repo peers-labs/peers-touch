@@ -18,10 +18,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from _acceptance_artifacts import explicit_output_path  # noqa: E402
+from tooling.acceptance.finalizers import load_strict_json_object  # noqa: E402
 
 
 def load_json_yaml(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return load_strict_json_object(path, str(path))
 
 
 def changed_paths(diff_range: str) -> list[str]:
@@ -57,7 +58,7 @@ def load_behavior_rules(root: Path) -> list[dict[str, Any]]:
     if not behavior_dir.exists():
         return rules
     for rule_file in sorted(behavior_dir.glob("*.yaml")):
-        data = json.loads(rule_file.read_text(encoding="utf-8"))
+        data = load_json_yaml(rule_file)
         for rule in data.get("rules", []):
             rule["_source_file"] = str(rule_file.relative_to(root))
             rules.append(rule)
@@ -67,6 +68,27 @@ def load_behavior_rules(root: Path) -> list[dict[str, Any]]:
 def path_matches_any(path: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(path, pattern) or fnmatch.fnmatch(f"/{path}", pattern)
                for pattern in patterns)
+
+
+def finalizer_bindings(
+    root: Path,
+    gates: dict[str, Any],
+) -> dict[str, Any]:
+    has_catalog_config = any(
+        isinstance(gate, dict) and "evidenceFinalizer" in gate
+        for gate in gates.values()
+    )
+    has_capability_declaration = any(
+        "finalizerRegistry" in load_json_yaml(path)
+        or "requiredEvidenceFinalizers" in load_json_yaml(path)
+        for path in sorted((root / "capabilities").glob("*.yaml"))
+    )
+    if not has_catalog_config and not has_capability_declaration:
+        return {}
+
+    from tooling.acceptance.finalizers import load_finalizer_bindings
+
+    return dict(load_finalizer_bindings(root, gates))
 
 
 def gate_launch_fields(gate_id: str, gate: dict[str, Any]) -> dict[str, Any]:
@@ -139,6 +161,7 @@ def is_supported_context_argv(argv: list[str]) -> bool:
 def planned_gate(
     gate_id: str,
     gate: dict[str, Any],
+    finalizer_binding: Any | None = None,
 ) -> dict[str, Any]:
     planned = {
         "id": gate_id,
@@ -150,12 +173,15 @@ def planned_gate(
         "description": gate.get("description", ""),
         "required_by": [],
     }
+    if finalizer_binding is not None:
+        planned["evidenceFinalizer"] = finalizer_binding.plan_config()
     return planned
 
 
 def plan(root: Path, paths: list[str]) -> dict[str, Any]:
     registry = load_json_yaml(root / "registry.yaml")
     gates = load_json_yaml(root / "gates.yaml").get("gates", {})
+    bindings = finalizer_bindings(root, gates)
     behavior_rules = load_behavior_rules(root)
     selected: dict[str, dict[str, Any]] = {}
     impacted_features: set[str] = set()
@@ -173,7 +199,7 @@ def plan(root: Path, paths: list[str]) -> dict[str, Any]:
                 raise SystemExit(f"gate {gate_id!r} referenced by rule {rule.get('id')!r} is missing")
             selected.setdefault(
                 gate_id,
-                planned_gate(gate_id, gates[gate_id]),
+                planned_gate(gate_id, gates[gate_id], bindings.get(gate_id)),
             )
             selected[gate_id]["required_by"].append(rule.get("id"))
 
@@ -197,7 +223,7 @@ def plan(root: Path, paths: list[str]) -> dict[str, Any]:
                 raise SystemExit(f"gate {gate_id!r} referenced by behavior rule {rule.get('id')!r} is missing")
             selected.setdefault(
                 gate_id,
-                planned_gate(gate_id, gates[gate_id]),
+                planned_gate(gate_id, gates[gate_id], bindings.get(gate_id)),
             )
             selected[gate_id]["required_by"].append(f"behavior:{rule.get('id')}")
 
