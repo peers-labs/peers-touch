@@ -1,0 +1,60 @@
+{
+  "id": "multi-station-linux",
+  "profile": {
+    "required": true,
+    "identity_match": true
+  },
+  "services": {
+    "station-four": {
+      "kind": "station",
+      "required": true,
+      "endpoint": "http://10.37.245.247:18080",
+      "ready_action": "station",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "station-home": {
+      "kind": "station",
+      "required": true,
+      "endpoint": "http://10.37.94.156:18132",
+      "ready_action": "station",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    }
+  },
+  "clients": [
+    {
+      "id": "alice",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-four",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "bob",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-home",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "chat-native-actors",
+      "authorization_required": true,
+      "authorization_ref": "env:CHAT_ACCEPTANCE_RESET"
+    }
+  ],
+  "credentials": [],
+  "cleanup": {
+    "resources": ["processes", "ports", "storage", "sessions"]
+  }
+}

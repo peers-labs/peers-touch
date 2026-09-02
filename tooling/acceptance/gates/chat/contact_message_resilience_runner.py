@@ -11,18 +11,29 @@ from typing import Any
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
-from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
-from tooling.acceptance.drivers.tauri import TauriDriver
-from tooling.acceptance.fixtures.chat_native_reset import profile_three_environment
+from tooling.acceptance.core import (
+    AcceptanceGate,
+    ActorRuntime,
+    GateError,
+)
+from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
+from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
+from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.fixtures.chat_native_reset import (
+    acceptance_station_environment,
+)
 from tooling.acceptance.fixtures.chat_contact_message_fault_proxy import (
     ProfileThreeContactMessageFaultProxy,
 )
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
+    NativeClientLifecycleLedger,
     async_harness,
     configure_station,
     enter_chat_page,
     reset_fixture,
+    runtime_station_service,
+    selected_native_runtime,
     start_authenticated_client,
     wait_until,
 )
@@ -45,14 +56,167 @@ class ContactMessageResilienceGate(AcceptanceGate):
 
     def __init__(self) -> None:
         super().__init__()
-        self.station_url = os.environ.get(
-            "CHAT_NATIVE_STATION_URL",
-            DEFAULT_STATION,
-        ).rstrip("/")
-        self.client: TauriDriver | None = None
-        self.proxy: ProfileThreeContactMessageFaultProxy | None = None
+        injected = (manifest, actor_manifest, runtime_binding)
+        if any(value is not None for value in injected) and not all(
+            value is not None for value in injected
+        ):
+            raise GateError(
+                "runtime manifest, actor manifest, and runtime binding "
+                "must be injected together"
+            )
+        selected_cell = os.environ.get(
+            "PT_ACCEPTANCE_RUNTIME_CELL",
+            "",
+        ).strip()
+        if selected_cell and runtime_binding is None:
+            raise GateError(
+                "selected runtime cell requires injected runtime resources"
+            )
+        if (
+            runtime_binding is not None
+            and runtime_binding.cell_id != selected_cell
+        ):
+            raise GateError(
+                "injected runtime binding does not match "
+                "PT_ACCEPTANCE_RUNTIME_CELL"
+            )
+        self.runtime_binding = runtime_binding
+        self.manifest = manifest or {}
+        self.actor_manifest = actor_manifest or {}
+        self.client_specs: dict[str, dict[str, Any]] = {}
+        self.actor_specs: dict[str, dict[str, Any]] = {}
+        if self.runtime_binding is not None:
+            station = runtime_station_service(self.manifest)
+            self.station_url = str(station.get("endpoint") or "").rstrip("/")
+            self.client_specs = {
+                str(client.get("actor")): client
+                for client in self.manifest.get("clients", [])
+                if isinstance(client, dict)
+            }
+            self.actor_specs = {
+                str(actor.get("role")): actor
+                for actor in self.actor_manifest.get("actors", [])
+                if isinstance(actor, dict)
+            }
+            if not self.station_url:
+                raise GateError("runtime manifest Station URL is required")
+            if set(self.client_specs) != {"alice"}:
+                raise GateError(
+                    "runtime manifest must allocate one isolated Alice client"
+                )
+            if set(self.actor_specs) != {"alice", "bob"}:
+                raise GateError(
+                    "actor manifest must contain canonical Alice and Bob identities"
+                )
+            self.report.manifest = self.manifest
+        else:
+            self.station_url = os.environ.get(
+                "CHAT_NATIVE_STATION_URL",
+                DEFAULT_STATION,
+            ).rstrip("/")
+        self.client: TauriSession | None = None
+        self.runtime_instances: list[TauriSession] = []
+        self.client_lifecycles = NativeClientLifecycleLedger()
+        self.proxy: AcceptanceStationContactMessageFaultProxy | None = None
         self.ptid = ""
         self.bob_ptid = ""
+        self.report.runtime.update(
+            {
+                "runtimeCell": (
+                    self.runtime_binding.cell_id
+                    if self.runtime_binding is not None
+                    else "native-tauri-embedded-webdriver"
+                ),
+                "journey": "contact-message-resilience",
+                "cleanup": {},
+            }
+        )
+
+    def verify_fixture_ready(self) -> bool:
+        if self.runtime_binding is None:
+            reset_fixture(("alice", "bob"))
+            return True
+        verify_runtime_fixture_ready(self.manifest, self.actor_manifest)
+        return True
+
+    def source_identity(
+        self,
+        station_live: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self.runtime_binding is None:
+            return {"stationLive": station_live}
+        identity = native_runtime_source_identity(
+            gate_id=self.gate_id,
+            manifest=self.manifest,
+            runtime_binding=self.runtime_binding,
+            station_live=station_live,
+        )
+        runtime_cell = identity["runtimeCell"]
+        self.report.runtime["runtimeCellRunId"] = runtime_cell.get("runId")
+        self.report.runtime["sourceIdentity"] = identity
+        return identity
+
+    def start_client(self) -> tuple[TauriSession, str]:
+        if self.runtime_binding is None:
+            return start_authenticated_client(
+                "alice",
+                CLIENT_PORT,
+                self.station_url,
+                instance="contact-resilience",
+            )
+        client = self.runtime_binding.create_bound_session(
+            "alice",
+            NativeLaunchOptions(window_slot=0, window_count=1),
+        )
+        self.runtime_instances.append(client)
+        expected_ptid = str(self.actor_specs["alice"].get("ptid") or "")
+        self.client_lifecycles.register(client, expected_ptid)
+        try:
+            client.start()
+            self.client_lifecycles.mark_live(client)
+            client.wait_for_acceptance_harness(30)
+            configure_station(client, self.station_url)
+            account_ref = str(
+                self.actor_specs["alice"].get("accountRef") or ""
+            )
+            login = async_harness(
+                client,
+                "loginWithPassword",
+                {
+                    "account": account_ref.removeprefix("station-account:"),
+                    "password": DEV_ACCOUNT_PASSWORD,
+                },
+                timeout=30,
+            )
+            if not (login or {}).get("authenticated"):
+                raise GateError("alice login did not authenticate")
+            self.client_lifecycles.mark_authenticated(client)
+            hydration = async_harness(
+                client,
+                "hydrateActiveActor",
+                {},
+                timeout=30,
+            )
+            ptid = str((hydration or {}).get("actorPtid") or "")
+            if ptid != expected_ptid:
+                raise GateError(
+                    "alice login identity mismatch: "
+                    f"expected={expected_ptid} actual={ptid}"
+                )
+            if not client.get_current_url().startswith("tauri://localhost"):
+                raise GateError(
+                    "alice is not running in native Tauri WebView: "
+                    f"{client.get_current_url()}"
+                )
+            return client, ptid
+        except Exception as error:
+            cleanup_errors = self.client_lifecycles.release(client)
+            if cleanup_errors and hasattr(error, "add_note"):
+                error.add_note(
+                    "Contact resilience launch cleanup also failed: "
+                    f"{json.dumps(cleanup_errors, sort_keys=True)}"
+                )
+            raise
 
     def _switch_to_contacts(self) -> None:
         driver = self.client.driver
@@ -198,6 +362,90 @@ class ContactMessageResilienceGate(AcceptanceGate):
             if ptid.startswith("ptid:"):
                 return ptid
         raise GateError("no friend contacts found in contacts panel")
+
+    def cleanup_runtime(self) -> dict[str, Any]:
+        cleanup_errors: list[dict[str, str]] = []
+        if self.proxy:
+            try:
+                self.proxy.disarm()
+                self.proxy.stop()
+            except Exception as error:
+                cleanup_errors.append(
+                    {"resource": "contact-message-proxy", "error": str(error)}
+                )
+            self.proxy = None
+        if self.client:
+            try:
+                configure_station(self.client, self.station_url)
+            except Exception as error:
+                cleanup_errors.append(
+                    {
+                        "resource": "client-station-restore",
+                        "error": str(error),
+                    }
+                )
+            try:
+                if self.runtime_binding is None:
+                    stop_client(self.client)
+                else:
+                    cleanup_errors.extend(
+                        self.client_lifecycles.release_all()
+                    )
+            except Exception as error:
+                cleanup_errors.append(
+                    {
+                        "resource": f"client:{self.client.profile}",
+                        "error": str(error),
+                    }
+                )
+
+        if self.runtime_binding is None:
+            cleanup = {
+                "clientsStopped": ["alice"] if self.client else [],
+                "cleanupErrors": cleanup_errors,
+            }
+            self.report.runtime["cleanup"] = cleanup
+            return cleanup
+        try:
+            cleanup = self.runtime_binding.finalize_cleanup(
+                self.runtime_instances,
+                self.client_specs,
+            )
+        except Exception as error:
+            cleanup = {
+                "portsReleased": False,
+                "processesReleased": False,
+                "storageReleased": False,
+                "logsReleased": False,
+                "cleanupErrors": [
+                    {
+                        "resource": "runtime-binding",
+                        "error": str(error),
+                    }
+                ],
+            }
+        binding_errors = cleanup.get("cleanupErrors")
+        if isinstance(binding_errors, list):
+            cleanup_errors.extend(
+                error
+                for error in binding_errors
+                if isinstance(error, dict)
+            )
+        cleanup["cleanupErrors"] = cleanup_errors
+        self.report.runtime["cleanup"] = cleanup
+        cleanup_passed = (
+            bool(cleanup.get("portsReleased"))
+            and bool(cleanup.get("processesReleased"))
+            and bool(cleanup.get("storageReleased"))
+            and bool(cleanup.get("logsReleased"))
+            and not cleanup_errors
+        )
+        if not cleanup_passed:
+            raise GateError(
+                "contact resilience runtime cleanup failed: "
+                f"{json.dumps(cleanup, sort_keys=True)}"
+            )
+        return cleanup
 
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":

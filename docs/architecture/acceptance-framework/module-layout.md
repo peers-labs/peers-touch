@@ -2,7 +2,9 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-08-15 | **Updated**: 2026-08-31
+> **Created**: 2026-08-15 | **Updated**: 2026-09-02
+
+
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -156,7 +158,7 @@ tooling/acceptance/
 | `core/errors.py` | GateError 统一异常，其他通用异常类型 |
 | `core/redaction.py` | 敏感字段、Bearer token、private key 和文本证据统一脱敏 |
 | `core/harness.py` | async_harness 通用 JS 桥接，支持命名空间调用 |
-| `core/provisioning.py` | 定义 EnvironmentProvisioner 生命周期、typed service topology、Runtime Resource Manifest、blocked artifact 和 cleanup result |
+| `core/provisioning.py` | 定义 EnvironmentProvisioner 生命周期、typed service topology、client-to-service bindings、Runtime Resource Manifest、blocked artifact 和 cleanup result |
 | `core/provisioner.py` | 解析并验证worktree Profile、管理Provisioner状态和reverse-order cleanup；D-19后不持有或执行business finalizer |
 | `core/launch_context.py` | 定义不可持久化launch context、capability registry、anonymous channel backend、child binding、framing与cleanup |
 | `core/bounded_http.py` | 以mandatory byte limit和monotonic deadline读取urllib response；无法控制底层socket deadline时fail closed |
@@ -290,6 +292,25 @@ fixtures/*.py → core/fixtures/base.py
 - attestation 不得由消费它的 Gate 或 validator 生产
 - Runtime Manifest 只允许 `services[service-id]` 表达服务拓扑；禁止 singular
   `station`、dual-write 和按 map 顺序推断 primary service
+- client-to-service 关系只允许由 Environment Contract 声明并由
+  `ClientRuntime.service_bindings` 发布；禁止 Gate 常量、裸 URL、Profile 默认值、
+  client/service 顺序或 endpoint 副本成为第二真源
+- 通用 binding resolver / validator 必须位于 `core/provisioning.py`；Mobile、
+  Federation、Chat 或平台 Provisioner 不得各自实现同语义 parser
+- Platform Runtime Binding owns `create_bound_session`; business Gate code may
+  pass only client ID and fields accepted by that binding's closed typed
+  non-topology launch-options contract. Unknown fields, arbitrary environment
+  maps, and topology-bearing values are rejected. Runtime Binding owns monotonic
+  generation allocation and proof-ref collection. It must read each required
+  role's observed identity from live client connection state, bind it to the
+  existing D-13 runtime-instance identity, and return no session until Core
+  persists a verified proof for every required role.
+- Run-scoped fault routing uses Runtime Binding-owned
+  `TransportOverrideHandle`; Gate code may request apply/clear operations but
+  must not receive a routable endpoint or call `configure_station` with proxy
+  URLs. Fault proxy implementation and product assertions remain Domain-owned.
+
+
 - `core/_paths.py`不得定义runtime report/evidence/manifest目录
 - 除`core/evidence_store.py`外不得解析`PT_ACCEPTANCE_ARTIFACT_ROOT`或platform default
 - runtime writers不得写repository、`tooling/`、`docs/`或`.git/`
