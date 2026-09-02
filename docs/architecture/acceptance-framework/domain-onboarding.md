@@ -84,7 +84,7 @@ Gate catalog、environment contract 和 Provisioner 必须形成一个可执行�
 | Environment contract | `tooling/acceptance/environments/<environment-id>.yaml` | 文件存在、可解析，且 contract `id` 与文件名/environment 一致 |
 | Provisioner registration | `tooling/acceptance/provisioners/__init__.py` | `_PROVISIONERS` 能按 environment ID 解析 Provisioner class |
 | Gate roles | Domain Provisioner | 注册 Gate 所需 service、actor、client、Fixture 和 credential roles；每个 required service 必须产生 ID/kind 匹配的 attestation |
-| Runtime consumption | Gate runner | 只按 `services[service-id]` 消费 Provisioner 生成的 immutable Runtime Manifest，不自行部署、猜测 primary service、读取 legacy `station` 或回退环境变量 |
+| Runtime consumption | Gate runner | durable truth只按`services[service-id]`消费immutable Runtime Manifest；process-local authority只允许使用D-18声明的ephemeral capability client；不得自行部署、猜测primary service、读取legacy `station`或回退环境变量 |
 
 Native Tauri Gate 还必须通过 `acceptance-driver-build` 产出专用 binary，并通过
 `tooling/acceptance/drivers/tauri.py` 的公开入口解析 binary。具体路径属于 Driver
