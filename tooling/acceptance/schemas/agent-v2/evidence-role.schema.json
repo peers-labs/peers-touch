@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peers.touch/schemas/agent-v2/evidence-role.schema.json",
+  "title": "Agent V2 Gate Evidence Role",
+  "type": "object",
+  "required": ["artifactKind", "schema", "role", "gateId", "runId", "sourceIdentity", "runtimeMatrix", "actorIdentityHash", "runtimeAttestationRefs", "scenarioIds", "sampleCount", "observations", "oracle", "observedAt"],
+  "properties": {
+    "artifactKind": {"const": "agent-v2-gate-evidence"},
+    "schema": {"type": "object"},
+    "role": {"type": "string", "minLength": 1},
+    "gateId": {"type": "string", "minLength": 1},
+    "runId": {"type": "string", "minLength": 1},
+    "sourceIdentity": {"type": "object"},
+    "runtimeMatrix": {"type": "object"},
+    "actorIdentityHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "runtimeAttestationRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "scenarioIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "sampleCount": {"type": "integer", "minimum": 1},
+    "observations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "object", "minProperties": 1}
+    },
+    "oracle": {
+      "type": "object",
+      "required": ["assertionId", "status", "expected", "actualHash"],
+      "properties": {
+        "assertionId": {"type": "string", "minLength": 1},
+        "status": {"const": "passed"},
+        "expected": {"type": "string", "minLength": 1},
+        "actualHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "observedAt": {"type": "string", "minLength": 1}
+  },
+  "x-role-contracts": {
+    "cell-results": {"requiredObservationFields": ["cellId", "status", "expected", "actual"]},
+    "cleanup": {"requiredObservationFields": ["resourceKind", "resourceIdHash", "status"]},
+    "command-ids": {"requiredObservationFields": ["commandId", "idempotencyKeyHash", "objectIds"]},
+    "contract-evidence": {"requiredObservationFields": ["contractId", "contractHash", "platform", "status", "roundTripEqual"]},
+    "executor-receipts": {"requiredObservationFields": ["receiptId", "toolCallId", "fencingToken", "status", "payloadHash"]},
+    "guard-report": {"requiredObservationFields": ["guardId", "sourceInventoryHash", "violationCount", "passed"]},
+    "measurement-report": {"requiredObservationFields": ["metric", "sampleIds", "threshold", "passed"]},
+    "metrics-lineage": {"requiredObservationFields": ["runId", "metricsVersion", "metricsHash", "sourceAttemptIds"]},
+    "oauth-resource-manifest": {"requiredObservationFields": ["connectionRevision", "resourceId", "resourceVersion", "scopesHash"]},
+    "process-port-secret-canary": {"requiredObservationFields": ["processCount", "portCount", "secretLeakCount", "passed"]},
+    "projection-revisions": {"requiredObservationFields": ["slice", "beforeRevision", "afterRevision"]},
+    "provider-revoke": {"requiredObservationFields": ["providerId", "status", "idempotencyKeyHash"]},
+    "readiness-snapshots": {"requiredObservationFields": ["snapshotId", "state", "authority", "revision"]},
+    "receiver-dom": {"requiredObservationFields": ["scenarioId", "cellId", "selector", "locale", "textHash", "visible"]},
+    "replay": {"requiredObservationFields": ["sourceHash", "replayHash", "equal"]},
+    "runtime-events": {"requiredObservationFields": ["eventId", "sequence", "eventType", "occurredAt"]},
+    "side-effect-count": {"requiredObservationFields": ["counterId", "count", "maximum"]},
+    "station-readback": {"requiredObservationFields": ["entityKind", "entityIdHash", "revision", "stateHash"]},
+    "turn-trace": {"requiredObservationFields": ["turnId", "traceId", "terminalStatus", "traceHash"]},
+    "zero-execution": {"requiredObservationFields": ["counterKind", "count", "expected"]}
+  }
+}
