@@ -624,29 +624,7 @@
       "provisioner": "home-station",
       "tier": "env-evidence",
       "description": "V2 kernel foundation: C01-C10 behavior across 419-cell Gate matrix.",
-      "initial_proof_status": "UNPROVEN",
-      "runtime_matrix": {
-        "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
-        "expected_tuple_count": 419
-      },
-      "required_artifact_roles": [
-        "cell-results",
-        "receiver-dom",
-        "station-readback",
-        "runtime-events",
-        "runtime-attestation-set",
-        "measurement-report",
-        "side-effect-count",
-        "replay",
-        "cleanup",
-        "contract-evidence",
-        "guard-report",
-        "source-identity",
-        "role-schema-report",
-        "runner-attestation"
-      ]
+      "initial_proof_status": "UNPROVEN"
     }
   }
 }
