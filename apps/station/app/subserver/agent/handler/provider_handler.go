@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -11,63 +12,28 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
-	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
 type ProviderHandlers struct {
-	providerConfig *service.ProviderConfigService
-	modelConfig    *service.ModelConfigService
-	credentialCfg  *service.CredentialConfigService
+	providerConfig    *service.ProviderConfigService
+	modelConfig       *service.ModelConfigService
+	credentialCfg     *service.CredentialConfigService
+	admissionResolver *service.RuntimeAdmissionResolver
 }
 
 func NewProviderHandlers(
 	providerConfig *service.ProviderConfigService,
 	modelConfig *service.ModelConfigService,
 	credentialCfg *service.CredentialConfigService,
+	admissionResolver *service.RuntimeAdmissionResolver,
 ) *ProviderHandlers {
 	return &ProviderHandlers{
-		providerConfig: providerConfig,
-		modelConfig:    modelConfig,
-		credentialCfg:  credentialCfg,
+		providerConfig:    providerConfig,
+		modelConfig:       modelConfig,
+		credentialCfg:     credentialCfg,
+		admissionResolver: admissionResolver,
 	}
-}
-
-func (h *ProviderHandlers) HandleVerifyCli(_ context.Context, req *model.VerifyCliRequest) (*model.VerifyCliResponse, error) {
-	if req.GetCliCommand() == "" {
-		return nil, server.NewHandlerError(http.StatusBadRequest, "cli_command is required")
-	}
-
-	result := cli.VerifyCliBinary(req.GetCliCommand())
-	return &model.VerifyCliResponse{
-		Available:   result.Available,
-		Program:     result.Program,
-		Path:        result.Path,
-		Error:       result.Error,
-		InstallHint: result.InstallHint,
-	}, nil
-}
-
-func (h *ProviderHandlers) HandleFetchCliModels(_ context.Context, req *model.FetchCliModelsRequest) (*model.FetchCliModelsResponse, error) {
-	providerID := req.GetProviderId()
-	if providerID == "" {
-		return nil, server.NewHandlerError(http.StatusBadRequest, "provider_id is required")
-	}
-
-	cp := catalog.Find(providerID)
-	if cp == nil {
-		return nil, server.NewHandlerError(http.StatusNotFound, "provider not found in catalog")
-	}
-	if cp.ModelsCommand == "" {
-		return nil, server.NewHandlerError(http.StatusBadRequest, "provider has no models_command")
-	}
-
-	models, err := cli.FetchModels(cp.ModelsCommand)
-	if err != nil {
-		return nil, server.NewHandlerError(http.StatusInternalServerError, err.Error())
-	}
-
-	return &model.FetchCliModelsResponse{Models: models}, nil
 }
 
 func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.ListProvidersRequest) (*model.ListProvidersResponse, error) {
@@ -97,6 +63,9 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 	}
 
 	for _, cp := range entries {
+		if !catalogProviderAdvertisedByFrozenProfile(cp) {
+			continue
+		}
 		userMatch := userMatchMap[cp.ID]
 
 		credentialStatus := "not_configured"
@@ -105,6 +74,7 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 				credentialStatus = "configured"
 			}
 		}
+
 		enabled := cp.Enabled
 		version := int64(0)
 		if userMatch != nil {
@@ -185,6 +155,9 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 		if catalog.Find(up.Name) != nil {
 			continue
 		}
+		if !providerAdvertisedByFrozenProfile(up.RuntimeKind, up.Protocol) {
+			continue
+		}
 		p := providerToProto(&up)
 		dbModels, err := h.modelConfig.List(ctx, actorPTID, up.Name)
 		if err != nil {
@@ -238,6 +211,12 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 	}
 
 	if cp == nil && userMatch == nil {
+		return nil, server.NewHandlerError(http.StatusNotFound, "provider not found")
+	}
+	if cp != nil && !catalogProviderAdvertisedByFrozenProfile(*cp) {
+		return nil, server.NewHandlerError(http.StatusNotFound, "provider not found")
+	}
+	if userMatch != nil && !providerAdvertisedByFrozenProfile(userMatch.RuntimeKind, userMatch.Protocol) {
 		return nil, server.NewHandlerError(http.StatusNotFound, "provider not found")
 	}
 
@@ -430,71 +409,47 @@ func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.
 }
 
 func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *model.ListAvailableModelsRequest) (*model.ListAvailableModelsResponse, error) {
-	actorPTID := subjectActorPTID(ctx)
-	userProviders, _ := h.providerConfig.List(ctx, actorPTID)
+	actorID := subjectActorID(ctx)
 
-	entries := catalog.List()
-	resp := &model.ListAvailableModelsResponse{}
+	models, err := h.admissionResolver.ListAvailableModels(ctx, actorID)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
 
-	for _, cp := range entries {
-		var userMatch *persistence.AgentProvider
-		for i := range userProviders {
-			if userProviders[i].Name == cp.ID {
-				userMatch = &userProviders[i]
-				break
-			}
-		}
-
-		enabled := cp.Enabled
-		if userMatch != nil {
-			enabled = userMatch.Enabled
-		}
-		if !enabled {
-			continue
-		}
-
-		hidden := parseHiddenModels(func() string {
-			if userMatch != nil {
-				return userMatch.HiddenModels
-			}
-			return ""
-		}())
-
-		catalogIDs := make(map[string]bool, len(cp.Models))
-		for _, m := range cp.Models {
-			catalogIDs[m.ID] = true
-			if !m.Enabled || contains(hidden, m.ID) {
-				continue
-			}
-			resp.Models = append(resp.Models, &model.AvailableModelInfo{
-				Id:            m.ID,
-				ProviderId:    cp.ID,
-				ProviderName:  cp.Name,
-				DisplayName:   m.DisplayName,
-				Type:          m.Type,
-				Enabled:       m.Enabled,
-				ContextWindow: int32(m.ContextWindow),
-			})
-		}
-
-		dbModels, _ := h.modelConfig.List(ctx, actorPTID, cp.ID)
-		for i := range dbModels {
-			if !dbModels[i].Enabled || catalogIDs[dbModels[i].ModelID] || contains(hidden, dbModels[i].ModelID) {
-				continue
-			}
-			resp.Models = append(resp.Models, &model.AvailableModelInfo{
-				Id:            dbModels[i].ModelID,
-				ProviderId:    cp.ID,
-				ProviderName:  cp.Name,
-				DisplayName:   dbModels[i].DisplayName,
-				Type:          "chat",
-				Enabled:       dbModels[i].Enabled,
-				ContextWindow: int32(dbModels[i].ContextWindow),
-			})
-		}
+	resp := &model.ListAvailableModelsResponse{
+		Models: make([]*model.AvailableModelInfo, 0, len(models)),
+	}
+	for _, m := range models {
+		resp.Models = append(resp.Models, &model.AvailableModelInfo{
+			Id:            m.ID,
+			ProviderId:    m.ProviderID,
+			ProviderName:  m.ProviderName,
+			DisplayName:   m.DisplayName,
+			Type:          m.Type,
+			Enabled:       m.Enabled,
+			ContextWindow: m.ContextWindow,
+		})
 	}
 
 	return resp, nil
+}
+
+func catalogProviderAdvertisedByFrozenProfile(cp catalog.CatalogProvider) bool {
+	return providerAdvertisedByFrozenProfile(cp.RuntimeKind, cp.Protocol)
+}
+
+func runtimeAdvertisedByFrozenProfile(runtimeKind string) bool {
+	switch strings.ToLower(strings.TrimSpace(runtimeKind)) {
+	case "", "http":
+		return true
+	default:
+		return false
+	}
+}
+
+func providerAdvertisedByFrozenProfile(runtimeKind, protocol string) bool {
+	return !strings.EqualFold(strings.TrimSpace(protocol), "cli") &&
+		runtimeAdvertisedByFrozenProfile(runtimeKind)
 }
 
 func (h *ProviderHandlers) HandleProviderDelete(ctx context.Context, req *model.DeleteProviderRequest) (*model.DeleteProviderResponse, error) {
@@ -512,9 +467,24 @@ func (h *ProviderHandlers) HandleProviderDelete(ctx context.Context, req *model.
 }
 
 func (h *ProviderHandlers) HandleModelList(ctx context.Context, req *model.ListModelsRequest) (*model.ListModelsResponse, error) {
-	actorPTID := subjectActorPTID(ctx)
+	actorID := subjectActorID(ctx)
+	providerID := req.GetProviderId()
 
-	models, err := h.modelConfig.List(ctx, actorPTID, req.GetProviderId())
+	if cp := catalog.Find(providerID); cp != nil && !catalogProviderAdvertisedByFrozenProfile(*cp) {
+		return &model.ListModelsResponse{}, nil
+	}
+	providers, err := h.providerConfig.List(ctx, actorID)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	for i := range providers {
+		if providers[i].Name == providerID &&
+			!providerAdvertisedByFrozenProfile(providers[i].RuntimeKind, providers[i].Protocol) {
+			return &model.ListModelsResponse{}, nil
+		}
+	}
+
+	models, err := h.modelConfig.List(ctx, actorID, providerID)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -580,7 +550,10 @@ func (h *ProviderHandlers) HandleModelUpdate(ctx context.Context, req *model.Upd
 }
 
 func (h *ProviderHandlers) HandleCredentialSet(ctx context.Context, req *model.SetCredentialRequest) (*model.SetCredentialResponse, error) {
-	actorPTID := subjectActorPTID(ctx)
+	actorPTID := subjectActorID(ctx)
+	if req.GetProviderId() == "" || req.GetApiKey() == "" {
+		return nil, server.NewHandlerError(http.StatusBadRequest, "provider_id and api_key are required")
+	}
 
 	status, err := h.credentialCfg.Set(ctx, service.CredentialSetRequest{
 		ActorPTID:  actorPTID,
@@ -680,7 +653,7 @@ func providerToProto(p *persistence.AgentProvider) *model.AgentProviderInfo {
 		Version:       p.Version,
 		Source:        "custom",
 	}
-	if cp != nil {
+	if cp != nil && catalogProviderAdvertisedByFrozenProfile(*cp) {
 		info.Source = "catalog"
 		info.Description = cp.Description
 		info.Builtin = cp.Builtin
@@ -698,15 +671,6 @@ func providerToProto(p *persistence.AgentProvider) *model.AgentProviderInfo {
 		}
 		if info.Protocol == "" {
 			info.Protocol = cp.Protocol
-		}
-		if info.RuntimeKind == "" {
-			info.RuntimeKind = cp.RuntimeKind
-		}
-		if info.CliCommand == "" {
-			info.CliCommand = cp.CliCommand
-		}
-		if info.ModelsCommand == "" {
-			info.ModelsCommand = cp.ModelsCommand
 		}
 	}
 	if key := parseKeyVaultAPIKey(p.KeyVaults); key != "" {
