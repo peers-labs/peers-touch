@@ -192,11 +192,11 @@ else
     for doc in "${covered_docs[@]}"; do
       if [[ -f "$doc" ]]; then
         printf '### %s\n' "$doc"
-        sed -n '1,260p' "$doc"
+        cat "$doc"
       elif [[ -d "$doc" ]]; then
         find "$doc" -type f -name '*.md' | sort | while IFS= read -r nested; do
           printf '### %s\n' "$nested"
-          sed -n '1,220p' "$nested"
+          cat "$nested"
         done
       fi
     done | shasum -a 256 | awk '{print $1}'

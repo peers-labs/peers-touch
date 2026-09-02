@@ -66,9 +66,6 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err := infrastructure.MigrateIdentitySchema(rds); err != nil {
 		return fmt.Errorf("migrate social identity schema: %w", err)
 	}
-	if err := infrastructure.MigrateRelationshipSchema(rds); err != nil {
-		return fmt.Errorf("migrate social relationship schema: %w", err)
-	}
 
 	// Actor identity translation is owned by the persistence adapter.
 	resolver := infrastructure.NewActorIdentity(rds)
