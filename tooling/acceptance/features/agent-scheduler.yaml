@@ -1,0 +1,39 @@
+{
+  "id": "agent-scheduler",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/scheduler_handler.go",
+    "apps/station/app/subserver/agent/service/scheduler_service.go",
+    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/services/desktop_api.ts"
+  ],
+  "truth_sources": [
+    "running Station agent API",
+    "agent_scheduler_jobs table"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/scheduler/start"},
+    {"type": "api", "route": "/agent/scheduler/stop"},
+    {"type": "api", "route": "/agent/scheduler/status"},
+    {"type": "api", "route": "/agent/scheduler/add-job"}
+  ],
+  "required_gates": ["agent-scheduler-e2e"],
+  "acceptance": {
+    "service": [
+      "start activates the agent scheduler and begins executing scheduled jobs",
+      "stop halts the scheduler gracefully, completing any in-progress job before stopping",
+      "status returns whether the scheduler is running, its next scheduled execution, and job queue depth",
+      "add-job registers a new scheduled job with cron expression, action type, and parameters"
+    ],
+    "visible": [
+      "scheduler status indicator shows running/stopped state in Desktop agent settings",
+      "scheduled jobs list shows next execution time and last result"
+    ]
+  },
+  "negative": [
+    "stopping the scheduler must not cancel an already-executing job mid-turn",
+    "add-job must reject invalid cron expressions with a descriptive error",
+    "the scheduler must not execute jobs when the agent has no valid provider credential"
+  ]
+}

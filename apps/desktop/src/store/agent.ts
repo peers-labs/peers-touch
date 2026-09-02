@@ -5,16 +5,14 @@ import {
   api,
   type AvailableModel,
   type Agent,
-  type AgentChatConfig,
   type AgentCreate,
-  type AgentKnowledgeResource,
   type AppletInfo,
-  parseAgentChatConfig,
-  parseAgentKnowledgeResources,
 } from '../services/desktop_api';
+import { useAgentCapabilityStore } from './agentCapabilities';
 import { beginMutation, endMutation, toStoreError, type RevalidationState } from './revalidation';
 
 type AgentSurface = 'chat' | 'profile';
+export type AgentSaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'failed' | 'conflict';
 
 interface AgentState extends RevalidationState {
   selectedModel: string;
@@ -28,6 +26,7 @@ interface AgentState extends RevalidationState {
   enabledAppletIds: string[];
   agentSurfaces: Record<string, AgentSurface>;
   agentRosterOpen: boolean;
+  saveStateByAgentId: Record<string, AgentSaveState>;
 
   setSelectedModel: (model: string, providerId?: string) => void;
   setSelectedAgent: (agent: string) => void;
@@ -39,11 +38,30 @@ interface AgentState extends RevalidationState {
   loadAgents: () => Promise<void>;
   loadApplets: () => Promise<void>;
   toggleApplet: (id: string) => Promise<void>;
+  createAgent: (input: AgentCreate) => Promise<Agent>;
   updateAgentProfile: (agentId: string, updates: Partial<AgentCreate>) => Promise<Agent>;
-  updateAgentConfig: (agentName: string, updates: { chatConfig?: Partial<AgentChatConfig> }) => Promise<void>;
-  getCurrentAgentChatConfig: () => AgentChatConfig;
-  updateKnowledgeResources: (agentId: string, resources: AgentKnowledgeResource[]) => Promise<void>;
-  getAgentKnowledgeResources: (agentId: string) => AgentKnowledgeResource[];
+  reloadAgentProfile: (agentId: string) => Promise<Agent>;
+}
+
+const ACTIVE_MUTATION_CONFLICT_CODE = 'ADMISSION_ACTIVE_MUTATION_CONFLICT';
+
+export function isActiveMutationConflict(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('details' in error)) return false;
+  const details = (error as { details?: unknown }).details;
+  return (
+    typeof details === 'object'
+    && details !== null
+    && !Array.isArray(details)
+    && (details as Record<string, unknown>).error_code === ACTIVE_MUTATION_CONFLICT_CODE
+  );
+}
+
+function reconcileAgent(agent: Agent): Agent {
+  return {
+    ...agent,
+    title: resolveI18nValue(agent.title),
+    description: resolveI18nValue(agent.description),
+  };
 }
 
 export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) => ({
@@ -58,17 +76,34 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
   enabledAppletIds: [],
   agentSurfaces: {},
   agentRosterOpen: true,
+  saveStateByAgentId: {},
   loading: false,
   error: null,
   lastLoadedAt: null,
   pendingMutations: {},
 
   setSelectedModel: (model: string, providerId?: string) => {
+    const state = get();
+    const agent = state.agents.find((item) => item.name === state.selectedAgent);
+    if (!agent) return;
+    const previousModel = agent.model;
+    const previousProvider = agent.provider;
     set({ selectedModel: model, selectedProviderId: providerId || '' });
+    void state.updateAgentProfile(agent.id, {
+      model,
+      provider: providerId || '',
+    }).catch(() => {
+      set({ selectedModel: previousModel, selectedProviderId: previousProvider });
+    });
   },
 
   setSelectedAgent: (agent: string) => {
-    set({ selectedAgent: agent });
+    const selected = get().agents.find((item) => item.name === agent);
+    set({
+      selectedAgent: agent,
+      selectedModel: selected?.model || '',
+      selectedProviderId: selected?.provider || '',
+    });
     void api.setSelectedAgent(agent).catch((error) => {
       log.error('agent', 'Failed to persist selected agent', { agent, error: toStoreError(error) });
     });
@@ -130,60 +165,12 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
     set({ loading: true, error: null });
     try {
       const res = await api.listAvailableModels();
-      let models = res.models || [];
+      const models = res.models || [];
       log.info('agent', 'Models loaded', { count: models.length });
-      const modelIds = new Set(models.map((m) => m.id));
-      const preferredDefault = res.default && modelIds.has(res.default) ? res.default : '';
-      const currentSelected = get().selectedModel;
-      const currentProvider = get().selectedProviderId;
-
-      // Only synthesize an entry for a missing model if its provider is still
-      // present (enabled) in the backend response — this handles custom endpoint
-      // IDs that aren't in the standard model list. If the provider was disabled,
-      // do NOT synthesize; fall through to selection logic below.
-      if (currentSelected && currentProvider && !modelIds.has(currentSelected)) {
-        const providerModels = models.filter((m) => m.provider_id === currentProvider);
-        if (providerModels.length > 0) {
-          const providerName = providerModels[0].provider_name || currentProvider;
-          const isEndpointId = currentSelected.length > 20;
-          const resolvedDisplayName = isEndpointId
-            ? providerModels[0].display_name
-            : currentSelected;
-          const syntheticEntry = {
-            id: currentSelected,
-            display_name: resolvedDisplayName,
-            provider_id: currentProvider,
-            provider_name: providerName,
-            type: 'chat' as const,
-            context_window: providerModels[0].context_window ?? 0,
-            enabled: true,
-            function_call: providerModels[0].function_call ?? false,
-            vision: providerModels[0].vision ?? false,
-            reasoning: providerModels[0].reasoning ?? false,
-            search: providerModels[0].search ?? false,
-            image_output: providerModels[0].image_output ?? false,
-            video: providerModels[0].video ?? false,
-          };
-          models = [...models, syntheticEntry];
-          modelIds.add(currentSelected);
-        }
-      }
-
       const enabledModels = models.filter((m) => m.enabled);
-      const nextSelected =
-        (currentSelected && modelIds.has(currentSelected) && enabledModels.some((m) => m.id === currentSelected) && currentSelected) ||
-        preferredDefault ||
-        enabledModels[0]?.id ||
-        models[0]?.id ||
-        '';
-      const nextProvider = models.find((m) => m.id === nextSelected)?.provider_id
-        || models[0]?.provider_id
-        || '';
       set({
         availableModels: models,
-        defaultModel: preferredDefault || enabledModels[0]?.id || models[0]?.id || '',
-        selectedModel: nextSelected,
-        selectedProviderId: nextProvider,
+        defaultModel: res.default || enabledModels[0]?.id || '',
         lastLoadedAt: Date.now(),
       });
     } catch (error) {
@@ -206,11 +193,19 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         }),
       ]);
       const raw = result.agents || [];
-      const agents = raw.map((a) => ({
+      let agents = raw.map((a) => ({
         ...a,
         title: resolveI18nValue(a.title),
         description: resolveI18nValue(a.description),
       }));
+      if (agents.length === 0) {
+        try {
+          const created = await api.createAgent({ name: 'assistant', description: '' });
+          agents = [{ ...created, title: resolveI18nValue(created.title), description: resolveI18nValue(created.description) }];
+        } catch (createError) {
+          log.warn('agent', 'Auto-create default agent failed', { error: toStoreError(createError) });
+        }
+      }
       log.info('agent', 'Agents loaded', { count: agents.length });
       const currentSelected = persistedSelected || get().selectedAgent;
       const fallbackAgent = result.defaultAgent || agents.find((agent) => agent.isDefault)?.name || agents[0]?.name || 'assistant';
@@ -224,11 +219,10 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         });
       }
       const current = agents.find((a) => a.name === nextSelected);
-      if (current?.model) {
-        const providerId = current.provider?.trim() || '';
-        const modelId = current.model.trim();
-        set({ selectedModel: modelId, selectedProviderId: providerId || get().selectedProviderId });
-      }
+      set({
+        selectedModel: current?.model?.trim() || '',
+        selectedProviderId: current?.provider?.trim() || '',
+      });
     } catch (error) {
       const message = toStoreError(error);
       log.error('agent', 'Failed to load agents', { error: message });
@@ -291,6 +285,37 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
     }
   },
 
+  createAgent: async (input) => {
+    // First-class agent creation (C5): wraps api.createAgent (Station-backed),
+    // then merges the created agent into the roster, selects it and switches to
+    // its profile surface. UI entry points reuse this instead of calling the API
+    // directly, mirroring LobeHub's store-level createAgent.
+    const mutationKey = 'agent-create';
+    set((state) => ({ error: null, pendingMutations: beginMutation(state.pendingMutations, mutationKey) }));
+    try {
+      const created = await api.createAgent(input);
+      const reconciled = reconcileAgent(created);
+      set((state) => {
+        const others = state.agents.filter((item) => item.id !== reconciled.id);
+        return {
+          agents: [...others, reconciled],
+          selectedAgent: reconciled.name,
+          agentSurfaces: { ...state.agentSurfaces, [reconciled.name]: 'profile' },
+          lastLoadedAt: Date.now(),
+        };
+      });
+      void api.setSelectedAgent(reconciled.name).catch(() => { /* selection best-effort */ });
+      return reconciled;
+    } catch (error) {
+      const message = toStoreError(error);
+      log.error('agent', 'Failed to create agent', { error: message });
+      set({ error: message });
+      throw error;
+    } finally {
+      set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
+    }
+  },
+
   updateAgentProfile: async (agentId, updates) => {
     const { agents } = get();
     const agent = agents.find((a) => a.id === agentId);
@@ -305,111 +330,81 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
     set((state) => ({
       agents: state.agents.map((item) => (item.id === agentId ? optimisticAgent : item)),
       error: null,
+      saveStateByAgentId: { ...state.saveStateByAgentId, [agentId]: 'saving' },
       pendingMutations: beginMutation(state.pendingMutations, mutationKey),
     }));
 
     try {
-      const updated = await api.updateAgent(agentId, updates);
-      const reconciled: Agent = {
-        ...updated,
-        title: resolveI18nValue(updated.title),
-        description: resolveI18nValue(updated.description),
-      };
+      const updated = await api.updateAgent(agentId, { ...updates, version: agent.version });
+      const reconciled = reconcileAgent(updated);
       set((state) => ({
         agents: state.agents.map((item) => (item.id === reconciled.id ? reconciled : item)),
+        saveStateByAgentId: { ...state.saveStateByAgentId, [agentId]: 'saved' },
         lastLoadedAt: Date.now(),
       }));
+      try {
+        await useAgentCapabilityStore.getState().loadAgent(agentId);
+      } catch (error) {
+        const message = toStoreError(error);
+        log.error('agent', 'Failed to refresh capability projection after Agent update', {
+          agentId,
+          error: message,
+        });
+        set({ error: message });
+      }
       return reconciled;
     } catch (error) {
       const message = toStoreError(error);
+      const conflict = isActiveMutationConflict(error);
       log.error('agent', 'Failed to update agent profile', { agentId, error: message });
-      set({ agents: previousAgents, error: message });
+      set((state) => ({
+        agents: previousAgents,
+        error: message,
+        saveStateByAgentId: {
+          ...state.saveStateByAgentId,
+          [agentId]: conflict ? 'conflict' : 'failed',
+        },
+      }));
       throw error;
     } finally {
       set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
     }
   },
 
-  updateAgentConfig: async (agentName, updates: { chatConfig?: Partial<AgentChatConfig> }) => {
-    const { agents } = get();
-    const agent = agents.find((a) => a.name === agentName);
-    if (!agent) return;
-
-    const payload: Record<string, string> = {};
-
-    if (updates.chatConfig) {
-      const existing = parseAgentChatConfig(agent);
-      const merged = { ...existing, ...updates.chatConfig };
-      payload.chatConfig = JSON.stringify(merged);
-    }
-    const previousAgents = agents;
-    const optimisticAgent = { ...agent, ...payload };
-    const mutationKey = `agent:${agent.id}`;
+  reloadAgentProfile: async (agentId) => {
+    const mutationKey = `agent-profile-reload:${agentId}`;
     set((state) => ({
-      agents: state.agents.map((item) => (item.id === agent.id ? optimisticAgent : item)),
-      error: null,
       pendingMutations: beginMutation(state.pendingMutations, mutationKey),
     }));
-
     try {
-      const updated = await api.updateAgent(agent.id, payload);
-      set((s) => ({
-        agents: s.agents.map((a) => (a.id === updated.id ? updated : a)),
-        lastLoadedAt: Date.now(),
-      }));
-    } catch (e) {
-      const message = toStoreError(e);
-      log.error('agent', 'Failed to update agent config', { agentName, error: message });
-      set({ agents: previousAgents, error: message });
-      throw e;
-    } finally {
-      set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
-    }
-  },
-
-  getCurrentAgentChatConfig: () => {
-    const { agents, selectedAgent } = get();
-    const agent = agents.find((a) => a.name === selectedAgent);
-    if (!agent) return {};
-    return parseAgentChatConfig(agent);
-  },
-
-  updateKnowledgeResources: async (agentId: string, resources: AgentKnowledgeResource[]) => {
-    const { agents } = get();
-    const agent = agents.find((a) => a.id === agentId);
-    if (!agent) return;
-
-    const previousAgents = agents;
-    const mutationKey = `knowledge:${agentId}`;
-    const serialized = JSON.stringify(resources);
-    const optimisticAgent = { ...agent, knowledgeResources: serialized };
-
-    set((state) => ({
-      agents: state.agents.map((item) => (item.id === agentId ? optimisticAgent : item)),
-      error: null,
-      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
-    }));
-
-    try {
-      const updated = await api.updateAgent(agentId, { knowledgeResources: serialized });
-      set((s) => ({
-        agents: s.agents.map((a) => (a.id === updated.id ? updated : a)),
-        lastLoadedAt: Date.now(),
-      }));
+      const reloaded = reconcileAgent(await api.getAgent(agentId));
+      set((state) => {
+        const selectedAgent = state.selectedAgent === reloaded.name;
+        return {
+          agents: state.agents.map((item) => (item.id === reloaded.id ? reloaded : item)),
+          error: null,
+          saveStateByAgentId: {
+            ...state.saveStateByAgentId,
+            [agentId]: 'idle',
+          },
+          selectedModel: selectedAgent ? reloaded.model : state.selectedModel,
+          selectedProviderId: selectedAgent ? reloaded.provider : state.selectedProviderId,
+          lastLoadedAt: Date.now(),
+        };
+      });
+      return reloaded;
     } catch (error) {
       const message = toStoreError(error);
-      log.error('agent', 'Failed to update knowledge resources', { agentId, error: message });
-      set({ agents: previousAgents, error: message });
+      log.error('agent', 'Failed to reload authoritative agent profile', {
+        agentId,
+        error: message,
+      });
+      set({ error: message });
       throw error;
     } finally {
-      set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
+      set((state) => ({
+        pendingMutations: endMutation(state.pendingMutations, mutationKey),
+      }));
     }
-  },
-
-  getAgentKnowledgeResources: (agentId: string) => {
-    const { agents } = get();
-    const agent = agents.find((a) => a.id === agentId);
-    if (!agent) return [];
-    return parseAgentKnowledgeResources(agent);
   },
 }));

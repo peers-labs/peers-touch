@@ -4,7 +4,7 @@
 > 不作为当前 Agent Memory 架构或实现真源。
 > 若与现状冲突，以 `docs/README.md`、`docs/architecture/`、`docs/global/coding-guide/` 及对应平台真源文档为准。
 
-> **Workspace:** <workspace-root>/peers-touch
+> **Workspace:** <repo-root>
 
 ---
 

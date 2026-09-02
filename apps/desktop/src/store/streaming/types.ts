@@ -7,14 +7,21 @@ export type OperationStatus =
   | 'waiting_for_approval'
   | 'completed'
   | 'cancelled'
+  | 'interrupted'
   | 'failed';
 
 export type RunState =
   | 'idle'
   | 'streaming'
+  | 'connection_lost'
+  | 'reconnecting'
+  | 'replaying'
+  | 'reconciling'
+  | 'recovery_failed'
   | 'approval_pending'
   | 'completed'
   | 'failed'
+  | 'interrupted'
   | 'cancelled';
 
 export interface OperationError {
@@ -36,6 +43,10 @@ export interface Operation {
   endedAt?: number;
   error?: OperationError;
   pendingApproval?: PendingApproval;
+  turnId?: string;
+  conversationId?: string;
+  streamGeneration?: number;
+  lastEventSeq?: number;
 }
 
 export interface PendingApproval {
@@ -51,14 +62,24 @@ export type TurnStreamEventType =
   | 'thinking'
   | 'tool_call'
   | 'tool_result'
-  | 'local_tool_request'
   | 'tool_approval_required'
   | 'tool_approval_decision'
   | 'intervention_request'
   | 'progress'
   | 'image'
   | 'conversation_created'
+  | 'queued'
+  | 'admission_replayed'
   | 'error'
+  | 'cancelled'
+  | 'connection_lost'
+  | 'reconnecting'
+  | 'replaying'
+  | 'reconciling'
+  | 'connected'
+  | 'recovery_failed'
+  | 'snapshot'
+  | 'catchup_done'
   | 'done';
 
 export interface TextEventPayload {
@@ -129,6 +150,14 @@ export interface DoneEventPayload {
   turn?: Record<string, unknown>;
   type?: string;
   suggestions?: string[];
+  model?: string;
+  seq?: number;
+}
+
+export interface CatchupDoneEventPayload {
+  type: 'catchup_done';
+  seq: number;
+  reason?: string;
 }
 
 export type TurnStreamEventPayload =
@@ -142,7 +171,8 @@ export type TurnStreamEventPayload =
   | ImageEventPayload
   | ConversationCreatedPayload
   | ErrorEventPayload
-  | DoneEventPayload;
+  | DoneEventPayload
+  | CatchupDoneEventPayload;
 
 export interface TurnStreamEvent {
   event: TurnStreamEventType;
@@ -160,6 +190,7 @@ export interface StreamingAccumulator {
   model: string;
   error: OperationError | null;
   isDone: boolean;
+  isCancelled: boolean;
   lastEventAt: number;
 }
 

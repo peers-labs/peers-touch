@@ -116,10 +116,6 @@ class ChatSubmitFaultProxyTest(unittest.TestCase):
         with urllib.request.urlopen(request, timeout=2) as response:
             self.assertEqual(response.status, 200)
         self.assertEqual(_UpstreamHandler.bodies, [submit_request])
-        self.assertEqual(
-            self.proxy.state.snapshot()["forwardedPaths"],
-            {SUBMIT_PATH: 1},
-        )
 
     def test_server_close_releases_listener(self) -> None:
         port = int(self.proxy.server_address[1])

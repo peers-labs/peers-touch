@@ -65,6 +65,24 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
   };
 }
 
+// #region debug-point F-I:foundation-cleanup-logout
+function reportFoundationCleanupLogout(stage: string): void {
+  if (typeof fetch !== 'function') return;
+  void fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'as-f07-revision-flow',
+      runId: 'pre-fix-logout',
+      hypothesisId: 'F-I',
+      location: 'session.ts:logout',
+      msg: `[DEBUG] ${stage}`,
+      data: {},
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 // ── Store ──
 
 export const useSessionStore = createDesktopStore<SessionStore>('session', (set, get) => ({
@@ -137,21 +155,25 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
 
   logout: async () => {
     markLocalIdentityAction();
-    try {
-      await api.realtimeStreamStop();
-    } catch {
-      // noop
-    }
-    try {
-      await api.authLogout();
-    } catch {
-      // Best-effort: if the session is already expired/revoked, still clear local state.
-    }
+    reportFoundationCleanupLogout('cleanup-logout-started');
     await runIdentityPipeline({
       reason: 'logout',
       actorPtid: null,
       loginMethod: null,
     });
+    reportFoundationCleanupLogout('cleanup-identity-pipeline-finished');
+    try {
+      await api.realtimeStreamStop();
+    } catch {
+      // noop
+    }
+    reportFoundationCleanupLogout('cleanup-realtime-stop-finished');
+    try {
+      await api.authLogout();
+    } catch {
+      // Best-effort: if the session is already expired/revoked, still clear local state.
+    }
+    reportFoundationCleanupLogout('cleanup-auth-logout-finished');
   },
 
   activateAuthenticatedSession: (response) => {
