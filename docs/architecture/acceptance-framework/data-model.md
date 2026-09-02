@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-08-16 | **Updated**: 2026-08-31
+> **Created**: 2026-08-16 | **Updated**: 2026-09-02
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -14,6 +14,7 @@
 
 - Environment Provisioning Contract 的机器可读字段。
 - Runtime Resource Manifest、Station Attestation、Actor Manifest 和 Gap Artifact。
+- 多服务环境中的 client-to-service binding 与校验规则。
 - Provisioning 生命周期状态及转换规则。
 - Native Desktop Runtime Cell、远端 transport、GUI session 与 platform adapter identity。
 - Ephemeral Gate Launch Context、anonymous capability channel与typed failure。
@@ -37,14 +38,39 @@ profile:
   required: true
   identity_match: true
 services:
-  station:
+  station-primary:
     kind: station
     required: true
-    runtime_identity_required: false
+    runtime_identity_required: true
     ready_action: station
     health_action: station-check
     status_action: station-status
     attestation_producer: station-deployment
+  station-secondary:
+    kind: station
+    required: true
+    runtime_identity_required: true
+    ready_action: station
+    health_action: station-check
+    status_action: station-status
+    attestation_producer: station-deployment
+clients:
+  - id: alice-primary
+    actor: alice
+    runtime: native-tauri
+    required_service_roles: [station]
+    service_bindings:
+      station:
+        service_id: station-primary
+        required_kind: station
+  - id: bob-secondary
+    actor: bob
+    runtime: native-tauri
+    required_service_roles: [station]
+    service_bindings:
+      station:
+        service_id: station-secondary
+        required_kind: station
 fixtures:
   - id: chat-native-actors
 credentials:
@@ -60,6 +86,21 @@ cleanup:
 - `id` 必须与 `gates.yaml.environment` 一致。
 - 每个 service 必须声明 `kind`；需要稳定 peer/runtime identity 的环境必须设置
   `runtime_identity_required: true`。
+- client ID 在一个 Environment Contract 内必须唯一；`service_bindings` 的 role、
+  `service_id` 和 `required_kind` 必须是非空稳定标识。
+- `required_service_roles` declares the closed set of binding roles the client
+  depends on. The validator requires `service_bindings.keys()` to equal
+  `required_service_roles` exactly; a missing role produces
+  `MISSING_REQUIRED_BINDING`, an extra role produces `UNEXPECTED_BINDING_ROLE`.
+  The field is mandatory. A service-independent client must explicitly declare
+  `required_service_roles: []`; omission is invalid and must not default to an
+  empty list. Empty `service_bindings` is valid only for that explicit case.
+- Client ID and binding role must match `^[a-z0-9][a-z0-9-]{0,63}$`
+  (same grammar as `SERVICE_ID_PATTERN`).
+- 每个 binding 的 `service_id` 必须引用同一 contract 的 service，且
+  `required_kind` 必须等于被引用 service 的 `kind`。
+- client binding 不得包含 endpoint、deployment environment、commit、credential
+  或 runtime identity；这些值只从 service attestation 解析。
 - `source_ref` 只允许引用，不允许写具体 secret value。
 - destructive Fixture 必须声明 authorization 和 target verification。
 - Contract 缺失或字段不完整时，plan 可以生成，但 environment Gate 不得执行。
@@ -140,7 +181,26 @@ Manifest 是一次 provisioning 运行的不可变输出。
     "mediaType": "application/json"
   },
   "credentialRefs": ["env:CHAT_NATIVE_DEMO_PASSWORD"],
-  "clients": [],
+  "clients": [
+    {
+      "id": "alice-primary",
+      "actor": "alice",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-primary",
+          "required_kind": "station"
+        }
+      },
+      "worktree": "<workspace-root>",
+      "gateway_port": 4540,
+      "renderer_port": 4610,
+      "webdriver_port": 4645,
+      "profile": "chat-native-alice-primary",
+      "storage_root": "<runtime-home>/acceptance/<run-id>/alice-primary"
+    }
+  ],
   "cleanup": {
     "registered": true,
     "resources": ["processes", "ports", "storage", "sessions"]
@@ -163,6 +223,162 @@ Manifest identity requirements:
   Environment Contract。
 - `services.*.liveCommit` 来自对应 live endpoint，不由本地推断。
 - `services.*.attestationArtifact` 指向实际 deployment/runtime producer 的输出。
+- `clients[].id` 是一次 Environment Contract 内的稳定 client identity，必须与
+  contract declaration 一致且唯一；`actor` 不能替代 client ID，因为同一 actor
+  可以拥有多个隔离 client / device。
+- `clients[].service_bindings` 必须与 Environment Contract 的 client binding
+  完全一致，并且只引用当前 manifest 的 `services`。
+- D-18 adds only `id`, `required_service_roles`, and `service_bindings` to the
+  existing `ClientRuntime` allocation record. It does not redefine port,
+  profile, storage, session, device, or platform isolation contracts; those
+  remain owned and validated by D-13 Runtime Cell and the existing platform
+  Provisioners.
+- Consumer 必须先按 client identity 取得 binding，再按 service ID 解析 endpoint；
+  禁止从 client 顺序、service map 顺序、Profile 默认值或业务常量推断。
+- 多个 client 可以共享一个 service；同一 client 可以声明多个不同 role。role
+  重复、悬空 service、kind mismatch 或 endpoint 副本都会使 manifest 无效。
+
+**Binding proof obligation**:
+
+Every call that starts or restarts a client must go through the platform-owned
+`create_bound_session(client_id, launch_options)` operation.
+The Runtime Binding resolves the service through the immutable Runtime Manifest,
+allocates the next monotonic `launchGeneration` for that client, launches the
+client, collects one platform observation for every
+`required_service_roles` entry, and asks the Core binding verifier to persist
+one `BindingProofRecord` per role before returning the session to the business
+Gate.
+
+`launch_options` is a closed typed contract owned by the selected Runtime
+Binding. Unknown fields are rejected. It may contain only non-topology
+operations such as window placement, restore mode, or wait policy; arbitrary
+environment maps and fields carrying endpoint, URL, host, port, service ID,
+deployment identity, commit, or runtime identity are forbidden.
+
+Run-scoped network-fault injection uses a separate opaque
+`TransportOverrideHandle`, not `launch_options` or `service_bindings`.
+Runtime Binding creates the handle from a Domain-owned local fault endpoint,
+keeps the routable endpoint private, and exposes only
+`apply_transport_override(client_id, binding_role, handle)` /
+`clear_transport_override(...)` to the Gate. The handle is bound to the current
+run, client, binding role, and declared service ID. It cannot replace the
+canonical binding or satisfy `BindingProofRecord`; Domain fault evidence owns
+proxy upstream identity, behavior, and cleanup.
+
+```json
+{
+  "artifactKind": "client-binding-proof",
+  "evidenceRunId": "<evidence-store-run-id>",
+  "provisioningRunId": "<runtime-manifest-run-id>",
+  "environmentId": "home-station",
+  "gateId": "chat-native-two-client-e2e",
+  "clientId": "alice-primary",
+  "bindingRole": "station",
+  "declaredServiceId": "station-primary",
+  "launchGeneration": 1,
+  "serviceAttestationRef": {
+    "artifactKind": "acceptance-artifact-ref",
+    "workspaceId": "<workspace-id>",
+    "gateId": "chat-native-two-client-e2e",
+    "runId": "<evidence-store-run-id>",
+    "path": "runtime/services/station-primary/attestation.json",
+    "sha256": "<attestation-sha256>",
+    "mediaType": "application/json"
+  },
+  "serviceAttestationDigest": "<sha256-of-station-primary-attestation>",
+  "clientRuntimeIdentity": {
+    "runtime": "native-tauri",
+    "instanceId": "<runtime-binding-owned-run-local-id>",
+    "identityDigest": "<sha256-of-d13-runtime-instance-identity>"
+  },
+  "observedRuntimeIdentity": "<station-peer-id>",
+  "capturedAt": "<UTC timestamp>",
+  "proofMechanism": "native-tauri-peer-id-check",
+  "verifierId": "core-client-binding",
+  "verifierSourceDigest": "<sha256>",
+  "verificationStatus": "VERIFIED"
+}
+```
+
+- `evidenceRunId` and `provisioningRunId` are distinct and mandatory. The
+  former identifies the Evidence Store run; the latter equals the final Runtime
+  Manifest `runId`. Neither may be inferred from the other.
+- `environmentId`, `gateId`, `clientId`, `bindingRole`, and
+  `declaredServiceId` must equal the immutable manifest projection.
+- `serviceAttestationRef` resolves the exact service attestation in the same
+  Evidence Store run; `serviceAttestationDigest` must equal its SHA-256.
+- `clientRuntimeIdentity` is platform-neutral. `runtime` must equal the
+  manifest client's runtime; `instanceId` is unique within the run and is
+  minted by Runtime Binding for the launch generation; `identityDigest` covers
+  the existing D-13 platform runtime identity. Desktop may derive that digest
+  from process identity, Mobile from device/session identity, and Federation
+  from browser-session identity. D-18 does not define or duplicate those
+  platform payloads.
+- The registered platform observer must read
+  `observedRuntimeIdentity` from the running client's live connection state
+  after launch and bind the observation to `clientRuntimeIdentity`. It
+  must not derive or copy the observed value from Runtime Manifest bindings,
+  launch options, environment variables, or ServiceAttestation. The observer
+  cannot supply expected identity or a `match` boolean.
+- Core resolves `expectedRuntimeIdentity` directly from the referenced
+  ServiceAttestation and derives `verificationStatus`; `VERIFIED` is emitted
+  only when observed and expected identities are equal.
+- `proofMechanism` is platform-specific and must be registered with Core.
+  Unregistered mechanisms are rejected.
+- The proof body contains neither its own ArtifactRef nor a Runtime Manifest
+  ArtifactRef. Evidence Store returns the proof ArtifactRef after persistence;
+  Runtime Binding appends it to its run-local binding-proof collection, and
+  Core harness finalization records that collection in the Gate result without
+  business-Gate participation.
+- Runtime Binding, not its caller, owns `launchGeneration`. It starts at 1 per
+  client and increases for every restart. Core harness finalization requires
+  exact proof closure:
+  `proof keys == {(clientId, launchGeneration, role) for every allocated
+  generation and every role in required_service_roles}`. A session is never
+  returned to business Gate code before every required role in its generation
+  has a `VERIFIED` proof.
+- Proof artifacts use existing Evidence Store atomic-write, cleanup, and
+  retention semantics. An unreferenced proof left by a crash is diagnostic
+  only and cannot satisfy Gate evidence.
+
+**ClientBindingError typed codes**:
+
+All binding validation failures use typed error codes. Each code belongs to the
+`20000s` protocol error range and maps to a specific failure stage and result:
+
+| Code | Numeric | Stage | Trigger | Result |
+|------|---------|-------|---------|--------|
+| `DUPLICATE_CLIENT_ID` | 20101 | pre-launch | Two clients share an `id` | `BLOCKED` |
+| `DANGLING_SERVICE_REF` | 20102 | pre-launch | `service_id` not found in `services` | `BLOCKED` |
+| `KIND_MISMATCH` | 20103 | pre-launch | `required_kind` differs from service `kind` | `BLOCKED` |
+| `MISSING_REQUIRED_BINDING` | 20104 | pre-launch | Role in `required_service_roles` has no matching `service_bindings` entry | `BLOCKED` |
+| `UNEXPECTED_BINDING_ROLE` | 20105 | pre-launch | Binding role not declared in `required_service_roles` | `BLOCKED` |
+| `ENDPOINT_COPY_DETECTED` | 20106 | pre-launch | Binding or launch options contains topology, arbitrary environment map, endpoint, commit, or runtime identity | `BLOCKED` |
+| `TRANSPORT_OVERRIDE_MISMATCH` | 20107 | runtime | Override handle does not match the current run, client, role, or declared service | `BLOCKED` |
+| `BINDING_PROOF_ABSENT` | 20201 | post-launch | No `BindingProofRecord` emitted for a required role | `UNPROVEN` |
+| `LAUNCH_IDENTITY_MISMATCH` | 20202 | post-launch | Observed identity differs from ServiceAttestation runtime identity | `BLOCKED` |
+| `UNREGISTERED_PROOF_MECHANISM` | 20203 | post-launch | `proofMechanism` not registered with Core | `BLOCKED` |
+
+The error object structure is:
+
+```json
+{
+  "code": "DANGLING_SERVICE_REF",
+  "numericCode": 20102,
+  "stage": "pre-launch",
+  "clientId": "alice-primary",
+  "bindingRole": "station",
+  "detail": "<redacted context>",
+  "result": "BLOCKED"
+}
+```
+
+Core or Runtime Binding must emit the structured error before propagating
+failure.
+`BINDING_PROOF_ABSENT` and `LAUNCH_IDENTITY_MISMATCH` are distinct failure
+modes: the former means no evidence exists, the latter means contradictory
+evidence exists. They must never be conflated. `BUSINESS_MIGRATION_REQUIRED`
+is an Acceptance Gap classification, not a `ClientBindingError`.
 - `profile.requestedName` 与 `resolvedName` 不一致时状态必须为 `BLOCKED`。
 - 顶层 `station` 字段已删除；reader 遇到旧字段必须 fail closed。
 - `source.workspaceDigest` 覆盖所有可执行源码和手写契约，但不包含自动生成的

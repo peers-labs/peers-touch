@@ -10,10 +10,19 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.core import (
+    AcceptanceGate,
+    ActorRuntime,
+    GateError,
+)
+from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
+from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
+from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
+    DEV_ACCOUNT_PASSWORD,
+    NativeClientLifecycleLedger,
+
     async_harness,
     commits_match,
     current_commit,
@@ -22,6 +31,9 @@ from tooling.acceptance.gates.chat.native_support import (
     message_snapshot,
     read_station_version,
     reset_fixture,
+    runtime_station_service,
+    selected_native_runtime,
+
     start_authenticated_client,
     stop_client,
     wait_until,
@@ -68,14 +80,84 @@ class NativeGroupMlsGate(AcceptanceGate):
 
     def __init__(self) -> None:
         super().__init__()
-        self.station_url = os.environ.get(
-            "CHAT_NATIVE_STATION_URL",
-            DEFAULT_STATION,
-        ).rstrip("/")
-        self.tested_commit = current_commit()
-        self.workspace_digest = current_workspace_digest()
+        injected = (manifest, actor_manifest, runtime_binding)
+        if any(value is not None for value in injected) and not all(
+            value is not None for value in injected
+        ):
+            raise GateError(
+                "runtime manifest, actor manifest, and runtime binding "
+                "must be injected together"
+            )
+        selected_cell = os.environ.get(
+            "PT_ACCEPTANCE_RUNTIME_CELL",
+            "",
+        ).strip()
+        if selected_cell and runtime_binding is None:
+            raise GateError(
+                "selected Native Desktop runtime cell requires injected "
+                "runtime resources"
+            )
+        if (
+            selected_cell
+            and runtime_binding is not None
+            and runtime_binding.cell_id != selected_cell
+        ):
+            raise GateError(
+                "injected Native Desktop runtime binding does not match "
+                f"PT_ACCEPTANCE_RUNTIME_CELL={selected_cell}"
+            )
+        self.manifest = manifest
+        self.actor_manifest = actor_manifest
+        self.runtime_binding = runtime_binding
+        if manifest is not None:
+            station = runtime_station_service(manifest)
+            source = manifest.get("source")
+            self.station_url = str(station.get("endpoint") or "").rstrip("/")
+            self.tested_commit = str(
+                source.get("commit") if isinstance(source, dict) else ""
+            )
+            self.workspace_digest = str(
+                source.get("workspaceDigest")
+                if isinstance(source, dict)
+                else ""
+            )
+            self.client_specs = {
+                str(client.get("actor")): client
+                for client in manifest.get("clients", [])
+                if isinstance(client, dict)
+            }
+            self.actor_specs = {
+                str(actor.get("role")): actor
+                for actor in (actor_manifest or {}).get("actors", [])
+                if isinstance(actor, dict)
+            }
+            if set(self.client_specs) != set(ACTORS):
+                raise GateError(
+                    "runtime manifest must allocate isolated Alice, Bob, and "
+                    "Charlie clients"
+                )
+            if set(self.actor_specs) != set(ACTORS):
+                raise GateError(
+                    "actor manifest must contain canonical Alice, Bob, and "
+                    "Charlie identities"
+                )
+            self.report.manifest = manifest
+        else:
+            self.station_url = os.environ.get(
+                "CHAT_NATIVE_STATION_URL",
+                DEFAULT_STATION,
+            ).rstrip("/")
+            self.tested_commit = current_commit()
+            self.workspace_digest = current_workspace_digest()
+            self.client_specs: dict[str, dict[str, Any]] = {}
+            self.actor_specs: dict[str, dict[str, Any]] = {}
+        if not self.station_url:
+            raise GateError("Native group MLS Station URL is required")
         self.steps: list[dict[str, Any]] = []
-        self.clients: dict[str, TauriDriver] = {}
+        self.clients: dict[str, TauriSession] = {}
+        self.runtime_instances: list[TauriSession] = []
+        self.client_lifecycles = NativeClientLifecycleLedger()
+
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
 
@@ -110,12 +192,86 @@ class NativeGroupMlsGate(AcceptanceGate):
         return value
 
     def start_client(self, actor: str) -> None:
-        client, ptid = start_authenticated_client(
+        if self.runtime_binding is None:
+            client, ptid = start_authenticated_client(
+                actor,
+                CLIENT_PORTS[actor],
+                self.station_url,
+            )
+            self.register_driver(client)
+            self.clients[actor] = client
+            self.ptids[actor] = ptid
+            device = async_harness(client, "getRealtimeDevice", {})
+            device_id = str((device or {}).get("deviceId") or "")
+            if not device_id:
+                raise GateError(f"{actor}: messaging device ID is missing")
+            self.device_ids[actor] = device_id
+            self.report.add_actor(
+                ActorRuntime(
+                    name=actor,
+                    runtime="native-tauri-embedded-webdriver",
+                    port=client.port,
+                    gateway_port=client.gateway_port,
+                    profile=client.profile,
+                    storage_root=client.storage_root,
+                    pid=client.process_id,
+                )
+            )
+            return
+        self.start_injected_client(actor)
+
+    def start_injected_client(self, actor: str) -> None:
+        if self.runtime_binding is None:
+            raise GateError("Native Desktop runtime binding is required")
+        spec = self.client_specs[actor]
+        client = self.runtime_binding.create_bound_session(
             actor,
-            CLIENT_PORTS[actor],
-            self.station_url,
+            NativeLaunchOptions(
+                window_slot=ACTORS.index(actor),
+                window_count=len(ACTORS),
+            ),
         )
+        self.runtime_instances.append(client)
+        expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
+        self.client_lifecycles.register(client, expected_ptid)
+        client.start()
+        self.client_lifecycles.mark_live(client)
         self.register_driver(client)
+        client.wait_for_acceptance_harness(30)
+        configure_station(client, self.station_url)
+        account_ref = str(
+            self.actor_specs[actor].get("accountRef") or ""
+        )
+        login = async_harness(
+            client,
+            "loginWithPassword",
+            {
+                "account": account_ref.removeprefix("station-account:"),
+                "password": DEV_ACCOUNT_PASSWORD,
+            },
+            timeout=30,
+        )
+        if not (login or {}).get("authenticated"):
+            raise GateError(f"{actor} login did not authenticate")
+        self.client_lifecycles.mark_authenticated(client)
+        hydration = async_harness(
+            client,
+            "hydrateActiveActor",
+            {},
+            timeout=30,
+        )
+        ptid = str((hydration or {}).get("actorPtid") or "")
+        if ptid != expected_ptid:
+            raise GateError(
+                f"{actor} login identity mismatch: "
+                f"expected={expected_ptid} actual={ptid}"
+            )
+        if not client.get_current_url().startswith("tauri://localhost"):
+            raise GateError(
+                f"{actor} is not running in native Tauri WebView: "
+                f"{client.get_current_url()}"
+            )
+
         self.clients[actor] = client
         self.ptids[actor] = ptid
         device = async_harness(client, "getRealtimeDevice", {})
@@ -135,6 +291,113 @@ class NativeGroupMlsGate(AcceptanceGate):
             )
         )
 
+    def verify_fixture_ready(self) -> bool:
+        verify_runtime_fixture_ready(
+            self.manifest or {},
+            self.actor_manifest or {},
+        )
+        return True
+
+    def source_identity(
+        self,
+        station_live: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self.runtime_binding is None or self.manifest is None:
+            return {}
+        identity = native_runtime_source_identity(
+            gate_id=self.gate_id,
+            manifest=self.manifest,
+            runtime_binding=self.runtime_binding,
+            station_live=station_live,
+        )
+        runtime_cell = identity["runtimeCell"]
+        self.assert_condition(
+            "source_build_runtime_identity",
+            True,
+            json.dumps(identity, sort_keys=True),
+        )
+        self.report.runtime.update(
+            {
+                "runtimeCellRunId": runtime_cell.get("runId"),
+                "sourceIdentity": identity,
+            }
+        )
+        return identity
+
+    def stop_authenticated_client(self, client: TauriSession) -> None:
+        errors = self.client_lifecycles.release(client)
+        if errors:
+            raise GateError(json.dumps(errors, sort_keys=True))
+
+    def cleanup_clients(self) -> dict[str, Any]:
+        if self.runtime_binding is None:
+            for client in self.clients.values():
+                try:
+                    stop_client(client)
+                except Exception:
+                    client.stop()
+            return {}
+        cleanup_errors: list[dict[str, str]] = []
+        for client in reversed(self.runtime_instances):
+            try:
+                self.stop_authenticated_client(client)
+            except Exception as error:
+                cleanup_errors.append(
+                    {
+                        "resource": f"client:{client.profile}",
+                        "error": str(error),
+                    }
+                )
+        for actor, client in self.clients.items():
+            if not self.save_app_log(client, actor):
+                cleanup_errors.append(
+                    {
+                        "resource": f"log:{client.profile}",
+                        "error": "Native client log was not exported",
+                    }
+                )
+        try:
+            cleanup = self.runtime_binding.finalize_cleanup(
+                self.runtime_instances,
+                self.client_specs,
+            )
+        except Exception as error:
+            cleanup = {
+                "portsReleased": False,
+                "processesReleased": False,
+                "storageReleased": False,
+                "logsReleased": False,
+                "cleanupErrors": [
+                    {
+                        "resource": "runtime-binding",
+                        "error": str(error),
+                    }
+                ],
+            }
+        binding_errors = cleanup.get("cleanupErrors")
+        if isinstance(binding_errors, list):
+            cleanup_errors.extend(
+                error
+                for error in binding_errors
+                if isinstance(error, dict)
+            )
+        cleanup["cleanupErrors"] = cleanup_errors
+        cleanup_passed = (
+            bool(cleanup.get("portsReleased"))
+            and bool(cleanup.get("processesReleased"))
+            and bool(cleanup.get("storageReleased"))
+            and bool(cleanup.get("logsReleased"))
+            and not cleanup_errors
+        )
+        self.report.runtime["cleanup"] = cleanup
+        if not cleanup_passed:
+            raise GateError(
+                "Native group MLS cleanup failed: "
+                f"{json.dumps(cleanup, sort_keys=True)}"
+            )
+        return cleanup
+
+
     def create_group(self) -> str:
         alice = self.clients["alice"]
         enter_chat_page(alice)
@@ -146,7 +409,7 @@ class NativeGroupMlsGate(AcceptanceGate):
                     "createGroup",
                     {
                         "name": "Acceptance MLS Group",
-                        "memberDids": [self.ptids["bob"], self.ptids["charlie"]],
+                        "memberPtids": [self.ptids["bob"], self.ptids["charlie"]],
                     },
                     timeout=60,
                 )
@@ -237,7 +500,7 @@ class NativeGroupMlsGate(AcceptanceGate):
         result = async_harness(
             alice,
             "removeGroupMember",
-            {"groupUlid": group_id, "memberDid": self.ptids["charlie"]},
+            {"groupUlid": group_id, "memberPtid": self.ptids["charlie"]},
             timeout=60,
         )
         if not result or not result.get("success"):
