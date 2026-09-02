@@ -4455,6 +4455,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   correction now preserves `BLOCKED / UNPROVEN` and performs candidate-role
   validation only after a passed Gate. G-F remains `PARTIAL / UNPROVEN`
   pending the replacement checkpoint and the same non-destructive preflight.
+- Replacement exact-source preflight
+  `20260902T225801126703Z-586a87dacfe251e5993dbda3fc51428c`
+  (aggregate `20260902T225800935179Z-bce6f443c962c34b7ffaf0352a333025`)
+  on `c22b6dd84bf0fda72bf9352c1ed9eecc79e5b56b` preserved the result as
+  `BLOCKED / UNPROVEN`, identified `fixture-target:station-two`, and stopped
+  before mutation of protected port `18080`. Local source, Station checkout,
+  runtime `buildCommit`, and deployment attestation all matched the replacement
+  commit with clean workspace digests and protocol digest
+  `959c3f3179d88ae2d63f2adf59d7ace70a75979dc1fd81048a333453d9a2f38f`.
+  Runtime-manifest SHA-256 is
+  `43f2bbc173859fbd9f1db77c5b3b1a370f294ca75de227d0b64a90a213eca672`;
+  cleanup SHA-256 is
+  `e324e828ad23cc5506df03540aa70bc20dedf683508cbcb4bb5ecb55f981a44d`
+  with `DONE / PROVEN / passed`; no candidate artifact was emitted. The
+  authorized non-destructive G-F scope is exhausted at
+  `DESTRUCTIVE_RESET_APPROVAL_REQUIRED`; 419/419 and Gate `DONE / PROVEN`
+  remain unclaimed.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
