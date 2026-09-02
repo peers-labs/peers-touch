@@ -50,6 +50,7 @@ Resolve each field from its owner instead of applying one global precedence:
 | Plan path, stage, current step, blocked flag, last session | `active_work` |
 | Main task and scope | Formal execution plan |
 | Progress, last completed, blocker detail, decisions | Plan status table or linked tracking source |
+| Overall progress ratio | Count of done/total workstreams from the plan status table; must not be guessed |
 | Evidence | Named commands and repository evidence |
 | Chat Anchor | Projection of the sources above |
 
@@ -103,6 +104,7 @@ Every user-facing Context Anchor is one fenced `markdown` block exactly like:
 - **Expected / verified HEAD**:
 - **Worktree-set digest**:
 - **Stage / step**:
+- **Overall progress**: <done>/<total> workstreams (<percentage>%)
 - **Progress**:
 - **Action and reason**:
 - **Evidence**:
