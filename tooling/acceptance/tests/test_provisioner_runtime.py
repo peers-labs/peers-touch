@@ -166,19 +166,35 @@ class ProvisionerBlockingTests(unittest.TestCase):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
         )
-        with patch.dict(
-            "os.environ",
-            {"PT_DEV_SLOT": "2"},
-            clear=True,
-        ):
-            clients = provisioner._clients(
-                "chat-native-two-client-e2e",
-                "run-webdriver-ports",
-            )
+        clients = provisioner._clients(
+            "chat-native-two-client-e2e",
+            "run-webdriver-ports",
+            2,
+        )
 
         self.assertEqual(
             [client.webdriver_port for client in clients],
             [4465, 4466],
+        )
+
+    def test_native_clients_use_resolved_slot_not_ambient_environment(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        with patch.dict(
+            "os.environ",
+            {"PT_DEV_SLOT": "0"},
+            clear=True,
+        ):
+            clients = provisioner._clients(
+                "chat-native-two-client-e2e",
+                "run-profile-slot",
+                3,
+            )
+
+        self.assertEqual(
+            [client.webdriver_port for client in clients],
+            [4475, 4476],
         )
 
     def test_native_webdriver_port_conflict_blocks(self):
@@ -201,6 +217,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
                     provisioner._clients(
                         "chat-native-two-client-e2e",
                         "run-webdriver-conflict",
+                        0,
                     )
 
     def test_agent_stream_client_uses_one_profile_and_isolated_storage(self):

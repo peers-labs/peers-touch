@@ -75,6 +75,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         self,
         gate_id: str,
         run_id: str,
+        slot: int,
     ) -> tuple[ClientRuntime, ...]:
         roles = CLIENT_ROLES.get(gate_id)
         if roles is None:
@@ -95,7 +96,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     resource=f"gate-environment:{gate_id}",
                 )
 
-        slot = int(os.environ.get("PT_DEV_SLOT", "0"))
         gateway_base = 3330 + slot * 100
         renderer_base = 3510 + slot * 100
         webdriver_base = 4445 + slot * 10
@@ -313,7 +313,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 credential_ref=credential_refs[0] if credential_refs else "",
                 reset_authorized=reset_authorized,
             )
-            clients = self._clients(gate_id, manifest.run_id)
+            clients = self._clients(gate_id, manifest.run_id, slot)
             manifest = dataclasses.replace(
                 manifest,
                 actor_manifest_ref=actor_ref,
