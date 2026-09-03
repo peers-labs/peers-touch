@@ -558,29 +558,7 @@ class IdentityRuntime {
   }
 
   private dispatch(event: IdentityEvent): void {
-    const previousPhase = this.phase.kind;
     this.phase = identityReducer(this.phase, event);
-    // #region debug-point A-D:identity-transition
-    void fetch('http://127.0.0.1:7781/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'foundation-login-readiness',
-        runId: 'post-fix',
-        hypothesisId: 'A-D',
-        location: 'identityRuntime.ts:dispatch',
-        msg: '[DEBUG] identity transition',
-        data: {
-          eventType: event.type,
-          previousPhase,
-          nextPhase: this.phase.kind,
-          lifecycleState: appStateFromIdentity(this.phase),
-          sessionAuthenticated: useSessionStore.getState().authenticated,
-          dataReady: this.dataReady,
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     this.installAuthGateIdentityRefresh();
     globalContext.setRuntimeAppState(identityPhaseAllowsReady(this.phase) ? 'ready' : 'booting');
     this.emit();

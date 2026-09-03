@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: reset authorization moved execution to canonical disposable profile `chat-native-disposable`; exact-source runtime reached `FIXTURE_READY`, fresh-client Station selection now passes, and the next failure is the cold-boot account-gate race before login; proof remains `UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: reset authorization moved execution to canonical disposable profile `chat-native-disposable`; exact-source runtime reached `FIXTURE_READY`, fresh-client Station selection and login readiness now pass, and the next failure is `agent.acceptance.providerModelUnavailable`; proof remains `UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4500,6 +4500,14 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   authenticated phase. Cleanup passed. The Agent Acceptance Harness now waits
   for the initialized account gate before submitting credentials, matching the
   existing Chat Harness lifecycle contract without changing product behavior.
+- Exact-source run
+  `20260903T150811019898Z-cdd0b874e7d0c93ed16e86ffca882f1c`
+  on `11694f1dd1164a6d355eab264831bcca21545bcb` verified the complete
+  login lifecycle transition through `authenticatedPendingCompletion` to
+  `ready`. It then stopped at the next source-backed failure,
+  `agent.acceptance.providerModelUnavailable`, before Foundation tuple
+  execution. Provisioner cleanup passed and G-F remains
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
