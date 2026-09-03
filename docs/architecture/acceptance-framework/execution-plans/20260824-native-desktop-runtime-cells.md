@@ -2322,3 +2322,26 @@ or product Gate ran. The minimum closure is:
 3. deploy one clean exact commit to both Stations and verify their runtime build
    identities before requesting target-specific destructive Fixture
    authorization.
+
+### 2026-09-03 station-four Exact Deployment
+
+The supported `PT_DEV_PROFILE_FILE` override supplied a temporary,
+worktree-local remote profile whose Station URL and dedicated
+`station-four` deployment environment both resolve to
+`10.37.245.247:18080`. `make station` then completed exact source sync, build,
+restart, and health verification for commit
+`0b8e4bb983efdc56668d3c246dd88825c513878d`.
+
+Live `/app-meta/version` metadata reports build commit `0b8e4bb983ef`, build
+label `refactor/chat-acceptance-cutover`, and Go `1.24.6`; the remote checkout
+is clean. The non-destructive Windows preflight run
+`20260903T092631845257Z-042991cd1071da409b3936c9767263dd` emitted a valid
+station-four deployment attestation, then stopped at
+`service-identity:station-five` because station-five does not expose the
+current stable build commit. No client, actor Fixture, or Windows runtime cell
+was provisioned. Provisioner cleanup completed with `DONE/PROVEN`.
+
+station-five remains healthy on `ef89b11fed8a`; exact-source sync is blocked by
+an uncommitted `tooling/docker/station.Dockerfile` change that replaces the
+committed domestic mirrors with Docker Hub images. That remote change has been
+inspected but not modified, reset, stashed, or overwritten.
