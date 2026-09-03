@@ -464,6 +464,11 @@ class NativeDesktopWindowsProvisioner:
                 environment={},
             )
             try:
+                self._wait_remote_actor_endpoints(
+                    "cell-probe",
+                    self.profile.webdriver_port,
+                    self.profile.gateway_port,
+                )
                 webdriver_tunnel = self.transport.start_local_forward(
                     remote_port=self.profile.webdriver_port,
                 )
@@ -578,6 +583,11 @@ class NativeDesktopWindowsProvisioner:
         webdriver_tunnel: SshTunnel | None = None
         gateway_tunnel: SshTunnel | None = None
         try:
+            self._wait_remote_actor_endpoints(
+                normalized_actor,
+                webdriver_port,
+                gateway_port,
+            )
             webdriver_tunnel = self.transport.start_local_forward(
                 remote_port=webdriver_port,
                 local_port=int(client_spec["webdriver_port"]),
@@ -1369,6 +1379,36 @@ class NativeDesktopWindowsProvisioner:
             self._require_state(),
             "stop-actor",
             {"actor": actor, "preserveState": preserve_state},
+        )
+
+    def _wait_remote_actor_endpoints(
+        self,
+        actor: str,
+        webdriver_port: int,
+        gateway_port: int,
+        *,
+        timeout: float = 60,
+    ) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            webdriver_ready = self.transport.remote_loopback_port_listening(
+                webdriver_port
+            )
+            gateway_ready = self.transport.remote_loopback_port_listening(
+                gateway_port
+            )
+            if webdriver_ready and gateway_ready:
+                return
+            time.sleep(0.25)
+        status = self._broker_from_state(
+            self._require_state(),
+            "status",
+            {},
+        )
+        raise ProvisioningError(
+            f"Windows runtime-cell actor {actor!r} endpoints did not become "
+            f"ready: webdriver={webdriver_port} gateway={gateway_port} "
+            f"broker={json.dumps(status, sort_keys=True)}"
         )
 
     def _probe_adapter(self, process_id: int) -> dict[str, Any]:
