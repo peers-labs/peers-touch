@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY` and login readiness; exact-source run `20260903T153702212775Z-dde95c9cd2e81266abd8c0f4a2ebda08` reproduced `agent.acceptance.providerModelUnavailable`, traced to legacy `varchar(36)` Agent PTID columns rejecting the 96-character canonical fixture PTID; the PTID-width and swallowed credential-error corrections await exact-source runtime proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY` and login readiness; Agent PTID persistence and provider/model admission now pass, and exact-source run `20260903T160825190459Z-903acc3e2b8b66d27beb9238495fea88` advanced to a Desktop protojson `int64` decode failure for credential version; the wire normalization correction awaits exact-source runtime proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4526,6 +4526,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   pass. The broader Station app sweep remains independently red because
   `tests/conversation_persistence_test.go` still initializes the removed
   `Conversation.ActorPTID` field. Runtime proof remains pending.
+- Exact-source run
+  `20260903T160825190459Z-903acc3e2b8b66d27beb9238495fea88`
+  (aggregate `20260903T160824990729Z-2e20eb4c15e6599416587773285bfa05`)
+  on `246bda626b25ca1fc32e0ea257ff4fdeb7a9f76d` proved the canonical
+  PTID migration and provider/model admission boundary, then advanced to
+  `decode credential status: invalid type: string "2", expected i64`.
+  Station protojson emits `int64` values as strings; the Desktop provider wire
+  adapter now accepts both canonical string and numeric representations for
+  provider, model, and credential versions. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
