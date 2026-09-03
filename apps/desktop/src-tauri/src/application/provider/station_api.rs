@@ -1,5 +1,5 @@
 use reqwest::Method;
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 
 use crate::infrastructure::station_client::{self, StationClientError};
@@ -15,6 +15,7 @@ pub struct StationProvider {
     pub runtime_kind: String,
     pub cli_command: String,
     pub enabled: bool,
+    #[serde(deserialize_with = "deserialize_proto_i64")]
     pub version: i64,
     #[serde(default)]
     pub config: Option<Value>,
@@ -28,6 +29,7 @@ pub struct StationModel {
     pub model_id: String,
     pub display_name: String,
     pub enabled: bool,
+    #[serde(deserialize_with = "deserialize_proto_i64")]
     pub version: i64,
 }
 
@@ -36,7 +38,25 @@ pub struct CredentialStatus {
     pub provider_id: String,
     pub configured: bool,
     pub status: String,
+    #[serde(deserialize_with = "deserialize_proto_i64")]
     pub version: i64,
+}
+
+fn deserialize_proto_i64<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Value::deserialize(deserializer)? {
+        Value::Number(value) => value
+            .as_i64()
+            .ok_or_else(|| D::Error::custom("integer is outside the i64 range")),
+        Value::String(value) => value
+            .parse::<i64>()
+            .map_err(|error| D::Error::custom(format!("invalid protobuf int64: {error}"))),
+        value => Err(D::Error::custom(format!(
+            "expected protobuf int64 number or string, got {value}"
+        ))),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -418,4 +438,51 @@ pub fn get_hidden_models(token: &str, provider_id: &str) -> Result<Vec<String>, 
     .unwrap_or_default();
 
     Ok(hidden)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CredentialStatus, StationModel, StationProvider};
+
+    #[test]
+    fn provider_wire_types_accept_protojson_and_numeric_versions() {
+        for version in [serde_json::json!("2"), serde_json::json!(2)] {
+            let status: CredentialStatus = serde_json::from_value(serde_json::json!({
+                "provider_id": "ark",
+                "configured": true,
+                "status": "active",
+                "version": version.clone(),
+            }))
+            .expect("decode credential status");
+
+            assert_eq!(status.version, 2);
+
+            let provider: StationProvider = serde_json::from_value(serde_json::json!({
+                "id": "provider-record",
+                "actor_ptid": "ptid:v1:actor",
+                "name": "ark",
+                "display_name": "Ark",
+                "base_url": "https://provider.example/v1",
+                "protocol": "openai-compatible",
+                "runtime_kind": "http",
+                "cli_command": "",
+                "enabled": true,
+                "version": version.clone(),
+            }))
+            .expect("decode provider");
+            assert_eq!(provider.version, 2);
+
+            let model: StationModel = serde_json::from_value(serde_json::json!({
+                "id": "model-record",
+                "actor_ptid": "ptid:v1:actor",
+                "provider_id": "ark",
+                "model_id": "model-id",
+                "display_name": "Model",
+                "enabled": true,
+                "version": version,
+            }))
+            .expect("decode model");
+            assert_eq!(model.version, 2);
+        }
+    }
 }
