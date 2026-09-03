@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Badge } from 'antd';
-import { Image, MessageCircle, Users, Settings } from 'lucide-react';
+import { Image, MessageCircle, User, Users } from 'lucide-react';
 
 import { useLifecyclePhase } from '../app/lifecycle';
 import { useMobileI18n } from '../app/mobileI18n';
@@ -32,7 +32,7 @@ const TAB_ICON_MAP: Record<TabId, typeof MessageCircle> = {
   chat: MessageCircle,
   moments: Image,
   contacts: Users,
-  settings: Settings,
+  settings: User,
 };
 
 /** Map navigation descriptor route IDs to local tab IDs. */
@@ -170,8 +170,8 @@ export function MobileShell(props: MobileShellProps) {
               onClick={() => switchTab(tabId)}
               type="button"
             >
-              <Badge count={badgeCount} size="small" offset={[4, 0]}>
-                <Icon size={22} strokeWidth={isActive ? 2.2 : 1.6} />
+              <Badge count={badgeCount} size="small" offset={[4, -2]}>
+                <Icon size={24} strokeWidth={isActive ? 2.2 : 1.7} />
               </Badge>
               <span className="tabbar-label">{t(descriptor.labelKey)}</span>
             </button>
