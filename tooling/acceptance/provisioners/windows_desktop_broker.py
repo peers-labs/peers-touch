@@ -700,11 +700,16 @@ try {
     New-Item -ItemType Directory -Force -Path $request.storageRoot | Out-Null
     New-Item -ItemType Directory -Force -Path ([IO.Path]::GetDirectoryName($request.logPath)) | Out-Null
     $errorPath = $request.logPath + '.stderr'
-    $process = Start-Process -FilePath $request.executable `
-        -ArgumentList @($request.arguments) `
-        -RedirectStandardOutput $request.logPath `
-        -RedirectStandardError $errorPath `
-        -PassThru
+    $startProcess = @{
+        FilePath = $request.executable
+        RedirectStandardOutput = $request.logPath
+        RedirectStandardError = $errorPath
+        PassThru = $true
+    }
+    if (@($request.arguments).Count -gt 0) {
+        $startProcess.ArgumentList = @($request.arguments)
+    }
+    $process = Start-Process @startProcess
     @{status='RUNNING'; processId=$process.Id; startedAt=(Get-Date).ToUniversalTime().ToString('o')} |
         ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath $request.statePath
     $process.WaitForExit()
