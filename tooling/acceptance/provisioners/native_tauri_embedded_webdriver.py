@@ -24,9 +24,9 @@ from .home_station import HomeStationProvisioner
 
 
 ACTOR_FIXTURE = REPO_ROOT / "apps" / "station" / "app" / "conf" / "actor.yml"
-SERVICE_PROFILES = {
-    "station-four": ("four", "station-four"),
-    "station-five": ("fiveArm", "station-five-arm"),
+_SERVICE_PROFILES = {
+    "station-four": ("chat-native-four", "chat-native-four"),
+    "station-five": ("chat-native-five", "chat-native-five"),
 }
 
 
