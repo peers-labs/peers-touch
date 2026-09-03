@@ -1414,6 +1414,26 @@ class NativeDesktopWindowsProvisioner:
     def _probe_adapter(self, process_id: int) -> dict[str, Any]:
         focus_deadline = time.monotonic() + 10
         control: dict[str, Any] = {}
+        screenshot = self.execute_adapter("capture_screenshot", {})
+        width, height = _bmp_geometry(screenshot.get("content"))
+        center = [width / 2, height / 2]
+        stack = self.execute_adapter(
+            "window_stack_at_point",
+            {"point": center},
+        )
+        point_owned = any(
+            isinstance(window, dict)
+            and int(window.get("ownerPid") or -1) == process_id
+            for window in stack.get("windows", [])
+        )
+        if point_owned:
+            self.execute_adapter(
+                "post_mouse",
+                {
+                    "actions": ["move", "left-down", "left-up"],
+                    "point": center,
+                },
+            )
         while time.monotonic() < focus_deadline:
             self.execute_adapter("activate_process", {"processId": process_id})
             control = self.execute_adapter(
@@ -1426,28 +1446,13 @@ class NativeDesktopWindowsProvisioner:
             ):
                 break
             time.sleep(0.25)
-        screenshot = self.execute_adapter("capture_screenshot", {})
-        width, height = _bmp_geometry(screenshot.get("content"))
-        center = [width / 2, height / 2]
-        stack = self.execute_adapter(
-            "window_stack_at_point",
-            {"point": center},
-        )
-        self.execute_adapter(
-            "post_mouse",
-            {"actions": ["move"], "point": center},
-        )
         return {
             "input": True,
             "focus": (
                 control.get("frontmost") is True
                 and control.get("focusedWindow") is True
             ),
-            "pointOwnership": any(
-                isinstance(window, dict)
-                and int(window.get("ownerPid") or -1) == process_id
-                for window in stack.get("windows", [])
-            ),
+            "pointOwnership": point_owned,
             "screenshot": bool(screenshot.get("content")),
             "width": width,
             "height": height,
