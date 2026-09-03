@@ -163,6 +163,8 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertIn("config core.longpaths true", source)
         self.assertIn('set "OPENSSL_SRC_PERL=', source)
         self.assertIn('set "PROTOC=', source)
+        self.assertIn('set "VITE_ACCEPTANCE_HARNESS=1"', source)
+        self.assertNotIn("set VITE_ACCEPTANCE_HARNESS=1 &&", source)
         self.assertNotIn('set "PATH={perl_directory}', source)
         self.assertNotIn("class SshTransport", source)
         self.assertNotIn("class SourceSyncRequest", source)
