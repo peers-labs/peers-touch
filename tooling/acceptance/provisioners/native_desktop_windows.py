@@ -1172,11 +1172,6 @@ class NativeDesktopWindowsProvisioner:
             ) as directory:
                 bundle = Path(directory) / "source.bundle"
                 revision = commit
-                if current_commit and self._local_is_ancestor(
-                    current_commit,
-                    commit,
-                ):
-                    revision = f"{current_commit}..{commit}"
                 created = subprocess.run(
                     (
                         "git",
