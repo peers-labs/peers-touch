@@ -6452,6 +6452,7 @@ export function installAcceptanceHarness(): void {
     async getRuntimeSnapshot() {
       const chatState = useChatStore.getState();
       const sessionState = useSessionStore.getState();
+      const identitySnapshot = identityRuntime.getSnapshot();
       const operation = chatState.operations[chatState.currentSessionKey];
       const assistant = [...chatState.messages]
         .reverse()
@@ -6460,7 +6461,9 @@ export function installAcceptanceHarness(): void {
       return {
         authenticated: sessionState.authenticated,
         actorId: sessionState.currentUser?.actorPtid ?? null,
-        identityState: identityRuntime.getSnapshot().lifecycle.state,
+        identityState: identitySnapshot.lifecycle.state,
+        identityPhase: identitySnapshot.phase.kind,
+        identityReason: 'reason' in identitySnapshot.phase ? identitySnapshot.phase.reason : null,
         currentSessionKey: chatState.currentSessionKey,
         messageCount: chatState.messages.length,
         isStreaming: chatState.isStreaming,
