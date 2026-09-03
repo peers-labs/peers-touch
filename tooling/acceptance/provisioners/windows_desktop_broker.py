@@ -350,7 +350,10 @@ class WindowsDesktopBroker:
             state = self._wait_for_state(state_path, timeout=30)
             process_id = int(state.get("processId") or 0)
             if process_id <= 0 or state.get("status") != "RUNNING":
-                raise BrokerError("interactive actor did not report a process identity")
+                raise BrokerError(
+                    "interactive actor did not report a process identity: "
+                    + json.dumps(state, sort_keys=True)
+                )
         except BaseException:
             try:
                 self.scheduler.unregister(task_name)
@@ -690,26 +693,32 @@ class WindowsDesktopBroker:
 param([Parameter(Mandatory=$true)][string]$RequestPath)
 $ErrorActionPreference = 'Stop'
 $request = Get-Content -Raw -LiteralPath $RequestPath | ConvertFrom-Json
-foreach ($property in $request.environment.PSObject.Properties) {
-    [Environment]::SetEnvironmentVariable($property.Name, [string]$property.Value, 'Process')
+try {
+    foreach ($property in $request.environment.PSObject.Properties) {
+        [Environment]::SetEnvironmentVariable($property.Name, [string]$property.Value, 'Process')
+    }
+    New-Item -ItemType Directory -Force -Path $request.storageRoot | Out-Null
+    New-Item -ItemType Directory -Force -Path ([IO.Path]::GetDirectoryName($request.logPath)) | Out-Null
+    $errorPath = $request.logPath + '.stderr'
+    $process = Start-Process -FilePath $request.executable `
+        -ArgumentList @($request.arguments) `
+        -RedirectStandardOutput $request.logPath `
+        -RedirectStandardError $errorPath `
+        -PassThru
+    @{status='RUNNING'; processId=$process.Id; startedAt=(Get-Date).ToUniversalTime().ToString('o')} |
+        ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath $request.statePath
+    $process.WaitForExit()
+    if (Test-Path -LiteralPath $errorPath) {
+        Get-Content -Raw -LiteralPath $errorPath | Add-Content -Encoding UTF8 -LiteralPath $request.logPath
+        Remove-Item -Force -LiteralPath $errorPath
+    }
+    @{status='EXITED'; processId=$process.Id; exitCode=$process.ExitCode; exitedAt=(Get-Date).ToUniversalTime().ToString('o')} |
+        ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath $request.statePath
+} catch {
+    @{status='ERROR'; error=$_.Exception.Message; failedAt=(Get-Date).ToUniversalTime().ToString('o')} |
+        ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath $request.statePath
+    throw
 }
-New-Item -ItemType Directory -Force -Path $request.storageRoot | Out-Null
-New-Item -ItemType Directory -Force -Path ([IO.Path]::GetDirectoryName($request.logPath)) | Out-Null
-$errorPath = $request.logPath + '.stderr'
-$process = Start-Process -FilePath $request.executable `
-    -ArgumentList @($request.arguments) `
-    -RedirectStandardOutput $request.logPath `
-    -RedirectStandardError $errorPath `
-    -PassThru
-@{status='RUNNING'; processId=$process.Id; startedAt=(Get-Date).ToUniversalTime().ToString('o')} |
-    ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath $request.statePath
-$process.WaitForExit()
-if (Test-Path -LiteralPath $errorPath) {
-    Get-Content -Raw -LiteralPath $errorPath | Add-Content -Encoding UTF8 -LiteralPath $request.logPath
-    Remove-Item -Force -LiteralPath $errorPath
-}
-@{status='EXITED'; processId=$process.Id; exitCode=$process.ExitCode; exitedAt=(Get-Date).ToUniversalTime().ToString('o')} |
-    ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath $request.statePath
 """.strip()
 
     @staticmethod
