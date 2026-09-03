@@ -1,8 +1,8 @@
 use crate::application::{agents, mcp, plugins};
 use crate::contracts::{
-    AgentIdInput, AgentPackageImportInput, McpCreateInput, McpNameInput, SkillImportAddressInput,
-    SkillImportGitHubInput, SkillImportZipInput, SkillMarketAddInput, SkillMarketDetailInput,
-    SkillMarketIdInput, SkillMarketListInput, SkillMarketSyncInput, StubPayload,
+    AgentIdInput, McpCreateInput, McpNameInput, SkillImportAddressInput, SkillImportGitHubInput,
+    SkillImportZipInput, SkillMarketAddInput, SkillMarketDetailInput, SkillMarketIdInput,
+    SkillMarketListInput, SkillMarketSyncInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -885,7 +885,7 @@ pub fn skills_market_detail(input: SkillMarketDetailInput) -> AppResult<StubPayl
 }
 
 pub fn skills_market_install(
-    actor_ptid: &str,
+    _actor_ptid: &str,
     input: SkillMarketDetailInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -930,13 +930,10 @@ pub fn skills_market_install(
     };
     match skill.package_type.as_deref().unwrap_or("skill") {
         "agent" => {
-            return install_agent_market_package(
-                actor_ptid,
-                target_agent_id,
-                market_id,
-                skill,
-                source,
-                content,
+            return AppResult::fail(
+                ErrorCode::NotImplemented,
+                "agent.packageMarketInstallRequiresCanonicalImport",
+                None,
             );
         }
         "mcp" => {
@@ -1079,88 +1076,6 @@ fn install_plugin_market_package(
             "isNew": true,
             "packageType": "plugin",
             "scanVerdict": "manifest-validated"
-        }),
-    )
-}
-
-fn install_agent_market_package(
-    actor_ptid: &str,
-    target_agent_id: String,
-    market_id: String,
-    skill: MarketSkill,
-    source: String,
-    content: String,
-) -> AppResult<StubPayload> {
-    let package = match serde_json::from_str::<Value>(&content) {
-        Ok(value) => value.get("package").cloned().unwrap_or(value),
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                format!("invalid Agent package JSON: {error}"),
-                None,
-            )
-        }
-    };
-    let result = agents::agents_import_package(
-        actor_ptid,
-        AgentPackageImportInput {
-            package,
-            name: Some(skill.name.clone()),
-        },
-    );
-    let Some(payload) = result.data else {
-        return result;
-    };
-    let agent = serde_json::from_str::<Value>(&payload.status).unwrap_or_else(|_| json!({}));
-    let agent_id = agent
-        .get("id")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    if agent_id.is_empty() {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            "Agent package installed without an agent id",
-            None,
-        );
-    }
-    let mut guard = match market_store().lock() {
-        Ok(guard) => guard,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("failed to access market store: {error}"),
-                None,
-            )
-        }
-    };
-    guard.installed.retain(|record| {
-        !(record.market_id == market_id
-            && record.file_path == skill.file_path
-            && record.agent_id == target_agent_id)
-    });
-    guard.installed.push(MarketInstallRecord {
-        market_id,
-        file_path: skill.file_path,
-        agent_id: target_agent_id,
-        skill_id: agent_id.clone(),
-        installed_at: current_millis().to_string(),
-        source,
-        scan_verdict: "package-validated".to_string(),
-        package_type: Some("agent".to_string()),
-    });
-    if let Err(error) = persist_market_store(&guard) {
-        return persist_error(error);
-    }
-    success_payload(
-        "skills_market_install",
-        json!({
-            "id": agent_id,
-            "identifier": agent.get("name").and_then(Value::as_str).unwrap_or(&skill.identifier),
-            "name": agent.get("title").and_then(Value::as_str).unwrap_or(&skill.name),
-            "isNew": true,
-            "packageType": "agent",
-            "scanVerdict": "package-validated"
         }),
     )
 }

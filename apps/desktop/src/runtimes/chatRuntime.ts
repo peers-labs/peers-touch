@@ -796,10 +796,8 @@ export const chatRuntime: RuntimeDescriptor = {
   async bootstrap(nextActorId) {
     if (!nextActorId) return;
     const bootstrapSequence = ++actorBootstrapSequence;
-    const sessionUser = useSessionStore.getState().currentUser;
-    const recoveryActorId = sessionUser?.actorId === nextActorId
-      ? sessionUser.ptid || nextActorId
-      : nextActorId;
+    const currentUser = useSessionStore.getState().currentUser;
+    const recoveryActorId = currentUser?.actorPtid || nextActorId;
     actorId = recoveryActorId;
     useAgentTurnRecoveryStore.getState().beginActor(recoveryActorId);
     const preservedFailedConversations = new Set(

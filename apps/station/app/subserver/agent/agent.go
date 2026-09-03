@@ -270,7 +270,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	turnAdmissionSvc := service.NewTurnAdmissionService()
 	turnHandlers.SetAdmissionService(turnAdmissionSvc)
 	turnSvc.SetTurnAdmissionService(turnAdmissionSvc)
-	turnAdmissionSvc.SetAttachmentPreflight(turnSvc.PreflightAttachments)
+	turnAdmissionSvc.SetRequestPreflight(turnSvc.PreflightTurn)
 	turnQueueHandlers := handler.NewTurnQueueHandlers(turnAdmissionSvc)
 	convHandlers := handler.NewConversationHandlers(convSvc, turnSvc)
 	revisionHandlers := handler.NewRevisionHandlers(service.NewRevisionService(convSvc, turnSvc))
