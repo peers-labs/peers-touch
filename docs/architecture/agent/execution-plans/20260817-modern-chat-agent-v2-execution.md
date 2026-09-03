@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | blocked at protected reset boundary: exact-source preflight on `c22b6dd84bf0fda72bf9352c1ed9eecc79e5b56b` preserved `BLOCKED / UNPROVEN`, rejected `fixture-target:station-two` before mutation, and completed cleanup; `DESTRUCTIVE_RESET_APPROVAL_REQUIRED` | W8a |
+| G-F Complete Foundation Gate | in progress: reset authorization moved execution to canonical disposable profile `chat-native-disposable`; exact-source runtime reached `FIXTURE_READY`, and the first application-path failure is fresh-client Station selection before login; proof remains `UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4472,6 +4472,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   authorized non-destructive G-F scope is exhausted at
   `DESTRUCTIVE_RESET_APPROVAL_REQUIRED`; 419/419 and Gate `DONE / PROVEN`
   remain unclaimed.
+- The owner authorized destructive Fixture reset on 2026-09-03. The protected
+  `station-two:18080` guard remains intact; execution moved to canonical
+  disposable profile `chat-native-disposable` at `10.37.94.156:18132`.
+  Disposable database recreation removed an obsolete schema that prevented
+  Station startup, and exact source
+  `92f7b5090ffc22e4218a18f7a0de5cde09ae3c4d` then reached
+  `FIXTURE_READY`. Run
+  `20260903T130519139571Z-2b3d14aa07495ecbe07743e66f528fce`
+  exposed missing provider fields in the imported local profile cache; after
+  binding the existing approved provider credential tuple without persisting
+  secret values, run
+  `20260903T131746772260Z-20213abdb8e06e9402ac1e479f0424d2`
+  crossed that boundary and failed at native login because a fresh Desktop
+  registry had not selected and probed the provisioned Station. Cleanup passed
+  for both runs. The local correction now drives production `station_add` and
+  `station_set_active` commands and verifies the active peer identity before
+  first login; recovery paths continue to require the persisted original
+  binding.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
