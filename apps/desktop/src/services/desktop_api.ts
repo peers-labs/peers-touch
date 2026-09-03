@@ -1,6 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
-import { fromBinary, fromJsonString } from '@bufbuild/protobuf';
-import type { Message as ProtoMessage } from '@bufbuild/protobuf';
+import {
+  create,
+  fromBinary,
+  fromJsonString,
+  toBinary,
+  toJson,
+} from '@bufbuild/protobuf';
+import type { JsonValue, Message as ProtoMessage } from '@bufbuild/protobuf';
 import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
 import { throttleInvoke } from '../kernel/invokeThrottler';
@@ -15,6 +21,7 @@ import type {
   AgentTurnStreamEventPayload,
   RealtimeCallSignalKind,
   SessionRevokedPayload,
+  SessionRevokedReason,
 } from '../kernel/events/types';
 import {
   SendFriendRequestResponseSchema,
@@ -31,7 +38,6 @@ import {
   LeaveGroupResponseSchema,
   TransferGroupOwnershipResponseSchema,
   DissolveGroupResponseSchema,
-  GetGroupMembersResponseSchema,
   RemoveMemberResponseSchema,
   UpdateMemberResponseSchema,
   RecallGroupMessageResponseSchema,
@@ -70,9 +76,49 @@ import {
   ListMemberStationsResponseSchema,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
+  ExportTurnDiagnosticsResponse,
   GetTurnTraceResponse,
+  ListTurnFeedbackResponse,
   ListTurnTracesResponse,
+  RecordFeedbackResponse,
 } from '../gen/proto/domain/agent/agent_pb';
+import {
+  ExportTurnDiagnosticsResponseSchema,
+  ListTurnFeedbackResponseSchema,
+  RecordFeedbackResponseSchema,
+} from '../gen/proto/domain/agent/agent_pb';
+import type {
+  AgentPackageUnresolvedDependency,
+  CapabilityApprovalPolicy,
+  CapabilityReadiness as ProtoCapabilityReadiness,
+  CapabilityReadinessSnapshot as ProtoCapabilityReadinessSnapshot,
+  CapabilitySourceKind,
+  CreateKnowledgeResourceDescriptorRequest,
+  ListKnowledgeResourceDescriptorsRequest,
+  TombstoneKnowledgeResourceDescriptorRequest,
+  UpdateKnowledgeResourceDescriptorRequest,
+} from '../gen/proto/domain/agent/capability_pb';
+import {
+  AgentCapabilityBindingSchema,
+  AgentPackageDocumentSchema,
+  CreateKnowledgeResourceDescriptorRequestSchema,
+  CreateKnowledgeResourceDescriptorResponseSchema,
+  DeleteAgentCapabilityBindingResponseSchema,
+  ExportAgentPackageRequestSchema,
+  ExportAgentPackageResponseSchema,
+  GetCapabilityReadinessResponseSchema,
+  ImportAgentPackageRequestSchema,
+  ImportAgentPackageResponseSchema,
+  ListAgentCapabilityBindingsResponseSchema,
+  ListCapabilityManifestsResponseSchema,
+  ListKnowledgeResourceDescriptorsRequestSchema,
+  ListKnowledgeResourceDescriptorsResponseSchema,
+  TombstoneKnowledgeResourceDescriptorRequestSchema,
+  TombstoneKnowledgeResourceDescriptorResponseSchema,
+  UpdateKnowledgeResourceDescriptorRequestSchema,
+  UpdateKnowledgeResourceDescriptorResponseSchema,
+  UpsertAgentCapabilityBindingResponseSchema,
+} from '../gen/proto/domain/agent/capability_pb';
 import type {
   ClaimDesktopExecutorTaskResponse,
   CollaborationTask,
@@ -301,18 +347,24 @@ function publishSessionRevoked(payload: SessionRevokedPayload) {
 }
 
 function extractSessionRevoked(error?: RustCommandError): SessionRevokedPayload | null {
-  const details = error?.details as any;
-  const reasonFromDetails = typeof details?.reason === 'string' ? details.reason : undefined;
-  if (error?.code !== 'UNAUTHORIZED') return null;
-  if (typeof details?.code === 'string' && details.code === 'session_revoked') {
-    return {
-      reason: (reasonFromDetails as any) || 'unknown',
-      raw: typeof details?.raw === 'string' ? details.raw : undefined,
-    };
-  }
+  const details = error?.details;
+  if (
+    error?.code !== 'UNAUTHORIZED'
+    || details?.code !== 'session_revoked'
+  ) return null;
+
+  const reason = details.reason;
+  const normalizedReason: SessionRevokedReason =
+    reason === 'expired'
+    || reason === 'kicked'
+    || reason === 'not_found'
+      ? reason
+      : 'unknown';
+
   return {
-    reason: (reasonFromDetails as any) || 'expired',
-    raw: error.message,
+    reason: normalizedReason,
+    raw: typeof details.raw === 'string' ? details.raw : undefined,
+    device_type: typeof details.device_type === 'string' ? details.device_type : undefined,
   };
 }
 
@@ -495,6 +547,22 @@ export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
   throw new Error(response.error?.message || `${command} failed`);
 }
 
+async function invokeRustProtoRequest<
+  TRequest extends ProtoMessage,
+  TResponse extends ProtoMessage,
+>(
+  command: string,
+  requestSchema: GenMessage<TRequest>,
+  responseSchema: GenMessage<TResponse>,
+  request: TRequest,
+): Promise<TResponse> {
+  return invokeRustProto(
+    command,
+    responseSchema,
+    { requestBytes: Array.from(toBinary(requestSchema, request)) },
+  );
+}
+
 function normalizeGroupChatFederatedActors(
   actors?: GroupChatFederatedActorInput[],
 ): GroupChatFederatedActorWireInput[] | undefined {
@@ -606,15 +674,27 @@ export interface OssUploadLocalFileInput {
   chat_session_id?: string | null;
 }
 
-export interface AgentUploadAttachmentBytesInput {
+export interface OssUploadAttachmentBytesInput {
   filename: string;
   mime_type: string;
   bytes: number[];
-  bucket: string;
-  visibility: 'public' | 'chat' | 'private';
-  /** Required when `visibility` is `chat`. */
-  chat_session_id?: string | null;
+  conversation_id: string;
 }
+
+/** Portable Agent attachment wire shape defined by `AgentAttachmentRef`. */
+export interface AgentAttachmentRefInput {
+  attachment_id: string;
+  object_ref: string;
+  mime_type: string;
+  size_bytes: number;
+  checksum: string;
+  filename: string;
+  authorization_scope: string;
+  expires_at: string;
+  extracted_content_ref: string;
+}
+
+export type AgentUploadAttachmentBytesInput = OssUploadAttachmentBytesInput;
 
 /**
  * Payload returned by `oss_upload_local_file` /
@@ -840,6 +920,8 @@ export interface AgentMemoryConfig {
   effort?: 'low' | 'medium' | 'high';
 }
 
+export type AgentThinkingMode = 'auto' | 'enabled' | 'disabled';
+
 export interface AgentWorkspaceConfig {
   root?: string;
   policy?: 'workspace-only';
@@ -849,23 +931,6 @@ export interface AgentWorkspaceConfig {
 export interface AgentProviderFallbackConfig {
   enabled?: boolean;
   maxRetries?: number;
-}
-
-export type AgentKnowledgeResourceType = 'document' | 'folder' | 'project' | 'url' | 'notebook' | 'workspace';
-export type AgentKnowledgeResourcePolicy = 'manual' | 'auto' | 'always' | 'disabled';
-export type AgentKnowledgeResourceStatus = 'bound' | 'pending_index' | 'indexed' | 'error';
-
-export interface AgentKnowledgeResource {
-  id: string;
-  type: AgentKnowledgeResourceType;
-  title: string;
-  source: string;
-  policy: AgentKnowledgeResourcePolicy;
-  status: AgentKnowledgeResourceStatus;
-  lastIndexedAt?: string;
-  error?: string;
-  createdAt?: string;
-  updatedAt?: string;
 }
 
 export interface AgentChatConfig {
@@ -883,9 +948,6 @@ export interface AgentChatConfig {
   memory?: AgentMemoryConfig;
   providerFallback?: AgentProviderFallbackConfig;
   workspace?: AgentWorkspaceConfig;
-  mcpServers?: string[];
-  tools?: string[];
-  skills?: string[];
 }
 
 export interface Agent {
@@ -901,15 +963,13 @@ export interface Agent {
   model: string;
   provider: string;
   effort: string;
+  thinkingMode?: AgentThinkingMode;
   visibility: string;
   isolationEnabled: boolean;
   isolationMode: string;
   isolationRetentionDays: number;
   workspaceMode: string;
-  runtimeBackend: string;
-  rootfsPath: string;
   allowedRoots: string;
-  cliCommand: string;
   tags: string;
   pinned: boolean;
   favorite: boolean;
@@ -917,8 +977,8 @@ export interface Agent {
   openingMessage: string;
   openingQuestions: string;
   chatConfig: string;
-  knowledgeResources: string;
   isDefault: boolean;
+  version: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -935,15 +995,13 @@ export interface AgentCreate {
   model?: string;
   provider?: string;
   effort?: string;
+  thinkingMode?: AgentThinkingMode;
   visibility?: string;
   isolationEnabled?: boolean;
   isolationMode?: string;
   isolationRetentionDays?: number;
   workspaceMode?: string;
-  runtimeBackend?: string;
-  rootfsPath?: string;
   allowedRoots?: string;
-  cliCommand?: string;
   tags?: string;
   pinned?: boolean;
   favorite?: boolean;
@@ -951,7 +1009,7 @@ export interface AgentCreate {
   openingMessage?: string;
   openingQuestions?: string;
   chatConfig?: string;
-  knowledgeResources?: string;
+  version?: number;
 }
 
 export type AgentWorkspaceCleanScope = 'tasks' | 'artifacts' | 'logs' | 'all_workspace';
@@ -967,40 +1025,16 @@ export interface AgentWorkspaceInfo {
   last_modified_at?: string;
 }
 
-export interface AgentPackage {
-  schemaVersion: 'peers.agent.package.v1';
-  exportedAt: string;
-  source: {
-    agentId: string;
-    name: string;
-    packageType?: 'agent';
-    exportedFrom?: 'desktop' | string;
-    sharePolicy?: {
-      includeLocalPaths?: boolean;
-      secrets?: 'redacted' | string;
-    };
-    redactions?: string[];
-  };
-  agent: Agent;
-  providerPreset: {
-    provider: string;
-    model: string;
-  };
-  bindings: {
-    mcpServers: string[];
-    tools: string[];
-    skills: string[];
-  };
-  opening: {
-    message: string;
-    questions: string;
-  };
-  chatBehavior: AgentChatConfig;
+export type AgentPackage = JsonValue;
+
+export interface AgentPackageExportResult {
+  package: AgentPackage;
+  unresolvedDependencies: AgentPackageUnresolvedDependency[];
 }
 
-export interface AgentPackageImportInput {
-  package: AgentPackage | Record<string, unknown>;
-  name?: string;
+export interface AgentPackageImportResult {
+  agent?: Agent;
+  unresolvedDependencies: AgentPackageUnresolvedDependency[];
 }
 
 export interface AgentListResult {
@@ -1090,56 +1124,16 @@ export interface AgentCollaborationStreamPayload {
   data: Record<string, any>;
 }
 
+export interface AgentAuthorityStreamPayload {
+  streamId: string;
+  agentId: string;
+  event: string;
+  data: Record<string, unknown>;
+}
+
 export function parseAgentChatConfig(agent: Agent): AgentChatConfig {
   if (!agent.chatConfig) return {};
   try { return JSON.parse(agent.chatConfig); } catch { return {}; }
-}
-
-function normalizeKnowledgeResource(raw: unknown): AgentKnowledgeResource | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const item = raw as Partial<AgentKnowledgeResource>;
-  const source = typeof item.source === 'string' ? item.source.trim() : '';
-  if (!source) return null;
-  const id = typeof item.id === 'string' && item.id.trim()
-    ? item.id.trim()
-    : `knowledge:${Date.now()}:${source}`;
-  const typeValues: AgentKnowledgeResourceType[] = ['document', 'folder', 'project', 'url', 'notebook', 'workspace'];
-  const policyValues: AgentKnowledgeResourcePolicy[] = ['manual', 'auto', 'always', 'disabled'];
-  const statusValues: AgentKnowledgeResourceStatus[] = ['bound', 'pending_index', 'indexed', 'error'];
-  const type = typeValues.includes(item.type as AgentKnowledgeResourceType)
-    ? item.type as AgentKnowledgeResourceType
-    : 'document';
-  const policy = policyValues.includes(item.policy as AgentKnowledgeResourcePolicy)
-    ? item.policy as AgentKnowledgeResourcePolicy
-    : 'manual';
-  const status = statusValues.includes(item.status as AgentKnowledgeResourceStatus)
-    ? item.status as AgentKnowledgeResourceStatus
-    : 'bound';
-  return {
-    id,
-    type,
-    title: typeof item.title === 'string' && item.title.trim() ? item.title.trim() : source,
-    source,
-    policy,
-    status,
-    lastIndexedAt: typeof item.lastIndexedAt === 'string' ? item.lastIndexedAt : '',
-    error: typeof item.error === 'string' ? item.error : '',
-    createdAt: typeof item.createdAt === 'string' ? item.createdAt : '',
-    updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : '',
-  };
-}
-
-export function parseAgentKnowledgeResources(agent: Agent): AgentKnowledgeResource[] {
-  if (!agent.knowledgeResources) return [];
-  try {
-    const parsed = JSON.parse(agent.knowledgeResources);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map(normalizeKnowledgeResource)
-      .filter((item): item is AgentKnowledgeResource => Boolean(item));
-  } catch {
-    return [];
-  }
 }
 
 export interface ToolInfo {
@@ -1153,7 +1147,7 @@ export interface ToolInfo {
   displayName?: string;
   description?: string;
   executable?: boolean;
-  executionOwner?: 'desktop-rust' | 'station' | string;
+  executionOwner?: 'client-local' | 'station' | string;
   riskLevel?: 'low' | 'medium' | 'high' | string;
   schema?: Record<string, unknown>;
 }
@@ -1173,8 +1167,16 @@ export interface AvailableModel {
   image_output?: boolean;
   video?: boolean;
   protocol_override?: string;
-  runtime_kind?: 'cli' | 'direct';
-  cli_command?: string;
+}
+
+interface AvailableModelWire {
+  id?: unknown;
+  display_name?: unknown;
+  provider_id?: unknown;
+  provider_name?: unknown;
+  type?: unknown;
+  context_window?: unknown;
+  enabled?: unknown;
 }
 
 export interface ProviderListItem {
@@ -1185,7 +1187,9 @@ export interface ProviderListItem {
   enabled: boolean;
   builtin: boolean;
   has_api_key: boolean;
-  runtime_kind: 'cli' | 'direct';
+  requires_api_key: boolean;
+  credential_status: string;
+  runtime_kind: string;
   version: number;
 }
 
@@ -1209,7 +1213,6 @@ export interface ProviderDetail extends ProviderListItem {
   api_key: string;
   base_url: string;
   default_base_url: string;
-  cli_command?: string;
   show_api_key?: boolean;
   show_checker: boolean;
   check_model?: string;
@@ -2144,6 +2147,23 @@ export interface AuthSessionResponse extends TauriStubPayload {
   login_method?: string;
 }
 
+export interface MessagingAcceptanceInteractionSnapshot {
+  actorPtid: string;
+  conversationId: string;
+  messageId: string;
+  projection: Record<string, unknown> | null;
+  intent: Record<string, unknown> | null;
+  outbox: Record<string, unknown> | null;
+  directSessions: Array<Record<string, unknown>>;
+  commandLedger: Array<Record<string, unknown>>;
+  reactions: Array<Record<string, unknown>>;
+  pins: Array<Record<string, unknown>>;
+  readCursors: Array<Record<string, unknown>>;
+  consumptionCount: number;
+  laneSequence: number;
+  consumerEpoch: number;
+}
+
 export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
 
 export interface AuthLoginInput {
@@ -2307,7 +2327,6 @@ export interface ProviderUpdateInput {
   key_vaults?: string;
   config_json?: string;
   runtime_kind?: string;
-  cli_command?: string;
   protocol?: string;
   version?: number;
 }
@@ -2325,7 +2344,6 @@ export interface ProviderCreateInput {
   key_vaults: string;
   config_json: string;
   runtime_kind?: string;
-  cli_command?: string;
   protocol?: string;
 }
 
@@ -2457,37 +2475,25 @@ export interface McpToolExecutionResult {
   };
 }
 
-export interface AgentLocalToolRequestInput {
-  source: 'mcp' | string;
-  server_name?: string;
-  tool_name: string;
-  arguments?: Record<string, unknown>;
-  call_id?: string;
-  turn_id?: string;
-  workspace_root?: string;
-  allowed_roots?: string[];
-}
-
-export interface AgentToolApprovalDecisionInput {
+export interface AgentToolDecisionIntentInput {
   approval_id: string;
+  tool_call_id: string;
+  decision_id: string;
+  expected_revision: number;
   approved: boolean;
-  actor?: string;
+  idempotency_key: string;
 }
 
-export interface AgentLocalToolResultEvent {
-  type: 'tool_result';
-  turnId: string;
-  callId: string;
-  source: string;
-  serverName: string;
-  toolName: string;
-  status: 'success' | 'error';
-  data: unknown;
-  trace: {
-    owner: 'desktop-rust';
-    bridge: string;
-    audit: Record<string, unknown>;
-  };
+export interface AgentToolDecisionIntentResponse {
+  accepted: boolean;
+  decision_revision: number;
+  approval_id: string;
+  tool_call_id: string;
+  decision_id: string;
+  approved: boolean;
+  idempotency_key: string;
+  payload_hash: string;
+  error_code: string;
 }
 
 export interface McpToolSchemaEntry {
@@ -2500,25 +2506,21 @@ export interface McpToolSchemaEntry {
 
 export interface AgentExecuteTurnInput {
   stream_id?: string;
+  client_idempotency_key: string;
   conversation_id: string;
   agent_id: string;
   user_input: string;
-  attachments?: ChatAttachmentInput[];
+  attachments?: AgentAttachmentRefInput[];
+  requested_budget?: AgentRuntimeBudgetInput;
   provider?: string;
   model?: string;
-  cli_command?: string;
-  workspace_mode?: string;
-  runtime_backend?: string;
-  rootfs_path?: string;
-  allowed_roots?: string[];
   identity?: string;
   agent_config_prompt?: string;
   effort?: string;
-  platform?: string;
-  workspace_root?: string;
+  thinking_mode?: AgentThinkingMode;
   context_window_size?: number;
   max_retries?: number;
-  knowledge_resources?: AgentExecuteTurnKnowledgeResource[];
+  client_capability_session_id?: string;
   available_tools?: McpToolSchemaEntry[];
   memory_disabled?: boolean;
 }
@@ -2528,19 +2530,67 @@ function createAgentTurnStreamId(): string {
   return `agent-turn-${randomId}`;
 }
 
-export interface AgentExecuteTurnKnowledgeResource {
-  resource_id: string;
-  agent_id: string;
-  type: number;
-  title: string;
-  source: string;
-  policy: number;
-  status: number;
-  last_indexed_at?: string;
+let agentTurnStreamGeneration = Date.now();
+
+function nextAgentTurnStreamGeneration(): number {
+  agentTurnStreamGeneration += 1;
+  return agentTurnStreamGeneration;
 }
 
 export interface AgentTurnStreamCancelInput {
+  turn_id: string;
+}
+
+export interface AgentTurnTransportCancelInput {
   stream_id: string;
+}
+
+export interface AgentTurnReplayStreamInput {
+  stream_id: string;
+  conversation_id: string;
+  turn_id: string;
+  after_seq: number;
+}
+
+export interface AgentTurnReplayStreamCancelInput {
+  stream_id: string;
+}
+
+export function toAgentTurnReplayWireInput(input: Omit<AgentTurnReplayStreamInput, 'stream_id'>): {
+  conversation_id: string;
+  turn_id: string;
+  afterSequence: number;
+} {
+  return {
+    conversation_id: input.conversation_id,
+    turn_id: input.turn_id,
+    afterSequence: input.after_seq,
+  };
+}
+
+export interface AgentTurnQueueEntry {
+  queue_entry_id: string;
+  conversation_id: string;
+  agent_id: string;
+  client_idempotency_key: string;
+  status: string;
+  queue_sequence: number;
+  queue_position: number;
+  admitted_turn_id: string;
+  user_input: string;
+}
+
+export interface AgentTurnQueueListOutput {
+  entries: AgentTurnQueueEntry[];
+  queue_capacity: number;
+  conversation_version: number;
+}
+
+export interface AgentTurnQueueCancelInput {
+  conversation_id: string;
+  queue_entry_id: string;
+  idempotency_key: string;
+  expected_conversation_version: number;
 }
 
 export interface AgentTurnTraceListInput {
@@ -2555,16 +2605,230 @@ export interface AgentTurnTraceGetInput {
   turn_id?: string;
 }
 
+export interface AgentTurnDiagnosticsInput {
+  turn_id: string;
+}
+
+export interface AgentRuntimeProfileInput {
+  agent_id: string;
+}
+
+export interface AgentCapabilityReadinessInput {
+  agent_id: string;
+  runtime_snapshot_id?: string;
+  client_capability_session_id?: string;
+}
+
+type SnakeCase<S extends string> =
+  S extends `${infer Head}${infer Tail}`
+    ? Tail extends Uncapitalize<Tail>
+      ? `${Lowercase<Head>}${SnakeCase<Tail>}`
+      : `${Lowercase<Head>}_${SnakeCase<Uncapitalize<Tail>>}`
+    : S;
+
+type ProtoJsonProjection<T> =
+  T extends bigint ? string
+    : T extends Uint8Array ? string
+      : T extends ReadonlyArray<infer Item> ? ProtoJsonProjection<Item>[]
+        : T extends object
+          ? {
+              [Key in keyof T as Key extends '$typeName'
+                ? never
+                : Key extends string
+                  ? SnakeCase<Key>
+                  : Key]: ProtoJsonProjection<T[Key]>
+            }
+          : T;
+
+type AgentCapabilityReadinessStateJson =
+  | 'CAPABILITY_READINESS_STATE_UNSPECIFIED'
+  | 'CAPABILITY_READINESS_STATE_READY'
+  | 'CAPABILITY_READINESS_STATE_DEGRADED'
+  | 'CAPABILITY_READINESS_STATE_UNAVAILABLE'
+  | 'CAPABILITY_READINESS_STATE_BLOCKED'
+  | 'CAPABILITY_READINESS_STATE_UNKNOWN';
+
+type AgentCapabilityReadiness = Omit<
+  ProtoJsonProjection<ProtoCapabilityReadiness>,
+  'state'
+> & {
+  state: AgentCapabilityReadinessStateJson;
+};
+
+export type AgentCapabilityReadinessSnapshot = Omit<
+  ProtoJsonProjection<ProtoCapabilityReadinessSnapshot>,
+  'capabilities'
+> & {
+  capabilities: AgentCapabilityReadiness[];
+};
+
+export function isAgentCapabilityReady(
+  capability: AgentCapabilityReadiness,
+): boolean {
+  return capability.state === 'CAPABILITY_READINESS_STATE_READY';
+}
+
+export interface AgentCapabilityBindingInput {
+  bindingId?: string;
+  agentId: string;
+  capabilityId: string;
+  capabilityVersion: string;
+  enabled: boolean;
+  approvalPolicy: CapabilityApprovalPolicy;
+  expectedAgentVersion: number | bigint;
+}
+
+function toRustUint64(value: number | bigint, field: string): number {
+  const numeric = Number(value);
+  if (!Number.isSafeInteger(numeric) || numeric < 0) {
+    throw new Error(`agent.capabilityInvalidUint64:${field}`);
+  }
+  return numeric;
+}
+
+export interface AgentRuntimeActivityInput {
+  runtime_kind: 1 | 2;
+  runtime_id: 'trae-cli' | 'external-agent';
+}
+
+export interface AgentRuntimeAdvertisement {
+  runtime_kind: string;
+  runtime_id: string;
+  state: string;
+  reason_code: string;
+}
+
+export interface AgentEffectiveRuntimeProfile {
+  snapshot_id: string;
+  ptid: string;
+  agent_id: string;
+  profile_id: string;
+  profile_revision: number;
+  readiness_snapshot_id: string;
+  runtimes: AgentRuntimeAdvertisement[];
+  observed_at: { seconds: number; nanos: number } | null;
+}
+
+export interface AgentRuntimeActivitySnapshot {
+  snapshot_id: string;
+  owner: string;
+  owner_instance_id: string;
+  ptid: string;
+  runtime_kind: string;
+  runtime_id: string;
+  counter_epoch: string;
+  counters: {
+    runtime_bindings_created: number;
+    external_sessions_created: number;
+    runtime_homes_created: number;
+    processes_started: number;
+    workspaces_created: number;
+  };
+  observed_at?: { seconds: number; nanos: number } | null;
+  observed_at_unix_ms?: number;
+}
+
+export interface AgentCapabilitySessionSnapshot {
+  active_session_count: number;
+  sessions: Array<{
+    actor_id_hash: string;
+    device_id_hash: string;
+    capability_session_id_hash: string;
+    lease_id_hash: string;
+    lease_revision: number;
+    capability_set_hash: string;
+    platform: string;
+    capability_ids: string[];
+    local_execution_attempt_count: number;
+    local_side_effect_count: number;
+    tool_call_side_effect_counts: Array<{
+      tool_call_id: string;
+      side_effect_count: number;
+    }>;
+    expires_at_ms: number;
+  }>;
+}
+
+export type AgentCapabilityNegativeControl =
+  | 'unsupported'
+  | 'unauthorized'
+  | 'signatureTamper'
+  | 'schemaMismatch'
+  | 'crossDevice';
+
+export interface AgentCapabilityNegativeControlFact {
+  control: AgentCapabilityNegativeControl;
+  availability: 'available' | 'unavailable';
+  unavailableReason?: string;
+  capabilitySessionIdHash: string;
+  before: {
+    localExecutionAttemptCount: number;
+    localSideEffectCount: number;
+  };
+  station?: {
+    endpoint: string;
+    requestSent: boolean;
+    responseReceived: boolean;
+    commandErrorCode?: string;
+    httpStatus?: number;
+    transportErrorKind?: string;
+    stationErrorDetails?: Record<string, unknown>;
+  };
+  after: {
+    localExecutionAttemptCount: number;
+    localSideEffectCount: number;
+  };
+}
+
+export interface AgentCapabilitySessionList {
+  sessions: Array<{
+    session_id: string;
+    ptid: string;
+    device_id: string;
+    platform: string;
+    typed_capabilities: Array<{
+      capability_id: string;
+      schema_version: string;
+      permission: string;
+      constraints: {
+        max_request_bytes: number;
+        max_result_bytes: number;
+        allowed_resource_kinds: string[];
+      } | null;
+    }>;
+    expires_at: { seconds: number; nanos: number } | null;
+    connection_id: string;
+    lease_id: string;
+    lease_revision: number;
+  }>;
+}
+
 export interface AgentConversation {
   conversation_id: string;
   agent_id: string;
-  user_id?: string;
+  ptid: string;
   title: string;
   description?: string;
   provider_id?: string;
   model_name?: string;
   status: string;
   parent_id?: string;
+  active_branch_message_id: string;
+  queued_turn_count: number;
+  version: number;
+  runtime_binding?: {
+    runtime_kind: number;
+    provider_id: string;
+    model_id: string;
+    runtime_profile_id: string;
+    external_session_id: string;
+    external_session_epoch: number;
+    runtime_home_ref: string;
+    capability_snapshot_hash: string;
+    config_snapshot_hash: string;
+    bound_at: { seconds: number; nanos: number } | null;
+  };
+  meta?: Record<string, string>;
   created_at: string;
   updated_at: string;
 }
@@ -2575,12 +2839,17 @@ export interface AgentMessage {
   turn_id?: string;
   model_name?: string;
   role: 'system' | 'user' | 'assistant' | 'tool';
+  status: string;
   content: string;
   seq: number;
   branch_id?: string;
+  parent_message_id?: string;
   replaces_message_id?: string;
+  thread_id?: string;
   reasoning_json?: string;
   tool_calls_json?: string;
+  metadata_json?: string;
+  attachments?: AgentAttachmentRefInput[];
   created_at: string;
   updated_at: string;
 }
@@ -2614,10 +2883,221 @@ export interface AgentConversationMessagesInput {
 export interface AgentConversationArchiveInput {
   conversation_id: string;
   permanent?: boolean;
+  expected_version: number;
+}
+
+export interface AgentConversationUpdateInput {
+  conversation_id: string;
+  expected_version: number;
+  title?: string;
+  description?: string;
+  model_name?: string;
+  meta?: Record<string, string>;
+  active_branch_message_id?: string;
+}
+
+export interface AgentConversationRestoreInput {
+  conversation_id: string;
+  expected_version: number;
+}
+
+export interface AgentRuntimeBudgetInput {
+  max_attempts?: number;
+  max_agent_steps?: number;
+  max_tool_calls?: number;
+  max_identical_tool_calls?: number;
+  max_delegation_depth?: number;
+  wall_time_ms?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
+  max_attachment_bytes?: number;
+  max_cost?: number;
+}
+
+export interface AgentRetryTurnInput {
+  conversation_id: string;
+  source_turn_id: string;
+  client_idempotency_key: string;
+  expected_conversation_version: number;
+  requested_budget?: AgentRuntimeBudgetInput;
+}
+
+export interface AgentRegenerateTurnInput {
+  conversation_id: string;
+  source_assistant_message_id: string;
+  client_idempotency_key: string;
+  expected_conversation_version: number;
+  requested_budget?: AgentRuntimeBudgetInput;
+}
+
+export interface AgentEditAndResendInput {
+  conversation_id: string;
+  source_user_message_id: string;
+  revised_content: string;
+  attachments?: AgentAttachmentRefInput[];
+  client_idempotency_key: string;
+  expected_conversation_version: number;
+  requested_budget?: AgentRuntimeBudgetInput;
+}
+
+export interface AgentSelectActiveBranchInput {
+  conversation_id: string;
+  active_branch_message_id: string;
+  client_idempotency_key: string;
+  expected_conversation_version: number;
+}
+
+export interface AgentTombstoneMessageInput {
+  conversation_id: string;
+  message_id: string;
+  client_idempotency_key: string;
+  expected_conversation_version: number;
+  destructive_confirmed: boolean;
+  reason?: string;
+}
+
+export interface AgentThread {
+  thread_id: string;
+  conversation_id: string;
+  source_message_id: string;
+  title: string;
+  source_seq: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentThreadCreateInput {
+  conversation_id: string;
+  source_message_id: string;
+  title?: string;
+}
+
+export interface AgentThreadListInput {
+  conversation_id: string;
+}
+
+export interface AgentThreadMessagesInput {
+  thread_id: string;
+  after_seq?: number;
+}
+
+export interface AgentGroupCreateInput {
+  name: string;
+  description?: string;
+  member_agent_ids?: string[];
+  orchestration_mode?: string;
+}
+
+export interface AgentGroupUpdateInput {
+  id: string;
+  name?: string;
+  description?: string;
+  member_agent_ids?: string[];
+  orchestration_mode?: string;
+}
+
+export interface AgentGroupDeleteInput {
+  id: string;
+}
+
+export interface StationAgentGroupRow {
+  ID: string;
+  Name: string;
+  Description: string;
+  MemberAgentIDs: string;
+  OrchestrationMode: string;
+  OwnerActorID: string;
+  CreatedAt: string;
+  UpdatedAt: string;
+}
+
+export interface TopicCommentCreateInput {
+  topic_key: string;
+  content: string;
+}
+
+export interface TopicCommentDeleteInput {
+  topic_key: string;
+  comment_id: string;
+}
+
+export interface TopicCommentListInput {
+  topic_key: string;
+}
+
+export interface StationTopicCommentRow {
+  ID: string;
+  TopicKey: string;
+  Content: string;
+  AuthorID: string;
+  CreatedAt: string;
+}
+
+export interface AgentTaskCreateInput {
+  title: string;
+  description?: string;
+  agent_id: string;
+  priority?: string;
+  topic_key?: string;
+}
+
+export interface AgentTaskListInput {
+  agent_id?: string;
+}
+
+export interface AgentTaskStatusInput {
+  id: string;
+  status: string;
+  result?: string;
+  error?: string;
+}
+
+export interface AgentTaskDeleteInput {
+  id: string;
+}
+
+export interface AgentTaskSubtaskAddInput {
+  task_id: string;
+  title: string;
+}
+
+export interface AgentTaskSubtaskCompleteInput {
+  task_id: string;
+  subtask_id: string;
+}
+
+export interface AgentMessageTranslateInput {
+  message_id: string;
+  translation: string;
+}
+
+export interface StationAgentSubtaskRow {
+  id: string;
+  title: string;
+  status: string;
+  completed_at?: number;
+}
+
+export interface StationAgentTaskRow {
+  id: string;
+  title: string;
+  description: string;
+  agent_id: string;
+  status: string;
+  priority: string;
+  progress: number;
+  subtasks: StationAgentSubtaskRow[];
+  topic_key: string;
+  result: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
 }
 
 export interface AgentTurnStreamPayload {
   streamId: string;
+  ptid: string;
   event: string;
   data: Record<string, unknown>;
 }
@@ -3123,6 +3603,12 @@ export const api = {
   authLogout: () =>
     invokeAuthCommand<void>('auth_logout'),
 
+  acceptanceLogoutWindowSession: (expectedActorPtid: string) =>
+    invokeAuthCommand<{ expected_actor_ptid: string }>(
+      'acceptance_logout_window_session',
+      { expected_actor_ptid: expectedActorPtid },
+    ),
+
   authRestoreSession: () =>
     invokeAuthCommand<void>('auth_restore_session'),
 
@@ -3240,10 +3726,22 @@ export const api = {
       input,
     ),
 
+  ossUploadAttachmentBytes: (input: OssUploadAttachmentBytesInput) =>
+    invokeRustDataFromStatus<OssUploadAttachmentBytesInput, OssAttachmentUploaded>(
+      'oss_upload_attachment_bytes',
+      input,
+    ),
+
   ossUploadAgentAttachmentBytes: (input: AgentUploadAttachmentBytesInput) =>
-    invokeRustDataFromStatus<AgentUploadAttachmentBytesInput, OssAttachmentUploaded>(
+    invokeRustDataFromStatus<AgentUploadAttachmentBytesInput, AgentAttachmentRefInput>(
       'oss_upload_agent_attachment_bytes',
       input,
+    ),
+
+  ossDeleteAgentAttachment: (objectRef: string) =>
+    invokeRustDataFromStatus<{ key: string }, OssDeleteResponse>(
+      'oss_delete_file',
+      { key: objectRef },
     ),
 
   /**
@@ -3504,18 +4002,53 @@ export const api = {
   duplicateAgent: (id: string, name: string) =>
     invokeRustDataFromStatus<AgentDuplicateInput, Agent>('agents_duplicate', { id, name }),
 
-  exportAgentPackage: (id: string, options?: { includeLocalPaths?: boolean }) =>
-    invokeRustDataFromStatus<AgentIdInput, { package: AgentPackage }>('agents_export_package', {
-      id,
-      includeLocalPaths: Boolean(options?.includeLocalPaths),
-    })
-      .then((r) => r.package),
+  exportAgentPackage: async (
+    id: string,
+    _options?: { includeLocalPaths?: boolean },
+  ): Promise<AgentPackageExportResult> => {
+    const response = await invokeRustProtoRequest(
+      'agent_package_export',
+      ExportAgentPackageRequestSchema,
+      ExportAgentPackageResponseSchema,
+      create(ExportAgentPackageRequestSchema, { agentId: id }),
+    );
+    if (!response.package) {
+      throw new Error('agent.packageExportResponseMissing');
+    }
+    return {
+      package: toJson(AgentPackageDocumentSchema, response.package, {
+        enumAsInteger: true,
+      }) as unknown as AgentPackage,
+      unresolvedDependencies: response.unresolvedDependencies,
+    };
+  },
 
-  importAgentPackage: (pkg: AgentPackage | Record<string, unknown>, name?: string) =>
-    invokeRustDataFromStatus<AgentPackageImportInput, Agent>('agents_import_package', {
-      package: pkg,
-      name,
-    }),
+  importAgentPackage: async (
+    pkg: AgentPackage | Record<string, unknown>,
+    name?: string,
+  ): Promise<AgentPackageImportResult> => {
+    const document = fromJsonString(
+      AgentPackageDocumentSchema,
+      JSON.stringify(pkg),
+      { ignoreUnknownFields: false },
+    );
+    const response = await invokeRustProtoRequest(
+      'agent_package_import',
+      ImportAgentPackageRequestSchema,
+      ImportAgentPackageResponseSchema,
+      create(ImportAgentPackageRequestSchema, {
+        package: document,
+        name: name ?? '',
+        idempotencyKey: globalThis.crypto.randomUUID(),
+      }),
+    );
+    return {
+      agent: response.agent
+        ? await api.getAgent(response.agent.agentId)
+        : undefined,
+      unresolvedDependencies: response.unresolvedDependencies,
+    };
+  },
 
   searchAgents: (q: string) =>
     invokeRustDataFromStatus<AgentSearchInput, { agents: Agent[] }>('agents_search', { q }).then((r) => r.agents),
@@ -3564,6 +4097,20 @@ export const api = {
       },
     ),
 
+  exportAgentTurnDiagnostics: (turnId: string) =>
+    invokeRustProto(
+      'agent_turn_diagnostics_export',
+      ExportTurnDiagnosticsResponseSchema,
+      { turn_id: turnId },
+    ),
+
+  listAgentTurnFeedback: (turnId: string) =>
+    invokeRustProto(
+      'agent_list_turn_feedback',
+      ListTurnFeedbackResponseSchema,
+      { turn_id: turnId },
+    ),
+
   createAgentCollaborationTask: (input: AgentCollaborationCreateInput) =>
     invokeRustDataFromStatus<AgentCollaborationCreateInput, { task?: CollaborationTask }>(
       'agent_collaboration_create',
@@ -3597,6 +4144,18 @@ export const api = {
   cancelAgentCollaborationStream: (streamId: string) =>
     invokeRustDataFromStatus<{ stream_id: string }, { stream_id: string }>(
       'agent_collaboration_cancel_stream',
+      { stream_id: streamId },
+    ),
+
+  startAgentEventStream: (agentId: string, streamId: string) =>
+    invokeRustDataFromStatus<
+      { agent_id: string; stream_id: string },
+      { stream_id: string }
+    >('agent_events_subscribe', { agent_id: agentId, stream_id: streamId }),
+
+  cancelAgentEventStream: (streamId: string) =>
+    invokeRustDataFromStatus<{ stream_id: string }, { stream_id: string }>(
+      'agent_events_cancel',
       { stream_id: streamId },
     ),
 
@@ -3648,84 +4207,18 @@ export const api = {
     }),
 
   listAvailableModels: async () => {
-    const r = await invokeRustDataFromStatus<void, { providers?: any[]; models?: any[] }>('provider_list_available_models');
-    if (r.models && Array.isArray(r.models)) {
-      const models = r.models.map((m: any) => ({
-        id: String(m.id || ''),
-        display_name: String(m.display_name || m.id || ''),
-        provider_id: String(m.provider_id || ''),
-        provider_name: String(m.provider_name || m.provider_id || ''),
-        type: String(m.type || 'chat'),
-        context_window: Number(m.context_window || 0),
-        enabled: Boolean(m.enabled ?? true),
-        runtime_kind: String(m.runtime_kind || 'direct'),
-      } as AvailableModel));
-      return { models, default: models[0]?.id || '' };
-    }
-    const models: AvailableModel[] = (r.providers || []).flatMap((p) => {
-      const cfg = parseJSONSafe(p.config_json);
-      const runtimeKind = String(cfg.runtime_kind || cfg.runtimeKind || cfg.runtime || '').trim().toLowerCase();
-      const cliCommand = String(cfg.cli_command || cfg.cliCommand || '').trim();
-      const normalizedRuntimeKind = runtimeKind === 'cli' || cliCommand ? 'cli' : 'direct';
-      const providerModels = Array.isArray(p.models) ? p.models : [];
-      if (providerModels.length > 0) {
-        return providerModels
-          .map((model: any, idx: number) => {
-            const rawId = String(model.id || '').trim();
-            const displayName = String(model.display_name || '').trim();
-            let resolvedId = rawId;
-            if (!resolvedId) {
-              if (p.check_model) {
-                resolvedId = String(p.check_model).trim();
-              } else if (displayName) {
-                resolvedId = `${p.id}:${displayName.toLowerCase().replace(/\s+/g, '-')}`;
-              } else {
-                resolvedId = `${p.id}:model-${idx}`;
-              }
-            }
-            return { model, id: resolvedId, displayName };
-          })
-          .filter(({ id }: { id: string }) => id.length > 0)
-          .map(({ model, id: mid, displayName }: {
-            model: any;
-            id: string;
-            displayName: string;
-          }) => {
-            return {
-              id: mid,
-              display_name: displayName || mid,
-              provider_id: p.id,
-              provider_name: p.name || p.id,
-              type: model.type || 'chat',
-              context_window: Number(model.context_window || 0),
-              enabled: Boolean(model.enabled),
-              function_call: Boolean(model.function_call),
-              vision: Boolean(model.vision),
-              reasoning: Boolean(model.reasoning),
-              search: Boolean(model.search),
-              image_output: Boolean(model.image_output),
-              video: Boolean(model.video),
-              protocol_override: model.protocol_override || p.protocol_override || undefined,
-              runtime_kind: normalizedRuntimeKind,
-              cli_command: cliCommand || undefined,
-            };
-          });
-      }
-      const fallbackCheckModel = String(p.check_model || '').trim();
-      const cfgDefault = String(cfg.default_model || '').trim();
-      const fallbackId = fallbackCheckModel || cfgDefault || `${p.id}:default`;
-      return [{
-        id: fallbackId,
-        display_name: fallbackId === `${p.id}:default` ? 'Default' : fallbackId,
-        provider_id: p.id,
-        provider_name: p.name || p.id,
-        type: 'chat',
-        context_window: 0,
-        enabled: true,
-        runtime_kind: normalizedRuntimeKind,
-        cli_command: cliCommand || undefined,
-      }];
-    });
+    const r = await invokeRustDataFromStatus<void, { models?: AvailableModelWire[] }>('provider_list_available_models');
+    const models: AvailableModel[] = Array.isArray(r.models)
+      ? r.models.map((model) => ({
+        id: String(model.id || ''),
+        display_name: String(model.display_name || model.id || ''),
+        provider_id: String(model.provider_id || ''),
+        provider_name: String(model.provider_name || model.provider_id || ''),
+        type: String(model.type || ''),
+        context_window: Number(model.context_window || 0),
+        enabled: Boolean(model.enabled),
+      }))
+      : [];
     return { models, default: models[0]?.id || '' };
   },
 
@@ -4204,13 +4697,7 @@ export const api = {
       call_id: callId,
     }),
 
-  resolveAgentLocalToolRequest: (input: AgentLocalToolRequestInput) =>
-    invokeRustDataFromStatus<AgentLocalToolRequestInput, AgentLocalToolResultEvent>(
-      'agent_resolve_local_tool_request',
-      input,
-    ),
-
-  executeAgentTurnOnce: (input: AgentExecuteTurnInput) =>
+  executeGuardedCanvasTurnOnce: (input: AgentExecuteTurnInput) =>
     invokeRustDataFromStatus<AgentExecuteTurnInput, Record<string, unknown>>(
       'agent_execute_turn',
       input,
@@ -4223,19 +4710,266 @@ export const api = {
     ),
 
   cancelAgentTurnStream: (streamId: string) =>
-    invokeRustDataFromStatus<AgentTurnStreamCancelInput, { stream_id: string; stopped: boolean }>(
+    invokeRustDataFromStatus<AgentTurnTransportCancelInput, { stream_id: string }>(
       'agent_cancel_turn_stream',
       { stream_id: streamId },
     ),
 
-  decideAgentToolApproval: (input: AgentToolApprovalDecisionInput) =>
-    invokeRustDataFromStatus<AgentToolApprovalDecisionInput, {
-      ok: boolean;
-      approvalId: string;
-      approved: boolean;
-      actor: string;
-      decidedAt: string;
-    }>('agent_decide_tool_approval', input),
+  cancelAgentTurn: (turnId: string) =>
+    invokeRustDataFromStatus<AgentTurnStreamCancelInput, { turn_id: string; status: string }>(
+      'agent_cancel_turn',
+      { turn_id: turnId },
+    ),
+
+  disconnectAgentTurnStream: (streamId: string) =>
+    invokeRustDataFromStatus<AgentTurnTransportCancelInput, { stream_id: string }>(
+      'agent_disconnect_turn_stream',
+      { stream_id: streamId },
+    ),
+
+  startAgentTurnReplayStream: (input: AgentTurnReplayStreamInput) =>
+    invokeRustDataFromStatus<AgentTurnReplayStreamInput, { stream_id: string }>(
+      'agent_replay_turn_stream',
+      input,
+    ),
+
+  cancelAgentTurnReplayStream: (streamId: string) =>
+    invokeRustDataFromStatus<AgentTurnReplayStreamCancelInput, { stream_id: string }>(
+      'agent_cancel_turn_replay_stream',
+      { stream_id: streamId },
+    ),
+
+  listAgentTurnQueue: (conversationId: string) =>
+    invokeRustDataFromStatus<{ conversation_id: string }, AgentTurnQueueListOutput>(
+      'agent_turn_queue_list',
+      { conversation_id: conversationId },
+    ),
+
+  cancelQueuedAgentTurn: (input: AgentTurnQueueCancelInput) =>
+    invokeRustDataFromStatus<AgentTurnQueueCancelInput, {
+      entry: AgentTurnQueueEntry;
+      conversation_version: number;
+      replayed: boolean;
+    }>('agent_turn_queue_cancel', input),
+
+  submitAgentToolDecision: (input: AgentToolDecisionIntentInput) =>
+    invokeRustDataFromStatus<AgentToolDecisionIntentInput, AgentToolDecisionIntentResponse>(
+      'agent_submit_tool_decision',
+      input,
+    ),
+
+  getAgentEffectiveRuntimeProfile: (input: AgentRuntimeProfileInput) =>
+    invokeRustDataFromStatus<AgentRuntimeProfileInput, AgentEffectiveRuntimeProfile>(
+      'agent_runtime_profile_effective',
+      input,
+    ),
+
+  listCapabilityManifests: (sourceKinds: readonly CapabilitySourceKind[] = []) =>
+    invokeRustProto(
+      'agent_capability_manifest_list',
+      ListCapabilityManifestsResponseSchema,
+      { sourceKinds: [...sourceKinds] },
+    ).then((response) => response.manifests),
+
+  listAgentCapabilityBindings: (agentId: string) =>
+    invokeRustProto(
+      'agent_capability_binding_list',
+      ListAgentCapabilityBindingsResponseSchema,
+      { agentId },
+    ).then((response) => response.bindings),
+
+  upsertAgentCapabilityBinding: (
+    input: AgentCapabilityBindingInput,
+    expectedBindingRevision: number | bigint,
+    idempotencyKey: string,
+  ) => {
+    const expectedAgentVersion = toRustUint64(
+      input.expectedAgentVersion,
+      'expectedAgentVersion',
+    );
+    const binding = create(AgentCapabilityBindingSchema, {
+      ...input,
+      bindingId: input.bindingId ?? '',
+      expectedAgentVersion: BigInt(expectedAgentVersion),
+    });
+    return invokeRustProto(
+      'agent_capability_binding_upsert',
+      UpsertAgentCapabilityBindingResponseSchema,
+      {
+        binding: {
+          bindingId: binding.bindingId,
+          agentId: binding.agentId,
+          capabilityId: binding.capabilityId,
+          capabilityVersion: binding.capabilityVersion,
+          enabled: binding.enabled,
+          approvalPolicy: binding.approvalPolicy,
+          expectedAgentVersion,
+        },
+        idempotencyKey,
+        expectedBindingRevision: toRustUint64(
+          expectedBindingRevision,
+          'expectedBindingRevision',
+        ),
+      },
+    ).then((response) => {
+      if (!response.binding) {
+        throw new Error('agent.capabilityBindingResponseMissing');
+      }
+      return response.binding;
+    });
+  },
+
+  deleteAgentCapabilityBinding: (
+    bindingId: string,
+    expectedBindingRevision: number | bigint,
+    idempotencyKey: string,
+    reason: string,
+  ) =>
+    invokeRustProto(
+      'agent_capability_binding_delete',
+      DeleteAgentCapabilityBindingResponseSchema,
+      {
+        bindingId,
+        expectedBindingRevision: toRustUint64(
+          expectedBindingRevision,
+          'expectedBindingRevision',
+        ),
+        idempotencyKey,
+        reason,
+      },
+    ).then((response) => {
+      if (!response.binding) {
+        throw new Error('agent.capabilityBindingResponseMissing');
+      }
+      return response.binding;
+    }),
+
+  createKnowledgeResourceDescriptor: (
+    request: CreateKnowledgeResourceDescriptorRequest,
+  ) => invokeRustProtoRequest(
+    'agent_knowledge_descriptor_create',
+    CreateKnowledgeResourceDescriptorRequestSchema,
+    CreateKnowledgeResourceDescriptorResponseSchema,
+    request,
+  ),
+
+  updateKnowledgeResourceDescriptor: (
+    request: UpdateKnowledgeResourceDescriptorRequest,
+  ) => invokeRustProtoRequest(
+    'agent_knowledge_descriptor_update',
+    UpdateKnowledgeResourceDescriptorRequestSchema,
+    UpdateKnowledgeResourceDescriptorResponseSchema,
+    request,
+  ),
+
+  listKnowledgeResourceDescriptors: (
+    request: ListKnowledgeResourceDescriptorsRequest,
+  ) => invokeRustProtoRequest(
+    'agent_knowledge_descriptor_list',
+    ListKnowledgeResourceDescriptorsRequestSchema,
+    ListKnowledgeResourceDescriptorsResponseSchema,
+    request,
+  ),
+
+  tombstoneKnowledgeResourceDescriptor: (
+    request: TombstoneKnowledgeResourceDescriptorRequest,
+  ) => invokeRustProtoRequest(
+    'agent_knowledge_descriptor_tombstone',
+    TombstoneKnowledgeResourceDescriptorRequestSchema,
+    TombstoneKnowledgeResourceDescriptorResponseSchema,
+    request,
+  ),
+
+  readAgentCapabilityReadiness: (input: AgentCapabilityReadinessInput) =>
+    invokeRustProto(
+      'agent_capability_readiness',
+      GetCapabilityReadinessResponseSchema,
+      input,
+    ).then((response) => {
+      if (!response.snapshot) {
+        throw new Error('agent.capabilityReadinessSnapshotMissing');
+      }
+      return response.snapshot;
+    }),
+
+  getAgentCapabilityReadiness: async (
+    input: AgentCapabilityReadinessInput,
+  ): Promise<AgentCapabilityReadinessSnapshot> => {
+    const response = await invokeRustProto(
+      'agent_capability_readiness',
+      GetCapabilityReadinessResponseSchema,
+      input,
+    );
+    const json = toJson(GetCapabilityReadinessResponseSchema, response, {
+      useProtoFieldName: true,
+    });
+    if (json === null || Array.isArray(json) || typeof json !== 'object') {
+      throw new Error('agent.capabilityReadinessResponseInvalid');
+    }
+    const snapshot = json.snapshot;
+    if (snapshot === null || Array.isArray(snapshot) || typeof snapshot !== 'object') {
+      throw new Error('agent.capabilityReadinessSnapshotMissing');
+    }
+    return snapshot as unknown as AgentCapabilityReadinessSnapshot;
+  },
+
+  getAgentStationRuntimeActivity: (input: AgentRuntimeActivityInput) =>
+    invokeRustDataFromStatus<AgentRuntimeActivityInput, AgentRuntimeActivitySnapshot>(
+      'agent_runtime_activity_station',
+      input,
+    ),
+
+  getAgentLocalRuntimeActivity: (input: AgentRuntimeActivityInput) =>
+    invokeRustDataFromStatus<AgentRuntimeActivityInput, AgentRuntimeActivitySnapshot>(
+      'agent_runtime_activity_local',
+      input,
+    ),
+
+  getAgentCapabilitySessionSnapshot: () =>
+    invokeRustDataFromStatus<Record<string, never>, AgentCapabilitySessionSnapshot>(
+      'agent_capability_session_snapshot',
+      {},
+    ),
+
+  runAgentCapabilityNegativeControl: (
+    control: AgentCapabilityNegativeControl,
+    capabilitySessionIdHash: string,
+    crossDeviceSessionId?: string,
+  ) =>
+    invokeRustDataFromStatus<
+      {
+        negativeControl: {
+          control: AgentCapabilityNegativeControl;
+          capabilitySessionIdHash: string;
+          crossDeviceSessionId?: string;
+        };
+      },
+      AgentCapabilityNegativeControlFact
+    >('agent_capability_session_snapshot', {
+      negativeControl: {
+        control,
+        capabilitySessionIdHash,
+        crossDeviceSessionId,
+      },
+    }),
+
+  listAgentCapabilitySessions: () =>
+    invokeRustDataFromStatus<Record<string, never>, AgentCapabilitySessionList>(
+      'agent_capability_sessions',
+      {},
+    ),
+
+  openBrowserCapabilitySession: () =>
+    invokeRustDataFromStatus<Record<string, never>, { state: string }>(
+      'agent_browser_capability_session_open',
+      {},
+    ),
+
+  closeBrowserCapabilitySession: () =>
+    invokeRustDataFromStatus<Record<string, never>, { state: string }>(
+      'agent_browser_capability_session_close',
+      {},
+    ),
 
   listAgentConversations: (agentId: string, options?: { status?: string; page?: number; pageSize?: number }) =>
     invokeRustDataFromStatus<AgentConversationListInput, { ok: boolean; conversations: AgentConversation[]; total: number }>(
@@ -4266,10 +5000,136 @@ export const api = {
       { ok: boolean; messages: AgentMessage[]; next_cursor: number; has_more: boolean }
     >('agent_conversation_messages', input),
 
-  archiveAgentConversation: (conversationId: string, permanent?: boolean) =>
-    invokeRustDataFromStatus<AgentConversationArchiveInput, { ok: boolean }>('agent_conversation_archive', {
-      conversation_id: conversationId,
-      permanent,
+  updateAgentConversation: (input: AgentConversationUpdateInput) =>
+    invokeRustDataFromStatus<AgentConversationUpdateInput, { ok: boolean; conversation: AgentConversation }>(
+      'agent_conversation_update',
+      input,
+    ).then((r) => r.conversation),
+
+  archiveAgentConversation: (conversationId: string, expectedVersion: number, permanent?: boolean) =>
+    invokeRustDataFromStatus<AgentConversationArchiveInput, { ok: boolean }>(
+      'agent_conversation_archive',
+      {
+        conversation_id: conversationId,
+        expected_version: expectedVersion,
+        permanent,
+      },
+    ),
+
+  restoreAgentConversation: (conversationId: string, expectedVersion: number) =>
+    invokeRustDataFromStatus<
+      AgentConversationRestoreInput,
+      { ok: boolean; conversation: AgentConversation }
+    >(
+      'agent_conversation_restore',
+      {
+        conversation_id: conversationId,
+        expected_version: expectedVersion,
+      },
+    ).then((result) => result.conversation),
+
+  retryAgentTurn: (input: AgentRetryTurnInput) =>
+    invokeRustDataFromStatus<AgentRetryTurnInput, Record<string, unknown>>('agent_retry_turn', input),
+
+  regenerateAgentTurn: (input: AgentRegenerateTurnInput) =>
+    invokeRustDataFromStatus<AgentRegenerateTurnInput, Record<string, unknown>>('agent_regenerate_turn', input),
+
+  editAndResendAgentMessage: (input: AgentEditAndResendInput) =>
+    invokeRustDataFromStatus<AgentEditAndResendInput, Record<string, unknown>>('agent_edit_and_resend', input),
+
+  selectAgentActiveBranch: (input: AgentSelectActiveBranchInput) =>
+    invokeRustDataFromStatus<AgentSelectActiveBranchInput, Record<string, unknown>>('agent_select_active_branch', input),
+
+  tombstoneAgentMessage: (input: AgentTombstoneMessageInput) =>
+    invokeRustDataFromStatus<AgentTombstoneMessageInput, Record<string, unknown>>('agent_tombstone_message', input),
+
+  createAgentThread: (input: AgentThreadCreateInput) =>
+    invokeRustDataFromStatus<AgentThreadCreateInput, { ok: boolean; thread: AgentThread }>(
+      'agent_thread_create',
+      input,
+    ).then((r) => r.thread),
+
+  listAgentThreads: (conversationId: string) =>
+    invokeRustDataFromStatus<AgentThreadListInput, { ok: boolean; threads: AgentThread[] }>(
+      'agent_thread_list',
+      { conversation_id: conversationId },
+    ).then((r) => r.threads),
+
+  listAgentThreadMessages: (input: AgentThreadMessagesInput) =>
+    invokeRustDataFromStatus<AgentThreadMessagesInput, { ok: boolean; messages: AgentMessage[] }>(
+      'agent_thread_messages',
+      input,
+    ).then((r) => r.messages),
+
+  createAgentGroupRemote: (input: AgentGroupCreateInput) =>
+    invokeRustDataFromStatus<AgentGroupCreateInput, { ok: boolean; group: StationAgentGroupRow }>(
+      'agent_group_create',
+      input,
+    ).then((r) => r.group),
+
+  updateAgentGroupRemote: (input: AgentGroupUpdateInput) =>
+    invokeRustDataFromStatus<AgentGroupUpdateInput, { ok: boolean }>('agent_group_update', input),
+
+  deleteAgentGroupRemote: (id: string) =>
+    invokeRustDataFromStatus<AgentGroupDeleteInput, { ok: boolean }>('agent_group_delete', { id }),
+
+  listAgentGroupsRemote: () =>
+    invokeRustDataFromStatus<void, { ok: boolean; groups: StationAgentGroupRow[] | null }>(
+      'agent_group_list',
+    ).then((r) => r.groups ?? []),
+
+  createTopicCommentRemote: (input: TopicCommentCreateInput) =>
+    invokeRustDataFromStatus<TopicCommentCreateInput, { ok: boolean; comment: StationTopicCommentRow }>(
+      'topic_comment_create',
+      input,
+    ).then((r) => r.comment),
+
+  deleteTopicCommentRemote: (input: TopicCommentDeleteInput) =>
+    invokeRustDataFromStatus<TopicCommentDeleteInput, { ok: boolean }>('topic_comment_delete', input),
+
+  listTopicCommentsRemote: (topicKey: string) =>
+    invokeRustDataFromStatus<TopicCommentListInput, { ok: boolean; comments: StationTopicCommentRow[] | null }>(
+      'topic_comment_list',
+      { topic_key: topicKey },
+    ).then((r) => r.comments ?? []),
+
+  createAgentTaskRemote: (input: AgentTaskCreateInput) =>
+    invokeRustDataFromStatus<AgentTaskCreateInput, { ok: boolean; task: StationAgentTaskRow }>(
+      'agent_task_create',
+      input,
+    ).then((r) => r.task),
+
+  listAgentTasksRemote: (agentId?: string) =>
+    invokeRustDataFromStatus<AgentTaskListInput, { ok: boolean; tasks: StationAgentTaskRow[] | null }>(
+      'agent_task_list',
+      { agent_id: agentId },
+    ).then((r) => r.tasks ?? []),
+
+  updateAgentTaskStatusRemote: (input: AgentTaskStatusInput) =>
+    invokeRustDataFromStatus<AgentTaskStatusInput, { ok: boolean; task: StationAgentTaskRow }>(
+      'agent_task_status',
+      input,
+    ).then((r) => r.task),
+
+  deleteAgentTaskRemote: (id: string) =>
+    invokeRustDataFromStatus<AgentTaskDeleteInput, { ok: boolean }>('agent_task_delete', { id }),
+
+  addAgentSubtaskRemote: (input: AgentTaskSubtaskAddInput) =>
+    invokeRustDataFromStatus<AgentTaskSubtaskAddInput, { ok: boolean; task: StationAgentTaskRow }>(
+      'agent_task_subtask_add',
+      input,
+    ).then((r) => r.task),
+
+  completeAgentSubtaskRemote: (input: AgentTaskSubtaskCompleteInput) =>
+    invokeRustDataFromStatus<AgentTaskSubtaskCompleteInput, { ok: boolean; task: StationAgentTaskRow }>(
+      'agent_task_subtask_complete',
+      input,
+    ).then((r) => r.task),
+
+  updateMessageTranslate: (messageId: string, translation: string) =>
+    invokeRustDataFromStatus<AgentMessageTranslateInput, { ok: boolean }>('agent_message_translate', {
+      message_id: messageId,
+      translation,
     }),
 
   // ── Cron Jobs API ──
@@ -4817,6 +5677,35 @@ export const api = {
       remove: options.remove ?? false,
     }),
 
+  messagingAcceptanceInteractionSnapshot: (input: {
+    actorPtid: string;
+    conversationId: string;
+    messageId: string;
+    commandId?: string;
+  }) =>
+    invokeRustData<
+      {
+        expected_actor_ptid: string;
+        conversation_id: string;
+        message_id: string;
+        command_id: string;
+      },
+      MessagingAcceptanceInteractionSnapshot
+    >('messaging_acceptance_interaction_snapshot', {
+      expected_actor_ptid: input.actorPtid,
+      conversation_id: input.conversationId,
+      message_id: input.messageId,
+      command_id: input.commandId ?? '',
+    }),
+
+  messagingAcceptanceCurrentEndpoint: (expectedActorPtid: string) =>
+    invokeRustData<
+      { expected_actor_ptid: string },
+      { actor_ptid: string; device_id: string }
+    >('messaging_acceptance_current_endpoint', {
+      expected_actor_ptid: expectedActorPtid,
+    }),
+
   /**
    * Seal a WebRTC signaling plaintext (canonical JSON for SDP /
    * candidate / hangup) into the standalone signaling envelope
@@ -4917,9 +5806,6 @@ export const api = {
 
   groupChatDissolveGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_dissolve_group', DissolveGroupResponseSchema, { group_ulid: groupUlid }),
-
-  groupChatGetMembers: (groupUlid: string, limit?: number, offset?: number) =>
-    invokeRustProto('group_chat_get_members', GetGroupMembersResponseSchema, { group_ulid: groupUlid, limit, offset }),
 
   groupChatRemoveMember: (groupUlid: string, memberPtid: string) =>
     invokeRustProto('group_chat_remove_member', RemoveMemberResponseSchema, { group_ulid: groupUlid, member_ptid: memberPtid }),
@@ -5269,6 +6155,25 @@ export interface NotificationPreferenceData {
 export interface StreamEvent {
   event: string;
   data: Record<string, unknown>;
+  ptid?: string;
+  sourceDelivery?: AgentTurnSourceDelivery;
+}
+
+export interface AgentTurnSourceDelivery {
+  transport: 'station-sse';
+  ptid: string;
+  conversationId: string;
+  turnId: string;
+  sequence: number;
+  rawPayload: {
+    eventType: string;
+    data: Record<string, unknown>;
+  };
+}
+
+export interface AgentTurnStreamController extends AbortController {
+  readonly streamGeneration: number;
+  disconnectTransport(): void;
 }
 
 export interface ChatImageInput {
@@ -5317,11 +6222,6 @@ function parseJSONSafe(input?: string): Record<string, any> {
 }
 
 function mapAIChatProviderToListItem(item: any): ProviderListItem {
-  const cfg = parseJSONSafe(item.config_json);
-  const keyVaults = parseJSONSafe(item.key_vaults);
-  const runtimeKind = String(item.runtime_kind || cfg.runtime_kind || cfg.runtimeKind || '').trim().toLowerCase();
-  const hasCliCommand = Boolean(String(item.cli_command || cfg.cli_command || cfg.cliCommand || '').trim());
-  const hasKey = item.credential_status === 'configured' || Boolean(keyVaults.api_key || keyVaults.key || '');
   return {
     id: item.id,
     name: item.name || '',
@@ -5329,8 +6229,10 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     logo: item.logo || undefined,
     enabled: Boolean(item.enabled),
     builtin: Boolean(item.builtin),
-    has_api_key: hasKey,
-    runtime_kind: runtimeKind === 'cli' || hasCliCommand ? 'cli' : 'direct',
+    has_api_key: item.credential_status === 'configured',
+    requires_api_key: Boolean(item.show_api_key),
+    credential_status: String(item.credential_status || ''),
+    runtime_kind: String(item.runtime_kind || ''),
     version: Number(item.version || 0),
   };
 }
@@ -5338,9 +6240,7 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
 function mapAIChatProviderToDetail(item: any): ProviderDetail {
   const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
-  const runtimeKind = String(item.runtime_kind || cfg.runtime_kind || cfg.runtimeKind || '').trim().toLowerCase();
-  const hasCliCommand = Boolean(String(item.cli_command || cfg.cli_command || cfg.cliCommand || '').trim());
-  const checkModel = item.check_model || cfg.default_model || 'default';
+  const checkModel = String(item.check_model || '');
   const providerModels = Array.isArray(item.models)
     ? item.models
     : Array.isArray(cfg.models)
@@ -5372,21 +6272,10 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     api_key: item.api_key || keyVaults.api_key || '',
     base_url: item.base_url || cfg.base_url || '',
     default_base_url: item.base_url || cfg.default_base_url || cfg.base_url || '',
-    cli_command: item.cli_command || cfg.cli_command || cfg.cliCommand || '',
     show_api_key: item.show_api_key ?? cfg.show_api_key ?? cfg.showApiKey,
     show_checker: item.show_checker ?? true,
     check_model: checkModel,
-    models: models.length > 0
-      ? models
-      : runtimeKind === 'cli' || hasCliCommand
-        ? []
-        : [{
-          id: checkModel,
-          display_name: checkModel,
-          type: 'chat',
-          enabled: true,
-          context_window: 0,
-        }],
+    models,
   };
 }
 
@@ -5394,33 +6283,158 @@ function isHttpGatewayMode() {
   return typeof window !== 'undefined' && Boolean((window as any).__PT_GATEWAY_BASE__);
 }
 
-function recordField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+export const AGENT_REPLAY_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000] as const;
+const AGENT_REPLAY_CATCHUP_TIMEOUT_MS = 30_000;
+export const AGENT_SSE_IDLE_TIMEOUT_MS = 30_000;
+const AGENT_REPLAY_CONTROL_EVENTS = new Set([
+  'reconnecting',
+  'replaying',
+  'reconciling',
+  'connected',
+  'recovery_failed',
+  'catchup_done',
+]);
+
+function waitForAgentReplay(delayMs: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Agent replay cancelled', 'AbortError'));
+      return;
+    }
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException('Agent replay cancelled', 'AbortError'));
+    };
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
-function stringField(value: unknown): string {
-  return typeof value === 'string' ? value : '';
+async function consumeAgentSSE(
+  response: Response,
+  signal: AbortSignal,
+  onFrame: (event: StreamEvent) => boolean,
+): Promise<boolean> {
+  if (!response.ok || !response.body) {
+    throw new Error(`Agent stream returned HTTP ${response.status}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let terminal = false;
+  while (!signal.aborted) {
+    let timeout: ReturnType<typeof globalThis.setTimeout> | undefined;
+    const idleTimeout = new Promise<never>((_resolve, reject) => {
+      timeout = globalThis.setTimeout(() => {
+        reject(new Error('agent.error.streamIdleTimeout'));
+        void reader.cancel();
+      }, AGENT_SSE_IDLE_TIMEOUT_MS);
+    });
+    const { done, value } = await Promise.race([reader.read(), idleTimeout])
+      .finally(() => {
+        if (timeout !== undefined) globalThis.clearTimeout(timeout);
+      });
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let boundary = buffer.indexOf('\n\n');
+    while (boundary >= 0) {
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const lines = frame.split('\n');
+      const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim() || 'message';
+      const dataText = lines
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
+      let data: Record<string, unknown> = {};
+      if (dataText) {
+        const parsed = JSON.parse(dataText);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          data = parsed as Record<string, unknown>;
+        }
+      }
+      terminal = onFrame({ event, data }) || terminal;
+      if (signal.aborted) {
+        await reader.cancel();
+        return terminal;
+      }
+      if (terminal) {
+        await reader.cancel();
+        return true;
+      }
+      boundary = buffer.indexOf('\n\n');
+    }
+  }
+  return terminal;
 }
 
-function extractAgentTurnText(result: Record<string, unknown> | undefined): string {
-  if (!result) return '';
-  const responseMessage = recordField(result.response_message || result.responseMessage);
-  const turn = recordField(result.turn);
-  const trace = recordField(result.trace);
-  return String(
-    stringField(responseMessage.content) ||
-    stringField(result.content) ||
-    stringField(result.text) ||
-    stringField(result.final_response) ||
-    stringField(result.finalResponse) ||
-    stringField(turn.final_response) ||
-    stringField(turn.finalResponse) ||
-    stringField(trace.final_response) ||
-    stringField(trace.finalResponse) ||
-    '',
-  );
+export function classifyAgentTurnTerminalEvent(
+  event: StreamEvent,
+): 'completed' | 'cancelled' | 'queued' | 'failed' | 'interrupted' | null {
+  if (event.event === 'error') return 'failed';
+  if (event.event === 'queued' || event.event === 'admission_replayed') return 'queued';
+  if (event.event === 'done') return 'completed';
+  if (event.event === 'cancelled') return 'cancelled';
+  if (event.event !== 'snapshot') return null;
+  const status = String(event.data?.status || '').toLowerCase();
+  if (status === 'failed') return 'failed';
+  if (status === 'interrupted') return 'interrupted';
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'completed') return 'completed';
+  return null;
+}
+
+export function createAgentTurnSourceDelivery(
+  event: string,
+  data: Record<string, unknown>,
+  ptid: string,
+  _fallbackConversationId: string,
+  _fallbackTurnId = '',
+): AgentTurnSourceDelivery {
+  const conversationId = String(
+    data.conversationId ?? data.conversation_id ?? '',
+  ).trim();
+  const turnId = String(data.turnId ?? data.turn_id ?? '').trim();
+  const sequence = Number(data.seq ?? data.sequence ?? 0);
+  return {
+    transport: 'station-sse',
+    ptid,
+    conversationId,
+    turnId,
+    sequence: Number.isSafeInteger(sequence) && sequence > 0 ? sequence : 0,
+    rawPayload: {
+      eventType: event,
+      data: { ...data },
+    },
+  };
+}
+
+function publishAgentTurnRuntimeEvent(
+  streamId: string,
+  streamGeneration: number,
+  ptid: string,
+  conversationId: string,
+  agentId: string,
+  event: StreamEvent,
+): void {
+  if (!ptid) return;
+  const payload: AgentTurnStreamEventPayload & {
+    sourceDelivery?: AgentTurnSourceDelivery;
+  } = {
+    streamId,
+    streamGeneration,
+    ptid,
+    conversationId,
+    agentId,
+    event: event.event,
+    data: event.data,
+    timestampMs: Date.now(),
+    sourceDelivery: event.sourceDelivery,
+  };
+  eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, payload);
 }
 
 export function streamChat(
@@ -5514,63 +6528,213 @@ export function streamAgentTurn(
   onEvent: (event: StreamEvent) => void,
   onDone: () => void,
   onError: (err: Error) => void,
-): AbortController {
-  const controller = new AbortController();
+  sourcePtid = '',
+): AgentTurnStreamController {
+  const controller = new AbortController() as AgentTurnStreamController;
+  const streamId = input.stream_id || createAgentTurnStreamId();
+  const streamGeneration = nextAgentTurnStreamGeneration();
+  Object.defineProperty(controller, 'streamGeneration', {
+    value: streamGeneration,
+    enumerable: true,
+  });
   log.info('api', 'streamAgentTurn started', { conversationId: input.conversation_id, agentId: input.agent_id });
   if (isHttpGatewayMode()) {
+    const transportController = new AbortController();
+    let transportDisconnectRequested = false;
+    Object.defineProperty(controller, 'disconnectTransport', {
+      value: () => {
+        if (transportDisconnectRequested || controller.signal.aborted) return;
+        transportDisconnectRequested = true;
+        transportController.abort();
+      },
+      enumerable: true,
+    });
     (async () => {
-      try {
-        const result = await api.executeAgentTurnOnce(input);
-        if (controller.signal.aborted) return;
-        const content = extractAgentTurnText(result);
-        if (content) {
-          onEvent({ event: 'text', data: { content } });
+      let turnId = '';
+      let conversationId = input.conversation_id || '';
+      let lastSequence = 0;
+      let settled = false;
+      const forward = (event: StreamEvent): boolean => {
+        const projectedEvent: StreamEvent = {
+          ...event,
+          data: { ...event.data, streamGeneration },
+        };
+        const seq = Number(projectedEvent.data?.seq || 0);
+        if (Number.isFinite(seq) && seq > lastSequence) lastSequence = seq;
+        const eventTurnId = String(projectedEvent.data?.turnId || projectedEvent.data?.turn_id || '');
+        const eventConversationId = String(projectedEvent.data?.conversationId || projectedEvent.data?.conversation_id || '');
+        if (eventTurnId) turnId = eventTurnId;
+        if (eventConversationId) conversationId = eventConversationId;
+        publishAgentTurnRuntimeEvent(
+          streamId,
+          streamGeneration,
+          sourcePtid,
+          conversationId || input.conversation_id,
+          input.agent_id,
+          projectedEvent,
+        );
+        onEvent(projectedEvent);
+        const terminal = classifyAgentTurnTerminalEvent(projectedEvent);
+        if (terminal === 'failed') {
+          onError(new Error(String(
+            projectedEvent.data?.error
+            || projectedEvent.data?.terminal_reason
+            || 'agent.error.streamFailed',
+          )));
+          settled = true;
+          return true;
         }
-        const trace = recordField(result?.trace);
-        const turn = recordField(result?.turn);
-        onEvent({
-          event: 'done',
-          data: {
-            model: stringField(trace.model) || stringField(turn.model) || input.model || '',
-          },
-        });
-        onDone();
-      } catch (err: unknown) {
-        if (!controller.signal.aborted) {
-          const error = err instanceof Error ? err : new Error(String(err));
-          const rustErr = err as RustCommandException;
-          if (rustErr?.details && typeof rustErr.details === 'object') {
-            const details = rustErr.details as Record<string, unknown>;
-            if (details.resolution) {
-              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).resolution = details.resolution;
+        if (terminal === 'completed' || terminal === 'cancelled' || terminal === 'queued') {
+          onDone();
+          settled = true;
+          return true;
+        }
+        if (terminal === 'interrupted') {
+          settled = true;
+          return true;
+        }
+        return false;
+      };
+      controller.signal.addEventListener('abort', () => {
+        transportController.abort();
+        if (turnId) {
+          api.cancelAgentTurn(turnId).catch((error) => {
+            log.warn('api', 'Browser Agent turn cancel failed', { error: String(error) });
+          });
+        }
+      }, { once: true });
+      try {
+        const gatewayBase = String((window as any).__PT_GATEWAY_BASE__ || '');
+        let terminal = false;
+        let liveTransportError: Error | null = null;
+        try {
+          const response = await fetch(`${gatewayBase}/agent/turn/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+            body: JSON.stringify({ ...input, stream: true }),
+            signal: transportController.signal,
+          });
+          const admittedTurnId = response.headers.get('x-agent-turn-id')?.trim() || '';
+          if (admittedTurnId) turnId = admittedTurnId;
+          if (controller.signal.aborted) {
+            if (turnId) {
+              await api.cancelAgentTurn(turnId);
             }
-            if (typeof details.detail === 'string') {
-              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).errorDetail = details.detail;
-            }
-            if (typeof details.providerId === 'string') {
-              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).providerId = details.providerId;
-            }
+            return;
           }
-          onError(error);
+          terminal = await consumeAgentSSE(
+            response,
+            transportController.signal,
+            (event) => forward({
+              ...event,
+              sourceDelivery: createAgentTurnSourceDelivery(
+                event.event,
+                event.data,
+                sourcePtid,
+                conversationId || input.conversation_id,
+                turnId,
+              ),
+            }),
+          );
+        } catch (error) {
+          liveTransportError = error instanceof Error ? error : new Error(String(error));
+        }
+        if (!terminal && !controller.signal.aborted) {
+          if (!turnId || !conversationId) {
+            throw liveTransportError ?? new Error('agent.error.streamIdentityMissing');
+          }
+          forward({
+            event: 'connection_lost',
+            data: {
+              turnId,
+              conversationId,
+              seq: lastSequence,
+              recoveryHandoff: true,
+              reason: transportDisconnectRequested
+                ? 'transport_disconnect_requested'
+                : liveTransportError?.message || 'station_stream_closed',
+            },
+          });
+        }
+      } catch (err: unknown) {
+        if (!controller.signal.aborted && !settled) {
+          onError(err instanceof Error ? err : new Error(String(err)));
         }
       }
     })();
     return controller;
   }
+  let transportDisconnectRequested = false;
+  let disconnectNativeTransport = () => {
+    transportDisconnectRequested = true;
+  };
+  Object.defineProperty(controller, 'disconnectTransport', {
+    value: () => {
+      if (controller.signal.aborted) return;
+      disconnectNativeTransport();
+    },
+    enumerable: true,
+  });
   (async () => {
-    let unlisten: (() => void) | undefined;
+    let unlistenLive: (() => void) | undefined;
+    let settled = false;
+    let startCompleted = false;
+    let transportCancellationSent = false;
+    let capturedTurnId = '';
+    const cleanup = () => {
+      unlistenLive?.();
+      unlistenLive = undefined;
+    };
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+    };
+    const cancelTransport = () => {
+      if (!startCompleted || transportCancellationSent) return;
+      transportCancellationSent = true;
+      void api.cancelAgentTurnStream(streamId).catch((error) => {
+        log.warn('api', 'Agent turn transport cancellation failed', {
+          streamId,
+          error: String(error),
+        });
+      });
+    };
+    const disconnectTransport = () => {
+      if (!startCompleted || transportCancellationSent) return;
+      transportCancellationSent = true;
+      void api.disconnectAgentTurnStream(streamId).catch((error) => {
+        log.warn('api', 'Agent turn transport disconnect failed', {
+          streamId,
+          error: String(error),
+        });
+      });
+    };
+    disconnectNativeTransport = () => {
+      transportDisconnectRequested = true;
+      disconnectTransport();
+    };
+    const cancelSemanticTurn = () => {
+      if (!capturedTurnId) return;
+      void api.cancelAgentTurn(capturedTurnId).catch((error) => {
+        log.warn('api', 'Agent turn cancel failed', {
+          turnId: capturedTurnId,
+          error: String(error),
+        });
+      });
+    };
+    const abortNativeStream = () => {
+      cancelSemanticTurn();
+      cancelTransport();
+      cleanup();
+    };
+    controller.signal.addEventListener('abort', abortNativeStream, { once: true });
     try {
       const { listen } = await import('@tauri-apps/api/event');
-      const streamId = input.stream_id || createAgentTurnStreamId();
+      let lastEventSeq = 0;
+      let capturedConversationId = input.conversation_id || '';
 
-      unlisten = await listen<AgentTurnStreamPayload>('agent:turn-stream-event', (tauriEvent) => {
-        const payload = tauriEvent.payload;
-        if (payload.streamId !== streamId) return;
-        if (controller.signal.aborted) {
-          unlisten?.();
-          return;
-        }
-
+      const forwardEvent = (payload: AgentTurnStreamPayload) => {
         const data: Record<string, unknown> = {};
         Object.entries(payload.data || {}).forEach(([key, value]) => {
           data[key] = value;
@@ -5582,21 +6746,73 @@ export function streamAgentTurn(
         if (typeof payload.data?.arguments === 'string') data.args = payload.data.arguments;
         if (typeof payload.data?.stage === 'string') data.message = payload.data.stage;
 
-        eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
-          streamId,
-          conversationId: input.conversation_id,
-          agentId: input.agent_id,
-          event: payload.event,
-          data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])),
-          timestampMs: Date.now(),
-        } satisfies AgentTurnStreamEventPayload);
-        onEvent({ event: payload.event, data });
-        if (payload.event === 'done') {
-          unlisten?.();
-          onDone();
+        const seq = typeof payload.data?.seq === 'number'
+          ? payload.data.seq
+          : typeof payload.data?.seq === 'string'
+            ? parseInt(payload.data.seq, 10)
+            : 0;
+        if (seq > 0 && seq > lastEventSeq) {
+          lastEventSeq = seq;
         }
-        if (payload.event === 'error') {
-          unlisten?.();
+        const eventTurnId = typeof payload.data?.turnId === 'string'
+          ? payload.data.turnId
+          : typeof payload.data?.turn_id === 'string'
+            ? payload.data.turn_id
+            : '';
+        if (eventTurnId) capturedTurnId = eventTurnId;
+        if (payload.event === 'conversation_created' && typeof payload.data?.conversation_id === 'string') {
+          capturedConversationId = payload.data.conversation_id;
+        }
+
+        const event: StreamEvent = {
+          event: payload.event,
+          data: { ...data, streamGeneration },
+          ptid: payload.ptid,
+        };
+        publishAgentTurnRuntimeEvent(
+          payload.streamId,
+          streamGeneration,
+          payload.ptid || '',
+          capturedConversationId || input.conversation_id,
+          input.agent_id,
+          event,
+        );
+        onEvent(event);
+      };
+
+      unlistenLive = await listen<AgentTurnStreamPayload>('agent:turn-stream-event', (tauriEvent) => {
+        const payload = tauriEvent.payload;
+        if (payload.streamId !== streamId) return;
+        if (controller.signal.aborted) {
+          const abortedTurnId = typeof payload.data?.turnId === 'string'
+            ? payload.data.turnId
+            : typeof payload.data?.turn_id === 'string'
+              ? payload.data.turn_id
+              : '';
+          if (abortedTurnId) capturedTurnId = abortedTurnId;
+          cancelSemanticTurn();
+          unlistenLive?.();
+          return;
+        }
+        forwardEvent(payload);
+        if (payload.event === 'connection_lost' && payload.data?.recoveryHandoff === true) {
+          cleanup();
+          return;
+        }
+        const terminal = classifyAgentTurnTerminalEvent({
+          event: payload.event,
+          data: payload.data || {},
+        });
+        if (terminal === 'completed' || terminal === 'cancelled' || terminal === 'queued') {
+          unlistenLive?.();
+          unlistenLive = undefined;
+          onDone();
+          settle();
+        }
+        if (terminal === 'failed') {
+          unlistenLive?.();
+          unlistenLive = undefined;
+          const data = payload.data || {};
           const err = new Error(typeof data.error === 'string' ? data.error : 'agent.error.streamFailed') as Error & {
             resolution?: unknown;
             errorDetail?: string;
@@ -5606,31 +6822,283 @@ export function streamAgentTurn(
           if (typeof data.detail === 'string') err.errorDetail = data.detail;
           if (typeof data.providerId === 'string') err.providerId = data.providerId;
           onError(err);
+          settle();
+        }
+        if (terminal === 'interrupted') {
+          settle();
         }
       });
 
+      if (controller.signal.aborted) {
+        cleanup();
+        return;
+      }
       const result = await api.startAgentTurnStream({ ...input, stream_id: streamId });
+      startCompleted = true;
       if (result?.stream_id !== streamId) {
-        unlisten();
+        cleanup();
         throw new Error('agent.error.streamIdMismatch');
       }
       if (controller.signal.aborted) {
-        api.cancelAgentTurnStream(streamId).catch((error) => {
-          log.warn('api', 'streamAgentTurn cancel failed', { error: String(error) });
-        });
-        unlisten();
+        abortNativeStream();
         return;
       }
-
-      controller.signal.addEventListener('abort', () => {
-        api.cancelAgentTurnStream(streamId).catch((error) => {
-          log.warn('api', 'streamAgentTurn cancel failed', { error: String(error) });
-        });
-        unlisten?.();
-      }, { once: true });
+      if (transportDisconnectRequested) {
+        disconnectTransport();
+      }
     } catch (err: unknown) {
+      cleanup();
+      if (!settled) {
+        onError(err instanceof Error ? err : new Error(String(err)));
+      }
+    }
+  })();
+  return controller;
+}
+
+export function streamAgentTurnReplay(
+  input: Omit<AgentTurnReplayStreamInput, 'stream_id'>,
+  onEvent: (event: StreamEvent) => void,
+  onError: (error: Error) => void,
+  sourcePtid = '',
+): AbortController {
+  const controller = new AbortController();
+  const streamId = createAgentTurnStreamId();
+  const streamGeneration = nextAgentTurnStreamGeneration();
+  let catchupEstablished = false;
+  let replayErrorReported = false;
+  const clearCatchupDeadline = () => {
+    globalThis.clearTimeout(catchupDeadline);
+  };
+  const deliverReplayEvent = (event: StreamEvent) => {
+    const projectedEvent = {
+      ...event,
+      data: { ...event.data, streamGeneration },
+    };
+    const terminalStatus = classifyAgentTurnTerminalEvent(projectedEvent);
+    if (
+      projectedEvent.event === 'catchup_done'
+      || (projectedEvent.event === 'snapshot' && terminalStatus !== null)
+    ) {
+      catchupEstablished = true;
+      clearCatchupDeadline();
+    }
+    onEvent(projectedEvent);
+  };
+  const reportReplayError = (error: Error) => {
+    if (replayErrorReported || controller.signal.aborted) return;
+    replayErrorReported = true;
+    clearCatchupDeadline();
+    onError(error);
+  };
+  const catchupDeadline = globalThis.setTimeout(() => {
+    if (catchupEstablished || controller.signal.aborted) return;
+    reportReplayError(new Error('agent.error.replayCatchupTimeout'));
+    controller.abort();
+  }, AGENT_REPLAY_CATCHUP_TIMEOUT_MS);
+  controller.signal.addEventListener('abort', clearCatchupDeadline, { once: true });
+
+  if (isHttpGatewayMode()) {
+    void (async () => {
+      const gatewayBase = String((window as any).__PT_GATEWAY_BASE__ || '');
+      let replayError: Error | null = null;
+      for (let attempt = 0; attempt <= AGENT_REPLAY_RETRY_DELAYS_MS.length; attempt += 1) {
+        let liveTailEstablished = false;
+        try {
+          if (attempt > 0) {
+            await waitForAgentReplay(
+              AGENT_REPLAY_RETRY_DELAYS_MS[attempt - 1],
+              controller.signal,
+            );
+          }
+          deliverReplayEvent({
+            event: 'reconnecting',
+            ptid: sourcePtid,
+            data: {
+              turnId: input.turn_id,
+              conversationId: input.conversation_id,
+              seq: input.after_seq,
+              attempt: attempt + 1,
+            },
+          });
+          const response = await fetch(`${gatewayBase}/agent/turn/events`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+            body: JSON.stringify(toAgentTurnReplayWireInput(input)),
+            signal: controller.signal,
+          });
+          deliverReplayEvent({
+            event: 'replaying',
+            ptid: sourcePtid,
+            data: {
+              turnId: input.turn_id,
+              conversationId: input.conversation_id,
+              seq: input.after_seq,
+            },
+          });
+          const terminal = await consumeAgentSSE(response, controller.signal, (event) => {
+            const sourceEvent: StreamEvent = {
+              ...event,
+              ptid: sourcePtid,
+              sourceDelivery: AGENT_REPLAY_CONTROL_EVENTS.has(event.event)
+                ? undefined
+                : createAgentTurnSourceDelivery(
+                    event.event,
+                    event.data,
+                    sourcePtid,
+                    input.conversation_id,
+                    input.turn_id,
+                  ),
+            };
+            const terminalStatus = classifyAgentTurnTerminalEvent(sourceEvent);
+            if (
+              sourceEvent.event === 'snapshot'
+              && terminalStatus !== null
+              && !liveTailEstablished
+            ) {
+              liveTailEstablished = true;
+              const recoveryData = {
+                turnId: input.turn_id,
+                conversationId: input.conversation_id,
+                seq: sourceEvent.data.seq ?? input.after_seq,
+              };
+              deliverReplayEvent({
+                event: 'reconciling',
+                ptid: sourcePtid,
+                data: recoveryData,
+              });
+              deliverReplayEvent({
+                event: 'connected',
+                ptid: sourcePtid,
+                data: recoveryData,
+              });
+              deliverReplayEvent(sourceEvent);
+              return true;
+            }
+            if (sourceEvent.event === 'catchup_done' && !liveTailEstablished) {
+              liveTailEstablished = true;
+              deliverReplayEvent({
+                event: 'reconciling',
+                ptid: sourcePtid,
+                data: {
+                  turnId: input.turn_id,
+                  conversationId: input.conversation_id,
+                  seq: sourceEvent.data.seq ?? input.after_seq,
+                },
+              });
+              deliverReplayEvent(sourceEvent);
+              deliverReplayEvent({
+                event: 'connected',
+                ptid: sourcePtid,
+                data: {
+                  turnId: input.turn_id,
+                  conversationId: input.conversation_id,
+                  seq: sourceEvent.data.seq ?? input.after_seq,
+                },
+              });
+            } else {
+              deliverReplayEvent(sourceEvent);
+            }
+            return liveTailEstablished && terminalStatus !== null;
+          });
+          if (terminal || controller.signal.aborted) return;
+          replayError = new Error(
+            liveTailEstablished
+              ? 'agent.error.replayTailClosed'
+              : 'agent.error.replayIncomplete',
+          );
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          replayError = error instanceof Error ? error : new Error(String(error));
+        }
+        if (liveTailEstablished && replayError) {
+          reportReplayError(replayError);
+          return;
+        }
+      }
+      if (!controller.signal.aborted) {
+        reportReplayError(replayError ?? new Error('agent.error.replayFailed'));
+      }
+    })();
+    return controller;
+  }
+
+  void (async () => {
+    let unlisten: (() => void) | undefined;
+    let replayStarted = false;
+    let cancellationSent = false;
+    let liveTailEstablished = false;
+    const cleanup = () => {
       unlisten?.();
-      onError(err instanceof Error ? err : new Error(String(err)));
+      unlisten = undefined;
+    };
+    const cancelReplay = () => {
+      cleanup();
+      if (!replayStarted || cancellationSent) return;
+      cancellationSent = true;
+      void api.cancelAgentTurnReplayStream(streamId).catch((error) => {
+        log.warn('api', 'Agent turn replay cancellation failed', {
+          streamId,
+          error: String(error),
+        });
+      });
+    };
+    controller.signal.addEventListener('abort', cancelReplay, { once: true });
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      unlisten = await listen<AgentTurnStreamPayload>(
+        'agent:turn-stream-event',
+        (tauriEvent) => {
+          const payload = tauriEvent.payload;
+          if (payload.streamId !== streamId || controller.signal.aborted) return;
+          const event: StreamEvent = {
+            event: payload.event,
+            data: payload.data || {},
+            ptid: payload.ptid,
+            sourceDelivery: AGENT_REPLAY_CONTROL_EVENTS.has(payload.event)
+              ? undefined
+              : createAgentTurnSourceDelivery(
+                  payload.event,
+                  payload.data || {},
+                  payload.ptid || sourcePtid,
+                  input.conversation_id,
+                  input.turn_id,
+                ),
+          };
+          const terminalStatus = classifyAgentTurnTerminalEvent(event);
+          const closesReplay = terminalStatus !== null
+            && (liveTailEstablished || event.event === 'snapshot');
+          if (event.event === 'catchup_done') {
+            liveTailEstablished = true;
+          }
+          deliverReplayEvent(event);
+          if (
+            closesReplay
+            || event.event === 'recovery_failed'
+          ) {
+            cleanup();
+          }
+          if (event.event === 'recovery_failed') {
+            reportReplayError(new Error(String(event.data.error || 'agent.error.replayFailed')));
+          }
+        },
+      );
+      const result = await api.startAgentTurnReplayStream({
+        ...input,
+        stream_id: streamId,
+      });
+      replayStarted = true;
+      if (result.stream_id !== streamId) {
+        throw new Error('agent.error.streamIdMismatch');
+      }
+      if (controller.signal.aborted) {
+        cancelReplay();
+      }
+    } catch (error) {
+      cleanup();
+      if (!controller.signal.aborted) {
+        reportReplayError(error instanceof Error ? error : new Error(String(error)));
+      }
     }
   })();
   return controller;
@@ -5693,7 +7161,61 @@ export function streamAgentCollaborationEvents(
   return controller;
 }
 
-export const executeAgentTurn = streamChat;
+export function streamAgentAuthorityEvents(
+  agentId: string,
+  onEvent: (payload: AgentAuthorityStreamPayload) => void,
+  onError: (error: Error) => void,
+): AbortController {
+  const controller = new AbortController();
+  void (async () => {
+    let unlisten: (() => void) | undefined;
+    const streamId = `agent-authority-${agentId}-${crypto.randomUUID()}`;
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      unlisten = await listen<AgentAuthorityStreamPayload>(
+        'agent:event',
+        (tauriEvent) => {
+          const payload = tauriEvent.payload;
+          if (payload.streamId !== streamId || controller.signal.aborted) return;
+          if (payload.event === 'error') {
+            const detail =
+              typeof payload.data.error === 'string'
+                ? payload.data.error
+                : 'agent.capabilityEventStreamFailed';
+            onError(new Error(detail));
+            return;
+          }
+          onEvent(payload);
+        },
+      );
+      const result = await api.startAgentEventStream(agentId, streamId);
+      if (result.stream_id !== streamId) {
+        throw new Error('agent.capabilityEventStreamIdentityMismatch');
+      }
+      if (controller.signal.aborted) {
+        await api.cancelAgentEventStream(streamId);
+        unlisten();
+        return;
+      }
+      controller.signal.addEventListener('abort', () => {
+        void api.cancelAgentEventStream(streamId).catch((error) => {
+          log.warn('api', 'agent event stream cancellation failed', {
+            error: String(error),
+          });
+        });
+        unlisten?.();
+      }, { once: true });
+    } catch (error) {
+      unlisten?.();
+      if (!controller.signal.aborted) {
+        onError(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+  })();
+  return controller;
+}
+
+export const executeAgentTurn = streamAgentTurn;
 
 // ---------------------------------------------------------------------------
 // Agent Growth APIs
@@ -5777,14 +7299,41 @@ export async function submitAgentFeedback(
   conversationId: string,
   signal: 'positive' | 'negative',
   comment?: string,
-): Promise<void> {
-  await invokeRustDataFromStatus('agent_submit_feedback', {
+  options?: {
+    assistantMessageId?: string;
+    categories?: string[];
+    idempotencyKey?: string;
+    source?: string;
+  },
+): Promise<RecordFeedbackResponse> {
+  return invokeRustProto('agent_submit_feedback', RecordFeedbackResponseSchema, {
     agent_id: agentId,
     turn_id: turnId,
     conversation_id: conversationId,
+    assistant_message_id: options?.assistantMessageId ?? '',
     signal,
+    source: options?.source ?? 'message_action',
+    rating: signal === 'positive' ? 1 : -1,
+    categories: options?.categories ?? [],
     comment: comment ?? null,
+    idempotency_key: options?.idempotencyKey ?? crypto.randomUUID(),
   });
+}
+
+export async function listAgentTurnFeedback(turnId: string): Promise<ListTurnFeedbackResponse> {
+  return invokeRustProto(
+    'agent_list_turn_feedback',
+    ListTurnFeedbackResponseSchema,
+    { turn_id: turnId },
+  );
+}
+
+export async function exportAgentTurnDiagnostics(turnId: string): Promise<ExportTurnDiagnosticsResponse> {
+  return invokeRustProto(
+    'agent_turn_diagnostics_export',
+    ExportTurnDiagnosticsResponseSchema,
+    { turn_id: turnId },
+  );
 }
 
 export async function agentQuickCompletion(agentId: string, prompt: string): Promise<string> {

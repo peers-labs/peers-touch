@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -23,38 +25,59 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     acceptance_station_environment,
 )
 from tooling.acceptance.fixtures.chat_contact_message_fault_proxy import (
-    ProfileThreeContactMessageFaultProxy,
+    AcceptanceStationContactMessageFaultProxy,
 )
 from tooling.acceptance.gates.chat.native_support import (
-    DEFAULT_STATION,
+    DEV_ACCOUNT_PASSWORD,
     NativeClientLifecycleLedger,
     async_harness,
-    configure_station,
+    cleanup_preserving_primary_failure,
     enter_chat_page,
-    reset_fixture,
+    native_runtime_source_identity,
+    read_station_version,
     runtime_station_service,
     selected_native_runtime,
-    start_authenticated_client,
+    verify_runtime_fixture_ready,
     wait_until,
 )
 
 
-REPORT_PATH = Path(
-    os.environ.get(
-        "CHAT_CONTACT_MESSAGE_RESILIENCE_REPORT",
-        str(REPORTS_DIR / "chat-contact-message-resilience.json"),
-    )
-)
+GATE_ID = "chat-contact-message-resilience-e2e"
+REPORT_PATH = None
 CLIENT_PORT = 4461
 NAVIGATION_ASSERTION_DEADLINE_MS = 2000
 
 
-class ContactMessageResilienceGate(AcceptanceGate):
-    gate_id = "chat-contact-message-resilience-e2e"
-    report_path = REPORT_PATH
-    evidence_dir = REPORT_PATH.parent / "chat-contact-message-resilience-evidence"
+def selected_runtime() -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    NativeDesktopRuntimeBinding,
+] | None:
+    selected = selected_native_runtime(GATE_ID)
+    if selected is None:
+        return None
+    return selected.manifest, selected.actor_manifest, selected.binding
 
-    def __init__(self) -> None:
+
+class ContactMessageResilienceGate(AcceptanceGate):
+    gate_id = GATE_ID
+    phase = "MP-W13-F"
+    bom = ("MP-W13-F",)
+    spec = ("chat-product-closure",)
+    report_path = REPORT_PATH
+    evidence_dir = (
+        REPORT_PATH.parent / "chat-contact-message-resilience-evidence"
+        if REPORT_PATH is not None
+        else None
+    )
+
+    def __init__(
+        self,
+        *,
+        manifest: dict[str, Any] | None = None,
+        actor_manifest: dict[str, Any] | None = None,
+        runtime_binding: NativeDesktopRuntimeBinding | None = None,
+    ) -> None:
         super().__init__()
         injected = (manifest, actor_manifest, runtime_binding)
         if any(value is not None for value in injected) and not all(
@@ -86,7 +109,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
         self.client_specs: dict[str, dict[str, Any]] = {}
         self.actor_specs: dict[str, dict[str, Any]] = {}
         if self.runtime_binding is not None:
-            station = runtime_station_service(self.manifest)
+            station = runtime_station_service(self.manifest, "alice")
             self.station_url = str(station.get("endpoint") or "").rstrip("/")
             self.client_specs = {
                 str(client.get("actor")): client
@@ -110,14 +133,14 @@ class ContactMessageResilienceGate(AcceptanceGate):
                 )
             self.report.manifest = self.manifest
         else:
-            self.station_url = os.environ.get(
-                "CHAT_NATIVE_STATION_URL",
-                DEFAULT_STATION,
-            ).rstrip("/")
+            raise GateError(
+                "Contact message resilience requires provisioned runtime resources"
+            )
         self.client: TauriSession | None = None
         self.runtime_instances: list[TauriSession] = []
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.proxy: AcceptanceStationContactMessageFaultProxy | None = None
+        self.transport_override = None
         self.ptid = ""
         self.bob_ptid = ""
         self.report.runtime.update(
@@ -133,9 +156,6 @@ class ContactMessageResilienceGate(AcceptanceGate):
         )
 
     def verify_fixture_ready(self) -> bool:
-        if self.runtime_binding is None:
-            reset_fixture(("alice", "bob"))
-            return True
         verify_runtime_fixture_ready(self.manifest, self.actor_manifest)
         return True
 
@@ -158,12 +178,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
 
     def start_client(self) -> tuple[TauriSession, str]:
         if self.runtime_binding is None:
-            return start_authenticated_client(
-                "alice",
-                CLIENT_PORT,
-                self.station_url,
-                instance="contact-resilience",
-            )
+            raise GateError("Native Desktop runtime binding is required")
         client = self.runtime_binding.create_bound_session(
             "alice",
             NativeLaunchOptions(window_slot=0, window_count=1),
@@ -172,10 +187,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
         expected_ptid = str(self.actor_specs["alice"].get("ptid") or "")
         self.client_lifecycles.register(client, expected_ptid)
         try:
-            client.start()
             self.client_lifecycles.mark_live(client)
-            client.wait_for_acceptance_harness(30)
-            configure_station(client, self.station_url)
             account_ref = str(
                 self.actor_specs["alice"].get("accountRef") or ""
             )
@@ -323,9 +335,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
         if not self.client:
             return
         try:
-            shot_path = self.evidence_dir / f"{label}.png"
-            shot_path.parent.mkdir(parents=True, exist_ok=True)
-            self.client.save_screenshot(shot_path)
+            self.save_screenshot(self.client, label)
             result = self.client.execute_script(
                 """
                 const regions = Array.from(document.querySelectorAll('[role="region"]'))
@@ -344,9 +354,23 @@ class ContactMessageResilienceGate(AcceptanceGate):
             )
             baseline = getattr(self, '_last_baseline', set())
             result['baselineRegions'] = list(baseline)
-            import json
-            dom_path = self.evidence_dir / f"{label}-dom.json"
-            dom_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+            with tempfile.NamedTemporaryFile(
+                suffix=".json",
+                delete=False,
+                mode="w",
+                encoding="utf-8",
+            ) as temporary:
+                json.dump(result, temporary, indent=2, ensure_ascii=False)
+                temporary.write("\n")
+                dom_path = Path(temporary.name)
+            try:
+                self.report.add_evidence_file(
+                    f"{label}-diagnostics",
+                    dom_path,
+                    destination_dir=self.evidence_dir,
+                )
+            finally:
+                dom_path.unlink(missing_ok=True)
         except Exception:
             pass
 
@@ -365,6 +389,18 @@ class ContactMessageResilienceGate(AcceptanceGate):
 
     def cleanup_runtime(self) -> dict[str, Any]:
         cleanup_errors: list[dict[str, str]] = []
+        if self.transport_override is not None and self.runtime_binding is not None:
+            try:
+                self.runtime_binding.clear_transport_override(
+                    "alice",
+                    "station",
+                    self.transport_override,
+                )
+            except Exception as error:
+                cleanup_errors.append(
+                    {"resource": "transport-override", "error": str(error)}
+                )
+            self.transport_override = None
         if self.proxy:
             try:
                 self.proxy.disarm()
@@ -376,21 +412,9 @@ class ContactMessageResilienceGate(AcceptanceGate):
             self.proxy = None
         if self.client:
             try:
-                configure_station(self.client, self.station_url)
-            except Exception as error:
-                cleanup_errors.append(
-                    {
-                        "resource": "client-station-restore",
-                        "error": str(error),
-                    }
+                cleanup_errors.extend(
+                    self.client_lifecycles.release_all()
                 )
-            try:
-                if self.runtime_binding is None:
-                    stop_client(self.client)
-                else:
-                    cleanup_errors.extend(
-                        self.client_lifecycles.release_all()
-                    )
             except Exception as error:
                 cleanup_errors.append(
                     {
@@ -400,12 +424,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
                 )
 
         if self.runtime_binding is None:
-            cleanup = {
-                "clientsStopped": ["alice"] if self.client else [],
-                "cleanupErrors": cleanup_errors,
-            }
-            self.report.runtime["cleanup"] = cleanup
-            return cleanup
+            raise GateError("Native Desktop runtime binding is required")
         try:
             cleanup = self.runtime_binding.finalize_cleanup(
                 self.runtime_instances,
@@ -450,31 +469,40 @@ class ContactMessageResilienceGate(AcceptanceGate):
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
-        try:
-            profile_three_environment(self.station_url)
-        except RuntimeError as error:
-            raise GateError(str(error)) from error
+        if self.runtime_binding is None:
+            try:
+                acceptance_station_environment(self.station_url)
+            except RuntimeError as error:
+                raise GateError(str(error)) from error
 
         self.report.station_url = self.station_url
         steps: list[dict[str, Any]] = []
+        result: dict[str, Any] = {}
+        cleanup: dict[str, Any] = {}
 
         try:
+            source_identity = (
+                self.source_identity(
+                    read_station_version(self.station_url)
+                )
+                if self.runtime_binding is not None
+                else {}
+            )
             steps.append({"step": "fixture.reset", "status": "start"})
-            reset_fixture(("alice", "bob"))
+            self.verify_fixture_ready()
             steps.append({"step": "fixture.reset", "status": "pass"})
 
             steps.append({"step": "client.authenticated", "status": "start"})
-            self.client, self.ptid = start_authenticated_client(
-                "alice",
-                CLIENT_PORT,
-                self.station_url,
-                instance="contact-resilience",
-            )
+            self.client, self.ptid = self.start_client()
             self.register_driver(self.client)
             self.report.add_actor(
                 ActorRuntime(
                     name="alice",
-                    runtime="native-tauri-embedded-webdriver",
+                    runtime=(
+                        self.runtime_binding.cell_id
+                        if self.runtime_binding is not None
+                        else "native-tauri-embedded-webdriver"
+                    ),
                     port=self.client.port,
                     gateway_port=self.client.gateway_port,
                     profile=self.client.profile,
@@ -492,9 +520,24 @@ class ContactMessageResilienceGate(AcceptanceGate):
             steps.append({"step": "navigate.contacts", "status": "pass", "ptid": self.bob_ptid})
 
             steps.append({"step": "proxy.start", "status": "start"})
-            self.proxy = ProfileThreeContactMessageFaultProxy(self.station_url)
+            self.proxy = AcceptanceStationContactMessageFaultProxy(
+                self.station_url
+            )
             self.proxy.start()
-            configure_station(self.client, self.proxy.url)
+            if self.runtime_binding is None:
+                raise GateError("Native Desktop runtime binding is required")
+            self.transport_override = (
+                self.runtime_binding.create_transport_override(
+                    "alice",
+                    "station",
+                    self.proxy.url,
+                )
+            )
+            self.runtime_binding.apply_transport_override(
+                "alice",
+                "station",
+                self.transport_override,
+            )
             self.proxy.arm_create_direct_failure()
             steps.append({"step": "proxy.start", "status": "pass"})
 
@@ -554,26 +597,38 @@ class ContactMessageResilienceGate(AcceptanceGate):
                 f"proxy should have forwarded non-createDirect traffic, got: {evidence}",
             )
 
-            return {
+            result = {
+                "runtimeCell": (
+                    self.runtime_binding.cell_id
+                    if self.runtime_binding is not None
+                    else "native-tauri-embedded-webdriver"
+                ),
                 "bobPtid": self.bob_ptid,
                 "navigationMs": navigation_ms,
                 "proxyEvidence": evidence,
+                "sourceIdentity": source_identity,
                 "steps": steps,
             }
         finally:
-            if self.proxy:
-                try:
-                    self.proxy.disarm()
-                    self.proxy.stop()
-                except Exception:
-                    pass
-                self.proxy = None
-            if self.client:
-                try:
-                    configure_station(self.client, self.station_url)
-                except Exception:
-                    pass
+            cleanup = cleanup_preserving_primary_failure(
+                self.cleanup_runtime,
+                self.report,
+                "Contact message resilience",
+            )
+            self.report.runtime["steps"] = steps
+        result["cleanup"] = cleanup
+        return result
 
 
 if __name__ == "__main__":
-    raise SystemExit(ContactMessageResilienceGate().execute())
+    runtime = selected_runtime()
+    gate = (
+        ContactMessageResilienceGate()
+        if runtime is None
+        else ContactMessageResilienceGate(
+            manifest=runtime[0],
+            actor_manifest=runtime[1],
+            runtime_binding=runtime[2],
+        )
+    )
+    raise SystemExit(gate.execute())

@@ -2,9 +2,22 @@ import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
-import { Alert, Badge, Empty, theme, Typography } from 'antd';
-import { RefreshCw, BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff } from 'lucide-react';
-import type { IMConversationProjection } from '@peers-touch/client-chat-core';
+import { Badge, Empty, theme, Typography } from 'antd';
+import {
+  BellOff,
+  CheckCheck,
+  CircleAlert,
+  EyeOff,
+  Pin,
+  Plus,
+  RefreshCw,
+  Search,
+  UserPlus,
+  Users,
+  UsersRound,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
@@ -13,12 +26,74 @@ import { markOverlayIntent, markOverlayVisible } from '../../kernel/frontendRunt
 import { OverlayCommitProfiler } from '../../kernel/OverlayCommitProfiler';
 import { imServiceV1 } from '../../services/im-service';
 import { useNavigationBadgeStore } from '../../store/navigationBadges';
+import {
+  projectGroupAvatarSlots,
+  resolveActorIdentity,
+} from '../../store/socialProfileProjection';
+import type { DesktopIMConversationProjection } from '../../store/socialProjection';
+import { log } from '../../utils/logger';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
 
 const { Text } = Typography;
+
+function ConversationListError({
+  compact = false,
+  onRetry,
+}: {
+  compact?: boolean;
+  onRetry: () => void;
+}) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation(['chat', 'common']);
+
+  return (
+    <Flexbox
+      data-chat-session-list-error
+      data-chat-session-list-error-mode={compact ? 'stale' : 'blocking'}
+      role="alert"
+      align="center"
+      justify="center"
+      gap={8}
+      style={{
+        boxSizing: 'border-box',
+        minWidth: 0,
+        width: '100%',
+        padding: compact ? '12px' : '24px 16px',
+        background: compact ? token.colorErrorBg : 'transparent',
+        borderBottom: compact ? `1px solid ${token.colorErrorBorder}` : undefined,
+        textAlign: 'center',
+      }}
+    >
+      <CircleAlert size={compact ? 16 : 24} color={token.colorError} aria-hidden />
+      <Text
+        strong
+        style={{
+          display: 'block',
+          minWidth: 0,
+          maxWidth: '100%',
+          fontSize: 12,
+          lineHeight: 1.5,
+          whiteSpace: 'normal',
+          overflowWrap: 'break-word',
+          wordBreak: 'normal',
+        }}
+      >
+        {t('chat.social.sessionList.loadFailed')}
+      </Text>
+      <Button
+        data-chat-session-list-retry
+        size="small"
+        icon={<RefreshCw size={12} />}
+        onClick={onRetry}
+      >
+        {t('common.action.retry', { ns: 'common' })}
+      </Button>
+    </Flexbox>
+  );
+}
 
 function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const diffMs = Date.now() - d.getTime();
@@ -49,6 +124,7 @@ export function ChatSessionList() {
     groupUnreadCounts,
     lastPreviews,
     currentUserPtid,
+    currentUserProfile,
     messages,
     activeTab,
     activeSessionUlid,
@@ -62,6 +138,7 @@ export function ChatSessionList() {
     getIMConversations,
     updateConversationLocalState,
     hideConversation,
+    restoreConversation,
     loadSessions,
     loadGroups,
   } = useActiveSocialChatSlice((state) => ({
@@ -72,6 +149,7 @@ export function ChatSessionList() {
     groupUnreadCounts: state.groupUnreadCounts,
     lastPreviews: state.lastPreviews,
     currentUserPtid: state.currentUserPtid,
+    currentUserProfile: state.currentUserProfile,
     messages: state.messages,
     activeTab: state.activeTab,
     activeSessionUlid: state.activeSessionUlid,
@@ -85,6 +163,7 @@ export function ChatSessionList() {
     getIMConversations: state.getIMConversations,
     updateConversationLocalState: state.updateConversationLocalState,
     hideConversation: state.hideConversation,
+    restoreConversation: state.restoreConversation,
     loadSessions: state.loadSessions,
     loadGroups: state.loadGroups,
   }));
@@ -116,7 +195,7 @@ export function ChatSessionList() {
     ],
   );
 
-  const handleSearchSelect = async (c: any) => {
+  const handleSearchSelect = async (c: DesktopIMConversationProjection) => {
     const existingConv = getIMConversations().find(
       (conv) => conv.id === c.id || (c.peerPtid && conv.peerPtid === c.peerPtid),
     );
@@ -132,13 +211,16 @@ export function ChatSessionList() {
 
     if (c.kind === 'friend' && c.peerPtid) {
       try {
-        await imServiceV1.messaging.createDirect(c.peerPtid);
-        await loadSessions();
-        const created = getIMConversations().find((conv) => conv.peerPtid === c.peerPtid);
-        if (created) {
-          setSearchText('');
-          handleSelect(created);
-        }
+        const conversation = await imServiceV1.messaging.createDirect(c.peerPtid);
+        setSearchText('');
+        selectSession(conversation.conversationId);
+        restoreConversation('friend', conversation.conversationId);
+        loadSessions().catch((error) => {
+          log.warn('chatSessionList', 'background loadSessions after createDirect failed', {
+            conversationId: conversation.conversationId,
+            error,
+          });
+        });
       } catch (error) {
         presentError(error, {
           mapper: mapChatError,
@@ -156,7 +238,7 @@ export function ChatSessionList() {
 
     const existingPeerIds = new Set(fromConversations.map((c) => c.peerPtid).filter(Boolean));
     const myId = currentUserPtid || '';
-    const fromContacts: IMConversationProjection[] = friendRequests
+    const fromContacts: DesktopIMConversationProjection[] = friendRequests
       .filter((r) => r.status === 2)
       .map((r) => {
         const isSender = r.senderPtid === myId;
@@ -177,6 +259,7 @@ export function ChatSessionList() {
         lastActivityMs: 0,
         unread: 0,
         visibleUnread: 0,
+        authorityStationId: '',
         hidden: false,
         muted: false,
         alertEnabled: true,
@@ -202,7 +285,7 @@ export function ChatSessionList() {
     },
   ];
 
-  const handleSelect = (c: IMConversationProjection) => {
+  const handleSelect = (c: DesktopIMConversationProjection) => {
     clearChatUnread(c.id);
     if (c.kind === 'friend') {
       selectSession(c.id);
@@ -211,7 +294,7 @@ export function ChatSessionList() {
     }
   };
 
-  const buildContextMenu = useCallback((c: IMConversationProjection) => {
+  const buildContextMenu = useCallback((c: DesktopIMConversationProjection) => {
     const localState = conversationLocalState[`${c.kind}:${c.id}`];
     const isPinned = Boolean(localState?.sticky);
     const isMuted = Boolean(localState?.muted);
@@ -281,7 +364,7 @@ export function ChatSessionList() {
     };
   }, [conversationLocalState, t, updateConversationLocalState, hideConversation]);
 
-  const isRowActive = (c: IMConversationProjection) => {
+  const isRowActive = (c: DesktopIMConversationProjection) => {
     if (c.kind === 'friend') {
       return activeTab === 'friend' && c.id === activeSessionUlid;
     }
@@ -298,8 +381,8 @@ export function ChatSessionList() {
       <Flexbox
         gap={0}
         style={{
-          width: 280,
-          minWidth: 280,
+          width: 'clamp(180px, 28vw, 280px)',
+          minWidth: 180,
           flexShrink: 0,
           height: '100%',
           borderRight: `1px solid ${token.colorBorderSecondary}`,
@@ -310,6 +393,7 @@ export function ChatSessionList() {
         <Flexbox gap={8} style={{ padding: '12px 12px 0' }}>
           <Flexbox horizontal align="center" gap={8}>
             <Input
+              data-chat-session-search
               prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
               placeholder={t('chat.social.sessionList.searchPlaceholder')}
               value={searchText}
@@ -337,24 +421,14 @@ export function ChatSessionList() {
           </Flexbox>
         </Flexbox>
 
-        {loadError && (
-          <div style={{ padding: '8px 12px 0', overflow: 'hidden' }}>
-            <Alert
-              type="error"
-              showIcon
-              message={t('chat.social.sessionList.loadFailed')}
-              action={
-                <Button size="small" type="text" icon={<RefreshCw size={12} />} onClick={handleRetry}>
-                  {t('common.action.retry', { ns: 'common' })}
-                </Button>
-              }
-              style={{ fontSize: 12 }}
-            />
-          </div>
+        {loadError && visibleConversations.length > 0 && (
+          <ConversationListError compact onRetry={handleRetry} />
         )}
 
         <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 8px' }} gap={2}>
-          {visibleConversations.length === 0 ? (
+          {loadError && visibleConversations.length === 0 ? (
+            <ConversationListError onRetry={handleRetry} />
+          ) : visibleConversations.length === 0 ? (
             <Flexbox align="center" justify="center" flex={1}>
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -443,15 +517,28 @@ export function ChatSessionList() {
                           {c.kind === 'group' ? (
                             <GroupSquareAvatar
                               remoteUrl={c.avatar || undefined}
-                              members={(groupMembers[c.id] || []).slice(0, 4).map((m) => {
-                                const p = peerProfiles[m.ptid];
-                                return { name: p?.display_name?.trim() || p?.username?.trim() || m.nickname || '', avatar: p?.avatar || '' };
-                              })}
+                              members={projectGroupAvatarSlots(
+                                groupMembers[c.id] || [],
+                                (ptid, nickname) => resolveActorIdentity({
+                                  ptid,
+                                  currentUserPtid,
+                                  currentUserProfile,
+                                  peerProfiles,
+                                  sessions,
+                                  nickname,
+                                }),
+                              )}
                               name={name}
                               size={36}
                             />
                           ) : (
-                            <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
+                            <span
+                              data-chat-avatar-ptid={c.peerPtid || ''}
+                              data-chat-avatar-src={c.avatar || ''}
+                              style={{ display: 'inline-flex', flexShrink: 0 }}
+                            >
+                              <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
+                            </span>
                           )}
 
                           <Flexbox flex={1} style={{ minWidth: 0 }}>

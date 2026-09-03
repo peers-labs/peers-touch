@@ -166,16 +166,8 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
 
     def test_remote_script_blocks_competing_git_writer_and_releases(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory) / "station-three"
-            subprocess.run(
-                ["git", "init", str(repo)],
-                check=True,
-                capture_output=True,
-            )
             first = self._start_lease(directory, "first-owner")
             try:
-                index_lock = repo / ".git" / "index.lock"
-                self.assertTrue(index_lock.is_file())
                 competing = subprocess.run(
                     [
                         "/bin/sh",
@@ -200,19 +192,12 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
             finally:
                 self._release_process(first)
 
-            self.assertFalse(index_lock.exists())
+            reacquired = self._start_lease(directory, "third-owner")
+            self._release_process(reacquired)
 
-    def test_remote_script_process_exit_removes_index_lock(self) -> None:
+    def test_remote_script_process_exit_releases_lock(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory) / "station-three"
-            subprocess.run(
-                ["git", "init", str(repo)],
-                check=True,
-                capture_output=True,
-            )
             process = self._start_lease(directory, "crash-owner")
-            index_lock = repo / ".git" / "index.lock"
-            self.assertTrue(index_lock.is_file())
             process.terminate()
             process.wait(timeout=10)
             if process.stdin is not None:
@@ -221,7 +206,8 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
                 process.stdout.close()
             if process.stderr is not None:
                 process.stderr.close()
-            self.assertFalse(index_lock.exists())
+            reacquired = self._start_lease(directory, "next-owner")
+            self._release_process(reacquired)
 
     def test_provisioner_registers_remote_source_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -269,6 +255,8 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
             host="station.example",
             user="acceptance",
             deploy_path="station-three",
+            port=22,
+            known_hosts_file="",
         )
         lease.acquire.assert_called_once_with()
         lease.release.assert_called_once_with()

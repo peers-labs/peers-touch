@@ -34,12 +34,12 @@ pub mod peers_touch {
 }
 
 use interface::tauri_commands::{
-    account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
-    applets, auth, channels, chat, conversation, cron, crypto, desktop_capture, federation,
-    frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice, key_exchange, mcp,
-    memory, messaging as messaging_commands, messaging_recovery, mls, model_config, notebook,
-    notification, oauth2, oss, presence, profile, provider, realtime, search, settings, skills,
-    skills_market, social, station, system, tools, tts,
+    account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_scheduler,
+    agent_turn, agents, applets, auth, capability_authority, channels, conversation, cron, crypto,
+    desktop_capture, federation, frontend_log, frontend_telemetry, group_chat, host_events, i18n,
+    ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery, mls,
+    model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
+    runtime_evidence, search, settings, skills, skills_market, social, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -47,12 +47,266 @@ use tauri::{Emitter, Manager};
 
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
+#[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+fn configure_acceptance_window_level(window: &tauri::WebviewWindow) -> std::io::Result<()> {
+    use dispatch2::DispatchQueue;
+    use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindow, NSWindowCollectionBehavior};
+
+    let ns_window = window.ns_window().map_err(|error| {
+        std::io::Error::other(format!("acceptance native window lookup failed: {error}"))
+    })? as usize;
+    DispatchQueue::main().exec_async(move || {
+        let ns_window = unsafe { &*(ns_window as *mut NSWindow) };
+        let collection_behavior = ns_window.collectionBehavior()
+            | NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::FullScreenAuxiliary;
+        ns_window.setCollectionBehavior(collection_behavior);
+        ns_window.setLevel(NSScreenSaverWindowLevel);
+    });
+    Ok(())
+}
+
+#[cfg(all(feature = "acceptance-webdriver", not(target_os = "macos")))]
+fn configure_acceptance_window_level(_window: &tauri::WebviewWindow) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+#[tauri::command]
+fn acceptance_yield_activation(target_pid: i32) -> error::AppResult<serde_json::Value> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSRunningApplication};
+
+    let Some(main_thread) = MainThreadMarker::new() else {
+        return error::AppResult::fail(
+            error::ErrorCode::InternalError,
+            "acceptance activation yield must run on the AppKit main thread",
+            Some(serde_json::json!({ "targetPid": target_pid })),
+        );
+    };
+    let Some(target) = NSRunningApplication::runningApplicationWithProcessIdentifier(target_pid)
+    else {
+        return error::AppResult::fail(
+            error::ErrorCode::NotFound,
+            "acceptance activation target process is unavailable",
+            Some(serde_json::json!({ "targetPid": target_pid })),
+        );
+    };
+
+    NSApplication::sharedApplication(main_thread).yieldActivationToApplication(&target);
+    error::AppResult::success(serde_json::json!({ "targetPid": target_pid }))
+}
+
+#[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+#[tauri::command]
+#[allow(deprecated)]
+fn acceptance_request_activation() -> error::AppResult<serde_json::Value> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSApplication;
+
+    let Some(main_thread) = MainThreadMarker::new() else {
+        return error::AppResult::fail(
+            error::ErrorCode::InternalError,
+            "acceptance activation request must run on the AppKit main thread",
+            None,
+        );
+    };
+
+    NSApplication::sharedApplication(main_thread).activateIgnoringOtherApps(true);
+    error::AppResult::success(serde_json::json!({ "requested": true }))
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+fn acceptance_window_x(
+    monitor_x: f64,
+    monitor_width: f64,
+    window_width: f64,
+    slot: u32,
+    count: u32,
+) -> Option<f64> {
+    if window_width > monitor_width {
+        return None;
+    }
+
+    let available_span = monitor_width - window_width;
+    let slot_ratio = if count <= 1 {
+        0.0
+    } else {
+        f64::from(slot) / f64::from(count - 1)
+    };
+    Some(monitor_x + available_span * slot_ratio)
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+fn position_acceptance_window(
+    window: &tauri::WebviewWindow,
+    monitor_x: f64,
+    monitor_width: f64,
+    window_y: f64,
+    scale: f64,
+    slot: u32,
+    count: u32,
+) -> std::io::Result<()> {
+    let actual_window_width = window
+        .outer_size()
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window size lookup failed: {error}"))
+        })?
+        .to_logical::<f64>(scale)
+        .width;
+    let window_x = acceptance_window_x(monitor_x, monitor_width, actual_window_width, slot, count)
+        .ok_or_else(|| {
+            std::io::Error::other(format!(
+                "acceptance window width {actual_window_width} exceeds monitor width {monitor_width}"
+            ))
+        })?;
+    window
+        .set_position(tauri::LogicalPosition::new(window_x, window_y))
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window positioning failed: {error}"))
+        })
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+fn configure_acceptance_window(
+    window: &tauri::WebviewWindow,
+    minimum_window_width: f64,
+) -> std::io::Result<()> {
+    let slot = std::env::var("PT_ACCEPTANCE_WINDOW_SLOT")
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window slot is missing: {error}"))
+        })?
+        .parse::<u32>()
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window slot is invalid: {error}"))
+        })?;
+    let count = std::env::var("PT_ACCEPTANCE_WINDOW_COUNT")
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window count is missing: {error}"))
+        })?
+        .parse::<u32>()
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window count is invalid: {error}"))
+        })?;
+    if count == 0 || slot >= count {
+        return Err(std::io::Error::other(format!(
+            "acceptance window slot {slot} is outside window count {count}"
+        )));
+    }
+
+    let monitor = window
+        .current_monitor()
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance monitor lookup failed: {error}"))
+        })?
+        .ok_or_else(|| std::io::Error::other("acceptance window has no current monitor"))?;
+    let scale = monitor.scale_factor();
+    let monitor_size = monitor.size();
+    let monitor_position = monitor.position();
+    let logical_width = f64::from(monitor_size.width) / scale;
+    let logical_height = f64::from(monitor_size.height) / scale;
+    let logical_x = f64::from(monitor_position.x) / scale;
+    let logical_y = f64::from(monitor_position.y) / scale;
+    let window_width = (logical_width / f64::from(count)).max(minimum_window_width);
+    let window_height = (logical_height - 64.0).min(800.0);
+    let window_y = logical_y + 32.0;
+
+    window
+        .set_position(tauri::LogicalPosition::new(logical_x, window_y))
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window positioning failed: {error}"))
+        })?;
+    let placement_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let positioned_window = window.clone();
+    let expected_resize_width = window_width * scale;
+    window.on_window_event(move |event| {
+        let tauri::WindowEvent::Resized(size) = event else {
+            return;
+        };
+        if (f64::from(size.width) - expected_resize_width).abs() > 1.0
+            || placement_started.swap(true, std::sync::atomic::Ordering::AcqRel)
+        {
+            return;
+        }
+
+        let positioned_window = positioned_window.clone();
+        std::thread::spawn(move || {
+            if let Err(error) = position_acceptance_window(
+                &positioned_window,
+                logical_x,
+                logical_width,
+                window_y,
+                scale,
+                slot,
+                count,
+            ) {
+                tracing::error!(error = %error, "acceptance window placement failed");
+            }
+        });
+    });
+    window
+        .set_size(tauri::LogicalSize::new(window_width, window_height))
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window resize failed: {error}"))
+        })?;
+    window.show().map_err(|error| {
+        std::io::Error::other(format!("acceptance window show failed: {error}"))
+    })?;
+    window.set_always_on_top(true).map_err(|error| {
+        std::io::Error::other(format!("acceptance window layering failed: {error}"))
+    })?;
+    configure_acceptance_window_level(window)?;
+    Ok(())
+}
+
+#[cfg(all(test, feature = "acceptance-webdriver"))]
+mod acceptance_window_tests {
+    use super::acceptance_window_x;
+
+    #[test]
+    fn three_actor_windows_stay_within_monitor_bounds() {
+        let monitor_width = 1920.0;
+        for (window_width, expected_positions) in [
+            (860.0, vec![0.0, 530.0, 1060.0]),
+            (862.0, vec![0.0, 529.0, 1058.0]),
+        ] {
+            let positions = (0..3)
+                .map(|slot| {
+                    acceptance_window_x(0.0, monitor_width, window_width, slot, 3)
+                        .expect("window should fit")
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(positions, expected_positions);
+            assert!(positions
+                .iter()
+                .all(|position| position + window_width <= monitor_width));
+        }
+    }
+
+    #[test]
+    fn single_actor_window_uses_monitor_origin() {
+        assert_eq!(
+            acceptance_window_x(320.0, 1920.0, 1200.0, 0, 1),
+            Some(320.0)
+        );
+    }
+
+    #[test]
+    fn window_wider_than_monitor_fails_closed() {
+        assert_eq!(acceptance_window_x(0.0, 800.0, 862.0, 0, 1), None);
+    }
+}
+
 fn main() {
     let ctx = bootstrap::run();
 
     tracing::info!("Launching Tauri application");
 
     let app_state = Arc::new(ctx.app_state);
+    let capability_worker_supervisor = Arc::new(
+        application::desktop_executor_worker::CapabilityWorkerSupervisor::new(app_state.clone()),
+    );
 
     let presence_supervisor = Arc::new(application::presence::PresenceSupervisor::new());
     let actor_device_identity = Arc::new(domain::actor_device_identity::ActorDeviceIdentity::new());
@@ -69,11 +323,28 @@ fn main() {
 
     builder
         .manage(app_state)
+        .manage(capability_worker_supervisor)
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
         .manage(presence_supervisor)
         .manage(actor_device_identity)
         .manage(mls_group_manager)
         .setup(|app| {
+            #[cfg(feature = "acceptance-webdriver")]
+            if std::env::var_os("PT_ACCEPTANCE_WINDOW_SLOT").is_some() {
+                let minimum_window_width = app
+                    .config()
+                    .app
+                    .windows
+                    .iter()
+                    .find(|config| config.label == "main")
+                    .and_then(|config| config.min_width)
+                    .unwrap_or_default();
+                let window = app
+                    .get_webview_window("main")
+                    .ok_or_else(|| std::io::Error::other("acceptance main window is missing"))?;
+                configure_acceptance_window(&window, minimum_window_width)?;
+            }
+
             let resource_dir = app.path()
                 .resource_dir()
                 .unwrap_or_else(|e| {
@@ -125,6 +396,15 @@ fn main() {
             #[cfg(debug_assertions)]
             interface::http_gateway::start(Arc::clone(state.inner()), app.handle().clone());
             application::desktop_executor_worker::start(Arc::clone(state.inner()));
+            let capability_supervisor = app
+                .state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
+            if capability_supervisor.starts_automatically() {
+                capability_supervisor.start().map_err(|error| {
+                    std::io::Error::other(format!(
+                        "start client capability supervisor: {error}"
+                    ))
+                })?;
+            }
             if let Err(e) = state.i18n.deploy_builtin_packs(&resource_dir) {
                 tracing::error!(error = %e, "Failed to deploy built-in i18n packs");
             }
@@ -164,6 +444,10 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+            acceptance_yield_activation,
+            #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+            acceptance_request_activation,
             interface::tauri_commands::meta_contract_version,
             frontend_log::frontend_log,
             frontend_telemetry::frontend_telemetry_upload,
@@ -182,20 +466,6 @@ fn main() {
             settings::settings_set,
             settings::settings_reset,
             desktop_capture::chat_screenshot_shortcut_register,
-            chat::chat_list_conversations,
-            chat::chat_list_messages,
-            chat::chat_send_message,
-            chat::chat_mark_read,
-            chat::chat_delete_conversation,
-            chat::chat_rename_conversation,
-            chat::chat_duplicate_conversation,
-            chat::chat_smart_rename_conversation,
-            chat::chat_set_conversation_model,
-            chat::chat_delete_message,
-            chat::chat_update_message,
-            chat::chat_stop,
-            chat::chat_completion_once,
-            chat::chat_completion_stream,
             social::social_create_moment,
             social::social_get_moment,
             social::social_delete_moment,
@@ -271,28 +541,75 @@ fn main() {
             agents::agents_update,
             agents::agents_delete,
             agents::agents_duplicate,
-            agents::agents_export_package,
-            agents::agents_import_package,
             agents::agents_search,
-            agents::agents_list_sessions,
             agent_turn::agent_execute_turn,
             agent_turn::agent_execute_turn_stream,
             agent_turn::agent_cancel_turn_stream,
+            agent_turn::agent_disconnect_turn_stream,
+            agent_turn::agent_cancel_turn,
+            agent_turn::agent_replay_turn_stream,
+            agent_turn::agent_cancel_turn_replay_stream,
+            agent_turn::agent_turn_queue_list,
+            agent_turn::agent_turn_queue_cancel,
             agent_turn::agent_turn_trace_list,
             agent_turn::agent_turn_trace_get,
-            agent_turn::agent_resolve_local_tool_request,
-            agent_turn::agent_decide_tool_approval,
+            agent_turn::agent_turn_diagnostics_export,
+            agent_turn::agent_submit_tool_decision,
+            runtime_evidence::agent_runtime_profile_effective,
+            capability_authority::agent_capability_manifest_list,
+            capability_authority::agent_capability_binding_list,
+            capability_authority::agent_capability_binding_upsert,
+            capability_authority::agent_capability_binding_delete,
+            capability_authority::agent_capability_readiness,
+            capability_authority::agent_knowledge_descriptor_create,
+            capability_authority::agent_knowledge_descriptor_update,
+            capability_authority::agent_knowledge_descriptor_list,
+            capability_authority::agent_knowledge_descriptor_tombstone,
+            capability_authority::agent_package_export,
+            capability_authority::agent_package_import,
+            runtime_evidence::agent_capability_sessions,
+            runtime_evidence::agent_browser_capability_session_open,
+            runtime_evidence::agent_browser_capability_session_close,
+            runtime_evidence::agent_runtime_activity_station,
+            runtime_evidence::agent_runtime_activity_local,
+            runtime_evidence::agent_capability_session_snapshot,
             agent_turn::agent_conversation_list,
             agent_turn::agent_conversation_get,
             agent_turn::agent_conversation_create,
             agent_turn::agent_conversation_messages,
+            agent_turn::agent_conversation_update,
             agent_turn::agent_conversation_archive,
+            agent_turn::agent_conversation_restore,
+            agent_turn::agent_retry_turn,
+            agent_turn::agent_regenerate_turn,
+            agent_turn::agent_edit_and_resend,
+            agent_turn::agent_select_active_branch,
+            agent_turn::agent_tombstone_message,
+            agent_turn::agent_thread_create,
+            agent_turn::agent_thread_list,
+            agent_turn::agent_thread_messages,
+            agent_turn::agent_group_create,
+            agent_turn::agent_group_update,
+            agent_turn::agent_group_delete,
+            agent_turn::agent_group_list,
+            agent_turn::topic_comment_create,
+            agent_turn::topic_comment_delete,
+            agent_turn::topic_comment_list,
+            agent_turn::agent_task_create,
+            agent_turn::agent_task_list,
+            agent_turn::agent_task_status,
+            agent_turn::agent_task_delete,
+            agent_turn::agent_task_subtask_add,
+            agent_turn::agent_task_subtask_complete,
+            agent_turn::agent_message_translate,
             agent_orchestration::agent_collaboration_create,
             agent_orchestration::agent_collaboration_get,
             agent_orchestration::agent_collaboration_list,
             agent_orchestration::agent_collaboration_list_events,
             agent_orchestration::agent_collaboration_subscribe,
             agent_orchestration::agent_collaboration_cancel_stream,
+            agent_events::agent_events_subscribe,
+            agent_events::agent_events_cancel,
             agent_orchestration::agent_collaboration_cancel_task,
             agent_orchestration::agent_collaboration_resume_task,
             agent_orchestration::agent_collaboration_submit_node_result,
@@ -654,6 +971,14 @@ fn main() {
                 }
             }
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                let capability_supervisor = app
+                    .state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
+                if let Err(error) = capability_supervisor.shutdown() {
+                    tracing::warn!(
+                        error = %error,
+                        "client capability supervisor shutdown failed"
+                    );
+                }
                 let state = app.state::<Arc<state::AppState>>();
                 if let Err(error) = state.messaging_engines.deactivate_all() {
                     tracing::warn!(
