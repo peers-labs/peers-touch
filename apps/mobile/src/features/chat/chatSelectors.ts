@@ -8,6 +8,7 @@
  */
 
 import { useMemo } from 'react';
+import { useShallow } from 'zustand/shallow';
 import {
   buildChatConversationSurfaceItems,
   filterChatMessagesAfterClearedAt,
@@ -59,13 +60,17 @@ export function useConversationListProjection(
   friendSettings: Record<string, FriendConversationSettings>,
   groupSettingsByUlid: Record<string, GroupSettings>,
 ): ConversationListProjection {
-  const sessions = useSocialStore((s) => s.sessions);
-  const sessionMessages = useSocialStore((s) => s.messages);
-  const currentUserPtid = useSocialStore((s) => s.currentUserPtid);
-  const peerOnline = useSocialStore((s) => s.peerOnline);
-  const groups = useGroupStore((s) => s.groups);
-  const groupMessagesByUlid = useGroupStore((s) => s.messages);
-  const groupUnreadCounts = useGroupStore((s) => s.unreadCounts);
+  const { sessions, sessionMessages, currentUserPtid, peerOnline } = useSocialStore(useShallow((s) => ({
+    sessions: s.sessions,
+    sessionMessages: s.messages,
+    currentUserPtid: s.currentUserPtid,
+    peerOnline: s.peerOnline,
+  })));
+  const { groups, groupMessagesByUlid, groupUnreadCounts } = useGroupStore(useShallow((s) => ({
+    groups: s.groups,
+    groupMessagesByUlid: s.messages,
+    groupUnreadCounts: s.unreadCounts,
+  })));
 
   const friendConversations = useMemo(
     () => projectConversations({ sessions, messages: sessionMessages, currentUserPtid, peerOnline }),

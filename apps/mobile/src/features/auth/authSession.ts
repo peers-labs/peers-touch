@@ -491,7 +491,7 @@ function scopedAccountHistoryKey(stationPeerId: string): string {
 }
 
 function safeScopePart(value: string): string {
-  return encodeURIComponent(value);
+  return value.replace(/[^A-Za-z0-9._-]/g, '_');
 }
 
 export function isAccessGranted(decision: AccessDecision | null): boolean {
