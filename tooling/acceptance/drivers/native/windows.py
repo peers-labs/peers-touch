@@ -351,19 +351,49 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
         hwnd = windows[-1]
         if self._is_window_minimized(hwnd):
             _user32.ShowWindow(hwnd, _SW_RESTORE)
-        # AllowSetForegroundWindow for the current process
-        _user32.AllowSetForegroundWindow(process_id)
-        if not _user32.SetForegroundWindow(hwnd):
-            # Fallback: use an Alt-key trick to unlock foreground permission
-            _send_inputs(
-                _make_key_input(0xA4, 0),  # VK_LMENU press
-                _make_key_input(0xA4, _KEYEVENTF_KEYUP),
-            )
+        current_thread = _kernel32.GetCurrentThreadId()
+        target_thread = _user32.GetWindowThreadProcessId(hwnd, None)
+        foreground = _user32.GetForegroundWindow()
+        foreground_thread = (
+            _user32.GetWindowThreadProcessId(foreground, None)
+            if foreground
+            else 0
+        )
+        attached_threads: list[int] = []
+        try:
+            for thread_id in {target_thread, foreground_thread}:
+                if (
+                    thread_id
+                    and thread_id != current_thread
+                    and _user32.AttachThreadInput(
+                        current_thread,
+                        thread_id,
+                        True,
+                    )
+                ):
+                    attached_threads.append(thread_id)
+            _user32.AllowSetForegroundWindow(process_id)
+            _user32.BringWindowToTop(hwnd)
+            _user32.SetActiveWindow(hwnd)
+            _user32.SetFocus(hwnd)
             if not _user32.SetForegroundWindow(hwnd):
-                raise DriverError(
-                    f"Win32 Native activation failed for process {process_id}"
+                _send_inputs(
+                    _make_key_input(0xA4, 0),  # VK_LMENU press
+                    _make_key_input(0xA4, _KEYEVENTF_KEYUP),
                 )
-        _user32.BringWindowToTop(hwnd)
+                _user32.SetForegroundWindow(hwnd)
+        finally:
+            for thread_id in reversed(attached_threads):
+                _user32.AttachThreadInput(
+                    current_thread,
+                    thread_id,
+                    False,
+                )
+        foreground = _user32.GetForegroundWindow()
+        if not foreground or self._window_process_id(foreground) != process_id:
+            raise DriverError(
+                f"Win32 Native activation failed for process {process_id}"
+            )
 
     def post_mouse(
         self,
