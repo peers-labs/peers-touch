@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from tooling.acceptance.provisioners.windows_desktop_broker import (
     BrokerError,
@@ -154,6 +155,40 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
                 broker.acquire(
                     {"runId": "run-1", "expiresAtEpoch": 1_000}
                 )
+
+    def test_actor_control_directory_is_scoped_by_run(self) -> None:
+        scheduler = _RecordingScheduler()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "runtime"
+            broker = WindowsDesktopBroker(
+                root,
+                desktop_user="administrator",
+                scheduler=scheduler,  # type: ignore[arg-type]
+                now=lambda: 1_000.0,
+            )
+            broker.acquire({"runId": "run-1", "expiresAtEpoch": 2_000})
+
+            with patch.object(
+                broker,
+                "_wait_for_state",
+                return_value={"status": "RUNNING", "processId": 42},
+            ):
+                broker.launch_actor(
+                    {
+                        "runId": "run-1",
+                        "actor": "alice",
+                        "executable": "C:\\runtime\\desktop.exe",
+                        "storageRoot": "C:\\runtime\\storage",
+                        "logPath": "C:\\runtime\\desktop.log",
+                        "webdriverPort": 4645,
+                        "gatewayPort": 3230,
+                    }
+                )
+
+            self.assertTrue(
+                (root / "actors" / "run-1" / "alice" / "launch.json").is_file()
+            )
+            self.assertFalse((root / "actors" / "alice").exists())
 
     def test_adapter_worker_binds_synced_source_before_import(self) -> None:
         worker = WindowsDesktopBroker._adapter_worker_script()

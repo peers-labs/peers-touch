@@ -284,6 +284,7 @@ class WindowsDesktopBroker:
     def launch_actor(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         lease = self._require_lease(payload)
         actor = _canonical_id(payload.get("actor"), "actor")
+        run_id = str(lease["runId"])
         actors = lease.get("actors")
         if not isinstance(actors, dict):
             raise BrokerError("broker lease actor state is invalid")
@@ -309,7 +310,7 @@ class WindowsDesktopBroker:
         ):
             raise BrokerError("actor arguments must be strings")
 
-        actor_root = self.root / "actors" / actor
+        actor_root = self.root / "actors" / run_id / actor
         request_path = actor_root / "launch.json"
         worker_path = actor_root / "worker.ps1"
         state_path = actor_root / "state.json"
@@ -358,7 +359,7 @@ class WindowsDesktopBroker:
             try:
                 self.scheduler.unregister(task_name)
             finally:
-                shutil.rmtree(actor_root, ignore_errors=True)
+                self._remove_tree(actor_root)
             raise
 
         actors[actor] = {
@@ -420,7 +421,8 @@ class WindowsDesktopBroker:
             pass
         if not preserve_state:
             shutil.rmtree(Path(str(actor_state["storageRoot"])), ignore_errors=True)
-        shutil.rmtree(self.root / "actors" / actor, ignore_errors=True)
+        actor_root = self.root / "actors" / str(lease["runId"]) / actor
+        self._remove_tree(actor_root)
         actors.pop(actor, None)
         self._write_json(self.lease_path, lease)
         return {
@@ -533,12 +535,28 @@ class WindowsDesktopBroker:
         if failures:
             raise BrokerError("broker cleanup failed: " + "; ".join(failures))
         self.lease_path.unlink(missing_ok=True)
-        shutil.rmtree(self.root, ignore_errors=True)
+        self._remove_tree(self.root)
+        if self.root.exists():
+            raise BrokerError("broker runtime root remains after cleanup")
         return {
             "clean": not self.root.exists(),
             "runId": lease["runId"],
             "expired": payload.get("expired") is True,
         }
+
+    @staticmethod
+    def _remove_tree(path: Path) -> None:
+        if not path.exists():
+            return
+        target = path
+        if os.name == "nt":
+            absolute = str(path.resolve())
+            if absolute.startswith("\\\\"):
+                absolute = "\\\\?\\UNC\\" + absolute[2:]
+            elif not absolute.startswith("\\\\?\\"):
+                absolute = "\\\\?\\" + absolute
+            target = Path(absolute)
+        shutil.rmtree(target)
 
     def audit(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         if not self.lease_path.exists():
