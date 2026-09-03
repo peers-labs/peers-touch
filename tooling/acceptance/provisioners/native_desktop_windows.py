@@ -1299,7 +1299,7 @@ class NativeDesktopWindowsProvisioner:
             f'set "PROTOC={self.profile.protoc_path}" && '
             f'cd /d "{remote_source}" && '
             "pnpm install --frozen-lockfile && "
-            "set VITE_ACCEPTANCE_HARNESS=1 && "
+            'set "VITE_ACCEPTANCE_HARNESS=1" && '
             "pnpm --dir apps/desktop run build && "
             "cd apps\\desktop\\src-tauri && "
             "set TAURI_CONFIG={\"app\":{\"withGlobalTauri\":true}} && "
