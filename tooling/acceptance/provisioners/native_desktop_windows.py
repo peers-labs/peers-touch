@@ -1412,7 +1412,6 @@ class NativeDesktopWindowsProvisioner:
         )
 
     def _probe_adapter(self, process_id: int) -> dict[str, Any]:
-        focus_deadline = time.monotonic() + 10
         control: dict[str, Any] = {}
         screenshot = self.execute_adapter("capture_screenshot", {})
         width, height = _bmp_geometry(screenshot.get("content"))
@@ -1434,10 +1433,10 @@ class NativeDesktopWindowsProvisioner:
                     "point": center,
                 },
             )
+        focus_deadline = time.monotonic() + 10
         while time.monotonic() < focus_deadline:
-            self.execute_adapter("activate_process", {"processId": process_id})
             control = self.execute_adapter(
-                "focused_control",
+                "activate_process",
                 {"processId": process_id},
             )
             if (

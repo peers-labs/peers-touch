@@ -165,6 +165,15 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
         self.assertLess(error_boundary, source_binding)
         self.assertLess(source_binding, adapter_import)
 
+    def test_activation_observes_focus_in_the_same_worker(self) -> None:
+        worker = WindowsDesktopBroker._adapter_worker_script()
+        activation = worker.index("adapter.activate_process(process_id)")
+        observation = worker.index(
+            "adapter.focused_control(process_id).to_dict()"
+        )
+
+        self.assertLess(activation, observation)
+
 
 if __name__ == "__main__":
     unittest.main()

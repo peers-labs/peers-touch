@@ -747,7 +747,9 @@ try:
     adapter = Win32NativeDesktopAdapter()
 
     if operation == "activate_process":
-        result = adapter.activate_process(int(payload["processId"])) or {}
+        process_id = int(payload["processId"])
+        adapter.activate_process(process_id)
+        result = adapter.focused_control(process_id).to_dict()
     elif operation == "post_mouse":
         actions = tuple(MouseAction(item) for item in payload["actions"])
         result = adapter.post_mouse(actions, tuple(payload["point"])) or {}
