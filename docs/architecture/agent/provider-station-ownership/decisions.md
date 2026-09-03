@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v1.0
-> **Created**: 2026-07-23 | **Updated**: 2026-07-23
+> **Created**: 2026-07-23 | **Updated**: 2026-09-03
 > **Owner**: Agent Team
 
 ---
@@ -78,7 +78,7 @@
 
 **Context**: Multi-actor Station serves different users. Each user may have different API keys for the same provider (e.g., both Actor A and Actor B use OpenAI but with their own keys).
 
-**Decision**: Credential pool is scoped by `actor_id`. Queries always include actor filter. No global credential sharing by default.
+**Decision**: Credential pool is scoped by canonical `actor_ptid`. Queries always include the PTID filter. No global credential sharing by default.
 
 **Rationale**:
 - Prevents credential leakage between actors.
@@ -90,7 +90,7 @@
 - Admin-managed shared pool with per-actor override — deferred: can be added later as an explicit opt-in feature without breaking per-actor default.
 
 **Consequences**:
-- Every credential table query adds `AND actor_id = ?`.
+- Every credential table query adds `AND actor_ptid = ?`.
 - Station must never fall back to "any available credential" when actor-specific one is missing.
 - Error message must clearly state "no credentials for provider X" rather than silently using another actor's key.
 
