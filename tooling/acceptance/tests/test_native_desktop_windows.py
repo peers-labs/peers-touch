@@ -198,6 +198,24 @@ class WindowsProvisionerContractTest(unittest.TestCase):
                 }
             )
 
+    def test_probe_uses_atomic_activation_focus_observation(self) -> None:
+        source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
+        probe = source[
+            source.index("    def _probe_adapter("):
+            source.index("    def _manifest(")
+        ]
+
+        self.assertIn(
+            'control = self.execute_adapter(\n'
+            '                "activate_process",',
+            probe,
+        )
+        self.assertNotIn(
+            'self.execute_adapter(\n'
+            '                "focused_control",',
+            probe,
+        )
+
     def test_broker_request_contains_run_actor_and_is_base64_json(self) -> None:
         transport = _BrokerTransport(
             {
