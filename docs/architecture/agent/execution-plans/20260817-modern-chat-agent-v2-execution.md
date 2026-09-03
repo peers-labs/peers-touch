@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY` and login readiness; Agent PTID persistence and provider/model admission now pass, and exact-source run `20260903T160825190459Z-903acc3e2b8b66d27beb9238495fea88` advanced to a Desktop protojson `int64` decode failure for credential version; the wire normalization correction awaits exact-source runtime proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, and provider/model admission; exact-source run `20260903T162716544607Z-786ee7e3e26608916e4ab1187a233810` advanced to `agent.capabilityReadinessFailed`, exposing a merge regression where Desktop Agent CRUD still used local JSON instead of Station authority; the Station-backed CRUD restoration awaits exact-source runtime proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4536,6 +4536,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   adapter now accepts both canonical string and numeric representations for
   provider, model, and credential versions. Provisioner cleanup completed
   `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260903T162716544607Z-786ee7e3e26608916e4ab1187a233810`
+  (aggregate `20260903T162716350860Z-3b94887a35c0da89be12c263be7a72bf`)
+  on `359827c79c343fb7935bc49956208f8d947ac8ad` crossed credential
+  decoding and advanced to `agent.capabilityReadinessFailed`. The failure
+  exposed a merge omission: Desktop `agents_*` commands still mutated a local
+  JSON store, while capability readiness correctly resolved the Agent from
+  Station. The accepted `MCA-D01` Station authority path is restored manually
+  from the prior implementation without overwriting newer PTID, package, or
+  orchestration behavior. Native and Browser commands now pass authenticated
+  Station context for Agent CRUD; the local store remains a projection plus
+  selected/default UI preference only. Cleanup completed
+  `DONE / PROVEN / passed`; runtime proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
