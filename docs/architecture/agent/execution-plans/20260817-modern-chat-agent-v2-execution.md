@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, and Station-backed Agent readiness; exact-source run `20260903T175346160142Z-edda0ef91ef59e6e42896d4da3a00cfb` proved Native/Browser auth session isolation and advanced to Browser capability-session setup, where the HTTP gateway lacked the runtime-evidence command surface; gateway parity is implemented and awaits exact-source runtime proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, and Native/Browser capability sessions; exact-source run `20260903T181834402679Z-c7bf17d273b4a89474633151d2517ca2` advanced to the first Browser AS-F01 tuple, where the HTTP gateway lacked Agent feedback readback; feedback gateway parity is implemented and awaits exact-source runtime proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4581,6 +4581,27 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   explicit Browser supervisor start/stop, local session snapshot and negative
   controls, Station session readback, and Station/local runtime activity
   snapshots. The focused Agent static suite passes 59 tests and Desktop Rust
+  `cargo check --locked --features e2e-testing` passes. Provisioner cleanup
+  completed `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN`
+  pending an exact-source rerun.
+- A source-mismatch preflight
+  `20260903T181649855274Z-9dd2b8b050bddb586247d91f40252cf8`
+  (aggregate `20260903T181649521591Z-e53e39981c2a30a378469ac530e7c869`)
+  correctly blocked before product execution because the disposable Station
+  still attested `bf100c1a5ae041e8c446af00f2cfcc43d0df16e9` while the client
+  had advanced to `23b2002946291b747a7ad5752a41efb5cbd7f8fd`. Cleanup passed,
+  and the Station was then redeployed to the exact client commit.
+- Exact-source run
+  `20260903T181834402679Z-c7bf17d273b4a89474633151d2517ca2`
+  (aggregate `20260903T181834188338Z-c1b5a01c9960f34b9feab73fe1c7c6ad`)
+  on `23b2002946291b747a7ad5752a41efb5cbd7f8fd` proved the Browser
+  capability-session command path and entered
+  `foundation-browser-direct / AS-F01 / en / single / sample-001`. It then
+  failed because `agent_list_turn_feedback`, already present in the shared
+  application service and Native Tauri command surface, was absent from the
+  HTTP gateway. The Browser gateway now routes both feedback submission and
+  exact-turn feedback readback through the same Station-backed application
+  service. The focused Agent static suite passes 59 tests and Desktop Rust
   `cargo check --locked --features e2e-testing` passes. Provisioner cleanup
   completed `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN`
   pending an exact-source rerun.
