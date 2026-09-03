@@ -80,11 +80,48 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     markLocalIdentityAction();
     const resp = await api.authLogin({ account, password });
     get().activateAuthenticatedSession(resp);
-    await runIdentityPipeline({
+    // #region debug-point D-H:session-activated
+    void fetch('http://127.0.0.1:7781/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'foundation-login-readiness',
+        runId: 'post-fix-2',
+        hypothesisId: 'D-H',
+        location: 'session.ts:loginWithPassword:activated',
+        msg: '[DEBUG] authenticated session activated',
+        data: {
+          responsePtidValid: Boolean(resp.actor_ptid?.startsWith('ptid:')),
+          sessionAuthenticated: get().authenticated,
+          sessionActorPresent: Boolean(get().currentUser?.actorPtid),
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    const pipeline = await runIdentityPipeline({
       reason: 'login',
       actorPtid: resp.actor_ptid ?? null,
       loginMethod: 'password',
     });
+    // #region debug-point E-G:session-after-pipeline
+    void fetch('http://127.0.0.1:7781/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'foundation-login-readiness',
+        runId: 'post-fix-2',
+        hypothesisId: 'E-G',
+        location: 'session.ts:loginWithPassword:pipeline-complete',
+        msg: '[DEBUG] identity pipeline completed',
+        data: {
+          pipelineOk: pipeline.ok,
+          failedHandlers: pipeline.failures.map((failure) => failure.handlerName),
+          sessionAuthenticated: get().authenticated,
+          sessionActorPresent: Boolean(get().currentUser?.actorPtid),
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
   },
 
   accessStart: async () => {
