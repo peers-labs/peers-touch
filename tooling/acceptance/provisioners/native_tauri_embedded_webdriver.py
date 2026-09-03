@@ -14,11 +14,15 @@ from tooling.acceptance.core.attestation import (
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioner import load_env_file
 from tooling.acceptance.core.provisioning import (
+    ClientRuntime,
     EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
+    ServiceAttestation,
 )
-from tooling.acceptance.fixtures.chat_native_actors import produce_actor_manifest
+from tooling.acceptance.fixtures.chat_native_actors import (
+    produce_bound_actor_manifest,
+)
 
 from .home_station import HomeStationProvisioner
 
@@ -95,8 +99,8 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
     def _provision_station_services(
         self,
         manifest: RuntimeManifest,
-    ) -> dict[str, object]:
-        services: dict[str, object] = {}
+    ) -> dict[str, ServiceAttestation]:
+        services: dict[str, ServiceAttestation] = {}
         local_proto_digest = source_proto_digest(REPO_ROOT)
         for service_id, (profile_name, deployment_environment) in (
             _SERVICE_PROFILES.items()
@@ -183,6 +187,45 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             services[service_id] = attestation
         return services
 
+    @staticmethod
+    def _actor_role_targets(
+        roles: tuple[str, ...],
+        clients: tuple[ClientRuntime, ...],
+        services: dict[str, ServiceAttestation],
+    ) -> dict[str, tuple[str, str]]:
+        targets: dict[str, tuple[str, str]] = {}
+        for role in roles:
+            service_ids = {
+                binding.service_id
+                for client in clients
+                if client.actor == role
+                for binding_role, binding in client.service_bindings.items()
+                if binding_role == "station"
+            }
+            if len(service_ids) != 1:
+                raise BlockedError(
+                    reason=(
+                        f"Native Chat actor role {role!r} must bind to exactly "
+                        "one fixture Station"
+                    ),
+                    resource=f"fixture-binding:{role}",
+                )
+            service_id = service_ids.pop()
+            service = services.get(service_id)
+            if service is None:
+                raise BlockedError(
+                    reason=(
+                        f"Native Chat actor role {role!r} binds unknown "
+                        f"service {service_id!r}"
+                    ),
+                    resource=f"fixture-binding:{role}",
+                )
+            targets[role] = (
+                service.endpoint,
+                service.deployment_environment,
+            )
+        return targets
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
@@ -239,16 +282,18 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 or os.environ.get(authorization_name) == "1"
             )
             roles = self._actor_roles(gate_id)
-            _, _, actor_ref = produce_actor_manifest(
+            clients = self._clients(gate_id, manifest.run_id, slot)
+            _, _, actor_ref = produce_bound_actor_manifest(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
-                station_url=fixture_station_url,
-                deployment_environment=fixture_environment,
-                roles=roles,
+                role_targets=self._actor_role_targets(
+                    roles,
+                    clients,
+                    services,
+                ),
                 credential_ref=credential_refs[0] if credential_refs else "",
                 reset_authorized=reset_authorized,
             )
-            clients = self._clients(gate_id, manifest.run_id, slot)
             manifest = dataclasses.replace(
                 manifest,
                 actor_manifest_ref=actor_ref,

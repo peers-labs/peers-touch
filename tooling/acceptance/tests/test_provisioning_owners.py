@@ -29,6 +29,7 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
     _login_session,
     produce_actor_manifest,
+    produce_bound_actor_manifest,
     reset_fixture,
 )
 
@@ -637,6 +638,60 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             self.assertEqual(
                 store.resolve(ArtifactRef.from_dict(reference)),
                 path,
+            )
+            run.close()
+
+    def test_bound_actor_manifest_uses_each_roles_declared_station(self) -> None:
+        from tooling.acceptance.core.provisioning import ActorIdentity
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("test-gate", source={})
+            with patch.dict(
+                os.environ,
+                run.subprocess_environment(os.environ),
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_actors.REPO_ROOT",
+                worktree,
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_actors.verify_reset_target"
+            ) as verify, patch(
+                "tooling.acceptance.fixtures.chat_native_actors.reset_fixture"
+            ) as reset, patch(
+                "tooling.acceptance.fixtures.chat_native_actors.resolve_actor_identity",
+                side_effect=lambda station, role, password: ActorIdentity(
+                    role=role,
+                    account_ref=f"station-account:{role}@p.t",
+                    ptid=f"ptid:{role}:{station.rsplit('-', 1)[-1]}",
+                ),
+            ) as resolve:
+                manifest, _, _ = produce_bound_actor_manifest(
+                    environment_id="native-tauri-embedded-webdriver",
+                    run_id="run-1",
+                    role_targets={
+                        "alice": ("http://station-four", "station-four"),
+                        "bob": ("http://station-five", "station-five"),
+                    },
+                    credential_ref="fixture:preset-users",
+                    reset_authorized=True,
+                )
+
+            self.assertEqual(verify.call_count, 2)
+            reset.assert_any_call("station-four", ["alice"])
+            reset.assert_any_call("station-five", ["bob"])
+            self.assertEqual(
+                [call.args[:2] for call in resolve.call_args_list],
+                [
+                    ("http://station-four", "alice"),
+                    ("http://station-five", "bob"),
+                ],
+            )
+            self.assertEqual(
+                [actor.ptid for actor in manifest.actors],
+                ["ptid:alice:four", "ptid:bob:five"],
             )
             run.close()
 

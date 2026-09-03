@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 from tooling.acceptance.core import (
     BlockedError,
+    ClientRuntime,
+    ClientServiceBinding,
     CredentialRef,
     EnvironmentContract,
     EnvironmentProvisioner,
@@ -22,6 +24,7 @@ from tooling.acceptance.core._paths import ENVIRONMENTS_DIR
 from tooling.acceptance.provisioners import (
     HomeStationProvisioner,
     MobileNativeProvisioner,
+    NativeTauriEmbeddedWebDriverProvisioner,
     get_provisioner,
 )
 
@@ -219,6 +222,80 @@ class ProvisionerBlockingTests(unittest.TestCase):
                         "run-webdriver-conflict",
                         0,
                     )
+
+    def test_native_actor_targets_follow_client_service_bindings(self):
+        clients = tuple(
+            ClientRuntime(
+                id=client_id,
+                actor=actor,
+                runtime="native-tauri",
+                worktree="/repo",
+                gateway_port=port,
+                renderer_port=port + 100,
+                webdriver_port=port + 200,
+                profile=f"chat-native-{client_id}",
+                storage_root=f"/tmp/{client_id}",
+                required_service_roles=("station",),
+                service_bindings={
+                    "station": ClientServiceBinding(
+                        service_id=service_id,
+                        required_kind="station",
+                    )
+                },
+            )
+            for client_id, actor, service_id, port in (
+                ("alice", "alice", "station-four", 3600),
+                ("bob", "bob", "station-five", 3601),
+                ("alice2", "alice", "station-four", 3602),
+            )
+        )
+        services = {
+            service_id: ServiceAttestation(
+                service_id=service_id,
+                service_kind="station",
+                environment_id="native-tauri-embedded-webdriver",
+                deployment_environment=deployment_environment,
+                endpoint=endpoint,
+                live_commit="a" * 40,
+                workspace_digest="clean",
+                protocol_digest="b" * 64,
+                artifact_ref={},
+                produced_at="2026-09-03T00:00:00+00:00",
+                producer="station-deployment",
+            )
+            for service_id, deployment_environment, endpoint in (
+                (
+                    "station-four",
+                    "chat-native-four",
+                    "http://station-four:18132",
+                ),
+                (
+                    "station-five",
+                    "chat-native-five",
+                    "http://station-five:18132",
+                ),
+            )
+        }
+
+        targets = NativeTauriEmbeddedWebDriverProvisioner._actor_role_targets(
+            ("alice", "bob"),
+            clients,
+            services,
+        )
+
+        self.assertEqual(
+            targets,
+            {
+                "alice": (
+                    "http://station-four:18132",
+                    "chat-native-four",
+                ),
+                "bob": (
+                    "http://station-five:18132",
+                    "chat-native-five",
+                ),
+            },
+        )
 
     def test_agent_stream_client_uses_one_profile_and_isolated_storage(self):
         provisioner = HomeStationProvisioner(

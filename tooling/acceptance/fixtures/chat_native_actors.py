@@ -11,7 +11,7 @@ import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.evidence_store import (
@@ -363,7 +363,27 @@ def produce_actor_manifest(
     credential_ref: str,
     reset_authorized: bool,
 ) -> tuple[ActorManifest, Path, dict[str, str]]:
-    unique_roles = tuple(dict.fromkeys(roles))
+    return produce_bound_actor_manifest(
+        environment_id=environment_id,
+        run_id=run_id,
+        role_targets={
+            role: (station_url, deployment_environment)
+            for role in roles
+        },
+        credential_ref=credential_ref,
+        reset_authorized=reset_authorized,
+    )
+
+
+def produce_bound_actor_manifest(
+    *,
+    environment_id: str,
+    run_id: str,
+    role_targets: Mapping[str, tuple[str, str]],
+    credential_ref: str,
+    reset_authorized: bool,
+) -> tuple[ActorManifest, Path, dict[str, str]]:
+    unique_roles = tuple(dict.fromkeys(role_targets))
     if not reset_authorized:
         raise BlockedError(
             reason=(
@@ -373,10 +393,22 @@ def produce_actor_manifest(
             resource="fixture-authorization:CHAT_ACCEPTANCE_RESET",
         )
 
-    verify_reset_target(station_url, deployment_environment)
-    reset_fixture(deployment_environment, unique_roles)
+    grouped_roles: dict[tuple[str, str], list[str]] = {}
+    for role in unique_roles:
+        station_url, deployment_environment = role_targets[role]
+        grouped_roles.setdefault(
+            (station_url, deployment_environment),
+            [],
+        ).append(role)
+    for (station_url, deployment_environment), target_roles in grouped_roles.items():
+        verify_reset_target(station_url, deployment_environment)
+        reset_fixture(deployment_environment, target_roles)
     actors = tuple(
-        resolve_actor_identity(station_url, role, ACTOR_PASSWORD)
+        resolve_actor_identity(
+            role_targets[role][0],
+            role,
+            ACTOR_PASSWORD,
+        )
         for role in unique_roles
     )
     manifest = ActorManifest(
