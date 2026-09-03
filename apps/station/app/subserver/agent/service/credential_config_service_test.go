@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -17,7 +18,7 @@ func TestCredentialSetMaterializesCatalogProviderAndUpdatesCredential(t *testing
 	service := NewCredentialConfigService()
 	ctx := context.Background()
 	request := CredentialSetRequest{
-		ActorPTID:  "actor-a",
+		ActorPTID:  "ptid:v1:" + strings.Repeat("a", 88),
 		ProviderID: "ark",
 		APIKey:     "test-key-with-\"-quote",
 	}
@@ -37,6 +38,9 @@ func TestCredentialSetMaterializesCatalogProviderAndUpdatesCredential(t *testing
 	}
 	if provider.SourceType != "catalog" {
 		t.Fatalf("provider source = %q, want catalog", provider.SourceType)
+	}
+	if provider.ActorPTID != request.ActorPTID {
+		t.Fatalf("provider actor PTID was truncated")
 	}
 	if provider.BaseURL != "https://ark.cn-beijing.volces.com/api/v3" {
 		t.Fatalf("provider base URL = %q", provider.BaseURL)

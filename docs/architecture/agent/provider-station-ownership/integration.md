@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-07-23 | **Updated**: 2026-07-27
+> **Created**: 2026-07-23 | **Updated**: 2026-09-03
 > **Owner**: Agent Team
 
 ---
@@ -112,13 +112,13 @@ These files import from `application::provider` and need adaptation:
 
 | Component | Status |
 |---|---|
-| `agent_providers` table: `actor_id`, `version`, `display_name`, `base_url` columns | ✅ Done |
+| `agent_providers` table: canonical `actor_ptid`, `version`, `display_name`, `base_url` columns | ✅ Done |
 | `agent_models` table (new) | ✅ Done |
-| `agent_credential_pool`: `actor_id`, `version` columns | ✅ Done |
+| `agent_credential_pool`: canonical `actor_ptid`, `version` columns | ✅ Done |
 | Provider/Model/Credential CRUD API endpoints | ✅ Done |
 | Version-gated mutations (optimistic lock) | ✅ Done |
 | CLI adapter registry | ✅ Done |
-| `CredentialPoolService.Lease()` with `actor_id` | ✅ Done |
+| `CredentialPoolService.Lease()` with `actor_ptid` | ✅ Done |
 | Turn-time revalidation | ✅ Done |
 
 ---

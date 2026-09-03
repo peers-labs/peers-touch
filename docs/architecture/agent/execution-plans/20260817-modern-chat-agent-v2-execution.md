@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: reset authorization moved execution to canonical disposable profile `chat-native-disposable`; exact-source runtime reached `FIXTURE_READY`, fresh-client Station selection and login readiness now pass, and the next failure is `agent.acceptance.providerModelUnavailable`; proof remains `UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY` and login readiness; exact-source run `20260903T153702212775Z-dde95c9cd2e81266abd8c0f4a2ebda08` reproduced `agent.acceptance.providerModelUnavailable`, traced to legacy `varchar(36)` Agent PTID columns rejecting the 96-character canonical fixture PTID; the PTID-width and swallowed credential-error corrections await exact-source runtime proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4508,6 +4508,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `agent.acceptance.providerModelUnavailable`, before Foundation tuple
   execution. Provisioner cleanup passed and G-F remains
   `PARTIAL / UNPROVEN`.
+- Clean exact-source run
+  `20260903T153702212775Z-dde95c9cd2e81266abd8c0f4a2ebda08`
+  (aggregate `20260903T153702024780Z-da13978f95762119cca23be735af0827`)
+  on `bff1c1828b0218d30bbd4cfa241bba1cfea5bd27` reproduced the same
+  provider/model boundary after `FIXTURE_READY`; cleanup completed
+  `DONE / PROVEN / passed`. Production API isolation showed
+  `credential/set` failed while materializing the catalog provider because
+  the 96-character canonical Fixture PTID exceeded the legacy
+  `agent_providers.actor_ptid varchar(36)` column. The same obsolete width
+  remained in credential/model ownership and task-run ownership used
+  `varchar(64)`. The correction moves these Agent ownership columns to
+  canonical PTID-safe text storage, orders Desktop provider update before the
+  dedicated credential write, and propagates credential failures at both Rust
+  and Station boundaries. Focused Agent package tests, Go style, Desktop
+  TypeScript checks, the Desktop Rust build, and 28 Foundation runner tests
+  pass. The broader Station app sweep remains independently red because
+  `tests/conversation_persistence_test.go` still initializes the removed
+  `Conversation.ActorPTID` field. Runtime proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

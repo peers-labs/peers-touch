@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v1.0
-> **Created**: 2026-07-23 | **Updated**: 2026-07-23
+> **Created**: 2026-07-23 | **Updated**: 2026-09-03
 > **Owner**: Agent Team
 
 > **Proto source of truth**: `model/domain/ai_chat/provider.proto`, `model/domain/ai_chat/ai_models.proto`.
@@ -19,7 +19,7 @@ Per-actor provider configuration.
 | Column | Type | Notes |
 |--------|------|-------|
 | id | varchar(36) PK | UUID |
-| actor_id | varchar(36) NOT NULL | Owner actor |
+| actor_ptid | text NOT NULL | Canonical owner PTID |
 | provider_id | varchar(64) NOT NULL | Logical provider name (e.g. "trae-cli", "openai", "anthropic") |
 | display_name | varchar(128) | Human-readable name |
 | runtime_kind | varchar(16) NOT NULL | "http" \| "cli" \| "embedded" |
@@ -31,7 +31,7 @@ Per-actor provider configuration.
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
 
-Unique constraint: `(actor_id, provider_id)`
+Unique constraint: `(actor_ptid, provider_id)`
 
 ### 1.2 `agent_credential_pool`
 
@@ -40,7 +40,7 @@ Per-actor credentials. Values encrypted at rest.
 | Column | Type | Notes |
 |--------|------|-------|
 | id | varchar(36) PK | UUID |
-| actor_id | varchar(36) NOT NULL | Owner actor |
+| actor_ptid | text NOT NULL | Canonical owner PTID |
 | provider | varchar(64) NOT NULL | FK → provider_id |
 | api_key_encrypted | bytea NOT NULL | Encrypted API key |
 | status | varchar(16) NOT NULL DEFAULT 'active' | "active" \| "exhausted" \| "error" \| "cooldown" |
@@ -50,7 +50,7 @@ Per-actor credentials. Values encrypted at rest.
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
 
-Unique constraint: `(actor_id, provider)`
+Unique constraint: `(actor_ptid, provider)`
 
 ### 1.3 `agent_models`
 
@@ -59,7 +59,7 @@ Per-actor model list within a provider.
 | Column | Type | Notes |
 |--------|------|-------|
 | id | varchar(36) PK | UUID |
-| actor_id | varchar(36) NOT NULL | Owner actor |
+| actor_ptid | text NOT NULL | Canonical owner PTID |
 | provider_id | varchar(64) NOT NULL | FK → provider_id |
 | model_id | varchar(128) NOT NULL | Model identifier (e.g. "gpt-4.1", "Test-O-New-Thinking") |
 | display_name | varchar(256) | |
@@ -70,7 +70,7 @@ Per-actor model list within a provider.
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
 
-Unique constraint: `(actor_id, provider_id, model_id)`
+Unique constraint: `(actor_ptid, provider_id, model_id)`
 
 ---
 
