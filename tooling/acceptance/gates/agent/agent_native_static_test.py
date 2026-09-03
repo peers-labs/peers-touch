@@ -634,12 +634,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
             gateway,
         )
         self.assertIn(
-            "bind_gateway_auth_result(state, app_auth::auth_restore_session(state))",
+            'app_auth::auth_restore_session_for_device(state, "desktop-browser")',
             gateway,
         )
         self.assertIn('input.device_type = Some("desktop-browser".to_string())', gateway)
         self.assertIn("state.sessions.unbind(HTTP_GATEWAY_SESSION_LABEL)", gateway)
         self.assertIn('.unwrap_or("desktop-native")', auth_service)
+        self.assertIn(
+            'auth_restore_session_for_device(state, "desktop-native")',
+            auth_service,
+        )
         self.assertNotIn('"device_type": "desktop"', auth_service)
 
     def test_harness_exposes_r6_production_actions_and_readback(self) -> None:
