@@ -84,12 +84,46 @@ export async function runIdentityPipeline(payload: IdentityChangePayload): Promi
   const failures: IdentityHandlerFailure[] = [];
   for (const { name, fn } of orderedHandlers) {
     const t0 = performance.now();
+    // #region debug-point E-G:identity-handler-start
+    void fetch('http://127.0.0.1:7781/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'foundation-login-readiness',
+        runId: 'post-fix-2',
+        hypothesisId: 'E-G',
+        location: 'identityPipeline.ts:handler-start',
+        msg: '[DEBUG] identity handler started',
+        data: {
+          handlerName: name,
+          reason: payload.reason,
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     if (payload.reason === 'logout') {
       reportFoundationCleanupIdentityHandler('handler-started', name);
     }
     try {
       await fn(payload);
       const ms = Math.round(performance.now() - t0);
+      // #region debug-point E-G:identity-handler-finish
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'foundation-login-readiness',
+          runId: 'post-fix-2',
+          hypothesisId: 'E-G',
+          location: 'identityPipeline.ts:handler-finish',
+          msg: '[DEBUG] identity handler finished',
+          data: {
+            handlerName: name,
+            reason: payload.reason,
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       if (payload.reason === 'logout') {
         reportFoundationCleanupIdentityHandler('handler-finished', name, ms);
       }
