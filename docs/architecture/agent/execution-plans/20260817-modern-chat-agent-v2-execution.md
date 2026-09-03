@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, and Station-backed Agent readiness; exact-source run `20260903T173030486447Z-14ba21027559bccd593116529169e1c0` advanced to capability-session setup, where the Browser login revoked Native because both transports still submitted `device_type=desktop`; distinct transport device types await exact-source runtime proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, and Station-backed Agent readiness; exact-source run `20260903T175346160142Z-edda0ef91ef59e6e42896d4da3a00cfb` proved Native/Browser auth session isolation and advanced to Browser capability-session setup, where the HTTP gateway lacked the runtime-evidence command surface; gateway parity is implemented and awaits exact-source runtime proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4569,6 +4569,21 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   defaults to `desktop-native` and the HTTP gateway injects
   `desktop-browser` for login and access-gate login. Cleanup completed
   `DONE / PROVEN / passed`; runtime proof remains pending.
+- Exact-source run
+  `20260903T175346160142Z-edda0ef91ef59e6e42896d4da3a00cfb`
+  (aggregate `20260903T175345959004Z-c3fa6e4fb1300d80f79fdd53fc413747`)
+  on `bf100c1a5ae041e8c446af00f2cfcc43d0df16e9` crossed Native and
+  Browser Agent readiness without revoking the Native session, then failed
+  Browser capability-session establishment because the HTTP gateway returned
+  `unknown command` for `agent_capability_session_snapshot` and
+  `agent_capability_sessions`. The Browser gateway now mirrors the six
+  runtime-evidence commands already registered for Native Tauri, including
+  explicit Browser supervisor start/stop, local session snapshot and negative
+  controls, Station session readback, and Station/local runtime activity
+  snapshots. The focused Agent static suite passes 59 tests and Desktop Rust
+  `cargo check --locked --features e2e-testing` passes. Provisioner cleanup
+  completed `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN`
+  pending an exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
