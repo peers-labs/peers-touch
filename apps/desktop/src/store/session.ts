@@ -79,6 +79,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   loginWithPassword: async (account, password) => {
     markLocalIdentityAction();
     const resp = await api.authLogin({ account, password });
+    get().activateAuthenticatedSession(resp);
     await runIdentityPipeline({
       reason: 'login',
       actorPtid: resp.actor_ptid ?? null,
@@ -99,6 +100,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   accessSubmitLogin: async (attemptId, account, password) => {
     markLocalIdentityAction();
     const resp = await api.accessSubmitLogin({ attempt_id: attemptId, account, password });
+    get().activateAuthenticatedSession(resp);
     await runIdentityPipeline({
       reason: 'login',
       actorPtid: resp.actor_ptid ?? null,
@@ -109,6 +111,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   loginWithOAuth: async (_providerId: string) => {
     markLocalIdentityAction();
     const resp = await api.ensureStationSession();
+    get().activateAuthenticatedSession(resp);
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
       reason: 'oauth_bridge',
