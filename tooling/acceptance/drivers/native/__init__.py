@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from tooling.acceptance.drivers.native.runtime import (
         NativeDesktopRuntimeBinding,
         NativeLaunchOptions,
-        RuntimeEndpoint,
+        TransportOverrideHandle,
     )
 
 __all__ = [
@@ -27,7 +27,7 @@ __all__ = [
     "NativeDesktopAdapter",
     "NativeDesktopRuntimeBinding",
     "NativeLaunchOptions",
-    "RuntimeEndpoint",
+    "TransportOverrideHandle",
     "NativeKey",
     "NativeModifier",
     "NativeWindowBounds",
@@ -69,7 +69,7 @@ def __getattr__(name: str) -> Any:
     if name in {
         "NativeDesktopRuntimeBinding",
         "NativeLaunchOptions",
-        "RuntimeEndpoint",
+        "TransportOverrideHandle",
         "resolve_native_desktop_runtime",
     }:
         from tooling.acceptance.drivers.native import runtime

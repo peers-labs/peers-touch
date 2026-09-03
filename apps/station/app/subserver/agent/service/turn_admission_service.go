@@ -29,9 +29,9 @@ const (
 )
 
 type TurnAdmissionService struct {
-	db                  *gorm.DB
-	now                 func() time.Time
-	attachmentPreflight func(context.Context, string, *model.ExecuteTurnRequest) error
+	db               *gorm.DB
+	now              func() time.Time
+	requestPreflight func(context.Context, string, *model.ExecuteTurnRequest) error
 }
 
 type AdmittedTurn struct {
@@ -54,13 +54,20 @@ func newTurnAdmissionServiceWithDB(db *gorm.DB) *TurnAdmissionService {
 	return &TurnAdmissionService{
 		db:  db,
 		now: func() time.Time { return time.Now().UTC() },
+		requestPreflight: func(
+			context.Context,
+			string,
+			*model.ExecuteTurnRequest,
+		) error {
+			return nil
+		},
 	}
 }
 
-func (s *TurnAdmissionService) SetAttachmentPreflight(
+func (s *TurnAdmissionService) SetRequestPreflight(
 	preflight func(context.Context, string, *model.ExecuteTurnRequest) error,
 ) {
-	s.attachmentPreflight = preflight
+	s.requestPreflight = preflight
 }
 
 func (s *TurnAdmissionService) Admit(
@@ -120,13 +127,16 @@ func (s *TurnAdmissionService) Admit(
 	if err != nil || existing != nil {
 		return existing, err
 	}
-	if len(request.GetAttachments()) > 0 {
-		if s.attachmentPreflight == nil {
-			return nil, attachmentRejected("attachment admission is unavailable")
-		}
-		if err := s.attachmentPreflight(ctx, actorID, request); err != nil {
-			return nil, err
-		}
+	if s.requestPreflight == nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"turn admission preflight is unavailable",
+			nil,
+		)
+	}
+	if err := s.requestPreflight(ctx, actorID, request); err != nil {
+		return nil, err
 	}
 
 	var admission *model.TurnAdmission
@@ -274,7 +284,7 @@ func (s *TurnAdmissionService) List(
 	}
 	var conversation persistence.Conversation
 	if err := db.WithContext(ctx).
-		Where("id = ? AND ptid = ?", strings.TrimSpace(conversationID), strings.TrimSpace(actorID)).
+		Where("id = ? AND actor_ptid = ?", strings.TrimSpace(conversationID), strings.TrimSpace(actorID)).
 		First(&conversation).Error; err != nil {
 		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "conversation not found", err)
 	}
@@ -443,27 +453,30 @@ func (s *TurnAdmissionService) AdmitNext(
 		if decodeErr := proto.Unmarshal(entry.RequestPayload, &request); decodeErr != nil {
 			return admissionInternal("decode queued turn request", decodeErr)
 		}
-		if len(request.GetAttachments()) > 0 {
-			if s.attachmentPreflight == nil {
-				rejected = attachmentRejected("attachment admission is unavailable")
-			} else {
-				rejected = s.attachmentPreflight(ctx, actorID, &request)
+		if s.requestPreflight == nil {
+			rejected = errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"turn admission preflight is unavailable",
+				nil,
+			)
+		} else {
+			rejected = s.requestPreflight(ctx, actorID, &request)
+		}
+		if rejected != nil {
+			entry.Status = queueStatusCancelled
+			entry.CancelledAt = &now
+			entry.UpdatedAt = now
+			if updateErr := tx.Save(&entry).Error; updateErr != nil {
+				return admissionInternal("reject invalid queued turn", updateErr)
 			}
-			if rejected != nil {
-				entry.Status = queueStatusCancelled
-				entry.CancelledAt = &now
-				entry.UpdatedAt = now
-				if updateErr := tx.Save(&entry).Error; updateErr != nil {
-					return admissionInternal("reject invalid queued attachment", updateErr)
-				}
-				return tx.Model(conversation).Updates(map[string]interface{}{
-					"queued_turn_count": gorm.Expr(
-						"CASE WHEN queued_turn_count > 0 THEN queued_turn_count - 1 ELSE 0 END",
-					),
-					"version":    conversation.Version + 1,
-					"updated_at": now,
-				}).Error
-			}
+			return tx.Model(conversation).Updates(map[string]interface{}{
+				"queued_turn_count": gorm.Expr(
+					"CASE WHEN queued_turn_count > 0 THEN queued_turn_count - 1 ELSE 0 END",
+				),
+				"version":    conversation.Version + 1,
+				"updated_at": now,
+			}).Error
 		}
 		key := entry.ClientIdempotencyKey
 		turn := &persistence.AgentTurn{
@@ -631,7 +644,7 @@ func lockAdmissionConversation(
 	agentID string,
 ) (*persistence.Conversation, error) {
 	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ? AND ptid = ?", strings.TrimSpace(conversationID), strings.TrimSpace(actorID))
+		Where("id = ? AND actor_ptid = ?", strings.TrimSpace(conversationID), strings.TrimSpace(actorID))
 	if strings.TrimSpace(agentID) != "" {
 		query = query.Where("agent_id = ?", strings.TrimSpace(agentID))
 	}

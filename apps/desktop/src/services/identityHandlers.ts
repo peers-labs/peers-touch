@@ -13,7 +13,12 @@ import { toolRuntime } from '../runtimes/toolRuntime';
 import { createDesktopClientStorageRuntime } from '../storage/desktopClientStorage';
 
 registerIdentityHandler('close-browser-capability-session', async (payload) => {
-  if (payload.reason === 'logout' || payload.reason === 'revoked') {
+  const currentActorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
+  if (
+    payload.reason === 'logout'
+    || payload.reason === 'revoked'
+    || currentActorPtid !== payload.actorPtid
+  ) {
     await closeBrowserCapabilitySession();
   }
 });

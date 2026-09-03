@@ -338,16 +338,23 @@ def check_report_status(report: dict, label: str) -> list[str]:
     if report.get("error"):
         errors.append(f"{label}: report contains error: {report['error']}")
     assertions = report.get("assertions", [])
-    if not assertions:
+    if not isinstance(assertions, list) or not assertions:
         errors.append(f"{label}: no assertions recorded")
-    else:
+    elif any(
+        not isinstance(assertion, dict)
+        or assertion.get("passed") is not True
+        for assertion in assertions
+    ):
         failed = [
-            a for a in assertions
-            if isinstance(a, dict) and a.get("passed") is False
+            assertion.get("name", "?")
+            if isinstance(assertion, dict)
+            else "malformed"
+            for assertion in assertions
+            if not isinstance(assertion, dict)
+            or assertion.get("passed") is not True
         ]
         if failed:
-            names = [a.get("name", "?") for a in failed]
-            errors.append(f"{label}: failed assertions: {names}")
+            errors.append(f"{label}: failed or malformed assertions: {failed}")
     return errors
 
 

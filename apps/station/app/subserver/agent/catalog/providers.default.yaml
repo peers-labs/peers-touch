@@ -18,11 +18,13 @@ providers:
         enabled: true
         context_window: 256000
         thinking_control: ark
+        capabilities: [text-input, text-output, streaming, reasoning, structured-output, native-tools, parallel-tools]
       - id: doubao-pro-256k
         display_name: Doubao Pro
         type: chat
         enabled: true
         context_window: 256000
+        capabilities: [text-input, text-output, streaming, structured-output, native-tools, parallel-tools]
       - id: doubao-embedding
         display_name: Doubao Embedding
         type: embedding
@@ -45,11 +47,13 @@ providers:
         type: chat
         enabled: true
         context_window: 128000
+        capabilities: [text-input, text-output, streaming, structured-output, native-tools, parallel-tools]
       - id: gpt-4o-mini
         display_name: GPT-4o Mini
         type: chat
         enabled: true
         context_window: 128000
+        capabilities: [text-input, text-output, streaming, structured-output, native-tools, parallel-tools]
   - id: anthropic
     name: Anthropic
     description: Claude models from Anthropic
@@ -67,6 +71,7 @@ providers:
         type: chat
         enabled: true
         context_window: 200000
+        capabilities: [text-input, text-output, streaming, prompt-cache]
   - id: google
     name: Google
     description: Gemini models from Google
@@ -84,6 +89,7 @@ providers:
         type: chat
         enabled: true
         context_window: 1048576
+        capabilities: [text-input, text-output]
   - id: deepseek
     name: DeepSeek
     description: DeepSeek models
@@ -101,6 +107,7 @@ providers:
         type: chat
         enabled: true
         context_window: 128000
+        capabilities: [text-input, text-output, streaming, structured-output, native-tools]
   - id: ollama
     name: Ollama
     description: Run open-source models locally
@@ -131,6 +138,7 @@ providers:
         type: chat
         enabled: true
         context_window: 128000
+        capabilities: [text-input, text-output, streaming, structured-output, native-tools, parallel-tools]
   - id: mistral
     name: Mistral
     description: Mistral AI models
@@ -148,6 +156,7 @@ providers:
         type: chat
         enabled: true
         context_window: 131072
+        capabilities: [text-input, text-output, streaming, structured-output, native-tools]
   - id: groq
     name: Groq
     description: Groq low-latency inference platform
@@ -165,6 +174,7 @@ providers:
         type: chat
         enabled: true
         context_window: 131072
+        capabilities: [text-input, text-output, streaming, native-tools, parallel-tools]
   - id: together
     name: Together
     description: Together AI model hosting
@@ -182,6 +192,7 @@ providers:
         type: chat
         enabled: true
         context_window: 131072
+        capabilities: [text-input, text-output, streaming, native-tools, parallel-tools]
   - id: cohere
     name: Cohere
     description: Cohere language models
@@ -199,6 +210,7 @@ providers:
         type: chat
         enabled: true
         context_window: 128000
+        capabilities: [text-input, text-output, streaming, native-tools]
   - id: codex-cli
     name: Codex CLI
     description: Local Codex CLI adapter running in the Agent workspace
@@ -252,6 +264,7 @@ providers:
         type: chat
         enabled: true
         context_window: 200000
+        capabilities: [text-input, text-output]
   - id: trae-cli
     name: TRAE CLI
     description: Local TRAE CLI adapter running in the Agent workspace

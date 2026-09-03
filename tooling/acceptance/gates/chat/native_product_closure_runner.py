@@ -40,7 +40,6 @@ from tooling.acceptance.drivers.native import (
     NativeModifier,
 )
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
-from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
     AcceptanceStationSubmitFaultProxy,
@@ -255,7 +254,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.native_adapter: NativeDesktopAdapter = (
             runtime_binding.native_adapter
         )
-        station = runtime_station_service(self.manifest)
+        station = runtime_station_service(self.manifest, "alice")
         self.station_url = str(station.get("endpoint") or "").rstrip("/")
         if not self.station_url:
             raise GateError("runtime manifest Station URL is required")
@@ -287,7 +286,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.localization_checks: dict[str, dict[str, list[str]]] = {}
         self.native_activation_diagnostics: list[dict[str, Any]] = []
         self.reaction_proxy: AcceptanceStationSubmitFaultProxy | None = None
-        self.reaction_endpoint_url: str | None = None
+        self.reaction_transport_override = None
         self.fixture_root = Path(tempfile.mkdtemp(prefix="pt-chat-product-closure-"))
         self.report.station_url = self.station_url
         self.report.manifest = self.manifest
@@ -309,11 +308,6 @@ class NativeProductClosureGate(AcceptanceGate):
             encoding="utf-8",
         )
         self.report.add_evidence_file(key, path)
-
-    def configure_station(self, client: TauriSession, station_url: str) -> None:
-        with StationDriver(f"http://127.0.0.1:{client.gateway_port}") as station:
-            station.station_add(station_url)
-            station.station_set_active(station_url)
 
     def wait_for_realtime_device(
         self,
@@ -352,11 +346,6 @@ class NativeProductClosureGate(AcceptanceGate):
         spec = self.client_specs[actor]
         actor_role = CLIENT_ACTOR_ROLES[actor]
         window_actors = tuple(CLIENT_ACTOR_ROLES)
-        actor_station_url = (
-            self.reaction_endpoint_url
-            if actor == "alice" and self.reaction_endpoint_url is not None
-            else self.station_url
-        )
         client = self.runtime_binding.create_bound_session(
             actor,
             NativeLaunchOptions(
@@ -390,16 +379,22 @@ class NativeProductClosureGate(AcceptanceGate):
                 client,
             )
         try:
-            client.start()
             self.client_lifecycles.mark_live(client)
             attempt["pid"] = client.process_id
             attempt["logPath"] = str(client.log_path or "")
             if client.process_id:
                 self.runtime_pids.add(int(client.process_id))
             self.register_driver(client)
-            client.wait_for_acceptance_harness(30)
+            if (
+                actor == "alice"
+                and self.reaction_transport_override is not None
+            ):
+                self.runtime_binding.apply_transport_override(
+                    "alice",
+                    "station",
+                    self.reaction_transport_override,
+                )
             if not restore_session:
-                self.configure_station(client, actor_station_url)
                 account_ref = str(
                     self.actor_specs[actor_role].get("accountRef") or ""
                 )
@@ -4513,6 +4508,19 @@ class NativeProductClosureGate(AcceptanceGate):
             if client.log_path is not None
         ]
         cleanup_errors: list[dict[str, str]] = []
+        if self.reaction_transport_override is not None:
+            try:
+                self.runtime_binding.clear_transport_override(
+                    "alice",
+                    "station",
+                    self.reaction_transport_override,
+                )
+            except Exception as error:
+                cleanup_errors.append({
+                    "resource": "reaction-transport-override",
+                    "error": str(error),
+                })
+            self.reaction_transport_override = None
         for index in reversed(range(len(self.runtime_instances))):
             client = self.runtime_instances[index]
             attempt = self.runtime_launches[index]
@@ -4610,7 +4618,7 @@ class NativeProductClosureGate(AcceptanceGate):
 
     def source_identity(self) -> dict[str, Any]:
         source = self.manifest.get("source")
-        station = runtime_station_service(self.manifest)
+        station = runtime_station_service(self.manifest, "alice")
         station_live = read_station_version(self.station_url)
         runtime_cell = self.runtime_binding.runtime_identity()
         binary = self.runtime_binding.binary_identity()
@@ -4733,10 +4741,12 @@ class NativeProductClosureGate(AcceptanceGate):
                 self.station_url
             )
             self.reaction_proxy.start()
-            self.reaction_endpoint_url = (
-                self.runtime_binding.expose_orchestrator_endpoint(
-                    self.reaction_proxy.url
-                ).url
+            self.reaction_transport_override = (
+                self.runtime_binding.create_transport_override(
+                    "alice",
+                    "station",
+                    self.reaction_proxy.url,
+                )
             )
             for actor in ("alice", "bob"):
                 self.step(f"{actor}.launch", lambda actor=actor: self.launch_actor(actor))
