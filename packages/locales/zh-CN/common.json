@@ -111,6 +111,7 @@
   "mobile.launch.brand": "Peers",
   "mobile.launch.changeTarget": "点选最近使用记录来切换目标",
   "mobile.launch.emptyStations": "还没有 Station 记录",
+  "mobile.launch.continue": "继续",
   "mobile.launch.enterStation": "进入站点",
   "mobile.launch.enterStationWithName": "进入 {{station}}",
   "mobile.launch.helperAutoSave": "最近使用会自动保存",
@@ -579,5 +580,28 @@
   "mobile.group.operationRemoveFailed": "移除成员失败",
   "mobile.group.operationUpdateMemberFailed": "更新成员失败",
   "mobile.group.operationUpdateFailed": "更新群组失败",
-  "mobile.group.operationCreateFailed": "创建群组失败"
+  "mobile.group.operationCreateFailed": "创建群组失败",
+
+  "mobile.moments.newPost": "发布动态",
+  "mobile.moments.whatsOnYourMind": "分享你的想法...",
+  "mobile.moments.comment.viewAll": "查看全部 {{count}} 条评论",
+
+  "mobile.settings.group.account": "账户",
+  "mobile.settings.group.chat": "聊天",
+  "mobile.settings.group.network": "网络",
+  "mobile.settings.group.about": "关于",
+  "mobile.settings.accountInfo": "账户信息",
+  "mobile.settings.privacySecurity": "隐私与安全",
+  "mobile.settings.safetyNumber": "安全号码",
+  "mobile.settings.chatSettings": "聊天设置",
+  "mobile.settings.chatBackground": "聊天背景",
+  "mobile.settings.stationConnection": "Station 连接",
+  "mobile.settings.encryption": "加密",
+  "mobile.settings.encryptionActive": "已启用",
+  "mobile.settings.aboutApp": "关于 Peers Touch",
+  "mobile.settings.appVersion": "v1.0.0",
+  "mobile.settings.stats.friends": "好友",
+  "mobile.settings.stats.groups": "群组",
+  "mobile.settings.stats.moments": "动态",
+  "mobile.settings.signOut": "退出登录"
 }

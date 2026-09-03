@@ -111,6 +111,7 @@
   "mobile.launch.brand": "Peers",
   "mobile.launch.changeTarget": "Tap a recent Station to change the target",
   "mobile.launch.emptyStations": "No Station history yet",
+  "mobile.launch.continue": "Continue",
   "mobile.launch.enterStation": "Open Station",
   "mobile.launch.enterStationWithName": "Open {{station}}",
   "mobile.launch.helperAutoSave": "Recent Stations are saved automatically",
@@ -579,5 +580,28 @@
   "mobile.group.operationRemoveFailed": "Failed to remove member",
   "mobile.group.operationUpdateMemberFailed": "Failed to update member",
   "mobile.group.operationUpdateFailed": "Failed to update group",
-  "mobile.group.operationCreateFailed": "Failed to create group"
+  "mobile.group.operationCreateFailed": "Failed to create group",
+
+  "mobile.moments.newPost": "New post",
+  "mobile.moments.whatsOnYourMind": "What's on your mind?",
+  "mobile.moments.comment.viewAll": "View all {{count}} comments",
+
+  "mobile.settings.group.account": "Account",
+  "mobile.settings.group.chat": "Chat",
+  "mobile.settings.group.network": "Network",
+  "mobile.settings.group.about": "About",
+  "mobile.settings.accountInfo": "Account Info",
+  "mobile.settings.privacySecurity": "Privacy & Security",
+  "mobile.settings.safetyNumber": "Safety Number",
+  "mobile.settings.chatSettings": "Chat Settings",
+  "mobile.settings.chatBackground": "Chat Background",
+  "mobile.settings.stationConnection": "Station Connection",
+  "mobile.settings.encryption": "Encryption",
+  "mobile.settings.encryptionActive": "Active",
+  "mobile.settings.aboutApp": "About Peers Touch",
+  "mobile.settings.appVersion": "v1.0.0",
+  "mobile.settings.stats.friends": "Friends",
+  "mobile.settings.stats.groups": "Groups",
+  "mobile.settings.stats.moments": "Moments",
+  "mobile.settings.signOut": "Sign Out"
 }

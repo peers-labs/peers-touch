@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox, Empty, Input, List, Modal, Spin, Tag, Typography } from 'antd';
-import { AlertCircle, Ban, Check, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
+import { AlertCircle, Ban, Check, ChevronRight, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { MobileAvatar } from '../components/MobileAvatar';
@@ -119,6 +119,17 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const windowedContacts = filteredContacts.length > CONTACT_WINDOW_SIZE ? filteredContacts.slice(0, CONTACT_WINDOW_SIZE) : filteredContacts;
   const windowedGroups = filteredGroups.length > CONTACT_WINDOW_SIZE ? filteredGroups.slice(0, CONTACT_WINDOW_SIZE) : filteredGroups;
 
+  // --- Alphabetical grouping for contacts ---
+  const groupedContacts = useMemo(() => {
+    const map = new Map<string, SocialConversation[]>();
+    windowedContacts.forEach((c) => {
+      const letter = (c.peerName || '?')[0].toUpperCase();
+      if (!map.has(letter)) map.set(letter, []);
+      map.get(letter)!.push(c);
+    });
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [windowedContacts]);
+
   // --- Selected contact profile ---
   const selectedProfile = selectedContact ? peerProfiles[selectedContact.peerPtid] : null;
   const selectedProfileLoading = selectedContact ? Boolean(peerProfileLoading[selectedContact.peerPtid]) : false;
@@ -221,81 +232,95 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
     <div className="page-container">
       <header className="page-header">
         <h1 className="header-title">{t('mobile.contacts.title')}</h1>
+        <button className="header-action" type="button" onClick={() => setAddOpen(true)} aria-label={t('mobile.contacts.findPeople')}>
+          <UserPlus size={20} />
+        </button>
       </header>
 
-      <div className="contacts-toolbar">
-        <Input className="contacts-search-input" value={contactQuery} onChange={(e) => setContactQuery(e.target.value)} prefix={<Search size={16} />} placeholder={t('mobile.contacts.searchPlaceholder')} allowClear />
-        <button className="contacts-add-button" type="button" onClick={() => setCreateGroupOpen(true)} aria-label={t('mobile.group.create')}><Users size={20} /></button>
-        <button className="contacts-add-button" type="button" onClick={() => setAddOpen(true)} aria-label={t('mobile.contacts.findPeople')}><UserPlus size={20} /></button>
+      <div className="chat-search-bar">
+        <Input value={contactQuery} onChange={(e) => setContactQuery(e.target.value)} prefix={<Search size={16} color="#9ca0ab" />} placeholder={t('mobile.contacts.searchPlaceholder')} allowClear />
       </div>
 
       {localActionError ? <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice> : null}
       {error ? <MobileNotice onClose={clearSocialError}>{formatSocialError(error)}</MobileNotice> : null}
       {groupError ? <MobileNotice onClose={clearGroupError}>{formatSocialError(groupError)}</MobileNotice> : null}
 
-      <section className="social-list-panel">
+      <section className="contacts-body">
         <Spin spinning={(loading || groupLoading) && windowedContacts.length === 0 && windowedGroups.length === 0 && inboundRequests.length === 0 && sentRequests.length === 0}>
           {/* --- Friend requests --- */}
-          <SectionTitle title={t('mobile.contacts.friendRequests')} count={inboundRequests.length} />
           {inboundRequests.length > 0 ? (
-            <List dataSource={inboundRequests} renderItem={(request) => (
-              <List.Item className="contact-item friend-request-item" actions={[
-                <Button key="accept" type="primary" icon={<Check size={14} />} onClick={() => handleAcceptRequest(request.requestId)} />,
-                <Button key="reject" icon={<X size={14} />} onClick={() => handleRejectRequest(request.requestId)} />,
-              ]}>
-                <List.Item.Meta
-                  avatar={<MobileAvatar src={request.senderAvatar}>{displayPeerName(request.senderDisplayName, t).slice(0, 1)}</MobileAvatar>}
-                  title={<Text strong>{displayPeerName(request.senderDisplayName, t)}</Text>}
-                  description={request.message || t('mobile.contacts.defaultRequestMessage')}
-                />
-              </List.Item>
-            )} />
-          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.contacts.noFriendRequests')} />}
+            <div className="contact-section">
+              <div className="section-header"><span>{t('mobile.contacts.friendRequests')}</span></div>
+              <List dataSource={inboundRequests} renderItem={(request) => (
+                <List.Item className="contact-item friend-request-item" actions={[
+                  <Button key="accept" type="primary" icon={<Check size={14} />} onClick={() => handleAcceptRequest(request.requestId)} />,
+                  <Button key="reject" icon={<X size={14} />} onClick={() => handleRejectRequest(request.requestId)} />,
+                ]}>
+                  <List.Item.Meta
+                    avatar={<MobileAvatar src={request.senderAvatar}>{displayPeerName(request.senderDisplayName, t).slice(0, 1)}</MobileAvatar>}
+                    title={<Text strong>{displayPeerName(request.senderDisplayName, t)}</Text>}
+                    description={request.message || t('mobile.contacts.defaultRequestMessage')}
+                  />
+                </List.Item>
+              )} />
+            </div>
+          ) : null}
 
-          {/* --- Friends list (bounded) --- */}
-          <SectionTitle title={t('mobile.contacts.friends')} count={contacts.length} />
-          {windowedContacts.length > 0 ? (
-            <List dataSource={windowedContacts} renderItem={(contact) => (
-              <List.Item className="contact-item" onClick={() => setSelectedContact(contact)}>
-                <List.Item.Meta
-                  avatar={<MobileAvatar src={contact.peerAvatar}>{contact.peerName.slice(0, 1)}</MobileAvatar>}
-                  title={<Text strong>{contact.peerName}</Text>}
-                  description={contact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}
-                />
-              </List.Item>
-            )} />
-          ) : contacts.length > 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.contacts.noSearchResults')} />
-          ) : (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={
-              <div className="empty-copy"><Text strong>{t('mobile.contacts.emptyTitle')}</Text><Text type="secondary">{t('mobile.contacts.emptySubtitle')}</Text></div>
-            } />
-          )}
-
-          {/* --- Groups list (bounded) --- */}
-          <SectionTitle title={t('mobile.group.title')} count={groups.length} />
+          {/* --- Groups section (prototype order: groups before contacts) --- */}
           {windowedGroups.length > 0 ? (
-            <List dataSource={windowedGroups} renderItem={(group) => (
-              <List.Item className="contact-item" onClick={() => openGroupChat(group)}>
-                <List.Item.Meta
-                  avatar={<MobileAvatar src={group.group.avatarCid} icon={<Users size={16} />}>{group.group.name.slice(0, 1)}</MobileAvatar>}
-                  title={<Text strong>{group.group.name}</Text>}
-                  description={t('mobile.group.memberCount', { count: group.group.memberCount })}
-                />
-              </List.Item>
-            )} />
-          ) : groups.length > 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.group.noSearchResults')} />
-          ) : (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={
-              <div className="empty-copy"><Text strong>{t('mobile.group.emptyTitle')}</Text><Text type="secondary">{t('mobile.group.emptySubtitle')}</Text></div>
-            } />
-          )}
+            <div className="contact-section">
+              <div className="section-header"><span>{t('mobile.group.title')}</span></div>
+              <div className="group-list">
+                {windowedGroups.map((group) => (
+                  <div key={group.group.ulid} className="group-item" onClick={() => openGroupChat(group)}>
+                    <MobileAvatar src={group.group.avatarCid} size={44} icon={<Users size={16} />}>{group.group.name.slice(0, 1)}</MobileAvatar>
+                    <div className="group-info">
+                      <Text strong>{group.group.name}</Text>
+                      <Text type="secondary">{t('mobile.group.memberCount', { count: group.group.memberCount })}</Text>
+                    </div>
+                    <ChevronRight size={18} color="#9ca0ab" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* --- Contacts section with alphabetical letter grouping --- */}
+          <div className="contact-section">
+            <div className="section-header"><span>{t('mobile.contacts.friends')}</span></div>
+            {groupedContacts.length > 0 ? (
+              <div className="contact-list">
+                {groupedContacts.map(([letter, letterContacts]) => (
+                  <div key={letter}>
+                    <div className="contact-letter">{letter}</div>
+                    {letterContacts.map((contact) => (
+                      <div key={contact.session.ulid} className="contact-item-row" onClick={() => setSelectedContact(contact)}>
+                        <span className="conversation-avatar-frame">
+                          <MobileAvatar src={contact.peerAvatar} size={44}>{contact.peerName.slice(0, 1)}</MobileAvatar>
+                          {contact.peerOnline ? <span className="conversation-online-dot" aria-hidden="true" /> : null}
+                        </span>
+                        <div className="contact-info">
+                          <Text strong>{contact.peerName}</Text>
+                          <Text type="secondary">{contact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}</Text>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : contacts.length > 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.contacts.noSearchResults')} />
+            ) : (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={
+                <div className="empty-copy"><Text strong>{t('mobile.contacts.emptyTitle')}</Text><Text type="secondary">{t('mobile.contacts.emptySubtitle')}</Text></div>
+              } />
+            )}
+          </div>
 
           {/* --- Sent requests --- */}
           {sentRequests.length > 0 ? (
-            <>
-              <SectionTitle title={t('mobile.contacts.sentRequests')} count={sentRequests.length} />
+            <div className="contact-section">
+              <div className="section-header"><span>{t('mobile.contacts.sentRequests')}</span></div>
               <List dataSource={sentRequests} renderItem={(request) => (
                 <List.Item className="contact-item">
                   <List.Item.Meta
@@ -306,7 +331,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
                   <Tag color="processing">{t('mobile.contacts.requestPending')}</Tag>
                 </List.Item>
               )} />
-            </>
+            </div>
           ) : null}
         </Spin>
       </section>

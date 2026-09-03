@@ -18,11 +18,14 @@
  * W6B: Refactored from monolithic page to pure-renderer pattern
  * with runtime-owned projection, cursor pagination, draft recovery,
  * reaction/comment/reply flows, and bounded feed.
+ *
+ * W6B-sync: Visual hierarchy aligned with prototype MomentsPage.
+ * Header uses ImagePlus toggle; feed uses Card-based layout.
  */
 
 import { useCallback, useMemo, useState } from 'react';
 import { Button, Typography } from 'antd';
-import { RefreshCw } from 'lucide-react';
+import { ImagePlus } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { MobileNotice } from '../components/MobileNotice';
@@ -99,6 +102,7 @@ export function MomentsPage() {
   // Local UI state
   const [noticeError, setNoticeError] = useState('');
   const [activeCommentsPostId, setActiveCommentsPostId] = useState<string | null>(null);
+  const [showNewPost, setShowNewPost] = useState(false);
 
   // -- Projection availability check --
   const projectionState = projection.state();
@@ -112,6 +116,7 @@ export function MomentsPage() {
   const handlePublished = useCallback(
     (post: Post) => {
       feed.prependPost(post);
+      setShowNewPost(false);
     },
     [feed],
   );
@@ -186,20 +191,18 @@ export function MomentsPage() {
 
   return (
     <div className="page-container moments-page">
-      <div className="page-header">
-        <div className="header-title">{t('mobile.moments.title')}</div>
-        {feed.loadState !== 'refreshing' && (
-          <Button
-            type="text"
-            icon={<RefreshCw size={16} />}
-            onClick={feed.refresh}
-            aria-label={t('mobile.moments.feed.refresh')}
-          />
-        )}
-        {feed.loadState === 'refreshing' && (
-          <Text type="secondary">{t('mobile.moments.feed.refreshing')}</Text>
-        )}
-      </div>
+      {/* Header: title + ImagePlus new-post toggle (prototype) */}
+      <header className="page-header">
+        <h1 className="header-title">{t('mobile.moments.title')}</h1>
+        <button
+          type="button"
+          className="header-action"
+          aria-label={t('mobile.moments.newPost')}
+          onClick={() => setShowNewPost(!showNewPost)}
+        >
+          <ImagePlus size={20} />
+        </button>
+      </header>
 
       {noticeError ? (
         <MobileNotice onClose={() => setNoticeError('')}>{noticeError}</MobileNotice>
@@ -210,8 +213,8 @@ export function MomentsPage() {
         <MomentsUnavailable reason={unavailableReason} onRetry={handleRetry} />
       )}
 
-      {/* Composer: only when authenticated and available */}
-      {!isUnavailable && authSession && gateway && (
+      {/* Composer: toggled by the header ImagePlus button */}
+      {showNewPost && !isUnavailable && authSession && gateway && (
         <MomentComposer
           session={authSession}
           gateway={gateway}
@@ -232,9 +235,9 @@ export function MomentsPage() {
         <MomentsFeedEmpty />
       )}
 
-      {/* Feed list */}
+      {/* Feed list — prototype card layout */}
       {!isUnavailable && feed.posts.length > 0 && (
-        <div className="moments-feed-list" role="feed" aria-label={t('mobile.moments.title')}>
+        <div className="moments-feed" role="feed" aria-label={t('mobile.moments.title')}>
           {feed.posts.map((post) => (
             <MomentFeedItem
               key={post.id}

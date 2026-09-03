@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { Badge, Button, Empty, Input, List, Modal, Popconfirm, Spin, Switch, Tag, Typography } from 'antd';
-import { ArrowLeft, Ban, Bell, Check, CheckCheck, FolderOpen, Image, Mic, MoreHorizontal, Paperclip, Pencil, Pin, Plus, RotateCcw, Scissors, Search, Send, Smile, Trash2, Users, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, Ban, Bell, BellOff, Check, CheckCheck, FolderOpen, Image, Mic, MoreHorizontal, Paperclip, Pencil, Pin, Plus, RotateCcw, Scissors, Search, Send, Smile, Trash2, Users, VolumeX, X } from 'lucide-react';
 import {
   CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD,
   canSubmitChatComposerDraft,
@@ -27,7 +27,6 @@ import {
 import { decryptClientMediaBlob, type ClientMediaEncryptionDescriptor } from '@peers-touch/client-media-security';
 
 import { useMobileI18n } from '../app/mobileI18n';
-import logo from '../assets/logo.png';
 import { MobileAvatar } from '../components/MobileAvatar';
 import { MobileNotice } from '../components/MobileNotice';
 import type { MobileAuthSession } from '../features/auth/authSession';
@@ -67,7 +66,6 @@ import {
   conversationTitle,
   conversationAvatar,
   conversationPreview,
-  chatStateTags,
   formatRelativeTime,
   stationHostFromUrl,
   friendSettingsToActionState,
@@ -679,12 +677,14 @@ export function ChatPage() {
   return (
     <div className="page-container">
       <header className="page-header">
-        <img src={logo} alt="Peers Touch" className="header-logo" />
         <h1 className="header-title">{t('mobile.chat.title')}</h1>
+        <button type="button" className="header-action" aria-label={t('mobile.chat.moreActions')}>
+          <Pencil size={20} />
+        </button>
       </header>
 
       <div className="chat-search-bar">
-        <Input value={conversationQuery} onChange={(e) => setConversationQuery(e.target.value)} prefix={<Search size={16} />} placeholder={t('mobile.chat.searchPlaceholder')} allowClear />
+        <Input value={conversationQuery} onChange={(e) => setConversationQuery(e.target.value)} prefix={<Search size={16} color="#9ca0ab" />} placeholder={t('mobile.chat.searchPlaceholder')} allowClear />
       </div>
 
       {localActionError ? <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice> : null}
@@ -717,16 +717,17 @@ export function ChatPage() {
                     }
                     title={
                       <span className="conversation-title-row">
+                        {preferenceState?.sticky ? <Pin size={12} className="conversation-state-icon" /> : null}
                         <Text strong>{conversationTitle(conv)}</Text>
-                        {conv.kind === 'group' ? <Users size={13} /> : null}
-                        {chatStateTags(preferenceState, t).map((tag) => <Tag key={tag} className="conversation-state-tag">{tag}</Tag>)}
+                        {conv.kind === 'group' ? <Users size={12} className="conversation-state-icon" /> : null}
+                        {preferenceState?.muted ? <BellOff size={12} className="conversation-state-icon" /> : null}
                       </span>
                     }
-                    description={conversationPreview(conv, t)}
+                    description={<span className="conversation-preview">{conversationPreview(conv, t)}</span>}
                   />
                   <div className="conversation-meta">
-                    <Text type="secondary">{formatRelativeTime(updatedAt, t)}</Text>
-                    {visibleUnread > 0 ? <Badge count={visibleUnread} /> : null}
+                    <Text type="secondary" className="conversation-time">{formatRelativeTime(updatedAt, t)}</Text>
+                    {visibleUnread > 0 ? <Badge count={visibleUnread} className="conversation-badge" /> : null}
                   </div>
                 </List.Item>
               );
