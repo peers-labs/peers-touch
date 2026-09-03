@@ -4,7 +4,9 @@ use crate::contracts::{
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::actor_bucket::actor_bucket_id;
+use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -205,6 +207,198 @@ fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayl
     })
 }
 
+fn station_failure(
+    error: station_client::StationClientError,
+    context: &str,
+) -> AppResult<StubPayload> {
+    error.into_app_result(context)
+}
+
+fn require_token(token: &str) -> Result<(), AppResult<StubPayload>> {
+    if token.trim().is_empty() {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        ));
+    }
+    Ok(())
+}
+
+fn normalize_station_visibility(value: Value) -> Value {
+    match value.as_str() {
+        Some("workspace") | Some("AGENT_VISIBILITY_WORKSPACE") => json!("workspace"),
+        _ => json!("private"),
+    }
+}
+
+fn normalize_station_i64(value: Value) -> Value {
+    value
+        .as_i64()
+        .or_else(|| value.as_str().and_then(|raw| raw.parse::<i64>().ok()))
+        .map(Value::from)
+        .unwrap_or_else(|| Value::from(0))
+}
+
+fn station_agent_to_desktop(agent: Value) -> Value {
+    let config = agent
+        .get("config_json")
+        .or_else(|| agent.get("configJson"))
+        .and_then(Value::as_str)
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .unwrap_or_else(|| json!({}));
+    let mut desktop = config.as_object().cloned().unwrap_or_default();
+    let field = |snake: &str, camel: &str| {
+        agent
+            .get(snake)
+            .or_else(|| agent.get(camel))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    desktop.insert("id".to_string(), field("agent_id", "agentId"));
+    desktop.insert("name".to_string(), field("name", "name"));
+    desktop.insert("title".to_string(), field("title", "title"));
+    desktop.insert(
+        "description".to_string(),
+        field("description", "description"),
+    );
+    desktop.insert("provider".to_string(), field("provider_id", "providerId"));
+    desktop.insert("model".to_string(), field("model_name", "modelName"));
+    desktop.insert("effort".to_string(), field("effort", "effort"));
+    desktop.insert(
+        "thinkingMode".to_string(),
+        field("thinking_mode", "thinkingMode"),
+    );
+    desktop.insert(
+        "visibility".to_string(),
+        normalize_station_visibility(field("visibility", "visibility")),
+    );
+    desktop.insert(
+        "version".to_string(),
+        normalize_station_i64(field("version", "version")),
+    );
+    desktop.insert("createdAt".to_string(), field("created_at", "createdAt"));
+    desktop.insert("updatedAt".to_string(), field("updated_at", "updatedAt"));
+    normalize_agent_value(Value::Object(desktop))
+}
+
+fn desktop_agent_config(data: &Value) -> String {
+    let mut config = data.as_object().cloned().unwrap_or_default();
+    for key in [
+        "id",
+        "name",
+        "title",
+        "description",
+        "provider",
+        "model",
+        "effort",
+        "thinkingMode",
+        "visibility",
+        "version",
+        "createdAt",
+        "updatedAt",
+    ] {
+        config.remove(key);
+    }
+    Value::Object(config).to_string()
+}
+
+fn station_agent_body(data: &Value, agent_id: Option<&str>) -> Value {
+    let string_value = |key: &str| {
+        data.get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let visibility =
+        normalize_station_visibility(data.get("visibility").cloned().unwrap_or(Value::Null));
+    let mut body = json!({
+        "name": string_value("name"),
+        "title": string_value("title"),
+        "description": string_value("description"),
+        "provider_id": string_value("provider"),
+        "model_name": string_value("model"),
+        "effort": string_value("effort"),
+        "thinking_mode": string_value("thinkingMode"),
+        "visibility": visibility,
+        "config_json": desktop_agent_config(data),
+        "version": data.get("version").and_then(Value::as_i64).unwrap_or(0),
+    });
+    if let Some(agent_id) = agent_id {
+        body["agent_id"] = json!(agent_id);
+    }
+    body
+}
+
+fn station_agent(token: &str, agent_id: &str) -> Result<Value, station_client::StationClientError> {
+    let result = station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/get",
+        token,
+        None,
+        Some(&json!({"agent_id": agent_id})),
+    )?;
+    Ok(station_agent_to_desktop(
+        result.get("agent").cloned().unwrap_or(result),
+    ))
+}
+
+fn create_station_agent(
+    actor_ptid: &str,
+    token: &str,
+    data: Value,
+    command: &str,
+) -> AppResult<StubPayload> {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/create",
+        token,
+        None,
+        Some(&station_agent_body(&normalize_agent_value(data), None)),
+    ) {
+        Ok(result) => {
+            let agent = station_agent_to_desktop(result.get("agent").cloned().unwrap_or(result));
+            let _ = agents_list(actor_ptid, token);
+            success_payload(command, agent)
+        }
+        Err(error) => station_failure(error, "Failed to create Agent"),
+    }
+}
+
+fn replace_station_projection(actor_ptid: &str, agents: &[Value]) -> Result<(), String> {
+    let records = agents
+        .iter()
+        .cloned()
+        .filter_map(record_from_value)
+        .collect::<Vec<_>>();
+    let key = actor_bucket_id(actor_ptid)?;
+    let mut stores = agent_stores()
+        .lock()
+        .map_err(|error| format!("failed to acquire Agent projection: {error}"))?;
+    let store = stores
+        .buckets
+        .entry(key)
+        .or_insert_with(|| AgentStore::load(actor_ptid));
+    store.agents = records;
+    if !store
+        .agents
+        .iter()
+        .any(|item| agent_name(item) == store.selected_agent)
+    {
+        store.selected_agent = store.agents.first().map(agent_name).unwrap_or_default();
+    }
+    if !store
+        .agents
+        .iter()
+        .any(|item| agent_name(item) == store.default_agent)
+    {
+        store.default_agent = store.selected_agent.clone();
+    }
+    mark_default_agent(&mut store.agents, &store.default_agent);
+    sort_agent_records(&mut store.agents);
+    persist_store(actor_ptid, store)
+}
+
 fn invalid_argument(message: &str) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::InvalidArgument, message, None)
 }
@@ -280,6 +474,8 @@ fn normalize_agent_value(mut data: Value) -> Value {
         .or_insert_with(|| json!(""));
     obj.entry("effort".to_string())
         .or_insert_with(|| json!("medium"));
+    obj.entry("thinkingMode".to_string())
+        .or_insert_with(|| json!("auto"));
     obj.entry("visibility".to_string())
         .or_insert_with(|| json!("private"));
     obj.entry("isolationEnabled".to_string())
@@ -309,6 +505,7 @@ fn normalize_agent_value(mut data: Value) -> Value {
         .or_insert_with(|| json!(""));
     obj.entry("updatedAt".to_string())
         .or_insert_with(|| json!(""));
+    obj.entry("version".to_string()).or_insert_with(|| json!(0));
     data
 }
 
@@ -401,19 +598,32 @@ fn set_default_agent(store: &mut AgentStore, name: String) {
     mark_default_agent(&mut store.agents, &name);
 }
 
-pub fn agents_list(actor_ptid: &str) -> AppResult<StubPayload> {
+pub fn agents_list(actor_ptid: &str, token: &str) -> AppResult<StubPayload> {
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    let result = match station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/list",
+        token,
+        None,
+        Some(&json!({"page": 1, "page_size": 100})),
+    ) {
+        Ok(result) => result,
+        Err(error) => return station_failure(error, "Failed to list Agents"),
+    };
+    let agents = result
+        .get("agents")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .cloned()
+        .map(station_agent_to_desktop)
+        .collect::<Vec<_>>();
+    if let Err(error) = replace_station_projection(actor_ptid, &agents) {
+        return persist_error(error);
+    }
     with_agent_app_result(actor_ptid, |store| {
-        sort_agent_records(&mut store.agents);
-        let agents = store
-            .agents
-            .iter()
-            .map(|item| item.data.clone())
-            .collect::<Vec<_>>();
-        tracing::info!(
-            command = "agents_list",
-            count = agents.len(),
-            "Agents listed"
-        );
         success_payload(
             "agents_list",
             json!({
@@ -482,150 +692,116 @@ pub fn agents_set_default(actor_ptid: &str, input: AgentIdInput) -> AppResult<St
     })
 }
 
-pub fn agents_get(actor_ptid: &str, input: AgentIdInput) -> AppResult<StubPayload> {
+pub fn agents_get(_actor_ptid: &str, token: &str, input: AgentIdInput) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
-    with_agent_app_result(actor_ptid, |store| {
-        if let Some(agent) = store.agents.iter().find(|item| item.id == input.id) {
-            return success_payload("agents_get", agent.data.clone());
-        }
-        AppResult::fail(ErrorCode::NotFound, "Agent not found", None)
-    })
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    match station_agent(token, &input.id) {
+        Ok(agent) => success_payload("agents_get", agent),
+        Err(error) => station_failure(error, "Failed to get Agent"),
+    }
 }
 
-pub fn agents_create(actor_ptid: &str, input: AgentCreateInput) -> AppResult<StubPayload> {
-    with_agent_mutation(actor_ptid, |store| {
-        let id = store.next_agent_id();
-        tracing::info!(command = "agents_create", agent_id = %id, "Creating agent");
-        let mut data = input.data;
-        let sort_order = store.next_sort_order();
-        if let Some(obj) = data.as_object_mut() {
-            obj.insert("id".to_string(), json!(id.clone()));
-            obj.insert("isDefault".to_string(), json!(false));
-            obj.insert("sortOrder".to_string(), json!(sort_order));
-        }
-        let data = normalize_agent_value(data);
-        store.agents.push(AgentRecord {
-            id,
-            data: data.clone(),
-        });
-        success_payload("agents_create", data)
-    })
+pub fn agents_create(
+    actor_ptid: &str,
+    token: &str,
+    input: AgentCreateInput,
+) -> AppResult<StubPayload> {
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    create_station_agent(actor_ptid, token, input.data, "agents_create")
 }
 
-pub fn agents_update(actor_ptid: &str, input: AgentUpdateInput) -> AppResult<StubPayload> {
+pub fn agents_update(
+    actor_ptid: &str,
+    token: &str,
+    input: AgentUpdateInput,
+) -> AppResult<StubPayload> {
     tracing::info!(command = "agents_update", agent_id = %input.id, "Updating agent");
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
-    with_agent_mutation(actor_ptid, |store| {
-        let Some(index) = store.agents.iter().position(|item| item.id == input.id) else {
-            return AppResult::fail(ErrorCode::NotFound, "Agent not found", None);
-        };
-        let previous_name = agent_name(&store.agents[index]);
-        let mut data = store.agents[index].data.clone();
-        if let (Some(base), Some(update)) = (data.as_object_mut(), input.data.as_object()) {
-            for (key, value) in update {
-                if matches!(
-                    key.as_str(),
-                    "chatConfig" | "params" | "toolsAllow" | "toolsDeny" | "toolsProfile"
-                ) {
-                    continue;
-                }
-                base.insert(key.to_string(), value.clone());
-            }
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    let current = match station_agent(token, &input.id) {
+        Ok(agent) => agent,
+        Err(error) => return station_failure(error, "Failed to load Agent before update"),
+    };
+    let mut data = current;
+    if let (Some(base), Some(update)) = (data.as_object_mut(), input.data.as_object()) {
+        for (key, value) in update {
+            base.insert(key.clone(), value.clone());
         }
-        if let Some(obj) = data.as_object_mut() {
-            obj.insert("id".to_string(), json!(input.id));
+    }
+    let data = normalize_agent_value(data);
+    match station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/update",
+        token,
+        None,
+        Some(&station_agent_body(&data, Some(&input.id))),
+    ) {
+        Ok(result) => {
+            let updated = station_agent_to_desktop(result.get("agent").cloned().unwrap_or(result));
+            let _ = agents_list(actor_ptid, token);
+            success_payload("agents_update", updated)
         }
-        let mut data = normalize_agent_value(data);
-        let next_name = data
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or(DEFAULT_AGENT_NAME)
-            .to_string();
-        if store.selected_agent == previous_name {
-            store.selected_agent = next_name.clone();
-        }
-        if let Some(obj) = data.as_object_mut() {
-            obj.insert(
-                "isDefault".to_string(),
-                json!(store.default_agent == previous_name),
-            );
-        }
-        store.agents[index].data = data.clone();
-        if store.default_agent == previous_name {
-            set_default_agent(store, next_name);
-        }
-        sort_agent_records(&mut store.agents);
-        success_payload("agents_update", data)
-    })
+        Err(error) => station_failure(error, "Failed to update Agent"),
+    }
 }
 
-pub fn agents_delete(actor_ptid: &str, input: AgentIdInput) -> AppResult<StubPayload> {
+pub fn agents_delete(actor_ptid: &str, token: &str, input: AgentIdInput) -> AppResult<StubPayload> {
     tracing::info!(command = "agents_delete", agent_id = %input.id, "Deleting agent");
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
-    with_agent_mutation(actor_ptid, |store| {
-        let deleted_selected = store
-            .agents
-            .iter()
-            .find(|item| item.id == input.id)
-            .map(|item| agent_name(item) == store.selected_agent)
-            .unwrap_or(false);
-        let before = store.agents.len();
-        store.agents.retain(|item| item.id != input.id);
-        if deleted_selected {
-            store.selected_agent = store
-                .agents
-                .first()
-                .map(agent_name)
-                .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    match station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/delete",
+        token,
+        None,
+        Some(&json!({"agent_id": input.id})),
+    ) {
+        Ok(_) => {
+            let _ = agents_list(actor_ptid, token);
+            success_payload("agents_delete", json!({"ok": true}))
         }
-        if !store
-            .agents
-            .iter()
-            .any(|item| agent_name(item) == store.default_agent)
-        {
-            let fallback = store
-                .agents
-                .first()
-                .map(agent_name)
-                .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
-            set_default_agent(store, fallback);
-        }
-        success_payload(
-            "agents_delete",
-            json!({ "ok": before != store.agents.len() }),
-        )
-    })
+        Err(error) => station_failure(error, "Failed to delete Agent"),
+    }
 }
 
-pub fn agents_duplicate(actor_ptid: &str, input: AgentDuplicateInput) -> AppResult<StubPayload> {
+pub fn agents_duplicate(
+    actor_ptid: &str,
+    token: &str,
+    input: AgentDuplicateInput,
+) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() || input.name.trim().is_empty() {
         return invalid_argument("id and name are required");
     }
-    with_agent_mutation(actor_ptid, |store| {
-        if let Some(agent) = store.agents.iter().find(|item| item.id == input.id) {
-            let id = store.next_agent_id();
-            let mut data = agent.data.clone();
-            if let Some(obj) = data.as_object_mut() {
-                obj.insert("id".to_string(), json!(id.clone()));
-                obj.insert("name".to_string(), json!(input.name));
-                obj.insert("isDefault".to_string(), json!(false));
-                obj.insert("sortOrder".to_string(), json!(store.next_sort_order()));
-            }
-            let data = normalize_agent_value(data);
-            store.agents.push(AgentRecord {
-                id,
-                data: data.clone(),
-            });
-            return success_payload("agents_duplicate", data);
-        }
-        AppResult::fail(ErrorCode::NotFound, "Agent not found", None)
-    })
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    let mut data = match station_agent(token, &input.id) {
+        Ok(agent) => agent,
+        Err(error) => return station_failure(error, "Failed to load Agent before duplicate"),
+    };
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert("name".to_string(), json!(input.name.trim()));
+        obj.insert("isDefault".to_string(), json!(false));
+        obj.remove("id");
+        obj.remove("version");
+        obj.remove("createdAt");
+        obj.remove("updatedAt");
+    }
+    create_station_agent(actor_ptid, token, data, "agents_duplicate")
 }
 
 pub fn agents_search(actor_ptid: &str, input: AgentSearchInput) -> AppResult<StubPayload> {
@@ -653,6 +829,11 @@ pub fn agents_search(actor_ptid: &str, input: AgentSearchInput) -> AppResult<Stu
 
 #[cfg(test)]
 mod tests {
+    use self::{
+        local_agents_create as agents_create, local_agents_delete as agents_delete,
+        local_agents_duplicate as agents_duplicate, local_agents_list as agents_list,
+        local_agents_update as agents_update,
+    };
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -688,6 +869,165 @@ mod tests {
             None => std::env::remove_var("PEERS_STORAGE_ROOT"),
         }
         let _ = fs::remove_dir_all(base);
+    }
+
+    fn local_agents_list(actor_ptid: &str) -> AppResult<StubPayload> {
+        with_agent_app_result(actor_ptid, |store| {
+            sort_agent_records(&mut store.agents);
+            success_payload(
+                "agents_list",
+                json!({
+                    "agents": store.agents.iter().map(|item| item.data.clone()).collect::<Vec<_>>(),
+                    "selectedAgent": store.selected_agent,
+                    "defaultAgent": store.default_agent
+                }),
+            )
+        })
+    }
+
+    fn local_agents_create(actor_ptid: &str, input: AgentCreateInput) -> AppResult<StubPayload> {
+        with_agent_mutation(actor_ptid, |store| {
+            let id = store.next_agent_id();
+            let mut data = input.data;
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("id".to_string(), json!(id.clone()));
+                obj.insert("isDefault".to_string(), json!(false));
+                obj.insert("sortOrder".to_string(), json!(store.next_sort_order()));
+            }
+            let data = normalize_agent_value(data);
+            store.agents.push(AgentRecord {
+                id,
+                data: data.clone(),
+            });
+            success_payload("agents_create", data)
+        })
+    }
+
+    fn local_agents_update(actor_ptid: &str, input: AgentUpdateInput) -> AppResult<StubPayload> {
+        with_agent_mutation(actor_ptid, |store| {
+            let Some(index) = store.agents.iter().position(|item| item.id == input.id) else {
+                return AppResult::fail(ErrorCode::NotFound, "Agent not found", None);
+            };
+            let previous_name = agent_name(&store.agents[index]);
+            let mut data = store.agents[index].data.clone();
+            if let (Some(base), Some(update)) = (data.as_object_mut(), input.data.as_object()) {
+                for (key, value) in update {
+                    base.insert(key.clone(), value.clone());
+                }
+            }
+            let mut data = normalize_agent_value(data);
+            let next_name = data
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or(DEFAULT_AGENT_NAME)
+                .to_string();
+            if store.selected_agent == previous_name {
+                store.selected_agent = next_name.clone();
+            }
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert(
+                    "isDefault".to_string(),
+                    json!(store.default_agent == previous_name),
+                );
+            }
+            store.agents[index].data = data.clone();
+            if store.default_agent == previous_name {
+                set_default_agent(store, next_name);
+            }
+            sort_agent_records(&mut store.agents);
+            success_payload("agents_update", data)
+        })
+    }
+
+    fn local_agents_delete(actor_ptid: &str, input: AgentIdInput) -> AppResult<StubPayload> {
+        with_agent_mutation(actor_ptid, |store| {
+            let deleted_selected = store
+                .agents
+                .iter()
+                .find(|item| item.id == input.id)
+                .map(|item| agent_name(item) == store.selected_agent)
+                .unwrap_or(false);
+            let before = store.agents.len();
+            store.agents.retain(|item| item.id != input.id);
+            if deleted_selected {
+                store.selected_agent = store
+                    .agents
+                    .first()
+                    .map(agent_name)
+                    .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
+            }
+            if !store
+                .agents
+                .iter()
+                .any(|item| agent_name(item) == store.default_agent)
+            {
+                let fallback = store
+                    .agents
+                    .first()
+                    .map(agent_name)
+                    .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
+                set_default_agent(store, fallback);
+            }
+            success_payload(
+                "agents_delete",
+                json!({ "ok": before != store.agents.len() }),
+            )
+        })
+    }
+
+    fn local_agents_duplicate(
+        actor_ptid: &str,
+        input: AgentDuplicateInput,
+    ) -> AppResult<StubPayload> {
+        with_agent_mutation(actor_ptid, |store| {
+            let Some(agent) = store.agents.iter().find(|item| item.id == input.id) else {
+                return AppResult::fail(ErrorCode::NotFound, "Agent not found", None);
+            };
+            let id = store.next_agent_id();
+            let mut data = agent.data.clone();
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("id".to_string(), json!(id.clone()));
+                obj.insert("name".to_string(), json!(input.name));
+                obj.insert("isDefault".to_string(), json!(false));
+                obj.insert("sortOrder".to_string(), json!(store.next_sort_order()));
+            }
+            let data = normalize_agent_value(data);
+            store.agents.push(AgentRecord {
+                id,
+                data: data.clone(),
+            });
+            success_payload("agents_duplicate", data)
+        })
+    }
+
+    #[test]
+    fn station_mapping_normalizes_agent_contract() {
+        let mapped = station_agent_to_desktop(json!({
+            "agent_id": "agent-1",
+            "name": "assistant",
+            "provider_id": "ark",
+            "model_name": "ep-model",
+            "effort": "medium",
+            "thinking_mode": "disabled",
+            "visibility": "AGENT_VISIBILITY_PRIVATE",
+            "version": "2",
+            "config_json": "{\"openingMessage\":\"Ready\"}"
+        }));
+
+        assert_eq!(mapped["id"], "agent-1");
+        assert_eq!(mapped["provider"], "ark");
+        assert_eq!(mapped["model"], "ep-model");
+        assert_eq!(mapped["effort"], "medium");
+        assert_eq!(mapped["thinkingMode"], "disabled");
+        assert_eq!(mapped["visibility"], "private");
+        assert_eq!(mapped["version"], 2);
+        assert_eq!(mapped["openingMessage"], "Ready");
+
+        let body = station_agent_body(&mapped, Some("agent-1"));
+        assert_eq!(body["agent_id"], "agent-1");
+        assert_eq!(body["visibility"], "private");
+        assert_eq!(body["version"], 2);
+        assert_eq!(body["thinking_mode"], "disabled");
     }
 
     #[test]
