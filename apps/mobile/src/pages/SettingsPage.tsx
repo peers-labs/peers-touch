@@ -1,9 +1,13 @@
 /**
  * SettingsPage.tsx — Pure renderer for the Settings / "Me" tab.
  *
- * W6C product closure: profile editing, account preferences, device
- * preferences, notifications, privacy, storage, blocked users,
- * language, permissions, station change, and logout.
+ * Visual hierarchy aligned with the prototype ProfilePage:
+ * - Header: "Me" title + Settings gear button
+ * - Profile header card: Avatar 64px + name + PTID + chevron,
+ *   stats row (Friends / Groups / Moments)
+ * - Setting groups: Account, Chat, Network, About
+ *   Each row: colored icon in tinted bg + label + optional value + chevron
+ * - Sign Out button at bottom
  *
  * This page is a pure renderer. All data comes from:
  *   - useSettingsController (dirty/save/discard/conflict lifecycle)
@@ -15,10 +19,24 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, Spin } from 'antd';
+import { Avatar, Card, Modal, Spin, Typography } from 'antd';
+import type { LucideIcon } from 'lucide-react';
+import {
+  Ban,
+  Bell,
+  ChevronRight,
+  Fingerprint,
+  Globe,
+  Image as ImageIcon,
+  MessageCircle,
+  Server,
+  Settings as SettingsIcon,
+  Shield,
+  ShieldCheck,
+  User,
+} from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
-import logo from '../assets/logo.png';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useSocialStore } from '../features/social/socialStore';
 import {
@@ -28,18 +46,26 @@ import {
 import { createProfileGateway } from '../services/gateways/profileGateway';
 import { createProfileProjection } from '../runtimes/profileProjectionDescriptor';
 import { useSettingsController } from './settings/useSettingsController';
-import {
-  BlockedUsersSection,
-  DevicePrefsSection,
-  DirtyBar,
-  LanguageSection,
-  NotificationsSection,
-  PermissionsSection,
-  PrivacySection,
-  ProfileSection,
-  StationSection,
-  StorageSection,
-} from './settings/SettingsSections';
+import { DirtyBar } from './settings/SettingsSections';
+
+const { Text } = Typography;
+
+// ---------------------------------------------------------------------------
+// Setting group types (prototype-aligned)
+// ---------------------------------------------------------------------------
+
+interface SettingEntry {
+  labelKey: string;
+  icon: LucideIcon;
+  tint: string;
+  valueKey?: string | undefined;
+  valueOverride?: string | undefined;
+}
+
+interface SettingGroup {
+  titleKey: string;
+  items: SettingEntry[];
+}
 
 // ---------------------------------------------------------------------------
 // Page props — the shell passes only what the page cannot own
@@ -53,7 +79,7 @@ interface SettingsPageProps {
 }
 
 // ---------------------------------------------------------------------------
-// SettingsPage — pure renderer
+// SettingsPage — pure renderer (prototype ProfilePage layout)
 // ---------------------------------------------------------------------------
 
 export function SettingsPage({
@@ -62,7 +88,7 @@ export function SettingsPage({
   onChangeStation,
   onLogout,
 }: SettingsPageProps) {
-  const { t } = useMobileI18n();
+  const { t, language } = useMobileI18n();
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
@@ -72,7 +98,15 @@ export function SettingsPage({
   // Blocked users from the social store
   const blockedUsers = useSocialStore((state) => state.blockedUsers);
   const refreshBlockedUsers = useSocialStore((state) => state.refreshBlockedUsers);
-  const unblockUser = useSocialStore((state) => state.unblockUser);
+
+  // Derive stats counts from available store data (best-effort; shows 0 when unavailable)
+  const friendCount = useSocialStore((state) => {
+    // Count non-blocked friendships as an approximation
+    const statuses = state.friendshipStatus ?? {};
+    return Object.values(statuses).filter((f) => !f.blocked).length;
+  });
+  const groupCount = 0; // Group count not available in social store projection
+  const momentsCount = 0; // Moments count not available in social store projection
 
   useEffect(() => {
     if (authSession) void refreshBlockedUsers().catch(() => undefined);
@@ -84,17 +118,8 @@ export function SettingsPage({
     [authSession],
   );
 
-  // Lightweight projection for the settings page lifetime.
-  // The global profile projection descriptor is the canonical owner;
-  // we create a local instance here so the controller can push readback
-  // into a cache without coupling to the global ingress lifecycle.
   const profileProjection = useMemo(() => {
     if (!authSession) return null;
-    // Stub ingress — settings page does not ingest realtime events,
-    // it only pushes preference readback into the projection cache.
-    // The profile projection factory requires an ingress reference but
-    // only uses it for type-level dependency; all data flows through
-    // explicit applyPreference / ingestEvent calls.
     const stubIngress = {
       ingestDataEvent: () => true,
       ingestControlEvent: () => true,
@@ -116,6 +141,46 @@ export function SettingsPage({
   // Settings controller — owns dirty/save/discard/conflict lifecycle
   const controller = useSettingsController(authSession, profileGateway, profileProjection);
 
+  // --- Setting groups (prototype-aligned) ---
+  const settingGroups: SettingGroup[] = useMemo(() => [
+    {
+      titleKey: 'mobile.settings.group.account',
+      items: [
+        { labelKey: 'mobile.settings.accountInfo', icon: User, tint: '#6366f1' },
+        { labelKey: 'mobile.settings.section.notifications', valueKey: 'mobile.settings.notifications.enabled', icon: Bell, tint: '#f59e0b' },
+        { labelKey: 'mobile.settings.privacySecurity', icon: Shield, tint: '#22c55e' },
+        { labelKey: 'mobile.settings.safetyNumber', icon: Fingerprint, tint: '#0ea5e9' },
+        { labelKey: 'mobile.settings.blockedUsers', valueOverride: String(blockedUsers.length), icon: Ban, tint: '#ef4444' },
+      ],
+    },
+    {
+      titleKey: 'mobile.settings.group.chat',
+      items: [
+        { labelKey: 'mobile.settings.chatSettings', icon: MessageCircle, tint: '#6366f1' },
+        { labelKey: 'mobile.settings.chatBackground', icon: ImageIcon, tint: '#ec4899' },
+      ],
+    },
+    {
+      titleKey: 'mobile.settings.group.network',
+      items: [
+        { labelKey: 'mobile.settings.stationConnection', valueOverride: activeStation?.label || t('mobile.settings.stationNotSelected'), icon: Server, tint: '#22c55e' },
+        { labelKey: 'mobile.settings.encryption', valueKey: 'mobile.settings.encryptionActive', icon: ShieldCheck, tint: '#6366f1' },
+        { labelKey: 'mobile.settings.section.language', valueOverride: language === 'zh-CN' ? '简体中文' : 'English', icon: Globe, tint: '#0ea5e9' },
+      ],
+    },
+    {
+      titleKey: 'mobile.settings.group.about',
+      items: [
+        { labelKey: 'mobile.settings.aboutApp', valueKey: 'mobile.settings.appVersion', icon: ShieldCheck, tint: '#f59e0b' },
+      ],
+    },
+  ], [blockedUsers.length, activeStation, language, t]);
+
+  // --- PTID display ---
+  const ptidDisplay = authSession?.actorRef.ptid
+    ? `ptid:${String(authSession.actorRef.ptid).slice(0, 24)}...`
+    : '';
+
   // --- Logout flow ---
   const handleLogoutConfirm = useCallback(async () => {
     setLogoutConfirmOpen(false);
@@ -126,15 +191,6 @@ export function SettingsPage({
       setLoggingOut(false);
     }
   }, [onLogout]);
-
-  // --- Cache clear ---
-  const handleClearCache = useCallback(() => {
-    if (typeof window !== 'undefined' && window.caches) {
-      void window.caches.keys().then((names) =>
-        Promise.all(names.map((name) => window.caches.delete(name))),
-      );
-    }
-  }, []);
 
   // --- Render ---
   if (controller.loading) {
@@ -147,87 +203,125 @@ export function SettingsPage({
 
   return (
     <div className="page-container settings-page">
+      {/* Header: "Me" + Settings gear */}
       <header className="page-header">
         <h1 className="header-title">{t('mobile.settings.title')}</h1>
+        <button
+          type="button"
+          className="header-action"
+          aria-label={t('mobile.settings.section.station')}
+          onClick={onChangeStation}
+        >
+          <SettingsIcon size={20} />
+        </button>
       </header>
 
-      {/* Profile card */}
-      <div className="settings-profile-card">
-        <img src={logo} alt="Peers Touch" className="profile-logo" />
-        <div className="profile-info">
-          <span className="profile-name">
-            {displayName || t('mobile.settings.notLoggedIn')}
-          </span>
-          <span className="profile-status">
-            {authSession ? t('mobile.settings.connected') : t('mobile.settings.loginHint')}
-          </span>
-        </div>
+      <div className="settings-body">
+        {/* Profile header card — Avatar 64px + name + PTID + chevron + stats */}
+        <Card className="settings-profile-header-card" variant="borderless">
+          <div className="settings-profile-header">
+            <Avatar
+              size={64}
+              style={{
+                background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                borderRadius: 16,
+              }}
+            >
+              {displayName ? displayName.slice(0, 2).toUpperCase() : '?'}
+            </Avatar>
+            <div className="settings-profile-info">
+              <Text strong className="settings-profile-name">
+                {displayName || t('mobile.settings.notLoggedIn')}
+              </Text>
+              {ptidDisplay && (
+                <Text type="secondary" className="settings-profile-ptid">
+                  {ptidDisplay}
+                </Text>
+              )}
+            </div>
+            <ChevronRight size={20} color="#9ca0ab" />
+          </div>
+          <div className="settings-profile-stats">
+            <div className="settings-stat">
+              <Text strong className="settings-stat-value">{friendCount}</Text>
+              <Text type="secondary" className="settings-stat-label">
+                {t('mobile.settings.stats.friends')}
+              </Text>
+            </div>
+            <div className="settings-stat-divider" />
+            <div className="settings-stat">
+              <Text strong className="settings-stat-value">{groupCount}</Text>
+              <Text type="secondary" className="settings-stat-label">
+                {t('mobile.settings.stats.groups')}
+              </Text>
+            </div>
+            <div className="settings-stat-divider" />
+            <div className="settings-stat">
+              <Text strong className="settings-stat-value">{momentsCount}</Text>
+              <Text type="secondary" className="settings-stat-label">
+                {t('mobile.settings.stats.moments')}
+              </Text>
+            </div>
+          </div>
+        </Card>
+
+        {/* Dirty bar — save/discard/conflict */}
+        <DirtyBar
+          dirty={controller.dirty}
+          conflict={controller.conflict}
+          saveStatus={controller.saveStatus}
+          saveError={controller.saveError}
+          onSave={() => void controller.save()}
+          onDiscard={controller.discard}
+          onReload={() => void controller.reload()}
+        />
+
+        {/* Setting groups (prototype-aligned) */}
+        {settingGroups.map((group) => (
+          <div key={group.titleKey} className="settings-group-block">
+            <div className="settings-group-block-title">{t(group.titleKey)}</div>
+            <Card className="settings-group-card" variant="borderless">
+              {group.items.map((item, idx) => {
+                const Icon = item.icon;
+                const displayValue = item.valueOverride ?? (item.valueKey ? t(item.valueKey) : undefined);
+                return (
+                  <div
+                    key={item.labelKey}
+                    className={`setting-row ${idx > 0 ? 'setting-row--border' : ''}`}
+                  >
+                    <span
+                      className="setting-row-icon"
+                      style={{
+                        backgroundColor: `${item.tint}14`,
+                        color: item.tint,
+                      }}
+                    >
+                      <Icon size={17} />
+                    </span>
+                    <Text className="setting-row-label">{t(item.labelKey)}</Text>
+                    {displayValue && (
+                      <Text type="secondary" className="setting-row-value">
+                        {displayValue}
+                      </Text>
+                    )}
+                    <ChevronRight size={17} color="#c1c4cc" />
+                  </div>
+                );
+              })}
+            </Card>
+          </div>
+        ))}
+
+        {/* Sign Out button */}
+        <button
+          type="button"
+          className="settings-sign-out"
+          onClick={() => setLogoutConfirmOpen(true)}
+          disabled={loggingOut}
+        >
+          {loggingOut ? t('mobile.settings.station.loggingOut') : t('mobile.settings.signOut')}
+        </button>
       </div>
-
-      {/* Dirty bar — save/discard/conflict */}
-      <DirtyBar
-        dirty={controller.dirty}
-        conflict={controller.conflict}
-        saveStatus={controller.saveStatus}
-        saveError={controller.saveError}
-        onSave={() => void controller.save()}
-        onDiscard={controller.discard}
-        onReload={() => void controller.reload()}
-      />
-
-      {/* Profile editing */}
-      <ProfileSection
-        displayName={displayName}
-        onEditProfile={() => {
-          // W6C: profile editing is a selected-only detail mount;
-          // the edit form is rendered on-demand (future detail page).
-        }}
-      />
-
-      {/* Notifications (account preferences, Station readback) */}
-      <NotificationsSection
-        prefs={controller.draftAccountPrefs}
-        onPatch={controller.patchAccountPrefs}
-        disabled={!authSession}
-      />
-
-      {/* Privacy (account preferences, Station readback) */}
-      <PrivacySection
-        prefs={controller.draftAccountPrefs}
-        onPatch={controller.patchAccountPrefs}
-        disabled={!authSession}
-      />
-
-      {/* Device preferences (local-only) */}
-      <DevicePrefsSection
-        prefs={controller.draftDevicePrefs}
-        onPatch={controller.patchDevicePrefs}
-      />
-
-      {/* Language */}
-      <LanguageSection />
-
-      {/* Storage */}
-      <StorageSection onClearCache={handleClearCache} />
-
-      {/* Blocked users */}
-      <BlockedUsersSection
-        blockedUsers={blockedUsers}
-        onUnblock={(ptid) => unblockUser(ptid)}
-      />
-
-      {/* Permissions */}
-      <PermissionsSection />
-
-      {/* Station + Logout */}
-      <StationSection
-        stationLabel={activeStation?.label || t('mobile.launch.station')}
-        stationUrl={activeStation?.url || t('mobile.settings.stationNotSelected')}
-        online={activeStation?.online ?? false}
-        onChangeStation={onChangeStation}
-        onLogout={() => setLogoutConfirmOpen(true)}
-        loggingOut={loggingOut}
-      />
 
       {/* Logout confirmation modal */}
       <Modal
