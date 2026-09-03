@@ -26,6 +26,36 @@ func TestToolCallSchemaVersionFitsCapabilityManifestVersion(t *testing.T) {
 	}
 }
 
+func TestActorPTIDColumnsUseCanonicalTextStorage(t *testing.T) {
+	cases := []struct {
+		name      string
+		model     interface{}
+		fieldName string
+	}{
+		{name: "provider", model: &AgentProvider{}, fieldName: "ActorPTID"},
+		{name: "credential", model: &Credential{}, fieldName: "ActorPTID"},
+		{name: "model", model: &AgentModel{}, fieldName: "ActorPTID"},
+		{name: "task run", model: &TaskRun{}, fieldName: "OwnerActorPTID"},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			parsed, err := schema.Parse(
+				testCase.model,
+				&sync.Map{},
+				schema.NamingStrategy{},
+			)
+			if err != nil {
+				t.Fatalf("parse %s schema: %v", testCase.name, err)
+			}
+			field := parsed.LookUpField(testCase.fieldName)
+			if field == nil || field.TagSettings["TYPE"] != "text" {
+				t.Fatalf("%s actor PTID type = %v, want text", testCase.name, field)
+			}
+		})
+	}
+}
+
 func TestMigrateActorIdentityColumnsRenamesLegacyColumnsIdempotently(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:agent-actor-identity-migration?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
