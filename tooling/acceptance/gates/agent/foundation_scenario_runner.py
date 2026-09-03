@@ -82,6 +82,13 @@ DIRECT_PROBE_TIMEOUT_SECONDS = {
 
 RESTORE_IDENTITY_STATES = frozenset(
     {
+        "onboarding",
+        "resuming",
+        "ready",
+    }
+)
+RESTORE_IDENTITY_PHASES = frozenset(
+    {
         "booting",
         "checkingLaunchContext",
         "resolvingSession",
@@ -94,7 +101,19 @@ RESTORE_IDENTITY_STATES = frozenset(
         "authenticatedPendingCompletion",
         "authenticated",
         "revoked",
-        "ready",
+    }
+)
+RESTORE_IDENTITY_REASONS = frozenset(
+    {
+        "cold_launch",
+        "renderer_reload",
+        "applet_launch",
+        "cold_policy",
+        "pin_required",
+        "session_missing",
+        "restore_failed",
+        "revoked",
+        "logout",
     }
 )
 RESTORE_ERROR_CODES = (
@@ -706,6 +725,28 @@ def _restore_failure_diagnostic(
         and identity_state in RESTORE_IDENTITY_STATES
         else "unknown"
     )
+    identity_phase = (
+        session_state.get("identityPhase")
+        if isinstance(session_state, Mapping)
+        else None
+    )
+    safe_identity_phase = (
+        identity_phase
+        if isinstance(identity_phase, str)
+        and identity_phase in RESTORE_IDENTITY_PHASES
+        else "unknown"
+    )
+    identity_reason = (
+        session_state.get("identityReason")
+        if isinstance(session_state, Mapping)
+        else None
+    )
+    safe_identity_reason = (
+        identity_reason
+        if isinstance(identity_reason, str)
+        and identity_reason in RESTORE_IDENTITY_REASONS
+        else None
+    )
     authenticated = (
         session_state.get("authenticated")
         if isinstance(session_state, Mapping)
@@ -748,6 +789,8 @@ def _restore_failure_diagnostic(
             "errorCode": error_code,
             "errorReason": error_reason,
             "errorType": type(last_error).__name__ if last_error else None,
+            "identityPhase": safe_identity_phase,
+            "identityReason": safe_identity_reason,
             "identityState": safe_identity_state,
             "pollCount": poll_count,
             "recoveryBoundary": recovery_boundary,
