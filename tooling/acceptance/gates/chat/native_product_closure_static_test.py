@@ -818,6 +818,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source.index(
                 "content_origin = self.native_adapter.content_origin("
             ),
+            click_source.index("current_target = client.driver.execute_script("),
+        )
+        self.assertLess(
+            click_source.index("current_target = client.driver.execute_script("),
             click_source.index("probe_id = self.install_native_input_probe("),
         )
         self.assertLess(
@@ -862,9 +866,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn("selector=selector,", click_source)
         self.assertIn(
-            'expected_point=(float(target["x"]), float(target["y"]))',
+            'float(current_target["x"]),',
             click_source,
         )
+        self.assertIn('float(current_target["y"]),', click_source)
         self.assertIn("let deliveredPoint = null;", self.source)
         self.assertIn("const mutations = [];", self.source)
         self.assertIn("reactionStates: inspectReactionStates()", self.source)

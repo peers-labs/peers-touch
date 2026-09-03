@@ -1435,25 +1435,56 @@ class NativeProductClosureGate(AcceptanceGate):
         content_origin = self.native_adapter.content_origin(
             client.process_id or 0
         )
+        if selector is not None:
+            element = client.find_element(selector, 30)
+            element = self._resolve_native_click_surface(client, element)
+        current_target = client.driver.execute_script(
+            """
+            const element = arguments[0];
+            const rect = element.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+            const hit = document.elementFromPoint(x, y);
+            return {
+              connected: element.isConnected,
+              disabled: Boolean(element.disabled),
+              hit: hit === element || element.contains(hit),
+              x,
+              y,
+            };
+            """,
+            element,
+        )
+        if (
+            not current_target.get("connected")
+            or current_target.get("disabled")
+            or not current_target.get("hit")
+        ):
+            raise GateError(
+                "Native click target changed before event delivery"
+            )
         point = (
             (
                 content_origin[0]
                 if content_origin is not None
                 else window["left"] + content_offset_x
             )
-            + float(target["x"]),
+            + float(current_target["x"]),
             (
                 content_origin[1]
                 if content_origin is not None
                 else window["top"] + content_offset_y
             )
-            + float(target["y"]),
+            + float(current_target["y"]),
         )
         probe_id = self.install_native_input_probe(
             client,
             element,
             selector=selector,
-            expected_point=(float(target["x"]), float(target["y"])),
+            expected_point=(
+                float(current_target["x"]),
+                float(current_target["y"]),
+            ),
         )
         mouse_down_posted = False
         try:
