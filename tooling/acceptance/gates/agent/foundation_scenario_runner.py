@@ -677,8 +677,8 @@ def _authenticate_clients(
         # Step 0: Warm-up — wait for Rust backend to finish initializing
         _warm_up_client(client)
 
-        # Step 1: Initial setup may log in. Recovery paths must instead prove
-        # the original session survived Station or client restart.
+        # Step 1: Initial setup drives the production Station selection commands
+        # before login. Recovery paths preserve and prove the original binding.
         if require_existing_session:
             restore_deadline = min(
                 session_deadline or time.monotonic() + 120,
@@ -723,6 +723,26 @@ def _authenticate_clients(
                     f"{client.spec.runtime} existing session was not restored"
                 )
         else:
+            station_url = profile_env.get("PT_STATION_URL", "").strip().rstrip("/")
+            if not station_url:
+                raise ScenarioRunnerError(
+                    "active profile is missing PT_STATION_URL"
+                )
+            station_result = client.harness(
+                "configureStation",
+                {"stationUrl": station_url},
+                timeout=60,
+            )
+            if (
+                not isinstance(station_result, Mapping)
+                or station_result.get("configured") is not True
+                or station_result.get("activeUrl") != station_url
+                or station_result.get("peerIdAvailable") is not True
+            ):
+                raise ScenarioRunnerError(
+                    f"{client.spec.runtime} Station configuration failed: "
+                    f"{station_result}"
+                )
             login_result = client.harness(
                 "loginWithPassword",
                 {"account": account, "password": password},
