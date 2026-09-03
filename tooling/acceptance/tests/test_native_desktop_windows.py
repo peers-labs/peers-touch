@@ -218,6 +218,35 @@ class WindowsProvisionerContractTest(unittest.TestCase):
             probe,
         )
 
+    def test_cleanup_audits_actor_results_before_releasing_source_lease(
+        self,
+    ) -> None:
+        source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
+        release_actor = source[
+            source.index("    def release_actor("):
+            source.index("    def actor_is_alive(")
+        ]
+        stop = source[
+            source.index("    def stop("):
+            source.index("    def _clean_remote_source(")
+        ]
+
+        for field in (
+            "processStopped",
+            "taskReleased",
+            "portsReleased",
+            "storageReleased",
+        ):
+            self.assertIn(f'"{field}"', release_actor)
+        self.assertLess(
+            stop.index('self._broker_from_state(state, "cleanup", {})'),
+            stop.index("self._clean_remote_source("),
+        )
+        self.assertLess(
+            stop.index("self._clean_remote_source("),
+            stop.index("self._release_source_lease()"),
+        )
+
     def test_broker_request_contains_run_actor_and_is_base64_json(self) -> None:
         transport = _BrokerTransport(
             {
