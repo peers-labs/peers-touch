@@ -17,6 +17,9 @@
 | B | Login completion runs before `authenticatedPendingCompletion` is observable | High | Low | Confirmed consequence: completion returned while phase remained `accountGate` |
 | C | An identity pipeline handler triggers logout or revocation after login | Medium | Medium | Rejected: logout events appeared only during cleanup after timeout |
 | D | Session authentication succeeds but identity snapshot publication is stale | Medium | Low | Confirmed root cause: auth command returned while session remained unauthenticated |
+| E | `clear-zustand-stores` clears the newly activated actor because identity comparison fails | Medium | Low | Pending |
+| F | `refresh-current-session` receives unauthorized and resets the new session | High | Low | Pending |
+| G | A concurrent native identity event clears the session during the pipeline | Low | Medium | Pending |
 
 ## Log Evidence
 - Instrumented `identityRuntime.ts:dispatch` to capture every identity event and
@@ -62,3 +65,9 @@ no-op.
   `sessionAuthenticated=false` after the auth command returned.
 - Next instrumentation distinguishes response mapping failure from a specific
   identity-pipeline handler clearing the newly activated session.
+- Exact-source diagnostic run
+  `20260903T144522958692Z-197226c351d33e8da8b7b1b947b9e091`
+  proved activation succeeds (`sessionAuthenticated=true`) before the pipeline
+  and becomes false only after the four registered handlers complete.
+- The next observation records reset decisions in `clear-zustand-stores` and
+  the success/unauthorized outcome of `refresh-current-session`.
