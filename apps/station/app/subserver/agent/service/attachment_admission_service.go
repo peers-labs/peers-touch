@@ -108,7 +108,7 @@ func (s *AttachmentAdmissionService) Admit(
 		if err != nil || meta == nil {
 			return nil, attachmentRejected("attachment object is unavailable")
 		}
-		if meta.OwnerActorID != strings.TrimSpace(actorID) ||
+		if meta.OwnerPTID != strings.TrimSpace(actorID) ||
 			meta.Visibility != ossmodel.VisibilityPrivate ||
 			meta.DeletedAt != nil {
 			return nil, attachmentRejected("attachment object is unauthorized")

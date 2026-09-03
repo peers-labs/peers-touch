@@ -403,6 +403,72 @@ class EvidenceStoreTests(unittest.TestCase):
             run.write_bytes("evidence/value.txt", b"different")
         run.close()
 
+    def test_configured_secrets_are_redacted_before_artifact_persistence(
+        self,
+    ) -> None:
+        run = self.store.begin_run("redaction-gate", source={})
+        run.configure_redaction(("resolved-secret",))
+        reference = run.write_bytes(
+            "reports/result.json",
+            b'{"value":"resolved-secret"}\n',
+        )
+
+        persisted = self.store.resolve(reference).read_text(encoding="utf-8")
+        self.assertNotIn("resolved-secret", persisted)
+        self.assertIn(REDACTED, persisted)
+        self.assertEqual(run.redacted_artifacts, ("reports/result.json",))
+        self.assertIn(
+            "PT_ACCEPTANCE_REDACTION_VALUES",
+            run.subprocess_environment({}),
+        )
+        run.close()
+
+    def test_runtime_cell_latest_pointer_is_isolated(self) -> None:
+        linux = self.store.begin_run("runtime-gate", source={})
+        linux.finalize(
+            result={
+                "status": "passed",
+                "runtimeCell": "desktop-linux-native",
+            }
+        )
+        linux.publish_latest(runtime_cell="desktop-linux-native")
+        linux.close()
+
+        windows = self.store.begin_run("runtime-gate", source={})
+        windows.finalize(
+            result={
+                "status": "passed",
+                "runtimeCell": "desktop-windows-native",
+            }
+        )
+        windows.publish_latest(runtime_cell="desktop-windows-native")
+        windows.close()
+
+        self.assertEqual(
+            self.store.latest(
+                "runtime-gate",
+                runtime_cell="desktop-linux-native",
+            )["runId"],
+            linux.run_id,
+        )
+        self.assertEqual(
+            self.store.latest(
+                "runtime-gate",
+                runtime_cell="desktop-windows-native",
+            )["runId"],
+            windows.run_id,
+        )
+
+    def test_discard_removes_active_run_without_publishing(self) -> None:
+        run = self.store.begin_run("discard-gate", source={})
+        run.write_bytes("reports/partial.txt", b"partial")
+        run.discard()
+
+        self.assertEqual(run.state, "CLOSED")
+        self.assertFalse(run.run_dir.exists())
+        with self.assertRaises(EvidenceManifestInvalid):
+            self.store.latest("discard-gate")
+
     def test_path_traversal_and_invalid_identity_are_rejected(self) -> None:
         run = self.store.begin_run("unit-gate", source={})
         for value in (

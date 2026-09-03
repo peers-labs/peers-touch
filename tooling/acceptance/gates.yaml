@@ -233,12 +233,27 @@
       "tier": "env-evidence",
       "description": "Validate live deployed federated browser prerequisites: distinct authority/follower Stations, healthy Relay, discoverable Station peer IDs, and optional Desktop gateway Station binding."
     },
+    "station-agent-unit": {
+      "command": "cd apps/station && go test ./app/subserver/agent/...",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run Station Agent subserver unit tests: turn service, tool dispatch, attachment service, prompt assembly, persistence."
+    },
     "desktop-check": {
       "command": "cd apps/desktop && pnpm run check",
       "timeout_seconds": 600,
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Run Desktop TypeScript checks."
+    },
+    "agent-stream-resilience-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey stream-resilience",
+      "timeout_seconds": 1800,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "Run the isolated One-profile native R6 journey: active turn, transport fault, visible reconciling, cursor replay without duplicate projection, logout teardown, auth-gate isolation, re-login Station readback, and cleanup."
     },
     "desktop-dev-runtime-isolation-static": {
       "command": "python3 -m unittest tooling.acceptance.gates.desktop.dev_runtime_multi_instance_static_test",

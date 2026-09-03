@@ -118,7 +118,7 @@ func seedRevisionConversation(t *testing.T, db *gorm.DB) {
 	if err := db.Create(&persistence.Conversation{
 		ID:                    "conversation-revision",
 		AgentID:               "agent-1",
-		Ptid:                  "ptid:person:owner",
+		ActorPTID:             "ptid:person:owner",
 		Title:                 "Revision",
 		Status:                "active",
 		ActiveBranchMessageID: "user-source",
