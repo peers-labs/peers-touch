@@ -747,10 +747,9 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         native = SessionHarnessClient("desktop_app", authenticated=False)
         browser = SessionHarnessClient("browser")
 
-        with self.assertRaisesRegex(
+        with self.assertRaises(
             foundation_scenario_runner.ScenarioRunnerError,
-            "existing session was not restored",
-        ):
+        ) as raised:
             foundation_scenario_runner._authenticate_clients(
                 SimpleNamespace(native=native, browser=browser),
                 {
@@ -763,8 +762,38 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 session_deadline=time.monotonic() + 0.01,
             )
 
+        message = str(raised.exception)
+        self.assertIn("existing session was not restored", message)
+        self.assertIn('"actorPresent":false', message)
+        self.assertIn('"authenticated":false', message)
+        self.assertIn('"identityState":"unknown"', message)
+        self.assertIn('"recoveryBoundary":"session-recovery"', message)
         self.assertNotIn("loginWithPassword", native.calls)
         self.assertEqual(browser.calls, [])
+
+    def test_restore_failure_diagnostic_redacts_identity_and_error_detail(
+        self,
+    ) -> None:
+        diagnostic = foundation_scenario_runner._restore_failure_diagnostic(
+            recovery_boundary="station-restart",
+            poll_count=3,
+            session_state={
+                "authenticated": False,
+                "actorId": "ptid:private-actor",
+                "identityState": "accountGate",
+            },
+            last_error=RuntimeError(
+                "UNAUTHORIZED session revoked token=private-token"
+            ),
+        )
+
+        self.assertIn('"actorPresent":true', diagnostic)
+        self.assertIn('"errorCode":"UNAUTHORIZED"', diagnostic)
+        self.assertIn('"errorReason":"session_revoked"', diagnostic)
+        self.assertIn('"errorType":"RuntimeError"', diagnostic)
+        self.assertIn('"recoveryBoundary":"station-restart"', diagnostic)
+        self.assertNotIn("private-actor", diagnostic)
+        self.assertNotIn("private-token", diagnostic)
 
     def test_direct_probe_runs_independent_group_one_oracle(self) -> None:
         probe_input = DirectRuntimeProbeInput(
@@ -867,6 +896,13 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             len(call.kwargs.get("clients", ())) == 1
             for call in authenticate.call_args_list
         ))
+        self.assertEqual(
+            [
+                call.kwargs.get("recovery_boundary")
+                for call in authenticate.call_args_list
+            ],
+            ["station-restart", "client-restart"] * 4,
+        )
         self.assertEqual(native.restart_count, 2)
         self.assertEqual(browser.restart_count, 2)
         self.assertEqual(len(native.prepare_calls), 2)

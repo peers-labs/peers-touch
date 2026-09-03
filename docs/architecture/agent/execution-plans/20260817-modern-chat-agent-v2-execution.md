@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T194240394618Z-bac0c3a8431196af6fcd0f60741e064f` executed the disposable AS-F06 restart and exposed a regressed Browser session-restore device scope; transport-aware restore is implemented and awaits exact-source proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T201542232807Z-02e5ae1ef2f8cf7bd5c057164bc6cabf` executed the disposable AS-F06 restart with transport-aware Browser restore and exposed an unresolved Browser session-recovery failure; bounded redacted restore diagnostics are implemented and await exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4659,6 +4659,31 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   tests pass 10 tests, and Desktop Rust compilation passes. Provisioner cleanup
   completed `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN`
   pending an exact-source rerun.
+- Exact-source preflight
+  `20260903T201334480007Z-8d62af0cf1ecd08eb1018d527438f1db`
+  (aggregate `20260903T201334287984Z-0b8152deae77cc82a9c05b6feda3aa32`)
+  on `97015066149cbd0faf4f56ccdbce011bede40711` stopped before product
+  execution when the disposable deployment node exhausted its root filesystem
+  during Fixture reset. Whole-disk inspection identified Docker BuildKit cache
+  as the dominant reclaimable owner; pruning only that cache restored 34 GB
+  while preserving active containers and database volumes. The environment
+  failure produced no product proof.
+- Exact-source run
+  `20260903T201542232807Z-02e5ae1ef2f8cf7bd5c057164bc6cabf`
+  (aggregate `20260903T201542027015Z-958d8c39cb2e0c9f0ece163e345b047c`)
+  on `97015066149cbd0faf4f56ccdbce011bede40711` crossed Browser AS-F01
+  through AS-F05, completed the source-bound disposable Station restart, and
+  still failed while restoring the Browser session. The runner emitted only
+  `browser existing session was not restored`, discarding the last projection,
+  command exception, and whether failure occurred after Station or client
+  restart. The local diagnostic correction preserves the final safe snapshot,
+  labels the recovery boundary, and emits only authentication state, an
+  allowlisted lifecycle state, actor presence, poll count, and allowlisted
+  error code/reason identifiers. It never emits actor identity, credentials,
+  tokens, or raw exception text. The focused Agent static/restart/scenario
+  suite passes 100 tests and `git diff --check` passes. Runtime behavior is
+  unchanged; G-F remains `PARTIAL / UNPROVEN` pending checkpoint deployment
+  and an exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
