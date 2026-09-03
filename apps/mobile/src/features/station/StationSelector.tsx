@@ -89,6 +89,7 @@ export function StationSelector({
               className="station-address-input"
               value={address}
               placeholder={t('mobile.launch.placeholder')}
+              aria-label={t('mobile.launch.stationAddress')}
               inputMode="url"
               autoCapitalize="none"
               autoCorrect="off"
@@ -98,7 +99,7 @@ export function StationSelector({
               onPressEnter={submit}
             />
           </div>
-          <Button icon={<Plus size={16} />} loading={checking} disabled={!canAdd || checking} onClick={submit} />
+          <Button icon={<Plus size={16} />} aria-label={t('mobile.launch.addStation')} loading={checking} disabled={!canAdd || checking} onClick={submit} />
           {hasEntries ? (
             <Button className="station-input-cancel" icon={<X size={16} />} onClick={closeStationInput} />
           ) : null}
