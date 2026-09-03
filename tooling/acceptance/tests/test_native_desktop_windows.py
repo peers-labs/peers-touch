@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 from tooling.acceptance.core import (
     RUNTIME_CELLS_DIR,
@@ -246,6 +247,14 @@ class WindowsProvisionerContractTest(unittest.TestCase):
             stop.index("self._clean_remote_source("),
             stop.index("self._release_source_lease()"),
         )
+        self.assertIn(
+            'if cleanup.get("clean") is not True:',
+            stop,
+        )
+        self.assertIn(
+            'failures.append("remote broker reported clean=false")',
+            stop,
+        )
 
     def test_broker_request_contains_run_actor_and_is_base64_json(self) -> None:
         transport = _BrokerTransport(
@@ -289,6 +298,38 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertEqual(request["runId"], "run-1")
         self.assertEqual(request["actor"], "alice")
         self.assertEqual(request["desktopUser"], "administrator")
+
+    def test_remote_actor_storage_is_scoped_by_runtime_run(self) -> None:
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        state = {
+            "brokerRoot": "C:\\runtime",
+            "runId": "run-1",
+            "binaryPath": "C:\\runtime\\desktop.exe",
+        }
+        provisioner._require_state = Mock(return_value=state)
+        provisioner._broker_from_state = Mock(
+            return_value={"actor": "alice", "processId": 42}
+        )
+
+        provisioner._launch_remote_actor(
+            actor="alice",
+            webdriver_port=4645,
+            gateway_port=3230,
+            profile="chat-native-alice",
+            environment={},
+        )
+
+        payload = provisioner._broker_from_state.call_args.args[2]
+        self.assertEqual(
+            payload["storageRoot"],
+            "C:\\runtime\\actors\\run-1\\alice\\storage",
+        )
+        self.assertEqual(
+            payload["logPath"],
+            "C:\\runtime\\actors\\run-1\\alice\\logs\\desktop.log",
+        )
 
     def test_actor_ports_are_stable_distinct_and_actor_scoped(self) -> None:
         provisioner = NativeDesktopWindowsProvisioner.__new__(

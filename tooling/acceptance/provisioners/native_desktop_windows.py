@@ -1061,6 +1061,8 @@ class NativeDesktopWindowsProvisioner:
         if state:
             try:
                 cleanup = self._broker_from_state(state, "cleanup", {})
+                if cleanup.get("clean") is not True:
+                    failures.append("remote broker reported clean=false")
             except Exception as error:
                 failures.append(f"remote broker: {error}")
                 cleanup = {"clean": False}
@@ -1355,6 +1357,7 @@ class NativeDesktopWindowsProvisioner:
         actor_root = _windows_join(
             str(state["brokerRoot"]),
             "actors",
+            str(state["runId"]),
             actor,
         )
         return self._broker_from_state(
