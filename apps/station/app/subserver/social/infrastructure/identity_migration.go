@@ -12,8 +12,8 @@ func MigrateIdentitySchema(rds *gorm.DB) error {
 	if err := migrateSocialIdentityColumns(rds); err != nil {
 		return err
 	}
-	if err := rds.AutoMigrate(&friendRequestModel{}); err != nil {
-		return fmt.Errorf("social: migrate friend request schema: %w", err)
+	if err := MigrateRelationshipSchema(rds); err != nil {
+		return fmt.Errorf("social: migrate relationship schema: %w", err)
 	}
 	return nil
 }
