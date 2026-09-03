@@ -23,6 +23,12 @@ export interface StationProbeResult {
   error?: string;
 }
 
+export interface StationIdentityResult {
+  stationPeerId: string;
+  canonicalOrigin: string;
+  identityVerified: boolean;
+}
+
 // Probe the station via an actual HTTP(S) request. This validates the full
 // protocol stack (TLS handshake for HTTPS, HTTP response for HTTP), so a
 // misconfigured protocol (e.g. HTTPS to an HTTP-only port) correctly fails.
@@ -57,7 +63,7 @@ export async function probeStation(url: string): Promise<StationProbeResult> {
   }
 }
 
-export async function verifyStationIdentity(url: string): Promise<VerifiedStationIdentity> {
+export async function verifyStationIdentity(url: string): Promise<StationIdentityResult> {
   const requestedOrigin = canonicalOrigin(url);
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   const request = create(StationIdentityRequestSchema, { challenge });
@@ -71,6 +77,9 @@ export async function verifyStationIdentity(url: string): Promise<VerifiedStatio
     },
     body: toBinary(StationIdentityRequestSchema, request),
   });
+  if (response.status === 404) {
+    return deriveUnverifiedIdentity(requestedOrigin);
+  }
   if (!response.ok) {
     throw new Error('mobile.launch.stationIdentityUnavailable');
   }
@@ -91,9 +100,20 @@ export async function verifyStationIdentity(url: string): Promise<VerifiedStatio
     throw new Error('mobile.launch.stationIdentityInvalid');
   }
   return {
-    ...verified,
     stationPeerId: verified.stationPeerId.trim(),
     canonicalOrigin: verified.canonicalOrigin.replace(/\/+$/, ''),
+    identityVerified: true,
+  };
+}
+
+async function deriveUnverifiedIdentity(origin: string): Promise<StationIdentityResult> {
+  const encoder = new TextEncoder();
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(origin));
+  const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return {
+    stationPeerId: `unverified:${hex.slice(0, 32)}`,
+    canonicalOrigin: origin,
+    identityVerified: false,
   };
 }
 
