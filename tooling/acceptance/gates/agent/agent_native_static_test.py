@@ -66,6 +66,19 @@ DESKTOP_AGENT_TURN = (
     / "agent_turn"
     / "mod.rs"
 )
+DESKTOP_AGENT_CRUD = (
+    ROOT / "apps" / "desktop" / "src-tauri" / "src" / "application" / "agents" / "mod.rs"
+)
+DESKTOP_AGENT_COMMANDS = (
+    ROOT
+    / "apps"
+    / "desktop"
+    / "src-tauri"
+    / "src"
+    / "interface"
+    / "tauri_commands"
+    / "agents.rs"
+)
 
 
 class AgentNativeRunnerStaticTest(unittest.TestCase):
@@ -585,6 +598,25 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "modelCapabilities.snapshot_id !== readiness.runtime_snapshot_id",
             self.source,
         )
+
+    def test_agent_crud_uses_authenticated_station_authority(self) -> None:
+        application = DESKTOP_AGENT_CRUD.read_text(encoding="utf-8")
+        commands = DESKTOP_AGENT_COMMANDS.read_text(encoding="utf-8")
+
+        for endpoint in (
+            '"/sub-agent/agent/list"',
+            '"/sub-agent/agent/get"',
+            '"/sub-agent/agent/create"',
+            '"/sub-agent/agent/update"',
+            '"/sub-agent/agent/delete"',
+        ):
+            with self.subTest(endpoint=endpoint):
+                self.assertIn(endpoint, application)
+
+        self.assertIn("fn token_for_cmd", commands)
+        self.assertIn("agents_list(&actor_ptid, &token)", commands)
+        self.assertIn("agents_update(&actor_ptid, &token, input)", commands)
+        self.assertNotIn('agents_list("")', commands)
 
     def test_harness_exposes_r6_production_actions_and_readback(self) -> None:
         for method in (

@@ -2757,66 +2757,116 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
 
         // =================================================================
-        // Agents (no state)
+        // Agents
         // =================================================================
-        "agents_list" => to_json(app_agents::agents_list("")),
-        "agents_get_selected" => to_json(app_agents::agents_get_selected("")),
+        "agents_list" => {
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_list(&actor_ptid, &token))
+        }
+        "agents_get_selected" => {
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_get_selected(&actor_ptid))
+        }
         "agents_set_selected" => {
             let input = match parse_args::<AgentSelectInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_set_selected("", input))
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_set_selected(&actor_ptid, input))
         }
-        "agents_get_default" => to_json(app_agents::agents_get_default("")),
+        "agents_get_default" => {
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_get_default(&actor_ptid))
+        }
         "agents_set_default" => {
             let input = match parse_args::<AgentIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_set_default("", input))
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_set_default(&actor_ptid, input))
         }
         "agents_get" => {
             let input = match parse_args::<AgentIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_get("", input))
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_get(&actor_ptid, &token, input))
         }
         "agents_create" => {
             let input = match parse_args::<AgentCreateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_create("", input))
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_create(&actor_ptid, &token, input))
         }
         "agents_update" => {
             let input = match parse_args::<AgentUpdateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_update("", input))
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_update(&actor_ptid, &token, input))
         }
         "agents_delete" => {
             let input = match parse_args::<AgentIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_delete("", input))
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_delete(&actor_ptid, &token, input))
         }
         "agents_duplicate" => {
             let input = match parse_args::<AgentDuplicateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_duplicate("", input))
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_duplicate(&actor_ptid, &token, input))
         }
         "agents_search" => {
             let input = match parse_args::<AgentSearchInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_search("", input))
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_search(&actor_ptid, input))
         }
         "agent_conversation_list" => {
             let input = match parse_args::<AgentConversationListInput>(args) {

@@ -1200,6 +1200,7 @@ pub fn skills_market_uninstall(
     if package_type == "agent" {
         let result = agents::agents_delete(
             actor_ptid,
+            token,
             AgentIdInput {
                 id: record.skill_id.clone(),
             },
