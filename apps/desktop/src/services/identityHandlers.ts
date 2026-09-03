@@ -25,25 +25,6 @@ registerIdentityHandler('close-browser-capability-session', async (payload) => {
 
 registerIdentityHandler('clear-zustand-stores', async (payload) => {
   const currentActorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
-  // #region debug-point E:zustand-reset-decision
-  void fetch('http://127.0.0.1:7781/event', {
-    method: 'POST',
-    body: JSON.stringify({
-      sessionId: 'foundation-login-readiness',
-      runId: 'post-fix-3',
-      hypothesisId: 'E',
-      location: 'identityHandlers.ts:clear-zustand-stores',
-      msg: '[DEBUG] Zustand reset decision',
-      data: {
-        reason: payload.reason,
-        currentActorPresent: Boolean(currentActorPtid),
-        payloadActorPresent: Boolean(payload.actorPtid),
-        actorMatches: currentActorPtid === payload.actorPtid,
-      },
-      ts: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   if (payload.reason === 'logout' || payload.reason === 'revoked' || currentActorPtid !== payload.actorPtid) {
     useChatStore.getState().reset();
     toolRuntime.reset();
@@ -80,41 +61,9 @@ registerIdentityHandler('refresh-current-session', async (payload) => {
   }
   try {
     await useSessionStore.getState().restoreSession();
-    // #region debug-point F-G:session-restore-result
-    void fetch('http://127.0.0.1:7781/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'foundation-login-readiness',
-        runId: 'post-fix-3',
-        hypothesisId: 'F-G',
-        location: 'identityHandlers.ts:refresh-current-session',
-        msg: '[DEBUG] session restore completed',
-        data: {
-          reason: payload.reason,
-          sessionAuthenticated: useSessionStore.getState().authenticated,
-          sessionActorPresent: Boolean(useSessionStore.getState().currentUser?.actorPtid),
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
   } catch (e) {
     if (e instanceof AuthCommandException && e.code === 'UNAUTHORIZED') {
       useSessionStore.getState().reset();
-      // #region debug-point F:session-restore-unauthorized
-      void fetch('http://127.0.0.1:7781/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'foundation-login-readiness',
-          runId: 'post-fix-3',
-          hypothesisId: 'F',
-          location: 'identityHandlers.ts:refresh-current-session',
-          msg: '[DEBUG] session restore unauthorized',
-          data: { reason: payload.reason },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       return;
     }
     throw e;
