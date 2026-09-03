@@ -4887,7 +4887,12 @@ export const api = {
     if (snapshot === null || Array.isArray(snapshot) || typeof snapshot !== 'object') {
       throw new Error('agent.capabilityReadinessSnapshotMissing');
     }
-    return snapshot as unknown as AgentCapabilityReadinessSnapshot;
+    return {
+      ...snapshot,
+      capabilities: Array.isArray(snapshot.capabilities)
+        ? snapshot.capabilities
+        : [],
+    } as unknown as AgentCapabilityReadinessSnapshot;
   },
 
   getAgentStationRuntimeActivity: (input: AgentRuntimeActivityInput) =>
