@@ -73,15 +73,18 @@ _URL_QUERY_FIELD_PATTERN = "|".join(
 _SENSITIVE_ASSIGNMENT = re.compile(
     rf"(?i)(?P<prefix>(?<![\w])[\"']?(?:{_SENSITIVE_FIELD_PATTERN})"
     rf"[\"']?\s*[:=]\s*)"
-    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
+    rf"(?P<value>{re.escape(REDACTED)}|"
+    r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
 )
 _SENSITIVE_COMMAND_FLAG = re.compile(
     rf"(?i)(?P<prefix>(?<![\w])--?(?:{_SENSITIVE_FIELD_PATTERN})\s+)"
-    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
+    rf"(?P<value>{re.escape(REDACTED)}|"
+    r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
 )
 _SENSITIVE_LINE_ASSIGNMENT = re.compile(
     rf"(?im)(?P<prefix>^\s*(?:{_SENSITIVE_FIELD_PATTERN})\s+)"
-    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\r\n]+)"
+    rf"(?P<value>{re.escape(REDACTED)}|"
+    r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\r\n]+)"
 )
 _AUTHORIZATION_HEADER = re.compile(
     r"(?im)(\b(?:proxy[-_\s]?authorization|authorization)\s*[:=]\s*)[^\r\n]+"
