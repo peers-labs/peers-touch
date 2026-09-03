@@ -197,7 +197,7 @@ func (s *CapabilityAuthorityService) ResolveReadiness(
 	}
 	var agent persistence.Agent
 	if err := s.db.WithContext(ctx).
-		Where("id = ? AND owner_actor_id = ? AND version = ?", agentID, ptid, agentVersion).
+		Where("id = ? AND owner_actor_ptid = ? AND version = ?", agentID, ptid, agentVersion).
 		First(&agent).Error; err != nil {
 		return nil, capabilityRecordError("owned agent revision", err)
 	}

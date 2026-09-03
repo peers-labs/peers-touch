@@ -1,9 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from 'antd';
 import { useSessionStore } from '../store/session';
 import { onSessionRevoked } from '../services/desktop_api';
-import { installAppRuntime, installDeferredAppRuntimeProjections, teardownAppRuntime } from '../services/appRuntime';
+import {
+  CRITICAL_SESSION_RUNTIME_IDS,
+  installAppRuntime,
+  installAuthenticatedCriticalRuntimes,
+  installDeferredAppRuntimeProjections,
+  teardownAppRuntime,
+} from '../services/appRuntime';
 import { installEventStreamBridge, teardownEventStreamBridge } from '../services/eventStream';
 import { usePresence } from './usePresence';
 import {
@@ -11,40 +17,68 @@ import {
   markPhaseEnd,
   markPhaseStart,
   scheduleIdle,
+  tearDownSessionRuntimes,
 } from '../kernel/boot';
 import type { AppLifecycle } from '../types/navigation';
 
-const CRITICAL_SESSION_RUNTIMES: ReadonlyArray<string> = [];
-
-export function useAppRuntime(lifecycle: AppLifecycle): void {
+export function useAppRuntime(lifecycle: AppLifecycle): boolean {
+  const actorPtid = useSessionStore((state) =>
+    state.authenticated ? state.currentUser?.actorPtid ?? null : null);
+  const [criticalActorPtid, setCriticalActorPtid] = useState<string | null>(null);
   useRuntimeInstall(lifecycle);
-  useDeferredProjections(lifecycle);
+  useAuthenticatedRuntimes(
+    lifecycle,
+    actorPtid,
+    setCriticalActorPtid,
+  );
   usePresence();
   useEventStreamBridge();
   useSessionRevocationNotice(lifecycle);
+  return !lifecycle.authenticated
+    || (actorPtid !== null && criticalActorPtid === actorPtid);
 }
 
 function useRuntimeInstall(lifecycle: AppLifecycle): void {
   useEffect(() => {
     if (!lifecycle.dataReady) return;
-    markPhaseStart('runtime:critical');
     installAppRuntime();
-    markPhaseEnd('runtime:critical', { critical: CRITICAL_SESSION_RUNTIMES, mode: 'early' });
     return () => teardownAppRuntime();
   }, [lifecycle.dataReady]);
 }
 
-function useDeferredProjections(lifecycle: AppLifecycle): void {
+function useAuthenticatedRuntimes(
+  lifecycle: AppLifecycle,
+  actorPtid: string | null,
+  setCriticalActorPtid: (actorPtid: string | null) => void,
+): void {
   useEffect(() => {
-    if (!lifecycle.authenticated) return;
-    const session = useSessionStore.getState();
-    const actorPtid = session.authenticated ? session.currentUser?.actorPtid ?? null : null;
-    if (!actorPtid) return;
-    return scheduleIdle(() => {
-      void installDeferredAppRuntimeProjections();
-      void installIdleRuntimes(actorPtid, CRITICAL_SESSION_RUNTIMES);
+    if (!lifecycle.authenticated || !actorPtid) {
+      setCriticalActorPtid(null);
+      tearDownSessionRuntimes();
+      return;
+    }
+    let cancelled = false;
+    let cancelIdle: (() => void) | null = null;
+    setCriticalActorPtid(null);
+    markPhaseStart('runtime:critical');
+    void installAuthenticatedCriticalRuntimes(actorPtid).then(() => {
+      if (cancelled) return;
+      setCriticalActorPtid(actorPtid);
+      markPhaseEnd('runtime:critical', {
+        actorPtid,
+        critical: CRITICAL_SESSION_RUNTIME_IDS,
+      });
+      cancelIdle = scheduleIdle(() => {
+        void installDeferredAppRuntimeProjections(actorPtid);
+        void installIdleRuntimes(actorPtid, CRITICAL_SESSION_RUNTIME_IDS);
+      });
     });
-  }, [lifecycle.authenticated]);
+    return () => {
+      cancelled = true;
+      cancelIdle?.();
+      tearDownSessionRuntimes();
+    };
+  }, [actorPtid, lifecycle.authenticated, setCriticalActorPtid]);
 }
 
 function useEventStreamBridge(): void {

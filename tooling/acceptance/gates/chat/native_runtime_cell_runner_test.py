@@ -114,11 +114,9 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 start = source.index("    def start_client(")
                 injected = source.index("    def start_injected_client(", start)
                 dispatch = source[start:injected]
-                self.assertIn("if self.runtime_binding is not None:", dispatch)
-                self.assertLess(
-                    dispatch.index("self.start_injected_client(actor)"),
-                    dispatch.index("start_authenticated_client("),
-                )
+                self.assertIn("self.start_injected_client(actor)", dispatch)
+                self.assertNotIn("start_authenticated_client(", dispatch)
+                self.assertNotIn("if self.runtime_binding is not None:", dispatch)
 
     def test_native_restart_preserves_and_restores_session(self) -> None:
         contracts = {
@@ -195,7 +193,6 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "native_multi_device_runner.py": "start_injected_client",
             "native_product_closure_runner.py": "launch_actor",
             "native_recovery_runner.py": "start_injected_client",
-            "native_support.py": "start_authenticated_client",
             "native_two_client_runner.py": "start_client",
             "native_typing_runner.py": "start_injected_client",
         }
@@ -205,6 +202,10 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 source = self.function_source(path, function_name)
                 self.assertIn("loginWithPassword", source)
                 self.assertNotIn("station.auth_logout()", source)
+        support = (
+            ROOT / "tooling/acceptance/gates/chat/native_support.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("def start_authenticated_client(", support)
 
     def test_native_cleanup_uses_window_owned_lifecycle(self) -> None:
         cleanup_functions = {

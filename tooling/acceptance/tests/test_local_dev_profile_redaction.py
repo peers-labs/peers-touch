@@ -23,7 +23,12 @@ class LocalDevProfileRedactionTests(unittest.TestCase):
         self.script_root.mkdir(parents=True)
         self.profile_root.mkdir(parents=True)
         self.active_root.mkdir(parents=True)
-        for script_name in ("config.sh", "profile.sh", "redact-env.sh"):
+        for script_name in (
+            "config.sh",
+            "env.sh",
+            "profile.sh",
+            "redact-env.sh",
+        ):
             shutil.copy2(SCRIPT_ROOT / script_name, self.script_root / script_name)
 
         self.profile = self.profile_root / "one.env"

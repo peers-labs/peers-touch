@@ -366,7 +366,7 @@ func (s *CapabilityBackfillService) scanKnowledgeResources(
 			capabilityID: "knowledge:" + legacyID,
 		}
 		if ok {
-			cleanup.ptid = strings.TrimSpace(agent.OwnerActorID)
+			cleanup.ptid = strings.TrimSpace(agent.OwnerActorPTID)
 		}
 		cleanups = append(cleanups, cleanup)
 		if !ok || legacyID == "" {
@@ -531,7 +531,7 @@ func buildKnowledgeMigrationSeed(
 		approvalPolicy = legacyApprovalPolicy(legacyRows[0].Policy)
 	}
 
-	ptid := strings.TrimSpace(agent.OwnerActorID)
+	ptid := strings.TrimSpace(agent.OwnerActorPTID)
 	resourceID := "knowledge-resource-" + shortCapabilityHash(ptid, legacyID)
 	title := strings.TrimSpace(legacy.Title)
 	if title == "" {
@@ -656,7 +656,7 @@ func (s *CapabilityBackfillService) scanMCPBindings(
 		bindings = append(bindings, capabilityBindingSeed{
 			source:            "mcp_binding",
 			sourceID:          row.ID,
-			ptid:              agent.OwnerActorID,
+			ptid:              agent.OwnerActorPTID,
 			agentID:           agent.ID,
 			agentVersion:      uint64(agent.Version),
 			capabilityID:      capabilityID,
@@ -963,7 +963,7 @@ func capabilityBindingFromSkill(
 	return capabilityBindingSeed{
 		source:            source,
 		sourceID:          sourceID,
-		ptid:              agent.OwnerActorID,
+		ptid:              agent.OwnerActorPTID,
 		agentID:           agent.ID,
 		agentVersion:      uint64(agent.Version),
 		capabilityID:      "skill:" + skill.ID,
@@ -983,7 +983,7 @@ func bindingFromManifest(
 	return capabilityBindingSeed{
 		source:            source,
 		sourceID:          sourceID,
-		ptid:              agent.OwnerActorID,
+		ptid:              agent.OwnerActorPTID,
 		agentID:           agent.ID,
 		agentVersion:      uint64(agent.Version),
 		capabilityID:      manifest.GetCapabilityId(),

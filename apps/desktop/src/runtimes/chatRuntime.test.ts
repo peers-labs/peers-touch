@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   }>,
   replayOnEvents: [] as Array<(event: StreamEvent) => void>,
   replayOnErrors: [] as Array<(error: Error) => void>,
-  sessionUser: null as { actorId: string; ptid?: string } | null,
+  sessionUser: null as { actorId: string; actorPtid?: string } | null,
   subscribers: new Map<string, Set<(payload: unknown) => void>>(),
 }));
 
@@ -533,7 +533,7 @@ describe('chatRuntime Agent turn recovery', () => {
   it('uses canonical PTID when the session also carries an internal actor id', async () => {
     mocks.sessionUser = {
       actorId: 'internal-actor-42',
-      ptid: 'ptid:person:alice',
+      actorPtid: 'ptid:person:alice',
     };
     mocks.readValue.mockResolvedValueOnce({});
     await chatRuntime.bootstrap('internal-actor-42');

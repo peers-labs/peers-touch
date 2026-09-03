@@ -1,0 +1,51 @@
+{
+  "id": "desktop-windows-native",
+  "platform": "windows",
+  "architecture": "x86_64",
+  "isolation": {
+    "kind": "host",
+    "image_ref": "",
+    "image_digest_required": false
+  },
+  "transport": {
+    "kind": "ssh",
+    "target_ref": "profile:acceptance-windows",
+    "webdriver_forward": "local-loopback"
+  },
+  "display": {
+    "session_type": "native-windows",
+    "physical_monitor_required": true,
+    "connected_output_required": true,
+    "fixed_geometry": "1920x1080"
+  },
+  "webdriver": {
+    "kind": "tauri-embedded",
+    "bind": "127.0.0.1"
+  },
+  "native_adapter": {
+    "input": "win32-sendinput",
+    "window": "win32-user32",
+    "screenshot": "win32-gdi"
+  },
+  "source": {
+    "mode": "git-object-sync",
+    "clean_commit_required_for_proof": true,
+    "binary_sha256_required": true
+  },
+  "lease": {
+    "scope": "gui-session",
+    "ttl_seconds": 5400
+  },
+  "cleanup": {
+    "resources": [
+      "ssh-tunnel",
+      "scheduled-task",
+      "broker-process",
+      "processes",
+      "ports",
+      "storage",
+      "source-workspace",
+      "gui-session-lease"
+    ]
+  }
+}

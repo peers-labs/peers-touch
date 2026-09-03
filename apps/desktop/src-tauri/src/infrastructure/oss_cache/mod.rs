@@ -366,15 +366,6 @@ pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheErro
     Ok(caps)
 }
 
-fn canonical_bound_origin(origin: &str) -> String {
-    let normalized = normalize_origin(origin);
-    if normalized.is_empty() || normalized == "self" {
-        normalize_origin(&station_client::station_base_url())
-    } else {
-        normalized
-    }
-}
-
 fn canonical_capability_host(request_origin: &str, advertised_host: &str) -> String {
     let advertised = normalize_origin(advertised_host);
     if advertised.is_empty() || advertised == "self" {
@@ -484,7 +475,7 @@ pub fn attachment_ensure(
         signed_query,
     )?;
 
-    let bytes = http_get_bytes(&url, bearer)?;
+    let bytes = http_get_bytes(url.as_str(), bearer)?;
     write_to_cache(&canonical_uri, &bytes)
 }
 
@@ -585,10 +576,10 @@ pub fn attachment_ensure_federated(
         "{}{}?key={}&owner={}",
         foreign_caps.host.trim_end_matches('/'),
         file_endpoint,
-        urlencode(&uri.key),
-        urlencode(home_actor_ptid),
+        urlencoding::encode(&uri.key),
+        urlencoding::encode(home_actor_ptid),
     );
-    let bytes = http_get_bytes(&url, Some(token.as_str()));
+    let bytes = http_get_bytes(&url, Some(token.as_str()))?;
 
     // Step 4 — write through the same cache layout as the
     // non-federated path. The renderer cannot distinguish federated

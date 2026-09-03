@@ -33,6 +33,16 @@ func TestFrozenProfileKeepsCLIRegistrationDisabledAndUnadvertised(t *testing.T) 
 	}
 }
 
+func TestFrozenProfileDoesNotAdvertiseUnimplementedProviderProtocol(t *testing.T) {
+	google := catalog.Find("google")
+	if google == nil {
+		t.Fatal("expected Google catalog registration")
+	}
+	if catalogProviderAdvertisedByFrozenProfile(*google) {
+		t.Fatal("provider without a Station Gemini adapter must not enter the effective projection")
+	}
+}
+
 func TestProviderProjectionDoesNotInferRuntimeCapabilityFromCatalog(t *testing.T) {
 	info := providerToProto(&persistence.AgentProvider{
 		Name:        "trae-cli",

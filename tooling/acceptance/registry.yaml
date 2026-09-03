@@ -410,6 +410,32 @@
       "require": ["mobile-native-platform-e2e", "mobile-hard-cut-static"]
     },
     {
+      "id": "agent-stream-resilience",
+      "features": ["agent-stream-resilience"],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/agent/**/turn_handler*",
+          "apps/station/app/subserver/agent/**/live_resume*",
+          "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
+          "apps/desktop/src/components/GlobalOperationTray.tsx",
+          "apps/desktop/src/components/OpStatusTray.tsx",
+          "apps/desktop/src/kernel/identityRuntime.ts",
+          "apps/desktop/src/services/desktop_api.ts",
+          "apps/desktop/src/services/eventStream*",
+          "apps/desktop/src/services/identityHandlers.ts",
+          "apps/desktop/src/services/identityPipeline.ts",
+          "apps/desktop/src/store/chat.ts",
+          "apps/desktop/src/store/chatOperationEvent.test.ts",
+          "apps/desktop/src/store/session.ts"
+        ]
+      },
+      "require": [
+        "station-agent-unit",
+        "desktop-check",
+        "agent-stream-resilience-e2e"
+      ]
+    },
+    {
       "id": "acceptance-framework",
       "features": ["acceptance-framework"],
       "when": {

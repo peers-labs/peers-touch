@@ -181,7 +181,7 @@ func MigrateTurnEvidence(db *gorm.DB) error {
 		if err := tx.Exec(`
 			UPDATE agent_user_feedback
 			SET ptid = COALESCE((
-				SELECT conversation.ptid
+				SELECT conversation.actor_ptid
 				FROM agent_turns AS turn_record
 				JOIN agent_conversations AS conversation
 				  ON conversation.id = turn_record.conversation_id
@@ -229,20 +229,27 @@ func MigrateConversations(db *gorm.DB) error {
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		hasPtid := tx.Migrator().HasColumn(&Conversation{}, "Ptid")
+		hasActorPTID := tx.Migrator().HasColumn(&Conversation{}, "ActorPTID")
+		hasLegacyPTID := tx.Migrator().HasColumn("agent_conversations", "ptid")
 		hasUserID := tx.Migrator().HasColumn("agent_conversations", "user_id")
-		if !hasPtid && hasUserID {
-			if err := tx.Migrator().RenameColumn("agent_conversations", "user_id", "ptid"); err != nil {
-				return fmt.Errorf("rename agent_conversations.user_id to ptid: %w", err)
+		if !hasActorPTID && hasLegacyPTID {
+			if err := tx.Migrator().RenameColumn("agent_conversations", "ptid", "actor_ptid"); err != nil {
+				return fmt.Errorf("rename agent_conversations.ptid to actor_ptid: %w", err)
 			}
-			hasPtid = true
+			hasActorPTID = true
 		}
-		if !hasPtid {
-			return fmt.Errorf("agent_conversations has neither ptid nor migratable user_id")
+		if !hasActorPTID && hasUserID {
+			if err := tx.Migrator().RenameColumn("agent_conversations", "user_id", "actor_ptid"); err != nil {
+				return fmt.Errorf("rename agent_conversations.user_id to actor_ptid: %w", err)
+			}
+			hasActorPTID = true
+		}
+		if !hasActorPTID {
+			return fmt.Errorf("agent_conversations has no canonical or migratable actor identity")
 		}
 		var missingOwners int64
 		if err := tx.Table("agent_conversations").
-			Where("ptid IS NULL OR TRIM(ptid) = ''").
+			Where("actor_ptid IS NULL OR TRIM(actor_ptid) = ''").
 			Count(&missingOwners).Error; err != nil {
 			return fmt.Errorf("count ownerless agent conversations: %w", err)
 		}

@@ -92,6 +92,9 @@ fn bind_after(
     result: AppResult<AuthSessionPayload>,
 ) -> AppResult<AuthSessionPayload> {
     if !result.ok {
+        if is_session_revoked(&result) {
+            state.sessions.unbind(window.label());
+        }
         return result;
     }
     if let Some(data) = &result.data {
@@ -102,11 +105,31 @@ fn bind_after(
     result
 }
 
-fn unbind_after(state: &Arc<AppState>, window: &Window, result: &AppResult<AuthSessionPayload>) {
-    if !result.ok {
-        return;
+fn is_session_revoked(result: &AppResult<AuthSessionPayload>) -> bool {
+    result
+        .error
+        .as_ref()
+        .and_then(|error| error.details.as_ref())
+        .and_then(|details| details.get("code"))
+        .and_then(serde_json::Value::as_str)
+        == Some("session_revoked")
+}
+
+fn unbind_for_logout(state: &Arc<AppState>, window: &Window) {
+    if let Some(session) = state.sessions.unbind(window.label()) {
+        crate::infrastructure::event_stream::stop(&session.actor.ptid);
     }
-    state.sessions.unbind(window.label());
+}
+
+fn run_logout_transition(
+    detach_native_authority: impl FnOnce(),
+    cleanup: impl FnOnce() -> AppResult<AuthSessionPayload>,
+    broadcast: impl FnOnce(),
+) -> AppResult<AuthSessionPayload> {
+    detach_native_authority();
+    let result = cleanup();
+    broadcast();
+    result
 }
 
 #[tauri::command]
@@ -170,10 +193,20 @@ pub fn auth_logout(
     app: AppHandle,
     window: Window,
 ) -> AppResult<AuthSessionPayload> {
-    let result = auth_service::auth_logout(state.inner());
-    unbind_after(state.inner(), &window, &result);
-    broadcast_identity(&app, IdentityChangeReason::Logout, &result);
-    result
+    run_logout_transition(
+        || unbind_for_logout(state.inner(), &window),
+        || auth_service::auth_logout(state.inner()),
+        || {
+            identity_event::emit(
+                &app,
+                IdentityChangedPayload {
+                    reason: IdentityChangeReason::Logout,
+                    actor_ptid: None,
+                    login_method: None,
+                },
+            );
+        },
+    )
 }
 
 #[tauri::command]
@@ -228,4 +261,56 @@ pub fn ensure_station_session(
     );
     broadcast_identity(&app, IdentityChangeReason::OauthBridge, &result);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_session_revoked, run_logout_transition};
+    use crate::contracts::AuthSessionPayload;
+    use crate::error::{AppResult, ErrorCode};
+    use std::cell::RefCell;
+
+    #[test]
+    fn recognizes_only_typed_session_revocation() {
+        let revoked = AppResult::<AuthSessionPayload>::fail(
+            ErrorCode::Unauthorized,
+            "session revoked",
+            Some(serde_json::json!({ "code": "session_revoked" })),
+        );
+        let unrelated = AppResult::<AuthSessionPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        );
+
+        assert!(is_session_revoked(&revoked));
+        assert!(!is_session_revoked(&unrelated));
+    }
+
+    #[test]
+    fn logout_detaches_and_broadcasts_before_returning_cleanup_failure() {
+        let order = RefCell::new(Vec::new());
+        let result = run_logout_transition(
+            || order.borrow_mut().push("detach"),
+            || {
+                order.borrow_mut().push("cleanup");
+                AppResult::fail(
+                    ErrorCode::InternalError,
+                    "cleanup failed",
+                    Some(serde_json::json!({ "reason": "logout_cleanup_failed" })),
+                )
+            },
+            || order.borrow_mut().push("broadcast"),
+        );
+
+        assert_eq!(*order.borrow(), vec!["detach", "cleanup", "broadcast"]);
+        assert!(!result.ok);
+        assert_eq!(
+            result
+                .error
+                .and_then(|error| error.details)
+                .and_then(|details| details["reason"].as_str().map(str::to_string)),
+            Some("logout_cleanup_failed".to_string())
+        );
+    }
 }

@@ -172,8 +172,8 @@ mod tests {
 
     #[test]
     fn profile_stores_isolate_actors() {
-        let a = "actor-profile-a";
-        let b = "actor-profile-b";
+        let a = "ptid:person:profile-a";
+        let b = "ptid:person:profile-b";
         update(a, Some("Name A".to_string()), None, None).expect("update a");
         let snap_b_before = get(b).expect("b default");
         assert_ne!(snap_b_before.display_name, "Name A");

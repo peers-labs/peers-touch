@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-24 | **Updated**: 2026-09-02
+> **Created**: 2026-08-24 | **Updated**: 2026-09-03
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
 > **Branch**: `refactor/chat-acceptance-cutover`
 > **Parent Design**: [../design.md](../design.md)
@@ -432,8 +432,9 @@ Evidence:
 
 Deliver:
 
-- `desktop-windows-native` environment contract in
-  `tooling/acceptance/environments/`.
+- `desktop-windows-native` runtime-cell contract in
+  `tooling/acceptance/runtime-cells/`; the shared
+  `native-tauri-embedded-webdriver` environment remains platform-neutral.
 - `WindowsNativeDesktopRuntimeBinding` in `runtime.py` implementing
   `NativeDesktopRuntimeBinding` with:
   - Remote source sync via SSH + git on sixwin.
@@ -844,8 +845,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | in-progress | Host `sixwin` (10.0.0.40, Win10 x64) discovered and SSH-verified. W9-A host bootstrap pending; W9-B Win32 adapter pending; W9-C runtime cell contract pending; W9-D product gate pending. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A done; W10-B Core done; W10-C done; W10-D per-platform pending | Platform-neutral binding infra. Core binding contract, verifier, and Native Chat atomic cutover (8 runners) complete. W10-D evidence is per-platform: Linux immediate (two Stations healthy), Windows after W9-C, macOS after W8. |
+| NDR-W9 Windows cell | W9-A/B source and dependency preflight complete; W9-C source and runtime dependency preflight complete; W9-D blocked before product execution | `sixwin` proves Python 3.12.1, Node 24.19.0, pnpm 11.25.0, Rust/Cargo 1.98.0, Git 2.55.0, VS 2022 C++ Build Tools, WebView2 `152.0.4191.62`, Strawberry Perl `v5.42.2`, protobuf compiler `36.0`, an interactive Explorer session, exact-HEAD clean source sync, Task Scheduler broker lifecycle, a contract-matching `1920x1080` interactive Win32 screenshot, SSH WebDriver-style local forwarding, a source-bound Windows Desktop executable build, and reverse cleanup. The executable SHA-256 is `be1ed49e980d3fa466d991133be2d7a450562f5cb8718c2a370998908b50ea76`. Windows run `20260903T074452984662Z-a9ab5cce3180cc34471c5ed4957d41ca` stopped at station-four source identity before actor Fixture or runtime-cell provisioning; W9-D remains `BLOCKED/UNPROVEN`. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A done; W10-B done; W10-C source closure done; W10-D product evidence blocked | Platform-neutral typed binding, bound-session proof closure, opaque transport overrides, Native Chat atomic cutover, and runtime-cell wiring pass the 185-test focused set and the stable 161-assertion Native static Gate. The first Windows product preflight emitted immutable `BLOCKED/UNPROVEN` evidence because station-four runs `ef89b11fed8a` while client source is `8aa5fe687253381757041af2d7238824e7714a3c`; station-five also lacks a current runtime build identity. Linux and Windows W10-D require a clean committed source deployed to both Stations; macOS remains after W8. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -2049,3 +2050,245 @@ Client Hosts:
 ```
 
 macOS (W8) remains pending and is not amended in this update.
+
+### 2026-09-03 Windows Bootstrap And Source Reconciliation
+
+The `refactor/chat-acceptance-cutover` worktree is the execution owner for this
+plan. Its verified binding is branch `refactor/chat-acceptance-cutover`,
+workspace `a534541b87e49abf`, and source commit
+`8aa5fe687253381757041af2d7238824e7714a3c`.
+
+Source reconciliation found that D-18 merge commit `51fca9493` deleted the
+shared Native adapter and launcher files while later Windows work restored only
+`native/{__init__,runtime,windows}.py`. The missing W3/W4 sources were restored
+from their last canonical Git objects without replacing current D-18 Core
+contracts:
+
+- `tooling/acceptance/core/drivers/launcher.py`
+- `tooling/acceptance/core/{_paths,source_sync}.py`
+- `tooling/acceptance/drivers/tauri.py`
+- `tooling/acceptance/drivers/native/{base,macos,linux_x11}.py`
+- `tooling/acceptance/transports/{__init__,ssh}.py`
+- `tooling/acceptance/provisioners/{local_tunnel_supervisor,native_desktop_linux,native_tauri_embedded_webdriver}.py`
+- `tooling/acceptance/runtime-cells/desktop-linux-native.yaml`
+
+The restored Linux lifecycle resolves through the runtime-cell registry, and
+the runtime-cell plus Win32 static contract suite passes 19 tests with the
+Windows-only smoke skipped locally. A real import and screenshot attempt on
+`sixwin` reached the Win32 GDI call but `BitBlt` failed because an SSH service
+session has no interactive desktop; this is environment evidence for
+`BLOCKED/UNPROVEN`, not a Windows Native proof. W9-B smoke must run inside the
+interactive Desktop session used by W9-C.
+
+`sixwin` now has Python 3.12.1, Node 24.19.0, pnpm 11.25.0, Rust/Cargo 1.98.0,
+Git 2.55.0, and VS 2022 C++ Build Tools. `cl.exe` and `msbuild.exe` resolve
+after loading `C:\BuildTools\Common7\Tools\VsDevCmd.bat`. WebView2/driver
+verification and a clean Windows Tauri compile remain before W9-A can close.
+
+The shared SSH transport now has an explicit Windows platform mode. It renders
+argv through encoded PowerShell, validates drive-absolute Windows copy targets,
+uses the Windows Python launcher for remote probes, and verifies the remote
+loopback endpoint before opening a local-forward tunnel. Focused transport,
+runtime-cell, and Win32 adapter tests pass 23 assertions with the interactive
+Windows smoke skipped locally; live `sixwin` execution of the encoded transport
+returned Node `v24.19.0` and Python `os.name=nt`.
+
+### 2026-09-03 Windows Source Closure And Dependency Preflight
+
+W1-W6 source reconciliation was completed without replacing the current D-19
+Core contracts. The runtime-cell composition entries, two-client runner and
+evidence validator, platform-cell Make targets, generated W11 plan, typed Gate
+metadata, fault-proxy contracts, and Desktop Native acceptance bridge are again
+single-source and runtime-cell aware. The Windows contract remains at
+`tooling/acceptance/runtime-cells/desktop-windows-native.yaml`.
+
+The Windows transport and source path now additionally:
+
+- force UTF-8 for encoded PowerShell and broker subprocess output;
+- use `msvcrt` byte-range locks with owner metadata outside the locked byte;
+- preserve the Linux persistent lease API and strict host-key verification;
+- hold a Windows source lease through runtime-cell preparation;
+- enable repository-local `core.longpaths=true` before checkout and cleanup;
+- derive display geometry from the interactive Win32 screenshot instead of the
+  SSH service session; and
+- reject a manifest whose observed geometry differs from the contract.
+
+Live `sixwin` dependency evidence:
+
+- Host: Windows 10 Build 19045, interactive Explorer session `1`.
+- Toolchain: Node `v24.19.0`, pnpm `11.25.0`, Python `3.12.1`, Rust/Cargo
+  `1.98.0`, Git `2.55.0.windows.5`, VS 2022 `VsDevCmd.bat`, Strawberry Perl
+  `v5.42.2`, and protobuf compiler `libprotoc 36.0`.
+- WebView2 Runtime: `152.0.4191.62`.
+- Source: expected and remote commit
+  `8aa5fe687253381757041af2d7238824e7714a3c`, clean remote checkout, tree
+  digest `sha256:48e07e44c186fa411353661e532f9e8988bea55e3ef518b88d99b118167afb62`.
+- Build snapshot: workspace digest
+  `7b54afb0fcacf60e9b9ac17719be866fd40c8e10d99e69a37f793b38efd8d7d3`;
+  AppleDouble-free source archive SHA-256
+  `2081c599dd0e9c7884c31e6294a787712db9a834bb4c69783147641513bf0343`.
+- Source lease: competing owner rejected with the active owner identity;
+  release and reacquire passed.
+- Broker: acquire/status/audit/TTL-task registration/cleanup passed through
+  Task Scheduler's PowerShell `Interactive` logon type, which maps to the
+  interactive-token scheduler contract.
+- Adapter: the QXL output accepted `1920x1080@64Hz`; the interactive GDI
+  screenshot produced a valid 8,294,454-byte BMP at `1920x1080`, SHA-256
+  `cb609e51a82ae8fd0ba71e1a240248d1494fac94d92916e5d3561123dbc54cb8`;
+  mouse-state probe passed.
+- Tunnel: broker-launched actor PID and task were live, remote loopback `4645`
+  returned HTTP 200 through the local SSH forward, and process/task/ports/storage
+  cleanup all passed.
+- Build: the Windows frontend and applet build passed, then
+  `cargo build --locked --features acceptance-webdriver` produced
+  `peers-touch-desktop.exe`, SHA-256
+  `be1ed49e980d3fa466d991133be2d7a450562f5cb8718c2a370998908b50ea76`.
+  Host preflight executes the required Perl module and `protoc --version`
+  instead of accepting path existence alone. The source snapshot disabled
+  macOS AppleDouble emission and was scanned for zero `._*` entries before
+  transfer.
+- Residue: no Acceptance scheduled tasks, no listeners on `3230` or `4645`,
+  no runtime-root entries, no temporary source archive, and the remote source
+  remained at the expected commit with zero residue.
+
+Verification:
+
+- Windows runtime-cell/source/lease/transport/provisioner/broker/binding suite:
+  63 PASS, 1 non-Windows-host smoke skipped.
+- NDR Chat contract suite: 115 PASS.
+- Native bridge Vitest: 6 PASS.
+- Desktop TypeScript check, 538 Vitest tests (1 environment-backed test
+  skipped), frontend production build, and Rust
+  `cargo check --features acceptance-webdriver`: PASS.
+- Applet contract TypeScript build, `packages/applets/build.js` syntax, Python
+  compile, and `git diff --check`: PASS.
+- Acceptance Gap Detector: `UNPROVEN` for W9-D/W10-D as expected. Current
+  product Gate evidence remains source-stale and the dirty source-closure range
+  is broader than the canonical product-plan mapping; no product proof is
+  inferred from the successful build.
+
+The former D-19 API/proto and display-geometry blockers are closed for this
+source snapshot. The successful executable build is dependency and source
+closure evidence only: the provisioner-backed Windows product launch, the
+22-Gate Windows product run, and W10-D Windows multi-Station product evidence
+were not executed. W9-D and the Windows portion of W10-D therefore remain
+`UNPROVEN`.
+
+### 2026-09-03 NDR-W10 Test Reconciliation
+
+The stale pre-D-18 Native Chat test fixtures and static assertions now use the
+accepted typed client contract (`id`, `required_service_roles`, and
+`service_bindings`) with distinct `station-four` and `station-five` services.
+Fault-path assertions now require Runtime Binding-owned opaque transport
+override creation, application, and cleanup, and reject the removed
+Gate-visible endpoint API. Lifecycle assertions now reflect that
+`create_bound_session` owns launch and readiness while preserving the existing
+MP-W13 product assertions and UI sources.
+
+Focused verification passes 185 tests:
+
+- `test_provisioning_model.py`: 45 PASS.
+- `test_native_runtime_binding.py`: 6 PASS.
+- `native_two_client_e2e_test.py`: 9 PASS.
+- `native_interactions_static_test.py`: 29 PASS.
+- `native_runtime_cell_runner_test.py`: 42 PASS.
+- `native_product_closure_static_test.py`: 54 PASS.
+- `git diff --check`: PASS.
+
+No implementation defect remained after the stale test contracts were
+reconciled. No live Gate, destructive reset, commit, or push was run. NDR-W10-D
+Linux and Windows multi-Station product evidence remains `UNPROVEN`.
+
+### 2026-09-03 Windows Product Gate Preflight
+
+The platform-neutral D-18 source closure now includes:
+
+- a Native environment with source-attested `station-four` and `station-five`
+  service IDs and explicit bindings for Alice, Alice2, Bob, Bob1, Bob2, and
+  Charlie;
+- contract-to-manifest client projection with no endpoint copies;
+- Runtime Binding-owned launch generation, live Station identity observation,
+  binding-proof persistence, and exact tuple-closure validation;
+- opaque run/client/role/service-scoped transport override handles; and
+- Native Chat runners migrated away from normal-launch Station URL injection
+  and Gate-visible fault endpoint routing.
+
+Verification:
+
+- Core/runtime/Chat D-18 focused set: 185 PASS.
+- Recovery and MLS typed-fixture additions: 11 PASS.
+- Stable `chat-native-visible-static` Gate: `DONE/PROVEN`, 6 Vitest and 161
+  Python assertions PASS, run
+  `20260903T075747981683Z-7f94a03e46b08e7a73c2ca21e7886058`.
+- Desktop TypeScript check, 538 Vitest tests with one environment-backed skip,
+  Desktop production build, and three Rust Acceptance window tests: PASS.
+- Acceptance plan self-check, Station messaging, messaging platform contract,
+  redaction/Evidence Store, and profile-resolution tests: PASS.
+
+The first non-destructive Windows environment attempt used
+`desktop-windows-native` and produced immutable run
+`20260903T074452984662Z-a9ab5cce3180cc34471c5ed4957d41ca`.
+It stopped during service attestation because station-four runs commit
+`ef89b11fed8afd2ecdc037f856ed0f28ee96f8be`, while the client source is
+`8aa5fe687253381757041af2d7238824e7714a3c`. The result is
+`completionStatus=BLOCKED`, `proofStatus=UNPROVEN`, with
+`blockedResource=source-identity:station-four:commit`. The blocker occurred
+before actor manifest creation, Fixture setup, or Windows runtime-cell
+provisioning. No destructive Fixture reset or Station restart was performed.
+
+Final `sixwin` audit shows zero Acceptance scheduled tasks, zero listeners on
+`3230` and `4645`, zero runtime-root entries, a clean remote source checkout,
+and expected HEAD `8aa5fe687253381757041af2d7238824e7714a3c`.
+
+W9-D and Windows W10-D remain `BLOCKED/UNPROVEN`. Their next dependency is a
+clean committed source deployed with source/runtime identity to both
+station-four and station-five, followed by separate explicit authorization for
+the destructive Fixture target(s). Build, static, or preflight evidence does
+not substitute for the unrun Windows product Gates.
+
+### 2026-09-03 Station Source Closure Reconciliation
+
+Pre-commit verification exposed merge omissions in the Station Agent V2 source
+that were not covered by the earlier Desktop and Acceptance-focused suites.
+The source closure now also includes:
+
+- canonical CLI normalization and prompt-routing behavior;
+- Conversation runtime-authority persistence and migrations using the current
+  `ActorPTID` / `actor_ptid` storage contract;
+- actor-owned conversation checks consistently querying `actor_ptid`;
+- bounded actor-owned OSS attachment reads and SHA-256 persistence required by
+  Agent attachment admission; and
+- the remaining Agent V2 domain, handler, persistence, and service code from
+  the accepted source, reconciled without replacing current identity naming.
+
+Verification after reconciliation:
+
+- `go test ./apps/station/app/subserver/agent/...`: PASS.
+- `go test ./apps/station/app/subserver/oss/service`: PASS.
+- W10/Windows focused Python suite: 224 PASS.
+- Desktop TypeScript check: PASS.
+- Desktop Vitest suite: 538 PASS, 1 environment-backed test skipped.
+- Desktop production build, including applet builds: PASS.
+- Rust `cargo check --features acceptance-webdriver`: PASS with existing
+  warnings.
+- Rust Acceptance window tests: 3 PASS.
+- Python compile, `packages/applets/build.js` syntax, `git diff --check`, and
+  added-line secret/debug/home-path scan: PASS.
+
+Broader checks remain accurately bounded:
+
+- `go test ./apps/station/app/...` reaches the pre-existing live
+  `apps/station/app/tests` package and fails because no Station is listening on
+  `127.0.0.1:18080`; all preceding application packages, including Agent,
+  messaging, and OSS, pass.
+- The Station frame workspace still has unrelated mDNS/bootstrap/transport and
+  backup-package failures outside this NDR source-closure range.
+- `make acceptance-validate` still fails on the unrelated Federation `fedp5`
+  Environment/Provisioner registration gap.
+- Gap Detector remains `UNPROVEN`: required runtime Gates are unrun and the
+  accumulated dirty range is broader than its canonical Acceptance plan.
+
+No commit, push, Station deployment, runtime restart, actor Fixture creation, or
+destructive reset has been performed. W9-D and Windows W10-D therefore remain
+`BLOCKED/UNPROVEN`; the next dependency remains an explicitly authorized commit
+and exact-source deployment to station-four and station-five.

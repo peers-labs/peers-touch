@@ -450,6 +450,7 @@ function ThreadReplyPreviewList({
                 return (
                   <div
                     key={reply.ulid}
+                    data-thread-preview-message-id={reply.ulid}
                     style={{
                       display: 'grid',
                       gridTemplateColumns: 'max-content minmax(0, 1fr)',
@@ -474,6 +475,7 @@ function ThreadReplyPreviewList({
                       {ownReply ? t('chat.social.thread.you') : profile.name}
                     </Text>
                     <Text
+                      data-thread-preview-message-content={reply.ulid}
                       ellipsis
                       style={{
                         minWidth: 0,
@@ -637,6 +639,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
       )}
 
       <Flexbox
+        data-message-action-anchor={message.ulid}
         align={isOwn ? 'flex-end' : 'flex-start'}
         style={{
           position: 'relative',
@@ -681,6 +684,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         )}
 
         <Flexbox
+          data-message-content={message.ulid}
           className="msg-bubble"
           style={{
             alignSelf: isOwn ? 'flex-end' : 'flex-start',

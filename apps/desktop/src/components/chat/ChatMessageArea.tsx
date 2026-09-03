@@ -601,14 +601,17 @@ export function ChatMessageArea() {
 
   return (
     <Flexbox
+      data-chat-conversation-pane={activeUlid}
       data-session-security={activeTab === 'friend' ? directSecurityState : undefined}
       data-group-security={activeTab === 'group' ? groupSecurityState[activeUlid] || 'unknown' : undefined}
       data-chat-typing={peerIsTyping ? 'active' : 'inactive'}
+      data-chat-background={activeBackground || 'default'}
+      data-chat-background-image={activeLocalState?.backgroundImage || ''}
       flex={1}
       gap={0}
       style={{
         height: '100%',
-        minWidth: 380,
+        minWidth: 0,
         background: token.colorBgLayout,
         position: 'relative',
         overflow: 'hidden',

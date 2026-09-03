@@ -68,8 +68,8 @@ export const MarketplacePage = memo(() => {
     error: catalogError,
     reload: reloadCatalog,
   } = usePrefetch('marketplace.catalog', loadMarketplaceCatalog);
-  const markets = catalog?.markets ?? [];
-  const packages = catalog?.packages ?? [];
+  const markets = useMemo(() => catalog?.markets ?? [], [catalog]);
+  const packages = useMemo(() => catalog?.packages ?? [], [catalog]);
 
   const [addSourceOpen, setAddSourceOpen] = useState(false);
   const [sourceUrl, setSourceUrl] = useState('');
@@ -158,6 +158,9 @@ export const MarketplacePage = memo(() => {
         sourceName.trim() || defaultNameFromUrl(url),
         sourceBranch.trim() || 'main',
       );
+      if (!('id' in result) || typeof result.id !== 'string' || !result.id) {
+        throw new Error(t('agent.marketplace.addSourceFailed'));
+      }
       sourceAdded = true;
       await api.syncSkillMarket(result.id);
       void message.success(t('agent.marketplace.addSourceSuccess'));
@@ -466,7 +469,9 @@ export const MarketplacePage = memo(() => {
                 {detail.version || '1'}
               </Descriptions.Item>
               <Descriptions.Item label={t('agent.marketplace.detail.publisher')}>
-                {detail.publisher || detail.author || t('agent.marketplace.unknownPublisher')}
+                {selectedDetail?.publisher
+                  || detail.author
+                  || t('agent.marketplace.unknownPublisher')}
               </Descriptions.Item>
               <Descriptions.Item label={t('agent.marketplace.detail.license')}>
                 {detail.license || t('agent.marketplace.notProvided')}
@@ -478,7 +483,7 @@ export const MarketplacePage = memo(() => {
                 {detail.riskLevel || t('agent.marketplace.risk.unknown')}
               </Descriptions.Item>
               <Descriptions.Item label={t('agent.marketplace.detail.source')} span={2}>
-                {detail.repository || detail.source || detail.filePath}
+                {selectedDetail?.repository || detail.source || detail.filePath}
               </Descriptions.Item>
               {detail.scanVerdict && (
                 <Descriptions.Item label={t('agent.marketplace.detail.scan')} span={2}>

@@ -10,6 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"google.golang.org/protobuf/encoding/protojson"
 	"gorm.io/gorm"
 )
 
@@ -170,17 +171,27 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 		Where("id = ?", "turn-1").
 		Updates(map[string]interface{}{
 			"status":          string(domain.TurnStatusFailed),
-			"terminal_reason": `Bearer raw-token /Users/alice/private/repository alice@example.com`,
+			"terminal_reason": `Bearer raw-token /private/tmp/private/repository alice@example.com`,
 			"ended_at":        now.Add(time.Second),
 		}).Error; err != nil {
 		t.Fatalf("update terminal turn: %v", err)
 	}
-	segments, err := json.Marshal([]ContextSegment{{
-		SourceRefs:      []string{"/Users/alice/private/source.txt"},
-		Content:         "must-not-export",
-		ContentHash:     "content-hash",
-		EstimatedTokens: 7,
-	}})
+	segments, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&model.ContextLedger{
+		ContextLedgerId:      "context:attempt-1",
+		TurnId:               "turn-1",
+		AttemptId:            "attempt-1",
+		EstimatedInputTokens: 10,
+		ReservedOutputTokens: 5,
+		ModelContextWindow:   128000,
+		PromptHash:           "prompt-hash",
+		PromptVersion:        contextLedgerPromptVersion,
+		Segments: []*model.ContextSegment{{
+			SegmentId:       "context:attempt-1:1",
+			SourceRefs:      []string{"/private/tmp/private/source.txt"},
+			ContentHash:     "content-hash",
+			EstimatedTokens: 7,
+		}},
+	})
 	if err != nil {
 		t.Fatalf("encode context segments: %v", err)
 	}
@@ -310,7 +321,7 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 	for _, forbidden := range []string{
 		"raw-token",
 		"credential-secret",
-		"/Users/alice/private",
+		"/private/tmp/private",
 		"alice@example.com",
 		"must-not-export",
 	} {
@@ -404,7 +415,7 @@ func seedTurnEvidence(t *testing.T, db *gorm.DB, now time.Time) {
 	if err := db.Create(&persistence.Conversation{
 		ID:        "conversation-1",
 		AgentID:   "agent-1",
-		Ptid:      "actor-1",
+		ActorPTID: "actor-1",
 		Title:     "Evidence",
 		Status:    "active",
 		Version:   1,

@@ -145,17 +145,42 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 "workspaceDigest": "clean",
             },
             "services": {
-                "station": {
+                "station-four": {
                     "kind": "station",
-                    "endpoint": "http://station",
+                    "endpoint": "http://station-four",
+                    "liveCommit": "commit-a",
+                    "workspaceDigest": "clean",
+                    "protocolDigest": "f" * 64,
+                },
+                "station-five": {
+                    "kind": "station",
+                    "endpoint": "http://station-five",
                     "liveCommit": "commit-a",
                     "workspaceDigest": "clean",
                     "protocolDigest": "f" * 64,
                 },
             },
+            "clients": [
+                {
+                    "id": actor,
+                    "actor": actor,
+                    "runtime": "native-tauri",
+                    "required_service_roles": ["station"],
+                    "service_bindings": {
+                        "station": {
+                            "service_id": service_id,
+                            "required_kind": "station",
+                        },
+                    },
+                }
+                for actor, service_id in (
+                    ("alice", "station-four"),
+                    ("bob", "station-five"),
+                )
+            ],
         }
         gate.runtime_binding = runtime_binding
-        gate.station_url = "http://station"
+        gate.station_url = "http://station-four"
         gate.report = new_report(gate.gate_id)
         return gate
 
@@ -206,7 +231,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
     def test_source_identity_rejects_malformed_station_protocol_digest(self) -> None:
         binding = SyntheticLinuxRuntimeBinding()
         gate = self.source_identity_gate(binding)
-        gate.manifest["services"]["station"]["protocolDigest"] = "not-a-digest"
+        gate.manifest["services"]["station-four"]["protocolDigest"] = (
+            "not-a-digest"
+        )
 
         with self.assertRaisesRegex(
             GateError,
@@ -1605,11 +1632,19 @@ class NativeProductClosureStaticTests(unittest.TestCase):
     def test_reaction_fault_transport_is_ready_before_alice_login(self) -> None:
         self.assertIn("self.reaction_proxy.start()", self.source)
         self.assertIn(
-            "self.runtime_binding.expose_orchestrator_endpoint(",
+            "self.runtime_binding.create_transport_override(",
             self.source,
         )
-        self.assertIn("actor_station_url = (", self.source)
-        self.assertIn("self.reaction_endpoint_url", self.source)
+        self.assertIn(
+            "self.runtime_binding.apply_transport_override(",
+            self.source,
+        )
+        self.assertIn(
+            "self.runtime_binding.clear_transport_override(",
+            self.source,
+        )
+        self.assertNotIn("expose_orchestrator_endpoint(", self.source)
+        self.assertNotIn("reaction_endpoint_url", self.source)
         self.assertNotIn(
             '"PEERS_STATION_URL"', self.source,
             "D-18: Station URL must not be injected by runners",
@@ -1627,8 +1662,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertLess(
             self.source.index("self.reaction_proxy.start()"),
             self.source.index(
-                "self.runtime_binding.expose_orchestrator_endpoint("
+                "self.runtime_binding.create_transport_override("
             ),
+        )
+        launch_start = self.source.index("    def launch_actor(")
+        launch_end = self.source.index("\n    def ", launch_start + 8)
+        launch_source = self.source[launch_start:launch_end]
+        self.assertLess(
+            launch_source.index(
+                "self.runtime_binding.apply_transport_override("
+            ),
+            launch_source.index('"loginWithPassword"'),
         )
 
     def test_runtime_endpoint_releases_before_local_proxy(self) -> None:
@@ -1766,12 +1810,16 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         launch_end = self.source.index("    def restart_actor(", launch_start)
         launch_source = self.source[launch_start:launch_end]
         self.assertLess(
+            launch_source.index(
+                "self.runtime_binding.create_bound_session("
+            ),
             launch_source.index("self.runtime_instances.append(client)"),
-            launch_source.index("client.start()"),
         )
         self.assertLess(
             launch_source.index("self.runtime_launches.append(attempt)"),
-            launch_source.index("client.start()"),
+            launch_source.index(
+                "self.client_lifecycles.mark_live(client)"
+            ),
         )
         cleanup_start = self.source.index("    def cleanup_clients(")
         cleanup_end = self.source.index("    def run(", cleanup_start)
