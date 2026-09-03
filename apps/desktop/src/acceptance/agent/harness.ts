@@ -6239,6 +6239,15 @@ export function installAcceptanceHarness(): void {
     },
 
     async loginWithPassword({ account, password }: LoginInput) {
+      await waitFor(
+        () => {
+          const snapshot = identityRuntime.getSnapshot();
+          return snapshot.phase.kind === 'accountGate' && snapshot.lifecycle.dataReady;
+        },
+        'identity account gate before login',
+        30_000,
+      );
+
       // Retry login once if the first attempt fails due to Rust cold-start.
       // The Tauri backend may still be initializing IPC listeners when the
       // harness becomes ready at the web layer.
