@@ -1373,12 +1373,12 @@ class RunHandle:
             }
             if redacted_secret_scan is not None:
                 manifest["result"]["secretScan"] = redacted_secret_scan
+            manifest = redact_value_with_values(
+                manifest,
+                self._redaction_values,
+            )
             encoded = (
                 json.dumps(manifest, indent=2, sort_keys=True, default=str) + "\n"
-            )
-            encoded = redact_text_with_values(
-                encoded,
-                self._redaction_values,
             ).encode("utf-8")
             manifest = json.loads(encoded.decode("utf-8"))
             target = self.run_dir / "manifest.json"
