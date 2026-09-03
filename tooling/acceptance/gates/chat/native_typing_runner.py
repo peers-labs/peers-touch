@@ -191,7 +191,7 @@ class NativeTypingGate(AcceptanceGate):
                 else ""
             )
             self.client_specs = {
-                str(client.get("actor")): client
+                str(client.get("id")): client
                 for client in manifest.get("clients", [])
                 if isinstance(client, dict)
             }

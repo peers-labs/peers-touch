@@ -134,6 +134,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.http_gateway = HTTP_GATEWAY.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
 
+    def test_client_specs_are_keyed_by_stable_client_id(self) -> None:
+        self.assertIn('str(client.get("id")): client', self.source)
+        self.assertNotIn('str(client.get("actor")): client', self.source)
+
     def source_identity_gate(
         self,
         runtime_binding: SyntheticLinuxRuntimeBinding,

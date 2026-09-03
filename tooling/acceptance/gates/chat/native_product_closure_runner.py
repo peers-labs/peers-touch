@@ -259,7 +259,7 @@ class NativeProductClosureGate(AcceptanceGate):
         if not self.station_url:
             raise GateError("runtime manifest Station URL is required")
         self.client_specs = {
-            str(client.get("actor")): client
+            str(client.get("id")): client
             for client in self.manifest.get("clients", [])
             if isinstance(client, dict)
         }
