@@ -889,6 +889,27 @@ evidence.
 | W8 | `pnpm --dir apps/mobile run check:mobile-shell-deletions`; `python3 tooling/scripts/acceptance-run.py --gate mobile-hard-cut-static` | `W8/` zero-reference report | Every deletion row is zero; no compatibility or runtime claim beyond scans |
 | W9 | `make acceptance PLAN=tooling/acceptance/plans/mobile-shell.json`; `python3 tooling/scripts/acceptance-validate.py --domain mobile --require-proven`; `make acceptance-report`; `make acceptance-coverage-report` | Immutable Acceptance runs, validation report, cleanup audit | Only mapped passing runtime cells become PROVEN |
 
+### W9 Gate Execution Order
+
+Gates must execute in dependency order. A phase failure blocks all subsequent
+phases.
+
+| Phase | Gates | Environment | Prerequisite |
+|---|---|---|---|
+| W9-A Static | MS-AG01 | CI/local | Proto gen clean |
+| W9-B Layout/A11y | MS-AG08, MS-AG11 | iOS simulator | Usable app on simulator |
+| W9-C Lifecycle | MS-AG02, MS-AG05 | iOS simulator + Station | Station with identity endpoint |
+| W9-D Social | MS-AG06, MS-AG04 | 2 simulators + Station + 2 accounts | W9-C passes |
+| W9-E Stress | MS-AG09, MS-AG10 | simulator + Station | W9-D passes |
+| W9-F Physical | MS-AG03, MS-AG07 | physical iOS + Android devices | W9-E passes |
+
+**Current blocker**: Station at `10.37.246.80:18080` is missing the
+`/sub-bootstrap/station-identity` endpoint. This returns 404 and blocks W9-C
+and all subsequent phases (W9-D, W9-E, W9-F). The identity endpoint must be
+deployed on the Station before lifecycle and social acceptance gates can run.
+See `docs/architecture/mobile/mobile-acceptance-environment.md` Section 5 for
+the full Station dependency contract.
+
 Every workstream must also update affected architecture/platform docs and the
 nearest directory README when public paths, contracts, or conventions change.
 
