@@ -55,4 +55,10 @@ no-op.
 
 ## Post-Fix Verification
 - Run ID: `post-fix`.
-- Pending exact-source Foundation reproduction.
+- Exact-source run
+  `20260903T141402227082Z-9aef3a92fa5ba394af7b5262ba51605d`
+  still timed out waiting for lifecycle readiness.
+- Account-gate ordering remained correct, but the trace still observed
+  `sessionAuthenticated=false` after the auth command returned.
+- Next instrumentation distinguishes response mapping failure from a specific
+  identity-pipeline handler clearing the newly activated session.
