@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, and Native/Browser capability sessions; exact-source run `20260903T181834402679Z-c7bf17d273b4a89474633151d2517ca2` advanced to the first Browser AS-F01 tuple, where the HTTP gateway lacked Agent feedback readback; feedback gateway parity is implemented and awaits exact-source runtime proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01/AS-F02; exact-source run `20260903T183424646199Z-cfc536cc3a0ef833611c6c24f04de974` advanced to Browser AS-F03, where omitted empty protobuf readiness capabilities violated the Desktop API's array contract; response normalization is implemented and awaits exact-source runtime proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4605,6 +4605,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `cargo check --locked --features e2e-testing` passes. Provisioner cleanup
   completed `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN`
   pending an exact-source rerun.
+- Exact-source run
+  `20260903T183424646199Z-cfc536cc3a0ef833611c6c24f04de974`
+  (aggregate `20260903T183424458488Z-b9b24c3c7ea01394ba2157c8bdc58383`)
+  on `aeec34d2b0276978f6fe1946c8a9315842f8faa2` crossed Browser
+  capability-session establishment plus AS-F01 and AS-F02, then failed in
+  AS-F03 when the Desktop API exposed an omitted protobuf repeated field as
+  `undefined` although its public type requires `capabilities: []`. The
+  adapter now normalizes an omitted readiness capability list to an empty
+  array. The focused capability adapter tests pass 5 tests, Desktop TypeScript
+  checks pass, and the focused Agent static suite passes 59 tests.
+  Provisioner cleanup completed `DONE / PROVEN / passed`; G-F remains
+  `PARTIAL / UNPROVEN` pending an exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
