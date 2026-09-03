@@ -3191,6 +3191,104 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 input, &token,
             ))
         }
+        "agent_capability_sessions" => {
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::station_capability_sessions(&token))
+        }
+        "agent_browser_capability_session_open" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let app = match runtime.app_handle("agent_browser_capability_session_open") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(app_runtime_evidence::open_browser_capability_session(
+                supervisor.inner(),
+            ))
+        }
+        "agent_browser_capability_session_close" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let app = match runtime.app_handle("agent_browser_capability_session_close") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(app_runtime_evidence::close_browser_capability_session(
+                supervisor.inner(),
+            ))
+        }
+        "agent_runtime_activity_station" => {
+            let input = match parse_args::<AgentRuntimeActivityInput>(args) {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::station_runtime_activity(
+                input, &token,
+            ))
+        }
+        "agent_runtime_activity_local" => {
+            let input = match parse_args::<AgentRuntimeActivityInput>(args) {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::local_runtime_activity(input, &token))
+        }
+        "agent_capability_session_snapshot" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let input = if args.as_object().is_some_and(|value| value.is_empty()) {
+                None
+            } else {
+                match parse_args::<app_runtime_evidence::AgentCapabilitySessionSnapshotInput>(args)
+                {
+                    Ok(input) => Some(input),
+                    Err(error) => return error,
+                }
+            };
+            let app = match runtime.app_handle("agent_capability_session_snapshot") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            if let Some(negative_control) = input.and_then(|value| value.negative_control) {
+                return to_json(app_runtime_evidence::capability_negative_control(
+                    negative_control,
+                    supervisor.inner(),
+                ));
+            }
+            match supervisor.snapshot() {
+                Ok(snapshot) => {
+                    to_json(app_runtime_evidence::capability_session_snapshot(snapshot))
+                }
+                Err(error) => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InternalError,
+                    "agent.capabilitySessionSnapshotFailed",
+                    Some(json!({ "cause": error })),
+                )),
+            }
+        }
         "agent_capability_manifest_list" => {
             let input =
                 match parse_args::<app_capability_authority::CapabilityManifestListInput>(args) {
