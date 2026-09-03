@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T192336578749Z-2b22311efd622177becf7bc1eb92afc7` advanced to AS-F06 and validated the approved disposable profile, then exposed a container host/internal port mismatch in the restart guard; port validation is corrected and awaits exact-source proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T194240394618Z-bac0c3a8431196af6fcd0f60741e064f` executed the disposable AS-F06 restart and exposed a regressed Browser session-restore device scope; transport-aware restore is implemented and awaits exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4646,6 +4646,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   all 40 focused restart/scenario tests and a read-only live container identity
   check pass. Provisioner cleanup completed `DONE / PROVEN / passed`; G-F
   remains `PARTIAL / UNPROVEN` pending an exact-source rerun.
+- Exact-source run
+  `20260903T194240394618Z-bac0c3a8431196af6fcd0f60741e064f`
+  (aggregate `20260903T194240220495Z-079dd8619879ed419c1d0ab6398feef0`)
+  on `ef65efe2ae8ae5159def89df09dfac4e60dd5ad9` crossed Browser AS-F01
+  through AS-F05, passed the disposable target/container guard, and performed
+  the source-bound AS-F06 Station restart. Browser recovery then failed because
+  `auth_restore_session` had regressed to the Native takeover device type.
+  Transport-aware restore is reinstated: Native keeps `desktop-native`, while
+  the HTTP gateway requests `desktop-browser` and rebinds the restored gateway
+  session. Focused Agent/restart/scenario tests pass 99 tests, identity runtime
+  tests pass 10 tests, and Desktop Rust compilation passes. Provisioner cleanup
+  completed `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN`
+  pending an exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
