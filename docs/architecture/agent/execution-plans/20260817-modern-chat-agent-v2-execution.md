@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01/AS-F02; exact-source run `20260903T183424646199Z-cfc536cc3a0ef833611c6c24f04de974` advanced to Browser AS-F03, where omitted empty protobuf readiness capabilities violated the Desktop API's array contract; response normalization is implemented and awaits exact-source runtime proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T190326451434Z-3b9625bd65a75964000db74181ca8536` advanced to AS-F06, where the restart helper still required legacy protected profile `two`; restart validation now binds the approved disposable runtime manifest and awaits exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4617,6 +4617,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   checks pass, and the focused Agent static suite passes 59 tests.
   Provisioner cleanup completed `DONE / PROVEN / passed`; G-F remains
   `PARTIAL / UNPROVEN` pending an exact-source rerun.
+- Exact-source run
+  `20260903T190326451434Z-3b9625bd65a75964000db74181ca8536`
+  (aggregate `20260903T190326260933Z-40f243f9d4c5dc7bdaa5fd076285fe47`)
+  on `fe842729ef60bb312abfc2011ee09d3cf48c94b2` crossed Browser AS-F01
+  through AS-F05 and reached the planned AS-F06 restart boundary. The
+  explicitly authorized run then failed closed because the restart helper
+  still required legacy profile `two` and `station-two:18080`, despite the
+  runtime manifest naming approved disposable profile
+  `chat-native-disposable`. The helper now derives the profile, deployment,
+  endpoint, port, and compose-project identity from the source-bound runtime
+  manifest and local profile, requires both explicit restart authorization and
+  `PT_ACCEPTANCE_DISPOSABLE=1`, and rejects non-disposable or mismatched
+  targets. Focused restart/scenario tests pass 40 tests and the combined Agent
+  static/Gate tests pass 66 tests. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN` pending an
+  exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

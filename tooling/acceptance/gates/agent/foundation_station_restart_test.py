@@ -14,15 +14,25 @@ SOURCE_COMMIT = "a" * 40
 PROTO_DIGEST = "sha256:proto"
 CONTAINER_ID = "b" * 64
 IMAGE_ID = "sha256:" + "c" * 64
+PROFILE = "chat-native-disposable"
+DEPLOYMENT = "chat-native-disposable-station"
+PROJECT_LABEL = "pt-chat-native-disposable"
+STATION_PORT = 18132
+AUTHORIZED_ENV = {
+    "PT_AGENT_V2_ALLOW_STATION_RESTART": "1",
+    "PT_ACCEPTANCE_APPROVED_PROFILE": PROFILE,
+    "PT_ACCEPTANCE_DISPOSABLE": "1",
+}
 
 
 def runtime_manifest() -> dict[str, object]:
     return {
-        "profile": {"resolvedName": "two"},
+        "profile": {"resolvedName": PROFILE},
         "source": {"commit": SOURCE_COMMIT, "workspaceDigest": "clean"},
         "services": {
             "station": {
-                "endpoint": "http://station.example:18080",
+                "deploymentEnvironment": DEPLOYMENT,
+                "endpoint": f"http://station.example:{STATION_PORT}",
                 "liveCommit": SOURCE_COMMIT[:12],
                 "protocolDigest": PROTO_DIGEST,
                 "workspaceDigest": "clean",
@@ -40,15 +50,15 @@ def inspect_payload(started_at: str, *, image_id: str = IMAGE_ID) -> str:
                 "Config": {
                     "Image": "peers-touch/station@sha256:image",
                     "Labels": {
-                        "com.docker.compose.project": "pt-station-two",
+                        "com.docker.compose.project": PROJECT_LABEL,
                         "com.docker.compose.service": "station",
                     },
                 },
                 "State": {"StartedAt": started_at},
                 "NetworkSettings": {
                     "Ports": {
-                        "18080/tcp": [
-                            {"HostIp": "0.0.0.0", "HostPort": "18080"}
+                        f"{STATION_PORT}/tcp": [
+                            {"HostIp": "0.0.0.0", "HostPort": str(STATION_PORT)}
                         ]
                     }
                 },
@@ -61,26 +71,35 @@ class FoundationStationRestartTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.repo_root = Path(self.temporary_directory.name)
-        profile = self.repo_root / ".local/dev/profiles/two.env"
+        profile = self.repo_root / f".local/dev/profiles/{PROFILE}.env"
         deployment = (
-            self.repo_root / ".local/deploy/envs/station-two.env"
+            self.repo_root / f".local/deploy/envs/{DEPLOYMENT}.env"
         )
         profile.parent.mkdir(parents=True)
         deployment.parent.mkdir(parents=True)
         profile.write_text(
             "\n".join(
                 (
-                    "PT_DEV_PROFILE=two",
-                    "PT_STATION_DEPLOY_ENV=station-two",
-                    "PT_STATION_URL=http://station.example:18080",
-                    "PT_STATION_HEALTH_URL=http://station.example:18080/sub-oss/healthz",
+                    f"PT_DEV_PROFILE={PROFILE}",
+                    f"PT_STATION_DEPLOY_ENV={DEPLOYMENT}",
+                    f"PT_STATION_URL=http://station.example:{STATION_PORT}",
+                    f"PT_STATION_PORT={STATION_PORT}",
+                    f"PT_STATION_HEALTH_URL=http://station.example:{STATION_PORT}/sub-oss/healthz",
                 )
             )
             + "\n",
             encoding="utf-8",
         )
         deployment.write_text(
-            "PT_DEPLOY_HOST=station.example\nPT_DEPLOY_USER=acceptance\n",
+            "\n".join(
+                (
+                    "PT_DEPLOY_HOST=station.example",
+                    "PT_DEPLOY_USER=acceptance",
+                    "PT_ACCEPTANCE_DISPOSABLE=1",
+                    f"PT_ACCEPTANCE_COMPOSE_PROJECT={PROJECT_LABEL}",
+                )
+            )
+            + "\n",
             encoding="utf-8",
         )
 
@@ -150,7 +169,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                {"PT_AGENT_V2_ALLOW_STATION_RESTART": "1"},
+                AUTHORIZED_ENV,
             ),
             patch.object(
                 foundation_station_restart,
@@ -209,7 +228,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                {"PT_AGENT_V2_ALLOW_STATION_RESTART": "1"},
+                AUTHORIZED_ENV,
             ),
             patch.object(
                 foundation_station_restart,
@@ -295,7 +314,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                {"PT_AGENT_V2_ALLOW_STATION_RESTART": "1"},
+                AUTHORIZED_ENV,
             ),
             patch.object(
                 foundation_station_restart,
@@ -345,7 +364,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                {"PT_AGENT_V2_ALLOW_STATION_RESTART": "1"},
+                AUTHORIZED_ENV,
             ),
             patch.object(
                 foundation_station_restart,
@@ -401,7 +420,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                {"PT_AGENT_V2_ALLOW_STATION_RESTART": "1"},
+                AUTHORIZED_ENV,
             ),
             patch.object(
                 foundation_station_restart,
@@ -418,13 +437,45 @@ class FoundationStationRestartTest(unittest.TestCase):
                 )
         remote.assert_not_called()
 
+    def test_restart_rejects_non_disposable_deployment(self) -> None:
+        deployment = (
+            self.repo_root / f".local/deploy/envs/{DEPLOYMENT}.env"
+        )
+        deployment.write_text(
+            "\n".join(
+                (
+                    "PT_DEPLOY_HOST=station.example",
+                    "PT_DEPLOY_USER=acceptance",
+                    f"PT_ACCEPTANCE_COMPOSE_PROJECT={PROJECT_LABEL}",
+                )
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        with (
+            patch.dict(os.environ, AUTHORIZED_ENV),
+            patch.object(
+                foundation_station_restart,
+                "_remote_command",
+            ) as remote,
+        ):
+            with self.assertRaisesRegex(
+                foundation_station_restart.FoundationStationRestartError,
+                "approved disposable Station deployment",
+            ):
+                foundation_station_restart.restart_foundation_station(
+                    runtime_manifest(),
+                    repo_root=self.repo_root,
+                )
+        remote.assert_not_called()
+
     def test_restart_rejects_wrong_profile_before_remote_command(self) -> None:
         manifest = runtime_manifest()
         manifest["profile"] = {"resolvedName": "one"}
         with (
             patch.dict(
                 os.environ,
-                {"PT_AGENT_V2_ALLOW_STATION_RESTART": "1"},
+                AUTHORIZED_ENV,
             ),
             patch.object(
                 foundation_station_restart,
@@ -433,7 +484,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 foundation_station_restart.FoundationStationRestartError,
-                "profile two",
+                "PT_ACCEPTANCE_APPROVED_PROFILE",
             ):
                 foundation_station_restart.restart_foundation_station(
                     manifest,
@@ -445,7 +496,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                {"PT_AGENT_V2_ALLOW_STATION_RESTART": "1"},
+                AUTHORIZED_ENV,
             ),
             patch.object(
                 foundation_station_restart,
@@ -488,7 +539,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                {"PT_AGENT_V2_ALLOW_STATION_RESTART": "1"},
+                AUTHORIZED_ENV,
             ),
             patch.object(
                 foundation_station_restart,
