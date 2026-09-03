@@ -423,6 +423,26 @@ class EvidenceStoreTests(unittest.TestCase):
         )
         run.close()
 
+    def test_finalize_preserves_valid_json_when_secret_contains_control_characters(
+        self,
+    ) -> None:
+        run = self.store.begin_run("control-character-redaction", source={})
+        run.configure_redaction(("fixture-secret\nsecond-line",))
+
+        manifest = run.finalize(
+            result={
+                "status": "blocked",
+                "reason": "fixture-secret\nsecond-line",
+            }
+        )
+
+        self.assertEqual(manifest["result"]["reason"], REDACTED)
+        persisted = json.loads(
+            (run.run_dir / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(persisted["result"]["reason"], REDACTED)
+        run.close()
+
     def test_runtime_cell_latest_pointer_is_isolated(self) -> None:
         linux = self.store.begin_run("runtime-gate", source={})
         linux.finalize(
