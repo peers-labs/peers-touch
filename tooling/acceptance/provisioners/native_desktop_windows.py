@@ -1171,7 +1171,7 @@ class NativeDesktopWindowsProvisioner:
                 prefix="pt-windows-source-"
             ) as directory:
                 bundle = Path(directory) / "source.bundle"
-                revision = commit
+                revision = request.branch
                 created = subprocess.run(
                     (
                         "git",
