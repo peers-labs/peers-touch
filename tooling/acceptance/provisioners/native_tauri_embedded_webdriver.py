@@ -99,7 +99,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
         services: dict[str, object] = {}
         local_proto_digest = source_proto_digest(REPO_ROOT)
         for service_id, (profile_name, deployment_environment) in (
-            SERVICE_PROFILES.items()
+            _SERVICE_PROFILES.items()
         ):
             profile_path = (
                 REPO_ROOT
