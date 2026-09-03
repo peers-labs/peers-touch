@@ -297,13 +297,7 @@ class IdentityRuntime {
   };
 
   loginWithPassword = async (account: string, password: string): Promise<void> => {
-    markLocalIdentityAction();
-    const resp = await api.authLogin({ account, password });
-    await runIdentityPipeline({
-      reason: 'login',
-      actorPtid: resp.actor_ptid ?? null,
-      loginMethod: 'password',
-    });
+    await useSessionStore.getState().loginWithPassword(account, password);
     await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
   };
 
@@ -571,7 +565,7 @@ class IdentityRuntime {
       method: 'POST',
       body: JSON.stringify({
         sessionId: 'foundation-login-readiness',
-        runId: 'pre-fix',
+        runId: 'post-fix',
         hypothesisId: 'A-D',
         location: 'identityRuntime.ts:dispatch',
         msg: '[DEBUG] identity transition',
