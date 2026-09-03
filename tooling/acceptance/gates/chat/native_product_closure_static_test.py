@@ -794,6 +794,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source.index("target = client.driver.execute_script("),
         )
         self.assertLess(
+            click_source.index(
+                '"arguments[0].focus({ preventScroll: true });"'
+            ),
+            click_source.index("target = client.driver.execute_script("),
+        )
+        self.assertLess(
             click_source.index("target = client.driver.execute_script("),
             click_source.index("probe_id = self.install_native_input_probe("),
         )
