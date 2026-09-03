@@ -121,10 +121,15 @@ class RedactionTests(unittest.TestCase):
         self.assertIn("marker=abc", redacted)
 
     def test_redaction_is_idempotent(self) -> None:
-        once = redact_text(
-            "Authorization: Bearer abc.def.ghi password=secret-value"
+        samples = (
+            "Authorization: Bearer abc.def.ghi password=secret-value",
+            "received auth:complete",
+            "HotKey already registered: key: KeyA id: 34078739",
         )
-        self.assertEqual(redact_text(once), once)
+        for sample in samples:
+            with self.subTest(sample=sample):
+                once = redact_text(sample)
+                self.assertEqual(redact_text(once), once)
 
     def test_redacts_json_and_binary_artifacts_before_persistence(self) -> None:
         payload = json.dumps(
