@@ -79,6 +79,9 @@ DESKTOP_AGENT_COMMANDS = (
     / "tauri_commands"
     / "agents.rs"
 )
+DESKTOP_AUTH_SERVICE = (
+    ROOT / "apps" / "desktop" / "src-tauri" / "src" / "application" / "auth" / "service.rs"
+)
 
 
 class AgentNativeRunnerStaticTest(unittest.TestCase):
@@ -620,6 +623,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_browser_auth_binds_gateway_session_before_agent_commands(self) -> None:
         gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
+        auth_service = DESKTOP_AUTH_SERVICE.read_text(encoding="utf-8")
 
         self.assertIn(
             "bind_gateway_auth_result(state, app_auth::auth_login(input, state))",
@@ -633,7 +637,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "bind_gateway_auth_result(state, app_auth::auth_restore_session(state))",
             gateway,
         )
+        self.assertIn('input.device_type = Some("desktop-browser".to_string())', gateway)
         self.assertIn("state.sessions.unbind(HTTP_GATEWAY_SESSION_LABEL)", gateway)
+        self.assertIn('.unwrap_or("desktop-native")', auth_service)
+        self.assertNotIn('"device_type": "desktop"', auth_service)
 
     def test_harness_exposes_r6_production_actions_and_readback(self) -> None:
         for method in (
