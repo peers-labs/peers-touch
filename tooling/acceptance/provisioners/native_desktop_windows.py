@@ -669,6 +669,16 @@ class NativeDesktopWindowsProvisioner:
                 runtime.log_path.write_bytes(
                     base64.b64decode(content, validate=True)
                 )
+            for field in (
+                "processStopped",
+                "taskReleased",
+                "portsReleased",
+                "storageReleased",
+            ):
+                if stopped.get(field) is not True:
+                    failures.append(
+                        f"remote actor reported {field}=false"
+                    )
         except Exception as error:
             failures.append(f"remote actor: {error}")
         if failures:
@@ -1048,28 +1058,25 @@ class NativeDesktopWindowsProvisioner:
                 self.release_endpoint(endpoint_id)
             except Exception as error:
                 failures.append(f"endpoint {endpoint_id}: {error}")
-        source_lease_released = True
-        try:
-            self._release_source_lease()
-        except Exception as error:
-            source_lease_released = False
-            failures.append(f"source lease: {error}")
         if state:
             try:
                 cleanup = self._broker_from_state(state, "cleanup", {})
             except Exception as error:
                 failures.append(f"remote broker: {error}")
                 cleanup = {"clean": False}
-            if source_lease_released:
-                try:
-                    self._clean_remote_source(
-                        str(state["remoteSource"]),
-                        str(state["sourceCommit"]),
-                    )
-                except Exception as error:
-                    failures.append(f"source workspace: {error}")
+            try:
+                self._clean_remote_source(
+                    str(state["remoteSource"]),
+                    str(state["sourceCommit"]),
+                )
+            except Exception as error:
+                failures.append(f"source workspace: {error}")
         else:
             cleanup = {"clean": True, "alreadyClean": True}
+        try:
+            self._release_source_lease()
+        except Exception as error:
+            failures.append(f"source lease: {error}")
         if failures:
             raise ProvisioningError(
                 "Windows runtime-cell cleanup failed: "

@@ -217,7 +217,7 @@ class NativeDesktopRuntimeBinding(ABC):
         }
 
         session = self._create_session(
-            client_spec.get("actor") or client_id,
+            client_id,
             client_spec,
             environment,
         )

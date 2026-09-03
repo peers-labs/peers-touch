@@ -337,6 +337,42 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         launch_environment = lifecycle.calls[-1][1][2]
         self.assertNotIn("PEERS_STATION_URL", launch_environment)
 
+    def test_bound_session_uses_client_id_for_same_actor_devices(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        manifest = self.runtime_manifest()
+        client = manifest["clients"][0]
+        client["id"] = "alice2"
+        client["actor"] = "alice"
+        binding.set_runtime_manifest(manifest)
+
+        with (
+            patch.object(TauriSession, "start"),
+            patch.object(TauriSession, "wait_for_acceptance_harness"),
+            patch.object(binding, "_configure_session_station"),
+            patch.object(
+                binding,
+                "_observe_live_service_identity",
+                return_value="station-peer-four",
+            ),
+            patch(
+                "tooling.acceptance.drivers.native.runtime."
+                "persist_client_binding_observation",
+                return_value=(object(), {}),
+            ),
+        ):
+            binding.create_bound_session("alice2")
+
+        launch_call = next(
+            call for call in lifecycle.calls if call[0] == "launch_actor"
+        )
+        self.assertEqual(launch_call[1][0], "alice2")
+        self.assertEqual(launch_call[1][1]["actor"], "alice")
+
     def test_linux_binding_keeps_posix_absolute_path_validation(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle("relative/fixture.png")
         binding = LinuxNativeDesktopRuntimeBinding(
