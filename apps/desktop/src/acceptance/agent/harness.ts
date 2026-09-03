@@ -6252,7 +6252,7 @@ export function installAcceptanceHarness(): void {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'foundation-login-readiness',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'A',
           location: 'agent/harness.ts:loginWithPassword:account-gate-ready',
           msg: '[DEBUG] account gate ready before login',
@@ -6276,7 +6276,7 @@ export function installAcceptanceHarness(): void {
           method: 'POST',
           body: JSON.stringify({
             sessionId: 'foundation-login-readiness',
-            runId: 'pre-fix',
+            runId: 'post-fix',
             hypothesisId: 'B-D',
             location: 'agent/harness.ts:loginWithPassword:login-returned',
             msg: '[DEBUG] login command returned',
@@ -6296,7 +6296,7 @@ export function installAcceptanceHarness(): void {
           method: 'POST',
           body: JSON.stringify({
             sessionId: 'foundation-login-readiness',
-            runId: 'pre-fix',
+            runId: 'post-fix',
             hypothesisId: 'B-D',
             location: 'agent/harness.ts:loginWithPassword:completion-returned',
             msg: '[DEBUG] login completion returned',
@@ -6325,7 +6325,7 @@ export function installAcceptanceHarness(): void {
           method: 'POST',
           body: JSON.stringify({
             sessionId: 'foundation-login-readiness',
-            runId: 'pre-fix',
+            runId: 'post-fix',
             hypothesisId: 'A-D',
             location: 'agent/harness.ts:loginWithPassword:first-failure',
             msg: '[DEBUG] first login attempt failed',
