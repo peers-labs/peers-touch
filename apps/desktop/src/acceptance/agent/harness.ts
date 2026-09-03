@@ -6247,13 +6247,69 @@ export function installAcceptanceHarness(): void {
         'identity account gate before login',
         30_000,
       );
+      // #region debug-point A:account-gate-ready
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'foundation-login-readiness',
+          runId: 'pre-fix',
+          hypothesisId: 'A',
+          location: 'agent/harness.ts:loginWithPassword:account-gate-ready',
+          msg: '[DEBUG] account gate ready before login',
+          data: {
+            phase: identityRuntime.getSnapshot().phase.kind,
+            lifecycleState: identityRuntime.getSnapshot().lifecycle.state,
+            dataReady: identityRuntime.getSnapshot().lifecycle.dataReady,
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
 
       // Retry login once if the first attempt fails due to Rust cold-start.
       // The Tauri backend may still be initializing IPC listeners when the
       // harness becomes ready at the web layer.
       const attemptLogin = async (): Promise<void> => {
         await identityRuntime.loginWithPassword(account, password);
+        // #region debug-point B-D:login-returned
+        void fetch('http://127.0.0.1:7781/event', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: 'foundation-login-readiness',
+            runId: 'pre-fix',
+            hypothesisId: 'B-D',
+            location: 'agent/harness.ts:loginWithPassword:login-returned',
+            msg: '[DEBUG] login command returned',
+            data: {
+              phase: identityRuntime.getSnapshot().phase.kind,
+              lifecycleState: identityRuntime.getSnapshot().lifecycle.state,
+              sessionAuthenticated: useSessionStore.getState().authenticated,
+              dataReady: identityRuntime.getSnapshot().lifecycle.dataReady,
+            },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         await identityRuntime.completeCurrentSession();
+        // #region debug-point B-D:completion-returned
+        void fetch('http://127.0.0.1:7781/event', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: 'foundation-login-readiness',
+            runId: 'pre-fix',
+            hypothesisId: 'B-D',
+            location: 'agent/harness.ts:loginWithPassword:completion-returned',
+            msg: '[DEBUG] login completion returned',
+            data: {
+              phase: identityRuntime.getSnapshot().phase.kind,
+              lifecycleState: identityRuntime.getSnapshot().lifecycle.state,
+              sessionAuthenticated: useSessionStore.getState().authenticated,
+              dataReady: identityRuntime.getSnapshot().lifecycle.dataReady,
+            },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         await waitFor(
           () => identityRuntime.getSnapshot().lifecycle.state === 'ready',
           'lifecycle ready after login',
@@ -6263,7 +6319,27 @@ export function installAcceptanceHarness(): void {
 
       try {
         await attemptLogin();
-      } catch {
+      } catch (error) {
+        // #region debug-point A-D:first-login-failed
+        void fetch('http://127.0.0.1:7781/event', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: 'foundation-login-readiness',
+            runId: 'pre-fix',
+            hypothesisId: 'A-D',
+            location: 'agent/harness.ts:loginWithPassword:first-failure',
+            msg: '[DEBUG] first login attempt failed',
+            data: {
+              phase: identityRuntime.getSnapshot().phase.kind,
+              lifecycleState: identityRuntime.getSnapshot().lifecycle.state,
+              sessionAuthenticated: useSessionStore.getState().authenticated,
+              dataReady: identityRuntime.getSnapshot().lifecycle.dataReady,
+              errorType: error instanceof Error ? error.name : typeof error,
+            },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         // Wait for Rust backend to finish cold-start initialization
         await new Promise((resolve) => setTimeout(resolve, 5_000));
         await attemptLogin();
