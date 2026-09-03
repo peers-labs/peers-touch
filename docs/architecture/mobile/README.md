@@ -56,6 +56,7 @@ runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原�
 | [integration.md](./integration.md) | Initial implementation gap and target impact |
 | [module-layout.md](./module-layout.md) | Target module ownership |
 | [native-oauth-proof/README.md](./native-oauth-proof/README.md) | W2-E2 physical OAuth Fixture, Station proof, browser lease and build provenance amendment |
+| [mobile-acceptance-environment.md](./mobile-acceptance-environment.md) | Mobile acceptance environment contract: tiers, gate mapping, Station dependency, network model |
 | [prototype/README.md](./prototype/README.md) | Confirmed prototype reference |
 | [execution-plans/20260827-mobile-shell-implementation.md](./execution-plans/20260827-mobile-shell-implementation.md) | Dependency-ordered implementation and Acceptance plan |
 | [execution-plans/20260829-mobile-native-oauth-proof.md](./execution-plans/20260829-mobile-native-oauth-proof.md) | Focused W2-E2 implementation and physical-proof plan |
