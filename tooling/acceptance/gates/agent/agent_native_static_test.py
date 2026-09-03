@@ -618,6 +618,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("agents_update(&actor_ptid, &token, input)", commands)
         self.assertNotIn('agents_list("")', commands)
 
+    def test_browser_auth_binds_gateway_session_before_agent_commands(self) -> None:
+        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "bind_gateway_auth_result(state, app_auth::auth_login(input, state))",
+            gateway,
+        )
+        self.assertIn(
+            "bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))",
+            gateway,
+        )
+        self.assertIn(
+            "bind_gateway_auth_result(state, app_auth::auth_restore_session(state))",
+            gateway,
+        )
+        self.assertIn("state.sessions.unbind(HTTP_GATEWAY_SESSION_LABEL)", gateway)
+
     def test_harness_exposes_r6_production_actions_and_readback(self) -> None:
         for method in (
             "logout",
