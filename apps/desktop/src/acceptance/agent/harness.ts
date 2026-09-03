@@ -60,6 +60,10 @@ interface LoginInput {
   password: string;
 }
 
+interface ConfigureStationInput {
+  stationUrl: string;
+}
+
 interface SendMessageInput {
   content: string;
 }
@@ -6207,6 +6211,30 @@ export function installAcceptanceHarness(): void {
         ready: true,
         lifecycleState,
         timestamp: Date.now(),
+      };
+    },
+
+    async configureStation({ stationUrl }: ConfigureStationInput) {
+      const expectedUrl = stationUrl.trim().replace(/\/+$/, '');
+      const probed = await api.stationAdd(expectedUrl);
+      await api.stationSetActive(expectedUrl);
+      const registry = await api.stationList();
+      const activeUrl = registry.active_url?.trim().replace(/\/+$/, '') ?? null;
+      const activeEntry = registry.entries.find(
+        (entry) => entry.url.trim().replace(/\/+$/, '') === expectedUrl,
+      );
+      const peerIdAvailable = Boolean(
+        activeEntry?.peer_id?.trim() || probed.peer_id?.trim(),
+      );
+
+      return {
+        configured:
+          activeUrl === expectedUrl
+          && activeEntry?.online === true
+          && peerIdAvailable,
+        activeUrl,
+        online: activeEntry?.online === true,
+        peerIdAvailable,
       };
     },
 
