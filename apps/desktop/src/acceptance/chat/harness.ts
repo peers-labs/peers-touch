@@ -295,6 +295,13 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async hydrateActiveActor() {
+      await hydrateSocialForActiveActor();
+      return {
+        actorPtid: activeActorPtid(),
+      };
+    },
+
     async createDirectConversation({ peerPtid }: { peerPtid: string }) {
       const conversation = await imServiceV1.messaging.createDirect(peerPtid);
       await useSocialChatStore.getState().loadSessions();
