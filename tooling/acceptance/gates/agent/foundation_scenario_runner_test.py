@@ -205,6 +205,10 @@ class SessionHarnessClient:
                 "authenticated": self.authenticated,
                 "actorId": "ptid:test" if self.authenticated else None,
                 "identityState": "ready" if self.authenticated else "onboarding",
+                "identityPhase": (
+                    "authenticated" if self.authenticated else "accountGate"
+                ),
+                "identityReason": None if self.authenticated else "session_missing",
             }
         if method == "navigateToAgent":
             return {"navigated": True}
@@ -766,7 +770,9 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertIn("existing session was not restored", message)
         self.assertIn('"actorPresent":false', message)
         self.assertIn('"authenticated":false', message)
-        self.assertIn('"identityState":"unknown"', message)
+        self.assertIn('"identityPhase":"accountGate"', message)
+        self.assertIn('"identityReason":"session_missing"', message)
+        self.assertIn('"identityState":"onboarding"', message)
         self.assertIn('"recoveryBoundary":"session-recovery"', message)
         self.assertNotIn("loginWithPassword", native.calls)
         self.assertEqual(browser.calls, [])
@@ -781,6 +787,8 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 "authenticated": False,
                 "actorId": "ptid:private-actor",
                 "identityState": "accountGate",
+                "identityPhase": "accountGate",
+                "identityReason": "restore_failed",
             },
             last_error=RuntimeError(
                 "UNAUTHORIZED session revoked token=private-token"
@@ -791,6 +799,9 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertIn('"errorCode":"UNAUTHORIZED"', diagnostic)
         self.assertIn('"errorReason":"session_revoked"', diagnostic)
         self.assertIn('"errorType":"RuntimeError"', diagnostic)
+        self.assertIn('"identityPhase":"accountGate"', diagnostic)
+        self.assertIn('"identityReason":"restore_failed"', diagnostic)
+        self.assertIn('"identityState":"unknown"', diagnostic)
         self.assertIn('"recoveryBoundary":"station-restart"', diagnostic)
         self.assertNotIn("private-actor", diagnostic)
         self.assertNotIn("private-token", diagnostic)

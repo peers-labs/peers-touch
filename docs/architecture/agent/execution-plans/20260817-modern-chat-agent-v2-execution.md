@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T201542232807Z-02e5ae1ef2f8cf7bd5c057164bc6cabf` executed the disposable AS-F06 restart with transport-aware Browser restore and exposed an unresolved Browser session-recovery failure; bounded redacted restore diagnostics are implemented and await exact-source proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T204530184499Z-47672b84031363a035371f1a3f7a6621` proves Station-restart recovery succeeds but Browser process-restart recovery loses authentication; typed identity phase/reason diagnostics are implemented and await exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4684,6 +4684,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   suite passes 100 tests and `git diff --check` passes. Runtime behavior is
   unchanged; G-F remains `PARTIAL / UNPROVEN` pending checkpoint deployment
   and an exact-source rerun.
+- Exact-source run
+  `20260903T204530184499Z-47672b84031363a035371f1a3f7a6621`
+  (aggregate `20260903T204529993640Z-c0c17b9f8960d65db4f9fc56e0c77174`)
+  on `ef33e690ebeb314c5454a7c49f0aaf3b728609fb` proved the Browser
+  recovery after the source-bound Station restart, then failed only after the
+  explicit Browser process restart. The preserved snapshot reported
+  `authenticated=false`, no actor projection, 119 successful polls, no command
+  exception, and `recoveryBoundary=client-restart`; cleanup completed
+  `DONE / PROVEN / passed`. The public lifecycle state was redacted as unknown
+  because the first diagnostic allowlist used internal identity phase names.
+  The follow-up correction now records the public
+  `onboarding | resuming | ready` state separately from the internal typed
+  phase and its closed auth-gate reason. Focused Agent static/restart/scenario
+  tests pass 100 tests, Desktop TypeScript checks pass, and
+  `git diff --check` passes. G-F remains `PARTIAL / UNPROVEN` pending
+  checkpoint deployment and an exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
