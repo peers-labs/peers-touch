@@ -396,11 +396,13 @@ func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.
 
 	if kv := req.GetKeyVaults(); kv != "" {
 		if apiKey := parseKeyVaultAPIKey(kv); apiKey != "" {
-			_, _ = h.credentialCfg.Set(ctx, service.CredentialSetRequest{
+			if _, credentialErr := h.credentialCfg.Set(ctx, service.CredentialSetRequest{
 				ActorPTID:  actorPTID,
 				ProviderID: providerID,
 				APIKey:     apiKey,
-			})
+			}); credentialErr != nil {
+				return nil, toHandlerError(credentialErr)
+			}
 		}
 	}
 

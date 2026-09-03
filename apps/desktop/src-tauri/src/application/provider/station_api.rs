@@ -124,7 +124,6 @@ pub fn update_provider_full(
     provider_id: &str,
     enabled: bool,
     config_json: Option<&str>,
-    key_vaults: Option<&str>,
     version: i64,
 ) -> Result<Value, StationApiError> {
     let mut body = json!({
@@ -137,13 +136,6 @@ pub fn update_provider_full(
             if let Some(base_url) = v.get("base_url").and_then(|u| u.as_str()) {
                 body["base_url"] = json!(base_url);
             }
-        }
-    }
-    if let Some(kv) = key_vaults {
-        if let Ok(parsed) = serde_json::from_str::<Value>(kv) {
-            body["key_vaults"] = parsed;
-        } else {
-            body["key_vaults"] = json!(kv);
         }
     }
 
