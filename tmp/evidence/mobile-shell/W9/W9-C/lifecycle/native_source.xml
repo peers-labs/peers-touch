@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AppiumAUT>
+  <XCUIElementTypeApplication type="XCUIElementTypeApplication" name="Peers" label="Peers" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+    <XCUIElementTypeWindow type="XCUIElementTypeWindow" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+      <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+        <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+          <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+            <XCUIElementTypeWebView type="XCUIElementTypeWebView" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+              <XCUIElementTypeWebView type="XCUIElementTypeWebView" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+                <XCUIElementTypeWebView type="XCUIElementTypeWebView" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+                  <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+                    <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+                      <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+                        <XCUIElementTypeOther type="XCUIElementTypeOther" name="Peers Touch Mobile" label="Peers Touch Mobile" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+                          <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+                            <XCUIElementTypeOther type="XCUIElementTypeOther" name="main" label="main" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+                              <XCUIElementTypeButton type="XCUIElementTypeButton" name="English" label="English" enabled="true" visible="true" accessible="true" x="307" y="71" width="70" height="34" index="0" traits="Button"/>
+                              <XCUIElementTypeImage type="XCUIElementTypeImage" name="Peers Touch" label="Peers Touch" enabled="true" visible="true" accessible="true" x="126" y="295" width="141" height="43" index="1" traits="Image"/>
+                              <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="Station" name="Station" label="Station" enabled="true" visible="true" accessible="true" x="39" y="549" width="49" height="18" index="2" traits="StaticText"/>
+                              <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="Tap a recent Station to change the target" name="Tap a recent Station to change the target" label="Tap a recent Station to change the target" enabled="true" visible="true" accessible="true" x="39" y="572" width="233" height="17" index="3" traits="StaticText"/>
+                              <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="Required" name="Required" label="Required" enabled="true" visible="true" accessible="true" x="295" y="550" width="51" height="15" index="4" traits="StaticText"/>
+                              <XCUIElementTypeButton type="XCUIElementTypeButton" name="HTTPS" label="HTTPS" enabled="true" visible="true" accessible="true" x="44" y="607" width="75" height="34" index="5" traits="Button"/>
+                              <XCUIElementTypeTextField type="XCUIElementTypeTextField" value="Host / IP:Port" name="Station address" label="Station address" enabled="true" visible="true" accessible="true" x="124" y="604" width="183" height="40" index="6" placeholderValue="Host / IP:Port" traits=""/>
+                              <XCUIElementTypeButton type="XCUIElementTypeButton" name="Add Station" label="Add Station" enabled="false" visible="true" accessible="true" x="318" y="606" width="36" height="36" index="7" traits="NotEnabled, Button"/>
+                              <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="No Station history yet" name="No Station history yet" label="No Station history yet" enabled="true" visible="true" accessible="true" x="79" y="675" width="140" height="18" index="8" traits="StaticText"/>
+                              <XCUIElementTypeButton type="XCUIElementTypeButton" name="Continue" label="Continue" enabled="false" visible="true" accessible="true" x="39" y="722" width="315" height="45" index="9" traits="NotEnabled, Button"/>
+                            </XCUIElementTypeOther>
+                            <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="false" accessible="false" x="0" y="0" width="0" height="0" index="1" traits=""/>
+                          </XCUIElementTypeOther>
+                        </XCUIElementTypeOther>
+                      </XCUIElementTypeOther>
+                    </XCUIElementTypeOther>
+                  </XCUIElementTypeOther>
+                </XCUIElementTypeWebView>
+                <XCUIElementTypeOther type="XCUIElementTypeOther" value="0%" name="Vertical scroll bar, 1 page" label="Vertical scroll bar, 1 page" enabled="true" visible="true" accessible="false" x="360" y="49" width="30" height="754" index="1" traits="Adjustable"/>
+                <XCUIElementTypeOther type="XCUIElementTypeOther" value="0%" name="Horizontal scroll bar, 1 page" label="Horizontal scroll bar, 1 page" enabled="true" visible="true" accessible="false" x="49" y="819" width="295" height="30" index="2" traits="Adjustable"/>
+              </XCUIElementTypeWebView>
+            </XCUIElementTypeWebView>
+          </XCUIElementTypeOther>
+        </XCUIElementTypeOther>
+      </XCUIElementTypeOther>
+    </XCUIElementTypeWindow>
+  </XCUIElementTypeApplication>
+</AppiumAUT>
