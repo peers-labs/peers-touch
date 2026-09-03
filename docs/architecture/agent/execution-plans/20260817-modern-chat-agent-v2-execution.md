@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: reset authorization moved execution to canonical disposable profile `chat-native-disposable`; exact-source runtime reached `FIXTURE_READY`, and the first application-path failure is fresh-client Station selection before login; proof remains `UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: reset authorization moved execution to canonical disposable profile `chat-native-disposable`; exact-source runtime reached `FIXTURE_READY`, fresh-client Station selection now passes, and the next failure is the cold-boot account-gate race before login; proof remains `UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4490,6 +4490,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `station_set_active` commands and verifies the active peer identity before
   first login; recovery paths continue to require the persisted original
   binding.
+- Exact-source run
+  `20260903T133245944296Z-124c1e35840cadde0d13270011ac2ced`
+  (aggregate `20260903T133245754226Z-6e5462a23aa9ce6d30c6b46a5028ac65`)
+  on `443d871e75cbf7f7beafa0f9ffe66c137e033eb9` verified the fresh
+  Station selection and peer identity, then exposed a cold-boot race:
+  `loginWithPassword` could complete before the asynchronous identity boot
+  reached `accountGate`, allowing that later transition to overwrite the
+  authenticated phase. Cleanup passed. The Agent Acceptance Harness now waits
+  for the initialized account gate before submitting credentials, matching the
+  existing Chat Harness lifecycle contract without changing product behavior.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
