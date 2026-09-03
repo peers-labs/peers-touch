@@ -197,6 +197,23 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn(command, main)
 
+    def test_acceptance_window_is_positioned_before_it_is_shown(self) -> None:
+        main = (
+            ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+        start = main.index("fn configure_acceptance_window(")
+        end = main.index(
+            "\n#[cfg(all(test, feature = \"acceptance-webdriver\"))]",
+            start,
+        )
+        function = main[start:end]
+        resize = function.rindex(".set_size(")
+        direct_position = function.rindex("position_acceptance_window(")
+        show = function.rindex(".show()")
+
+        self.assertLess(resize, direct_position)
+        self.assertLess(direct_position, show)
+
     def test_initial_authentication_never_logs_out(self) -> None:
         runner_functions = {
             "contact_message_resilience_runner.py": "start_client",

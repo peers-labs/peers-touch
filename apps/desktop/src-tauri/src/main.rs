@@ -249,6 +249,15 @@ fn configure_acceptance_window(
         .map_err(|error| {
             std::io::Error::other(format!("acceptance window resize failed: {error}"))
         })?;
+    position_acceptance_window(
+        window,
+        logical_x,
+        logical_width,
+        window_y,
+        scale,
+        slot,
+        count,
+    )?;
     window.show().map_err(|error| {
         std::io::Error::other(format!("acceptance window show failed: {error}"))
     })?;
