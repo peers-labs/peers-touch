@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T204530184499Z-47672b84031363a035371f1a3f7a6621` proves Station-restart recovery succeeds but Browser process-restart recovery loses authentication; typed identity phase/reason diagnostics are implemented and await exact-source proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T210930116450Z-5b4a2f2b42c6fee0a8b19434811d004d` proves Browser process-restart restore fails local validation because Desktop decodes the legacy JWT `sub` claim instead of Station's canonical `subject_ptid`; the canonical decoder fix is implemented and awaits exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4700,6 +4700,39 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   tests pass 100 tests, Desktop TypeScript checks pass, and
   `git diff --check` passes. G-F remains `PARTIAL / UNPROVEN` pending
   checkpoint deployment and an exact-source rerun.
+- Exact-source run
+  `20260903T210930116450Z-5b4a2f2b42c6fee0a8b19434811d004d`
+  (aggregate `20260903T210929928581Z-0ecd4220119343c6c49a6821b36d820a`)
+  on `16d6e524036869ba969653735755ee0c43af96ae` reproduced the Browser
+  client-restart failure with typed lifecycle evidence:
+  `identityPhase=accountGate`, `identityReason=session_missing`, and
+  `identityState=onboarding`; cleanup completed `DONE / PROVEN / passed`.
+  A focused isolated Browser restart then proved the Station registry, active
+  peer scope, durable account, actor binding, and raw session file all remained
+  present and consistent. Direct invocation of `auth_restore_session` rejected
+  that persisted token locally as `token_invalid_or_expired` before Station
+  takeover. Station JWT source declares canonical `subject_ptid`, while the
+  current Desktop decoder had regressed to legacy `sub`. The local correction
+  restores `subject_ptid` decoding and explicitly rejects `sub`-only identity
+  tokens. The two focused Rust JWT tests, 100 Agent
+  static/restart/scenario tests, Desktop TypeScript checks, formatting, and
+  `git diff --check` pass. G-F remains `PARTIAL / UNPROVEN` pending checkpoint
+  deployment and an exact-source rerun.
+- A focused isolated Browser process-restart probe then separated storage from
+  token parsing. Before and after restart, the persisted Station registry,
+  active peer scope, durable account, actor binding, and raw session file were
+  all present and mutually consistent. Direct `auth_restore_session` read the
+  file but rejected its JWT locally as `token_invalid_or_expired` before any
+  Station takeover. Station JWT source encodes the canonical actor in
+  `subject_ptid`; Desktop had regressed to decoding legacy `sub`. The local fix
+  restores `subject_ptid` decoding and rejects `sub`-only identity tokens. A
+  second isolated Browser probe on the corrected source transitioned from
+  `resolvingSession` to authenticated `ready` after a real process restart and
+  completed cleanly. Two focused Rust JWT tests, Rust
+  `cargo check --locked --features e2e-testing`, 100 Agent
+  static/restart/scenario tests, Desktop TypeScript checks, formatting, and
+  `git diff --check` pass. G-F remains `PARTIAL / UNPROVEN` until this source
+  is checkpointed, deployed exact-source, and the full Gate reruns.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
