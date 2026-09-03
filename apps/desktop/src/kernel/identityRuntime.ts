@@ -2,7 +2,7 @@ import { useAccountIdentityStore } from '../store/accountIdentity';
 import { useOAuth2Store } from '../store/oauth2';
 import { useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
-import { markLocalIdentityAction } from '../services/identity_event';
+import { clearLocalIdentityAction, markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
 import { readDesktopPreferenceSync, removeDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type { AppLifecycle, SessionUser } from '../types/navigation';
@@ -175,6 +175,15 @@ function classifyRestoreFailure(error: unknown): IdentityAuthGateReason {
   return 'restore_failed';
 }
 
+function isDetachedAccountSwitchFailure(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('details' in error)) return false;
+  const details = (error as { details?: unknown }).details;
+  return typeof details === 'object'
+    && details !== null
+    && 'detached' in details
+    && details.detached === true;
+}
+
 interface IdentityRuntimeSnapshot {
   phase: IdentityPhase;
   lifecycle: AppLifecycle;
@@ -307,7 +316,7 @@ class IdentityRuntime {
       });
     }
     markLocalIdentityAction();
-    const resp = await api.ensureStationSession(sessionId);
+    const resp = await api.ensureStationSession();
     useSessionStore.getState().activateAuthenticatedSession(resp);
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
@@ -320,13 +329,23 @@ class IdentityRuntime {
 
   switchAccount = async (accountId: string): Promise<void> => {
     markLocalIdentityAction();
-    const restored = await api.accountSwitch(accountId);
-    useSessionStore.getState().activateAuthenticatedSession(restored);
+    try {
+      await api.accountSwitch(accountId);
+    } catch (error) {
+      clearLocalIdentityAction();
+      if (isDetachedAccountSwitchFailure(error)) {
+        useSessionStore.getState().reset();
+        await this.loadAuthGate('restore_failed', false);
+      }
+      throw error;
+    }
+    const restored = await api.authValidateToken({});
     await runIdentityPipeline({
       reason: 'switch',
-      actorPtid: restored.actor_ptid ?? accountId,
+      actorPtid: restored.actor_ptid ?? null,
       loginMethod: restored.login_method ?? null,
     });
+    useSessionStore.getState().activateAuthenticatedSession(restored);
     await useAccountIdentityStore.getState().load();
     await this.acceptAuthenticatedEdgeFromCurrentSession('account_switch');
   };
@@ -402,10 +421,11 @@ class IdentityRuntime {
   };
 
   revokeSession = async (): Promise<void> => {
+    const actorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
     this.dispatch({ type: 'SESSION_REVOKED', reason: 'revoked' });
     await runIdentityPipeline({
       reason: 'revoked',
-      actorId: null,
+      actorPtid,
       loginMethod: null,
     });
     await this.loadAuthGate('revoked', false);
@@ -413,8 +433,16 @@ class IdentityRuntime {
 
   logout = async (): Promise<void> => {
     this.dispatch({ type: 'LOGOUT_REQUESTED' });
-    await useSessionStore.getState().logout();
+    let cleanupError: unknown;
+    try {
+      await useSessionStore.getState().logout();
+    } catch (error) {
+      cleanupError = error;
+    }
     await this.loadAuthGate('logout', false);
+    if (cleanupError) {
+      throw cleanupError;
+    }
   };
 
   revalidateIfNeeded = (): void => {

@@ -49,16 +49,6 @@ pub(crate) fn station_set_active_with_state(
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let _transition = match state.identity_transition.lock() {
-        Ok(guard) => guard,
-        Err(_) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                "Failed to coordinate identity transition",
-                None,
-            )
-        }
-    };
     let registry = station_client::station_registry();
     let previous = station_binding::service().state();
     let requested_url = input.url.trim().trim_end_matches('/');
@@ -165,16 +155,6 @@ pub(crate) fn station_remove_with_state(
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let _transition = match state.identity_transition.lock() {
-        Ok(guard) => guard,
-        Err(_) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                "Failed to coordinate identity transition",
-                None,
-            )
-        }
-    };
     let registry = station_client::station_registry();
     let (binding, was_selected) =
         match station_binding::service().remove_station(registry, &input.url) {

@@ -946,7 +946,11 @@ pub fn social_friend_request_send(
         Err(e) => return e,
     };
     if input.receiver_ptid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "receiver_ptid is required", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "receiver_ptid is required",
+            None,
+        );
     }
     let req = model::chat::SendFriendRequestRequest {
         receiver_ptid: input.receiver_ptid,
