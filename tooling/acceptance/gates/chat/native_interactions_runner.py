@@ -258,7 +258,7 @@ class NativeInteractionsGate(AcceptanceGate):
             station = runtime_station_service(self.manifest, "alice")
             self.station_url = str(station.get("endpoint") or "").rstrip("/")
             self.client_specs = {
-                str(client.get("actor")): client
+                str(client.get("id")): client
                 for client in self.manifest.get("clients", [])
                 if isinstance(client, dict)
             }
