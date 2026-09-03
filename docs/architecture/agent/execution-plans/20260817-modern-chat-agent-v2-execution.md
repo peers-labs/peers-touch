@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, and native Agent readiness; exact-source run `20260903T170818185926Z-95826c322441f7a173c64776fb152f1a` advanced to Browser Agent bootstrap, exposing an unbound HTTP-gateway session; Station-backed CRUD and Browser session binding await exact-source runtime proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, and Station-backed Agent readiness; exact-source run `20260903T173030486447Z-14ba21027559bccd593116529169e1c0` advanced to capability-session setup, where the Browser login revoked Native because both transports still submitted `device_type=desktop`; distinct transport device types await exact-source runtime proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4558,6 +4558,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   binding that session to its command context, so subsequent Station-backed
   Agent commands were unauthorized. Browser login, access-gate login, and
   restore now bind the gateway session; logout unbinds it. Cleanup completed
+  `DONE / PROVEN / passed`; runtime proof remains pending.
+- Exact-source run
+  `20260903T173030486447Z-14ba21027559bccd593116529169e1c0`
+  (aggregate `20260903T173030233906Z-221387b95cc90065b24e5077bd643cc8`)
+  on `272e6177f3f911d45c110d7f9e4f0deeecc28625` crossed native and
+  Browser Agent bootstrap and provider readiness, then failed capability
+  session establishment because the Browser login revoked the Native session.
+  The shared auth service still hardcoded `device_type=desktop`; native now
+  defaults to `desktop-native` and the HTTP gateway injects
+  `desktop-browser` for login and access-gate login. Cleanup completed
   `DONE / PROVEN / passed`; runtime proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
