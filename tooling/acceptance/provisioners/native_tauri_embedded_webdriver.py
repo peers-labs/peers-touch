@@ -248,7 +248,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 credential_ref=credential_refs[0] if credential_refs else "",
                 reset_authorized=reset_authorized,
             )
-            clients = self._clients(gate_id, manifest.run_id)
+            clients = self._clients(gate_id, manifest.run_id, slot)
             manifest = dataclasses.replace(
                 manifest,
                 actor_manifest_ref=actor_ref,
