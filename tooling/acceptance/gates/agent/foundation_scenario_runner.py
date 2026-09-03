@@ -80,6 +80,38 @@ DIRECT_PROBE_TIMEOUT_SECONDS = {
     "AS-F07": 900,
 }
 
+RESTORE_IDENTITY_STATES = frozenset(
+    {
+        "booting",
+        "checkingLaunchContext",
+        "resolvingSession",
+        "accessGateChainPending",
+        "loggingOut",
+        "accountGate",
+        "pinGate",
+        "pinRecoveryAuthenticating",
+        "pinRecoveryPendingPin",
+        "authenticatedPendingCompletion",
+        "authenticated",
+        "revoked",
+        "ready",
+    }
+)
+RESTORE_ERROR_CODES = (
+    "UNAUTHORIZED",
+    "FORBIDDEN",
+    "INVALID_ARGUMENT",
+    "INTERNAL_ERROR",
+)
+RESTORE_ERROR_REASONS = (
+    "session_missing",
+    "pin_required",
+    "actor_ptid_mismatch",
+    "takeover_failed",
+    "restore_failed",
+    "session_revoked",
+)
+
 
 def _agent_provider_config(profile_env: Mapping[str, str]) -> dict[str, str]:
     config = {
@@ -453,6 +485,7 @@ class FoundationF06Coordinator:
                 clients=(client,),
                 require_existing_session=True,
                 session_deadline=operation_deadline,
+                recovery_boundary="station-restart",
             )
             remaining = operation_deadline - time.monotonic()
             if remaining <= 0:
@@ -510,6 +543,7 @@ class FoundationF06Coordinator:
             self._profile_env,
             clients=(client,),
             require_existing_session=True,
+            recovery_boundary="client-restart",
         )
         if durable_reload_evidence is None:
             raise ScenarioRunnerError(
@@ -653,6 +687,76 @@ def _warm_up_client(client: "FoundationRuntimeClient") -> None:
     # existing-session probe reports the operation-specific failure.
 
 
+def _restore_failure_diagnostic(
+    *,
+    recovery_boundary: str,
+    poll_count: int,
+    session_state: Mapping[str, Any] | None,
+    last_error: BaseException | None,
+) -> str:
+    """Return bounded restore diagnostics without actor or credential values."""
+    identity_state = (
+        session_state.get("identityState")
+        if isinstance(session_state, Mapping)
+        else None
+    )
+    safe_identity_state = (
+        identity_state
+        if isinstance(identity_state, str)
+        and identity_state in RESTORE_IDENTITY_STATES
+        else "unknown"
+    )
+    authenticated = (
+        session_state.get("authenticated")
+        if isinstance(session_state, Mapping)
+        and isinstance(session_state.get("authenticated"), bool)
+        else None
+    )
+    actor_present = (
+        isinstance(session_state.get("actorId"), str)
+        and bool(session_state.get("actorId"))
+        if isinstance(session_state, Mapping)
+        else False
+    )
+
+    error_texts: list[str] = []
+    error = last_error
+    for _ in range(4):
+        if error is None:
+            break
+        error_texts.append(str(error).lower())
+        error = error.__cause__
+    combined_error = " ".join(error_texts)
+    error_code = next(
+        (code for code in RESTORE_ERROR_CODES if code.lower() in combined_error),
+        None,
+    )
+    error_reason = next(
+        (
+            reason
+            for reason in RESTORE_ERROR_REASONS
+            if reason in combined_error
+            or reason.replace("_", " ") in combined_error
+        ),
+        None,
+    )
+
+    return json.dumps(
+        {
+            "actorPresent": actor_present,
+            "authenticated": authenticated,
+            "errorCode": error_code,
+            "errorReason": error_reason,
+            "errorType": type(last_error).__name__ if last_error else None,
+            "identityState": safe_identity_state,
+            "pollCount": poll_count,
+            "recoveryBoundary": recovery_boundary,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
 def _authenticate_clients(
     runtime_pair: FoundationRuntimePair,
     profile_env: dict[str, str],
@@ -660,6 +764,7 @@ def _authenticate_clients(
     clients: tuple[FoundationRuntimeClient, ...] | None = None,
     require_existing_session: bool = False,
     session_deadline: float | None = None,
+    recovery_boundary: str = "session-recovery",
 ) -> None:
     """Prepare authenticated clients without masking recovery failures.
 
@@ -685,7 +790,10 @@ def _authenticate_clients(
                 time.monotonic() + 120,
             )
             session_state: Mapping[str, Any] | None = None
+            last_error: BaseException | None = None
+            poll_count = 0
             while time.monotonic() < restore_deadline:
+                poll_count += 1
                 try:
                     candidate = client.harness(
                         "getRuntimeSnapshot",
@@ -695,7 +803,9 @@ def _authenticate_clients(
                             max(1, restore_deadline - time.monotonic()),
                         ),
                     )
-                except Exception:
+                    last_error = None
+                except Exception as error:
+                    last_error = error
                     candidate = None
                 if isinstance(candidate, Mapping):
                     session_state = candidate
@@ -710,8 +820,6 @@ def _authenticate_clients(
                 if remaining <= 0:
                     break
                 time.sleep(min(1.0, remaining))
-            else:
-                session_state = None
             if (
                 not isinstance(session_state, Mapping)
                 or session_state.get("authenticated") is not True
@@ -719,8 +827,15 @@ def _authenticate_clients(
                 or not isinstance(session_state.get("actorId"), str)
                 or not session_state.get("actorId")
             ):
+                diagnostic = _restore_failure_diagnostic(
+                    recovery_boundary=recovery_boundary,
+                    poll_count=poll_count,
+                    session_state=session_state,
+                    last_error=last_error,
+                )
                 raise ScenarioRunnerError(
-                    f"{client.spec.runtime} existing session was not restored"
+                    f"{client.spec.runtime} existing session was not restored: "
+                    f"{diagnostic}"
                 )
         else:
             station_url = profile_env.get("PT_STATION_URL", "").strip().rstrip("/")
