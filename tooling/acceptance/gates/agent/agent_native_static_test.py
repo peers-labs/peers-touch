@@ -815,6 +815,35 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("closeBrowserCapabilitySession", runtime)
         self.assertIn("starts_automatically()", desktop_main)
 
+    def test_browser_gateway_exposes_runtime_evidence_commands(self) -> None:
+        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
+        for command in (
+            "agent_capability_sessions",
+            "agent_browser_capability_session_open",
+            "agent_browser_capability_session_close",
+            "agent_runtime_activity_station",
+            "agent_runtime_activity_local",
+            "agent_capability_session_snapshot",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(f'"{command}" =>', gateway)
+        self.assertIn(
+            "app_runtime_evidence::open_browser_capability_session",
+            gateway,
+        )
+        self.assertIn(
+            "app_runtime_evidence::close_browser_capability_session",
+            gateway,
+        )
+        self.assertIn(
+            "app_runtime_evidence::capability_session_snapshot",
+            gateway,
+        )
+        self.assertIn(
+            "app_runtime_evidence::capability_negative_control",
+            gateway,
+        )
+
     def test_harness_compares_local_and_station_session_authorities(self) -> None:
         source = HARNESS.read_text(encoding="utf-8")
         self.assertIn("getAgentCapabilitySessionSnapshot", source)
