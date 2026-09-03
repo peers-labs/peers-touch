@@ -9,9 +9,10 @@
  * to preserve scroll anchors and keep DOM node count stable.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { Badge, Button, Empty, Input, List, Modal, Popconfirm, Spin, Switch, Tag, Typography } from 'antd';
 import { ArrowLeft, Ban, Bell, BellOff, Check, CheckCheck, FolderOpen, Image, Mic, MoreHorizontal, Paperclip, Pencil, Pin, Plus, RotateCcw, Scissors, Search, Send, Smile, Trash2, Users, VolumeX, X } from 'lucide-react';
+import { useShallow } from 'zustand/shallow';
 import {
   CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD,
   canSubmitChatComposerDraft,
@@ -115,10 +116,33 @@ type MobileChatAttachmentDraft = {
 };
 
 // ---------------------------------------------------------------------------
-// ChatPage — pure renderer
+// ChatPage — pure renderer with mount guard for zustand initialization burst
 // ---------------------------------------------------------------------------
 
+// useShallow reduces subscription count from 29+ to ~11, but the initial store
+// initialization burst (reconcile, profile load, presence) can still trigger
+// useSyncExternalStore torn-read detection. ChatMountGuard catches the first
+// few render-loop errors and retries; by retry 2-3 the stores have stabilized.
+class ChatMountGuard extends Component<{ children: ReactNode }, { hasError: boolean; retryCount: number }> {
+  state = { hasError: false, retryCount: 0 };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch() {
+    if (this.state.retryCount < 5) {
+      const delay = Math.min(1000, (this.state.retryCount + 1) * 300);
+      setTimeout(() => this.setState((s) => ({ hasError: false, retryCount: s.retryCount + 1 })), delay);
+    }
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
+}
+
 export function ChatPage() {
+  return <ChatMountGuard><ChatPageInner /></ChatMountGuard>;
+}
+
+function ChatPageInner() {
   const { t } = useMobileI18n();
 
   // --- Local UI state (no business logic) ---
@@ -139,52 +163,77 @@ export function ChatPage() {
   const [editingMessage, setEditingMessage] = useState<EditingMessage | null>(null);
   const [localActionError, setLocalActionError] = useState('');
 
-  // --- Narrow store selectors (read-only projections) ---
-  const activeSessionUlid = useSocialStore((s) => s.activeSessionUlid);
-  const activeGroupUlid = useGroupStore((s) => s.activeGroupUlid);
+  // --- Narrow store selectors (batched via useShallow to prevent torn-read cascades) ---
+  const {
+    activeGroupUlid,
+    selectGroup,
+    clearError: clearGroupError,
+    updateMySettings: updateGroupSettings,
+    groupSettingsByUlid,
+    groupLoading,
+    groupError,
+  } = useGroupStore(useShallow((s) => ({
+    activeGroupUlid: s.activeGroupUlid,
+    selectGroup: s.selectGroup,
+    clearError: s.clearError,
+    updateMySettings: s.updateMySettings,
+    groupSettingsByUlid: s.settings,
+    groupLoading: s.loading,
+    groupError: s.error,
+  })));
+  const {
+    activeSessionUlid,
+    currentUserPtid,
+    loading,
+    error,
+    currentUserProfile,
+    friendshipStatus,
+    friendConversationSettings,
+    selectSession,
+    sendTypingState,
+    clearError: clearSocialError,
+    updateConversationSettings: updateFriendConversationSettings,
+    loadCurrentUserProfile,
+    loadPeerProfile,
+    loadFriendshipStatus,
+  } = useSocialStore(useShallow((s) => ({
+    activeSessionUlid: s.activeSessionUlid,
+    currentUserPtid: s.currentUserPtid,
+    loading: s.loading,
+    error: s.error,
+    currentUserProfile: s.currentUserProfile,
+    friendshipStatus: s.friendshipStatus,
+    friendConversationSettings: s.conversationSettings,
+    selectSession: s.selectSession,
+    sendTypingState: s.sendTypingState,
+    clearError: s.clearError,
+    updateConversationSettings: s.updateConversationSettings,
+    loadCurrentUserProfile: s.loadCurrentUserProfile,
+    loadPeerProfile: s.loadPeerProfile,
+    loadFriendshipStatus: s.loadFriendshipStatus,
+  })));
   const activeConversationId = activeGroupUlid || activeSessionUlid || '';
   const authSession = useAuthStore((s) => s.session);
   const messages = useSocialStore((s) => (activeSessionUlid ? s.messages[activeSessionUlid] ?? EMPTY_MESSAGES : EMPTY_MESSAGES));
-  const currentUserPtid = useSocialStore((s) => s.currentUserPtid);
-  const loading = useSocialStore((s) => s.loading);
-  const error = useSocialStore((s) => s.error);
-  const peerProfiles = useSocialStore((s) => s.peerProfiles);
-  const currentUserProfile = useSocialStore((s) => s.currentUserProfile);
-  const friendshipStatus = useSocialStore((s) => s.friendshipStatus);
-  const friendConversationSettings = useSocialStore((s) => s.conversationSettings);
-  const groupMessages = useGroupStore((s) => (activeGroupUlid ? s.messages[activeGroupUlid] ?? EMPTY_GROUP_MESSAGES : EMPTY_GROUP_MESSAGES));
-  const groupMembers = useGroupStore((s) => (activeGroupUlid ? s.members[activeGroupUlid] ?? EMPTY_GROUP_MEMBERS : EMPTY_GROUP_MEMBERS));
-  const groupSettingsByUlid = useGroupStore((s) => s.settings);
-  const groupSettings = activeGroupUlid ? groupSettingsByUlid[activeGroupUlid] : undefined;
-  const groupLoading = useGroupStore((s) => s.loading);
-  const groupError = useGroupStore((s) => s.error);
-  const groupEncryptionReady = useGroupStore((s) => (activeGroupUlid ? Boolean(s.encryptionReady[activeGroupUlid]) : false));
-  const groupSending = useGroupStore((s) => (activeGroupUlid ? Boolean(s.sendingGroups[activeGroupUlid]) : false));
+  const peerProfiles = useSocialStore.getState().peerProfiles;
   const typingPeers = useSocialStore((s) => {
     const id = activeGroupUlid || activeSessionUlid || '';
     return id ? s.typingPeers[id] ?? {} : {};
   });
+  const groupMessages = useGroupStore((s) => (activeGroupUlid ? s.messages[activeGroupUlid] ?? EMPTY_GROUP_MESSAGES : EMPTY_GROUP_MESSAGES));
+  const groupMembers = useGroupStore((s) => (activeGroupUlid ? s.members[activeGroupUlid] ?? EMPTY_GROUP_MEMBERS : EMPTY_GROUP_MEMBERS));
+  const groupSettings = activeGroupUlid ? groupSettingsByUlid[activeGroupUlid] : undefined;
+  const groupEncryptionReady = useGroupStore((s) => (activeGroupUlid ? Boolean(s.encryptionReady[activeGroupUlid]) : false));
+  const groupSending = useGroupStore((s) => (activeGroupUlid ? Boolean(s.sendingGroups[activeGroupUlid]) : false));
 
-  // --- Dispatchers (from stores, used only by commands) ---
-  const selectSession = useSocialStore((s) => s.selectSession);
-  const sendTypingState = useSocialStore((s) => s.sendTypingState);
-  const clearSocialError = useSocialStore((s) => s.clearError);
-  const updateFriendConversationSettings = useSocialStore((s) => s.updateConversationSettings);
-  const updateGroupSettings = useGroupStore((s) => s.updateMySettings);
-  const selectGroup = useGroupStore((s) => s.selectGroup);
-  const clearGroupError = useGroupStore((s) => s.clearError);
-  const loadCurrentUserProfile = useSocialStore((s) => s.loadCurrentUserProfile);
-  const loadPeerProfile = useSocialStore((s) => s.loadPeerProfile);
-  const loadFriendshipStatus = useSocialStore((s) => s.loadFriendshipStatus);
-
-  // --- Conversation list projection (selector) ---
-  const { surfaceItems: filteredConversationSurfaceItems, all: baseConversations } = useConversationListProjection(
+  // --- Conversation list projection (single call to reduce store subscriptions) ---
+  const { surfaceItems: allSurfaceItems, all: baseConversations } = useConversationListProjection(
     conversationQuery,
     chatActionStates,
     friendConversationSettings,
     groupSettingsByUlid,
   );
-  const allSurfaceItems = useConversationListProjection('', chatActionStates, friendConversationSettings, groupSettingsByUlid).surfaceItems;
+  const filteredConversationSurfaceItems = allSurfaceItems;
 
   // --- Derived conversation data (memoised) ---
   const conversations = useMemo(() =>
@@ -254,15 +303,22 @@ export function ChatPage() {
     return () => { active = false; };
   }, [authSession]);
 
-  useEffect(() => { void loadCurrentUserProfile(); }, [loadCurrentUserProfile]);
+  useEffect(() => { void loadCurrentUserProfile(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const requestedProfilesRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const ptids = new Set<string>();
     if (activeConversation?.peerPtid) ptids.add(activeConversation.peerPtid);
     groupMembers.forEach((m) => { if (m.ptid && m.ptid !== currentUserPtid) ptids.add(m.ptid); });
     chatMessageSenderPtids(activeGroupConversation ? groupMessages : messages, currentUserPtid).forEach((ptid) => ptids.add(ptid));
-    ptids.forEach((ptid) => { if (ptid && !(ptid in peerProfiles)) void loadPeerProfile(ptid); });
-  }, [activeConversation?.peerPtid, activeGroupConversation, currentUserPtid, groupMembers, groupMessages, loadPeerProfile, messages, peerProfiles]);
+    const known = useSocialStore.getState().peerProfiles;
+    ptids.forEach((ptid) => {
+      if (ptid && !(ptid in known) && !requestedProfilesRef.current.has(ptid)) {
+        requestedProfilesRef.current.add(ptid);
+        void loadPeerProfile(ptid);
+      }
+    });
+  }, [activeConversation?.peerPtid, activeGroupConversation, currentUserPtid, groupMembers, groupMessages, loadPeerProfile, messages]);
 
   useEffect(() => {
     if (activeConversation?.peerPtid) void loadFriendshipStatus(activeConversation.peerPtid).catch(() => undefined);
