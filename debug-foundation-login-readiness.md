@@ -17,9 +17,9 @@
 | B | Login completion runs before `authenticatedPendingCompletion` is observable | High | Low | Confirmed consequence: completion returned while phase remained `accountGate` |
 | C | An identity pipeline handler triggers logout or revocation after login | Medium | Medium | Rejected: logout events appeared only during cleanup after timeout |
 | D | Session authentication succeeds but identity snapshot publication is stale | Medium | Low | Confirmed root cause: auth command returned while session remained unauthenticated |
-| E | `clear-zustand-stores` clears the newly activated actor because identity comparison fails | Medium | Low | Pending |
-| F | `refresh-current-session` receives unauthorized and resets the new session | High | Low | Pending |
-| G | A concurrent native identity event clears the session during the pipeline | Low | Medium | Pending |
+| E | `clear-zustand-stores` clears the newly activated actor because identity comparison fails | Medium | Low | Rejected: actor identities match and the handler preserves the session |
+| F | `refresh-current-session` replaces the newly activated session with an unauthenticated projection | High | Low | Confirmed: session changes from authenticated to unauthenticated inside this handler |
+| G | A concurrent native identity event clears the session during the pipeline | Low | Medium | Rejected: no interleaved identity event appears before the reset |
 
 ## Log Evidence
 - Instrumented `identityRuntime.ts:dispatch` to capture every identity event and
@@ -71,3 +71,12 @@ no-op.
   and becomes false only after the four registered handlers complete.
 - The next observation records reset decisions in `clear-zustand-stores` and
   the success/unauthorized outcome of `refresh-current-session`.
+- Exact-source diagnostic run
+  `20260903T144522958692Z-197226c351d33e8da8b7b1b947b9e091`
+  showed the activated session surviving `clear-zustand-stores`, then becoming
+  unauthenticated during `refresh-current-session` despite that handler
+  returning successfully.
+- The owning handler now preserves an already authenticated projection and
+  performs restore only when the session is absent, as required by unlock and
+  recovery paths.
+- Focused identity/session handler tests: 14 passed.

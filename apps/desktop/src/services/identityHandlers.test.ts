@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IdentityChangePayload } from './identityPipeline';
 
 const mocks = vi.hoisted(() => ({
+  authenticated: true,
   currentActorPtid: 'ptid:peer:alice' as string | null,
   handlers: new Map<string, (payload: IdentityChangePayload) => Promise<void>>(),
   sessionReset: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('./desktop_api', () => ({
 vi.mock('../store/session', () => ({
   useSessionStore: {
     getState: () => ({
+      authenticated: mocks.authenticated,
       currentUser: mocks.currentActorPtid
         ? { actorPtid: mocks.currentActorPtid }
         : null,
@@ -108,6 +110,7 @@ await import('./identityHandlers');
 describe('identity handler actor-scoped projection cleanup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.authenticated = true;
     mocks.currentActorPtid = 'ptid:peer:alice';
   });
 
@@ -166,6 +169,34 @@ describe('identity handler actor-scoped projection cleanup', () => {
     });
 
     expect(mocks.restoreSession).not.toHaveBeenCalled();
+  });
+
+  it('preserves an already activated login session', async () => {
+    const handler = mocks.handlers.get('refresh-current-session');
+    expect(handler).toBeDefined();
+
+    await handler?.({
+      reason: 'login',
+      actorPtid: 'ptid:peer:alice',
+      loginMethod: 'password',
+    });
+
+    expect(mocks.restoreSession).not.toHaveBeenCalled();
+  });
+
+  it('restores an unauthenticated unlock session', async () => {
+    mocks.authenticated = false;
+    mocks.currentActorPtid = null;
+    const handler = mocks.handlers.get('refresh-current-session');
+    expect(handler).toBeDefined();
+
+    await handler?.({
+      reason: 'unlock',
+      actorPtid: 'ptid:peer:alice',
+      loginMethod: 'password',
+    });
+
+    expect(mocks.restoreSession).toHaveBeenCalledOnce();
   });
 
 });
