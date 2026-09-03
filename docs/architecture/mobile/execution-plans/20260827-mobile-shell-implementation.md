@@ -1097,15 +1097,15 @@ Closure-level negative coverage:
 | W0 Mobile Acceptance Domain onboarding and baseline | done | `tmp/evidence/mobile-shell/20260827/W0/coverage-gap-matrix.md`; D-13 hard cut; structural validation and static Gate PASS; native proof remains UNPROVEN |
 | W1 Unified ActorRef identity and Station trust | done | `tmp/evidence/mobile-shell/20260827/W1/progress.md`; PTID-only Proto/API cutover, signed Station verification, atomic schema migrations, scoped Station tests, Desktop/Mobile checks, and identity Gate PASS; MS-AG02 native runtime proof remains explicitly UNPROVEN until the integrated native runtime cell |
 | W2 Access Gate and OAuth | in progress | `tmp/evidence/mobile-shell/20260827/W2/progress.md`; W2-A through W2-D and W2-E1 Simulator evidence are done; E2-0 through E2-4 source closures done; D-19 Infra landed (PR #105); E2-5 source-side closure done (finalizer module, registry, baseline, capability YAML, gate catalog, 11 adversarial tests); E2-5 atomic cutover complete; A5-11 main plan update done; E2-6 physical proof remains `UNPROVEN` — requires physical iOS/Android devices and approved provider accounts |
-| W3 Lifecycle, runtime graph, and navigation | pending | — |
-| W4 InteractionAdmission, command ledger, and draft store | pending | — |
-| W5 Generated gateway and Social projection convergence | pending | — |
-| W6A Chat, Contacts, and Group product closure | pending | — |
-| W6B Moments product closure | pending | — |
-| W6C Profile and Settings product closure | pending | — |
-| W6D Recovery and degraded-state closure | pending | — |
-| W7 Native lifecycle and platform closure | pending | — |
-| W8 Atomic old-path deletion | pending | — |
+| W3 Lifecycle, runtime graph, and navigation | done | `MobileLifecycleKernel`, `topologicalSort`, `MobileRuntimeDescriptor` types, `AppProviders` bootstrap/teardown; committed `050d488dc` |
+| W4 InteractionAdmission, command ledger, and draft store | done | Rust encrypted SQLite ledger (AES-256-GCM), crash recovery, four-key fairness, `DraftStore`, TypeScript `InteractionAdmission` adapter; committed `050d488dc` |
+| W5 Generated gateway and Social projection convergence | done | `socialEventIngress` discriminated union, control/data capacity, cursor tracking, 6 domain API gateways with JSON quarantine; committed `050d488dc` |
+| W6A Chat, Contacts, and Group product closure | done | `ChatPage` pure renderer with selectors and command dispatch, `ContactsPage` with alphabetical grouping and group items; prototype-aligned `7d4289d85`; committed `050d488dc` + `7d4289d85` |
+| W6B Moments product closure | done | `MomentsPage` with feed store, composer, reaction picker, inline comments; prototype-aligned `7d4289d85`; committed `050d488dc` + `7d4289d85` |
+| W6C Profile and Settings product closure | done | `SettingsPage` with profile header card, stats row, grouped settings, sign-out; prototype-aligned `7d4289d85`; committed `050d488dc` + `7d4289d85` |
+| W6D Recovery and degraded-state closure | done | `recoveryProjection` central aggregation for 8 recovery state types, 8 recovery overlay components; prototype-to-production mapping confirmed `7d4289d85`; committed `050d488dc` + `7d4289d85` |
+| W7 Native lifecycle and platform closure | done | Rust `lifecycle_bridge` monotonic generation counter, `background_bridge` resume coordination, `permission_bridge`, `network_bridge`, 10 Tauri commands; committed `050d488dc` |
+| W8 Atomic old-path deletion | done | Deleted `socialApi.ts` (749 LOC), `groupApi.ts` (351 LOC), migrated stores to gateways, extracted shared types; committed `050d488dc` |
 | W9 Native Acceptance and readiness audit | in progress | `tmp/evidence/mobile-shell/W9/readiness-audit.md`; W9 audit executed 2026-09-03; 195 mobile gate unit tests PASS; identity-contract gate FAIL (DID alias in relationship_schema.go); all 14 plan gates UNPROVEN (no native run); acceptance runner blocked by missing `transports.ssh` module and `redact_text_with_values` function; 0/27 MS-PA and 0/11 MS-AG proven; readiness verdict UNPROVEN |
 
 ## 12. Risks And Escalation
