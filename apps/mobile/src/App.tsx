@@ -17,7 +17,7 @@ import {
 } from './features/auth/authSession';
 import { AccessGateHost } from './features/auth/AccessGateHost';
 import { useAuthStore } from './features/auth/authStore';
-import { probeStation, verifyStationIdentity } from './features/station/stationConnection';
+import { probeStation, verifyStationIdentity, type StationIdentityResult } from './features/station/stationConnection';
 import { StationLaunchScreen } from './features/station/StationLaunchScreen';
 import {
   activateStationEntry,
@@ -361,6 +361,7 @@ function MobileAppRoot() {
             stationRegistryRef.current,
             { stationPeerId: identity.stationPeerId, url: normalizedUrl },
             { checkedAt: probe.checkedAt, label: probe.label, online: probe.online },
+            identity.identityVerified,
           );
           if (!next.ok) {
             setStationError(t(next.error));
@@ -401,7 +402,9 @@ function MobileAppRoot() {
             return;
           }
           const identity = await verifyStationIdentity(selectedStation.url);
-          requireMatchingStationIdentity(selectedStation, identity.stationPeerId);
+          if (identity.identityVerified) {
+            requireMatchingStationIdentity(selectedStation, identity.stationPeerId);
+          }
           const next = activateStationEntry(stationRegistryRef.current, selectedStation.stationPeerId, {
             checkedAt: probe.checkedAt,
             label: probe.label,
