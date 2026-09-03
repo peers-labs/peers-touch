@@ -3178,6 +3178,28 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agent_turn::agent_turn_diagnostics_export(input, &token))
         }
+        "agent_submit_feedback" => {
+            let input = match parse_args::<app_agent_growth::AgentFeedbackInput>(args) {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_submit_feedback(input, &token))
+        }
+        "agent_list_turn_feedback" => {
+            let input = match parse_args::<app_agent_growth::AgentTurnFeedbackListInput>(args) {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_list_turn_feedback(input, &token))
+        }
         "agent_runtime_profile_effective" => {
             let input = match parse_args::<AgentRuntimeProfileInput>(args) {
                 Ok(v) => v,
