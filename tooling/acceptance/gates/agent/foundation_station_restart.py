@@ -22,6 +22,7 @@ from tooling.acceptance.core.provisioner import load_env_file
 
 
 EXPECTED_SERVICE_LABEL = "station"
+EXPECTED_CONTAINER_PORT = 18080
 RESTART_TIMEOUT_SECONDS = 180
 RESTORE_RESERVE_SECONDS = 15
 
@@ -301,7 +302,7 @@ def _container_snapshot(
         raise FoundationStationRestartError(
             "AS-F06 Station container labels or ports are missing"
         )
-    host_bindings = ports.get(f"{station_port}/tcp")
+    host_bindings = ports.get(f"{EXPECTED_CONTAINER_PORT}/tcp")
     has_expected_port = isinstance(host_bindings, list) and any(
         isinstance(binding, Mapping)
         and str(binding.get("HostPort") or "") == str(station_port)

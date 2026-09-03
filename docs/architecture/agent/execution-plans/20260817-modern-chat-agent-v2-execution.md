@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T190326451434Z-3b9625bd65a75964000db74181ca8536` advanced to AS-F06, where the restart helper still required legacy protected profile `two`; restart validation now binds the approved disposable runtime manifest and awaits exact-source proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T192336578749Z-2b22311efd622177becf7bc1eb92afc7` advanced to AS-F06 and validated the approved disposable profile, then exposed a container host/internal port mismatch in the restart guard; port validation is corrected and awaits exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4633,6 +4633,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   static/Gate tests pass 66 tests. Provisioner cleanup completed
   `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN` pending an
   exact-source rerun.
+- Exact-source run
+  `20260903T192336578749Z-2b22311efd622177becf7bc1eb92afc7`
+  (aggregate `20260903T192336386886Z-1c84f22776025a0f184985f094ea5cf2`)
+  on `27a1bab69bc2e034e01bf9495c79febf5daa917c` passed Browser AS-F01
+  through AS-F05 and reached the source-bound AS-F06 restart helper. The
+  helper accepted the approved disposable profile and deployment but rejected
+  the live container because it treated profile host port `18132` as the
+  container port key. Live inspection confirmed the intended mapping:
+  container `18080/tcp` to host `18132`. Restart validation now checks the
+  fixed Station container port separately from the profile-derived host port;
+  all 40 focused restart/scenario tests and a read-only live container identity
+  check pass. Provisioner cleanup completed `DONE / PROVEN / passed`; G-F
+  remains `PARTIAL / UNPROVEN` pending an exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

@@ -57,7 +57,7 @@ def inspect_payload(started_at: str, *, image_id: str = IMAGE_ID) -> str:
                 "State": {"StartedAt": started_at},
                 "NetworkSettings": {
                     "Ports": {
-                        f"{STATION_PORT}/tcp": [
+                        f"{foundation_station_restart.EXPECTED_CONTAINER_PORT}/tcp": [
                             {"HostIp": "0.0.0.0", "HostPort": str(STATION_PORT)}
                         ]
                     }
