@@ -70,7 +70,12 @@ registerIdentityHandler('clear-client-storage-caches', async (payload) => {
 });
 
 registerIdentityHandler('refresh-current-session', async (payload) => {
-  if (payload.reason === 'logout' || payload.reason === 'revoked' || payload.reason === 'switch') {
+  if (
+    payload.reason === 'logout'
+    || payload.reason === 'revoked'
+    || payload.reason === 'switch'
+    || useSessionStore.getState().authenticated
+  ) {
     return;
   }
   try {
