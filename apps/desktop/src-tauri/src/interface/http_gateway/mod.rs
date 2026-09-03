@@ -563,6 +563,46 @@ fn bind_gateway_session(
     Ok(())
 }
 
+fn bind_gateway_auth_result(state: &AppState, result: AppResult<AuthSessionPayload>) -> Value {
+    if !result.ok {
+        return to_json(result);
+    }
+    let Some(payload) = result.data.as_ref() else {
+        return to_json(AppResult::<AuthSessionPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authenticated response is missing session data",
+            None,
+        ));
+    };
+    let Some(actor_ptid) = payload.actor_ptid.clone() else {
+        return to_json(AppResult::<AuthSessionPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authenticated response is missing canonical actor PTID",
+            None,
+        ));
+    };
+    let Some(token) = payload.session_token.clone() else {
+        return to_json(AppResult::<AuthSessionPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authenticated response is missing session token",
+            None,
+        ));
+    };
+    let Some(account_id) =
+        crate::infrastructure::auth_identity::find_account_id_by_actor_ptid(&actor_ptid)
+    else {
+        return to_json(AppResult::<AuthSessionPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authenticated actor has no local account",
+            None,
+        ));
+    };
+    if let Err(error) = bind_gateway_session(state, account_id, actor_ptid, token) {
+        return error;
+    }
+    to_json(result)
+}
+
 fn gateway_access_context(state: &AppState) -> Result<(String, String, String), Value> {
     let session = gateway_session(state).ok_or_else(|| to_json(unauthorized_error()))?;
     if !session.actor.ptid.starts_with("ptid:") || session.jwt.trim().is_empty() {
@@ -2207,7 +2247,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_auth::auth_login(input, state))
+            bind_gateway_auth_result(state, app_auth::auth_login(input, state))
         }
         // Interactive access-gate login chain (Email Login path). These mirror
         // the one-shot `auth_login` but drive the Station's pre-login gate
@@ -2225,10 +2265,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_auth::access_submit_login(input, state))
+            bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))
         }
-        "auth_logout" => to_json(app_auth::auth_logout(state)),
-        "auth_restore_session" => to_json(app_auth::auth_restore_session(state)),
+        "auth_logout" => {
+            let result = app_auth::auth_logout(state);
+            state.sessions.unbind(HTTP_GATEWAY_SESSION_LABEL);
+            to_json(result)
+        }
+        "auth_restore_session" => {
+            bind_gateway_auth_result(state, app_auth::auth_restore_session(state))
+        }
         "auth_validate_token" => {
             let input = match parse_args::<AuthValidateTokenInput>(args) {
                 Ok(v) => v,

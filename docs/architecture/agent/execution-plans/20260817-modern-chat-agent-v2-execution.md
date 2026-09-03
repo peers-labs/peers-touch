@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, and provider/model admission; exact-source run `20260903T162716544607Z-786ee7e3e26608916e4ab1187a233810` advanced to `agent.capabilityReadinessFailed`, exposing a merge regression where Desktop Agent CRUD still used local JSON instead of Station authority; the Station-backed CRUD restoration awaits exact-source runtime proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, and native Agent readiness; exact-source run `20260903T170818185926Z-95826c322441f7a173c64776fb152f1a` advanced to Browser Agent bootstrap, exposing an unbound HTTP-gateway session; Station-backed CRUD and Browser session binding await exact-source runtime proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4548,6 +4548,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   orchestration behavior. Native and Browser commands now pass authenticated
   Station context for Agent CRUD; the local store remains a projection plus
   selected/default UI preference only. Cleanup completed
+  `DONE / PROVEN / passed`; runtime proof remains pending.
+- Exact-source run
+  `20260903T170818185926Z-95826c322441f7a173c64776fb152f1a`
+  (aggregate `20260903T170817983011Z-848ff25345ccff4679973bd7acb7f785`)
+  on `4c72d3ab7c4ee76fdbed347090e943155a11c0aa` crossed native Agent
+  creation and readiness, then timed out while the Browser client loaded its
+  Agent list. The HTTP gateway returned authenticated login data without
+  binding that session to its command context, so subsequent Station-backed
+  Agent commands were unauthorized. Browser login, access-gate login, and
+  restore now bind the gateway session; logout unbinds it. Cleanup completed
   `DONE / PROVEN / passed`; runtime proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
