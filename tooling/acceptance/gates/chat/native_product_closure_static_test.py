@@ -138,6 +138,16 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('str(client.get("id")): client', self.source)
         self.assertNotIn('str(client.get("actor")): client', self.source)
 
+    def test_entrypoint_injects_runtime_manifest_into_binding(self) -> None:
+        resolution = self.entry.index("resolve_native_desktop_runtime(")
+        injection = self.entry.index(
+            "runtime_binding.set_runtime_manifest(manifest)"
+        )
+        construction = self.entry.index("super().__init__(")
+
+        self.assertLess(resolution, injection)
+        self.assertLess(injection, construction)
+
     def source_identity_gate(
         self,
         runtime_binding: SyntheticLinuxRuntimeBinding,

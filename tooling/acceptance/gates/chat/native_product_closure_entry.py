@@ -29,6 +29,7 @@ class NativeProductClosureEntrypoint(NativeProductClosureGate):
             gate_id=self.gate_id,
             source_commit=source_commit,
         )
+        runtime_binding.set_runtime_manifest(manifest)
         super().__init__(
             manifest=manifest,
             actor_manifest=actor_manifest,
