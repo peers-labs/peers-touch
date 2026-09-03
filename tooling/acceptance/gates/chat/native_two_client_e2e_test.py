@@ -602,6 +602,10 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
         self.assertNotIn("conversation.syncFromStation", friend_sync)
         self.assertIn("resolve_native_desktop_runtime", entry)
+        self.assertIn(
+            "runtime_binding.set_runtime_manifest(manifest)",
+            entry,
+        )
         self.assertEqual(gates["timeout_seconds"], 1800)
         self.assertEqual(
             gates["requiredRuntimeCells"],
