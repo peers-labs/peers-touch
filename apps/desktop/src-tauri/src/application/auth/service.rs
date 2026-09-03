@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 pub(crate) fn takeover_station_session_token(
     token: &str,
 ) -> Result<String, station_client::StationClientError> {
-    let body = json!({ "device_type": "desktop" });
+    let body = json!({ "device_type": "desktop-native" });
     let resp = station_client::request_json_auth(
         reqwest::Method::POST,
         "/actor/session/takeover",
@@ -277,6 +277,7 @@ fn submit_login_gate(
     attempt_id: &str,
     account: &str,
     password: &str,
+    device_type: &str,
 ) -> Result<Value, AppResult<AuthSessionPayload>> {
     let data = access_post::<AuthSessionPayload>(
         "/actor/access/submit",
@@ -287,7 +288,7 @@ fn submit_login_gate(
             "login": {
                 "email": account,
                 "password": password,
-                "device_type": "desktop"
+                "device_type": device_type
             }
         }),
         ErrorCode::Unauthorized,
@@ -368,7 +369,13 @@ pub fn access_submit_login(
     if let Err(error) = validate_login_input(&input.account, &input.password) {
         return map_domain_error(error);
     }
-    let data = match submit_login_gate(&input.attempt_id, &input.account, &input.password) {
+    let device_type = input.device_type.as_deref().unwrap_or("desktop-native");
+    let data = match submit_login_gate(
+        &input.attempt_id,
+        &input.account,
+        &input.password,
+        device_type,
+    ) {
         Ok(data) => data,
         Err(error) => return error,
     };
@@ -379,6 +386,7 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
     if let Err(error) = validate_login_input(&input.account, &input.password) {
         return map_domain_error(error);
     }
+    let device_type = input.device_type.as_deref().unwrap_or("desktop-native");
 
     let attempt = match start_access_attempt::<AuthSessionPayload>() {
         Ok(decision) => decision,
@@ -391,7 +399,7 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
                 tracing::info!(
                     "access-gate endpoint not found (404), falling back to direct /actor/login"
                 );
-                return direct_login_fallback(&input.account, &input.password, state);
+                return direct_login_fallback(&input.account, &input.password, state, device_type);
             }
             return error;
         }
@@ -404,7 +412,7 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
             Some(attempt),
         );
     }
-    let data = match submit_login_gate(&attempt_id, &input.account, &input.password) {
+    let data = match submit_login_gate(&attempt_id, &input.account, &input.password, device_type) {
         Ok(data) => data,
         Err(error) => return error,
     };
@@ -417,11 +425,12 @@ fn direct_login_fallback(
     account: &str,
     password: &str,
     state: &AppState,
+    device_type: &str,
 ) -> AppResult<AuthSessionPayload> {
     let body = json!({
         "email": account,
         "password": password,
-        "device_type": "desktop"
+        "device_type": device_type
     });
     let resp = match station_client::post_json_no_auth("/actor/login", body) {
         Ok(resp) => resp,

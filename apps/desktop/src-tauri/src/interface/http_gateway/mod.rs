@@ -2243,10 +2243,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // Auth (state-dependent)
         // =================================================================
         "auth_login" => {
-            let input = match parse_args::<AuthLoginInput>(args) {
+            let mut input = match parse_args::<AuthLoginInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
+            if input.device_type.is_none() {
+                input.device_type = Some("desktop-browser".to_string());
+            }
             bind_gateway_auth_result(state, app_auth::auth_login(input, state))
         }
         // Interactive access-gate login chain (Email Login path). These mirror
@@ -2261,10 +2264,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_auth::access_submit_invite_code(input))
         }
         "access_submit_login" => {
-            let input = match parse_args::<AccessSubmitLoginInput>(args) {
+            let mut input = match parse_args::<AccessSubmitLoginInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
+            if input.device_type.is_none() {
+                input.device_type = Some("desktop-browser".to_string());
+            }
             bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))
         }
         "auth_logout" => {
