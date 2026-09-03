@@ -817,12 +817,12 @@ select,
 .station-address-input {
   flex: 1 1 auto;
   min-width: 0;
-  padding-left: 0 !important;
+  padding-left: 6px !important;
 }
 
 .station-address-input .ant-input {
   min-width: 0;
-  padding-left: 0 !important;
+  padding-left: 2px !important;
 }
 
 .station-error {
