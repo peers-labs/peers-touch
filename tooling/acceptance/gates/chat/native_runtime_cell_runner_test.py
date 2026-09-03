@@ -185,6 +185,18 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertIn("engine.endpoint().device_id.as_str()", endpoint_source)
         self.assertIn("engine.endpoint().ptid != actor_ptid", endpoint_source)
 
+    def test_native_acceptance_commands_are_registered_with_tauri(self) -> None:
+        main = (
+            ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+        for command in (
+            "auth::acceptance_logout_window_session",
+            "messaging_commands::messaging_acceptance_current_endpoint",
+            "messaging_commands::messaging_acceptance_interaction_snapshot",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(command, main)
+
     def test_initial_authentication_never_logs_out(self) -> None:
         runner_functions = {
             "contact_message_resilience_runner.py": "start_client",

@@ -459,6 +459,8 @@ fn main() {
             auth::access_submit_invite_code,
             auth::access_submit_login,
             auth::auth_logout,
+            #[cfg(feature = "acceptance-webdriver")]
+            auth::acceptance_logout_window_session,
             auth::auth_restore_session,
             auth::auth_validate_token,
             auth::ensure_station_session,
@@ -886,6 +888,11 @@ fn main() {
             messaging_commands::messaging_create_group,
             messaging_commands::messaging_membership_transition,
             messaging_commands::messaging_list_conversations,
+            messaging_commands::messaging_command_status,
+            #[cfg(feature = "acceptance-webdriver")]
+            messaging_commands::messaging_acceptance_current_endpoint,
+            #[cfg(feature = "acceptance-webdriver")]
+            messaging_commands::messaging_acceptance_interaction_snapshot,
             messaging_commands::messaging_pick_attachment_source,
             messaging_commands::messaging_stage_attachment_source,
             messaging_commands::messaging_discard_attachment_source,
@@ -896,6 +903,7 @@ fn main() {
             messaging_commands::messaging_submit_edit,
             messaging_commands::messaging_submit_metadata_interaction,
             messaging_commands::messaging_list_messages,
+            messaging_commands::messaging_list_thread_messages,
             messaging_commands::messaging_open_attachment,
             messaging_commands::messaging_search_messages,
             // v1 conversation commands (P2)
