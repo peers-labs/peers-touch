@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
     accountSwitch: vi.fn(),
     authValidateToken: vi.fn(),
     accountLoad: vi.fn(),
+    loginWithPassword: vi.fn(),
     logout: vi.fn(),
     resetSession: vi.fn(),
     runIdentityPipeline: vi.fn(),
@@ -63,6 +64,7 @@ vi.mock('../store/session', () => ({
           loginMethod: 'password',
         };
       },
+      loginWithPassword: mocks.loginWithPassword,
       updateProfile: vi.fn(),
       logout: mocks.logout,
       reset: mocks.resetSession,
@@ -159,11 +161,36 @@ describe('identityRuntime account switch ordering', () => {
       mocks.order.push(`pipeline:${mocks.session.currentUser?.actorPtid}`);
       return { ok: true, failures: [] };
     });
+    mocks.loginWithPassword.mockImplementation(async () => {
+      mocks.order.push('session-login');
+      mocks.session.currentUser = {
+        actorPtid: 'ptid:person:new',
+        name: 'New',
+        email: '',
+        loginMethod: 'password',
+      };
+      mocks.session.authenticated = true;
+    });
     mocks.logout.mockResolvedValue(undefined);
     mocks.resetSession.mockImplementation(() => {
       mocks.session.currentUser = null;
       mocks.session.authenticated = false;
     });
+  });
+
+  it('accepts and completes the session activated by password login', async () => {
+    mocks.session.currentUser = null;
+    mocks.session.authenticated = false;
+
+    await identityRuntime.loginWithPassword('alice@p.t', 'password');
+
+    expect(mocks.loginWithPassword).toHaveBeenCalledWith('alice@p.t', 'password');
+    expect(identityRuntime.getSnapshot().phase.kind).toBe('authenticatedPendingCompletion');
+
+    await identityRuntime.completeCurrentSession();
+
+    expect(identityRuntime.getSnapshot().lifecycle.state).toBe('ready');
+    expect(identityRuntime.getSnapshot().lifecycle.authenticated).toBe(true);
   });
 
   it('cleans the old actor projection before activating the restored actor', async () => {
