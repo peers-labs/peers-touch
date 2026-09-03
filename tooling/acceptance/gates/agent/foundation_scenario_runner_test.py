@@ -180,17 +180,26 @@ class SessionHarnessClient:
         self.spec = SimpleNamespace(runtime=runtime)
         self.authenticated = authenticated
         self.calls: list[str] = []
+        self.payloads: dict[str, dict[str, object]] = {}
 
     def harness(
         self,
         method: str,
-        _payload: dict[str, object] | None = None,
+        payload: dict[str, object] | None = None,
         timeout: float = 120,
     ) -> dict[str, object]:
         del timeout
         self.calls.append(method)
+        self.payloads[method] = payload or {}
         if method == "getAcceptanceHarnessStatus":
             return {"ready": True}
+        if method == "configureStation":
+            return {
+                "configured": True,
+                "activeUrl": self.payloads[method]["stationUrl"],
+                "online": True,
+                "peerIdAvailable": True,
+            }
         if method == "getRuntimeSnapshot":
             return {
                 "authenticated": self.authenticated,
@@ -684,6 +693,32 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             ["browser capability identity changed"],
         )
 
+    def test_initial_setup_selects_verified_station_before_login(self) -> None:
+        native = SessionHarnessClient("desktop_app")
+        browser = SessionHarnessClient("browser")
+        station_url = "https://station.example"
+
+        foundation_scenario_runner._authenticate_clients(
+            SimpleNamespace(native=native, browser=browser),
+            {
+                "PT_STATION_URL": f"{station_url}/",
+                "PT_AGENT_PROVIDER_ID": "ark",
+                "PT_AGENT_PROVIDER_API_KEY": "credential",
+                "PT_AGENT_DEFAULT_MODEL_ID": "endpoint-model",
+                "PT_AGENT_PROVIDER_BASE_URL": "https://provider.example/v1",
+            },
+        )
+
+        for client in (native, browser):
+            self.assertLess(
+                client.calls.index("configureStation"),
+                client.calls.index("loginWithPassword"),
+            )
+            self.assertEqual(
+                client.payloads["configureStation"],
+                {"stationUrl": station_url},
+            )
+
     def test_recovery_setup_reuses_existing_sessions_without_login(self) -> None:
         native = SessionHarnessClient("desktop_app")
         browser = SessionHarnessClient("browser")
@@ -701,6 +736,8 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
 
         self.assertNotIn("loginWithPassword", native.calls)
         self.assertNotIn("loginWithPassword", browser.calls)
+        self.assertNotIn("configureStation", native.calls)
+        self.assertNotIn("configureStation", browser.calls)
         self.assertNotIn("ensureProvider", native.calls)
         self.assertNotIn("ensureProvider", browser.calls)
         self.assertIn("getRuntimeSnapshot", native.calls)
