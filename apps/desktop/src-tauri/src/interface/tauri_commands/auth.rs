@@ -3,10 +3,12 @@ use crate::contracts::{
     AuthSessionPayload, AuthValidateTokenInput,
 };
 use crate::domain::identity::{ActiveSession, ActorRef};
-use crate::error::AppResult;
+use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::identity_event::{self, IdentityChangeReason, IdentityChangedPayload};
 use crate::infrastructure::session_revocation::SESSION_KICKED_EVENT;
 use crate::state::AppState;
+#[cfg(feature = "acceptance-webdriver")]
+use serde::Deserialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State, Window};
 
@@ -207,6 +209,54 @@ pub fn auth_logout(
             );
         },
     )
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[derive(Debug, Deserialize)]
+pub struct AcceptanceLogoutWindowSessionInput {
+    pub expected_actor_ptid: String,
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn acceptance_logout_window_session(
+    input: AcceptanceLogoutWindowSessionInput,
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    window: Window,
+) -> AppResult<AuthSessionPayload> {
+    let Some(session) = state.sessions.get(window.label()) else {
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "Window has no committed session",
+            Some(serde_json::json!({
+                "command": "acceptance_logout_window_session",
+                "reason": "window_session_missing"
+            })),
+        );
+    };
+    let expected_actor_ptid = input.expected_actor_ptid.trim();
+    if !expected_actor_ptid.starts_with("ptid:") {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "acceptance.chat.expectedActorPtidInvalid",
+            Some(serde_json::json!({
+                "command": "acceptance_logout_window_session",
+                "reason": "expected_actor_ptid_invalid"
+            })),
+        );
+    }
+    if expected_actor_ptid != session.actor.ptid {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "acceptance.chat.windowActorMismatch",
+            Some(serde_json::json!({
+                "command": "acceptance_logout_window_session",
+                "reason": "window_actor_mismatch"
+            })),
+        );
+    }
+    auth_logout(state, app, window)
 }
 
 #[tauri::command]
