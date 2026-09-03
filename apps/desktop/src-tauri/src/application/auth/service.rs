@@ -16,7 +16,14 @@ use serde_json::{json, Value};
 pub(crate) fn takeover_station_session_token(
     token: &str,
 ) -> Result<String, station_client::StationClientError> {
-    let body = json!({ "device_type": "desktop-native" });
+    takeover_station_session_token_for_device(token, "desktop-native")
+}
+
+pub(crate) fn takeover_station_session_token_for_device(
+    token: &str,
+    device_type: &str,
+) -> Result<String, station_client::StationClientError> {
+    let body = json!({ "device_type": device_type });
     let resp = station_client::request_json_auth(
         reqwest::Method::POST,
         "/actor/session/takeover",
@@ -786,6 +793,13 @@ pub(crate) fn persist_prepared_account_switch_session(
 }
 
 pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
+    auth_restore_session_for_device(state, "desktop-native")
+}
+
+pub(crate) fn auth_restore_session_for_device(
+    state: &AppState,
+    device_type: &str,
+) -> AppResult<AuthSessionPayload> {
     let Some(account_id) = session_vault::active_account_id() else {
         return unauthorized(
             "missing session",
@@ -813,7 +827,7 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
         Ok(session) => session,
         Err(error) => return map_domain_error(error),
     };
-    let token = match takeover_station_session_token(&blob.token) {
+    let token = match takeover_station_session_token_for_device(&blob.token, device_type) {
         Ok(token) => token,
         Err(error) => {
             session_vault::purge_raw_session_for_actor_ptid(&initial_session.actor_ptid);

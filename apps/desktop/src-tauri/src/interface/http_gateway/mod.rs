@@ -2278,9 +2278,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             state.sessions.unbind(HTTP_GATEWAY_SESSION_LABEL);
             to_json(result)
         }
-        "auth_restore_session" => {
-            bind_gateway_auth_result(state, app_auth::auth_restore_session(state))
-        }
+        "auth_restore_session" => bind_gateway_auth_result(
+            state,
+            app_auth::auth_restore_session_for_device(state, "desktop-browser"),
+        ),
         "auth_validate_token" => {
             let input = match parse_args::<AuthValidateTokenInput>(args) {
                 Ok(v) => v,
