@@ -1338,6 +1338,13 @@ class NativeProductClosureGate(AcceptanceGate):
             element,
             selector=selector,
         )
+        client.driver.execute_script(
+            "arguments[0].focus({ preventScroll: true });",
+            element,
+        )
+        if selector is not None:
+            element = client.find_element(selector, 30)
+            element = self._resolve_native_click_surface(client, element)
         target = client.driver.execute_script(
             """
             const element = arguments[0];
