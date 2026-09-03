@@ -845,8 +845,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B source and dependency preflight complete; W9-C source and runtime dependency preflight complete; W9-D blocked before product execution | `sixwin` proves Python 3.12.1, Node 24.19.0, pnpm 11.25.0, Rust/Cargo 1.98.0, Git 2.55.0, VS 2022 C++ Build Tools, WebView2 `152.0.4191.62`, Strawberry Perl `v5.42.2`, protobuf compiler `36.0`, an interactive Explorer session, exact-HEAD clean source sync, Task Scheduler broker lifecycle, a contract-matching `1920x1080` interactive Win32 screenshot, SSH WebDriver-style local forwarding, a source-bound Windows Desktop executable build, and reverse cleanup. The executable SHA-256 is `be1ed49e980d3fa466d991133be2d7a450562f5cb8718c2a370998908b50ea76`. Windows run `20260903T074452984662Z-a9ab5cce3180cc34471c5ed4957d41ca` stopped at station-four source identity before actor Fixture or runtime-cell provisioning; W9-D remains `BLOCKED/UNPROVEN`. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A done; W10-B done; W10-C source closure done; W10-D product evidence blocked | Platform-neutral typed binding, bound-session proof closure, opaque transport overrides, Native Chat atomic cutover, and runtime-cell wiring pass the 185-test focused set and the stable 161-assertion Native static Gate. The first Windows product preflight emitted immutable `BLOCKED/UNPROVEN` evidence because station-four runs `ef89b11fed8a` while client source is `8aa5fe687253381757041af2d7238824e7714a3c`; station-five also lacks a current runtime build identity. Linux and Windows W10-D require a clean committed source deployed to both Stations; macOS remains after W8. |
+| NDR-W9 Windows cell | W9-A/B source and dependency preflight complete; W9-C source and runtime dependency preflight complete; W9-D blocked before product execution | `sixwin` proves Python 3.12.1, Node 24.19.0, pnpm 11.25.0, Rust/Cargo 1.98.0, Git 2.55.0, VS 2022 C++ Build Tools, WebView2 `152.0.4191.62`, Strawberry Perl `v5.42.2`, protobuf compiler `36.0`, an interactive Explorer session, exact-HEAD clean source sync, Task Scheduler broker lifecycle, a contract-matching `1920x1080` interactive Win32 screenshot, SSH WebDriver-style local forwarding, a source-bound Windows Desktop executable build, and reverse cleanup. The executable SHA-256 is `be1ed49e980d3fa466d991133be2d7a450562f5cb8718c2a370998908b50ea76`. Windows run `20260903T074452984662Z-a9ab5cce3180cc34471c5ed4957d41ca` stopped at station-four source identity before actor Fixture or runtime-cell provisioning. Source closure commit `d466f0e52286f76220790bd329ea7bf8f64fb887` is ready, but neither Station has deployed it; W9-D remains `BLOCKED/UNPROVEN`. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A done; W10-B done; W10-C source closure done; W10-D product evidence blocked | Platform-neutral typed binding, bound-session proof closure, opaque transport overrides, Native Chat atomic cutover, and runtime-cell wiring pass the 224-test focused set and the stable 161-assertion Native static Gate. Both station-four and station-five remain healthy on `ef89b11fed8a`, not source closure commit `d466f0e52286f76220790bd329ea7bf8f64fb887`. station-five exact-source sync stopped at `BLOCKED:dirty-remote-worktree`; station-four deployment was not attempted because canonical profile `four` resolves to a deploy environment targeting station-five. Linux and Windows W10-D require clean exact-source deployment to both Stations; macOS remains after W8. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -2288,7 +2288,37 @@ Broader checks remain accurately bounded:
 - Gap Detector remains `UNPROVEN`: required runtime Gates are unrun and the
   accumulated dirty range is broader than its canonical Acceptance plan.
 
-No commit, push, Station deployment, runtime restart, actor Fixture creation, or
-destructive reset has been performed. W9-D and Windows W10-D therefore remain
-`BLOCKED/UNPROVEN`; the next dependency remains an explicitly authorized commit
-and exact-source deployment to station-four and station-five.
+At this source-reconciliation checkpoint, no commit, push, Station deployment,
+runtime restart, actor Fixture creation, or destructive reset had been
+performed. W9-D and Windows W10-D therefore remained `BLOCKED/UNPROVEN`; the
+next dependency was an explicitly authorized commit and exact-source deployment
+to station-four and station-five.
+
+### 2026-09-03 Exact-Source Deployment Attempt
+
+Source closure commit
+`d466f0e52286f76220790bd329ea7bf8f64fb887` was created without pushing to
+GitHub. The immutable worktree binding was refreshed and verified against that
+full commit.
+
+Deployment remained fail-closed:
+
+- station-five (`10.37.221.38:18080`) is healthy on `ef89b11fed8a`.
+  `make station` under the canonical `fiveArm` remote profile stopped during
+  source sync with `BLOCKED:dirty-remote-worktree`; build and restart did not
+  run.
+- station-four (`10.37.245.247:18080`) is healthy on `ef89b11fed8a`.
+  Deployment was not attempted because canonical profile `four` declares that
+  URL but resolves `PT_STATION_DEPLOY_ENV=station`, whose cached deployment host
+  is station-five. The profile/deploy target mismatch is unsafe.
+
+No remote cleanup, reset, checkout override, Station restart, Fixture creation,
+or product Gate ran. The minimum closure is:
+
+1. reconcile and preserve the remote station-five working-tree changes before
+   retrying exact-source sync;
+2. correct the canonical station-four profile/deploy mapping in the environment
+   repository; and
+3. deploy one clean exact commit to both Stations and verify their runtime build
+   identities before requesting target-specific destructive Fixture
+   authorization.
