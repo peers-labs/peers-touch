@@ -818,10 +818,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source.index(
                 "content_origin = self.native_adapter.content_origin("
             ),
-            click_source.index("current_target = client.driver.execute_script("),
+            click_source.index(
+                "self.native_adapter.post_mouse((MouseAction.MOVE,), point)"
+            ),
         )
         self.assertLess(
-            click_source.index("current_target = client.driver.execute_script("),
+            click_source.index(
+                "self.native_adapter.post_mouse((MouseAction.MOVE,), point)"
+            ),
+            click_source.index("def stable_live_target("),
+        )
+        self.assertLess(
+            click_source.index(").until(stable_live_target)"),
             click_source.index("probe_id = self.install_native_input_probe("),
         )
         self.assertLess(
@@ -829,7 +837,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source.index(
                 "self.native_adapter.post_mouse(\n"
                 "                (\n"
-                "                    MouseAction.MOVE,\n"
                 "                    MouseAction.LEFT_DOWN,\n"
                 "                    MouseAction.LEFT_UP,\n"
                 "                ),"
@@ -837,7 +844,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertEqual(
             click_source.count("self.native_adapter.post_mouse("),
-            1,
+            2,
         )
         self.assertNotIn(
             'report_native_input_delivery("before-click")',

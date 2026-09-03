@@ -1435,34 +1435,69 @@ class NativeProductClosureGate(AcceptanceGate):
         content_origin = self.native_adapter.content_origin(
             client.process_id or 0
         )
-        if selector is not None:
-            element = client.find_element(selector, 30)
-            element = self._resolve_native_click_surface(client, element)
-        current_target = client.driver.execute_script(
-            """
-            const element = arguments[0];
-            const rect = element.getBoundingClientRect();
-            const x = rect.left + rect.width / 2;
-            const y = rect.top + rect.height / 2;
-            const hit = document.elementFromPoint(x, y);
-            return {
-              connected: element.isConnected,
-              disabled: Boolean(element.disabled),
-              hit: hit === element || element.contains(hit),
-              x,
-              y,
-            };
-            """,
-            element,
-        )
-        if (
-            not current_target.get("connected")
-            or current_target.get("disabled")
-            or not current_target.get("hit")
-        ):
-            raise GateError(
-                "Native click target changed before event delivery"
+        point = (
+            (
+                content_origin[0]
+                if content_origin is not None
+                else window["left"] + content_offset_x
             )
+            + float(target["x"]),
+            (
+                content_origin[1]
+                if content_origin is not None
+                else window["top"] + content_offset_y
+            )
+            + float(target["y"]),
+        )
+        self.native_adapter.post_mouse((MouseAction.MOVE,), point)
+        stable_geometry: tuple[float, float, float, float] | None = None
+        stable_since = time.monotonic()
+
+        def stable_live_target(_: Any) -> tuple[Any, dict[str, Any]] | None:
+            nonlocal element, stable_geometry, stable_since
+            if selector is not None:
+                element = client.find_element(selector, 30)
+                element = self._resolve_native_click_surface(client, element)
+            current = client.driver.execute_script(
+                """
+                const element = arguments[0];
+                const rect = element.getBoundingClientRect();
+                const x = rect.left + rect.width / 2;
+                const y = rect.top + rect.height / 2;
+                const hit = document.elementFromPoint(x, y);
+                return {
+                  connected: element.isConnected,
+                  disabled: Boolean(element.disabled),
+                  hit: hit === element || element.contains(hit),
+                  rect: [rect.left, rect.top, rect.width, rect.height],
+                  x,
+                  y,
+                };
+                """,
+                element,
+            )
+            if (
+                not current.get("connected")
+                or current.get("disabled")
+                or not current.get("hit")
+            ):
+                stable_geometry = None
+                stable_since = time.monotonic()
+                return None
+            geometry = tuple(float(value) for value in current["rect"])
+            if geometry != stable_geometry:
+                stable_geometry = geometry
+                stable_since = time.monotonic()
+                return None
+            if time.monotonic() - stable_since < 0.25:
+                return None
+            return element, current
+
+        element, current_target = WebDriverWait(
+            client.driver,
+            5,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(stable_live_target)
         point = (
             (
                 content_origin[0]
@@ -1492,7 +1527,6 @@ class NativeProductClosureGate(AcceptanceGate):
             mouse_down_posted = True
             self.native_adapter.post_mouse(
                 (
-                    MouseAction.MOVE,
                     MouseAction.LEFT_DOWN,
                     MouseAction.LEFT_UP,
                 ),
