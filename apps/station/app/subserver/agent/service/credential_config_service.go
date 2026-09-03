@@ -55,7 +55,7 @@ func (s *CredentialConfigService) Set(ctx context.Context, req CredentialSetRequ
 
 	if strings.TrimSpace(req.ActorPTID) == "" || strings.TrimSpace(req.ProviderID) == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			"actor_id and provider_id are required", nil)
+			"actor_ptid and provider_id are required", nil)
 	}
 	if strings.TrimSpace(req.APIKey) == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
