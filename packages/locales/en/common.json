@@ -117,6 +117,8 @@
   "mobile.launch.helperAutoSave": "Recent Stations are saved automatically",
   "mobile.launch.helperHttpWarning": "HTTP is not encrypted. Avoid it on public networks",
   "mobile.launch.placeholder": "Host / IP:Port",
+  "mobile.launch.stationAddress": "Station address",
+  "mobile.launch.stationIdentityUnverified": "Identity unverified",
   "mobile.launch.required": "Required",
   "mobile.launch.selected": "Selected",
   "mobile.launch.station": "Station",
