@@ -33,6 +33,7 @@ from tooling.acceptance.gates.chat.native_support import (
     async_harness,
     cleanup_preserving_primary_failure,
     enter_chat_page,
+    is_native_tauri_url,
     native_runtime_source_identity,
     read_station_version,
     runtime_station_service,
@@ -215,7 +216,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
                     "alice login identity mismatch: "
                     f"expected={expected_ptid} actual={ptid}"
                 )
-            if not client.get_current_url().startswith("tauri://localhost"):
+            if not is_native_tauri_url(client.get_current_url()):
                 raise GateError(
                     "alice is not running in native Tauri WebView: "
                     f"{client.get_current_url()}"
