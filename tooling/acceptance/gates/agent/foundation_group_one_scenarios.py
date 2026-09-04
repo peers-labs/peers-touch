@@ -1724,6 +1724,140 @@ def evaluate_base_active_mutation_conflict(
     return assertions
 
 
+def evaluate_base_approval_denied(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-APPROVAL_DENIED"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    decision = _mapping(capture, "decision", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    lineage = _mapping(station, "lineage", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    states = station.get("states")
+    if not isinstance(states, list) or any(
+        not isinstance(value, str) or not value
+        for value in states
+    ):
+        raise GroupOneScenarioError(
+            f"{scenario} station states fact is invalid"
+        )
+
+    tool_call_id = _nonempty_string(
+        decision,
+        "toolCallId",
+        scenario=scenario,
+    )
+    decision_id = _nonempty_string(
+        decision,
+        "decisionId",
+        scenario=scenario,
+    )
+    decision_revision = _positive_int(
+        decision,
+        "decisionRevision",
+        scenario=scenario,
+    )
+    acknowledgement_source_hash = _nonempty_string(
+        replay,
+        "acknowledgementSourceHash",
+        scenario=scenario,
+    )
+    diagnostic_source_hash = _nonempty_string(
+        replay,
+        "diagnosticSourceHash",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedDenialProjected": (
+            outcome.get("error_type") == "TOOL_APPROVAL_DENIED"
+            and outcome.get("locale_key")
+            == "agent.errors.toolApprovalDenied"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details) == ["decision_id", "tool_call_id"]
+            and details.get("tool_call_id") == tool_call_id
+            and details.get("decision_id") == decision_id
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+            and receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+        ),
+        "denialPersisted": (
+            decision.get("accepted") is True
+            and decision.get("approved") is False
+            and station.get("policy") == "manual"
+            and states == ["policy_check", "awaiting_user", "denied"]
+            and station.get("errorCode") == "TOOL_APPROVAL_DENIED"
+            and lineage.get("toolCallId") == tool_call_id
+            and lineage.get("decisionId") == decision_id
+            and _positive_int(
+                lineage,
+                "decisionRevision",
+                scenario=scenario,
+            )
+            == decision_revision
+        ),
+        "zeroSideEffect": all(
+            _nonnegative_int(station, key, scenario=scenario) == 0
+            for key in (
+                "executionAttemptCount",
+                "sideEffectCount",
+                "resultCount",
+                "continuationCount",
+            )
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _nonempty_string(
+                replay,
+                "acknowledgementReplayHash",
+                scenario=scenario,
+            )
+            == acknowledgement_source_hash
+            and _nonempty_string(
+                replay,
+                "diagnosticReplayHash",
+                scenario=scenario,
+            )
+            == diagnostic_source_hash
+        ),
+        "cleanupComplete": (
+            cleanup.get("conversationDeleted") is True
+            and cleanup.get("bindingRestored") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def _mapping(
     value: Mapping[str, Any],
     key: str,

@@ -310,6 +310,7 @@ pub fn submit_tool_decision(
     let error_code = agent::ToolApprovalDecisionErrorCode::try_from(response.error_code)
         .unwrap_or(agent::ToolApprovalDecisionErrorCode::Unspecified)
         .as_str_name();
+    let outcome_error = tool_decision_outcome_json(response.outcome_error.as_ref());
     success_payload(
         "agent_submit_tool_decision",
         json!({
@@ -322,8 +323,22 @@ pub fn submit_tool_decision(
             "idempotency_key": response.idempotency_key,
             "payload_hash": response.payload_hash,
             "error_code": error_code,
+            "outcome_error": outcome_error,
         }),
     )
+}
+
+fn tool_decision_outcome_json(error: Option<&agent::ErrorPayload>) -> Option<Value> {
+    error.map(|error| {
+        json!({
+            "error": error.error,
+            "error_type": error.error_type,
+            "locale_key": error.locale_key,
+            "retryable": error.retryable,
+            "terminal": error.terminal,
+            "details": error.details,
+        })
+    })
 }
 
 fn tool_decision_payload_hash(
@@ -2513,6 +2528,36 @@ mod tests {
         assert_eq!(
             tool_decision_payload_hash("approval-1", "tool-call-1", "decision-1", 0, true,),
             "4d8f48896d7fc4b24b44328c4d59f2938a5cb5a0db8fcea7f5afcdfdbfbca9ef",
+        );
+    }
+
+    #[test]
+    fn tool_decision_outcome_preserves_typed_denial_contract() {
+        let outcome = agent::ErrorPayload {
+            error: "agent.errors.toolApprovalDenied".to_string(),
+            error_type: "TOOL_APPROVAL_DENIED".to_string(),
+            locale_key: "agent.errors.toolApprovalDenied".to_string(),
+            retryable: false,
+            terminal: true,
+            details: HashMap::from([
+                ("tool_call_id".to_string(), "tool-call-1".to_string()),
+                ("decision_id".to_string(), "decision-1".to_string()),
+            ]),
+        };
+
+        assert_eq!(
+            tool_decision_outcome_json(Some(&outcome)),
+            Some(json!({
+                "error": "agent.errors.toolApprovalDenied",
+                "error_type": "TOOL_APPROVAL_DENIED",
+                "locale_key": "agent.errors.toolApprovalDenied",
+                "retryable": false,
+                "terminal": true,
+                "details": {
+                    "tool_call_id": "tool-call-1",
+                    "decision_id": "decision-1",
+                },
+            })),
         );
     }
 

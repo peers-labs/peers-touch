@@ -20,6 +20,7 @@ const (
 	AgentActiveDependency    Code = "ACTIVE_DEPENDENCY"
 	AgentQueueFull           Code = "ADMISSION_QUEUE_FULL"
 	AgentAttachmentRejected  Code = "CONTEXT_ATTACHMENT_REJECTED"
+	AgentToolApprovalDenied  Code = "TOOL_APPROVAL_DENIED"
 	AgentToolBudgetExhausted Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
 	AgentProviderFailed      Code = "AGENT_5001"
 	AgentCompressionFailed   Code = "AGENT_5002"
@@ -34,6 +35,7 @@ const (
 	AgentCanvasSingleAgentNotReadyLocaleKey    = "agent.errors.canvasSingleAgentNotReady"
 	AgentCanvasSingleAgentNotReadyRequiredGate = "agent-v2-kernel-foundation-e2e"
 	AgentAttachmentRejectedLocaleKey           = "agent.errors.attachmentRejected"
+	AgentToolApprovalDeniedLocaleKey           = "agent.errors.toolApprovalDenied"
 	AgentToolBudgetExhaustedLocaleKey          = "agent.errors.toolLoopBudgetExhausted"
 )
 
@@ -93,6 +95,20 @@ func NewAttachmentRejected(reasonCode string) *BizError {
 			Retryable: false,
 			Terminal:  true,
 			Details:   map[string]string{"reason_code": reasonCode},
+		},
+	}
+}
+
+func NewToolApprovalDeniedPayload(toolCallID, decisionID string) *model.ErrorPayload {
+	return &model.ErrorPayload{
+		Error:     AgentToolApprovalDeniedLocaleKey,
+		ErrorType: string(AgentToolApprovalDenied),
+		LocaleKey: AgentToolApprovalDeniedLocaleKey,
+		Retryable: false,
+		Terminal:  true,
+		Details: map[string]string{
+			"tool_call_id": toolCallID,
+			"decision_id":  decisionID,
 		},
 	}
 }

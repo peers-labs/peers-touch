@@ -168,6 +168,16 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-APPROVAL_DENIED": frozenset(
+        {
+            "typedDenialProjected",
+            "localizedRecoveryVisible",
+            "denialPersisted",
+            "zeroSideEffect",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
 }
 
 

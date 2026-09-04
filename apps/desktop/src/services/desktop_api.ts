@@ -2467,6 +2467,15 @@ export interface AgentToolDecisionIntentInput {
   idempotency_key: string;
 }
 
+export interface AgentTypedErrorPayload {
+  error: string;
+  error_type: string;
+  locale_key: string;
+  retryable: boolean;
+  terminal: boolean;
+  details: Record<string, string>;
+}
+
 export interface AgentToolDecisionIntentResponse {
   accepted: boolean;
   decision_revision: number;
@@ -2477,6 +2486,7 @@ export interface AgentToolDecisionIntentResponse {
   idempotency_key: string;
   payload_hash: string;
   error_code: string;
+  outcome_error?: AgentTypedErrorPayload | null;
 }
 
 export interface McpToolSchemaEntry {

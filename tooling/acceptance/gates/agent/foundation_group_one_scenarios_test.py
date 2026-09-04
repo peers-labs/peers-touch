@@ -7,6 +7,7 @@ import unittest
 
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
+    evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
     evaluate_as_f02,
     evaluate_as_f03,
@@ -695,6 +696,64 @@ def valid_active_mutation_conflict_capture() -> dict[str, object]:
             "deletedFromStation": True,
             "priorSelection": "assistant",
             "restoredSelection": "assistant",
+        },
+    }
+
+
+def valid_approval_denied_capture() -> dict[str, object]:
+    return {
+        "outcome": {
+            "error": "agent.errors.toolApprovalDenied",
+            "error_type": "TOOL_APPROVAL_DENIED",
+            "locale_key": "agent.errors.toolApprovalDenied",
+            "retryable": False,
+            "terminal": True,
+            "details": {
+                "tool_call_id": "tool-call-denied",
+                "decision_id": "decision-denied",
+            },
+        },
+        "receiver": {
+            "recoveryVisible": True,
+            "recoveryText": "Continue without tool",
+            "expectedRecoveryText": "Continue without tool",
+            "recoveryExecuted": True,
+            "errorVisible": True,
+            "errorText": "Tool execution was not approved.",
+            "expectedErrorText": "Tool execution was not approved.",
+        },
+        "decision": {
+            "accepted": True,
+            "approved": False,
+            "approvalId": "approval-denied",
+            "toolCallId": "tool-call-denied",
+            "decisionId": "decision-denied",
+            "decisionRevision": 1,
+        },
+        "station": {
+            "policy": "manual",
+            "states": ["policy_check", "awaiting_user", "denied"],
+            "errorCode": "TOOL_APPROVAL_DENIED",
+            "executionAttemptCount": 0,
+            "sideEffectCount": 0,
+            "resultCount": 0,
+            "continuationCount": 0,
+            "lineage": {
+                "toolCallId": "tool-call-denied",
+                "decisionId": "decision-denied",
+                "decisionRevision": 1,
+            },
+        },
+        "replay": {
+            "acknowledgementSourceHash": "a" * 64,
+            "acknowledgementReplayHash": "a" * 64,
+            "diagnosticSourceHash": "b" * 64,
+            "diagnosticReplayHash": "b" * 64,
+            "equal": True,
+        },
+        "cleanup": {
+            "bindingRestored": True,
+            "conversationDeleted": True,
         },
     }
 
@@ -1391,6 +1450,34 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "localizedRecoveryVisible",
         ):
             evaluate_base_active_mutation_conflict(capture)
+
+    def test_approval_denied_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_approval_denied(
+            valid_approval_denied_capture()
+        )
+
+        self.assertEqual(len(assertions), 6)
+        self.assertTrue(all(assertions.values()))
+
+    def test_approval_denied_rejects_unsafe_details(self) -> None:
+        capture = valid_approval_denied_capture()
+        capture["outcome"]["details"]["actor_id"] = "private-actor"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedDenialProjected",
+        ):
+            evaluate_base_approval_denied(capture)
+
+    def test_approval_denied_rejects_side_effect(self) -> None:
+        capture = valid_approval_denied_capture()
+        capture["station"]["sideEffectCount"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroSideEffect",
+        ):
+            evaluate_base_approval_denied(capture)
 
 
 if __name__ == "__main__":

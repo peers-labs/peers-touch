@@ -1,6 +1,7 @@
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import {
   api,
+  type AgentTypedErrorPayload,
   type AgentToolDecisionIntentInput,
   type AgentToolDecisionIntentResponse,
   type StreamEvent,
@@ -28,6 +29,7 @@ export interface ToolProjection {
   approvalActor?: string;
   decidedAt?: string;
   decisionErrorCode?: string;
+  decisionOutcome?: AgentTypedErrorPayload;
   delegationResults?: DelegationTaskInfo[];
 }
 
@@ -257,7 +259,8 @@ export function reduceToolProjection(
         payloadHash: payloadHash || current.payloadHash,
         approvalActor: stringValue(data, 'actor', 'actorPtid', 'actor_ptid') || undefined,
         decidedAt: stringValue(data, 'decidedAt', 'decided_at') || undefined,
-        decisionErrorCode: undefined,
+        decisionErrorCode: approved ? undefined : current.decisionErrorCode,
+        decisionOutcome: approved ? undefined : current.decisionOutcome,
       },
     };
   }
@@ -459,6 +462,12 @@ class ToolRuntime implements RuntimeDescriptor {
             payloadHash: response.payload_hash,
           },
         });
+        if (response.outcome_error) {
+          this.patch(toolCallId, {
+            decisionErrorCode: response.outcome_error.locale_key,
+            decisionOutcome: response.outcome_error,
+          });
+        }
         return response;
       })
       .catch((error: unknown) => {

@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, Browser AS-F01 through AS-F05, and Browser cold-process restore; exact-source run `20260904T012735158621Z-6b35580424e236ea70c13e0a9b742cc6` crossed the JWT restore boundary and exposed a missing Native `agent_list_turn_feedback` Tauri registration; the registration fix is implemented and awaits exact-source proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, Browser AS-F01 through AS-F06, and Native feedback readback; exact-source run `20260904T020156594004Z-7865c3aebe7f55f7a3079d55c614b292` reached Browser `BASE-APPROVAL_DENIED` and exposed the next G-FE1 typed-error vertical as unimplemented | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4746,6 +4746,38 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Provisioner still completed `DONE / PROVEN / passed` and released all six
   client ports and temporary storage. G-F remains `PARTIAL / UNPROVEN`
   pending focused verification, checkpoint deployment, and exact-source rerun.
+- Exact-source run
+  `20260904T020156594004Z-7865c3aebe7f55f7a3079d55c614b292`
+  (aggregate `20260904T020156461847Z-044ca19c1fef5d0bd1b53802a68b4a06`)
+  on `86d4bdcbc12459a1689ef761db09c28dcac9a066` crossed the Native
+  feedback registration boundary and advanced to Browser
+  `BASE-APPROVAL_DENIED`. The direct adapter failed closed because this G-FE1
+  vertical was not implemented. Source inspection confirms that Station
+  already persists a manual `approved=false` decision, terminal denied
+  ToolCall state, blocked batch, replayable acknowledgement, and zero dispatch,
+  but the acknowledgement lacks the required typed
+  `TOOL_APPROVAL_DENIED` outcome and the product action still renders the
+  generic deny label. The dependency-ready closure is therefore Proto-first
+  typed outcome transport, Station readback, localized
+  `Continue without tool`, a production Harness scenario, and an independent
+  oracle. Provisioner cleanup completed `DONE / PROVEN / passed`; G-F remains
+  `PARTIAL / UNPROVEN`.
+- The `BASE-APPROVAL_DENIED` vertical now carries a Proto-first typed outcome
+  from Station through Desktop Rust and both client transports. A manual
+  `approved=false` decision persists `TOOL_APPROVAL_DENIED`, returns only
+  `tool_call_id` and `decision_id` as safe details, blocks the ToolBatch, and
+  creates no dispatch or continuation. The existing ToolCall decision surface
+  now labels that action with the localized `Continue without tool` contract
+  and retains the terminal error projection. The direct Harness clicks the
+  product action, verifies localized receiver state, Station readback, zero
+  side effects, acknowledgement replay, diagnostic replay, binding restoration,
+  and conversation cleanup; the independent Python oracle recomputes all six
+  assertions. Proto coverage, 157 focused Foundation tests, 556 Desktop tests,
+  Desktop TypeScript checks, focused Station Agent tests, Go style, scoped
+  Desktop lint, two focused Rust transport tests, Rust
+  `cargo check --locked --features e2e-testing`, Rust formatting, and
+  `git diff --check` pass. Repository-wide Desktop lint remains red on
+  unrelated baseline findings. Exact-source runtime proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

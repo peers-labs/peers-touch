@@ -155,6 +155,52 @@ describe('toolRuntime projection authority', () => {
     });
   });
 
+  it('retains the typed denial outcome in the terminal projection', async () => {
+    submitAgentToolDecision.mockResolvedValue({
+      accepted: true,
+      decision_revision: 1,
+      approval_id: 'approval-1',
+      tool_call_id: 'tool-call-1',
+      decision_id: 'decision-generated-1',
+      approved: false,
+      idempotency_key: 'decision-generated-1',
+      payload_hash: 'decision-hash-1',
+      error_code: 'TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED',
+      outcome_error: {
+        error: 'agent.errors.toolApprovalDenied',
+        error_type: 'TOOL_APPROVAL_DENIED',
+        locale_key: 'agent.errors.toolApprovalDenied',
+        retryable: false,
+        terminal: true,
+        details: {
+          tool_call_id: 'tool-call-1',
+          decision_id: 'decision-generated-1',
+        },
+      },
+    });
+    toolRuntime.consume(approvalRequired);
+
+    await toolRuntime.submitDecision('tool-call-1', false);
+
+    expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
+      status: 'denied',
+      pending: false,
+      decisionId: 'decision-generated-1',
+      decisionRevision: 1,
+      decisionErrorCode: 'agent.errors.toolApprovalDenied',
+      decisionOutcome: {
+        error_type: 'TOOL_APPROVAL_DENIED',
+        locale_key: 'agent.errors.toolApprovalDenied',
+        retryable: false,
+        terminal: true,
+        details: {
+          tool_call_id: 'tool-call-1',
+          decision_id: 'decision-generated-1',
+        },
+      },
+    });
+  });
+
   it('projects result and terminal events without Web execution authority', () => {
     let state = reduceToolProjection({}, approvalRequired);
     state = reduceToolProjection(state, {

@@ -866,8 +866,14 @@ func (s *ToolDispatchService) SubmitDecision(
 			"status":                status,
 			"updated_at":            now,
 		}
+		var outcomeError *model.ErrorPayload
 		if !request.GetApproved() {
 			update["ended_at"] = now
+			update["error_code"] = string(errcode.AgentToolApprovalDenied)
+			outcomeError = errcode.NewToolApprovalDeniedPayload(
+				request.GetToolCallId(),
+				request.GetDecisionId(),
+			)
 		}
 		result := tx.Model(&persistence.ToolCall{}).
 			Where("id = ? AND decision_revision = ? AND status = ?",
@@ -914,6 +920,7 @@ func (s *ToolDispatchService) SubmitDecision(
 			Approved:         request.GetApproved(),
 			IdempotencyKey:   request.GetIdempotencyKey(),
 			PayloadHash:      canonicalHash,
+			OutcomeError:     outcomeError,
 		}
 		ack, err := proto.MarshalOptions{Deterministic: true}.Marshal(response)
 		if err != nil {
@@ -1807,6 +1814,9 @@ func (s *ToolDispatchService) proposeCallTx(
 		ReconciliationDeadline: &reconciliationDeadline,
 		CreatedAt:              now,
 		UpdatedAt:              now,
+	}
+	if policy == ToolPolicyDeny {
+		row.ErrorCode = string(errcode.AgentToolApprovalDenied)
 	}
 	if authorization.ExecutionOwner ==
 		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY {

@@ -18,6 +18,7 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter import (
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
+    evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
     evaluate_as_f02,
     evaluate_as_f03,
@@ -179,6 +180,9 @@ def assert_group_one_capture(
     capture: Mapping[str, Any],
 ) -> None:
     evaluators = {
+        "BASE-APPROVAL_DENIED": (
+            lambda facts: evaluate_base_approval_denied(facts)
+        ),
         "BASE-ACTIVE_MUTATION_CONFLICT": (
             lambda facts: evaluate_base_active_mutation_conflict(facts)
         ),
