@@ -667,7 +667,9 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                     account_ref=f"station-account:{role}@p.t",
                     ptid=f"ptid:{role}:{station.rsplit('-', 1)[-1]}",
                 ),
-            ) as resolve:
+            ) as resolve, patch(
+                "tooling.acceptance.fixtures.chat_native_actors.prepare_bound_friendships"
+            ) as friendships:
                 manifest, _, _ = produce_bound_actor_manifest(
                     environment_id="native-tauri-embedded-webdriver",
                     run_id="run-1",
@@ -688,6 +690,13 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                     ("http://station-four", "alice"),
                     ("http://station-five", "bob"),
                 ],
+            )
+            friendships.assert_called_once_with(
+                {
+                    "alice": ("http://station-four", "station-four"),
+                    "bob": ("http://station-five", "station-five"),
+                },
+                manifest.actors,
             )
             self.assertEqual(
                 [actor.ptid for actor in manifest.actors],

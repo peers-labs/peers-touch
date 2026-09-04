@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -423,6 +424,54 @@ COMMIT;
     if not isinstance(value, dict):
         raise RuntimeError("queue replay fault injection evidence is invalid")
     return value
+
+
+def seed_accepted_friendship(
+    station_url: str,
+    environment_name: str,
+    actor_ptid: str,
+    peer_ptid: str,
+) -> None:
+    environment = acceptance_station_environment(
+        station_url,
+        environment_name,
+    )
+    verify_disposable_station_runtime(environment)
+    pair_key = "|".join(sorted((actor_ptid, peer_ptid)))
+    request_id = (
+        "acceptance-cross-"
+        + hashlib.sha256(pair_key.encode("utf-8")).hexdigest()[:24]
+    )
+    sql = f"""
+BEGIN;
+DELETE FROM friend_chat_friend_requests
+WHERE request_id = 'acceptance-alice-bob';
+INSERT INTO friend_chat_friend_requests (
+  request_id,
+  pair_key,
+  sender_ptid,
+  receiver_ptid,
+  status,
+  message,
+  created_at,
+  updated_at
+) VALUES (
+  {_sql_literal(request_id)},
+  {_sql_literal(pair_key)},
+  {_sql_literal(actor_ptid)},
+  {_sql_literal(peer_ptid)},
+  2,
+  '',
+  clock_timestamp(),
+  clock_timestamp()
+)
+ON CONFLICT (pair_key, status) DO UPDATE SET
+  sender_ptid = EXCLUDED.sender_ptid,
+  receiver_ptid = EXCLUDED.receiver_ptid,
+  updated_at = EXCLUDED.updated_at;
+COMMIT;
+"""
+    _remote_psql(environment, sql)
 
 
 def restart_acceptance_station(

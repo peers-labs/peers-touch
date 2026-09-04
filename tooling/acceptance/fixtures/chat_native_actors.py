@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
@@ -26,6 +27,7 @@ from tooling.acceptance.core.provisioning import (
 )
 from tooling.acceptance.fixtures.chat_native_reset import (
     acceptance_station_environment,
+    seed_accepted_friendship,
     verify_disposable_station_runtime,
 )
 
@@ -353,6 +355,158 @@ def resolve_actor_identity(
     )
 
 
+def _cache_remote_actor(
+    *,
+    local_station_url: str,
+    local_role: str,
+    remote_station_url: str,
+    remote_role: str,
+    expected_ptid: str,
+) -> None:
+    account = ACTOR_ACCOUNTS[local_role]
+    cookie_jar = CookieJar()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(cookie_jar)
+    )
+    login_request = urllib.request.Request(
+        f"{local_station_url.rstrip('/')}/actor/login",
+        data=json.dumps(
+            {
+                "email": account,
+                "password": ACTOR_PASSWORD,
+                "device_type": "acceptance-fixture",
+            }
+        ).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with opener.open(login_request, timeout=15) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        _, access_token, session_id = _login_session(
+            payload if isinstance(payload, dict) else {},
+            local_role,
+        )
+
+        remote_account = ACTOR_ACCOUNTS[remote_role]
+        remote_username = remote_account.split("@", 1)[0]
+        remote_domain = urllib.parse.urlparse(remote_station_url).netloc
+        handle = f"@{remote_username}@{remote_domain}"
+        resolve_request = urllib.request.Request(
+            (
+                f"{local_station_url.rstrip('/')}/actor/federation/resolve?"
+                + urllib.parse.urlencode({"handle": handle, "timeout": "30s"})
+            ),
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+            },
+        )
+        with opener.open(resolve_request, timeout=40) as response:
+            resolved = json.loads(response.read().decode("utf-8"))
+        data = _response_data(resolved if isinstance(resolved, dict) else {})
+        profile = data.get("profile")
+        peers_touch = (
+            profile.get("peers_touch") or profile.get("peersTouch")
+            if isinstance(profile, dict)
+            else None
+        )
+        resolved_ptid = (
+            str(
+                peers_touch.get("network_id")
+                or peers_touch.get("networkId")
+                or ""
+            )
+            if isinstance(peers_touch, dict)
+            else ""
+        )
+        if resolved_ptid != expected_ptid:
+            raise BlockedError(
+                reason=(
+                    f"Federation resolve returned {resolved_ptid or 'no PTID'} "
+                    f"for fixture role {remote_role}, expected {expected_ptid}"
+                ),
+                resource=f"fixture-federation-resolve:{remote_role}",
+            )
+    except (
+        urllib.error.URLError,
+        OSError,
+        TimeoutError,
+        json.JSONDecodeError,
+    ) as error:
+        raise BlockedError(
+            reason=(
+                f"Cannot cache cross-Station fixture actor {remote_role}: "
+                f"{error}"
+            ),
+            resource=f"fixture-federation-resolve:{remote_role}",
+        ) from error
+    finally:
+        if "access_token" in locals() and "session_id" in locals():
+            logout_request = urllib.request.Request(
+                f"{local_station_url.rstrip('/')}/actor/logout",
+                data=json.dumps({"session_id": session_id}).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                opener.open(logout_request, timeout=10).close()
+            except (urllib.error.URLError, OSError, TimeoutError) as error:
+                raise BlockedError(
+                    reason=(
+                        f"Cannot release cross-Station fixture session for "
+                        f"{local_role}: {error}"
+                    ),
+                    resource=f"fixture-session:{local_role}",
+                ) from error
+
+
+def prepare_bound_friendships(
+    role_targets: Mapping[str, tuple[str, str]],
+    actors: tuple[ActorIdentity, ...],
+) -> None:
+    if "alice" not in role_targets or "bob" not in role_targets:
+        return
+    if role_targets["alice"] == role_targets["bob"]:
+        return
+
+    by_role = {actor.role: actor for actor in actors}
+    alice = by_role["alice"]
+    bob = by_role["bob"]
+    alice_station_url, alice_environment = role_targets["alice"]
+    bob_station_url, bob_environment = role_targets["bob"]
+
+    _cache_remote_actor(
+        local_station_url=alice_station_url,
+        local_role="alice",
+        remote_station_url=bob_station_url,
+        remote_role="bob",
+        expected_ptid=bob.ptid,
+    )
+    _cache_remote_actor(
+        local_station_url=bob_station_url,
+        local_role="bob",
+        remote_station_url=alice_station_url,
+        remote_role="alice",
+        expected_ptid=alice.ptid,
+    )
+    seed_accepted_friendship(
+        alice_station_url,
+        alice_environment,
+        alice.ptid,
+        bob.ptid,
+    )
+    seed_accepted_friendship(
+        bob_station_url,
+        bob_environment,
+        bob.ptid,
+        alice.ptid,
+    )
+
+
 def produce_actor_manifest(
     *,
     environment_id: str,
@@ -411,6 +565,7 @@ def produce_bound_actor_manifest(
         )
         for role in unique_roles
     )
+    prepare_bound_friendships(role_targets, actors)
     manifest = ActorManifest(
         fixture_id="chat-native-actors",
         environment_id=environment_id,
