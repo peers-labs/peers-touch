@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
@@ -29,6 +30,29 @@ func NewRepos(db *gorm.DB) *Repos {
 		SyncCursor:      &syncCursorRepo{db: db},
 		ActorSigningKey: &actorSigningKeyRepo{db: db},
 	}
+}
+
+// MigrateSchema preserves legacy actor identities before bringing every
+// Federation repository table to the current schema.
+func MigrateSchema(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := MigrateIdentityColumns(tx); err != nil {
+			return fmt.Errorf("migrate identity columns: %w", err)
+		}
+
+		if err := tx.AutoMigrate(
+			&federationModel{},
+			&ledgerEventModel{},
+			&membershipModel{},
+			&actorRoleModel{},
+			&actorSigningKeyModel{},
+			&syncCursorModel{},
+		); err != nil {
+			return fmt.Errorf("auto-migrate tables: %w", err)
+		}
+
+		return nil
+	})
 }
 
 func MigrateIdentityColumns(db *gorm.DB) error {

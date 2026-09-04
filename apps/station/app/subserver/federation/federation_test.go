@@ -29,92 +29,9 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	sqlDB, _ := db.DB()
 	t.Cleanup(func() { sqlDB.Close() })
 
-	db.Exec(`CREATE TABLE IF NOT EXISTS federation (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		federation_id VARCHAR(30) NOT NULL UNIQUE,
-		name VARCHAR(255) NOT NULL,
-		description TEXT NOT NULL DEFAULT '',
-		status VARCHAR(20) NOT NULL DEFAULT 'active',
-		policy_type VARCHAR(30) NOT NULL DEFAULT 'single_admin',
-		sequencer_station_peer_id VARCHAR(128) NOT NULL,
-		genesis_hash BLOB NOT NULL,
-		head_hash BLOB NOT NULL,
-		head_seq INTEGER NOT NULL DEFAULT 0,
-		created_by_actor_ptid VARCHAR(255) NOT NULL,
-		created_by_station_peer_id VARCHAR(128) NOT NULL,
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-	)`)
-
-	db.Exec(`CREATE TABLE IF NOT EXISTS federation_ledger_event (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		event_id VARCHAR(30) NOT NULL UNIQUE,
-		federation_id VARCHAR(30) NOT NULL,
-		seq INTEGER NOT NULL,
-		prev_hash BLOB NOT NULL,
-		event_hash BLOB NOT NULL,
-		event_type INTEGER NOT NULL,
-		payload_bytes BLOB NOT NULL,
-		payload_hash BLOB NOT NULL,
-		actor_ptid VARCHAR(255) NOT NULL,
-		actor_federated_handle VARCHAR(255) NOT NULL DEFAULT '',
-		station_peer_id VARCHAR(128) NOT NULL,
-		sequencer_station_peer_id VARCHAR(128) NOT NULL,
-		actor_signature BLOB NOT NULL,
-		station_signature BLOB NOT NULL,
-		sequencer_signature BLOB NOT NULL,
-		created_at_unix_ms INTEGER NOT NULL,
-		UNIQUE(federation_id, seq)
-	)`)
-
-	db.Exec(`CREATE TABLE IF NOT EXISTS federation_station_membership (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		federation_id VARCHAR(30) NOT NULL,
-		station_peer_id VARCHAR(128) NOT NULL,
-		station_name VARCHAR(255) NOT NULL DEFAULT '',
-		station_url VARCHAR(512) NOT NULL DEFAULT '',
-		role VARCHAR(30) NOT NULL DEFAULT 'member_station',
-		status VARCHAR(20) NOT NULL DEFAULT 'active',
-		joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		approved_by_event_id VARCHAR(30) NOT NULL DEFAULT '',
-		UNIQUE(federation_id, station_peer_id)
-	)`)
-
-	db.Exec(`CREATE TABLE IF NOT EXISTS federation_actor_role (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		federation_id VARCHAR(30) NOT NULL,
-		actor_ptid VARCHAR(255) NOT NULL,
-		actor_federated_handle VARCHAR(255) NOT NULL DEFAULT '',
-		station_peer_id VARCHAR(128) NOT NULL,
-		role VARCHAR(30) NOT NULL,
-		granted_by_event_id VARCHAR(30) NOT NULL DEFAULT '',
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		revoked_at DATETIME,
-		UNIQUE(federation_id, actor_ptid)
-	)`)
-
-	db.Exec(`CREATE TABLE IF NOT EXISTS actor_signing_key (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		actor_ptid VARCHAR(255) NOT NULL UNIQUE,
-		public_key BLOB NOT NULL,
-		encrypted_private_key BLOB NOT NULL,
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		rotated_at DATETIME
-	)`)
-
-	db.Exec(`CREATE TABLE IF NOT EXISTS federation_sync_cursor (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		federation_id VARCHAR(30) NOT NULL,
-		remote_station_peer_id VARCHAR(128) NOT NULL,
-		last_seen_head_hash BLOB,
-		last_seen_head_seq INTEGER NOT NULL DEFAULT 0,
-		last_applied_seq INTEGER NOT NULL DEFAULT 0,
-		last_sync_at DATETIME,
-		status VARCHAR(30) NOT NULL DEFAULT 'healthy',
-		error_code INTEGER NOT NULL DEFAULT 0,
-		error_message TEXT NOT NULL DEFAULT '',
-		UNIQUE(federation_id, remote_station_peer_id)
-	)`)
+	if err := infrastructure.MigrateSchema(db); err != nil {
+		t.Fatalf("migrate federation test database: %v", err)
+	}
 
 	return db
 }
