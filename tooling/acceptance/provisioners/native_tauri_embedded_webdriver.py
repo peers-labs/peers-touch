@@ -16,6 +16,7 @@ from tooling.acceptance.core.provisioner import load_env_file
 from tooling.acceptance.core.provisioning import (
     ClientRuntime,
     EnvironmentContract,
+    EnvironmentClient,
     ProvisioningState,
     RuntimeManifest,
     ServiceAttestation,
@@ -191,6 +192,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
     def _actor_role_targets(
         roles: tuple[str, ...],
         clients: tuple[ClientRuntime, ...],
+        declared_clients: tuple[EnvironmentClient, ...],
         services: dict[str, ServiceAttestation],
     ) -> dict[str, tuple[str, str]]:
         targets: dict[str, tuple[str, str]] = {}
@@ -202,6 +204,13 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 for binding_role, binding in client.service_bindings.items()
                 if binding_role == "station"
             }
+            service_ids.update(
+                binding.service_id
+                for client in declared_clients
+                if client.actor == role
+                for binding_role, binding in client.service_bindings.items()
+                if binding_role == "station"
+            )
             if len(service_ids) != 1:
                 raise BlockedError(
                     reason=(
@@ -289,6 +298,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 role_targets=self._actor_role_targets(
                     roles,
                     clients,
+                    self.contract.clients,
                     services,
                 ),
                 credential_ref=credential_refs[0] if credential_refs else "",
