@@ -471,6 +471,21 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("deletedConversationIds.length === conversationIds.length", cleanup)
 
     def test_revision_scenario_disables_capabilities_and_restores_them(self) -> None:
+        revision_start = self.source.index(
+            "async function runFoundationF07Scenario",
+        )
+        revision_end = self.source.index(
+            "function foundationF10RejectionFact",
+            revision_start,
+        )
+        revision = self.source[revision_start:revision_end]
+        self.assertEqual(revision.count(".branchFromMessage("), 1)
+        self.assertNotIn("label: 'F07Selected'", revision)
+        self.assertIn(
+            "await api.getAgentConversation(conversation.conversation_id)",
+            revision,
+        )
+
         helper_start = self.source.index(
             "async function runFoundationF07WithCapabilityIsolation",
         )
