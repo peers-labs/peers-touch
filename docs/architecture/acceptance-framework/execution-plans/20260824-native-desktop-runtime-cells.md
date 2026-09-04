@@ -2610,3 +2610,18 @@ Local evidence:
 The current slice remains `IMPLEMENTED_UNPROVEN` until exact-source Windows
 `chat-contact-message-resilience-e2e` proves the failure path and Windows
 `chat-native-product-closure-e2e` proves successful cross-Station Direct open.
+
+Windows resilience run
+`20260904T113004716796Z-40317bad53a2b6608f02e4df47fa57f9` at exact source
+`61f1cb759687899735a2a6069913c4a95f7ecf8c` was
+`BLOCKED/UNPROVEN` before client launch. Both Station attestations and
+provisioner cleanup passed, but fixture construction could not bind Bob
+because the one-client Gate intentionally launches only Alice and the
+provisioner incorrectly derived fixture actor bindings only from launched
+runtime clients.
+
+The Chat-specific native provisioner now resolves fixture actors from the full
+declared environment client bindings and keeps runtime allocation limited to
+the Gate's client subset. A regression test proves non-launched Bob binds to
+station-five while Alice binds to station-four. Fresh exact-source Windows
+evidence is still required.
