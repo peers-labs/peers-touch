@@ -15,6 +15,7 @@ from tooling.acceptance.core import (
     ClientServiceBinding,
     CredentialRef,
     EnvironmentContract,
+    EnvironmentClient,
     EnvironmentProvisioner,
     ProvisioningError,
     ProvisioningState,
@@ -223,7 +224,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
                         0,
                     )
 
-    def test_native_actor_targets_follow_client_service_bindings(self):
+    def test_native_actor_targets_include_non_launched_fixture_roles(self):
         clients = tuple(
             ClientRuntime(
                 id=client_id,
@@ -245,9 +246,34 @@ class ProvisionerBlockingTests(unittest.TestCase):
             )
             for client_id, actor, service_id, port in (
                 ("alice", "alice", "station-four", 3600),
-                ("bob", "bob", "station-five", 3601),
                 ("alice2", "alice", "station-four", 3602),
             )
+        )
+        declared_clients = (
+            EnvironmentClient(
+                id="alice",
+                actor="alice",
+                runtime="native-tauri",
+                required_service_roles=("station",),
+                service_bindings={
+                    "station": ClientServiceBinding(
+                        service_id="station-four",
+                        required_kind="station",
+                    )
+                },
+            ),
+            EnvironmentClient(
+                id="bob",
+                actor="bob",
+                runtime="native-tauri",
+                required_service_roles=("station",),
+                service_bindings={
+                    "station": ClientServiceBinding(
+                        service_id="station-five",
+                        required_kind="station",
+                    )
+                },
+            ),
         )
         services = {
             service_id: ServiceAttestation(
@@ -280,6 +306,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         targets = NativeTauriEmbeddedWebDriverProvisioner._actor_role_targets(
             ("alice", "bob"),
             clients,
+            declared_clients,
             services,
         )
 
