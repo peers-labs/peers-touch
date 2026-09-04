@@ -5307,7 +5307,7 @@ function reportFoundationApprovalReceiverDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'foundation-approval-receiver',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationApprovalDeniedScenario',
       msg: `[DEBUG] ${stage}`,
