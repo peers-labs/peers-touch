@@ -30,6 +30,7 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    is_native_tauri_url,
     message_snapshot,
     native_runtime_source_identity,
     read_station_version,
@@ -263,7 +264,7 @@ class NativeRecoveryGate(AcceptanceGate):
                 f"{actor} login identity mismatch: "
                 f"expected={expected_ptid} actual={ptid}"
             )
-        if not client.get_current_url().startswith("tauri://localhost"):
+        if not is_native_tauri_url(client.get_current_url()):
             raise GateError(
                 f"{actor} is not running in native Tauri WebView: "
                 f"{client.get_current_url()}"
@@ -583,7 +584,7 @@ class NativeRecoveryGate(AcceptanceGate):
             self.assert_condition(
                 "native_runtime",
                 all(
-                    client.get_current_url().startswith("tauri://localhost")
+                    is_native_tauri_url(client.get_current_url())
                     for client in self.clients.values()
                 ),
             )
