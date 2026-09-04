@@ -4858,36 +4858,53 @@ async function runFoundationF10Scenario(input: {
   }
 
   const agentId = input.agent.id || input.agent.name;
-  const conversation = await api.createAgentConversation({
-    agent_id: agentId,
-    title: `Foundation capability contract ${input.sampleId}`,
-    provider_id: input.agent.provider,
-    model_name: input.agent.model,
-  });
-  await useChatStore.getState().selectSession(conversation.conversation_id);
-  const startedAt = performance.now();
-  const observed = startObservedFoundationTurn({
-    conversationId: conversation.conversation_id,
-    agentId,
-    content: `Reply with one short sentence for capability sample ${input.sampleId}.`,
-    idempotencyKey: crypto.randomUUID(),
-    provider: input.agent.provider || undefined,
-    model: input.agent.model || undefined,
-    effort: 'low',
-    thinkingMode: 'disabled',
-    clientCapabilitySessionId: stationSession.session_id,
-  });
-  const result = await observed.result;
-  if (!result.ok) {
-    throw new Error(result.error || 'agent.acceptance.foundationCapabilityTurnFailed');
-  }
-  const turnId = observedTurnId(result.events);
-  const runtimeEvent = [...result.events].reverse().find((event) =>
-    classifyAgentTurnTerminalEvent(event) !== null);
-  if (!turnId || !runtimeEvent) {
-    throw new Error('agent.acceptance.foundationCapabilityTurnEvidenceMissing');
-  }
-  const terminalStatus = classifyAgentTurnTerminalEvent(runtimeEvent);
+  const core = await withFoundationCapabilitiesDisabled(
+    input.agent,
+    stationSession.session_id,
+    async (toolIsolation) => {
+      const conversation = await api.createAgentConversation({
+        agent_id: agentId,
+        title: `Foundation capability contract ${input.sampleId}`,
+        provider_id: input.agent.provider,
+        model_name: input.agent.model,
+      });
+      await useChatStore.getState().selectSession(conversation.conversation_id);
+      const startedAt = performance.now();
+      const observed = startObservedFoundationTurn({
+        conversationId: conversation.conversation_id,
+        agentId,
+        content: `Reply with one short sentence for capability sample ${input.sampleId}.`,
+        idempotencyKey: crypto.randomUUID(),
+        provider: input.agent.provider || undefined,
+        model: input.agent.model || undefined,
+        effort: 'low',
+        thinkingMode: 'disabled',
+        clientCapabilitySessionId: stationSession.session_id,
+      });
+      const result = await observed.result;
+      if (!result.ok) {
+        throw new Error(
+          result.error || 'agent.acceptance.foundationCapabilityTurnFailed',
+        );
+      }
+      const turnId = observedTurnId(result.events);
+      const runtimeEvent = [...result.events].reverse().find((event) =>
+        classifyAgentTurnTerminalEvent(event) !== null);
+      if (!turnId || !runtimeEvent) {
+        throw new Error(
+          'agent.acceptance.foundationCapabilityTurnEvidenceMissing',
+        );
+      }
+      return {
+        conversationId: conversation.conversation_id,
+        turnId,
+        durationMs: performance.now() - startedAt,
+        runtimeEvent,
+        terminalStatus: classifyAgentTurnTerminalEvent(runtimeEvent),
+        toolIsolation,
+      };
+    },
+  );
 
   const controls = Object.fromEntries(await Promise.all(
     ([
@@ -4927,21 +4944,22 @@ async function runFoundationF10Scenario(input: {
   );
 
   return {
-    conversationId: conversation.conversation_id,
-    turnId,
-    durationMs: performance.now() - startedAt,
+    conversationId: core.conversationId,
+    turnId: core.turnId,
+    durationMs: core.durationMs,
     runtimeEvent: {
-      eventType: runtimeEvent.event,
-      sequence: Number(runtimeEvent.data.seq ?? 0),
-      observedAt: runtimeEvent.observedAt,
+      eventType: core.runtimeEvent.event,
+      sequence: Number(core.runtimeEvent.data.seq ?? 0),
+      observedAt: core.runtimeEvent.observedAt,
     },
     facts: {
       coreOutcome: {
-        stationStatus: terminalStatus,
-        receiverStatus: result.ok && terminalStatus === 'completed'
+        stationStatus: core.terminalStatus,
+        receiverStatus: core.terminalStatus === 'completed'
           ? 'completed'
           : 'incomplete',
       },
+      toolIsolation: core.toolIsolation,
       capabilitySession: {
         platform: clientPlatformName(stationSession.platform),
         sessionId: localSession.capability_session_id_hash,
@@ -6489,6 +6507,10 @@ function evaluateF09(ctx: DirectCellAssertionContext): Record<string, boolean | 
 function evaluateF10(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
   const facts = evidenceRecord(ctx.scenarioFacts, 'foundationF10Facts');
   const core = evidenceRecord(facts.coreOutcome, 'foundationF10CoreOutcome');
+  const toolIsolation = evidenceRecord(
+    facts.toolIsolation,
+    'foundationF10ToolIsolation',
+  );
   const session = evidenceRecord(
     facts.capabilitySession,
     'foundationF10CapabilitySession',
@@ -6518,7 +6540,13 @@ function evaluateF10(ctx: DirectCellAssertionContext): Record<string, boolean | 
   return {
     coreOutcomesMatch:
       core.stationStatus === 'completed'
-      && core.receiverStatus === 'completed',
+      && core.receiverStatus === 'completed'
+      && Number(toolIsolation.readyCapabilityCount) === 0
+      && toolIsolation.restorationVerified === true
+      && Number(toolIsolation.restoredReadyCapabilityCount)
+        === Number(toolIsolation.originalReadyCapabilityCount)
+      && toolIsolation.restoredReadyCapabilityHash
+        === toolIsolation.originalReadyCapabilityHash,
     unsupportedRejected: rejection(
       'unsupported',
       ['AGENT_4002', 'CAPABILITY_UNAVAILABLE'],

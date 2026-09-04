@@ -1432,6 +1432,7 @@ def evaluate_as_f10(
     platform: str,
 ) -> dict[str, bool | None]:
     core = _mapping(capture, "coreOutcome", scenario="AS-F10")
+    tool_isolation = _mapping(capture, "toolIsolation", scenario="AS-F10")
     session = _mapping(capture, "capabilitySession", scenario="AS-F10")
     selected_device = _mapping(capture, "selectedDevice", scenario="AS-F10")
     rejections = _mapping(capture, "rejections", scenario="AS-F10")
@@ -1545,6 +1546,33 @@ def evaluate_as_f10(
         "coreOutcomesMatch": (
             core.get("stationStatus") == "completed"
             and core.get("receiverStatus") == "completed"
+            and _nonnegative_int(
+                tool_isolation,
+                "readyCapabilityCount",
+                scenario="AS-F10",
+            )
+            == 0
+            and tool_isolation.get("restorationVerified") is True
+            and _nonnegative_int(
+                tool_isolation,
+                "restoredReadyCapabilityCount",
+                scenario="AS-F10",
+            )
+            == _nonnegative_int(
+                tool_isolation,
+                "originalReadyCapabilityCount",
+                scenario="AS-F10",
+            )
+            and _nonempty_string(
+                tool_isolation,
+                "restoredReadyCapabilityHash",
+                scenario="AS-F10",
+            )
+            == _nonempty_string(
+                tool_isolation,
+                "originalReadyCapabilityHash",
+                scenario="AS-F10",
+            )
         ),
         "unsupportedRejected": unsupported_result,
         "unauthorizedRejected": rejected(unauthorized, "unauthorized"),
