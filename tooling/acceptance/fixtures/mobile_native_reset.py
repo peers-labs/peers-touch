@@ -156,7 +156,7 @@ def prepare_fixture(
         verify_reset_target(station_url, deployment_environment)
         reset_fixture(deployment_environment, ROLES)
         actors = [
-            resolve_actor_identity(station_url, environment_name, role)
+            resolve_actor_identity(station_url, deployment_environment, role)
             for role in ROLES
         ]
         stations[service_id] = {
