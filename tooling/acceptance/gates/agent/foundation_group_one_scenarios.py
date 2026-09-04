@@ -1221,6 +1221,7 @@ def evaluate_as_f07(capture: Mapping[str, Any]) -> dict[str, bool]:
                 "sourceConversationId",
                 scenario="AS-F07",
             )
+            and retry.get("sourceStatus") == "cancelled"
             and source_turn_id
             == _nonempty_string(
                 retry,
