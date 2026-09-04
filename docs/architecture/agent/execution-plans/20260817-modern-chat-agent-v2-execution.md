@@ -4893,6 +4893,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   existing revision-fenced capability isolation and requires zero ready
   capabilities plus verified restoration, matching the AS-F10 root-cause
   correction without changing product semantics.
+- Exact-source run
+  `20260904T075624493319Z-c8b5f2b8292968eedcbf3f47e7b303a1`
+  (aggregate `20260904T075624357036Z-9c6022481e35c24a3b70c6bf9a9b9b7d`)
+  on `cf1f81428cd87d0eaec8930a6ff69e02df51f8bc` proved the AS-F01
+  capability-isolation correction and returned to Browser AS-F12. The bounded
+  diagnostic identified `BetaSibling` with `expected=8` and `actual=8`, ruling
+  out stale CAS. Regeneration already made that sibling the active response;
+  reselecting it was not an independent branch switch and Station rejected the
+  source state. The scenario now keeps Alpha on its regenerated sibling and
+  explicitly switches Beta to its original response head. The independent
+  oracle accepts either owned head while still requiring both source and
+  sibling messages, distinct topic graphs, and exact post-restart active heads.
+  Provisioner cleanup completed `DONE / PROVEN / passed`; G-F remains
+  `PARTIAL / UNPROVEN` pending checkpoint deployment and rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
