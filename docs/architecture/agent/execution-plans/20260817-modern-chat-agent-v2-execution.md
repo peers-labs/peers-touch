@@ -5004,6 +5004,33 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Desktop tests, production build, 170 focused Foundation tests, and
   `git diff --check` pass. Exact-source runtime proof remains pending; G-F
   remains `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260904T113338681412Z-efdeb340a5cfad732b2bff5fc08ec60b`
+  (aggregate `20260904T113338489249Z-2fe1c704b1adb27774ae9a607ec27952`)
+  on `595b782d66e8ef830521d5c3ff169426e1197881` advanced through
+  the complete Desktop row, including both Desktop AS-F12 tuples, proving the
+  canonicalized restart snapshot on that runtime cell. The run then failed at
+  Browser AS-F07 English because Chrome deleted the WebDriver session. Source
+  identity, redaction, and cleanup passed; Browser AS-F12 and complete G-F
+  remain `UNPROVEN`.
+- The unchanged retry
+  `20260904T120639212379Z-fe4254d5511a6a714588e0df2cc0d3a4`
+  (aggregate `20260904T120638654504Z-981c6a89ddbf74c84fe8670af36be82e`)
+  was blocked before product execution when the approved PostgreSQL fixture
+  reset timed out. Cleanup then timed out releasing the run-owned remote source
+  lease. The orphaned process was identified by the exact run owner plus open
+  lease FD, terminated without touching other deployment leases, and the
+  repository `RemoteGitSourceLease` subsequently acquired and released the
+  same resource successfully.
+- The next exact-source run
+  `20260904T121940506424Z-c261df4ab00dd6c343d3c4aa46b3094d`
+  (aggregate `20260904T121940387092Z-68f3900685f3e31cd4143994e1b64578`)
+  reproduced the intermittent Browser `identity login precondition` timeout
+  before the scenario matrix; cleanup completed `DONE / PROVEN / passed`.
+  Debug session `foundation-identity-boot` now instruments only bounded
+  identity phase/lifecycle transitions and client process/port liveness. No
+  identity behavior change is justified before that runtime evidence is
+  collected.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

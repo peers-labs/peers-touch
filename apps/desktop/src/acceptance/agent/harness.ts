@@ -7846,21 +7846,68 @@ export function installAcceptanceHarness(): void {
     },
 
     async loginWithPassword({ account, password }: LoginInput) {
+      // #region debug-point A-B-D-E:identity-login-precondition
+      const reportIdentityDebug = (
+        hypothesisId: string,
+        msg: string,
+      ): void => {
+        const snapshot = identityRuntime.getSnapshot();
+        void fetch('http://127.0.0.1:7778/event', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: 'foundation-identity-boot',
+            runId: 'pre-fix',
+            hypothesisId,
+            location: 'apps/desktop/src/acceptance/agent/harness.ts:loginWithPassword',
+            msg: `[DEBUG] ${msg}`,
+            data: {
+              phaseKind: snapshot.phase.kind,
+              phaseReason:
+                'reason' in snapshot.phase ? snapshot.phase.reason : null,
+              lifecycleState: snapshot.lifecycle.state,
+              dataReady: snapshot.lifecycle.dataReady,
+              authenticated: useSessionStore.getState().authenticated,
+            },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+      };
+      let priorIdentityDebugState = '';
+      reportIdentityDebug('E', 'login entry');
       identityRuntime.boot();
-      await waitFor(
-        () => {
-          const snapshot = identityRuntime.getSnapshot();
-          return (
-            snapshot.phase.kind === 'accountGate'
-            && snapshot.lifecycle.dataReady
-          ) || (
-            useSessionStore.getState().authenticated
-            && snapshot.lifecycle.state === 'ready'
-          );
-        },
-        'identity login precondition',
-        30_000,
-      );
+      reportIdentityDebug('D', 'boot requested');
+      try {
+        await waitFor(
+          () => {
+            const snapshot = identityRuntime.getSnapshot();
+            const currentIdentityDebugState = stableJson({
+              phaseKind: snapshot.phase.kind,
+              phaseReason:
+                'reason' in snapshot.phase ? snapshot.phase.reason : null,
+              lifecycleState: snapshot.lifecycle.state,
+              dataReady: snapshot.lifecycle.dataReady,
+              authenticated: useSessionStore.getState().authenticated,
+            });
+            if (currentIdentityDebugState !== priorIdentityDebugState) {
+              priorIdentityDebugState = currentIdentityDebugState;
+              reportIdentityDebug('A', 'identity phase changed');
+            }
+            return (
+              snapshot.phase.kind === 'accountGate'
+              && snapshot.lifecycle.dataReady
+            ) || (
+              useSessionStore.getState().authenticated
+              && snapshot.lifecycle.state === 'ready'
+            );
+          },
+          'identity login precondition',
+          30_000,
+        );
+      } catch (error) {
+        reportIdentityDebug('B', 'identity login precondition failed');
+        throw error;
+      }
+      // #endregion
       if (useSessionStore.getState().authenticated) {
         await identityRuntime.logout();
       }
