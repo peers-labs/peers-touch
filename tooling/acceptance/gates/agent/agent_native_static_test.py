@@ -381,6 +381,59 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("sideEffectDelta", scenario)
         self.assertIn("crossDeviceSession.session_id", scenario)
 
+    def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
+        prepare_start = self.source.index(
+            "async function runFoundationF12Prepare",
+        )
+        complete_start = self.source.index(
+            "async function runFoundationF12Complete",
+            prepare_start,
+        )
+        prepare = self.source[prepare_start:complete_start]
+        complete_end = self.source.index(
+            "async function foundationRevisionMessageFact",
+            complete_start,
+        )
+        complete = self.source[complete_start:complete_end]
+
+        self.assertIn("withFoundationCapabilitiesDisabled(", prepare)
+        self.assertIn("runFoundationF12Turn({", prepare)
+        self.assertEqual(prepare.count("runFoundationF12Turn({"), 4)
+        self.assertIn("await api.regenerateAgentTurn({", prepare)
+        self.assertIn("await api.selectAgentActiveBranch({", prepare)
+        self.assertIn("staleExpectedVersion", prepare)
+        self.assertIn("foundationF12TopicSnapshot(", prepare)
+        self.assertIn("foundationF12ReceiverSnapshot(", prepare)
+        self.assertIn("writeFoundationF12Handoff(handoff)", prepare)
+        self.assertIn("readFoundationF12Handoff(input.scenarioKey)", complete)
+        self.assertIn("alphaPostRestartHash", complete)
+        self.assertIn("betaPostRestartHash", complete)
+        self.assertIn("stationRestarted:", complete)
+        self.assertIn("clientRestarted:", complete)
+        self.assertNotIn("noCrossTopicReferences: true", self.source)
+
+        direct_probe = self.source.index("async foundationDirectProbe")
+        f12 = self.source.index("if (cell === 'AS-F12')", direct_probe)
+        next_cell = self.source.index("if (cell === 'AS-F05')", f12)
+        f12_dispatch = self.source[f12:next_cell]
+        self.assertIn("runFoundationF12Complete(stationRestart", f12_dispatch)
+        self.assertNotIn("createAgentConversation", f12_dispatch)
+
+    def test_two_topic_cleanup_deletes_both_topics_and_handoff(self) -> None:
+        cleanup_start = self.source.index(
+            "async function cleanupFoundationF12Scenario",
+        )
+        cleanup_end = self.source.index(
+            "async function runFoundationF12Prepare",
+            cleanup_start,
+        )
+        cleanup = self.source[cleanup_start:cleanup_end]
+
+        self.assertIn("for (const conversationId of", cleanup)
+        self.assertIn("await deleteFoundationConversation(conversationId)", cleanup)
+        self.assertIn("removeFoundationF12Handoff(input.scenarioKey)", cleanup)
+        self.assertIn("deletedConversationIds.length === conversationIds.length", cleanup)
+
     def test_revision_scenario_disables_capabilities_and_restores_them(self) -> None:
         helper_start = self.source.index(
             "async function runFoundationF07WithCapabilityIsolation",
