@@ -29,6 +29,12 @@ WINDOWS_PROVISIONER_PATH = (
     / "provisioners"
     / "native_desktop_windows.py"
 )
+WINDOWS_DRIVER_PATH = (
+    Path(__file__).parents[1]
+    / "drivers"
+    / "native"
+    / "windows.py"
+)
 
 
 class _BrokerTransport:
@@ -118,6 +124,12 @@ class WindowsProvisionerContractTest(unittest.TestCase):
             _bmp_geometry(base64.b64encode(content).decode("ascii")),
             (1696, 912),
         )
+
+    def test_win32_adapter_uses_topmost_process_window(self) -> None:
+        source = WINDOWS_DRIVER_PATH.read_text(encoding="utf-8")
+
+        self.assertNotIn("windows[-1]", source)
+        self.assertGreaterEqual(source.count("hwnd = windows[0]"), 2)
 
     def test_implements_remote_runtime_binding_surface(self) -> None:
         module = ast.parse(

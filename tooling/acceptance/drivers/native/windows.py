@@ -347,8 +347,8 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             raise DriverError(
                 f"Win32 Native actor process {process_id} has no visible window"
             )
-        # Use the last (topmost) window owned by the process
-        hwnd = windows[-1]
+        # EnumWindows returns top-level windows in top-to-bottom z-order.
+        hwnd = windows[0]
         if self._is_window_minimized(hwnd):
             _user32.ShowWindow(hwnd, _SW_RESTORE)
         current_thread = _kernel32.GetCurrentThreadId()
@@ -556,7 +556,7 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
         windows = self._find_windows_by_pid(process_id)
         if not windows:
             return None
-        hwnd = windows[-1]
+        hwnd = windows[0]
         # ClientToScreen gives the client area origin relative to the screen
         point = ctypes.wintypes.POINT(0, 0)
         _user32.ClientToScreen(hwnd, ctypes.byref(point))
