@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T210231215831Z-95b83306d2b3337c553c41fe22d50410` passed AS-F07 cancellation/revision paths and exposed a deterministic `BASE-APPROVAL-DENIED` evidence projection omission; the local manual-denial state-sequence correction awaits checkpoint deployment/rerun | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T214921386952Z-ccee9f99fc0168e78fe2fe4d588d6da4` reached `FIXTURE_READY` after reclaiming inactive remote Docker build cache, then failed first at Browser AS-F04 `denialExecutedZero`; redacted denial-fact instrumentation is checkpointed for exact-source classification | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5273,6 +5273,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   static tests, 63 Group One evaluator tests, and `git diff --check` pass.
   Provisioner cleanup completed `DONE / PROVEN / passed`; G-F remains
   `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source rerun.
+- The first exact-source attempt on
+  `5085e7657b143f7463ef33a96cd24f23cab55991` blocked before product
+  execution because the approved Station root filesystem had no free blocks.
+  A whole-disk audit attributed 86.9 GB to Docker, including 29.84 GB of
+  inactive, fully reclaimable build cache. Removing only that cache restored
+  30 GB free while preserving containers, volumes, repositories, and logs.
+  The unchanged-source rerun
+  `20260904T214921386952Z-ccee9f99fc0168e78fe2fe4d588d6da4`
+  reached `FIXTURE_READY`, then failed first at Browser AS-F04 with only
+  `denialExecutedZero=false`; cleanup passed. Because the manual-denial
+  projection change also affects policy-level denial evidence, checkpoint
+  `240aadb00acab41f82ab9052ddfc260ee1654e01` adds only a redacted
+  denial-fact checkpoint before the unchanged AS-F04 oracle. G-F remains
+  `PARTIAL / UNPROVEN` pending exact-source classification.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
