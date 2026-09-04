@@ -313,6 +313,117 @@ function toToolCallInfo(projection: ToolProjection): ToolCallInfo {
   };
 }
 
+export interface ToolProjectionMessage {
+  readonly turnId?: string;
+  readonly toolCalls?: readonly ToolCallInfo[];
+}
+
+function toolStatusRank(status: ToolCallStatus): number {
+  if (status === 'queued') return 0;
+  if (status === 'pending') return 1;
+  if (status === 'approval_required') return 2;
+  if (status === 'approved') return 3;
+  return 4;
+}
+
+function sameToolProjection(
+  left: ToolProjection,
+  right: ToolProjection,
+): boolean {
+  return left.toolCallId === right.toolCallId
+    && left.turnId === right.turnId
+    && left.toolName === right.toolName
+    && left.arguments === right.arguments
+    && left.serverName === right.serverName
+    && left.source === right.source
+    && left.status === right.status
+    && left.pending === right.pending
+    && left.result === right.result
+    && left.error === right.error
+    && left.progress === right.progress
+    && left.progressPct === right.progressPct
+    && left.approvalId === right.approvalId
+    && left.decisionId === right.decisionId
+    && left.decisionRevision === right.decisionRevision
+    && left.payloadHash === right.payloadHash
+    && left.approvalActor === right.approvalActor
+    && left.decidedAt === right.decidedAt
+    && left.decisionErrorCode === right.decisionErrorCode
+    && left.decisionOutcome === right.decisionOutcome
+    && left.delegationResults === right.delegationResults;
+}
+
+export function reconcileToolProjectionState(
+  state: ToolProjectionState,
+  messages: readonly ToolProjectionMessage[],
+): ToolProjectionState {
+  let next = state;
+
+  for (const message of messages) {
+    for (const toolCall of message.toolCalls ?? []) {
+      if (!toolCall.id) continue;
+
+      const current = next[toolCall.id];
+      const decisionRevision = toolCall.decisionRevision ?? 0;
+      const status = toolCall.status
+        ?? current?.status
+        ?? (toolCall.pending ? 'pending' : 'success');
+
+      if (
+        current
+        && (
+          decisionRevision < current.decisionRevision
+          || (
+            decisionRevision === current.decisionRevision
+            && toolStatusRank(status) < toolStatusRank(current.status)
+          )
+        )
+      ) {
+        continue;
+      }
+
+      const projection: ToolProjection = {
+        ...current,
+        toolCallId: toolCall.id,
+        turnId: message.turnId || current?.turnId || '',
+        toolName: toolCall.name || current?.toolName || 'tool',
+        arguments: toolCall.args ?? current?.arguments ?? '',
+        serverName: toolCall.serverName ?? current?.serverName,
+        source: toolCall.source ?? current?.source,
+        status,
+        pending: toolCall.pending ?? (
+          status === 'queued'
+          || status === 'pending'
+          || status === 'approval_required'
+          || status === 'approved'
+        ),
+        result: toolCall.result ?? current?.result,
+        error: toolCall.error ?? current?.error,
+        progress: toolCall.progress ?? current?.progress,
+        progressPct: toolCall.progressPct ?? current?.progressPct,
+        approvalId: toolCall.approvalId ?? current?.approvalId,
+        decisionId: toolCall.decisionId ?? current?.decisionId,
+        decisionRevision,
+        payloadHash: toolCall.payloadHash ?? current?.payloadHash,
+        approvalActor: toolCall.approvalActor ?? current?.approvalActor,
+        decidedAt: toolCall.approvedAt ?? current?.decidedAt,
+        decisionErrorCode: current?.decisionErrorCode,
+        decisionOutcome: current?.decisionOutcome,
+        delegationResults:
+          toolCall.delegationResults ?? current?.delegationResults,
+      };
+
+      if (current && sameToolProjection(current, projection)) continue;
+      next = {
+        ...next,
+        [toolCall.id]: projection,
+      };
+    }
+  }
+
+  return next;
+}
+
 class ToolRuntime implements RuntimeDescriptor {
   readonly id = 'agent-tool';
   readonly scope = 'session' as const;
@@ -361,6 +472,13 @@ class ToolRuntime implements RuntimeDescriptor {
 
   consume(event: StreamEvent): boolean {
     const next = reduceToolProjection(this.state, event);
+    if (next === this.state) return false;
+    this.replaceState(next);
+    return true;
+  }
+
+  reconcileMessages(messages: readonly ToolProjectionMessage[]): boolean {
+    const next = reconcileToolProjectionState(this.state, messages);
     if (next === this.state) return false;
     this.replaceState(next);
     return true;
