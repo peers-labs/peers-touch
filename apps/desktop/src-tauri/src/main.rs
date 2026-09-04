@@ -592,6 +592,7 @@ fn main() {
             agent_growth::agent_memory_list,
             agent_growth::agent_skill_list,
             agent_growth::agent_submit_feedback,
+            agent_growth::agent_list_turn_feedback,
             agent_growth::agent_quick_completion,
             agent_scheduler::agent_scheduler_start,
             agent_scheduler::agent_scheduler_stop,

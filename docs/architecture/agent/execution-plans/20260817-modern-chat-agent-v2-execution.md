@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, and Browser AS-F01 through AS-F05; exact-source run `20260903T210930116450Z-5b4a2f2b42c6fee0a8b19434811d004d` proves Browser process-restart restore fails local validation because Desktop decodes the legacy JWT `sub` claim instead of Station's canonical `subject_ptid`; the canonical decoder fix is implemented and awaits exact-source proof | W8a |
+| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, Browser AS-F01 through AS-F05, and Browser cold-process restore; exact-source run `20260904T012735158621Z-6b35580424e236ea70c13e0a9b742cc6` crossed the JWT restore boundary and exposed a missing Native `agent_list_turn_feedback` Tauri registration; the registration fix is implemented and awaits exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4733,6 +4733,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   static/restart/scenario tests, Desktop TypeScript checks, formatting, and
   `git diff --check` pass. G-F remains `PARTIAL / UNPROVEN` until this source
   is checkpointed, deployed exact-source, and the full Gate reruns.
+- Exact-source run
+  `20260904T012735158621Z-6b35580424e236ea70c13e0a9b742cc6`
+  (aggregate `20260904T012735034400Z-c0953a9445ae4e5df78e017062976f31`)
+  on `c8fc2f83266f93d1ac9d9beebd76eb985800086b` crossed Browser
+  cold-process restore and advanced into the Native AS-F06 completion path.
+  It then failed because the production Tauri wrapper existed for
+  `agent_list_turn_feedback` but `main.rs` had not registered the command.
+  The local correction registers the existing Station-backed Native command
+  and adds a static parity guard. The failed tuple also reported secondary
+  cleanup authentication and turn-cancellation failures, while the outer
+  Provisioner still completed `DONE / PROVEN / passed` and released all six
+  client ports and temporary storage. G-F remains `PARTIAL / UNPROVEN`
+  pending focused verification, checkpoint deployment, and exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
