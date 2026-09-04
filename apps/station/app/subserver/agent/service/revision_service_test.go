@@ -115,6 +115,7 @@ func seedRevisionConversation(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	now := time.Now()
 	content := "question"
+	turnID := "turn-source"
 	if err := db.Create(&persistence.Conversation{
 		ID:                    "conversation-revision",
 		AgentID:               "agent-1",
@@ -128,9 +129,21 @@ func seedRevisionConversation(t *testing.T, db *gorm.DB) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             turnID,
+		ConversationID: "conversation-revision",
+		AgentID:        "agent-1",
+		UserInput:      &content,
+		Status:         string(domain.TurnStatusCompleted),
+		StartedAt:      now,
+		EndedAt:        &now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&persistence.AgentMessage{
 		ID:             "user-source",
 		ConversationID: "conversation-revision",
+		TurnID:         &turnID,
 		Role:           string(domain.MessageRoleUser),
 		Status:         "completed",
 		Content:        &content,
@@ -257,6 +270,86 @@ func TestSelectAndTombstoneAreVersionFenced(t *testing.T) {
 		tombstoned.Conversation.Version != 3 ||
 		tombstoned.Conversation.ActiveBranchMessageID != "" {
 		t.Fatalf("unexpected tombstone result: %+v", tombstoned)
+	}
+}
+
+func TestSelectActiveBranchEventsUseOwningTurnCursor(t *testing.T) {
+	db := openConversationAuthorityDB(t, "revision_select_turn_cursor")
+	migrateRevisionModels(t, db)
+	seedRevisionConversation(t, db)
+	now := time.Now()
+	content := "second question"
+	turnID := "turn-second"
+	if err := db.Create(&persistence.Conversation{
+		ID:                    "conversation-second",
+		AgentID:               "agent-1",
+		Ptid:                  "ptid:person:owner",
+		Title:                 "Second revision",
+		Status:                "active",
+		ActiveBranchMessageID: "user-second",
+		Version:               1,
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             turnID,
+		ConversationID: "conversation-second",
+		AgentID:        "agent-1",
+		UserInput:      &content,
+		Status:         string(domain.TurnStatusCompleted),
+		StartedAt:      now,
+		EndedAt:        &now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&persistence.AgentMessage{
+		ID:             "user-second",
+		ConversationID: "conversation-second",
+		TurnID:         &turnID,
+		Role:           string(domain.MessageRoleUser),
+		Status:         "completed",
+		Content:        &content,
+		Seq:            1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewRevisionService(NewConversationService(), nil)
+	for _, request := range []RevisionRequest{
+		{
+			Ptid:                        "ptid:person:owner",
+			ConversationID:              "conversation-revision",
+			SourceMessageID:             "user-source",
+			IdempotencyKey:              "select-first-conversation",
+			ExpectedConversationVersion: 1,
+		},
+		{
+			Ptid:                        "ptid:person:owner",
+			ConversationID:              "conversation-second",
+			SourceMessageID:             "user-second",
+			IdempotencyKey:              "select-second-conversation",
+			ExpectedConversationVersion: 1,
+		},
+	} {
+		if _, err := service.SelectActiveBranch(context.Background(), request); err != nil {
+			t.Fatalf("select branch for %s: %v", request.ConversationID, err)
+		}
+	}
+
+	var events []persistence.TurnEvent
+	if err := db.Order("conversation_id ASC").Find(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("event count=%d, want 2", len(events))
+	}
+	if events[0].TurnID == "" || events[1].TurnID == "" ||
+		events[0].TurnID == events[1].TurnID {
+		t.Fatalf("revision events are not scoped to owning turns: %+v", events)
 	}
 }
 
@@ -638,9 +731,11 @@ func TestSelectRejectsNonHeadAndTombstoneRejectsDependencies(t *testing.T) {
 	now := time.Now()
 	content := "answer"
 	parent := "user-source"
+	turnID := "turn-source"
 	if err := db.Create(&persistence.AgentMessage{
 		ID:              "assistant-head",
 		ConversationID:  "conversation-revision",
+		TurnID:          &turnID,
 		Role:            string(domain.MessageRoleAssistant),
 		Status:          "completed",
 		Content:         &content,
