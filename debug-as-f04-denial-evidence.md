@@ -34,9 +34,12 @@
   distinguish hypotheses A-D.
 
 ## Instrumentation
-- Pending: record the deny case policy, projected states, execution counters,
-  and lineage equality immediately before the unchanged AS-F04 assertion.
+- Checkpoint `240aadb00acab41f82ab9052ddfc260ee1654e01` records the deny
+  case policy, projected states, execution counters, target status, binding
+  revision equality, and replay equality immediately before the unchanged
+  AS-F04 assertion.
+- Desktop strict checks and 67 native static tests pass.
 
 ## Verification Conclusion
-Runtime evidence is insufficient to change behavior. Instrument and rerun the
-same exact-source Gate.
+Runtime evidence is insufficient to change behavior. Deploy the diagnostic
+checkpoint and rerun the same exact-source Gate.
