@@ -902,7 +902,7 @@ def _extract_machine_id(runtime_manifest: dict[str, Any]) -> str:
     return _socket.gethostname()
 
 
-def _warm_up_client(client: "FoundationRuntimeClient") -> None:
+def _warm_up_client(client: "FoundationRuntimeClient") -> bool:
     """Wait for Rust backend readiness before attempting login.
 
     After harness_ready confirms the web layer is mounted, the Rust/Tauri
@@ -926,14 +926,13 @@ def _warm_up_client(client: "FoundationRuntimeClient") -> None:
                 timeout=probe_timeout,
             )
             if isinstance(result, Mapping) and result.get("ready"):
-                return
+                return True
         except Exception:
             pass
         if attempt < max_attempts:
             _time.sleep(retry_interval)
 
-    # Final warm-up failure is not terminal here. The caller's next login or
-    # existing-session probe reports the operation-specific failure.
+    return False
 
 
 def _restore_failure_diagnostic(
@@ -1053,7 +1052,13 @@ def _authenticate_clients(
 
     for client in selected_clients:
         # Step 0: Warm-up — wait for Rust backend to finish initializing
-        _warm_up_client(client)
+        if not _warm_up_client(client):
+            client.restart()
+            if not _warm_up_client(client):
+                raise ScenarioRunnerError(
+                    f"{client.spec.runtime} client session remained unavailable "
+                    "after bounded restart"
+                )
 
         # Step 1: Initial setup drives the production Station selection commands
         # before login. Recovery paths preserve and prove the original binding.
