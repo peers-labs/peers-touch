@@ -7204,9 +7204,22 @@ function evaluateF01(ctx: DirectCellAssertionContext): Record<string, boolean | 
   const isAuthenticated = ctx.sessionState.authenticated;
   const hasCapabilitySession = Boolean(ctx.capabilitySessions.selectedStationSession);
   const profileExists = Boolean(ctx.profile.profile_id);
+  const toolIsolation = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationF01ToolIsolation',
+  );
+  const isolation = evidenceRecord(
+    toolIsolation.toolIsolation,
+    'foundationF01ToolIsolationState',
+  );
 
   return {
-    configured: hasProvider && hasModel && profileExists,
+    configured:
+      hasProvider
+      && hasModel
+      && profileExists
+      && isFoundationCapabilityIsolationRestored(isolation)
+      && Number(isolation.readyCapabilityCount) === 0,
     restartPersisted: isAuthenticated && hasCapabilitySession,
     missingCredentialBlocked: !isAuthenticated ? true : hasCapabilitySession,
     unavailableModelBlocked: hasModel && profileExists,
@@ -8853,67 +8866,60 @@ export function installAcceptanceHarness(): void {
       }
 
       if (cell === 'AS-F01') {
-        const sourcePtid = authenticatedFoundationActorPtid();
-        const conversation = await api.createAgentConversation({
-          agent_id: agentId,
-          title: `Foundation ${sampleId}`,
-          provider_id: agent.provider,
-          model_name: agent.model,
-        });
-        preparedConversationId = conversation.conversation_id;
-        await useChatStore.getState().selectSession(conversation.conversation_id);
-        const turnStartedAt = performance.now();
-        preparedTurnId = await new Promise<string>((resolve, reject) => {
-          let observedTurnId = '';
-          let timeout = 0;
-          const controller = streamAgentTurn({
-            conversation_id: conversation.conversation_id,
-            agent_id: agentId,
-            user_input: 'Reply with ready.',
-            client_idempotency_key: crypto.randomUUID(),
-            provider: agent.provider || undefined,
-            model: agent.model || undefined,
-            client_capability_session_id:
-              capabilitySessions.selectedStationSession?.session_id,
-          }, (event) => {
-            const data = event.data as Record<string, unknown>;
-            const candidate = data.turn_id ?? data.turnId;
-            if (typeof candidate === 'string' && candidate) {
-              observedTurnId = candidate;
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        await withFoundationCapabilitiesDisabled(
+          agent,
+          capabilitySessionId,
+          async (toolIsolation) => {
+            const conversation = await api.createAgentConversation({
+              agent_id: agentId,
+              title: `Foundation ${sampleId}`,
+              provider_id: agent.provider,
+              model_name: agent.model,
+            });
+            preparedConversationId = conversation.conversation_id;
+            await useChatStore.getState().selectSession(
+              conversation.conversation_id,
+            );
+            const turnStartedAt = performance.now();
+            const observed = startObservedFoundationTurn({
+              conversationId: conversation.conversation_id,
+              agentId,
+              content: 'Reply with ready.',
+              idempotencyKey: crypto.randomUUID(),
+              provider: agent.provider || undefined,
+              model: agent.model || undefined,
+              effort: 'low',
+              thinkingMode: 'disabled',
+              clientCapabilitySessionId: capabilitySessionId,
+            });
+            const result = await observed.result;
+            if (!result.ok) {
+              throw new Error(
+                result.error || 'agent.acceptance.foundationTurnFailed',
+              );
             }
+            const turnId = observedTurnId(result.events);
+            const terminal = [...result.events].reverse().find((event) =>
+              classifyAgentTurnTerminalEvent(event) === 'completed');
+            if (!turnId || !terminal) {
+              throw new Error('agent.acceptance.foundationTurnIdMissing');
+            }
+            preparedTurnId = turnId;
             preparedRuntimeEvent.current = {
-              eventType: event.event,
-              sequence: Number(data.seq ?? 0),
-              observedAt: new Date().toISOString(),
+              eventType: terminal.event,
+              sequence: Number(terminal.data.seq ?? 0),
+              observedAt: terminal.observedAt,
             };
-          }, () => {
-            window.clearTimeout(timeout);
             turnDurationMs = performance.now() - turnStartedAt;
-            if (observedTurnId) {
-              resolve(observedTurnId);
-              return;
-            }
-            void foundationConversationReadback(conversation.conversation_id)
-              .then((readback) => {
-                const turnId = [...readback.messages]
-                  .reverse()
-                  .find((message) => message.turnId)?.turnId;
-                if (!turnId) {
-                  reject(new Error('agent.acceptance.foundationTurnIdMissing'));
-                  return;
-                }
-                resolve(turnId);
-              })
-              .catch(reject);
-          }, (error) => {
-            window.clearTimeout(timeout);
-            reject(error);
-          }, sourcePtid);
-          timeout = window.setTimeout(() => {
-            controller.abort();
-            reject(new Error('agent.acceptance.foundationTurnTimeout'));
-          }, 120_000);
-        });
+            scenarioFacts = { toolIsolation };
+          },
+          true,
+        );
       }
 
       if (cell === 'AS-F02') {
