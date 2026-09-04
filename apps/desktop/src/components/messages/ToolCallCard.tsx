@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tag } from '@lobehub/ui';
 import { theme } from 'antd';
@@ -340,12 +340,26 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
 
 // --- Collapsed tool calls block ---
 
+function hasActionableToolApproval(
+  toolCalls: readonly ToolCallInfo[],
+): boolean {
+  return toolCalls.some(
+    (toolCall) =>
+      toolCall.status === 'approval_required' && Boolean(toolCall.approvalId),
+  );
+}
+
 export function ToolCallsBlock({ toolCalls, messageId }: { toolCalls: ToolCallInfo[]; messageId?: string }) {
-  const [expanded, setExpanded] = useState(false);
+  const actionableApproval = hasActionableToolApproval(toolCalls);
+  const [expanded, setExpanded] = useState(actionableApproval);
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const pendingCount = toolCalls.filter((tc) => tc.pending).length;
   const doneCount = toolCalls.length - pendingCount;
+
+  useEffect(() => {
+    if (actionableApproval) setExpanded(true);
+  }, [actionableApproval]);
 
   const summary = pendingCount > 0
     ? t('chat.message.toolCall.using', { count: toolCalls.length })

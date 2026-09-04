@@ -13,11 +13,11 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | Selecting the new conversation after the Turn starts drops the earlier ToolCall event from the Chat store. | High | Low | Pending: compare ToolCall membership before selection, after selection, and after approval observation. |
-| B | Periodic authoritative message refresh removes a pending ToolCall-only local projection before Station persists an equivalent message. | High | Low | Pending: record refresh entry/exit and pending ToolCall membership. |
-| C | The tool runtime receives the approval proposal while the Chat message projection does not. | Medium | Low | Pending: compare tool-runtime status with Chat-store ToolCall membership. |
-| D | The matching ToolCall exists in the DOM but is hidden or collapsed. | Low | Low | Pending: record matching DOM count and visibility. |
-| E | The approval event and rendered ToolCall use different IDs. | Low | Medium | Pending: compare only equality booleans between expected IDs and projected entries. |
+| A | Selecting the new conversation after the Turn starts drops the earlier ToolCall event from the Chat store. | High | Low | Confirmed as the initial condition, but not the terminal failure: approval observation found Station membership while the Chat store was still missing the ToolCall; authoritative sync later repaired Chat-store membership. |
+| B | Periodic authoritative message refresh removes a pending ToolCall-only local projection before Station persists an equivalent message. | High | Low | Rejected: the timeout snapshot retained the expected ToolCall in the Chat store after authoritative sync. |
+| C | The tool runtime receives the approval proposal while the Chat message projection does not. | Medium | Low | Rejected as stated. The inverse occurred: Chat-store membership became true while `toolRuntime` remained missing. This confirms the missing Station-snapshot reconciliation path in the `agent-tool` runtime. |
+| D | The matching ToolCall exists in the DOM but is hidden or collapsed. | Low | Low | Confirmed as a receiver-surface contributor: the ToolCall group remained collapsed, so no `[data-pt-agent-tool-call]` row was mounted even after Chat-store membership became true. |
+| E | The approval event and rendered ToolCall use different IDs. | Low | Medium | Rejected: the expected ToolCall matched both Station and Chat-store records at timeout. |
 
 ## Log Evidence
 - Exact-source run `20260904T171932940301Z-1ffb7349f89aa4d4977ac5235a458a6d`
@@ -27,6 +27,23 @@
   receiver ToolCall element.
 - Provisioning reached `FIXTURE_READY`; source identity matched; provisioner
   cleanup completed `DONE / PROVEN / passed`.
+- Exact-source diagnostic run
+  `20260904T181345411289Z-d1a3ea858238237e0e5fa14bbfa31d58`
+  on `490d758a6dbdd447880fc78e3e70efb3500ab824` reproduced the same
+  Browser receiver timeout.
+- At approval observation, log line 228 recorded:
+  `currentSessionMatches=true`, `expectedToolCallInStation=true`,
+  `expectedToolCallInStore=false`, `runtimeProjectionPresent=false`, and
+  `expectedToolCallInDom=false`.
+- At receiver timeout, log line 234 recorded:
+  `expectedToolCallInStation=true`, `expectedToolCallInStore=true`,
+  `runtimeProjectionPresent=false`, `renderedToolCallCount=0`, and
+  `expectedToolCallInDom=false`.
+- The run therefore proves that authoritative message reconciliation repairs
+  Chat-store membership but does not reconcile the `agent-tool` runtime, while
+  the collapsed ToolCall block keeps the actionable receiver row unmounted.
+- Provisioner cleanup completed `DONE / PROVEN / passed`; all Native/Browser
+  gateway, renderer, and WebDriver ports were released.
 
 ## Instrumentation
 - Conversation selection records current-session equality plus Chat-store
@@ -38,4 +55,30 @@
   counts before and after cache replacement.
 
 ## Verification Conclusion
-Pending pre-fix runtime evidence.
+Pre-fix evidence confirms two owner-layer gaps:
+
+1. `toolRuntime` has an immediate event-consumption path but no reconciliation
+   path from authoritative Station message snapshots.
+2. A ToolCall requiring approval remains inside a collapsed block, so the
+   required receiver action is not visible when the persisted projection
+   arrives.
+
+The fix must reconcile persisted ToolCalls into `toolRuntime` without
+regressing newer event revisions and automatically expose an actionable
+approval. Post-fix runtime evidence remains pending.
+
+## Local Fix Verification
+- `toolRuntime.reconcileMessages` now hydrates missing Station-authored
+  ToolCalls and rejects snapshots older than the current decision revision or
+  lifecycle status.
+- Every cached, incremental, and authoritative message load reconciles the
+  `agent-tool` runtime before publishing Chat-store messages.
+- `ToolCallsBlock` automatically expands when a persisted ToolCall requires an
+  actionable approval.
+- Focused Desktop tests: 21 passed.
+- Full Desktop tests: 560 passed, 1 unrelated environment-dependent test
+  skipped.
+- Desktop typecheck/build: passed.
+- Agent native static tests: 66 passed.
+- `git diff --check`: passed.
+- Exact-source post-fix runtime evidence: pending.

@@ -344,6 +344,12 @@ function foldToolMessages(messages: ChatMessage[]): ChatMessage[] {
   return folded;
 }
 
+function reconcileToolMessages(messages: ChatMessage[]): ChatMessage[] {
+  const folded = foldToolMessages(messages);
+  toolRuntime.reconcileMessages(folded);
+  return folded;
+}
+
 function isOptimisticMessageId(id: string): boolean {
   return id.startsWith('temp-');
 }
@@ -916,13 +922,17 @@ async function loadSessionMessages(
   try {
     const cached = await agentChatCache.getMessages(key);
     if (get().currentSessionKey !== key) return;
-    const cachedMessages = foldToolMessages(cached.map(cachedMessageToChatMessage));
+    const cachedMessages = reconcileToolMessages(
+      cached.map(cachedMessageToChatMessage),
+    );
     set({ messages: mergeServerMessages(get().messages, cachedMessages) });
     void agentChatCache
       .syncConversation(key)
       .then((synced) => {
         if (get().currentSessionKey !== key) return;
-        const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
+        const serverMessages = reconcileToolMessages(
+          synced.map(cachedMessageToChatMessage),
+        );
         set({ messages: mergeServerMessages(get().messages, serverMessages) });
       })
       .catch((syncError) => {
@@ -1122,7 +1132,9 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       }
       const synced = await agentChatCache.refreshConversation(currentSessionKey);
       if (get().currentSessionKey !== currentSessionKey) return;
-      const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
+      const serverMessages = reconcileToolMessages(
+        synced.map(cachedMessageToChatMessage),
+      );
 
       const merged = mergeServerMessages(get().messages, serverMessages);
       set({ messages: merged });
@@ -1229,7 +1241,9 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
     const operation = get().operations[conversationId];
     if (operation?.turnId !== turnId) return;
-    const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
+    const serverMessages = reconcileToolMessages(
+      synced.map(cachedMessageToChatMessage),
+    );
     const reconcileMessages = (messages: ChatMessage[]) => {
       const merged = mergeServerMessages(messages, serverMessages);
       if (!terminal) return merged;

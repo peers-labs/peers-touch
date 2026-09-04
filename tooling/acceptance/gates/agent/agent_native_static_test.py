@@ -58,6 +58,9 @@ DESKTOP_APP_RUNTIME_HOOK = (
 DESKTOP_AGENT_TOPIC_RUNTIME = (
     ROOT / "apps" / "desktop" / "src" / "runtimes" / "agentTopicRuntime.ts"
 )
+DESKTOP_TOOL_RUNTIME = (
+    ROOT / "apps" / "desktop" / "src" / "runtimes" / "toolRuntime.ts"
+)
 DESKTOP_CHAT_STORE = ROOT / "apps" / "desktop" / "src" / "store" / "chat.ts"
 SHARED_AGENT_CHAT_CACHE = (
     ROOT / "packages" / "client-chat-core" / "src" / "agentChatCache.ts"
@@ -507,6 +510,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         cache_source = SHARED_AGENT_CHAT_CACHE.read_text(encoding="utf-8")
         chat_source = DESKTOP_CHAT_STORE.read_text(encoding="utf-8")
         runtime_source = DESKTOP_AGENT_TOPIC_RUNTIME.read_text(encoding="utf-8")
+        tool_runtime_source = DESKTOP_TOOL_RUNTIME.read_text(encoding="utf-8")
         sync_start = chat_source.index("syncMessages: async () =>")
         sync_end = chat_source.index("applyRecoveredTurnEvent:", sync_start)
         sync_messages = chat_source[sync_start:sync_end]
@@ -520,6 +524,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertNotIn(
             "agentChatCache.syncConversation(currentSessionKey)",
             sync_messages,
+        )
+        self.assertIn(
+            "toolRuntime.reconcileMessages(folded)",
+            chat_source,
+        )
+        self.assertIn(
+            "reconcileToolProjectionState(this.state, messages)",
+            tool_runtime_source,
         )
         self.assertEqual(
             runtime_source.count(
@@ -1343,6 +1355,8 @@ class AgentSelectorsBoundInProductSource(unittest.TestCase):
         self.assertIn("submitAgentToolDecision", source)
         self.assertIn("approval_required", source)
         self.assertIn("chat.message.toolCall.approve", source)
+        self.assertIn("useState(actionableApproval)", source)
+        self.assertIn("if (actionableApproval) setExpanded(true)", source)
 
 if __name__ == "__main__":
     unittest.main()

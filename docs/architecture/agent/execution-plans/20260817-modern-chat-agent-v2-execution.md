@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T155208865276Z-9c5eafc516837c1ec1d29b89c2fc7f05` passed both Browser AS-F03 locales, then confirmed an AS-F12 Desktop cache/Station active-branch projection divergence; authoritative cache replacement is locally verified and awaits exact-source rerun | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T181345411289Z-d1a3ea858238237e0e5fa14bbfa31d58` crossed the Foundation core scenarios and exposed the Browser approval receiver missing `agent-tool` snapshot reconciliation plus actionable-row expansion; the owner-layer correction is locally verified and awaits checkpoint deployment/rerun | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5193,6 +5193,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Foundation discovery passes 275 tests and retains two known unrelated
   `receiver-dom` fixture errors. G-F remains `PARTIAL / UNPROVEN` pending
   checkpoint deployment and exact-source rerun.
+- Exact-source diagnostic run
+  `20260904T181345411289Z-d1a3ea858238237e0e5fa14bbfa31d58`
+  (aggregate `20260904T181345298582Z-0a7fe61186caed68ce5029f8d54d164e`)
+  on `490d758a6dbdd447880fc78e3e70efb3500ab824` crossed AS-F06 and
+  the remaining Foundation core scenarios, then reproduced Browser
+  `BASE-APPROVAL-DENIED`. At approval observation Station contained the exact
+  ToolCall while both the Chat store and `toolRuntime` were missing it. By the
+  receiver timeout, authoritative message reconciliation had restored the
+  exact ToolCall to the Chat store, but `toolRuntime` remained missing and the
+  collapsed ToolCall group mounted no actionable row. This rejects
+  authoritative-cache deletion, hidden matching DOM, and ID divergence. The
+  local owner-layer correction reconciles persisted ToolCalls into
+  `toolRuntime` without regressing newer event revisions and automatically
+  expands a ToolCall group when it contains an actionable approval. Focused
+  Desktop runtime/UI tests, all 560 Desktop tests with one unrelated skip,
+  Desktop typecheck/build, 66 native static tests, and `git diff --check`
+  pass. Provisioner cleanup completed `DONE / PROVEN / passed`; G-F remains
+  `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
