@@ -13,16 +13,25 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | `selectSession` or `syncMessages` leaves the target branch message absent from the Chat store. | High | Low | Pending: compare selected-session state and message membership after both calls. |
-| B | Station readback does not project the branch selected by the preceding revision command. | Medium | Low | Pending: compare expected branch membership with the synchronized store. |
-| C | The Chat store contains the selected branch but React has not rendered it before the timeout. | Medium | Low | Pending: compare store membership with DOM membership and visibility. |
-| D | Navigation leaves the Agent page hidden while the correct conversation is selected. | Medium | Low | Pending: record matching DOM nodes and their visibility without content. |
-| E | `syncMessages` encounters a transport error that its projection-preserving contract intentionally absorbs. | Medium | Low | Pending: record the post-sync store state and correlate with runtime logs. |
+| A | `selectSession` or `syncMessages` leaves the target branch message absent from the Chat store. | Confirmed | Low | The selected session remained current and registered, but the four-message store projection omitted the selected branch that Station returned. |
+| B | Station readback does not project the branch selected by the preceding revision command. | Rejected | Low | Independent Station readback returned four messages and included the expected selected branch. |
+| C | The Chat store contains the selected branch but React has not rendered it before the timeout. | Rejected | Low | The selected branch was absent from both the store and DOM. |
+| D | Navigation leaves the Agent page hidden while the correct conversation is selected. | Rejected | Low | The target conversation remained selected; the missing DOM row followed the missing store row. |
+| E | `syncMessages` encounters a transport error that its projection-preserving contract intentionally absorbs. | Rejected | Low | Station readback completed and the cache returned four stale rows; no transport failure caused the divergence. |
 
 ## Log Evidence
 - Exact-source Gate run `20260904T150505739160Z-7d9babb401f1240950f77893ac962634` on `686dc32f7a953071ae460b6fcecacc7583883dd4` passed the prior AS-F03 boundary and Browser AS-F12 English.
 - Browser AS-F12 Simplified Chinese then timed out waiting for one conversation projection.
 - The Gate completed provisioner and client cleanup successfully, but the existing timeout message does not identify which store or DOM predicate stayed false.
+- Exact-source run `20260904T155208865276Z-9c5eafc516837c1ec1d29b89c2fc7f05`
+  on `16a54457e028864d778c8fcd3058ad910f740818` reproduced the failure
+  after both Browser AS-F03 locales passed. The target conversation remained
+  selected and registered. Station and the Desktop store each reported four
+  messages, but only Station contained the selected branch message.
+- The shared cache had advanced its cursor through the regenerated sibling.
+  Selecting the lower-sequence original branch changed Station's active
+  projection, but the next incremental `after_seq` read could neither fetch
+  the older selected head nor remove the inactive sibling.
 
 ## Instrumentation
 - `A`: selected-session equality, session registration, and synchronized store message count.
@@ -32,4 +41,11 @@
 - `E`: readback error code when the post-timeout Station diagnostic cannot complete.
 
 ## Verification Conclusion
-Pending post-instrumentation exact-source evidence.
+Root cause confirmed in the shared Agent message cache. Incremental append-only
+synchronization is valid for new messages, but not for mutable active-branch
+projections. The local correction adds a paginated authoritative refresh that
+replaces projection membership, resets the cursor to the selected projection,
+and serializes per-conversation writes. Desktop `syncMessages` and periodic
+`agent-topic` reconciliation now use that path. Package, Desktop, and focused
+Foundation checks pass; exact-source runtime verification is pending. Keep this
+debug session open until the rerun proves AS-F12.

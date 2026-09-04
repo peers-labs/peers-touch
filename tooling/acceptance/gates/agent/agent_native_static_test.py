@@ -55,6 +55,13 @@ DESKTOP_APP_RUNTIME = (
 DESKTOP_APP_RUNTIME_HOOK = (
     ROOT / "apps" / "desktop" / "src" / "hooks" / "useAppRuntime.ts"
 )
+DESKTOP_AGENT_TOPIC_RUNTIME = (
+    ROOT / "apps" / "desktop" / "src" / "runtimes" / "agentTopicRuntime.ts"
+)
+DESKTOP_CHAT_STORE = ROOT / "apps" / "desktop" / "src" / "store" / "chat.ts"
+SHARED_AGENT_CHAT_CACHE = (
+    ROOT / "packages" / "client-chat-core" / "src" / "agentChatCache.ts"
+)
 DESKTOP_CONTRACTS = ROOT / "apps" / "desktop" / "src-tauri" / "src" / "contracts.rs"
 DESKTOP_AGENT_TURN = (
     ROOT
@@ -493,6 +500,33 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("await deleteFoundationConversation(conversationId)", cleanup)
         self.assertIn("removeFoundationF12Handoff(input.scenarioKey)", cleanup)
         self.assertIn("deletedConversationIds.length === conversationIds.length", cleanup)
+
+    def test_agent_topic_reconciliation_refreshes_authoritative_branch_projection(
+        self,
+    ) -> None:
+        cache_source = SHARED_AGENT_CHAT_CACHE.read_text(encoding="utf-8")
+        chat_source = DESKTOP_CHAT_STORE.read_text(encoding="utf-8")
+        runtime_source = DESKTOP_AGENT_TOPIC_RUNTIME.read_text(encoding="utf-8")
+        sync_start = chat_source.index("syncMessages: async () =>")
+        sync_end = chat_source.index("applyRecoveredTurnEvent:", sync_start)
+        sync_messages = chat_source[sync_start:sync_end]
+
+        self.assertIn("refreshConversation(conversationId", cache_source)
+        self.assertIn("replaceMessages(conversationId, messages)", cache_source)
+        self.assertIn(
+            "agentChatCache.refreshConversation(currentSessionKey)",
+            sync_messages,
+        )
+        self.assertNotIn(
+            "agentChatCache.syncConversation(currentSessionKey)",
+            sync_messages,
+        )
+        self.assertEqual(
+            runtime_source.count(
+                "await useChatStore.getState().syncMessages();",
+            ),
+            2,
+        )
 
     def test_revision_scenario_disables_capabilities_and_restores_them(self) -> None:
         revision_start = self.source.index(
