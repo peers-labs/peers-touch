@@ -1894,6 +1894,11 @@ class NativeProductClosureGate(AcceptanceGate):
             """
             const selector = arguments[0];
             const state = window.__PT_DIRECT_OPEN_DEBUG__ = { events: [] };
+            window.addEventListener('pt:direct-open-debug', (event) => {
+              if (event instanceof CustomEvent && event.detail) {
+                state.events.push(event.detail);
+              }
+            });
             document.addEventListener('click', (event) => {
               const target = event.target instanceof Element
                 ? event.target.closest(selector)
