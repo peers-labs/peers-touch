@@ -4521,7 +4521,7 @@ async function cleanupFoundationF12Scenario(input: {
   };
 }
 
-async function selectFoundationF12Branch(input: {
+async function selectFoundationBranchWithDiagnostics(input: {
   label: string;
   conversationId: string;
   messageId: string;
@@ -4535,7 +4535,7 @@ async function selectFoundationF12Branch(input: {
         client_idempotency_key: crypto.randomUUID(),
         expected_conversation_version: input.expectedVersion,
       }),
-      `foundationF12${input.label}Selection`,
+      `foundation${input.label}Selection`,
     );
   } catch (error) {
     const actualVersion = await api.getAgentConversation(
@@ -4545,7 +4545,7 @@ async function selectFoundationF12Branch(input: {
       () => 0,
     );
     throw new Error([
-      'agent.acceptance.foundationTopicBranchSelectionFailed',
+      'agent.acceptance.foundationBranchSelectionFailed',
       input.label,
       observedErrorCode(error),
       `expected=${input.expectedVersion}`,
@@ -4673,7 +4673,7 @@ async function runFoundationF12Prepare(input: {
           alpha.conversation_id,
         );
         const staleExpectedVersion = alphaAfterRegenerate.version;
-        const alphaOriginalSelection = await selectFoundationF12Branch({
+        const alphaOriginalSelection = await selectFoundationBranchWithDiagnostics({
           label: 'AlphaOriginal',
           conversationId: alpha.conversation_id,
           messageId: alphaAssistant.messageId,
@@ -4683,7 +4683,7 @@ async function runFoundationF12Prepare(input: {
           alphaOriginalSelection.conversation,
           'foundationF12AlphaOriginalConversation',
         );
-        await selectFoundationF12Branch({
+        await selectFoundationBranchWithDiagnostics({
           label: 'AlphaSibling',
           conversationId: alpha.conversation_id,
           messageId: String(alphaSibling.messageId),
@@ -4716,7 +4716,7 @@ async function runFoundationF12Prepare(input: {
         const betaAfterRegenerate = await api.getAgentConversation(
           beta.conversation_id,
         );
-        await selectFoundationF12Branch({
+        await selectFoundationBranchWithDiagnostics({
           label: 'BetaOriginal',
           conversationId: beta.conversation_id,
           messageId: betaAssistant.messageId,
@@ -5463,15 +5463,12 @@ async function runFoundationF07Scenario(input: {
     staleErrorCode: staleBranchError,
   });
 
-  const originalBranch = evidenceRecord(
-    await api.selectAgentActiveBranch({
-      conversation_id: conversation.conversation_id,
-      active_branch_message_id: sourceAssistant.messageId,
-      client_idempotency_key: crypto.randomUUID(),
-      expected_conversation_version: afterEdit.version,
-    }),
-    'foundationF07OriginalBranch',
-  );
+  const originalBranch = await selectFoundationBranchWithDiagnostics({
+    label: 'F07Original',
+    conversationId: conversation.conversation_id,
+    messageId: sourceAssistant.messageId,
+    expectedVersion: afterEdit.version,
+  });
   const originalBranchConversation = evidenceRecord(
     originalBranch.conversation,
     'foundationF07OriginalBranchConversation',
@@ -5493,21 +5490,18 @@ async function runFoundationF07Scenario(input: {
     throw new Error('agent.acceptance.foundationRevisionOriginalBranchMissing');
   }
 
-  const selectedBranch = evidenceRecord(
-    await api.selectAgentActiveBranch({
-      conversation_id: conversation.conversation_id,
-      active_branch_message_id: String(firstRegenerateMessage.messageId),
-      client_idempotency_key: crypto.randomUUID(),
-      expected_conversation_version: Number(
-        evidenceField(
-          originalBranchConversation,
-          'version',
-          'version',
-        ) ?? 0,
-      ),
-    }),
-    'foundationF07SelectedBranch',
-  );
+  const selectedBranch = await selectFoundationBranchWithDiagnostics({
+    label: 'F07Selected',
+    conversationId: conversation.conversation_id,
+    messageId: String(firstRegenerateMessage.messageId),
+    expectedVersion: Number(
+      evidenceField(
+        originalBranchConversation,
+        'version',
+        'version',
+      ) ?? 0,
+    ),
+  });
   const selectedBranchConversation = evidenceRecord(
     selectedBranch.conversation,
     'foundationF07SelectedBranchConversation',
