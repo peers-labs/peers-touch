@@ -847,8 +847,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Product Closure run `20260904T151711681542Z-3568aa0eeacb4485ce4fdfd042393ed1` at `07290b4bfd55d74922f215329632fab0ba4ef178`, binary SHA-256 `f3fc60bf8a81234adcf7e4fb2919f9b7d7fe9b73d8b5cc86ccfdfbaab064c4b2`, proves exact Direct create/reopen before timing out at `group.create.ui`; overlay assertions were not reached. Runtime-log cleanliness independently fails on the proposed MP-D29 follower-membership gap. W9-D remains `PARTIAL/UNPROVEN`. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows distinct bindings and exact Direct create/reopen; remaining product claims are open | Product Closure run `20260904T151711681542Z-3568aa0eeacb4485ce4fdfd042393ed1` proves Alice generation 1 bound to station-four and Bob generation 1 bound to station-five at exact source `07290b4bfd55d74922f215329632fab0ba4ef178`, and creates/reopens Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120`. Cross-Station group creation, MLS receipts, multi-device aggregation, PostgreSQL recovery, and fault replay remain unproven. MP-D29 remains proposed and unimplemented. |
+| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Product Closure run `20260904T174913706510Z-285038c7784e15b141f511170e839a0e` at `491ed6b2b4e248baa58cc26951d5176c4bbf0887`, binary SHA-256 `bad933c6ba2e02fdea01de518d8e0a07a3d922b30b72559f89a9b31ecaabec0b`, proves exact Direct create/reopen and group genesis before a Windows focus timeout at `transcript.thread.ui`; overlay assertions were not reached. Runtime-log cleanliness independently fails on the proposed MP-D29 follower-membership gap. W9-D remains `PARTIAL/UNPROVEN`. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows distinct bindings, exact Direct create/reopen, and cross-Station group genesis; remaining product claims are open | Product Closure run `20260904T174913706510Z-285038c7784e15b141f511170e839a0e` proves Alice generation 1 bound to station-four and Bob generation 1 bound to station-five at exact source `491ed6b2b4e248baa58cc26951d5176c4bbf0887`, creates/reopens Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120`, and commits group genesis through remote queue acknowledgement. MLS transcript/receipt, multi-device aggregation, PostgreSQL recovery, and fault replay remain unproven. MP-D29 remains proposed and unimplemented. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -2852,3 +2852,38 @@ debug record made the local worktree dirty; Provisioner cleanup passed.
 The next comparison run must use a clean commit containing this checkpoint and
 the open debug record. MP-D29 remains proposed and out of scope until Owner
 acceptance.
+
+### 2026-09-04 Windows Group Genesis Proof And Focus Sequencing
+
+After exact deployment of checkpoint commit
+`491ed6b2b4e248baa58cc26951d5176c4bbf0887` and restoration of the
+dedicated Relay/DHT environments, Windows run
+`20260904T174913706510Z-285038c7784e15b141f511170e839a0e`
+passed `conversation.search.ui` and `group.create.ui`. Station evidence records:
+
+- `POST /messaging/group/genesis/prepare` returning 200;
+- `POST /messaging/command/submit` returning 200; and
+- remote device-queue acknowledgements after the committed genesis.
+
+This is source-bound proof that the manifest-only remote-member correction
+crosses the previous `StaleAuthorityPlan` boundary. The run then failed at
+`transcript.thread.ui` before the composer click because
+`focus_actor_window()` timed out. Runtime-log cleanliness independently failed
+on the known MP-D29 membership marker; process, port, storage, endpoint,
+tunnel, source, and lease cleanup passed.
+
+Unchanged-source run
+`20260904T182736117079Z-d7f0149e23b90392e96db7ce6ff69ed3`
+reproduced the same focus timeout earlier at `conversation.search.ui`.
+Diagnostics from both runs show the WebView focused immediately after native
+activation, followed by foreground focus moving to unrelated Windows
+processes while diagnostic and point-ownership probes ran before the later
+focus check. This classifies the failure as a Windows Gate activation-ordering
+defect rather than a Chat product regression.
+
+The Gate correction verifies point ownership before activation, checks WebView
+focus without an intervening native probe, returns immediately on successful
+activation, and retains the title-bar click plus terminal diagnostic only as a
+fallback. Focused Native Product Closure and Runtime Cell tests pass
+58 + 45. Exact-source Windows verification of this Gate correction remains
+pending.
