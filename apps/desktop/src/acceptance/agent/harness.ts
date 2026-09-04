@@ -3456,6 +3456,21 @@ async function prepareFoundationF06Conversation(
       };
       foundationF06PendingHandoffs.set(input.scenarioKey, handoff);
       boundarySettled = true;
+      void reportFoundationF06RegistrationDebug(
+        'A-E',
+        'prepare-boundary-ready',
+        {
+          activeRecordPresent: activeAfterMutation !== undefined,
+          actorMatches: activeAfterMutation?.actorId === actorId,
+          turnMatches: activeAfterMutation?.turnId === turnId,
+          streamMatches: activeAfterMutation?.streamId === streamId,
+          generationMatches:
+            activeAfterMutation?.streamGeneration
+              === controller.streamGeneration,
+          activePhase: activeAfterMutation?.phase ?? 'MISSING',
+          activeCursor: activeAfterMutation?.cursor ?? 0,
+        },
+      );
       controller.disconnectTransport();
       resolveBoundary({
         handoff,
@@ -3531,6 +3546,20 @@ async function observeFoundationRecoveryFailure(
   await foundationF06ReplayRecording;
   const activeAtOutage = useAgentTurnRecoveryStore.getState()
     .active[handoff.conversationId];
+  await reportFoundationF06RegistrationDebug(
+    'A-E',
+    'outage-observer-entry',
+    {
+      activeRecordPresent: activeAtOutage !== undefined,
+      actorMatches: activeAtOutage?.actorId === handoff.actorPtid,
+      turnMatches: activeAtOutage?.turnId === handoff.turnId,
+      streamMatches: activeAtOutage?.streamId === handoff.streamId,
+      generationMatches:
+        activeAtOutage?.streamGeneration === handoff.streamGeneration,
+      activePhase: activeAtOutage?.phase ?? 'MISSING',
+      activeCursor: activeAtOutage?.cursor ?? 0,
+    },
+  );
   if (
     !activeAtOutage
     || activeAtOutage.actorId !== handoff.actorPtid
@@ -5180,6 +5209,27 @@ function reportFoundationF06PrefixDebug(
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:prepareFoundationF06Conversation',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:foundation-recovery-registration
+function reportFoundationF06RegistrationDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7780/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-recovery-registration',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:AS-F06',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
