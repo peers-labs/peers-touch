@@ -2943,3 +2943,40 @@ NDR-W9-D and Windows NDR-W10-D remain blocked at the accepted design boundary:
 MP-D29 is still `proposed` and must not be implemented until Owner review and
 acceptance. The remaining Product Closure assertions and dependent Windows
 22-Gate proof cannot be claimed from this partial run.
+
+### 2026-09-05 Focused Windows Closure Audit
+
+The focused change range
+`07290b4bfd55d74922f215329632fab0ba4ef178...e75171754a7cec83e9125a74a296beb2275a2e8d`
+produced Acceptance plan
+`20260904T195300472275Z-721af034a9428a621b99e6b29884a5a6`.
+Its local CI aggregate
+`20260904T195308139055Z-41b97b7fbdbb200b8650bee260e337df`
+passed five of seven dependency-ready Gates:
+
+- `station-messaging-unit`;
+- `messaging-platform-contract`;
+- `desktop-check`;
+- `chat-native-visible-static`; and
+- `acceptance-plan-self`.
+
+Two existing framework-wide checks remain failed and unproven:
+
+- `acceptance-infra-validation` rejected the previously published Acceptance
+  run because its source did not match the current documentation checkpoint;
+- `acceptance-runtime-provisioning-self` retained five errors and four failures
+  in stale Agent provisioner contracts and launch-context timeout tests. None
+  of those failures touch the six-file Chat correction range.
+
+The focused Gap Detector therefore returns `UNPROVEN`. In addition to those two
+framework baselines, `chat-native-interactions-e2e` has no Windows evidence for
+this source, and `chat-native-product-closure-e2e` remains
+`FAIL/PARTIAL/UNPROVEN` in the separate exact-source run above.
+
+Completion audit result: the focus-ordering and group-genesis corrections are
+ready for review with source-bound Windows evidence, but NDR-W9-D and Windows
+NDR-W10-D are not complete. Their next dependency is Owner acceptance of
+MP-D29, followed by its separate architecture/plan/implementation lifecycle
+and a fresh exact-source Windows product matrix. Repeating destructive fixture
+resets before that decision would only reproduce the same known authority
+boundary.
