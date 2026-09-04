@@ -192,7 +192,7 @@ function reportFoundationApprovalReceiverDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'foundation-approval-receiver',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId: 'A-B',
       location: 'chat.ts:syncMessages',
       msg: `[DEBUG] ${stage}`,
