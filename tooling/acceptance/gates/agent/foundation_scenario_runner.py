@@ -640,7 +640,6 @@ class FoundationF12Coordinator:
         self._runtime_manifest = runtime_manifest
         self._profile_env = dict(profile_env)
         self._captures: dict[tuple[str, str, str, str], Mapping[str, Any]] = {}
-        self._executed = False
 
     @staticmethod
     def _capture_key(
@@ -830,26 +829,6 @@ class FoundationF12Coordinator:
                         ) from primary_error
                     raise
 
-    def _execute(self) -> None:
-        f12_inputs = tuple(
-            DirectRuntimeProbeInput(
-                platform=runtime_tuple.platform,
-                locale=runtime_tuple.locale,
-                cell=runtime_tuple.cell,
-                sample_id=runtime_tuple.sample_id,
-            )
-            for runtime_tuple in group_one_tuples()
-            if runtime_tuple.cell == "AS-F12"
-        )
-        if len(f12_inputs) != 4:
-            raise ScenarioRunnerError(
-                f"AS-F12 matrix changed: expected 4 tuples, got {len(f12_inputs)}"
-            )
-        for probe_input in f12_inputs:
-            result = self._execute_active(probe_input)
-            self._captures[self._capture_key(probe_input)] = dict(result)
-        self._executed = True
-
     def capture(
         self,
         probe_input: DirectRuntimeProbeInput,
@@ -858,14 +837,11 @@ class FoundationF12Coordinator:
             raise ScenarioRunnerError(
                 f"AS-F12 coordinator received {probe_input.cell}"
             )
-        if not self._executed:
-            self._execute()
-        capture = self._captures.get(self._capture_key(probe_input))
+        capture_key = self._capture_key(probe_input)
+        capture = self._captures.get(capture_key)
         if capture is None:
-            raise ScenarioRunnerError(
-                f"AS-F12 tuple was not prepared: "
-                f"{self._scenario_key(probe_input)}"
-            )
+            capture = dict(self._execute_active(probe_input))
+            self._captures[capture_key] = capture
         return capture
 
 
