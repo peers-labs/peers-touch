@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T203015364850Z-7ea6de81d43dab92e5680877c894ac1e` proved the Browser denial receiver correction and advanced to AS-F07, where cancellation response diagnostics now await checkpoint deployment/rerun | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T210231215831Z-95b83306d2b3337c553c41fe22d50410` passed AS-F07 cancellation/revision paths and exposed a deterministic `BASE-APPROVAL-DENIED` evidence projection omission; the local manual-denial state-sequence correction awaits checkpoint deployment/rerun | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5256,6 +5256,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   moves only that reporter to an isolated collector and records the
   cancellation response status/type/shape before the unchanged fail-closed
   assertion. G-F remains `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260904T210231215831Z-95b83306d2b3337c553c41fe22d50410`
+  on `60f61aa735b7f1da1403195dd6148930e58f37e6` rejected the AS-F07
+  cancellation-response hypotheses: two Browser revision scenarios received
+  canonical string status `cancelled`, independently observed terminal
+  cancellation, and completed retry/regenerate/edit/branch evidence. The run
+  later failed Browser `BASE-APPROVAL-DENIED` only at
+  `denialPersisted`. Station settlement was already required to be `DENIED`;
+  the evidence projector nevertheless emitted
+  `policy_check -> denied`, making the accepted
+  `policy_check -> awaiting_user -> denied` lifecycle impossible. The local
+  correction preserves the manual-approval wait state before the denied
+  terminal and records redacted settlement inputs. Desktop typecheck/build,
+  560 Desktop tests with one unrelated environment-dependent skip, 67 native
+  static tests, 63 Group One evaluator tests, and `git diff --check` pass.
+  Provisioner cleanup completed `DONE / PROVEN / passed`; G-F remains
+  `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
