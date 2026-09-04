@@ -366,6 +366,8 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         scenario = self.source[scenario_start:scenario_end]
 
+        self.assertIn("withFoundationCapabilitiesDisabled(", scenario)
+        self.assertIn("toolIsolation", scenario)
         self.assertIn("runAgentCapabilityNegativeControl(", scenario)
         for control in (
             "'unsupported'",

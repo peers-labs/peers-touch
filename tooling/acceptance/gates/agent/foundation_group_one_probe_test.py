@@ -113,6 +113,16 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
                 "stationStatus": "completed",
                 "receiverStatus": "completed",
             },
+            "toolIsolation": {
+                "disabledBindingCount": 1,
+                "readyCapabilityCount": 0,
+                "originalReadyCapabilityCount": 1,
+                "originalReadyCapabilityHash": "f" * 64,
+                "restoredBindingCount": 1,
+                "restoredReadyCapabilityCount": 1,
+                "restoredReadyCapabilityHash": "f" * 64,
+                "restorationVerified": True,
+            },
             "capabilitySession": {
                 "platform": probe.platform,
                 "sessionId": "session-1",
