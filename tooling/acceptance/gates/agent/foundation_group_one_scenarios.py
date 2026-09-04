@@ -2039,6 +2039,18 @@ def _evaluate_as_f12_topic(
             scenario=scenario,
         )
     )
+    pre_conversation = _mapping(
+        pre_restart,
+        "conversation",
+        scenario=scenario,
+    )
+    pre_messages = _list(pre_restart, "messages", scenario=scenario)
+    post_messages = _list(post_restart, "messages", scenario=scenario)
+    pre_runtime_turn = _mapping(
+        pre_restart,
+        "runtimeTurn",
+        scenario=scenario,
+    )
     restart_checks = {
         "preHashMatches": (
             _canonical_payload_hash(pre_restart) == pre_restart_hash
@@ -2048,6 +2060,23 @@ def _evaluate_as_f12_topic(
         ),
         "hashesEqual": pre_restart_hash == post_restart_hash,
         "payloadsEqual": pre_restart == post_restart,
+        "conversationVersionEqual": (
+            pre_conversation.get("version") == post_conversation.get("version")
+        ),
+        "activeBranchEqual": (
+            pre_conversation.get("activeBranchMessageId")
+            == post_conversation.get("activeBranchMessageId")
+        ),
+        "runtimeBindingEqual": (
+            pre_conversation.get("runtimeBinding")
+            == post_conversation.get("runtimeBinding")
+        ),
+        "messagesEqual": pre_messages == post_messages,
+        "runtimeTurnEqual": pre_runtime_turn == runtime_turn,
+        "selectedBranchEqual": (
+            pre_restart.get("selectedBranchMessageId")
+            == post_restart.get("selectedBranchMessageId")
+        ),
         "conversationMatches": (
             post_conversation.get("conversationId") == conversation_id
         ),
