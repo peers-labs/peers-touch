@@ -182,6 +182,40 @@ export interface ChatMessage {
   budgetNotice?: BudgetNotice;
 }
 
+// #region debug-point A-B:foundation-approval-receiver
+function reportFoundationApprovalReceiverDebug(
+  stage: string,
+  messages: readonly ChatMessage[],
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7782/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-approval-receiver',
+      runId: 'pre-fix',
+      hypothesisId: 'A-B',
+      location: 'chat.ts:syncMessages',
+      msg: `[DEBUG] ${stage}`,
+      data: {
+        messageCount: messages.length,
+        toolCallCount: messages.reduce(
+          (count, message) => count + (message.toolCalls?.length ?? 0),
+          0,
+        ),
+        pendingToolCallCount: messages.reduce(
+          (count, message) => count + (
+            message.toolCalls?.filter((toolCall) => toolCall.pending).length
+            ?? 0
+          ),
+          0,
+        ),
+      },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 const agentChatCache = getDesktopAgentChatCache();
 
 function cachedConversationToSession(conversation: CachedAgentConversation): Session {
@@ -1077,6 +1111,10 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   syncMessages: async () => {
     log.debug('chat', 'Syncing messages', { key: get().currentSessionKey });
     const { currentSessionKey } = get();
+    reportFoundationApprovalReceiverDebug(
+      'authoritative-sync-start',
+      get().messages,
+    );
 
     try {
       if (isAgentDraftKey(currentSessionKey)) {
@@ -1088,6 +1126,10 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
       const merged = mergeServerMessages(get().messages, serverMessages);
       set({ messages: merged });
+      reportFoundationApprovalReceiverDebug(
+        'authoritative-sync-complete',
+        merged,
+      );
     } catch (error) {
       log.warn('chat', 'Failed to sync messages; keeping current view', { error: String(error) });
     }

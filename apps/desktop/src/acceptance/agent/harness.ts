@@ -2455,6 +2455,19 @@ async function runFoundationApprovalDeniedScenario(input: {
       label: 'approval-denied',
     });
     await useChatStore.getState().selectSession(turn.conversationId);
+    void reportFoundationApprovalReceiverDebug(
+      'A-B',
+      'conversation-selected',
+      {
+        currentSessionMatches:
+          useChatStore.getState().currentSessionKey === turn.conversationId,
+        storeMessageCount: useChatStore.getState().messages.length,
+        storeToolCallCount: useChatStore.getState().messages.reduce(
+          (count, message) => count + (message.toolCalls?.length ?? 0),
+          0,
+        ),
+      },
+    );
     const approval = await waitForToolApprovalEvent(turn);
     const approvalId = String(
       evidenceField(approval, 'approvalId', 'approval_id') ?? '',
@@ -2469,14 +2482,60 @@ async function runFoundationApprovalDeniedScenario(input: {
       throw new Error('agent.acceptance.foundationToolApprovalInvalid');
     }
 
-    await waitFor(
-      () => Array.from(
+    const approvalProjectionDiagnostics = async () => {
+      const chatState = useChatStore.getState();
+      const stationMessages = await api.listAgentConversationMessages({
+        conversation_id: turn.conversationId,
+        after_seq: 0,
+        limit: 200,
+      });
+      const rendered = Array.from(
         document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
-      ).some((element) =>
-        element.dataset.ptAgentToolCall === toolCallId),
-      'approval-denied ToolCall receiver',
-      30_000,
+      );
+      return {
+        currentSessionMatches:
+          chatState.currentSessionKey === turn.conversationId,
+        storeMessageCount: chatState.messages.length,
+        storeToolCallCount: chatState.messages.reduce(
+          (count, message) => count + (message.toolCalls?.length ?? 0),
+          0,
+        ),
+        expectedToolCallInStore: chatState.messages.some((message) =>
+          message.toolCalls?.some((toolCall) => toolCall.id === toolCallId)),
+        runtimeProjectionPresent:
+          toolRuntime.getProjection(toolCallId) !== undefined,
+        runtimeProjectionStatus:
+          toolRuntime.getProjection(toolCallId)?.status ?? 'MISSING',
+        stationMessageCount: stationMessages.messages.length,
+        expectedToolCallInStation: stationMessages.messages.some((message) =>
+          message.tool_calls_json?.includes(toolCallId)),
+        renderedToolCallCount: rendered.length,
+        expectedToolCallInDom: rendered.some((element) =>
+          element.dataset.ptAgentToolCall === toolCallId),
+      };
+    };
+    void reportFoundationApprovalReceiverDebug(
+      'A-E',
+      'approval-observed',
+      await approvalProjectionDiagnostics(),
     );
+    try {
+      await waitFor(
+        () => Array.from(
+          document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
+        ).some((element) =>
+          element.dataset.ptAgentToolCall === toolCallId),
+        'approval-denied ToolCall receiver',
+        30_000,
+      );
+    } catch (error) {
+      await reportFoundationApprovalReceiverDebug(
+        'A-E',
+        'receiver-timeout',
+        await approvalProjectionDiagnostics(),
+      );
+      throw error;
+    }
     const toolCallElement = Array.from(
       document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
     ).find((element) => element.dataset.ptAgentToolCall === toolCallId);
@@ -5230,6 +5289,27 @@ function reportFoundationF06RegistrationDebug(
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:AS-F06',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:foundation-approval-receiver
+function reportFoundationApprovalReceiverDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7782/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-approval-receiver',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationApprovalDeniedScenario',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
