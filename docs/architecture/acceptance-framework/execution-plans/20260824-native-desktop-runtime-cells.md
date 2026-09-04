@@ -845,8 +845,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; W9-D product execution reached the first Direct journey and exposed two sequential owner-layer defects | Exact-source run `20260904T053556542665Z-6aa174fec173c38d9b9c98594ba9e011` proved Windows 10 x64, WebView2 `152.0.4191.62`, interactive `1920x1080`, Win32 `SendInput`, clean source `63e830f6b50dafa02ad8c0a2b5f66491cf100059`, binary SHA-256 `cd55b5ac3c1354d58948a3f5069b1c6170dced38229100dab0466bec448024b9`, and cleanup `DONE/PROVEN`. Post-login session takeover was fixed and exact-source run `20260904T061940213867Z-e8f335fd65350800b1b198472c68e6f6` at `1ee7da584aaae737fa0c4270eb35cb2152c37203` proved the native click, React handler, branch selection, and create-direct invocation before Station returned application-level 404. The remaining endpoint-directory/trust/Relay bootstrap correction is locally verified but not yet deployed; product proof remains `PARTIAL/UNPROVEN`. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D Windows binding proof passes, product evidence remains partial | Runs `20260904T053556542665Z-6aa174fec173c38d9b9c98594ba9e011` and `20260904T061940213867Z-e8f335fd65350800b1b198472c68e6f6` proved Alice generation 1 bound to station-four and Bob generation 1 bound to station-five with distinct source-attested Station identities. The second run removed session revocation and isolated Direct creation failure before remote endpoint-manifest fetch: actor routing incorrectly required a remote `actor_devices` row, the peer TOFU key had no first-use bootstrap, and Messaging did not consume the late-bound Relay client. The owner-layer correction now uses actor-directory truth, signed locator/profile TOFU, live Relay access, and protobuf control traffic; exact-source runtime proof remains pending. Linux multi-Station and macOS-after-W8 evidence also remain open. |
+| NDR-W9 Windows cell | W9-A/B/C done; W9-D proves cross-Station Direct open; later product closure remains partial | Exact-source run `20260904T074120233666Z-fdb77bd29b2e510be6a9964332a9e4d5` at `6517324cdb5aa46cf6fcca8eac2e6ed1858c6721` and binary SHA-256 `c0d00168bbbb7161789cd8ac8810dbea9447b73f8abc6a0240bac27beef8c17e` proved Windows 10 x64, WebView2 `152.0.4191.62`, interactive `1920x1080`, Win32 `SendInput`, exact Station/source binding, first Direct creation, and repeat selection of the same conversation. The Gate then failed in `transcript.thread.ui`; the pane-owned overlay is now semantically restored and locally verified. Runtime-log cleanliness still requires proposed MP-D29 follower membership. W9-D remains `PARTIAL/UNPROVEN`. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows binding and the first cross-Station Direct product path; MP-D29 is ready for review | Run `20260904T074120233666Z-fdb77bd29b2e510be6a9964332a9e4d5` proved Alice generation 1 bound to station-four and Bob generation 1 bound to station-five with distinct source-attested Station identities at `6517324cdb5aa46cf6fcca8eac2e6ed1858c6721`. The actor-directory/TOFU/live-Relay correction created Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120` and reopened it by exact search. The overlay regression is locally repaired. MP-D29 now proposes an authority-signed, Station-addressed follower projection independent of device delivery; implementation is blocked on architecture acceptance. Linux multi-Station and macOS-after-W8 evidence also remain open. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -2425,6 +2425,108 @@ Go style, formatting, and diff checks pass. Full Station App tests reach only
 the pre-existing environment-backed suite that requires a service at
 `127.0.0.1:18080`; full Frame tests retain unrelated baseline failures in
 legacy config/CLI/logrus/ActivityPub packages. The next action is an authorized
-commit, exact-source deployment to station-four and station-five, topology
-reapplication, and a second post-fix Windows rerun with the Debug Server and
-instrumentation retained.
+commit and exact-source Windows rerun; the checkpoint below records that
+subsequent result.
+
+### 2026-09-04 Windows Endpoint Bootstrap Proof Checkpoint
+
+Commit `6517324cdb5aa46cf6fcca8eac2e6ed1858c6721` deployed through exact
+Git-object source sync to station-four and station-five. Both deployments
+reported clean workspaces, the same protocol digest, distinct Station peer
+identities, one connected DHT seed, and ready federation health after their
+dedicated Relay/DHT environments were reapplied.
+
+Windows Gate run
+`20260904T074120233666Z-fdb77bd29b2e510be6a9964332a9e4d5`
+proved:
+
+- clean Windows source at the exact commit;
+- binary SHA-256
+  `c0d00168bbbb7161789cd8ac8810dbea9447b73f8abc6a0240bac27beef8c17e`;
+- Windows 10 x64, WebView2 `152.0.4191.62`, connected `1920x1080` output,
+  Win32 `SendInput`, and process-bound native windows;
+- Alice bound to station-four and Bob bound to station-five;
+- first exact Bob search created Direct conversation
+  `d-f4d4aaa25c831bb05fdd53cd1cdd6120`;
+- the second exact Bob search selected the same conversation;
+- process, port, storage, endpoint, tunnel, and lease cleanup completed.
+
+The overall Gate remains `PARTIAL/UNPROVEN`. The first later product failure
+was `transcript.thread.ui`: Alice rendered Bob's group message, but the Gate
+could not observe the pane-owned message action overlay within 15 seconds.
+Source history proves commit `13a3d5bb1` removed the accepted
+`ChatMessageActionOverlay` wiring and restored the row-local absolute toolbar
+for MP-W13's PTID reconciliation. This conflicts with the accepted MP-W13-B
+deliverable and atomic deletion matrix.
+
+Runtime-log cleanliness also failed independently. station-four stores both
+actors as active members in `messaging_conversation_members`; station-five has
+no authority, legacy, or follower membership projection for the remote Direct
+or group. Bob's Home Station therefore rejects legacy
+`/conversation/member/settings` and Alice's legacy
+`/conversation/thread/counts` calls with
+`active conversation membership required`. The next implementation slice must:
+
+1. semantically restore the pane-owned, collision-aware message overlay while
+   retaining the PTID model and later fixes;
+2. resolve `DESIGN_AMENDMENT_REQUIRED` for remote Home Station authorization:
+   current Messaging federation frames deliver opaque device queue payloads
+   but do not materialize an authority-signed post-transition membership
+   projection on station-five; receipt history cannot safely substitute for
+   active membership after removal;
+3. after that design is accepted, route thread/settings reads through the
+   canonical Messaging authority/follower projection instead of weakening
+   authorization;
+4. add focused regression tests, rerun the exact Windows Gate, then run the
+   remaining 22-Gate matrix, Gap Detector, and completion audit.
+
+### 2026-09-04 MP-W13-B Reconciliation And MP-D29 Design Gate
+
+The MP-W13-B semantic conflict is resolved locally without overwrite-style
+file replacement:
+
+- the PTID model and current group-member loading remain;
+- `ChatMessageTimeline` again owns one `ChatMessageActionOverlay`;
+- `ChatMessageRow` only emits hover/focus anchors and no longer owns an
+  absolute toolbar inside transformed virtual rows;
+- collision, keyboard focus, selected-emoji reaction, pending/error/rollback,
+  authority-sequence, attachment-count and thread-reply-ID evidence are
+  restored;
+- a structural regression test forbids the row-local `HoverActions` owner.
+
+Local evidence:
+
+- `pnpm run check`: PASS;
+- `pnpm run test`: 539 PASS, 1 explicitly skipped three-Station E2E;
+- `pnpm run build`: PASS with pre-existing chunk-size/dynamic-import warnings;
+- Chat product/static contracts: 71 PASS;
+- focused overlay/reaction/thread tests: 18 PASS.
+- exact 13-file change-surface planning selected the existing Chat Gates without
+  adding a new Feature or Capability;
+- `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`,
+  `chat-native-visible-static`, and `acceptance-plan-self`: PASS
+  (`chat-native-visible-static` includes 6 Vitest and 166 Python tests);
+- `acceptance-infra-validation`: unrelated infrastructure failure because the
+  aggregate Acceptance run omits the `source` field required by the validator;
+- `acceptance-runtime-provisioning-self`: unrelated baseline failures in the
+  Agent provisioner tests, launch-context timing tests, and occupied port 4445.
+
+This proves implementation and static closure only. MP-W13-B remains
+`IMPLEMENTED_UNPROVEN` until a source-bound native Gate observes the overlay,
+geometry and interaction results.
+
+Remote member-settings authorization is now captured as proposed `MP-D29` in:
+
+- `docs/architecture/messaging-platform/design.md`;
+- `docs/architecture/messaging-platform/decisions.md`;
+- `docs/architecture/messaging-platform/data-model.md`;
+- `docs/architecture/messaging-platform/integration.md`.
+
+`MP-D29` reuses the authority-signed public `ConversationEvent` already carried
+inside `DeviceEventDelivery`, keeps endpoint payload bytes opaque, and requires
+one target transaction for follower head/membership, federation inbox and local
+device queues. It defines duplicate/gap/fork/fresh-join/snapshot semantics,
+canonical authority-versus-follower membership reads, and hard deletion of
+legacy JSON thread/settings reads. Status is `DESIGN_READY_FOR_REVIEW`; no
+Model, Station or Desktop membership implementation may begin before Owner
+acceptance.
