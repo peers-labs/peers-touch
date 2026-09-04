@@ -852,6 +852,12 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("app_agent_growth::agent_submit_feedback", gateway)
         self.assertIn("app_agent_growth::agent_list_turn_feedback", gateway)
 
+    def test_native_feedback_commands_are_registered(self) -> None:
+        desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
+
+        self.assertIn("agent_growth::agent_submit_feedback", desktop_main)
+        self.assertIn("agent_growth::agent_list_turn_feedback", desktop_main)
+
     def test_harness_compares_local_and_station_session_authorities(self) -> None:
         source = HARNESS.read_text(encoding="utf-8")
         self.assertIn("getAgentCapabilitySessionSnapshot", source)
