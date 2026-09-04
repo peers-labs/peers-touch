@@ -11,7 +11,7 @@ import (
 
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type AuthorityPrepareTokenMinter interface {
@@ -70,7 +70,7 @@ func (f *HTTPAuthorityPrepareFetcher) PrepareSend(
 	if err != nil {
 		return nil, err
 	}
-	body, err := protojson.Marshal(&chat.FederatedPrepareMessagingSendRequest{
+	body, err := proto.Marshal(&chat.FederatedPrepareMessagingSendRequest{
 		Request:             request,
 		SourceHomeStationId: f.localStation,
 	})
@@ -93,8 +93,8 @@ func (f *HTTPAuthorityPrepareFetcher) PrepareSend(
 	if err != nil {
 		return nil, err
 	}
-	httpRequest.Header.Set("Content-Type", "application/json")
-	httpRequest.Header.Set("Accept", "application/json")
+	httpRequest.Header.Set("Content-Type", "application/protobuf")
+	httpRequest.Header.Set("Accept", "application/protobuf")
 	if viaRelay {
 		httpRequest.Header.Set("Authorization", "Bearer "+relayToken)
 		httpRequest.Header.Set(nativefed.ForwardAuthorizationHeader, "Bearer "+token)
@@ -118,7 +118,7 @@ func (f *HTTPAuthorityPrepareFetcher) PrepareSend(
 		)
 	}
 	result := &chat.PrepareMessagingSendResponse{}
-	if err := protojson.Unmarshal(responseBody, result); err != nil {
+	if err := proto.Unmarshal(responseBody, result); err != nil {
 		return nil, err
 	}
 	if result.ConversationId != request.ConversationId ||
