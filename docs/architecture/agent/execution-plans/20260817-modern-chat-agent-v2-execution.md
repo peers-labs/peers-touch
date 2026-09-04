@@ -4953,6 +4953,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   final restored head. Provisioner cleanup completed
   `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN` pending the next
   exact-source run.
+- Exact-source run
+  `20260904T101501227535Z-2b0bb4237891ca4124b08367bdca79b5`
+  (aggregate `20260904T101501116090Z-009633eebefc27817a6c39c6a60da118`)
+  on `b9492d5757d7675d65de97e8471faade61d15f61` passed the
+  branch-event collision boundary and completed AS-F12 alternate-branch
+  traversal, selected-head restoration, and cleanup. The independent oracle
+  failed only `restartRestored`. Boolean-only diagnostics now distinguish
+  source-restart identity, tuple scope, pre/post semantic hash verification,
+  payload equality, conversation/topic identity, Turn identity, and runtime
+  binding equality without exposing topic content or identifiers. Provisioner
+  cleanup completed `DONE / PROVEN / passed`; G-F remains
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
