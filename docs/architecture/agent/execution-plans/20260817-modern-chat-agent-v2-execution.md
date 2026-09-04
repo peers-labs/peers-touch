@@ -4859,6 +4859,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   rejects stale latest evidence before the new exact-source run. G-F remains
   `PARTIAL / UNPROVEN` pending checkpoint deployment and the next 419-cell
   execution.
+- Exact-source run
+  `20260904T064815367562Z-a32101f830ab3a2d812b85474f788543`
+  (aggregate `20260904T064815250347Z-01675eabfbcc7d919035306a80d8a111`)
+  on `1ac501829900d46511acf38e3b5adb6eebdbac07` crossed the prior
+  AS-F12 timeout and exercised the new production scenario. Native AS-F12
+  tuples completed; Browser English AS-F12 failed during preparation because
+  one non-stale `agent_select_active_branch` command returned the transport's
+  generic failure message. The run was source-matching, reached
+  `FIXTURE_READY`, and Provisioner cleanup completed
+  `DONE / PROVEN / passed`; the Gate remains `PARTIAL / UNPROVEN`. The
+  Harness now emits bounded branch-step diagnostics with only the typed error
+  code and expected/actual conversation versions, allowing a focused
+  single-tuple reproduction before any behavioral correction.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
