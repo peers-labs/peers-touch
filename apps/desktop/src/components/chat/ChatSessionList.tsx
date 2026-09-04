@@ -39,6 +39,12 @@ import { FindPeopleModal } from './FindPeopleModal';
 
 const { Text } = Typography;
 
+// #region debug-point A-C:cross-station-direct-open
+function reportDirectOpenDebug(detail: Record<string, unknown>): void {
+  window.dispatchEvent(new CustomEvent('pt:direct-open-debug', { detail }));
+}
+// #endregion
+
 function ConversationListError({
   compact = false,
   onRetry,
@@ -196,11 +202,25 @@ export function ChatSessionList() {
   );
 
   const handleSearchSelect = async (c: DesktopIMConversationProjection) => {
+    reportDirectOpenDebug({
+      kind: 'handler-entry',
+      candidateId: c.id,
+      candidateKind: c.kind,
+      peerPtid: c.peerPtid || '',
+    });
     const existingConv = getIMConversations().find(
       (conv) => conv.id === c.id || (c.peerPtid && conv.peerPtid === c.peerPtid),
     );
+    reportDirectOpenDebug({
+      kind: 'branch-resolved',
+      existingConversationId: existingConv?.id || '',
+    });
 
     if (existingConv) {
+      reportDirectOpenDebug({
+        kind: 'existing-conversation-selected',
+        conversationId: existingConv.id,
+      });
       setSearchText('');
       handleSelect(existingConv);
       if (existingConv.hidden) {
@@ -211,7 +231,12 @@ export function ChatSessionList() {
 
     if (c.kind === 'friend' && c.peerPtid) {
       try {
+        reportDirectOpenDebug({ kind: 'create-direct-start' });
         const conversation = await imServiceV1.messaging.createDirect(c.peerPtid);
+        reportDirectOpenDebug({
+          kind: 'create-direct-success',
+          conversationId: conversation.conversationId,
+        });
         setSearchText('');
         selectSession(conversation.conversationId);
         restoreConversation('friend', conversation.conversationId);
@@ -222,6 +247,10 @@ export function ChatSessionList() {
           });
         });
       } catch (error) {
+        reportDirectOpenDebug({
+          kind: 'create-direct-failure',
+          error: error instanceof Error ? error.message : String(error),
+        });
         presentError(error, {
           mapper: mapChatError,
           context: { operation: 'conversationAction' },
