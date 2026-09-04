@@ -195,7 +195,45 @@ interface FoundationF06FaultBoundary {
   };
 }
 
+type FoundationF12TopicKey = 'alpha' | 'beta';
+
+interface FoundationF12RuntimeEvent {
+  topic: FoundationF12TopicKey;
+  turnId: string;
+  eventType: string;
+  sequence: number;
+  observedAt: string;
+}
+
+interface FoundationF12TopicHandoff {
+  key: FoundationF12TopicKey;
+  conversationId: string;
+  fact: string;
+  turnIds: string[];
+  runtimeTurnId: string;
+  sourceAssistantMessageId: string;
+  siblingMessageId: string;
+  selectedBranchMessageId: string;
+  preRestart: Record<string, unknown>;
+  preRestartHash: string;
+  receiverBefore: Record<string, unknown>;
+}
+
+interface FoundationF12Handoff {
+  scenarioKey: string;
+  platform: string;
+  locale: string;
+  sampleId: string;
+  agentId: string;
+  topics: Record<FoundationF12TopicKey, FoundationF12TopicHandoff>;
+  staleMutation: Record<string, unknown>;
+  runtimeEvents: FoundationF12RuntimeEvent[];
+  toolIsolation: FoundationCapabilityIsolation;
+  preparedAt: string;
+}
+
 const FOUNDATION_F06_STORAGE_KEY = 'pt.acceptance.agent.foundation.as-f06';
+const FOUNDATION_F12_STORAGE_KEY = 'pt.acceptance.agent.foundation.as-f12';
 const FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY =
   'pt.acceptance.agent.foundation.capability-isolation';
 const FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY =
@@ -311,6 +349,74 @@ function removeFoundationF06Handoff(scenarioKey: string): void {
     return;
   }
   window.localStorage.setItem(FOUNDATION_F06_STORAGE_KEY, JSON.stringify(handoffs));
+}
+
+function readFoundationF12Handoffs(): Record<string, FoundationF12Handoff> {
+  const raw = window.localStorage.getItem(FOUNDATION_F12_STORAGE_KEY);
+  if (!raw) return {};
+  try {
+    const values = JSON.parse(raw) as Record<string, Partial<FoundationF12Handoff>>;
+    if (!values || typeof values !== 'object' || Array.isArray(values)) return {};
+    const handoffs: Record<string, FoundationF12Handoff> = {};
+    for (const [scenarioKey, value] of Object.entries(values)) {
+      const topics = value.topics as
+        | Partial<Record<FoundationF12TopicKey, Partial<FoundationF12TopicHandoff>>>
+        | undefined;
+      const alpha = topics?.alpha;
+      const beta = topics?.beta;
+      if (
+        value.scenarioKey !== scenarioKey
+        || typeof value.platform !== 'string'
+        || typeof value.locale !== 'string'
+        || typeof value.sampleId !== 'string'
+        || typeof value.agentId !== 'string'
+        || typeof value.preparedAt !== 'string'
+        || !value.toolIsolation
+        || !Array.isArray(value.runtimeEvents)
+        || !value.staleMutation
+        || !alpha
+        || !beta
+        || typeof alpha.conversationId !== 'string'
+        || typeof beta.conversationId !== 'string'
+        || !Array.isArray(alpha.turnIds)
+        || !Array.isArray(beta.turnIds)
+        || typeof alpha.preRestartHash !== 'string'
+        || typeof beta.preRestartHash !== 'string'
+      ) {
+        return {};
+      }
+      handoffs[scenarioKey] = value as FoundationF12Handoff;
+    }
+    return handoffs;
+  } catch {
+    return {};
+  }
+}
+
+function readFoundationF12Handoff(scenarioKey: string): FoundationF12Handoff | null {
+  return readFoundationF12Handoffs()[scenarioKey] ?? null;
+}
+
+function writeFoundationF12Handoff(value: FoundationF12Handoff): void {
+  const handoffs = readFoundationF12Handoffs();
+  handoffs[value.scenarioKey] = value;
+  window.localStorage.setItem(
+    FOUNDATION_F12_STORAGE_KEY,
+    JSON.stringify(handoffs),
+  );
+}
+
+function removeFoundationF12Handoff(scenarioKey: string): void {
+  const handoffs = readFoundationF12Handoffs();
+  delete handoffs[scenarioKey];
+  if (Object.keys(handoffs).length === 0) {
+    window.localStorage.removeItem(FOUNDATION_F12_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(
+    FOUNDATION_F12_STORAGE_KEY,
+    JSON.stringify(handoffs),
+  );
 }
 
 function installFoundationF06Observation(): void {
@@ -1033,6 +1139,7 @@ async function foundationConversationReadback(conversationId: string) {
   return {
     conversation,
     messages: result.messages.map((message) => ({
+      conversationId: message.conversation_id,
       messageId: message.message_id,
       turnId: message.turn_id ?? null,
       role: message.role,
@@ -4086,6 +4193,791 @@ async function runFoundationF06Complete(
   };
 }
 
+function foundationF12RuntimeBindingFact(
+  value: unknown,
+): Record<string, unknown> {
+  const binding = evidenceRecord(value, 'foundationF12RuntimeBinding');
+  return {
+    runtimeKind: runtimeKindName(
+      evidenceField(binding, 'runtimeKind', 'runtime_kind'),
+    ),
+    providerId: String(
+      evidenceField(binding, 'providerId', 'provider_id') ?? '',
+    ),
+    modelId: String(evidenceField(binding, 'modelId', 'model_id') ?? ''),
+    runtimeProfileId: String(
+      evidenceField(binding, 'runtimeProfileId', 'runtime_profile_id') ?? '',
+    ),
+    externalSessionId: String(
+      evidenceField(binding, 'externalSessionId', 'external_session_id') ?? '',
+    ),
+    externalSessionEpoch: Number(
+      evidenceField(
+        binding,
+        'externalSessionEpoch',
+        'external_session_epoch',
+      ) ?? 0,
+    ),
+    runtimeHomeRef: String(
+      evidenceField(binding, 'runtimeHomeRef', 'runtime_home_ref') ?? '',
+    ),
+    capabilitySnapshotHash: String(
+      evidenceField(
+        binding,
+        'capabilitySnapshotHash',
+        'capability_snapshot_hash',
+      ) ?? '',
+    ),
+    configSnapshotHash: String(
+      evidenceField(
+        binding,
+        'configSnapshotHash',
+        'config_snapshot_hash',
+      ) ?? '',
+    ),
+  };
+}
+
+function foundationF12RuntimeSnapshotFact(
+  value: unknown,
+): Record<string, unknown> {
+  const evidence = evidenceRecord(value, 'foundationF12TurnEvidence');
+  const diagnostics = evidenceRecord(
+    evidence.diagnostics,
+    'foundationF12TurnDiagnostics',
+  );
+  const replay = evidenceRecord(
+    diagnostics.replay,
+    'foundationF12TurnReplay',
+  );
+  const attempts = evidenceArray(
+    replay.attempts,
+    'foundationF12TurnAttempts',
+  );
+  const attempt = evidenceRecord(
+    attempts[attempts.length - 1],
+    'foundationF12TurnAttempt',
+  );
+  const snapshot = evidenceRecord(
+    evidenceField(attempt, 'runtimeSnapshot', 'runtime_snapshot'),
+    'foundationF12RuntimeSnapshot',
+  );
+  return {
+    turnId: String(evidenceField(attempt, 'turnId', 'turn_id') ?? ''),
+    attemptId: String(
+      evidenceField(attempt, 'attemptId', 'attempt_id') ?? '',
+    ),
+    runtimeKind: runtimeKindName(
+      evidenceField(snapshot, 'runtimeKind', 'runtime_kind'),
+    ),
+    providerId: String(
+      evidenceField(snapshot, 'providerId', 'provider_id') ?? '',
+    ),
+    modelId: String(
+      evidenceField(snapshot, 'modelId', 'model_id') ?? '',
+    ),
+    runtimeProfileId: String(
+      evidenceField(snapshot, 'runtimeProfileId', 'runtime_profile_id') ?? '',
+    ),
+    externalSessionId: String(
+      evidenceField(snapshot, 'externalSessionId', 'external_session_id') ?? '',
+    ),
+    externalSessionEpoch: Number(
+      evidenceField(
+        snapshot,
+        'externalSessionEpoch',
+        'external_session_epoch',
+      ) ?? 0,
+    ),
+  };
+}
+
+async function foundationF12TopicSnapshot(
+  topic: Pick<
+    FoundationF12TopicHandoff,
+    'key' | 'conversationId' | 'fact' | 'runtimeTurnId'
+      | 'selectedBranchMessageId'
+  >,
+): Promise<Record<string, unknown>> {
+  const [readback, turnEvidence] = await Promise.all([
+    foundationConversationReadback(topic.conversationId),
+    foundationTurnEvidence(topic.conversationId, topic.runtimeTurnId),
+  ]);
+  const messages = [...readback.messages]
+    .sort((left, right) =>
+      left.seq - right.seq || left.messageId.localeCompare(right.messageId))
+    .map((message) => ({
+      conversationId: message.conversationId,
+      messageId: message.messageId,
+      turnId: message.turnId ?? '',
+      role: message.role,
+      status: message.status,
+      content: message.content,
+      seq: message.seq,
+      branchId: message.branchId ?? '',
+      parentMessageId: message.parentMessageId ?? '',
+      replacesMessageId: message.replacesMessageId ?? '',
+    }));
+  return {
+    key: topic.key,
+    fact: topic.fact,
+    conversation: {
+      conversationId: readback.conversation.conversation_id,
+      agentId: readback.conversation.agent_id,
+      status: readback.conversation.status,
+      activeBranchMessageId:
+        readback.conversation.active_branch_message_id,
+      version: readback.conversation.version,
+      runtimeBinding: foundationF12RuntimeBindingFact(
+        readback.conversation.runtime_binding,
+      ),
+    },
+    selectedBranchMessageId: topic.selectedBranchMessageId,
+    runtimeTurn: foundationF12RuntimeSnapshotFact(turnEvidence),
+    messages,
+  };
+}
+
+async function foundationF12ReceiverSnapshot(
+  topic: Pick<
+    FoundationF12TopicHandoff,
+    'conversationId' | 'fact' | 'selectedBranchMessageId'
+  >,
+  foreignFact: string,
+): Promise<Record<string, unknown>> {
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await useChatStore.getState().selectSession(topic.conversationId);
+  await useChatStore.getState().syncMessages();
+  await waitFor(
+    () => {
+      const state = useChatStore.getState();
+      return (
+        state.currentSessionKey === topic.conversationId
+        && state.messages.some(
+          (message) => message.id === topic.selectedBranchMessageId,
+        )
+        && Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '[data-pt-agent-message-id]',
+          ),
+        ).some((element) =>
+          element.dataset.ptAgentMessageId === topic.selectedBranchMessageId
+          && element.getClientRects().length > 0)
+      );
+    },
+    `Foundation AS-F12 ${topic.conversationId} projection`,
+    30_000,
+  );
+  const rendered = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-pt-agent-message-id]'),
+  ).map((element) => ({
+    messageId: element.dataset.ptAgentMessageId ?? '',
+    role: element.dataset.ptAgentMessage ?? '',
+    visible: element.getClientRects().length > 0,
+    text: element.textContent?.trim() ?? '',
+  }));
+  const visibleText = rendered
+    .filter((message) => message.visible)
+    .map((message) => message.text)
+    .join('\n');
+  return {
+    conversationId: topic.conversationId,
+    selectedBranchMessageId: topic.selectedBranchMessageId,
+    rendered,
+    storeMessageIds: useChatStore.getState().messages.map(
+      (message) => message.id,
+    ),
+    selectedBranchVisible: rendered.some(
+      (message) =>
+        message.visible
+        && message.messageId === topic.selectedBranchMessageId,
+    ),
+    ownFactVisible: visibleText.includes(topic.fact),
+    foreignFactVisible: visibleText.includes(foreignFact),
+  };
+}
+
+async function runFoundationF12Turn(input: {
+  topic: FoundationF12TopicKey;
+  conversationId: string;
+  agentId: string;
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  content: string;
+}): Promise<{
+  turnId: string;
+  runtimeEvent: FoundationF12RuntimeEvent;
+}> {
+  await useChatStore.getState().selectSession(input.conversationId);
+  const observed = startObservedFoundationTurn({
+    conversationId: input.conversationId,
+    agentId: input.agentId,
+    content: input.content,
+    idempotencyKey: crypto.randomUUID(),
+    provider: input.agent.provider || undefined,
+    model: input.agent.model || undefined,
+    effort: 'low',
+    thinkingMode: 'disabled',
+    clientCapabilitySessionId: input.capabilitySessionId,
+  });
+  const result = await observed.result;
+  if (!result.ok) {
+    throw new Error(
+      result.error || 'agent.acceptance.foundationTopicTurnFailed',
+    );
+  }
+  const turnId = observedTurnId(result.events);
+  const terminal = [...result.events].reverse().find((event) =>
+    classifyAgentTurnTerminalEvent(event) === 'completed');
+  if (!turnId || !terminal) {
+    throw new Error('agent.acceptance.foundationTopicEvidenceMissing');
+  }
+  return {
+    turnId,
+    runtimeEvent: {
+      topic: input.topic,
+      turnId,
+      eventType: terminal.event,
+      sequence: Number(terminal.data.seq ?? 0),
+      observedAt: terminal.observedAt,
+    },
+  };
+}
+
+async function cleanupFoundationF12Scenario(input: {
+  scenarioKey: string;
+  conversationIds?: string[];
+}): Promise<Record<string, unknown>> {
+  const handoff = readFoundationF12Handoff(input.scenarioKey);
+  const conversationIds = Array.from(new Set(
+    handoff
+      ? Object.values(handoff.topics).map((topic) => topic.conversationId)
+      : input.conversationIds ?? [],
+  )).filter(Boolean);
+  if (conversationIds.length === 0) {
+    removeFoundationF12Handoff(input.scenarioKey);
+    return {
+      cleanupComplete: true,
+      handoffCleared: true,
+      conversationIds: [],
+      deletedConversationIds: [],
+      cancellationErrorCodes: [],
+    };
+  }
+
+  const deletedConversationIds: string[] = [];
+  const cancellationErrorCodes: string[] = [];
+  for (const conversationId of [...conversationIds].reverse()) {
+    try {
+      await cancelFoundationQueuedTurns(conversationId);
+      const messages = await api.listAgentConversationMessages({
+        conversation_id: conversationId,
+        limit: 200,
+      });
+      const turnIds = Array.from(new Set(
+        messages.messages
+          .map((message) => message.turn_id)
+          .filter((turnId): turnId is string => Boolean(turnId)),
+      ));
+      for (const turnId of turnIds.reverse()) {
+        try {
+          await api.cancelAgentTurn(turnId);
+        } catch (error) {
+          cancellationErrorCodes.push(observedErrorCode(error));
+        }
+      }
+      await deleteFoundationConversation(conversationId);
+      const deleted = await api.getAgentConversation(conversationId).then(
+        (conversation) => conversation.status === 'deleted',
+        (error: unknown) => observedErrorCode(error).includes('AGENT_4004'),
+      );
+      if (!deleted) {
+        throw new Error(
+          'agent.acceptance.foundationTopicCleanupConversationNotDeleted',
+        );
+      }
+      deletedConversationIds.push(conversationId);
+    } catch (error) {
+      throw new Error(
+        `CLEANUP_FAILED:${conversationId}:${observedErrorCode(error)}`,
+      );
+    }
+  }
+
+  removeFoundationF12Handoff(input.scenarioKey);
+  const handoffCleared = readFoundationF12Handoff(input.scenarioKey) === null;
+  const cleanupComplete =
+    handoffCleared
+    && deletedConversationIds.length === conversationIds.length;
+  if (!cleanupComplete) {
+    throw new Error('CLEANUP_FAILED:agent.acceptance.foundationTopicCleanup');
+  }
+  return {
+    cleanupComplete,
+    handoffCleared,
+    conversationIds,
+    deletedConversationIds,
+    cancellationErrorCodes,
+  };
+}
+
+async function runFoundationF12Prepare(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  scenarioKey: string;
+  platform: string;
+  locale: string;
+  sampleId: string;
+}): Promise<FoundationF12Handoff> {
+  const existing = readFoundationF12Handoff(input.scenarioKey);
+  if (existing) {
+    await cleanupFoundationF12Scenario({
+      scenarioKey: input.scenarioKey,
+    });
+  }
+  const agentId = input.agent.id || input.agent.name;
+  const nonce = crypto.randomUUID();
+  const facts: Record<FoundationF12TopicKey, string> = {
+    alpha: `alpha-${input.sampleId}-${nonce}`,
+    beta: `beta-${input.sampleId}-${nonce}`,
+  };
+  const createdConversationIds: string[] = [];
+
+  try {
+    const prepared = await withFoundationCapabilitiesDisabled(
+      input.agent,
+      input.capabilitySessionId,
+      async (toolIsolation) => {
+        const alpha = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Foundation topic alpha ${input.sampleId}`,
+          provider_id: input.agent.provider,
+          model_name: input.agent.model,
+        });
+        createdConversationIds.push(alpha.conversation_id);
+        const beta = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Foundation topic beta ${input.sampleId}`,
+          provider_id: input.agent.provider,
+          model_name: input.agent.model,
+        });
+        createdConversationIds.push(beta.conversation_id);
+
+        const runtimeEvents: FoundationF12RuntimeEvent[] = [];
+        const alphaFirst = await runFoundationF12Turn({
+          topic: 'alpha',
+          conversationId: alpha.conversation_id,
+          agentId,
+          agent: input.agent,
+          capabilitySessionId: input.capabilitySessionId,
+          content: `Remember this exact topic fact: ${facts.alpha}. Reply with that fact only.`,
+        });
+        runtimeEvents.push(alphaFirst.runtimeEvent);
+        const betaFirst = await runFoundationF12Turn({
+          topic: 'beta',
+          conversationId: beta.conversation_id,
+          agentId,
+          agent: input.agent,
+          capabilitySessionId: input.capabilitySessionId,
+          content: `Remember this exact topic fact: ${facts.beta}. Reply with that fact only.`,
+        });
+        runtimeEvents.push(betaFirst.runtimeEvent);
+        const alphaSecond = await runFoundationF12Turn({
+          topic: 'alpha',
+          conversationId: alpha.conversation_id,
+          agentId,
+          agent: input.agent,
+          capabilitySessionId: input.capabilitySessionId,
+          content: `Recall only the topic fact ${facts.alpha}.`,
+        });
+        runtimeEvents.push(alphaSecond.runtimeEvent);
+        const betaSecond = await runFoundationF12Turn({
+          topic: 'beta',
+          conversationId: beta.conversation_id,
+          agentId,
+          agent: input.agent,
+          capabilitySessionId: input.capabilitySessionId,
+          content: `Recall only the topic fact ${facts.beta}.`,
+        });
+        runtimeEvents.push(betaSecond.runtimeEvent);
+
+        const alphaSource = await foundationConversationReadback(
+          alpha.conversation_id,
+        );
+        const betaSource = await foundationConversationReadback(
+          beta.conversation_id,
+        );
+        const alphaAssistant = alphaSource.messages.find((message) =>
+          message.role === 'assistant'
+          && message.turnId === alphaSecond.turnId);
+        const betaAssistant = betaSource.messages.find((message) =>
+          message.role === 'assistant'
+          && message.turnId === betaSecond.turnId);
+        if (!alphaAssistant || !betaAssistant) {
+          throw new Error(
+            'agent.acceptance.foundationTopicSourceMessagesMissing',
+          );
+        }
+
+        const alphaRegeneration = evidenceRecord(
+          await api.regenerateAgentTurn({
+            conversation_id: alpha.conversation_id,
+            source_assistant_message_id: alphaAssistant.messageId,
+            client_idempotency_key: crypto.randomUUID(),
+            expected_conversation_version: alphaSource.conversation.version,
+          }),
+          'foundationF12AlphaRegeneration',
+        );
+        const alphaSibling = await foundationRevisionMessageFact(
+          evidenceField(
+            alphaRegeneration,
+            'assistantMessage',
+            'assistant_message',
+          ),
+          'foundationF12AlphaSibling',
+        );
+        const alphaAfterRegenerate = await api.getAgentConversation(
+          alpha.conversation_id,
+        );
+        const staleExpectedVersion = alphaAfterRegenerate.version;
+        const alphaOriginalSelection = evidenceRecord(
+          await api.selectAgentActiveBranch({
+            conversation_id: alpha.conversation_id,
+            active_branch_message_id: alphaAssistant.messageId,
+            client_idempotency_key: crypto.randomUUID(),
+            expected_conversation_version: alphaAfterRegenerate.version,
+          }),
+          'foundationF12AlphaOriginalSelection',
+        );
+        const alphaOriginalConversation = evidenceRecord(
+          alphaOriginalSelection.conversation,
+          'foundationF12AlphaOriginalConversation',
+        );
+        await api.selectAgentActiveBranch({
+          conversation_id: alpha.conversation_id,
+          active_branch_message_id: String(alphaSibling.messageId),
+          client_idempotency_key: crypto.randomUUID(),
+          expected_conversation_version: Number(
+            evidenceField(
+              alphaOriginalConversation,
+              'version',
+              'version',
+            ) ?? 0,
+          ),
+        });
+
+        const betaRegeneration = evidenceRecord(
+          await api.regenerateAgentTurn({
+            conversation_id: beta.conversation_id,
+            source_assistant_message_id: betaAssistant.messageId,
+            client_idempotency_key: crypto.randomUUID(),
+            expected_conversation_version: betaSource.conversation.version,
+          }),
+          'foundationF12BetaRegeneration',
+        );
+        const betaSibling = await foundationRevisionMessageFact(
+          evidenceField(
+            betaRegeneration,
+            'assistantMessage',
+            'assistant_message',
+          ),
+          'foundationF12BetaSibling',
+        );
+        const betaAfterRegenerate = await api.getAgentConversation(
+          beta.conversation_id,
+        );
+        await api.selectAgentActiveBranch({
+          conversation_id: beta.conversation_id,
+          active_branch_message_id: String(betaSibling.messageId),
+          client_idempotency_key: crypto.randomUUID(),
+          expected_conversation_version: betaAfterRegenerate.version,
+        });
+
+        const topicInputs = {
+          alpha: {
+            key: 'alpha' as const,
+            conversationId: alpha.conversation_id,
+            fact: facts.alpha,
+            turnIds: [
+              alphaFirst.turnId,
+              alphaSecond.turnId,
+              String(alphaSibling.turnId),
+            ].filter(Boolean),
+            runtimeTurnId: alphaSecond.turnId,
+            sourceAssistantMessageId: alphaAssistant.messageId,
+            siblingMessageId: String(alphaSibling.messageId),
+            selectedBranchMessageId: String(alphaSibling.messageId),
+          },
+          beta: {
+            key: 'beta' as const,
+            conversationId: beta.conversation_id,
+            fact: facts.beta,
+            turnIds: [
+              betaFirst.turnId,
+              betaSecond.turnId,
+              String(betaSibling.turnId),
+            ].filter(Boolean),
+            runtimeTurnId: betaSecond.turnId,
+            sourceAssistantMessageId: betaAssistant.messageId,
+            siblingMessageId: String(betaSibling.messageId),
+            selectedBranchMessageId: String(betaSibling.messageId),
+          },
+        };
+        const [alphaBeforeStale, betaBeforeStale] = await Promise.all([
+          foundationF12TopicSnapshot(topicInputs.alpha),
+          foundationF12TopicSnapshot(topicInputs.beta),
+        ]);
+        const [alphaBeforeHash, betaBeforeHash] = await Promise.all([
+          sha256Hex(stableJson(alphaBeforeStale)),
+          sha256Hex(stableJson(betaBeforeStale)),
+        ]);
+        let staleErrorCode = '';
+        try {
+          await api.selectAgentActiveBranch({
+            conversation_id: alpha.conversation_id,
+            active_branch_message_id: alphaAssistant.messageId,
+            client_idempotency_key: crypto.randomUUID(),
+            expected_conversation_version: staleExpectedVersion,
+          });
+        } catch (error) {
+          staleErrorCode = observedErrorCode(error);
+        }
+        const [alphaAfterStale, betaAfterStale] = await Promise.all([
+          foundationF12TopicSnapshot(topicInputs.alpha),
+          foundationF12TopicSnapshot(topicInputs.beta),
+        ]);
+        const [alphaAfterHash, betaAfterHash] = await Promise.all([
+          sha256Hex(stableJson(alphaAfterStale)),
+          sha256Hex(stableJson(betaAfterStale)),
+        ]);
+        const receiverBeforeAlpha = await foundationF12ReceiverSnapshot(
+          topicInputs.alpha,
+          facts.beta,
+        );
+        const receiverBeforeBeta = await foundationF12ReceiverSnapshot(
+          topicInputs.beta,
+          facts.alpha,
+        );
+
+        return {
+          toolIsolation,
+          runtimeEvents,
+          topicInputs,
+          topicSnapshots: {
+            alpha: alphaAfterStale,
+            beta: betaAfterStale,
+          },
+          topicHashes: {
+            alpha: alphaAfterHash,
+            beta: betaAfterHash,
+          },
+          receiverBefore: {
+            alpha: receiverBeforeAlpha,
+            beta: receiverBeforeBeta,
+          },
+          staleMutation: {
+            targetConversationId: alpha.conversation_id,
+            attemptedBranchMessageId: alphaAssistant.messageId,
+            expectedVersion: staleExpectedVersion,
+            errorCode: staleErrorCode,
+            before: {
+              alphaHash: alphaBeforeHash,
+              betaHash: betaBeforeHash,
+              alphaVersion: Number(
+                evidenceRecord(
+                  alphaBeforeStale.conversation,
+                  'foundationF12AlphaBeforeConversation',
+                ).version,
+              ),
+              betaVersion: Number(
+                evidenceRecord(
+                  betaBeforeStale.conversation,
+                  'foundationF12BetaBeforeConversation',
+                ).version,
+              ),
+            },
+            after: {
+              alphaHash: alphaAfterHash,
+              betaHash: betaAfterHash,
+              alphaVersion: Number(
+                evidenceRecord(
+                  alphaAfterStale.conversation,
+                  'foundationF12AlphaAfterConversation',
+                ).version,
+              ),
+              betaVersion: Number(
+                evidenceRecord(
+                  betaAfterStale.conversation,
+                  'foundationF12BetaAfterConversation',
+                ).version,
+              ),
+            },
+          },
+        };
+      },
+      true,
+    );
+
+    const handoff: FoundationF12Handoff = {
+      scenarioKey: input.scenarioKey,
+      platform: input.platform,
+      locale: input.locale,
+      sampleId: input.sampleId,
+      agentId,
+      topics: {
+        alpha: {
+          ...prepared.topicInputs.alpha,
+          preRestart: prepared.topicSnapshots.alpha,
+          preRestartHash: prepared.topicHashes.alpha,
+          receiverBefore: prepared.receiverBefore.alpha,
+        },
+        beta: {
+          ...prepared.topicInputs.beta,
+          preRestart: prepared.topicSnapshots.beta,
+          preRestartHash: prepared.topicHashes.beta,
+          receiverBefore: prepared.receiverBefore.beta,
+        },
+      },
+      staleMutation: prepared.staleMutation,
+      runtimeEvents: prepared.runtimeEvents,
+      toolIsolation: prepared.toolIsolation,
+      preparedAt: new Date().toISOString(),
+    };
+    writeFoundationF12Handoff(handoff);
+    return handoff;
+  } catch (error) {
+    try {
+      await cleanupFoundationF12Scenario({
+        scenarioKey: input.scenarioKey,
+        conversationIds: createdConversationIds,
+      });
+    } catch (cleanupError) {
+      const primary = error instanceof Error ? error.message : String(error);
+      const cleanup = cleanupError instanceof Error
+        ? cleanupError.message
+        : String(cleanupError);
+      throw new Error(`CLEANUP_FAILED:${primary}; cleanup=${cleanup}`);
+    }
+    throw error;
+  }
+}
+
+async function runFoundationF12Complete(
+  stationRestart: Record<string, unknown>,
+  input: {
+    scenarioKey: string;
+    platform: string;
+    locale: string;
+    sampleId: string;
+  },
+): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: {
+    eventType: string;
+    sequence: number;
+    observedAt: string;
+  };
+  facts: Record<string, unknown>;
+}> {
+  const handoff = readFoundationF12Handoff(input.scenarioKey);
+  if (!handoff) {
+    throw new Error('agent.acceptance.foundationTopicHandoffMissing');
+  }
+  if (
+    handoff.platform !== input.platform
+    || handoff.locale !== input.locale
+    || handoff.sampleId !== input.sampleId
+  ) {
+    throw new Error('agent.acceptance.foundationTopicScopeMismatch');
+  }
+  const [alphaPostRestart, betaPostRestart] = await Promise.all([
+    foundationF12TopicSnapshot(handoff.topics.alpha),
+    foundationF12TopicSnapshot(handoff.topics.beta),
+  ]);
+  const [alphaPostRestartHash, betaPostRestartHash] = await Promise.all([
+    sha256Hex(stableJson(alphaPostRestart)),
+    sha256Hex(stableJson(betaPostRestart)),
+  ]);
+  const receiverAfterAlpha = await foundationF12ReceiverSnapshot(
+    handoff.topics.alpha,
+    handoff.topics.beta.fact,
+  );
+  const receiverAfterBeta = await foundationF12ReceiverSnapshot(
+    handoff.topics.beta,
+    handoff.topics.alpha.fact,
+  );
+  await useChatStore.getState().selectSession(
+    handoff.topics.alpha.conversationId,
+  );
+  await useChatStore.getState().syncMessages();
+
+  const runtimeEvent =
+    handoff.runtimeEvents[handoff.runtimeEvents.length - 1];
+  if (!runtimeEvent) {
+    throw new Error('agent.acceptance.foundationTopicRuntimeEventMissing');
+  }
+  const preparedAtMs = Date.parse(handoff.preparedAt);
+  if (!Number.isFinite(preparedAtMs)) {
+    throw new Error('agent.acceptance.foundationTopicStartMissing');
+  }
+  return {
+    conversationId: handoff.topics.alpha.conversationId,
+    turnId: handoff.topics.alpha.runtimeTurnId,
+    durationMs: Date.now() - preparedAtMs,
+    runtimeEvent,
+    facts: {
+      scope: {
+        scenarioKey: handoff.scenarioKey,
+        platform: handoff.platform,
+        locale: handoff.locale,
+        sampleId: handoff.sampleId,
+      },
+      toolIsolation: handoff.toolIsolation,
+      topics: {
+        alpha: {
+          ...handoff.topics.alpha,
+          postRestart: alphaPostRestart,
+          postRestartHash: alphaPostRestartHash,
+          receiverAfter: receiverAfterAlpha,
+        },
+        beta: {
+          ...handoff.topics.beta,
+          postRestart: betaPostRestart,
+          postRestartHash: betaPostRestartHash,
+          receiverAfter: receiverAfterBeta,
+        },
+      },
+      staleMutation: handoff.staleMutation,
+      runtimeEvents: handoff.runtimeEvents,
+      restart: {
+        stationRestarted:
+          typeof stationRestart.containerId === 'string'
+          && stationRestart.containerId.length > 0
+          && stationRestart.beforeStartedAt !== stationRestart.afterStartedAt
+          && stationRestart.beforeCommit === stationRestart.afterCommit,
+        clientRestarted:
+          evidenceRecord(
+            stationRestart.clientReloads,
+            'foundationF12ClientReloads',
+          )[input.platform] === true,
+        station: stationRestart,
+      },
+      cleanup: {
+        cleanupComplete: false,
+        handoffCleared: false,
+        conversationIds: [
+          handoff.topics.alpha.conversationId,
+          handoff.topics.beta.conversationId,
+        ],
+        deletedConversationIds: [],
+        cancellationErrorCodes: [],
+      },
+    },
+  };
+}
+
 async function foundationRevisionMessageFact(
   value: unknown,
   name: string,
@@ -6592,15 +7484,188 @@ function evaluateF10(ctx: DirectCellAssertionContext): Record<string, boolean | 
 }
 
 function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
-  const messages = ctx.conversationReadback?.messages ?? [];
-  const hasMultipleConversations = Boolean(ctx.conversations);
+  const facts = evidenceRecord(ctx.scenarioFacts, 'foundationF12Facts');
+  const topics = evidenceRecord(facts.topics, 'foundationF12Topics');
+  const alpha = evidenceRecord(topics.alpha, 'foundationF12Alpha');
+  const beta = evidenceRecord(topics.beta, 'foundationF12Beta');
+  const alphaPre = evidenceRecord(
+    alpha.preRestart,
+    'foundationF12AlphaPreRestart',
+  );
+  const betaPre = evidenceRecord(
+    beta.preRestart,
+    'foundationF12BetaPreRestart',
+  );
+  const alphaPost = evidenceRecord(
+    alpha.postRestart,
+    'foundationF12AlphaPostRestart',
+  );
+  const betaPost = evidenceRecord(
+    beta.postRestart,
+    'foundationF12BetaPostRestart',
+  );
+  const alphaConversation = evidenceRecord(
+    alphaPost.conversation,
+    'foundationF12AlphaConversation',
+  );
+  const betaConversation = evidenceRecord(
+    betaPost.conversation,
+    'foundationF12BetaConversation',
+  );
+  const alphaMessages = evidenceArray(
+    alphaPost.messages,
+    'foundationF12AlphaMessages',
+  ).map((value) => evidenceRecord(value, 'foundationF12AlphaMessage'));
+  const betaMessages = evidenceArray(
+    betaPost.messages,
+    'foundationF12BetaMessages',
+  ).map((value) => evidenceRecord(value, 'foundationF12BetaMessage'));
+  const alphaMessageIds = new Set(
+    alphaMessages.map((message) => String(message.messageId ?? '')),
+  );
+  const betaMessageIds = new Set(
+    betaMessages.map((message) => String(message.messageId ?? '')),
+  );
+  const alphaTurnIds = new Set(
+    alphaMessages.map((message) => String(message.turnId ?? '')).filter(Boolean),
+  );
+  const betaTurnIds = new Set(
+    betaMessages.map((message) => String(message.turnId ?? '')).filter(Boolean),
+  );
+  const alphaBranchIds = new Set(
+    alphaMessages.map((message) => String(message.branchId ?? '')).filter(Boolean),
+  );
+  const betaBranchIds = new Set(
+    betaMessages.map((message) => String(message.branchId ?? '')).filter(Boolean),
+  );
+  const disjoint = (left: Set<string>, right: Set<string>) =>
+    [...left].every((value) => !right.has(value));
+  const referencesStayWithin = (
+    messages: Record<string, unknown>[],
+    messageIds: Set<string>,
+    conversationId: string,
+  ) => messages.every((message) => (
+    message.conversationId === conversationId
+    && (
+      !message.parentMessageId
+      || messageIds.has(String(message.parentMessageId))
+    )
+    && (
+      !message.replacesMessageId
+      || messageIds.has(String(message.replacesMessageId))
+    )
+  ));
+  const runtimeMatches = (topic: Record<string, unknown>) => {
+    const post = evidenceRecord(
+      topic.postRestart,
+      'foundationF12RuntimePostRestart',
+    );
+    const conversation = evidenceRecord(
+      post.conversation,
+      'foundationF12RuntimeConversation',
+    );
+    const binding = evidenceRecord(
+      conversation.runtimeBinding,
+      'foundationF12RuntimeBinding',
+    );
+    const runtimeTurn = evidenceRecord(
+      post.runtimeTurn,
+      'foundationF12RuntimeTurn',
+    );
+    return (
+      binding.runtimeKind === runtimeTurn.runtimeKind
+      && binding.providerId === runtimeTurn.providerId
+      && binding.modelId === runtimeTurn.modelId
+      && binding.runtimeProfileId === runtimeTurn.runtimeProfileId
+      && binding.externalSessionId === runtimeTurn.externalSessionId
+      && Number(binding.externalSessionEpoch)
+        === Number(runtimeTurn.externalSessionEpoch)
+      && (
+        binding.runtimeKind !== 'direct_model'
+        || (
+          binding.externalSessionId === ''
+          && binding.runtimeHomeRef === ''
+        )
+      )
+    );
+  };
+  const alphaReceiver = evidenceRecord(
+    alpha.receiverAfter,
+    'foundationF12AlphaReceiver',
+  );
+  const betaReceiver = evidenceRecord(
+    beta.receiverAfter,
+    'foundationF12BetaReceiver',
+  );
+  const restart = evidenceRecord(facts.restart, 'foundationF12Restart');
+  const stale = evidenceRecord(
+    facts.staleMutation,
+    'foundationF12StaleMutation',
+  );
+  const staleBefore = evidenceRecord(
+    stale.before,
+    'foundationF12StaleBefore',
+  );
+  const staleAfter = evidenceRecord(
+    stale.after,
+    'foundationF12StaleAfter',
+  );
+  const toolIsolation = evidenceRecord(
+    facts.toolIsolation,
+    'foundationF12ToolIsolation',
+  );
 
   return {
-    twoTopicsDistinct: hasMultipleConversations,
-    restartRestored: ctx.sessionState.authenticated,
-    branchesIndependent: messages.length > 0,
-    noCrossTopicReferences: true,
-    staleMutationConflict: messages.length > 0,
+    twoTopicsDistinct:
+      String(alphaConversation.conversationId).length > 0
+      && String(betaConversation.conversationId).length > 0
+      && alphaConversation.conversationId !== betaConversation.conversationId
+      && String(alpha.fact).length > 0
+      && String(beta.fact).length > 0
+      && alpha.fact !== beta.fact
+      && disjoint(alphaMessageIds, betaMessageIds)
+      && disjoint(alphaTurnIds, betaTurnIds),
+    restartRestored:
+      restart.stationRestarted === true
+      && restart.clientRestarted === true
+      && alpha.preRestartHash === alpha.postRestartHash
+      && beta.preRestartHash === beta.postRestartHash
+      && stableJson(alphaPre) === stableJson(alphaPost)
+      && stableJson(betaPre) === stableJson(betaPost)
+      && toolIsolation.restorationVerified === true,
+    branchesIndependent:
+      alphaConversation.activeBranchMessageId
+        === alpha.selectedBranchMessageId
+      && betaConversation.activeBranchMessageId
+        === beta.selectedBranchMessageId
+      && alphaMessageIds.has(String(alpha.selectedBranchMessageId))
+      && betaMessageIds.has(String(beta.selectedBranchMessageId))
+      && disjoint(alphaBranchIds, betaBranchIds)
+      && alphaReceiver.selectedBranchVisible === true
+      && betaReceiver.selectedBranchVisible === true,
+    noCrossTopicReferences:
+      referencesStayWithin(
+        alphaMessages,
+        alphaMessageIds,
+        String(alphaConversation.conversationId),
+      )
+      && referencesStayWithin(
+        betaMessages,
+        betaMessageIds,
+        String(betaConversation.conversationId),
+      )
+      && alphaReceiver.ownFactVisible === true
+      && alphaReceiver.foreignFactVisible === false
+      && betaReceiver.ownFactVisible === true
+      && betaReceiver.foreignFactVisible === false
+      && runtimeMatches(alpha)
+      && runtimeMatches(beta),
+    staleMutationConflict:
+      stale.errorCode === 'VERSION_CONFLICT'
+      && staleBefore.alphaHash === staleAfter.alphaHash
+      && staleBefore.betaHash === staleAfter.betaHash
+      && Number(staleBefore.alphaVersion) === Number(staleAfter.alphaVersion)
+      && Number(staleBefore.betaVersion) === Number(staleAfter.betaVersion),
   };
 }
 
@@ -7576,6 +8641,57 @@ export function installAcceptanceHarness(): void {
       }));
     },
 
+    async foundationF12Prepare({
+      scenarioKey,
+      platform,
+      locale,
+      sampleId,
+    }: {
+      scenarioKey: string;
+      platform: string;
+      locale: string;
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent) throw new Error('agent.acceptance.agentMissing');
+      const capabilitySessions = await waitForCapabilitySessionEvidence();
+      const capabilitySessionId =
+        capabilitySessions.selectedStationSession?.session_id;
+      if (!capabilitySessionId) {
+        throw new Error('agent.acceptance.capabilitySessionUnavailable');
+      }
+      const handoff = await runFoundationF12Prepare({
+        agent,
+        capabilitySessionId,
+        scenarioKey,
+        platform,
+        locale,
+        sampleId,
+      });
+      return evidenceValue({
+        scenarioKey: handoff.scenarioKey,
+        conversationIds: [
+          handoff.topics.alpha.conversationId,
+          handoff.topics.beta.conversationId,
+        ],
+        primaryConversationId: handoff.topics.alpha.conversationId,
+        primaryTurnId: handoff.topics.alpha.runtimeTurnId,
+      });
+    },
+
+    async foundationF12Cleanup({
+      scenarioKey,
+      conversationIds,
+    }: {
+      scenarioKey: string;
+      conversationIds?: string[];
+    }) {
+      return evidenceValue(await cleanupFoundationF12Scenario({
+        scenarioKey,
+        conversationIds,
+      }));
+    },
+
     async foundationDirectProbe({
       platform,
       locale,
@@ -7649,6 +8765,23 @@ export function installAcceptanceHarness(): void {
             sampleId,
           },
         );
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
+      if (cell === 'AS-F12') {
+        if (!stationRestart || !scenarioKey) {
+          throw new Error('agent.acceptance.foundationStationRestartMissing');
+        }
+        const scenario = await runFoundationF12Complete(stationRestart, {
+          scenarioKey,
+          platform,
+          locale,
+          sampleId,
+        });
         preparedConversationId = scenario.conversationId;
         preparedTurnId = scenario.turnId;
         preparedRuntimeEvent.current = scenario.runtimeEvent;
@@ -8150,51 +9283,6 @@ export function installAcceptanceHarness(): void {
         await useChatStore.getState().selectSession(scenario.conversationId);
       }
 
-      if (cell === 'AS-F12') {
-        for (const topic of ['alpha', 'beta']) {
-          const conversation = await api.createAgentConversation({
-            agent_id: agentId,
-            title: `Foundation topic ${topic} ${sampleId}`,
-            provider_id: agent.provider,
-            model_name: agent.model,
-          });
-          await useChatStore.getState().selectSession(conversation.conversation_id);
-          const startedAt = performance.now();
-          const observed = startObservedFoundationTurn({
-            conversationId: conversation.conversation_id,
-            agentId,
-            content: `Reply with the code word ${topic}-${sampleId}.`,
-            idempotencyKey: crypto.randomUUID(),
-            provider: agent.provider || undefined,
-            model: agent.model || undefined,
-            effort: 'low',
-            thinkingMode: 'disabled',
-            clientCapabilitySessionId:
-              capabilitySessions.selectedStationSession?.session_id,
-          });
-          const result = await observed.result;
-          if (!result.ok) {
-            throw new Error(
-              result.error || 'agent.acceptance.foundationTopicTurnFailed',
-            );
-          }
-          const turnId = observedTurnId(result.events);
-          const terminal = [...result.events].reverse().find((event) =>
-            classifyAgentTurnTerminalEvent(event) !== null);
-          if (!turnId || !terminal) {
-            throw new Error('agent.acceptance.foundationTopicEvidenceMissing');
-          }
-          preparedConversationId = conversation.conversation_id;
-          preparedTurnId = turnId;
-          preparedRuntimeEvent.current = {
-            eventType: terminal.event,
-            sequence: Number(terminal.data.seq ?? 0),
-            observedAt: terminal.observedAt,
-          };
-          turnDurationMs = performance.now() - startedAt;
-        }
-      }
-
       capabilitySessions = await waitForCapabilitySessionEvidence();
       const [profile, readiness, conversations] = await Promise.all([
         api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
@@ -8359,6 +9447,12 @@ export function installAcceptanceHarness(): void {
           deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
         };
       }
+      if (cell === 'AS-F12' && scenarioFacts && scenarioKey) {
+        preservedReplayReadback = conversationReadback;
+        scenarioFacts.cleanup = await cleanupFoundationF12Scenario({
+          scenarioKey,
+        });
+      }
       if (
         cell === 'BASE-APPROVAL_DENIED'
         && scenarioFacts
@@ -8474,6 +9568,52 @@ export function installAcceptanceHarness(): void {
         stationReadback.revision = Number(lineage.decisionRevision);
         stationReadback.stateHash = await sha256Hex(stableJson(station));
       }
+      if (cell === 'AS-F12' && scenarioFacts) {
+        const topics = evidenceRecord(
+          scenarioFacts.topics,
+          'foundationF12StationTopics',
+        );
+        const alpha = evidenceRecord(
+          topics.alpha,
+          'foundationF12StationAlpha',
+        );
+        const beta = evidenceRecord(
+          topics.beta,
+          'foundationF12StationBeta',
+        );
+        const alphaPost = evidenceRecord(
+          alpha.postRestart,
+          'foundationF12StationAlphaPost',
+        );
+        const betaPost = evidenceRecord(
+          beta.postRestart,
+          'foundationF12StationBetaPost',
+        );
+        stationReadback.entityKind = 'agent-two-topic-restart-readback';
+        stationReadback.entityIdHash = await sha256Hex(stableJson([
+          alpha.conversationId,
+          beta.conversationId,
+        ]));
+        stationReadback.revision = Number(
+          evidenceRecord(
+            alphaPost.conversation,
+            'foundationF12StationAlphaConversation',
+          ).version,
+        ) + Number(
+          evidenceRecord(
+            betaPost.conversation,
+            'foundationF12StationBetaConversation',
+          ).version,
+        );
+        stationReadback.stateHash = await sha256Hex(stableJson({
+          alpha: alphaPost,
+          beta: betaPost,
+        }));
+        stationReadback.topics = {
+          alpha: alphaPost,
+          beta: betaPost,
+        };
+      }
 
       const runtimeEvents: Record<string, unknown> =
         cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
@@ -8493,6 +9633,21 @@ export function installAcceptanceHarness(): void {
                 ).observedAt,
               ),
             }
+          : cell === 'AS-F12' && scenarioFacts
+            ? {
+                eventId: await sha256Hex(stableJson({
+                  events: scenarioFacts.runtimeEvents,
+                  restart: scenarioFacts.restart,
+                })),
+                sequence: evidenceArray(
+                  scenarioFacts.runtimeEvents,
+                  'foundationF12RuntimeEvents',
+                ).length,
+                eventType: 'TWO_TOPIC_RESTART_RESTORED',
+                occurredAt: observedRuntimeEvent?.observedAt ?? '',
+                events: scenarioFacts.runtimeEvents,
+                restart: scenarioFacts.restart,
+              }
           : turnEvidence && observedRuntimeEvent
         ? {
             eventId: await sha256Hex(stableJson({
@@ -8507,7 +9662,11 @@ export function installAcceptanceHarness(): void {
         : { eventId: '', sequence: 0, eventType: '', occurredAt: '' };
 
       const measurementLimitMs =
-        cell === 'AS-F04' ? 900_000 : cell === 'AS-F06' ? 300_000 : 120_000;
+        cell === 'AS-F04' || cell === 'AS-F12'
+          ? 900_000
+          : cell === 'AS-F06'
+            ? 300_000
+            : 120_000;
       const measurementReport: Record<string, unknown> = {
         metric: 'foundation-turn-duration-ms',
         sampleIds: [sampleId],
@@ -8597,6 +9756,32 @@ export function installAcceptanceHarness(): void {
               maximum: 0,
               measurements: scenarioFacts.sideEffects,
             }
+          : cell === 'AS-F12' && scenarioFacts
+            ? (() => {
+                const stale = evidenceRecord(
+                  scenarioFacts.staleMutation,
+                  'foundationF12SideEffectStaleMutation',
+                );
+                const before = evidenceRecord(
+                  stale.before,
+                  'foundationF12SideEffectBefore',
+                );
+                const after = evidenceRecord(
+                  stale.after,
+                  'foundationF12SideEffectAfter',
+                );
+                const unchanged =
+                  before.alphaHash === after.alphaHash
+                  && before.betaHash === after.betaHash
+                  && Number(before.alphaVersion) === Number(after.alphaVersion)
+                  && Number(before.betaVersion) === Number(after.betaVersion);
+                return {
+                  counterId: String(stale.targetConversationId ?? ''),
+                  count: unchanged ? 0 : 1,
+                  maximum: 0,
+                  measurements: stale,
+                };
+              })()
           : {
             counterId: 'pending-turn-queue',
             count: queueEntryCount,
@@ -8675,6 +9860,24 @@ export function installAcceptanceHarness(): void {
                   scenarioFacts.cleanup,
                   'foundationF06Cleanup',
                 ).conversationDeleted === true
+              : cell === 'AS-F12' && scenarioFacts
+                ? (
+                    evidenceRecord(
+                      scenarioFacts.cleanup,
+                      'foundationF12Cleanup',
+                    ).cleanupComplete === true
+                    && evidenceRecord(
+                      scenarioFacts.cleanup,
+                      'foundationF12Cleanup',
+                    ).handoffCleared === true
+                    && evidenceArray(
+                      evidenceRecord(
+                        scenarioFacts.cleanup,
+                        'foundationF12Cleanup',
+                      ).deletedConversationIds,
+                      'foundationF12DeletedConversations',
+                    ).length === 2
+                  )
               : true
         )
           ? 'clean'
@@ -8685,6 +9888,8 @@ export function installAcceptanceHarness(): void {
         ),
         ...(cell === 'AS-F06' && scenarioFacts
           ? { proof: scenarioFacts.cleanup }
+          : cell === 'AS-F12' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-APPROVAL_DENIED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
@@ -8759,6 +9964,65 @@ export function installAcceptanceHarness(): void {
         replayEvidence.sourceHash = replay.acknowledgementSourceHash;
         replayEvidence.replayHash = replay.acknowledgementReplayHash;
         replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'AS-F12' && scenarioFacts) {
+        const topics = evidenceRecord(
+          scenarioFacts.topics,
+          'foundationF12ReplayTopics',
+        );
+        const alpha = evidenceRecord(
+          topics.alpha,
+          'foundationF12ReplayAlpha',
+        );
+        const beta = evidenceRecord(
+          topics.beta,
+          'foundationF12ReplayBeta',
+        );
+        replayEvidence.sourceHash = await sha256Hex(stableJson({
+          alpha: alpha.preRestart,
+          beta: beta.preRestart,
+        }));
+        replayEvidence.replayHash = await sha256Hex(stableJson({
+          alpha: alpha.postRestart,
+          beta: beta.postRestart,
+        }));
+        replayEvidence.equal =
+          replayEvidence.sourceHash === replayEvidence.replayHash;
+        replayEvidence.turnId = null;
+        replayEvidence.topics = {
+          alpha: {
+            sourceHash: alpha.preRestartHash,
+            replayHash: alpha.postRestartHash,
+          },
+          beta: {
+            sourceHash: beta.preRestartHash,
+            replayHash: beta.postRestartHash,
+          },
+        };
+        const alphaReceiver = evidenceRecord(
+          alpha.receiverAfter,
+          'foundationF12ReceiverAlpha',
+        );
+        const betaReceiver = evidenceRecord(
+          beta.receiverAfter,
+          'foundationF12ReceiverBeta',
+        );
+        receiverDomRole.visible =
+          alphaReceiver.selectedBranchVisible === true
+          && betaReceiver.selectedBranchVisible === true
+          && alphaReceiver.ownFactVisible === true
+          && betaReceiver.ownFactVisible === true
+          && alphaReceiver.foreignFactVisible === false
+          && betaReceiver.foreignFactVisible === false;
+        receiverDomRole.selector = '[data-pt-agent-message-id]';
+        receiverDomRole.textHash = await sha256Hex(stableJson({
+          alpha: alphaReceiver,
+          beta: betaReceiver,
+        }));
+        receiverDomRole.topics = {
+          alpha: alphaReceiver,
+          beta: betaReceiver,
+        };
       }
 
       return evidenceValue({
