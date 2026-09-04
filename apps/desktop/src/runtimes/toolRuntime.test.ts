@@ -61,6 +61,63 @@ describe('toolRuntime projection authority', () => {
     });
   });
 
+  it('reconciles a missed approval event from the authoritative message snapshot', () => {
+    expect(toolRuntime.reconcileMessages([{
+      turnId: 'turn-1',
+      toolCalls: [{
+        id: 'tool-call-1',
+        name: 'filesystem.read',
+        args: '{"resource_ref":"opaque-1"}',
+        pending: true,
+        status: 'approval_required',
+        approvalId: 'approval-1',
+        decisionRevision: 0,
+        payloadHash: 'payload-1',
+      }],
+    }])).toBe(true);
+
+    expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
+      turnId: 'turn-1',
+      status: 'approval_required',
+      pending: true,
+      approvalId: 'approval-1',
+      decisionRevision: 0,
+      payloadHash: 'payload-1',
+    });
+  });
+
+  it('does not regress a newer event projection with a stale message snapshot', () => {
+    toolRuntime.consume(approvalRequired);
+    toolRuntime.consume({
+      event: 'tool_approval_decision',
+      data: {
+        toolCallId: 'tool-call-1',
+        decisionId: 'decision-1',
+        decisionRevision: 1,
+        approved: true,
+        payloadHash: 'decision-hash-1',
+      },
+    });
+    const current = toolRuntime.getSnapshot();
+
+    expect(toolRuntime.reconcileMessages([{
+      turnId: 'turn-1',
+      toolCalls: [{
+        id: 'tool-call-1',
+        name: 'filesystem.read',
+        pending: true,
+        status: 'approval_required',
+        approvalId: 'approval-1',
+        decisionRevision: 0,
+      }],
+    }])).toBe(false);
+    expect(toolRuntime.getSnapshot()).toBe(current);
+    expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
+      status: 'approved',
+      decisionRevision: 1,
+    });
+  });
+
   it('deduplicates decision projections by identity and revision', () => {
     let state: ToolProjectionState = reduceToolProjection({}, approvalRequired);
     state = reduceToolProjection(state, {
