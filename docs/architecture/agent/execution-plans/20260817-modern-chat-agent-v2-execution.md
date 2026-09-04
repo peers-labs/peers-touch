@@ -5031,6 +5031,27 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   identity phase/lifecycle transitions and client process/port liveness. No
   identity behavior change is justified before that runtime evidence is
   collected.
+- Instrumented exact-source run
+  `20260904T123215171497Z-b8addb2df843c33665e38845564ffa82`
+  (aggregate `20260904T123215057760Z-404b4ffa88058f52023d1c868a8a3d46`)
+  on `a72dec1cb369f2a811cba1cb4f62956d0a0c634b` crossed both login
+  preconditions. Identity debug lines 1-6 show both clients entering from the
+  expected `accountGate / session_missing / onboarding / dataReady=true`
+  state. The run failed later at Browser AS-F07 Simplified Chinese while the
+  Browser process, driver, Chrome instance, gateway, renderer, and WebDriver
+  port were all live. This rejects an identity or renderer-exit explanation
+  for that run.
+- The AS-F07 failure was the second branch mutation in one user action:
+  `selectFoundationBranchWithDiagnostics` had already committed the selected
+  branch, then `chatStore.branchFromMessage` submitted the same mutation again
+  using independently refreshed revision state. Depending on projection
+  timing, the duplicate command raced and surfaced the generic
+  `agent_select_active_branch failed`. The Harness now uses
+  `branchFromMessage` as the single production mutation, then reads the
+  resulting conversation from Station for response evidence. Desktop check,
+  556 Desktop tests, production build, 179 focused Foundation/runtime tests,
+  and `git diff --check` pass. Post-fix exact-source runtime proof remains
+  pending; G-F remains `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

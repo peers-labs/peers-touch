@@ -276,7 +276,7 @@ class FoundationRuntimeClient:
                         data=json.dumps(
                             {
                                 "sessionId": "foundation-identity-boot",
-                                "runId": "pre-fix",
+                                "runId": "post-fix",
                                 "hypothesisId": "C",
                                 "location": (
                                     "tooling/acceptance/gates/agent/"
