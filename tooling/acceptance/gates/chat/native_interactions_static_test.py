@@ -391,30 +391,53 @@ class ContactMessageResilienceTest(unittest.TestCase):
     def source(self, path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
 
-    def test_message_button_navigates_before_create_direct_resolves(self) -> None:
-        src = self.source(
+    def test_message_button_opens_peer_bound_recovery_surface(self) -> None:
+        contacts = self.source(
             "apps/desktop/src/components/chat/ChatContactsDetailPanel.tsx"
         )
-        create_direct_pos = src.find("createDirect(peerPtid)")
+        page = self.source("apps/desktop/src/pages/SocialChatPage.tsx")
+        area = self.source(
+            "apps/desktop/src/components/chat/ChatMessageArea.tsx"
+        )
+        runner = self.source(
+            "tooling/acceptance/gates/chat/contact_message_resilience_runner.py"
+        )
+
+        self.assertIn("onMessage(selectedContact)", contacts)
+        self.assertNotIn("messaging.createDirect", contacts)
+
+        intent_pos = page.find("setDirectOpenIntent(intent)")
+        create_direct_pos = page.find(
+            "imServiceV1.messaging.createDirect(contact.peerPtid)"
+        )
+        navigation_pos = page.find("setSubPage('chats')", intent_pos)
         self.assertGreater(
             create_direct_pos, 0,
-            "handleMessage must call imServiceV1.messaging.createDirect",
+            "SocialChatPage must own the Direct-open command lifecycle",
         )
-        set_opening_pos = src.rfind("setOpeningConversation(true)", 0, create_direct_pos)
-        on_message_before_create = src.rfind("onMessage()", set_opening_pos, create_direct_pos)
         self.assertGreater(
-            on_message_before_create, set_opening_pos,
-            "onMessage() must be called BEFORE createDirect resolves; "
-            "navigation must not be blocked by async API failure",
+            intent_pos, 0,
+            "peer-bound intent must be published before the command starts",
         )
-        try_block_start = src.find("try {", on_message_before_create)
-        self.assertGreater(try_block_start, on_message_before_create)
-        self.assertGreater(create_direct_pos, try_block_start)
-        catch_block = src.find("} catch", create_direct_pos)
-        self.assertGreater(catch_block, create_direct_pos)
-        self.assertIn(
-            "presentError", src[create_direct_pos:catch_block + 200],
-            "errors must be presented within the already-open chat view",
+        self.assertGreater(navigation_pos, intent_pos)
+        self.assertGreater(create_direct_pos, navigation_pos)
+        self.assertIn("mode: 'inline'", page)
+        self.assertIn("failDirectConversationOpen", page)
+
+        for selector in (
+            "data-chat-conversation-intent=",
+            "data-chat-conversation-intent-state=",
+            "data-chat-conversation-intent-error=",
+            "data-chat-conversation-intent-retry",
+        ):
+            self.assertIn(selector, area)
+
+        self.assertIn("peer_bound_conversation_intent_visible", runner)
+        self.assertIn("error_displayed_in_peer_bound_view", runner)
+        self.assertIn("conversation_retry_visible", runner)
+        self.assertNotIn(
+            "self._chats_subpage_active() or self._chat_area_visible()",
+            runner,
         )
 
     def test_runner_binds_selected_runtime_cell(self) -> None:

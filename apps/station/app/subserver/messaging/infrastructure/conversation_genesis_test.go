@@ -62,7 +62,6 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 	devices := []touchactor.DeviceRecord{
 		verifiedGenesisDevice("ptid:alice", "alice-desktop", now),
 		verifiedGenesisDevice("ptid:alice", "alice-phone", now),
-		verifiedGenesisDevice("ptid:bob", "bob-desktop", now),
 	}
 	if err := db.Create(&devices).Error; err != nil {
 		t.Fatal(err)
@@ -73,7 +72,7 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 		messaging.FederationFrameSignFunc(func(context.Context, *chat.MessagingFederationFrame) error {
 			return nil
 		}),
-		testEndpointManifestResolver(t, db, now),
+		testMixedEndpointManifestResolver(t, db, now),
 		func() time.Time { return now },
 	)
 	if err != nil {
@@ -104,8 +103,8 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 	if err := db.Order("recipient_ptid, recipient_device_id").Find(&queueItems).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(queueItems) != 3 {
-		t.Fatalf("queue items = %d, want 3", len(queueItems))
+	if len(queueItems) != 2 {
+		t.Fatalf("local queue items = %d, want 2", len(queueItems))
 	}
 	for _, item := range queueItems {
 		var delivery chat.DeviceEventDelivery
@@ -117,6 +116,26 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 			len(delivery.SenderActorIdentityPublicKey) != 32 {
 			t.Fatalf("invalid genesis delivery: %+v", delivery)
 		}
+	}
+	var outbox []infrastructure.FederationOutboxModel
+	if err := db.Find(&outbox).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(outbox) != 1 {
+		t.Fatalf("federation outbox rows = %d, want 1", len(outbox))
+	}
+	var frame chat.MessagingFederationFrame
+	if err := proto.Unmarshal(outbox[0].FrameBytes, &frame); err != nil {
+		t.Fatal(err)
+	}
+	var batch chat.FederatedDeviceQueueBatch
+	if err := proto.Unmarshal(frame.OpaquePayload, &batch); err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.Writes) != 1 ||
+		batch.Writes[0].Recipient.GetPtid() != "ptid:bob" ||
+		batch.Writes[0].Recipient.GetDeviceId() != "bob-desktop" {
+		t.Fatalf("remote queue batch = %+v", batch.Writes)
 	}
 	views, err := service.List(ctx, creator)
 	if err != nil {
