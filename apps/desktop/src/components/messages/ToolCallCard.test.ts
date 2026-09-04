@@ -9,7 +9,10 @@ describe('ToolCallsBlock approval visibility', () => {
     );
 
     expect(source).toContain(
-      "toolCall.status === 'approval_required' && Boolean(toolCall.approvalId)",
+      "(projection?.status ?? toolCall.status) === 'approval_required'",
+    );
+    expect(source).toContain(
+      'Boolean(projection?.approvalId ?? toolCall.approvalId)',
     );
     expect(source).toContain(
       'const [expanded, setExpanded] = useState(actionableApproval)',

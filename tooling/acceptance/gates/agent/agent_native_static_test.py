@@ -530,7 +530,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             chat_source,
         )
         self.assertIn(
-            "reconcileToolProjectionState(this.state, messages)",
+            "reconcileToolProjectionState(this.state, reconciled)",
             tool_runtime_source,
         )
         self.assertEqual(

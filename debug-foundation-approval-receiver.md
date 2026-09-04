@@ -82,3 +82,24 @@ approval. Post-fix runtime evidence remains pending.
 - Agent native static tests: 66 passed.
 - `git diff --check`: passed.
 - Exact-source post-fix runtime evidence: pending.
+
+## First Fix Iteration
+- Exact-source run
+  `20260904T191316480393Z-131f3a55b3b3095dc64bd3589b01a044`
+  on `a938938c2a87cb2ae729c1a48b28cc2db657c0c1` showed the first
+  correction was incomplete.
+- At timeout, the exact ToolCall was present in Station and the Chat store, and
+  a `toolRuntime` projection existed, but that projection was incorrectly
+  `success` and the receiver DOM remained empty.
+- Source inspection confirmed `AgentMessage.tool_calls_json` is provider-format
+  data containing ToolCall ID and nested function data, not governed
+  ToolCall status or approval identity. Defaulting that record to `success`
+  was invalid.
+- The corrected implementation uses the existing Station
+  `TurnDiagnosticReplay.tool_calls` contract for status, approval ID, decision
+  revision, and error state. Provider-format message JSON supplies only the
+  visible call identity and arguments. The ToolCall group subscribes to
+  `agent-tool`, so a reconciled actionable approval becomes visible without a
+  page-level refresh or Harness shortcut.
+- Exact-source runtime comparison for this corrected implementation remains
+  pending.

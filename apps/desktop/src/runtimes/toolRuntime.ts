@@ -1,5 +1,9 @@
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import {
+  ToolCallStatus as AgentToolCallStatus,
+  type TurnDiagnosticToolFact,
+} from '../gen/proto/domain/agent/agent_pb';
+import {
   api,
   type AgentTypedErrorPayload,
   type AgentToolDecisionIntentInput,
@@ -318,6 +322,33 @@ export interface ToolProjectionMessage {
   readonly toolCalls?: readonly ToolCallInfo[];
 }
 
+function toolStatusFromDiagnostic(
+  status: AgentToolCallStatus,
+): ToolCallStatus | undefined {
+  if (status === AgentToolCallStatus.PROPOSED) return 'queued';
+  if (status === AgentToolCallStatus.WAITING_APPROVAL) {
+    return 'approval_required';
+  }
+  if (status === AgentToolCallStatus.APPROVED) return 'approved';
+  if (
+    status === AgentToolCallStatus.CLAIMED
+    || status === AgentToolCallStatus.RUNNING
+  ) {
+    return 'pending';
+  }
+  if (status === AgentToolCallStatus.SUCCEEDED) return 'success';
+  if (status === AgentToolCallStatus.DENIED) return 'denied';
+  if (status === AgentToolCallStatus.CANCELLED) return 'cancelled';
+  if (
+    status === AgentToolCallStatus.FAILED
+    || status === AgentToolCallStatus.EXPIRED
+    || status === AgentToolCallStatus.UNKNOWN_SIDE_EFFECT
+  ) {
+    return 'error';
+  }
+  return undefined;
+}
+
 function toolStatusRank(status: ToolCallStatus): number {
   if (status === 'queued') return 0;
   if (status === 'pending') return 1;
@@ -355,73 +386,83 @@ function sameToolProjection(
 
 export function reconcileToolProjectionState(
   state: ToolProjectionState,
-  messages: readonly ToolProjectionMessage[],
+  projections: readonly ToolProjection[],
 ): ToolProjectionState {
   let next = state;
 
-  for (const message of messages) {
-    for (const toolCall of message.toolCalls ?? []) {
-      if (!toolCall.id) continue;
-
-      const current = next[toolCall.id];
-      const decisionRevision = toolCall.decisionRevision ?? 0;
-      const status = toolCall.status
-        ?? current?.status
-        ?? (toolCall.pending ? 'pending' : 'success');
-
-      if (
-        current
-        && (
-          decisionRevision < current.decisionRevision
-          || (
-            decisionRevision === current.decisionRevision
-            && toolStatusRank(status) < toolStatusRank(current.status)
-          )
+  for (const projection of projections) {
+    const current = next[projection.toolCallId];
+    if (
+      current
+      && (
+        projection.decisionRevision < current.decisionRevision
+        || (
+          projection.decisionRevision === current.decisionRevision
+          && toolStatusRank(projection.status) < toolStatusRank(current.status)
         )
-      ) {
-        continue;
-      }
-
-      const projection: ToolProjection = {
-        ...current,
-        toolCallId: toolCall.id,
-        turnId: message.turnId || current?.turnId || '',
-        toolName: toolCall.name || current?.toolName || 'tool',
-        arguments: toolCall.args ?? current?.arguments ?? '',
-        serverName: toolCall.serverName ?? current?.serverName,
-        source: toolCall.source ?? current?.source,
-        status,
-        pending: toolCall.pending ?? (
-          status === 'queued'
-          || status === 'pending'
-          || status === 'approval_required'
-          || status === 'approved'
-        ),
-        result: toolCall.result ?? current?.result,
-        error: toolCall.error ?? current?.error,
-        progress: toolCall.progress ?? current?.progress,
-        progressPct: toolCall.progressPct ?? current?.progressPct,
-        approvalId: toolCall.approvalId ?? current?.approvalId,
-        decisionId: toolCall.decisionId ?? current?.decisionId,
-        decisionRevision,
-        payloadHash: toolCall.payloadHash ?? current?.payloadHash,
-        approvalActor: toolCall.approvalActor ?? current?.approvalActor,
-        decidedAt: toolCall.approvedAt ?? current?.decidedAt,
-        decisionErrorCode: current?.decisionErrorCode,
-        decisionOutcome: current?.decisionOutcome,
-        delegationResults:
-          toolCall.delegationResults ?? current?.delegationResults,
-      };
-
-      if (current && sameToolProjection(current, projection)) continue;
-      next = {
-        ...next,
-        [toolCall.id]: projection,
-      };
+      )
+    ) {
+      continue;
     }
+
+    const reconciled = current
+      ? {
+          ...current,
+          ...projection,
+          result: projection.result ?? current.result,
+          error: projection.error ?? current.error,
+          progress: projection.progress ?? current.progress,
+          progressPct: projection.progressPct ?? current.progressPct,
+          payloadHash: projection.payloadHash ?? current.payloadHash,
+          approvalActor: projection.approvalActor ?? current.approvalActor,
+          decidedAt: projection.decidedAt ?? current.decidedAt,
+          decisionErrorCode:
+            projection.decisionErrorCode ?? current.decisionErrorCode,
+          decisionOutcome:
+            projection.decisionOutcome ?? current.decisionOutcome,
+          delegationResults:
+            projection.delegationResults ?? current.delegationResults,
+        }
+      : projection;
+    if (current && sameToolProjection(current, reconciled)) continue;
+    next = {
+      ...next,
+      [projection.toolCallId]: reconciled,
+    };
   }
 
   return next;
+}
+
+function projectionFromDiagnostic(
+  fact: TurnDiagnosticToolFact,
+  source: ToolCallInfo,
+  turnId: string,
+): ToolProjection | undefined {
+  const status = toolStatusFromDiagnostic(fact.status);
+  if (!fact.toolCallId || !status) return undefined;
+
+  const decisionRevision = Number(fact.decisionRevision);
+  return {
+    toolCallId: fact.toolCallId,
+    turnId,
+    toolName: fact.toolName || source.name,
+    arguments: fact.redactedArguments || source.args || '',
+    status,
+    pending:
+      status === 'queued'
+      || status === 'pending'
+      || status === 'approval_required'
+      || status === 'approved',
+    result: source.result,
+    error: fact.errorCode || source.error,
+    approvalId: fact.approvalId || source.approvalId,
+    decisionId: fact.decisionId || source.decisionId,
+    decisionRevision: Number.isSafeInteger(decisionRevision)
+      ? decisionRevision
+      : 0,
+    payloadHash: source.payloadHash,
+  };
 }
 
 class ToolRuntime implements RuntimeDescriptor {
@@ -477,8 +518,54 @@ class ToolRuntime implements RuntimeDescriptor {
     return true;
   }
 
-  reconcileMessages(messages: readonly ToolProjectionMessage[]): boolean {
-    const next = reconcileToolProjectionState(this.state, messages);
+  async reconcileMessages(
+    messages: readonly ToolProjectionMessage[],
+  ): Promise<boolean> {
+    const toolCallsByTurn = new Map<string, Map<string, ToolCallInfo>>();
+    for (const message of messages) {
+      if (!message.turnId || !message.toolCalls?.length) continue;
+      const unresolved = message.toolCalls.filter((toolCall) => {
+        const current = this.state[toolCall.id];
+        return !current || current.pending;
+      });
+      if (unresolved.length === 0) continue;
+      toolCallsByTurn.set(
+        message.turnId,
+        new Map(unresolved.map((toolCall) => [toolCall.id, toolCall])),
+      );
+    }
+
+    const reconciled = (
+      await Promise.all(
+        Array.from(toolCallsByTurn.entries()).map(
+          async ([turnId, visibleToolCalls]) => {
+            try {
+              const diagnostics = await api.exportAgentTurnDiagnostics(turnId);
+              return (diagnostics.replay?.toolCalls ?? [])
+                .map((fact) => {
+                  const source = visibleToolCalls.get(fact.toolCallId);
+                  return source
+                    ? projectionFromDiagnostic(fact, source, turnId)
+                    : undefined;
+                })
+                .filter(
+                  (projection): projection is ToolProjection =>
+                    projection !== undefined,
+                );
+            } catch (error) {
+              log.warn(
+                'toolRuntime',
+                'Failed to reconcile Station ToolCall projection',
+                { turnId, error: String(error) },
+              );
+              return [];
+            }
+          },
+        ),
+      )
+    ).flat();
+
+    const next = reconcileToolProjectionState(this.state, reconciled);
     if (next === this.state) return false;
     this.replaceState(next);
     return true;
