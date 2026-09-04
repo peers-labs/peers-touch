@@ -791,6 +791,21 @@ class FoundationCandidateProducerTest(unittest.TestCase):
             "runtimeAttestation",
         )
 
+    def test_topic_label_is_safe_but_bare_key_is_rejected(self) -> None:
+        _ensure_evidence_safe(
+            {"topics": {"alpha": {"topicLabel": "alpha"}}},
+            "station-readback",
+        )
+
+        with self.assertRaisesRegex(
+            FoundationCandidateError,
+            "secret-bearing evidence field",
+        ):
+            _ensure_evidence_safe(
+                {"topics": {"alpha": {"key": "alpha"}}},
+                "station-readback",
+            )
+
     def test_wrong_gate_or_source_identity_is_rejected_before_collection(self) -> None:
         adapter = RecordingAdapter()
         producer = FoundationCandidateProducer(_adapters(adapter))
