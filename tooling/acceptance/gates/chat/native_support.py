@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,6 +44,26 @@ ACCOUNTS = {
     "bob": "bob@p.t",
     "charlie": "carol@p.t",
 }
+
+
+def is_native_tauri_url(value: str) -> bool:
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.username is None
+        and parsed.password is None
+        and port is None
+        and (
+            (parsed.scheme == "tauri" and parsed.hostname == "localhost")
+            or (
+                parsed.scheme == "http"
+                and parsed.hostname == "tauri.localhost"
+            )
+        )
+    )
 
 
 def runtime_station_service(

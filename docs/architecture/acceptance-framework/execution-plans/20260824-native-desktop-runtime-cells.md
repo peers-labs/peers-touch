@@ -2723,3 +2723,26 @@ Focused evidence after the transport correction:
 
 The Gate remains `PARTIAL/UNPROVEN`; the next exact-source Windows rerun must
 cross cell `LEASED` and execute the peer-bound failure assertion.
+
+Commit `6a2b95ed27568f29107c7d228955da68134f77ce` then passed the Windows
+runtime-cell boundary. Run
+`20260904T142201550359Z-560ba6d3b78abb99c5baed8b46eead6c` produced:
+
+- cell state `LEASED`;
+- binary SHA-256
+  `16641815f71799155b1b3a22871658d32321a2e9fa076368f2b878b1ee53ed0f`;
+- Windows 10/WebView2/Win32 input and screenshot readiness;
+- source-bound Alice generation-1 binding proof to station-four; and
+- complete process, task, tunnel, port, storage, source, and lease cleanup.
+
+The Gate then failed at its first product-runner check because Windows WebView2
+reported the native Tauri URL as `http://tauri.localhost/`, while seven Native
+Chat runners accepted only the macOS/Linux form `tauri://localhost`. This was a
+Gate portability defect, not a product failure. A shared strict predicate now
+accepts only those two platform-owned Tauri origins and rejects browser,
+credential-bearing, alternate-scheme, and explicit-port URLs. All affected
+Native Chat runners consume that predicate.
+
+Focused native runner and static tests: 74 PASS. The strengthened peer-bound
+Direct-open assertion remains `UNPROVEN` until the corrected Gate reaches that
+assertion on an exact-source Windows run.

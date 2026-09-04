@@ -14,6 +14,7 @@ from tooling.acceptance.gates.chat import desktop_gateway_e2e
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
     cleanup_preserving_primary_failure,
+    is_native_tauri_url,
     is_station_authorization_rejection,
 )
 from tooling.acceptance.gates.chat.native_multi_device_runner import (
@@ -74,6 +75,22 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 for target in node.targets
             )
         )
+
+    def test_native_tauri_origin_accepts_platform_owned_origins_only(
+        self,
+    ) -> None:
+        self.assertTrue(is_native_tauri_url("tauri://localhost"))
+        self.assertTrue(
+            is_native_tauri_url("http://tauri.localhost/chat#direct")
+        )
+        for url in (
+            "http://localhost:3210",
+            "https://tauri.localhost",
+            "http://tauri.localhost:3210",
+            "http://user@tauri.localhost",
+        ):
+            with self.subTest(url=url):
+                self.assertFalse(is_native_tauri_url(url))
 
     def test_selected_runtime_fails_closed_and_uses_binding(self) -> None:
         support = (
