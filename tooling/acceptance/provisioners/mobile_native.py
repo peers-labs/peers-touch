@@ -60,7 +60,6 @@ from tooling.acceptance.core.provisioning import (
 )
 from tooling.acceptance.core.redaction import redact_value
 from tooling.acceptance.fixtures.mobile_native_reset import (
-    ACTOR_PASSWORD,
     ROLES,
     SERVICE_CONFIG,
     _write_fixture_outcomes,
@@ -4873,7 +4872,11 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             verify_reset_target(station_url, deployment_environment)
             reset_fixture(deployment_environment, ROLES)
             actors = [
-                resolve_actor_identity(station_url, role, ACTOR_PASSWORD)
+                resolve_actor_identity(
+                    station_url,
+                    deployment_environment,
+                    role,
+                )
                 for role in ROLES
             ]
             stations[service_id] = {
