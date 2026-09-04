@@ -5052,6 +5052,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   556 Desktop tests, production build, 179 focused Foundation/runtime tests,
   and `git diff --check` pass. Post-fix exact-source runtime proof remains
   pending; G-F remains `PARTIAL / UNPROVEN`.
+- Exact-source post-fix run
+  `20260904T130727786234Z-ee9baa5bcd31cc85acf4b4fb3ae10b10`
+  (aggregate `20260904T130727673358Z-4c7f9e6e3990ec6b04bb3b4501be34a3`)
+  on `6699130ceec1b6dc534396418fa484d401e128ee` again crossed both
+  login preconditions, then stopped earlier at Browser AS-F02 Simplified
+  Chinese because `visibleQueuePositions` was zero. The Station queue had
+  already reached its required capacity, but the Harness called
+  `syncTurnQueue` and immediately sampled the receiver DOM without waiting for
+  the projection render. AS-F02 now waits up to its existing bounded 30-second
+  receiver interval for a visible queue entry and the exact expected count,
+  preserving the strict oracle instead of weakening it. Desktop check, 556
+  Desktop tests, production build, 180 focused Foundation/runtime tests, and
+  `git diff --check` pass. AS-F07 post-fix and complete G-F runtime proof remain
+  pending; G-F remains `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
