@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
   closeBrowserCapabilitySession: vi.fn(),
   sidebarReset: vi.fn(),
   globalContextReset: vi.fn(),
-  restoreSession: vi.fn(),
+  authValidateToken: vi.fn(),
+  activateAuthenticatedSession: vi.fn(),
 }));
 
 vi.mock('./identityPipeline', () => ({
@@ -28,7 +29,16 @@ vi.mock('./identityPipeline', () => ({
 }));
 
 vi.mock('./desktop_api', () => ({
-  AuthCommandException: class AuthCommandException extends Error {},
+  api: {
+    authValidateToken: mocks.authValidateToken,
+  },
+  AuthCommandException: class AuthCommandException extends Error {
+    code: string;
+    constructor(error: { code: string; message: string }) {
+      super(error.message);
+      this.code = error.code;
+    }
+  },
 }));
 
 vi.mock('../store/session', () => ({
@@ -38,7 +48,7 @@ vi.mock('../store/session', () => ({
         ? { actorPtid: mocks.currentActorPtid }
         : null,
       reset: mocks.sessionReset,
-      restoreSession: mocks.restoreSession,
+      activateAuthenticatedSession: mocks.activateAuthenticatedSession,
     }),
   },
 }));
@@ -109,6 +119,10 @@ describe('identity handler actor-scoped projection cleanup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.currentActorPtid = 'ptid:peer:alice';
+    mocks.authValidateToken.mockResolvedValue({
+      actor_ptid: 'ptid:peer:alice',
+      login_method: 'password',
+    });
   });
 
   it('clears actor-scoped stores before switching accounts', async () => {
@@ -155,7 +169,24 @@ describe('identity handler actor-scoped projection cleanup', () => {
     expect(mocks.navigationBadgeReset).not.toHaveBeenCalled();
   });
 
-  it('does not restore a switched account twice', async () => {
+  it('validates the already bound session after login without taking it over', async () => {
+    const handler = mocks.handlers.get('refresh-current-session');
+    expect(handler).toBeDefined();
+
+    await handler?.({
+      reason: 'login',
+      actorPtid: 'ptid:peer:alice',
+      loginMethod: 'password',
+    });
+
+    expect(mocks.authValidateToken).toHaveBeenCalledWith({});
+    expect(mocks.activateAuthenticatedSession).toHaveBeenCalledWith({
+      actor_ptid: 'ptid:peer:alice',
+      login_method: 'password',
+    });
+  });
+
+  it('does not validate a switched account twice', async () => {
     const handler = mocks.handlers.get('refresh-current-session');
     expect(handler).toBeDefined();
 
@@ -165,6 +196,6 @@ describe('identity handler actor-scoped projection cleanup', () => {
       loginMethod: 'password',
     });
 
-    expect(mocks.restoreSession).not.toHaveBeenCalled();
+    expect(mocks.authValidateToken).not.toHaveBeenCalled();
   });
 });

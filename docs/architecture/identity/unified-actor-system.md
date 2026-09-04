@@ -246,6 +246,8 @@ adapter, dual-write, or legacy identity reader remains.
          ↳ state.session.lock() = Some(...)                — legacy mirror, C-7
          ↳ identity_event::emit(Login)                     — C-5
   ③ runIdentityPipeline({ reason:'login', actorPtid, … })  — C-6 originator
+       ↳ refresh-current-session validates the window-bound token
+         without issuing a takeover session
 
 [other windows]
   ④ Tauri event auth.identity_changed
@@ -336,7 +338,12 @@ Handlers run sequentially in registration order. The first thrown error halts th
 
 1. `clear-zustand-stores` — calls `reset()` on every top-level store; for non-logout, follows up with `hydrate(actorPtid)` where supported.
 2. `clear-localstorage-caches` — removes keys with prefixes `user:`, `chat:`, `friend:`, `group:`, `profile:`, `accountSession:`, `socialChat:`. The prefix list is the contract: any new module that introduces actor-scoped cached keys MUST register its prefix here.
-3. `refresh-current-session` — for non-logout, calls `api.authRestoreSession()` and writes the result back into `useSessionStore`.
+3. `refresh-current-session` — for non-logout and non-switch transitions,
+   validates the current window-bound token through `api.authValidateToken({})`
+   and writes the result back into `useSessionStore`. It MUST NOT call
+   takeover-style persisted-session restore after a successful login, OAuth
+   bridge, or PIN unlock because that would revoke the session just issued to
+   the same window.
 
 ### 7.3 Originator / listener deduplication
 

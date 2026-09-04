@@ -1,5 +1,5 @@
 import { registerIdentityHandler } from './identityPipeline';
-import { AuthCommandException } from './desktop_api';
+import { api, AuthCommandException } from './desktop_api';
 import { useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
 import { useNotificationStore } from '../store/notification';
@@ -55,7 +55,8 @@ registerIdentityHandler('refresh-current-session', async (payload) => {
     return;
   }
   try {
-    await useSessionStore.getState().restoreSession();
+    const session = await api.authValidateToken({});
+    useSessionStore.getState().activateAuthenticatedSession(session);
   } catch (e) {
     if (e instanceof AuthCommandException && e.code === 'UNAUTHORIZED') {
       useSessionStore.getState().reset();
