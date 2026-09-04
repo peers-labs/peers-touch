@@ -5240,7 +5240,7 @@ function reportFoundationF07Debug(
   stage: string,
   data: Record<string, unknown> = {},
 ): Promise<void> {
-  return fetch('http://127.0.0.1:7777/event', {
+  return fetch('http://127.0.0.1:7783/event', {
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'as-f07-revision-flow',
@@ -5509,6 +5509,12 @@ async function runFoundationF07Scenario(input: {
   const sourceCancellationStatus = String(
     cancellationResponse?.status ?? '',
   ).toLowerCase();
+  await reportFoundationF07Debug('S-U', 'retry-source-cancel-response', {
+    elapsedMs: performance.now() - scenarioStartedAt,
+    sourceCancellationStatus,
+    sourceCancellationStatusType: typeof cancellationResponse?.status,
+    responseFields: Object.keys(cancellationResponse ?? {}).sort(),
+  });
   if (sourceCancellationStatus !== 'cancelled') {
     retrySource.controller.abort();
     throw new Error('agent.acceptance.foundationRevisionRetrySourceNotCancelled');

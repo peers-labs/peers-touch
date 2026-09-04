@@ -3,12 +3,13 @@
 - **Issue**: The first exact-source AS-F07 production scenario times out with
   `agent.acceptance.turnSubmissionTimeout` before emitting independently
   evaluated revision evidence.
-- **Debug Server**: http://127.0.0.1:7777/event
+- **Debug Server**: http://127.0.0.1:7783/event
 - **Log File**: .dbg/trae-debug-log-as-f07-revision-flow.ndjson
 
 ## Reproduction Steps
 1. Use worktree `peers-ai-agent`, branch
-   `feat/p0-streaming-runtime-message-actions`, profile `two`.
+   `feat/p0-streaming-runtime-message-actions`, profile
+   `chat-native-disposable`.
 2. Deploy Station and build the Acceptance Desktop binary from the same clean
    source commit.
 3. Run `agent-v2-kernel-foundation-e2e` with
@@ -36,6 +37,9 @@
 | P | The edit response and Station readback disagree on the edited user/assistant lineage | High | Low | `revision-assertion-inputs.edit` identifies the first mismatching message, parent, replacement, branch, or active-head field |
 | Q | A root user message represents its absent parent differently before and after the edit | Medium | Low | Source and edited parent IDs differ only by absent-value normalization |
 | R | The original Turn diagnostic replay changes after sibling revisions even though immutable usage, feedback, attempts, and messages do not | High | Low | Message, feedback, and attempt facts remain equal while only the whole diagnostic hash changes |
+| S | The provider reaches a terminal success before the cancellation transaction commits | Medium | Low | Cancellation response status is `completed` and no cancelled stream terminal is observed |
+| T | The Desktop cancellation response omits or reshapes the Station `status` field | Medium | Low | Response fields omit `status`, or its runtime type is not `string` |
+| U | The Station returns a non-canonical cancellation status spelling | Low | Low | Response status is present but differs from `cancelled` |
 
 ## Instrumentation
 - Record one redacted stage checkpoint before and after each AS-F07 production
@@ -337,3 +341,18 @@
   redacted assertion-input checkpoint to distinguish a real Station lineage
   mutation from an evidence-normalization defect before any behavior change.
   Source identity, redaction, and cleanup passed.
+- Exact-source run
+  `20260904T203015364850Z-7ea6de81d43dab92e5680877c894ac1e`
+  on `6858918203ac0d115669b2bc93e9a42d187e053c` advanced through
+  the repaired `BASE-APPROVAL-DENIED` tuple and failed first at Browser AS-F07
+  with `agent.acceptance.foundationRevisionRetrySourceNotCancelled`.
+  The existing AS-F07 trace recorded `scenario-started` and
+  `retry-source-cancel-requested` at durable sequence 2 after 1451 ms, then
+  entered cleanup without `retry-source-finished`. This places the failure
+  after the cancellation response returned and before retry admission.
+- Port `7777` is owned by a Debug Server whose working directory is another
+  worktree. The dedicated AS-F07 collector now listens on
+  `127.0.0.1:7783`, and the reporter targets that port. One awaited,
+  redacted checkpoint records normalized cancellation status, raw status type,
+  and response field names before the unchanged fail-closed assertion.
+  No product or Gate behavior has changed.

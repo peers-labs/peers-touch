@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T195645915962Z-2685115f2ec7084d62ae2bc0f79ca78f` advanced through governed ToolCall recovery and exposed the `continue-without-tool` selector on the approve action; the local selector correction and ordering guards await checkpoint deployment/rerun | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T203015364850Z-7ea6de81d43dab92e5680877c894ac1e` proved the Browser denial receiver correction and advanced to AS-F07, where cancellation response diagnostics now await checkpoint deployment/rerun | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5242,6 +5242,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   66 native static tests, and `git diff --check` passed. Provisioner cleanup
   completed `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN` pending
   checkpoint deployment and exact-source rerun.
+- Exact-source run
+  `20260904T203015364850Z-7ea6de81d43dab92e5680877c894ac1e`
+  on `6858918203ac0d115669b2bc93e9a42d187e053c` passed the repaired
+  Browser `BASE-APPROVAL-DENIED` receiver and advanced the first failure to
+  `AS-F07 / en / single / sample-001` with
+  `agent.acceptance.foundationRevisionRetrySourceNotCancelled`. The retained
+  AS-F07 trace recorded scenario start and a cancellation request at durable
+  sequence 2 after 1451 ms, then entered cleanup before
+  `retry-source-finished`. Provisioner cleanup completed
+  `DONE / PROVEN / passed`. The existing AS-F07 reporter had been targeting a
+  Debug Server owned by another worktree; the local diagnostic checkpoint
+  moves only that reporter to an isolated collector and records the
+  cancellation response status/type/shape before the unchanged fail-closed
+  assertion. G-F remains `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
