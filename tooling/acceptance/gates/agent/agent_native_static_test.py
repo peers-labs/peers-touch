@@ -501,6 +501,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
             revision_start,
         )
         revision = self.source[revision_start:revision_end]
+        self.assertIn("sourceCancellationStatus", revision)
+        self.assertIn("sourceStreamCancellationObserved", revision)
+        self.assertNotIn(
+            "if (!retrySourceResult.events.some",
+            revision,
+        )
         self.assertEqual(revision.count(".branchFromMessage("), 1)
         self.assertNotIn("label: 'F07Selected'", revision)
         self.assertIn(

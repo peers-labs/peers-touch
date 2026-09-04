@@ -5270,14 +5270,22 @@ async function runFoundationF07Scenario(input: {
       );
     }),
   ]);
-  await cancellationAttempt.result;
-  const retrySourceResult = await retrySource.result;
-  if (!retrySourceResult.events.some((event) =>
-    classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
+  const cancellationResponse = await cancellationAttempt.result;
+  const sourceCancellationStatus = String(
+    cancellationResponse?.status ?? '',
+  ).toLowerCase();
+  if (sourceCancellationStatus !== 'cancelled') {
+    retrySource.controller.abort();
     throw new Error('agent.acceptance.foundationRevisionRetrySourceNotCancelled');
   }
+  const retrySourceResult = await retrySource.result;
+  const sourceStreamCancellationObserved = retrySourceResult.events.some(
+    (event) => classifyAgentTurnTerminalEvent(event) === 'cancelled',
+  );
   reportFoundationF07Debug('A-B', 'retry-source-finished', {
     elapsedMs: performance.now() - scenarioStartedAt,
+    sourceCancellationStatus,
+    sourceStreamCancellationObserved,
     terminalEvent: [...retrySourceResult.events]
       .reverse()
       .find((event) => classifyAgentTurnTerminalEvent(event) !== null)?.event
@@ -5688,6 +5696,8 @@ async function runFoundationF07Scenario(input: {
       retry: {
         sourceConversationId: retryConversation.conversation_id,
         sourceTurnId: cancellationAttempt.turnId,
+        sourceStatus: sourceCancellationStatus,
+        sourceStreamCancellationObserved,
         resultTurnId: String(
           evidenceField(
             evidenceRecord(retryResponse.turn, 'foundationF07RetryTurn'),
