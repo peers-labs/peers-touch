@@ -239,6 +239,7 @@ def _make_direct_probe(
     client: Any,
     *,
     f06_coordinator: "FoundationF06Coordinator | None" = None,
+    f12_coordinator: "FoundationF12Coordinator | None" = None,
 ) -> "Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]":
     """Create a direct-runtime probe that executes via WebDriver harness.
 
@@ -253,6 +254,12 @@ def _make_direct_probe(
                     "AS-F06 direct probe requires restart orchestration"
                 )
             return f06_coordinator.capture(probe_input)
+        if probe_input.cell == "AS-F12":
+            if f12_coordinator is None:
+                raise ScenarioRunnerError(
+                    "AS-F12 direct probe requires restart orchestration"
+                )
+            return f12_coordinator.capture(probe_input)
         locale = client.harness(
             "setFoundationLocale",
             {"locale": probe_input.locale},
@@ -615,6 +622,248 @@ class FoundationF06Coordinator:
         if capture is None:
             raise ScenarioRunnerError(
                 f"AS-F06 tuple was not prepared: "
+                f"{self._scenario_key(probe_input)}"
+            )
+        return capture
+
+
+class FoundationF12Coordinator:
+    """Close every AS-F12 tuple around its own source-bound restart."""
+
+    def __init__(
+        self,
+        runtime_pair: FoundationRuntimePair,
+        runtime_manifest: Mapping[str, Any],
+        profile_env: Mapping[str, str],
+    ) -> None:
+        self._runtime_pair = runtime_pair
+        self._runtime_manifest = runtime_manifest
+        self._profile_env = dict(profile_env)
+        self._captures: dict[tuple[str, str, str, str], Mapping[str, Any]] = {}
+        self._executed = False
+
+    @staticmethod
+    def _capture_key(
+        probe_input: DirectRuntimeProbeInput,
+    ) -> tuple[str, str, str, str]:
+        return (
+            probe_input.platform,
+            probe_input.locale,
+            probe_input.cell,
+            probe_input.sample_id,
+        )
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _client(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"AS-F12 has no direct client for platform {platform}"
+        )
+
+    def _set_locale(
+        self,
+        client: Any,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> None:
+        result = client.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                f"AS-F12 locale did not converge for "
+                f"{self._scenario_key(probe_input)}"
+            )
+
+    def _cleanup(
+        self,
+        client: Any,
+        *,
+        scenario_key: str,
+        conversation_ids: tuple[str, str],
+    ) -> None:
+        result = client.harness(
+            "foundationF12Cleanup",
+            {
+                "scenarioKey": scenario_key,
+                "conversationIds": list(conversation_ids),
+            },
+            timeout=60,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("cleanupComplete") is not True
+            or result.get("handoffCleared") is not True
+        ):
+            raise ScenarioRunnerError(
+                f"AS-F12 cleanup proof is invalid for "
+                f"{scenario_key}: {result!r}"
+            )
+
+    def _execute_active(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        client = self._client(probe_input.platform)
+        scenario_key = self._scenario_key(probe_input)
+        prepared = False
+        conversation_ids: tuple[str, str] = ("", "")
+        result: Mapping[str, Any] | None = None
+        primary_error: BaseException | None = None
+        try:
+            self._set_locale(client, probe_input)
+            preparation = client.harness(
+                "foundationF12Prepare",
+                {
+                    "scenarioKey": scenario_key,
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "sampleId": probe_input.sample_id,
+                },
+                timeout=300,
+            )
+            candidate_conversation_ids = (
+                preparation.get("conversationIds")
+                if isinstance(preparation, Mapping)
+                else None
+            )
+            if (
+                not isinstance(preparation, Mapping)
+                or preparation.get("scenarioKey") != scenario_key
+                or not isinstance(candidate_conversation_ids, list)
+                or len(candidate_conversation_ids) != 2
+                or any(
+                    not isinstance(value, str) or not value
+                    for value in candidate_conversation_ids
+                )
+                or len(set(candidate_conversation_ids)) != 2
+                or preparation.get("primaryConversationId")
+                != candidate_conversation_ids[0]
+                or not isinstance(preparation.get("primaryTurnId"), str)
+                or not preparation.get("primaryTurnId")
+            ):
+                raise ScenarioRunnerError(
+                    f"AS-F12 prepare returned invalid evidence for "
+                    f"{scenario_key}: {preparation!r}"
+                )
+            prepared = True
+            conversation_ids = (
+                candidate_conversation_ids[0],
+                candidate_conversation_ids[1],
+            )
+
+            station_restart = restart_foundation_station(
+                self._runtime_manifest,
+                repo_root=REPO_ROOT,
+            )
+            client.restart()
+            _authenticate_clients(
+                self._runtime_pair,
+                self._profile_env,
+                clients=(client,),
+                require_existing_session=True,
+                recovery_boundary="as-f12-client-restart",
+            )
+            restart_evidence = {
+                **station_restart,
+                "clientReloads": {probe_input.platform: True},
+                "owningPlatform": probe_input.platform,
+                "existingSessionRestored": True,
+            }
+            candidate_result = client.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": "AS-F12",
+                    "sampleId": probe_input.sample_id,
+                    "scenarioKey": scenario_key,
+                    "stationRestart": restart_evidence,
+                },
+                timeout=300,
+            )
+            if not isinstance(candidate_result, Mapping):
+                raise ScenarioRunnerError(
+                    f"AS-F12 direct probe returned invalid evidence for "
+                    f"{scenario_key}"
+                )
+            result = dict(candidate_result)
+            assert_group_one_capture(probe_input, result)
+            return result
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            cleanup = result.get("cleanup") if isinstance(result, Mapping) else None
+            cleanup_is_clean = (
+                isinstance(cleanup, Mapping)
+                and cleanup.get("status") == "clean"
+            )
+            if prepared and not cleanup_is_clean:
+                try:
+                    self._cleanup(
+                        client,
+                        scenario_key=scenario_key,
+                        conversation_ids=conversation_ids,
+                    )
+                except BaseException as cleanup_error:
+                    if primary_error is not None:
+                        raise ScenarioRunnerError(
+                            f"{primary_error}; CLEANUP_FAILED: {cleanup_error}"
+                        ) from primary_error
+                    raise
+
+    def _execute(self) -> None:
+        f12_inputs = tuple(
+            DirectRuntimeProbeInput(
+                platform=runtime_tuple.platform,
+                locale=runtime_tuple.locale,
+                cell=runtime_tuple.cell,
+                sample_id=runtime_tuple.sample_id,
+            )
+            for runtime_tuple in group_one_tuples()
+            if runtime_tuple.cell == "AS-F12"
+        )
+        if len(f12_inputs) != 4:
+            raise ScenarioRunnerError(
+                f"AS-F12 matrix changed: expected 4 tuples, got {len(f12_inputs)}"
+            )
+        for probe_input in f12_inputs:
+            result = self._execute_active(probe_input)
+            self._captures[self._capture_key(probe_input)] = dict(result)
+        self._executed = True
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        if probe_input.cell != "AS-F12":
+            raise ScenarioRunnerError(
+                f"AS-F12 coordinator received {probe_input.cell}"
+            )
+        if not self._executed:
+            self._execute()
+        capture = self._captures.get(self._capture_key(probe_input))
+        if capture is None:
+            raise ScenarioRunnerError(
+                f"AS-F12 tuple was not prepared: "
                 f"{self._scenario_key(probe_input)}"
             )
         return capture
@@ -1188,12 +1437,18 @@ def run_scenario(*, dry_run: bool = False) -> Path:
             runtime_manifest,
             profile_env,
         )
+        f12_coordinator = FoundationF12Coordinator(
+            runtime_pair,
+            runtime_manifest,
+            profile_env,
+        )
 
         # 1. Desktop native adapter: real WebDriver probe through native client.
         desktop_native_adapter = DirectRuntimeFoundationAdapter(
             _make_direct_probe(
                 runtime_pair.native,
                 f06_coordinator=f06_coordinator,
+                f12_coordinator=f12_coordinator,
             )
         )
 
@@ -1202,6 +1457,7 @@ def run_scenario(*, dry_run: bool = False) -> Path:
             _make_direct_probe(
                 runtime_pair.browser,
                 f06_coordinator=f06_coordinator,
+                f12_coordinator=f12_coordinator,
             )
         )
 
