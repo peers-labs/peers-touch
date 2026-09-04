@@ -399,6 +399,28 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("      true,", scenario)
         self.assertNotIn("streamAgentTurn({", scenario)
 
+    def test_queue_scenario_waits_for_receiver_projection(self) -> None:
+        direct_probe = self.source.index("async foundationDirectProbe")
+        scenario_start = self.source.index(
+            "if (cell === 'AS-F02')",
+            direct_probe,
+        )
+        scenario_end = self.source.index(
+            "if (cell === 'AS-F03')",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("'Foundation AS-F02 queue projection'", scenario)
+        self.assertIn(
+            "queueProjection.queuePositions.visibleCount",
+            scenario,
+        )
+        self.assertLess(
+            scenario.index("'Foundation AS-F02 queue projection'"),
+            scenario.index("const queueReceiver = foundationDomSnapshot()"),
+        )
+
     def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
         snapshot_start = self.source.index(
             "async function foundationF12TopicSnapshot",
