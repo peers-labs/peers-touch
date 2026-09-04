@@ -24,16 +24,15 @@ import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError } from '../../services/errorPresenter';
 import { markOverlayIntent, markOverlayVisible } from '../../kernel/frontendRuntimeProfiler';
 import { OverlayCommitProfiler } from '../../kernel/OverlayCommitProfiler';
-import { imServiceV1 } from '../../services/im-service';
 import { useNavigationBadgeStore } from '../../store/navigationBadges';
 import {
   projectGroupAvatarSlots,
   resolveActorIdentity,
 } from '../../store/socialProfileProjection';
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
-import { log } from '../../utils/logger';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
+import type { FriendContactSelection } from './contactSelection';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
 
@@ -119,7 +118,15 @@ function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) 
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-export function ChatSessionList() {
+interface ChatSessionListProps {
+  onConversationSelected: () => void;
+  onOpenDirect: (contact: FriendContactSelection) => void;
+}
+
+export function ChatSessionList({
+  onConversationSelected,
+  onOpenDirect,
+}: ChatSessionListProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation(['chat', 'common']);
   const {
@@ -144,7 +151,6 @@ export function ChatSessionList() {
     getIMConversations,
     updateConversationLocalState,
     hideConversation,
-    restoreConversation,
     loadSessions,
     loadGroups,
   } = useActiveSocialChatSlice((state) => ({
@@ -169,7 +175,6 @@ export function ChatSessionList() {
     getIMConversations: state.getIMConversations,
     updateConversationLocalState: state.updateConversationLocalState,
     hideConversation: state.hideConversation,
-    restoreConversation: state.restoreConversation,
     loadSessions: state.loadSessions,
     loadGroups: state.loadGroups,
   }));
@@ -230,32 +235,13 @@ export function ChatSessionList() {
     }
 
     if (c.kind === 'friend' && c.peerPtid) {
-      try {
-        reportDirectOpenDebug({ kind: 'create-direct-start' });
-        const conversation = await imServiceV1.messaging.createDirect(c.peerPtid);
-        reportDirectOpenDebug({
-          kind: 'create-direct-success',
-          conversationId: conversation.conversationId,
-        });
-        setSearchText('');
-        selectSession(conversation.conversationId);
-        restoreConversation('friend', conversation.conversationId);
-        loadSessions().catch((error) => {
-          log.warn('chatSessionList', 'background loadSessions after createDirect failed', {
-            conversationId: conversation.conversationId,
-            error,
-          });
-        });
-      } catch (error) {
-        reportDirectOpenDebug({
-          kind: 'create-direct-failure',
-          error: error instanceof Error ? error.message : String(error),
-        });
-        presentError(error, {
-          mapper: mapChatError,
-          context: { operation: 'conversationAction' },
-        });
-      }
+      setSearchText('');
+      onOpenDirect({
+        kind: 'friend',
+        peerPtid: c.peerPtid,
+        displayName: c.title,
+        avatar: c.avatar,
+      });
     }
   };
 
@@ -315,6 +301,7 @@ export function ChatSessionList() {
   ];
 
   const handleSelect = (c: DesktopIMConversationProjection) => {
+    onConversationSelected();
     clearChatUnread(c.id);
     if (c.kind === 'friend') {
       selectSession(c.id);

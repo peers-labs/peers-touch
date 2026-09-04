@@ -20,6 +20,9 @@
 | C | `messaging_create_direct` starts but fails before returning a projected conversation. | High | Low | Confirmed and fixed: the intermediate run returned Station 404; exact-source run `20260904T074120233666Z-fdb77bd29b2e510be6a9964332a9e4d5` emitted `create-direct-success` and reopened the same conversation ID. |
 | D | A duplicate login transition revokes the token used by the messaging engine. | High | Low | Confirmed and fixed: the pre-fix run contains `auth_login -> refresh-current-session -> auth_restore_session` and `session_revoked:kicked`; the post-fix run validates the bound token and contains no session revocation. |
 | E | The conversation is created but store selection/projection never becomes visible. | Medium | Low | Rejected for the current runs: the native command returned a Station 404 before conversation creation. |
+| F | Direct creation resolves the remote endpoint manifest but then discards it and requires the remote endpoint to exist in the authority Station's local `actor_devices` table. | High | Low | Confirmed: station-five returned the Bob endpoint manifest with HTTP 200; station-four persisted it, but had only Alice in `actor_devices`. `ConversationService.CreateDirect` ignored the resolved manifests and returned 500 after `ListActiveEndpoints` found no local Bob row. |
+| G | Contacts `Message` changes only the Chat subpage before `createDirect`; on failure it has no peer-bound conversation state to render. | High | Low | Confirmed by the user screenshot and source: `onMessage()` switched `subPage`, while `activeSessionUlid` remained empty until RPC success, so the generic empty Chat pane and global toast appeared. |
+| H | The resilience Gate can pass the blank-pane regression. | High | Low | Confirmed: the latest Linux Gate accepted `_chats_subpage_active() OR _chat_area_visible()`, and therefore proved a 333 ms tab switch plus toast rather than a peer-bound pane. No Windows pointer/evidence existed for this Gate. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -96,3 +99,42 @@ had been removed by a later semantic merge. Resource cleanup passed, while
 runtime-log cleanliness failed on independent legacy conversation membership
 403s. Those failures do not invalidate the Direct-open proof. Instrumentation
 and the Debug Server remain active until user confirmation.
+
+Two exact-source runs at
+`4a13e269aca19a2eaefd4fdb20af7e53bf8ae973` then exposed hypothesis F:
+
+- run `20260904T092247675913Z-f95b1761b3142fd0081bd5e071185a77`
+  proved source, Windows runtime, service binding, and cleanup, but failed
+  Direct open after the Station deployment had replaced the dedicated DHT and
+  Relay environment;
+- after restoring one DHT seed and the Relay client on both Stations, run
+  `20260904T095919484188Z-5258359310246689b3288cd4289543c4` still returned
+  Station 500 for Direct creation;
+- station-five returned
+  `/messaging/federation/endpoint-manifest` with HTTP 200 and station-four
+  persisted Bob's verified manifest;
+- station-four had no Bob row in local `actor_devices`;
+- `ConversationService.CreateDirect` calls `resolveEndpointManifests` but
+  discards the returned snapshots, then rebuilds the endpoint set exclusively
+  through `DeviceDirectory.ListActiveEndpoints`.
+
+The required fix is to derive the Direct participant endpoint set from the
+already-verified manifest snapshots, while retaining the creator's local
+active-device authorization check. This is an implementation correction under
+the accepted endpoint-manifest architecture; it does not change MP-D29.
+
+The client and Acceptance correction now also addresses hypotheses G and H:
+
+- `SocialChatPage` owns one request-generation-fenced Direct-open intent;
+- Contacts and search results share that interaction path;
+- the Chat pane renders the selected peer identity immediately without
+  fabricating an authoritative conversation ID;
+- create failure remains inline and retryable in the peer-bound pane;
+- create success replaces the intent with the Station-authored conversation;
+- the resilience Gate no longer accepts a Chat-tab switch or generic empty
+  view and requires the peer-bound intent, inline error, retry action, and
+  Windows source-bound evidence.
+
+Local pre-runtime verification passes: Desktop check, 540 Desktop tests,
+Desktop production build, 169 Chat static tests, and all Station Messaging
+package tests. Exact-source Windows post-fix evidence remains pending.

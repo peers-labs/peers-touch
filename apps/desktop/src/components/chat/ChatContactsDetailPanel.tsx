@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button } from '@lobehub/ui';
@@ -6,10 +6,6 @@ import { Empty, theme } from 'antd';
 import { MessageCircle, Users } from 'lucide-react';
 
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
-import { presentError } from '../../services/errorPresenter';
-import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
-import { imServiceV1 } from '../../services/im-service';
-import { log } from '../../utils/logger';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import {
   findContactConversation,
@@ -18,32 +14,25 @@ import {
 
 interface ChatContactsDetailPanelProps {
   selectedContact: ContactSelection | null;
-  onMessage: () => void;
+  openingPeerPtid?: string;
+  onMessage: (contact: ContactSelection) => void;
 }
 
 export function ChatContactsDetailPanel({
   selectedContact,
+  openingPeerPtid,
   onMessage,
 }: ChatContactsDetailPanelProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const [openingConversation, setOpeningConversation] = useState(false);
   const {
     getIMConversations,
     peerProfiles,
     loadPeerProfile,
-    loadSessions,
-    selectSession,
-    selectGroup,
-    restoreConversation,
   } = useActiveSocialChatSlice((s) => ({
     getIMConversations: s.getIMConversations,
     peerProfiles: s.peerProfiles,
     loadPeerProfile: s.loadPeerProfile,
-    loadSessions: s.loadSessions,
-    selectSession: s.selectSession,
-    selectGroup: s.selectGroup,
-    restoreConversation: s.restoreConversation,
   }));
 
   const activeConversation = selectedContact
@@ -107,47 +96,6 @@ export function ChatContactsDetailPanel({
 
   if (!profile) return null;
 
-  const handleMessage = async () => {
-    if (selectedContact.kind === 'group') {
-      selectGroup(selectedContact.conversationId);
-      restoreConversation('group', selectedContact.conversationId);
-      onMessage();
-      return;
-    }
-
-    const peerPtid = selectedContact.peerPtid;
-    const existing = findContactConversation(selectedContact, getIMConversations());
-
-    if (existing) {
-      selectSession(existing.id);
-      restoreConversation('friend', existing.id);
-      onMessage();
-      return;
-    }
-
-    setOpeningConversation(true);
-    onMessage();
-
-    try {
-      log.info('chatContactsDetail', 'creating direct conversation', { peerPtid });
-      const conversation = await imServiceV1.messaging.createDirect(peerPtid);
-      selectSession(conversation.conversationId);
-      restoreConversation('friend', conversation.conversationId);
-      log.info('chatContactsDetail', 'direct conversation created', { id: conversation.conversationId });
-      loadSessions().catch((err) => {
-        log.warn('chatContactsDetail', 'background loadSessions after createDirect failed', err);
-      });
-    } catch (error) {
-      log.error('chatContactsDetail', 'createDirect failed', error);
-      presentError(error, {
-        mapper: mapChatError,
-        context: { operation: 'conversationAction' },
-      });
-    } finally {
-      setOpeningConversation(false);
-    }
-  };
-
   return (
     <Flexbox
       flex={1}
@@ -180,8 +128,11 @@ export function ChatContactsDetailPanel({
             size="large"
             type="primary"
             icon={<MessageCircle size={16} />}
-            loading={openingConversation}
-            onClick={() => void handleMessage()}
+            loading={
+              selectedContact.kind === 'friend'
+              && openingPeerPtid === selectedContact.peerPtid
+            }
+            onClick={() => onMessage(selectedContact)}
           >
             {t('chat.social.contacts.sendMessage')}
           </Button>

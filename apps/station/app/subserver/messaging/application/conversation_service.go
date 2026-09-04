@@ -62,11 +62,20 @@ func (s *ConversationService) CreateDirect(
 	conversationID := deterministicDirectConversationID(creator.Ptid, peerPTID)
 	actors := []string{creator.Ptid, peerPTID}
 	sort.Strings(actors)
-	if err := resolveEndpointManifests(ctx, s.manifestResolver, actors); err != nil {
+	manifests, err := resolveEndpointManifestSnapshots(
+		ctx,
+		s.manifestResolver,
+		actors,
+	)
+	if err != nil {
+		return nil, err
+	}
+	endpoints, err := endpointsFromManifestSnapshots(actors, manifests)
+	if err != nil {
 		return nil, err
 	}
 	var view *chat.MessagingConversationView
-	err := s.uow.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+	err = s.uow.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
 		active, err := repositories.Devices.IsActive(ctx, creator)
 		if err != nil {
 			return err
@@ -74,20 +83,6 @@ func (s *ConversationService) CreateDirect(
 		if !active {
 			return messaging.ErrSenderUnauthorized
 		}
-		endpoints := make([]*chat.CryptoEndpoint, 0)
-		for _, ptid := range actors {
-			actorEndpoints, err := repositories.Devices.ListActiveEndpoints(ctx, ptid)
-			if err != nil {
-				return err
-			}
-			if len(actorEndpoints) == 0 {
-				return fmt.Errorf("messaging: actor %s has no active device", ptid)
-			}
-			endpoints = append(endpoints, actorEndpoints...)
-		}
-		sort.Slice(endpoints, func(i, j int) bool {
-			return endpointKey(endpoints[i]) < endpointKey(endpoints[j])
-		})
 		conversation := &messaging.AuthorityConversation{
 			ConversationID:  conversationID,
 			Kind:            messaging.AuthorityConversationKindDirect,

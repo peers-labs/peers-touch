@@ -49,7 +49,7 @@
         "apps/station/app/subserver/messaging/**",
         "apps/station/app/subserver/envelope/**",
         "apps/desktop/src-tauri/src/messaging/**",
-        "apps/desktop/src/runtimes/imRuntime.ts"
+        "apps/desktop/src/runtimes/socialRuntime.ts"
       ],
       "evidence": {
         "truth_sources": [
@@ -58,7 +58,7 @@
           "Desktop chat projection"
         ],
         "surfaces": [
-          "Desktop imRuntime",
+          "Desktop socialRuntime",
           "/messaging/queue/claim",
           "/messaging/queue/ack"
         ],
@@ -78,7 +78,10 @@
       "domain": "chat",
       "direction": "acceptance_validates_product",
       "features": ["desktop-chat-surface"],
-      "required_gates": ["desktop-check"],
+      "required_gates": [
+        "desktop-check",
+        "chat-contact-message-resilience-e2e"
+      ],
       "synthetic_paths": [
         "apps/desktop/src/pages/SocialChatPage.tsx",
         "apps/desktop/src/components/chat/ChatSessionList.tsx",
@@ -95,14 +98,18 @@
           "Desktop chat session list",
           "Desktop chat message area"
         ],
-        "proven_by": ["desktop-check"],
+        "proven_by": [
+          "desktop-check",
+          "chat-contact-message-resilience-e2e"
+        ],
         "proven_scope": [
           "Desktop chat pages, components, store and service APIs type-check together",
-          "Chat visible surface keeps compile-time contract with the Desktop messaging bridge"
+          "Chat visible surface keeps compile-time contract with the Desktop messaging bridge",
+          "Current source-bound native cells prove peer-bound Direct-open recovery rather than a tab switch or toast-only fallback"
         ],
         "unproven_scope": [
-          "DOM-level Desktop chat page assertions",
-          "Human-visible message send/read/recall/edit workflow"
+          "Runtime cells without a current source-bound contact-message resilience Gate",
+          "Human-visible message send/read/recall/edit workflow beyond the dedicated interaction Gates"
         ]
       }
     },

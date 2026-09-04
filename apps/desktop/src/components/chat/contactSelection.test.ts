@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
 import {
+  beginDirectConversationOpen,
+  failDirectConversationOpen,
   findContactConversation,
   friendContactSelection,
   type ContactSelection,
@@ -91,6 +93,39 @@ describe('findContactConversation', () => {
       peerPtid: 'ptid:bob',
       displayName: 'Bob',
       avatar: undefined,
+    });
+  });
+
+  it('keeps failed Direct-open intent bound to the selected peer', () => {
+    const creating = beginDirectConversationOpen({
+      kind: 'friend',
+      peerPtid: 'ptid:bob',
+      displayName: 'Bob',
+      avatar: 'avatar',
+    });
+    const failed = failDirectConversationOpen(creating, {
+      code: 'chat.conversationActionFailed',
+      title: 'Error',
+      message: 'Conversation action failed',
+      severity: 'error',
+      recoverable: true,
+    });
+
+    expect(creating).toEqual({
+      phase: 'creating',
+      peerPtid: 'ptid:bob',
+      displayName: 'Bob',
+      avatar: 'avatar',
+    });
+    expect(failed).toMatchObject({
+      phase: 'failed',
+      peerPtid: 'ptid:bob',
+      displayName: 'Bob',
+      avatar: 'avatar',
+      error: {
+        code: 'chat.conversationActionFailed',
+        recoverable: true,
+      },
     });
   });
 });

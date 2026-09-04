@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove that clicking Message opens the chat view even when createDirect fails."""
+"""Prove that Message opens a peer-bound recovery pane when createDirect fails."""
 
 from __future__ import annotations
 
@@ -270,64 +270,49 @@ class ContactMessageResilienceGate(AcceptanceGate):
         except Exception:
             return False
 
-    def _chat_area_visible(self) -> bool:
+    def _conversation_intent_state(self, peer_ptid: str) -> str:
         driver = self.client.driver
         try:
-            driver.find_element(By.CSS_SELECTOR, '[data-chat-typing]')
-            return True
-        except Exception:
-            return False
-
-    def _snapshot_regions(self) -> set[str]:
-        if not self.client:
-            return set()
-        try:
-            result = self.client.execute_script(
-                """
-                return Array.from(document.querySelectorAll('[role="region"]'))
-                  .map(el => (el.textContent || '').trim())
-                  .filter(t => t.length > 0);
-                """
+            pane = driver.find_element(
+                By.CSS_SELECTOR,
+                f'[data-chat-conversation-intent="{peer_ptid}"]',
             )
-            return set(result) if isinstance(result, list) else set()
+            if not pane.is_displayed():
+                return ""
+            return (
+                pane.get_attribute("data-chat-conversation-intent-state")
+                or ""
+            )
         except Exception:
-            return set()
+            return ""
 
-    def _error_presented(self, baseline: set[str]) -> bool:
+    def _conversation_intent_error_visible(self, peer_ptid: str) -> bool:
         if not self.client:
             return False
         try:
-            result = self.client.execute_script(
-                """
-                const baseline = arguments[0];
-                const hasVisibleContent = (el) => {
-                  const style = window.getComputedStyle(el);
-                  if (style.display === 'none' || style.visibility === 'hidden') return false;
-                  if (parseFloat(style.opacity || '1') < 0.1) return false;
-                  if (el.children.length === 0) return el.textContent.trim().length > 0;
-                  for (const child of el.children) {
-                    if (hasVisibleContent(child)) return true;
-                  }
-                  return false;
-                };
-                for (const role of ['status', 'alert', 'log']) {
-                  for (const el of document.querySelectorAll(`[role="${role}"]`)) {
-                    const text = (el.textContent || '').trim();
-                    if (text.length > 2 && !baseline.includes(text) && hasVisibleContent(el))
-                      return true;
-                  }
-                }
-                for (const el of document.querySelectorAll('[role="region"]')) {
-                  const text = (el.textContent || '').trim();
-                  if (text.length < 3 || text.length > 500) continue;
-                  if (baseline.includes(text)) continue;
-                  if (hasVisibleContent(el)) return true;
-                }
-                return false;
-                """,
-                list(baseline),
+            error = self.client.driver.find_element(
+                By.CSS_SELECTOR,
+                (
+                    f'[data-chat-conversation-intent="{peer_ptid}"] '
+                    '[data-chat-conversation-intent-error]'
+                ),
             )
-            return bool(result)
+            return error.is_displayed()
+        except Exception:
+            return False
+
+    def _conversation_intent_retry_visible(self, peer_ptid: str) -> bool:
+        if not self.client:
+            return False
+        try:
+            retry = self.client.driver.find_element(
+                By.CSS_SELECTOR,
+                (
+                    f'[data-chat-conversation-intent="{peer_ptid}"] '
+                    '[data-chat-conversation-intent-retry]'
+                ),
+            )
+            return retry.is_displayed() and retry.is_enabled()
         except Exception:
             return False
 
@@ -352,8 +337,6 @@ class ContactMessageResilienceGate(AcceptanceGate):
                 return {bodyText: document.body?.innerText?.slice(-1000) || '', regions, roles};
                 """
             )
-            baseline = getattr(self, '_last_baseline', set())
-            result['baselineRegions'] = list(baseline)
             with tempfile.NamedTemporaryFile(
                 suffix=".json",
                 delete=False,
@@ -542,46 +525,69 @@ class ContactMessageResilienceGate(AcceptanceGate):
             steps.append({"step": "proxy.start", "status": "pass"})
 
             steps.append({"step": "message.click", "status": "start"})
-            baseline_regions = self._snapshot_regions()
             click_start = time.monotonic()
             self._click_message_button()
-            self._last_baseline = baseline_regions
 
-            navigated_fast = False
+            intent_state = ""
             deadline = click_start + (NAVIGATION_ASSERTION_DEADLINE_MS / 1000)
             while time.monotonic() < deadline:
-                if self._chats_subpage_active() or self._chat_area_visible():
-                    navigated_fast = True
+                intent_state = self._conversation_intent_state(self.bob_ptid)
+                if self._chats_subpage_active() and intent_state in {
+                    "creating",
+                    "failed",
+                }:
                     break
                 time.sleep(0.05)
             navigation_ms = int((time.monotonic() - click_start) * 1000)
 
             self.assert_condition(
-                "navigation_before_create_direct_resolves",
-                navigated_fast,
-                f"chat view did not appear within {NAVIGATION_ASSERTION_DEADLINE_MS}ms "
-                f"(took {navigation_ms}ms); navigation must not be blocked by createDirect failure",
+                "peer_bound_conversation_intent_visible",
+                (
+                    self._chats_subpage_active()
+                    and intent_state in {"creating", "failed"}
+                ),
+                "peer-bound conversation intent did not appear within "
+                f"{NAVIGATION_ASSERTION_DEADLINE_MS}ms (took {navigation_ms}ms); "
+                "a tab switch or generic empty Chat view is not sufficient",
             )
-            steps.append({"step": "message.click", "status": "pass", "navigationMs": navigation_ms})
+            steps.append({
+                "step": "message.click",
+                "status": "pass",
+                "navigationMs": navigation_ms,
+                "intentState": intent_state,
+            })
 
             steps.append({"step": "error.presented", "status": "start"})
             try:
                 error_visible = wait_until(
-                    lambda: self._error_presented(baseline_regions),
-                    "error presentation after createDirect failure",
+                    lambda: (
+                        self._conversation_intent_state(self.bob_ptid)
+                        == "failed"
+                        and self._conversation_intent_error_visible(
+                            self.bob_ptid
+                        )
+                    ),
+                    "peer-bound inline error after createDirect failure",
                     8,
                 )
             except GateError:
-                self._dump_diagnostics("toast-timeout")
+                self._dump_diagnostics("intent-error-timeout")
                 if self.proxy:
                     proxy_ev = self.proxy.evidence()
                     steps.append({"step": "proxy.evidence", "status": "info", "evidence": proxy_ev})
                 raise
             self.assert_condition(
-                "error_displayed_in_open_view",
+                "error_displayed_in_peer_bound_view",
                 bool(error_visible),
-                "error toast must be presented within the already-open chat view",
+                "createDirect failure must remain inside the peer-bound "
+                "conversation intent pane",
             )
+            self.assert_condition(
+                "conversation_retry_visible",
+                self._conversation_intent_retry_visible(self.bob_ptid),
+                "failed conversation intent must expose an enabled retry action",
+            )
+            self.save_screenshot(self.client, "peer-bound-intent-failure")
             steps.append({"step": "error.presented", "status": "pass"})
 
             time.sleep(1)

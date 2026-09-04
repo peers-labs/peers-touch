@@ -74,13 +74,10 @@
           "apps/desktop/src/acceptance/chat/**",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/fixtures/chat_submit_fault_proxy.py",
-          "tooling/acceptance/fixtures/chat_contact_message_fault_proxy.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/gates/chat/chat_submit_fault_proxy_test.py",
-          "tooling/acceptance/gates/chat/chat_contact_message_fault_proxy_test.py",
           "tooling/acceptance/gates/chat/native_interactions_runner.py",
           "tooling/acceptance/gates/chat/native_interactions_static_test.py",
-          "tooling/acceptance/gates/chat/contact_message_resilience_runner.py",
           "tooling/acceptance/gates/chat/native_support.py"
         ]
       },
@@ -89,8 +86,7 @@
         "messaging-platform-contract",
         "desktop-check",
         "chat-native-visible-static",
-        "chat-native-interactions-e2e",
-        "chat-contact-message-resilience-e2e"
+        "chat-native-interactions-e2e"
       ]
     },
     {
@@ -129,10 +125,17 @@
           "apps/desktop/src/pages/SocialChatPage.descriptor.tsx",
           "apps/desktop/src/components/chat/**",
           "apps/desktop/src/store/socialChat.ts",
-          "apps/desktop/src/services/socialChatRealtime.ts"
+          "apps/desktop/src/services/socialChatRealtime.ts",
+          "tooling/acceptance/fixtures/chat_contact_message_fault_proxy.py",
+          "tooling/acceptance/gates/chat/chat_contact_message_fault_proxy_test.py",
+          "tooling/acceptance/gates/chat/contact_message_resilience_runner.py"
         ]
       },
-      "require": ["desktop-check", "chat-native-visible-static"]
+      "require": [
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-contact-message-resilience-e2e"
+      ]
     },
     {
       "id": "chat-native-visible-operations",
