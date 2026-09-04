@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: canonical disposable execution reaches `FIXTURE_READY`, login readiness, provider/model admission, Station-backed Agent readiness, Native/Browser capability sessions, Browser AS-F01 through AS-F06, and Native feedback readback; exact-source run `20260904T020156594004Z-7865c3aebe7f55f7a3079d55c614b292` reached Browser `BASE-APPROVAL_DENIED` and exposed the next G-FE1 typed-error vertical as unimplemented | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T141328825018Z-38da519bb0beba1008fa7b78826514ee` reached `FIXTURE_READY` and failed at Browser AS-F03 Simplified Chinese because cancellation lost the terminal race; the strict cancellation oracle remains unchanged and diagnostic evidence is pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5101,6 +5101,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   accepting the retry Attempt. Desktop check, 556 Desktop tests, 183 focused
   Foundation/runtime tests, and `git diff --check` pass. Exact-source runtime
   proof remains pending; G-F remains `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260904T141328825018Z-38da519bb0beba1008fa7b78826514ee`
+  (aggregate `20260904T141328661820Z-0392ac8d272b2bf1ab7703ecdb09bd0f`,
+  candidate producer
+  `20260904T141341922994Z-3895a9b6c90dcfbdaf6093ee817c061c`)
+  on `af2a859a04b386e65d88f181e4b0a7b97d249caf` reached
+  `FIXTURE_READY`, completed Native setup and Browser login, then failed first
+  at `foundation-browser-direct / browser / direct_model / AS-F03 / zh-CN /
+  single / sample-001` with
+  `agent.acceptance.foundationActiveTurnCancelRejected`. Station intentionally
+  returns the durable terminal winner when completion races cancellation, but
+  the Harness discarded that returned status before emitting diagnostics.
+  Cleanup completed `DONE / PROVEN / passed`, all six client ports were
+  released, temporary storage was removed, and redaction passed. A separate
+  `foundation-cancel-race` debug session now records the safe cancellation
+  status, timing, event sequence, and Turn-identity equality without changing
+  the product path or strict AS-F03 oracle. G-F remains
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
