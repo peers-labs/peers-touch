@@ -107,7 +107,7 @@ def _debug_report(
     payload = json.dumps(
         {
             "sessionId": session_id,
-            "runId": "pre-fix",
+            "runId": os.environ.get("PT_DEBUG_RUN_ID", "pre-fix"),
             "hypothesisId": hypothesis_id,
             "location": location,
             "msg": f"[DEBUG] {message}",
