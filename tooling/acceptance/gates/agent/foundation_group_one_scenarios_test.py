@@ -101,6 +101,8 @@ def valid_as_f07_capture() -> dict[str, object]:
         "retry": {
             "sourceConversationId": "conversation-retry",
             "sourceTurnId": "turn-retry",
+            "sourceStatus": "cancelled",
+            "sourceStreamCancellationObserved": True,
             "resultTurnId": "turn-retry",
             "attemptId": "attempt-2",
             "attemptsBefore": [
@@ -1513,6 +1515,16 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneScenarioError,
             "originalReadyCapabilityCount must be a positive integer",
+        ):
+            evaluate_as_f07(capture)
+
+    def test_as_f07_rejects_retry_without_cancelled_source(self) -> None:
+        capture = copy.deepcopy(valid_as_f07_capture())
+        capture["retry"]["sourceStatus"] = "completed"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "retryCreatedAttempt",
         ):
             evaluate_as_f07(capture)
 
