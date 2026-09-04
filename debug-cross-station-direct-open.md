@@ -178,3 +178,37 @@ those exact environment files, both Stations report:
 
 The next comparison run uses unchanged product implementation and
 `runId=post-topology-restore`.
+
+The topology-restored run
+`20260904T174913706510Z-285038c7784e15b141f511170e839a0e`
+at commit `491ed6b2b4e248baa58cc26951d5176c4bbf0887` proved:
+
+- exact Direct creation and repeat reopen;
+- `group.create.ui` completed through authority prepare, command commit, and
+  remote queue acknowledgements; and
+- the group-genesis endpoint-manifest correction crossed its former failure
+  boundary.
+
+The first failed step moved to `transcript.thread.ui`. It timed out in
+`focus_actor_window()` before the composer click. Runtime-log cleanliness still
+failed independently on the MP-D29 membership marker, while all resource
+cleanup passed.
+
+An unchanged-source retry
+`20260904T182736117079Z-d7f0149e23b90392e96db7ce6ff69ed3`
+reproduced the same `focus_actor_window()` timeout earlier at
+`conversation.search.ui`. In both runs the activation diagnostic sampled
+`documentFocused=true` immediately after native process activation, but native
+diagnostic and point-ownership subprocesses ran before the later WebView focus
+check and foreground focus moved to unrelated Windows processes.
+
+The Gate-owned correction now:
+
+- verifies point ownership before process activation;
+- performs no native diagnostic or point probe between successful activation
+  and the WebView focus check;
+- returns immediately once WebView focus is confirmed; and
+- retains the title-bar mouse fallback and terminal diagnostic only when
+  process activation does not focus the document.
+
+Focused Native Product Closure and Runtime Cell tests pass: 58 + 45.
