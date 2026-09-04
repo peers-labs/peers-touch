@@ -9203,6 +9203,18 @@ export function installAcceptanceHarness(): void {
           throw new Error('agent.acceptance.queueCapacitySnapshotMismatch');
         }
         await useChatStore.getState().syncTurnQueue(conversation.conversation_id);
+        await waitFor(
+          () => {
+            const queueProjection = foundationDomSnapshot();
+            return (
+              queueProjection.queueEntries.visibleCount > 0
+              && queueProjection.queuePositions.visibleCount
+                === queueAtCapacity.entries.length
+            );
+          },
+          'Foundation AS-F02 queue projection',
+          30_000,
+        );
         const queueReceiver = foundationDomSnapshot();
         const activeDependencyError = await observeFoundationActiveDependency(
           conversation.conversation_id,
