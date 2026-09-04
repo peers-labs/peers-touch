@@ -4,7 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Tooltip, toast } from '@lobehub/ui';
 import { Empty, Spin, theme, Typography } from 'antd';
 import {
-  Inbox, Phone, RadioTower, Video, MoreHorizontal,
+  Inbox, Phone, RadioTower, RefreshCw, Video, MoreHorizontal,
   Lock,
 } from 'lucide-react';
 import {
@@ -45,9 +45,15 @@ import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
 import { ForwardPickerModal } from './ForwardPickerModal';
 import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
+import type { DirectConversationOpenIntent } from './contactSelection';
 
 const { Text } = Typography;
 const REACTION_PROJECTION_TIMEOUT_MS = 8_000;
+
+interface ChatMessageAreaProps {
+  directOpenIntent: DirectConversationOpenIntent | null;
+  onRetryDirectOpen: () => void;
+}
 
 function chatBackgroundCss(
   background: string | undefined,
@@ -74,7 +80,10 @@ function chatBackgroundCss(
   }
 }
 
-export function ChatMessageArea() {
+export function ChatMessageArea({
+  directOpenIntent,
+  onRetryDirectOpen,
+}: ChatMessageAreaProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
@@ -695,6 +704,89 @@ export function ChatMessageArea() {
       resolveTimestampMs: messageTimestampMs,
     });
   };
+
+  if (!activeUlid && directOpenIntent) {
+    return (
+      <Flexbox
+        data-chat-conversation-intent={directOpenIntent.peerPtid}
+        data-chat-conversation-intent-state={directOpenIntent.phase}
+        flex={1}
+        style={{
+          height: '100%',
+          minWidth: 0,
+          background: token.colorBgLayout,
+        }}
+      >
+        <Flexbox
+          horizontal
+          align="center"
+          style={{
+            height: 64,
+            padding: '0 18px',
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            background: token.colorBgContainer,
+            flexShrink: 0,
+          }}
+        >
+          <Text strong style={{ fontSize: 14 }}>
+            {directOpenIntent.displayName}
+          </Text>
+        </Flexbox>
+
+        <Flexbox
+          flex={1}
+          align="center"
+          justify="center"
+          gap={12}
+          aria-live="polite"
+          style={{ padding: 24 }}
+        >
+          {directOpenIntent.phase === 'creating' ? (
+            <>
+              <Spin size="small" />
+              <Text type="secondary">
+                {t('common.state.loading', { ns: 'common' })}
+              </Text>
+            </>
+          ) : (
+            <Flexbox
+              data-chat-conversation-intent-error={directOpenIntent.error.code}
+              gap={10}
+              style={{ width: 'min(420px, 100%)' }}
+            >
+              <PresentedErrorAlert error={directOpenIntent.error} />
+              {directOpenIntent.error.recoverable && (
+                <Button
+                  data-chat-conversation-intent-retry
+                  icon={<RefreshCw size={14} />}
+                  onClick={onRetryDirectOpen}
+                >
+                  {t('chat.message.action.retry')}
+                </Button>
+              )}
+            </Flexbox>
+          )}
+        </Flexbox>
+
+        <ChatComposer
+          activeConversationId=""
+          disabled
+          editing={false}
+          surfaceBackground={token.colorBgContainer}
+          value={inputValue}
+          onChange={handleInputChange}
+          onBlurInput={stopTypingPulse}
+          onCancelEdit={cancelEdit}
+          onCancelReply={() => setReplyToUlid(null)}
+          onSend={handleSend}
+          replyPreview={replyingPreview}
+          replyPreviewKey={replyToUlid}
+          sending={false}
+          capabilities={CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN}
+        />
+      </Flexbox>
+    );
+  }
 
   if (!activeUlid) {
     return (
