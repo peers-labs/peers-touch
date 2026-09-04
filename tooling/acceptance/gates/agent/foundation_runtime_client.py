@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
@@ -10,6 +11,7 @@ import socket
 import subprocess
 import threading
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -266,6 +268,57 @@ class FoundationRuntimeClient:
                 script_timeout=timeout,
             )
         except Exception as error:
+            # #region debug-point C:client-harness-failure
+            try:
+                urllib.request.urlopen(
+                    urllib.request.Request(
+                        "http://127.0.0.1:7778/event",
+                        data=json.dumps(
+                            {
+                                "sessionId": "foundation-identity-boot",
+                                "runId": "pre-fix",
+                                "hypothesisId": "C",
+                                "location": (
+                                    "tooling/acceptance/gates/agent/"
+                                    "foundation_runtime_client.py:harness"
+                                ),
+                                "msg": "[DEBUG] client harness failed",
+                                "data": {
+                                    "runtime": self.spec.runtime,
+                                    "method": method,
+                                    "processState": (
+                                        "missing"
+                                        if self.process is None
+                                        else (
+                                            "running"
+                                            if self.process.poll() is None
+                                            else "exited"
+                                        )
+                                    ),
+                                    "driverPresent": self.driver is not None,
+                                    "chromePresent": self.chrome is not None,
+                                    "gatewayPortOpen": port_open(
+                                        self.spec.gateway_port
+                                    ),
+                                    "rendererPortOpen": port_open(
+                                        self.spec.renderer_port
+                                    ),
+                                    "webdriverPortOpen": port_open(
+                                        self.spec.webdriver_port
+                                    ),
+                                    "errorType": type(error).__name__,
+                                },
+                                "ts": int(time.time() * 1000),
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    ),
+                    timeout=1,
+                ).read()
+            except Exception:
+                pass
+            # #endregion
             raise FoundationClientError(
                 f"{self.spec.runtime} harness {method} failed: {error}"
             ) from error
