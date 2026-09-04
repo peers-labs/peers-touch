@@ -2684,3 +2684,42 @@ NDR-W9-D and Windows NDR-W10-D remain `IMPLEMENTED_UNPROVEN` until the repair
 is committed, deployed as exact source, and both
 `chat-contact-message-resilience-e2e` and
 `chat-native-product-closure-e2e` complete with source-bound evidence.
+
+Commit `68525d60edd1fe854207c6d83a65d23cf9db98c2` deployed the first repair to
+both Stations and the Windows cell. Both Stations reported that commit, one
+connected DHT seed, ten connected routing peers, and distinct peer identities
+after their dedicated environments were restored.
+
+Windows resilience run
+`20260904T124259635040Z-3530889547fb3cbcce5b918a935e35ec` reached
+`FIXTURE_READY` with Alice bound to station-four and Bob bound to station-five,
+then failed before the cell reached `LEASED`. The exact Windows binary had
+SHA-256
+`84b61d10227399c1b47ec8a89f804ab98791fc783e71752d59326d72013a02f0`.
+The probe process remained live, and its startup log proved:
+
+- WebDriver listened on `127.0.0.1:4645`;
+- the Desktop HTTP Gateway listened on `127.0.0.1:3230`;
+- the frontend reached its account gate; and
+- the prior `1936 > 1920` geometry panic did not recur.
+
+The generic SSH loopback probe nevertheless reported both ports closed. A
+same-binary diagnostic measured the cause: the Windows encoded-PowerShell plus
+Python probe exceeded its inherited two-second default and returned false at
+approximately `2.01s`; the identical probe succeeded in approximately `3.11s`
+with a five-second budget. The transport now selects a five-second default for
+Windows and retains the two-second POSIX default while preserving every
+explicit caller timeout.
+
+Focused evidence after the transport correction:
+
+- SSH transport, Windows broker, Windows provisioner, and fixture-binding
+  tests: 32 PASS;
+- Acceptance Infra boundary, validator, and Quality Evidence tests:
+  8 + 20 + 14 PASS;
+- live exact-binary Windows probe: WebDriver and Gateway both reachable with
+  the five-second budget;
+- probe cleanup: process, task, ports, and storage all released.
+
+The Gate remains `PARTIAL/UNPROVEN`; the next exact-source Windows rerun must
+cross cell `LEASED` and execute the peer-bound failure assertion.
