@@ -5086,6 +5086,21 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   check, 182 focused Foundation/runtime tests, and `git diff --check` pass.
   Exact-source runtime proof remains pending; G-F remains
   `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260904T134623116159Z-920ba924ebb12321106d64889ed652b9`
+  (aggregate `20260904T134623004059Z-8f4a1ca347e4e25c5d054f99077f3e54`)
+  on `c971e1c15721f2c2fa8fd5bd1fc8ef7156ed3dea` crossed client
+  setup, AS-F02, and the AS-F07 branch-selection path, then failed at Browser
+  AS-F07 Simplified Chinese because the Harness required a client-stream
+  `cancelled` event before exercising retry. The production
+  `cancelAgentTurn` response was previously discarded even though Station
+  cancellation is the authoritative source state and AS-F03/AS-F06 own stream
+  cancellation/recovery proof. AS-F07 now requires and records the Station
+  cancellation status, records stream cancellation observation separately,
+  and lets the independent oracle require `sourceStatus=cancelled` before
+  accepting the retry Attempt. Desktop check, 556 Desktop tests, 183 focused
+  Foundation/runtime tests, and `git diff --check` pass. Exact-source runtime
+  proof remains pending; G-F remains `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
