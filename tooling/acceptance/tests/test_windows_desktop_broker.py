@@ -14,6 +14,7 @@ from tooling.acceptance.provisioners.windows_desktop_broker import (
     InteractiveTaskScheduler,
     ScheduledTask,
     WindowsDesktopBroker,
+    _powershell_failure_detail,
 )
 
 
@@ -103,6 +104,107 @@ class InteractiveTaskSchedulerTest(unittest.TestCase):
                     user_id="administrator",
                 )
             )
+
+    def test_idempotent_stop_and_unregister_end_with_explicit_success(
+        self,
+    ) -> None:
+        runner = _RecordingRunner()
+        scheduler = InteractiveTaskScheduler(
+            user_id="administrator",
+            runner=runner,
+        )
+
+        scheduler.stop("PeersTouch-Acceptance-run-actor-alice")
+        scheduler.unregister("PeersTouch-Acceptance-run-actor-alice")
+
+        self.assertEqual(len(runner.commands), 2)
+        for command in runner.commands:
+            self.assertTrue(_decode_script(command).endswith("; exit 0"))
+
+
+class PowerShellCleanupTest(unittest.TestCase):
+    def test_progress_only_clixml_is_not_reported_as_a_failure_detail(
+        self,
+    ) -> None:
+        completed = subprocess.CompletedProcess(
+            ("powershell.exe",),
+            1,
+            stdout="",
+            stderr=(
+                "#< CLIXML\n"
+                '<Objs xmlns="http://schemas.microsoft.com/powershell/2004/04">'
+                '<Obj S="progress"><S N="Message">'
+                "Preparing modules for first use."
+                "</S></Obj></Objs>"
+            ),
+        )
+
+        self.assertEqual(_powershell_failure_detail(completed), "exit code 1")
+
+    def test_process_absence_closes_cleanup_despite_progress_clixml(
+        self,
+    ) -> None:
+        completed = subprocess.CompletedProcess(
+            ("powershell.exe",),
+            1,
+            stdout="",
+            stderr=(
+                "#< CLIXML\n"
+                '<Objs xmlns="http://schemas.microsoft.com/powershell/2004/04">'
+                '<Obj S="progress"><S N="Message">'
+                "Preparing modules for first use."
+                "</S></Obj></Objs>"
+            ),
+        )
+        with (
+            patch(
+                "tooling.acceptance.provisioners.windows_desktop_broker."
+                "subprocess.run",
+                return_value=completed,
+            ),
+            patch.object(
+                WindowsDesktopBroker,
+                "_process_alive",
+                return_value=False,
+            ),
+        ):
+            WindowsDesktopBroker._stop_process(42)
+
+    def test_live_process_keeps_cleanup_fail_closed(self) -> None:
+        completed = subprocess.CompletedProcess(
+            ("powershell.exe",),
+            1,
+            stdout="",
+            stderr=(
+                "#< CLIXML\n"
+                '<Objs xmlns="http://schemas.microsoft.com/powershell/2004/04">'
+                '<Obj S="progress"><S N="Message">'
+                "Preparing modules for first use."
+                "</S></Obj></Objs>"
+            ),
+        )
+        with (
+            patch(
+                "tooling.acceptance.provisioners.windows_desktop_broker."
+                "subprocess.run",
+                return_value=completed,
+            ),
+            patch.object(
+                WindowsDesktopBroker,
+                "_process_alive",
+                return_value=True,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.windows_desktop_broker."
+                "time.monotonic",
+                side_effect=(0.0, 16.0),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                BrokerError,
+                "process 42 remains alive; exit code 1",
+            ):
+                WindowsDesktopBroker._stop_process(42)
 
 
 class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
