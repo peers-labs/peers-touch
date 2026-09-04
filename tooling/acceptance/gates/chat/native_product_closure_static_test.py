@@ -35,6 +35,10 @@ MESSAGE_ACTION_OVERLAY = (
     ROOT
     / "apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx"
 )
+MESSAGE_TIMELINE = (
+    ROOT
+    / "apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx"
+)
 MESSAGE_ROW = ROOT / "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
 MESSAGE_CONTENT = (
     ROOT / "apps/desktop/src/components/chat/message/ChatMessageContent.tsx"
@@ -118,6 +122,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.message_action_overlay = MESSAGE_ACTION_OVERLAY.read_text(
             encoding="utf-8"
         )
+        self.message_timeline = MESSAGE_TIMELINE.read_text(encoding="utf-8")
         self.message_row = MESSAGE_ROW.read_text(encoding="utf-8")
         self.message_content = MESSAGE_CONTENT.read_text(encoding="utf-8")
         self.home_station_provisioner = HOME_STATION_PROVISIONER.read_text(
@@ -1124,6 +1129,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("onMouseLeave={() => {", self.message_action_overlay)
         self.assertNotIn("onPointerEnter={() => {", self.message_action_overlay)
         self.assertNotIn("onPointerLeave={() => {", self.message_action_overlay)
+
+    def test_message_actions_are_owned_by_the_conversation_pane_overlay(self) -> None:
+        self.assertIn("<ChatMessageActionOverlay", self.message_timeline)
+        self.assertIn("onActionTargetChange={activateActions}", self.message_timeline)
+        self.assertIn("data-message-action-overlay-host", self.chat_message_area)
+        self.assertIn("ref={messageActionAnchorRef}", self.message_row)
+        self.assertNotIn("function HoverActions(", self.message_row)
+        self.assertNotIn("msg-hover-actions", self.message_row)
 
     def test_acceptance_window_owns_the_native_overlay_level(self) -> None:
         self.assertIn('feature = "acceptance-webdriver"', self.desktop_main)

@@ -69,6 +69,9 @@ class NativeInteractionContractsTest(unittest.TestCase):
         row = self.source(
             "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
         )
+        overlay = self.source(
+            "apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx"
+        )
         area = self.source("apps/desktop/src/components/chat/ChatMessageArea.tsx")
         thread = self.source("apps/desktop/src/components/chat/ChatThreadPanel.tsx")
         for selector in (
@@ -76,6 +79,9 @@ class NativeInteractionContractsTest(unittest.TestCase):
             'data-message-action="retract"',
             'data-message-action="reaction"',
             'data-message-action="pin"',
+        ):
+            self.assertIn(selector, overlay)
+        for selector in (
             "data-message-edited=",
             "data-message-retracted=",
             "data-message-reply-to=",

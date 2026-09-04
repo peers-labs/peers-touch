@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-08-21
+> **Created**: 2026-08-08 | **Updated**: 2026-09-04
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/app/subserver/`, `apps/desktop/`, `apps/mobile/`
 
@@ -75,7 +75,9 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 
 - Product：`PRODUCT_ACCEPTED`
 - Architecture：`ARCHITECTURE_ACCEPTED`（`MP-D01`–`MP-D27`；interaction/typing
-  amendment accepted through the 2026-08-16 completion Goal）
+  amendment accepted through the 2026-08-16 completion Goal）；`MP-D29`
+  authority-signed Home Station follower membership projection is
+  `PROPOSED / DESIGN_READY_FOR_REVIEW`。
 - Plan：base plan `PLAN_APPROVED`；`MP-W13` corrective amendment pending review。
 - Execution：live product evidence invalidated the prior MP-W10-E/MP-W12/MP-W11
   receiver-proof claims；`MP-W13` defines projection、interaction UI、identity/Station

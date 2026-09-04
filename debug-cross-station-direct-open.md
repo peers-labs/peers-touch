@@ -17,7 +17,7 @@
 |----|------------|------------|--------|----------|
 | A | Native click reaches the DOM but the React selection handler does not run. | Medium | Low | Rejected: post-fix debug line 2 contains `handler-entry` for the exact Bob PTID. |
 | B | The selection handler enters the existing-conversation branch with an invalid projection ID. | Low | Low | Rejected: post-fix debug line 2 records `branch-resolved` with an empty `existingConversationId`, followed by `create-direct-start`. |
-| C | `messaging_create_direct` starts but fails before returning a projected conversation. | High | Low | Confirmed: post-fix debug lines 2-3 record `create-direct-failure` with `station returned 404`. |
+| C | `messaging_create_direct` starts but fails before returning a projected conversation. | High | Low | Confirmed and fixed: the intermediate run returned Station 404; exact-source run `20260904T074120233666Z-fdb77bd29b2e510be6a9964332a9e4d5` emitted `create-direct-success` and reopened the same conversation ID. |
 | D | A duplicate login transition revokes the token used by the messaging engine. | High | Low | Confirmed and fixed: the pre-fix run contains `auth_login -> refresh-current-session -> auth_restore_session` and `session_revoked:kicked`; the post-fix run validates the bound token and contains no session revocation. |
 | E | The conversation is created but store selection/projection never becomes visible. | Medium | Low | Rejected for the current runs: the native command returned a Station 404 before conversation creation. |
 
@@ -75,6 +75,24 @@ The remaining failure is Station-owned federation bootstrap:
 The implementation now reads actor ownership from `touch_actor`, establishes
 the missing TOFU binding through a fresh signed locator/profile resolution,
 reads the live Relay handle per request, and uses protobuf for the affected
-first-party federation control requests. Local focused tests pass; exact-source
-deployment and post-fix Windows comparison remain pending. Instrumentation and
-the Debug Server remain active until runtime proof and user confirmation.
+first-party federation control requests.
+
+Exact-source Windows run
+`20260904T074120233666Z-fdb77bd29b2e510be6a9964332a9e4d5`
+at commit `6517324cdb5aa46cf6fcca8eac2e6ed1858c6721` and binary
+SHA-256
+`c0d00168bbbb7161789cd8ac8810dbea9447b73f8abc6a0240bac27beef8c17e`
+confirmed the fix:
+
+- the first exact Bob click emitted `create-direct-success` for
+  `d-f4d4aaa25c831bb05fdd53cd1cdd6120`;
+- the conversation pane became visible and search cleared;
+- the second exact Bob search selected the same existing conversation;
+- no `create-direct-failure` or session revocation occurred.
+
+The product-closure Gate continued past this checkpoint and later failed in
+`transcript.thread.ui` because the accepted pane-owned message action overlay
+had been removed by a later semantic merge. Resource cleanup passed, while
+runtime-log cleanliness failed on independent legacy conversation membership
+403s. Those failures do not invalidate the Direct-open proof. Instrumentation
+and the Debug Server remain active until user confirmation.

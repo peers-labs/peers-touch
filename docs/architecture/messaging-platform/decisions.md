@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.4
-> **Created**: 2026-08-08 | **Updated**: 2026-08-17
+> **Created**: 2026-08-08 | **Updated**: 2026-09-04
 > **Owner**: Messaging Platform Team
 
 ---
@@ -39,6 +39,7 @@
 | MP-D26 | Durable message interactions 共用 authority sequence 与 atomic device consumption | accepted |
 | MP-D27 | Typing 使用独立 ephemeral QoS，不进入 durable message lane | accepted |
 | MP-D28 | 采用行业基线：pending retry + accepted 后留痕 retract | accepted |
+| MP-D29 | Home Station 使用 authority-signed follower membership projection | proposed |
 
 ---
 
@@ -401,6 +402,171 @@ exact-command retry 和 ordered Authority retract event，不需要更强的 in-
 ### Acceptance
 
 Owner accepted on 2026-08-17: “与业界保持一致，不要太复杂”。
+
+## MP-D29: Home Station 使用 Authority-Signed Follower Membership Projection
+
+**Status**: proposed
+**Date**: 2026-09-04
+
+### Context
+
+跨 Station Messaging Authority 在 authority Station 上持久化 canonical membership，
+并通过 `FederatedDeviceQueueBatch` 向 actor Home Station 投递每个 endpoint 的有序
+queue item。Target Home Station 当前只校验 batch hash 并写 device lane，不从已签名
+frame 中 materialize public authority event 或 follower membership。
+
+Windows multi-Station Gate 证明了由此产生的断层：
+
+- station-four authority 存在 Alice/Bob active membership；
+- station-five 能向 Bob 的 device lane 投递、Bob Engine 能解密并渲染；
+- station-five 没有 authority、legacy 或 follower membership row；
+- Bob 的 Home Station 因而无法安全授权 actor-local member settings；
+- 旧 queue item 的存在不能证明 removal 后仍然 active。
+
+`DeviceEventDelivery` 已经包含 public `ConversationEvent` 和 endpoint-private payload，
+但 device delivery不能独自承载 follower truth：actor可能保留membership但暂时没有
+active device，removed/revoked endpoint也可能没有future device write。Membership
+projection因此必须拥有独立的Station-addressed delivery。
+
+### Decision
+
+Authority transaction为每个受影响actor Home Station写一个独立、
+Station-addressed `FOLLOWER_PROJECTION` federation outbox row。Target set：
+
+- conversation create：initial member Home Stations；
+- ordinary event：当前active member Home Stations；
+- membership transition：pre/post member Home Stations的union，确保removed actor的
+  Home Station收到final revocation；
+- target selection读取Authority持久化的actor `home_station_id`，不依赖active
+  endpoints。
+
+Authority membership row和hashed `ConversationAuthoritySnapshot.active_members`必须携带
+verified `home_station_id`。Route在membership admission时从signed actor/endpoint
+directory绑定；client command不能自行选择。
+
+`FOLLOWER_PROJECTION` payload携带exact public `ConversationEvent`，不携带
+`DeviceEventDelivery.endpoint_payload`。Authority event、projection outbox、device
+queue/federation batch和command receipt必须在同一Authority transaction提交。
+
+Target Home Station ingest projection frame时：
+
+1. 验证 peer JWT、frame signature、source/target、frame hash、idempotency和payload
+   hash；
+2. deterministic-unmarshal public `ConversationEvent`；
+3. first `ConversationCreatedFact`要求frame source同时等于event authority和verified
+   owner Home Station；随后把authority identity钉死到follower conversation；
+4. 后续frame验证event hash、source/target、conversation/event/sequence bindings和
+   pinned authority identity/key continuity；
+5. 在一个transaction中写federation inbox、follower event receipt、head和membership；
+6. transaction commit后才ACK projection frame。
+
+Device queue batch与projection frame可任意顺序到达：
+
+- queue batch仍验证每个`DeviceEventDelivery`和其public event；
+- matching follower event已存在时，只原子写local device rows；
+- public event是follower next sequence时，可与device rows同transaction apply；
+- future/gapped device frame不得写local rows或ACK，source保留exact private payload并
+  retry；
+- follower event replay只修复public follower state，绝不生成、替代或ACK缺失的
+  endpoint-private delivery。
+
+Follower membership 只从 authority public facts产生：
+
+- target `ConversationCreatedFact.members[]`携带
+  `ptid + home_station_id + role`并创建初始actor membership；
+- `MembershipTransitionCommittedFact.post_state.active_members` 原子替换 active actor
+  membership；
+- empty follower projection只允许从self-contained conversation create，或明确ADD且
+  hashed `post_state.active_members`包含local actor/Home Station的membership
+  transition建立首个checkpoint；两者都要求event authority等于hashed owner Home
+  Station。Late-join路径还必须先通过signed Federation Actor locator/profile独立
+  resolve owner Home Station；event自带route不能建立自己的authority trust。其他
+  non-initial event必须先replay；
+- removal/retirement event 必须在 target ACK 前把 actor 置为 inactive；
+- ordinary event 只推进 verified head，不改变 membership；
+- missing base、gap、fork 或 invalid signature 均 fail closed，并进入 bounded
+  authority event-log replay。
+
+Resync返回原始、hash-chained public `ConversationEvent`，不是独立mutable membership
+snapshot。Request/response绑定format version、authority、target、conversation、
+observed head、nonce、page cursor、expiry和pinned signing key。Target拒绝任何sequence
+rollback；`FORK_PROTECTED_READ_ONLY`只有显式operator-authorized forensic reset可退出。
+Public gap buffer每conversation最多128 events或4 MiB，10分钟后过期；超限返回typed
+retryable overload，不接收无界状态。
+
+Applied follower receipt只保留event identity/hash/kind/timestamp。完整public event bytes
+只在bounded gap buffer中暂存，apply后删除；不得长期复制actor endpoint metadata。
+`ConversationEvent.actor`中的PTID/device ID是已提交public authority metadata，会在
+participant Home Stations间可见；该metadata不得进入普通日志，且不扩大到非participant
+Station。
+
+Replay page signature同时绑定ordered public event digest和ordered immutable
+projection-grant digest。Authority event与grant在active conversation生命周期内
+co-retain；合法GC必须先向所有granted Home Stations交付signed terminal tombstone并
+取得ACK。Unexpected source loss返回`FOLLOWER_REPLAY_UNAVAILABLE`，Target保持
+`RESYNC_UNAVAILABLE_READ_ONLY`，不得以空状态或client state自动恢复。
+
+Canonical Messaging membership reader 按 `authority_station_id`选择：
+
+- local authority：读取 authority membership；
+- remote authority：读取 verified follower membership。
+
+Actor-local mute/background 等 member settings 由 actor Home Station 持久化，并使用上述
+reader授权。Thread summary/count 由 Device Messaging Engine 的完整 local message
+projection提供，不再调用 legacy plaintext Conversation thread endpoint。
+
+### Rationale
+
+- 复用 authority 已提交并签名的 public event，不创建第二套 membership truth；
+- Station-addressed projection不依赖actor存在active endpoint，zero-device membership和
+  final removal都有durable route；
+- follower membership与device delivery共享同一个authority commit，但使用独立
+  outbox identity，避免把payload delivery当membership truth；
+- final removal projection可撤销Home Station authorization，旧queue history不会成为
+  stale grant；
+- Home Station 不解析 ciphertext/MLS/private content，保持 E2EE boundary；
+- per-actor settings 在 Home Station 可离线读写，不把每次 UI 操作代理到 remote
+  Authority。
+
+### Alternatives Considered
+
+- **从历史 device queue 推断 membership**：拒绝，removal 后旧 row 仍存在，形成 stale
+  authorization。
+- **信任 client/Engine 提交当前 membership**：拒绝，Client 不是 shared business
+  truth owner。
+- **继续读取 legacy conversation follower tables**：拒绝，形成 canonical Messaging
+  与 legacy Conversation 双 owner。
+- **每次 settings/thread read 都同步代理到 Authority**：拒绝，扩大远端依赖，把
+  actor-local preferences 绑定到 Authority availability，并保留 legacy plaintext
+  thread surface。
+- **Target Station 解密 endpoint payload 后重建 projection**：拒绝，违反 E2EE 和
+  Station payload opacity。
+- **独立signed current-state snapshot覆盖follower state**：拒绝，与MP-D20 event-log
+  truth冲突，并允许valid-but-stale snapshot rollback。
+
+### Consequences
+
+正面：
+
+- remote Home Station 可以用同一 authority event chain授权 actor-local settings；
+- creation、membership transition、removal、duplicate、restart 和 resync有同一
+  follower state machine；
+- Desktop 不再向 legacy JSON thread/settings owner发起 canonical Messaging读取。
+
+负面：
+
+- authority transaction增加per-Home-Station projection outbox fan-out；
+- target ingest增加public event validation和follower projection writes；
+- authority membership持久化必须记录actor Home Station route；
+- 需要新增follower projection persistence与signed event-log replay contract；
+- frame gap会让 settings 暂时 fail closed，直到 follower resync完成；
+- canonical thread/settings cutover必须跨 Model、Station、Desktop Rust/Web 原子完成。
+
+### Reversal Trigger
+
+只有当 future architecture取消 Home Station actor-local settings ownership，或
+Conversation Authority 不再产生可验证 public membership event时重新评估。性能压力
+不是回退到 queue-history/client-trust authorization 的理由。
 
 ## MP-D23: Attachment Object 与 Transfer Session 由 Conversation Authority 拥有
 

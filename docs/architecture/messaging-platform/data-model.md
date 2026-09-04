@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-08-17
+> **Created**: 2026-08-08 | **Updated**: 2026-09-04
 > **Owner**: Messaging Platform Team
 
 ---
@@ -130,9 +130,15 @@ conversation_events(
 )
 
 conversation_members(
-  conversation_id, ptid, role,
+  conversation_id, ptid, home_station_id, role,
   active, joined_sequence, left_sequence,
   primary key(conversation_id, ptid)
+)
+
+messaging_event_projection_targets(
+  conversation_id, event_id,
+  target_home_station_id, entitlement_reason,
+  primary key(conversation_id, event_id, target_home_station_id)
 )
 
 conversation_member_devices(
@@ -143,7 +149,7 @@ conversation_member_devices(
 
 conversation_authority_snapshot(
   conversation_id, kind, name, owner_ptid,
-  active_members(ptid, role),
+  active_members(ptid, home_station_id, role),
   active_endpoints(ptid, device_id),
   membership_epoch, mls_epoch
 )
@@ -179,6 +185,21 @@ actor membership和device leaf membership必须独立存储。actor暂时没有a
 event中的deterministic post-state value，进入event hash。Fresh MLS endpoint以明确添加
 自己的Welcome event作为首个checkpoint时，使用该snapshot在同一SQLCipher transaction
 初始化conversation/member projection；snapshot之外不得推断或补写共享membership。
+
+`ConversationAuthorityMember` target contract增加verified `home_station_id`。
+Authority membership admission从signed actor/endpoint directory绑定该route，持久化到
+member row，并把它纳入每个post-transition snapshot hash。Client command不得自行选择
+member Home Station。
+
+`ConversationCreatedFact` target contract以
+`repeated ConversationAuthorityMember members`替换PTID-only member list。Creation
+event和membership `post_state`因此都完整携带`ptid + home_station_id + role`，follower
+不得从本地directory猜测缺失字段。Hard cut后PTID-only creation member list必须删除。
+
+`messaging_event_projection_targets`是Authority transaction产生的immutable replay
+entitlement ledger。每个event记录当时有权接收public projection的Home Stations；
+membership transition使用pre/post Home Station union。它不是membership truth，
+不能独立授权，只用于限制event-log replay。
 
 authority plan状态：
 
@@ -257,6 +278,37 @@ federation_inbox(
   received_at,
   primary key(source_station_id, idempotency_key)
 )
+
+messaging_follower_conversations(
+  conversation_id primary key,
+  authority_station_id,
+  kind, name, owner_ptid,
+  current_sequence, current_event_hash,
+  membership_epoch, mls_epoch,
+  state, updated_at
+)
+
+messaging_follower_members(
+  conversation_id, ptid,
+  home_station_id, role, active,
+  joined_sequence, left_sequence,
+  primary key(conversation_id, ptid)
+)
+
+messaging_follower_event_receipts(
+  conversation_id, sequence,
+  event_id, event_hash, previous_hash,
+  event_kind, applied_at,
+  primary key(conversation_id, sequence),
+  unique(conversation_id, event_id)
+)
+
+messaging_follower_pending_events(
+  conversation_id, sequence,
+  event_id, event_hash, previous_hash,
+  public_event_bytes, expires_at,
+  primary key(conversation_id, sequence)
+)
 ```
 
 `FederatedEndpointManifest`是routing snapshot，不是crypto identity。manifest必须由
@@ -267,6 +319,173 @@ bundle/KeyPackage hashes和expiry。Authority plan引用manifest hash；过期�
 一个authority transaction同时写local device queues与remote federation outbox rows。
 Target Home Station以`(source_station_id, idempotency_key)`幂等ingest；相同key不同hash
 是安全冲突，不得覆盖。
+
+### 3.3.1 Authority-Signed Follower Membership
+
+> `MP-D29` amendment status: proposed
+
+`messaging_follower_*`只保存 Authority 签名的 public event/projection，不保存
+endpoint-private payload、Direct ciphertext、MLS bytes、plaintext 或 key material。
+
+Authority transaction除endpoint-specific queue batch外，还为每个受影响actor Home
+Station写一个Station-addressed `FOLLOWER_PROJECTION` outbox row。Membership transition
+使用pre/post member Home Station union，因此zero-device actor和removed actor的Home
+Station仍会收到final projection。
+
+Target Home Station ingest `FOLLOWER_PROJECTION` 时在一个 transaction 中完成：
+
+```text
+federation_inbox idempotency row
++ follower event receipt/head/membership mutation
+```
+
+Device queue batch保持独立：它可deterministic-unmarshal
+`DeviceEventDelivery`外层验证public event binding，但`endpoint_payload`保持opaque。
+Matching follower event已apply时，batch仍需写exact local queue rows；future/gapped batch
+不写、不ACK，由source保留private payload并retry。Follower replay不生成private payload。
+
+Follower state：
+
+```text
+ACTIVE
+  -> GAP_WAITING_RESYNC
+  -> ACTIVE
+
+ACTIVE | GAP_WAITING_RESYNC
+  -> FORK_PROTECTED_READ_ONLY
+
+GAP_WAITING_RESYNC
+  -> RESYNC_UNAVAILABLE_READ_ONLY
+```
+
+Apply 规则：
+
+1. exact next sequence + previous hash：apply；
+2. exact duplicate event/hash：no-op；
+3. existing sequence + different event ID/hash、existing event ID + different
+   sequence/hash、或exact-next + wrong previous hash：fork-protected；
+4. future sequence：只buffer public event，最多128 events或4 MiB，10分钟expiry，并触发
+   authority event-log replay；
+5. missing base：请求 authority-signed event-log replay，未完成前 membership read
+   fail closed；
+6. empty follower可从self-contained `ConversationCreatedFact.members`，或明确ADD并在
+   `post_state.active_members`包含local actor/Home Station的membership transition建立
+   首个checkpoint；frame source/event authority必须等于hashed owner Home Station；
+7. `ConversationCreatedFact`初始化成员；membership transition以`post_state`替换成员；
+   ordinary event不改变成员。
+
+`FORK_PROTECTED_READ_ONLY`不可自动恢复；只有operator-authorized forensic rebootstrap
+可以清除。
+
+Pending public event expiry会删除bytes但保持`GAP_WAITING_RESYNC`，随后使用fresh nonce
+重新请求event-log replay。Buffer overflow不写入新event，返回typed retryable
+overload；不得丢弃gap后继续推进。
+
+`RESYNC_UNAVAILABLE_READ_ONLY`表示Authority在合法terminal tombstone之前无法提供
+co-retained event/grant。该状态不允许自动清空follower head；只能等待Authority恢复，
+或由operator依据forensic evidence执行显式purge/rebootstrap。
+
+Authority projection/replay contract：
+
+```text
+MessagingFollowerProjection {
+  format_version
+  authority_station_id
+  target_home_station_id
+  conversation_event
+}
+
+GetMessagingFollowerEventsRequest {
+  format_version
+  conversation_id
+  authority_station_id
+  target_home_station_id
+  after_sequence
+  after_event_hash
+  request_nonce
+  page_limit
+}
+
+MessagingFollowerEventsPage {
+  format_version
+  authority_station_id
+  target_home_station_id
+  conversation_id
+  request_nonce
+  repeated conversation_events
+  repeated event_projection_grants
+  next_sequence
+  has_more
+  generated_at
+  expires_at
+  signing_key_id
+  authority_signature
+}
+
+MessagingFollowerEventsPageSigningInput {
+  format_version
+  authority_station_id
+  target_home_station_id
+  conversation_id
+  request_nonce
+  after_sequence
+  after_event_hash
+  events_sha256
+  event_projection_grants_sha256
+  next_sequence
+  has_more
+  generated_at
+  expires_at
+  signing_key_id
+}
+```
+
+Request 使用 Home-to-Authority peer authentication。Response signature 绑定所有字段；
+Target Station必须验证pinned authority identity、target Station、request nonce、
+expiry、non-regressing sequence/hash和deterministic event bytes。Replay只能按hash
+chain顺序apply原始public events，不能以current-state assertion覆盖现有head，也不能
+推进device lane。
+
+Authority对每个returned event必须读取immutable
+`messaging_event_projection_targets`并证明requesting Home Station在该event的grant
+集合中。Target同样验证page中的grant与自身Station ID；pre-join和post-removal event
+不得返回。`event_projection_grants_sha256`绑定ordered
+`(event_id, target_home_station_id, entitlement_reason)` tuples；Replay page不能把
+member current state扩大为historical entitlement。
+
+Initial `ConversationCreatedFact`只有在frame source、event authority和verified
+`owner_ptid` Home Station一致时才能建立authority pin。后续projection/replay必须通过
+该pinned Station identity与`auth_peer_keys` continuity；key mismatch进入
+fork-protected read-only，不能以response自带key自动替换。
+
+Late-join Welcome在没有existing conversation authority pin时，Target必须先通过signed
+Federation Actor locator/profile独立resolve `post_state.owner_ptid`的Home Station。
+只有resolved owner Home Station、frame source和event authority三者一致时，才能建立
+首个authority pin；event自身携带的owner route不能单独建立信任。
+
+Applied follower receipt只保留event identity/hash/kind/timestamp。完整public event只在
+bounded pending buffer中暂存，apply后删除。Follower repository不得复制actor device
+identity、endpoint payload或private content。
+
+Authority `ConversationEvent`与对应`messaging_event_projection_targets`必须co-retain：
+active conversation生命周期内不得单独GC任一方。Conversation purge前，Authority必须
+向所有仍有grant的Home Stations提交并获得signed terminal projection tombstone ACK；
+之后才可同时删除event与grant。若event/grant在合法tombstone前不可用，replay返回typed
+`FOLLOWER_REPLAY_UNAVAILABLE`，Target进入`RESYNC_UNAVAILABLE_READ_ONLY`，不得清空或
+重建membership来伪装恢复。
+
+Canonical membership read：
+
+```text
+local authority conversation
+  -> messaging authority member row
+
+remote authority conversation
+  -> messaging follower member row
+```
+
+Legacy `conversation_members`/`conversation_follower_members`不得参与 canonical
+Messaging authorization。
 
 ### 3.4 Devices And Backups
 
