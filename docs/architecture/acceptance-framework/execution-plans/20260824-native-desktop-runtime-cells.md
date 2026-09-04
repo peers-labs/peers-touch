@@ -845,8 +845,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B source and dependency preflight complete; W9-C source and runtime dependency preflight complete; W9-D blocked before product execution | `sixwin` proves Python 3.12.1, Node 24.19.0, pnpm 11.25.0, Rust/Cargo 1.98.0, Git 2.55.0, VS 2022 C++ Build Tools, WebView2 `152.0.4191.62`, Strawberry Perl `v5.42.2`, protobuf compiler `36.0`, an interactive Explorer session, exact-HEAD clean source sync, Task Scheduler broker lifecycle, a contract-matching `1920x1080` interactive Win32 screenshot, SSH WebDriver-style local forwarding, a source-bound Windows Desktop executable build, and reverse cleanup. The executable SHA-256 is `be1ed49e980d3fa466d991133be2d7a450562f5cb8718c2a370998908b50ea76`. Windows run `20260903T074452984662Z-a9ab5cce3180cc34471c5ed4957d41ca` stopped at station-four source identity before actor Fixture or runtime-cell provisioning. Source closure commit `d466f0e52286f76220790bd329ea7bf8f64fb887` is ready, but neither Station has deployed it; W9-D remains `BLOCKED/UNPROVEN`. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A done; W10-B done; W10-C source closure done; W10-D product evidence blocked | Platform-neutral typed binding, bound-session proof closure, opaque transport overrides, Native Chat atomic cutover, and runtime-cell wiring pass the 224-test focused set and the stable 161-assertion Native static Gate. Both station-four and station-five remain healthy on `ef89b11fed8a`, not source closure commit `d466f0e52286f76220790bd329ea7bf8f64fb887`. station-five exact-source sync stopped at `BLOCKED:dirty-remote-worktree`; station-four deployment was not attempted because canonical profile `four` resolves to a deploy environment targeting station-five. Linux and Windows W10-D require clean exact-source deployment to both Stations; macOS remains after W8. |
+| NDR-W9 Windows cell | W9-A/B/C done; W9-D product execution reached the first Direct journey and failed | Exact-source run `20260904T053556542665Z-6aa174fec173c38d9b9c98594ba9e011` proved Windows 10 x64, WebView2 `152.0.4191.62`, interactive `1920x1080`, Win32 `SendInput`, clean source `63e830f6b50dafa02ad8c0a2b5f66491cf100059`, binary SHA-256 `cd55b5ac3c1354d58948a3f5069b1c6170dced38229100dab0466bec448024b9`, and cleanup `DONE/PROVEN`. Product proof remains `PARTIAL/UNPROVEN`: Alice timed out opening the first Direct conversation. Debug evidence confirms the exact result received the native click and confirms post-login session takeover revoked the messaging worker token. The owner-layer correction and narrower handler instrumentation await exact-source rerun. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D Windows binding proof passes, product evidence remains partial | Run `20260904T053556542665Z-6aa174fec173c38d9b9c98594ba9e011` proved Alice generation 1 bound to station-four and Bob generation 1 bound to station-five with distinct source-attested Station identities at `63e830f6b50dafa02ad8c0a2b5f66491cf100059`. The cross-Station product journey failed at first Direct open, so W10-D Windows remains `PARTIAL/UNPROVEN`; Linux multi-Station and macOS-after-W8 evidence also remain open. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -2345,3 +2345,47 @@ station-five remains healthy on `ef89b11fed8a`; exact-source sync is blocked by
 an uncommitted `tooling/docker/station.Dockerfile` change that replaces the
 committed domestic mirrors with Docker Hub images. That remote change has been
 inspected but not modified, reset, stashed, or overwritten.
+
+### 2026-09-04 Windows Direct-Open Debug Checkpoint
+
+The Windows product Gate now reaches the first cross-Station Direct journey
+with complete source, runtime, and client-binding identity:
+
+- Gate run:
+  `20260904T053556542665Z-6aa174fec173c38d9b9c98594ba9e011`.
+- Exact source:
+  `63e830f6b50dafa02ad8c0a2b5f66491cf100059`.
+- Runtime cell:
+  Windows 10 x64, WebView2 `152.0.4191.62`, interactive `1920x1080`,
+  Win32 `SendInput`.
+- Client bindings:
+  Alice generation 1 -> station-four; Bob generation 1 -> station-five.
+- Product result:
+  `PARTIAL/UNPROVEN`, timed out waiting for Alice's first Direct
+  conversation.
+- Cleanup:
+  runtime-cell and Provisioner cleanup `DONE/PROVEN`.
+
+The pre-fix debug trace proves that the exact Bob result received the native
+click, but no conversation pane or session projection appeared. Client logs
+also prove a separate owner-layer defect: `auth_login` starts the messaging
+worker with the newly issued token, then the identity pipeline invokes
+takeover-style `auth_restore_session`, which revokes that token as `kicked`
+before returning another token.
+
+The correction keeps persisted-session takeover for cold launch and renderer
+reload, but changes post-login identity reconciliation to validate the token
+already bound to the current window through `auth_validate_token`. Temporary
+handler-entry and create-direct instrumentation remains active for the
+post-fix comparison. Local verification passed:
+
+- Desktop check: PASS.
+- Desktop tests: 539 PASS, one environment-backed test skipped.
+- Desktop production build: PASS.
+- Chat Native product-closure static tests: 56 PASS.
+- Provisioning owner plus Chat static tests: 73 PASS.
+
+The Gap Detector correctly remains `UNPROVEN`: the post-fix Windows product
+Gate and the remaining 22-Gate matrix have not run. The next action is a clean
+commit, exact-source deployment to station-four and station-five, and a
+post-fix Windows rerun with the Debug Server and instrumentation retained.
