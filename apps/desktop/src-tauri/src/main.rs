@@ -138,6 +138,29 @@ fn acceptance_window_x(
 }
 
 #[cfg(feature = "acceptance-webdriver")]
+fn acceptance_window_inner_width(
+    monitor_width: f64,
+    outer_frame_width: f64,
+    minimum_window_width: f64,
+    count: u32,
+) -> Option<f64> {
+    if count == 0 {
+        return None;
+    }
+
+    let maximum_inner_width = monitor_width - outer_frame_width.max(0.0);
+    if minimum_window_width > maximum_inner_width {
+        return None;
+    }
+
+    Some(
+        (monitor_width / f64::from(count))
+            .max(minimum_window_width)
+            .min(maximum_inner_width),
+    )
+}
+
+#[cfg(feature = "acceptance-webdriver")]
 fn position_acceptance_window(
     window: &tauri::WebviewWindow,
     monitor_x: f64,
@@ -207,7 +230,33 @@ fn configure_acceptance_window(
     let logical_height = f64::from(monitor_size.height) / scale;
     let logical_x = f64::from(monitor_position.x) / scale;
     let logical_y = f64::from(monitor_position.y) / scale;
-    let window_width = (logical_width / f64::from(count)).max(minimum_window_width);
+    let initial_inner_width = window
+        .inner_size()
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance client size lookup failed: {error}"))
+        })?
+        .to_logical::<f64>(scale)
+        .width;
+    let initial_outer_width = window
+        .outer_size()
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window size lookup failed: {error}"))
+        })?
+        .to_logical::<f64>(scale)
+        .width;
+    let outer_frame_width = (initial_outer_width - initial_inner_width).max(0.0);
+    let window_width = acceptance_window_inner_width(
+        logical_width,
+        outer_frame_width,
+        minimum_window_width,
+        count,
+    )
+    .ok_or_else(|| {
+        std::io::Error::other(format!(
+            "acceptance minimum client width {minimum_window_width} with outer frame width \
+             {outer_frame_width} exceeds monitor width {logical_width}"
+        ))
+    })?;
     let window_height = (logical_height - 64.0).min(800.0);
     let window_y = logical_y + 32.0;
 
@@ -270,7 +319,30 @@ fn configure_acceptance_window(
 
 #[cfg(all(test, feature = "acceptance-webdriver"))]
 mod acceptance_window_tests {
-    use super::acceptance_window_x;
+    use super::{acceptance_window_inner_width, acceptance_window_x};
+
+    #[test]
+    fn single_actor_client_width_reserves_native_window_frame() {
+        let inner_width =
+            acceptance_window_inner_width(1920.0, 16.0, 860.0, 1).expect("window should fit");
+
+        assert_eq!(inner_width, 1904.0);
+        assert!(inner_width + 16.0 <= 1920.0);
+    }
+
+    #[test]
+    fn multi_actor_client_width_preserves_product_minimum() {
+        let inner_width =
+            acceptance_window_inner_width(1920.0, 16.0, 860.0, 3).expect("window should fit");
+
+        assert_eq!(inner_width, 860.0);
+        assert!(inner_width + 16.0 <= 1920.0);
+    }
+
+    #[test]
+    fn minimum_client_width_wider_than_framed_monitor_fails_closed() {
+        assert_eq!(acceptance_window_inner_width(800.0, 16.0, 790.0, 1), None);
+    }
 
     #[test]
     fn three_actor_windows_stay_within_monitor_bounds() {

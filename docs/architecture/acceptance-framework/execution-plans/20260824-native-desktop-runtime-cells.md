@@ -2625,3 +2625,62 @@ declared environment client bindings and keeps runtime allocation limited to
 the Gate's client subset. A regression test proves non-launched Bob binds to
 station-five while Alice binds to station-four. Fresh exact-source Windows
 evidence is still required.
+
+### 2026-09-04 Windows One-Client Runtime-Cell Infra Repair
+
+Windows resilience run
+`20260904T121508428720Z-62049f534df05230e5fa28f0daa3f5a0` reached the
+exact-source Windows runtime cell at commit
+`f8688325219bedda029fd58cbd46afeb074a9738`. The built Desktop binary had
+SHA-256
+`c7994f756e16e7b08acb28e52c7cdbd61acf262dfa2158e6939e2fe06694763a`.
+The product journey did not start because the one-client window requested the
+full `1920` logical client width; Win32 decorations increased its observed
+outer width to `1936`, and the existing containment guard correctly rejected
+that geometry.
+
+Cleanup then exposed an independent broker defect. The Desktop process and
+ports were already absent, but Windows PowerShell emitted progress-only CLIXML
+while process and scheduled-task cleanup commands inherited a nonzero status.
+The broker treated those diagnostics as resource residue even though the
+authoritative postconditions were already satisfied.
+
+The generic runtime-cell correction now:
+
+- derives the client width from the monitor width minus the observed native
+  outer-frame width, preserving the product minimum while ensuring the actual
+  outer window fits;
+- polls process absence as the process-cleanup authority and retains
+  fail-closed behavior when the PID remains alive;
+- parses PowerShell CLIXML for real error records instead of reporting progress
+  records as failures; and
+- gives idempotent scheduled-task stop/unregister scripts an explicit successful
+  no-op exit while retaining terminating cmdlet failures.
+
+Local evidence:
+
+- Rust Acceptance window tests: 6 PASS;
+- focused Windows broker, provisioner, and non-launched fixture-binding tests:
+  27 PASS;
+- Acceptance Infra boundary tests: 8 PASS;
+- Quality Evidence tests: 14 PASS;
+- Acceptance validator tests: 20 PASS;
+- `acceptance-plan-self`: PASS and selects
+  `acceptance-runtime-provisioning-self`;
+- `git diff --check` and `cargo fmt --check`: PASS.
+
+The complete `acceptance-runtime-provisioning-self` command retains its known
+unrelated baseline failures in stale Agent provisioner contracts, occupied
+port `4445`, and launch-context timing tests.
+`acceptance-infra-validation` remains blocked by the known latest-run source
+mismatch, and `skill-check` remains blocked by the pre-existing review-rules
+digest drift.
+
+The failed Windows lease was cleaned by exact run identity. Post-cleanup audit
+shows zero Acceptance scheduled tasks, zero Desktop processes, zero listeners
+on `3230` and `4645`, no runtime root, and no local runtime-cell state.
+
+NDR-W9-D and Windows NDR-W10-D remain `IMPLEMENTED_UNPROVEN` until the repair
+is committed, deployed as exact source, and both
+`chat-contact-message-resilience-e2e` and
+`chat-native-product-closure-e2e` complete with source-bound evidence.
