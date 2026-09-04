@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -77,6 +78,58 @@ VALID_ATTACHMENT_IMAGE_BYTES = bytes.fromhex(
     "0000000d49444154789c63f8cfc0f01f00050001ff89993d1d"
     "0000000049454e44ae426082"
 )
+
+
+# #region debug-point A-E:cross-station-direct-open
+def _debug_report(
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict[str, Any],
+) -> None:
+    env_path = REPO_ROOT / ".dbg" / "cross-station-direct-open.env"
+    if not env_path.exists():
+        return
+    values = {}
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            values[key] = value
+    url = values.get("DEBUG_SERVER_URL", "")
+    session_id = values.get("DEBUG_SESSION_ID", "")
+    if not url or not session_id:
+        return
+    endpoint = url.removeprefix("http://")
+    authority, separator, path = endpoint.partition("/")
+    if not separator or ":" not in authority:
+        return
+    host, raw_port = authority.rsplit(":", 1)
+    payload = json.dumps(
+        {
+            "sessionId": session_id,
+            "runId": "pre-fix",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "msg": f"[DEBUG] {message}",
+            "data": data,
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+    try:
+        connection = http.client.HTTPConnection(host, int(raw_port), timeout=1)
+        connection.request(
+            "POST",
+            f"/{path}",
+            body=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        connection.getresponse().read()
+        connection.close()
+    except (OSError, ValueError):
+        pass
+# #endregion
+
+
 LOCALIZATION_KEY_PATTERN = re.compile(
     r"\b(?:agent|applet|auth|channels|chat|common|cron|error|errors|layout|memory|"
     r"moments|notes|oauth|provider|search|settings|share|tts)"
@@ -1836,9 +1889,91 @@ class NativeProductClosureGate(AcceptanceGate):
                 result.get_attribute("data-chat-search-result-peer-ptid") or ""
             ),
         }
+        # #region debug-point A-C:search-result-selection
+        client.execute_script(
+            """
+            const selector = arguments[0];
+            const state = window.__PT_DIRECT_OPEN_DEBUG__ = { events: [] };
+            document.addEventListener('click', (event) => {
+              const target = event.target instanceof Element
+                ? event.target.closest(selector)
+                : null;
+              if (target) {
+                state.events.push({
+                  kind: 'search-result-click',
+                  peerPtid: target.getAttribute(
+                    'data-chat-search-result-peer-ptid',
+                  ) || '',
+                });
+              }
+            }, { capture: true, once: true });
+            const internals = window.__TAURI_INTERNALS__;
+            if (internals?.invoke && !internals.__ptDirectOpenOriginalInvoke) {
+              const original = internals.invoke.bind(internals);
+              internals.__ptDirectOpenOriginalInvoke = original;
+              internals.invoke = (command, args) => {
+                if (command !== 'messaging_create_direct') {
+                  return original(command, args);
+                }
+                state.events.push({ kind: 'create-direct-start' });
+                return Promise.resolve(original(command, args)).then(
+                  (value) => {
+                    state.events.push({
+                      kind: 'create-direct-success',
+                      conversationId:
+                        value?.data?.conversation_id
+                        || value?.conversation_id
+                        || '',
+                    });
+                    return value;
+                  },
+                  (error) => {
+                    state.events.push({
+                      kind: 'create-direct-failure',
+                      error: String(error?.message || error || ''),
+                    });
+                    throw error;
+                  },
+                );
+              };
+            }
+            """,
+            selector,
+        )
+        _debug_report(
+            "A",
+            "native_product_closure_runner.py:search_contact_result",
+            "exact search result ready for native click",
+            {
+                "actor": actor,
+                "kind": snapshot["kind"],
+                "peerPtidSha256": hashlib.sha256(
+                    snapshot["peerPtid"].encode("utf-8")
+                ).hexdigest(),
+            },
+        )
         self.capture_visible_localization(localization_checkpoint, (actor,))
         self.arm_conversation_search_feedback_probe(actor)
         self.click(actor, selector)
+        observed = client.execute_script(
+            """
+            const search = document.querySelector('[data-chat-session-search]');
+            return {
+              events: window.__PT_DIRECT_OPEN_DEBUG__?.events || [],
+              paneCount: document.querySelectorAll(
+                '[data-chat-conversation-pane]',
+              ).length,
+              searchValue: search?.value || '',
+            };
+            """
+        )
+        _debug_report(
+            "A-C",
+            "native_product_closure_runner.py:search_contact_result",
+            "native click observation",
+            observed if isinstance(observed, dict) else {},
+        )
+        # #endregion
         return snapshot
 
     def active_direct_conversation(
@@ -1892,11 +2027,46 @@ class NativeProductClosureGate(AcceptanceGate):
             peer_ptid,
             "search-result-create",
         )
-        first_open = wait_until(
-            lambda: self.active_direct_conversation(actor),
-            "Alice Direct conversation from first search result",
-            timeout=120,
-        )
+        # #region debug-point C-E:conversation-open-result
+        try:
+            first_open = wait_until(
+                lambda: self.active_direct_conversation(actor),
+                "Alice Direct conversation from first search result",
+                timeout=120,
+            )
+        except GateError:
+            client = self.clients[actor]
+            failure = client.execute_script(
+                """
+                const search = document.querySelector(
+                  '[data-chat-session-search]',
+                );
+                return {
+                  events: window.__PT_DIRECT_OPEN_DEBUG__?.events || [],
+                  paneCount: document.querySelectorAll(
+                    '[data-chat-conversation-pane]',
+                  ).length,
+                  sessionIds: Array.from(
+                    document.querySelectorAll('[data-chat-session-ulid]'),
+                  ).map((row) => row.getAttribute('data-chat-session-ulid')),
+                  searchValue: search?.value || '',
+                };
+                """
+            )
+            feedback = self.conversation_search_feedback(actor)
+            _debug_report(
+                "C-E",
+                "native_product_closure_runner.py:prove_conversation_search_open",
+                "direct conversation did not become visible",
+                {
+                    "state": failure if isinstance(failure, dict) else {},
+                    "feedback": feedback,
+                },
+            )
+            self.save_screenshot(client, "alice-direct-search-failed")
+            self.save_dom(client, "alice-direct-search-failed")
+            raise
+        # #endregion
         first_feedback = self.conversation_search_feedback(actor)
         self.save_screenshot(
             self.clients[actor],
