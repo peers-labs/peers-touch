@@ -202,6 +202,16 @@ def valid_as_f10_capture(platform: str = "desktop_app") -> dict[str, object]:
             "stationStatus": "completed",
             "receiverStatus": "completed",
         },
+        "toolIsolation": {
+            "disabledBindingCount": 1,
+            "readyCapabilityCount": 0,
+            "originalReadyCapabilityCount": 1,
+            "originalReadyCapabilityHash": "f" * 64,
+            "restoredBindingCount": 1,
+            "restoredReadyCapabilityCount": 1,
+            "restoredReadyCapabilityHash": "f" * 64,
+            "restorationVerified": True,
+        },
         "capabilitySession": {
             "platform": platform,
             "sessionId": "session-1",
@@ -1370,6 +1380,16 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneScenarioError,
             "zeroExecutionOnReject",
+        ):
+            evaluate_as_f10(capture, platform="browser")
+
+    def test_as_f10_rejects_unisolated_core_turn(self) -> None:
+        capture = valid_as_f10_capture("browser")
+        capture["toolIsolation"]["readyCapabilityCount"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "coreOutcomesMatch",
         ):
             evaluate_as_f10(capture, platform="browser")
 

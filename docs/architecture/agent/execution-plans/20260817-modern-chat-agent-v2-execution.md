@@ -4807,6 +4807,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   TypeScript checks, Rust formatting, and `git diff --check` pass. Cleanup for
   both runs completed `DONE / PROVEN / passed`; G-F remains
   `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260904T053154576294Z-e36f20f3da94441bbb4a46e11462304b`
+  (aggregate `20260904T053154433161Z-da5f7fdb6e5e92baffca6ca2a7772e86`)
+  on `8aa59b580f41b9fdd860de829e35342af9433413` crossed the corrected
+  login and AS-F06 lifecycle boundaries, then reproduced Browser AS-F10
+  `agent.acceptance.turnSubmissionTimeout`. Durable Station readback for both
+  AS-F10 failures shows the model emitted a ToolCall within two seconds,
+  entered `tool_approval_required`, and remained there until the 120-second
+  client cancellation; this is not provider latency. AS-F10's core
+  command/event parity Turn is tool-independent, while its explicit capability
+  negative controls run after that Turn. The local correction therefore uses
+  the existing revision-fenced capability-isolation helper only around the
+  core Turn, restores the bindings before the controls, and strengthens both
+  independent oracles to require zero ready capabilities during the Turn plus
+  verified restoration. The 155 focused Foundation tests, 51 capability
+  isolation tests, Desktop TypeScript checks, Rust formatting, and
+  `git diff --check` pass. Cleanup completed `DONE / PROVEN / passed`; G-F
+  remains `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
