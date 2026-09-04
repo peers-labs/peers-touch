@@ -4907,6 +4907,21 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   sibling messages, distinct topic graphs, and exact post-restart active heads.
   Provisioner cleanup completed `DONE / PROVEN / passed`; G-F remains
   `PARTIAL / UNPROVEN` pending checkpoint deployment and rerun.
+- Exact-source run
+  `20260904T081925930277Z-23f308e264e898e272791a779e06b23a`
+  (aggregate `20260904T081925818760Z-af768c77c7498b23d065fb8dface0c25`)
+  on `3ea05baa71e5e274d6687dcf958ccd20a971acfc` crossed the AS-F01
+  isolation boundary but stopped at Browser AS-F07 Simplified Chinese on a
+  generic `agent_select_active_branch failed`. The unchanged rerun
+  `20260904T083559746272Z-e424b36bf60bffd206d55e2f171eb4cb`
+  (aggregate `20260904T083559633362Z-de50915d3349d946c20034b51339eab9`)
+  reproduced the same failure in Browser English. Durable revision rows show
+  both regenerations and edit-and-resend committed, while no later branch
+  command committed. The accepted branch behavior is unchanged; bounded
+  expected/actual revision diagnostics now cover AS-F07's two non-stale branch
+  switches so the next exact run can distinguish a CAS race from invalid
+  source state. Both Provisioner cleanups completed
+  `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
