@@ -2169,6 +2169,28 @@ async function runFoundationF04Scenario(input: {
       ...capabilitySession.facts,
       turnId: turn.turnId,
     };
+    if (label === 'deny') {
+      const lineage = evidenceRecord(
+        caseFact.lineage,
+        'foundationF04DenyLineage',
+      );
+      await reportFoundationF04DenialDebug('A-D', 'denial-fact', {
+        policy: caseFact.policy,
+        states: caseFact.states,
+        executionAttemptCount: caseFact.executionAttemptCount,
+        sideEffectCount: caseFact.sideEffectCount,
+        resultCount: caseFact.resultCount,
+        continuationCount: caseFact.continuationCount,
+        targetStatusMatches: toolStatusName(fact.status)
+          === toolStatusName(targetStatus),
+        bindingRevisionMatches:
+          currentBinding !== null
+          && String(lineage.bindingRevision) === String(currentBinding.revision),
+        sourceReplayMatches:
+          stableJson(withoutDiagnosticGenerationTime(source.replay))
+          === stableJson(withoutDiagnosticGenerationTime(replayed.replay)),
+      });
+    }
     return {
       turn,
       fact,
@@ -5258,6 +5280,27 @@ async function foundationRevisionMessageFact(
     contentHash: await sha256Hex(content),
   };
 }
+
+// #region debug-point A-D:as-f04-denial-evidence
+function reportFoundationF04DenialDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7784/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'as-f04-denial-evidence',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationF04Scenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
 
 // #region debug-point A-E:as-f07-revision-stage
 function reportFoundationF07Debug(
