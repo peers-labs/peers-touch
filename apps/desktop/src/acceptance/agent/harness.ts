@@ -4319,7 +4319,7 @@ async function foundationF12TopicSnapshot(
       replacesMessageId: message.replacesMessageId ?? '',
     }));
   const snapshot = {
-    key: topic.key,
+    topicLabel: topic.key,
     fact: topic.fact,
     conversation: {
       conversationId: readback.conversation.conversation_id,
