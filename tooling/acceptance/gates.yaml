@@ -86,7 +86,7 @@
         "desktop-windows-native"
       ],
       "tier": "env-evidence",
-      "description": "Prove that clicking the contact Message button opens the chat view immediately even when createDirect fails, and the error is presented within the open view."
+      "description": "Prove that clicking the contact Message button immediately opens a peer-bound conversation intent pane even when createDirect fails, with inline error and retry instead of the generic empty Chat view."
     },
     "chat-native-typing-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
