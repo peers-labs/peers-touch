@@ -1076,17 +1076,17 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   syncMessages: async () => {
     log.debug('chat', 'Syncing messages', { key: get().currentSessionKey });
-    const { currentSessionKey, messages: currentMessages } = get();
+    const { currentSessionKey } = get();
 
     try {
       if (isAgentDraftKey(currentSessionKey)) {
         return;
       }
-      const synced = await agentChatCache.syncConversation(currentSessionKey);
+      const synced = await agentChatCache.refreshConversation(currentSessionKey);
       if (get().currentSessionKey !== currentSessionKey) return;
       const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
 
-      const merged = mergeServerMessages(currentMessages, serverMessages);
+      const merged = mergeServerMessages(get().messages, serverMessages);
       set({ messages: merged });
     } catch (error) {
       log.warn('chat', 'Failed to sync messages; keeping current view', { error: String(error) });

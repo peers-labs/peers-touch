@@ -63,6 +63,24 @@ describe('mergeServerMessages', () => {
     expect(merged[0].toolCalls).toHaveLength(1);
   });
 
+  it('removes an inactive branch when the authoritative projection selects an older sibling', () => {
+    const current = [
+      msg('user-1', 'user', 'question'),
+      msg('assistant-newer', 'assistant', 'regenerated answer'),
+    ];
+    const server = [
+      msg('user-1', 'user', 'question'),
+      msg('assistant-older', 'assistant', 'selected original answer'),
+    ];
+
+    const merged = mergeServerMessages(current, server);
+
+    expect(merged.map((message) => message.id)).toEqual([
+      'user-1',
+      'assistant-older',
+    ]);
+  });
+
   it('retains a failed assistant message when the server has not persisted it', () => {
     const current = [
       msg('temp-user-1', 'user', 'hello'),

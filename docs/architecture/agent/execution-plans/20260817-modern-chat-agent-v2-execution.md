@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T153321748945Z-5390dd23d06e8b2d74cc7b8d0253071f` confirmed the Browser AS-F03 cancellation/completion race; bounded live-provider cancellation-window acquisition is being added while the strict cancellation oracle remains unchanged | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T155208865276Z-9c5eafc516837c1ec1d29b89c2fc7f05` passed both Browser AS-F03 locales, then confirmed an AS-F12 Desktop cache/Station active-branch projection divergence; authoritative cache replacement is locally verified and awaits exact-source rerun | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5171,6 +5171,28 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `DONE / PROVEN / passed`. Desktop check, 173 focused Foundation/runtime
   tests, and `git diff --check` pass. G-F remains `PARTIAL / UNPROVEN`
   pending checkpoint deployment and exact-source rerun.
+- Exact-source run
+  `20260904T155208865276Z-9c5eafc516837c1ec1d29b89c2fc7f05`
+  (aggregate `20260904T155208747044Z-86d899fc7bb8f49fb5831ccbaffbf1e1`,
+  candidate producer
+  `20260904T155220147429Z-bb76c264721cd5528c31a56510495846`)
+  on `16a54457e028864d778c8fcd3058ad910f740818` passed both Browser
+  AS-F03 locale tuples on the first cancellation-window attempt, then failed
+  Browser AS-F12 English while projecting the second topic's selected branch.
+  Safe diagnostics proved the target conversation remained selected and
+  registered and that Station returned four messages containing the selected
+  branch, while the Desktop store returned four messages without it. The
+  shared Agent cache had advanced its incremental cursor through a regenerated
+  sibling; selecting the lower-sequence original branch could therefore
+  neither fetch the selected head nor remove the inactive sibling. The local
+  correction adds paginated authoritative replacement with cursor reset and
+  per-conversation write serialization, makes Desktop `syncMessages` use that
+  path, and invokes it from periodic `agent-topic` reconciliation. The shared
+  cache regression, 557 Desktop tests with one unrelated skip, Desktop
+  typecheck/build, 66 native static tests, and `git diff --check` pass. Broad
+  Foundation discovery passes 275 tests and retains two known unrelated
+  `receiver-dom` fixture errors. G-F remains `PARTIAL / UNPROVEN` pending
+  checkpoint deployment and exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
@@ -5268,7 +5290,12 @@ Consequence:
 - **Expected**: Each topic restores only its own messages/fact/runtime binding and the same active branch; no ID, message, context, branch, or runtime-home/session crosses topics.
 - **Failure variant**: Inject a stale topic/branch revision; mutation conflicts without altering either topic.
 - **Evidence**: Native DOM before/after restart, Station conversation/message/branch/runtime-binding rows, zero cross-topic references.
-- **Status**: pending
+- **Status**: in progress. Exact-source run
+  `20260904T155208865276Z-9c5eafc516837c1ec1d29b89c2fc7f05`
+  proved Station retained the selected active branch while Desktop's
+  incremental cache retained the inactive sibling. Authoritative cache
+  replacement and periodic runtime reconciliation are locally verified;
+  source-matched runtime proof remains pending.
 
 ### AS-F13 Conditional Stateless CLI Adapter
 - **Precondition**: Read Station effective provider/model projection, D12 profile, and D05 readiness snapshot for the actor.
