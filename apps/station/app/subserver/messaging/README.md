@@ -14,6 +14,9 @@ queues, recovery revisions, and federation delivery.
   typed application calls.
 - `worker/` owns durable federation dispatch.
 - `composition.go` is the only dependency graph for these owners.
+- Federated endpoint discovery reads actor ownership from `touch_actor`,
+  establishes Station trust through the signed locator/profile path, and uses
+  the live Relay client for inter-Station routing.
 
 The composition is intentionally not registered in `apps/station/app/main.go`
 during MP-W02 through MP-W04 and MP-W06. MP-W05 atomically registers its

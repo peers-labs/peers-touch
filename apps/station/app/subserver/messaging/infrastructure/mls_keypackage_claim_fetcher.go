@@ -13,7 +13,7 @@ import (
 	messaging "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type MlsKeyPackageClaimTokenMinter interface {
@@ -60,7 +60,7 @@ func (c *HTTPMlsKeyPackageClaimer) ClaimMlsKeyPackage(
 	if err != nil {
 		return nil, err
 	}
-	body, err := protojson.Marshal(request)
+	body, err := proto.Marshal(request)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +77,8 @@ func (c *HTTPMlsKeyPackageClaimer) ClaimMlsKeyPackage(
 	if err != nil {
 		return nil, err
 	}
-	httpRequest.Header.Set("Content-Type", "application/json")
-	httpRequest.Header.Set("Accept", "application/json")
+	httpRequest.Header.Set("Content-Type", "application/protobuf")
+	httpRequest.Header.Set("Accept", "application/protobuf")
 	if viaRelay {
 		httpRequest.Header.Set("Authorization", "Bearer "+relayToken)
 		httpRequest.Header.Set(nativefed.ForwardAuthorizationHeader, "Bearer "+token)
@@ -102,7 +102,7 @@ func (c *HTTPMlsKeyPackageClaimer) ClaimMlsKeyPackage(
 		)
 	}
 	result := &chat.ClaimFederatedMlsKeyPackageResponse{}
-	if err := protojson.Unmarshal(responseBody, result); err != nil {
+	if err := proto.Unmarshal(responseBody, result); err != nil {
 		return nil, err
 	}
 	if !validClaimedMlsKeyPackage(result, request, homeStationID) {
