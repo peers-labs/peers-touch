@@ -24,6 +24,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f06,
     evaluate_as_f07,
     evaluate_as_f10,
+    evaluate_as_f12,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_approval_denied_capture,
@@ -32,6 +33,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_as_f05_capture,
     valid_as_f06_capture,
     valid_as_f07_capture,
+    valid_as_f12_capture,
 )
 
 
@@ -172,6 +174,20 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
         result["assertions"] = evaluate_as_f10(
             facts,
             platform=probe.platform,
+        )
+        return result
+    if probe.cell == "AS-F12":
+        facts = valid_as_f12_capture(
+            probe.platform,
+            probe.locale,
+            probe.sample_id,
+        )
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_as_f12(
+            facts,
+            platform=probe.platform,
+            locale=probe.locale,
+            sample_id=probe.sample_id,
         )
         return result
     if probe.cell != "AS-F02":
@@ -369,6 +385,35 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             "AS-F10 assertions do not match production scenario facts",
         ):
             runner.collect(mismatched)
+
+    def test_as_f12_rejects_renderer_assertions_not_derived_from_facts(
+        self,
+    ) -> None:
+        facts = valid_as_f12_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": {
+                **evaluate_as_f12(
+                    facts,
+                    platform="desktop_app",
+                    locale="en",
+                    sample_id="sample-001",
+                ),
+                "noCrossTopicReferences": False,
+            },
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="desktop_app",
+            locale="en",
+            cell="AS-F12",
+            sample_id="sample-001",
+        )
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "AS-F12 assertions do not match production scenario facts",
+        ):
+            assert_group_one_capture(probe, capture_value)
 
     def test_as_f05_rejects_assertions_not_derived_from_facts(self) -> None:
         runner = FoundationGroupOneProbeRunner(

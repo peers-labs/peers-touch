@@ -1610,6 +1610,494 @@ def evaluate_as_f10(
     return assertions
 
 
+def evaluate_as_f12(
+    capture: Mapping[str, Any],
+    *,
+    platform: str,
+    locale: str,
+    sample_id: str,
+) -> dict[str, bool]:
+    scenario = "AS-F12"
+    scope = _mapping(capture, "scope", scenario=scenario)
+    tool_isolation = _mapping(
+        capture,
+        "toolIsolation",
+        scenario=scenario,
+    )
+    topics = _mapping(capture, "topics", scenario=scenario)
+    restart = _mapping(capture, "restart", scenario=scenario)
+    station = _mapping(restart, "station", scenario=scenario)
+    stale = _mapping(capture, "staleMutation", scenario=scenario)
+    stale_before = _mapping(stale, "before", scenario=scenario)
+    stale_after = _mapping(stale, "after", scenario=scenario)
+
+    if set(topics) != {"alpha", "beta"}:
+        raise GroupOneScenarioError(
+            f"{scenario} topics must contain alpha and beta"
+        )
+
+    expected_scenario_key = "|".join(
+        (platform, locale, scenario, sample_id)
+    )
+    topic_facts = {
+        key: _evaluate_as_f12_topic(
+            _mapping(topics, key, scenario=scenario),
+            key=key,
+            scenario=scenario,
+        )
+        for key in ("alpha", "beta")
+    }
+    alpha = topic_facts["alpha"]
+    beta = topic_facts["beta"]
+    conversation_ids = {
+        alpha["conversation_id"],
+        beta["conversation_id"],
+    }
+    distinct_topic_identity = (
+        alpha["fact"] != beta["fact"]
+        and len(conversation_ids) == 2
+        and alpha["message_ids"].isdisjoint(beta["message_ids"])
+        and alpha["branch_ids"].isdisjoint(beta["branch_ids"])
+        and alpha["turn_ids"].isdisjoint(beta["turn_ids"])
+        and _as_f12_runtime_ownership_isolated(alpha, beta)
+    )
+    source_restart_proven = (
+        _sha256_string(
+            station,
+            "stationUrlHash",
+            scenario=scenario,
+        )
+        and _sha256_string(
+            station,
+            "protoDigest",
+            scenario=scenario,
+        )
+        and _nonempty_string(
+            station,
+            "containerId",
+            scenario=scenario,
+        )
+        and _nonempty_string(
+            station,
+            "imageId",
+            scenario=scenario,
+        )
+        and _nonempty_string(
+            station,
+            "imageRef",
+            scenario=scenario,
+        )
+        and _nonempty_string(
+            station,
+            "beforeStartedAt",
+            scenario=scenario,
+        )
+        != _nonempty_string(
+            station,
+            "afterStartedAt",
+            scenario=scenario,
+        )
+        and _hex_identity_matches(
+            _nonempty_string(
+                station,
+                "sourceCommit",
+                scenario=scenario,
+            ),
+            _nonempty_string(
+                station,
+                "beforeCommit",
+                scenario=scenario,
+            ),
+        )
+        and _hex_identity_matches(
+            _nonempty_string(
+                station,
+                "sourceCommit",
+                scenario=scenario,
+            ),
+            _nonempty_string(
+                station,
+                "afterCommit",
+                scenario=scenario,
+            ),
+        )
+        and _mapping(
+            station,
+            "clientReloads",
+            scenario=scenario,
+        ).get(platform)
+        is True
+        and station.get("owningPlatform") == platform
+        and station.get("existingSessionRestored") is True
+    )
+    stale_target = _nonempty_string(
+        stale,
+        "targetConversationId",
+        scenario=scenario,
+    )
+    stale_expected_version = _positive_int(
+        stale,
+        "expectedVersion",
+        scenario=scenario,
+    )
+    stale_before_alpha_version = _positive_int(
+        stale_before,
+        "alphaVersion",
+        scenario=scenario,
+    )
+    stale_preserved = (
+        stale.get("errorCode") == "VERSION_CONFLICT"
+        and stale_target == alpha["conversation_id"]
+        and _nonempty_string(
+            stale,
+            "attemptedBranchMessageId",
+            scenario=scenario,
+        )
+        == alpha["source_assistant_message_id"]
+        and stale_expected_version < stale_before_alpha_version
+        and _sha256_string(
+            stale_before,
+            "alphaHash",
+            scenario=scenario,
+        )
+        == _sha256_string(
+            stale_after,
+            "alphaHash",
+            scenario=scenario,
+        )
+        == alpha["post_restart_hash"]
+        and _sha256_string(
+            stale_before,
+            "betaHash",
+            scenario=scenario,
+        )
+        == _sha256_string(
+            stale_after,
+            "betaHash",
+            scenario=scenario,
+        )
+        == beta["post_restart_hash"]
+        and stale_before_alpha_version
+        == _positive_int(
+            stale_after,
+            "alphaVersion",
+            scenario=scenario,
+        )
+        and _positive_int(
+            stale_before,
+            "betaVersion",
+            scenario=scenario,
+        )
+        == _positive_int(
+            stale_after,
+            "betaVersion",
+            scenario=scenario,
+        )
+    )
+    assertions = {
+        "twoTopicsDistinct": (
+            distinct_topic_identity
+            and _positive_int(
+                tool_isolation,
+                "disabledBindingCount",
+                scenario=scenario,
+            )
+            > 0
+            and _nonnegative_int(
+                tool_isolation,
+                "readyCapabilityCount",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "restartRestored": (
+            scope.get("scenarioKey") == expected_scenario_key
+            and scope.get("platform") == platform
+            and scope.get("locale") == locale
+            and scope.get("sampleId") == sample_id
+            and source_restart_proven
+            and alpha["restart_restored"]
+            and beta["restart_restored"]
+        ),
+        "branchesIndependent": (
+            distinct_topic_identity
+            and alpha["branch_owned"]
+            and beta["branch_owned"]
+            and alpha["selected_branch_message_id"]
+            != beta["selected_branch_message_id"]
+        ),
+        "noCrossTopicReferences": (
+            distinct_topic_identity
+            and alpha["references_owned"]
+            and beta["references_owned"]
+        ),
+        "staleMutationConflict": stale_preserved,
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
+def _evaluate_as_f12_topic(
+    topic: Mapping[str, Any],
+    *,
+    key: str,
+    scenario: str,
+) -> dict[str, Any]:
+    if topic.get("key") != key:
+        raise GroupOneScenarioError(
+            f"{scenario} {key} topic key is invalid"
+        )
+    conversation_id = _nonempty_string(
+        topic,
+        "conversationId",
+        scenario=scenario,
+    )
+    fact = _nonempty_string(topic, "fact", scenario=scenario)
+    turn_ids = _string_set(topic, "turnIds", scenario=scenario)
+    runtime_turn_id = _nonempty_string(
+        topic,
+        "runtimeTurnId",
+        scenario=scenario,
+    )
+    source_assistant_message_id = _nonempty_string(
+        topic,
+        "sourceAssistantMessageId",
+        scenario=scenario,
+    )
+    sibling_message_id = _nonempty_string(
+        topic,
+        "siblingMessageId",
+        scenario=scenario,
+    )
+    selected_branch_message_id = _nonempty_string(
+        topic,
+        "selectedBranchMessageId",
+        scenario=scenario,
+    )
+    pre_restart = _mapping(topic, "preRestart", scenario=scenario)
+    post_restart = _mapping(topic, "postRestart", scenario=scenario)
+    pre_restart_hash = _sha256_string(
+        topic,
+        "preRestartHash",
+        scenario=scenario,
+    )
+    post_restart_hash = _sha256_string(
+        topic,
+        "postRestartHash",
+        scenario=scenario,
+    )
+    receiver_before = _mapping(topic, "receiverBefore", scenario=scenario)
+    receiver_after = _mapping(topic, "receiverAfter", scenario=scenario)
+
+    post_conversation = _mapping(
+        post_restart,
+        "conversation",
+        scenario=scenario,
+    )
+    runtime_binding = _mapping(
+        post_conversation,
+        "runtimeBinding",
+        scenario=scenario,
+    )
+    runtime_turn = _mapping(
+        post_restart,
+        "runtimeTurn",
+        scenario=scenario,
+    )
+    messages = _list(post_restart, "messages", scenario=scenario)
+    message_ids = {
+        _nonempty_string(message, "messageId", scenario=scenario)
+        for message in messages
+    }
+    if len(message_ids) != len(messages):
+        raise GroupOneScenarioError(
+            f"{scenario} {key} message IDs are not unique"
+        )
+    branch_ids = {
+        str(message.get("branchId") or "")
+        for message in messages
+        if message.get("branchId")
+    }
+    if not branch_ids:
+        raise GroupOneScenarioError(
+            f"{scenario} {key} branch IDs are missing"
+        )
+    message_references_owned = all(
+        message.get("conversationId") == conversation_id
+        and (
+            not message.get("turnId")
+            or message.get("turnId") in turn_ids
+        )
+        and (
+            not message.get("parentMessageId")
+            or message.get("parentMessageId") in message_ids
+        )
+        and (
+            not message.get("replacesMessageId")
+            or message.get("replacesMessageId") in message_ids
+        )
+        for message in messages
+    )
+    receiver_before_owned = _evaluate_as_f12_receiver(
+        receiver_before,
+        conversation_id=conversation_id,
+        selected_branch_message_id=selected_branch_message_id,
+        message_ids=message_ids,
+        scenario=scenario,
+    )
+    receiver_after_owned = _evaluate_as_f12_receiver(
+        receiver_after,
+        conversation_id=conversation_id,
+        selected_branch_message_id=selected_branch_message_id,
+        message_ids=message_ids,
+        scenario=scenario,
+    )
+    runtime_identity_matches = all(
+        _nonempty_string(runtime_binding, field, scenario=scenario)
+        == _nonempty_string(runtime_turn, field, scenario=scenario)
+        for field in (
+            "runtimeKind",
+            "providerId",
+            "modelId",
+            "runtimeProfileId",
+        )
+    ) and (
+        _optional_string(
+            runtime_binding,
+            "externalSessionId",
+            scenario=scenario,
+        )
+        == _optional_string(
+            runtime_turn,
+            "externalSessionId",
+            scenario=scenario,
+        )
+    ) and (
+        _nonnegative_int(
+            runtime_binding,
+            "externalSessionEpoch",
+            scenario=scenario,
+        )
+        == _nonnegative_int(
+            runtime_turn,
+            "externalSessionEpoch",
+            scenario=scenario,
+        )
+    )
+    return {
+        "conversation_id": conversation_id,
+        "fact": fact,
+        "turn_ids": turn_ids,
+        "message_ids": message_ids,
+        "branch_ids": branch_ids,
+        "runtime_kind": _nonempty_string(
+            runtime_binding,
+            "runtimeKind",
+            scenario=scenario,
+        ),
+        "runtime_home_ref": _optional_string(
+            runtime_binding,
+            "runtimeHomeRef",
+            scenario=scenario,
+        ),
+        "external_session_id": _optional_string(
+            runtime_binding,
+            "externalSessionId",
+            scenario=scenario,
+        ),
+        "source_assistant_message_id": source_assistant_message_id,
+        "selected_branch_message_id": selected_branch_message_id,
+        "post_restart_hash": post_restart_hash,
+        "restart_restored": (
+            _canonical_payload_hash(pre_restart) == pre_restart_hash
+            and _canonical_payload_hash(post_restart) == post_restart_hash
+            and pre_restart_hash == post_restart_hash
+            and pre_restart == post_restart
+            and post_conversation.get("conversationId") == conversation_id
+            and post_restart.get("key") == key
+            and post_restart.get("fact") == fact
+            and runtime_turn.get("turnId") == runtime_turn_id
+            and runtime_turn_id in turn_ids
+            and runtime_identity_matches
+        ),
+        "branch_owned": (
+            sibling_message_id == selected_branch_message_id
+            and source_assistant_message_id != sibling_message_id
+            and selected_branch_message_id in message_ids
+            and post_conversation.get("activeBranchMessageId")
+            == selected_branch_message_id
+            and post_restart.get("selectedBranchMessageId")
+            == selected_branch_message_id
+        ),
+        "references_owned": (
+            message_references_owned
+            and receiver_before_owned
+            and receiver_after_owned
+        ),
+    }
+
+
+def _evaluate_as_f12_receiver(
+    receiver: Mapping[str, Any],
+    *,
+    conversation_id: str,
+    selected_branch_message_id: str,
+    message_ids: set[str],
+    scenario: str,
+) -> bool:
+    rendered = _list(receiver, "rendered", scenario=scenario)
+    rendered_ids = {
+        _nonempty_string(item, "messageId", scenario=scenario)
+        for item in rendered
+    }
+    store_message_ids = _string_set(
+        receiver,
+        "storeMessageIds",
+        scenario=scenario,
+    )
+    selected_visible = any(
+        item.get("messageId") == selected_branch_message_id
+        and item.get("visible") is True
+        for item in rendered
+    )
+    return (
+        receiver.get("conversationId") == conversation_id
+        and receiver.get("selectedBranchMessageId")
+        == selected_branch_message_id
+        and receiver.get("selectedBranchVisible") is True
+        and receiver.get("ownFactVisible") is True
+        and receiver.get("foreignFactVisible") is False
+        and selected_visible
+        and rendered_ids <= message_ids
+        and store_message_ids <= message_ids
+    )
+
+
+def _as_f12_runtime_ownership_isolated(
+    alpha: Mapping[str, Any],
+    beta: Mapping[str, Any],
+) -> bool:
+    runtime_kinds = {alpha["runtime_kind"], beta["runtime_kind"]}
+    if runtime_kinds == {"direct_model"}:
+        return all(
+            not topic[field]
+            for topic in (alpha, beta)
+            for field in ("runtime_home_ref", "external_session_id")
+        )
+    if runtime_kinds == {"external_agent"}:
+        return all(
+            alpha[field]
+            and beta[field]
+            and alpha[field] != beta[field]
+            for field in ("runtime_home_ref", "external_session_id")
+        )
+    return False
+
+
 def evaluate_base_active_mutation_conflict(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:
@@ -1927,6 +2415,43 @@ def _string_list(
     return list(item)
 
 
+def _string_set(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    scenario: str,
+) -> set[str]:
+    items = _string_list(value, key, scenario=scenario)
+    if not items or len(items) != len(set(items)):
+        raise GroupOneScenarioError(
+            f"{scenario} {key} fact must contain unique values"
+        )
+    return set(items)
+
+
+def _sha256_string(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    scenario: str,
+) -> str:
+    item = _nonempty_string(value, key, scenario=scenario)
+    if re.fullmatch(r"[0-9a-f]{64}", item) is None:
+        raise GroupOneScenarioError(
+            f"{scenario} {key} must be a lowercase SHA-256 digest"
+        )
+    return item
+
+
+def _hex_identity_matches(left: str, right: str) -> bool:
+    pattern = re.compile(r"^[0-9a-f]{12,40}$")
+    return (
+        pattern.fullmatch(left) is not None
+        and pattern.fullmatch(right) is not None
+        and (left.startswith(right) or right.startswith(left))
+    )
+
+
 def _normalized_attachment_metadata(
     value: Mapping[str, Any],
     key: str,
@@ -2049,5 +2574,19 @@ def _nonempty_string(
     if not isinstance(item, str) or not item:
         raise GroupOneScenarioError(
             f"{scenario} {key} must be a non-empty string"
+        )
+    return item
+
+
+def _optional_string(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    scenario: str,
+) -> str:
+    item = value.get(key)
+    if not isinstance(item, str):
+        raise GroupOneScenarioError(
+            f"{scenario} {key} must be a string"
         )
     return item

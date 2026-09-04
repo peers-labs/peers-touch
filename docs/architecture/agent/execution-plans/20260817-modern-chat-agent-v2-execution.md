@@ -4825,6 +4825,40 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   isolation tests, Desktop TypeScript checks, Rust formatting, and
   `git diff --check` pass. Cleanup completed `DONE / PROVEN / passed`; G-F
   remains `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260904T055723045389Z-19294f8334438a076712e064cc006831`
+  (aggregate `20260904T055722918995Z-36faa8a9a23ddcb5703fd1b44d6d854c`)
+  on `3a274eaf24d7a037f0bee57a1d40890da7ac36d0` crossed AS-F10 and
+  failed at Browser AS-F12 with
+  `agent.acceptance.turnSubmissionTimeout`. Durable Station events prove the
+  code-word Turn emitted `tool_call` and `tool_approval_required` under the
+  manual policy, then waited until the 120-second client bound. Cleanup
+  completed `DONE / PROVEN / passed`. Source inspection also confirmed that
+  the AS-F12 producer was self-asserting: it created two sequential topics but
+  performed no branch mutation, stale-CAS check, Station/client restart,
+  per-topic restoration comparison, independent Python evaluation, or
+  two-topic cleanup.
+- AS-F12 now uses one production two-topic scenario per required tuple. It
+  disables effective Agent bindings only around four interleaved provider
+  Turns, creates and selects independent sibling response branches, submits a
+  stale branch revision and verifies zero mutation, persists both semantic
+  snapshots, then lets the Python coordinator restart the source-bound
+  disposable Station and only the owning client. Existing-session restoration
+  is mandatory. The post-restart Harness reopens both topics independently and
+  records Station conversation/message/branch/runtime-binding rows, Turn
+  runtime snapshots, and before/after receiver DOM. The independent Python
+  oracle recomputes topic/branch/reference/runtime isolation and rejects
+  renderer assertions that disagree with source facts; direct-model runtime
+  home/session fields must remain empty, while external runtimes require
+  distinct non-empty ownership. Success deletes both topics and clears the
+  durable handoff; every failure after preparation invokes explicit cleanup.
+  179 focused Foundation tests, 556 Desktop tests, Desktop check, Desktop
+  build, Python compile, and `git diff --check` pass. The broader Foundation
+  discovery suite has 266 passing tests and two pre-existing candidate-producer
+  `receiver-dom` profile-mismatch errors. Agent Domain validation correctly
+  rejects stale latest evidence before the new exact-source run. G-F remains
+  `PARTIAL / UNPROVEN` pending checkpoint deployment and the next 419-cell
+  execution.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

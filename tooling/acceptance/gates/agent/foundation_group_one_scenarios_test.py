@@ -16,6 +16,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f06,
     evaluate_as_f07,
     evaluate_as_f10,
+    evaluate_as_f12,
 )
 
 
@@ -523,6 +524,204 @@ def valid_as_f06_capture(
             "conversationDeleted": True,
             "recoveryRecordCleared": True,
             "deletionErrorCodeHash": "f" * 64,
+        },
+    }
+
+
+def valid_as_f12_capture(
+    platform: str = "desktop_app",
+    locale: str = "en",
+    sample_id: str = "sample-001",
+) -> dict[str, object]:
+    def topic(topic_key: str, index: int) -> dict[str, object]:
+        conversation_id = f"conversation-{topic_key}"
+        fact = f"{topic_key}-{sample_id}-nonce"
+        user_message_id = f"message-{topic_key}-user"
+        source_message_id = f"message-{topic_key}-assistant"
+        sibling_message_id = f"message-{topic_key}-branch"
+        turn_ids = [
+            f"turn-{topic_key}-first",
+            f"turn-{topic_key}-second",
+        ]
+        snapshot = {
+            "key": topic_key,
+            "fact": fact,
+            "conversation": {
+                "conversationId": conversation_id,
+                "agentId": "agent-foundation",
+                "status": "active",
+                "activeBranchMessageId": sibling_message_id,
+                "version": index + 4,
+                "runtimeBinding": {
+                    "runtimeKind": "direct_model",
+                    "providerId": "provider",
+                    "modelId": "model",
+                    "runtimeProfileId": "modern-chat-agent-v1",
+                    "externalSessionId": "",
+                    "externalSessionEpoch": 1,
+                    "runtimeHomeRef": "",
+                    "capabilitySnapshotHash": "a" * 64,
+                    "configSnapshotHash": "b" * 64,
+                },
+            },
+            "selectedBranchMessageId": sibling_message_id,
+            "runtimeTurn": {
+                "turnId": turn_ids[1],
+                "attemptId": f"attempt-{topic_key}",
+                "runtimeKind": "direct_model",
+                "providerId": "provider",
+                "modelId": "model",
+                "runtimeProfileId": "modern-chat-agent-v1",
+                "externalSessionId": "",
+                "externalSessionEpoch": 1,
+            },
+            "messages": [
+                {
+                    "conversationId": conversation_id,
+                    "messageId": user_message_id,
+                    "turnId": turn_ids[1],
+                    "role": "user",
+                    "status": "completed",
+                    "content": fact,
+                    "seq": 1,
+                    "branchId": f"branch-{topic_key}",
+                    "parentMessageId": "",
+                    "replacesMessageId": "",
+                },
+                {
+                    "conversationId": conversation_id,
+                    "messageId": source_message_id,
+                    "turnId": turn_ids[1],
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": fact,
+                    "seq": 2,
+                    "branchId": f"branch-{topic_key}",
+                    "parentMessageId": user_message_id,
+                    "replacesMessageId": "",
+                },
+                {
+                    "conversationId": conversation_id,
+                    "messageId": sibling_message_id,
+                    "turnId": turn_ids[1],
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": fact,
+                    "seq": 3,
+                    "branchId": f"branch-{topic_key}-sibling",
+                    "parentMessageId": user_message_id,
+                    "replacesMessageId": source_message_id,
+                },
+            ],
+        }
+        receiver = {
+            "conversationId": conversation_id,
+            "selectedBranchMessageId": sibling_message_id,
+            "rendered": [
+                {
+                    "messageId": user_message_id,
+                    "role": "user",
+                    "visible": True,
+                    "text": fact,
+                },
+                {
+                    "messageId": sibling_message_id,
+                    "role": "assistant",
+                    "visible": True,
+                    "text": fact,
+                },
+            ],
+            "storeMessageIds": [
+                user_message_id,
+                sibling_message_id,
+            ],
+            "selectedBranchVisible": True,
+            "ownFactVisible": True,
+            "foreignFactVisible": False,
+        }
+        snapshot_hash = canonical_payload_hash(snapshot)
+        return {
+            "key": topic_key,
+            "conversationId": conversation_id,
+            "fact": fact,
+            "turnIds": turn_ids,
+            "runtimeTurnId": turn_ids[1],
+            "sourceAssistantMessageId": source_message_id,
+            "siblingMessageId": sibling_message_id,
+            "selectedBranchMessageId": sibling_message_id,
+            "preRestart": copy.deepcopy(snapshot),
+            "preRestartHash": snapshot_hash,
+            "receiverBefore": copy.deepcopy(receiver),
+            "postRestart": copy.deepcopy(snapshot),
+            "postRestartHash": snapshot_hash,
+            "receiverAfter": copy.deepcopy(receiver),
+        }
+
+    topics = {
+        "alpha": topic("alpha", 1),
+        "beta": topic("beta", 2),
+    }
+    return {
+        "scope": {
+            "scenarioKey": f"{platform}|{locale}|AS-F12|{sample_id}",
+            "platform": platform,
+            "locale": locale,
+            "sampleId": sample_id,
+        },
+        "toolIsolation": {
+            "disabledBindingCount": 1,
+            "readyCapabilityCount": 0,
+        },
+        "restart": {
+            "stationRestarted": True,
+            "clientRestarted": True,
+            "station": {
+                "stationUrlHash": "c" * 64,
+                "protoDigest": "d" * 64,
+                "containerId": "e" * 64,
+                "imageId": "f" * 64,
+                "imageRef": "foundation-station:test",
+                "beforeStartedAt": "2026-09-04T00:00:00Z",
+                "afterStartedAt": "2026-09-04T00:01:00Z",
+                "sourceCommit": "a" * 40,
+                "beforeCommit": "a" * 40,
+                "afterCommit": "a" * 40,
+                "clientReloads": {platform: True},
+                "owningPlatform": platform,
+                "existingSessionRestored": True,
+            },
+        },
+        "topics": topics,
+        "staleMutation": {
+            "errorCode": "VERSION_CONFLICT",
+            "targetConversationId": "conversation-alpha",
+            "attemptedBranchMessageId": "message-alpha-assistant",
+            "expectedVersion": 3,
+            "before": {
+                "alphaHash": topics["alpha"]["postRestartHash"],
+                "betaHash": topics["beta"]["postRestartHash"],
+                "alphaVersion": 5,
+                "betaVersion": 6,
+            },
+            "after": {
+                "alphaHash": topics["alpha"]["postRestartHash"],
+                "betaHash": topics["beta"]["postRestartHash"],
+                "alphaVersion": 5,
+                "betaVersion": 6,
+            },
+        },
+        "cleanup": {
+            "cleanupComplete": True,
+            "handoffCleared": True,
+            "conversationIds": [
+                "conversation-alpha",
+                "conversation-beta",
+            ],
+            "deletedConversationIds": [
+                "conversation-alpha",
+                "conversation-beta",
+            ],
+            "cancellationErrorCodes": [],
         },
     }
 
@@ -1372,6 +1571,140 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
 
                 self.assertEqual(len(assertions), 9)
                 self.assertTrue(all(assertions.values()))
+
+    def test_as_f12_accepts_two_topic_restart_isolation(self) -> None:
+        assertions = evaluate_as_f12(
+            valid_as_f12_capture(),
+            platform="desktop_app",
+            locale="en",
+            sample_id="sample-001",
+        )
+
+        self.assertEqual(len(assertions), 5)
+        self.assertTrue(all(assertions.values()))
+
+    def test_as_f12_rejects_cross_topic_reference_leakage(self) -> None:
+        capture = valid_as_f12_capture()
+        capture["topics"]["alpha"]["postRestart"]["messages"][0][
+            "conversationId"
+        ] = "conversation-beta"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "noCrossTopicReferences",
+        ):
+            evaluate_as_f12(
+                capture,
+                platform="desktop_app",
+                locale="en",
+                sample_id="sample-001",
+            )
+
+    def test_as_f12_rejects_direct_model_runtime_home(self) -> None:
+        capture = valid_as_f12_capture()
+        for phase in ("preRestart", "postRestart"):
+            capture["topics"]["alpha"][phase]["conversation"][
+                "runtimeBinding"
+            ]["runtimeHomeRef"] = "runtime-home-alpha"
+            capture["topics"]["alpha"][f"{phase}Hash"] = canonical_payload_hash(
+                capture["topics"]["alpha"][phase]
+            )
+        capture["staleMutation"]["before"]["alphaHash"] = (
+            capture["topics"]["alpha"]["postRestartHash"]
+        )
+        capture["staleMutation"]["after"]["alphaHash"] = (
+            capture["topics"]["alpha"]["postRestartHash"]
+        )
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "twoTopicsDistinct",
+        ):
+            evaluate_as_f12(
+                capture,
+                platform="desktop_app",
+                locale="en",
+                sample_id="sample-001",
+            )
+
+    def test_as_f12_accepts_distinct_external_runtime_ownership(self) -> None:
+        capture = valid_as_f12_capture()
+        for topic_key in ("alpha", "beta"):
+            topic = capture["topics"][topic_key]
+            for phase in ("preRestart", "postRestart"):
+                snapshot = topic[phase]
+                binding = snapshot["conversation"]["runtimeBinding"]
+                runtime_turn = snapshot["runtimeTurn"]
+                binding["runtimeKind"] = "external_agent"
+                binding["runtimeHomeRef"] = f"runtime-home-{topic_key}"
+                binding["externalSessionId"] = f"external-session-{topic_key}"
+                runtime_turn["runtimeKind"] = "external_agent"
+                runtime_turn["externalSessionId"] = (
+                    f"external-session-{topic_key}"
+                )
+                topic[f"{phase}Hash"] = canonical_payload_hash(snapshot)
+            capture["staleMutation"]["before"][f"{topic_key}Hash"] = (
+                topic["postRestartHash"]
+            )
+            capture["staleMutation"]["after"][f"{topic_key}Hash"] = (
+                topic["postRestartHash"]
+            )
+
+        assertions = evaluate_as_f12(
+            capture,
+            platform="desktop_app",
+            locale="en",
+            sample_id="sample-001",
+        )
+
+        self.assertTrue(all(assertions.values()))
+
+    def test_as_f12_rejects_stale_mutation_of_either_topic(self) -> None:
+        capture = valid_as_f12_capture()
+        capture["staleMutation"]["after"]["betaHash"] = "f" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "staleMutationConflict",
+        ):
+            evaluate_as_f12(
+                capture,
+                platform="desktop_app",
+                locale="en",
+                sample_id="sample-001",
+            )
+
+    def test_as_f12_rejects_incomplete_restart_restoration(self) -> None:
+        capture = valid_as_f12_capture()
+        capture["topics"]["beta"]["postRestart"]["conversation"][
+            "activeBranchMessageId"
+        ] = "message-beta-assistant"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "restartRestored",
+        ):
+            evaluate_as_f12(
+                capture,
+                platform="desktop_app",
+                locale="en",
+                sample_id="sample-001",
+            )
+
+    def test_as_f12_rejects_restart_source_identity_drift(self) -> None:
+        capture = valid_as_f12_capture()
+        capture["restart"]["station"]["afterCommit"] = "b" * 40
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "restartRestored",
+        ):
+            evaluate_as_f12(
+                capture,
+                platform="desktop_app",
+                locale="en",
+                sample_id="sample-001",
+            )
 
     def test_as_f10_rejects_any_execution_delta(self) -> None:
         capture = valid_as_f10_capture("browser")
