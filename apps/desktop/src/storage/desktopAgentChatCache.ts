@@ -24,7 +24,11 @@ export function getDesktopAgentChatCache(): AgentChatCache {
           after_seq: afterSeq,
           limit: 200,
         });
-        return { messages: result.messages.map(toCachedMessage) };
+        return {
+          messages: result.messages.map(toCachedMessage),
+          nextCursor: result.next_cursor,
+          hasMore: result.has_more,
+        };
       },
     },
   });
