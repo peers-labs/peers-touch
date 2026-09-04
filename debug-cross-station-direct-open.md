@@ -15,11 +15,11 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | Native click reaches the DOM but the React selection handler does not run. | Medium | Low | Inconclusive: debug lines 1-3 prove the click reached the exact result, but the current probe does not observe handler entry. |
-| B | The selection handler enters the existing-conversation branch with an invalid projection ID. | Low | Low | Rejected: after 120 seconds the search value remains `bob`, no session row is active, and no pane exists. The existing branch clears search synchronously. |
-| C | `messaging_create_direct` starts but hangs or fails before returning a projected conversation. | High | Low | Inconclusive: no invoke event was captured, but handler entry is not yet observed independently of the invoke hook. |
-| D | A duplicate login transition revokes the token used by the messaging engine. | High | Low | Confirmed: both clients run `auth_login -> refresh-current-session -> auth_restore_session`; the original worker token is rejected as `session_revoked:kicked` while restore succeeds with a replacement token. |
-| E | The conversation is created but store selection/projection never becomes visible. | Medium | Low | Rejected for this run: no create success event, conversation pane, or session projection appeared. |
+| A | Native click reaches the DOM but the React selection handler does not run. | Medium | Low | Rejected: post-fix debug line 2 contains `handler-entry` for the exact Bob PTID. |
+| B | The selection handler enters the existing-conversation branch with an invalid projection ID. | Low | Low | Rejected: post-fix debug line 2 records `branch-resolved` with an empty `existingConversationId`, followed by `create-direct-start`. |
+| C | `messaging_create_direct` starts but fails before returning a projected conversation. | High | Low | Confirmed: post-fix debug lines 2-3 record `create-direct-failure` with `station returned 404`. |
+| D | A duplicate login transition revokes the token used by the messaging engine. | High | Low | Confirmed and fixed: the pre-fix run contains `auth_login -> refresh-current-session -> auth_restore_session` and `session_revoked:kicked`; the post-fix run validates the bound token and contains no session revocation. |
+| E | The conversation is created but store selection/projection never becomes visible. | Medium | Low | Rejected for the current runs: the native command returned a Station 404 before conversation creation. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -42,14 +42,39 @@
   `auth_restore_session` ran inside `refresh-current-session`; the original
   token was rejected as `kicked` before restore returned a replacement token.
   Bob app log lines 88-105 show the same sequence.
+- Post-fix Gate
+  `20260904T061940213867Z-e8f335fd65350800b1b198472c68e6f6`
+  used exact source `1ee7da584aaae737fa0c4270eb35cb2152c37203`
+  and binary SHA-256
+  `2fbb00352224de469e6a1b2e00d169db5206bd919c84ef382a93ed1e0c88afc2`.
+  It retained Windows WebView2, Win32 `SendInput`, 1920x1080 GUI, distinct
+  station-four/station-five bindings, and `DONE/PROVEN` cleanup.
+- Post-fix debug line 2 proves the exact native click entered
+  `ChatSessionList.handleSearchSelect`, rejected the existing-conversation
+  branch, and started `messaging_create_direct`.
+- Post-fix debug lines 2-3 record `create-direct-failure` with
+  `station returned 404 :`; Station logs show authenticated
+  `POST /messaging/conversation/direct` returning application-level 404.
+- Database evidence shows the remote actor and its Home Station in
+  `touch_actor`, but no remote `actor_devices`, `auth_peer_keys`, or
+  `federation_station_membership` rows. `ActorHomeStationID` queried only
+  `actor_devices`, so manifest resolution stopped before any remote fetch.
 
 ## Verification Conclusion
-The duplicate Station session issuance is confirmed at the Desktop identity
-reconciliation boundary. The minimal owner-layer correction is to validate and
-project the already bound window session during `refresh-current-session`
-instead of invoking takeover-style persisted-session restore.
+The duplicate Station session issuance was fixed at the Desktop identity
+reconciliation boundary and the post-fix run rejects hypotheses A, B, and E.
+The remaining failure is Station-owned federation bootstrap:
 
-The direct-open branch still needs one narrower post-fix observation: record
-React handler entry, branch selection, and create-direct completion directly
-from `ChatSessionList`. Existing instrumentation and the Debug Server remain
-active until post-fix evidence and user confirmation.
+1. actor Home Station routing incorrectly depends on an already-cached remote
+   device;
+2. Messaging production wiring captures no Relay access even though
+   relay-client registers after Subserver initialization;
+3. endpoint-manifest verification requires the remote Station TOFU key, while
+   the signed locator/profile resolver did not persist that verified key.
+
+The implementation now reads actor ownership from `touch_actor`, establishes
+the missing TOFU binding through a fresh signed locator/profile resolution,
+reads the live Relay handle per request, and uses protobuf for the affected
+first-party federation control requests. Local focused tests pass; exact-source
+deployment and post-fix Windows comparison remain pending. Instrumentation and
+the Debug Server remain active until runtime proof and user confirmation.
