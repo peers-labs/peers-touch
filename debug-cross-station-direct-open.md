@@ -147,3 +147,34 @@ The correction now resolves every fixture actor from the full declared
 environment client bindings while still launching only the Gate-specific
 runtime clients. A focused provisioner regression test proves Alice resolves
 to station-four and non-launched Bob resolves to station-five.
+
+Exact-source run
+`20260904T170550632438Z-86c08bfd4c710aac4cd6efce33ada3e6`
+at commit `1f8a0a3625e3dbbcd791b2e3389727a8ea2ffd6f` and binary
+SHA-256
+`6675bdf135fc7f06d75052f40345588a561cbfddcbb73e0ae04cc632231154d3`
+proved both Station bindings, the Windows runtime cell, the Bob-bound inline
+failure pane, runtime-log cleanliness, and complete cleanup. The Gate correctly
+reported `conversation.search.ui` as the first failed step.
+
+Debug lines 11-13 prove the exact Bob click entered the handler, rejected the
+existing-conversation branch, started Direct creation, and received Station
+500. Station-four logged the corresponding authenticated
+`POST /messaging/conversation/direct` at `17:33:52Z`, then returned 500.
+Its bootstrap evidence at the request boundary reported `seeds=0` and an empty
+DHT routing table. Container inspection confirmed
+`RELAY_CLIENT_ENABLED=false`.
+
+This run confirms a topology restoration failure rather than a new Direct
+implementation regression. `make station` recreated both disposable Station
+containers with the shared `station.env`; it did not reapply the saved
+`chat-native-four.env` and `chat-native-five.env` topology. After reapplying
+those exact environment files, both Stations report:
+
+- the exact `1f8a0a3625e3` build;
+- Relay enabled with the shared Relay endpoint;
+- one configured and connected DHT seed; and
+- ten connected routing peers.
+
+The next comparison run uses unchanged product implementation and
+`runId=post-topology-restore`.
