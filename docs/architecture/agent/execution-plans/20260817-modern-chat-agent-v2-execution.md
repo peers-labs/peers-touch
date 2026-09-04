@@ -4982,6 +4982,28 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   identifiers. Provisioner cleanup completed `DONE / PROVEN / passed`; G-F
   remains `PARTIAL / UNPROVEN` pending the diagnostic checkpoint,
   exact-source deployment, and rerun.
+- Checkpoint `cb48542ea4b9bca814a0ee26378df310a7c9fc24` was deployed
+  exact-source to `chat-native-disposable`. Run
+  `20260904T110406527755Z-0a3cb161b052d5ff5c86e5176456b73c`
+  (aggregate `20260904T110406415041Z-92fa5b75909cedf876face6d15105f7c`)
+  stopped before the scenario matrix because Browser identity boot did not
+  reach its login precondition within 30 seconds. Station source/runtime
+  identity and cleanup passed. The required unchanged-source rerun
+  `20260904T110841855632Z-6c1f0ef3e8965a00be0c381eeb3f9754`
+  (aggregate `20260904T110841666099Z-b42eea2e00f304817c643620cb083147`)
+  crossed login and returned to Browser AS-F12, so the startup failure remains
+  intermittent and does not justify an identity behavior change.
+- The AS-F12 field diagnostics isolate the restart mismatch to `messages`;
+  conversation version, active branch, runtime binding, runtime Turn, selected
+  branch, tuple scope, and source restart identity all match. The stored
+  pre/post hashes are equal because `stableJson` represents an `undefined`
+  object field as `null`, while localStorage JSON serialization dropped that
+  field from the persisted pre-restart message snapshot. The F12 snapshot now
+  materializes the canonical `stableJson` object before hashing and persistence
+  so the payload and its hash share one representation. Desktop check, 556
+  Desktop tests, production build, 170 focused Foundation tests, and
+  `git diff --check` pass. Exact-source runtime proof remains pending; G-F
+  remains `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

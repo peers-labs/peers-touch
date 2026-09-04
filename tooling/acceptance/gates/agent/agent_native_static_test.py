@@ -400,6 +400,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertNotIn("streamAgentTurn({", scenario)
 
     def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
+        snapshot_start = self.source.index(
+            "async function foundationF12TopicSnapshot",
+        )
+        snapshot_end = self.source.index(
+            "async function foundationF12ReceiverSnapshot",
+            snapshot_start,
+        )
+        snapshot = self.source[snapshot_start:snapshot_end]
         prepare_start = self.source.index(
             "async function runFoundationF12Prepare",
         )
@@ -415,6 +423,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         complete = self.source[complete_start:complete_end]
 
         self.assertIn("withFoundationCapabilitiesDisabled(", prepare)
+        self.assertIn("JSON.parse(stableJson(snapshot))", snapshot)
         self.assertIn("runFoundationF12Turn({", prepare)
         self.assertEqual(prepare.count("runFoundationF12Turn({"), 4)
         self.assertIn("await api.regenerateAgentTurn({", prepare)

@@ -4318,7 +4318,7 @@ async function foundationF12TopicSnapshot(
       parentMessageId: message.parentMessageId ?? '',
       replacesMessageId: message.replacesMessageId ?? '',
     }));
-  return {
+  const snapshot = {
     key: topic.key,
     fact: topic.fact,
     conversation: {
@@ -4336,6 +4336,12 @@ async function foundationF12TopicSnapshot(
     runtimeTurn: foundationF12RuntimeSnapshotFact(turnEvidence),
     messages,
   };
+  // Persist the exact canonical object being hashed; localStorage drops
+  // undefined object fields while stableJson represents them as null.
+  return evidenceRecord(
+    JSON.parse(stableJson(snapshot)) as unknown,
+    'foundationF12TopicSnapshot',
+  );
 }
 
 async function foundationF12ReceiverSnapshot(
