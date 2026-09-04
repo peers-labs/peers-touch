@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T191316480393Z-131f3a55b3b3095dc64bd3589b01a044` confirmed Browser approval recovery requires governed `TurnDiagnosticReplay.tool_calls`, not provider-format message JSON; diagnostic-backed `agent-tool` reconciliation and actionable-row expansion are locally verified and await checkpoint deployment/rerun | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T195645915962Z-2685115f2ec7084d62ae2bc0f79ca78f` advanced through governed ToolCall recovery and exposed the `continue-without-tool` selector on the approve action; the local selector correction and ordering guards await checkpoint deployment/rerun | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5226,6 +5226,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   runtime/UI tests, Desktop typecheck, and 66 native static tests pass.
   Provisioner cleanup completed `DONE / PROVEN / passed`; exact-source runtime
   proof remains pending.
+- Exact-source run
+  `20260904T195645915962Z-2685115f2ec7084d62ae2bc0f79ca78f`
+  on `8dd31dd4d330f8d47722c5f36ece19874c7b94c3` advanced past the
+  previously missing Browser ToolCall receiver, then timed out waiting for the
+  `BASE-APPROVAL-DENIED` typed outcome. The receiver selected
+  `data-pt-agent-tool-recovery="continue-without-tool"`, but that attribute was
+  attached to the approve button while the denial button carried the matching
+  localized label without the selector. Post-click debug evidence showed the
+  tool loop continuing to three ToolCalls with one pending, consistent with an
+  approval rather than a denial. The local correction moves the selector to
+  the `approved=false` action and adds component/native static ordering guards.
+  Focused Desktop tests passed 8 tests; the full Desktop suite passed 560 tests
+  with one unrelated environment-dependent skip; Desktop typecheck/build,
+  66 native static tests, and `git diff --check` passed. Provisioner cleanup
+  completed `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN` pending
+  checkpoint deployment and exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
