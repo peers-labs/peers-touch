@@ -1794,6 +1794,12 @@ def evaluate_as_f12(
             scenario=scenario,
         )
     )
+    scope_matches = (
+        scope.get("scenarioKey") == expected_scenario_key
+        and scope.get("platform") == platform
+        and scope.get("locale") == locale
+        and scope.get("sampleId") == sample_id
+    )
     assertions = {
         "twoTopicsDistinct": (
             distinct_topic_identity
@@ -1811,10 +1817,7 @@ def evaluate_as_f12(
             == 0
         ),
         "restartRestored": (
-            scope.get("scenarioKey") == expected_scenario_key
-            and scope.get("platform") == platform
-            and scope.get("locale") == locale
-            and scope.get("sampleId") == sample_id
+            scope_matches
             and source_restart_proven
             and alpha["restart_restored"]
             and beta["restart_restored"]
@@ -1835,8 +1838,15 @@ def evaluate_as_f12(
     }
     failed = sorted(key for key, passed in assertions.items() if not passed)
     if failed:
+        diagnostics = {
+            "scopeMatches": scope_matches,
+            "sourceRestartProven": bool(source_restart_proven),
+            "alphaRestart": alpha["restart_checks"],
+            "betaRestart": beta["restart_checks"],
+        }
         raise GroupOneScenarioError(
-            f"{scenario} production facts failed assertions: {failed}"
+            f"{scenario} production facts failed assertions: {failed}; "
+            f"diagnostics={json.dumps(diagnostics, sort_keys=True)}"
         )
     return assertions
 
@@ -2029,6 +2039,28 @@ def _evaluate_as_f12_topic(
             scenario=scenario,
         )
     )
+    restart_checks = {
+        "preHashMatches": (
+            _canonical_payload_hash(pre_restart) == pre_restart_hash
+        ),
+        "postHashMatches": (
+            _canonical_payload_hash(post_restart) == post_restart_hash
+        ),
+        "hashesEqual": pre_restart_hash == post_restart_hash,
+        "payloadsEqual": pre_restart == post_restart,
+        "conversationMatches": (
+            post_conversation.get("conversationId") == conversation_id
+        ),
+        "topicMatches": (
+            post_restart.get("key") == key
+            and post_restart.get("fact") == fact
+        ),
+        "turnMatches": (
+            runtime_turn.get("turnId") == runtime_turn_id
+            and runtime_turn_id in turn_ids
+        ),
+        "runtimeMatches": runtime_identity_matches,
+    }
     return {
         "conversation_id": conversation_id,
         "fact": fact,
@@ -2053,18 +2085,8 @@ def _evaluate_as_f12_topic(
         "source_assistant_message_id": source_assistant_message_id,
         "selected_branch_message_id": selected_branch_message_id,
         "post_restart_hash": post_restart_hash,
-        "restart_restored": (
-            _canonical_payload_hash(pre_restart) == pre_restart_hash
-            and _canonical_payload_hash(post_restart) == post_restart_hash
-            and pre_restart_hash == post_restart_hash
-            and pre_restart == post_restart
-            and post_conversation.get("conversationId") == conversation_id
-            and post_restart.get("key") == key
-            and post_restart.get("fact") == fact
-            and runtime_turn.get("turnId") == runtime_turn_id
-            and runtime_turn_id in turn_ids
-            and runtime_identity_matches
-        ),
+        "restart_checks": restart_checks,
+        "restart_restored": all(restart_checks.values()),
         "branch_owned": (
             source_assistant_message_id != sibling_message_id
             and source_assistant_message_id in message_ids
