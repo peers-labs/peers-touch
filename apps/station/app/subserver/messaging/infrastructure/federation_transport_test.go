@@ -11,7 +11,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/worker"
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type tokenMinterStub struct{}
@@ -62,16 +62,20 @@ func TestHTTPFederationTransportDirectDeliveryRequiresAcceptedResponse(t *testin
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := protojson.Unmarshal(raw, &body); err != nil {
+		if request.Header.Get("Content-Type") != "application/protobuf" ||
+			request.Header.Get("Accept") != "application/protobuf" {
+			t.Fatalf("protobuf headers = %v", request.Header)
+		}
+		if err := proto.Unmarshal(raw, &body); err != nil {
 			t.Fatal(err)
 		}
 		if body.Frame.GetFrameId() != "frame-1" {
 			t.Fatalf("frame = %+v", body.Frame)
 		}
-		response, _ := protojson.Marshal(&chat.DeliverMessagingFederationFrameResponse{
+		response, _ := proto.Marshal(&chat.DeliverMessagingFederationFrameResponse{
 			Accepted: true,
 		})
-		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("Content-Type", "application/protobuf")
 		_, _ = writer.Write(response)
 	}))
 	defer server.Close()
@@ -108,7 +112,11 @@ func TestHTTPFederationTransportUsesRelayBearerAndForwardJWT(t *testing.T) {
 				request.Header.Get(nativefed.ForwardAuthorizationHeader),
 			)
 		}
-		response, _ := protojson.Marshal(&chat.DeliverMessagingFederationFrameResponse{
+		if request.Header.Get("Content-Type") != "application/protobuf" ||
+			request.Header.Get("Accept") != "application/protobuf" {
+			t.Fatalf("protobuf headers = %v", request.Header)
+		}
+		response, _ := proto.Marshal(&chat.DeliverMessagingFederationFrameResponse{
 			Accepted:  true,
 			Duplicate: true,
 		})

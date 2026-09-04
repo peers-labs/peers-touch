@@ -7,6 +7,7 @@ import (
 	"time"
 
 	messaging "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
@@ -100,12 +101,24 @@ type ActorIdentityReadModel struct {
 	ProfileVersion int64  `gorm:"column:profile_version"`
 }
 
+// ActorFederationReadModel maps the actor-owned federation route without
+// taking migration or mutation ownership.
+type ActorFederationReadModel struct {
+	PTID              string `gorm:"column:ptid"`
+	HomeStationPeerID string `gorm:"column:home_station_peer_id"`
+	Origin            string `gorm:"column:origin"`
+}
+
 func (*ActorIdentityReadModel) TableName() string {
 	return "actor_identity_keys"
 }
 
 func (*ActorDeviceReadModel) TableName() string {
 	return "actor_devices"
+}
+
+func (*ActorFederationReadModel) TableName() string {
+	return "touch_actor"
 }
 
 type AuthorityRepository struct {
@@ -716,29 +729,21 @@ func (d *DeviceDirectory) ActorHomeStationID(
 	if ptid == "" {
 		return "", messaging.ErrNotFound
 	}
-	var records []ActorDeviceReadModel
+	var actor ActorFederationReadModel
 	if err := d.db.WithContext(ctx).
-		Select("home_station_peer_id").
-		Where(
-			"ptid = ? AND revoked = ? AND verification_source <> ? "+
-				"AND length(public_key) = ? AND home_station_peer_id <> ''",
-			ptid,
-			false,
-			0,
-			32,
-		).
-		Group("home_station_peer_id").
-		Order("home_station_peer_id ASC").
-		Find(&records).Error; err != nil {
-		return "", err
+		Select("ptid", "home_station_peer_id", "origin").
+		Where("ptid = ?", ptid).
+		First(&actor).Error; err != nil {
+		return "", mapNotFound(err)
 	}
-	if len(records) == 0 {
+	if actor.HomeStationPeerID == "" {
 		return "", messaging.ErrNotFound
 	}
-	if len(records) != 1 {
+	if actor.Origin != touchactor.OriginLocal &&
+		actor.Origin != touchactor.OriginRemoteCached {
 		return "", messaging.ErrEndpointManifestConflict
 	}
-	return records[0].HomeStationPeerID, nil
+	return actor.HomeStationPeerID, nil
 }
 
 func (d *DeviceDirectory) HomeStationID(
