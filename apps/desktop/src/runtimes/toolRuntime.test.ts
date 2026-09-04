@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const submitAgentToolDecision = vi.hoisted(() => vi.fn());
+const exportAgentTurnDiagnostics = vi.hoisted(() => vi.fn());
 
 vi.mock('../services/desktop_api', () => ({
   api: {
+    exportAgentTurnDiagnostics,
     submitAgentToolDecision,
   },
 }));
 
+import { ToolCallStatus as AgentToolCallStatus } from '../gen/proto/domain/agent/agent_pb';
 import { reduceToolProjection, toolRuntime, type ToolProjectionState } from './toolRuntime';
 
 const approvalRequired = {
@@ -24,6 +27,7 @@ const approvalRequired = {
 
 describe('toolRuntime projection authority', () => {
   beforeEach(async () => {
+    exportAgentTurnDiagnostics.mockReset();
     submitAgentToolDecision.mockReset();
     vi.stubGlobal('fetch', vi.fn());
     vi.stubGlobal('crypto', { randomUUID: () => 'decision-generated-1' });
@@ -61,8 +65,24 @@ describe('toolRuntime projection authority', () => {
     });
   });
 
-  it('reconciles a missed approval event from the authoritative message snapshot', () => {
-    expect(toolRuntime.reconcileMessages([{
+  it('reconciles a missed approval event from authoritative Turn diagnostics', async () => {
+    exportAgentTurnDiagnostics.mockResolvedValue({
+      replay: {
+        turnId: 'turn-1',
+        toolCalls: [{
+          toolCallId: 'tool-call-1',
+          toolName: 'filesystem.read',
+          redactedArguments: '{"resource_ref":"opaque-1"}',
+          status: AgentToolCallStatus.WAITING_APPROVAL,
+          approvalId: 'approval-1',
+          decisionId: '',
+          decisionRevision: 0n,
+          errorCode: '',
+        }],
+      },
+    });
+
+    await expect(toolRuntime.reconcileMessages([{
       turnId: 'turn-1',
       toolCalls: [{
         id: 'tool-call-1',
@@ -74,7 +94,7 @@ describe('toolRuntime projection authority', () => {
         decisionRevision: 0,
         payloadHash: 'payload-1',
       }],
-    }])).toBe(true);
+    }])).resolves.toBe(true);
 
     expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
       turnId: 'turn-1',
@@ -86,7 +106,7 @@ describe('toolRuntime projection authority', () => {
     });
   });
 
-  it('does not regress a newer event projection with a stale message snapshot', () => {
+  it('does not regress a newer event projection with stale Turn diagnostics', async () => {
     toolRuntime.consume(approvalRequired);
     toolRuntime.consume({
       event: 'tool_approval_decision',
@@ -99,8 +119,23 @@ describe('toolRuntime projection authority', () => {
       },
     });
     const current = toolRuntime.getSnapshot();
+    exportAgentTurnDiagnostics.mockResolvedValue({
+      replay: {
+        turnId: 'turn-1',
+        toolCalls: [{
+          toolCallId: 'tool-call-1',
+          toolName: 'filesystem.read',
+          redactedArguments: '{}',
+          status: AgentToolCallStatus.WAITING_APPROVAL,
+          approvalId: 'approval-1',
+          decisionId: '',
+          decisionRevision: 0n,
+          errorCode: '',
+        }],
+      },
+    });
 
-    expect(toolRuntime.reconcileMessages([{
+    await expect(toolRuntime.reconcileMessages([{
       turnId: 'turn-1',
       toolCalls: [{
         id: 'tool-call-1',
@@ -110,7 +145,7 @@ describe('toolRuntime projection authority', () => {
         approvalId: 'approval-1',
         decisionRevision: 0,
       }],
-    }])).toBe(false);
+    }])).resolves.toBe(false);
     expect(toolRuntime.getSnapshot()).toBe(current);
     expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
       status: 'approved',
