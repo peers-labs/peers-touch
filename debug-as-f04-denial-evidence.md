@@ -17,10 +17,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Expected Signal |
 |----|------------|------------|--------|-----------------|
-| A | `diagnosticToolCase` adds `awaiting_user` to a policy-level deny that never waited for a user. | High | Low | Deny fact has `policy=deny`, states `policy_check -> awaiting_user -> denied`, and all execution counters remain zero. |
-| B | The denied ToolCall executed despite policy denial. | Medium | Low | At least one execution, side-effect, result, or continuation count is nonzero. |
-| C | The policy mutation did not become authoritative before the Turn snapshot. | Medium | Low | Deny fact reports `manual` or `auto`, or its binding revision does not match the updated binding. |
-| D | The Harness projected a diagnostic fact from a different ToolCall or replay. | Low | Medium | Turn/ToolCall lineage or repeated replay identity differs from the denial case. |
+| A | `diagnosticToolCase` adds `awaiting_user` to a policy-level deny that never waited for a user. | High | Low | Confirmed: deny fact has `policy=deny`, states `policy_check -> awaiting_user -> denied`, and all execution counters are zero. |
+| B | The denied ToolCall executed despite policy denial. | Medium | Low | Rejected: execution, side-effect, result, and continuation counts are all zero. |
+| C | The policy mutation did not become authoritative before the Turn snapshot. | Medium | Low | Rejected: policy is `deny` and the binding revision matches. |
+| D | The Harness projected a diagnostic fact from a different ToolCall or replay. | Low | Medium | Rejected: target status, binding revision, and repeated replay all match. |
 
 ## Log Evidence
 - Exact-source run
@@ -32,6 +32,16 @@
 - Provisioner cleanup completed successfully.
 - The current Gate does not persist the denial fact fields needed to
   distinguish hypotheses A-D.
+- Diagnostic exact-source run
+  `20260904T220822121030Z-ab3b1762700ffe88dac9a83328bbd759`
+  on `fa52e32f5fb61f47bbd0a09662baa73e6468295a` emitted one
+  `denial-fact` checkpoint:
+  - `policy=deny`
+  - `states=["policy_check","awaiting_user","denied"]`
+  - execution, side-effect, result, and continuation counts all equal `0`
+  - target status, binding revision, and replay equality all match
+- The independent oracle again failed only `denialExecutedZero`; provisioner
+  cleanup passed.
 
 ## Instrumentation
 - Checkpoint `240aadb00acab41f82ab9052ddfc260ee1654e01` records the deny
@@ -41,5 +51,20 @@
 - Desktop strict checks and 67 native static tests pass.
 
 ## Verification Conclusion
-Runtime evidence is insufficient to change behavior. Deploy the diagnostic
-checkpoint and rerun the same exact-source Gate.
+Hypothesis A is confirmed and B-D are rejected. The shared projector
+incorrectly treats policy-level denial as if it had entered the manual
+approval wait state. The fix must branch on policy: `deny` projects
+`policy_check -> denied`, while a final manual denial projects
+`policy_check -> awaiting_user -> denied`.
+
+## Local Fix Verification
+- `diagnosticToolCase` now handles `policy=deny` before the manual approval
+  branch.
+- Manual terminal denial still projects
+  `policy_check -> awaiting_user -> denied`.
+- The post-fix debug checkpoint remains active for exact-source comparison.
+- Desktop strict checks: passed.
+- Desktop tests: 560 passed, with one unrelated environment-dependent skip.
+- Desktop production build: passed.
+- Agent native static and Group One evaluator tests: 130 passed.
+- `git diff --check`: passed.
