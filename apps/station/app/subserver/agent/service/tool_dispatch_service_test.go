@@ -1565,6 +1565,77 @@ func TestToolDispatchServiceSubmitDecision(t *testing.T) {
 	}
 }
 
+func TestToolDispatchServiceSubmitDeniedDecisionReturnsTypedOutcome(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.authorizedProposal(
+		t,
+		"denied-decision",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+	)
+	decisions, err := fixture.service.ProposeAuthorizedBatch(context.Background(), proposal)
+	if err != nil {
+		t.Fatalf("propose manual tool: %v", err)
+	}
+	request := &model.SubmitToolApprovalDecisionRequest{
+		ApprovalId:       decisions[0].ApprovalID,
+		ToolCallId:       proposal.Calls[0].ToolCallID,
+		DecisionId:       "decision-denied-1",
+		ExpectedRevision: decisions[0].DecisionRevision,
+		Approved:         false,
+		IdempotencyKey:   "decision-denied-command-1",
+	}
+	request.PayloadHash = decisionPayloadHash(request)
+
+	first, err := fixture.service.SubmitDecision(context.Background(), fixture.actorID, request)
+	if err != nil {
+		t.Fatalf("submit denied decision: %v", err)
+	}
+	outcome := first.GetOutcomeError()
+	if !first.GetAccepted() || first.GetApproved() || outcome == nil {
+		t.Fatalf("unexpected denied acknowledgement: %+v", first)
+	}
+	if outcome.GetErrorType() != string(errcode.AgentToolApprovalDenied) ||
+		outcome.GetLocaleKey() != errcode.AgentToolApprovalDeniedLocaleKey ||
+		outcome.GetRetryable() ||
+		!outcome.GetTerminal() ||
+		len(outcome.GetDetails()) != 2 ||
+		outcome.GetDetails()["tool_call_id"] != request.GetToolCallId() ||
+		outcome.GetDetails()["decision_id"] != request.GetDecisionId() {
+		t.Fatalf("unexpected denied outcome: %+v", outcome)
+	}
+
+	replayed, err := fixture.service.SubmitDecision(context.Background(), fixture.actorID, request)
+	if err != nil {
+		t.Fatalf("replay denied decision: %v", err)
+	}
+	if !proto.Equal(first, replayed) {
+		t.Fatalf("denied replay differs: first=%+v replayed=%+v", first, replayed)
+	}
+
+	var call persistence.ToolCall
+	if err := fixture.db.Where("tool_call_id = ?", request.GetToolCallId()).First(&call).Error; err != nil {
+		t.Fatalf("load denied tool call: %v", err)
+	}
+	if call.Status != persistence.ToolCallStatusDenied ||
+		call.DecisionID != request.GetDecisionId() ||
+		call.ErrorCode != string(errcode.AgentToolApprovalDenied) {
+		t.Fatalf("unexpected denied tool call: %+v", call)
+	}
+	var outboxCount int64
+	if err := fixture.db.Model(&persistence.ToolDispatchOutbox{}).Count(&outboxCount).Error; err != nil {
+		t.Fatalf("count denied outbox rows: %v", err)
+	}
+	var continuationCount int64
+	if err := fixture.db.Model(&persistence.ToolContinuation{}).Count(&continuationCount).Error; err != nil {
+		t.Fatalf("count denied continuation rows: %v", err)
+	}
+	if outboxCount != 0 || continuationCount != 0 {
+		t.Fatalf("denied decision dispatched work: outbox=%d continuation=%d", outboxCount, continuationCount)
+	}
+}
+
 func TestToolDispatchServiceConcurrentDecisionCAS(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
 	sqlDB, err := fixture.db.DB()

@@ -25,6 +25,7 @@ import {
   flushAgentTurnRecoveryPersistence,
   type AgentTurnSnapshotReloadResult,
 } from '../../runtimes/chatRuntime';
+import { toolRuntime } from '../../runtimes/toolRuntime';
 import { useAgentStore } from '../../store/agent';
 import { useAgentTurnRecoveryStore } from '../../store/agentTurnRecovery';
 import { useChatStore } from '../../store/chat';
@@ -1837,6 +1838,7 @@ function diagnosticToolCase(
     sideEffectCount,
     resultCount: stringField('resultId', 'result_id') ? 1 : 0,
     continuationCount: stringField('continuationId', 'continuation_id') ? 1 : 0,
+    errorCode: stringField('errorCode', 'error_code'),
     duplicateDeliveryCount: numberField(
       'duplicateDeliveryCount',
       'duplicate_delivery_count',
@@ -1854,6 +1856,10 @@ function diagnosticToolCase(
       ),
       approvalId: stringField('approvalId', 'approval_id'),
       decisionId: stringField('decisionId', 'decision_id'),
+      decisionRevision: numberField(
+        'decisionRevision',
+        'decision_revision',
+      ),
       executionClaimId: stringField(
         'executionClaimId',
         'execution_claim_id',
@@ -2290,6 +2296,285 @@ async function runFoundationF04Scenario(input: {
       );
     }
   }
+}
+
+async function runFoundationApprovalDeniedScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  platform: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: {
+    eventType: string;
+    sequence: number;
+    observedAt: string;
+  };
+  facts: Record<string, unknown>;
+}> {
+  const fixture = await foundationToolFixture(
+    input.agent.id || input.agent.name,
+    input.platform,
+  );
+  const originalBinding = fixture.binding;
+  let currentBinding = originalBinding;
+  const startedAt = performance.now();
+  let result: {
+    conversationId: string;
+    turnId: string;
+    durationMs: number;
+    runtimeEvent: {
+      eventType: string;
+      sequence: number;
+      observedAt: string;
+    };
+    facts: Record<string, unknown>;
+  } | null = null;
+
+  try {
+    currentBinding = await updateFoundationToolPolicy(
+      input.agent,
+      fixture,
+      currentBinding,
+      CapabilityApprovalPolicy.MANUAL,
+    );
+    const capabilitySession = await resolveFoundationToolTurnSession();
+    const turn = await startFoundationToolTurn({
+      agent: input.agent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture,
+      sampleId: input.sampleId,
+      label: 'approval-denied',
+    });
+    await useChatStore.getState().selectSession(turn.conversationId);
+    const approval = await waitForToolApprovalEvent(turn);
+    const approvalId = String(
+      evidenceField(approval, 'approvalId', 'approval_id') ?? '',
+    );
+    const toolCallId = String(
+      evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    const expectedRevision = Number(
+      evidenceField(approval, 'decisionRevision', 'decision_revision') ?? 0,
+    );
+    if (!approvalId || !toolCallId || !Number.isInteger(expectedRevision)) {
+      throw new Error('agent.acceptance.foundationToolApprovalInvalid');
+    }
+
+    await waitFor(
+      () => Array.from(
+        document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
+      ).some((element) =>
+        element.dataset.ptAgentToolCall === toolCallId),
+      'approval-denied ToolCall receiver',
+      30_000,
+    );
+    const toolCallElement = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
+    ).find((element) => element.dataset.ptAgentToolCall === toolCallId);
+    if (!toolCallElement) {
+      throw new Error('agent.acceptance.foundationToolCallSurfaceMissing');
+    }
+    let recovery = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-recovery="continue-without-tool"]',
+    );
+    if (!recovery) {
+      toolCallElement.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(toolCallElement.querySelector(
+          '[data-pt-agent-tool-recovery="continue-without-tool"]',
+        )),
+        'approval-denied recovery action',
+        10_000,
+      );
+      recovery = toolCallElement.querySelector<HTMLButtonElement>(
+        '[data-pt-agent-tool-recovery="continue-without-tool"]',
+      );
+    }
+    if (!recovery) {
+      throw new Error('agent.acceptance.foundationToolRecoveryMissing');
+    }
+    const expectedRecoveryText = i18n.t(
+      'agent.recovery.continueWithoutTool',
+      { ns: 'agent' },
+    );
+    const recoveryVisible = recovery.getClientRects().length > 0;
+    const recoveryText = recovery.textContent?.trim() ?? '';
+    recovery.click();
+
+    await waitFor(
+      () => {
+        const projection = toolRuntime.getProjection(toolCallId);
+        return (
+          projection?.status === 'denied'
+          && projection.decisionOutcome?.error_type === 'TOOL_APPROVAL_DENIED'
+        );
+      },
+      'approval-denied typed outcome',
+      30_000,
+    );
+    const projection = toolRuntime.getProjection(toolCallId);
+    if (!projection?.decisionId || !projection.decisionOutcome) {
+      throw new Error('agent.acceptance.foundationToolDenialOutcomeMissing');
+    }
+    const firstAcknowledgement = {
+      accepted: true,
+      decision_revision: projection.decisionRevision,
+      approval_id: projection.approvalId,
+      tool_call_id: projection.toolCallId,
+      decision_id: projection.decisionId,
+      approved: false,
+      idempotency_key: projection.decisionId,
+      payload_hash: projection.payloadHash,
+      error_code: 'TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED',
+      outcome_error: projection.decisionOutcome,
+    };
+    const replayedAcknowledgement = await api.submitAgentToolDecision({
+      approval_id: approvalId,
+      tool_call_id: toolCallId,
+      decision_id: projection.decisionId,
+      expected_revision: expectedRevision,
+      approved: false,
+      idempotency_key: projection.decisionId,
+    });
+    const source = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts, replay) =>
+        facts.length === 1
+        && Number(facts[0].status) === ToolCallStatus.DENIED
+        && diagnosticReplayTerminal(replay),
+      'approval-denied Station settlement',
+    );
+    const replayed = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts, replay) =>
+        facts.length === 1
+        && Number(facts[0].status) === ToolCallStatus.DENIED
+        && diagnosticReplayTerminal(replay),
+      'approval-denied Station replay',
+    );
+    const sideEffectCount = await foundationToolSideEffectCount(
+      input.platform,
+      replayed.facts[0],
+    );
+    await waitFor(
+      () => Boolean(toolCallElement.querySelector(
+        '[data-pt-agent-tool-error="agent.errors.toolApprovalDenied"]',
+      )),
+      'approval-denied error surface',
+      10_000,
+    );
+    const errorElement = toolCallElement.querySelector<HTMLElement>(
+      '[data-pt-agent-tool-error="agent.errors.toolApprovalDenied"]',
+    );
+    const runtimeEvent = [...turn.observed.events]
+      .reverse()
+      .map((event) => ({
+        eventType: event.event,
+        sequence: Number(event.data.seq ?? 0),
+        observedAt: event.observedAt,
+      }))
+      .find((event) => event.sequence > 0);
+    if (!runtimeEvent) {
+      throw new Error('agent.acceptance.foundationToolRuntimeEventMissing');
+    }
+    const sourceReplay = withoutDiagnosticGenerationTime(source.replay);
+    const repeatedReplay = withoutDiagnosticGenerationTime(replayed.replay);
+    const firstAcknowledgementHash = await sha256Hex(
+      stableJson(firstAcknowledgement),
+    );
+    const replayedAcknowledgementHash = await sha256Hex(
+      stableJson(replayedAcknowledgement),
+    );
+    const sourceReplayHash = await sha256Hex(stableJson(sourceReplay));
+    const repeatedReplayHash = await sha256Hex(stableJson(repeatedReplay));
+
+    result = {
+      conversationId: turn.conversationId,
+      turnId: turn.turnId,
+      durationMs: performance.now() - startedAt,
+      runtimeEvent,
+      facts: {
+        outcome: projection.decisionOutcome,
+        receiver: {
+          recoveryVisible,
+          recoveryText,
+          expectedRecoveryText,
+          recoveryExecuted: true,
+          errorVisible: Boolean(
+            errorElement && errorElement.getClientRects().length > 0,
+          ),
+          errorText: errorElement?.textContent?.trim() ?? '',
+          expectedErrorText: i18n.t(
+            'agent.errors.toolApprovalDenied',
+            { ns: 'agent' },
+          ),
+        },
+        decision: {
+          accepted: true,
+          approved: false,
+          approvalId,
+          toolCallId,
+          decisionId: projection.decisionId,
+          decisionRevision: projection.decisionRevision,
+        },
+        station: diagnosticToolCase(replayed.facts[0], sideEffectCount),
+        replay: {
+          acknowledgementSourceHash: firstAcknowledgementHash,
+          acknowledgementReplayHash: replayedAcknowledgementHash,
+          diagnosticSourceHash: sourceReplayHash,
+          diagnosticReplayHash: repeatedReplayHash,
+          equal:
+            firstAcknowledgementHash === replayedAcknowledgementHash
+            && sourceReplayHash === repeatedReplayHash,
+        },
+        capabilitySession: {
+          ...capabilitySession.facts,
+          turnId: turn.turnId,
+        },
+      },
+    };
+  } finally {
+    if (originalBinding) {
+      await updateFoundationToolPolicy(
+        input.agent,
+        fixture,
+        currentBinding,
+        originalBinding.approvalPolicy,
+        originalBinding.enabled,
+      );
+    } else if (currentBinding) {
+      await api.deleteAgentCapabilityBinding(
+        currentBinding.bindingId,
+        currentBinding.revision,
+        crypto.randomUUID(),
+        'acceptance_fixture_cleanup',
+      );
+    }
+  }
+  if (!result) {
+    throw new Error('agent.acceptance.foundationToolDenialFactsMissing');
+  }
+  const restoredBindings = await api.listAgentCapabilityBindings(
+    input.agent.id || input.agent.name,
+  );
+  const restoredBinding = restoredBindings.find((candidate) =>
+    candidate.capabilityId === fixture.manifest.capabilityId
+    && candidate.capabilityVersion === fixture.manifest.version
+    && !candidate.tombstonedAt) ?? null;
+  result.facts.cleanup = {
+    bindingRestored: originalBinding
+      ? (
+          restoredBinding?.approvalPolicy === originalBinding.approvalPolicy
+          && restoredBinding.enabled === originalBinding.enabled
+        )
+      : restoredBinding === null,
+    conversationDeleted: false,
+  };
+  return result;
 }
 
 const FOUNDATION_PNG_BYTES = Array.from(Uint8Array.from([
@@ -5191,9 +5476,100 @@ async function evaluateDirectCellAssertions(
       return evaluateF12(ctx);
     case 'BASE-ACTIVE_MUTATION_CONFLICT':
       return evaluateBaseActiveMutationConflict(ctx);
+    case 'BASE-APPROVAL_DENIED':
+      return evaluateBaseApprovalDenied(ctx);
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+function evaluateBaseApprovalDenied(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationApprovalDeniedFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationApprovalDeniedOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationApprovalDeniedDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationApprovalDeniedReceiver',
+  );
+  const decision = evidenceRecord(
+    facts.decision,
+    'foundationApprovalDeniedDecision',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationApprovalDeniedStation',
+  );
+  const lineage = evidenceRecord(
+    station.lineage,
+    'foundationApprovalDeniedLineage',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationApprovalDeniedReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationApprovalDeniedCleanup',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+
+  return {
+    typedDenialProjected: (
+      outcome.error_type === 'TOOL_APPROVAL_DENIED'
+      && outcome.locale_key === 'agent.errors.toolApprovalDenied'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && safeDetailKeys.length === 2
+      && safeDetailKeys[0] === 'decision_id'
+      && safeDetailKeys[1] === 'tool_call_id'
+      && details.tool_call_id === decision.toolCallId
+      && details.decision_id === decision.decisionId
+    ),
+    localizedRecoveryVisible: (
+      receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+      && receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+    ),
+    denialPersisted: (
+      decision.accepted === true
+      && decision.approved === false
+      && station.policy === 'manual'
+      && stableJson(station.states)
+        === stableJson(['policy_check', 'awaiting_user', 'denied'])
+      && station.errorCode === 'TOOL_APPROVAL_DENIED'
+      && lineage.toolCallId === decision.toolCallId
+      && lineage.decisionId === decision.decisionId
+      && Number(lineage.decisionRevision) === decision.decisionRevision
+    ),
+    zeroSideEffect: (
+      Number(station.executionAttemptCount) === 0
+      && Number(station.sideEffectCount) === 0
+      && Number(station.resultCount) === 0
+      && Number(station.continuationCount) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.acknowledgementSourceHash
+        === replay.acknowledgementReplayHash
+      && replay.diagnosticSourceHash === replay.diagnosticReplayHash
+    ),
+    cleanupComplete: (
+      cleanup.conversationDeleted === true
+      && cleanup.bindingRestored === true
+    ),
+  };
 }
 
 function evaluateBaseActiveMutationConflict(
@@ -7200,6 +7576,19 @@ export function installAcceptanceHarness(): void {
         scenarioFacts = scenario.facts;
       }
 
+      if (cell === 'BASE-APPROVAL_DENIED') {
+        const scenario = await runFoundationApprovalDeniedScenario({
+          agent,
+          platform,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
       if (cell === 'AS-F06') {
         if (!stationRestart || !scenarioKey || !durableReloadEvidence) {
           throw new Error('agent.acceptance.foundationStationRestartMissing');
@@ -7924,6 +8313,34 @@ export function installAcceptanceHarness(): void {
           deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
         };
       }
+      if (
+        cell === 'BASE-APPROVAL_DENIED'
+        && scenarioFacts
+        && currentConversationId
+      ) {
+        preservedReplayReadback = conversationReadback;
+        const deletionErrorCode = await deleteFoundationConversation(
+          currentConversationId,
+        );
+        let conversationDeleted = deletionErrorCode.includes('AGENT_4004');
+        if (!conversationDeleted) {
+          try {
+            conversationDeleted = (
+              await api.getAgentConversation(currentConversationId)
+            ).status === 'deleted';
+          } catch (error) {
+            conversationDeleted = observedErrorCode(error).includes('AGENT_4004');
+          }
+        }
+        scenarioFacts.cleanup = {
+          ...evidenceRecord(
+            scenarioFacts.cleanup,
+            'foundationApprovalDeniedCleanup',
+          ),
+          conversationDeleted,
+          deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
+        };
+      }
 
       const sessionState = useSessionStore.getState();
       const providerState = useProviderStore.getState();
@@ -7995,6 +8412,22 @@ export function installAcceptanceHarness(): void {
         stationReadback.revision = Number(winner.revisionAfterReload);
         stationReadback.stateHash = String(winner.hashAfterReload);
       }
+      if (cell === 'BASE-APPROVAL_DENIED' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationApprovalDeniedStation',
+        );
+        const lineage = evidenceRecord(
+          station.lineage,
+          'foundationApprovalDeniedLineage',
+        );
+        stationReadback.entityKind = 'agent-tool-call';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(lineage.toolCallId),
+        );
+        stationReadback.revision = Number(lineage.decisionRevision);
+        stationReadback.stateHash = await sha256Hex(stableJson(station));
+      }
 
       const runtimeEvents: Record<string, unknown> =
         cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
@@ -8061,7 +8494,23 @@ export function installAcceptanceHarness(): void {
               ),
               maximum: 0,
             }
-          : cell === 'AS-F04'
+          : cell === 'BASE-APPROVAL_DENIED' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationApprovalDeniedStation',
+                );
+                const lineage = evidenceRecord(
+                  station.lineage,
+                  'foundationApprovalDeniedLineage',
+                );
+                return {
+                  counterId: String(lineage.toolCallId),
+                  count: Number(station.sideEffectCount),
+                  maximum: 0,
+                };
+              })()
+            : cell === 'AS-F04'
         ? (() => {
             const facts = evidenceRecord(
               scenarioFacts,
@@ -8156,6 +8605,17 @@ export function installAcceptanceHarness(): void {
                     'foundationActiveMutationConflictCleanup',
                   ).priorSelection
               )
+            : cell === 'BASE-APPROVAL_DENIED' && scenarioFacts
+              ? (
+                  evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationApprovalDeniedCleanup',
+                  ).conversationDeleted === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationApprovalDeniedCleanup',
+                  ).bindingRestored === true
+                )
             : cell === 'AS-F05'
             ? attachmentCleanup.length > 0
               && attachmentCleanup.every((entry) =>
@@ -8179,38 +8639,55 @@ export function installAcceptanceHarness(): void {
         ),
         ...(cell === 'AS-F06' && scenarioFacts
           ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-APPROVAL_DENIED' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : {}),
       };
 
-      const receiver = cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
+      const receiver = (
+        cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
+        || cell === 'BASE-APPROVAL_DENIED'
+      ) && scenarioFacts
         ? evidenceRecord(
             scenarioFacts.receiver,
-            'foundationActiveMutationConflictReceiver',
+            'foundationTypedErrorReceiver',
           )
         : null;
       const receiverDomRole: Record<string, unknown> = {
         scenarioId: cell,
         cellId: cell,
         visible: receiver
-          ? receiver.conflictVisible === true && receiver.reloadVisible === true
+          ? cell === 'BASE-APPROVAL_DENIED'
+            ? (
+                receiver.recoveryVisible === true
+                && receiver.errorVisible === true
+              )
+            : receiver.conflictVisible === true && receiver.reloadVisible === true
           : cell === 'AS-F05'
           ? receiverDom.messageAttachments.visibleCount >= 2
           : receiverDom.composer.visibleCount > 0
             || receiverDom.assistantMessages.visibleCount > 0,
         selector: receiver
-          ? '[data-pt-agent-profile-conflict],[data-pt-agent-profile-reload]'
+          ? cell === 'BASE-APPROVAL_DENIED'
+            ? '[data-pt-agent-tool-recovery="continue-without-tool"],[data-pt-agent-tool-error]'
+            : '[data-pt-agent-profile-conflict],[data-pt-agent-profile-reload]'
           : cell === 'AS-F05'
           ? '[data-pt-agent-message-attachment]'
           : '[data-pt-agent-composer],[data-pt-agent-message="assistant"]',
         locale,
         textHash: await sha256Hex(
           receiver
-            ? stableJson({
-                conflictText: receiver.conflictText,
-                reloadText: receiver.reloadText,
-              })
+            ? cell === 'BASE-APPROVAL_DENIED'
+              ? stableJson({
+                  recoveryText: receiver.recoveryText,
+                  errorText: receiver.errorText,
+                })
+              : stableJson({
+                  conflictText: receiver.conflictText,
+                  reloadText: receiver.reloadText,
+                })
             : JSON.stringify(
             cell === 'AS-F05'
               ? receiverDom.messageAttachments.text
@@ -8227,6 +8704,15 @@ export function installAcceptanceHarness(): void {
         replayEvidence.replayHash = winner.hashAfterReload;
         replayEvidence.equal = winner.hashBeforeStale === winner.hashAfterReload;
         replayEvidence.turnId = null;
+      }
+      if (cell === 'BASE-APPROVAL_DENIED' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationApprovalDeniedReplay',
+        );
+        replayEvidence.sourceHash = replay.acknowledgementSourceHash;
+        replayEvidence.replayHash = replay.acknowledgementReplayHash;
+        replayEvidence.equal = replay.equal;
       }
 
       return evidenceValue({
