@@ -4521,6 +4521,39 @@ async function cleanupFoundationF12Scenario(input: {
   };
 }
 
+async function selectFoundationF12Branch(input: {
+  label: string;
+  conversationId: string;
+  messageId: string;
+  expectedVersion: number;
+}): Promise<Record<string, unknown>> {
+  try {
+    return evidenceRecord(
+      await api.selectAgentActiveBranch({
+        conversation_id: input.conversationId,
+        active_branch_message_id: input.messageId,
+        client_idempotency_key: crypto.randomUUID(),
+        expected_conversation_version: input.expectedVersion,
+      }),
+      `foundationF12${input.label}Selection`,
+    );
+  } catch (error) {
+    const actualVersion = await api.getAgentConversation(
+      input.conversationId,
+    ).then(
+      (conversation) => conversation.version,
+      () => 0,
+    );
+    throw new Error([
+      'agent.acceptance.foundationTopicBranchSelectionFailed',
+      input.label,
+      observedErrorCode(error),
+      `expected=${input.expectedVersion}`,
+      `actual=${actualVersion}`,
+    ].join(':'));
+  }
+}
+
 async function runFoundationF12Prepare(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
@@ -4640,24 +4673,21 @@ async function runFoundationF12Prepare(input: {
           alpha.conversation_id,
         );
         const staleExpectedVersion = alphaAfterRegenerate.version;
-        const alphaOriginalSelection = evidenceRecord(
-          await api.selectAgentActiveBranch({
-            conversation_id: alpha.conversation_id,
-            active_branch_message_id: alphaAssistant.messageId,
-            client_idempotency_key: crypto.randomUUID(),
-            expected_conversation_version: alphaAfterRegenerate.version,
-          }),
-          'foundationF12AlphaOriginalSelection',
-        );
+        const alphaOriginalSelection = await selectFoundationF12Branch({
+          label: 'AlphaOriginal',
+          conversationId: alpha.conversation_id,
+          messageId: alphaAssistant.messageId,
+          expectedVersion: alphaAfterRegenerate.version,
+        });
         const alphaOriginalConversation = evidenceRecord(
           alphaOriginalSelection.conversation,
           'foundationF12AlphaOriginalConversation',
         );
-        await api.selectAgentActiveBranch({
-          conversation_id: alpha.conversation_id,
-          active_branch_message_id: String(alphaSibling.messageId),
-          client_idempotency_key: crypto.randomUUID(),
-          expected_conversation_version: Number(
+        await selectFoundationF12Branch({
+          label: 'AlphaSibling',
+          conversationId: alpha.conversation_id,
+          messageId: String(alphaSibling.messageId),
+          expectedVersion: Number(
             evidenceField(
               alphaOriginalConversation,
               'version',
@@ -4686,11 +4716,11 @@ async function runFoundationF12Prepare(input: {
         const betaAfterRegenerate = await api.getAgentConversation(
           beta.conversation_id,
         );
-        await api.selectAgentActiveBranch({
-          conversation_id: beta.conversation_id,
-          active_branch_message_id: String(betaSibling.messageId),
-          client_idempotency_key: crypto.randomUUID(),
-          expected_conversation_version: betaAfterRegenerate.version,
+        await selectFoundationF12Branch({
+          label: 'BetaSibling',
+          conversationId: beta.conversation_id,
+          messageId: String(betaSibling.messageId),
+          expectedVersion: betaAfterRegenerate.version,
         });
 
         const topicInputs = {
