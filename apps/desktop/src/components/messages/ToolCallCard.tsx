@@ -342,15 +342,24 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
 
 function hasActionableToolApproval(
   toolCalls: readonly ToolCallInfo[],
+  projections: ReturnType<typeof toolRuntime.getSnapshot>,
 ): boolean {
-  return toolCalls.some(
-    (toolCall) =>
-      toolCall.status === 'approval_required' && Boolean(toolCall.approvalId),
-  );
+  return toolCalls.some((toolCall) => {
+    const projection = projections[toolCall.id];
+    return (
+      (projection?.status ?? toolCall.status) === 'approval_required'
+      && Boolean(projection?.approvalId ?? toolCall.approvalId)
+    );
+  });
 }
 
 export function ToolCallsBlock({ toolCalls, messageId }: { toolCalls: ToolCallInfo[]; messageId?: string }) {
-  const actionableApproval = hasActionableToolApproval(toolCalls);
+  const projections = useSyncExternalStore(
+    toolRuntime.subscribe,
+    toolRuntime.getSnapshot,
+    toolRuntime.getSnapshot,
+  );
+  const actionableApproval = hasActionableToolApproval(toolCalls, projections);
   const [expanded, setExpanded] = useState(actionableApproval);
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');

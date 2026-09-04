@@ -291,11 +291,15 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
         decision_id?: string;
         decision_revision?: number;
         payload_hash?: string;
+        function?: {
+          name?: string;
+          arguments?: string;
+        };
       }>;
       chatMessage.toolCalls = parsed.map((toolCall) => ({
         id: toolCall.id || toolCall.name || '',
-        name: toolCall.name || 'tool',
-        args: toolCall.args,
+        name: toolCall.name || toolCall.function?.name || 'tool',
+        args: toolCall.args ?? toolCall.function?.arguments,
         result: toolCall.result,
         pending: toolCall.status === 'approval_required' ||
           toolCall.status === 'approved' ||
@@ -346,7 +350,11 @@ function foldToolMessages(messages: ChatMessage[]): ChatMessage[] {
 
 function reconcileToolMessages(messages: ChatMessage[]): ChatMessage[] {
   const folded = foldToolMessages(messages);
-  toolRuntime.reconcileMessages(folded);
+  void toolRuntime.reconcileMessages(folded).catch((error) => {
+    log.warn('chat', 'Failed to reconcile ToolCall projections', {
+      error: String(error),
+    });
+  });
   return folded;
 }
 
