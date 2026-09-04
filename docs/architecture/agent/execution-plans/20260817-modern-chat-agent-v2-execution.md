@@ -4778,6 +4778,35 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `cargo check --locked --features e2e-testing`, Rust formatting, and
   `git diff --check` pass. Repository-wide Desktop lint remains red on
   unrelated baseline findings. Exact-source runtime proof remains pending.
+- Exact-source run
+  `20260904T043527365583Z-b99b2e5b8ac9cd009d4808c7d4f10948`
+  (aggregate `20260904T043527116497Z-1cda1cb1c913051e8502f8079e28d82b`)
+  rejected the AS-F06 restart before mutation because the invocation omitted
+  `PT_ACCEPTANCE_DISPOSABLE=1`; the approved profile and exact Station source
+  were otherwise correct, and cleanup completed `DONE / PROVEN / passed`.
+  Fully authorized exact-source run
+  `20260904T045329426974Z-48f9f855f546129e934bd38b49663cf3`
+  (aggregate `20260904T045329305193Z-197aa66e3e6f00c28cf81ed8e7fb333c`)
+  crossed `BASE-APPROVAL_DENIED`, proving that vertical, and advanced to
+  Browser AS-F10. Its short provider-backed Turn remained active for exactly
+  the 120-second client bound and was then durably cancelled with no provider
+  error. Neighboring short Turns completed in 1-31 seconds, so one unchanged
+  rerun was required before assigning a code owner.
+- The unchanged-source rerun
+  `20260904T051748432909Z-4338d93f2991f91f6a393a99d9f980cd`
+  (aggregate `20260904T051748300508Z-ccb8fb7ba9221ebead145776791f75dd4`)
+  did not reproduce AS-F10; it failed before tuple execution because Browser
+  waited indefinitely for `accountGate`. The Acceptance Harness can register
+  before React's lifecycle effect starts `identityRuntime`, and its initial
+  login path also rejects an already-restored `ready` session. AS-F06 cleanup
+  compounded failures by requesting a fresh login after client restart instead
+  of requiring the existing session. The local correction idempotently starts
+  the identity owner, converts an already-authenticated initial client back to
+  a fresh account gate before credential login, and makes restart cleanup
+  verify the existing session. The 91 focused runner/static tests, Desktop
+  TypeScript checks, Rust formatting, and `git diff --check` pass. Cleanup for
+  both runs completed `DONE / PROVEN / passed`; G-F remains
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
