@@ -446,6 +446,8 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
         self.assertIn("withFoundationCapabilitiesDisabled(", prepare)
         self.assertIn("JSON.parse(stableJson(snapshot))", snapshot)
+        self.assertIn("topicLabel: topic.key", snapshot)
+        self.assertNotIn("key: topic.key", snapshot)
         self.assertIn("runFoundationF12Turn({", prepare)
         self.assertEqual(prepare.count("runFoundationF12Turn({"), 4)
         self.assertIn("await api.regenerateAgentTurn({", prepare)

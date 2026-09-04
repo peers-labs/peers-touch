@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T141328825018Z-38da519bb0beba1008fa7b78826514ee` reached `FIXTURE_READY` and failed at Browser AS-F03 Simplified Chinese because cancellation lost the terminal race; the strict cancellation oracle remains unchanged and diagnostic evidence is pending | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T142747367508Z-59fddbe07fd75bf50392a158f05b2e3c` passed the prior AS-F03 boundary and reached Browser AS-F12, where evidence safety rejected a semantic fixture field named `key`; the global redaction policy remains unchanged and the field is being renamed | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5119,6 +5119,25 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   status, timing, event sequence, and Turn-identity equality without changing
   the product path or strict AS-F03 oracle. G-F remains
   `PARTIAL / UNPROVEN`.
+- Diagnostic exact-source run
+  `20260904T142747367508Z-59fddbe07fd75bf50392a158f05b2e3c`
+  (aggregate `20260904T142747255170Z-8e9e8b4865a718904be0b3224afc694a`,
+  candidate producer
+  `20260904T142758391840Z-8248a1a9e7b86a492183453f5a9b394a`)
+  on `50f98702f09bead6606ff641224c4a1feea4c0b3` passed both Browser
+  AS-F03 locale tuples. The cancellation diagnostics recorded matching Turn
+  identities and authoritative `cancelled` responses while buffered text
+  continued through sequence 31. The run then reached Browser AS-F12 and
+  failed evidence safety at `station-readback.topics.alpha.key`: the semantic
+  `alpha` / `beta` fixture label used the globally secret-bearing field name
+  `key`. The correction renames only the persisted snapshot field to
+  `topicLabel`; the global redaction policy and every AS-F12 restart,
+  branch-isolation, and cross-topic assertion remain unchanged. Cleanup
+  completed `DONE / PROVEN / passed`. Desktop check, 173 focused
+  Foundation/runtime tests, and `git diff --check` pass. The broader
+  185-test selection retains two known unrelated `receiver-dom` fixture
+  failures. G-F remains `PARTIAL / UNPROVEN` pending checkpoint deployment
+  and exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

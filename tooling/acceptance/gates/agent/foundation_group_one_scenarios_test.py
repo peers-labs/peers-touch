@@ -546,7 +546,7 @@ def valid_as_f12_capture(
             f"turn-{topic_key}-second",
         ]
         snapshot = {
-            "key": topic_key,
+            "topicLabel": topic_key,
             "fact": fact,
             "conversation": {
                 "conversationId": conversation_id,
@@ -1601,6 +1601,28 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
 
         self.assertEqual(len(assertions), 5)
         self.assertTrue(all(assertions.values()))
+
+    def test_as_f12_rejects_topic_label_mismatch(self) -> None:
+        capture = valid_as_f12_capture()
+        alpha = capture["topics"]["alpha"]
+        for phase in ("preRestart", "postRestart"):
+            alpha[phase]["topicLabel"] = "beta"
+            alpha[f"{phase}Hash"] = canonical_payload_hash(alpha[phase])
+        for stale_phase in ("before", "after"):
+            capture["staleMutation"][stale_phase]["alphaHash"] = (
+                alpha["postRestartHash"]
+            )
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "restartRestored",
+        ):
+            evaluate_as_f12(
+                capture,
+                platform="desktop_app",
+                locale="en",
+                sample_id="sample-001",
+            )
 
     def test_as_f12_accepts_independent_original_branch_selection(self) -> None:
         capture = valid_as_f12_capture()

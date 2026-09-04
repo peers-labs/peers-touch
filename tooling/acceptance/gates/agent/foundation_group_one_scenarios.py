@@ -2082,7 +2082,7 @@ def _evaluate_as_f12_topic(
             post_conversation.get("conversationId") == conversation_id
         ),
         "topicMatches": (
-            post_restart.get("key") == key
+            post_restart.get("topicLabel") == key
             and post_restart.get("fact") == fact
         ),
         "turnMatches": (
