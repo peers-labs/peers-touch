@@ -23,6 +23,7 @@
 | F | Direct creation resolves the remote endpoint manifest but then discards it and requires the remote endpoint to exist in the authority Station's local `actor_devices` table. | High | Low | Confirmed: station-five returned the Bob endpoint manifest with HTTP 200; station-four persisted it, but had only Alice in `actor_devices`. `ConversationService.CreateDirect` ignored the resolved manifests and returned 500 after `ListActiveEndpoints` found no local Bob row. |
 | G | Contacts `Message` changes only the Chat subpage before `createDirect`; on failure it has no peer-bound conversation state to render. | High | Low | Confirmed by the user screenshot and source: `onMessage()` switched `subPage`, while `activeSessionUlid` remained empty until RPC success, so the generic empty Chat pane and global toast appeared. |
 | H | The resilience Gate can pass the blank-pane regression. | High | Low | Confirmed: the latest Linux Gate accepted `_chats_subpage_active() OR _chat_area_visible()`, and therefore proved a 333 ms tab switch plus toast rather than a peer-bound pane. No Windows pointer/evidence existed for this Gate. |
+| I | The one-client resilience Gate cannot provision Bob on station-five because fixture actor binding is derived only from launched runtime clients. | High | Low | Confirmed by Windows run `20260904T113004716796Z-40317bad53a2b6608f02e4df47fa57f9`: source and both Station attestations passed, then provisioning blocked on `fixture-binding:bob`. The declared environment already maps Bob to station-five, but Bob is intentionally not launched by this Gate. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -138,3 +139,11 @@ The client and Acceptance correction now also addresses hypotheses G and H:
 Local pre-runtime verification passes: Desktop check, 540 Desktop tests,
 Desktop production build, 169 Chat static tests, and all Station Messaging
 package tests. Exact-source Windows post-fix evidence remains pending.
+
+The first Windows resilience attempt at commit `61f1cb759687899735a2a6069913c4a95f7ecf8c`
+was correctly classified `BLOCKED/UNPROVEN` before client launch because the
+Chat provisioner derived fixture bindings only from the launched-client subset.
+The correction now resolves every fixture actor from the full declared
+environment client bindings while still launching only the Gate-specific
+runtime clients. A focused provisioner regression test proves Alice resolves
+to station-four and non-launched Bob resolves to station-five.
