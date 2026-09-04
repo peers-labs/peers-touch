@@ -4899,13 +4899,12 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   on `cf1f81428cd87d0eaec8930a6ff69e02df51f8bc` proved the AS-F01
   capability-isolation correction and returned to Browser AS-F12. The bounded
   diagnostic identified `BetaSibling` with `expected=8` and `actual=8`, ruling
-  out stale CAS. Regeneration already made that sibling the active response;
-  reselecting it was not an independent branch switch and Station rejected the
-  source state. The scenario now keeps Alpha on its regenerated sibling and
-  explicitly switches Beta to its original response head. The independent
-  oracle accepts either owned head while still requiring both source and
-  sibling messages, distinct topic graphs, and exact post-restart active heads.
-  Provisioner cleanup completed `DONE / PROVEN / passed`; G-F remains
+  out stale CAS. Regeneration already made that sibling the active response, so
+  the scenario now keeps Alpha on its regenerated sibling and explicitly
+  switches Beta to its original response head. The independent oracle accepts
+  either owned head while still requiring both source and sibling messages,
+  distinct topic graphs, and exact post-restart active heads. Provisioner
+  cleanup completed `DONE / PROVEN / passed`; G-F remains
   `PARTIAL / UNPROVEN` pending checkpoint deployment and rerun.
 - Exact-source run
   `20260904T081925930277Z-23f308e264e898e272791a779e06b23a`
@@ -4922,6 +4921,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   switches so the next exact run can distinguish a CAS race from invalid
   source state. Both Provisioner cleanups completed
   `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260904T090546562696Z-0159f9325f2943175277491ceb345cab`
+  (aggregate `20260904T090546449554Z-814c4059489c5e8ee6ab553f0b9b9773`)
+  on `7ffa53614f9fad6ee66feefe5da752a318931b1b` reproduced AS-F07 at
+  `F07Original` with `expected=7` and `actual=7`, excluding a CAS race.
+  PostgreSQL reported the authoritative failure:
+  `idx_turn_events_turn_seq` rejected duplicate
+  `(turn_id,event_seq)=('',189)`. Conversation-only branch/tombstone revision
+  events were stored with an empty Turn ID while the canonical event cursor and
+  unique index are per Turn, so equivalent sequence values in different
+  conversations collided globally. Station now binds each revision event to
+  the selected message's owning Turn and rejects lineage-less source messages.
+  A two-conversation regression proves equal per-Turn sequence values no longer
+  collide. Focused Station Agent packages, 181 Foundation tests, Desktop check,
+  Go style, and `git diff --check` pass. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; runtime proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
