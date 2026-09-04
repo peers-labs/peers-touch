@@ -2025,8 +2025,11 @@ def _evaluate_as_f12_topic(
             and runtime_identity_matches
         ),
         "branch_owned": (
-            sibling_message_id == selected_branch_message_id
-            and source_assistant_message_id != sibling_message_id
+            source_assistant_message_id != sibling_message_id
+            and source_assistant_message_id in message_ids
+            and sibling_message_id in message_ids
+            and selected_branch_message_id
+            in {source_assistant_message_id, sibling_message_id}
             and selected_branch_message_id in message_ids
             and post_conversation.get("activeBranchMessageId")
             == selected_branch_message_id

@@ -4717,9 +4717,9 @@ async function runFoundationF12Prepare(input: {
           beta.conversation_id,
         );
         await selectFoundationF12Branch({
-          label: 'BetaSibling',
+          label: 'BetaOriginal',
           conversationId: beta.conversation_id,
-          messageId: String(betaSibling.messageId),
+          messageId: betaAssistant.messageId,
           expectedVersion: betaAfterRegenerate.version,
         });
 
@@ -4750,7 +4750,7 @@ async function runFoundationF12Prepare(input: {
             runtimeTurnId: betaSecond.turnId,
             sourceAssistantMessageId: betaAssistant.messageId,
             siblingMessageId: String(betaSibling.messageId),
-            selectedBranchMessageId: String(betaSibling.messageId),
+            selectedBranchMessageId: betaAssistant.messageId,
           },
         };
         const [alphaBeforeStale, betaBeforeStale] = await Promise.all([

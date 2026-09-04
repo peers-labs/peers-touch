@@ -1583,6 +1583,37 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         self.assertEqual(len(assertions), 5)
         self.assertTrue(all(assertions.values()))
 
+    def test_as_f12_accepts_independent_original_branch_selection(self) -> None:
+        capture = valid_as_f12_capture()
+        beta = capture["topics"]["beta"]
+        selected = beta["sourceAssistantMessageId"]
+        beta["selectedBranchMessageId"] = selected
+        for phase in ("preRestart", "postRestart"):
+            snapshot = beta[phase]
+            snapshot["selectedBranchMessageId"] = selected
+            snapshot["conversation"]["activeBranchMessageId"] = selected
+            beta[f"{phase}Hash"] = canonical_payload_hash(snapshot)
+        for receiver_phase in ("receiverBefore", "receiverAfter"):
+            receiver = beta[receiver_phase]
+            receiver["selectedBranchMessageId"] = selected
+            receiver["rendered"][1]["messageId"] = selected
+            receiver["storeMessageIds"][1] = selected
+        capture["staleMutation"]["before"]["betaHash"] = (
+            beta["postRestartHash"]
+        )
+        capture["staleMutation"]["after"]["betaHash"] = (
+            beta["postRestartHash"]
+        )
+
+        assertions = evaluate_as_f12(
+            capture,
+            platform="desktop_app",
+            locale="en",
+            sample_id="sample-001",
+        )
+
+        self.assertTrue(all(assertions.values()))
+
     def test_as_f12_rejects_cross_topic_reference_leakage(self) -> None:
         capture = valid_as_f12_capture()
         capture["topics"]["alpha"]["postRestart"]["messages"][0][
