@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T181345411289Z-d1a3ea858238237e0e5fa14bbfa31d58` crossed the Foundation core scenarios and exposed the Browser approval receiver missing `agent-tool` snapshot reconciliation plus actionable-row expansion; the owner-layer correction is locally verified and awaits checkpoint deployment/rerun | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T191316480393Z-131f3a55b3b3095dc64bd3589b01a044` confirmed Browser approval recovery requires governed `TurnDiagnosticReplay.tool_calls`, not provider-format message JSON; diagnostic-backed `agent-tool` reconciliation and actionable-row expansion are locally verified and await checkpoint deployment/rerun | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5211,6 +5211,21 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Desktop typecheck/build, 66 native static tests, and `git diff --check`
   pass. Provisioner cleanup completed `DONE / PROVEN / passed`; G-F remains
   `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source rerun.
+- The first post-fix exact-source run
+  `20260904T191316480393Z-131f3a55b3b3095dc64bd3589b01a044`
+  on `a938938c2a87cb2ae729c1a48b28cc2db657c0c1` confirmed that
+  message-cache membership alone is insufficient: the expected ToolCall was
+  present in Station and the Chat store at timeout, but the runtime projection
+  was incorrectly `success` and no actionable row was mounted. Station
+  `AgentMessage.tool_calls_json` intentionally preserves provider-format call
+  identity and nested function arguments; it does not contain governed status
+  or approval revision. The correction now reconciles the visible ToolCall IDs
+  against the existing Station `TurnDiagnosticReplay.tool_calls` contract,
+  rejects stale status/revision snapshots, and lets `ToolCallsBlock` react to
+  `agent-tool` state so a recovered approval is exposed. Local focused
+  runtime/UI tests, Desktop typecheck, and 66 native static tests pass.
+  Provisioner cleanup completed `DONE / PROVEN / passed`; exact-source runtime
+  proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
