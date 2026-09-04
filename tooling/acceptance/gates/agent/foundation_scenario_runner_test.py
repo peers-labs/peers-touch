@@ -1261,18 +1261,27 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                     sample_id="sample-001",
                 )
             )
+            replay = probe(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="AS-F12",
+                    sample_id="sample-001",
+                )
+            )
 
-        self.assertEqual(station_restart.call_count, 4)
-        self.assertEqual(authenticate_clients.call_count, 4)
-        self.assertEqual(native.restart_count, 2)
-        self.assertEqual(browser.restart_count, 2)
-        self.assertEqual(len(native.prepare_calls), 2)
-        self.assertEqual(len(browser.prepare_calls), 2)
-        self.assertEqual(len(native.direct_calls), 2)
-        self.assertEqual(len(browser.direct_calls), 2)
+        self.assertEqual(station_restart.call_count, 1)
+        self.assertEqual(authenticate_clients.call_count, 1)
+        self.assertEqual(native.restart_count, 0)
+        self.assertEqual(browser.restart_count, 1)
+        self.assertEqual(native.prepare_calls, [])
+        self.assertEqual(len(browser.prepare_calls), 1)
+        self.assertEqual(native.direct_calls, [])
+        self.assertEqual(len(browser.direct_calls), 1)
         self.assertEqual(native.cleanup_calls, [])
         self.assertEqual(browser.cleanup_calls, [])
         self.assertEqual(result["cleanup"]["status"], "clean")
+        self.assertEqual(replay, result)
         for client in (native, browser):
             for request in client.direct_calls:
                 self.assertEqual(request["cell"], "AS-F12")
