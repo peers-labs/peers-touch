@@ -532,6 +532,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)
+        login_start = self.source.index("async loginWithPassword")
+        login_end = self.source.index("async logout()", login_start)
+        login = self.source[login_start:login_end]
+
+        self.assertLess(
+            login.index("identityRuntime.boot()"),
+            login.index("'identity login precondition'"),
+        )
+        self.assertIn(
+            "if (useSessionStore.getState().authenticated)",
+            login,
+        )
+        self.assertIn("await identityRuntime.logout()", login)
+        self.assertLess(
+            login.index("'identity login precondition'"),
+            login.index("'identity account gate before login'"),
+        )
 
     def test_cleanup_logout_closes_identity_phase_before_session_reset(
         self,

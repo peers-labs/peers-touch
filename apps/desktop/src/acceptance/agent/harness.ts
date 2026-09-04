@@ -6615,6 +6615,24 @@ export function installAcceptanceHarness(): void {
     },
 
     async loginWithPassword({ account, password }: LoginInput) {
+      identityRuntime.boot();
+      await waitFor(
+        () => {
+          const snapshot = identityRuntime.getSnapshot();
+          return (
+            snapshot.phase.kind === 'accountGate'
+            && snapshot.lifecycle.dataReady
+          ) || (
+            useSessionStore.getState().authenticated
+            && snapshot.lifecycle.state === 'ready'
+          );
+        },
+        'identity login precondition',
+        30_000,
+      );
+      if (useSessionStore.getState().authenticated) {
+        await identityRuntime.logout();
+      }
       await waitFor(
         () => {
           const snapshot = identityRuntime.getSnapshot();

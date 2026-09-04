@@ -945,6 +945,34 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             native.prepare_calls[1]["scenarioKey"],
         )
 
+    def test_as_f06_cleanup_requires_existing_sessions(self) -> None:
+        native = SimpleNamespace(restart=Mock())
+        browser = SimpleNamespace(restart=Mock())
+        coordinator = foundation_scenario_runner.FoundationF06Coordinator(
+            SimpleNamespace(native=native, browser=browser),
+            {"profile": {"resolvedName": "two"}},
+            {},
+        )
+
+        with patch.object(
+            foundation_scenario_runner,
+            "_authenticate_clients",
+        ) as authenticate:
+            errors = coordinator._restore_clients_for_cleanup()
+
+        self.assertEqual(errors, [])
+        native.restart.assert_called_once_with()
+        browser.restart.assert_called_once_with()
+        authenticate.assert_called_once()
+        self.assertIs(
+            authenticate.call_args.kwargs["require_existing_session"],
+            True,
+        )
+        self.assertEqual(
+            authenticate.call_args.kwargs["recovery_boundary"],
+            "cleanup-restart",
+        )
+
     def test_as_f06_rejects_durable_reload_without_source_delivery(
         self,
     ) -> None:
