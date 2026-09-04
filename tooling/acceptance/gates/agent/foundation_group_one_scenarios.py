@@ -1880,6 +1880,16 @@ def _evaluate_as_f12_topic(
     )
     pre_restart = _mapping(topic, "preRestart", scenario=scenario)
     post_restart = _mapping(topic, "postRestart", scenario=scenario)
+    alternate_post_restart = _mapping(
+        topic,
+        "alternatePostRestart",
+        scenario=scenario,
+    )
+    restored_post_restart = _mapping(
+        topic,
+        "restoredSelectedPostRestart",
+        scenario=scenario,
+    )
     pre_restart_hash = _sha256_string(
         topic,
         "preRestartHash",
@@ -1908,14 +1918,30 @@ def _evaluate_as_f12_topic(
         "runtimeTurn",
         scenario=scenario,
     )
-    messages = _list(post_restart, "messages", scenario=scenario)
-    message_ids = {
-        _nonempty_string(message, "messageId", scenario=scenario)
-        for message in messages
-    }
-    if len(message_ids) != len(messages):
+    messages_by_id: dict[str, Mapping[str, Any]] = {}
+    for snapshot in (
+        post_restart,
+        alternate_post_restart,
+        restored_post_restart,
+    ):
+        for message in _list(snapshot, "messages", scenario=scenario):
+            message_id = _nonempty_string(
+                message,
+                "messageId",
+                scenario=scenario,
+            )
+            existing = messages_by_id.get(message_id)
+            if existing is not None and existing != message:
+                raise GroupOneScenarioError(
+                    f"{scenario} {key} message {message_id} changed "
+                    "while traversing branches"
+                )
+            messages_by_id[message_id] = message
+    messages = list(messages_by_id.values())
+    message_ids = set(messages_by_id)
+    if not message_ids:
         raise GroupOneScenarioError(
-            f"{scenario} {key} message IDs are not unique"
+            f"{scenario} {key} message IDs are missing"
         )
     branch_ids = {
         str(message.get("branchId") or "")
@@ -1954,6 +1980,21 @@ def _evaluate_as_f12_topic(
         conversation_id=conversation_id,
         selected_branch_message_id=selected_branch_message_id,
         message_ids=message_ids,
+        scenario=scenario,
+    )
+    alternate_branch_message_id = (
+        source_assistant_message_id
+        if selected_branch_message_id == sibling_message_id
+        else sibling_message_id
+    )
+    alternate_conversation = _mapping(
+        alternate_post_restart,
+        "conversation",
+        scenario=scenario,
+    )
+    restored_conversation = _mapping(
+        restored_post_restart,
+        "conversation",
         scenario=scenario,
     )
     runtime_identity_matches = all(
@@ -2034,6 +2075,18 @@ def _evaluate_as_f12_topic(
             and post_conversation.get("activeBranchMessageId")
             == selected_branch_message_id
             and post_restart.get("selectedBranchMessageId")
+            == selected_branch_message_id
+            and alternate_conversation.get("conversationId")
+            == conversation_id
+            and alternate_conversation.get("activeBranchMessageId")
+            == alternate_branch_message_id
+            and alternate_post_restart.get("selectedBranchMessageId")
+            == alternate_branch_message_id
+            and restored_conversation.get("conversationId")
+            == conversation_id
+            and restored_conversation.get("activeBranchMessageId")
+            == selected_branch_message_id
+            and restored_post_restart.get("selectedBranchMessageId")
             == selected_branch_message_id
         ),
         "references_owned": (
