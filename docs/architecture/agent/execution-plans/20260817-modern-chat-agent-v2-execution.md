@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T214921386952Z-ccee9f99fc0168e78fe2fe4d588d6da4` reached `FIXTURE_READY` after reclaiming inactive remote Docker build cache, then failed first at Browser AS-F04 `denialExecutedZero`; redacted denial-fact instrumentation is checkpointed for exact-source classification | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source diagnostic run `20260904T220822121030Z-ab3b1762700ffe88dac9a83328bbd759` proved Browser AS-F04 policy denial executed zero times but was projected with a false `awaiting_user` state; the policy-aware evidence correction passes local checks and awaits checkpoint deployment/rerun | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5287,6 +5287,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `240aadb00acab41f82ab9052ddfc260ee1654e01` adds only a redacted
   denial-fact checkpoint before the unchanged AS-F04 oracle. G-F remains
   `PARTIAL / UNPROVEN` pending exact-source classification.
+- Exact-source diagnostic run
+  `20260904T220822121030Z-ab3b1762700ffe88dac9a83328bbd759`
+  on `fa52e32f5fb61f47bbd0a09662baa73e6468295a` confirmed the
+  AS-F04 regression: the deny case had authoritative `policy=deny`, zero
+  execution/side-effect/result/continuation counts, matching target status and
+  binding revision, and stable replay, but the shared evidence projector
+  emitted `policy_check -> awaiting_user -> denied`. The local correction
+  distinguishes policy-level denial (`policy_check -> denied`) from manual
+  denial (`policy_check -> awaiting_user -> denied`) and strengthens the
+  native static guard for both branches. Desktop check/build, 560 Desktop tests
+  with one unrelated skip, 130 focused Foundation/static tests, and
+  `git diff --check` pass. Cleanup completed `DONE / PROVEN / passed`; G-F
+  remains `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source
+  rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

@@ -1918,11 +1918,11 @@ function diagnosticToolCase(
   const states = ['policy_check'];
   if (policy === 'auto') {
     states.push('auto_approved');
+  } else if (policy === 'deny') {
+    states.push('denied');
   } else {
     states.push('awaiting_user');
-    if (status === 'denied') {
-      states.push('denied');
-    } else if (status !== 'expired') {
+    if (status !== 'expired') {
       states.push(approved ? 'approved' : 'denied');
     }
   }
@@ -5291,7 +5291,7 @@ function reportFoundationF04DenialDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'as-f04-denial-evidence',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationF04Scenario',
       msg: `[DEBUG] ${stage}`,

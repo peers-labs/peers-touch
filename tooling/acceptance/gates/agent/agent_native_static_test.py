@@ -544,7 +544,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             2,
         )
 
-    def test_manual_denial_evidence_preserves_waiting_state(self) -> None:
+    def test_denial_evidence_distinguishes_policy_and_user_denial(self) -> None:
         helper_start = self.source.index("function diagnosticToolCase")
         helper_end = self.source.index(
             "async function foundationToolSideEffectCount",
@@ -552,9 +552,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         helper = self.source[helper_start:helper_end]
 
+        deny_policy_branch = helper.index("else if (policy === 'deny')")
+        manual_wait_state = helper.index("states.push('awaiting_user')")
+        self.assertLess(deny_policy_branch, manual_wait_state)
+        self.assertIn("states.push('denied')", helper)
         self.assertIn("states.push('awaiting_user')", helper)
-        self.assertIn("if (status === 'denied')", helper)
-        self.assertNotIn("else if (status === 'denied')", helper)
+        self.assertIn(
+            "states.push(approved ? 'approved' : 'denied')",
+            helper,
+        )
+        self.assertNotIn("if (status === 'denied')", helper)
 
     def test_revision_scenario_disables_capabilities_and_restores_them(self) -> None:
         revision_start = self.source.index(
