@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	envelopesub "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/infrastructure"
@@ -86,12 +85,20 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return err
 	}
-	stationURLResolver := envelopesub.NewGORMStationURLResolver(database)
+	peerKeys := authfed.NewPeerKeyStoreGORMWithDB(database)
+	peerTrustResolver, err := infrastructure.NewFederationPeerTrustResolver(
+		database,
+		peerKeys,
+	)
+	if err != nil {
+		return err
+	}
+	relayAccess := infrastructure.NewLiveFederationRelayAccess()
 	federationTransport, err := infrastructure.NewHTTPFederationTransport(
 		&http.Client{Timeout: 15 * time.Second},
 		tokenMinter,
-		stationURLResolver,
 		nil,
+		relayAccess,
 	)
 	if err != nil {
 		return err
@@ -100,7 +107,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		Database:       database,
 		Clock:          time.Now,
 		LocalStationID: localStationID,
-		PeerKeys:       authfed.NewPeerKeyStoreGORMWithDB(database),
+		PeerKeys:       peerKeys,
 		QueueLimits: domain.QueueLimits{
 			MaxUnackedItems: defaultQueueMaxItems,
 			MaxUnackedBytes: defaultQueueMaxBytes,
@@ -133,8 +140,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 			BaseBackoff:   time.Second,
 			MaxBackoff:    time.Minute,
 		},
-		FederationTransport:          federationTransport,
-		FederationStationURLResolver: stationURLResolver,
+		FederationTransport:         federationTransport,
+		FederationRelay:             relayAccess,
+		FederationPeerTrustResolver: peerTrustResolver,
 	})
 	if err != nil {
 		return err

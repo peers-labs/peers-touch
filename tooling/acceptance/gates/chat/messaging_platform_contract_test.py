@@ -201,6 +201,30 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn("bytes payload_sha256 = 11;", federation)
         self.assertIn("bytes station_signature = 15;", federation)
 
+    def test_inter_station_messaging_control_plane_uses_protobuf(self) -> None:
+        infrastructure = (
+            ROOT / "apps/station/app/subserver/messaging/infrastructure"
+        )
+        for name in (
+            "authority_prepare_fetcher.go",
+            "endpoint_manifest_fetcher.go",
+            "federation_transport.go",
+            "mls_keypackage_claim_fetcher.go",
+        ):
+            source = (infrastructure / name).read_text(encoding="utf-8")
+            self.assertIn('"google.golang.org/protobuf/proto"', source)
+            self.assertIn('"application/protobuf"', source)
+            self.assertNotIn("protojson", source)
+            self.assertNotIn('"application/json"', source)
+
+        federation_resolver = (
+            ROOT
+            / "apps/station/frame/touch/federation/resolver/resolver.go"
+        ).read_text(encoding="utf-8")
+        self.assertIn('req.Header.Set("Accept", "application/protobuf")', federation_resolver)
+        self.assertIn("proto.Unmarshal(body, env)", federation_resolver)
+        self.assertNotIn("protojson", federation_resolver)
+
     def test_recovery_archive_excludes_live_crypto_state(self) -> None:
         recovery = (CHAT_PROTO / "recovery.proto").read_text(encoding="utf-8")
 

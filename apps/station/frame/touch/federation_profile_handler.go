@@ -5,8 +5,7 @@
 //
 //   * No JWT — federation discovery must work for clients that have no
 //     account on this station.
-//   * 200 → protojson(ActorProfileEnvelope) under content-type
-//     application/json.
+//   * 200 → ActorProfileEnvelope in the caller's negotiated format.
 //   * 400 → missing handle.
 //   * 404 → handle is not local (correct response for a stale resolver
 //     hitting the wrong home station).
@@ -17,7 +16,6 @@ package touch
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -26,9 +24,8 @@ import (
 	fednode "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
-	pb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 )
 
 // FederationProfile is the Hertz handler bound to
@@ -38,7 +35,14 @@ import (
 func FederationProfile(c context.Context, ctx *app.RequestContext) {
 	handle := string(ctx.Query("handle"))
 	if handle == "" {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "handle parameter is required"})
+		writeFederationError(
+			c,
+			ctx,
+			http.StatusBadRequest,
+			model.ErrorCode_ERROR_CODE_INVALID_QUERY_PARAMETERS,
+			"handle parameter is required",
+			nil,
+		)
 		return
 	}
 
@@ -56,49 +60,55 @@ func FederationProfile(c context.Context, ctx *app.RequestContext) {
 	fetcher := actor.FederationProfileFetcher(canonicalBase)
 	keys := actor.FederationKeyCache()
 
-	_, bytes, err := fedprofile.Build(c, fedprofile.BuildInput{
+	envelope, bytes, err := fedprofile.Build(c, fedprofile.BuildInput{
 		Handle:  handle,
 		Fetcher: fetcher,
 		Keys:    keys,
 	})
 	if err != nil {
 		if errors.Is(err, fedprofile.ErrHandleNotLocal) {
-			ctx.JSON(http.StatusNotFound, map[string]string{
-				"handle": handle,
-				"error":  "not_local",
-			})
+			writeFederationError(
+				c,
+				ctx,
+				http.StatusNotFound,
+				model.ErrorCode_ERROR_CODE_ACTOR_NOT_FOUND,
+				"federated actor is not local",
+				map[string]string{"handle": handle},
+			)
 			return
 		}
 		hlog.Warnf("[federation profile] build failed handle=%s err=%v", handle, err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"handle": handle,
-			"error":  fmt.Sprintf("build envelope: %s", err),
-		})
+		writeFederationError(
+			c,
+			ctx,
+			http.StatusInternalServerError,
+			model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR,
+			"failed to build federation profile",
+			map[string]string{"handle": handle},
+		)
+		return
+	}
+	if shouldUseProto(ctx) {
+		ctx.Data(http.StatusOK, model.ContentTypeProtobuf, bytes)
 		return
 	}
 
-	envJSON, err := envelopeBytesToProtojson(bytes)
+	envJSON, err := protojson.MarshalOptions{
+		EmitUnpopulated: false,
+		UseProtoNames:   false,
+	}.Marshal(envelope)
 	if err != nil {
 		hlog.Warnf("[federation profile] protojson failed handle=%s err=%v", handle, err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "marshal envelope"})
+		writeFederationError(
+			c,
+			ctx,
+			http.StatusInternalServerError,
+			model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR,
+			"failed to encode federation profile",
+			map[string]string{"handle": handle},
+		)
 		return
 	}
 
 	ctx.Data(http.StatusOK, "application/json", envJSON)
-}
-
-// envelopeBytesToProtojson round-trips a wire-format envelope through
-// protojson so callers see a human-friendly JSON shape (bytes fields →
-// base64) without losing byte fidelity. The resolver re-marshals via
-// protojson before signature verification, so canonicalDigest still
-// matches.
-func envelopeBytesToProtojson(bytes []byte) ([]byte, error) {
-	env := &pb.ActorProfileEnvelope{}
-	if err := proto.Unmarshal(bytes, env); err != nil {
-		return nil, fmt.Errorf("unmarshal envelope: %w", err)
-	}
-	return protojson.MarshalOptions{
-		EmitUnpopulated: false,
-		UseProtoNames:   false,
-	}.Marshal(env)
 }

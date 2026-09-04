@@ -845,8 +845,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; W9-D product execution reached the first Direct journey and failed | Exact-source run `20260904T053556542665Z-6aa174fec173c38d9b9c98594ba9e011` proved Windows 10 x64, WebView2 `152.0.4191.62`, interactive `1920x1080`, Win32 `SendInput`, clean source `63e830f6b50dafa02ad8c0a2b5f66491cf100059`, binary SHA-256 `cd55b5ac3c1354d58948a3f5069b1c6170dced38229100dab0466bec448024b9`, and cleanup `DONE/PROVEN`. Product proof remains `PARTIAL/UNPROVEN`: Alice timed out opening the first Direct conversation. Debug evidence confirms the exact result received the native click and confirms post-login session takeover revoked the messaging worker token. The owner-layer correction and narrower handler instrumentation await exact-source rerun. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D Windows binding proof passes, product evidence remains partial | Run `20260904T053556542665Z-6aa174fec173c38d9b9c98594ba9e011` proved Alice generation 1 bound to station-four and Bob generation 1 bound to station-five with distinct source-attested Station identities at `63e830f6b50dafa02ad8c0a2b5f66491cf100059`. The cross-Station product journey failed at first Direct open, so W10-D Windows remains `PARTIAL/UNPROVEN`; Linux multi-Station and macOS-after-W8 evidence also remain open. |
+| NDR-W9 Windows cell | W9-A/B/C done; W9-D product execution reached the first Direct journey and exposed two sequential owner-layer defects | Exact-source run `20260904T053556542665Z-6aa174fec173c38d9b9c98594ba9e011` proved Windows 10 x64, WebView2 `152.0.4191.62`, interactive `1920x1080`, Win32 `SendInput`, clean source `63e830f6b50dafa02ad8c0a2b5f66491cf100059`, binary SHA-256 `cd55b5ac3c1354d58948a3f5069b1c6170dced38229100dab0466bec448024b9`, and cleanup `DONE/PROVEN`. Post-login session takeover was fixed and exact-source run `20260904T061940213867Z-e8f335fd65350800b1b198472c68e6f6` at `1ee7da584aaae737fa0c4270eb35cb2152c37203` proved the native click, React handler, branch selection, and create-direct invocation before Station returned application-level 404. The remaining endpoint-directory/trust/Relay bootstrap correction is locally verified but not yet deployed; product proof remains `PARTIAL/UNPROVEN`. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D Windows binding proof passes, product evidence remains partial | Runs `20260904T053556542665Z-6aa174fec173c38d9b9c98594ba9e011` and `20260904T061940213867Z-e8f335fd65350800b1b198472c68e6f6` proved Alice generation 1 bound to station-four and Bob generation 1 bound to station-five with distinct source-attested Station identities. The second run removed session revocation and isolated Direct creation failure before remote endpoint-manifest fetch: actor routing incorrectly required a remote `actor_devices` row, the peer TOFU key had no first-use bootstrap, and Messaging did not consume the late-bound Relay client. The owner-layer correction now uses actor-directory truth, signed locator/profile TOFU, live Relay access, and protobuf control traffic; exact-source runtime proof remains pending. Linux multi-Station and macOS-after-W8 evidence also remain open. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -2386,6 +2386,45 @@ post-fix comparison. Local verification passed:
 - Provisioning owner plus Chat static tests: 73 PASS.
 
 The Gap Detector correctly remains `UNPROVEN`: the post-fix Windows product
-Gate and the remaining 22-Gate matrix have not run. The next action is a clean
-commit, exact-source deployment to station-four and station-five, and a
-post-fix Windows rerun with the Debug Server and instrumentation retained.
+Gate and the remaining 22-Gate matrix have not run.
+
+The first post-fix Windows run
+`20260904T061940213867Z-e8f335fd65350800b1b198472c68e6f6`
+used exact source `1ee7da584aaae737fa0c4270eb35cb2152c37203` and binary
+SHA-256
+`2fbb00352224de469e6a1b2e00d169db5206bd919c84ef382a93ed1e0c88afc2`.
+It proved the session-takeover correction: neither client emitted a
+`session_revoked` failure. Direct-open instrumentation then proved:
+
+- the native click reached the exact station-five Bob result;
+- `ChatSessionList.handleSearchSelect` executed;
+- no existing conversation ID was selected;
+- `messaging_create_direct` started;
+- Station authenticated `POST /messaging/conversation/direct` and returned an
+  application-level 404 before a conversation was created.
+
+Database readback isolated the second root cause. The remote actor and
+`home_station_peer_id` existed in `touch_actor`, but no remote
+`actor_devices`, `auth_peer_keys`, or `federation_station_membership` row
+existed. Messaging therefore required remote endpoint state before it could
+discover the actor's Home Station, and its production composition had no
+live Relay access for the subsequent fetch.
+
+The local correction now:
+
+- reads actor Home Station ownership from `touch_actor`;
+- establishes missing Station TOFU through a fresh signed DHT locator and
+  profile resolution before accepting an endpoint manifest;
+- reads the Relay client dynamically per request instead of capturing an
+  unavailable Init-time handle;
+- uses protobuf for the inter-Station profile, endpoint-manifest, authority
+  prepare, MLS KeyPackage claim, and durable federation-frame control paths.
+
+Focused Messaging/resolver tests, race tests, Chat Acceptance contract tests,
+Go style, formatting, and diff checks pass. Full Station App tests reach only
+the pre-existing environment-backed suite that requires a service at
+`127.0.0.1:18080`; full Frame tests retain unrelated baseline failures in
+legacy config/CLI/logrus/ActivityPub packages. The next action is an authorized
+commit, exact-source deployment to station-four and station-five, topology
+reapplication, and a second post-fix Windows rerun with the Debug Server and
+instrumentation retained.

@@ -116,6 +116,28 @@ type RemoteEndpointManifestFetcher interface {
 	) (*chat.FederatedEndpointManifest, error)
 }
 
+type FederationPeerTrustResolver interface {
+	EnsurePeerTrust(
+		ctx context.Context,
+		homeStationID string,
+		actorPTID string,
+	) error
+}
+
+type FederationPeerTrustResolveFunc func(
+	ctx context.Context,
+	homeStationID string,
+	actorPTID string,
+) error
+
+func (fn FederationPeerTrustResolveFunc) EnsurePeerTrust(
+	ctx context.Context,
+	homeStationID string,
+	actorPTID string,
+) error {
+	return fn(ctx, homeStationID, actorPTID)
+}
+
 type RemoteMlsKeyPackageClaimer interface {
 	ClaimMlsKeyPackage(
 		ctx context.Context,

@@ -3,7 +3,6 @@ package infrastructure
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +12,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/worker"
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type FederationTokenMinter interface {
@@ -68,7 +67,7 @@ func (t *HTTPFederationTransport) Deliver(
 	if err != nil {
 		return retryable("token_mint_failed")
 	}
-	body, err := protojson.Marshal(&chat.DeliverMessagingFederationFrameRequest{
+	body, err := proto.Marshal(&chat.DeliverMessagingFederationFrameRequest{
 		Frame: frame,
 	})
 	if err != nil {
@@ -87,8 +86,8 @@ func (t *HTTPFederationTransport) Deliver(
 	if err != nil {
 		return terminal("request_build_failed")
 	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", "application/protobuf")
+	request.Header.Set("Accept", "application/protobuf")
 	if viaRelay {
 		request.Header.Set("Authorization", "Bearer "+relayToken)
 		request.Header.Set(nativefed.ForwardAuthorizationHeader, "Bearer "+targetToken)
@@ -106,7 +105,7 @@ func (t *HTTPFederationTransport) Deliver(
 	}
 	if response.StatusCode >= 200 && response.StatusCode < 300 {
 		var decoded chat.DeliverMessagingFederationFrameResponse
-		if err := protojson.Unmarshal(responseBody, &decoded); err != nil || !decoded.Accepted {
+		if err := proto.Unmarshal(responseBody, &decoded); err != nil || !decoded.Accepted {
 			return terminal("invalid_success_response")
 		}
 		return worker.FederationDeliveryResult{Delivered: true}
@@ -116,10 +115,6 @@ func (t *HTTPFederationTransport) Deliver(
 		response.StatusCode >= http.StatusInternalServerError {
 		return retryable(fmt.Sprintf("http_%d", response.StatusCode))
 	}
-	var bodyError struct {
-		Error string `json:"error"`
-	}
-	_ = json.Unmarshal(responseBody, &bodyError)
 	return terminal(fmt.Sprintf("http_%d", response.StatusCode))
 }
 
