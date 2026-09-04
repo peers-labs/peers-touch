@@ -533,6 +533,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "reconcileToolProjectionState(this.state, reconciled)",
             tool_runtime_source,
         )
+        self.assertIn(
+            "api.exportAgentTurnDiagnostics(turnId)",
+            tool_runtime_source,
+        )
         self.assertEqual(
             runtime_source.count(
                 "await useChatStore.getState().syncMessages();",
@@ -1355,6 +1359,7 @@ class AgentSelectorsBoundInProductSource(unittest.TestCase):
         self.assertIn("submitAgentToolDecision", source)
         self.assertIn("approval_required", source)
         self.assertIn("chat.message.toolCall.approve", source)
+        self.assertIn("toolRuntime.getSnapshot", source)
         self.assertIn("useState(actionableApproval)", source)
         self.assertIn("if (actionableApproval) setExpanded(true)", source)
 
