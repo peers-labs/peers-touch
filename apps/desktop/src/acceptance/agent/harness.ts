@@ -4892,6 +4892,41 @@ async function runFoundationF12Prepare(input: {
   }
 }
 
+async function traverseFoundationF12Branches(
+  topic: FoundationF12TopicHandoff,
+): Promise<{
+  alternatePostRestart: Record<string, unknown>;
+  restoredSelectedPostRestart: Record<string, unknown>;
+}> {
+  const alternateBranchMessageId =
+    topic.selectedBranchMessageId === topic.siblingMessageId
+      ? topic.sourceAssistantMessageId
+      : topic.siblingMessageId;
+  const beforeAlternate = await api.getAgentConversation(topic.conversationId);
+  await selectFoundationBranchWithDiagnostics({
+    label: `F12${topic.key}Alternate`,
+    conversationId: topic.conversationId,
+    messageId: alternateBranchMessageId,
+    expectedVersion: beforeAlternate.version,
+  });
+  const alternatePostRestart = await foundationF12TopicSnapshot({
+    ...topic,
+    selectedBranchMessageId: alternateBranchMessageId,
+  });
+  const beforeRestore = await api.getAgentConversation(topic.conversationId);
+  await selectFoundationBranchWithDiagnostics({
+    label: `F12${topic.key}Restore`,
+    conversationId: topic.conversationId,
+    messageId: topic.selectedBranchMessageId,
+    expectedVersion: beforeRestore.version,
+  });
+  const restoredSelectedPostRestart = await foundationF12TopicSnapshot(topic);
+  return {
+    alternatePostRestart,
+    restoredSelectedPostRestart,
+  };
+}
+
 async function runFoundationF12Complete(
   stationRestart: Record<string, unknown>,
   input: {
@@ -4930,6 +4965,12 @@ async function runFoundationF12Complete(
     sha256Hex(stableJson(alphaPostRestart)),
     sha256Hex(stableJson(betaPostRestart)),
   ]);
+  const alphaTraversal = await traverseFoundationF12Branches(
+    handoff.topics.alpha,
+  );
+  const betaTraversal = await traverseFoundationF12Branches(
+    handoff.topics.beta,
+  );
   const receiverAfterAlpha = await foundationF12ReceiverSnapshot(
     handoff.topics.alpha,
     handoff.topics.beta.fact,
@@ -4970,12 +5011,14 @@ async function runFoundationF12Complete(
           ...handoff.topics.alpha,
           postRestart: alphaPostRestart,
           postRestartHash: alphaPostRestartHash,
+          ...alphaTraversal,
           receiverAfter: receiverAfterAlpha,
         },
         beta: {
           ...handoff.topics.beta,
           postRestart: betaPostRestart,
           postRestartHash: betaPostRestartHash,
+          ...betaTraversal,
           receiverAfter: receiverAfterBeta,
         },
       },
@@ -7549,14 +7592,27 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
     betaPost.conversation,
     'foundationF12BetaConversation',
   );
-  const alphaMessages = evidenceArray(
-    alphaPost.messages,
-    'foundationF12AlphaMessages',
-  ).map((value) => evidenceRecord(value, 'foundationF12AlphaMessage'));
-  const betaMessages = evidenceArray(
-    betaPost.messages,
-    'foundationF12BetaMessages',
-  ).map((value) => evidenceRecord(value, 'foundationF12BetaMessage'));
+  const topicMessages = (
+    topic: Record<string, unknown>,
+    label: string,
+  ): Record<string, unknown>[] => {
+    const snapshots = [
+      evidenceRecord(topic.postRestart, `${label}PostRestart`),
+      evidenceRecord(topic.alternatePostRestart, `${label}AlternatePostRestart`),
+      evidenceRecord(
+        topic.restoredSelectedPostRestart,
+        `${label}RestoredPostRestart`,
+      ),
+    ];
+    const messages = snapshots.flatMap((snapshot) =>
+      evidenceArray(snapshot.messages, `${label}Messages`)
+        .map((value) => evidenceRecord(value, `${label}Message`)));
+    return Array.from(new Map(
+      messages.map((message) => [String(message.messageId ?? ''), message]),
+    ).values());
+  };
+  const alphaMessages = topicMessages(alpha, 'foundationF12Alpha');
+  const betaMessages = topicMessages(beta, 'foundationF12Beta');
   const alphaMessageIds = new Set(
     alphaMessages.map((message) => String(message.messageId ?? '')),
   );
@@ -7634,6 +7690,43 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
     beta.receiverAfter,
     'foundationF12BetaReceiver',
   );
+  const branchTraversalRestored = (topic: Record<string, unknown>) => {
+    const selectedBranchMessageId = String(
+      topic.selectedBranchMessageId ?? '',
+    );
+    const sourceAssistantMessageId = String(
+      topic.sourceAssistantMessageId ?? '',
+    );
+    const siblingMessageId = String(topic.siblingMessageId ?? '');
+    const alternateBranchMessageId =
+      selectedBranchMessageId === siblingMessageId
+        ? sourceAssistantMessageId
+        : siblingMessageId;
+    const alternate = evidenceRecord(
+      topic.alternatePostRestart,
+      'foundationF12AlternatePostRestart',
+    );
+    const restored = evidenceRecord(
+      topic.restoredSelectedPostRestart,
+      'foundationF12RestoredSelectedPostRestart',
+    );
+    return (
+      selectedBranchMessageId.length > 0
+      && sourceAssistantMessageId.length > 0
+      && siblingMessageId.length > 0
+      && sourceAssistantMessageId !== siblingMessageId
+      && evidenceRecord(
+        alternate.conversation,
+        'foundationF12AlternateConversation',
+      ).activeBranchMessageId === alternateBranchMessageId
+      && alternate.selectedBranchMessageId === alternateBranchMessageId
+      && evidenceRecord(
+        restored.conversation,
+        'foundationF12RestoredConversation',
+      ).activeBranchMessageId === selectedBranchMessageId
+      && restored.selectedBranchMessageId === selectedBranchMessageId
+    );
+  };
   const restart = evidenceRecord(facts.restart, 'foundationF12Restart');
   const stale = evidenceRecord(
     facts.staleMutation,
@@ -7677,6 +7770,8 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
         === beta.selectedBranchMessageId
       && alphaMessageIds.has(String(alpha.selectedBranchMessageId))
       && betaMessageIds.has(String(beta.selectedBranchMessageId))
+      && branchTraversalRestored(alpha)
+      && branchTraversalRestored(beta)
       && disjoint(alphaBranchIds, betaBranchIds)
       && alphaReceiver.selectedBranchVisible === true
       && betaReceiver.selectedBranchVisible === true,

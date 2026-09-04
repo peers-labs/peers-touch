@@ -4937,6 +4937,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   collide. Focused Station Agent packages, 181 Foundation tests, Desktop check,
   Go style, and `git diff --check` pass. Provisioner cleanup completed
   `DONE / PROVEN / passed`; runtime proof remains pending.
+- Exact-source run
+  `20260904T094818212276Z-a2038741bcecfe372ac623cab6e1f69e`
+  (aggregate `20260904T094818094958Z-eb1748cf82079da3217b554155e50f29`)
+  on `7424dd5e706c0c2c00ec353ca03f986a3a1adb24` proved the revision
+  event Turn-ID fix and advanced through AS-F12's production preparation,
+  Station restart, client restart, selected-branch restoration, and cleanup.
+  The independent oracle then rejected Beta because the Station message API
+  correctly projects only the active original branch, so the inactive
+  regenerated sibling and its non-empty branch ID were absent from that
+  readback. AS-F12 now traverses the alternate branch through the production
+  select API after the immutable selected-branch restart snapshot, captures
+  that projection, and restores the original selected head. The oracle unions
+  the two Station projections and requires both source/sibling lineage plus the
+  final restored head. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; G-F remains `PARTIAL / UNPROVEN` pending the next
+  exact-source run.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

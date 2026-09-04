@@ -640,6 +640,11 @@ def valid_as_f12_capture(
             "foreignFactVisible": False,
         }
         snapshot_hash = canonical_payload_hash(snapshot)
+        alternate_snapshot = copy.deepcopy(snapshot)
+        alternate_snapshot["conversation"][
+            "activeBranchMessageId"
+        ] = source_message_id
+        alternate_snapshot["selectedBranchMessageId"] = source_message_id
         return {
             "key": topic_key,
             "conversationId": conversation_id,
@@ -654,6 +659,8 @@ def valid_as_f12_capture(
             "receiverBefore": copy.deepcopy(receiver),
             "postRestart": copy.deepcopy(snapshot),
             "postRestartHash": snapshot_hash,
+            "alternatePostRestart": alternate_snapshot,
+            "restoredSelectedPostRestart": copy.deepcopy(snapshot),
             "receiverAfter": copy.deepcopy(receiver),
         }
 
@@ -1593,6 +1600,14 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             snapshot["selectedBranchMessageId"] = selected
             snapshot["conversation"]["activeBranchMessageId"] = selected
             beta[f"{phase}Hash"] = canonical_payload_hash(snapshot)
+        restored = beta["restoredSelectedPostRestart"]
+        restored["selectedBranchMessageId"] = selected
+        restored["conversation"]["activeBranchMessageId"] = selected
+        alternate = beta["alternatePostRestart"]
+        alternate["selectedBranchMessageId"] = beta["siblingMessageId"]
+        alternate["conversation"]["activeBranchMessageId"] = (
+            beta["siblingMessageId"]
+        )
         for receiver_phase in ("receiverBefore", "receiverAfter"):
             receiver = beta[receiver_phase]
             receiver["selectedBranchMessageId"] = selected
@@ -1616,9 +1631,14 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
 
     def test_as_f12_rejects_cross_topic_reference_leakage(self) -> None:
         capture = valid_as_f12_capture()
-        capture["topics"]["alpha"]["postRestart"]["messages"][0][
-            "conversationId"
-        ] = "conversation-beta"
+        for phase in (
+            "postRestart",
+            "alternatePostRestart",
+            "restoredSelectedPostRestart",
+        ):
+            capture["topics"]["alpha"][phase]["messages"][0][
+                "conversationId"
+            ] = "conversation-beta"
 
         with self.assertRaisesRegex(
             GroupOneScenarioError,
