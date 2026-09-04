@@ -34,6 +34,7 @@ const firstTopic = vi.hoisted(() => ({
 const loadTopicsForAgent = vi.hoisted(() => vi.fn());
 const mergeSessions = vi.hoisted(() => vi.fn());
 const bootstrapSession = vi.hoisted(() => vi.fn());
+const syncMessages = vi.hoisted(() => vi.fn());
 const syncTurnQueue = vi.hoisted(() => vi.fn());
 const selectSession = vi.hoisted(() => vi.fn());
 
@@ -61,6 +62,7 @@ vi.mock('../store/chat', () => ({
       currentSessionKey: currentSession.key,
       mergeSessions,
       bootstrapSession,
+      syncMessages,
       syncTurnQueue,
       selectSession,
       newSession: vi.fn(),
@@ -87,6 +89,7 @@ describe('agentTopicRuntime', () => {
     vi.clearAllMocks();
     loadTopicsForAgent.mockResolvedValue([firstTopic]);
     bootstrapSession.mockResolvedValue(undefined);
+    syncMessages.mockResolvedValue(undefined);
     syncTurnQueue.mockResolvedValue(undefined);
     selectSession.mockResolvedValue(undefined);
   });
@@ -97,6 +100,7 @@ describe('agentTopicRuntime', () => {
     expect(loadTopicsForAgent).toHaveBeenCalledWith(selectedAgent.id, 'test');
     expect(mergeSessions).toHaveBeenCalledWith([firstTopic]);
     expect(bootstrapSession).toHaveBeenCalledOnce();
+    expect(syncMessages).toHaveBeenCalledOnce();
     expect(syncTurnQueue).toHaveBeenCalledWith(currentSession.key);
     expect(selectSession).not.toHaveBeenCalled();
   });
