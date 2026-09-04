@@ -95,7 +95,7 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
   const [expanded, setExpanded] = useState(false);
   const [submittingDecision, setSubmittingDecision] = useState(false);
   const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
+  const { t } = useTranslation(['chat', 'agent']);
   const projection = useSyncExternalStore(
     toolRuntime.subscribe,
     () => toolRuntime.getProjection(sourceTool.id),
@@ -105,8 +105,13 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
     sourceTool.status === 'error' ||
     sourceTool.status === 'denied' ||
     sourceTool.status === 'cancelled';
+  const projectionAddsDeniedOutcome = (
+    sourceTool.status === 'denied'
+    && projection?.status === 'denied'
+    && Boolean(projection.decisionErrorCode)
+  );
   const useProjection = projection &&
-    !sourceIsTerminal &&
+    (!sourceIsTerminal || projectionAddsDeniedOutcome) &&
     projection.decisionRevision >= (sourceTool.decisionRevision ?? 0);
   const tool: ToolCallInfo = useProjection
     ? {
@@ -136,6 +141,13 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
     tool.decisionRevision !== undefined &&
     !submittingDecision;
   const denied = tool.status === 'denied' || tool.status === 'error';
+  const deniedMessage = denied && tool.error
+    ? (
+        tool.error.startsWith('agent.')
+          ? t(tool.error, { ns: 'agent' })
+          : tool.error
+      )
+    : '';
   const status = tool.status || (tool.pending ? 'pending' : 'success');
   const statusColor = status === 'success' || status === 'approved'
     ? 'success'
@@ -150,8 +162,12 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
   const delegationResults = tool.delegationResults || [];
 
   return (
-    <div style={{ borderRadius: 6, overflow: 'hidden' }}>
+    <div
+      data-pt-agent-tool-call={tool.id}
+      style={{ borderRadius: 6, overflow: 'hidden' }}
+    >
       <div
+        data-pt-agent-tool-call-toggle
         onClick={() => setExpanded(!expanded)}
         style={{
           display: 'flex',
@@ -245,6 +261,7 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
           {approvalRequired && tool.approvalId && (
             <Flexbox horizontal gap={8} style={{ marginBottom: 8 }}>
               <button
+                data-pt-agent-tool-recovery="continue-without-tool"
                 disabled={!canSubmitDecision}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -284,9 +301,17 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
                   fontSize: 12,
                 }}
               >
-                {t('chat.message.toolCall.deny')}
+                {t('agent.recovery.continueWithoutTool', { ns: 'agent' })}
               </button>
             </Flexbox>
+          )}
+          {deniedMessage && (
+            <div
+              data-pt-agent-tool-error={tool.error}
+              style={{ marginBottom: 8, color: token.colorErrorText }}
+            >
+              {deniedMessage}
+            </div>
           )}
           {delegationResults.length > 0 && (
             <DelegationResultsBlock results={delegationResults} />

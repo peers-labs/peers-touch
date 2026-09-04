@@ -702,6 +702,28 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("await api.setSelectedAgent(priorSelection)", scenario)
         self.assertNotIn("mock", scenario.lower())
 
+    def test_approval_denied_uses_product_action_and_station_readback(self) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationApprovalDeniedScenario"
+        )
+        scenario_end = self.source.index(
+            "const FOUNDATION_PNG_BYTES",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("CapabilityApprovalPolicy.MANUAL", scenario)
+        self.assertIn("waitForToolApprovalEvent(turn)", scenario)
+        self.assertIn(
+            'data-pt-agent-tool-recovery="continue-without-tool"',
+            scenario,
+        )
+        self.assertIn("recovery.click()", scenario)
+        self.assertIn("waitForFoundationToolFacts(", scenario)
+        self.assertIn("foundationToolSideEffectCount(", scenario)
+        self.assertIn("api.submitAgentToolDecision({", scenario)
+        self.assertNotIn("mock", scenario.lower())
+
     def test_harness_drives_as_f05_through_production_boundaries(self) -> None:
         self.assertIn("cell === 'AS-F05'", self.source)
         self.assertIn("runFoundationF05Scenario", self.source)
@@ -870,7 +892,10 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
     def test_foundation_f04_resolves_matched_session_before_each_turn(self) -> None:
         source = HARNESS.read_text(encoding="utf-8")
         start = source.index("async function runFoundationF04Scenario")
-        end = source.index("const FOUNDATION_PNG_BYTES", start)
+        end = source.index(
+            "async function runFoundationApprovalDeniedScenario",
+            start,
+        )
         scenario = source[start:end]
         run_case_start = scenario.index("const runCase")
         loop_start = scenario.index(
