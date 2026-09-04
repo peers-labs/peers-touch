@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-24 | **Updated**: 2026-09-03
+> **Created**: 2026-08-24 | **Updated**: 2026-09-04
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
 > **Branch**: `refactor/chat-acceptance-cutover`
 > **Parent Design**: [../design.md](../design.md)
@@ -722,7 +722,9 @@ business Gate is permitted.
   cell failure blocks at W9-C. Status remains `UNPROVEN` at the failed stage.
 - **Evidence**: immutable Windows cell run, Win32 native diagnostics, and
   cleanup audit.
-- **Status**: pending — host available, bootstrap not started
+- **Status**: partial — runtime cell, Win32 input, peer-bound Direct recovery,
+  exact cross-Station Direct create/reopen, and distinct client bindings are
+  proven; Product Closure currently stops at `group.create.ui`
 
 ### AS-NDR-09: Linux multi-Station binding
 
@@ -831,7 +833,7 @@ committed to this plan.
 | WebDriver exposed on LAN | Loopback bind plus run-scoped SSH local forward only |
 | Platform-specific code returns to Chat runner | Static dependency scan and C1 deletion gate |
 | Linux proof is used as universal Desktop proof | Gate × cell validator and aggregate fail-closed result |
-| Windows host unavailable | Keep Windows cell runtime proof explicitly `UNPROVEN`; no readiness claim |
+| Windows Product Closure fails after runtime readiness | Preserve the first product failure independently from cleanup/readiness failures; keep Windows `PARTIAL/UNPROVEN` until the complete source-bound Gate passes |
 
 ## 12. Implementation Status
 
@@ -845,8 +847,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; W9-D proves cross-Station Direct open; later product closure remains partial | Exact-source run `20260904T074120233666Z-fdb77bd29b2e510be6a9964332a9e4d5` at `6517324cdb5aa46cf6fcca8eac2e6ed1858c6721` and binary SHA-256 `c0d00168bbbb7161789cd8ac8810dbea9447b73f8abc6a0240bac27beef8c17e` proved Windows 10 x64, WebView2 `152.0.4191.62`, interactive `1920x1080`, Win32 `SendInput`, exact Station/source binding, first Direct creation, and repeat selection of the same conversation. The Gate then failed in `transcript.thread.ui`; the pane-owned overlay is now semantically restored and locally verified. Runtime-log cleanliness still requires proposed MP-D29 follower membership. W9-D remains `PARTIAL/UNPROVEN`. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows binding and the first cross-Station Direct product path; MP-D29 is ready for review | Run `20260904T074120233666Z-fdb77bd29b2e510be6a9964332a9e4d5` proved Alice generation 1 bound to station-four and Bob generation 1 bound to station-five with distinct source-attested Station identities at `6517324cdb5aa46cf6fcca8eac2e6ed1858c6721`. The actor-directory/TOFU/live-Relay correction created Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120` and reopened it by exact search. The overlay regression is locally repaired. MP-D29 now proposes an authority-signed, Station-addressed follower projection independent of device delivery; implementation is blocked on architecture acceptance. Linux multi-Station and macOS-after-W8 evidence also remain open. |
+| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Product Closure run `20260904T151711681542Z-3568aa0eeacb4485ce4fdfd042393ed1` at `07290b4bfd55d74922f215329632fab0ba4ef178`, binary SHA-256 `f3fc60bf8a81234adcf7e4fb2919f9b7d7fe9b73d8b5cc86ccfdfbaab064c4b2`, proves exact Direct create/reopen before timing out at `group.create.ui`; overlay assertions were not reached. Runtime-log cleanliness independently fails on the proposed MP-D29 follower-membership gap. W9-D remains `PARTIAL/UNPROVEN`. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows distinct bindings and exact Direct create/reopen; remaining product claims are open | Product Closure run `20260904T151711681542Z-3568aa0eeacb4485ce4fdfd042393ed1` proves Alice generation 1 bound to station-four and Bob generation 1 bound to station-five at exact source `07290b4bfd55d74922f215329632fab0ba4ef178`, and creates/reopens Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120`. Cross-Station group creation, MLS receipts, multi-device aggregation, PostgreSQL recovery, and fault replay remain unproven. MP-D29 remains proposed and unimplemented. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -2746,3 +2748,82 @@ Native Chat runners consume that predicate.
 Focused native runner and static tests: 74 PASS. The strengthened peer-bound
 Direct-open assertion remains `UNPROVEN` until the corrected Gate reaches that
 assertion on an exact-source Windows run.
+
+### 2026-09-04 Windows Contact Proof And Group Genesis Diagnosis
+
+Exact-source Windows contact resilience run
+`20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` reached
+`PASS/DONE/PROVEN`. It proves that selecting Bob's Message action immediately
+opens Bob's peer-bound intent pane and keeps Direct creation failure inline and
+retryable. A generic empty pane, Chat-tab-only switch, or toast-only failure no
+longer satisfies the Gate.
+
+Windows Product Closure run
+`20260904T151711681542Z-3568aa0eeacb4485ce4fdfd042393ed1`
+at source `07290b4bfd55d74922f215329632fab0ba4ef178` and binary SHA-256
+`f3fc60bf8a81234adcf7e4fb2919f9b7d7fe9b73d8b5cc86ccfdfbaab064c4b2`
+proved:
+
+- Windows 10, WebView2, Win32 input, and 1920x1080 runtime identity;
+- Alice generation 1 bound to station-four and Bob generation 1 bound to
+  station-five;
+- exact cross-Station Direct creation and repeat reopen of
+  `d-f4d4aaa25c831bb05fdd53cd1cdd6120`; and
+- process, port, storage, endpoint, tunnel, and lease cleanup.
+
+The run remains `PARTIAL/UNPROVEN` for two independent reasons:
+
+1. The primary product failure is `group.create.ui`: Alice never projected a
+   ready MLS group, so transcript and pane-owned overlay assertions were not
+   reached.
+2. Runtime-log cleanliness failed because Bob's Home Station returned
+   `active conversation membership required` for legacy member-settings reads.
+   This is the proposed MP-D29 follower-membership gap and is not implemented
+   by this execution slice.
+
+The canonical report incorrectly replaced the primary group timeout with the
+later runtime-log cleanup failure. The Chat business Gate now records
+`firstFailedStep`, persists its step ledger, and uses the shared
+primary-failure-preserving cleanup helper so both failures remain visible.
+
+Group diagnosis found an accepted-architecture implementation defect rather
+than an MP-D29 dependency. Group prepare resolved Bob's signed remote endpoint
+manifest and claimed his remote KeyPackage, but commit revalidation rebuilt the
+participant set from station-four's local `actor_devices`. Shared delivery-set
+construction then applied the same local-only filter. The local correction:
+
+- resolves current signed manifests before the authority transaction;
+- compares them with the exact plan snapshots;
+- derives remote participant endpoints from those manifests;
+- retains local `actor_devices` as the immediate revocation authority only for
+  actors whose signed manifest identifies the current Station as Home Station;
+  and
+- proves a manifest-only remote Bob can commit group genesis sequence 1/2 and
+  produce two remote federation outbox rows while the stale-local-device
+  rejection remains intact.
+
+Local verification passes:
+
+- Station Messaging subserver packages;
+- Station Messaging application and infrastructure race tests;
+- 174 Native identity/runtime/product static tests;
+- two Desktop Rust `group_creation_` tests;
+- Desktop TypeScript check;
+- Acceptance plan self-check, planner tests, validator tests, Infra boundary
+  tests, Gap Detector tests, and Quality Evidence tests; and
+- Go style, Python compilation, and `git diff --check`.
+
+Known unchanged baseline failures remain explicit:
+
+- Chat and Infra validation reject the latest evidence because its source no
+  longer matches the dirty working tree;
+- Acceptance runner tests retain stale Core API expectations;
+- runtime-provisioning self-tests retain stale Agent provisioner contracts and
+  launch-context timing failures; and
+- coverage-report tests reject non-current evidence.
+
+No commit, deployment, destructive Fixture reset, or new Windows runtime proof
+has occurred for this correction. The next runtime action requires an exact
+source commit and deployment to station-four, station-five, and sixwin, followed
+by separate explicit authorization for the destructive two-Station Fixture
+reset. MP-D29 remains proposed and out of scope until Owner acceptance.

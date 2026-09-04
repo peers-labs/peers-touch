@@ -1878,6 +1878,32 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
 
+    def test_product_failure_remains_primary_when_cleanup_also_fails(self) -> None:
+        gate = object.__new__(NativeProductClosureGate)
+        gate.steps = []
+        gate.report = new_report(gate.gate_id)
+
+        with self.assertRaisesRegex(GateError, "group timed out"):
+            gate.step(
+                "group.create.ui",
+                lambda: (_ for _ in ()).throw(GateError("group timed out")),
+            )
+
+        self.assertEqual(gate.report.runtime["firstFailedStep"], "group.create.ui")
+        self.assertEqual(
+            gate.report.runtime["steps"],
+            [{
+                "step": "group.create.ui",
+                "status": "fail",
+                "error": "group timed out",
+            }],
+        )
+        self.assertIn(
+            "cleanup = cleanup_preserving_primary_failure(",
+            self.source,
+        )
+        self.assertIn('self.report.runtime["cleanup"] = result', self.source)
+
     def test_group_creation_waits_for_exact_projected_state_once(self) -> None:
         self.assertIn(
             "trackPendingGroupCreation(conversationId, created.commandId);",

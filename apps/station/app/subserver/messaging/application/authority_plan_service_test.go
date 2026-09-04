@@ -827,6 +827,105 @@ func TestPrepareGroupGenesisClaimsRemoteKeyPackageBoundToManifest(t *testing.T) 
 	if planCount != 1 || localPackageCount != 0 {
 		t.Fatalf("plans=%d local packages=%d, want 1/0", planCount, localPackageCount)
 	}
+
+	var localBobDeviceCount int64
+	if err := db.Model(&touchactor.DeviceRecord{}).
+		Where("ptid = ?", "bob").
+		Count(&localBobDeviceCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if localBobDeviceCount != 0 {
+		t.Fatalf("local Bob devices = %d, want 0", localBobDeviceCount)
+	}
+
+	authority, err := application.NewAuthorityService(
+		uow,
+		"station-local",
+		messaging.FederationFrameSignFunc(func(
+			context.Context,
+			*chat.MessagingFederationFrame,
+		) error {
+			return nil
+		}),
+		manifestResolver,
+		func() time.Time { return now },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := []byte("remote opaque RFC9420 commit")
+	commitHash := sha256.Sum256(commit)
+	welcome := []byte("remote opaque RFC9420 welcome")
+	welcomeHash := sha256.Sum256(welcome)
+	changes := make([]*chat.MessagingMembershipChangeIntent, 0, len(response.ProspectiveEndpoints))
+	welcomes := make([]*chat.PreparedEndpointPayload, 0, len(response.ProspectiveEndpoints)-1)
+	seenActors := make(map[string]struct{})
+	for _, endpoint := range response.ProspectiveEndpoints {
+		action := chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_ADD_DEVICE
+		if _, ok := seenActors[endpoint.Ptid]; !ok {
+			action = chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_ADD_ACTOR
+			seenActors[endpoint.Ptid] = struct{}{}
+		}
+		role := "member"
+		if endpoint.Ptid == "alice" {
+			role = "owner"
+		}
+		changes = append(changes, &chat.MessagingMembershipChangeIntent{
+			Action:   action,
+			Ptid:     endpoint.Ptid,
+			DeviceId: endpoint.DeviceId,
+			Role:     role,
+		})
+		if endpoint.Ptid == "alice" {
+			continue
+		}
+		welcomes = append(welcomes, &chat.PreparedEndpointPayload{
+			Recipient:     endpoint,
+			Kind:          chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_WELCOME,
+			OpaquePayload: welcome,
+			PayloadSha256: welcomeHash[:],
+		})
+	}
+	command := &chat.ChatCommand{
+		CommandId:               "remote-genesis-command",
+		ConversationId:          "remote-group",
+		AuthorityStationId:      "station-local",
+		Sender:                  response.ProspectiveEndpoints[0],
+		ObservedMembershipEpoch: 0,
+		ObservedMlsEpoch:        0,
+		ClientTimestamp:         timestamppb.New(now),
+		DeliveryPlanSha256:      response.AuthorityPlanSha256,
+		Payload: &chat.ChatCommand_MembershipTransition{
+			MembershipTransition: &chat.MembershipTransitionIntent{
+				TransitionId:        "remote-transition-1",
+				FromMembershipEpoch: 0,
+				FromMlsEpoch:        0,
+				ToMlsEpoch:          1,
+				Changes:             changes,
+				MlsCommit:           commit,
+				MlsCommitSha256:     commitHash[:],
+				WelcomePayloads:     welcomes,
+				AuthorityPlanId:     response.AuthorityPlanId,
+				AuthorityPlanSha256: response.AuthorityPlanSha256,
+			},
+		},
+	}
+	event, err := authority.Submit(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Sequence != 2 || event.MembershipEpoch != 1 || event.MlsEpoch != 1 {
+		t.Fatalf("remote genesis event = %+v", event)
+	}
+	var remoteOutboxCount int64
+	if err := db.Model(&infrastructure.FederationOutboxModel{}).
+		Where("target_station_id = ?", "station-remote").
+		Count(&remoteOutboxCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if remoteOutboxCount != 2 {
+		t.Fatalf("remote federation outbox rows = %d, want 2", remoteOutboxCount)
+	}
 }
 
 type planRemoteKeyPackageClaimer struct{}

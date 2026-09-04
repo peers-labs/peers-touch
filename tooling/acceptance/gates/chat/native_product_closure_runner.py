@@ -47,6 +47,7 @@ from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
 )
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
+    cleanup_preserving_primary_failure,
     commits_match,
     read_station_version,
     runtime_station_service,
@@ -349,6 +350,8 @@ class NativeProductClosureGate(AcceptanceGate):
             value = action()
         except Exception as error:
             self.steps.append({"step": name, "status": "fail", "error": str(error)})
+            self.report.runtime["steps"] = list(self.steps)
+            self.report.runtime["firstFailedStep"] = name
             raise
         self.steps.append({"step": name, "status": "pass"})
         return value
@@ -4824,6 +4827,7 @@ class NativeProductClosureGate(AcceptanceGate):
         for name, passed in assertions.items():
             self.report.add_assertion(name, passed, detail)
         self.write_json_evidence("cleanup", result)
+        self.report.runtime["cleanup"] = result
         failed = [name for name, passed in assertions.items() if not passed]
         if failed:
             raise GateError(f"cleanup assertions failed: {failed}; {detail}")
@@ -5065,8 +5069,14 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         finally:
             try:
-                cleanup = self.cleanup_clients()
+                cleanup = cleanup_preserving_primary_failure(
+                    self.cleanup_clients,
+                    self.report,
+                    "Native product closure",
+                )
+                self.report.runtime["cleanup"] = cleanup
             finally:
+                self.report.runtime["steps"] = list(self.steps)
                 shutil.rmtree(self.fixture_root, ignore_errors=True)
 
         assertion_names = {assertion.name for assertion in self.report.assertions}

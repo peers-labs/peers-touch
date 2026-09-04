@@ -145,6 +145,53 @@ func resolveEndpointManifests(
 	return nil
 }
 
+func (s *AuthorityService) resolveGroupGenesisCommitManifests(
+	ctx context.Context,
+	command *chat.ChatCommand,
+) ([]*chat.FederatedEndpointManifest, error) {
+	transition := command.GetMembershipTransition()
+	if transition == nil || transition.AuthorityPlanId == "" {
+		return nil, nil
+	}
+
+	var actorPTIDs []string
+	receiptExists := false
+	err := s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+		if _, err := repositories.Authority.GetCommandReceipt(
+			ctx,
+			command.ConversationId,
+			command.CommandId,
+		); err == nil {
+			receiptExists = true
+			return nil
+		} else if !errors.Is(err, messaging.ErrNotFound) {
+			return err
+		}
+
+		plan, err := repositories.Plans.Get(ctx, transition.AuthorityPlanId)
+		if err != nil {
+			return err
+		}
+		if plan.PlanKind != messaging.AuthorityPlanKindGroupGenesis {
+			return nil
+		}
+
+		var request chat.PrepareMessagingGroupGenesisRequest
+		if err := proto.Unmarshal(plan.IntentBytes, &request); err != nil {
+			return fmt.Errorf("messaging: decode group genesis intent: %w", err)
+		}
+		actorPTIDs, err = groupGenesisActorPTIDs(&request)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if receiptExists || len(actorPTIDs) == 0 {
+		return nil, nil
+	}
+	return resolveEndpointManifestSnapshots(ctx, s.manifestResolver, actorPTIDs)
+}
+
 func (s *AuthorityService) Submit(
 	ctx context.Context,
 	command *chat.ChatCommand,
@@ -161,6 +208,10 @@ func (s *AuthorityService) Submit(
 		return nil, fmt.Errorf("messaging: marshal command: %w", err)
 	}
 	commandHash := sha256.Sum256(commandBytes)
+	groupGenesisManifests, err := s.resolveGroupGenesisCommitManifests(ctx, command)
+	if err != nil {
+		return nil, err
+	}
 	var committed *chat.ConversationEvent
 
 	err = s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
@@ -199,6 +250,7 @@ func (s *AuthorityService) Submit(
 					command,
 					commandHash[:],
 					transition,
+					groupGenesisManifests,
 					s.localStationID,
 					s.frameSigner,
 					s.clock().UTC(),
@@ -892,6 +944,7 @@ func commitGroupGenesisFromPlan(
 	command *chat.ChatCommand,
 	commandHash []byte,
 	transition *chat.MembershipTransitionIntent,
+	currentManifests []*chat.FederatedEndpointManifest,
 	localStationID string,
 	frameSigner messaging.FederationFrameSigner,
 	now time.Time,
@@ -953,7 +1006,14 @@ func commitGroupGenesisFromPlan(
 	if !active {
 		return nil, messaging.ErrSenderUnauthorized
 	}
-	currentEndpoints, actors, err := resolveGenesisEndpoints(ctx, repositories, &request)
+	actors, err := groupGenesisActorPTIDs(&request)
+	if err != nil {
+		return nil, messaging.ErrAuthorityPlanStale
+	}
+	if !sameManifestSnapshots(snapshot.EndpointManifests, currentManifests) {
+		return nil, messaging.ErrAuthorityPlanStale
+	}
+	currentEndpoints, err := endpointsFromManifestSnapshots(actors, currentManifests)
 	if err != nil {
 		return nil, err
 	}
@@ -1122,13 +1182,20 @@ func commitGroupGenesisFromPlan(
 	return event, nil
 }
 
-func resolveGenesisEndpoints(
-	ctx context.Context,
-	repositories messaging.AuthorityRepositories,
+func groupGenesisActorPTIDs(
 	request *chat.PrepareMessagingGroupGenesisRequest,
-) ([]*chat.CryptoEndpoint, []string, error) {
+) ([]string, error) {
+	if request == nil ||
+		request.Creator == nil ||
+		strings.TrimSpace(request.Creator.Ptid) == "" {
+		return nil, messaging.ErrAuthorityPlanStale
+	}
 	actorSet := map[string]struct{}{request.Creator.Ptid: {}}
 	for _, actor := range request.MemberPtids {
+		actor = strings.TrimSpace(actor)
+		if actor == "" {
+			return nil, messaging.ErrAuthorityPlanStale
+		}
 		actorSet[actor] = struct{}{}
 	}
 	actors := make([]string, 0, len(actorSet))
@@ -1136,21 +1203,10 @@ func resolveGenesisEndpoints(
 		actors = append(actors, actor)
 	}
 	sort.Strings(actors)
-	endpoints := make([]*chat.CryptoEndpoint, 0)
-	for _, actor := range actors {
-		devices, err := repositories.Devices.ListActiveEndpoints(ctx, actor)
-		if err != nil {
-			return nil, nil, err
-		}
-		if len(devices) == 0 {
-			return nil, nil, messaging.ErrAuthorityPlanStale
-		}
-		endpoints = append(endpoints, devices...)
+	if len(actors) < 2 {
+		return nil, messaging.ErrAuthorityPlanStale
 	}
-	sort.Slice(endpoints, func(i, j int) bool {
-		return endpointKey(endpoints[i]) < endpointKey(endpoints[j])
-	})
-	return endpoints, actors, nil
+	return actors, nil
 }
 
 func endpointSlicesEqual(left, right []*chat.CryptoEndpoint) bool {
@@ -1439,7 +1495,13 @@ func buildSendPlan(
 	authorityStationID string,
 	now time.Time,
 ) (*chat.PrepareMessagingSendResponse, error) {
-	endpoints, err := listRequiredEndpoints(ctx, repositories, conversation.ConversationID)
+	endpoints, err := listRequiredEndpoints(
+		ctx,
+		repositories,
+		conversation.ConversationID,
+		authorityStationID,
+		now,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1519,23 +1581,60 @@ func listRequiredEndpoints(
 	ctx context.Context,
 	repositories messaging.AuthorityRepositories,
 	conversationID string,
+	localStationID string,
+	now time.Time,
 ) ([]*chat.CryptoEndpoint, error) {
 	required, err := repositories.Authority.ListActiveMemberDevices(ctx, conversationID)
 	if err != nil {
 		return nil, err
+	}
+	actorSet := make(map[string]struct{})
+	for _, device := range required {
+		if device.Active && device.Endpoint != nil {
+			actorSet[device.Endpoint.Ptid] = struct{}{}
+		}
+	}
+	actors := make([]string, 0, len(actorSet))
+	for actor := range actorSet {
+		actors = append(actors, actor)
+	}
+	sort.Strings(actors)
+	manifests, err := repositories.EndpointManifests.ListVerifiedManifests(
+		ctx,
+		actors,
+		now.UTC(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := endpointsFromManifestSnapshots(actors, manifests); err != nil {
+		return nil, err
+	}
+	activeEndpointHomeStations := make(map[string]string)
+	for _, manifest := range manifests {
+		for _, entry := range manifest.ActiveEndpoints {
+			activeEndpointHomeStations[endpointKey(entry.Endpoint)] = manifest.HomeStationId
+		}
 	}
 	endpoints := make([]*chat.CryptoEndpoint, 0, len(required))
 	for _, device := range required {
 		if !device.Active || device.Endpoint == nil {
 			continue
 		}
-		active, err := repositories.Devices.IsActive(ctx, device.Endpoint)
-		if err != nil {
-			return nil, err
+		homeStationID, active := activeEndpointHomeStations[endpointKey(device.Endpoint)]
+		if !active {
+			continue
 		}
-		if active {
-			endpoints = append(endpoints, device.Endpoint)
+		if homeStationID == localStationID {
+			active, err = repositories.Devices.IsActive(ctx, device.Endpoint)
+			if err != nil {
+				return nil, err
+			}
+			if !active {
+				continue
+			}
 		}
+		endpoints = append(endpoints, device.Endpoint)
 	}
 	sort.Slice(endpoints, func(i, j int) bool {
 		return endpointKey(endpoints[i]) < endpointKey(endpoints[j])
@@ -1695,7 +1794,13 @@ func buildEventAndPayloads(
 			return nil, nil, err
 		}
 	}
-	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
+	endpoints, err := listRequiredEndpoints(
+		ctx,
+		repositories,
+		command.ConversationId,
+		command.AuthorityStationId,
+		now,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1808,7 +1913,13 @@ func buildMembershipTransitionEventAndPayloads(
 	if !bytes.Equal(commitHash[:], transition.MlsCommitSha256) {
 		return nil, nil, messaging.ErrDeliverySet
 	}
-	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
+	endpoints, err := listRequiredEndpoints(
+		ctx,
+		repositories,
+		command.ConversationId,
+		command.AuthorityStationId,
+		now,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1970,7 +2081,13 @@ func buildEditMessageEventAndPayloads(
 		return nil, nil, messaging.ErrDeliverySet
 	}
 
-	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
+	endpoints, err := listRequiredEndpoints(
+		ctx,
+		repositories,
+		command.ConversationId,
+		command.AuthorityStationId,
+		now,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2082,7 +2199,13 @@ func buildRetractMessageEventAndPayloads(
 		return nil, nil, messaging.ErrSenderUnauthorized
 	}
 
-	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
+	endpoints, err := listRequiredEndpoints(
+		ctx,
+		repositories,
+		command.ConversationId,
+		command.AuthorityStationId,
+		now,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2146,7 +2269,13 @@ func buildReactionEventAndPayloads(
 		return nil, nil, err
 	}
 
-	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
+	endpoints, err := listRequiredEndpoints(
+		ctx,
+		repositories,
+		command.ConversationId,
+		command.AuthorityStationId,
+		now,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2211,7 +2340,13 @@ func buildPinMessageEventAndPayloads(
 		return nil, nil, err
 	}
 
-	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
+	endpoints, err := listRequiredEndpoints(
+		ctx,
+		repositories,
+		command.ConversationId,
+		command.AuthorityStationId,
+		now,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
