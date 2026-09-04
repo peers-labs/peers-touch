@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-09-03
+> **Created**: 2026-08-17 | **Updated**: 2026-09-04
 > **Owner**: Peers-Touch Agent Team
 > **Plan gate**: `OWNER_APPROVED_EXECUTION`
 > **Entry gate**: Owner accepted MCA-D19A/D19B/D19C into the main Goal G1 task on 2026-08-22
@@ -4965,6 +4965,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   binding equality without exposing topic content or identifiers. Provisioner
   cleanup completed `DONE / PROVEN / passed`; G-F remains
   `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260904T103741961156Z-970668a89b727abc1a9fd8c386cb3316`
+  (aggregate `20260904T103741849588Z-e3606160df11b489ebb5f6a8c7222832`)
+  on `38d0fafd369f345068eccc0ce8dd0f17779178d0` again completed
+  AS-F12 preparation, Station/client restart, alternate-branch traversal,
+  selected-head restoration, and cleanup. Source/runtime identity, tuple
+  scope, conversation/topic/Turn/runtime identity, and the stored pre/post
+  hashes all matched. The independent oracle still rejected only
+  `restartRestored`: both post-restart payload hashes matched their canonical
+  JSON payloads, while both persisted pre-restart hashes did not match the
+  pre-restart payloads after the localStorage/JSON round trip, and the pre/post
+  payload objects were unequal. Granular boolean-only diagnostics now isolate
+  conversation version, active branch, runtime binding, message projection,
+  runtime Turn, and selected branch without exposing topic content or
+  identifiers. Provisioner cleanup completed `DONE / PROVEN / passed`; G-F
+  remains `PARTIAL / UNPROVEN` pending the diagnostic checkpoint,
+  exact-source deployment, and rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
