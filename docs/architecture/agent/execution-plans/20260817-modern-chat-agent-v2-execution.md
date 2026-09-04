@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T150505739160Z-7d9babb401f1240950f77893ac962634` passed Browser AS-F03 and AS-F12 English, then timed out waiting for the Browser AS-F12 Simplified Chinese receiver projection; bounded store/DOM diagnostics are pending | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T153321748945Z-5390dd23d06e8b2d74cc7b8d0253071f` confirmed the Browser AS-F03 cancellation/completion race; bounded live-provider cancellation-window acquisition is being added while the strict cancellation oracle remains unchanged | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5154,6 +5154,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   session records only bounded selection, store, Station-readback, and DOM
   booleans/counts at the synchronization and timeout boundaries. G-F remains
   `PARTIAL / UNPROVEN`.
+- Diagnostic exact-source run
+  `20260904T153321748945Z-5390dd23d06e8b2d74cc7b8d0253071f`
+  (aggregate `20260904T153321636467Z-5772b00bded458015db3b3d2c8831f`)
+  on `4a0fdfb81bf356e1ef54e1e942c559dde9e7bcdb` reproduced Browser
+  AS-F03 English and confirmed the terminal race. Cancellation started from
+  text sequence 3 after 1375 ms with matching Turn identity, but its 146.5 ms
+  round trip returned Station's durable `completed` winner after the stream
+  had already delivered text through sequence 43 and `done` sequence 44.
+  Station serialization and Desktop status passthrough are correct. AS-F03 now
+  acquires the plan-required live-provider cancellation window with a long
+  bounded workload and at most two real attempts; a completed winner is
+  cleaned up and retried, while every other non-cancelled outcome and
+  exhaustion remain failures. The final oracle still requires one
+  authoritative `cancelled` terminal. Cleanup completed
+  `DONE / PROVEN / passed`. Desktop check, 173 focused Foundation/runtime
+  tests, and `git diff --check` pass. G-F remains `PARTIAL / UNPROVEN`
+  pending checkpoint deployment and exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

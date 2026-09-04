@@ -1221,6 +1221,20 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("event.event !== 'text'", scenario)
         self.assertIn("api.cancelAgentTurn(turnId)", scenario)
         self.assertIn("resolveCancellation({ turnId, result })", scenario)
+        self.assertIn("const maxCancellationAttempts = 2", scenario)
+        self.assertIn("max_output_tokens: 4096", scenario)
+        self.assertIn("timeoutMs: 90_000", scenario)
+        self.assertIn("cancellationStatus === 'completed'", scenario)
+        self.assertIn(
+            "'agent.acceptance.foundationCancellationWindowUnavailable'",
+            scenario,
+        )
+        self.assertLess(
+            scenario.index(
+                "await deleteFoundationConversation(conversation.conversation_id)",
+            ),
+            scenario.index("'cancel-window-retry'"),
+        )
         self.assertIn("toLowerCase() !== 'cancelled'", scenario)
         self.assertIn("terminalEvent?.eventType !== 'cancelled'", scenario)
         self.assertIn("!replay.deliveryOnly", source)
