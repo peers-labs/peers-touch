@@ -1,4 +1,5 @@
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
+import type { PresentedError } from '../../services/errorPresenter';
 
 export type ContactSelection =
   | {
@@ -15,6 +16,45 @@ export type ContactSelection =
       avatar?: string;
       memberCount: number;
     };
+
+export type FriendContactSelection = Extract<ContactSelection, { kind: 'friend' }>;
+
+export type DirectConversationOpenIntent =
+  | {
+      phase: 'creating';
+      peerPtid: string;
+      displayName: string;
+      avatar?: string;
+    }
+  | {
+      phase: 'failed';
+      peerPtid: string;
+      displayName: string;
+      avatar?: string;
+      error: PresentedError;
+    };
+
+export function beginDirectConversationOpen(
+  contact: FriendContactSelection,
+): DirectConversationOpenIntent {
+  return {
+    phase: 'creating',
+    peerPtid: contact.peerPtid,
+    displayName: contact.displayName,
+    avatar: contact.avatar,
+  };
+}
+
+export function failDirectConversationOpen(
+  intent: DirectConversationOpenIntent,
+  error: PresentedError,
+): DirectConversationOpenIntent {
+  return {
+    ...intent,
+    phase: 'failed',
+    error,
+  };
+}
 
 export function findContactConversation(
   selection: ContactSelection,

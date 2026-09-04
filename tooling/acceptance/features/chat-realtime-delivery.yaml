@@ -6,7 +6,7 @@
     "apps/station/app/subserver/messaging/**",
     "apps/station/app/subserver/envelope/**",
     "apps/desktop/src-tauri/src/messaging/**",
-    "apps/desktop/src/runtimes/imRuntime.ts",
+    "apps/desktop/src/runtimes/socialRuntime.ts",
     "apps/desktop/src/store/socialChat.ts"
   ],
   "truth_sources": [
@@ -15,7 +15,7 @@
     "Desktop social chat projection"
   ],
   "visible_surfaces": [
-    {"type": "desktop-runtime", "route": "imRuntime"},
+    {"type": "desktop-runtime", "route": "socialRuntime"},
     {"type": "api", "route": "/messaging/queue/claim"},
     {"type": "api", "route": "/messaging/queue/ack"}
   ],

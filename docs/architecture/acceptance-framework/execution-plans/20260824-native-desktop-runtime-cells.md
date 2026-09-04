@@ -2530,3 +2530,83 @@ canonical authority-versus-follower membership reads, and hard deletion of
 legacy JSON thread/settings reads. Status is `DESIGN_READY_FOR_REVIEW`; no
 Model, Station or Desktop membership implementation may begin before Owner
 acceptance.
+
+### 2026-09-04 Overlay Exact-Source Rerun Blocker
+
+Commit `4a13e269aca19a2eaefd4fdb20af7e53bf8ae973` contains the pane-owned
+overlay repair and the proposed MP-D29 documents. Both Station deployments and
+the Windows binary attested this exact source.
+
+Windows runs
+`20260904T092247675913Z-f95b1761b3142fd0081bd5e071185a77` and
+`20260904T095919484188Z-5258359310246689b3288cd4289543c4` stopped before the
+overlay assertion because Direct creation returned Station 500. Both runs
+proved Windows 10/WebView2/Win32 input, exact source and service bindings, and
+complete process/port/storage cleanup.
+
+The first run exposed that `make station` had recreated both containers with
+the shared environment: DHT seeds were empty and the Relay client was disabled.
+The saved per-Station environments were reapplied. Both Stations then reported
+one DHT seed, a connected Relay client, and a non-empty routing table.
+
+The second run isolated a separate owner-layer defect:
+
+- station-five returned Bob's endpoint manifest with HTTP 200;
+- station-four persisted the verified Bob manifest;
+- station-four correctly had no Bob row in its local `actor_devices`;
+- `ConversationService.CreateDirect` discarded the resolved manifest snapshots
+  and rebuilt all participant endpoints only from local `actor_devices`.
+
+Approved correction:
+
+1. retain the creator local-device authorization check;
+2. derive the participant endpoint set from the already-verified manifest
+   snapshots through the existing canonical helper;
+3. add a regression test with a local creator and a remote peer present only in
+   a signed endpoint manifest;
+4. run focused Station/Chat checks, commit, redeploy both Stations, reapply the
+   dedicated topology, and rerun the Windows Gate.
+
+This does not change MP-D29. The overlay remains `IMPLEMENTED_UNPROVEN`, and
+follower membership implementation remains blocked on separate Owner
+acceptance.
+
+The user then reproduced the same failure from the Contacts profile in a
+separately merged worktree: `Message` switched to Chat, but the right pane
+remained the generic no-selection state and displayed only a global
+conversation-action toast. Audit of the dedicated
+`chat-contact-message-resilience-e2e` Gate found that its historical Linux
+proof accepted either an active Chat subpage or a generic Chat area. It did not
+require a peer-bound conversation surface, its owning
+`desktop-chat-surface` Feature/Capability did not require the Gate, and no
+Windows run existed. That historical proof is therefore insufficient for the
+reported product behavior.
+
+The current correction strengthens both ownership layers:
+
+1. Station `CreateDirect` derives participant endpoints from the verified
+   manifest snapshots already fetched for the actor set; only the creator's
+   authorization remains a local-device lookup.
+2. Desktop owns a transient, request-generation-fenced Direct-open intent.
+   Contacts and search results navigate immediately to a peer-bound pane.
+3. The intent pane shows creating, inline failed, and retry states without
+   inventing Station conversation truth; successful creation replaces it with
+   the authoritative conversation ID.
+4. The resilience Gate requires the exact peer PTID, intent state, inline
+   error, enabled retry, and pass screenshot. A Chat-tab switch, generic empty
+   pane, or toast-only response fails.
+5. `desktop-chat-surface` and its Capability now require the resilience Gate
+   on every claimed native runtime cell.
+
+Local evidence:
+
+- all Station Messaging package tests: PASS;
+- remote-manifest Direct genesis regression: PASS;
+- Desktop check: PASS;
+- Desktop tests: 540 PASS, 1 skipped;
+- Desktop production build: PASS with existing bundle warnings;
+- Chat static/contract suite: 169 PASS.
+
+The current slice remains `IMPLEMENTED_UNPROVEN` until exact-source Windows
+`chat-contact-message-resilience-e2e` proves the failure path and Windows
+`chat-native-product-closure-e2e` proves successful cross-Station Direct open.
