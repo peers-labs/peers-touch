@@ -4351,28 +4351,91 @@ async function foundationF12ReceiverSnapshot(
   >,
   foreignFact: string,
 ): Promise<Record<string, unknown>> {
+  const projectionDiagnostics = () => {
+    const state = useChatStore.getState();
+    const selectedMessage = state.messages.find(
+      (message) => message.id === topic.selectedBranchMessageId,
+    );
+    const rendered = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-pt-agent-message-id]'),
+    );
+    const selectedElements = rendered.filter(
+      (element) =>
+        element.dataset.ptAgentMessageId === topic.selectedBranchMessageId,
+    );
+    return {
+      currentSessionMatches: state.currentSessionKey === topic.conversationId,
+      sessionRegistered: state.sessions.some(
+        (session) => session.key === topic.conversationId,
+      ),
+      storeMessageCount: state.messages.length,
+      selectedMessageInStore: selectedMessage !== undefined,
+      selectedMessageRole: selectedMessage?.role ?? '',
+      renderedMessageCount: rendered.length,
+      selectedMessageInDom: selectedElements.length > 0,
+      selectedMessageVisible: selectedElements.some(
+        (element) => element.getClientRects().length > 0,
+      ),
+    };
+  };
+
   eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
   await useChatStore.getState().selectSession(topic.conversationId);
   await useChatStore.getState().syncMessages();
-  await waitFor(
-    () => {
-      const state = useChatStore.getState();
-      return (
-        state.currentSessionKey === topic.conversationId
-        && state.messages.some(
-          (message) => message.id === topic.selectedBranchMessageId,
-        )
-        && Array.from(
-          document.querySelectorAll<HTMLElement>(
-            '[data-pt-agent-message-id]',
-          ),
-        ).some((element) =>
-          element.dataset.ptAgentMessageId === topic.selectedBranchMessageId
-          && element.getClientRects().length > 0)
+  void reportFoundationF12ProjectionDebug(
+    'A-E',
+    'projection-synchronized',
+    projectionDiagnostics(),
+  );
+  try {
+    await waitFor(
+      () => {
+        const state = useChatStore.getState();
+        return (
+          state.currentSessionKey === topic.conversationId
+          && state.messages.some(
+            (message) => message.id === topic.selectedBranchMessageId,
+          )
+          && Array.from(
+            document.querySelectorAll<HTMLElement>(
+              '[data-pt-agent-message-id]',
+            ),
+          ).some((element) =>
+            element.dataset.ptAgentMessageId === topic.selectedBranchMessageId
+            && element.getClientRects().length > 0)
+        );
+      },
+      `Foundation AS-F12 ${topic.conversationId} projection`,
+      30_000,
+    );
+  } catch (error) {
+    let stationMessageCount = -1;
+    let selectedMessageInStationReadback = false;
+    let stationReadbackErrorCode = '';
+    try {
+      const readback = await foundationConversationReadback(
+        topic.conversationId,
       );
-    },
-    `Foundation AS-F12 ${topic.conversationId} projection`,
-    30_000,
+      stationMessageCount = readback.messages.length;
+      selectedMessageInStationReadback = readback.messages.some(
+        (message) => message.messageId === topic.selectedBranchMessageId,
+      );
+    } catch (readbackError) {
+      stationReadbackErrorCode = observedErrorCode(readbackError);
+    }
+    await reportFoundationF12ProjectionDebug('A-E', 'projection-timeout', {
+      ...projectionDiagnostics(),
+      stationMessageCount,
+      selectedMessageInStationReadback,
+      stationReadbackErrorCode,
+      errorType: error instanceof Error ? error.name : typeof error,
+    });
+    throw error;
+  }
+  void reportFoundationF12ProjectionDebug(
+    'C-D',
+    'projection-ready',
+    projectionDiagnostics(),
   );
   const rendered = Array.from(
     document.querySelectorAll<HTMLElement>('[data-pt-agent-message-id]'),
@@ -5138,6 +5201,27 @@ function reportFoundationF03CancelDebug(
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:foundationDirectProbe:AS-F03',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:as-f12-projection
+function reportFoundationF12ProjectionDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7781/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-f12-projection',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:foundationF12ReceiverSnapshot',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
