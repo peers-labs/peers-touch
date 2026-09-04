@@ -393,7 +393,12 @@ class FoundationF06Coordinator:
             except BaseException as error:
                 errors.append(f"{platform} cleanup restart: {error}")
         try:
-            _authenticate_clients(self._runtime_pair, self._profile_env)
+            _authenticate_clients(
+                self._runtime_pair,
+                self._profile_env,
+                require_existing_session=True,
+                recovery_boundary="cleanup-restart",
+            )
         except BaseException as error:
             errors.append(f"cleanup authentication: {error}")
         return errors
