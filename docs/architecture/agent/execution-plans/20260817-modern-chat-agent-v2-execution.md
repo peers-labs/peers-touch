@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T142747367508Z-59fddbe07fd75bf50392a158f05b2e3c` passed the prior AS-F03 boundary and reached Browser AS-F12, where evidence safety rejected a semantic fixture field named `key`; the global redaction policy remains unchanged and the field is being renamed | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T150505739160Z-7d9babb401f1240950f77893ac962634` passed Browser AS-F03 and AS-F12 English, then timed out waiting for the Browser AS-F12 Simplified Chinese receiver projection; bounded store/DOM diagnostics are pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5138,6 +5138,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   185-test selection retains two known unrelated `receiver-dom` fixture
   failures. G-F remains `PARTIAL / UNPROVEN` pending checkpoint deployment
   and exact-source rerun.
+- Exact-source run
+  `20260904T150505739160Z-7d9babb401f1240950f77893ac962634`
+  (aggregate `20260904T150505610288Z-b842f619bf00f7dd34bbe85c63f716f2`,
+  candidate producer
+  `20260904T150517478400Z-8856a503f9696429046945a3547a0dd9`)
+  on `686dc32f7a953071ae460b6fcecacc7583883dd4` proved that the
+  AS-F12 `topicLabel` evidence passes redaction, crossed both Browser AS-F03
+  locale tuples and Browser AS-F12 English, then failed during Browser AS-F12
+  Simplified Chinese preparation while waiting for the selected branch message
+  to appear in the active conversation projection. Existing evidence does not
+  distinguish a missing Station branch projection, a swallowed synchronization
+  error, or a store-to-DOM render lag. Cleanup completed
+  `DONE / PROVEN / passed`. A separate `foundation-f12-projection` debug
+  session records only bounded selection, store, Station-readback, and DOM
+  booleans/counts at the synchronization and timeout boundaries. G-F remains
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
