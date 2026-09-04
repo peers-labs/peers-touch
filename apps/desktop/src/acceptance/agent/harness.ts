@@ -5539,24 +5539,35 @@ async function runFoundationF07Scenario(input: {
     throw new Error('agent.acceptance.foundationRevisionOriginalBranchMissing');
   }
 
-  const selectedBranch = await selectFoundationBranchWithDiagnostics({
-    label: 'F07Selected',
-    conversationId: conversation.conversation_id,
-    messageId: String(firstRegenerateMessage.messageId),
-    expectedVersion: Number(
-      evidenceField(
-        originalBranchConversation,
-        'version',
-        'version',
-      ) ?? 0,
-    ),
-  });
-  const selectedBranchConversation = evidenceRecord(
-    selectedBranch.conversation,
-    'foundationF07SelectedBranchConversation',
+  const selectedExpectedVersion = Number(
+    evidenceField(
+      originalBranchConversation,
+      'version',
+      'version',
+    ) ?? 0,
   );
-  await useChatStore.getState().branchFromMessage(
-    String(firstRegenerateMessage.messageId),
+  try {
+    await useChatStore.getState().branchFromMessage(
+      String(firstRegenerateMessage.messageId),
+    );
+  } catch (error) {
+    const actualVersion = await api.getAgentConversation(
+      conversation.conversation_id,
+    ).then(
+      (currentConversation) => currentConversation.version,
+      () => 0,
+    );
+    throw new Error([
+      'agent.acceptance.foundationBranchSelectionFailed',
+      'F07Selected',
+      observedErrorCode(error),
+      `expected=${selectedExpectedVersion}`,
+      `actual=${actualVersion}`,
+    ].join(':'));
+  }
+  const selectedBranchConversation = evidenceRecord(
+    await api.getAgentConversation(conversation.conversation_id),
+    'foundationF07SelectedBranchConversation',
   );
   await waitFor(
     () => Array.from(
@@ -7856,7 +7867,7 @@ export function installAcceptanceHarness(): void {
           method: 'POST',
           body: JSON.stringify({
             sessionId: 'foundation-identity-boot',
-            runId: 'pre-fix',
+            runId: 'post-fix',
             hypothesisId,
             location: 'apps/desktop/src/acceptance/agent/harness.ts:loginWithPassword',
             msg: `[DEBUG] ${msg}`,
