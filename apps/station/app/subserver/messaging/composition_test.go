@@ -89,6 +89,11 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 		},
 		FederationTransport:          compositionFederationTransport{},
 		FederationStationURLResolver: compositionStationURLResolver{},
+		FederationPeerTrustResolver: domain.FederationPeerTrustResolveFunc(
+			func(context.Context, string, string) error {
+				return nil
+			},
+		),
 	})
 	if err != nil {
 		t.Fatal(err)

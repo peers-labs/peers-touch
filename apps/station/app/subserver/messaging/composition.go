@@ -34,6 +34,7 @@ type CompositionConfig struct {
 	FederationTransport          worker.FederationTransport
 	FederationStationURLResolver infrastructure.FederationStationURLResolver
 	FederationRelay              infrastructure.FederationRelayAccess
+	FederationPeerTrustResolver  domain.FederationPeerTrustResolver
 }
 
 // Composition is the single dependency graph for the target Station Messaging
@@ -90,6 +91,7 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		config.PeerKeys == nil ||
 		config.AttachmentBlobStore == nil ||
 		config.FederationTransport == nil ||
+		config.FederationPeerTrustResolver == nil ||
 		(config.FederationStationURLResolver == nil && config.FederationRelay == nil) {
 		return nil, fmt.Errorf("messaging: composition dependencies are invalid")
 	}
@@ -167,6 +169,7 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		config.FederationStationURLResolver,
 		config.FederationRelay,
 		config.PeerKeys,
+		config.FederationPeerTrustResolver,
 		endpointManifestRepository,
 		config.Clock,
 	)

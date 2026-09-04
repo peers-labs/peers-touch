@@ -15,7 +15,7 @@ import (
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type EndpointManifestTokenMinter interface {
@@ -32,6 +32,7 @@ type HTTPFederatedEndpointManifestFetcher struct {
 	resolver    FederationStationURLResolver
 	relay       FederationRelayAccess
 	peerKeys    authfed.PeerKeyStore
+	peerTrust   messaging.FederationPeerTrustResolver
 	repository  messaging.EndpointManifestRepository
 	clock       func() time.Time
 }
@@ -42,6 +43,7 @@ func NewHTTPFederatedEndpointManifestFetcher(
 	resolver FederationStationURLResolver,
 	relay FederationRelayAccess,
 	peerKeys authfed.PeerKeyStore,
+	peerTrust messaging.FederationPeerTrustResolver,
 	repository messaging.EndpointManifestRepository,
 	clock func() time.Time,
 ) (*HTTPFederatedEndpointManifestFetcher, error) {
@@ -49,6 +51,7 @@ func NewHTTPFederatedEndpointManifestFetcher(
 		tokenMinter == nil ||
 		(resolver == nil && relay == nil) ||
 		peerKeys == nil ||
+		peerTrust == nil ||
 		repository == nil ||
 		clock == nil {
 		return nil, fmt.Errorf("messaging: endpoint manifest fetcher dependencies are invalid")
@@ -59,6 +62,7 @@ func NewHTTPFederatedEndpointManifestFetcher(
 		resolver:    resolver,
 		relay:       relay,
 		peerKeys:    peerKeys,
+		peerTrust:   peerTrust,
 		repository:  repository,
 		clock:       clock,
 	}, nil
@@ -72,6 +76,10 @@ func (f *HTTPFederatedEndpointManifestFetcher) FetchEndpointManifest(
 	if homeStationID == "" || actorPTID == "" {
 		return nil, messaging.ErrEndpointManifestInvalid
 	}
+	peerKey, err := f.resolvePeerKey(ctx, homeStationID, actorPTID)
+	if err != nil {
+		return nil, err
+	}
 	token, err := f.tokenMinter.MintEndpointManifestRead(
 		ctx,
 		homeStationID,
@@ -80,7 +88,7 @@ func (f *HTTPFederatedEndpointManifestFetcher) FetchEndpointManifest(
 	if err != nil {
 		return nil, err
 	}
-	body, err := protojson.Marshal(&chat.GetFederatedEndpointManifestRequest{
+	body, err := proto.Marshal(&chat.GetFederatedEndpointManifestRequest{
 		ActorPtid: actorPTID,
 	})
 	if err != nil {
@@ -99,8 +107,8 @@ func (f *HTTPFederatedEndpointManifestFetcher) FetchEndpointManifest(
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", "application/protobuf")
+	request.Header.Set("Accept", "application/protobuf")
 	if viaRelay {
 		request.Header.Set("Authorization", "Bearer "+relayToken)
 		request.Header.Set(nativefed.ForwardAuthorizationHeader, "Bearer "+token)
@@ -124,17 +132,10 @@ func (f *HTTPFederatedEndpointManifestFetcher) FetchEndpointManifest(
 		)
 	}
 	result := &chat.GetFederatedEndpointManifestResponse{}
-	if err := protojson.Unmarshal(responseBody, result); err != nil {
+	if err := proto.Unmarshal(responseBody, result); err != nil {
 		return nil, err
 	}
 	manifest := result.Manifest
-	peerKey, err := f.peerKeys.Get(ctx, homeStationID)
-	if err != nil {
-		return nil, err
-	}
-	if peerKey == nil {
-		return nil, messaging.ErrEndpointManifestSignature
-	}
 	publicKey, keyID, err := authfed.ParsePeerJWKPEM(peerKey.PubPEM)
 	if err != nil || keyID != peerKey.Kid {
 		return nil, messaging.ErrEndpointManifestSignature
@@ -162,6 +163,35 @@ func (f *HTTPFederatedEndpointManifestFetcher) FetchEndpointManifest(
 		return nil, err
 	}
 	return manifest, nil
+}
+
+func (f *HTTPFederatedEndpointManifestFetcher) resolvePeerKey(
+	ctx context.Context,
+	homeStationID string,
+	actorPTID string,
+) (*authfed.PeerKey, error) {
+	peerKey, err := f.peerKeys.Get(ctx, homeStationID)
+	if err != nil {
+		return nil, err
+	}
+	if peerKey != nil {
+		return peerKey, nil
+	}
+	if err := f.peerTrust.EnsurePeerTrust(
+		ctx,
+		homeStationID,
+		actorPTID,
+	); err != nil {
+		return nil, err
+	}
+	peerKey, err = f.peerKeys.Get(ctx, homeStationID)
+	if err != nil {
+		return nil, err
+	}
+	if peerKey == nil {
+		return nil, messaging.ErrEndpointManifestSignature
+	}
+	return peerKey, nil
 }
 
 func (f *HTTPFederatedEndpointManifestFetcher) resolveEndpoint(

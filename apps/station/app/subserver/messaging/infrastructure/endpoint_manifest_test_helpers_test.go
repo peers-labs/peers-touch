@@ -29,7 +29,14 @@ func testEndpointManifestResolver(
 		ctx context.Context,
 		actorPTID string,
 	) (*chat.FederatedEndpointManifest, error) {
-		homeStationID, err := directory.ActorHomeStationID(ctx, actorPTID)
+		endpoints, err := directory.ListActiveEndpoints(ctx, actorPTID)
+		if err != nil {
+			return nil, err
+		}
+		if len(endpoints) == 0 {
+			return nil, messaging.ErrNotFound
+		}
+		homeStationID, err := directory.HomeStationID(ctx, endpoints[0])
 		if err != nil {
 			return nil, err
 		}
