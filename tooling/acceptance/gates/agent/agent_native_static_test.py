@@ -1362,6 +1362,13 @@ class AgentSelectorsBoundInProductSource(unittest.TestCase):
         self.assertIn("toolRuntime.getSnapshot", source)
         self.assertIn("useState(actionableApproval)", source)
         self.assertIn("if (actionableApproval) setExpanded(true)", source)
+        approve_decision = source.index("submitAgentToolDecision(tool.id, true)")
+        recovery_selector = source.index(
+            'data-pt-agent-tool-recovery="continue-without-tool"'
+        )
+        deny_decision = source.index("submitAgentToolDecision(tool.id, false)")
+        self.assertLess(approve_decision, recovery_selector)
+        self.assertLess(recovery_selector, deny_decision)
 
 if __name__ == "__main__":
     unittest.main()

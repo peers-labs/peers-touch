@@ -103,3 +103,33 @@ approval. Post-fix runtime evidence remains pending.
   page-level refresh or Harness shortcut.
 - Exact-source runtime comparison for this corrected implementation remains
   pending.
+
+## Second Fix Iteration
+- Exact-source run
+  `20260904T195645915962Z-2685115f2ec7084d62ae2bc0f79ca78f`
+  on `8dd31dd4d330f8d47722c5f36ece19874c7b94c3` reached Browser
+  `BASE-APPROVAL-DENIED / en / single / sample-001` and advanced past the
+  previously missing ToolCall receiver.
+- At approval observation, debug line 229 still recorded the expected
+  Station ToolCall before the asynchronous Chat/runtime reconciliation.
+  Lines 233 and 236-239 then recorded authoritative ToolCall recovery, ending
+  with three projected ToolCalls and one pending call.
+- The receiver selected
+  `[data-pt-agent-tool-recovery="continue-without-tool"]`, but source inspection
+  showed that selector was attached to the approve button. The button whose
+  localized label is `agent.recovery.continueWithoutTool` submitted
+  `approved=false` but had no selector.
+- The Gate therefore approved the ToolCall and continued the tool loop, then
+  correctly timed out waiting for a denied typed outcome. This confirms that
+  governed diagnostic reconciliation made the receiver actionable and exposes
+  a separate selector-to-intent binding defect.
+- The local correction moves the recovery selector to the `approved=false`
+  button and adds component/native static guards that require the selector to
+  occur between the approve and deny handlers.
+- Focused Desktop tests passed 8 tests. The full Desktop suite passed 560 tests
+  with one unrelated environment-dependent skip. Desktop typecheck and
+  production build passed, 66 native static tests passed, and
+  `git diff --check` passed.
+- Exact-source runtime comparison for the selector correction remains pending.
+- Provisioner cleanup for the failed run completed
+  `DONE / PROVEN / passed`; the debug session remains `[OPEN]`.

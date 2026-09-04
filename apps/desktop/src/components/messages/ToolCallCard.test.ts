@@ -20,5 +20,18 @@ describe('ToolCallsBlock approval visibility', () => {
     expect(source).toContain(
       'if (actionableApproval) setExpanded(true)',
     );
+
+    const approveDecision = source.indexOf(
+      'submitAgentToolDecision(tool.id, true)',
+    );
+    const recoverySelector = source.indexOf(
+      'data-pt-agent-tool-recovery="continue-without-tool"',
+    );
+    const denyDecision = source.indexOf(
+      'submitAgentToolDecision(tool.id, false)',
+    );
+    expect(approveDecision).toBeGreaterThan(-1);
+    expect(recoverySelector).toBeGreaterThan(approveDecision);
+    expect(recoverySelector).toBeLessThan(denyDecision);
   });
 });

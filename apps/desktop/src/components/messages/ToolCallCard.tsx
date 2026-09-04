@@ -261,7 +261,6 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
           {approvalRequired && tool.approvalId && (
             <Flexbox horizontal gap={8} style={{ marginBottom: 8 }}>
               <button
-                data-pt-agent-tool-recovery="continue-without-tool"
                 disabled={!canSubmitDecision}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -283,6 +282,7 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
                 {t('chat.message.toolCall.approve')}
               </button>
               <button
+                data-pt-agent-tool-recovery="continue-without-tool"
                 disabled={!canSubmitDecision}
                 onClick={(event) => {
                   event.stopPropagation();
