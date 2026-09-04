@@ -423,6 +423,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("foundationF12TopicSnapshot(", prepare)
         self.assertIn("foundationF12ReceiverSnapshot(", prepare)
         self.assertIn("writeFoundationF12Handoff(handoff)", prepare)
+        self.assertIn("label: 'BetaOriginal'", prepare)
+        self.assertIn(
+            "selectedBranchMessageId: betaAssistant.messageId",
+            prepare,
+        )
+        self.assertNotIn("label: 'BetaSibling'", prepare)
         self.assertIn("readFoundationF12Handoff(input.scenarioKey)", complete)
         self.assertIn("alphaPostRestartHash", complete)
         self.assertIn("betaPostRestartHash", complete)
