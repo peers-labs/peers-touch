@@ -1124,55 +1124,6 @@ class NativeProductClosureGate(AcceptanceGate):
             ).until(
                 lambda _: not self.native_adapter.mouse_button_down()
             )
-        cooperative_activation = (
-            self.runtime_binding.request_cooperative_activation(
-                client,
-                tuple(self.clients.values()),
-            )
-        )
-        if cooperative_activation:
-            self.capture_native_activation_diagnostic(
-                actor,
-                client,
-                point,
-                "after-cooperative-request",
-            )
-            try:
-                WebDriverWait(
-                    client.driver,
-                    5,
-                    poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-                ).until(
-                    lambda driver: (
-                        bool(driver.execute_script("return document.hasFocus()"))
-                        and actor_window_owns_point()
-                    )
-                )
-            except TimeoutException:
-                snapshot = self.capture_native_activation_diagnostic(
-                    actor,
-                    client,
-                    point,
-                    "cooperative-timeout",
-                )
-                raise GateError(
-                    "Native cooperative activation timed out: "
-                    f"{json.dumps(snapshot, sort_keys=True, default=str)}"
-                ) from None
-        else:
-            self.capture_native_activation_diagnostic(
-                actor,
-                client,
-                point,
-                "before-fallback-activation",
-            )
-            self.native_adapter.activate_process(client.process_id)
-            self.capture_native_activation_diagnostic(
-                actor,
-                client,
-                point,
-                "after-fallback-activation",
-            )
         try:
             WebDriverWait(
                 client.driver,
@@ -1192,29 +1143,69 @@ class NativeProductClosureGate(AcceptanceGate):
                 "Native actor window did not own the activation point: "
                 f"{json.dumps(snapshot, sort_keys=True, default=str)}"
             ) from None
-        if not bool(client.driver.execute_script("return document.hasFocus()")):
-            focus_mouse_down = False
+        cooperative_activation = (
+            self.runtime_binding.request_cooperative_activation(
+                client,
+                tuple(self.clients.values()),
+            )
+        )
+        if cooperative_activation:
             try:
-                self.native_adapter.post_mouse(
-                    (MouseAction.LEFT_DOWN,),
-                    point,
-                )
-                focus_mouse_down = True
-                self.native_adapter.post_mouse(
-                    (MouseAction.LEFT_UP,),
-                    point,
-                )
-                focus_mouse_down = False
                 WebDriverWait(
                     client.driver,
                     5,
                     poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
                 ).until(
-                    lambda _: not self.native_adapter.mouse_button_down()
+                    lambda driver: bool(
+                        driver.execute_script("return document.hasFocus()")
+                    )
                 )
-            finally:
-                if focus_mouse_down:
-                    self.native_adapter.release_stuck_mouse_button(point)
+            except TimeoutException:
+                snapshot = self.capture_native_activation_diagnostic(
+                    actor,
+                    client,
+                    point,
+                    "cooperative-timeout",
+                )
+                raise GateError(
+                    "Native cooperative activation timed out: "
+                    f"{json.dumps(snapshot, sort_keys=True, default=str)}"
+                ) from None
+            return client
+        else:
+            self.capture_native_activation_diagnostic(
+                actor,
+                client,
+                point,
+                "before-fallback-activation",
+            )
+            self.native_adapter.activate_process(client.process_id)
+        try:
+            WebDriverWait(
+                client.driver,
+                5,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(
+                lambda driver: bool(
+                    driver.execute_script("return document.hasFocus()")
+                )
+            )
+            return client
+        except TimeoutException:
+            pass
+
+        focus_mouse_down = False
+        try:
+            self.native_adapter.post_mouse(
+                (MouseAction.LEFT_DOWN,),
+                point,
+            )
+            focus_mouse_down = True
+            self.native_adapter.post_mouse(
+                (MouseAction.LEFT_UP,),
+                point,
+            )
+            focus_mouse_down = False
             WebDriverWait(
                 client.driver,
                 5,
@@ -1222,6 +1213,20 @@ class NativeProductClosureGate(AcceptanceGate):
             ).until(
                 lambda driver: bool(driver.execute_script("return document.hasFocus()"))
             )
+        except TimeoutException:
+            snapshot = self.capture_native_activation_diagnostic(
+                actor,
+                client,
+                point,
+                "fallback-focus-timeout",
+            )
+            raise GateError(
+                "Native actor window did not focus after activation: "
+                f"{json.dumps(snapshot, sort_keys=True, default=str)}"
+            ) from None
+        finally:
+            if focus_mouse_down:
+                self.native_adapter.release_stuck_mouse_button(point)
         return client
 
     def click_element(self, actor: str, element: Any) -> Any:

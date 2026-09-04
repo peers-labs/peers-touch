@@ -932,19 +932,23 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         activation_index = focus_source.index(
             "self.native_adapter.activate_process(client.process_id)"
         )
-        focus_wait_index = focus_source.index(
+        point_ownership_wait_index = focus_source.index(
             "lambda _: actor_window_owns_point()",
+        )
+        fallback_document_focus_index = focus_source.index(
+            "lambda driver: bool(\n"
+            '                    driver.execute_script("return document.hasFocus()")',
             activation_index,
         )
         focus_down_index = focus_source.index(
-            "(MouseAction.LEFT_DOWN,)",
-            focus_wait_index,
+            "MouseAction.LEFT_DOWN,",
+            fallback_document_focus_index,
         )
         focus_up_index = focus_source.index(
-            "(MouseAction.LEFT_UP,)",
+            "MouseAction.LEFT_UP,",
             focus_down_index,
         )
-        document_focus_index = focus_source.index(
+        click_document_focus_index = focus_source.index(
             'lambda driver: bool(driver.execute_script("return document.hasFocus()"))',
             focus_up_index,
         )
@@ -986,10 +990,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"before-activation"',
             focus_source,
         )
-        self.assertIn(
-            '"after-cooperative-request"',
-            focus_source,
-        )
+        self.assertNotIn('"after-cooperative-request"', focus_source)
         self.assertIn(
             '"cooperative-timeout"',
             focus_source,
@@ -998,14 +999,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"before-fallback-activation"',
             focus_source,
         )
-        self.assertIn(
-            '"after-fallback-activation"',
-            focus_source,
-        )
+        self.assertNotIn('"after-fallback-activation"', focus_source)
         self.assertIn(
             '"point-ownership-timeout"',
             focus_source,
         )
+        self.assertIn('"fallback-focus-timeout"', focus_source)
         self.assertIn(
             "except TimeoutException:",
             focus_source,
@@ -1017,10 +1016,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertLess(recovery_index, cooperative_index)
         self.assertLess(cooperative_index, activation_index)
         self.assertLess(recovery_index, activation_index)
-        self.assertLess(activation_index, focus_wait_index)
-        self.assertLess(focus_wait_index, focus_down_index)
+        self.assertLess(point_ownership_wait_index, activation_index)
+        self.assertLess(activation_index, fallback_document_focus_index)
+        self.assertLess(fallback_document_focus_index, focus_down_index)
         self.assertLess(focus_down_index, focus_up_index)
-        self.assertLess(focus_up_index, document_focus_index)
+        self.assertLess(focus_up_index, click_document_focus_index)
         self.assertIn(
             "self.native_adapter.window_stack_at_point(",
             focus_source,
