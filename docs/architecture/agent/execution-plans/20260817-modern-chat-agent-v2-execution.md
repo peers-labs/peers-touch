@@ -4872,6 +4872,27 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Harness now emits bounded branch-step diagnostics with only the typed error
   code and expected/actual conversation versions, allowing a focused
   single-tuple reproduction before any behavioral correction.
+- On-demand AS-F12 orchestration then avoided pre-running unrelated AS-F12
+  tuples. Exact-source runs
+  `20260904T072613659319Z-bc8acf71f2b56a1b13967b17c959a297`
+  (aggregate `20260904T072613499623Z-8131054a3fdafb5a53af33846f43bb25`)
+  and
+  `20260904T074638833357Z-7f97dab829c7eb84dbdf2d6884926164`
+  (aggregate `20260904T074638726239Z-adee816b441e6284e948ae7313b09c8f`)
+  on `242bfaaa1fd073916f0d57f78720b2dd8ec370cb` stopped earlier at
+  Browser AS-F01 `agent.acceptance.foundationTurnTimeout`; the unchanged run
+  between them
+  (`20260904T073051976784Z-20ae0cd74b21f0fad8acf8d35ffc9811`,
+  aggregate
+  `20260904T073051860726Z-cbdc1c4364698e5b684b7758b832ac6b`)
+  instead reached the known intermittent AS-F06 Browser client-restore
+  boundary. All three Provisioner cleanups completed
+  `DONE / PROVEN / passed`. Read-only durable database evidence for the latest
+  AS-F01 Turn shows terminal `cancelled_by_user` plus exactly one cancelled
+  ToolCall. AS-F01's readiness Turn is tool-independent, so it now uses the
+  existing revision-fenced capability isolation and requires zero ready
+  capabilities plus verified restoration, matching the AS-F10 root-cause
+  correction without changing product semantics.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
