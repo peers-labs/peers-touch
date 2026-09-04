@@ -5198,7 +5198,7 @@ function reportFoundationF03CancelDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'foundation-cancel-race',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:foundationDirectProbe:AS-F03',
       msg: `[DEBUG] ${stage}`,
@@ -9487,137 +9487,195 @@ export function installAcceptanceHarness(): void {
           agent,
           capabilitySessionId,
           async (toolIsolation) => {
-          const conversation = await api.createAgentConversation({
-            agent_id: agentId,
-            title: `Foundation stream ${sampleId}`,
-            provider_id: agent.provider,
-            model_name: agent.model,
-          });
-          preparedConversationId = conversation.conversation_id;
-          await useChatStore.getState().selectSession(conversation.conversation_id);
-
-          const startedAt = performance.now();
-          let cancellationRequested = false;
-          let cancellationRequestedAt = 0;
-          let triggeringTurnId = '';
-          let resolveCancellation!: (value: {
-            turnId: string;
-            result: Promise<{
-              response: Awaited<ReturnType<typeof api.cancelAgentTurn>> | null;
-              error: unknown;
-            }>;
-          }) => void;
-          const cancellation = new Promise<{
-            turnId: string;
-            result: Promise<{
-              response: Awaited<ReturnType<typeof api.cancelAgentTurn>> | null;
-              error: unknown;
-            }>;
-          }>((resolve) => {
-            resolveCancellation = resolve;
-          });
-          const observed = startObservedFoundationTurn({
-            conversationId: conversation.conversation_id,
-            agentId,
-            content: 'Reply immediately with 100 numbered queue rules. Do not explain.',
-            idempotencyKey: crypto.randomUUID(),
-            provider: agent.provider || undefined,
-            model: agent.model || undefined,
-            effort: 'low',
-            thinkingMode: 'disabled',
-            clientCapabilitySessionId:
-              capabilitySessions.selectedStationSession?.session_id,
-            onEvent: (event, events) => {
-              if (cancellationRequested || event.event !== 'text') return;
-              triggeringTurnId = String(
-                event.data.turn_id ?? event.data.turnId ?? '',
-              );
-              const turnId = observedTurnId(events);
-              if (!turnId) return;
-              cancellationRequested = true;
-              cancellationRequestedAt = performance.now();
-              preparedTurnId = turnId;
-              const result = api.cancelAgentTurn(turnId).then(
-                (response) => ({ response, error: null }),
-                (error: unknown) => ({ response: null, error }),
-              );
-              void reportFoundationF03CancelDebug('B-C', 'cancel-requested', {
-                elapsedMs: cancellationRequestedAt - startedAt,
-                eventSequence: Number(event.data.seq ?? 0),
-                eventTurnIdPresent: triggeringTurnId.length > 0,
-                selectedTurnIdPresent: turnId.length > 0,
-                triggeringTurnMatchesSelected: triggeringTurnId === turnId,
-                observedEventTypes: events.map((candidate) => candidate.event),
+            const maxCancellationAttempts = 2;
+            const terminalRaceStatuses: string[] = [];
+            for (
+              let attemptIndex = 1;
+              attemptIndex <= maxCancellationAttempts;
+              attemptIndex += 1
+            ) {
+              const conversation = await api.createAgentConversation({
+                agent_id: agentId,
+                title: `Foundation stream ${sampleId} attempt ${attemptIndex}`,
+                provider_id: agent.provider,
+                model_name: agent.model,
               });
-              resolveCancellation({ turnId, result });
-            },
-          });
-          const cancellationAttempt = await Promise.race([
-            cancellation,
-            observed.result.then((result) => {
-              throw new Error(
-                result.error || 'agent.acceptance.progressiveTextMissing',
+              preparedConversationId = conversation.conversation_id;
+              await useChatStore.getState().selectSession(
+                conversation.conversation_id,
               );
-            }),
-          ]);
-          preparedTurnId = cancellationAttempt.turnId;
-          const cancellationResult = await cancellationAttempt.result;
-          if (cancellationResult.error) {
-            await reportFoundationF03CancelDebug('D', 'cancel-error', {
-              elapsedMs: performance.now() - startedAt,
-              errorCode: observedErrorCode(cancellationResult.error),
-              observedEventTypes: observed.events.map((event) => event.event),
-            });
-            throw cancellationResult.error;
-          }
-          const activeCancellation = cancellationResult.response;
-          const cancellationStatus = String(
-            activeCancellation?.status ?? '',
-          ).toLowerCase();
-          await reportFoundationF03CancelDebug('A-D', 'cancel-finished', {
-            elapsedMs: performance.now() - startedAt,
-            cancelLatencyMs: performance.now() - cancellationRequestedAt,
-            cancellationStatus,
-            responsePresent: activeCancellation !== null,
-            triggeringTurnIdPresent: triggeringTurnId.length > 0,
-            triggeringTurnMatchesSelected:
-              triggeringTurnId === cancellationAttempt.turnId,
-            observedEvents: observed.events.map((event) => ({
-              eventType: event.event,
-              sequence: Number(event.data.seq ?? 0),
-            })),
-          });
-          if (
-            activeCancellation
-            && String(activeCancellation.status).toLowerCase() !== 'cancelled'
-          ) {
-            observed.controller.abort();
-            throw new Error('agent.acceptance.foundationActiveTurnCancelRejected');
-          }
-          const result = await observed.result;
-          turnDurationMs = performance.now() - startedAt;
-          const normalizedEvents = result.events
-            .filter((event) =>
-              !FOUNDATION_F06_PHASE_BY_EVENT[event.event]
-              && event.event !== 'catchup_done')
-            .map((event) => ({
-              eventType: event.event,
-              sequence: Number(event.data.seq ?? 0),
-              observedAt: event.observedAt,
-            }));
-          const terminalEvent = [...normalizedEvents]
-            .reverse()
-            .find((event) =>
-              ['done', 'error', 'cancelled'].includes(event.eventType));
-          if (terminalEvent?.eventType !== 'cancelled') {
-            throw new Error('agent.acceptance.foundationActiveTurnCancelMissing');
-          }
-          preparedRuntimeEvent.current = terminalEvent ?? null;
-          scenarioFacts = {
-            events: normalizedEvents,
-            sawTextBeforeCancel: true,
-            toolIsolation,
-          };
+
+              const startedAt = performance.now();
+              let cancellationRequested = false;
+              let cancellationRequestedAt = 0;
+              let triggeringTurnId = '';
+              let resolveCancellation!: (value: {
+                turnId: string;
+                result: Promise<{
+                  response: Awaited<ReturnType<typeof api.cancelAgentTurn>> | null;
+                  error: unknown;
+                }>;
+              }) => void;
+              const cancellation = new Promise<{
+                turnId: string;
+                result: Promise<{
+                  response: Awaited<ReturnType<typeof api.cancelAgentTurn>> | null;
+                  error: unknown;
+                }>;
+              }>((resolve) => {
+                resolveCancellation = resolve;
+              });
+              const observed = startObservedFoundationTurn({
+                conversationId: conversation.conversation_id,
+                agentId,
+                content:
+                  'Write a detailed 2000-word numbered guide to reliable queues. '
+                  + 'Continue until the full guide is complete.',
+                idempotencyKey: crypto.randomUUID(),
+                provider: agent.provider || undefined,
+                model: agent.model || undefined,
+                effort: 'low',
+                thinkingMode: 'disabled',
+                clientCapabilitySessionId:
+                  capabilitySessions.selectedStationSession?.session_id,
+                requestedBudget: {
+                  max_output_tokens: 4096,
+                  wall_time_ms: 90_000,
+                },
+                timeoutMs: 90_000,
+                onEvent: (event, events) => {
+                  if (cancellationRequested || event.event !== 'text') return;
+                  triggeringTurnId = String(
+                    event.data.turn_id ?? event.data.turnId ?? '',
+                  );
+                  const turnId = observedTurnId(events);
+                  if (!turnId) return;
+                  cancellationRequested = true;
+                  cancellationRequestedAt = performance.now();
+                  preparedTurnId = turnId;
+                  const result = api.cancelAgentTurn(turnId).then(
+                    (response) => ({ response, error: null }),
+                    (error: unknown) => ({ response: null, error }),
+                  );
+                  void reportFoundationF03CancelDebug(
+                    'B-C',
+                    'cancel-requested',
+                    {
+                      attemptIndex,
+                      elapsedMs: cancellationRequestedAt - startedAt,
+                      eventSequence: Number(event.data.seq ?? 0),
+                      eventTurnIdPresent: triggeringTurnId.length > 0,
+                      selectedTurnIdPresent: turnId.length > 0,
+                      triggeringTurnMatchesSelected: triggeringTurnId === turnId,
+                      observedEventTypes: events.map(
+                        (candidate) => candidate.event,
+                      ),
+                    },
+                  );
+                  resolveCancellation({ turnId, result });
+                },
+              });
+              const cancellationAttempt = await Promise.race([
+                cancellation,
+                observed.result.then((result) => {
+                  throw new Error(
+                    result.error || 'agent.acceptance.progressiveTextMissing',
+                  );
+                }),
+              ]);
+              preparedTurnId = cancellationAttempt.turnId;
+              const cancellationResult = await cancellationAttempt.result;
+              if (cancellationResult.error) {
+                await reportFoundationF03CancelDebug('D', 'cancel-error', {
+                  attemptIndex,
+                  elapsedMs: performance.now() - startedAt,
+                  errorCode: observedErrorCode(cancellationResult.error),
+                  observedEventTypes: observed.events.map((event) => event.event),
+                });
+                throw cancellationResult.error;
+              }
+              const activeCancellation = cancellationResult.response;
+              const cancellationStatus = String(
+                activeCancellation?.status ?? '',
+              ).toLowerCase();
+              await reportFoundationF03CancelDebug('A-D', 'cancel-finished', {
+                attemptIndex,
+                elapsedMs: performance.now() - startedAt,
+                cancelLatencyMs: performance.now() - cancellationRequestedAt,
+                cancellationStatus,
+                responsePresent: activeCancellation !== null,
+                triggeringTurnIdPresent: triggeringTurnId.length > 0,
+                triggeringTurnMatchesSelected:
+                  triggeringTurnId === cancellationAttempt.turnId,
+                observedEvents: observed.events.map((event) => ({
+                  eventType: event.event,
+                  sequence: Number(event.data.seq ?? 0),
+                })),
+              });
+              const result = await observed.result;
+              const normalizedEvents = result.events
+                .filter((event) =>
+                  !FOUNDATION_F06_PHASE_BY_EVENT[event.event]
+                  && event.event !== 'catchup_done')
+                .map((event) => ({
+                  eventType: event.event,
+                  sequence: Number(event.data.seq ?? 0),
+                  observedAt: event.observedAt,
+                }));
+              const terminalEvent = [...normalizedEvents]
+                .reverse()
+                .find((event) =>
+                  ['done', 'error', 'cancelled'].includes(event.eventType));
+
+              if (cancellationStatus === 'completed') {
+                if (terminalEvent?.eventType !== 'done') {
+                  throw new Error(
+                    'agent.acceptance.foundationActiveTurnCancelRejected',
+                  );
+                }
+                terminalRaceStatuses.push(cancellationStatus);
+                await deleteFoundationConversation(conversation.conversation_id);
+                preparedConversationId = null;
+                preparedTurnId = null;
+                await reportFoundationF03CancelDebug(
+                  'A-B',
+                  'cancel-window-retry',
+                  {
+                    attemptIndex,
+                    terminalRaceCount: terminalRaceStatuses.length,
+                  },
+                );
+                continue;
+              }
+              if (
+                !activeCancellation
+                || String(activeCancellation.status).toLowerCase() !== 'cancelled'
+              ) {
+                observed.controller.abort();
+                throw new Error('agent.acceptance.foundationActiveTurnCancelRejected');
+              }
+              if (terminalEvent?.eventType !== 'cancelled') {
+                throw new Error('agent.acceptance.foundationActiveTurnCancelMissing');
+              }
+
+              turnDurationMs = performance.now() - startedAt;
+              preparedRuntimeEvent.current = terminalEvent;
+              scenarioFacts = {
+                events: normalizedEvents,
+                sawTextBeforeCancel: true,
+                toolIsolation,
+                cancellationWindow: {
+                  attemptCount: attemptIndex,
+                  terminalRaceCount: terminalRaceStatuses.length,
+                },
+              };
+              break;
+            }
+            if (!scenarioFacts) {
+              throw new Error(
+                'agent.acceptance.foundationCancellationWindowUnavailable',
+              );
+            }
           },
         );
       }
