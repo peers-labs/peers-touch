@@ -2822,8 +2822,33 @@ Known unchanged baseline failures remain explicit:
   launch-context timing failures; and
 - coverage-report tests reject non-current evidence.
 
-No commit, deployment, destructive Fixture reset, or new Windows runtime proof
-has occurred for this correction. The next runtime action requires an exact
-source commit and deployment to station-four, station-five, and sixwin, followed
-by separate explicit authorization for the destructive two-Station Fixture
-reset. MP-D29 remains proposed and out of scope until Owner acceptance.
+Commit `1f8a0a3625e3dbbcd791b2e3389727a8ea2ffd6f` contains the correction
+and was deployed by exact Git-object sync to station-four and station-five.
+Windows run
+`20260904T170550632438Z-86c08bfd4c710aac4cd6efce33ada3e6`
+then synchronized and built the same source on sixwin, producing binary
+SHA-256
+`6675bdf135fc7f06d75052f40345588a561cbfddcbb73e0ae04cc632231154d3`.
+It proved the Windows cell, both client bindings, the Bob-bound inline failure
+pane, first-failure attribution, runtime-log cleanliness, and complete cleanup.
+
+The run failed at `conversation.search.ui` before group creation. Preserved
+debug evidence records `create-direct-start` followed by Station 500.
+station-four logged the matching authenticated
+`POST /messaging/conversation/direct`, while its bootstrap state reported
+`seeds=0`, an empty DHT routing table, and Relay disabled. The product failure
+therefore came from a deployment-topology regression: `make station` recreated
+both disposable containers with the shared `station.env` instead of the saved
+`chat-native-four.env` and `chat-native-five.env`.
+
+The saved environments were reapplied to both exact-source containers. Each
+Station then reported Relay enabled, one configured and connected seed, ten
+connected routing peers, and its original distinct peer identity. A first
+comparison attempt
+`20260904T174414332612Z-eb639f2a778332815b31a4d9da96ea94`
+correctly stopped before Windows source sync because the mandatory tracked
+debug record made the local worktree dirty; Provisioner cleanup passed.
+
+The next comparison run must use a clean commit containing this checkpoint and
+the open debug record. MP-D29 remains proposed and out of scope until Owner
+acceptance.
