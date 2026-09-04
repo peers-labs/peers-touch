@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -51,6 +52,22 @@ CHAT_TABLES = (
     "mls_key_packages",
     "federated_mls_key_package_claims",
 )
+
+
+@dataclass(frozen=True)
+class FixtureActorRecord:
+    ptid: str
+    preferred_username: str
+    name: str
+    summary: str
+    icon: str
+    image: str
+    url: str
+    federated_handle: str
+    home_station_peer_id: str
+    home_station_domain: str
+    visibility: int
+    locator_seq: int
 
 
 def load_environment_file(path: Path) -> dict[str, str]:
@@ -426,24 +443,145 @@ COMMIT;
     return value
 
 
-def seed_accepted_friendship(
+def read_fixture_actor(
     station_url: str,
     environment_name: str,
-    actor_ptid: str,
-    peer_ptid: str,
-) -> None:
+    account_email: str,
+) -> FixtureActorRecord:
     environment = acceptance_station_environment(
         station_url,
         environment_name,
     )
     verify_disposable_station_runtime(environment)
-    pair_key = "|".join(sorted((actor_ptid, peer_ptid)))
+    output = _remote_psql(
+        environment,
+        f"""
+SELECT json_build_object(
+  'ptid', ptid,
+  'preferredUsername', preferred_username,
+  'name', name,
+  'summary', summary,
+  'icon', icon,
+  'image', image,
+  'url', url,
+  'federatedHandle', federated_handle,
+  'homeStationPeerId', home_station_peer_id,
+  'homeStationDomain', home_station_domain,
+  'visibility', visibility,
+  'locatorSeq', locator_seq
+)
+FROM touch_actor
+WHERE email = {_sql_literal(account_email)}
+  AND origin = 'local';
+""",
+    )
+    lines = [line for line in output.splitlines() if line.strip().startswith("{")]
+    if len(lines) != 1:
+        raise RuntimeError(
+            "Chat fixture requires exactly one local actor for "
+            f"account={account_email}"
+        )
+    value = json.loads(lines[0])
+    if not isinstance(value, dict):
+        raise RuntimeError(
+            f"Chat fixture actor projection is invalid for account={account_email}"
+        )
+    record = FixtureActorRecord(
+        ptid=str(value.get("ptid") or ""),
+        preferred_username=str(value.get("preferredUsername") or ""),
+        name=str(value.get("name") or ""),
+        summary=str(value.get("summary") or ""),
+        icon=str(value.get("icon") or ""),
+        image=str(value.get("image") or ""),
+        url=str(value.get("url") or ""),
+        federated_handle=str(value.get("federatedHandle") or ""),
+        home_station_peer_id=str(value.get("homeStationPeerId") or ""),
+        home_station_domain=str(value.get("homeStationDomain") or ""),
+        visibility=int(value.get("visibility") or 0),
+        locator_seq=int(value.get("locatorSeq") or 0),
+    )
+    if (
+        not record.ptid.startswith("ptid:")
+        or not record.preferred_username
+        or not record.federated_handle.startswith("@")
+        or not record.home_station_peer_id
+        or not record.home_station_domain
+    ):
+        raise RuntimeError(
+            f"Chat fixture actor identity is incomplete for account={account_email}"
+        )
+    return record
+
+
+def seed_cross_station_contact(
+    station_url: str,
+    environment_name: str,
+    actor_ptid: str,
+    peer: FixtureActorRecord,
+) -> None:
+    environment = acceptance_station_environment(station_url, environment_name)
+    verify_disposable_station_runtime(environment)
+    pair_key = "|".join(sorted((actor_ptid, peer.ptid)))
     request_id = (
         "acceptance-cross-"
         + hashlib.sha256(pair_key.encode("utf-8")).hexdigest()[:24]
     )
     sql = f"""
 BEGIN;
+LOCK TABLE touch_actor IN SHARE ROW EXCLUSIVE MODE;
+DELETE FROM touch_actor
+WHERE origin = 'remote_cached'
+  AND (
+    ptid = {_sql_literal(peer.ptid)}
+    OR federated_handle = {_sql_literal(peer.federated_handle)}
+  );
+INSERT INTO touch_actor (
+  id,
+  ptid,
+  namespace,
+  preferred_username,
+  name,
+  type,
+  summary,
+  icon,
+  image,
+  email,
+  password_hash,
+  kind,
+  url,
+  federated_handle,
+  home_station_peer_id,
+  home_station_domain,
+  origin,
+  visibility,
+  locator_seq,
+  cached_until_unix_ms,
+  created_at,
+  updated_at
+) VALUES (
+  (SELECT coalesce(max(id), 0) + 1 FROM touch_actor),
+  {_sql_literal(peer.ptid)},
+  'peers',
+  {_sql_literal(peer.federated_handle)},
+  {_sql_literal(peer.name)},
+  'Person',
+  {_sql_literal(peer.summary)},
+  {_sql_literal(peer.icon)},
+  {_sql_literal(peer.image)},
+  {_sql_literal("remote+" + peer.federated_handle)},
+  'remote-cached',
+  'p',
+  {_sql_literal(peer.url)},
+  {_sql_literal(peer.federated_handle)},
+  {_sql_literal(peer.home_station_peer_id)},
+  {_sql_literal(peer.home_station_domain)},
+  'remote_cached',
+  {peer.visibility},
+  {peer.locator_seq},
+  (extract(epoch FROM clock_timestamp() + interval '1 hour') * 1000)::bigint,
+  clock_timestamp(),
+  clock_timestamp()
+);
 DELETE FROM friend_chat_friend_requests
 WHERE request_id = 'acceptance-alice-bob';
 INSERT INTO friend_chat_friend_requests (
@@ -459,7 +597,7 @@ INSERT INTO friend_chat_friend_requests (
   {_sql_literal(request_id)},
   {_sql_literal(pair_key)},
   {_sql_literal(actor_ptid)},
-  {_sql_literal(peer_ptid)},
+  {_sql_literal(peer.ptid)},
   2,
   '',
   clock_timestamp(),
@@ -583,6 +721,7 @@ def reset_station_messaging_state(environment_name: str) -> None:
     sql = f"""
 BEGIN;
 TRUNCATE TABLE {', '.join(CHAT_TABLES)} CASCADE;
+DELETE FROM touch_actor WHERE origin = 'remote_cached';
 DO $acceptance$
 DECLARE
   preset_hash text;
