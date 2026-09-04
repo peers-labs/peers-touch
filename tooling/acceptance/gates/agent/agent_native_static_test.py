@@ -381,6 +381,24 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("sideEffectDelta", scenario)
         self.assertIn("crossDeviceSession.session_id", scenario)
 
+    def test_foundation_readiness_turn_disables_tool_bindings(self) -> None:
+        direct_probe = self.source.index("async foundationDirectProbe")
+        scenario_start = self.source.index(
+            "if (cell === 'AS-F01')",
+            direct_probe,
+        )
+        scenario_end = self.source.index(
+            "if (cell === 'AS-F02')",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("withFoundationCapabilitiesDisabled(", scenario)
+        self.assertIn("thinkingMode: 'disabled'", scenario)
+        self.assertIn("scenarioFacts = { toolIsolation }", scenario)
+        self.assertIn("      true,", scenario)
+        self.assertNotIn("streamAgentTurn({", scenario)
+
     def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
         prepare_start = self.source.index(
             "async function runFoundationF12Prepare",
