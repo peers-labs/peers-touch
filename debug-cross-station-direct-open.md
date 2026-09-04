@@ -1,7 +1,7 @@
 # Debug Session: cross-station-direct-open
 - **Status**: [OPEN]
 - **Issue**: The Windows native Chat Gate selects the exact station-five Bob search result, but Alice's direct conversation does not open.
-- **Debug Server**: `http://100.86.255.160:7777/event`
+- **Debug Server**: `http://10.4.33.34:7781/event`
 - **Log File**: `.dbg/trae-debug-log-cross-station-direct-open.ndjson`
 
 ## Reproduction Steps
