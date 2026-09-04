@@ -264,8 +264,12 @@ class SessionHarnessClient:
     def __init__(self, runtime: str, *, authenticated: bool = True) -> None:
         self.spec = SimpleNamespace(runtime=runtime)
         self.authenticated = authenticated
+        self.restart_count = 0
         self.calls: list[str] = []
         self.payloads: dict[str, dict[str, object]] = {}
+
+    def restart(self) -> None:
+        self.restart_count += 1
 
     def harness(
         self,
@@ -807,6 +811,71 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 client.payloads["configureStation"],
                 {"stationUrl": station_url},
             )
+
+    def test_initial_setup_restarts_a_dead_driver_before_login(self) -> None:
+        browser = SessionHarnessClient("browser")
+        runtime_pair = SimpleNamespace(
+            native=SessionHarnessClient("desktop_app"),
+            browser=browser,
+        )
+
+        with patch.object(
+            foundation_scenario_runner,
+            "_warm_up_client",
+            side_effect=(False, True),
+        ) as warm_up:
+            foundation_scenario_runner._authenticate_clients(
+                runtime_pair,
+                {
+                    "PT_STATION_URL": "https://station.example",
+                    "PT_AGENT_PROVIDER_ID": "ark",
+                    "PT_AGENT_PROVIDER_API_KEY": "credential",
+                    "PT_AGENT_DEFAULT_MODEL_ID": "endpoint-model",
+                    "PT_AGENT_PROVIDER_BASE_URL": "https://provider.example/v1",
+                },
+                clients=(browser,),
+            )
+
+        self.assertEqual(warm_up.call_count, 2)
+        self.assertEqual(browser.restart_count, 1)
+        self.assertIn("configureStation", browser.calls)
+        self.assertIn("loginWithPassword", browser.calls)
+
+    def test_initial_setup_rejects_a_dead_driver_after_bounded_restart(
+        self,
+    ) -> None:
+        browser = SessionHarnessClient("browser")
+        runtime_pair = SimpleNamespace(
+            native=SessionHarnessClient("desktop_app"),
+            browser=browser,
+        )
+
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "_warm_up_client",
+                side_effect=(False, False),
+            ),
+            self.assertRaisesRegex(
+                foundation_scenario_runner.ScenarioRunnerError,
+                "client session remained unavailable after bounded restart",
+            ),
+        ):
+            foundation_scenario_runner._authenticate_clients(
+                runtime_pair,
+                {
+                    "PT_STATION_URL": "https://station.example",
+                    "PT_AGENT_PROVIDER_ID": "ark",
+                    "PT_AGENT_PROVIDER_API_KEY": "credential",
+                    "PT_AGENT_DEFAULT_MODEL_ID": "endpoint-model",
+                    "PT_AGENT_PROVIDER_BASE_URL": "https://provider.example/v1",
+                },
+                clients=(browser,),
+            )
+
+        self.assertEqual(browser.restart_count, 1)
+        self.assertNotIn("configureStation", browser.calls)
+        self.assertNotIn("loginWithPassword", browser.calls)
 
     def test_recovery_setup_reuses_existing_sessions_without_login(self) -> None:
         native = SessionHarnessClient("desktop_app")

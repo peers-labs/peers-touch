@@ -5066,6 +5066,26 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Desktop tests, production build, 180 focused Foundation/runtime tests, and
   `git diff --check` pass. AS-F07 post-fix and complete G-F runtime proof remain
   pending; G-F remains `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260904T132033716371Z-5d8ea4d1f0c0220df9cee7d58fb4417e`
+  (aggregate `20260904T132033597670Z-ee4ad078345f56429f32bb9731d74f7c`)
+  on `f12d20f7fdb0574f63511defe727dce91df65d7b` stopped during
+  initial native Station selection while the remote Station health endpoint
+  was flapping; a later status check and repository lease acquire/release both
+  succeeded. The unchanged rerun
+  `20260904T132921920791Z-e034142a8f918dd5382a33d276e192e9`
+  (aggregate `20260904T132921809260Z-e9c6a973420c5e4b9793311f1702cf90`)
+  crossed that boundary and then found the Browser WebDriver session invalid.
+  Post-fix debug lines 4-8 prove the browser process, Chrome handle, gateway,
+  renderer, and WebDriver port remained live while three health probes and
+  `configureStation` used the dead session. Cleanup restart lines 9-12 then
+  restored the normal `checkingLaunchContext -> accountGate` transition.
+  `_warm_up_client` now reports success explicitly; after all bounded health
+  probes fail, authentication restarts only that client once, re-runs warm-up,
+  and fails closed before login if the session is still unavailable. Desktop
+  check, 182 focused Foundation/runtime tests, and `git diff --check` pass.
+  Exact-source runtime proof remains pending; G-F remains
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
