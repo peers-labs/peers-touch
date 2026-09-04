@@ -847,8 +847,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Product Closure run `20260904T174913706510Z-285038c7784e15b141f511170e839a0e` at `491ed6b2b4e248baa58cc26951d5176c4bbf0887`, binary SHA-256 `bad933c6ba2e02fdea01de518d8e0a07a3d922b30b72559f89a9b31ecaabec0b`, proves exact Direct create/reopen and group genesis before a Windows focus timeout at `transcript.thread.ui`; overlay assertions were not reached. Runtime-log cleanliness independently fails on the proposed MP-D29 follower-membership gap. W9-D remains `PARTIAL/UNPROVEN`. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows distinct bindings, exact Direct create/reopen, and cross-Station group genesis; remaining product claims are open | Product Closure run `20260904T174913706510Z-285038c7784e15b141f511170e839a0e` proves Alice generation 1 bound to station-four and Bob generation 1 bound to station-five at exact source `491ed6b2b4e248baa58cc26951d5176c4bbf0887`, creates/reopens Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120`, and commits group genesis through remote queue acknowledgement. MLS transcript/receipt, multi-device aggregation, PostgreSQL recovery, and fault replay remain unproven. MP-D29 remains proposed and unimplemented. |
+| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Product Closure run `20260904T190332370979Z-f9793309fcd5ad79ac955d4bad864acd` at `9e7faa577bc8a7ffd3e710f365442a51140625c2`, binary SHA-256 `f3bb7159ba06983561f269cccc710e4ad64cbc811ec645585bcaaa3861653122`, proves the Windows focus-ordering correction, exact Direct create/reopen, group genesis, and Alice-to-Bob transcript delivery. Bob's outbound group send then failed because station-five has no authority-signed follower membership projection. Runtime-log cleanliness reports the same proposed MP-D29 gap; cleanup passed. W9-D remains `PARTIAL/UNPROVEN`. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows distinct bindings, exact Direct create/reopen, cross-Station group genesis, and authority-to-follower message delivery; remaining product claims are open | Product Closure run `20260904T190332370979Z-f9793309fcd5ad79ac955d4bad864acd` proves Alice generation 1 bound to station-four and Bob generation 1 bound to station-five at exact source `9e7faa577bc8a7ffd3e710f365442a51140625c2`, creates/reopens Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120`, commits group genesis, and delivers Alice's sequence-3 group message to Bob. station-five ACKed all three Bob queue items but retained zero authority events and zero conversation membership rows, so Bob could not submit the next group message. MLS bidirectional transcript/receipt, multi-device aggregation, PostgreSQL recovery, and fault replay remain unproven. MP-D29 remains proposed and unimplemented. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -2887,3 +2887,59 @@ activation, and retains the title-bar click plus terminal diagnostic only as a
 fallback. Focused Native Product Closure and Runtime Cell tests pass
 58 + 45. Exact-source Windows verification of this Gate correction remains
 pending.
+
+### 2026-09-04 Windows Focus Proof And MP-D29 Runtime Boundary
+
+Exact-source Windows Product Closure run
+`20260904T190332370979Z-f9793309fcd5ad79ac955d4bad864acd`
+executed commit `9e7faa577bc8a7ffd3e710f365442a51140625c2` and binary
+SHA-256
+`f3bb7159ba06983561f269cccc710e4ad64cbc811ec645585bcaaa3861653122`.
+The runtime remained Windows 10 x64 with WebView2 `152.0.4191.62`, Win32
+`SendInput`, a connected `1920x1080` output, and distinct source-attested
+bindings from Alice to station-four and Bob to station-five.
+
+The run passed:
+
+- `alice.launch`;
+- `bob.launch`;
+- `conversation.search.ui`, including exact Direct creation and repeat reopen;
+- `group.create.ui`, including group genesis and remote queue acknowledgement;
+  and
+- Alice's first group transcript send and Bob's visible receipt.
+
+This crosses both former focus timeout locations and source-binds the Windows
+focus-ordering correction. The first failed step remained
+`transcript.thread.ui`, but the new failure occurred after Bob received Alice's
+message: Bob's outbound group send returned
+`messaging_send_outcome:not_queued:draft`, and the Gate timed out waiting for
+Bob's own visible message.
+
+Read-only Station evidence for group
+`2ef5bd8d-492b-46fe-b342-d74498d3bd04` establishes the boundary:
+
+- station-four contains two active members, three authority events, three
+  delivered federation outbox frames, and three acknowledged local queue
+  items;
+- station-five received the three federation frames and Bob acknowledged all
+  three queue items;
+- station-five contains zero authority events and zero conversation membership
+  rows for the group; and
+- Bob's client repeatedly receives `active conversation membership required`
+  and projects `group:0`.
+
+This confirms the proposed MP-D29 authority-signed follower-membership gap.
+Device delivery is healthy enough for Bob to receive Alice's message, but
+station-five cannot authorize Bob as a sender without a verified follower
+membership projection. A UI retry, local client cache, or Gate relaxation
+would bypass Station ownership and is forbidden.
+
+The canonical report is `FAIL/PARTIAL/UNPROVEN`, with
+`firstFailedStep=transcript.thread.ui`. Runtime-log cleanliness independently
+fails on the same membership marker. Process, port, storage, endpoint, tunnel,
+source-workspace, and GUI-lease cleanup all passed.
+
+NDR-W9-D and Windows NDR-W10-D remain blocked at the accepted design boundary:
+MP-D29 is still `proposed` and must not be implemented until Owner review and
+acceptance. The remaining Product Closure assertions and dependent Windows
+22-Gate proof cannot be claimed from this partial run.

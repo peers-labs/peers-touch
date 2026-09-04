@@ -24,6 +24,10 @@
 | G | Contacts `Message` changes only the Chat subpage before `createDirect`; on failure it has no peer-bound conversation state to render. | High | Low | Confirmed by the user screenshot and source: `onMessage()` switched `subPage`, while `activeSessionUlid` remained empty until RPC success, so the generic empty Chat pane and global toast appeared. |
 | H | The resilience Gate can pass the blank-pane regression. | High | Low | Confirmed: the latest Linux Gate accepted `_chats_subpage_active() OR _chat_area_visible()`, and therefore proved a 333 ms tab switch plus toast rather than a peer-bound pane. No Windows pointer/evidence existed for this Gate. |
 | I | The one-client resilience Gate cannot provision Bob on station-five because fixture actor binding is derived only from launched runtime clients. | High | Low | Confirmed by Windows run `20260904T113004716796Z-40317bad53a2b6608f02e4df47fa57f9`: source and both Station attestations passed, then provisioning blocked on `fixture-binding:bob`. The declared environment already maps Bob to station-five, but Bob is intentionally not launched by this Gate. |
+| J | The Windows focus-ordering correction still loses WebView focus before transcript input. | Medium | Low | Rejected by run `20260904T190332370979Z-f9793309fcd5ad79ac955d4bad864acd`: the Gate crossed both former focus timeouts, submitted Alice's group message, and observed it in Bob's DOM. |
+| K | Authority-to-follower federation delivery or Bob's local decrypt path drops Alice's group message. | Medium | Low | Rejected: station-four delivered authority sequence 3, station-five received its frame, Bob ACKed the queue item, and the Gate observed Alice's root message in Bob's transcript. |
+| L | station-five lacks the authority-signed follower membership required to authorize Bob's outbound group message. | High | Low | Confirmed: station-five has zero authority events and zero membership rows for the group, Bob projects `group:0`, and `sendGroupMessage` returns `messaging_send_outcome:not_queued:draft`. |
+| M | Bob's message exists in client state but the Gate's visible-DOM selector misses it. | Low | Low | Rejected: Bob's send failed before queueing, so no Bob-authored message existed for the selector to observe. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -212,3 +216,38 @@ The Gate-owned correction now:
   process activation does not focus the document.
 
 Focused Native Product Closure and Runtime Cell tests pass: 58 + 45.
+
+Exact-source Windows run
+`20260904T190332370979Z-f9793309fcd5ad79ac955d4bad864acd`
+at commit `9e7faa577bc8a7ffd3e710f365442a51140625c2` and binary
+SHA-256
+`f3bb7159ba06983561f269cccc710e4ad64cbc811ec645585bcaaa3861653122`
+confirmed the focus correction:
+
+- `conversation.search.ui` passed with exact Direct create/reopen;
+- `group.create.ui` passed;
+- Alice's first group message reached Bob's visible transcript; and
+- cleanup released every process, port, storage root, endpoint, tunnel, source
+  workspace, and GUI lease.
+
+The first failed step remained `transcript.thread.ui`, but it moved beyond
+native focus. Bob's outbound group send returned
+`messaging_send_outcome:not_queued:draft`, so the Gate timed out waiting for
+Bob's own visible message.
+
+Read-only database evidence for group
+`2ef5bd8d-492b-46fe-b342-d74498d3bd04` shows:
+
+- station-four: two active members, three authority events, and three
+  delivered federation frames;
+- station-five: all three Bob queue items ACKed, but zero authority events and
+  zero conversation membership rows; and
+- Bob's runtime: repeated `active conversation membership required`,
+  `group:0`, and no queued Bob-authored message.
+
+This confirms hypothesis L and rejects J, K, and M. The remaining failure is
+the proposed MP-D29 authority-signed follower-membership design boundary, not
+a focus, delivery, decrypt, or DOM-selector regression. MP-D29 remains
+unimplemented pending Owner acceptance. The current debug session stays
+`[OPEN]`; instrumentation and the Debug Server must remain available until
+the user confirms cleanup.
