@@ -544,6 +544,18 @@ class AgentHarnessStaticTest(unittest.TestCase):
             2,
         )
 
+    def test_manual_denial_evidence_preserves_waiting_state(self) -> None:
+        helper_start = self.source.index("function diagnosticToolCase")
+        helper_end = self.source.index(
+            "async function foundationToolSideEffectCount",
+            helper_start,
+        )
+        helper = self.source[helper_start:helper_end]
+
+        self.assertIn("states.push('awaiting_user')", helper)
+        self.assertIn("if (status === 'denied')", helper)
+        self.assertNotIn("else if (status === 'denied')", helper)
+
     def test_revision_scenario_disables_capabilities_and_restores_them(self) -> None:
         revision_start = self.source.index(
             "async function runFoundationF07Scenario",

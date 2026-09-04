@@ -1918,11 +1918,13 @@ function diagnosticToolCase(
   const states = ['policy_check'];
   if (policy === 'auto') {
     states.push('auto_approved');
-  } else if (status === 'denied') {
-    states.push('denied');
   } else {
     states.push('awaiting_user');
-    if (status !== 'expired') states.push(approved ? 'approved' : 'denied');
+    if (status === 'denied') {
+      states.push('denied');
+    } else if (status !== 'expired') {
+      states.push(approved ? 'approved' : 'denied');
+    }
   }
   if (status === 'succeeded') states.push('running', 'succeeded');
   if (status === 'expired') states.push('expired');
@@ -2657,6 +2659,29 @@ async function runFoundationApprovalDeniedScenario(input: {
     );
     const sourceReplayHash = await sha256Hex(stableJson(sourceReplay));
     const repeatedReplayHash = await sha256Hex(stableJson(repeatedReplay));
+    const stationFact = diagnosticToolCase(replayed.facts[0], sideEffectCount);
+    const stationLineage = evidenceRecord(
+      stationFact.lineage,
+      'foundationApprovalDeniedStationLineage',
+    );
+    await reportFoundationApprovalReceiverDebug(
+      'F',
+      'denial-settled',
+      {
+        stationPolicy: stationFact.policy,
+        stationStates: stationFact.states,
+        stationErrorCode: stationFact.errorCode,
+        decisionAccepted: firstAcknowledgement.accepted,
+        decisionApproved: firstAcknowledgement.approved,
+        toolCallMatches:
+          stationLineage.toolCallId === firstAcknowledgement.tool_call_id,
+        decisionIdMatches:
+          stationLineage.decisionId === firstAcknowledgement.decision_id,
+        decisionRevisionMatches:
+          Number(stationLineage.decisionRevision)
+            === firstAcknowledgement.decision_revision,
+      },
+    );
 
     result = {
       conversationId: turn.conversationId,
@@ -2687,7 +2712,7 @@ async function runFoundationApprovalDeniedScenario(input: {
           decisionId: projection.decisionId,
           decisionRevision: projection.decisionRevision,
         },
-        station: diagnosticToolCase(replayed.facts[0], sideEffectCount),
+        station: stationFact,
         replay: {
           acknowledgementSourceHash: firstAcknowledgementHash,
           acknowledgementReplayHash: replayedAcknowledgementHash,

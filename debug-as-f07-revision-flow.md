@@ -356,3 +356,16 @@
   redacted checkpoint records normalized cancellation status, raw status type,
   and response field names before the unchanged fail-closed assertion.
   No product or Gate behavior has changed.
+- Exact-source run
+  `20260904T210231215831Z-95b83306d2b3337c553c41fe22d50410`
+  on `60f61aa735b7f1da1403195dd6148930e58f37e6` did not reproduce
+  the cancellation failure. Debug lines 4-14 and 16-26 record two complete
+  Browser AS-F07 production sequences.
+- Both cancellation responses contained fields `ok`, `status`, and `turn_id`;
+  `status` was a string normalized to `cancelled`, and both streams
+  independently observed terminal `cancelled`. Hypotheses S, T, and U are
+  rejected for this run. No AS-F07 behavior change is justified.
+- The Gate advanced beyond AS-F07 and later failed the independent
+  `BASE-APPROVAL-DENIED` assertion `denialPersisted`. Provisioner cleanup
+  completed `DONE / PROVEN / passed`; the AS-F07 debug session remains
+  `[OPEN]`.

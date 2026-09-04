@@ -18,6 +18,7 @@
 | C | The tool runtime receives the approval proposal while the Chat message projection does not. | Medium | Low | Rejected as stated. The inverse occurred: Chat-store membership became true while `toolRuntime` remained missing. This confirms the missing Station-snapshot reconciliation path in the `agent-tool` runtime. |
 | D | The matching ToolCall exists in the DOM but is hidden or collapsed. | Low | Low | Confirmed as a receiver-surface contributor: the ToolCall group remained collapsed, so no `[data-pt-agent-tool-call]` row was mounted even after Chat-store membership became true. |
 | E | The approval event and rendered ToolCall use different IDs. | Low | Medium | Rejected: the expected ToolCall matched both Station and Chat-store records at timeout. |
+| F | Final denied ToolCall evidence drops the prior manual-approval wait state. | High | Low | Confirmed: Station settlement was already `DENIED`, but `diagnosticToolCase` emitted `policy_check -> denied` while the accepted oracle requires `policy_check -> awaiting_user -> denied`. |
 
 ## Log Evidence
 - Exact-source run `20260904T171932940301Z-1ffb7349f89aa4d4977ac5235a458a6d`
@@ -133,3 +134,27 @@ approval. Post-fix runtime evidence remains pending.
 - Exact-source runtime comparison for the selector correction remains pending.
 - Provisioner cleanup for the failed run completed
   `DONE / PROVEN / passed`; the debug session remains `[OPEN]`.
+
+## Third Fix Iteration
+- Exact-source run
+  `20260904T210231215831Z-95b83306d2b3337c553c41fe22d50410`
+  on `60f61aa735b7f1da1403195dd6148930e58f37e6` passed multiple
+  AS-F07 revision sequences and returned to Browser
+  `BASE-APPROVAL-DENIED / en / single / sample-001`.
+- The receiver action, typed runtime denial, Station `DENIED` settlement,
+  replay, and localized error surface completed far enough for the independent
+  assertion map to report only `denialPersisted=false`.
+- `diagnosticToolCase` deterministically projected a final manual denial as
+  `policy_check -> denied`, omitting the already-observed
+  `awaiting_user` state. The independent oracle correctly requires
+  `policy_check -> awaiting_user -> denied`.
+- The local correction preserves `awaiting_user` for every manual-policy
+  terminal path and appends `denied` for the denied terminal. A redacted
+  `denial-settled` checkpoint records policy, states, error code, and lineage
+  equality without persisting IDs.
+- Desktop typecheck and production build passed, the full Desktop suite passed
+  560 tests with one unrelated environment-dependent skip, 67 native static
+  tests passed, 63 Group One evaluator tests passed, and `git diff --check`
+  passed.
+- Provisioner cleanup completed `DONE / PROVEN / passed`; exact-source runtime
+  comparison remains pending.
