@@ -19,6 +19,7 @@ import socket
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
@@ -97,6 +98,39 @@ def _ps_literal(value: object) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def _powershell_failure_detail(
+    completed: subprocess.CompletedProcess[str],
+) -> str:
+    details: list[str] = []
+    marker = "#< CLIXML"
+    for output in (completed.stderr, completed.stdout):
+        normalized = output.strip()
+        if not normalized:
+            continue
+        marker_index = normalized.find(marker)
+        if marker_index < 0:
+            details.append(normalized)
+            continue
+
+        prefix = normalized[:marker_index].strip()
+        if prefix:
+            details.append(prefix)
+        try:
+            root = ElementTree.fromstring(
+                normalized[marker_index + len(marker):].strip()
+            )
+        except ElementTree.ParseError:
+            details.append(normalized)
+            continue
+        details.extend(
+            text
+            for element in root.iter()
+            if element.attrib.get("S", "").lower() == "error"
+            and (text := (element.text or "").strip())
+        )
+    return "\n".join(details) or f"exit code {completed.returncode}"
+
+
 class InteractiveTaskScheduler:
     """Small argv-only Task Scheduler adapter with strict task ownership."""
 
@@ -158,7 +192,7 @@ class InteractiveTaskScheduler:
             "-ErrorAction SilentlyContinue; "
             "if ($null -ne $task) { "
             f"Unregister-ScheduledTask -TaskName {_ps_literal(task_name)} "
-            "-Confirm:$false }",
+            "-Confirm:$false }; exit 0",
             "unregister scheduled task",
         )
 
@@ -169,7 +203,7 @@ class InteractiveTaskScheduler:
             "-ErrorAction SilentlyContinue; "
             "if ($null -ne $task -and $task.State -eq 'Running') { "
             f"Stop-ScheduledTask -TaskName {_ps_literal(task_name)} "
-            "}",
+            "}; exit 0",
             "stop scheduled task",
         )
 
@@ -629,17 +663,22 @@ class WindowsDesktopBroker:
             _encoded_powershell(
                 f"$process=Get-Process -Id {process_id} -ErrorAction "
                 "SilentlyContinue; if ($null -ne $process) { "
-                f"Stop-Process -Id {process_id} -Force; "
-                f"Wait-Process -Id {process_id} -Timeout 15 "
+                f"Stop-Process -Id {process_id} -Force "
                 "-ErrorAction SilentlyContinue }"
             ),
             capture_output=True,
             text=True,
             check=False,
         )
-        if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip()
-            raise BrokerError(f"actor process cleanup failed: {detail[-4000:]}")
+        deadline = time.monotonic() + 15
+        while WindowsDesktopBroker._process_alive(process_id):
+            if time.monotonic() >= deadline:
+                detail = _powershell_failure_detail(completed)
+                raise BrokerError(
+                    "actor process cleanup failed: "
+                    f"process {process_id} remains alive; {detail[-4000:]}"
+                )
+            time.sleep(_WAIT_INTERVAL_SECONDS)
 
     @staticmethod
     def _port_listening(port: int) -> bool:
