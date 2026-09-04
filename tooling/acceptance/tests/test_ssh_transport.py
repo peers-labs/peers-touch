@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import subprocess
 import unittest
+from unittest.mock import patch
 
 from tooling.acceptance.transports.ssh import (
     RemotePlatform,
@@ -57,6 +59,69 @@ class SshTransportRenderingTest(unittest.TestCase):
         for path in invalid:
             with self.subTest(path=path):
                 self.assertFalse(SshTransport._valid_windows_path(path))
+
+    def test_loopback_probe_default_accounts_for_remote_platform_startup(
+        self,
+    ) -> None:
+        for platform, expected_timeout in (
+            (RemotePlatform.POSIX, 2.0),
+            (RemotePlatform.WINDOWS, 5.0),
+        ):
+            with self.subTest(platform=platform):
+                transport = SshTransport(
+                    SshTarget(
+                        "host.example",
+                        "runner",
+                        remote_platform=platform,
+                    )
+                )
+                completed = subprocess.CompletedProcess(
+                    ("python",),
+                    0,
+                    stdout="",
+                    stderr="",
+                )
+                with patch.object(
+                    transport,
+                    "run_argv",
+                    return_value=completed,
+                ) as run:
+                    self.assertTrue(
+                        transport.remote_loopback_port_listening(4645)
+                    )
+
+                self.assertEqual(
+                    run.call_args.kwargs["timeout"],
+                    expected_timeout,
+                )
+
+    def test_loopback_probe_preserves_explicit_timeout(self) -> None:
+        transport = SshTransport(
+            SshTarget(
+                "host.example",
+                "runner",
+                remote_platform=RemotePlatform.WINDOWS,
+            )
+        )
+        completed = subprocess.CompletedProcess(
+            ("python",),
+            0,
+            stdout="",
+            stderr="",
+        )
+        with patch.object(
+            transport,
+            "run_argv",
+            return_value=completed,
+        ) as run:
+            self.assertTrue(
+                transport.remote_loopback_port_listening(
+                    4645,
+                    timeout=1.5,
+                )
+            )
+
+        self.assertEqual(run.call_args.kwargs["timeout"], 1.5)
 
 
 if __name__ == "__main__":

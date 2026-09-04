@@ -342,10 +342,19 @@ class SshTransport:
         self,
         port: int,
         *,
-        timeout: float = 2,
+        timeout: float | None = None,
     ) -> bool:
         if port < 1 or port > 65535:
             raise ProvisioningError("remote loopback probe port is invalid")
+        probe_timeout = (
+            timeout
+            if timeout is not None
+            else (
+                5.0
+                if self.target.remote_platform == RemotePlatform.WINDOWS
+                else 2.0
+            )
+        )
         try:
             probe = self.run_argv(
                 (
@@ -363,7 +372,7 @@ class SshTransport:
                     ),
                     str(port),
                 ),
-                timeout=timeout,
+                timeout=probe_timeout,
                 check=False,
             )
         except subprocess.TimeoutExpired:
