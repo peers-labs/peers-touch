@@ -195,6 +195,7 @@ export function reduceToolProjection(
   if (!toolCallId) return state;
 
   const current = state[toolCallId];
+  if (current && isTerminalToolStatus(current.status)) return state;
   if (event.event === 'tool_call') {
     const next: ToolProjection = {
       ...current,
@@ -317,6 +318,27 @@ function toToolCallInfo(projection: ToolProjection): ToolCallInfo {
   };
 }
 
+export function resolveToolCallProjection(
+  source: ToolCallInfo,
+  projection: ToolProjection | undefined,
+): ToolCallInfo {
+  if (!projection) return source;
+
+  const sourceIsTerminal = isTerminalToolStatus(source.status);
+  const projectionAddsTypedTerminalOutcome = (
+    (projection.status === 'denied' || projection.status === 'expired')
+    && (source.status === projection.status || source.status === 'error')
+    && Boolean(projection.decisionErrorCode)
+  );
+  if (
+    (sourceIsTerminal && !projectionAddsTypedTerminalOutcome)
+    || projection.decisionRevision < (source.decisionRevision ?? 0)
+  ) {
+    return source;
+  }
+  return { ...source, ...toToolCallInfo(projection) };
+}
+
 export interface ToolProjectionMessage {
   readonly turnId?: string;
   readonly toolCalls?: readonly ToolCallInfo[];
@@ -339,9 +361,9 @@ function toolStatusFromDiagnostic(
   if (status === AgentToolCallStatus.SUCCEEDED) return 'success';
   if (status === AgentToolCallStatus.DENIED) return 'denied';
   if (status === AgentToolCallStatus.CANCELLED) return 'cancelled';
+  if (status === AgentToolCallStatus.EXPIRED) return 'expired';
   if (
     status === AgentToolCallStatus.FAILED
-    || status === AgentToolCallStatus.EXPIRED
     || status === AgentToolCallStatus.UNKNOWN_SIDE_EFFECT
   ) {
     return 'error';
@@ -355,6 +377,29 @@ function toolStatusRank(status: ToolCallStatus): number {
   if (status === 'approval_required') return 2;
   if (status === 'approved') return 3;
   return 4;
+}
+
+function isTerminalToolStatus(
+  status: ToolCallStatus | undefined,
+): boolean {
+  return status === 'success'
+    || status === 'error'
+    || status === 'denied'
+    || status === 'cancelled'
+    || status === 'expired';
+}
+
+function diagnosticToolError(
+  fact: TurnDiagnosticToolFact,
+  source: ToolCallInfo,
+): string | undefined {
+  if (
+    fact.status === AgentToolCallStatus.EXPIRED
+    && fact.errorCode === 'TOOL_APPROVAL_EXPIRED'
+  ) {
+    return 'agent.errors.toolApprovalExpired';
+  }
+  return fact.errorCode || source.error;
 }
 
 function sameToolProjection(
@@ -392,13 +437,25 @@ export function reconcileToolProjectionState(
 
   for (const projection of projections) {
     const current = next[projection.toolCallId];
+    const refinesUnclassifiedError = (
+      current?.status === 'error'
+      && !current.decisionErrorCode
+      && isTerminalToolStatus(projection.status)
+    );
     if (
       current
       && (
         projection.decisionRevision < current.decisionRevision
         || (
           projection.decisionRevision === current.decisionRevision
-          && toolStatusRank(projection.status) < toolStatusRank(current.status)
+          && !refinesUnclassifiedError
+          && (
+            toolStatusRank(projection.status) < toolStatusRank(current.status)
+            || (
+              isTerminalToolStatus(current.status)
+              && projection.status !== current.status
+            )
+          )
         )
       )
     ) {
@@ -455,7 +512,8 @@ function projectionFromDiagnostic(
       || status === 'approval_required'
       || status === 'approved',
     result: source.result,
-    error: fact.errorCode || source.error,
+    error: diagnosticToolError(fact, source),
+    decisionErrorCode: fact.errorCode || undefined,
     approvalId: fact.approvalId || source.approvalId,
     decisionId: fact.decisionId || source.decisionId,
     decisionRevision: Number.isSafeInteger(decisionRevision)
@@ -526,7 +584,11 @@ class ToolRuntime implements RuntimeDescriptor {
       if (!message.turnId || !message.toolCalls?.length) continue;
       const unresolved = message.toolCalls.filter((toolCall) => {
         const current = this.state[toolCall.id];
-        return !current || current.pending;
+        return (
+          !current
+          || current.pending
+          || (current.status === 'error' && !current.decisionErrorCode)
+        );
       });
       if (unresolved.length === 0) continue;
       toolCallsByTurn.set(
@@ -652,7 +714,15 @@ class ToolRuntime implements RuntimeDescriptor {
     const request = api.submitAgentToolDecision(input)
       .then((response) => {
         if (!response.accepted) {
-          this.patch(toolCallId, { decisionErrorCode: response.error_code });
+          const expired =
+            response.error_code
+            === 'TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED';
+          this.patch(toolCallId, {
+            ...(expired ? { status: 'expired' as const, pending: false } : {}),
+            decisionErrorCode:
+              response.outcome_error?.locale_key || response.error_code,
+            decisionOutcome: response.outcome_error ?? undefined,
+          });
           return response;
         }
         this.consume({
@@ -718,6 +788,13 @@ export const submitAgentToolDecision = (
 
 export function logToolDecisionFailure(toolCallId: string, error: unknown): void {
   log.error('toolRuntime', 'Failed to submit Station tool decision intent', {
+    toolCallId,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
+export function logToolRecoveryFailure(toolCallId: string, error: unknown): void {
+  log.error('toolRuntime', 'Failed to request ToolCall recovery', {
     toolCallId,
     error: error instanceof Error ? error.message : String(error),
   });

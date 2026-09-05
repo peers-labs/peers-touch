@@ -158,3 +158,16 @@ approval. Post-fix runtime evidence remains pending.
   passed.
 - Provisioner cleanup completed `DONE / PROVEN / passed`; exact-source runtime
   comparison remains pending.
+
+## Fourth Fix Iteration
+- Exact-source run
+  `20260904T222331747954Z-58f6c341ba8392c6b50a2c1712ec0388`
+  on `770e4ec8ae6d0e6fe2ed3d66a76ea89ffff27f55` completed Browser
+  manual denial twice.
+- Both `denial-settled` checkpoints record
+  `policy_check -> awaiting_user -> denied`,
+  `TOOL_APPROVAL_DENIED`, an accepted `approved=false` decision, matching
+  ToolCall/decision lineage, and zero forbidden execution.
+- The Gate advanced to `BASE-APPROVAL-EXPIRED`; the receiver and manual-denial
+  projection defects are runtime-confirmed closed. The debug session remains
+  `[OPEN]` until the Owner explicitly authorizes instrumentation removal.
