@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260905T131248877567Z-ef022ff2b49f7b5593a5ad8bd508c217` on `f95a4dd0eb779aae6106872257a1d1c4247535b2` confirmed that Browser AS-F06 allowed provider completion to close the recovery record before outage observation; the local correction now acknowledges a token-bound client TCP cut at the Harness boundary before handoff finalization and the source-bound restart, while cancellation instrumentation remains pending for the next exact-source run | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `cdf50ddc8b0c4f2f3d6c3d87c8bbc83907dcce87` makes the Browser AS-F06 cut boundary acknowledged and cleanup idempotent; its first exact-source execution reached `FIXTURE_READY` and emitted recovery activity before a host reboot interrupted the runner without a candidate, manifest, or cleanup receipt, so the run is `INCOMPLETE / UNPROVEN` and an unchanged rerun is pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5409,6 +5409,27 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   mismatch where receiver DOM visibility disagrees with the runtime profile.
   Exact-source post-fix proof remains pending, so AS-F06, cancellation,
   Foundation, and G-F remain `PARTIAL / UNPROVEN`.
+- Checkpoint `cdf50ddc8b0c4f2f3d6c3d87c8bbc83907dcce87` was deployed
+  exact-source to `chat-native-disposable`; the Acceptance driver was rebuilt,
+  its copied binary matched the Cargo target at SHA-256
+  `7e291f4207ad5b5b2c3d92adcb89a59d2e39e34aa2885f39aa96ce991d95e761`,
+  and smoke passed. Aggregate run
+  `20260905T144656500100Z-697d09085b429dbe9832fe2545120f4e`,
+  provisioning run
+  `20260905T144656633346Z-7c4b922e0d19d2d2fb2c3ebd1c0250a2`, and child
+  run `20260905T144707784814Z-8e0ca5dfe2b717f7e2ac1084396bc1f2`
+  reached `FIXTURE_READY` and emitted recovery instrumentation. The host then
+  rebooted at `2026-09-05T23:09:05+08:00`, terminating the runner and removing
+  its temporary client namespace before finalization. The three Evidence Store
+  runs contain no candidate, run manifest, or cleanup receipt; their empty
+  active locks are unowned, and canonical `latest.json` still points to the
+  earlier blocked preflight. A post-reboot audit found no run-owned process,
+  listener on ports `3230`, `3410`, `3231`, `3411`, `4445`, or `4446`, or
+  temporary client storage. This proves current resource cleanliness, not that
+  the interrupted teardown completed. Classify the attempt as
+  `INCOMPLETE / UNPROVEN`, not as a Gate or product failure; retain its
+  artifacts unchanged and rerun the exact source without changing Gate
+  timeouts or assertions.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

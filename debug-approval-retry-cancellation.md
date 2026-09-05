@@ -30,6 +30,12 @@
 - The first failure advanced to `timed out waiting for: approval-expired retry
   cancellation`.
 - Provisioner cleanup completed `DONE / PROVEN / passed`.
+- Post-fix exact-source aggregate
+  `20260905T144656500100Z-697d09085b429dbe9832fe2545120f4e`
+  on `cdf50ddc8b0c4f2f3d6c3d87c8bbc83907dcce87` was interrupted by a
+  host reboot at `2026-09-05T23:09:05+08:00` before this probe emitted any
+  event. No candidate, run manifest, or cleanup receipt exists, so all five
+  hypotheses remain pending.
 
 ## Instrumentation
 - The Harness records the retry attempt count, retry ToolCall status, and
@@ -43,4 +49,6 @@
   content, and endpoint values.
 
 ## Verification Conclusion
-Pending runtime instrumentation.
+Pending runtime instrumentation. The latest attempt is
+`INCOMPLETE / UNPROVEN` due to the external host reboot and provides no
+approval-retry cancellation evidence.

@@ -37,6 +37,14 @@
   `failureKeyArgumentPresent=true` and `nextFailureKeyPresent=true`. This
   proves the normal `failRecovery` phase transition retains a supplied key,
   but it does not classify the original empty-hash tuple.
+- Post-fix exact-source aggregate
+  `20260905T144656500100Z-697d09085b429dbe9832fe2545120f4e`
+  on `cdf50ddc8b0c4f2f3d6c3d87c8bbc83907dcce87` recorded two normal
+  `RECONNECTING -> RECOVERY_FAILED` transitions with a supplied and retained
+  failure key. The host rebooted at `2026-09-05T23:09:05+08:00` before the
+  runner finalized the target tuple or emitted a candidate and cleanup
+  receipt. The attempt remains `INCOMPLETE / UNPROVEN` and does not classify
+  the original empty-hash boundary.
 
 ## Instrumentation
 - `agentTurnRecovery.consume` records whether an accepted
@@ -54,4 +62,5 @@ The target empty-`errorHash` boundary remains unclassified because the latest
 run failed earlier at the now-confirmed provider-terminal race. The current
 post-fix candidate makes the transport cut deterministic before Station
 restart. Keep this session open and reuse the instrumentation on the next
-exact-source run; no failure-key behavior change is justified yet.
+exact-source run; no failure-key behavior change is justified yet. The
+interrupted run supplied supporting normal-transition evidence only.

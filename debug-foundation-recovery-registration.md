@@ -44,6 +44,14 @@
   `done(44)`, `reconciling(44)`, and `connected(44)`. The authoritative
   `snapshot(44)` closed the record before the outage observer sampled it as
   `MISSING`. Cleanup completed `DONE / PROVEN / passed`.
+- Post-fix exact-source aggregate
+  `20260905T144656500100Z-697d09085b429dbe9832fe2545120f4e`
+  on `cdf50ddc8b0c4f2f3d6c3d87c8bbc83907dcce87` reached
+  `FIXTURE_READY` and emitted recovery transitions through
+  `CONNECTION_LOST`, `RECONNECTING`, `REPLAYING`, and `RECONCILING`. The host
+  rebooted at `2026-09-05T23:09:05+08:00` before the runner could publish a
+  candidate, run manifest, or cleanup receipt. The attempt is
+  `INCOMPLETE / UNPROVEN`; its runtime activity cannot prove AS-F06.
 
 ## Instrumentation
 - Recovery-store actor begin/reset records active and watermark counts.
@@ -68,4 +76,6 @@ cannot silently orphan the Station conversation. Python then invokes a second
 Harness phase to hash and persist the handoff before the source-bound Station
 restart. The proxy also rejects connections admitted by an earlier fault
 generation. Runtime proof is still pending; keep the instrumentation and debug
-session open.
+session open. The post-fix run was externally interrupted by the host reboot,
+so an unchanged exact-source rerun is required before comparing the corrected
+fault boundary with the pre-fix sequence.
