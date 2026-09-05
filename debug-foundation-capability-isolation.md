@@ -35,6 +35,13 @@
   `readyCapabilityCount=0`, and one `BLOCKED / binding_disabled` readiness
   row. Agent selection and version equality were valid, and no stale journal
   existed. Cleanup again completed `DONE / PROVEN / passed`.
+- Post-fix exact-source aggregate
+  `20260905T173017351674Z-65338c392b7d5a1a098d0adc93796164`
+  on `18d5ff27bd0c485adbff996067faec9e6489be90` passed both Browser
+  AS-F01 locale tuples. Each strict precondition recorded one enabled binding
+  and one `READY / capability_ready` row; the Gate then advanced through
+  AS-F02-AS-F05 to the independent AS-F06 cursor boundary. Provisioner and
+  client cleanup completed `DONE / PROVEN / passed`.
 
 ## Instrumentation
 - `foundationDirectProbe` records journal presence before and after restoration,
@@ -76,4 +83,5 @@ not change.
 - `git diff --check`: PASS.
 - Focused Harness lint: five pre-existing findings remain; the new helper adds
   no lint finding.
-- Exact-source runtime comparison: pending.
+- Exact-source runtime comparison: AS-F01 passed for both Browser locale
+  tuples; the complete Foundation Gate remains `PARTIAL / UNPROVEN`.
