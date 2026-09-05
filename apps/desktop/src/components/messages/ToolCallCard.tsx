@@ -309,6 +309,24 @@ export function ToolCallItem({
               disabled={requestingAgain}
               onClick={(event) => {
                 event.stopPropagation();
+                // #region debug-point A:recovery-click
+                void fetch('http://127.0.0.1:7777/event', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    sessionId: 'approval-expiry-retry',
+                    runId: 'pre-fix',
+                    hypothesisId: 'A',
+                    location: 'ToolCallCard.tsx:request-again',
+                    msg: '[DEBUG] request-again-clicked',
+                    data: {
+                      requestingAgain,
+                      messageIdPresent: Boolean(messageId),
+                      toolStatus: tool.status ?? null,
+                    },
+                    ts: Date.now(),
+                  }),
+                }).catch(() => {});
+                // #endregion
                 setRequestingAgain(true);
                 void onRequestAgain()
                   .catch((error: unknown) =>
