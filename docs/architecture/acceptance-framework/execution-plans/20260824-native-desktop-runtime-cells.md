@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-24 | **Updated**: 2026-09-04
+> **Created**: 2026-08-24 | **Updated**: 2026-09-05
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
 > **Branch**: `refactor/chat-acceptance-cutover`
 > **Parent Design**: [../design.md](../design.md)
@@ -455,7 +455,20 @@ Evidence:
 
 Deliver:
 
-- Run the same 22-Gate Chat product suite through the Windows cell.
+- During implementation, run the four source-relevant local Chat Gates once
+  after each code revision, then run only the Windows Native Gate that owns the
+  current product boundary.
+- On the final source, run the approved 12-Gate Windows IM Chat matrix:
+  `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`,
+  `chat-native-visible-static`, and all eight Windows Native Chat Gates.
+- Keep Proto, Desktop gateway, Acceptance Infra, runtime-provisioning,
+  dev-runtime-isolation, and planner self-validation Gates conditional on
+  their owned source paths. They are not repeated Windows product proof.
+- Keep the historical MP-W11 closure audits attached to the Linux 22-Gate
+  record. Windows closure uses the approved matrix result plus Gap Detector
+  instead of reusing MP-W11's hard-coded 22-Gate audit.
+- Exclude standalone Federation, Applet, Agent, and Mobile Gates. Cross-Station
+  transport remains in scope only where a Chat Gate directly exercises it.
 - Alice and Bob on sixwin bind to distinct Stations via the same multi-Station
   manifest contract used by the Linux cell (W10 infrastructure).
 - Product assertions use platform-neutral DOM/WebDriver paths; only the
@@ -467,11 +480,12 @@ Deliver:
 
 Evidence:
 
-- Source-matched Windows run with all 22 Gates reaching `DONE/PROVEN`.
+- Source-matched final run with all four local Chat Gates and all eight Windows
+  Native Chat Gates reaching `DONE/PROVEN`.
 - Win32 adapter native diagnostics (window stack, focus, screenshot) captured.
 - Multi-Station binding proof (distinct Station identities per client).
 - Cleanup audit shows all remote processes terminated and storage wiped.
-- Gap Detector reports zero gaps for the Windows cell run.
+- Gap Detector reports zero gaps for the approved Windows matrix.
 
 Parallel execution note:
 
@@ -847,8 +861,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Product Closure run `20260904T190332370979Z-f9793309fcd5ad79ac955d4bad864acd` at `9e7faa577bc8a7ffd3e710f365442a51140625c2`, binary SHA-256 `f3bb7159ba06983561f269cccc710e4ad64cbc811ec645585bcaaa3861653122`, proves the Windows focus-ordering correction, exact Direct create/reopen, group genesis, and Alice-to-Bob transcript delivery. Bob's outbound group send then failed because station-five has no authority-signed follower membership projection. Runtime-log cleanliness reports the same proposed MP-D29 gap; cleanup passed. W9-D remains `PARTIAL/UNPROVEN`. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows distinct bindings, exact Direct create/reopen, cross-Station group genesis, and authority-to-follower message delivery; remaining product claims are open | Product Closure run `20260904T190332370979Z-f9793309fcd5ad79ac955d4bad864acd` proves Alice generation 1 bound to station-four and Bob generation 1 bound to station-five at exact source `9e7faa577bc8a7ffd3e710f365442a51140625c2`, creates/reopens Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120`, commits group genesis, and delivers Alice's sequence-3 group message to Bob. station-five ACKed all three Bob queue items but retained zero authority events and zero conversation membership rows, so Bob could not submit the next group message. MLS bidirectional transcript/receipt, multi-device aggregation, PostgreSQL recovery, and fault replay remain unproven. MP-D29 remains proposed and unimplemented. |
+| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Product Closure run `20260904T190332370979Z-f9793309fcd5ad79ac955d4bad864acd` at `9e7faa577bc8a7ffd3e710f365442a51140625c2`, binary SHA-256 `f3bb7159ba06983561f269cccc710e4ad64cbc811ec645585bcaaa3861653122`, proves the Windows focus-ordering correction, exact Direct create/reopen, group genesis, and Alice-to-Bob transcript delivery. MP-W14 A-D now locally implement and verify the follower-membership correction. No fresh exact-source Windows Product Closure has run, so W9-D remains `PARTIAL/UNPROVEN`. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows distinct bindings, exact Direct create/reopen, cross-Station group genesis, and authority-to-follower message delivery; remaining product claims are open | Product Closure run `20260904T190332370979Z-f9793309fcd5ad79ac955d4bad864acd` proves Alice generation 1 bound to station-four and Bob generation 1 bound to station-five at exact source `9e7faa577bc8a7ffd3e710f365442a51140625c2`, creates/reopens Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120`, commits group genesis, and delivers Alice's sequence-3 group message to Bob. MP-W14 A-D now pass local contract/state-machine checks, including follower membership, removal, replay, canonical settings, and Engine thread counts. MLS bidirectional transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and the fresh Windows MP-W14-E run remain unproven. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -2002,7 +2016,8 @@ closures (W9-A through W9-D) mirroring the Linux cell pattern:
   Win32 API).
 - W9-C: runtime cell contract and remote provisioner (SSH-based source sync,
   process supervision, WebView2 WebDriver tunnel).
-- W9-D: product gate execution and proof (22-Gate suite on Windows).
+- W9-D: product gate execution and proof (approved 12-Gate Windows IM Chat
+  matrix).
 
 Parallel execution: W9 (Windows) and W10-D Linux evidence may proceed
 concurrently. W10-D Windows evidence follows W9-C completion.
@@ -2172,9 +2187,9 @@ Verification:
 The former D-19 API/proto and display-geometry blockers are closed for this
 source snapshot. The successful executable build is dependency and source
 closure evidence only: the provisioner-backed Windows product launch, the
-22-Gate Windows product run, and W10-D Windows multi-Station product evidence
-were not executed. W9-D and the Windows portion of W10-D therefore remain
-`UNPROVEN`.
+approved Windows IM Chat matrix, and W10-D Windows multi-Station product
+evidence were not executed. W9-D and the Windows portion of W10-D therefore
+remain `UNPROVEN`.
 
 ### 2026-09-03 NDR-W10 Test Reconciliation
 
@@ -2387,8 +2402,10 @@ post-fix comparison. Local verification passed:
 - Chat Native product-closure static tests: 56 PASS.
 - Provisioning owner plus Chat static tests: 73 PASS.
 
-The Gap Detector correctly remains `UNPROVEN`: the post-fix Windows product
-Gate and the remaining 22-Gate matrix have not run.
+The Gap Detector correctly remained `UNPROVEN`: the post-fix Windows product
+Gate and the then-required 22-Gate matrix had not run. The
+2026-09-05 matrix amendment below supersedes that Windows scheduling rule
+without changing this historical evidence result.
 
 The first post-fix Windows run
 `20260904T061940213867Z-e8f335fd65350800b1b198472c68e6f6`
@@ -2480,7 +2497,8 @@ or group. Bob's Home Station therefore rejects legacy
    canonical Messaging authority/follower projection instead of weakening
    authorization;
 4. add focused regression tests, rerun the exact Windows Gate, then run the
-   remaining 22-Gate matrix, Gap Detector, and completion audit.
+   remaining approved Windows Native Chat Gates, Gap Detector, and cleanup
+   audit.
 
 ### 2026-09-04 MP-W13-B Reconciliation And MP-D29 Design Gate
 
@@ -2939,10 +2957,11 @@ The canonical report is `FAIL/PARTIAL/UNPROVEN`, with
 fails on the same membership marker. Process, port, storage, endpoint, tunnel,
 source-workspace, and GUI-lease cleanup all passed.
 
-NDR-W9-D and Windows NDR-W10-D remain blocked at the accepted design boundary:
-MP-D29 is still `proposed` and must not be implemented until Owner review and
-acceptance. The remaining Product Closure assertions and dependent Windows
-22-Gate proof cannot be claimed from this partial run.
+NDR-W9-D and Windows NDR-W10-D remain blocked at the MP-D29 implementation
+boundary. Owner accepted MP-D29 on 2026-09-05; its protocol, persistence,
+projection, authorization cutover, and proof remain pending. The remaining
+Product Closure assertions and dependent Windows matrix proof cannot be claimed
+from this partial run.
 
 ### 2026-09-05 Focused Windows Closure Audit
 
@@ -2975,8 +2994,101 @@ this source, and `chat-native-product-closure-e2e` remains
 
 Completion audit result: the focus-ordering and group-genesis corrections are
 ready for review with source-bound Windows evidence, but NDR-W9-D and Windows
-NDR-W10-D are not complete. Their next dependency is Owner acceptance of
-MP-D29, followed by its separate architecture/plan/implementation lifecycle
-and a fresh exact-source Windows product matrix. Repeating destructive fixture
-resets before that decision would only reproduce the same known authority
-boundary.
+NDR-W10-D are not complete. Owner accepted MP-D29 on 2026-09-05; its separate
+implementation closure and a fresh exact-source Windows product matrix remain.
+Repeating destructive fixture resets before the implementation lands would
+only reproduce the same known authority boundary.
+
+### 2026-09-05 Approved Windows IM Chat Acceptance Matrix
+
+The Owner approved replacing repeated Windows execution of the historical
+MP-W11 22-Gate bundle with a Chat-scoped, change-aware matrix. This amendment
+changes execution cost and Gate scheduling only; it does not weaken any Chat
+product assertion or reuse evidence across runtime cells.
+
+#### Iteration Matrix
+
+After a source revision, run these four local Gates once:
+
+1. `station-messaging-unit`;
+2. `messaging-platform-contract`;
+3. `desktop-check`; and
+4. `chat-native-visible-static`.
+
+During diagnosis, run only the Windows Native Gate that owns the first current
+product failure. Stop at that boundary, diagnose it, and do not repeatedly run
+unaffected Native journeys.
+
+#### Final Windows Matrix
+
+On the final exact source, the four local Gates above and these eight Windows
+Native Chat Gates must reach `DONE/PROVEN`:
+
+1. `chat-native-product-closure-e2e`;
+2. `chat-native-two-client-e2e`;
+3. `chat-native-interactions-e2e`;
+4. `chat-contact-message-resilience-e2e`;
+5. `chat-native-typing-e2e`;
+6. `chat-native-multi-device-e2e`;
+7. `chat-native-recovery-e2e`; and
+8. `chat-native-group-mls-e2e`.
+
+The final matrix also requires exact source/build/runtime identity, distinct
+Alice and Bob Station bindings, reverse-order cleanup, and a zero-gap Gap
+Detector result.
+
+#### Conditional Gates
+
+The following Gates run only when their owned source changes:
+
+- `proto-build`: Chat Proto changes;
+- `chat-desktop-gateway-e2e`: login, Desktop gateway, or Rust messaging gateway
+  changes;
+- `acceptance-plan-self`: Registry, Gate Catalog, or planner changes;
+- `acceptance-infra-validation`: generic Acceptance Infra changes;
+- `acceptance-runtime-provisioning-self`: generic provisioning or
+  launch-context changes; and
+- `desktop-dev-runtime-isolation-static`: Desktop runtime isolation changes.
+
+Their failure cannot block W9-D or W10-D when the relevant owned source is
+outside the focused Chat change range.
+
+`federation-desktop-gateway-smoke` is removed from the W9-D/W10-D matrix.
+Standalone Federation, Applet, Agent, and Mobile proof remains out of scope.
+The historical Linux MP-W11 22/22 aggregate and its
+`chat-w11-completion-audit` remain immutable evidence for that completed
+closure; they are not a template for repeated Windows execution.
+
+### 2026-09-05 MP-D29 Owner Acceptance And MP-W14 Handoff
+
+The Owner continued from the explicit MP-D29 design gate, accepting the
+authority-signed Home Station follower membership architecture. The canonical
+decision is `MP-D29` in
+`docs/architecture/messaging-platform/decisions.md`; implementation is tracked
+as `MP-W14` in
+`docs/architecture/messaging-platform/execution-plans/20260808-messaging-platform.md`.
+
+NDR-W9-D and Windows NDR-W10-D now depend on `MP-W14-E`. They remain
+`PARTIAL/UNPROVEN` until the locally verified MP-W14 A-D source is committed,
+deployed, and the approved Windows matrix passes at that exact source. No
+additional destructive Windows rerun is useful before that deployment.
+
+### 2026-09-05 MP-W14 A-D Local Verification
+
+MP-W14 A-D now implement the accepted authority-signed follower-membership
+boundary across Proto, Station, Desktop Rust, Desktop Web, and direct Mobile
+generated Chat contracts. The final local Chat aggregate
+`20260905T045308233830Z-d8262898db418a6fcfd179ce939fe8f8` passed all four
+approved iteration Gates plus the source-owned conditional `proto-build` Gate.
+
+Focused tests additionally pass for follower pagination/restart, final-removal
+ACK ordering, live/replay head races, device-first trust isolation, exact-next
+atomic device ingest, routed conversation creation, Engine thread counts,
+typed member settings, group genesis, membership transition, and Messaging
+Core. Legacy Conversation thread/settings contracts and runtime paths have
+zero live references; endpoint-private payload remains opaque in production
+Station follower code.
+
+This is local implementation evidence only. `MP-W14-E`, NDR-W9-D, and the
+Windows portion of NDR-W10-D remain `PARTIAL/UNPROVEN`. No commit, deployment,
+destructive fixture reset, or Windows Native Gate was performed.

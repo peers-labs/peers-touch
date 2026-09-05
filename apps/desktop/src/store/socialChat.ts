@@ -5,7 +5,6 @@ import {
   CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION,
   chatUnreadForParticipant,
   encryptedChatTransportMessageType,
-  mergeUniqueChatMessages,
 } from '@peers-touch/client-chat-core';
 
 import {
@@ -841,14 +840,6 @@ function cacheDecryptedGroupMessage(message: GroupMessage, decoded: GroupMessage
   });
 }
 
-function isMessageInThread(msg: SocialMessage, rootUlid: string): boolean {
-  return socialMessageExplicitThreadRootUlid(msg) === rootUlid;
-}
-
-function mergeThreadMessages(existing: SocialMessage[], incoming: SocialMessage[]): SocialMessage[] {
-  return mergeUniqueChatMessages(existing, incoming);
-}
-
 export function socialThreadKey(kind: 'friend' | 'group', ulid: string, rootUlid: string): string {
   return `${kind}:${ulid}:${rootUlid}`;
 }
@@ -1161,17 +1152,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           }),
       );
       const conversationSnapshots = await Promise.all(projections.map(async (conversation) => {
-        let settings: MemberSettingsResult | null = null;
-        try {
-          settings = await imServiceV1.conversation.getMemberSettings(
-            conversation.conversationId,
-          );
-        } catch (error) {
-          log.warn('socialChat', 'load conversation member settings failed', {
-            conversationId: conversation.conversationId,
-            error,
-          });
-        }
+        const settings: MemberSettingsResult =
+          await imServiceV1.messaging.getMemberSettings(conversation.conversationId);
 
         const groupSecurityState = conversation.kind === 2 && conversation.mlsStatus
           ? projectGroupSecurityState(conversation.mlsStatus)
@@ -1242,7 +1224,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
             };
           }
         }
-        if (!settings) continue;
         const kind = conversation.kind === 1 ? 'friend' : 'group';
         const key = conversationKey(kind, conversation.conversationId);
         nextConversationLocalState[key] = {
@@ -1430,7 +1411,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         .map((msg) => msg.ulid)
         .filter(Boolean);
       if (rootUlids.length > 0) {
-        get().refreshThreadCounts(ulid, rootUlids, activeTab).catch(() => {});
+        await get().refreshThreadCounts(ulid, rootUlids, activeTab);
       }
     } catch (error) {
       if (isUnauthorizedError(error)) {
@@ -1463,8 +1444,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       threadError: { ...state.threadError, [key]: null },
     }));
     try {
-      const fallbackRoot = (get().messages[ulid] || []).find((msg) => msg.ulid === rootUlid);
-      const nextMessages = fallbackRoot ? [fallbackRoot] : [];
+      const projections = await imServiceV1.messaging.listThreadMessages(ulid, rootUlid);
+      const nextMessages = projections.map(projection =>
+        projectMessagingProjection(activeKind, ulid, projection),
+      );
       const hasMore = false;
       const nextCursor = hasMore
         ? String(nextMessages.reduce((max, message) => Math.max(max, messageGroupSeq(message)), 0))
@@ -1480,26 +1463,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       await get().refreshThreadCounts(ulid, [rootUlid], activeKind);
     } catch (error) {
       log.error('socialChat', 'loadThreadMessages failed', error);
-      const fallbackRoot = (get().messages[ulid] || []).find((msg) => msg.ulid === rootUlid);
-      const fallbackThread = fallbackRoot
-        ? [
-            fallbackRoot,
-            ...(get().messages[ulid] || [])
-              .filter((msg) => msg.ulid !== rootUlid && isMessageInThread(msg, rootUlid)),
-          ]
-        : [];
       set((state) => ({
-        threadMessages: !append && fallbackThread.length > 0
-          ? { ...state.threadMessages, [key]: mergeThreadMessages([], fallbackThread) }
-          : state.threadMessages,
+        threadMessages: state.threadMessages,
         threadLoading: { ...state.threadLoading, [key]: false },
         threadLoadingMore: { ...state.threadLoadingMore, [key]: false },
         threadError: {
           ...state.threadError,
-          [key]: fallbackThread.length > 0 ? null : error instanceof Error ? error.message : String(error),
+          [key]: error instanceof Error ? error.message : String(error),
         },
       }));
-      if (fallbackThread.length > 0) return;
       throw error;
     }
   },
@@ -1508,19 +1480,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     const activeKind = kind ?? get().activeTab;
     const uniqueRootUlids = Array.from(new Set(rootUlids.filter(Boolean)));
     if (uniqueRootUlids.length === 0) return;
-    try {
-      const data = await imServiceV1.conversation.threadCounts(ulid, uniqueRootUlids);
-      const counts = data?.counts || [];
-      set((state) => {
-        const next = { ...state.threadCounts };
-        for (const count of counts) {
-          next[socialThreadKey(activeKind, ulid, count.rootUlid)] = count;
-        }
-        return { threadCounts: next };
-      });
-    } catch (error) {
-      log.warn('socialChat', 'refreshThreadCounts failed', error);
-    }
+    const data = await imServiceV1.messaging.threadCounts(ulid, uniqueRootUlids);
+    const counts = data.counts;
+    set((state) => {
+      const next = { ...state.threadCounts };
+      for (const count of counts) {
+        next[socialThreadKey(activeKind, ulid, count.rootUlid)] = count;
+      }
+      return { threadCounts: next };
+    });
   },
 
   markThreadRead: async (ulid, rootUlid, lastReadUlid, kind) => {
@@ -1535,6 +1503,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       await get().refreshThreadCounts(ulid, [rootUlid], activeKind);
     } catch (error) {
       log.warn('socialChat', 'markThreadRead failed', error);
+      throw error;
     }
   },
 
@@ -1990,9 +1959,22 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   updateConversationLocalState: async (kind, ulid, patch) => {
     const key = conversationKey(kind, ulid);
+    let committedPatch = patch;
     try {
-      if (patch.muted !== undefined) {
-        await imServiceV1.conversation.updateMemberSettings(ulid, { muted: patch.muted });
+      const settingsPatch: Partial<MemberSettingsResult> = {
+        muted: patch.muted,
+        alertEnabled: patch.alertEnabled,
+        pinned: patch.sticky,
+        background: patch.background,
+        backgroundImage: patch.backgroundImage,
+        clearedAtUnixMs: patch.clearedAt,
+      };
+      if (Object.values(settingsPatch).some(value => value !== undefined)) {
+        const settings = await imServiceV1.messaging.updateMemberSettings(ulid, settingsPatch);
+        committedPatch = {
+          ...patch,
+          ...projectConversationMemberSettings(settings),
+        };
       }
     } catch (error) {
       log.error('socialChat', 'update conversation settings failed', { kind, ulid, error });
@@ -2003,7 +1985,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ...state.conversationLocalState,
         [key]: {
           ...state.conversationLocalState[key],
-          ...patch,
+          ...committedPatch,
         },
       };
       saveConversationLocalState(state.currentUserPtid, nextLocalState);

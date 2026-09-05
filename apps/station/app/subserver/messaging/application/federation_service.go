@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"fmt"
+	"sort"
 	"time"
 
 	messaging "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
@@ -38,6 +39,7 @@ type FederationService struct {
 	authority        AuthorityCommandService
 	manifestResolver messaging.EndpointManifestResolver
 	manifestVerifier messaging.LocalEndpointManifestVerifier
+	follower         *FollowerProjectionService
 	policy           FederationPolicy
 }
 
@@ -47,6 +49,7 @@ func NewFederationService(
 	authority AuthorityCommandService,
 	manifestResolver messaging.EndpointManifestResolver,
 	manifestVerifier messaging.LocalEndpointManifestVerifier,
+	follower *FollowerProjectionService,
 	policy FederationPolicy,
 ) (*FederationService, error) {
 	if unitOfWork == nil ||
@@ -54,6 +57,7 @@ func NewFederationService(
 		authority == nil ||
 		manifestResolver == nil ||
 		manifestVerifier == nil ||
+		follower == nil ||
 		policy.MaxBatchWrites <= 0 {
 		return nil, fmt.Errorf("messaging: federation service dependencies are invalid")
 	}
@@ -63,6 +67,7 @@ func NewFederationService(
 		authority:        authority,
 		manifestResolver: manifestResolver,
 		manifestVerifier: manifestVerifier,
+		follower:         follower,
 		policy:           policy,
 	}, nil
 }
@@ -103,6 +108,11 @@ func (s *FederationService) Deliver(
 			return nil, messaging.ErrFederationFrameInvalid
 		}
 		return s.deliverDeviceQueueBatch(ctx, frame, now)
+	case chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION:
+		if frame.EventId == "" {
+			return nil, messaging.ErrFederationFrameInvalid
+		}
+		return s.follower.DeliverProjection(ctx, frame, sourceStationPublicKey, now)
 	case chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_COMMAND:
 		return s.deliverAuthorityCommand(ctx, frame, now)
 	default:
@@ -132,6 +142,7 @@ func (s *FederationService) deliverDeviceQueueBatch(
 		return nil, err
 	}
 	seen := make(map[string]struct{}, len(batch.Writes))
+	var publicEvent *chat.ConversationEvent
 	for _, write := range batch.Writes {
 		if write == nil ||
 			write.Recipient == nil ||
@@ -153,6 +164,15 @@ func (s *FederationService) deliverDeviceQueueBatch(
 		if !bytes.Equal(hash[:], write.PayloadSha256) {
 			return nil, messaging.ErrFederationFrameInvalid
 		}
+		delivery, err := validateFederatedDeviceEventDelivery(write, frame)
+		if err != nil {
+			return nil, err
+		}
+		if publicEvent == nil {
+			publicEvent = delivery.Event
+		} else if !proto.Equal(publicEvent, delivery.Event) {
+			return nil, messaging.ErrFederationFrameInvalid
+		}
 		key := write.Recipient.Ptid + "\x00" + write.Recipient.DeviceId
 		if _, duplicate := seen[key]; duplicate {
 			return nil, messaging.ErrFederationFrameInvalid
@@ -160,11 +180,11 @@ func (s *FederationService) deliverDeviceQueueBatch(
 		seen[key] = struct{}{}
 	}
 
-	duplicate, err := s.unitOfWork.IngestFederationFrame(
+	return s.follower.IngestDeviceEventFrame(
 		ctx,
 		frame,
-		now.UTC(),
-		func(queue messaging.QueueRepository) error {
+		publicEvent,
+		func(repositories messaging.FederationInboxRepositories) error {
 			for _, write := range batch.Writes {
 				active, err := s.devices.IsActiveDevice(
 					ctx,
@@ -177,7 +197,7 @@ func (s *FederationService) deliverDeviceQueueBatch(
 				if !active {
 					continue
 				}
-				if _, err := queue.Enqueue(ctx, &chat.DeviceQueueItem{
+				if _, err := repositories.Queue.Enqueue(ctx, &chat.DeviceQueueItem{
 					Recipient:      write.Recipient,
 					EventId:        write.EventId,
 					ConversationId: write.ConversationId,
@@ -191,14 +211,8 @@ func (s *FederationService) deliverDeviceQueueBatch(
 			}
 			return nil
 		},
+		now,
 	)
-	if err != nil {
-		return nil, err
-	}
-	return &chat.DeliverMessagingFederationFrameResponse{
-		Accepted:  true,
-		Duplicate: duplicate,
-	}, nil
 }
 
 func (s *FederationService) deliverAuthorityCommand(
@@ -227,19 +241,80 @@ func (s *FederationService) deliverAuthorityCommand(
 	if _, err := s.authority.Submit(ctx, payload.Command); err != nil {
 		return nil, err
 	}
-	duplicate, err := s.unitOfWork.IngestFederationFrame(
+	duplicate, acknowledged, err := s.unitOfWork.IngestFederationFrame(
 		ctx,
 		frame,
 		now.UTC(),
-		func(messaging.QueueRepository) error { return nil },
+		func(messaging.FederationInboxRepositories) (messaging.FederationInboxMutation, error) {
+			return messaging.FederationInboxMutation{Acknowledge: true}, nil
+		},
 	)
 	if err != nil {
 		return nil, err
+	}
+	if !acknowledged {
+		return nil, messaging.ErrFederationFrameInvalid
 	}
 	return &chat.DeliverMessagingFederationFrameResponse{
 		Accepted:  true,
 		Duplicate: duplicate,
 	}, nil
+}
+
+func validateFederatedDeviceEventDelivery(
+	write *chat.FederatedDeviceQueueWrite,
+	frame *chat.MessagingFederationFrame,
+) (*chat.DeviceEventDelivery, error) {
+	delivery := &chat.DeviceEventDelivery{}
+	if err := unmarshalDeterministic(write.OpaquePayload, delivery); err != nil {
+		return nil, messaging.ErrFederationFrameInvalid
+	}
+	event := delivery.Event
+	if event == nil ||
+		delivery.Recipient == nil ||
+		delivery.Recipient.Ptid != write.Recipient.Ptid ||
+		delivery.Recipient.DeviceId != write.Recipient.DeviceId ||
+		event.EventId != write.EventId ||
+		event.EventId != frame.EventId ||
+		event.ConversationId != write.ConversationId ||
+		event.ConversationId != frame.ConversationId ||
+		event.Sequence != frame.AuthoritySequence ||
+		event.AuthorityStationId != frame.SourceStationId ||
+		delivery.PayloadKind == chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_UNSPECIFIED ||
+		len(delivery.EndpointPayloadSha256) != sha256.Size ||
+		len(delivery.DeliveryCommitment) != sha256.Size {
+		return nil, messaging.ErrFederationFrameInvalid
+	}
+	if err := validateFollowerEvent(event); err != nil {
+		return nil, err
+	}
+	payloadHash := sha256.Sum256(delivery.EndpointPayload)
+	if !bytes.Equal(payloadHash[:], delivery.EndpointPayloadSha256) {
+		return nil, messaging.ErrFederationFrameInvalid
+	}
+	commitment := deliveryCommitment(
+		event.EventId,
+		event.ConversationId,
+		&chat.PreparedEndpointPayload{
+			Recipient:     delivery.Recipient,
+			Kind:          delivery.PayloadKind,
+			PayloadSha256: delivery.EndpointPayloadSha256,
+		},
+	)
+	if !bytes.Equal(commitment, delivery.DeliveryCommitment) {
+		return nil, messaging.ErrFederationFrameInvalid
+	}
+	index := sort.Search(
+		len(event.DeliveryCommitments),
+		func(index int) bool {
+			return bytes.Compare(event.DeliveryCommitments[index], commitment) >= 0
+		},
+	)
+	if index >= len(event.DeliveryCommitments) ||
+		!bytes.Equal(event.DeliveryCommitments[index], commitment) {
+		return nil, messaging.ErrFederationFrameInvalid
+	}
+	return delivery, nil
 }
 
 func (s *FederationService) validateEndpointManifests(

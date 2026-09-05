@@ -675,7 +675,6 @@ type MessagingMembershipChangeIntent struct {
 	Action        MessagingMembershipAction `protobuf:"varint,1,opt,name=action,proto3,enum=peers_touch.model.chat.v1.MessagingMembershipAction" json:"action,omitempty"`
 	Ptid          string                    `protobuf:"bytes,2,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	DeviceId      string                    `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	HomeStationId string                    `protobuf:"bytes,4,opt,name=home_station_id,json=homeStationId,proto3" json:"home_station_id,omitempty"`
 	Role          string                    `protobuf:"bytes,5,opt,name=role,proto3" json:"role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -728,13 +727,6 @@ func (x *MessagingMembershipChangeIntent) GetPtid() string {
 func (x *MessagingMembershipChangeIntent) GetDeviceId() string {
 	if x != nil {
 		return x.DeviceId
-	}
-	return ""
-}
-
-func (x *MessagingMembershipChangeIntent) GetHomeStationId() string {
-	if x != nil {
-		return x.HomeStationId
 	}
 	return ""
 }
@@ -1144,13 +1136,12 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"\x05_nameB\x0e\n" +
 	"\f_descriptionB\x13\n" +
 	"\x11_avatar_object_idB\x1a\n" +
-	"\x18_disappear_timer_seconds\"\xdc\x01\n" +
+	"\x18_disappear_timer_seconds\"\xcb\x01\n" +
 	"\x1fMessagingMembershipChangeIntent\x12L\n" +
 	"\x06action\x18\x01 \x01(\x0e24.peers_touch.model.chat.v1.MessagingMembershipActionR\x06action\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x1b\n" +
-	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12&\n" +
-	"\x0fhome_station_id\x18\x04 \x01(\tR\rhomeStationId\x12\x12\n" +
-	"\x04role\x18\x05 \x01(\tR\x04role\"\xc5\x04\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12\x12\n" +
+	"\x04role\x18\x05 \x01(\tR\x04roleJ\x04\b\x04\x10\x05R\x0fhome_station_id\"\xc5\x04\n" +
 	"\x1aMembershipTransitionIntent\x12#\n" +
 	"\rtransition_id\x18\x01 \x01(\tR\ftransitionId\x122\n" +
 	"\x15from_membership_epoch\x18\x02 \x01(\x03R\x13fromMembershipEpoch\x12$\n" +

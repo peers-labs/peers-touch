@@ -837,16 +837,16 @@ func (s *AuthorityPlanService) activeTransitionActors(
 ) ([]string, error) {
 	actorSet := make(map[string]struct{})
 	err := s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
-		members, err := repositories.Authority.ListActiveMembers(
+		devices, err := repositories.Authority.ListActiveMemberDevices(
 			ctx,
 			request.ConversationId,
 		)
 		if err != nil {
 			return err
 		}
-		for _, member := range members {
-			if member.Active {
-				actorSet[member.PTID] = struct{}{}
+		for _, device := range devices {
+			if device.Active && device.Endpoint != nil {
+				actorSet[device.Endpoint.Ptid] = struct{}{}
 			}
 		}
 		return nil

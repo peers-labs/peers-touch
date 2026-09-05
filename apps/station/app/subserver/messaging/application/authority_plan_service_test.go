@@ -923,8 +923,38 @@ func TestPrepareGroupGenesisClaimsRemoteKeyPackageBoundToManifest(t *testing.T) 
 		Count(&remoteOutboxCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if remoteOutboxCount != 2 {
-		t.Fatalf("remote federation outbox rows = %d, want 2", remoteOutboxCount)
+	if remoteOutboxCount != 4 {
+		t.Fatalf("remote federation outbox rows = %d, want 4", remoteOutboxCount)
+	}
+	var remoteOutbox []infrastructure.FederationOutboxModel
+	if err := db.
+		Where("target_station_id = ?", "station-remote").
+		Order("authority_sequence ASC, frame_id ASC").
+		Find(&remoteOutbox).Error; err != nil {
+		t.Fatal(err)
+	}
+	projectionCount := 0
+	for _, row := range remoteOutbox {
+		var frame chat.MessagingFederationFrame
+		if err := proto.Unmarshal(row.FrameBytes, &frame); err != nil {
+			t.Fatal(err)
+		}
+		if frame.PayloadType ==
+			chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION {
+			projectionCount++
+		}
+	}
+	if projectionCount != 2 {
+		t.Fatalf("remote follower projection frames = %d, want 2", projectionCount)
+	}
+	var grantCount int64
+	if err := db.Model(&infrastructure.EventProjectionGrantModel{}).
+		Where("conversation_id = ? AND target_home_station_id = ?", "remote-group", "station-remote").
+		Count(&grantCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if grantCount != 2 {
+		t.Fatalf("remote projection grants = %d, want 2", grantCount)
 	}
 }
 

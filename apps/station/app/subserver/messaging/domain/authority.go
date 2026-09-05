@@ -9,15 +9,18 @@ import (
 )
 
 var (
-	ErrNotFound             = errors.New("messaging: record not found")
-	ErrCommandConflict      = errors.New("messaging: command identity conflicts with persisted bytes")
-	ErrConversationState    = errors.New("messaging: conversation is not active")
-	ErrSenderUnauthorized   = errors.New("messaging: sender endpoint is not active")
-	ErrDeliverySet          = errors.New("messaging: prepared payloads do not match required endpoints")
-	ErrStaleDeliveryPlan    = errors.New("messaging: delivery plan is stale")
-	ErrAuthorityPlanStale   = errors.New("messaging: authority plan is stale")
-	ErrAuthorityPlanExpired = errors.New("messaging: authority plan is expired")
-	ErrUnsupportedCommand   = errors.New("messaging: command is not supported")
+	ErrNotFound                = errors.New("messaging: record not found")
+	ErrCommandConflict         = errors.New("messaging: command identity conflicts with persisted bytes")
+	ErrConversationState       = errors.New("messaging: conversation is not active")
+	ErrSenderUnauthorized      = errors.New("messaging: sender endpoint is not active")
+	ErrDeliverySet             = errors.New("messaging: prepared payloads do not match required endpoints")
+	ErrStaleDeliveryPlan       = errors.New("messaging: delivery plan is stale")
+	ErrAuthorityPlanStale      = errors.New("messaging: authority plan is stale")
+	ErrAuthorityPlanExpired    = errors.New("messaging: authority plan is expired")
+	ErrUnsupportedCommand      = errors.New("messaging: command is not supported")
+	ErrProjectionGrantConflict = errors.New(
+		"messaging: event projection grant conflicts with persisted entitlement",
+	)
 )
 
 type AuthorityConversationKind int32
@@ -50,9 +53,10 @@ type AuthorityMemberDevice struct {
 }
 
 type AuthorityMember struct {
-	PTID   string
-	Role   string
-	Active bool
+	PTID          string
+	HomeStationID string
+	Role          string
+	Active        bool
 }
 
 type AuthorityCommandReceipt struct {
@@ -73,10 +77,12 @@ type AuthorityMessageIdentity struct {
 
 type AuthorityRepository interface {
 	CreateConversation(ctx context.Context, conversation *AuthorityConversation) (bool, error)
+	GetConversation(ctx context.Context, conversationID string) (*AuthorityConversation, error)
 	AddMember(
 		ctx context.Context,
 		conversationID string,
 		ptid string,
+		homeStationID string,
 		role string,
 		joinedSequence int64,
 	) error
@@ -151,6 +157,7 @@ type AuthorityRepositories struct {
 	Plans             AuthorityPlanRepository
 	Attachments       AttachmentRepository
 	ReadCursors       ReadCursorRepository
+	ProjectionGrants  EventProjectionGrantRepository
 }
 
 type AuthorityUnitOfWork interface {
