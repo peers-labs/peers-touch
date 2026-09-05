@@ -5350,6 +5350,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Desktop typecheck, 568 tests with one unrelated skip, production build, 198
   focused Foundation/static tests, and `git diff --check` pass. Exact-source
   post-fix runtime proof remains pending.
+- Exact-source post-fix run
+  `20260905T113943783383Z-00250439a82b1ea43a5390c7353d5ea5`
+  (aggregate `20260905T113943676581Z-9dc849f5ff9927497a98f960f336023f`)
+  on `372e646e7242a72cbe4f0ebf4428708fcf260e6e` proved the
+  recovery-aware retry boundary: two receiver clicks produced one
+  `RetryTurn`, one new Attempt, and one distinct approval identity. The first
+  failure advanced to `approval-expired retry cancellation`, where the Gate
+  timed out waiting for both the retried ToolCall and Turn to become
+  `cancelled`. Source identity and redaction passed; Provisioner cleanup
+  completed `DONE / PROVEN / passed`. Cancellation response and final replay
+  state instrumentation are pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
