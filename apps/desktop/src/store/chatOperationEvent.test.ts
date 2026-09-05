@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyOperationEventIdentity,
+  isMessageRetryBlocked,
   type ChatMessage,
   type ChatOperation,
   useChatStore,
@@ -141,6 +142,19 @@ describe('Agent turn event identity projection', () => {
 
     expect(result.operations['conversation-1'].runState).toBe('recovery_failed');
     expect(isTerminalEvent(event)).toBe(false);
+  });
+
+  it('allows RetryTurn only for the matching recovery-failed operation', () => {
+    const recoveryFailed: ChatOperation = {
+      ...operation(),
+      runState: 'recovery_failed',
+      turnId: 'turn-1',
+    };
+
+    expect(isMessageRetryBlocked(true, recoveryFailed, 'turn-1')).toBe(false);
+    expect(isMessageRetryBlocked(true, recoveryFailed, 'turn-2')).toBe(true);
+    expect(isMessageRetryBlocked(true, operation(), 'turn-1')).toBe(true);
+    expect(isMessageRetryBlocked(false, operation(), 'turn-1')).toBe(false);
   });
 
   it('keeps a replay catch-up marker non-terminal until Station reports a terminal snapshot', () => {

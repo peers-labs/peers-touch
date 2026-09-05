@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260904T222331747954Z-58f6c341ba8392c6b50a2c1712ec0388` on `770e4ec8ae6d0e6fe2ed3d66a76ea89ffff27f55` passed AS-F04 policy/manual denial and AS-F07 revision flows, then failed first at Browser `BASE-APPROVAL_EXPIRED` because its direct-runtime vertical was not implemented; the source-backed expiry vertical now passes local checks and awaits checkpoint deployment/rerun | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260905T033944336847Z-d9b58bb4bfa09720bc427db17300bb25` on `229af39233369388dd729a30e1917416e59f7092` crossed Browser AS-F06 and reached `BASE-APPROVAL_EXPIRED`; runtime evidence shows both `Request again` clicks were blocked before `RetryTurn` because the current operation remained `recovery_failed` while the coarse `isStreaming` projection stayed true; cleanup completed `DONE / PROVEN / passed` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5331,6 +5331,25 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   pre-existing `receiver-dom` fixture-profile mismatches, and Agent proof
   validation correctly rejects stale latest evidence. Runtime proof remains
   `UNPROVEN` pending checkpoint deployment and exact-source Gate execution.
+- Exact-source diagnostic run
+  `20260905T033944336847Z-d9b58bb4bfa09720bc427db17300bb25`
+  (aggregate `20260905T033944224129Z-14a6a10a76112351b49ef86e442d9576`)
+  on `229af39233369388dd729a30e1917416e59f7092` crossed the Browser
+  AS-F06 restart tuples and advanced to `BASE-APPROVAL_EXPIRED`. The receiver
+  rendered the localized expired ToolCall recovery action, and both duplicate
+  clicks reached `retryMessage`, but the command returned before `RetryTurn`
+  because `isStreaming=true` while the matching operation was already
+  `recovery_failed`; no retry API call or attempt was created. The Gate
+  remained `PARTIAL / UNPROVEN`; source identity and redaction passed, and
+  Provisioner cleanup completed `DONE / PROVEN / passed`.
+- The local correction keeps active streaming/replay states fenced while
+  allowing `RetryTurn` only when the current operation is `recovery_failed`
+  and its Turn identity matches the selected source message. This preserves
+  Station terminal-state validation and the existing per-message single-flight
+  fence instead of clearing the runtime projection or weakening the Gate.
+  Desktop typecheck, 568 tests with one unrelated skip, production build, 198
+  focused Foundation/static tests, and `git diff --check` pass. Exact-source
+  post-fix runtime proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
