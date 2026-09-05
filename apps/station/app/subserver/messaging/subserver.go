@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/infrastructure"
@@ -33,6 +34,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
@@ -42,6 +44,7 @@ const (
 	defaultQueueMaxBytes          = 64 << 20
 	defaultRecoveryMaxBytes       = 256 << 20
 	defaultFederationDispatchTick = time.Second
+	defaultFollowerReplayTick     = time.Minute
 	defaultAttachmentUploadTTL    = 24 * time.Hour
 	defaultAttachmentGCTick       = time.Hour
 	defaultAttachmentGCBatch      = 100
@@ -122,6 +125,16 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		FederationPolicy: application.FederationPolicy{
 			MaxBatchWrites: 100,
 		},
+		FollowerProjectionPolicy: application.FollowerProjectionPolicy{
+			MaxPendingEvents: 128,
+			MaxPendingBytes:  4 << 20,
+			PendingTTL:       10 * time.Minute,
+			ReplayPageLimit:  128,
+		},
+		FollowerReplayPolicy: application.FollowerReplayPolicy{
+			MaxPageEvents: 128,
+			PageTTL:       time.Minute,
+		},
 		RecoveryPolicy: application.RecoveryPolicy{
 			MaxEncryptedArchiveBytes: defaultRecoveryMaxBytes,
 		},
@@ -177,6 +190,29 @@ func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
 				slog.WarnContext(
 					runContext,
 					"messaging federation dispatch failed; durable retry remains scheduled",
+					"error",
+					err,
+				)
+			}
+			select {
+			case <-runContext.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	s.wait.Add(1)
+	go func() {
+		defer s.wait.Done()
+		ticker := time.NewTicker(defaultFollowerReplayTick)
+		defer ticker.Stop()
+		for {
+			if err := s.composition.FollowerProjectionService.ReconcilePending(
+				runContext,
+			); err != nil && runContext.Err() == nil {
+				slog.WarnContext(
+					runContext,
+					"messaging follower replay reconciliation failed; retry remains scheduled",
 					"error",
 					err,
 				)
@@ -266,6 +302,10 @@ func (s *subServer) Handlers() []server.Handler {
 			s.handlePrepareMembershipTransition, logID, deviceID, s.jwtWrapper),
 		server.NewTypedHandler("messaging-conversation-list", "/messaging/conversation/list", server.GET,
 			s.handleListConversations, logID, deviceID, s.jwtWrapper),
+		server.NewTypedHandler("messaging-member-settings-get", "/messaging/member/settings", server.GET,
+			s.handleGetMemberSettings, logID, s.jwtWrapper),
+		server.NewTypedHandler("messaging-member-settings-put", "/messaging/member/settings", server.PUT,
+			s.handleUpdateMemberSettings, logID, s.jwtWrapper),
 		server.NewTypedHandler("messaging-command-prepare", "/messaging/command/prepare", server.POST,
 			s.handlePrepareSend, logID, deviceID, s.jwtWrapper),
 		server.NewTypedHandler("messaging-command-submit", "/messaging/command/submit", server.POST,
@@ -385,7 +425,15 @@ func (s *subServer) Handlers() []server.Handler {
 			s.composition.AttachmentFederationAuth,
 		),
 		server.NewTypedHandler("messaging-federation-deliver", "/messaging/federation/deliver", server.POST,
-			s.composition.FederationHandler.DeliverAuthenticated, logID, s.composition.FederationAuth),
+			s.handleFederationDeliver, logID, s.composition.FederationAuth),
+		server.NewTypedHandler(
+			"messaging-federation-follower-events",
+			"/messaging/federation/follower/events",
+			server.POST,
+			s.handleFollowerReplay,
+			logID,
+			s.composition.FollowerReplayAuth,
+		),
 		server.NewTypedHandler(
 			"messaging-federation-endpoint-manifest",
 			"/messaging/federation/endpoint-manifest",
@@ -417,6 +465,22 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("messaging-delivery-receipt-submit", "/messaging/receipt/delivery", server.POST,
 			s.handleSubmitDeliveryReceipt, logID, deviceID, s.jwtWrapper),
 	}
+}
+
+func (s *subServer) handleFederationDeliver(
+	ctx context.Context,
+	request *chat.DeliverMessagingFederationFrameRequest,
+) (*chat.DeliverMessagingFederationFrameResponse, error) {
+	response, err := s.composition.FederationHandler.DeliverAuthenticated(ctx, request)
+	return response, mapMessagingError(err)
+}
+
+func (s *subServer) handleFollowerReplay(
+	ctx context.Context,
+	request *chat.GetMessagingFollowerEventsRequest,
+) (*chat.MessagingFollowerEventsPage, error) {
+	response, err := s.composition.FollowerReplayHandler.GetAuthenticated(ctx, request)
+	return response, mapMessagingError(err)
 }
 
 func (s *subServer) handlePrepareGroupGenesis(
@@ -513,6 +577,73 @@ func (s *subServer) handleListConversations(
 		return nil, mapMessagingError(err)
 	}
 	return &chat.ListMessagingConversationsResponse{Conversations: conversations}, nil
+}
+
+func (s *subServer) handleGetMemberSettings(
+	ctx context.Context,
+	request *chat.GetMessagingMemberSettingsRequest,
+) (*chat.GetMessagingMemberSettingsResponse, error) {
+	ptid, err := messagingSubjectPTID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.composition.MemberSettingsService.Get(ctx, ptid, request)
+	return response, mapMessagingError(err)
+}
+
+func (s *subServer) handleUpdateMemberSettings(
+	ctx context.Context,
+	request *chat.UpdateMessagingMemberSettingsRequest,
+) (*chat.UpdateMessagingMemberSettingsResponse, error) {
+	ptid, err := messagingSubjectPTID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := s.composition.MemberSettingsService.Update(ctx, ptid, request)
+	if err != nil {
+		return nil, mapMessagingError(err)
+	}
+	if err := publishMemberSettingsChanged(updated.Conversation, ptid); err != nil {
+		slog.WarnContext(
+			ctx,
+			"messaging member settings realtime publish failed; durable settings remain authoritative",
+			"conversation_id",
+			request.ConversationId,
+			"error",
+			err,
+		)
+	}
+	return updated.Response, nil
+}
+
+func publishMemberSettingsChanged(
+	conversation *chat.MessagingConversationView,
+	ptid string,
+) error {
+	if conversation == nil {
+		return fmt.Errorf("messaging: settings conversation projection is missing")
+	}
+	bus := events.GetBus()
+	if bus == nil {
+		return fmt.Errorf("messaging: settings event bus is unavailable")
+	}
+	kind := realtime.ConversationSettingsChanged_FRIEND
+	if conversation.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
+		kind = realtime.ConversationSettingsChanged_GROUP
+	}
+	if _, err := bus.Publish(ptid, &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_ConversationSettingsChanged{
+			ConversationSettingsChanged: &realtime.ConversationSettingsChanged{
+				ContainerUlid:   conversation.ConversationId,
+				Kind:            kind,
+				ActorPtid:       ptid,
+				ChangedTsUnixMs: time.Now().UnixMilli(),
+			},
+		},
+	}); err != nil {
+		return fmt.Errorf("messaging: publish member settings change: %w", err)
+	}
+	return nil
 }
 
 func (s *subServer) handlePrepareSend(
@@ -1507,12 +1638,23 @@ func (writer responseWriter) Write(body []byte) (int, error) {
 }
 
 func messagingEndpoint(ctx context.Context) (string, string, error) {
-	subject := coreauth.GetSubject(ctx)
+	ptid, err := messagingSubjectPTID(ctx)
+	if err != nil {
+		return "", "", err
+	}
 	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
-	if subject == nil || strings.TrimSpace(subject.ID) == "" || deviceID == "" {
+	if deviceID == "" {
 		return "", "", server.Unauthorized("authenticated messaging endpoint required")
 	}
-	return subject.ID, deviceID, nil
+	return ptid, deviceID, nil
+}
+
+func messagingSubjectPTID(ctx context.Context) (string, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil || strings.TrimSpace(subject.ID) == "" {
+		return "", server.Unauthorized("authenticated messaging actor required")
+	}
+	return subject.ID, nil
 }
 
 func attachmentHandlerError(
@@ -1581,19 +1723,36 @@ func mapMessagingError(err error) error {
 			0,
 		)
 	case errors.Is(err, application.ErrDeviceUnauthorized),
-		errors.Is(err, domain.ErrSenderUnauthorized):
+		errors.Is(err, domain.ErrSenderUnauthorized),
+		errors.Is(err, domain.ErrMembershipNotActive):
 		return server.Forbidden(err.Error())
+	case errors.Is(err, domain.ErrMemberSettingsInvalid):
+		return server.BadRequest(err.Error())
 	case errors.Is(err, domain.ErrNotFound):
 		return server.NotFound(err.Error())
 	case errors.Is(err, domain.ErrCommandConflict),
 		errors.Is(err, domain.ErrConversationState),
 		errors.Is(err, domain.ErrAuthorityPlanStale),
 		errors.Is(err, domain.ErrAuthorityPlanExpired),
+		errors.Is(err, domain.ErrMembershipSourceConflict),
 		errors.Is(err, domain.ErrQueueItemOrder),
 		errors.Is(err, domain.ErrQueueItemState),
 		errors.Is(err, domain.ErrConsumerFenced),
 		errors.Is(err, domain.ErrPayloadHash):
 		return server.Conflict(err.Error())
+	case errors.Is(err, domain.ErrFollowerFork),
+		errors.Is(err, domain.ErrFollowerProjectionConflict),
+		errors.Is(err, domain.ErrFollowerHeadConflict),
+		errors.Is(err, domain.ErrFollowerReplayInvalid):
+		return server.Conflict(err.Error())
+	case errors.Is(err, domain.ErrFollowerReplayNotGranted):
+		return server.Forbidden(err.Error())
+	case errors.Is(err, domain.ErrFollowerReplayUnavailable):
+		return server.NewHandlerError(http.StatusGone, err.Error())
+	case errors.Is(err, domain.ErrFollowerBufferOverloaded):
+		return server.NewHandlerError(http.StatusTooManyRequests, err.Error())
+	case errors.Is(err, domain.ErrFollowerGap):
+		return server.NewHandlerError(http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, domain.ErrAttachmentExpired):
 		return attachmentHandlerError(
 			http.StatusConflict,

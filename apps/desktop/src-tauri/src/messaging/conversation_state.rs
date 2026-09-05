@@ -72,21 +72,20 @@ impl ConversationStateProcessor {
             _ => return Err("messaging conversation-state event is unsupported".to_string()),
         };
         if !created
-            .member_ptids
-            .binary_search(&self.endpoint.ptid)
-            .is_ok()
+            .members
+            .iter()
+            .any(|member| member.ptid == self.endpoint.ptid)
         {
             return Err("messaging recipient is not a conversation member".to_string());
         }
         let members = created
-            .member_ptids
+            .members
             .iter()
-            .map(|ptid| ConversationMemberProjection {
-                ptid: ptid.clone(),
-                role: if ptid == &created.owner_ptid {
-                    MemberRole::Owner as i32
-                } else {
-                    MemberRole::Member as i32
+            .map(|member| ConversationMemberProjection {
+                ptid: member.ptid.clone(),
+                role: match member.role.as_str() {
+                    "owner" => MemberRole::Owner as i32,
+                    _ => MemberRole::Member as i32,
                 },
             })
             .collect();
@@ -153,8 +152,8 @@ mod tests {
     use super::super::verification::delivery_commitment;
     use super::*;
     use crate::model::chat::{
-        ConversationCreatedFact, ConversationEvent, ConversationKind, DeviceEventDelivery,
-        DeviceQueuePayloadType,
+        ConversationAuthorityMember, ConversationCreatedFact, ConversationEvent, ConversationKind,
+        DeviceEventDelivery, DeviceQueuePayloadType,
     };
     use sha2::{Digest, Sha256};
 
@@ -196,7 +195,18 @@ mod tests {
                     kind: ConversationKind::Direct as i32,
                     name: String::new(),
                     owner_ptid: "ptid:alice".to_string(),
-                    member_ptids: vec!["ptid:alice".to_string(), "ptid:bob".to_string()],
+                    members: vec![
+                        ConversationAuthorityMember {
+                            ptid: "ptid:alice".to_string(),
+                            role: "owner".to_string(),
+                            home_station_id: "station-local".to_string(),
+                        },
+                        ConversationAuthorityMember {
+                            ptid: "ptid:bob".to_string(),
+                            role: "member".to_string(),
+                            home_station_id: "station-remote".to_string(),
+                        },
+                    ],
                 },
             )),
         };

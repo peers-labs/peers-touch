@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-09-04
+> **Created**: 2026-08-08 | **Updated**: 2026-09-05
 > **Owner**: Messaging Platform Team
 
 ---
@@ -140,7 +140,7 @@ Home Station route truth、target ingest和两个独立数据库的native receiv
 
 #### 3.3.1 Home Station Follower Membership Cutover
 
-> `MP-D29` amendment status: proposed
+> `MP-D29` amendment status: accepted (Owner accepted 2026-09-05)
 
 ```text
 authority commit writes Station-addressed projection outbox + device batch

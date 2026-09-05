@@ -13,6 +13,7 @@ const (
 	FederationScope                     = "messaging-frame-deliver"
 	EndpointManifestScope               = "messaging-endpoint-manifest-read"
 	AuthorityPrepareScope               = "messaging-authority-prepare"
+	FollowerReplayScope                 = "messaging-follower-replay-read"
 	MlsKeyPackageClaimScope             = "messaging-mls-key-package-claim"
 	AttachmentTransferScope             = "messaging-attachment-transfer"
 	FederationClaimFrameID              = "frame_id"
@@ -28,6 +29,7 @@ const (
 	FederationClaimDeviceID             = "device_id"
 	FederationClaimAttachmentAction     = "attachment_action"
 	FederationClaimAttachmentResourceID = "attachment_resource_id"
+	FederationClaimRequestSHA256        = "request_sha256"
 )
 
 var (
@@ -238,6 +240,19 @@ type FederationInboxUnitOfWork interface {
 		ctx context.Context,
 		frame *chat.MessagingFederationFrame,
 		receivedAt time.Time,
-		fn func(queue QueueRepository) error,
-	) (duplicate bool, err error)
+		fn func(FederationInboxRepositories) (FederationInboxMutation, error),
+	) (duplicate bool, acknowledged bool, err error)
+	ExecuteFollower(
+		ctx context.Context,
+		fn func(FollowerRepository) error,
+	) error
+}
+
+type FederationInboxRepositories struct {
+	Queue    QueueRepository
+	Follower FollowerRepository
+}
+
+type FederationInboxMutation struct {
+	Acknowledge bool
 }

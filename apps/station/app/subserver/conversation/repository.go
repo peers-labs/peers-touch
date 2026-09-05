@@ -564,29 +564,3 @@ func (r *postgresConversationRepo) ListThreadEvents(ctx context.Context, convers
 	}
 	return result, nil
 }
-
-func (r *postgresConversationRepo) CountThreadReplies(ctx context.Context, conversationID string, rootIDs []string) (map[string]ThreadSummary, error) {
-	allEvents, err := r.ListEvents(ctx, conversationID, 0, 5000)
-	if err != nil {
-		return nil, err
-	}
-	summaries := make(map[string]ThreadSummary, len(rootIDs))
-	for _, rootID := range rootIDs {
-		summaries[rootID] = ThreadSummary{RootMessageID: rootID}
-	}
-	for _, event := range allEvents {
-		mc := event.GetMessageCommitted()
-		if mc == nil || mc.ThreadRootMessageId == "" {
-			continue
-		}
-		if s, ok := summaries[mc.ThreadRootMessageId]; ok {
-			s.ReplyCount++
-			s.LatestReplyID = mc.MessageId
-			if event.CommittedAt != nil {
-				s.LatestReplyAtMs = event.CommittedAt.AsTime().UnixMilli()
-			}
-			summaries[mc.ThreadRootMessageId] = s
-		}
-	}
-	return summaries, nil
-}

@@ -117,3 +117,45 @@ func TestHashAuthorityEventExcludesOnlyEventHash(t *testing.T) {
 		t.Fatal("delivery commitment was not bound by event hash")
 	}
 }
+
+func TestFollowerProjectionGrantsUseMembershipTransitionPrePostHomeStationUnion(t *testing.T) {
+	event := &chat.ConversationEvent{
+		EventId:        "event-membership",
+		ConversationId: "conversation-1",
+		Payload: &chat.ConversationEvent_MembershipTransitionCommitted{
+			MembershipTransitionCommitted: &chat.MembershipTransitionCommittedFact{},
+		},
+	}
+	preMembers := []messaging.AuthorityMember{
+		{PTID: "alice", HomeStationID: "station:local", Role: "owner", Active: true},
+		{PTID: "bob", HomeStationID: "station:removed", Role: "member", Active: true},
+		{PTID: "carol", HomeStationID: "station:shared", Role: "member", Active: true},
+	}
+	postMembers := []messaging.AuthorityMember{
+		{PTID: "alice", HomeStationID: "station:local", Role: "owner", Active: true},
+		{PTID: "carol", HomeStationID: "station:shared", Role: "member", Active: true},
+		{PTID: "dave", HomeStationID: "station:added", Role: "member", Active: true},
+	}
+
+	grants, err := followerProjectionGrants(
+		event,
+		preMembers,
+		postMembers,
+		"station:local",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(grants) != 3 {
+		t.Fatalf("projection grants = %+v", grants)
+	}
+	reasons := make(map[string]string, len(grants))
+	for _, grant := range grants {
+		reasons[grant.TargetHomeStationID] = grant.EntitlementReason
+	}
+	if reasons["station:removed"] != projectionEntitlementPreState ||
+		reasons["station:shared"] != projectionEntitlementPreAndPost ||
+		reasons["station:added"] != projectionEntitlementPostState {
+		t.Fatalf("projection union reasons = %+v", reasons)
+	}
+}

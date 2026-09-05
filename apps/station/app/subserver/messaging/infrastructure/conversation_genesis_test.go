@@ -44,8 +44,20 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 	if err := uow.AutoMigrate(); err != nil {
 		t.Fatal(err)
 	}
+	followers, err := infrastructure.NewFollowerRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberships, err := application.NewMembershipReader(
+		uow,
+		followers,
+		"station:local",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	now := time.Unix(1_700_000_000, 0).UTC()
-	for index, ptid := range []string{"ptid:alice", "ptid:bob"} {
+	for index, ptid := range []string{"ptid:zara", "ptid:bob"} {
 		publicKey := bytes.Repeat([]byte{byte(index + 1)}, 32)
 		fingerprint := sha256.Sum256(publicKey)
 		if err := db.Create(&touchactor.ActorIdentityRecord{
@@ -60,14 +72,15 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 		}
 	}
 	devices := []touchactor.DeviceRecord{
-		verifiedGenesisDevice("ptid:alice", "alice-desktop", now),
-		verifiedGenesisDevice("ptid:alice", "alice-phone", now),
+		verifiedGenesisDevice("ptid:zara", "zara-desktop", now),
+		verifiedGenesisDevice("ptid:zara", "zara-phone", now),
 	}
 	if err := db.Create(&devices).Error; err != nil {
 		t.Fatal(err)
 	}
 	service, err := application.NewConversationService(
 		uow,
+		memberships,
 		"station:local",
 		messaging.FederationFrameSignFunc(func(context.Context, *chat.MessagingFederationFrame) error {
 			return nil
@@ -78,7 +91,7 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	creator := &chat.CryptoEndpoint{Ptid: "ptid:alice", DeviceId: "alice-desktop"}
+	creator := &chat.CryptoEndpoint{Ptid: "ptid:zara", DeviceId: "zara-desktop"}
 	first, err := service.CreateDirect(ctx, creator, "ptid:bob")
 	if err != nil {
 		t.Fatal(err)
@@ -88,6 +101,7 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if first.ConversationId != replayed.ConversationId ||
+		first.OwnerPtid != creator.Ptid ||
 		len(first.MemberPtids) != 2 ||
 		first.MembershipEpoch != 1 {
 		t.Fatalf("direct views mismatch: first=%+v replay=%+v", first, replayed)
@@ -121,15 +135,28 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 	if err := db.Find(&outbox).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(outbox) != 1 {
-		t.Fatalf("federation outbox rows = %d, want 1", len(outbox))
+	if len(outbox) != 2 {
+		t.Fatalf("federation outbox rows = %d, want device and projection rows", len(outbox))
 	}
-	var frame chat.MessagingFederationFrame
-	if err := proto.Unmarshal(outbox[0].FrameBytes, &frame); err != nil {
-		t.Fatal(err)
+	var deviceFrame *chat.MessagingFederationFrame
+	var projectionFrame *chat.MessagingFederationFrame
+	for _, row := range outbox {
+		frame := &chat.MessagingFederationFrame{}
+		if err := proto.Unmarshal(row.FrameBytes, frame); err != nil {
+			t.Fatal(err)
+		}
+		switch frame.PayloadType {
+		case chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH:
+			deviceFrame = frame
+		case chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION:
+			projectionFrame = frame
+		}
+	}
+	if deviceFrame == nil || projectionFrame == nil {
+		t.Fatalf("missing device/projection frame: device=%v projection=%v", deviceFrame, projectionFrame)
 	}
 	var batch chat.FederatedDeviceQueueBatch
-	if err := proto.Unmarshal(frame.OpaquePayload, &batch); err != nil {
+	if err := proto.Unmarshal(deviceFrame.OpaquePayload, &batch); err != nil {
 		t.Fatal(err)
 	}
 	if len(batch.Writes) != 1 ||
@@ -137,11 +164,75 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 		batch.Writes[0].Recipient.GetDeviceId() != "bob-desktop" {
 		t.Fatalf("remote queue batch = %+v", batch.Writes)
 	}
+	var projection chat.MessagingFollowerProjection
+	if err := proto.Unmarshal(projectionFrame.OpaquePayload, &projection); err != nil {
+		t.Fatal(err)
+	}
+	created := projection.GetConversationEvent().GetConversationCreated()
+	if projection.FormatVersion != application.MessagingFollowerProjectionFormatVersion ||
+		projection.AuthorityStationId != "station:local" ||
+		projection.TargetHomeStationId != "station:remote" ||
+		created == nil ||
+		len(created.Members) != 2 ||
+		created.Members[0].HomeStationId == "" ||
+		created.Members[1].HomeStationId == "" {
+		t.Fatalf("follower creation projection = %+v", projection)
+	}
+	var grants []infrastructure.EventProjectionGrantModel
+	if err := db.Find(&grants).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(grants) != 1 ||
+		grants[0].EventID != projection.ConversationEvent.EventId ||
+		grants[0].TargetHomeStationID != "station:remote" {
+		t.Fatalf("creation projection grants = %+v", grants)
+	}
+	if _, err := followers.CreateConversation(ctx, &messaging.FollowerConversation{
+		ConversationID:        "remote-group",
+		AuthorityStationID:    "station:remote",
+		AuthoritySigningKeyID: "remote-key",
+		Kind:                  messaging.AuthorityConversationKindGroup,
+		Name:                  "Remote group",
+		OwnerPTID:             "ptid:bob",
+		CurrentSequence:       3,
+		CurrentEventHash:      bytes.Repeat([]byte{7}, sha256.Size),
+		MembershipEpoch:       1,
+		MlsEpoch:              1,
+		State:                 messaging.FollowerConversationStateActive,
+		UpdatedAt:             now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, member := range []*messaging.FollowerMember{
+		{
+			ConversationID: "remote-group",
+			PTID:           "ptid:bob",
+			HomeStationID:  "station:remote",
+			Role:           "owner",
+			Active:         true,
+			JoinedSequence: 1,
+		},
+		{
+			ConversationID: "remote-group",
+			PTID:           "ptid:zara",
+			HomeStationID:  "station:local",
+			Role:           "member",
+			Active:         true,
+			JoinedSequence: 1,
+		},
+	} {
+		if err := followers.UpsertMember(ctx, member); err != nil {
+			t.Fatal(err)
+		}
+	}
 	views, err := service.List(ctx, creator)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(views) != 1 || views[0].ConversationId != first.ConversationId {
+	if len(views) != 2 ||
+		views[0].ConversationId != first.ConversationId ||
+		views[1].ConversationId != "remote-group" ||
+		views[1].AuthorityStationId != "station:remote" {
 		t.Fatalf("conversation list = %+v", views)
 	}
 

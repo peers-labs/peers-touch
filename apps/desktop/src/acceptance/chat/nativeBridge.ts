@@ -223,7 +223,7 @@ export const nativeAcceptanceBridge = createNativeAcceptanceBridge({
   readConversations: () =>
     imServiceV1.messaging.listConversations(),
   readMemberSettings: (conversationId) =>
-    imServiceV1.conversation.getMemberSettings(conversationId),
+    imServiceV1.messaging.getMemberSettings(conversationId),
   openAttachment: (attachmentId) =>
     imServiceV1.messaging.openAttachment(attachmentId),
   identityState: () => {

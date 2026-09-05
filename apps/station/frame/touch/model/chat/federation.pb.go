@@ -25,10 +25,11 @@ const (
 type MessagingFederationPayloadType int32
 
 const (
-	MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_UNSPECIFIED        MessagingFederationPayloadType = 0
-	MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH MessagingFederationPayloadType = 1
-	MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_COMMAND  MessagingFederationPayloadType = 2
-	MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_RESULT   MessagingFederationPayloadType = 3
+	MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_UNSPECIFIED         MessagingFederationPayloadType = 0
+	MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH  MessagingFederationPayloadType = 1
+	MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_COMMAND   MessagingFederationPayloadType = 2
+	MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_RESULT    MessagingFederationPayloadType = 3
+	MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION MessagingFederationPayloadType = 4
 )
 
 // Enum value maps for MessagingFederationPayloadType.
@@ -38,12 +39,14 @@ var (
 		1: "MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH",
 		2: "MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_COMMAND",
 		3: "MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_RESULT",
+		4: "MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION",
 	}
 	MessagingFederationPayloadType_value = map[string]int32{
-		"MESSAGING_FEDERATION_PAYLOAD_TYPE_UNSPECIFIED":        0,
-		"MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH": 1,
-		"MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_COMMAND":  2,
-		"MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_RESULT":   3,
+		"MESSAGING_FEDERATION_PAYLOAD_TYPE_UNSPECIFIED":         0,
+		"MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH":  1,
+		"MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_COMMAND":   2,
+		"MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_RESULT":    3,
+		"MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION": 4,
 	}
 )
 
@@ -270,6 +273,522 @@ func (x *FederatedAuthorityCommand) GetSourceHomeStationId() string {
 	return ""
 }
 
+type MessagingFollowerProjection struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	FormatVersion       uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	AuthorityStationId  string                 `protobuf:"bytes,2,opt,name=authority_station_id,json=authorityStationId,proto3" json:"authority_station_id,omitempty"`
+	TargetHomeStationId string                 `protobuf:"bytes,3,opt,name=target_home_station_id,json=targetHomeStationId,proto3" json:"target_home_station_id,omitempty"`
+	ConversationEvent   *ConversationEvent     `protobuf:"bytes,4,opt,name=conversation_event,json=conversationEvent,proto3" json:"conversation_event,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *MessagingFollowerProjection) Reset() {
+	*x = MessagingFollowerProjection{}
+	mi := &file_domain_chat_federation_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MessagingFollowerProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessagingFollowerProjection) ProtoMessage() {}
+
+func (x *MessagingFollowerProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_federation_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessagingFollowerProjection.ProtoReflect.Descriptor instead.
+func (*MessagingFollowerProjection) Descriptor() ([]byte, []int) {
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *MessagingFollowerProjection) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *MessagingFollowerProjection) GetAuthorityStationId() string {
+	if x != nil {
+		return x.AuthorityStationId
+	}
+	return ""
+}
+
+func (x *MessagingFollowerProjection) GetTargetHomeStationId() string {
+	if x != nil {
+		return x.TargetHomeStationId
+	}
+	return ""
+}
+
+func (x *MessagingFollowerProjection) GetConversationEvent() *ConversationEvent {
+	if x != nil {
+		return x.ConversationEvent
+	}
+	return nil
+}
+
+type MessagingEventProjectionGrant struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	EventId             string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	TargetHomeStationId string                 `protobuf:"bytes,2,opt,name=target_home_station_id,json=targetHomeStationId,proto3" json:"target_home_station_id,omitempty"`
+	EntitlementReason   string                 `protobuf:"bytes,3,opt,name=entitlement_reason,json=entitlementReason,proto3" json:"entitlement_reason,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *MessagingEventProjectionGrant) Reset() {
+	*x = MessagingEventProjectionGrant{}
+	mi := &file_domain_chat_federation_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MessagingEventProjectionGrant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessagingEventProjectionGrant) ProtoMessage() {}
+
+func (x *MessagingEventProjectionGrant) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_federation_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessagingEventProjectionGrant.ProtoReflect.Descriptor instead.
+func (*MessagingEventProjectionGrant) Descriptor() ([]byte, []int) {
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *MessagingEventProjectionGrant) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *MessagingEventProjectionGrant) GetTargetHomeStationId() string {
+	if x != nil {
+		return x.TargetHomeStationId
+	}
+	return ""
+}
+
+func (x *MessagingEventProjectionGrant) GetEntitlementReason() string {
+	if x != nil {
+		return x.EntitlementReason
+	}
+	return ""
+}
+
+type GetMessagingFollowerEventsRequest struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	FormatVersion       uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	ConversationId      string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	AuthorityStationId  string                 `protobuf:"bytes,3,opt,name=authority_station_id,json=authorityStationId,proto3" json:"authority_station_id,omitempty"`
+	TargetHomeStationId string                 `protobuf:"bytes,4,opt,name=target_home_station_id,json=targetHomeStationId,proto3" json:"target_home_station_id,omitempty"`
+	AfterSequence       int64                  `protobuf:"varint,5,opt,name=after_sequence,json=afterSequence,proto3" json:"after_sequence,omitempty"`
+	AfterEventHash      []byte                 `protobuf:"bytes,6,opt,name=after_event_hash,json=afterEventHash,proto3" json:"after_event_hash,omitempty"`
+	RequestNonce        []byte                 `protobuf:"bytes,7,opt,name=request_nonce,json=requestNonce,proto3" json:"request_nonce,omitempty"`
+	PageLimit           uint32                 `protobuf:"varint,8,opt,name=page_limit,json=pageLimit,proto3" json:"page_limit,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *GetMessagingFollowerEventsRequest) Reset() {
+	*x = GetMessagingFollowerEventsRequest{}
+	mi := &file_domain_chat_federation_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMessagingFollowerEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMessagingFollowerEventsRequest) ProtoMessage() {}
+
+func (x *GetMessagingFollowerEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_federation_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMessagingFollowerEventsRequest.ProtoReflect.Descriptor instead.
+func (*GetMessagingFollowerEventsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetMessagingFollowerEventsRequest) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *GetMessagingFollowerEventsRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *GetMessagingFollowerEventsRequest) GetAuthorityStationId() string {
+	if x != nil {
+		return x.AuthorityStationId
+	}
+	return ""
+}
+
+func (x *GetMessagingFollowerEventsRequest) GetTargetHomeStationId() string {
+	if x != nil {
+		return x.TargetHomeStationId
+	}
+	return ""
+}
+
+func (x *GetMessagingFollowerEventsRequest) GetAfterSequence() int64 {
+	if x != nil {
+		return x.AfterSequence
+	}
+	return 0
+}
+
+func (x *GetMessagingFollowerEventsRequest) GetAfterEventHash() []byte {
+	if x != nil {
+		return x.AfterEventHash
+	}
+	return nil
+}
+
+func (x *GetMessagingFollowerEventsRequest) GetRequestNonce() []byte {
+	if x != nil {
+		return x.RequestNonce
+	}
+	return nil
+}
+
+func (x *GetMessagingFollowerEventsRequest) GetPageLimit() uint32 {
+	if x != nil {
+		return x.PageLimit
+	}
+	return 0
+}
+
+type MessagingFollowerEventsPage struct {
+	state                 protoimpl.MessageState           `protogen:"open.v1"`
+	FormatVersion         uint32                           `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	AuthorityStationId    string                           `protobuf:"bytes,2,opt,name=authority_station_id,json=authorityStationId,proto3" json:"authority_station_id,omitempty"`
+	TargetHomeStationId   string                           `protobuf:"bytes,3,opt,name=target_home_station_id,json=targetHomeStationId,proto3" json:"target_home_station_id,omitempty"`
+	ConversationId        string                           `protobuf:"bytes,4,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	RequestNonce          []byte                           `protobuf:"bytes,5,opt,name=request_nonce,json=requestNonce,proto3" json:"request_nonce,omitempty"`
+	ConversationEvents    []*ConversationEvent             `protobuf:"bytes,6,rep,name=conversation_events,json=conversationEvents,proto3" json:"conversation_events,omitempty"`
+	EventProjectionGrants []*MessagingEventProjectionGrant `protobuf:"bytes,7,rep,name=event_projection_grants,json=eventProjectionGrants,proto3" json:"event_projection_grants,omitempty"`
+	NextSequence          int64                            `protobuf:"varint,8,opt,name=next_sequence,json=nextSequence,proto3" json:"next_sequence,omitempty"`
+	HasMore               bool                             `protobuf:"varint,9,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	GeneratedAt           *timestamppb.Timestamp           `protobuf:"bytes,10,opt,name=generated_at,json=generatedAt,proto3" json:"generated_at,omitempty"`
+	ExpiresAt             *timestamppb.Timestamp           `protobuf:"bytes,11,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	SigningKeyId          string                           `protobuf:"bytes,12,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	AuthoritySignature    []byte                           `protobuf:"bytes,13,opt,name=authority_signature,json=authoritySignature,proto3" json:"authority_signature,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *MessagingFollowerEventsPage) Reset() {
+	*x = MessagingFollowerEventsPage{}
+	mi := &file_domain_chat_federation_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MessagingFollowerEventsPage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessagingFollowerEventsPage) ProtoMessage() {}
+
+func (x *MessagingFollowerEventsPage) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_federation_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessagingFollowerEventsPage.ProtoReflect.Descriptor instead.
+func (*MessagingFollowerEventsPage) Descriptor() ([]byte, []int) {
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *MessagingFollowerEventsPage) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *MessagingFollowerEventsPage) GetAuthorityStationId() string {
+	if x != nil {
+		return x.AuthorityStationId
+	}
+	return ""
+}
+
+func (x *MessagingFollowerEventsPage) GetTargetHomeStationId() string {
+	if x != nil {
+		return x.TargetHomeStationId
+	}
+	return ""
+}
+
+func (x *MessagingFollowerEventsPage) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *MessagingFollowerEventsPage) GetRequestNonce() []byte {
+	if x != nil {
+		return x.RequestNonce
+	}
+	return nil
+}
+
+func (x *MessagingFollowerEventsPage) GetConversationEvents() []*ConversationEvent {
+	if x != nil {
+		return x.ConversationEvents
+	}
+	return nil
+}
+
+func (x *MessagingFollowerEventsPage) GetEventProjectionGrants() []*MessagingEventProjectionGrant {
+	if x != nil {
+		return x.EventProjectionGrants
+	}
+	return nil
+}
+
+func (x *MessagingFollowerEventsPage) GetNextSequence() int64 {
+	if x != nil {
+		return x.NextSequence
+	}
+	return 0
+}
+
+func (x *MessagingFollowerEventsPage) GetHasMore() bool {
+	if x != nil {
+		return x.HasMore
+	}
+	return false
+}
+
+func (x *MessagingFollowerEventsPage) GetGeneratedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.GeneratedAt
+	}
+	return nil
+}
+
+func (x *MessagingFollowerEventsPage) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *MessagingFollowerEventsPage) GetSigningKeyId() string {
+	if x != nil {
+		return x.SigningKeyId
+	}
+	return ""
+}
+
+func (x *MessagingFollowerEventsPage) GetAuthoritySignature() []byte {
+	if x != nil {
+		return x.AuthoritySignature
+	}
+	return nil
+}
+
+type MessagingFollowerEventsPageSigningInput struct {
+	state                       protoimpl.MessageState `protogen:"open.v1"`
+	FormatVersion               uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	AuthorityStationId          string                 `protobuf:"bytes,2,opt,name=authority_station_id,json=authorityStationId,proto3" json:"authority_station_id,omitempty"`
+	TargetHomeStationId         string                 `protobuf:"bytes,3,opt,name=target_home_station_id,json=targetHomeStationId,proto3" json:"target_home_station_id,omitempty"`
+	ConversationId              string                 `protobuf:"bytes,4,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	RequestNonce                []byte                 `protobuf:"bytes,5,opt,name=request_nonce,json=requestNonce,proto3" json:"request_nonce,omitempty"`
+	AfterSequence               int64                  `protobuf:"varint,6,opt,name=after_sequence,json=afterSequence,proto3" json:"after_sequence,omitempty"`
+	AfterEventHash              []byte                 `protobuf:"bytes,7,opt,name=after_event_hash,json=afterEventHash,proto3" json:"after_event_hash,omitempty"`
+	EventsSha256                []byte                 `protobuf:"bytes,8,opt,name=events_sha256,json=eventsSha256,proto3" json:"events_sha256,omitempty"`
+	EventProjectionGrantsSha256 []byte                 `protobuf:"bytes,9,opt,name=event_projection_grants_sha256,json=eventProjectionGrantsSha256,proto3" json:"event_projection_grants_sha256,omitempty"`
+	NextSequence                int64                  `protobuf:"varint,10,opt,name=next_sequence,json=nextSequence,proto3" json:"next_sequence,omitempty"`
+	HasMore                     bool                   `protobuf:"varint,11,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	GeneratedAt                 *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=generated_at,json=generatedAt,proto3" json:"generated_at,omitempty"`
+	ExpiresAt                   *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	SigningKeyId                string                 `protobuf:"bytes,14,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) Reset() {
+	*x = MessagingFollowerEventsPageSigningInput{}
+	mi := &file_domain_chat_federation_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessagingFollowerEventsPageSigningInput) ProtoMessage() {}
+
+func (x *MessagingFollowerEventsPageSigningInput) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_federation_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessagingFollowerEventsPageSigningInput.ProtoReflect.Descriptor instead.
+func (*MessagingFollowerEventsPageSigningInput) Descriptor() ([]byte, []int) {
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetAuthorityStationId() string {
+	if x != nil {
+		return x.AuthorityStationId
+	}
+	return ""
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetTargetHomeStationId() string {
+	if x != nil {
+		return x.TargetHomeStationId
+	}
+	return ""
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetRequestNonce() []byte {
+	if x != nil {
+		return x.RequestNonce
+	}
+	return nil
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetAfterSequence() int64 {
+	if x != nil {
+		return x.AfterSequence
+	}
+	return 0
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetAfterEventHash() []byte {
+	if x != nil {
+		return x.AfterEventHash
+	}
+	return nil
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetEventsSha256() []byte {
+	if x != nil {
+		return x.EventsSha256
+	}
+	return nil
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetEventProjectionGrantsSha256() []byte {
+	if x != nil {
+		return x.EventProjectionGrantsSha256
+	}
+	return nil
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetNextSequence() int64 {
+	if x != nil {
+		return x.NextSequence
+	}
+	return 0
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetHasMore() bool {
+	if x != nil {
+		return x.HasMore
+	}
+	return false
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetGeneratedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.GeneratedAt
+	}
+	return nil
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *MessagingFollowerEventsPageSigningInput) GetSigningKeyId() string {
+	if x != nil {
+		return x.SigningKeyId
+	}
+	return ""
+}
+
 type FederatedEndpointManifestEntry struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	Endpoint             *CryptoEndpoint        `protobuf:"bytes,1,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
@@ -281,7 +800,7 @@ type FederatedEndpointManifestEntry struct {
 
 func (x *FederatedEndpointManifestEntry) Reset() {
 	*x = FederatedEndpointManifestEntry{}
-	mi := &file_domain_chat_federation_proto_msgTypes[3]
+	mi := &file_domain_chat_federation_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -293,7 +812,7 @@ func (x *FederatedEndpointManifestEntry) String() string {
 func (*FederatedEndpointManifestEntry) ProtoMessage() {}
 
 func (x *FederatedEndpointManifestEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_federation_proto_msgTypes[3]
+	mi := &file_domain_chat_federation_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -306,7 +825,7 @@ func (x *FederatedEndpointManifestEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FederatedEndpointManifestEntry.ProtoReflect.Descriptor instead.
 func (*FederatedEndpointManifestEntry) Descriptor() ([]byte, []int) {
-	return file_domain_chat_federation_proto_rawDescGZIP(), []int{3}
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *FederatedEndpointManifestEntry) GetEndpoint() *CryptoEndpoint {
@@ -349,7 +868,7 @@ type FederatedEndpointManifestSigningInput struct {
 
 func (x *FederatedEndpointManifestSigningInput) Reset() {
 	*x = FederatedEndpointManifestSigningInput{}
-	mi := &file_domain_chat_federation_proto_msgTypes[4]
+	mi := &file_domain_chat_federation_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -361,7 +880,7 @@ func (x *FederatedEndpointManifestSigningInput) String() string {
 func (*FederatedEndpointManifestSigningInput) ProtoMessage() {}
 
 func (x *FederatedEndpointManifestSigningInput) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_federation_proto_msgTypes[4]
+	mi := &file_domain_chat_federation_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -374,7 +893,7 @@ func (x *FederatedEndpointManifestSigningInput) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use FederatedEndpointManifestSigningInput.ProtoReflect.Descriptor instead.
 func (*FederatedEndpointManifestSigningInput) Descriptor() ([]byte, []int) {
-	return file_domain_chat_federation_proto_rawDescGZIP(), []int{4}
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *FederatedEndpointManifestSigningInput) GetFormatVersion() uint32 {
@@ -474,7 +993,7 @@ type FederatedEndpointManifest struct {
 
 func (x *FederatedEndpointManifest) Reset() {
 	*x = FederatedEndpointManifest{}
-	mi := &file_domain_chat_federation_proto_msgTypes[5]
+	mi := &file_domain_chat_federation_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -486,7 +1005,7 @@ func (x *FederatedEndpointManifest) String() string {
 func (*FederatedEndpointManifest) ProtoMessage() {}
 
 func (x *FederatedEndpointManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_federation_proto_msgTypes[5]
+	mi := &file_domain_chat_federation_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -499,7 +1018,7 @@ func (x *FederatedEndpointManifest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FederatedEndpointManifest.ProtoReflect.Descriptor instead.
 func (*FederatedEndpointManifest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_federation_proto_rawDescGZIP(), []int{5}
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *FederatedEndpointManifest) GetFormatVersion() uint32 {
@@ -595,7 +1114,7 @@ type GetFederatedEndpointManifestRequest struct {
 
 func (x *GetFederatedEndpointManifestRequest) Reset() {
 	*x = GetFederatedEndpointManifestRequest{}
-	mi := &file_domain_chat_federation_proto_msgTypes[6]
+	mi := &file_domain_chat_federation_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -607,7 +1126,7 @@ func (x *GetFederatedEndpointManifestRequest) String() string {
 func (*GetFederatedEndpointManifestRequest) ProtoMessage() {}
 
 func (x *GetFederatedEndpointManifestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_federation_proto_msgTypes[6]
+	mi := &file_domain_chat_federation_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -620,7 +1139,7 @@ func (x *GetFederatedEndpointManifestRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use GetFederatedEndpointManifestRequest.ProtoReflect.Descriptor instead.
 func (*GetFederatedEndpointManifestRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_federation_proto_rawDescGZIP(), []int{6}
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetFederatedEndpointManifestRequest) GetActorPtid() string {
@@ -639,7 +1158,7 @@ type GetFederatedEndpointManifestResponse struct {
 
 func (x *GetFederatedEndpointManifestResponse) Reset() {
 	*x = GetFederatedEndpointManifestResponse{}
-	mi := &file_domain_chat_federation_proto_msgTypes[7]
+	mi := &file_domain_chat_federation_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -651,7 +1170,7 @@ func (x *GetFederatedEndpointManifestResponse) String() string {
 func (*GetFederatedEndpointManifestResponse) ProtoMessage() {}
 
 func (x *GetFederatedEndpointManifestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_federation_proto_msgTypes[7]
+	mi := &file_domain_chat_federation_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -664,7 +1183,7 @@ func (x *GetFederatedEndpointManifestResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use GetFederatedEndpointManifestResponse.ProtoReflect.Descriptor instead.
 func (*GetFederatedEndpointManifestResponse) Descriptor() ([]byte, []int) {
-	return file_domain_chat_federation_proto_rawDescGZIP(), []int{7}
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetFederatedEndpointManifestResponse) GetManifest() *FederatedEndpointManifest {
@@ -690,7 +1209,7 @@ type ClaimFederatedMlsKeyPackageRequest struct {
 
 func (x *ClaimFederatedMlsKeyPackageRequest) Reset() {
 	*x = ClaimFederatedMlsKeyPackageRequest{}
-	mi := &file_domain_chat_federation_proto_msgTypes[8]
+	mi := &file_domain_chat_federation_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -702,7 +1221,7 @@ func (x *ClaimFederatedMlsKeyPackageRequest) String() string {
 func (*ClaimFederatedMlsKeyPackageRequest) ProtoMessage() {}
 
 func (x *ClaimFederatedMlsKeyPackageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_federation_proto_msgTypes[8]
+	mi := &file_domain_chat_federation_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -715,7 +1234,7 @@ func (x *ClaimFederatedMlsKeyPackageRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ClaimFederatedMlsKeyPackageRequest.ProtoReflect.Descriptor instead.
 func (*ClaimFederatedMlsKeyPackageRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_federation_proto_rawDescGZIP(), []int{8}
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ClaimFederatedMlsKeyPackageRequest) GetAuthorityPlanId() string {
@@ -760,7 +1279,7 @@ type ClaimFederatedMlsKeyPackageResponse struct {
 
 func (x *ClaimFederatedMlsKeyPackageResponse) Reset() {
 	*x = ClaimFederatedMlsKeyPackageResponse{}
-	mi := &file_domain_chat_federation_proto_msgTypes[9]
+	mi := &file_domain_chat_federation_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -772,7 +1291,7 @@ func (x *ClaimFederatedMlsKeyPackageResponse) String() string {
 func (*ClaimFederatedMlsKeyPackageResponse) ProtoMessage() {}
 
 func (x *ClaimFederatedMlsKeyPackageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_federation_proto_msgTypes[9]
+	mi := &file_domain_chat_federation_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -785,7 +1304,7 @@ func (x *ClaimFederatedMlsKeyPackageResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ClaimFederatedMlsKeyPackageResponse.ProtoReflect.Descriptor instead.
 func (*ClaimFederatedMlsKeyPackageResponse) Descriptor() ([]byte, []int) {
-	return file_domain_chat_federation_proto_rawDescGZIP(), []int{9}
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ClaimFederatedMlsKeyPackageResponse) GetTarget() *CryptoEndpoint {
@@ -853,7 +1372,7 @@ type MessagingFederationFrameSigningInput struct {
 
 func (x *MessagingFederationFrameSigningInput) Reset() {
 	*x = MessagingFederationFrameSigningInput{}
-	mi := &file_domain_chat_federation_proto_msgTypes[10]
+	mi := &file_domain_chat_federation_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -865,7 +1384,7 @@ func (x *MessagingFederationFrameSigningInput) String() string {
 func (*MessagingFederationFrameSigningInput) ProtoMessage() {}
 
 func (x *MessagingFederationFrameSigningInput) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_federation_proto_msgTypes[10]
+	mi := &file_domain_chat_federation_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -878,7 +1397,7 @@ func (x *MessagingFederationFrameSigningInput) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use MessagingFederationFrameSigningInput.ProtoReflect.Descriptor instead.
 func (*MessagingFederationFrameSigningInput) Descriptor() ([]byte, []int) {
-	return file_domain_chat_federation_proto_rawDescGZIP(), []int{10}
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *MessagingFederationFrameSigningInput) GetFormatVersion() uint32 {
@@ -1002,7 +1521,7 @@ type MessagingFederationFrame struct {
 
 func (x *MessagingFederationFrame) Reset() {
 	*x = MessagingFederationFrame{}
-	mi := &file_domain_chat_federation_proto_msgTypes[11]
+	mi := &file_domain_chat_federation_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1014,7 +1533,7 @@ func (x *MessagingFederationFrame) String() string {
 func (*MessagingFederationFrame) ProtoMessage() {}
 
 func (x *MessagingFederationFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_federation_proto_msgTypes[11]
+	mi := &file_domain_chat_federation_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1027,7 +1546,7 @@ func (x *MessagingFederationFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessagingFederationFrame.ProtoReflect.Descriptor instead.
 func (*MessagingFederationFrame) Descriptor() ([]byte, []int) {
-	return file_domain_chat_federation_proto_rawDescGZIP(), []int{11}
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *MessagingFederationFrame) GetFormatVersion() uint32 {
@@ -1144,7 +1663,7 @@ type DeliverMessagingFederationFrameRequest struct {
 
 func (x *DeliverMessagingFederationFrameRequest) Reset() {
 	*x = DeliverMessagingFederationFrameRequest{}
-	mi := &file_domain_chat_federation_proto_msgTypes[12]
+	mi := &file_domain_chat_federation_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1156,7 +1675,7 @@ func (x *DeliverMessagingFederationFrameRequest) String() string {
 func (*DeliverMessagingFederationFrameRequest) ProtoMessage() {}
 
 func (x *DeliverMessagingFederationFrameRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_federation_proto_msgTypes[12]
+	mi := &file_domain_chat_federation_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1169,7 +1688,7 @@ func (x *DeliverMessagingFederationFrameRequest) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use DeliverMessagingFederationFrameRequest.ProtoReflect.Descriptor instead.
 func (*DeliverMessagingFederationFrameRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_federation_proto_rawDescGZIP(), []int{12}
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *DeliverMessagingFederationFrameRequest) GetFrame() *MessagingFederationFrame {
@@ -1189,7 +1708,7 @@ type DeliverMessagingFederationFrameResponse struct {
 
 func (x *DeliverMessagingFederationFrameResponse) Reset() {
 	*x = DeliverMessagingFederationFrameResponse{}
-	mi := &file_domain_chat_federation_proto_msgTypes[13]
+	mi := &file_domain_chat_federation_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1201,7 +1720,7 @@ func (x *DeliverMessagingFederationFrameResponse) String() string {
 func (*DeliverMessagingFederationFrameResponse) ProtoMessage() {}
 
 func (x *DeliverMessagingFederationFrameResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_federation_proto_msgTypes[13]
+	mi := &file_domain_chat_federation_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1214,7 +1733,7 @@ func (x *DeliverMessagingFederationFrameResponse) ProtoReflect() protoreflect.Me
 
 // Deprecated: Use DeliverMessagingFederationFrameResponse.ProtoReflect.Descriptor instead.
 func (*DeliverMessagingFederationFrameResponse) Descriptor() ([]byte, []int) {
-	return file_domain_chat_federation_proto_rawDescGZIP(), []int{13}
+	return file_domain_chat_federation_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DeliverMessagingFederationFrameResponse) GetAccepted() bool {
@@ -1235,7 +1754,7 @@ var File_domain_chat_federation_proto protoreflect.FileDescriptor
 
 const file_domain_chat_federation_proto_rawDesc = "" +
 	"\n" +
-	"\x1cdomain/chat/federation.proto\x12\x19peers_touch.model.chat.v1\x1a\x19domain/chat/command.proto\x1a\x1adomain/chat/endpoint.proto\x1a\x17domain/chat/queue.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf5\x02\n" +
+	"\x1cdomain/chat/federation.proto\x12\x19peers_touch.model.chat.v1\x1a\x19domain/chat/command.proto\x1a\x1adomain/chat/endpoint.proto\x1a\x17domain/chat/event.proto\x1a\x17domain/chat/queue.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf5\x02\n" +
 	"\x19FederatedDeviceQueueWrite\x12G\n" +
 	"\trecipient\x18\x01 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\trecipient\x12\x19\n" +
 	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12'\n" +
@@ -1249,7 +1768,59 @@ const file_domain_chat_federation_proto_rawDesc = "" +
 	"\x12endpoint_manifests\x18\x02 \x03(\v24.peers_touch.model.chat.v1.FederatedEndpointManifestR\x11endpointManifests\"\x92\x01\n" +
 	"\x19FederatedAuthorityCommand\x12@\n" +
 	"\acommand\x18\x01 \x01(\v2&.peers_touch.model.chat.v1.ChatCommandR\acommand\x123\n" +
-	"\x16source_home_station_id\x18\x02 \x01(\tR\x13sourceHomeStationId\"\xc3\x01\n" +
+	"\x16source_home_station_id\x18\x02 \x01(\tR\x13sourceHomeStationId\"\x88\x02\n" +
+	"\x1bMessagingFollowerProjection\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x120\n" +
+	"\x14authority_station_id\x18\x02 \x01(\tR\x12authorityStationId\x123\n" +
+	"\x16target_home_station_id\x18\x03 \x01(\tR\x13targetHomeStationId\x12[\n" +
+	"\x12conversation_event\x18\x04 \x01(\v2,.peers_touch.model.chat.v1.ConversationEventR\x11conversationEvent\"\x9e\x01\n" +
+	"\x1dMessagingEventProjectionGrant\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x123\n" +
+	"\x16target_home_station_id\x18\x02 \x01(\tR\x13targetHomeStationId\x12-\n" +
+	"\x12entitlement_reason\x18\x03 \x01(\tR\x11entitlementReason\"\xef\x02\n" +
+	"!GetMessagingFollowerEventsRequest\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12'\n" +
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x120\n" +
+	"\x14authority_station_id\x18\x03 \x01(\tR\x12authorityStationId\x123\n" +
+	"\x16target_home_station_id\x18\x04 \x01(\tR\x13targetHomeStationId\x12%\n" +
+	"\x0eafter_sequence\x18\x05 \x01(\x03R\rafterSequence\x12(\n" +
+	"\x10after_event_hash\x18\x06 \x01(\fR\x0eafterEventHash\x12#\n" +
+	"\rrequest_nonce\x18\a \x01(\fR\frequestNonce\x12\x1d\n" +
+	"\n" +
+	"page_limit\x18\b \x01(\rR\tpageLimit\"\xdb\x05\n" +
+	"\x1bMessagingFollowerEventsPage\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x120\n" +
+	"\x14authority_station_id\x18\x02 \x01(\tR\x12authorityStationId\x123\n" +
+	"\x16target_home_station_id\x18\x03 \x01(\tR\x13targetHomeStationId\x12'\n" +
+	"\x0fconversation_id\x18\x04 \x01(\tR\x0econversationId\x12#\n" +
+	"\rrequest_nonce\x18\x05 \x01(\fR\frequestNonce\x12]\n" +
+	"\x13conversation_events\x18\x06 \x03(\v2,.peers_touch.model.chat.v1.ConversationEventR\x12conversationEvents\x12p\n" +
+	"\x17event_projection_grants\x18\a \x03(\v28.peers_touch.model.chat.v1.MessagingEventProjectionGrantR\x15eventProjectionGrants\x12#\n" +
+	"\rnext_sequence\x18\b \x01(\x03R\fnextSequence\x12\x19\n" +
+	"\bhas_more\x18\t \x01(\bR\ahasMore\x12=\n" +
+	"\fgenerated_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\vgeneratedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12$\n" +
+	"\x0esigning_key_id\x18\f \x01(\tR\fsigningKeyId\x12/\n" +
+	"\x13authority_signature\x18\r \x01(\fR\x12authoritySignature\"\xa0\x05\n" +
+	"'MessagingFollowerEventsPageSigningInput\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x120\n" +
+	"\x14authority_station_id\x18\x02 \x01(\tR\x12authorityStationId\x123\n" +
+	"\x16target_home_station_id\x18\x03 \x01(\tR\x13targetHomeStationId\x12'\n" +
+	"\x0fconversation_id\x18\x04 \x01(\tR\x0econversationId\x12#\n" +
+	"\rrequest_nonce\x18\x05 \x01(\fR\frequestNonce\x12%\n" +
+	"\x0eafter_sequence\x18\x06 \x01(\x03R\rafterSequence\x12(\n" +
+	"\x10after_event_hash\x18\a \x01(\fR\x0eafterEventHash\x12#\n" +
+	"\revents_sha256\x18\b \x01(\fR\feventsSha256\x12C\n" +
+	"\x1eevent_projection_grants_sha256\x18\t \x01(\fR\x1beventProjectionGrantsSha256\x12#\n" +
+	"\rnext_sequence\x18\n" +
+	" \x01(\x03R\fnextSequence\x12\x19\n" +
+	"\bhas_more\x18\v \x01(\bR\ahasMore\x12=\n" +
+	"\fgenerated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\vgeneratedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12$\n" +
+	"\x0esigning_key_id\x18\x0e \x01(\tR\fsigningKeyId\"\xc3\x01\n" +
 	"\x1eFederatedEndpointManifestEntry\x12E\n" +
 	"\bendpoint\x18\x01 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\bendpoint\x12$\n" +
 	"\x0esigning_key_id\x18\x02 \x01(\tR\fsigningKeyId\x124\n" +
@@ -1345,12 +1916,13 @@ const file_domain_chat_federation_proto_rawDesc = "" +
 	"\x05frame\x18\x01 \x01(\v23.peers_touch.model.chat.v1.MessagingFederationFrameR\x05frame\"c\n" +
 	"'DeliverMessagingFederationFrameResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x1c\n" +
-	"\tduplicate\x18\x02 \x01(\bR\tduplicate*\xfe\x01\n" +
+	"\tduplicate\x18\x02 \x01(\bR\tduplicate*\xb9\x02\n" +
 	"\x1eMessagingFederationPayloadType\x121\n" +
 	"-MESSAGING_FEDERATION_PAYLOAD_TYPE_UNSPECIFIED\x10\x00\x128\n" +
 	"4MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH\x10\x01\x127\n" +
 	"3MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_COMMAND\x10\x02\x126\n" +
-	"2MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_RESULT\x10\x03BGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
+	"2MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_RESULT\x10\x03\x129\n" +
+	"5MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION\x10\x04BGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
 
 var (
 	file_domain_chat_federation_proto_rawDescOnce sync.Once
@@ -1365,57 +1937,70 @@ func file_domain_chat_federation_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_chat_federation_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_chat_federation_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_domain_chat_federation_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_domain_chat_federation_proto_goTypes = []any{
 	(MessagingFederationPayloadType)(0),             // 0: peers_touch.model.chat.v1.MessagingFederationPayloadType
 	(*FederatedDeviceQueueWrite)(nil),               // 1: peers_touch.model.chat.v1.FederatedDeviceQueueWrite
 	(*FederatedDeviceQueueBatch)(nil),               // 2: peers_touch.model.chat.v1.FederatedDeviceQueueBatch
 	(*FederatedAuthorityCommand)(nil),               // 3: peers_touch.model.chat.v1.FederatedAuthorityCommand
-	(*FederatedEndpointManifestEntry)(nil),          // 4: peers_touch.model.chat.v1.FederatedEndpointManifestEntry
-	(*FederatedEndpointManifestSigningInput)(nil),   // 5: peers_touch.model.chat.v1.FederatedEndpointManifestSigningInput
-	(*FederatedEndpointManifest)(nil),               // 6: peers_touch.model.chat.v1.FederatedEndpointManifest
-	(*GetFederatedEndpointManifestRequest)(nil),     // 7: peers_touch.model.chat.v1.GetFederatedEndpointManifestRequest
-	(*GetFederatedEndpointManifestResponse)(nil),    // 8: peers_touch.model.chat.v1.GetFederatedEndpointManifestResponse
-	(*ClaimFederatedMlsKeyPackageRequest)(nil),      // 9: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageRequest
-	(*ClaimFederatedMlsKeyPackageResponse)(nil),     // 10: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageResponse
-	(*MessagingFederationFrameSigningInput)(nil),    // 11: peers_touch.model.chat.v1.MessagingFederationFrameSigningInput
-	(*MessagingFederationFrame)(nil),                // 12: peers_touch.model.chat.v1.MessagingFederationFrame
-	(*DeliverMessagingFederationFrameRequest)(nil),  // 13: peers_touch.model.chat.v1.DeliverMessagingFederationFrameRequest
-	(*DeliverMessagingFederationFrameResponse)(nil), // 14: peers_touch.model.chat.v1.DeliverMessagingFederationFrameResponse
-	(*CryptoEndpoint)(nil),                          // 15: peers_touch.model.chat.v1.CryptoEndpoint
-	(DeviceQueuePayloadType)(0),                     // 16: peers_touch.model.chat.v1.DeviceQueuePayloadType
-	(*ChatCommand)(nil),                             // 17: peers_touch.model.chat.v1.ChatCommand
-	(*timestamppb.Timestamp)(nil),                   // 18: google.protobuf.Timestamp
+	(*MessagingFollowerProjection)(nil),             // 4: peers_touch.model.chat.v1.MessagingFollowerProjection
+	(*MessagingEventProjectionGrant)(nil),           // 5: peers_touch.model.chat.v1.MessagingEventProjectionGrant
+	(*GetMessagingFollowerEventsRequest)(nil),       // 6: peers_touch.model.chat.v1.GetMessagingFollowerEventsRequest
+	(*MessagingFollowerEventsPage)(nil),             // 7: peers_touch.model.chat.v1.MessagingFollowerEventsPage
+	(*MessagingFollowerEventsPageSigningInput)(nil), // 8: peers_touch.model.chat.v1.MessagingFollowerEventsPageSigningInput
+	(*FederatedEndpointManifestEntry)(nil),          // 9: peers_touch.model.chat.v1.FederatedEndpointManifestEntry
+	(*FederatedEndpointManifestSigningInput)(nil),   // 10: peers_touch.model.chat.v1.FederatedEndpointManifestSigningInput
+	(*FederatedEndpointManifest)(nil),               // 11: peers_touch.model.chat.v1.FederatedEndpointManifest
+	(*GetFederatedEndpointManifestRequest)(nil),     // 12: peers_touch.model.chat.v1.GetFederatedEndpointManifestRequest
+	(*GetFederatedEndpointManifestResponse)(nil),    // 13: peers_touch.model.chat.v1.GetFederatedEndpointManifestResponse
+	(*ClaimFederatedMlsKeyPackageRequest)(nil),      // 14: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageRequest
+	(*ClaimFederatedMlsKeyPackageResponse)(nil),     // 15: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageResponse
+	(*MessagingFederationFrameSigningInput)(nil),    // 16: peers_touch.model.chat.v1.MessagingFederationFrameSigningInput
+	(*MessagingFederationFrame)(nil),                // 17: peers_touch.model.chat.v1.MessagingFederationFrame
+	(*DeliverMessagingFederationFrameRequest)(nil),  // 18: peers_touch.model.chat.v1.DeliverMessagingFederationFrameRequest
+	(*DeliverMessagingFederationFrameResponse)(nil), // 19: peers_touch.model.chat.v1.DeliverMessagingFederationFrameResponse
+	(*CryptoEndpoint)(nil),                          // 20: peers_touch.model.chat.v1.CryptoEndpoint
+	(DeviceQueuePayloadType)(0),                     // 21: peers_touch.model.chat.v1.DeviceQueuePayloadType
+	(*ChatCommand)(nil),                             // 22: peers_touch.model.chat.v1.ChatCommand
+	(*ConversationEvent)(nil),                       // 23: peers_touch.model.chat.v1.ConversationEvent
+	(*timestamppb.Timestamp)(nil),                   // 24: google.protobuf.Timestamp
 }
 var file_domain_chat_federation_proto_depIdxs = []int32{
-	15, // 0: peers_touch.model.chat.v1.FederatedDeviceQueueWrite.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	16, // 1: peers_touch.model.chat.v1.FederatedDeviceQueueWrite.payload_type:type_name -> peers_touch.model.chat.v1.DeviceQueuePayloadType
+	20, // 0: peers_touch.model.chat.v1.FederatedDeviceQueueWrite.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	21, // 1: peers_touch.model.chat.v1.FederatedDeviceQueueWrite.payload_type:type_name -> peers_touch.model.chat.v1.DeviceQueuePayloadType
 	1,  // 2: peers_touch.model.chat.v1.FederatedDeviceQueueBatch.writes:type_name -> peers_touch.model.chat.v1.FederatedDeviceQueueWrite
-	6,  // 3: peers_touch.model.chat.v1.FederatedDeviceQueueBatch.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
-	17, // 4: peers_touch.model.chat.v1.FederatedAuthorityCommand.command:type_name -> peers_touch.model.chat.v1.ChatCommand
-	15, // 5: peers_touch.model.chat.v1.FederatedEndpointManifestEntry.endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	4,  // 6: peers_touch.model.chat.v1.FederatedEndpointManifestSigningInput.active_endpoints:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifestEntry
-	18, // 7: peers_touch.model.chat.v1.FederatedEndpointManifestSigningInput.issued_at:type_name -> google.protobuf.Timestamp
-	18, // 8: peers_touch.model.chat.v1.FederatedEndpointManifestSigningInput.expires_at:type_name -> google.protobuf.Timestamp
-	4,  // 9: peers_touch.model.chat.v1.FederatedEndpointManifest.active_endpoints:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifestEntry
-	18, // 10: peers_touch.model.chat.v1.FederatedEndpointManifest.issued_at:type_name -> google.protobuf.Timestamp
-	18, // 11: peers_touch.model.chat.v1.FederatedEndpointManifest.expires_at:type_name -> google.protobuf.Timestamp
-	6,  // 12: peers_touch.model.chat.v1.GetFederatedEndpointManifestResponse.manifest:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
-	15, // 13: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageRequest.target:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	18, // 14: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageRequest.plan_expires_at:type_name -> google.protobuf.Timestamp
-	15, // 15: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageResponse.target:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	0,  // 16: peers_touch.model.chat.v1.MessagingFederationFrameSigningInput.payload_type:type_name -> peers_touch.model.chat.v1.MessagingFederationPayloadType
-	18, // 17: peers_touch.model.chat.v1.MessagingFederationFrameSigningInput.issued_at:type_name -> google.protobuf.Timestamp
-	18, // 18: peers_touch.model.chat.v1.MessagingFederationFrameSigningInput.expires_at:type_name -> google.protobuf.Timestamp
-	0,  // 19: peers_touch.model.chat.v1.MessagingFederationFrame.payload_type:type_name -> peers_touch.model.chat.v1.MessagingFederationPayloadType
-	18, // 20: peers_touch.model.chat.v1.MessagingFederationFrame.issued_at:type_name -> google.protobuf.Timestamp
-	18, // 21: peers_touch.model.chat.v1.MessagingFederationFrame.expires_at:type_name -> google.protobuf.Timestamp
-	12, // 22: peers_touch.model.chat.v1.DeliverMessagingFederationFrameRequest.frame:type_name -> peers_touch.model.chat.v1.MessagingFederationFrame
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	11, // 3: peers_touch.model.chat.v1.FederatedDeviceQueueBatch.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
+	22, // 4: peers_touch.model.chat.v1.FederatedAuthorityCommand.command:type_name -> peers_touch.model.chat.v1.ChatCommand
+	23, // 5: peers_touch.model.chat.v1.MessagingFollowerProjection.conversation_event:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	23, // 6: peers_touch.model.chat.v1.MessagingFollowerEventsPage.conversation_events:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	5,  // 7: peers_touch.model.chat.v1.MessagingFollowerEventsPage.event_projection_grants:type_name -> peers_touch.model.chat.v1.MessagingEventProjectionGrant
+	24, // 8: peers_touch.model.chat.v1.MessagingFollowerEventsPage.generated_at:type_name -> google.protobuf.Timestamp
+	24, // 9: peers_touch.model.chat.v1.MessagingFollowerEventsPage.expires_at:type_name -> google.protobuf.Timestamp
+	24, // 10: peers_touch.model.chat.v1.MessagingFollowerEventsPageSigningInput.generated_at:type_name -> google.protobuf.Timestamp
+	24, // 11: peers_touch.model.chat.v1.MessagingFollowerEventsPageSigningInput.expires_at:type_name -> google.protobuf.Timestamp
+	20, // 12: peers_touch.model.chat.v1.FederatedEndpointManifestEntry.endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	9,  // 13: peers_touch.model.chat.v1.FederatedEndpointManifestSigningInput.active_endpoints:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifestEntry
+	24, // 14: peers_touch.model.chat.v1.FederatedEndpointManifestSigningInput.issued_at:type_name -> google.protobuf.Timestamp
+	24, // 15: peers_touch.model.chat.v1.FederatedEndpointManifestSigningInput.expires_at:type_name -> google.protobuf.Timestamp
+	9,  // 16: peers_touch.model.chat.v1.FederatedEndpointManifest.active_endpoints:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifestEntry
+	24, // 17: peers_touch.model.chat.v1.FederatedEndpointManifest.issued_at:type_name -> google.protobuf.Timestamp
+	24, // 18: peers_touch.model.chat.v1.FederatedEndpointManifest.expires_at:type_name -> google.protobuf.Timestamp
+	11, // 19: peers_touch.model.chat.v1.GetFederatedEndpointManifestResponse.manifest:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
+	20, // 20: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageRequest.target:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	24, // 21: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageRequest.plan_expires_at:type_name -> google.protobuf.Timestamp
+	20, // 22: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageResponse.target:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	0,  // 23: peers_touch.model.chat.v1.MessagingFederationFrameSigningInput.payload_type:type_name -> peers_touch.model.chat.v1.MessagingFederationPayloadType
+	24, // 24: peers_touch.model.chat.v1.MessagingFederationFrameSigningInput.issued_at:type_name -> google.protobuf.Timestamp
+	24, // 25: peers_touch.model.chat.v1.MessagingFederationFrameSigningInput.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 26: peers_touch.model.chat.v1.MessagingFederationFrame.payload_type:type_name -> peers_touch.model.chat.v1.MessagingFederationPayloadType
+	24, // 27: peers_touch.model.chat.v1.MessagingFederationFrame.issued_at:type_name -> google.protobuf.Timestamp
+	24, // 28: peers_touch.model.chat.v1.MessagingFederationFrame.expires_at:type_name -> google.protobuf.Timestamp
+	17, // 29: peers_touch.model.chat.v1.DeliverMessagingFederationFrameRequest.frame:type_name -> peers_touch.model.chat.v1.MessagingFederationFrame
+	30, // [30:30] is the sub-list for method output_type
+	30, // [30:30] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_federation_proto_init() }
@@ -1425,6 +2010,7 @@ func file_domain_chat_federation_proto_init() {
 	}
 	file_domain_chat_command_proto_init()
 	file_domain_chat_endpoint_proto_init()
+	file_domain_chat_event_proto_init()
 	file_domain_chat_queue_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1432,7 +2018,7 @@ func file_domain_chat_federation_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_federation_proto_rawDesc), len(file_domain_chat_federation_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   14,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

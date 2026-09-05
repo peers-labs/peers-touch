@@ -184,6 +184,15 @@ pub struct ConversationMessageProjection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreadCountProjection {
+    pub root_message_id: String,
+    pub reply_count: i64,
+    pub latest_reply_id: String,
+    pub latest_reply_at_unix_ms: i64,
+    pub unread_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationMemberProjection {
     pub ptid: String,
     pub role: i32,
@@ -2263,6 +2272,98 @@ impl MessagingStore {
             }
         }
         Ok(rows)
+    }
+
+    pub fn thread_count_projections(
+        &self,
+        conversation_id: &str,
+        root_message_ids: &[String],
+        actor_ptid: &str,
+    ) -> Result<Vec<ThreadCountProjection>, String> {
+        if conversation_id.trim().is_empty() || actor_ptid.trim().is_empty() {
+            return Err("messaging thread count scope is required".to_string());
+        }
+        let connection = self.connection()?;
+        let read_cursor = connection
+            .query_row(
+                "SELECT last_read_sequence FROM read_cursors
+                 WHERE conversation_id = ?1 AND actor_ptid = ?2",
+                params![conversation_id, actor_ptid],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .unwrap_or(0);
+        let mut statement = connection
+            .prepare(
+                "WITH thread_replies AS (
+                    SELECT message_id, sender_ptid, event_sequence,
+                           committed_at_unix_ms, 0 AS pending_rank
+                    FROM messaging_message_projections
+                    WHERE conversation_id = ?1
+                      AND thread_root_message_id = ?2
+                    UNION ALL
+                    SELECT pending.message_id, pending.sender_ptid, NULL,
+                           pending.created_at_unix_ms, 1
+                    FROM messaging_pending_messages pending
+                    WHERE pending.conversation_id = ?1
+                      AND pending.thread_root_message_id = ?2
+                      AND NOT EXISTS (
+                          SELECT 1 FROM messaging_message_projections committed
+                          WHERE committed.conversation_id = pending.conversation_id
+                            AND committed.message_id = pending.message_id
+                      )
+                 )
+                 SELECT message_id, sender_ptid, event_sequence,
+                        committed_at_unix_ms
+                 FROM thread_replies
+                 ORDER BY pending_rank ASC,
+                          event_sequence ASC,
+                          committed_at_unix_ms ASC,
+                          message_id ASC",
+            )
+            .map_err(|error| error.to_string())?;
+        let mut seen = HashSet::new();
+        let mut counts = Vec::with_capacity(root_message_ids.len());
+        for root_message_id in root_message_ids {
+            let root_message_id = root_message_id.trim();
+            if root_message_id.is_empty() || !seen.insert(root_message_id.to_string()) {
+                continue;
+            }
+            let replies = statement
+                .query_map(params![conversation_id, root_message_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, i64>(3)?,
+                    ))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            let unread_count = replies
+                .iter()
+                .filter(|(_, sender_ptid, event_sequence, _)| {
+                    sender_ptid != actor_ptid
+                        && event_sequence
+                            .map(|sequence| sequence > read_cursor)
+                            .unwrap_or(false)
+                })
+                .count() as i64;
+            let (latest_reply_id, latest_reply_at_unix_ms) = replies
+                .last()
+                .map(|(message_id, _, _, timestamp)| (message_id.clone(), *timestamp))
+                .unwrap_or_default();
+            counts.push(ThreadCountProjection {
+                root_message_id: root_message_id.to_string(),
+                reply_count: replies.len() as i64,
+                latest_reply_id,
+                latest_reply_at_unix_ms,
+                unread_count,
+            });
+        }
+        Ok(counts)
     }
 
     pub fn search_message_projections(
@@ -8447,6 +8548,40 @@ mod tests {
                 .map(|message| message.event_sequence)
                 .collect::<Vec<_>>(),
             vec![Some(10), Some(11), Some(13), None, None]
+        );
+
+        store
+            .update_read_cursor("conversation-1", "ptid:bob", 11, 1_000)
+            .unwrap();
+        let counts = store
+            .thread_count_projections(
+                "conversation-1",
+                &[
+                    "root".to_string(),
+                    "missing-root".to_string(),
+                    "root".to_string(),
+                ],
+                "ptid:bob",
+            )
+            .unwrap();
+        assert_eq!(
+            counts,
+            vec![
+                ThreadCountProjection {
+                    root_message_id: "root".to_string(),
+                    reply_count: 4,
+                    latest_reply_id: "pending-z".to_string(),
+                    latest_reply_at_unix_ms: 50,
+                    unread_count: 1,
+                },
+                ThreadCountProjection {
+                    root_message_id: "missing-root".to_string(),
+                    reply_count: 0,
+                    latest_reply_id: String::new(),
+                    latest_reply_at_unix_ms: 0,
+                    unread_count: 0,
+                },
+            ]
         );
     }
 
