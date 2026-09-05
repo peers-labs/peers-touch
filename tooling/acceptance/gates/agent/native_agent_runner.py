@@ -22,7 +22,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 import urllib.request
-from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
@@ -41,6 +40,7 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.core.harness import call_async_harness
 from tooling.acceptance.core.provisioner import load_env_file
+from tooling.acceptance.gates.agent.tcp_fault_proxy import TcpFaultProxy
 
 
 GATE_BY_JOURNEY = {
@@ -91,142 +91,6 @@ def wait_until(
 def port_open(port: int) -> bool:
     with socket.socket() as probe:
         return probe.connect_ex(("127.0.0.1", port)) == 0
-
-
-class TcpFaultProxy:
-    """Transparent TCP proxy whose active connections can be cut deterministically."""
-
-    def __init__(self, upstream_host: str, upstream_port: int) -> None:
-        self.upstream_host = upstream_host
-        self.upstream_port = upstream_port
-        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.listener.bind(("127.0.0.1", 0))
-        self.listener.listen()
-        self.listener.settimeout(0.2)
-        self.port = int(self.listener.getsockname()[1])
-        self._enabled = threading.Event()
-        self._enabled.set()
-        self._stopped = threading.Event()
-        self._connections: set[socket.socket] = set()
-        self._lock = threading.Lock()
-        self._thread = threading.Thread(
-            target=self._accept_loop,
-            name="agent-stream-fault-proxy",
-            daemon=True,
-        )
-
-    @classmethod
-    def from_url(cls, station_url: str) -> TcpFaultProxy:
-        parsed = urlparse(station_url)
-        require(parsed.scheme == "http", "R6 fault proxy requires an http Station URL")
-        require(bool(parsed.hostname), "Station URL is missing a host")
-        return cls(parsed.hostname or "", parsed.port or 80)
-
-    @property
-    def url(self) -> str:
-        return f"http://127.0.0.1:{self.port}"
-
-    @property
-    def is_alive(self) -> bool:
-        return self._thread.is_alive() and not self._stopped.is_set()
-
-    def start(self) -> None:
-        self._thread.start()
-
-    def cut(self) -> None:
-        self._enabled.clear()
-        self._close_active_connections()
-
-    def restore(self) -> None:
-        self._enabled.set()
-
-    def close(self) -> None:
-        self._stopped.set()
-        self._enabled.set()
-        try:
-            self.listener.close()
-        except OSError:
-            pass
-        self._close_active_connections()
-        self._thread.join(timeout=3)
-
-    def _track(self, connection: socket.socket) -> None:
-        with self._lock:
-            self._connections.add(connection)
-
-    def _untrack(self, connection: socket.socket) -> None:
-        with self._lock:
-            self._connections.discard(connection)
-
-    def _close_active_connections(self) -> None:
-        with self._lock:
-            active = tuple(self._connections)
-            self._connections.clear()
-        for connection in active:
-            try:
-                connection.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            try:
-                connection.close()
-            except OSError:
-                pass
-
-    def _accept_loop(self) -> None:
-        while not self._stopped.is_set():
-            try:
-                downstream, _ = self.listener.accept()
-            except socket.timeout:
-                continue
-            except OSError:
-                break
-            if not self._enabled.is_set():
-                downstream.close()
-                continue
-            try:
-                upstream = socket.create_connection(
-                    (self.upstream_host, self.upstream_port),
-                    timeout=10,
-                )
-            except OSError:
-                downstream.close()
-                continue
-            downstream.settimeout(None)
-            upstream.settimeout(None)
-            self._track(downstream)
-            self._track(upstream)
-            threading.Thread(
-                target=self._pump,
-                args=(downstream, upstream),
-                daemon=True,
-            ).start()
-            threading.Thread(
-                target=self._pump,
-                args=(upstream, downstream),
-                daemon=True,
-            ).start()
-
-    def _pump(self, source: socket.socket, target: socket.socket) -> None:
-        try:
-            while not self._stopped.is_set() and self._enabled.is_set():
-                chunk = source.recv(64 * 1024)
-                if not chunk:
-                    break
-                target.sendall(chunk)
-        except OSError:
-            pass
-        finally:
-            for connection in (source, target):
-                self._untrack(connection)
-                try:
-                    connection.shutdown(socket.SHUT_RDWR)
-                except OSError:
-                    pass
-                try:
-                    connection.close()
-                except OSError:
-                    pass
 
 
 class AgentNativeJourney:

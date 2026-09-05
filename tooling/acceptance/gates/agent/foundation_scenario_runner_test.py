@@ -88,22 +88,61 @@ class F06HarnessClient:
         platform: str,
         *,
         cleanup_log: list[str] | None = None,
+        event_log: list[str] | None = None,
         fail_prepare_at: int | None = None,
+        fail_finalize: bool = False,
+        lose_prepare_response: bool = False,
         invalid_reload_delivery: bool = False,
     ) -> None:
         self.platform = platform
+        self.station_url = "http://127.0.0.1:28080"
         self.cleanup_log = cleanup_log
+        self.event_log = event_log
         self.fail_prepare_at = fail_prepare_at
+        self.fail_finalize = fail_finalize
+        self.lose_prepare_response = lose_prepare_response
         self.invalid_reload_delivery = invalid_reload_delivery
         self.restart_count = 0
+        self.transport_cut_count = 0
+        self.transport_restore_count = 0
         self.prepare_calls: list[dict[str, object]] = []
+        self.finalize_calls: list[dict[str, object]] = []
         self.failure_calls: list[dict[str, object]] = []
         self.reload_calls: list[dict[str, object]] = []
         self.complete_calls: list[dict[str, object]] = []
         self.cleanup_calls: list[dict[str, object]] = []
+        self.handoffs: dict[str, dict[str, object]] = {}
 
     def restart(self) -> None:
         self.restart_count += 1
+        if self.event_log is not None:
+            self.event_log.append(f"{self.platform}:client-restart")
+
+    def prepare_foundation_f06(
+        self,
+        payload: dict[str, object],
+        *,
+        timeout: float,
+    ) -> dict[str, object]:
+        handoff = self.harness(
+            "foundationF06Prepare",
+            payload,
+            timeout=timeout,
+        )
+        self.cut_station_transport()
+        if self.lose_prepare_response:
+            raise RuntimeError("prepare response lost")
+        return handoff
+
+    def cut_station_transport(self) -> None:
+        self.transport_cut_count += 1
+        if self.event_log is not None:
+            self.event_log.append(f"{self.platform}:transport-cut")
+
+    def restore_station_transport(self) -> None:
+        self.transport_restore_count += 1
+        if self.event_log is not None:
+            self.event_log.append(f"{self.platform}:transport-restore")
 
     def harness(
         self,
@@ -120,12 +159,23 @@ class F06HarnessClient:
             if self.fail_prepare_at == len(self.prepare_calls):
                 raise RuntimeError("prepare failed")
             suffix = f"{self.platform}-{len(self.prepare_calls)}"
-            return {
+            handoff = {
                 "conversationId": f"conversation-{suffix}",
                 "turnId": f"turn-{suffix}",
             }
+            self.handoffs[str(request["scenarioKey"])] = handoff
+            return handoff
+        if method == "foundationF06FinalizePreparation":
+            self.finalize_calls.append(request)
+            if self.fail_finalize:
+                raise RuntimeError("finalize failed")
+            if self.event_log is not None:
+                self.event_log.append(f"{self.platform}:boundary-finalized")
+            return self.handoffs[str(request["scenarioKey"])]
         if method == "foundationF06ObserveFailure":
             self.failure_calls.append(request)
+            if self.event_log is not None:
+                self.event_log.append(f"{self.platform}:observe-failure")
             return {
                 "activeFailureObserved": True,
                 "blocker": "",
@@ -133,6 +183,8 @@ class F06HarnessClient:
             }
         if method == "foundationF06DurableReload":
             self.reload_calls.append(request)
+            if self.event_log is not None:
+                self.event_log.append(f"{self.platform}:durable-reload")
             if self.invalid_reload_delivery:
                 return {"durableReload": {"observed": True}}
             return {
@@ -155,6 +207,8 @@ class F06HarnessClient:
         if method != "foundationDirectProbe":
             raise AssertionError(f"unexpected method: {method}")
         self.complete_calls.append(request)
+        if self.event_log is not None:
+            self.event_log.append(f"{self.platform}:complete")
         probe = DirectRuntimeProbeInput(
             platform=str(request["platform"]),
             locale=str(request["locale"]),
@@ -263,10 +317,18 @@ class F12HarnessClient:
 class SessionHarnessClient:
     def __init__(self, runtime: str, *, authenticated: bool = True) -> None:
         self.spec = SimpleNamespace(runtime=runtime)
+        self.station_url = "http://127.0.0.1:28080"
         self.authenticated = authenticated
         self.restart_count = 0
         self.calls: list[str] = []
         self.payloads: dict[str, dict[str, object]] = {}
+
+    def configure_station(self, *, timeout: float = 60) -> None:
+        self.harness(
+            "configureStation",
+            {"stationUrl": self.station_url},
+            timeout=timeout,
+        )
 
     def restart(self) -> None:
         self.restart_count += 1
@@ -809,7 +871,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             )
             self.assertEqual(
                 client.payloads["configureStation"],
-                {"stationUrl": station_url},
+                {"stationUrl": client.station_url},
             )
 
     def test_initial_setup_restarts_a_dead_driver_before_login(self) -> None:
@@ -1021,8 +1083,9 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(client.timeout, 1200)
 
     def test_as_f06_closes_each_tuple_around_its_own_restart(self) -> None:
-        native = F06HarnessClient("desktop_app")
-        browser = F06HarnessClient("browser")
+        event_log: list[str] = []
+        native = F06HarnessClient("desktop_app", event_log=event_log)
+        browser = F06HarnessClient("browser", event_log=event_log)
         runtime_pair = SimpleNamespace(native=native, browser=browser)
         coordinator = foundation_scenario_runner.FoundationF06Coordinator(
             runtime_pair,
@@ -1034,19 +1097,33 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             f06_coordinator=coordinator,
         )
 
+        def restart_station(*_args: object, **kwargs: object) -> dict[str, object]:
+            event_log.append("station:restart")
+            kwargs["during_outage"](time.monotonic() + 165)
+            event_log.append("station:ready")
+            kwargs["after_restart"](time.monotonic() + 180)
+            return {"containerId": "container"}
+
+        def authenticate_clients(
+            *_args: object,
+            **kwargs: object,
+        ) -> None:
+            client = kwargs["clients"][0]
+            event_log.append(
+                f"{client.platform}:authenticate:"
+                f"{kwargs['recovery_boundary']}"
+            )
+
         with (
             patch.object(
                 foundation_scenario_runner,
                 "restart_foundation_station",
-                side_effect=lambda *_args, **kwargs: (
-                    kwargs["during_outage"](time.monotonic() + 165),
-                    kwargs["after_restart"](time.monotonic() + 180),
-                    {"containerId": "container"},
-                )[-1],
+                side_effect=restart_station,
             ) as restart,
             patch.object(
                 foundation_scenario_runner,
                 "_authenticate_clients",
+                side_effect=authenticate_clients,
             ) as authenticate,
         ):
             first = probe(
@@ -1085,8 +1162,37 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         )
         self.assertEqual(native.restart_count, 2)
         self.assertEqual(browser.restart_count, 2)
+        self.assertEqual(native.transport_cut_count, 2)
+        self.assertEqual(browser.transport_cut_count, 2)
+        self.assertEqual(native.transport_restore_count, 2)
+        self.assertEqual(browser.transport_restore_count, 2)
+        expected_order = []
+        for runtime_tuple in (
+            item
+            for item in foundation_scenario_runner.group_one_tuples()
+            if item.cell == "AS-F06"
+        ):
+            platform = runtime_tuple.platform
+            expected_order.extend(
+                (
+                    f"{platform}:transport-cut",
+                    f"{platform}:boundary-finalized",
+                    "station:restart",
+                    f"{platform}:observe-failure",
+                    "station:ready",
+                    f"{platform}:transport-restore",
+                    f"{platform}:authenticate:station-restart",
+                    f"{platform}:durable-reload",
+                    f"{platform}:client-restart",
+                    f"{platform}:authenticate:client-restart",
+                    f"{platform}:complete",
+                )
+            )
+        self.assertEqual(event_log, expected_order)
         self.assertEqual(len(native.prepare_calls), 2)
         self.assertEqual(len(browser.prepare_calls), 2)
+        self.assertEqual(len(native.finalize_calls), 2)
+        self.assertEqual(len(browser.finalize_calls), 2)
         self.assertEqual(len(native.failure_calls), 2)
         self.assertEqual(len(browser.failure_calls), 2)
         self.assertEqual(len(native.reload_calls), 2)
@@ -1140,6 +1246,92 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(
             authenticate.call_args.kwargs["recovery_boundary"],
             "cleanup-restart",
+        )
+
+    def test_as_f06_finalize_failure_restores_transport_and_cleans_handoff(
+        self,
+    ) -> None:
+        cleanup_log: list[str] = []
+        browser = F06HarnessClient(
+            "browser",
+            cleanup_log=cleanup_log,
+            fail_finalize=True,
+        )
+        coordinator = foundation_scenario_runner.FoundationF06Coordinator(
+            SimpleNamespace(
+                native=F06HarnessClient("desktop_app"),
+                browser=browser,
+            ),
+            {"profile": {"resolvedName": "two"}},
+            {},
+        )
+
+        with patch.object(
+            foundation_scenario_runner,
+            "_authenticate_clients",
+        ):
+            with self.assertRaisesRegex(RuntimeError, "finalize failed"):
+                coordinator.capture(
+                    DirectRuntimeProbeInput(
+                        platform="browser",
+                        locale="en",
+                        cell="AS-F06",
+                        sample_id="sample-001",
+                    )
+                )
+
+        self.assertEqual(browser.transport_cut_count, 1)
+        self.assertEqual(browser.transport_restore_count, 1)
+        self.assertEqual(
+            cleanup_log,
+            ["browser|en|AS-F06|sample-001"],
+        )
+
+    def test_as_f06_lost_prepare_response_restores_and_cleans_by_scenario(
+        self,
+    ) -> None:
+        cleanup_log: list[str] = []
+        browser = F06HarnessClient(
+            "browser",
+            cleanup_log=cleanup_log,
+            lose_prepare_response=True,
+        )
+        coordinator = foundation_scenario_runner.FoundationF06Coordinator(
+            SimpleNamespace(
+                native=F06HarnessClient("desktop_app"),
+                browser=browser,
+            ),
+            {"profile": {"resolvedName": "two"}},
+            {},
+        )
+
+        with patch.object(
+            foundation_scenario_runner,
+            "_authenticate_clients",
+        ):
+            with self.assertRaisesRegex(RuntimeError, "prepare response lost"):
+                coordinator.capture(
+                    DirectRuntimeProbeInput(
+                        platform="browser",
+                        locale="en",
+                        cell="AS-F06",
+                        sample_id="sample-001",
+                    )
+                )
+
+        self.assertEqual(browser.transport_cut_count, 1)
+        self.assertEqual(browser.transport_restore_count, 1)
+        self.assertEqual(
+            cleanup_log,
+            ["browser|en|AS-F06|sample-001"],
+        )
+        self.assertEqual(
+            browser.cleanup_calls[0],
+            {
+                "scenarioKey": "browser|en|AS-F06|sample-001",
+                "conversationId": "",
+                "turnId": "",
+            },
         )
 
     def test_as_f06_rejects_durable_reload_without_source_delivery(
@@ -1273,6 +1465,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(
             cleanup_log,
             [
+                "desktop_app|zh-CN|AS-F06|sample-001",
                 "desktop_app|en|AS-F06|sample-001",
                 "browser|zh-CN|AS-F06|sample-001",
                 "browser|en|AS-F06|sample-001",
