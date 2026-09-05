@@ -1,7 +1,7 @@
 # Debug Session: approval-retry-cancellation
 - **Status**: [OPEN]
 - **Issue**: Browser BASE-APPROVAL_EXPIRED creates exactly one retry attempt and distinct approval, but the scenario times out waiting for the retried Turn and ToolCall to become cancelled.
-- **Debug Server**: `http://127.0.0.1:7779/event`
+- **Debug Server**: `http://127.0.0.1:7781/event`
 - **Log File**: `.dbg/trae-debug-log-approval-retry-cancellation.ndjson`
 
 ## Reproduction Steps

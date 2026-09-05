@@ -5909,7 +5909,7 @@ function reportFoundationApprovalRetryCancellationDebug(
   stage: string,
   data: Record<string, unknown> = {},
 ): Promise<void> {
-  return fetch('http://127.0.0.1:7779/event', {
+  return fetch('http://127.0.0.1:7781/event', {
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'approval-retry-cancellation',
