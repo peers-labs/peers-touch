@@ -300,5 +300,16 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         self.assertIn("'acceptance-alice-carol'", sql)
         self.assertIn("'acceptance-bob-carol'", sql)
 
+    def test_station_reset_clears_mp_w14_projection_state(self) -> None:
+        required_tables = {
+            "messaging_event_projection_targets",
+            "messaging_follower_conversations",
+            "messaging_follower_event_receipts",
+            "messaging_follower_members",
+            "messaging_follower_pending_events",
+        }
+
+        self.assertEqual(required_tables - set(CHAT_TABLES), set())
+
 if __name__ == "__main__":
     unittest.main()
