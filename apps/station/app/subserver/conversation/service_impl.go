@@ -990,7 +990,3 @@ func (s *DefaultService) ListMessages(ctx context.Context, conversationID string
 func (s *DefaultService) ListThreadMessages(ctx context.Context, conversationID, threadRootID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error) {
 	return s.repo.ListThreadEvents(ctx, conversationID, threadRootID, afterSeq, limit)
 }
-
-func (s *DefaultService) GetThreadCounts(ctx context.Context, conversationID string, rootIDs []string) (map[string]ThreadSummary, error) {
-	return s.repo.CountThreadReplies(ctx, conversationID, rootIDs)
-}

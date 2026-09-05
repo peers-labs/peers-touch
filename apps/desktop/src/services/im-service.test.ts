@@ -898,7 +898,41 @@ describe('Messaging conversation projection', () => {
   })
 })
 
-describe('Conversation member settings projection', () => {
+describe('Messaging local projections and member settings', () => {
+  it('reads thread counts from the Device Messaging Engine', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        counts: [{
+          rootUlid: 'root-1',
+          replyCount: 2,
+          latestReplyUlid: 'reply-2',
+          latestReplyAt: 1_800_000_000_000,
+          unreadCount: 1,
+        }],
+      },
+    })
+
+    await expect(imServiceV1.messaging.threadCounts(
+      'conversation-1',
+      ['root-1'],
+    )).resolves.toEqual({
+      counts: [{
+        rootUlid: 'root-1',
+        replyCount: 2,
+        latestReplyUlid: 'reply-2',
+        latestReplyAt: 1_800_000_000_000,
+        unreadCount: 1,
+      }],
+    })
+    expect(invokeMock).toHaveBeenCalledWith('messaging_thread_counts', {
+      input: {
+        conversation_id: 'conversation-1',
+        root_message_ids: ['root-1'],
+      },
+    })
+  })
+
   it('round-trips typed Station-backed conversation actions', async () => {
     invokeMock.mockResolvedValueOnce({
       ok: true,
@@ -913,7 +947,7 @@ describe('Conversation member settings projection', () => {
       },
     })
 
-    await expect(imServiceV1.conversation.updateMemberSettings('conversation-1', {
+    await expect(imServiceV1.messaging.updateMemberSettings('conversation-1', {
       muted: true,
       pinned: true,
       background: 'mint',
@@ -929,7 +963,7 @@ describe('Conversation member settings projection', () => {
       clearedAtUnixMs: 1_800_000_000_000,
     })
 
-    expect(invokeMock).toHaveBeenCalledWith('conversation_update_member_settings', {
+    expect(invokeMock).toHaveBeenCalledWith('messaging_update_member_settings', {
       input: {
         conversation_id: 'conversation-1',
         nickname: undefined,

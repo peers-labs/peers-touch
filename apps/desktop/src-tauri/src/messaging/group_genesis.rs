@@ -151,7 +151,6 @@ impl GroupGenesisPreparer {
                     },
                     ptid: endpoint.ptid.clone(),
                     device_id: endpoint.device_id.clone(),
-                    home_station_id: String::new(),
                     role: if endpoint.ptid == self.endpoint.ptid {
                         "owner".to_string()
                     } else {

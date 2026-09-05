@@ -40,6 +40,13 @@ func (u *FederationInboxUnitOfWork) AutoMigrate() error {
 	if err := u.db.AutoMigrate(&FederationInboxModel{}); err != nil {
 		return err
 	}
+	follower, err := NewFollowerRepository(u.db)
+	if err != nil {
+		return err
+	}
+	if err := follower.AutoMigrate(); err != nil {
+		return err
+	}
 	queue, err := NewQueueRepository(u.db, u.limits)
 	if err != nil {
 		return err
@@ -79,14 +86,15 @@ func (u *FederationInboxUnitOfWork) IngestFederationFrame(
 	ctx context.Context,
 	frame *chat.MessagingFederationFrame,
 	receivedAt time.Time,
-	fn func(queue messaging.QueueRepository) error,
-) (bool, error) {
+	fn func(messaging.FederationInboxRepositories) (messaging.FederationInboxMutation, error),
+) (bool, bool, error) {
 	frameBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(frame)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	frameHash := sha256.Sum256(frameBytes)
 	duplicate := false
+	acknowledged := false
 	err = u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing FederationInboxModel
 		err := tx.Where(
@@ -100,6 +108,7 @@ func (u *FederationInboxUnitOfWork) IngestFederationFrame(
 				return messaging.ErrFederationFrameConflict
 			}
 			duplicate = true
+			acknowledged = true
 			return nil
 		}
 		if err != gorm.ErrRecordNotFound {
@@ -109,18 +118,46 @@ func (u *FederationInboxUnitOfWork) IngestFederationFrame(
 		if err != nil {
 			return err
 		}
-		if err := fn(queue); err != nil {
+		follower, err := NewFollowerRepository(tx)
+		if err != nil {
 			return err
 		}
-		return tx.Create(&FederationInboxModel{
+		mutation, err := fn(messaging.FederationInboxRepositories{
+			Queue:    queue,
+			Follower: follower,
+		})
+		if err != nil {
+			return err
+		}
+		if !mutation.Acknowledge {
+			return nil
+		}
+		if err := tx.Create(&FederationInboxModel{
 			SourceStationID: frame.SourceStationId,
 			IdempotencyKey:  frame.IdempotencyKey,
 			FrameID:         frame.FrameId,
 			FrameSHA256:     frameHash[:],
 			ReceivedAt:      receivedAt,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		acknowledged = true
+		return nil
 	})
-	return duplicate, err
+	return duplicate, acknowledged, err
+}
+
+func (u *FederationInboxUnitOfWork) ExecuteFollower(
+	ctx context.Context,
+	fn func(messaging.FollowerRepository) error,
+) error {
+	return u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		follower, err := NewFollowerRepository(tx)
+		if err != nil {
+			return err
+		}
+		return fn(follower)
+	})
 }
 
 var _ messaging.FederationInboxUnitOfWork = (*FederationInboxUnitOfWork)(nil)
