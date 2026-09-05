@@ -1445,6 +1445,39 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("queueCapacitySnapshotMismatch", source)
         self.assertIn("receiverDomAtCapacity", source)
 
+    def test_group_one_queue_probe_captures_capacity_before_stream_completion(
+        self,
+    ) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        start = source.index("if (cell === 'AS-F02')")
+        end = source.index("if (cell === 'AS-F03')", start)
+        scenario = source[start:end]
+
+        duplicate_start = scenario.index(
+            "const duplicate = startObservedFoundationTurn({",
+        )
+        queue_start = scenario.index(
+            "const queuedTurns = Array.from({ length: 8 }",
+        )
+        capacity_snapshot = scenario.index(
+            "const queueSnapshotStartedAt = performance.now();",
+        )
+        overflow_start = scenario.index(
+            "const overflow = startObservedFoundationTurn({",
+        )
+        stream_completion = scenario.index(
+            "const [duplicateFirstEvent, queuedResults, overflowResult]",
+        )
+
+        self.assertLess(duplicate_start, queue_start)
+        self.assertLess(queue_start, capacity_snapshot)
+        self.assertLess(capacity_snapshot, overflow_start)
+        self.assertLess(overflow_start, stream_completion)
+        self.assertNotIn(
+            "const duplicateResult = await duplicate.result;",
+            scenario,
+        )
+
     def test_group_one_queue_probe_requires_completed_active_turn(self) -> None:
         source = HARNESS.read_text(encoding="utf-8")
         self.assertIn("const queuedTurns = Array.from({ length: 8 }", source)

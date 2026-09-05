@@ -13,11 +13,11 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | The active Turn becomes terminal before the capacity snapshot, allowing Station to drain the queue below eight. | High | Low | Pending: capture active terminal state and queue counts over time. |
-| B | Awaiting queued stream results delays the snapshot until after queue drain begins. | High | Low | Pending: capture queued-result settlement count before each queue read. |
-| C | Station reports a queue capacity other than eight for this conversation. | Medium | Low | Pending: capture authoritative `queue_capacity` with every queue read. |
-| D | One or more queued submissions are rejected before admission. | Medium | Low | Pending: capture only result status/error code and event types per submission. |
-| E | Conversation cleanup or selection drift makes the readback target differ from the created queue conversation. | Low | Low | Pending: compare hashed/boolean conversation identity facts without content or credentials. |
+| A | The active Turn becomes terminal before the capacity snapshot, allowing Station to drain the queue below eight. | High | Low | Confirmed for the failing zh-CN tuple: `done` preceded queued submission, the first read was seven, and the queue drained to zero. |
+| B | Awaiting queued stream results delays the snapshot until after queue drain begins. | High | Low | Confirmed at the earlier duplicate-result await boundary: the fast active Turn completed before the eight follow-ups were started. |
+| C | Station reports a queue capacity other than eight for this conversation. | Medium | Low | Rejected: both tuples reported authoritative capacity eight. |
+| D | One or more queued submissions are rejected before admission. | Medium | Low | Rejected: all eight submissions succeeded; one became active after the original Turn completed. |
+| E | Conversation cleanup or selection drift makes the readback target differ from the created queue conversation. | Low | Low | Rejected: both tuples retained the selected conversation. |
 
 ## Log Evidence
 - Existing exact-source Gate evidence:
@@ -31,6 +31,27 @@
   - `queued-submissions-started`: submission count and events already observed.
   - `queued-results-settled`: settlement status, safe error codes, event types, and queue positions.
   - `queue-capacity-sampled`: authoritative queue size/capacity/positions, bounded poll statistics, active event types, overflow result, and selected-conversation equality.
+- Pre-fix run `20260905T214027259590Z-8a11e2ddc9dccfce48c4e62d723e2e35`:
+  - English AS-F02 sampled `8/8` while the active Turn had no terminal event.
+  - Simplified Chinese AS-F02 observed the active Turn `done` before queued submissions started.
+  - All eight submissions succeeded, but one was executed immediately; the first queue read was seven and the queue drained to zero during the unchanged 30-second window.
+  - The supposed overflow request also executed successfully because capacity was no longer full.
+  - Station capacity remained eight and the selected conversation remained correct.
 
 ## Verification Conclusion
-Pending.
+The Harness awaited duplicate stream completion before it launched the queue workload. A fast provider response could therefore finish the active Turn and release dequeue before the eight queue requests existed. The queue and oracle behaved correctly; the Acceptance action ordering was nondeterministic. The minimal correction is to launch the duplicate and all eight queue requests while the original Turn is active, capture the strict Station `8/8` snapshot, and only then submit the overflow request and await stream completion.
+
+## Fix
+- Capture the empty queue baseline before starting duplicate replay.
+- Start duplicate replay and all eight unique queue submissions without awaiting duplicate completion.
+- Poll the authoritative Station queue to the unchanged strict `8/8` condition.
+- Submit the overflow request only after the full-capacity snapshot exists.
+- Await duplicate, queued, and overflow results after their ordering-sensitive actions have been issued.
+- Preserve the existing queue-capacity, FIFO, overflow, cancellation, DOM, and lifecycle assertions.
+
+## Local Verification
+- `python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test`: 69/69 passed.
+- `cd apps/desktop && pnpm run check`: passed.
+- `cd apps/desktop && pnpm run test`: 569 passed, one unrelated environment-dependent test skipped.
+- `git diff --check`: passed.
+- Post-fix exact-source runtime comparison: pending.
