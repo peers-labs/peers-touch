@@ -68,3 +68,16 @@ approval wait state. The fix must branch on policy: `deny` projects
 - Desktop production build: passed.
 - Agent native static and Group One evaluator tests: 130 passed.
 - `git diff --check`: passed.
+
+## Post-Fix Runtime Verification
+- Exact-source run
+  `20260904T222331747954Z-58f6c341ba8392c6b50a2c1712ec0388`
+  on `770e4ec8ae6d0e6fe2ed3d66a76ea89ffff27f55` emitted the
+  corrected denial fact twice:
+  - `policy=deny`
+  - `states=["policy_check","denied"]`
+  - execution, side-effect, result, and continuation counts all equal `0`
+  - target status, binding revision, and replay equality all match
+- The Gate advanced beyond AS-F04 to later Foundation cells. This closes the
+  behavior diagnosis, while the debug session remains `[OPEN]` until the Owner
+  explicitly authorizes instrumentation removal.

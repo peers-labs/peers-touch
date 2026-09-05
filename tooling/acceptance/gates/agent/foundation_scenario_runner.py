@@ -78,6 +78,7 @@ class ScenarioRunnerError(RuntimeError):
 DIRECT_PROBE_TIMEOUT_SECONDS = {
     "AS-F04": 900,
     "AS-F07": 900,
+    "BASE-APPROVAL_EXPIRED": 1200,
 }
 
 RESTORE_IDENTITY_STATES = frozenset(

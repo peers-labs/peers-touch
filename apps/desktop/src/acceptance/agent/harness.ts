@@ -855,6 +855,47 @@ async function deleteFoundationConversation(
   throw new Error('agent.acceptance.foundationConversationDeleteBlocked');
 }
 
+async function cleanupFoundationToolConversation(
+  conversationId: string,
+  turnId: string,
+): Promise<void> {
+  let cancellationError: unknown = null;
+  if (turnId) {
+    try {
+      await api.cancelAgentTurn(turnId);
+    } catch (error) {
+      cancellationError = error;
+    }
+  }
+
+  try {
+    const deletionErrorCode = await deleteFoundationConversation(conversationId);
+    let conversationDeleted = deletionErrorCode.includes('AGENT_4004');
+    if (!conversationDeleted) {
+      try {
+        conversationDeleted = (
+          await api.getAgentConversation(conversationId)
+        ).status === 'deleted';
+      } catch (error) {
+        conversationDeleted = observedErrorCode(error).includes('AGENT_4004');
+      }
+    }
+    if (!conversationDeleted) {
+      throw new Error(
+        'agent.acceptance.foundationCleanupConversationNotDeleted',
+      );
+    }
+  } catch (cleanupError) {
+    throw Object.assign(
+      new Error('agent.acceptance.foundationToolConversationCleanupFailed'),
+      {
+        cancellationError,
+        cleanupError,
+      },
+    );
+  }
+}
+
 async function cancelFoundationQueuedTurns(
   conversationId: string,
 ): Promise<Awaited<ReturnType<typeof api.cancelQueuedAgentTurn>> | null> {
@@ -1287,6 +1328,7 @@ async function waitFor(
 }
 
 const FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS = 180_000;
+const FOUNDATION_TOOL_RECONCILE_TIMEOUT_MS = 90_000;
 const FOUNDATION_LOOP_MAX_TOOL_CALLS = 2;
 
 interface FoundationToolFixture {
@@ -2770,6 +2812,406 @@ async function runFoundationApprovalDeniedScenario(input: {
   }
   if (!result) {
     throw new Error('agent.acceptance.foundationToolDenialFactsMissing');
+  }
+  const restoredBindings = await api.listAgentCapabilityBindings(
+    input.agent.id || input.agent.name,
+  );
+  const restoredBinding = restoredBindings.find((candidate) =>
+    candidate.capabilityId === fixture.manifest.capabilityId
+    && candidate.capabilityVersion === fixture.manifest.version
+    && !candidate.tombstonedAt) ?? null;
+  result.facts.cleanup = {
+    bindingRestored: originalBinding
+      ? (
+          restoredBinding?.approvalPolicy === originalBinding.approvalPolicy
+          && restoredBinding.enabled === originalBinding.enabled
+        )
+      : restoredBinding === null,
+    conversationDeleted: false,
+  };
+  return result;
+}
+
+async function runFoundationApprovalExpiredScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  platform: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: {
+    eventType: string;
+    sequence: number;
+    observedAt: string;
+  };
+  facts: Record<string, unknown>;
+}> {
+  const fixture = await foundationToolFixture(
+    input.agent.id || input.agent.name,
+    input.platform,
+  );
+  const originalBinding = fixture.binding;
+  let currentBinding = originalBinding;
+  let conversationId = '';
+  let turnId = '';
+  let operationError: unknown = null;
+  const startedAt = performance.now();
+  let result: {
+    conversationId: string;
+    turnId: string;
+    durationMs: number;
+    runtimeEvent: {
+      eventType: string;
+      sequence: number;
+      observedAt: string;
+    };
+    facts: Record<string, unknown>;
+  } | null = null;
+
+  try {
+    currentBinding = await updateFoundationToolPolicy(
+      input.agent,
+      fixture,
+      currentBinding,
+      CapabilityApprovalPolicy.MANUAL,
+    );
+    const capabilitySession = await resolveFoundationToolTurnSession();
+    const turn = await startFoundationToolTurn({
+      agent: input.agent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture,
+      sampleId: input.sampleId,
+      label: 'approval-expired',
+    });
+    conversationId = turn.conversationId;
+    turnId = turn.turnId;
+    await useChatStore.getState().selectSession(turn.conversationId);
+    const approval = await waitForToolApprovalEvent(turn);
+    const approvalId = String(
+      evidenceField(approval, 'approvalId', 'approval_id') ?? '',
+    );
+    const toolCallId = String(
+      evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    const expectedRevision = Number(
+      evidenceField(approval, 'decisionRevision', 'decision_revision') ?? 0,
+    );
+    const expiresAt = String(
+      evidenceField(approval, 'expiresAt', 'expires_at') ?? '',
+    );
+    if (
+      !approvalId
+      || !toolCallId
+      || !Number.isInteger(expectedRevision)
+      || !expiresAt
+    ) {
+      throw new Error('agent.acceptance.foundationToolApprovalInvalid');
+    }
+
+    await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts, replay) =>
+        facts.length === 1
+        && Number(facts[0].status) === ToolCallStatus.EXPIRED
+        && diagnosticReplayTerminal(replay),
+      'approval-expired Station settlement',
+    );
+
+    await waitFor(
+      () => {
+        const projection = toolRuntime.getProjection(toolCallId);
+        return (
+          projection?.status === 'expired'
+          && projection.error === 'agent.errors.toolApprovalExpired'
+        );
+      },
+      'approval-expired runtime projection',
+      FOUNDATION_TOOL_RECONCILE_TIMEOUT_MS,
+    );
+    await waitFor(
+      () => Array.from(
+        document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
+      ).some((element) =>
+        element.dataset.ptAgentToolCall === toolCallId),
+      'approval-expired ToolCall receiver',
+      30_000,
+    );
+    const toolCallElement = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
+    ).find((element) => element.dataset.ptAgentToolCall === toolCallId);
+    if (!toolCallElement) {
+      throw new Error('agent.acceptance.foundationToolCallSurfaceMissing');
+    }
+    let recovery = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-recovery="request-again"]',
+    );
+    if (!recovery) {
+      toolCallElement.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(toolCallElement.querySelector(
+          '[data-pt-agent-tool-recovery="request-again"]',
+        )),
+        'approval-expired recovery action',
+        10_000,
+      );
+      recovery = toolCallElement.querySelector<HTMLButtonElement>(
+        '[data-pt-agent-tool-recovery="request-again"]',
+      );
+    }
+    if (!recovery) {
+      throw new Error('agent.acceptance.foundationToolRecoveryMissing');
+    }
+    const expectedRecoveryText = i18n.t(
+      'agent.recovery.requestAgain',
+      { ns: 'agent' },
+    );
+    const recoveryVisible = recovery.getClientRects().length > 0;
+    const recoveryText = recovery.textContent?.trim() ?? '';
+    const errorElement = toolCallElement.querySelector<HTMLElement>(
+      '[data-pt-agent-tool-error="agent.errors.toolApprovalExpired"]',
+    );
+
+    const decisionId = crypto.randomUUID();
+    const decisionIntent = {
+      approval_id: approvalId,
+      tool_call_id: toolCallId,
+      decision_id: decisionId,
+      expected_revision: expectedRevision,
+      approved: true,
+      idempotency_key: decisionId,
+    };
+    const firstAcknowledgement = await api.submitAgentToolDecision(
+      decisionIntent,
+    );
+    const replayedAcknowledgement = await api.submitAgentToolDecision(
+      decisionIntent,
+    );
+    const firstAcknowledgementHash = await sha256Hex(
+      stableJson(firstAcknowledgement),
+    );
+    const replayedAcknowledgementHash = await sha256Hex(
+      stableJson(replayedAcknowledgement),
+    );
+    const decisionSettled = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts, replay) =>
+        facts.length === 1
+        && Number(facts[0].status) === ToolCallStatus.EXPIRED
+        && diagnosticReplayTerminal(replay),
+      'approval-expired decision replay',
+    );
+    const expiredDecisionFact = decisionSettled.facts[0];
+    const sideEffectCountBefore = await foundationToolSideEffectCount(
+      input.platform,
+      expiredDecisionFact,
+    );
+    const stationBefore = diagnosticToolCase(
+      expiredDecisionFact,
+      sideEffectCountBefore,
+    );
+    const stationBeforeHash = await sha256Hex(stableJson(stationBefore));
+    const attemptsBefore = evidenceArray(
+      decisionSettled.replay.attempts,
+      'foundationApprovalExpiredAttemptsBefore',
+    ).length;
+
+    recovery.click();
+    recovery.click();
+    const retryStarted = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts, replay) => (
+        evidenceArray(
+          replay.attempts,
+          'foundationApprovalExpiredRetryAttempts',
+        ).length === attemptsBefore + 1
+        && facts.some((fact) => (
+          String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+            !== toolCallId
+          && String(evidenceField(fact, 'approvalId', 'approval_id') ?? '')
+        ))
+      ),
+      'approval-expired request-again attempt',
+      120_000,
+    );
+    const retryToolFact = retryStarted.facts.find((fact) =>
+      String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+        !== toolCallId
+      && String(evidenceField(fact, 'approvalId', 'approval_id') ?? ''));
+    const cancellation = await api.cancelAgentTurn(turn.turnId);
+    const settled = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts, replay) =>
+        facts.some((fact) =>
+          String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+            === toolCallId)
+        && facts.some((fact) =>
+          String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+            !== toolCallId
+          && Number(fact.status) === ToolCallStatus.CANCELLED)
+        && Number(replay.status) === AgentTurnStatus.CANCELLED,
+      'approval-expired retry cancellation',
+    );
+    const expiredAfter = settled.facts.find((fact) =>
+      String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+        === toolCallId);
+    if (!expiredAfter) {
+      throw new Error('agent.acceptance.foundationExpiredToolFactMissing');
+    }
+    const retryAfter = settled.facts.find((fact) =>
+      String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+        !== toolCallId
+      && String(evidenceField(fact, 'approvalId', 'approval_id') ?? ''));
+    if (!retryAfter) {
+      throw new Error('agent.acceptance.foundationRetryToolFactMissing');
+    }
+    const sideEffectCountAfter = await foundationToolSideEffectCount(
+      input.platform,
+      expiredAfter,
+    );
+    const retrySideEffectCount = await foundationToolSideEffectCount(
+      input.platform,
+      retryAfter,
+    );
+    const retryStation = diagnosticToolCase(
+      retryAfter,
+      retrySideEffectCount,
+    );
+    const stationAfter = diagnosticToolCase(
+      expiredAfter,
+      sideEffectCountAfter,
+    );
+    const stationAfterHash = await sha256Hex(stableJson(stationAfter));
+    const runtimeEvent = [...turn.observed.events]
+      .reverse()
+      .map((event) => ({
+        eventType: event.event,
+        sequence: Number(event.data.seq ?? 0),
+        observedAt: event.observedAt,
+      }))
+      .find((event) => event.sequence > 0);
+    if (!runtimeEvent) {
+      throw new Error('agent.acceptance.foundationToolRuntimeEventMissing');
+    }
+
+    result = {
+      conversationId: turn.conversationId,
+      turnId: turn.turnId,
+      durationMs: performance.now() - startedAt,
+      runtimeEvent,
+      facts: {
+        outcome: firstAcknowledgement.outcome_error,
+        receiver: {
+          recoveryVisible,
+          recoveryText,
+          expectedRecoveryText,
+          recoveryExecuted: true,
+          errorVisible: Boolean(
+            errorElement && errorElement.getClientRects().length > 0,
+          ),
+          errorText: errorElement?.textContent?.trim() ?? '',
+          expectedErrorText: i18n.t(
+            'agent.errors.toolApprovalExpired',
+            { ns: 'agent' },
+          ),
+        },
+        decision: {
+          accepted: firstAcknowledgement.accepted,
+          approvalId,
+          toolCallId,
+          decisionId,
+          decisionRevision: firstAcknowledgement.decision_revision,
+          errorCode: firstAcknowledgement.error_code,
+          expiresAt,
+        },
+        station: stationAfter,
+        recovery: {
+          attemptCountBefore: attemptsBefore,
+          attemptCountAfter: evidenceArray(
+            retryStarted.replay.attempts,
+            'foundationApprovalExpiredAttemptsAfter',
+          ).length,
+          newApprovalIdentityDistinct: Boolean(
+            retryToolFact
+            && String(
+              evidenceField(
+                retryToolFact,
+                'approvalId',
+                'approval_id',
+              ) ?? '',
+            ) !== approvalId
+          ),
+          cancellationStatus: String(cancellation.status ?? '').toLowerCase(),
+          retryToolStatus: toolStatusName(retryAfter.status),
+          retryExecutionAttemptCount: retryStation.executionAttemptCount,
+          retrySideEffectCount: retryStation.sideEffectCount,
+          retryResultCount: retryStation.resultCount,
+          retryContinuationCount: retryStation.continuationCount,
+        },
+        replay: {
+          acknowledgementSourceHash: firstAcknowledgementHash,
+          acknowledgementReplayHash: replayedAcknowledgementHash,
+          stationSourceHash: stationBeforeHash,
+          stationReplayHash: stationAfterHash,
+          equal:
+            firstAcknowledgementHash === replayedAcknowledgementHash
+            && stationBeforeHash === stationAfterHash,
+        },
+        capabilitySession: {
+          ...capabilitySession.facts,
+          turnId: turn.turnId,
+        },
+      },
+    };
+  } catch (error) {
+    operationError = error;
+  } finally {
+    const cleanupErrors: unknown[] = [];
+    try {
+      if (originalBinding) {
+        await updateFoundationToolPolicy(
+          input.agent,
+          fixture,
+          currentBinding,
+          originalBinding.approvalPolicy,
+          originalBinding.enabled,
+        );
+      } else if (currentBinding) {
+        await api.deleteAgentCapabilityBinding(
+          currentBinding.bindingId,
+          currentBinding.revision,
+          crypto.randomUUID(),
+          'acceptance_fixture_cleanup',
+        );
+      }
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    if ((operationError || cleanupErrors.length > 0) && conversationId) {
+      try {
+        await cleanupFoundationToolConversation(
+          conversationId,
+          turnId,
+        );
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+    if (cleanupErrors.length > 0) {
+      throw Object.assign(
+        new Error('agent.acceptance.foundationToolExpiryCleanupFailed'),
+        {
+          primaryError: operationError,
+          cleanupErrors,
+        },
+      );
+    }
+  }
+  if (operationError) throw operationError;
+  if (!result) {
+    throw new Error('agent.acceptance.foundationToolExpiryFactsMissing');
   }
   const restoredBindings = await api.listAgentCapabilityBindings(
     input.agent.id || input.agent.name,
@@ -6791,6 +7233,8 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseActiveMutationConflict(ctx);
     case 'BASE-APPROVAL_DENIED':
       return evaluateBaseApprovalDenied(ctx);
+    case 'BASE-APPROVAL_EXPIRED':
+      return evaluateBaseApprovalExpired(ctx);
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
@@ -6877,6 +7321,112 @@ function evaluateBaseApprovalDenied(
       && replay.acknowledgementSourceHash
         === replay.acknowledgementReplayHash
       && replay.diagnosticSourceHash === replay.diagnosticReplayHash
+    ),
+    cleanupComplete: (
+      cleanup.conversationDeleted === true
+      && cleanup.bindingRestored === true
+    ),
+  };
+}
+
+function evaluateBaseApprovalExpired(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationApprovalExpiredFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationApprovalExpiredOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationApprovalExpiredDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationApprovalExpiredReceiver',
+  );
+  const decision = evidenceRecord(
+    facts.decision,
+    'foundationApprovalExpiredDecision',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationApprovalExpiredStation',
+  );
+  const lineage = evidenceRecord(
+    station.lineage,
+    'foundationApprovalExpiredLineage',
+  );
+  const recovery = evidenceRecord(
+    facts.recovery,
+    'foundationApprovalExpiredRecovery',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationApprovalExpiredReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationApprovalExpiredCleanup',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+
+  return {
+    typedExpiryProjected: (
+      outcome.error_type === 'TOOL_APPROVAL_EXPIRED'
+      && outcome.locale_key === 'agent.errors.toolApprovalExpired'
+      && outcome.retryable === true
+      && outcome.terminal === true
+      && safeDetailKeys.length === 2
+      && safeDetailKeys[0] === 'decision_id'
+      && safeDetailKeys[1] === 'expires_at'
+      && details.decision_id === decision.decisionId
+      && details.expires_at === decision.expiresAt
+    ),
+    localizedRecoveryVisible: (
+      receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+      && receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+    ),
+    expiredDecisionImmutable: (
+      decision.accepted === false
+      && decision.errorCode
+        === 'TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED'
+      && station.policy === 'manual'
+      && stableJson(station.states)
+        === stableJson(['policy_check', 'awaiting_user', 'expired'])
+      && station.errorCode === 'TOOL_APPROVAL_EXPIRED'
+      && lineage.toolCallId === decision.toolCallId
+      && lineage.decisionId === ''
+      && Number(lineage.decisionRevision) === decision.decisionRevision
+    ),
+    requestAgainCreatedOneAttempt: (
+      receiver.recoveryExecuted === true
+      && Number(recovery.attemptCountAfter)
+        === Number(recovery.attemptCountBefore) + 1
+      && recovery.newApprovalIdentityDistinct === true
+      && recovery.cancellationStatus === 'cancelled'
+      && recovery.retryToolStatus === 'cancelled'
+    ),
+    zeroSideEffect: (
+      Number(station.executionAttemptCount) === 0
+      && Number(station.sideEffectCount) === 0
+      && Number(station.resultCount) === 0
+      && Number(station.continuationCount) === 0
+      && Number(recovery.retryExecutionAttemptCount) === 0
+      && Number(recovery.retrySideEffectCount) === 0
+      && Number(recovery.retryResultCount) === 0
+      && Number(recovery.retryContinuationCount) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.acknowledgementSourceHash
+        === replay.acknowledgementReplayHash
+      && replay.stationSourceHash === replay.stationReplayHash
     ),
     cleanupComplete: (
       cleanup.conversationDeleted === true
@@ -9245,6 +9795,7 @@ export function installAcceptanceHarness(): void {
         | Awaited<ReturnType<typeof foundationConversationReadback>>
         | null = null;
 
+      try {
       if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT') {
         const scenario = await runFoundationActiveMutationConflictScenario({
           sampleId,
@@ -9255,6 +9806,19 @@ export function installAcceptanceHarness(): void {
 
       if (cell === 'BASE-APPROVAL_DENIED') {
         const scenario = await runFoundationApprovalDeniedScenario({
+          agent,
+          platform,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
+      if (cell === 'BASE-APPROVAL_EXPIRED') {
+        const scenario = await runFoundationApprovalExpiredScenario({
           agent,
           platform,
           sampleId,
@@ -10069,7 +10633,10 @@ export function installAcceptanceHarness(): void {
         });
       }
       if (
-        cell === 'BASE-APPROVAL_DENIED'
+        (
+          cell === 'BASE-APPROVAL_DENIED'
+          || cell === 'BASE-APPROVAL_EXPIRED'
+        )
         && scenarioFacts
         && currentConversationId
       ) {
@@ -10090,7 +10657,9 @@ export function installAcceptanceHarness(): void {
         scenarioFacts.cleanup = {
           ...evidenceRecord(
             scenarioFacts.cleanup,
-            'foundationApprovalDeniedCleanup',
+            cell === 'BASE-APPROVAL_DENIED'
+              ? 'foundationApprovalDeniedCleanup'
+              : 'foundationApprovalExpiredCleanup',
           ),
           conversationDeleted,
           deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
@@ -10167,14 +10736,24 @@ export function installAcceptanceHarness(): void {
         stationReadback.revision = Number(winner.revisionAfterReload);
         stationReadback.stateHash = String(winner.hashAfterReload);
       }
-      if (cell === 'BASE-APPROVAL_DENIED' && scenarioFacts) {
+      if (
+        (
+          cell === 'BASE-APPROVAL_DENIED'
+          || cell === 'BASE-APPROVAL_EXPIRED'
+        )
+        && scenarioFacts
+      ) {
         const station = evidenceRecord(
           scenarioFacts.station,
-          'foundationApprovalDeniedStation',
+          cell === 'BASE-APPROVAL_DENIED'
+            ? 'foundationApprovalDeniedStation'
+            : 'foundationApprovalExpiredStation',
         );
         const lineage = evidenceRecord(
           station.lineage,
-          'foundationApprovalDeniedLineage',
+          cell === 'BASE-APPROVAL_DENIED'
+            ? 'foundationApprovalDeniedLineage'
+            : 'foundationApprovalExpiredLineage',
         );
         stationReadback.entityKind = 'agent-tool-call';
         stationReadback.entityIdHash = await sha256Hex(
@@ -10277,7 +10856,9 @@ export function installAcceptanceHarness(): void {
         : { eventId: '', sequence: 0, eventType: '', occurredAt: '' };
 
       const measurementLimitMs =
-        cell === 'AS-F04' || cell === 'AS-F12'
+        cell === 'AS-F04'
+        || cell === 'AS-F12'
+        || cell === 'BASE-APPROVAL_EXPIRED'
           ? 900_000
           : cell === 'AS-F06'
             ? 300_000
@@ -10314,15 +10895,22 @@ export function installAcceptanceHarness(): void {
               ),
               maximum: 0,
             }
-          : cell === 'BASE-APPROVAL_DENIED' && scenarioFacts
+          : (
+            cell === 'BASE-APPROVAL_DENIED'
+            || cell === 'BASE-APPROVAL_EXPIRED'
+          ) && scenarioFacts
             ? (() => {
                 const station = evidenceRecord(
                   scenarioFacts.station,
-                  'foundationApprovalDeniedStation',
+                  cell === 'BASE-APPROVAL_DENIED'
+                    ? 'foundationApprovalDeniedStation'
+                    : 'foundationApprovalExpiredStation',
                 );
                 const lineage = evidenceRecord(
                   station.lineage,
-                  'foundationApprovalDeniedLineage',
+                  cell === 'BASE-APPROVAL_DENIED'
+                    ? 'foundationApprovalDeniedLineage'
+                    : 'foundationApprovalExpiredLineage',
                 );
                 return {
                   counterId: String(lineage.toolCallId),
@@ -10451,15 +11039,22 @@ export function installAcceptanceHarness(): void {
                     'foundationActiveMutationConflictCleanup',
                   ).priorSelection
               )
-            : cell === 'BASE-APPROVAL_DENIED' && scenarioFacts
+            : (
+              cell === 'BASE-APPROVAL_DENIED'
+              || cell === 'BASE-APPROVAL_EXPIRED'
+            ) && scenarioFacts
               ? (
                   evidenceRecord(
                     scenarioFacts.cleanup,
-                    'foundationApprovalDeniedCleanup',
+                    cell === 'BASE-APPROVAL_DENIED'
+                      ? 'foundationApprovalDeniedCleanup'
+                      : 'foundationApprovalExpiredCleanup',
                   ).conversationDeleted === true
                   && evidenceRecord(
                     scenarioFacts.cleanup,
-                    'foundationApprovalDeniedCleanup',
+                    cell === 'BASE-APPROVAL_DENIED'
+                      ? 'foundationApprovalDeniedCleanup'
+                      : 'foundationApprovalExpiredCleanup',
                   ).bindingRestored === true
                 )
             : cell === 'AS-F05'
@@ -10505,7 +11100,10 @@ export function installAcceptanceHarness(): void {
           ? { proof: scenarioFacts.cleanup }
           : cell === 'AS-F12' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
-          : cell === 'BASE-APPROVAL_DENIED' && scenarioFacts
+          : (
+            cell === 'BASE-APPROVAL_DENIED'
+            || cell === 'BASE-APPROVAL_EXPIRED'
+          ) && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
@@ -10515,6 +11113,7 @@ export function installAcceptanceHarness(): void {
       const receiver = (
         cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
         || cell === 'BASE-APPROVAL_DENIED'
+        || cell === 'BASE-APPROVAL_EXPIRED'
       ) && scenarioFacts
         ? evidenceRecord(
             scenarioFacts.receiver,
@@ -10525,7 +11124,10 @@ export function installAcceptanceHarness(): void {
         scenarioId: cell,
         cellId: cell,
         visible: receiver
-          ? cell === 'BASE-APPROVAL_DENIED'
+          ? (
+            cell === 'BASE-APPROVAL_DENIED'
+            || cell === 'BASE-APPROVAL_EXPIRED'
+          )
             ? (
                 receiver.recoveryVisible === true
                 && receiver.errorVisible === true
@@ -10536,8 +11138,13 @@ export function installAcceptanceHarness(): void {
           : receiverDom.composer.visibleCount > 0
             || receiverDom.assistantMessages.visibleCount > 0,
         selector: receiver
-          ? cell === 'BASE-APPROVAL_DENIED'
-            ? '[data-pt-agent-tool-recovery="continue-without-tool"],[data-pt-agent-tool-error]'
+          ? (
+            cell === 'BASE-APPROVAL_DENIED'
+            || cell === 'BASE-APPROVAL_EXPIRED'
+          )
+            ? cell === 'BASE-APPROVAL_DENIED'
+              ? '[data-pt-agent-tool-recovery="continue-without-tool"],[data-pt-agent-tool-error]'
+              : '[data-pt-agent-tool-recovery="request-again"],[data-pt-agent-tool-error]'
             : '[data-pt-agent-profile-conflict],[data-pt-agent-profile-reload]'
           : cell === 'AS-F05'
           ? '[data-pt-agent-message-attachment]'
@@ -10545,7 +11152,10 @@ export function installAcceptanceHarness(): void {
         locale,
         textHash: await sha256Hex(
           receiver
-            ? cell === 'BASE-APPROVAL_DENIED'
+            ? (
+              cell === 'BASE-APPROVAL_DENIED'
+              || cell === 'BASE-APPROVAL_EXPIRED'
+            )
               ? stableJson({
                   recoveryText: receiver.recoveryText,
                   errorText: receiver.errorText,
@@ -10571,10 +11181,18 @@ export function installAcceptanceHarness(): void {
         replayEvidence.equal = winner.hashBeforeStale === winner.hashAfterReload;
         replayEvidence.turnId = null;
       }
-      if (cell === 'BASE-APPROVAL_DENIED' && scenarioFacts) {
+      if (
+        (
+          cell === 'BASE-APPROVAL_DENIED'
+          || cell === 'BASE-APPROVAL_EXPIRED'
+        )
+        && scenarioFacts
+      ) {
         const replay = evidenceRecord(
           scenarioFacts.replay,
-          'foundationApprovalDeniedReplay',
+          cell === 'BASE-APPROVAL_DENIED'
+            ? 'foundationApprovalDeniedReplay'
+            : 'foundationApprovalExpiredReplay',
         );
         replayEvidence.sourceHash = replay.acknowledgementSourceHash;
         replayEvidence.replayHash = replay.acknowledgementReplayHash;
@@ -10652,6 +11270,25 @@ export function installAcceptanceHarness(): void {
         replay: replayEvidence,
         cleanup,
       });
+      } catch (error) {
+        if (cell === 'BASE-APPROVAL_EXPIRED' && preparedConversationId) {
+          try {
+            await cleanupFoundationToolConversation(
+              preparedConversationId,
+              preparedTurnId ?? '',
+            );
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error('agent.acceptance.foundationToolExpiryCleanupFailed'),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        throw error;
+      }
     },
 
     async foundationNonAdvertisementProbe({
