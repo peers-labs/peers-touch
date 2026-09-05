@@ -396,7 +396,6 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	}
 	authorityPrepareHandler, err := httpinterface.NewAuthorityPrepareHandler(
 		authorityService,
-		deviceDirectory,
 	)
 	if err != nil {
 		return nil, err

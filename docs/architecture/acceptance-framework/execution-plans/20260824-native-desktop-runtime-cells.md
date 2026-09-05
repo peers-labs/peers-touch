@@ -861,8 +861,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Product Closure run `20260904T190332370979Z-f9793309fcd5ad79ac955d4bad864acd` at `9e7faa577bc8a7ffd3e710f365442a51140625c2`, binary SHA-256 `f3bb7159ba06983561f269cccc710e4ad64cbc811ec645585bcaaa3861653122`, proves the Windows focus-ordering correction, exact Direct create/reopen, group genesis, and Alice-to-Bob transcript delivery. MP-W14 A-D now locally implement and verify the follower-membership correction. No fresh exact-source Windows Product Closure has run, so W9-D remains `PARTIAL/UNPROVEN`. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows distinct bindings, exact Direct create/reopen, cross-Station group genesis, and authority-to-follower message delivery; remaining product claims are open | Product Closure run `20260904T190332370979Z-f9793309fcd5ad79ac955d4bad864acd` proves Alice generation 1 bound to station-four and Bob generation 1 bound to station-five at exact source `9e7faa577bc8a7ffd3e710f365442a51140625c2`, creates/reopens Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120`, commits group genesis, and delivers Alice's sequence-3 group message to Bob. MP-W14 A-D now pass local contract/state-machine checks, including follower membership, removal, replay, canonical settings, and Engine thread counts. MLS bidirectional transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and the fresh Windows MP-W14-E run remain unproven. |
+| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Product Closure run `20260905T114725741869Z-8894cc822a6bd05b8f187403b0c557e3` at `f04e0dfd68513ab8d249a5cfe0ed93645d189536`, binary SHA-256 `6b104889e266dda2f4b8f714b8214befb935ff4ad381cbfc9f0b39afb1150108`, proves restored Relay/DHT topology, exact Direct create/reopen, active follower membership, and typed settings authorization. It still fails at Bob's outbound Group prepare because the authority validates the remote endpoint through its local device table instead of the signed endpoint manifest. W9-D remains `PARTIAL/UNPROVEN`. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows distinct bindings, exact Direct create/reopen, cross-Station group genesis, authority-to-follower delivery, and verified Home Station follower membership; remote reply remains open | Product Closure run `20260905T114725741869Z-8894cc822a6bd05b8f187403b0c557e3` proves Alice bound to station-four and Bob to station-five at exact source `f04e0dfd68513ab8d249a5cfe0ed93645d189536`, reopens Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120`, and persists an `ACTIVE` station-five follower group at sequence 3 with both members active and no pending gap. Bob's remote `/messaging/command/prepare` reaches station-four but returns `messaging: record not found` because the federated authority path still requires a local `actor_devices` row. MLS bidirectional transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -3089,6 +3089,72 @@ Core. Legacy Conversation thread/settings contracts and runtime paths have
 zero live references; endpoint-private payload remains opaque in production
 Station follower code.
 
-This is local implementation evidence only. `MP-W14-E`, NDR-W9-D, and the
-Windows portion of NDR-W10-D remain `PARTIAL/UNPROVEN`. No commit, deployment,
-destructive fixture reset, or Windows Native Gate was performed.
+This local implementation was committed as
+`f04e0dfd68513ab8d249a5cfe0ed93645d189536`. `MP-W14-E`, NDR-W9-D, and the
+Windows portion of NDR-W10-D remain `PARTIAL/UNPROVEN`; current runtime evidence
+is recorded below.
+
+### 2026-09-05 MP-W14-E Windows Runtime Checkpoint
+
+The first exact-source Product Closure run
+`20260905T105928664207Z-cf73c7b7f1b9d3e05a34ce9b305e248c` used binary
+SHA-256
+`b3904e78de213428e1efe2fdd964eba5f1c80940e8593fa648cafc42405046df`
+but failed at `conversation.search.ui`. Deployment had recreated both
+disposable Stations through the shared `station.env`, disabling the Relay
+client and removing DHT bootstrap configuration. Dedicated per-Station
+environments and fresh Relay invites restored both Stations to `ready=true`,
+one connected seed, twelve routing peers, and stable Relay streams.
+
+The unchanged-source comparison run
+`20260905T114725741869Z-8894cc822a6bd05b8f187403b0c557e3` used binary
+SHA-256
+`6b104889e266dda2f4b8f714b8214befb935ff4ad381cbfc9f0b39afb1150108`.
+It proved:
+
+- Windows WebView2/Win32 runtime identity and distinct Alice/Bob Station
+  bindings at exact source `f04e0dfd68513ab8d249a5cfe0ed93645d189536`;
+- Direct create and repeat reopen for
+  `d-f4d4aaa25c831bb05fdd53cd1cdd6120`;
+- station-five follower group
+  `ffebb1c2-e3e0-4ec8-b181-7ebee91ca088` `ACTIVE` at sequence 3, with Alice
+  and Bob active, three applied receipts, and no pending gap;
+- Bob's typed member-settings reads and group typing authorization; and
+- complete process, port, storage, endpoint, tunnel, source-workspace, and GUI
+  lease cleanup.
+
+The first failed step remains `transcript.thread.ui`: Bob's reply stayed as a
+durable draft because station-five's authenticated
+`POST /messaging/command/prepare` was forwarded to station-four, where
+`POST /messaging/federation/command/prepare` returned
+`messaging: record not found`. Runtime and source inspection identify the
+remaining implementation defect: the federated authority prepare handler and
+authority send preparation still validate Bob's remote endpoint through
+station-four's local device directory. MP-D19 already requires cross-Station
+prepare to consume the verified signed endpoint manifest, which station-four
+has for Bob.
+
+The approved correction scope is limited to replacing those remote-sender
+local-device assumptions with verified manifest endpoint/Home Station
+validation, retaining local-device authorization for local requests, and
+adding focused handler/service regressions. The four local Chat Gates must pass
+before another exact-source deployment and targeted Product Closure rerun.
+The remaining seven Windows Native Chat Gates stay dependency-blocked.
+
+The approved local correction now passes focused handler and repository-backed
+manifest-only sender regressions plus the complete reduced local cohort:
+
+- `station-messaging-unit`:
+  `20260905T125516955785Z-e8f094e0ace831b5792a8ff08d1541d9`;
+- `messaging-platform-contract`:
+  `20260905T125521976036Z-c0638e8eee6bb7f5f07e1fba09694e61`;
+- `desktop-check`:
+  `20260905T125523518414Z-39d1d3533889126902b9de8b3add3ece`;
+- `chat-native-visible-static`:
+  `20260905T125533060955Z-e1f590673dc9b35dad98b5dcbd96f11e`;
+- aggregate:
+  `20260905T125516816692Z-a1fe8cb980506bd4e86592a5e451136e`.
+
+The correction is committed in this checkpoint but not yet deployed. Windows
+Product Closure and the remaining seven Windows Native Chat Gates remain
+`UNPROVEN`.

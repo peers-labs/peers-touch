@@ -67,6 +67,29 @@ func (s *AuthorityService) PrepareSend(
 	ctx context.Context,
 	request *chat.PrepareMessagingSendRequest,
 ) (*chat.PrepareMessagingSendResponse, error) {
+	return s.prepareSend(ctx, request, "")
+}
+
+// PrepareFederatedSend validates the sender against its signed Home Station
+// manifest before preparing a plan at the remote conversation authority.
+func (s *AuthorityService) PrepareFederatedSend(
+	ctx context.Context,
+	sourceHomeStationID string,
+	request *chat.PrepareMessagingSendRequest,
+) (*chat.PrepareMessagingSendResponse, error) {
+	sourceHomeStationID = strings.TrimSpace(sourceHomeStationID)
+	if sourceHomeStationID == "" {
+		return nil, messaging.ErrSenderUnauthorized
+	}
+
+	return s.prepareSend(ctx, request, sourceHomeStationID)
+}
+
+func (s *AuthorityService) prepareSend(
+	ctx context.Context,
+	request *chat.PrepareMessagingSendRequest,
+	expectedSenderHomeStationID string,
+) (*chat.PrepareMessagingSendResponse, error) {
 	if request == nil ||
 		request.ConversationId == "" ||
 		request.Sender == nil ||
@@ -79,8 +102,23 @@ func (s *AuthorityService) PrepareSend(
 	if err != nil {
 		return nil, err
 	}
-	if err := resolveEndpointManifests(ctx, s.manifestResolver, actors); err != nil {
+	manifests, err := resolveEndpointManifestSnapshots(ctx, s.manifestResolver, actors)
+	if err != nil {
 		return nil, err
+	}
+	senderManifest, _, err := manifestEntryForEndpoint(manifests, request.Sender)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"messaging: sender endpoint is absent from the verified manifest: %w",
+			messaging.ErrSenderUnauthorized,
+		)
+	}
+	if expectedSenderHomeStationID != "" &&
+		senderManifest.HomeStationId != expectedSenderHomeStationID {
+		return nil, fmt.Errorf(
+			"messaging: sender Home Station does not match authenticated source: %w",
+			messaging.ErrSenderUnauthorized,
+		)
 	}
 	var plan *chat.PrepareMessagingSendResponse
 	err = s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
@@ -93,13 +131,6 @@ func (s *AuthorityService) PrepareSend(
 		}
 		if !conversation.Active {
 			return messaging.ErrConversationState
-		}
-		active, err := repositories.Devices.IsActive(ctx, request.Sender)
-		if err != nil {
-			return err
-		}
-		if !active {
-			return messaging.ErrSenderUnauthorized
 		}
 		plan, err = buildSendPlan(
 			ctx,
@@ -141,19 +172,6 @@ func (s *AuthorityService) activeConversationActors(
 		return nil
 	})
 	return actors, err
-}
-
-func resolveEndpointManifests(
-	ctx context.Context,
-	resolver messaging.EndpointManifestResolver,
-	actorPTIDs []string,
-) error {
-	for _, actorPTID := range actorPTIDs {
-		if _, err := resolver.ResolveEndpointManifest(ctx, actorPTID); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *AuthorityService) resolveGroupGenesisCommitManifests(

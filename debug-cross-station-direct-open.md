@@ -1,7 +1,7 @@
 # Debug Session: cross-station-direct-open
 - **Status**: [OPEN]
 - **Issue**: The Windows native Chat Gate selects the exact station-five Bob search result, but Alice's direct conversation does not open.
-- **Debug Server**: `http://10.4.33.34:7781/event`
+- **Debug Server**: `http://10.4.33.34:7779/event`
 - **Log File**: `.dbg/trae-debug-log-cross-station-direct-open.ndjson`
 
 ## Reproduction Steps
@@ -28,6 +28,11 @@
 | K | Authority-to-follower federation delivery or Bob's local decrypt path drops Alice's group message. | Medium | Low | Rejected: station-four delivered authority sequence 3, station-five received its frame, Bob ACKed the queue item, and the Gate observed Alice's root message in Bob's transcript. |
 | L | station-five lacks the authority-signed follower membership required to authorize Bob's outbound group message. | High | Low | Confirmed: station-five has zero authority events and zero membership rows for the group, Bob projects `group:0`, and `sendGroupMessage` returns `messaging_send_outcome:not_queued:draft`. |
 | M | Bob's message exists in client state but the Gate's visible-DOM selector misses it. | Low | Low | Rejected: Bob's send failed before queueing, so no Bob-authored message existed for the selector to observe. |
+| N | The latest Direct-open regression is caused by Station deployment losing the dedicated Relay/DHT environment, not by MP-W14 product code. | High | Low | Confirmed for run `20260905T105928664207Z-cf73c7b7f1b9d3e05a34ce9b305e248c`: both containers had Relay disabled and no bootstrap seed after deployment through the shared `station.env`. |
+| O | Fresh Relay invites plus the dedicated topology restore cross-Station Direct creation at unchanged source. | High | Low | Confirmed by run `20260905T114725741869Z-8894cc822a6bd05b8f187403b0c557e3`: Direct create and repeat reopen used `d-f4d4aaa25c831bb05fdd53cd1cdd6120`. |
+| P | MP-W14 fails because station-five did not apply the authority-signed follower projection. | Medium | Low | Rejected: station-five has an `ACTIVE` follower group at sequence 3, both members active, three applied receipts, no pending gap, successful member-settings reads, and Bob's group typing authorization succeeds. |
+| Q | Federated command preparation still validates Bob's endpoint through station-four's local `actor_devices` instead of the verified remote endpoint manifest. | High | Low | Confirmed: station-five forwards `/messaging/command/prepare`; station-four receives `/messaging/federation/command/prepare`, then returns `messaging: record not found`. The authority has Bob's verified manifest but no local Bob device row, and both `AuthorityPrepareHandler` and `AuthorityService.PrepareSend` still use the local device directory. |
+| R | Bob's Device Messaging Engine lacks the MLS session required to prepare the reply. | Low | Low | Rejected as the first failure: the Station prepare request returns 500 before local MLS outbound preparation runs. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -251,3 +256,65 @@ a focus, delivery, decrypt, or DOM-selector regression. MP-D29 remains
 unimplemented pending Owner acceptance. The current debug session stays
 `[OPEN]`; instrumentation and the Debug Server must remain available until
 the user confirms cleanup.
+
+MP-D29 was subsequently accepted and implemented as MP-W14 A-D at exact commit
+`f04e0dfd68513ab8d249a5cfe0ed93645d189536`. Windows Product Closure run
+`20260905T105928664207Z-cf73c7b7f1b9d3e05a34ce9b305e248c`, binary SHA-256
+`b3904e78de213428e1efe2fdd964eba5f1c80940e8593fa648cafc42405046df`,
+failed earlier at `conversation.search.ui`. Runtime inspection proved both
+disposable Station containers had been recreated through the shared
+`station.env`, which disabled Relay and removed DHT bootstrap configuration.
+
+Fresh Relay invites were issued, the two disposable cached Relay tokens were
+replaced, both Stations were recreated with their dedicated environments, and
+the worktree-local deploy commands were corrected to keep those environment
+files. Preflight then proved exact source `f04e0dfd6851`, Relay stream
+connection, no subsequent token rejection, DHT `ready=true`, one connected
+seed, and twelve routing peers on both Stations.
+
+The unchanged-source comparison run
+`20260905T114725741869Z-8894cc822a6bd05b8f187403b0c557e3`, binary SHA-256
+`6b104889e266dda2f4b8f714b8214befb935ff4ad381cbfc9f0b39afb1150108`,
+confirmed the topology correction:
+
+- debug lines 1-2 show the exact Bob click returning
+  `create-direct-success` for
+  `d-f4d4aaa25c831bb05fdd53cd1cdd6120`;
+- debug lines 3-4 show repeat search selecting that same conversation;
+- station-five persisted the group follower conversation as `ACTIVE` at
+  sequence 3 with Alice and Bob active, three applied follower receipts, and
+  no pending event;
+- Bob's typed member-settings reads and group typing authorization succeeded.
+
+The first failed step remains `transcript.thread.ui`, but the failure moved to
+the next authority boundary. Bob's
+`POST /messaging/command/prepare` reached station-five, was forwarded to
+station-four as `/messaging/federation/command/prepare`, and station-four
+returned `messaging: record not found`. Bob's durable draft therefore remained
+`not_queued`. Source inspection matches the runtime evidence:
+`AuthorityPrepareHandler` resolves the sender Home Station through the local
+device directory, and `AuthorityService.PrepareSend` checks sender activity in
+the same local directory even for a remotely authenticated endpoint.
+station-four correctly has no local Bob device row; its verified signed Bob
+endpoint manifest is the required authority under MP-D19.
+
+The correction must validate the federated sender Home Station and active
+endpoint against the already verified endpoint manifest, retain local-device
+authorization for local requests, and add manifest-only remote-sender
+regressions at the handler and authority-service boundaries. The run completed
+full Windows process, port, storage, endpoint, tunnel, source-workspace, and GUI
+lease cleanup. The debug session remains `[OPEN]`.
+
+The approved local correction now routes federated prepare through
+`AuthorityService.PrepareFederatedSend`. The service resolves all active member
+manifests, requires the sender endpoint to appear in the signed active endpoint
+set, and binds the sender manifest Home Station to the JWT-authenticated source.
+The redundant authority-local `actor_devices` sender lookup was removed from
+send preparation; local callers remain authorized through their freshly built
+local signed manifest.
+
+Focused handler and repository-backed manifest-only sender regressions pass.
+The approved four-Gate local Chat cohort passes in aggregate
+`20260905T125516816692Z-a1fe8cb980506bd4e86592a5e451136e`.
+Post-fix Windows evidence is not yet collected, so hypotheses Q and R retain
+their pre-fix conclusions and the debug session remains `[OPEN]`.
