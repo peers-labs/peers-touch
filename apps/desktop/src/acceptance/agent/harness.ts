@@ -3040,20 +3040,95 @@ async function runFoundationApprovalExpiredScenario(input: {
       String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
         !== toolCallId
       && String(evidenceField(fact, 'approvalId', 'approval_id') ?? ''));
-    const cancellation = await api.cancelAgentTurn(turn.turnId);
-    const settled = await waitForFoundationToolFacts(
-      turn.turnId,
-      (facts, replay) =>
-        facts.some((fact) =>
-          String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
-            === toolCallId)
-        && facts.some((fact) =>
-          String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
-            !== toolCallId
-          && Number(fact.status) === ToolCallStatus.CANCELLED)
-        && Number(replay.status) === AgentTurnStatus.CANCELLED,
-      'approval-expired retry cancellation',
+    await reportFoundationApprovalRetryCancellationDebug(
+      'B-D',
+      'retry-observed',
+      {
+        attemptCountBefore: attemptsBefore,
+        attemptCountAfter: evidenceArray(
+          retryStarted.replay.attempts,
+          'foundationApprovalExpiredRetryAttempts',
+        ).length,
+        replayStatus: Number(retryStarted.replay.status),
+        retryToolPresent: Boolean(retryToolFact),
+        retryToolStatus: retryToolFact
+          ? Number(retryToolFact.status)
+          : null,
+        retryApprovalPresent: Boolean(
+          retryToolFact
+          && String(
+            evidenceField(retryToolFact, 'approvalId', 'approval_id') ?? '',
+          ),
+        ),
+      },
     );
+    const cancellation = await api.cancelAgentTurn(turn.turnId);
+    await reportFoundationApprovalRetryCancellationDebug(
+      'A-D',
+      'cancel-response',
+      {
+        cancellationStatus: String(cancellation.status ?? ''),
+        turnIdentityPresent: Boolean(cancellation.turn_id),
+      },
+    );
+    let settled: Awaited<ReturnType<typeof waitForFoundationToolFacts>>;
+    try {
+      settled = await waitForFoundationToolFacts(
+        turn.turnId,
+        (facts, replay) =>
+          facts.some((fact) =>
+            String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+              === toolCallId)
+          && facts.some((fact) =>
+            String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+              !== toolCallId
+            && Number(fact.status) === ToolCallStatus.CANCELLED)
+          && Number(replay.status) === AgentTurnStatus.CANCELLED,
+        'approval-expired retry cancellation',
+      );
+    } catch (error) {
+      try {
+        const replay = await foundationDiagnosticReplay(turn.turnId);
+        const facts = foundationDiagnosticToolFacts(replay);
+        const originalTool = facts.find((fact) =>
+          String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+            === toolCallId);
+        const retryTool = facts.find((fact) =>
+          String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+            !== toolCallId);
+        await reportFoundationApprovalRetryCancellationDebug(
+          'A-E',
+          'cancellation-timeout',
+          {
+            cancellationStatus: String(cancellation.status ?? ''),
+            replayStatus: Number(replay.status),
+            attemptCount: evidenceArray(
+              replay.attempts,
+              'foundationApprovalExpiredCancellationAttempts',
+            ).length,
+            toolFactCount: facts.length,
+            originalToolStatus: originalTool
+              ? Number(originalTool.status)
+              : null,
+            retryToolStatus: retryTool
+              ? Number(retryTool.status)
+              : null,
+            retryApprovalPresent: Boolean(
+              retryTool
+              && String(
+                evidenceField(retryTool, 'approvalId', 'approval_id') ?? '',
+              ),
+            ),
+          },
+        );
+      } catch {
+        await reportFoundationApprovalRetryCancellationDebug(
+          'C',
+          'cancellation-diagnostic-read-failed',
+        );
+      }
+      throw error;
+    }
     const expiredAfter = settled.facts.find((fact) =>
       String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
         === toolCallId);
@@ -5820,6 +5895,27 @@ function reportFoundationApprovalReceiverDebug(
       runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationApprovalDeniedScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:approval-retry-cancellation
+function reportFoundationApprovalRetryCancellationDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7779/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'approval-retry-cancellation',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationApprovalExpiredScenario',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
