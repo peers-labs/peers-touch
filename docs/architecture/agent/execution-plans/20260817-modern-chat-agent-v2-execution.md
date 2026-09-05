@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `3965d47da1bc3e8a80715dd1840a069847d9f1cd` is deployed exact-source; its first run stopped before tuple execution on a cold `e2e-testing` compile, and the unchanged prewarmed rerun stopped at Browser AS-F02 zh-CN with `queueCapacitySnapshotMismatch`; cleanup passed, but the failure artifact lacks the queue count/capacity/timing facts needed to distinguish Station behavior from Harness sampling, so retained instrumentation is being added before any behavior change | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source diagnostic run `20260905T214027259590Z-8a11e2ddc9dccfce48c4e62d723e2e35` on `1b332d7865ff1cfd6aaf5f8a23c30d7b0b33f514` confirmed Browser AS-F02 awaited duplicate completion before creating the queue workload; the fast zh-CN active Turn completed first, one follow-up executed, the queue fell from seven to zero, and the overflow request was accepted; the local correction establishes and snapshots the strict `8/8` queue before awaiting stream completion, with the oracle unchanged | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5529,6 +5529,28 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   behavior from Acceptance sampling order. Retained session
   `foundation-queue-capacity` records only those redacted boundaries before any
   product or assertion change. Foundation and G-F remain
+  `PARTIAL / UNPROVEN`.
+- Exact-source diagnostic Gate run
+  `20260905T214027259590Z-8a11e2ddc9dccfce48c4e62d723e2e35`
+  (aggregate
+  `20260905T214027067388Z-4a2f36cc37fff9eeaf8d070cb924329d`)
+  on `1b332d7865ff1cfd6aaf5f8a23c30d7b0b33f514` reproduced the same
+  Browser AS-F02 zh-CN failure and supplied the missing runtime facts. The
+  English tuple sampled a full Station queue with positions `1..8` while the
+  active Turn remained non-terminal. In the zh-CN tuple, the active Turn
+  emitted `done` before queued submissions began; all eight follow-ups were
+  accepted, one immediately executed, the first queue read returned seven,
+  the queue drained to zero, and the supposed overflow request completed.
+  Station still reported capacity eight and the selected conversation matched.
+  This confirms an Acceptance action-ordering race: awaiting duplicate replay
+  completion used provider duration as the queue hold barrier. The local
+  correction starts duplicate replay and all eight queue requests without
+  awaiting completion, captures the unchanged strict `8/8` Station snapshot,
+  then sends the ninth request and awaits results. The queue, FIFO, overflow,
+  cancellation, DOM, and lifecycle oracles are unchanged. Desktop check,
+  569 Desktop tests with one unrelated skip, 69 Agent native static tests, and
+  `git diff --check` pass. Cleanup completed `DONE / PROVEN / passed`;
+  post-fix exact-source proof remains pending, so Foundation and G-F remain
   `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission

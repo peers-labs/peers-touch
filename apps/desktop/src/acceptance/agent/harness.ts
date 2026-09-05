@@ -6279,7 +6279,7 @@ function reportFoundationQueueCapacityDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'foundation-queue-capacity',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:foundationDirectProbe:AS-F02',
       msg: `[DEBUG] ${stage}`,
@@ -10627,6 +10627,9 @@ export function installAcceptanceHarness(): void {
           },
         );
 
+        const duplicateQueue = await api.listAgentTurnQueue(
+          conversation.conversation_id,
+        );
         const duplicate = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
           agentId,
@@ -10637,15 +10640,6 @@ export function installAcceptanceHarness(): void {
           clientCapabilitySessionId:
             capabilitySessions.selectedStationSession?.session_id,
         });
-        const duplicateResult = await duplicate.result;
-        const activeTurnId = observedTurnId(duplicateResult.events);
-        if (!activeTurnId) {
-          active.controller.abort();
-          throw new Error('agent.acceptance.foundationTurnIdMissing');
-        }
-        const duplicateQueue = await api.listAgentTurnQueue(
-          conversation.conversation_id,
-        );
         const queuedTurns = Array.from({ length: 8 }, (_, index) =>
           startObservedFoundationTurn({
             conversationId: conversation.conversation_id,
@@ -10669,41 +10663,9 @@ export function installAcceptanceHarness(): void {
             activeEventTypes: active.events.map((event) => event.event),
           },
         );
-        const queuedResults = await Promise.all(
+        const queuedResultsPromise = Promise.all(
           queuedTurns.map((queued) => queued.result),
         );
-        void reportFoundationQueueCapacityDebug(
-          'A,B,D',
-          'queued-results-settled',
-          {
-            elapsedSinceActiveMs: performance.now() - activeStartedAt,
-            activeEventTypes: active.events.map((event) => event.event),
-            queuedResults: queuedResults.map((result) => ({
-              ok: result.ok,
-              errorCode: observedErrorCode(result.error),
-              eventTypes: result.events.map((event) => event.event),
-              queuePositions: result.events.map((event) => {
-                const admission = event.data.admission;
-                if (!admission || typeof admission !== 'object') return 0;
-                return Number(
-                  (admission as Record<string, unknown>).queue_position ?? 0,
-                );
-              }),
-            })),
-          },
-        );
-        const overflow = startObservedFoundationTurn({
-          conversationId: conversation.conversation_id,
-          agentId,
-          content: 'Overflow',
-          idempotencyKey: crypto.randomUUID(),
-          provider: agent.provider || undefined,
-          model: agent.model || undefined,
-          clientCapabilitySessionId:
-            capabilitySessions.selectedStationSession?.session_id,
-        });
-        const overflowResult = await overflow.result;
-
         const queueSnapshotStartedAt = performance.now();
         let queueAtCapacity = await api.listAgentTurnQueue(
           conversation.conversation_id,
@@ -10726,7 +10688,7 @@ export function installAcceptanceHarness(): void {
           );
           queuePollCount += 1;
         }
-        await reportFoundationQueueCapacityDebug(
+        void reportFoundationQueueCapacityDebug(
           'A,B,C,D,E',
           'queue-capacity-sampled',
           {
@@ -10742,11 +10704,6 @@ export function installAcceptanceHarness(): void {
             ),
             queuePollCount,
             activeEventTypes: active.events.map((event) => event.event),
-            overflowOk: overflowResult.ok,
-            overflowErrorCode: observedErrorCode(overflowResult.error),
-            overflowEventTypes: overflowResult.events.map(
-              (event) => event.event,
-            ),
             selectedConversationMatches:
               useChatStore.getState().currentSessionKey
                 === conversation.conversation_id,
@@ -10754,9 +10711,56 @@ export function installAcceptanceHarness(): void {
         );
         if (queueAtCapacity.entries.length !== 8) {
           active.controller.abort();
-          overflow.controller.abort();
+          duplicate.controller.abort();
+          for (const queued of queuedTurns) queued.controller.abort();
           throw new Error('agent.acceptance.queueCapacitySnapshotMismatch');
         }
+        const overflow = startObservedFoundationTurn({
+          conversationId: conversation.conversation_id,
+          agentId,
+          content: 'Overflow',
+          idempotencyKey: crypto.randomUUID(),
+          provider: agent.provider || undefined,
+          model: agent.model || undefined,
+          clientCapabilitySessionId:
+            capabilitySessions.selectedStationSession?.session_id,
+        });
+        const [duplicateFirstEvent, queuedResults, overflowResult] = await Promise.all([
+          duplicate.firstEvent,
+          queuedResultsPromise,
+          overflow.result,
+        ]);
+        const activeTurnId = observedTurnId([duplicateFirstEvent]);
+        if (!activeTurnId) {
+          active.controller.abort();
+          throw new Error('agent.acceptance.foundationTurnIdMissing');
+        }
+        void reportFoundationQueueCapacityDebug(
+          'A,B,D',
+          'queue-results-settled',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            activeEventTypes: active.events.map((event) => event.event),
+            duplicateEventTypes: duplicate.events.map((event) => event.event),
+            queuedResults: queuedResults.map((result) => ({
+              ok: result.ok,
+              errorCode: observedErrorCode(result.error),
+              eventTypes: result.events.map((event) => event.event),
+              queuePositions: result.events.map((event) => {
+                const admission = event.data.admission;
+                if (!admission || typeof admission !== 'object') return 0;
+                return Number(
+                  (admission as Record<string, unknown>).queue_position ?? 0,
+                );
+              }),
+            })),
+            overflowOk: overflowResult.ok,
+            overflowErrorCode: observedErrorCode(overflowResult.error),
+            overflowEventTypes: overflowResult.events.map(
+              (event) => event.event,
+            ),
+          },
+        );
         await useChatStore.getState().syncTurnQueue(conversation.conversation_id);
         await waitFor(
           () => {
@@ -10793,7 +10797,10 @@ export function installAcceptanceHarness(): void {
           || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
           active.controller.disconnectTransport();
         }
-        const activeResult = await active.result;
+        const [activeResult, duplicateResult] = await Promise.all([
+          active.result,
+          duplicate.result,
+        ]);
         if (!activeResult.events.some((event) =>
           event.event === 'cancelled'
           || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
@@ -10870,7 +10877,7 @@ export function installAcceptanceHarness(): void {
           },
           duplicateSubmission: {
             firstTurnId: activeTurnId,
-            replayedTurnId: activeTurnId,
+            replayedTurnId: observedTurnId(duplicateResult.events),
             turnDelta: 1,
             queueEntryDelta: duplicateQueue.entries.length,
           },
