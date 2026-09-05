@@ -75,6 +75,43 @@ const DEFAULT_PORT: u16 = 3030;
 const POOL_SIZE: usize = 8;
 const MAX_FRONTEND_TELEMETRY_BATCH_EVENTS: usize = 500;
 
+struct GatewayRequestDiagnostics {
+    active_workers_at_enqueue: usize,
+    queue_wait_ms: u128,
+    queued_at_enqueue: usize,
+}
+
+// #region debug-point D-E:foundation-gateway-dispatch
+fn report_foundation_gateway_debug(stage: &str, data: Value) {
+    if std::env::var("PT_DESKTOP_E2E").as_deref() != Ok("true") {
+        return;
+    }
+    let payload = json!({
+        "sessionId": "foundation-identity-boot",
+        "runId": "pre-fix",
+        "hypothesisId": "D-E",
+        "location": "http_gateway/mod.rs:handle_request",
+        "msg": format!("[DEBUG] {stage}"),
+        "data": data,
+        "ts": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0),
+    });
+    let _ = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_millis(100))
+        .timeout(std::time::Duration::from_millis(250))
+        .build()
+        .and_then(|client| {
+            client
+                .post("http://127.0.0.1:7778/event")
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(payload.to_string())
+                .send()
+        });
+}
+// #endregion
+
 #[derive(Clone)]
 enum GatewayRuntime {
     Tauri { app_handle: AppHandle },
@@ -164,8 +201,20 @@ fn start_with_runtime(state: Arc<AppState>, runtime: GatewayRuntime) {
 
                 let state = Arc::clone(&state);
                 let runtime = runtime.clone();
+                let enqueued_at = std::time::Instant::now();
+                let active_workers_at_enqueue = pool.active_count();
+                let queued_at_enqueue = pool.queued_count();
                 pool.execute(move || {
-                    handle_request(request, &state, &runtime);
+                    handle_request(
+                        request,
+                        &state,
+                        &runtime,
+                        GatewayRequestDiagnostics {
+                            active_workers_at_enqueue,
+                            queue_wait_ms: enqueued_at.elapsed().as_millis(),
+                            queued_at_enqueue,
+                        },
+                    );
                 });
             }
         })
@@ -176,7 +225,12 @@ fn start_with_runtime(state: Arc<AppState>, runtime: GatewayRuntime) {
 // Request handling
 // -------------------------------------------------------------------------
 
-fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &GatewayRuntime) {
+fn handle_request(
+    mut request: tiny_http::Request,
+    state: &AppState,
+    runtime: &GatewayRuntime,
+    diagnostics: GatewayRequestDiagnostics,
+) {
     // CORS preflight
     if *request.method() == tiny_http::Method::Options {
         let response = tiny_http::Response::empty(200)
@@ -276,7 +330,26 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &G
         None => raw_args,
     };
 
+    let dispatch_started_at = std::time::Instant::now();
+    report_foundation_gateway_debug(
+        "gateway-dispatch-started",
+        json!({
+            "command": cmd,
+            "activeWorkersAtEnqueue": diagnostics.active_workers_at_enqueue,
+            "queuedAtEnqueue": diagnostics.queued_at_enqueue,
+            "queueWaitMs": diagnostics.queue_wait_ms,
+        }),
+    );
     let result = dispatch(cmd, args, state, runtime);
+    report_foundation_gateway_debug(
+        "gateway-dispatch-completed",
+        json!({
+            "command": cmd,
+            "dispatchDurationMs": dispatch_started_at.elapsed().as_millis(),
+            "resultCode": result.get("code").cloned().unwrap_or(Value::Null),
+            "resultOk": result.get("ok").and_then(Value::as_bool),
+        }),
+    );
 
     let response_body = result.to_string();
     let response = tiny_http::Response::from_string(response_body)
