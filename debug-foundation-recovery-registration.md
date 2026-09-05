@@ -52,6 +52,15 @@
   rebooted at `2026-09-05T23:09:05+08:00` before the runner could publish a
   candidate, run manifest, or cleanup receipt. The attempt is
   `INCOMPLETE / UNPROVEN`; its runtime activity cannot prove AS-F06.
+- Exact-source aggregate
+  `20260905T173017351674Z-65338c392b7d5a1a098d0adc93796164`
+  on `18d5ff27bd0c485adbff996067faec9e6489be90` passed the repaired
+  AS-F01 tuples and reached Browser AS-F06. It failed at
+  `agent.acceptance.foundationRecoveryCursorAdvancedBeforeFault`: the recovery
+  cursor advanced while the asynchronous loopback cut request was in flight.
+  The error proves the implementation froze the cursor before the cut was
+  acknowledged, not at the actual transport boundary. Outer Provisioner and
+  client cleanup completed `DONE / PROVEN / passed`.
 
 ## Instrumentation
 - Recovery-store actor begin/reset records active and watermark counts.
@@ -78,4 +87,23 @@ restart. The proxy also rejects connections admitted by an earlier fault
 generation. Runtime proof is still pending; keep the instrumentation and debug
 session open. The post-fix run was externally interrupted by the host reboot,
 so an unchanged exact-source rerun is required before comparing the corrected
-fault boundary with the pre-fix sequence.
+fault boundary with the pre-fix sequence. That rerun proved the control request
+itself is not an atomic cursor boundary: provider events may validly arrive
+before the proxy closes the connection. The next correction must register the
+pending recovery identity first, request the cut immediately, and capture the
+acknowledged cursor only after the proxy confirms closure and the recovery
+projection leaves `CONNECTED`. Duplicate/out-of-order mutation checks then run
+synchronously against that frozen post-cut cursor.
+
+## Post-Cut Cursor Fix
+- The pending recovery identity is registered before the asynchronous control
+  request so phase transitions remain observable.
+- The pre-request cursor is diagnostic context only.
+- `acknowledgedCursor`, prefix evidence, and duplicate/out-of-order source
+  events are derived after the proxy acknowledges the cut and recovery leaves
+  `CONNECTED`.
+- Synthetic stale/duplicate mutations execute synchronously from that point,
+  and any later cursor advancement fails closed as
+  `agent.acceptance.foundationRecoveryCursorAdvancedAfterFault`.
+- Desktop check, 123 focused runtime/coordinator/static tests, and
+  `git diff --check` pass. Exact-source runtime verification remains pending.

@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260905T164357867194Z-1225fd0418b0b82a7a2626f8eaebbf55` on `e2f1cb183f80ca6a9b9016617cbaf4dfd40050fa` confirmed AS-F01 depended on a residual enabled capability binding; the local correction gives AS-F01 and AS-F07 one shared reversible fixture lifecycle, while post-fix exact-source proof remains pending | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260905T173017478667Z-2354616474f59352e5d26e4583395011` on `18d5ff27bd0c485adbff996067faec9e6489be90` passed both repaired Browser AS-F01 tuples and advanced to AS-F06; the local correction now freezes the acknowledged recovery cursor only after the proxy confirms the transport cut, while post-fix exact-source proof remains pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5454,6 +5454,30 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   capability-isolation tests, 68 native static tests, 38 Foundation coordinator
   tests, and `git diff --check` pass. Product/runtime proof remains
   `PARTIAL / UNPROVEN` pending the exact-source post-fix run.
+- Exact-source aggregate
+  `20260905T173017351674Z-65338c392b7d5a1a098d0adc93796164`
+  (Gate run
+  `20260905T173017478667Z-2354616474f59352e5d26e4583395011`)
+  on `18d5ff27bd0c485adbff996067faec9e6489be90` passed both Browser
+  AS-F01 locale tuples with one enabled, READY capability before isolation,
+  proving the deterministic fixture correction. It advanced through AS-F05
+  and failed at Browser `AS-F06 / en / single / sample-001` with
+  `agent.acceptance.foundationRecoveryCursorAdvancedBeforeFault`. The previous
+  implementation captured `acknowledgedCursor` before its asynchronous
+  loopback cut request, so provider events that validly arrived before the
+  proxy confirmed closure were misclassified as post-fault drift. Scenario
+  cleanup also encountered a crashed Browser tab, but the outer Provisioner
+  released both clients, all proxy/control/gateway/renderer/WebDriver ports,
+  temporary storage, actor identity, and both source/profile leases with
+  `DONE / PROVEN / passed`. The local correction registers the pending
+  recovery identity first, requests the cut immediately, then derives the
+  acknowledged cursor, text prefix, and duplicate/out-of-order probes after
+  cut acknowledgment and the first non-`CONNECTED` recovery phase. Synthetic
+  mutations remain synchronous, and any cursor movement after that boundary
+  still fails closed. Desktop check, 123 focused
+  runtime/coordinator/static tests, 51 capability-isolation tests, and
+  `git diff --check` pass. Foundation and G-F remain
+  `PARTIAL / UNPROVEN` pending exact-source verification.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
