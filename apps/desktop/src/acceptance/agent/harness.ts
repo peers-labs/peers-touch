@@ -6269,6 +6269,27 @@ function reportFoundationCapabilityIsolationDebug(
 }
 // #endregion
 
+// #region debug-point A-E:foundation-queue-capacity
+function reportFoundationQueueCapacityDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7786/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-queue-capacity',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:foundationDirectProbe:AS-F02',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 // #region debug-point A-E:as-f07-revision-stage
 function reportFoundationF07Debug(
   hypothesisId: string,
@@ -10594,6 +10615,17 @@ export function installAcceptanceHarness(): void {
           sequence: Number(firstActiveEvent.data.seq ?? 0),
           observedAt: new Date().toISOString(),
         };
+        void reportFoundationQueueCapacityDebug(
+          'A',
+          'active-first-event',
+          {
+            eventType: firstActiveEvent.event,
+            sequence: Number(firstActiveEvent.data.seq ?? 0),
+            selectedConversationMatches:
+              useChatStore.getState().currentSessionKey
+                === conversation.conversation_id,
+          },
+        );
 
         const duplicate = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
@@ -10626,8 +10658,39 @@ export function installAcceptanceHarness(): void {
               capabilitySessions.selectedStationSession?.session_id,
           }),
         );
+        void reportFoundationQueueCapacityDebug(
+          'B,D',
+          'queued-submissions-started',
+          {
+            submissionCount: queuedTurns.length,
+            observedEventCounts: queuedTurns.map(
+              (queued) => queued.events.length,
+            ),
+            activeEventTypes: active.events.map((event) => event.event),
+          },
+        );
         const queuedResults = await Promise.all(
           queuedTurns.map((queued) => queued.result),
+        );
+        void reportFoundationQueueCapacityDebug(
+          'A,B,D',
+          'queued-results-settled',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            activeEventTypes: active.events.map((event) => event.event),
+            queuedResults: queuedResults.map((result) => ({
+              ok: result.ok,
+              errorCode: observedErrorCode(result.error),
+              eventTypes: result.events.map((event) => event.event),
+              queuePositions: result.events.map((event) => {
+                const admission = event.data.admission;
+                if (!admission || typeof admission !== 'object') return 0;
+                return Number(
+                  (admission as Record<string, unknown>).queue_position ?? 0,
+                );
+              }),
+            })),
+          },
         );
         const overflow = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
@@ -10641,9 +10704,13 @@ export function installAcceptanceHarness(): void {
         });
         const overflowResult = await overflow.result;
 
+        const queueSnapshotStartedAt = performance.now();
         let queueAtCapacity = await api.listAgentTurnQueue(
           conversation.conversation_id,
         );
+        const initialQueueSize = queueAtCapacity.entries.length;
+        let maximumObservedQueueSize = initialQueueSize;
+        let queuePollCount = 1;
         const queueDeadline = Date.now() + 30_000;
         while (
           queueAtCapacity.entries.length < 8
@@ -10653,7 +10720,38 @@ export function installAcceptanceHarness(): void {
           queueAtCapacity = await api.listAgentTurnQueue(
             conversation.conversation_id,
           );
+          maximumObservedQueueSize = Math.max(
+            maximumObservedQueueSize,
+            queueAtCapacity.entries.length,
+          );
+          queuePollCount += 1;
         }
+        await reportFoundationQueueCapacityDebug(
+          'A,B,C,D,E',
+          'queue-capacity-sampled',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            queueSamplingDurationMs:
+              performance.now() - queueSnapshotStartedAt,
+            initialQueueSize,
+            finalQueueSize: queueAtCapacity.entries.length,
+            maximumObservedQueueSize,
+            queueCapacity: queueAtCapacity.queue_capacity,
+            queuePositions: queueAtCapacity.entries.map(
+              (entry) => entry.queue_position,
+            ),
+            queuePollCount,
+            activeEventTypes: active.events.map((event) => event.event),
+            overflowOk: overflowResult.ok,
+            overflowErrorCode: observedErrorCode(overflowResult.error),
+            overflowEventTypes: overflowResult.events.map(
+              (event) => event.event,
+            ),
+            selectedConversationMatches:
+              useChatStore.getState().currentSessionKey
+                === conversation.conversation_id,
+          },
+        );
         if (queueAtCapacity.entries.length !== 8) {
           active.controller.abort();
           overflow.controller.abort();

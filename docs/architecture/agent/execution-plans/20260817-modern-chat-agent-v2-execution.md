@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260905T185006531870Z-ac3390c3b433b509109002e48a903ff0` on `6cc996f229bb0a1f977d5e0097f8174b00e79dfc` proved the post-cut cursor, replay identity, idempotence, and stale-fence correction, then failed Browser AS-F06 only because steady-state periodic reconciliation entered recovery before the live stream reported `CONNECTION_LOST`; the local owner-layer correction preserves live `CONNECTED` ownership until transport loss, while post-fix exact-source proof remains pending | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `3965d47da1bc3e8a80715dd1840a069847d9f1cd` is deployed exact-source; its first run stopped before tuple execution on a cold `e2e-testing` compile, and the unchanged prewarmed rerun stopped at Browser AS-F02 zh-CN with `queueCapacitySnapshotMismatch`; cleanup passed, but the failure artifact lacks the queue count/capacity/timing facts needed to distinguish Station behavior from Harness sampling, so retained instrumentation is being added before any behavior change | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5500,6 +5500,36 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   and `git diff --check` passes. Inner runtime cleanup and outer Provisioner
   cleanup both completed cleanly. Foundation and G-F remain
   `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source rerun.
+- Checkpoint `3965d47da1bc3e8a80715dd1840a069847d9f1cd` was deployed
+  exact-source to `chat-native-disposable-station`. Aggregate
+  `20260905T195807685764Z-18ed2980976c201a46728c4699ee01e9`
+  (Gate run
+  `20260905T195807807530Z-943afa3a55d7436996877f9285bdc025`)
+  stopped before tuple execution because switching the shared Cargo target from
+  `acceptance-webdriver` back to `e2e-testing` exceeded the native WebDriver
+  startup budget during a cold compile. Cleanup passed. The canonical
+  `make desktop` runtime was then started until the Rust gateway came up and
+  stopped cleanly, prewarming the unchanged source without altering the Gate
+  timeout.
+- The unchanged exact-source rerun
+  `20260905T204138408664Z-69dcf0a120403deccd4ba66aefe1c9a0`
+  (aggregate
+  `20260905T204138299751Z-0c94dd3d4794901925923f99259fe4a2`,
+  candidate producer
+  `20260905T204145831741Z-47b114e117eb812613aa081214c59533`)
+  reached `FIXTURE_READY`, completed Native setup and Browser AS-F01, then
+  stopped at `foundation-browser-direct / browser / direct_model / AS-F02 /
+  zh-CN / single / sample-001` with
+  `agent.acceptance.queueCapacitySnapshotMismatch`. Source and Station both
+  identify `3965d47da1bc3e8a80715dd1840a069847d9f1cd` with clean
+  workspace digests, and inner plus outer cleanup completed
+  `DONE / PROVEN / passed`. The failure artifact contains no queue count,
+  authority capacity, submission outcome, active-Turn terminal, or
+  conversation-selection facts, so it cannot yet distinguish Station queue
+  behavior from Acceptance sampling order. Retained session
+  `foundation-queue-capacity` records only those redacted boundaries before any
+  product or assertion change. Foundation and G-F remain
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
