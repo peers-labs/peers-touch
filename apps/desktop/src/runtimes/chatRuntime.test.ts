@@ -247,6 +247,29 @@ describe('chatRuntime Agent turn recovery', () => {
     expect(mocks.replayOnEvents).toHaveLength(1);
   });
 
+  it('leaves a live connected turn under its stream owner during periodic reconcile', async () => {
+    mocks.readValue.mockResolvedValueOnce({});
+    await chatRuntime.bootstrap('ptid:person:alice');
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      streamId: 'stream-1',
+      streamGeneration: 10,
+      ptid: 'ptid:person:alice',
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      event: 'connected',
+      data: { turnId: 'turn-1', seq: 1 },
+      timestampMs: 500,
+    });
+
+    await chatRuntime.reconcile?.('periodic');
+
+    expect(mocks.replayInputs).toHaveLength(0);
+    expect(useAgentTurnRecoveryStore.getState().active['conversation-1']).toMatchObject({
+      phase: 'CONNECTED',
+      recoveryEpoch: 0,
+    });
+  });
+
   it('flushes the current recovery phase before a client restart', async () => {
     mocks.readValue.mockResolvedValueOnce({});
     await chatRuntime.bootstrap('ptid:person:alice');
