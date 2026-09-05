@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `cdf50ddc8b0c4f2f3d6c3d87c8bbc83907dcce87` makes the Browser AS-F06 cut boundary acknowledged and cleanup idempotent; its first exact-source execution reached `FIXTURE_READY` and emitted recovery activity before a host reboot interrupted the runner without a candidate, manifest, or cleanup receipt, so the run is `INCOMPLETE / UNPROVEN` and an unchanged rerun is pending | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260905T164357867194Z-1225fd0418b0b82a7a2626f8eaebbf55` on `e2f1cb183f80ca6a9b9016617cbaf4dfd40050fa` confirmed AS-F01 depended on a residual enabled capability binding; the local correction gives AS-F01 and AS-F07 one shared reversible fixture lifecycle, while post-fix exact-source proof remains pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5430,6 +5430,30 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `INCOMPLETE / UNPROVEN`, not as a Gate or product failure; retain its
   artifacts unchanged and rerun the exact source without changing Gate
   timeouts or assertions.
+- The first post-reboot run on
+  `7601b663861e101b37d0183badcc16956765664e` failed before tuple
+  execution because profile re-import removed the four provider fields from
+  the local disposable cache. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; the previously approved provider tuple was restored
+  from the existing local profile source without printing or committing its
+  values. Exact-source aggregate
+  `20260905T155910608914Z-5e1551459204f9f999b32a19fb8a374b`
+  then reached Browser `AS-F01 / en / single / sample-001` and failed at
+  `agent.acceptance.foundationCapabilityIsolationUnavailable`; cleanup again
+  passed. Instrumented exact-source aggregate
+  `20260905T164357715597Z-1ab26f1e29b133786540aec33a8d992c`
+  on `e2f1cb183f80ca6a9b9016617cbaf4dfd40050fa` proved the selected
+  and authoritative Agent versions matched, no stale journal existed, and the
+  sole binding was disabled, yielding one
+  `BLOCKED / binding_disabled` readiness row and zero READY capabilities. The
+  fault is Acceptance business-fixture state, not product readiness behavior:
+  AS-F01 required a positive isolation boundary but did not provision the
+  reversible platform-specific capability fixture already used by AS-F07. The
+  local correction extracts that setup/restoration into one shared
+  revision-fenced lifecycle used by both scenarios. Desktop check, 51 focused
+  capability-isolation tests, 68 native static tests, 38 Foundation coordinator
+  tests, and `git diff --check` pass. Product/runtime proof remains
+  `PARTIAL / UNPROVEN` pending the exact-source post-fix run.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
