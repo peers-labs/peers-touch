@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260905T122935196020Z-b10c556a47fdd200739b280e907e37ba` on `d983768315b338e71a5cea48f4eccc95f6a93daa` stopped at Browser AS-F06 because the captured recovery failure had an empty `errorHash`; source identity matched and cleanup completed `DONE / PROVEN / passed`; cancellation instrumentation remains pending behind this earlier failure | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260905T131248877567Z-ef022ff2b49f7b5593a5ad8bd508c217` on `f95a4dd0eb779aae6106872257a1d1c4247535b2` confirmed that Browser AS-F06 allowed provider completion to close the recovery record before outage observation; the local correction now acknowledges a token-bound client TCP cut at the Harness boundary before handoff finalization and the source-bound restart, while cancellation instrumentation remains pending for the next exact-source run | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5373,6 +5373,42 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `foundation-recovery-error-key` debug session now records only failure-key
   presence, event-field presence, phase transitions, sequence relationships,
   and recovery epochs before any business fix.
+- Exact-source diagnostic run
+  `20260905T131248877567Z-ef022ff2b49f7b5593a5ad8bd508c217`
+  (aggregate `20260905T131248751096Z-27ef204ebfb28347a409dcff22faf33f`)
+  on `f95a4dd0eb779aae6106872257a1d1c4247535b2` stopped at the same
+  Browser AS-F06 tuple before the error-key boundary. Runtime evidence showed
+  a valid `CONNECTED` recovery record at cursor `3`, followed by
+  `connection_lost(3) -> reconnecting(3) -> replaying(3) -> done(44) ->
+  reconciling(44) -> connected(44) -> snapshot(44)`. The authoritative
+  snapshot correctly closed the terminal record before the Python outage
+  observer sampled `MISSING`. This confirms a fault-ordering race: the Harness
+  disconnected while Station was still live, so the client could reconnect
+  and consume provider completion before the external restart began.
+- The local correction removes the Harness-owned disconnect and reuses one
+  Agent-domain TCP fault proxy implementation for both the existing Native
+  stream-resilience journey and Foundation runtime clients. AS-F06 preparation
+  now publishes the acknowledged-cursor boundary, invokes a token-bound
+  loopback control endpoint, and returns only after that endpoint acknowledges
+  the selected client's real Station path is cut and the recovery projection
+  has left `CONNECTED`. Any cursor movement across that boundary fails closed.
+  Python then invokes a second Harness phase for hashing, handoff persistence,
+  and page switching before the source-bound Station restart. A durable cleanup
+  locator is written immediately after conversation creation, so a lost
+  prepare response can still clean the Station conversation by scenario key.
+  The proxy rejects connections admitted by an earlier fault generation,
+  restores before post-restart authentication and durable reload, rejects HTTPS
+  endpoints that would change TLS identity, and verifies both proxy/control-port
+  release during cleanup. Failed client startup and runtime teardown also close
+  both endpoints independently. The coordinator consumes neither endpoint URL;
+  `FoundationRuntimeClient` owns Station configuration and fault-control
+  injection. Focused runtime/scenario/static tests pass `123/123`; Desktop
+  typecheck, `568` tests with one unrelated skip, production build, Python
+  compilation, and `git diff --check` pass. Full Foundation test discovery
+  passes `179/181`; the two failures are the known unrelated candidate-fixture
+  mismatch where receiver DOM visibility disagrees with the runtime profile.
+  Exact-source post-fix proof remains pending, so AS-F06, cancellation,
+  Foundation, and G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

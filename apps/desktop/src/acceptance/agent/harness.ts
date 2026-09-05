@@ -195,6 +195,13 @@ interface FoundationF06FaultBoundary {
   };
 }
 
+interface FoundationF06CleanupLocator {
+  scenarioKey: string;
+  conversationId: string;
+  turnId: string;
+  state: 'created' | 'deleted';
+}
+
 type FoundationF12TopicKey = 'alpha' | 'beta';
 
 interface FoundationF12RuntimeEvent {
@@ -233,6 +240,8 @@ interface FoundationF12Handoff {
 }
 
 const FOUNDATION_F06_STORAGE_KEY = 'pt.acceptance.agent.foundation.as-f06';
+const FOUNDATION_F06_CLEANUP_STORAGE_KEY =
+  'pt.acceptance.agent.foundation.as-f06-cleanup';
 const FOUNDATION_F12_STORAGE_KEY = 'pt.acceptance.agent.foundation.as-f12';
 const FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY =
   'pt.acceptance.agent.foundation.capability-isolation';
@@ -250,7 +259,19 @@ let foundationF06ObservationInstalled = false;
 let foundationF06ReplayRecording: Promise<void> = Promise.resolve();
 const foundationF06Controllers = new Map<string, AgentTurnStreamController>();
 const foundationF06PendingHandoffs = new Map<string, FoundationF06Handoff>();
+const foundationF06FaultBoundaries =
+  new Map<string, FoundationF06FaultBoundary>();
 const foundationF06ReplayingScenarios = new Set<string>();
+
+function observedFoundationF06Handoffs(): FoundationF06Handoff[] {
+  const byScenario = new Map(
+    Object.entries(readFoundationF06Handoffs()),
+  );
+  for (const [scenarioKey, handoff] of foundationF06PendingHandoffs) {
+    byScenario.set(scenarioKey, handoff);
+  }
+  return [...byScenario.values()];
+}
 
 function authenticatedFoundationActorPtid(): string {
   const user = useSessionStore.getState().currentUser;
@@ -318,6 +339,61 @@ function readFoundationF06Handoff(scenarioKey: string): FoundationF06Handoff | n
   return readFoundationF06Handoffs()[scenarioKey] ?? null;
 }
 
+function readFoundationF06CleanupLocators(): Record<
+  string,
+  FoundationF06CleanupLocator
+> {
+  const raw = window.localStorage.getItem(FOUNDATION_F06_CLEANUP_STORAGE_KEY);
+  if (!raw) return {};
+  try {
+    const values = JSON.parse(raw) as Record<
+      string,
+      Partial<FoundationF06CleanupLocator>
+    >;
+    if (!values || typeof values !== 'object' || Array.isArray(values)) return {};
+    const locators: Record<string, FoundationF06CleanupLocator> = {};
+    for (const [scenarioKey, value] of Object.entries(values)) {
+      if (
+        value.scenarioKey !== scenarioKey
+        || typeof value.conversationId !== 'string'
+        || !value.conversationId
+        || typeof value.turnId !== 'string'
+        || !['created', 'deleted'].includes(value.state ?? '')
+      ) {
+        return {};
+      }
+      locators[scenarioKey] = value as FoundationF06CleanupLocator;
+    }
+    return locators;
+  } catch {
+    return {};
+  }
+}
+
+function writeFoundationF06CleanupLocator(
+  locator: FoundationF06CleanupLocator,
+): void {
+  const locators = readFoundationF06CleanupLocators();
+  locators[locator.scenarioKey] = locator;
+  window.localStorage.setItem(
+    FOUNDATION_F06_CLEANUP_STORAGE_KEY,
+    JSON.stringify(locators),
+  );
+}
+
+function removeFoundationF06CleanupLocator(scenarioKey: string): void {
+  const locators = readFoundationF06CleanupLocators();
+  delete locators[scenarioKey];
+  if (Object.keys(locators).length === 0) {
+    window.localStorage.removeItem(FOUNDATION_F06_CLEANUP_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(
+    FOUNDATION_F06_CLEANUP_STORAGE_KEY,
+    JSON.stringify(locators),
+  );
+}
+
 function writeFoundationF06Handoff(value: FoundationF06Handoff): void {
   const handoffs = readFoundationF06Handoffs();
   handoffs[value.scenarioKey] = value;
@@ -339,9 +415,16 @@ async function updateFoundationF06RecoveryFailure(
   await foundationF06ReplayRecording;
 }
 
-function removeFoundationF06Handoff(scenarioKey: string): void {
+function removeFoundationF06Handoff(
+  scenarioKey: string,
+  removeCleanupLocator = true,
+): void {
   foundationF06ReplayingScenarios.delete(scenarioKey);
   foundationF06PendingHandoffs.delete(scenarioKey);
+  foundationF06FaultBoundaries.delete(scenarioKey);
+  if (removeCleanupLocator) {
+    removeFoundationF06CleanupLocator(scenarioKey);
+  }
   const handoffs = readFoundationF06Handoffs();
   delete handoffs[scenarioKey];
   if (Object.keys(handoffs).length === 0) {
@@ -423,10 +506,7 @@ function installFoundationF06Observation(): void {
   if (foundationF06ObservationInstalled) return;
   foundationF06ObservationInstalled = true;
   useAgentTurnRecoveryStore.subscribe((state, previousState) => {
-    const observedHandoffs = [
-      ...Object.values(readFoundationF06Handoffs()),
-      ...foundationF06PendingHandoffs.values(),
-    ];
+    const observedHandoffs = observedFoundationF06Handoffs();
     for (const handoff of observedHandoffs) {
       const current = state.active[handoff.conversationId];
       const previous = previousState.active[handoff.conversationId];
@@ -465,10 +545,7 @@ function installFoundationF06Observation(): void {
     const sourceDelivery = observed.sourceDelivery;
     const observedTurnId = sourceDelivery?.turnId
       ?? String(payload.data.turnId || payload.data.turn_id || '');
-    const observedHandoffs = [
-      ...Object.values(readFoundationF06Handoffs()),
-      ...foundationF06PendingHandoffs.values(),
-    ];
+    const observedHandoffs = observedFoundationF06Handoffs();
     const handoff = observedHandoffs.find((candidate) =>
       payload.conversationId === candidate.conversationId
       && observedTurnId === candidate.turnId
@@ -3758,6 +3835,7 @@ async function runFoundationF05Scenario(input: {
 async function runFoundationF06Prepare(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
+  faultControlUrl: string;
   scenarioKey: string;
   platform: string;
   locale: string;
@@ -3773,6 +3851,12 @@ async function runFoundationF06Prepare(input: {
     title: `Foundation recovery ${input.sampleId}`,
     provider_id: input.agent.provider,
     model_name: input.agent.model,
+  });
+  writeFoundationF06CleanupLocator({
+    scenarioKey: input.scenarioKey,
+    conversationId: conversation.conversation_id,
+    turnId: '',
+    state: 'created',
   });
   try {
     return await withFoundationCapabilitiesDisabled(
@@ -3814,6 +3898,7 @@ async function prepareFoundationF06Conversation(
   input: {
     agent: NonNullable<ReturnType<typeof selectedAgent>>;
     capabilitySessionId: string;
+    faultControlUrl: string;
     scenarioKey: string;
     platform: string;
     locale: string;
@@ -3830,6 +3915,8 @@ async function prepareFoundationF06Conversation(
   const idempotencyKey = crypto.randomUUID();
   const actorId = authenticatedFoundationActorPtid();
   let boundarySettled = false;
+  let boundaryRequested = false;
+  let cleanupTurnId = '';
   let resolveBoundary!: (value: FoundationF06FaultBoundary) => void;
   let rejectBoundary!: (error: Error) => void;
   const faultBoundary = new Promise<FoundationF06FaultBoundary>((resolve, reject) => {
@@ -3855,7 +3942,18 @@ async function prepareFoundationF06Conversation(
     clientCapabilitySessionId: input.capabilitySessionId,
     timeoutMs: 300_000,
     onEvent: (event, events, controller, complete) => {
-      if (boundarySettled) return;
+      if (boundarySettled || boundaryRequested) return;
+      if (!cleanupTurnId) {
+        cleanupTurnId = observedTurnId(events);
+        if (cleanupTurnId) {
+          writeFoundationF06CleanupLocator({
+            scenarioKey: input.scenarioKey,
+            conversationId: conversation.conversation_id,
+            turnId: cleanupTurnId,
+            state: 'created',
+          });
+        }
+      }
       if (classifyAgentTurnTerminalEvent(event) !== null) {
         failBoundary('agent.acceptance.foundationRecoveryTurnAlreadyTerminal');
         return;
@@ -3897,6 +3995,12 @@ async function prepareFoundationF06Conversation(
         failBoundary('agent.acceptance.foundationRecoveryGenerationMismatch');
         return;
       }
+      writeFoundationF06CleanupLocator({
+        scenarioKey: input.scenarioKey,
+        conversationId: conversation.conversation_id,
+        turnId,
+        state: 'created',
+      });
 
       const acknowledgedCursor = active.cursor;
       const duplicateSource = [...durableEvents]
@@ -4078,32 +4182,75 @@ async function prepareFoundationF06Conversation(
         preparedAt: scenarioStartedAt,
       };
       foundationF06PendingHandoffs.set(input.scenarioKey, handoff);
-      boundarySettled = true;
-      void reportFoundationF06RegistrationDebug(
-        'A-E',
-        'prepare-boundary-ready',
-        {
-          activeRecordPresent: activeAfterMutation !== undefined,
-          actorMatches: activeAfterMutation?.actorId === actorId,
-          turnMatches: activeAfterMutation?.turnId === turnId,
-          streamMatches: activeAfterMutation?.streamId === streamId,
-          generationMatches:
-            activeAfterMutation?.streamGeneration
-              === controller.streamGeneration,
-          activePhase: activeAfterMutation?.phase ?? 'MISSING',
-          activeCursor: activeAfterMutation?.cursor ?? 0,
-        },
-      );
-      controller.disconnectTransport();
-      resolveBoundary({
+      writeFoundationF06Handoff(handoff);
+      const boundary = {
         handoff,
         projectionBeforeMutation,
         projectionAfterMutation,
         prefix,
         duplicateSource,
         outOfOrderSource,
-      });
-      complete();
+      };
+      foundationF06FaultBoundaries.set(input.scenarioKey, boundary);
+      boundaryRequested = true;
+      void requestFoundationF06TransportCut(input.faultControlUrl)
+        .then(async () => {
+          await waitFor(() => {
+            const current = useAgentTurnRecoveryStore.getState()
+              .active[conversation.conversation_id];
+            if (!current) {
+              throw new Error(
+                'agent.acceptance.foundationRecoveryTurnAlreadyTerminal',
+              );
+            }
+            return current.phase !== 'CONNECTED';
+          }, 'Foundation AS-F06 fault acknowledgement', 30_000);
+          const activeAtCut = useAgentTurnRecoveryStore.getState()
+            .active[conversation.conversation_id];
+          if (
+            !activeAtCut
+            || activeAtCut.actorId !== actorId
+            || activeAtCut.turnId !== turnId
+            || activeAtCut.streamId !== streamId
+            || activeAtCut.streamGeneration !== controller.streamGeneration
+          ) {
+            throw new Error(
+              'agent.acceptance.foundationRecoveryFaultBoundaryMismatch',
+            );
+          }
+          if (activeAtCut.cursor !== acknowledgedCursor) {
+            throw new Error(
+              'agent.acceptance.foundationRecoveryCursorAdvancedBeforeFault',
+            );
+          }
+          writeFoundationF06Handoff(handoff);
+          boundarySettled = true;
+          void reportFoundationF06RegistrationDebug(
+            'A-E',
+            'prepare-boundary-ready',
+            {
+              activeRecordPresent: true,
+              actorMatches: activeAtCut.actorId === actorId,
+              turnMatches: activeAtCut.turnId === turnId,
+              streamMatches: activeAtCut.streamId === streamId,
+              generationMatches:
+                activeAtCut.streamGeneration
+                  === controller.streamGeneration,
+              activePhase: activeAtCut.phase,
+              activeCursor: activeAtCut.cursor,
+            },
+          );
+          resolveBoundary(boundary);
+          complete();
+        })
+        .catch((error) => {
+          boundarySettled = true;
+          rejectBoundary(
+            error instanceof Error
+              ? error
+              : new Error('agent.acceptance.foundationFaultControlRejected'),
+          );
+        });
     },
   });
   foundationF06Controllers.set(input.scenarioKey, observed.controller);
@@ -4115,6 +4262,29 @@ async function prepareFoundationF06Conversation(
       );
     }),
   ]);
+  return boundary.handoff;
+}
+
+async function requestFoundationF06TransportCut(
+  controlUrl: string,
+): Promise<void> {
+  const url = new URL(controlUrl);
+  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') {
+    throw new Error('agent.acceptance.foundationFaultControlInvalid');
+  }
+  const response = await fetch(url, { method: 'POST' });
+  if (!response.ok) {
+    throw new Error('agent.acceptance.foundationFaultControlRejected');
+  }
+}
+
+async function finalizeFoundationF06Preparation(
+  scenarioKey: string,
+): Promise<FoundationF06Handoff> {
+  const boundary = foundationF06FaultBoundaries.get(scenarioKey);
+  if (!boundary) {
+    throw new Error('agent.acceptance.foundationRecoveryBoundaryMissing');
+  }
   const [
     actorPtidHash,
     prefixHash,
@@ -4131,7 +4301,7 @@ async function prepareFoundationF06Conversation(
     sha256Hex(stableJson(boundary.outOfOrderSource)),
   ]);
   await foundationF06ReplayRecording;
-  const handoff = foundationF06PendingHandoffs.get(input.scenarioKey);
+  const handoff = foundationF06PendingHandoffs.get(scenarioKey);
   if (!handoff) {
     throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
   }
@@ -4143,7 +4313,8 @@ async function prepareFoundationF06Conversation(
     duplicatePayloadHash,
     outOfOrderPayloadHash,
   });
-  foundationF06PendingHandoffs.delete(input.scenarioKey);
+  foundationF06PendingHandoffs.delete(scenarioKey);
+  foundationF06FaultBoundaries.delete(scenarioKey);
   writeFoundationF06Handoff(handoff);
 
   eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'settings' });
@@ -4437,24 +4608,72 @@ async function cleanupFoundationF06Scenario(input: {
   const controller = foundationF06Controllers.get(input.scenarioKey);
   foundationF06Controllers.delete(input.scenarioKey);
   controller?.abort();
-  const handoff = readFoundationF06Handoff(input.scenarioKey);
+  const handoff = foundationF06PendingHandoffs.get(input.scenarioKey)
+    ?? foundationF06FaultBoundaries.get(input.scenarioKey)?.handoff
+    ?? readFoundationF06Handoff(input.scenarioKey);
+  const cleanupLocator =
+    readFoundationF06CleanupLocators()[input.scenarioKey];
   if (
     handoff
     && (
-      handoff.conversationId !== input.conversationId
-      || handoff.turnId !== input.turnId
+      (input.conversationId && handoff.conversationId !== input.conversationId)
+      || (input.turnId && handoff.turnId !== input.turnId)
     )
   ) {
     throw new Error('agent.acceptance.foundationCleanupIdentityMismatch');
   }
+  if (
+    cleanupLocator
+    && (
+      (
+        input.conversationId
+        && cleanupLocator.conversationId !== input.conversationId
+      )
+      || (input.turnId && cleanupLocator.turnId !== input.turnId)
+    )
+  ) {
+    throw new Error('agent.acceptance.foundationCleanupIdentityMismatch');
+  }
+  if (cleanupLocator?.state === 'deleted') {
+    useAgentTurnRecoveryStore.getState().clear(
+      cleanupLocator.conversationId,
+      cleanupLocator.turnId,
+    );
+    removeFoundationF06Handoff(input.scenarioKey, false);
+    const handoffCleared =
+      readFoundationF06Handoff(input.scenarioKey) === null;
+    const recoveryRecordCleared =
+      useAgentTurnRecoveryStore.getState()
+        .active[cleanupLocator.conversationId] === undefined;
+    if (!handoffCleared || !recoveryRecordCleared) {
+      throw new Error('CLEANUP_FAILED:foundationCleanupVerificationFailed');
+    }
+    return {
+      cleanupComplete: true,
+      handoffCleared,
+      conversationDeleted: true,
+      recoveryRecordCleared,
+    };
+  }
+  const conversationId = input.conversationId
+    || handoff?.conversationId
+    || cleanupLocator?.conversationId
+    || '';
+  const turnId = input.turnId
+    || handoff?.turnId
+    || cleanupLocator?.turnId
+    || '';
+  if (!conversationId) {
+    throw new Error('CLEANUP_FAILED:foundationCleanupLocatorMissing');
+  }
   let cleanupError: unknown = null;
   let deletionErrorCode = '';
   try {
-    if (input.turnId) {
-      await api.cancelAgentTurn(input.turnId);
+    if (turnId) {
+      await api.cancelAgentTurn(turnId);
     }
-    await cancelFoundationQueuedTurns(input.conversationId);
-    deletionErrorCode = await deleteFoundationConversation(input.conversationId);
+    await cancelFoundationQueuedTurns(conversationId);
+    deletionErrorCode = await deleteFoundationConversation(conversationId);
   } catch (error) {
     deletionErrorCode = observedErrorCode(error);
     if (!deletionErrorCode.includes('AGENT_4004')) {
@@ -4462,15 +4681,14 @@ async function cleanupFoundationF06Scenario(input: {
     }
   } finally {
     useAgentTurnRecoveryStore.getState().clear(
-      input.conversationId,
-      input.turnId,
+      conversationId,
+      turnId,
     );
-    removeFoundationF06Handoff(input.scenarioKey);
   }
 
   let conversationDeleted = false;
   try {
-    const deleted = await api.getAgentConversation(input.conversationId);
+    const deleted = await api.getAgentConversation(conversationId);
     conversationDeleted = deleted.status === 'deleted';
     if (conversationDeleted) {
       deletionErrorCode = 'CONVERSATION_DELETED';
@@ -4484,9 +4702,18 @@ async function cleanupFoundationF06Scenario(input: {
     conversationDeleted = deletionErrorCode.includes('AGENT_4004');
     if (!conversationDeleted && cleanupError === null) cleanupError = error;
   }
+  if (conversationDeleted) {
+    writeFoundationF06CleanupLocator({
+      scenarioKey: input.scenarioKey,
+      conversationId,
+      turnId,
+      state: 'deleted',
+    });
+    removeFoundationF06Handoff(input.scenarioKey, false);
+  }
   const handoffCleared = readFoundationF06Handoff(input.scenarioKey) === null;
   const recoveryRecordCleared =
-    useAgentTurnRecoveryStore.getState().active[input.conversationId] === undefined;
+    useAgentTurnRecoveryStore.getState().active[conversationId] === undefined;
   const cleanupComplete =
     conversationDeleted && handoffCleared && recoveryRecordCleared;
   if (cleanupError !== null || !cleanupComplete) {
@@ -9784,11 +10011,13 @@ export function installAcceptanceHarness(): void {
       platform,
       locale,
       sampleId,
+      faultControlUrl,
     }: {
       scenarioKey: string;
       platform: string;
       locale: string;
       sampleId: string;
+      faultControlUrl: string;
     }) {
       try {
         const agent = selectedAgent();
@@ -9806,6 +10035,7 @@ export function installAcceptanceHarness(): void {
           platform,
           locale,
           sampleId,
+          faultControlUrl,
         }));
       } catch (error) {
         const primary = error instanceof Error ? error.message : String(error);
@@ -9825,6 +10055,16 @@ export function installAcceptanceHarness(): void {
         throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
       }
       return evidenceValue(await observeFoundationRecoveryFailure(handoff));
+    },
+
+    async foundationF06FinalizePreparation({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      return evidenceValue(
+        await finalizeFoundationF06Preparation(scenarioKey),
+      );
     },
 
     async foundationF06DurableReload({

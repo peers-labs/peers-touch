@@ -45,6 +45,14 @@ FOUNDATION_SCENARIO_RUNNER = (
     / "agent"
     / "foundation_scenario_runner.py"
 )
+TCP_FAULT_PROXY = (
+    ROOT
+    / "tooling"
+    / "acceptance"
+    / "gates"
+    / "agent"
+    / "tcp_fault_proxy.py"
+)
 DESKTOP_HTTP_GATEWAY = (
     ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "http_gateway" / "mod.rs"
 )
@@ -149,8 +157,14 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertIn("runner.run_stream_resilience()", self.source)
 
     def test_runner_injects_transport_fault(self) -> None:
-        self.assertIn("class TcpFaultProxy", self.source)
-        self.assertIn("except socket.timeout:", self.source)
+        proxy_source = TCP_FAULT_PROXY.read_text(encoding="utf-8")
+        self.assertIn(
+            "from tooling.acceptance.gates.agent.tcp_fault_proxy "
+            "import TcpFaultProxy",
+            self.source,
+        )
+        self.assertIn("class TcpFaultProxy", proxy_source)
+        self.assertIn("except socket.timeout:", proxy_source)
         self.assertIn("cut_station_transport", self.source)
         self.assertIn("restore_station_transport", self.source)
         self.assertIn("reconciling_visible", self.source)
@@ -220,6 +234,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         prepare_start = self.source.index(
             "async function prepareFoundationF06Conversation"
         )
+        prepare_end = self.source.index(
+            "async function observeFoundationRecoveryFailure",
+            prepare_start,
+        )
         cursor_capture = self.source.index(
             "const acknowledgedCursor = active.cursor",
             prepare_start,
@@ -228,30 +246,98 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "foundationF06PendingHandoffs.set(input.scenarioKey, handoff)",
             cursor_capture,
         )
-        disconnect = self.source.index(
-            "controller.disconnectTransport()",
+        fault_request = self.source.index(
+            "requestFoundationF06TransportCut(input.faultControlUrl)",
             handoff_publish,
+        )
+        fault_observation = self.source.index(
+            "Foundation AS-F06 fault acknowledgement",
+            fault_request,
+        )
+        boundary_publish = self.source.index(
+            "resolveBoundary(boundary)",
+            fault_observation,
+        )
+        boundary_return = self.source.index(
+            "return boundary.handoff",
+            boundary_publish,
+        )
+        finalizer = self.source.index(
+            "async function finalizeFoundationF06Preparation",
+            boundary_return,
         )
 
         self.assertLess(cursor_capture, handoff_publish)
-        self.assertLess(handoff_publish, disconnect)
-        self.assertNotIn("await ", self.source[cursor_capture:disconnect])
-        self.assertIn("transitions: []", self.source[cursor_capture:disconnect])
-        self.assertIn("replayDeliveries: []", self.source[cursor_capture:disconnect])
+        self.assertLess(handoff_publish, fault_request)
+        self.assertLess(fault_request, fault_observation)
+        self.assertLess(fault_observation, boundary_publish)
+        self.assertNotIn("await ", self.source[cursor_capture:fault_request])
         self.assertIn(
-            "foundationF06PendingHandoffs.delete(input.scenarioKey)",
-            self.source[disconnect:],
+            "foundationRecoveryCursorAdvancedBeforeFault",
+            self.source[fault_observation:boundary_publish],
         )
-        self.assertIn("writeFoundationF06Handoff(handoff)", self.source[disconnect:])
+        self.assertIn(
+            "]);\n  return boundary.handoff;",
+            self.source[boundary_publish:boundary_return + len("return boundary.handoff;")],
+        )
+        self.assertIn("transitions: []", self.source[cursor_capture:boundary_publish])
+        self.assertIn(
+            "replayDeliveries: []",
+            self.source[cursor_capture:boundary_publish],
+        )
+        self.assertNotIn(
+            "controller.disconnectTransport()",
+            self.source[prepare_start:finalizer],
+        )
+        self.assertIn(
+            "foundationF06PendingHandoffs.delete(scenarioKey)",
+            self.source[finalizer:prepare_end],
+        )
+        self.assertIn(
+            "writeFoundationF06Handoff(handoff)",
+            self.source[finalizer:prepare_end],
+        )
         drain = self.source.index(
             "await foundationF06ReplayRecording",
-            disconnect,
+            finalizer,
         )
         pending_delete = self.source.index(
-            "foundationF06PendingHandoffs.delete(input.scenarioKey)",
+            "foundationF06PendingHandoffs.delete(scenarioKey)",
             drain,
         )
         self.assertLess(drain, pending_delete)
+        self.assertIn(
+            "async foundationF06FinalizePreparation",
+            self.source,
+        )
+        self.assertIn(
+            "writeFoundationF06CleanupLocator",
+            self.source[prepare_start:prepare_end],
+        )
+        self.assertIn(
+            "foundationCleanupLocatorMissing",
+            self.source,
+        )
+        self.assertIn(
+            "state: 'deleted'",
+            self.source,
+        )
+        self.assertIn(
+            "removeFoundationF06Handoff(input.scenarioKey, false)",
+            self.source,
+        )
+        cleanup_start = self.source.index(
+            "async function cleanupFoundationF06Scenario",
+        )
+        cleanup_identity_check = self.source.index(
+            "cleanupLocator.conversationId !== input.conversationId",
+            cleanup_start,
+        )
+        deleted_receipt = self.source.index(
+            "cleanupLocator?.state === 'deleted'",
+            cleanup_start,
+        )
+        self.assertLess(cleanup_identity_check, deleted_receipt)
 
     def test_recovery_preparation_uses_one_fault_bound_attempt(self) -> None:
         prepare_start = self.source.index("async function runFoundationF06Prepare")
