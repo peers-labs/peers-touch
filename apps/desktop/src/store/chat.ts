@@ -216,6 +216,28 @@ function reportFoundationApprovalReceiverDebug(
 }
 // #endregion
 
+// #region debug-point A-E:approval-expiry-retry
+function reportApprovalExpiryRetryDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'approval-expiry-retry',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'chat.ts:retryMessage',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 const agentChatCache = getDesktopAgentChatCache();
 
 function cachedConversationToSession(conversation: CachedAgentConversation): Session {
@@ -1603,27 +1625,86 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   retryMessage: (messageId: string) => {
     const { currentSessionKey, messages, isStreaming } = get();
-    if (isStreaming) return Promise.resolve();
     const source = messages.find((message) => message.id === messageId);
     const sourceTurnId = source?.turnId;
-    if (!sourceTurnId) return Promise.resolve();
-
     const retryKey = `${currentSessionKey}:${messageId}`;
     const pending = pendingMessageRetries.get(retryKey);
-    if (pending) return pending;
+
+    // #region debug-point A-B-E:retry-entry
+    reportApprovalExpiryRetryDebug('A-B-E', 'retry-entry', {
+      isStreaming,
+      sourcePresent: Boolean(source),
+      sourceTurnPresent: Boolean(sourceTurnId),
+      sourceTerminalStatus: source?.terminalStatus ?? null,
+      sourceLoading: source?.loading === true,
+      operationPresent: Boolean(get().operations[currentSessionKey]),
+      operationRunState: get().operations[currentSessionKey]?.runState ?? null,
+      pendingRetryPresent: Boolean(pending),
+    });
+    // #endregion
+
+    if (isStreaming) {
+      // #region debug-point A:streaming-guard
+      reportApprovalExpiryRetryDebug('A', 'retry-skipped-streaming', {});
+      // #endregion
+      return Promise.resolve();
+    }
+    if (!sourceTurnId) {
+      // #region debug-point B:source-guard
+      reportApprovalExpiryRetryDebug('B', 'retry-skipped-source', {
+        sourcePresent: Boolean(source),
+      });
+      // #endregion
+      return Promise.resolve();
+    }
+
+    if (pending) {
+      // #region debug-point E:single-flight
+      reportApprovalExpiryRetryDebug('E', 'retry-single-flight-reused', {});
+      // #endregion
+      return pending;
+    }
 
     const request = (async () => {
-      const version = await stationConversationVersion(currentSessionKey);
-      await api.retryAgentTurn({
-        conversation_id: currentSessionKey,
-        source_turn_id: sourceTurnId,
-        client_idempotency_key: tempId(),
-        expected_conversation_version: version,
-      });
-      if (get().currentSessionKey === currentSessionKey) {
-        await get().syncMessages();
+      try {
+        const version = await stationConversationVersion(currentSessionKey);
+        // #region debug-point C:retry-api-start
+        reportApprovalExpiryRetryDebug('C', 'retry-api-start', {
+          conversationVersionPresent: Number.isInteger(version) && version > 0,
+        });
+        // #endregion
+        const response = await api.retryAgentTurn({
+          conversation_id: currentSessionKey,
+          source_turn_id: sourceTurnId,
+          client_idempotency_key: tempId(),
+          expected_conversation_version: version,
+        });
+        // #region debug-point D:retry-api-complete
+        reportApprovalExpiryRetryDebug('D', 'retry-api-complete', {
+          hasTurn: Boolean(response.turn),
+          hasAttempt: Boolean(response.attempt),
+          hasConversation: Boolean(response.conversation),
+          turnStatus: (
+            response.turn && typeof response.turn === 'object'
+              ? String((response.turn as Record<string, unknown>).status ?? '')
+              : ''
+          ),
+        });
+        // #endregion
+        if (get().currentSessionKey === currentSessionKey) {
+          await get().syncMessages();
+        }
+        await get().loadSessions();
+      } catch (error) {
+        const stableCode = String(error).match(/\b(?:AGENT|TOOL)_[A-Z0-9_]+\b/)?.[0] ?? null;
+        // #region debug-point C:retry-api-error
+        reportApprovalExpiryRetryDebug('C', 'retry-api-error', {
+          errorName: error instanceof Error ? error.name : typeof error,
+          stableCode,
+        });
+        // #endregion
+        throw error;
       }
-      await get().loadSessions();
     })().finally(() => {
       pendingMessageRetries.delete(retryKey);
     });
