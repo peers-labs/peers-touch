@@ -362,20 +362,30 @@ class FoundationF06Coordinator:
 
     def _cleanup_prepared(
         self,
-        prepared: list[tuple[DirectRuntimeProbeInput, Mapping[str, Any]]],
+        prepared: list[
+            tuple[DirectRuntimeProbeInput, Mapping[str, Any] | None]
+        ],
     ) -> list[str]:
         errors: list[str] = []
         for probe_input, handoff in reversed(prepared):
             scenario_key = self._scenario_key(probe_input)
+            conversation_id = (
+                str(handoff.get("conversationId") or "")
+                if handoff is not None
+                else ""
+            )
+            turn_id = (
+                str(handoff.get("turnId") or "")
+                if handoff is not None
+                else ""
+            )
             try:
                 result = self._client(probe_input.platform).harness(
                     "foundationF06Cleanup",
                     {
                         "scenarioKey": scenario_key,
-                        "conversationId": str(
-                            handoff.get("conversationId") or ""
-                        ),
-                        "turnId": str(handoff.get("turnId") or ""),
+                        "conversationId": conversation_id,
+                        "turnId": turn_id,
                     },
                     timeout=60,
                 )
@@ -428,33 +438,57 @@ class FoundationF06Coordinator:
             )
 
         prepared: list[
-            tuple[DirectRuntimeProbeInput, Mapping[str, Any]]
+            tuple[DirectRuntimeProbeInput, Mapping[str, Any] | None]
         ] = []
         primary_error: BaseException | None = None
         try:
             for probe_input in f06_inputs:
                 client = self._client(probe_input.platform)
                 self._set_locale(client, probe_input)
-                handoff = client.harness(
-                    "foundationF06Prepare",
-                    {
-                        "scenarioKey": self._scenario_key(probe_input),
-                        "platform": probe_input.platform,
-                        "locale": probe_input.locale,
-                        "sampleId": probe_input.sample_id,
-                    },
-                    timeout=300,
-                )
-                if (
-                    not isinstance(handoff, Mapping)
-                    or not str(handoff.get("conversationId") or "")
-                    or not str(handoff.get("turnId") or "")
-                ):
-                    raise ScenarioRunnerError(
-                        f"AS-F06 prepare returned invalid evidence for "
-                        f"{self._scenario_key(probe_input)}"
+                prepared_index = len(prepared)
+                prepared.append((probe_input, None))
+                try:
+                    handoff = client.prepare_foundation_f06(
+                        {
+                            "scenarioKey": self._scenario_key(probe_input),
+                            "platform": probe_input.platform,
+                            "locale": probe_input.locale,
+                            "sampleId": probe_input.sample_id,
+                        },
+                        timeout=300,
                     )
-                prepared.append((probe_input, handoff))
+                    prepared[prepared_index] = (
+                        probe_input,
+                        handoff if isinstance(handoff, Mapping) else None,
+                    )
+                    if (
+                        not isinstance(handoff, Mapping)
+                        or not str(handoff.get("conversationId") or "")
+                        or not str(handoff.get("turnId") or "")
+                    ):
+                        raise ScenarioRunnerError(
+                            f"AS-F06 prepare returned invalid evidence for "
+                            f"{self._scenario_key(probe_input)}"
+                        )
+                    finalized_handoff = client.harness(
+                        "foundationF06FinalizePreparation",
+                        {"scenarioKey": self._scenario_key(probe_input)},
+                        timeout=60,
+                    )
+                    if (
+                        not isinstance(finalized_handoff, Mapping)
+                        or finalized_handoff.get("conversationId")
+                        != handoff.get("conversationId")
+                        or finalized_handoff.get("turnId")
+                        != handoff.get("turnId")
+                    ):
+                        raise ScenarioRunnerError(
+                            f"AS-F06 finalized handoff is invalid for "
+                            f"{self._scenario_key(probe_input)}"
+                        )
+                except BaseException:
+                    client.restore_station_transport()
+                    raise
                 self._execute_active(probe_input)
         except BaseException as error:
             primary_error = error
@@ -481,6 +515,7 @@ class FoundationF06Coordinator:
         probe_input: DirectRuntimeProbeInput,
     ) -> None:
         durable_reload_evidence: Mapping[str, Any] | None = None
+        transport_restored = False
 
         def observe_recovery_failures(outage_deadline: float) -> None:
             remaining = outage_deadline - time.monotonic()
@@ -509,8 +544,10 @@ class FoundationF06Coordinator:
                 )
 
         def exercise_durable_reloads(operation_deadline: float) -> None:
-            nonlocal durable_reload_evidence
+            nonlocal durable_reload_evidence, transport_restored
             client = self._client(probe_input.platform)
+            client.restore_station_transport()
+            transport_restored = True
             _authenticate_clients(
                 self._runtime_pair,
                 self._profile_env,
@@ -561,13 +598,17 @@ class FoundationF06Coordinator:
                 )
             durable_reload_evidence = dict(result)
 
-        station_restart = restart_foundation_station(
-            self._runtime_manifest,
-            repo_root=REPO_ROOT,
-            during_outage=observe_recovery_failures,
-            after_restart=exercise_durable_reloads,
-        )
         client = self._client(probe_input.platform)
+        try:
+            station_restart = restart_foundation_station(
+                self._runtime_manifest,
+                repo_root=REPO_ROOT,
+                during_outage=observe_recovery_failures,
+                after_restart=exercise_durable_reloads,
+            )
+        finally:
+            if not transport_restored:
+                client.restore_station_transport()
         client.restart()
         client_reloads = {probe_input.platform: True}
         _authenticate_clients(
@@ -1117,26 +1158,14 @@ def _authenticate_clients(
                     f"{diagnostic}"
                 )
         else:
-            station_url = profile_env.get("PT_STATION_URL", "").strip().rstrip("/")
-            if not station_url:
+            source_station_url = (
+                profile_env.get("PT_STATION_URL", "").strip().rstrip("/")
+            )
+            if not source_station_url:
                 raise ScenarioRunnerError(
                     "active profile is missing PT_STATION_URL"
                 )
-            station_result = client.harness(
-                "configureStation",
-                {"stationUrl": station_url},
-                timeout=60,
-            )
-            if (
-                not isinstance(station_result, Mapping)
-                or station_result.get("configured") is not True
-                or station_result.get("activeUrl") != station_url
-                or station_result.get("peerIdAvailable") is not True
-            ):
-                raise ScenarioRunnerError(
-                    f"{client.spec.runtime} Station configuration failed: "
-                    f"{station_result}"
-                )
+            client.configure_station(timeout=60)
             login_result = client.harness(
                 "loginWithPassword",
                 {"account": account, "password": password},
