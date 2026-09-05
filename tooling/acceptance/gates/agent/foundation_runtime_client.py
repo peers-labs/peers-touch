@@ -32,6 +32,40 @@ class FoundationClientError(RuntimeError):
     """A provisioned Foundation client failed its lifecycle contract."""
 
 
+def report_identity_boot_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, Any],
+) -> None:
+    # #region debug-point A-D:foundation-launch-context
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request(
+                "http://127.0.0.1:7778/event",
+                data=json.dumps(
+                    {
+                        "sessionId": "foundation-identity-boot",
+                        "runId": "pre-fix",
+                        "hypothesisId": hypothesis_id,
+                        "location": (
+                            "tooling/acceptance/gates/agent/"
+                            "foundation_runtime_client.py:restart"
+                        ),
+                        "msg": f"[DEBUG] {message}",
+                        "data": dict(data),
+                        "ts": int(time.time() * 1000),
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            ),
+            timeout=1,
+        ).read()
+    except Exception:
+        pass
+    # #endregion
+
+
 def port_open(port: int) -> bool:
     """Check if a port is listening on localhost (IPv4 or IPv6)."""
     for family, addr in (
@@ -133,6 +167,7 @@ class FoundationRuntimeClient:
         self.log_handle: Any = None
         self.driver: Any = None
         self.chrome: ChromeDriver | None = None
+        self.restart_generation = 0
 
     @property
     def actor_identity_root(self) -> Path:
@@ -324,12 +359,52 @@ class FoundationRuntimeClient:
             ) from error
 
     def restart(self) -> None:
+        self.restart_generation += 1
+        report_identity_boot_debug(
+            "A-D",
+            "client-restart-started",
+            {
+                "runtime": self.spec.runtime,
+                "restartGeneration": self.restart_generation,
+                "storageRootPresent": self.spec.storage_root.exists(),
+                "chromeStoragePresent": (
+                    self.spec.storage_root / "chrome"
+                ).exists(),
+                "runtimeProfilePresent": self.runtime_profile.exists(),
+            },
+        )
         result = self._stop_runtime(logout=False, remove_storage=False)
+        report_identity_boot_debug(
+            "A-D",
+            "client-restart-stopped",
+            {
+                "runtime": self.spec.runtime,
+                "restartGeneration": self.restart_generation,
+                "cleanupStatus": result["status"],
+                "storagePreserved": result.get("storagePreserved"),
+                "portsReleased": result.get("portsReleased"),
+            },
+        )
         if result["status"] != "clean":
             raise FoundationClientError(
                 f"{self.spec.runtime} restart cleanup failed: {result['failures']}"
             )
         self.start()
+        report_identity_boot_debug(
+            "A-D",
+            "client-restart-completed",
+            {
+                "runtime": self.spec.runtime,
+                "restartGeneration": self.restart_generation,
+                "storageRootPresent": self.spec.storage_root.exists(),
+                "chromeStoragePresent": (
+                    self.spec.storage_root / "chrome"
+                ).exists(),
+                "runtimeProfilePresent": self.runtime_profile.exists(),
+                "driverPresent": self.driver is not None,
+                "chromePresent": self.chrome is not None,
+            },
+        )
 
     def _stop_runtime(
         self,
