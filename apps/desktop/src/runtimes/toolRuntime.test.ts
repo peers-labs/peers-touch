@@ -11,7 +11,14 @@ vi.mock('../services/desktop_api', () => ({
 }));
 
 import { ToolCallStatus as AgentToolCallStatus } from '../gen/proto/domain/agent/agent_pb';
-import { reduceToolProjection, toolRuntime, type ToolProjectionState } from './toolRuntime';
+import {
+  reconcileToolProjectionState,
+  reduceToolProjection,
+  resolveToolCallProjection,
+  toolRuntime,
+  type ToolProjection,
+  type ToolProjectionState,
+} from './toolRuntime';
 
 const approvalRequired = {
   event: 'tool_approval_required',
@@ -153,6 +160,147 @@ describe('toolRuntime projection authority', () => {
     });
   });
 
+  it('keeps a classified terminal projection immutable at the same revision', () => {
+    const expired: ToolProjection = {
+      toolCallId: 'tool-call-1',
+      turnId: 'turn-1',
+      toolName: 'filesystem.read',
+      arguments: '{}',
+      status: 'expired',
+      pending: false,
+      error: 'agent.errors.toolApprovalExpired',
+      decisionRevision: 0,
+      decisionErrorCode: 'TOOL_APPROVAL_EXPIRED',
+    };
+    const current = { [expired.toolCallId]: expired };
+    const reconciled = reconcileToolProjectionState(current, [{
+      ...expired,
+      status: 'denied',
+      error: 'agent.errors.toolApprovalDenied',
+      decisionErrorCode: 'TOOL_APPROVAL_DENIED',
+    }]);
+
+    expect(reconciled).toBe(current);
+  });
+
+  it('ignores late live decision and result events after expiry', () => {
+    const expired: ToolProjection = {
+      toolCallId: 'tool-call-1',
+      turnId: 'turn-1',
+      toolName: 'filesystem.read',
+      arguments: '{}',
+      status: 'expired',
+      pending: false,
+      error: 'agent.errors.toolApprovalExpired',
+      decisionRevision: 0,
+      decisionErrorCode: 'TOOL_APPROVAL_EXPIRED',
+    };
+    const current = { [expired.toolCallId]: expired };
+
+    expect(reduceToolProjection(current, {
+      event: 'tool_approval_decision',
+      data: {
+        toolCallId: 'tool-call-1',
+        decisionId: 'late-decision',
+        decisionRevision: 1,
+        approved: true,
+      },
+    })).toBe(current);
+    expect(reduceToolProjection(current, {
+      event: 'tool_result',
+      data: {
+        toolCallId: 'tool-call-1',
+        content: 'late result',
+      },
+    })).toBe(current);
+  });
+
+  it('does not refine an unclassified terminal error to a nonterminal state', () => {
+    const failed: ToolProjection = {
+      toolCallId: 'tool-call-1',
+      turnId: 'turn-1',
+      toolName: 'filesystem.read',
+      arguments: '{}',
+      status: 'error',
+      pending: false,
+      error: 'agent.errors.providerFailed',
+      decisionRevision: 0,
+    };
+    const current = { [failed.toolCallId]: failed };
+    const reconciled = reconcileToolProjectionState(current, [{
+      ...failed,
+      status: 'approval_required',
+      pending: true,
+      approvalId: 'approval-1',
+      error: undefined,
+    }]);
+
+    expect(reconciled).toBe(current);
+  });
+
+  it('refines an unclassified terminal message error from Station truth', () => {
+    const projected = resolveToolCallProjection({
+      id: 'tool-call-1',
+      name: 'filesystem.read',
+      pending: false,
+      status: 'error',
+      decisionRevision: 0,
+    }, {
+      toolCallId: 'tool-call-1',
+      turnId: 'turn-1',
+      toolName: 'filesystem.read',
+      arguments: '{}',
+      status: 'expired',
+      pending: false,
+      error: 'agent.errors.toolApprovalExpired',
+      decisionRevision: 0,
+      decisionErrorCode: 'TOOL_APPROVAL_EXPIRED',
+    });
+
+    expect(projected).toMatchObject({
+      status: 'expired',
+      error: 'agent.errors.toolApprovalExpired',
+    });
+  });
+
+  it('projects Station approval expiry as a localized terminal error', async () => {
+    exportAgentTurnDiagnostics.mockResolvedValue({
+      replay: {
+        turnId: 'turn-1',
+        toolCalls: [{
+          toolCallId: 'tool-call-1',
+          toolName: 'filesystem.read',
+          redactedArguments: '{}',
+          status: AgentToolCallStatus.EXPIRED,
+          approvalId: 'approval-1',
+          decisionId: '',
+          decisionRevision: 0n,
+          errorCode: 'TOOL_APPROVAL_EXPIRED',
+        }],
+      },
+    });
+
+    await expect(toolRuntime.reconcileMessages([{
+      turnId: 'turn-1',
+      toolCalls: [{
+        id: 'tool-call-1',
+        name: 'filesystem.read',
+        pending: true,
+        status: 'approval_required',
+        approvalId: 'approval-1',
+        decisionRevision: 0,
+      }],
+    }])).resolves.toBe(true);
+
+    expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
+      status: 'expired',
+      pending: false,
+      error: 'agent.errors.toolApprovalExpired',
+      approvalId: 'approval-1',
+      decisionRevision: 0,
+    });
+  });
+
   it('deduplicates decision projections by identity and revision', () => {
     let state: ToolProjectionState = reduceToolProjection({}, approvalRequired);
     state = reduceToolProjection(state, {
@@ -288,6 +436,51 @@ describe('toolRuntime projection authority', () => {
         details: {
           tool_call_id: 'tool-call-1',
           decision_id: 'decision-generated-1',
+        },
+      },
+    });
+  });
+
+  it('projects a rejected expired decision as a typed terminal error', async () => {
+    submitAgentToolDecision.mockResolvedValue({
+      accepted: false,
+      decision_revision: 0,
+      approval_id: 'approval-1',
+      tool_call_id: 'tool-call-1',
+      decision_id: 'decision-generated-1',
+      approved: true,
+      idempotency_key: 'decision-generated-1',
+      payload_hash: 'decision-hash-1',
+      error_code: 'TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED',
+      outcome_error: {
+        error: 'agent.errors.toolApprovalExpired',
+        error_type: 'TOOL_APPROVAL_EXPIRED',
+        locale_key: 'agent.errors.toolApprovalExpired',
+        retryable: true,
+        terminal: true,
+        details: {
+          decision_id: 'decision-generated-1',
+          expires_at: '2026-09-04T22:00:00Z',
+        },
+      },
+    });
+    toolRuntime.consume(approvalRequired);
+
+    await toolRuntime.submitDecision('tool-call-1', true);
+
+    expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
+      status: 'expired',
+      pending: false,
+      decisionRevision: 0,
+      decisionErrorCode: 'agent.errors.toolApprovalExpired',
+      decisionOutcome: {
+        error_type: 'TOOL_APPROVAL_EXPIRED',
+        locale_key: 'agent.errors.toolApprovalExpired',
+        retryable: true,
+        terminal: true,
+        details: {
+          decision_id: 'decision-generated-1',
+          expires_at: '2026-09-04T22:00:00Z',
         },
       },
     });

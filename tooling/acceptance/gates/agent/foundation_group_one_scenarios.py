@@ -2482,6 +2482,189 @@ def evaluate_base_approval_denied(
     return assertions
 
 
+def evaluate_base_approval_expired(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-APPROVAL_EXPIRED"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    decision = _mapping(capture, "decision", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    lineage = _mapping(station, "lineage", scenario=scenario)
+    recovery = _mapping(capture, "recovery", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    states = station.get("states")
+    if not isinstance(states, list) or any(
+        not isinstance(value, str) or not value
+        for value in states
+    ):
+        raise GroupOneScenarioError(
+            f"{scenario} station states fact is invalid"
+        )
+
+    decision_id = _nonempty_string(
+        decision,
+        "decisionId",
+        scenario=scenario,
+    )
+    tool_call_id = _nonempty_string(
+        decision,
+        "toolCallId",
+        scenario=scenario,
+    )
+    expires_at = _nonempty_string(
+        decision,
+        "expiresAt",
+        scenario=scenario,
+    )
+    acknowledgement_source_hash = _nonempty_string(
+        replay,
+        "acknowledgementSourceHash",
+        scenario=scenario,
+    )
+    station_source_hash = _nonempty_string(
+        replay,
+        "stationSourceHash",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedExpiryProjected": (
+            outcome.get("error_type") == "TOOL_APPROVAL_EXPIRED"
+            and outcome.get("locale_key")
+            == "agent.errors.toolApprovalExpired"
+            and outcome.get("retryable") is True
+            and outcome.get("terminal") is True
+            and sorted(details) == ["decision_id", "expires_at"]
+            and details.get("decision_id") == decision_id
+            and details.get("expires_at") == expires_at
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+            and receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+        ),
+        "expiredDecisionImmutable": (
+            decision.get("accepted") is False
+            and decision.get("errorCode")
+            == "TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED"
+            and station.get("policy") == "manual"
+            and states == ["policy_check", "awaiting_user", "expired"]
+            and station.get("errorCode") == "TOOL_APPROVAL_EXPIRED"
+            and lineage.get("toolCallId") == tool_call_id
+            and lineage.get("decisionId") == ""
+            and _nonnegative_int(
+                lineage,
+                "decisionRevision",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                decision,
+                "decisionRevision",
+                scenario=scenario,
+            )
+        ),
+        "requestAgainCreatedOneAttempt": (
+            receiver.get("recoveryExecuted") is True
+            and _nonnegative_int(
+                recovery,
+                "attemptCountAfter",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                recovery,
+                "attemptCountBefore",
+                scenario=scenario,
+            )
+            + 1
+            and recovery.get("newApprovalIdentityDistinct") is True
+            and recovery.get("cancellationStatus") == "cancelled"
+            and recovery.get("retryToolStatus") == "cancelled"
+        ),
+        "zeroSideEffect": (
+            all(
+                _nonnegative_int(station, key, scenario=scenario) == 0
+                for key in (
+                    "executionAttemptCount",
+                    "sideEffectCount",
+                    "resultCount",
+                    "continuationCount",
+                )
+            )
+            and _nonnegative_int(
+                recovery,
+                "retryExecutionAttemptCount",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                recovery,
+                "retrySideEffectCount",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                recovery,
+                "retryResultCount",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                recovery,
+                "retryContinuationCount",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _nonempty_string(
+                replay,
+                "acknowledgementReplayHash",
+                scenario=scenario,
+            )
+            == acknowledgement_source_hash
+            and _nonempty_string(
+                replay,
+                "stationReplayHash",
+                scenario=scenario,
+            )
+            == station_source_hash
+        ),
+        "cleanupComplete": (
+            cleanup.get("conversationDeleted") is True
+            and cleanup.get("bindingRestored") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def _mapping(
     value: Mapping[str, Any],
     key: str,

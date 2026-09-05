@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source diagnostic run `20260904T220822121030Z-ab3b1762700ffe88dac9a83328bbd759` proved Browser AS-F04 policy denial executed zero times but was projected with a false `awaiting_user` state; the policy-aware evidence correction passes local checks and awaits checkpoint deployment/rerun | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260904T222331747954Z-58f6c341ba8392c6b50a2c1712ec0388` on `770e4ec8ae6d0e6fe2ed3d66a76ea89ffff27f55` passed AS-F04 policy/manual denial and AS-F07 revision flows, then failed first at Browser `BASE-APPROVAL_EXPIRED` because its direct-runtime vertical was not implemented; the source-backed expiry vertical now passes local checks and awaits checkpoint deployment/rerun | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5301,6 +5301,36 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `git diff --check` pass. Cleanup completed `DONE / PROVEN / passed`; G-F
   remains `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source
   rerun.
+- Exact-source run
+  `20260904T222331747954Z-58f6c341ba8392c6b50a2c1712ec0388`
+  (aggregate `20260904T222331635806Z-8e7216f8a08c873c51f8f7733746e459`)
+  on `770e4ec8ae6d0e6fe2ed3d66a76ea89ffff27f55` proved the AS-F04
+  policy path as `policy_check -> denied`, preserved manual denial as
+  `policy_check -> awaiting_user -> denied`, and completed both Browser
+  AS-F07 revision sequences. The first failure advanced to Browser
+  `BASE-APPROVAL_EXPIRED`, where the direct adapter failed closed because the
+  cell was not implemented. Provisioner cleanup completed
+  `DONE / PROVEN / passed`.
+- The local `BASE-APPROVAL_EXPIRED` vertical now makes the Station deadline the
+  canonical expiry authority, persists a typed and idempotent
+  `TOOL_APPROVAL_EXPIRED` rejection, preserves the expired ToolCall decision
+  identity and revision, and records zero dispatch/result/continuation. The
+  `agent-tool` runtime projects an explicit terminal `expired` state, refines
+  only unclassified terminal errors, and keeps classified terminal states
+  immutable. The ToolCall surface exposes localized `Request again` through
+  the existing retry command with in-flight deduplication; Tool details consume
+  the same projection and localized status. The direct Harness waits for
+  production periodic reconciliation, duplicates the recovery click, creates
+  exactly one new attempt with distinct approval identity, rechecks the old
+  ToolCall side-effect count, and performs scenario plus outer failure cleanup.
+  Focused Station, Desktop, and Python checks, full Agent package tests,
+  Desktop typecheck, 567 Desktop tests with one unrelated environment-dependent
+  skip, Desktop production build, 225 focused Foundation/static tests, Agent
+  locale parity, Go style, and
+  `git diff --check` pass. The broad Foundation discovery still reports its two
+  pre-existing `receiver-dom` fixture-profile mismatches, and Agent proof
+  validation correctly rejects stale latest evidence. Runtime proof remains
+  `UNPROVEN` pending checkpoint deployment and exact-source Gate execution.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
