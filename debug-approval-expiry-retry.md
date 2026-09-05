@@ -35,6 +35,13 @@
   `retry-api-start`, API result, or typed API error was emitted.
 - The aggregate remained `PARTIAL / UNPROVEN`; Provisioner cleanup completed
   `DONE / PROVEN / passed`.
+- Post-fix exact-source run
+  `20260905T113943783383Z-00250439a82b1ea43a5390c7353d5ea5`
+  on `372e646e7242a72cbe4f0ebf4428708fcf260e6e` emitted one
+  `retry-api-start` and one successful `retry-api-complete`. The duplicate
+  click emitted `retry-single-flight-reused`, proving the new attempt is
+  single-flight. The Gate advanced to the subsequent
+  `approval-expired retry cancellation` boundary.
 
 ## Instrumentation
 - `ToolCallCard.tsx` records entry into the `Request again` click handler.
