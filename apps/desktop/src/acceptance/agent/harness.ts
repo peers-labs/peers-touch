@@ -1798,9 +1798,10 @@ async function withFoundationCapabilitiesDisabled<T>(
   await restorePersistedFoundationCapabilityIsolation();
   const agentId = agent.id || agent.name;
   const authoritativeAgent = await api.getAgent(agentId);
-  const originalBindings = (
-    await api.listAgentCapabilityBindings(agentId)
-  ).filter((binding) => binding.enabled && !binding.tombstonedAt);
+  const allBindings = await api.listAgentCapabilityBindings(agentId);
+  const originalBindings = allBindings.filter(
+    (binding) => binding.enabled && !binding.tombstonedAt,
+  );
   const originalReadiness = await api.getAgentCapabilityReadiness({
     agent_id: agentId,
     client_capability_session_id: capabilitySessionId,
@@ -1810,6 +1811,46 @@ async function withFoundationCapabilitiesDisabled<T>(
   ).length;
   const originalReadyCapabilityHash = await foundationReadyCapabilityHash(
     originalReadiness,
+  );
+  const readinessStateCounts = Object.fromEntries(
+    Object.entries(
+      originalReadiness.capabilities.reduce<Record<string, number>>(
+        (counts, capability) => {
+          const state = String(capability.state);
+          counts[state] = (counts[state] ?? 0) + 1;
+          return counts;
+        },
+        {},
+      ),
+    ).sort(([left], [right]) => left.localeCompare(right)),
+  );
+  const readinessReasonCounts = Object.fromEntries(
+    Object.entries(
+      originalReadiness.capabilities.reduce<Record<string, number>>(
+        (counts, capability) => {
+          const reason = capability.reason_code || 'none';
+          counts[reason] = (counts[reason] ?? 0) + 1;
+          return counts;
+        },
+        {},
+      ),
+    ).sort(([left], [right]) => left.localeCompare(right)),
+  );
+  await reportFoundationCapabilityIsolationDebug(
+    'A-C',
+    'isolation-precondition',
+    {
+      requireEffectiveCapabilities,
+      selectedAgentVersion: agent.version,
+      authoritativeAgentVersion: authoritativeAgent.version,
+      agentVersionMatches: agent.version === authoritativeAgent.version,
+      totalBindingCount: allBindings.length,
+      enabledBindingCount: originalBindings.length,
+      readinessEntryCount: originalReadiness.capabilities.length,
+      readyCapabilityCount: originalReadyCapabilityCount,
+      readinessStateCounts,
+      readinessReasonCounts,
+    },
   );
   if (requireEffectiveCapabilities) {
     await reportFoundationF07Debug('J-L', 'isolation-preflight', {
@@ -6078,6 +6119,27 @@ function reportFoundationF04DenialDebug(
 }
 // #endregion
 
+// #region debug-point A-D:foundation-capability-isolation
+function reportFoundationCapabilityIsolationDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7785/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-capability-isolation',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:withFoundationCapabilitiesDisabled',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 // #region debug-point A-E:as-f07-revision-stage
 function reportFoundationF07Debug(
   hypothesisId: string,
@@ -10163,10 +10225,44 @@ export function installAcceptanceHarness(): void {
       stationRestart?: Record<string, unknown>;
       durableReloadEvidence?: Record<string, unknown>;
     }) {
+      await reportFoundationCapabilityIsolationDebug(
+        'C-D',
+        'entry-restoration-start',
+        {
+          cell,
+          isolationJournalPresent:
+            readFoundationCapabilityIsolationJournal() !== null,
+          fixtureJournalPresent:
+            readFoundationCapabilityFixtureJournal() !== null,
+        },
+      );
       await restorePersistedFoundationCapabilityIsolation();
       await restorePersistedFoundationCapabilityFixture();
+      const agentState = useAgentStore.getState();
       const agent = selectedAgent();
       if (!agent) throw new Error('agent.acceptance.agentMissing');
+      await reportFoundationCapabilityIsolationDebug(
+        'C-D',
+        'entry-restoration-complete',
+        {
+          cell,
+          isolationJournalPresent:
+            readFoundationCapabilityIsolationJournal() !== null,
+          fixtureJournalPresent:
+            readFoundationCapabilityFixtureJournal() !== null,
+          selectedAgentNamePresent: Boolean(agentState.selectedAgent),
+          selectedAgentResolvedByName: agentState.agents.some(
+            (candidate) => candidate.name === agentState.selectedAgent,
+          ),
+          selectedAgentUsesFallback:
+            !agentState.agents.some(
+              (candidate) => candidate.name === agentState.selectedAgent,
+            )
+            && agentState.agents[0] === agent,
+          agentCount: agentState.agents.length,
+          selectedAgentVersion: agent.version,
+        },
+      );
       const agentId = agent.id || agent.name;
       let capabilitySessions = await waitForCapabilitySessionEvidence();
       let preparedConversationId: string | null = null;
