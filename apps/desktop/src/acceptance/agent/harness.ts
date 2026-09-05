@@ -4070,13 +4070,16 @@ async function prepareFoundationF06Conversation(
         failBoundary('agent.acceptance.foundationRecoveryTurnAlreadyTerminal');
         return;
       }
-      const durableEvents = events
+      const observedDurableEvents = events
         .filter((candidate) => Number(candidate.data.seq ?? 0) > 0)
         .sort((left, right) =>
           Number(left.data.seq ?? 0) - Number(right.data.seq ?? 0));
-      const hasText = durableEvents.some((candidate) => candidate.event === 'text');
+      const hasText = observedDurableEvents.some(
+        (candidate) => candidate.event === 'text',
+      );
       const uniqueSequences = new Set(
-        durableEvents.map((candidate) => Number(candidate.data.seq ?? 0)),
+        observedDurableEvents.map((candidate) =>
+          Number(candidate.data.seq ?? 0)),
       );
       if (!hasText || uniqueSequences.size < 2) return;
 
@@ -4113,149 +4116,7 @@ async function prepareFoundationF06Conversation(
         turnId,
         state: 'created',
       });
-
-      const acknowledgedCursor = active.cursor;
-      const duplicateSource = [...durableEvents]
-        .reverse()
-        .find((candidate) =>
-          Number(candidate.data.seq ?? 0) === acknowledgedCursor);
-      const outOfOrderSource = [...durableEvents]
-        .reverse()
-        .find((candidate) =>
-          Number(candidate.data.seq ?? 0) < acknowledgedCursor);
-      if (!duplicateSource || !outOfOrderSource) return;
-
-      const textEvents = durableEvents.filter((candidate) =>
-        candidate.event === 'text'
-        && Number(candidate.data.seq ?? 0) <= acknowledgedCursor);
-      if (textEvents.length === 0) {
-        void reportFoundationF06PrefixDebug('B-C', 'prefix-not-acknowledged', {
-          acknowledgedCursor,
-          durableEventTypes: durableEvents.map((candidate) => ({
-            event: candidate.event,
-            sequence: Number(candidate.data.seq ?? 0),
-          })),
-        });
-        return;
-      }
-      const textEventFacts = textEvents.map((candidate) => {
-        const content = String(
-          candidate.data.content ?? candidate.data.text ?? '',
-        );
-        return {
-          sequence: Number(candidate.data.seq ?? 0),
-          contentLength: content.length,
-          dataKeys: Object.keys(candidate.data).sort(),
-        };
-      });
-      const prefix = textEvents
-        .map((candidate) =>
-          String(candidate.data.content ?? candidate.data.text ?? ''))
-        .join('');
-      void reportFoundationF06PrefixDebug('A-D', 'boundary-evaluated', {
-        acknowledgedCursor,
-        durableEventCount: durableEvents.length,
-        durableEventTypes: durableEvents.map((candidate) => ({
-          event: candidate.event,
-          sequence: Number(candidate.data.seq ?? 0),
-        })),
-        textEventFacts,
-        prefixLength: prefix.length,
-      });
-      if (!prefix) {
-        void reportFoundationF06PrefixDebug('A-D', 'prefix-missing', {
-          acknowledgedCursor,
-          textEventFacts,
-        });
-        failBoundary('agent.acceptance.foundationRecoveryPrefixMissing');
-        return;
-      }
-      void reportFoundationF06PrefixDebug('A-C', 'prefix-ready', {
-        acknowledgedCursor,
-        prefixLength: prefix.length,
-        textEventFacts,
-      });
-
-      const chatBefore = useChatStore.getState();
-      const projectionBeforeMutation = stableJson({
-        operation: chatBefore.operations[conversation.conversation_id]
-          ? {
-              turnId: chatBefore.operations[conversation.conversation_id].turnId,
-              streamGeneration:
-                chatBefore.operations[conversation.conversation_id].streamGeneration,
-              lastEventSeq:
-                chatBefore.operations[conversation.conversation_id].lastEventSeq,
-              status: chatBefore.operations[conversation.conversation_id].status,
-              runState: chatBefore.operations[conversation.conversation_id].runState,
-            }
-          : null,
-        messageCount: chatBefore.messages.length,
-        turnMessages: chatBefore.messages
-          .filter((message) => message.turnId === turnId)
-          .map((message) => ({
-            id: message.id,
-            content: message.content,
-            terminalStatus: message.terminalStatus,
-            toolCalls: message.toolCalls,
-          })),
-        cursor: active.cursor,
-      });
-      const publishFault = (
-        source: { event: string; data: Record<string, unknown> },
-        streamGeneration: number,
-      ) => eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
-        streamId,
-        streamGeneration,
-        ptid: actorId,
-        conversationId: conversation.conversation_id,
-        agentId,
-        event: source.event,
-        data: {
-          ...source.data,
-          turnId,
-          conversationId: conversation.conversation_id,
-        },
-        timestampMs: Date.now(),
-      });
-      publishFault(duplicateSource, active.streamGeneration);
-      publishFault(outOfOrderSource, active.streamGeneration);
-      const staleGeneration = Math.max(1, active.streamGeneration - 1);
-      publishFault(duplicateSource, staleGeneration);
-      publishFault({
-        event: 'done',
-        data: {
-          ...outOfOrderSource.data,
-          seq: Number(outOfOrderSource.data.seq),
-          status: 'completed',
-        },
-      }, active.streamGeneration);
-
-      const chatAfter = useChatStore.getState();
-      const activeAfterMutation = useAgentTurnRecoveryStore.getState()
-        .active[conversation.conversation_id];
-      const projectionAfterMutation = stableJson({
-        operation: chatAfter.operations[conversation.conversation_id]
-          ? {
-              turnId: chatAfter.operations[conversation.conversation_id].turnId,
-              streamGeneration:
-                chatAfter.operations[conversation.conversation_id].streamGeneration,
-              lastEventSeq:
-                chatAfter.operations[conversation.conversation_id].lastEventSeq,
-              status: chatAfter.operations[conversation.conversation_id].status,
-              runState: chatAfter.operations[conversation.conversation_id].runState,
-            }
-          : null,
-        messageCount: chatAfter.messages.length,
-        turnMessages: chatAfter.messages
-          .filter((message) => message.turnId === turnId)
-          .map((message) => ({
-            id: message.id,
-            content: message.content,
-            terminalStatus: message.terminalStatus,
-            toolCalls: message.toolCalls,
-          })),
-        cursor: activeAfterMutation?.cursor,
-      });
+      const requestedCursor = active.cursor;
       const handoff: FoundationF06Handoff = {
         scenarioKey: input.scenarioKey,
         platform: input.platform,
@@ -4267,21 +4128,17 @@ async function prepareFoundationF06Conversation(
         streamGeneration: active.streamGeneration,
         actorPtid: actorId,
         actorPtidHash: 'pending',
-        acknowledgedCursor,
+        acknowledgedCursor: requestedCursor,
         conversationRevision: conversation.version,
         prefixHash: 'pending',
-        prefixLength: prefix.length,
-        duplicateSequence: Number(duplicateSource.data.seq),
-        outOfOrderSequence: Number(outOfOrderSource.data.seq),
-        staleGeneration,
-        staleGenerationRejected:
-          activeAfterMutation?.streamGeneration === active.streamGeneration,
-        staleTerminalRejected:
-          activeAfterMutation?.turnId === turnId
-          && chatAfter.operations[conversation.conversation_id]?.status
-            !== 'completed',
-        cursorBeforeMutation: active.cursor,
-        cursorAfterMutation: activeAfterMutation?.cursor ?? 0,
+        prefixLength: 0,
+        duplicateSequence: 0,
+        outOfOrderSequence: 0,
+        staleGeneration: Math.max(1, active.streamGeneration - 1),
+        staleGenerationRejected: false,
+        staleTerminalRejected: false,
+        cursorBeforeMutation: requestedCursor,
+        cursorAfterMutation: requestedCursor,
         projectionBeforeMutationHash: 'pending',
         projectionAfterMutationHash: 'pending',
         duplicatePayloadHash: 'pending',
@@ -4294,17 +4151,16 @@ async function prepareFoundationF06Conversation(
         preparedAt: scenarioStartedAt,
       };
       foundationF06PendingHandoffs.set(input.scenarioKey, handoff);
-      writeFoundationF06Handoff(handoff);
-      const boundary = {
-        handoff,
-        projectionBeforeMutation,
-        projectionAfterMutation,
-        prefix,
-        duplicateSource,
-        outOfOrderSource,
-      };
-      foundationF06FaultBoundaries.set(input.scenarioKey, boundary);
       boundaryRequested = true;
+      void reportFoundationF06RegistrationDebug(
+        'A-E',
+        'fault-cut-requested',
+        {
+          activeRecordPresent: true,
+          activePhase: active.phase,
+          requestedCursor,
+        },
+      );
       void requestFoundationF06TransportCut(input.faultControlUrl)
         .then(async () => {
           await waitFor(() => {
@@ -4330,11 +4186,210 @@ async function prepareFoundationF06Conversation(
               'agent.acceptance.foundationRecoveryFaultBoundaryMismatch',
             );
           }
-          if (activeAtCut.cursor !== acknowledgedCursor) {
+          const acknowledgedCursor = activeAtCut.cursor;
+          const durableEvents = events
+            .filter((candidate) =>
+              Number(candidate.data.seq ?? 0) > 0
+              && !FOUNDATION_F06_PHASE_BY_EVENT[candidate.event]
+              && candidate.event !== 'catchup_done'
+              && candidate.event !== 'snapshot')
+            .sort((left, right) =>
+              Number(left.data.seq ?? 0) - Number(right.data.seq ?? 0));
+          const duplicateSource = [...durableEvents]
+            .reverse()
+            .find((candidate) =>
+              Number(candidate.data.seq ?? 0) === acknowledgedCursor);
+          const outOfOrderSource = [...durableEvents]
+            .reverse()
+            .find((candidate) =>
+              Number(candidate.data.seq ?? 0) < acknowledgedCursor);
+          if (!duplicateSource || !outOfOrderSource) {
             throw new Error(
-              'agent.acceptance.foundationRecoveryCursorAdvancedBeforeFault',
+              'agent.acceptance.foundationRecoveryFaultBoundaryEventsMissing',
             );
           }
+
+          const textEvents = durableEvents.filter((candidate) =>
+            candidate.event === 'text'
+            && Number(candidate.data.seq ?? 0) <= acknowledgedCursor);
+          if (textEvents.length === 0) {
+            void reportFoundationF06PrefixDebug(
+              'B-C',
+              'prefix-not-acknowledged',
+              {
+                acknowledgedCursor,
+                durableEventTypes: durableEvents.map((candidate) => ({
+                  event: candidate.event,
+                  sequence: Number(candidate.data.seq ?? 0),
+                })),
+              },
+            );
+            throw new Error(
+              'agent.acceptance.foundationRecoveryPrefixMissing',
+            );
+          }
+          const textEventFacts = textEvents.map((candidate) => {
+            const content = String(
+              candidate.data.content ?? candidate.data.text ?? '',
+            );
+            return {
+              sequence: Number(candidate.data.seq ?? 0),
+              contentLength: content.length,
+              dataKeys: Object.keys(candidate.data).sort(),
+            };
+          });
+          const prefix = textEvents
+            .map((candidate) =>
+              String(candidate.data.content ?? candidate.data.text ?? ''))
+            .join('');
+          void reportFoundationF06PrefixDebug('A-D', 'boundary-evaluated', {
+            acknowledgedCursor,
+            durableEventCount: durableEvents.length,
+            durableEventTypes: durableEvents.map((candidate) => ({
+              event: candidate.event,
+              sequence: Number(candidate.data.seq ?? 0),
+            })),
+            textEventFacts,
+            prefixLength: prefix.length,
+          });
+          if (!prefix) {
+            void reportFoundationF06PrefixDebug('A-D', 'prefix-missing', {
+              acknowledgedCursor,
+              textEventFacts,
+            });
+            throw new Error(
+              'agent.acceptance.foundationRecoveryPrefixMissing',
+            );
+          }
+          void reportFoundationF06PrefixDebug('A-C', 'prefix-ready', {
+            acknowledgedCursor,
+            prefixLength: prefix.length,
+            textEventFacts,
+          });
+
+          const chatBefore = useChatStore.getState();
+          const projectionBeforeMutation = stableJson({
+            operation: chatBefore.operations[conversation.conversation_id]
+              ? {
+                  turnId:
+                    chatBefore.operations[conversation.conversation_id].turnId,
+                  streamGeneration:
+                    chatBefore.operations[conversation.conversation_id]
+                      .streamGeneration,
+                  lastEventSeq:
+                    chatBefore.operations[conversation.conversation_id]
+                      .lastEventSeq,
+                  status:
+                    chatBefore.operations[conversation.conversation_id].status,
+                  runState:
+                    chatBefore.operations[conversation.conversation_id].runState,
+                }
+              : null,
+            messageCount: chatBefore.messages.length,
+            turnMessages: chatBefore.messages
+              .filter((message) => message.turnId === turnId)
+              .map((message) => ({
+                id: message.id,
+                content: message.content,
+                terminalStatus: message.terminalStatus,
+                toolCalls: message.toolCalls,
+              })),
+            cursor: activeAtCut.cursor,
+          });
+          const publishFault = (
+            source: { event: string; data: Record<string, unknown> },
+            streamGeneration: number,
+          ) => eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+            streamId,
+            streamGeneration,
+            ptid: actorId,
+            conversationId: conversation.conversation_id,
+            agentId,
+            event: source.event,
+            data: {
+              ...source.data,
+              turnId,
+              conversationId: conversation.conversation_id,
+            },
+            timestampMs: Date.now(),
+          });
+          publishFault(duplicateSource, activeAtCut.streamGeneration);
+          publishFault(outOfOrderSource, activeAtCut.streamGeneration);
+          const staleGeneration = Math.max(
+            1,
+            activeAtCut.streamGeneration - 1,
+          );
+          publishFault(duplicateSource, staleGeneration);
+          publishFault({
+            event: 'done',
+            data: {
+              ...outOfOrderSource.data,
+              seq: Number(outOfOrderSource.data.seq),
+              status: 'completed',
+            },
+          }, activeAtCut.streamGeneration);
+
+          const chatAfter = useChatStore.getState();
+          const activeAfterMutation = useAgentTurnRecoveryStore.getState()
+            .active[conversation.conversation_id];
+          if (activeAfterMutation?.cursor !== acknowledgedCursor) {
+            throw new Error(
+              'agent.acceptance.foundationRecoveryCursorAdvancedAfterFault',
+            );
+          }
+          const projectionAfterMutation = stableJson({
+            operation: chatAfter.operations[conversation.conversation_id]
+              ? {
+                  turnId:
+                    chatAfter.operations[conversation.conversation_id].turnId,
+                  streamGeneration:
+                    chatAfter.operations[conversation.conversation_id]
+                      .streamGeneration,
+                  lastEventSeq:
+                    chatAfter.operations[conversation.conversation_id]
+                      .lastEventSeq,
+                  status:
+                    chatAfter.operations[conversation.conversation_id].status,
+                  runState:
+                    chatAfter.operations[conversation.conversation_id].runState,
+                }
+              : null,
+            messageCount: chatAfter.messages.length,
+            turnMessages: chatAfter.messages
+              .filter((message) => message.turnId === turnId)
+              .map((message) => ({
+                id: message.id,
+                content: message.content,
+                terminalStatus: message.terminalStatus,
+                toolCalls: message.toolCalls,
+              })),
+            cursor: activeAfterMutation.cursor,
+          });
+          Object.assign(handoff, {
+            acknowledgedCursor,
+            prefixLength: prefix.length,
+            duplicateSequence: Number(duplicateSource.data.seq),
+            outOfOrderSequence: Number(outOfOrderSource.data.seq),
+            staleGeneration,
+            staleGenerationRejected:
+              activeAfterMutation.streamGeneration
+                === activeAtCut.streamGeneration,
+            staleTerminalRejected:
+              activeAfterMutation.turnId === turnId
+              && chatAfter.operations[conversation.conversation_id]?.status
+                !== 'completed',
+            cursorBeforeMutation: activeAtCut.cursor,
+            cursorAfterMutation: activeAfterMutation.cursor,
+          });
+          const boundary = {
+            handoff,
+            projectionBeforeMutation,
+            projectionAfterMutation,
+            prefix,
+            duplicateSource,
+            outOfOrderSource,
+          };
+          foundationF06FaultBoundaries.set(input.scenarioKey, boundary);
           writeFoundationF06Handoff(handoff);
           boundarySettled = true;
           void reportFoundationF06RegistrationDebug(
@@ -4350,6 +4405,9 @@ async function prepareFoundationF06Conversation(
                   === controller.streamGeneration,
               activePhase: activeAtCut.phase,
               activeCursor: activeAtCut.cursor,
+              requestedCursor,
+              cursorAdvancedBeforeCut:
+                activeAtCut.cursor > requestedCursor,
             },
           );
           resolveBoundary(boundary);

@@ -230,7 +230,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             self.source,
         )
 
-    def test_recovery_cursor_is_frozen_at_fault_injection(self) -> None:
+    def test_recovery_cursor_is_frozen_at_fault_acknowledgement(self) -> None:
         prepare_start = self.source.index(
             "async function prepareFoundationF06Conversation"
         )
@@ -238,13 +238,13 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "async function observeFoundationRecoveryFailure",
             prepare_start,
         )
-        cursor_capture = self.source.index(
-            "const acknowledgedCursor = active.cursor",
+        requested_cursor = self.source.index(
+            "const requestedCursor = active.cursor",
             prepare_start,
         )
         handoff_publish = self.source.index(
             "foundationF06PendingHandoffs.set(input.scenarioKey, handoff)",
-            cursor_capture,
+            requested_cursor,
         )
         fault_request = self.source.index(
             "requestFoundationF06TransportCut(input.faultControlUrl)",
@@ -254,9 +254,17 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "Foundation AS-F06 fault acknowledgement",
             fault_request,
         )
+        cursor_capture = self.source.index(
+            "const acknowledgedCursor = activeAtCut.cursor",
+            fault_observation,
+        )
+        mutation_probe = self.source.index(
+            "publishFault(duplicateSource, activeAtCut.streamGeneration)",
+            cursor_capture,
+        )
         boundary_publish = self.source.index(
             "resolveBoundary(boundary)",
-            fault_observation,
+            mutation_probe,
         )
         boundary_return = self.source.index(
             "return boundary.handoff",
@@ -267,23 +275,32 @@ class AgentHarnessStaticTest(unittest.TestCase):
             boundary_return,
         )
 
-        self.assertLess(cursor_capture, handoff_publish)
+        self.assertLess(requested_cursor, handoff_publish)
         self.assertLess(handoff_publish, fault_request)
         self.assertLess(fault_request, fault_observation)
-        self.assertLess(fault_observation, boundary_publish)
-        self.assertNotIn("await ", self.source[cursor_capture:fault_request])
-        self.assertIn(
+        self.assertLess(fault_observation, cursor_capture)
+        self.assertLess(cursor_capture, mutation_probe)
+        self.assertLess(mutation_probe, boundary_publish)
+        self.assertNotIn("await ", self.source[cursor_capture:mutation_probe])
+        self.assertNotIn(
             "foundationRecoveryCursorAdvancedBeforeFault",
-            self.source[fault_observation:boundary_publish],
+            self.source[prepare_start:prepare_end],
+        )
+        self.assertIn(
+            "foundationRecoveryCursorAdvancedAfterFault",
+            self.source[mutation_probe:boundary_publish],
         )
         self.assertIn(
             "]);\n  return boundary.handoff;",
             self.source[boundary_publish:boundary_return + len("return boundary.handoff;")],
         )
-        self.assertIn("transitions: []", self.source[cursor_capture:boundary_publish])
+        self.assertIn(
+            "transitions: []",
+            self.source[requested_cursor:boundary_publish],
+        )
         self.assertIn(
             "replayDeliveries: []",
-            self.source[cursor_capture:boundary_publish],
+            self.source[requested_cursor:boundary_publish],
         )
         self.assertNotIn(
             "controller.disconnectTransport()",
