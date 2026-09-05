@@ -489,7 +489,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         scenario = self.source[scenario_start:scenario_end]
 
+        self.assertIn("withFoundationReadyCapabilityFixture(", scenario)
         self.assertIn("withFoundationCapabilitiesDisabled(", scenario)
+        self.assertLess(
+            scenario.index("withFoundationReadyCapabilityFixture("),
+            scenario.index("withFoundationCapabilitiesDisabled("),
+        )
         self.assertIn("thinkingMode: 'disabled'", scenario)
         self.assertIn("scenarioFacts = { toolIsolation }", scenario)
         self.assertIn("      true,", scenario)
@@ -679,20 +684,34 @@ class AgentHarnessStaticTest(unittest.TestCase):
             helper_start,
         )
         helper = self.source[helper_start:helper_end]
-        self.assertIn("foundationToolFixture(agentId, input.platform)", helper)
-        self.assertIn("CapabilityApprovalPolicy.MANUAL", helper)
-        self.assertIn(
-            "setupIdempotencyKey: crypto.randomUUID()",
-            helper,
-        )
-        self.assertIn("parseFoundationCapabilityFixtureJournal(", helper)
-        self.assertIn("await prepareFoundationCapabilityFixture(journal)", helper)
+        self.assertIn("withFoundationReadyCapabilityFixture(", helper)
         self.assertIn("await resolveFoundationToolTurnSession()", helper)
         self.assertIn("withFoundationCapabilitiesDisabled(", helper)
         self.assertIn("      true,", helper)
+
+        fixture_start = self.source.index(
+            "async function withFoundationReadyCapabilityFixture",
+        )
+        fixture_end = self.source.index(
+            "async function startFoundationToolTurn",
+            fixture_start,
+        )
+        fixture = self.source[fixture_start:fixture_end]
+        self.assertIn("foundationToolFixture(agentId, platform)", fixture)
+        self.assertIn("CapabilityApprovalPolicy.MANUAL", fixture)
+        self.assertIn(
+            "setupIdempotencyKey: crypto.randomUUID()",
+            fixture,
+        )
+        self.assertIn("parseFoundationCapabilityFixtureJournal(", fixture)
+        self.assertIn("await prepareFoundationCapabilityFixture(journal)", fixture)
+        self.assertIn(
+            "await restorePersistedFoundationCapabilityIsolation()",
+            fixture,
+        )
         self.assertIn(
             "await restorePersistedFoundationCapabilityFixture()",
-            helper,
+            fixture,
         )
         self.assertIn("cleanupExpectedRevision", self.source)
         self.assertIn("cleanupIdempotencyKey", self.source)
