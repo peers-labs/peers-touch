@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260905T033944336847Z-d9b58bb4bfa09720bc427db17300bb25` on `229af39233369388dd729a30e1917416e59f7092` crossed Browser AS-F06 and reached `BASE-APPROVAL_EXPIRED`; runtime evidence shows both `Request again` clicks were blocked before `RetryTurn` because the current operation remained `recovery_failed` while the coarse `isStreaming` projection stayed true; cleanup completed `DONE / PROVEN / passed` | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260905T122935196020Z-b10c556a47fdd200739b280e907e37ba` on `d983768315b338e71a5cea48f4eccc95f6a93daa` stopped at Browser AS-F06 because the captured recovery failure had an empty `errorHash`; source identity matched and cleanup completed `DONE / PROVEN / passed`; cancellation instrumentation remains pending behind this earlier failure | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5361,6 +5361,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `cancelled`. Source identity and redaction passed; Provisioner cleanup
   completed `DONE / PROVEN / passed`. Cancellation response and final replay
   state instrumentation are pending.
+- Exact-source diagnostic run
+  `20260905T122935196020Z-b10c556a47fdd200739b280e907e37ba`
+  (aggregate `20260905T122935070921Z-7f451ff3729a8558b849ee8eaab62dff`)
+  on `d983768315b338e71a5cea48f4eccc95f6a93daa` stopped earlier at
+  Browser `AS-F06 / en / single / sample-001`: the recovery record reached
+  `RECOVERY_FAILED`, but the captured `errorHash` was empty. The run therefore
+  did not reach the approval-retry cancellation probe. Source identity matched,
+  the Gate remained `PARTIAL / UNPROVEN`, and Provisioner cleanup completed
+  `DONE / PROVEN / passed`. A separate
+  `foundation-recovery-error-key` debug session now records only failure-key
+  presence, event-field presence, phase transitions, sequence relationships,
+  and recovery epochs before any business fix.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
