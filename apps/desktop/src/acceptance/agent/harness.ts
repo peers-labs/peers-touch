@@ -1948,6 +1948,77 @@ async function withFoundationCapabilitiesDisabled<T>(
   }
 }
 
+async function withFoundationReadyCapabilityFixture<T>(
+  agent: NonNullable<ReturnType<typeof selectedAgent>>,
+  platform: string,
+  operation: (
+    authoritativeAgent: NonNullable<ReturnType<typeof selectedAgent>>,
+  ) => Promise<T>,
+): Promise<T> {
+  await restorePersistedFoundationCapabilityIsolation();
+  await restorePersistedFoundationCapabilityFixture();
+  const agentId = agent.id || agent.name;
+  const authoritativeAgent = await api.getAgent(agentId);
+  const fixture = await foundationToolFixture(agentId, platform);
+  const originalBinding = fixture.binding;
+  let outcome:
+    | { ok: true; value: T }
+    | { ok: false; error: unknown };
+
+  try {
+    if (
+      !originalBinding
+      || !originalBinding.enabled
+      || originalBinding.approvalPolicy !== CapabilityApprovalPolicy.MANUAL
+    ) {
+      const journal: FoundationCapabilityFixtureJournal = {
+        agentId,
+        agentVersion: authoritativeAgent.version,
+        capabilityId: fixture.manifest.capabilityId,
+        capabilityVersion: fixture.manifest.version,
+        setupIdempotencyKey: crypto.randomUUID(),
+        originalBinding: originalBinding
+          ? {
+              bindingId: originalBinding.bindingId,
+              enabled: originalBinding.enabled,
+              approvalPolicy: originalBinding.approvalPolicy,
+              revision: originalBinding.revision.toString(),
+            }
+          : null,
+      };
+      const serializedJournal = JSON.stringify(journal);
+      parseFoundationCapabilityFixtureJournal(serializedJournal);
+      window.localStorage.setItem(
+        FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY,
+        serializedJournal,
+      );
+      await prepareFoundationCapabilityFixture(journal);
+    }
+    outcome = {
+      ok: true,
+      value: await operation(authoritativeAgent),
+    };
+  } catch (error) {
+    outcome = { ok: false, error };
+  }
+
+  try {
+    await restorePersistedFoundationCapabilityIsolation();
+    await restorePersistedFoundationCapabilityFixture();
+  } catch (cleanupError) {
+    throw Object.assign(
+      new Error('agent.acceptance.foundationCapabilityFixtureCleanupFailed'),
+      {
+        primaryError: outcome.ok ? null : outcome.error,
+        cleanupError,
+      },
+    );
+  }
+
+  if (!outcome.ok) throw outcome.error;
+  return outcome.value;
+}
+
 async function startFoundationToolTurn(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
@@ -8487,76 +8558,28 @@ async function runFoundationF07WithCapabilityIsolation(input: {
   platform: string;
   sampleId: string;
 }) {
-  await restorePersistedFoundationCapabilityIsolation();
-  await restorePersistedFoundationCapabilityFixture();
-  const agentId = input.agent.id || input.agent.name;
-  const authoritativeAgent = await api.getAgent(agentId);
-  const fixture = await foundationToolFixture(agentId, input.platform);
-  const originalBinding = fixture.binding;
-  let operationError: unknown = null;
-
-  try {
-    if (
-      !originalBinding
-      || !originalBinding.enabled
-      || originalBinding.approvalPolicy !== CapabilityApprovalPolicy.MANUAL
-    ) {
-      const journal: FoundationCapabilityFixtureJournal = {
-        agentId,
-        agentVersion: authoritativeAgent.version,
-        capabilityId: fixture.manifest.capabilityId,
-        capabilityVersion: fixture.manifest.version,
-        setupIdempotencyKey: crypto.randomUUID(),
-        originalBinding: originalBinding
-          ? {
-              bindingId: originalBinding.bindingId,
-              enabled: originalBinding.enabled,
-              approvalPolicy: originalBinding.approvalPolicy,
-              revision: originalBinding.revision.toString(),
-            }
-          : null,
-      };
-      const serializedJournal = JSON.stringify(journal);
-      parseFoundationCapabilityFixtureJournal(serializedJournal);
-      window.localStorage.setItem(
-        FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY,
-        serializedJournal,
-      );
-      await prepareFoundationCapabilityFixture(journal);
-    }
-    const capabilitySession = await resolveFoundationToolTurnSession();
-    return await withFoundationCapabilitiesDisabled(
-      authoritativeAgent,
-      capabilitySession.capabilitySessionId,
-      async (toolIsolation) => {
-        const result = await runFoundationF07Scenario(input);
-        return {
-          ...result,
-          facts: {
-            ...result.facts,
-            toolIsolation,
-          },
-        };
-      },
-      true,
-    );
-  } catch (error) {
-    operationError = error;
-    throw error;
-  } finally {
-    try {
-      await restorePersistedFoundationCapabilityIsolation();
-      await restorePersistedFoundationCapabilityFixture();
-    } catch (cleanupError) {
-      throw Object.assign(
-        new Error('agent.acceptance.foundationCapabilityFixtureCleanupFailed'),
-        {
-          primaryError: operationError,
-          cleanupError,
+  return withFoundationReadyCapabilityFixture(
+    input.agent,
+    input.platform,
+    async (authoritativeAgent) => {
+      const capabilitySession = await resolveFoundationToolTurnSession();
+      return await withFoundationCapabilitiesDisabled(
+        authoritativeAgent,
+        capabilitySession.capabilitySessionId,
+        async (toolIsolation) => {
+          const result = await runFoundationF07Scenario(input);
+          return {
+            ...result,
+            facts: {
+              ...result.facts,
+              toolIsolation,
+            },
+          };
         },
+        true,
       );
-    }
-  }
+    },
+  );
 }
 
 function evaluateF01(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
@@ -10392,54 +10415,62 @@ export function installAcceptanceHarness(): void {
         if (!capabilitySessionId) {
           throw new Error('agent.acceptance.capabilitySessionUnavailable');
         }
-        await withFoundationCapabilitiesDisabled(
+        await withFoundationReadyCapabilityFixture(
           agent,
-          capabilitySessionId,
-          async (toolIsolation) => {
-            const conversation = await api.createAgentConversation({
-              agent_id: agentId,
-              title: `Foundation ${sampleId}`,
-              provider_id: agent.provider,
-              model_name: agent.model,
-            });
-            preparedConversationId = conversation.conversation_id;
-            await useChatStore.getState().selectSession(
-              conversation.conversation_id,
+          platform,
+          async (authoritativeAgent) => {
+            const authoritativeAgentId =
+              authoritativeAgent.id || authoritativeAgent.name;
+            await withFoundationCapabilitiesDisabled(
+              authoritativeAgent,
+              capabilitySessionId,
+              async (toolIsolation) => {
+                const conversation = await api.createAgentConversation({
+                  agent_id: authoritativeAgentId,
+                  title: `Foundation ${sampleId}`,
+                  provider_id: authoritativeAgent.provider,
+                  model_name: authoritativeAgent.model,
+                });
+                preparedConversationId = conversation.conversation_id;
+                await useChatStore.getState().selectSession(
+                  conversation.conversation_id,
+                );
+                const turnStartedAt = performance.now();
+                const observed = startObservedFoundationTurn({
+                  conversationId: conversation.conversation_id,
+                  agentId: authoritativeAgentId,
+                  content: 'Reply with ready.',
+                  idempotencyKey: crypto.randomUUID(),
+                  provider: authoritativeAgent.provider || undefined,
+                  model: authoritativeAgent.model || undefined,
+                  effort: 'low',
+                  thinkingMode: 'disabled',
+                  clientCapabilitySessionId: capabilitySessionId,
+                });
+                const result = await observed.result;
+                if (!result.ok) {
+                  throw new Error(
+                    result.error || 'agent.acceptance.foundationTurnFailed',
+                  );
+                }
+                const turnId = observedTurnId(result.events);
+                const terminal = [...result.events].reverse().find((event) =>
+                  classifyAgentTurnTerminalEvent(event) === 'completed');
+                if (!turnId || !terminal) {
+                  throw new Error('agent.acceptance.foundationTurnIdMissing');
+                }
+                preparedTurnId = turnId;
+                preparedRuntimeEvent.current = {
+                  eventType: terminal.event,
+                  sequence: Number(terminal.data.seq ?? 0),
+                  observedAt: terminal.observedAt,
+                };
+                turnDurationMs = performance.now() - turnStartedAt;
+                scenarioFacts = { toolIsolation };
+              },
+              true,
             );
-            const turnStartedAt = performance.now();
-            const observed = startObservedFoundationTurn({
-              conversationId: conversation.conversation_id,
-              agentId,
-              content: 'Reply with ready.',
-              idempotencyKey: crypto.randomUUID(),
-              provider: agent.provider || undefined,
-              model: agent.model || undefined,
-              effort: 'low',
-              thinkingMode: 'disabled',
-              clientCapabilitySessionId: capabilitySessionId,
-            });
-            const result = await observed.result;
-            if (!result.ok) {
-              throw new Error(
-                result.error || 'agent.acceptance.foundationTurnFailed',
-              );
-            }
-            const turnId = observedTurnId(result.events);
-            const terminal = [...result.events].reverse().find((event) =>
-              classifyAgentTurnTerminalEvent(event) === 'completed');
-            if (!turnId || !terminal) {
-              throw new Error('agent.acceptance.foundationTurnIdMissing');
-            }
-            preparedTurnId = turnId;
-            preparedRuntimeEvent.current = {
-              eventType: terminal.event,
-              sequence: Number(terminal.data.seq ?? 0),
-              observedAt: terminal.observedAt,
-            };
-            turnDurationMs = performance.now() - turnStartedAt;
-            scenarioFacts = { toolIsolation };
           },
-          true,
         );
       }
 
