@@ -18,14 +18,6 @@ type FederationPolicy struct {
 	MaxBatchWrites int
 }
 
-type FederationDeviceAccess interface {
-	DeviceAccess
-	HomeStationID(
-		ctx context.Context,
-		endpoint *chat.CryptoEndpoint,
-	) (string, error)
-}
-
 type AuthorityCommandService interface {
 	Submit(
 		ctx context.Context,
@@ -35,7 +27,7 @@ type AuthorityCommandService interface {
 
 type FederationService struct {
 	unitOfWork       messaging.FederationInboxUnitOfWork
-	devices          FederationDeviceAccess
+	devices          DeviceAccess
 	authority        AuthorityCommandService
 	manifestResolver messaging.EndpointManifestResolver
 	manifestVerifier messaging.LocalEndpointManifestVerifier
@@ -45,7 +37,7 @@ type FederationService struct {
 
 func NewFederationService(
 	unitOfWork messaging.FederationInboxUnitOfWork,
-	devices FederationDeviceAccess,
+	devices DeviceAccess,
 	authority AuthorityCommandService,
 	manifestResolver messaging.EndpointManifestResolver,
 	manifestVerifier messaging.LocalEndpointManifestVerifier,
@@ -231,11 +223,25 @@ func (s *FederationService) deliverAuthorityCommand(
 		frame.AuthoritySequence != 0 {
 		return nil, messaging.ErrFederationFrameInvalid
 	}
-	homeStationID, err := s.devices.HomeStationID(ctx, payload.Command.Sender)
+	manifests, err := resolveEndpointManifestSnapshots(
+		ctx,
+		s.manifestResolver,
+		[]string{payload.Command.Sender.Ptid},
+	)
 	if err != nil {
 		return nil, err
 	}
-	if homeStationID != frame.SourceStationId {
+	senderManifest, _, err := manifestEntryForEndpoint(
+		manifests,
+		payload.Command.Sender,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"messaging: authority command sender endpoint is absent from the verified manifest: %w",
+			messaging.ErrSenderUnauthorized,
+		)
+	}
+	if senderManifest.HomeStationId != frame.SourceStationId {
 		return nil, messaging.ErrSenderUnauthorized
 	}
 	if _, err := s.authority.Submit(ctx, payload.Command); err != nil {
