@@ -35,19 +35,16 @@ func (a federationDeviceAccess) IsActiveDevice(
 	return a.active[ptid+"\x00"+deviceID], nil
 }
 
-func (a federationDeviceAccess) HomeStationID(
-	_ context.Context,
-	_ *chat.CryptoEndpoint,
-) (string, error) {
-	return "station-b", nil
+type federationAuthorityService struct {
+	submitted int
 }
 
-type federationAuthorityService struct{}
-
-func (federationAuthorityService) Submit(
+func (s *federationAuthorityService) Submit(
 	context.Context,
 	*chat.ChatCommand,
 ) (*chat.ConversationEvent, error) {
+	s.submitted++
+
 	return &chat.ConversationEvent{}, nil
 }
 
@@ -67,6 +64,23 @@ func newFederationInboxFixture(
 	limits messaging.QueueLimits,
 	devices federationDeviceAccess,
 ) (*gorm.DB, *application.FederationService) {
+	t.Helper()
+	db, service, _ := newFederationInboxFixtureWithManifest(
+		t,
+		limits,
+		devices,
+		testBatchManifest(),
+	)
+
+	return db, service
+}
+
+func newFederationInboxFixtureWithManifest(
+	t *testing.T,
+	limits messaging.QueueLimits,
+	devices federationDeviceAccess,
+	manifest *chat.FederatedEndpointManifest,
+) (*gorm.DB, *application.FederationService, *federationAuthorityService) {
 	t.Helper()
 	db, err := gorm.Open(
 		sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"),
@@ -104,15 +118,20 @@ func newFederationInboxFixture(
 	if err != nil {
 		t.Fatal(err)
 	}
+	authority := &federationAuthorityService{}
 	service, err := application.NewFederationService(
 		uow,
 		devices,
-		federationAuthorityService{},
+		authority,
 		messaging.EndpointManifestResolveFunc(func(
-			context.Context,
-			string,
+			_ context.Context,
+			actorPTID string,
 		) (*chat.FederatedEndpointManifest, error) {
-			return testBatchManifest(), nil
+			if manifest == nil || manifest.ActorPtid != actorPTID {
+				return nil, messaging.ErrNotFound
+			}
+
+			return manifest, nil
 		}),
 		messaging.LocalEndpointManifestVerifyFunc(func(
 			context.Context,
@@ -128,7 +147,8 @@ func newFederationInboxFixture(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return db, service
+
+	return db, service, authority
 }
 
 func federatedWrite(
@@ -319,6 +339,49 @@ func signedProjectionFrame(
 	return frame
 }
 
+func signedAuthorityCommandFrame(
+	t *testing.T,
+	privateKey ed25519.PrivateKey,
+	sourceStationID string,
+	sender *chat.CryptoEndpoint,
+	now time.Time,
+) *chat.MessagingFederationFrame {
+	t.Helper()
+	command := &chat.ChatCommand{
+		CommandId:          "command-1",
+		ConversationId:     "conversation-1",
+		Sender:             sender,
+		AuthorityStationId: "station-a",
+	}
+	payloadBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&chat.FederatedAuthorityCommand{
+			Command:             command,
+			SourceHomeStationId: sourceStationID,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadHash := sha256.Sum256(payloadBytes)
+	frame := &chat.MessagingFederationFrame{
+		FrameId:         "authority-command-frame",
+		SourceStationId: sourceStationID,
+		TargetStationId: "station-a",
+		IdempotencyKey:  "authority-command:command-1",
+		PayloadType:     chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_COMMAND,
+		ConversationId:  "conversation-1",
+		OpaquePayload:   payloadBytes,
+		PayloadSha256:   payloadHash[:],
+		IssuedAt:        timestamppb.New(now),
+		ExpiresAt:       timestamppb.New(now.Add(time.Minute)),
+	}
+	if err := application.SignFederationFrame(frame, "key-1", privateKey); err != nil {
+		t.Fatal(err)
+	}
+
+	return frame
+}
+
 func testDeliveryCommitment(
 	conversationID string,
 	eventID string,
@@ -381,6 +444,118 @@ func testBatchManifest() *chat.FederatedEndpointManifest {
 		StationSignature:       make([]byte, ed25519.SignatureSize),
 		ActorIdentityPublicKey: bytes.Repeat([]byte{1}, ed25519.PublicKeySize),
 		ActorProfileVersion:    1,
+	}
+}
+
+func TestFederationAuthorityCommandUsesRemoteSenderManifest(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_700_000_000, 0).UTC()
+	sender := &chat.CryptoEndpoint{
+		Ptid:     "ptid:alice",
+		DeviceId: "active-device",
+	}
+	db, service, authority := newFederationInboxFixtureWithManifest(
+		t,
+		messaging.QueueLimits{MaxUnackedItems: 100, MaxUnackedBytes: 1024 * 1024},
+		federationDeviceAccess{},
+		testBatchManifest(),
+	)
+	response, err := service.Deliver(
+		context.Background(),
+		signedAuthorityCommandFrame(t, privateKey, "station-b", sender, now),
+		"station-a",
+		publicKey,
+		now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.Accepted || response.Duplicate {
+		t.Fatalf("response = %+v", response)
+	}
+	if authority.submitted != 1 {
+		t.Fatalf("submitted commands = %d, want 1", authority.submitted)
+	}
+	var inboxCount int64
+	if err := db.Model(&infrastructure.FederationInboxModel{}).
+		Count(&inboxCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if inboxCount != 1 {
+		t.Fatalf("inbox rows = %d, want 1", inboxCount)
+	}
+}
+
+func TestFederationAuthorityCommandRejectsUnverifiedSenderRoute(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_700_000_000, 0).UTC()
+	tests := []struct {
+		name            string
+		sourceStationID string
+		sender          *chat.CryptoEndpoint
+	}{
+		{
+			name:            "wrong Home Station",
+			sourceStationID: "station-c",
+			sender: &chat.CryptoEndpoint{
+				Ptid:     "ptid:alice",
+				DeviceId: "active-device",
+			},
+		},
+		{
+			name:            "endpoint absent from active manifest",
+			sourceStationID: "station-b",
+			sender: &chat.CryptoEndpoint{
+				Ptid:     "ptid:alice",
+				DeviceId: "missing-device",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db, service, authority := newFederationInboxFixtureWithManifest(
+				t,
+				messaging.QueueLimits{
+					MaxUnackedItems: 100,
+					MaxUnackedBytes: 1024 * 1024,
+				},
+				federationDeviceAccess{},
+				testBatchManifest(),
+			)
+			_, err := service.Deliver(
+				context.Background(),
+				signedAuthorityCommandFrame(
+					t,
+					privateKey,
+					test.sourceStationID,
+					test.sender,
+					now,
+				),
+				"station-a",
+				publicKey,
+				now,
+			)
+			if !errors.Is(err, messaging.ErrSenderUnauthorized) {
+				t.Fatalf("delivery error = %v, want ErrSenderUnauthorized", err)
+			}
+			if authority.submitted != 0 {
+				t.Fatalf("submitted commands = %d, want 0", authority.submitted)
+			}
+			var inboxCount int64
+			if err := db.Model(&infrastructure.FederationInboxModel{}).
+				Count(&inboxCount).Error; err != nil {
+				t.Fatal(err)
+			}
+			if inboxCount != 0 {
+				t.Fatalf("inbox rows = %d, want 0", inboxCount)
+			}
+		})
 	}
 }
 
