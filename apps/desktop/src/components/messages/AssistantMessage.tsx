@@ -380,7 +380,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   }, [regenerateMessage, message.id]);
 
   const handleRetry = useCallback(() => {
-    retryMessage(message.id);
+    return retryMessage(message.id);
   }, [retryMessage, message.id]);
 
   const handleRetryRecovery = useCallback(() => {
@@ -532,7 +532,11 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
 
           {/* Tool calls block */}
           {message.toolCalls && message.toolCalls.length > 0 && (
-            <ToolCallsBlock toolCalls={message.toolCalls} messageId={message.id} />
+            <ToolCallsBlock
+              toolCalls={message.toolCalls}
+              messageId={message.id}
+              onRequestAgain={handleRetry}
+            />
           )}
 
           {/* Artifacts */}

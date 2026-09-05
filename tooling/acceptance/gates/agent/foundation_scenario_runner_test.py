@@ -1005,6 +1005,21 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(client.locale, "en")
         self.assertEqual(client.timeout, 900)
 
+    def test_approval_expiry_budget_covers_deadline_and_recovery(self) -> None:
+        client = TimeoutCaptureHarnessClient()
+        probe_input = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-APPROVAL_EXPIRED",
+            sample_id="sample-001",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "captured timeout"):
+            foundation_scenario_runner._make_direct_probe(client)(probe_input)
+
+        self.assertEqual(client.locale, "en")
+        self.assertEqual(client.timeout, 1200)
+
     def test_as_f06_closes_each_tuple_around_its_own_restart(self) -> None:
         native = F06HarnessClient("desktop_app")
         browser = F06HarnessClient("browser")

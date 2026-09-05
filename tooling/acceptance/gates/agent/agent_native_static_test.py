@@ -929,7 +929,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "async function runFoundationApprovalDeniedScenario"
         )
         scenario_end = self.source.index(
-            "const FOUNDATION_PNG_BYTES",
+            "async function runFoundationApprovalExpiredScenario",
             scenario_start,
         )
         scenario = self.source[scenario_start:scenario_end]
@@ -944,6 +944,57 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("waitForFoundationToolFacts(", scenario)
         self.assertIn("foundationToolSideEffectCount(", scenario)
         self.assertIn("api.submitAgentToolDecision({", scenario)
+        self.assertNotIn("mock", scenario.lower())
+
+    def test_approval_expired_uses_station_expiry_and_retry_action(self) -> None:
+        self.assertNotIn("BASE-APPROVAL-EXPIRED", self.source)
+        scenario_start = self.source.index(
+            "async function runFoundationApprovalExpiredScenario"
+        )
+        scenario_end = self.source.index(
+            "const FOUNDATION_PNG_BYTES",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("CapabilityApprovalPolicy.MANUAL", scenario)
+        self.assertIn("waitForToolApprovalEvent(turn)", scenario)
+        self.assertIn("ToolCallStatus.EXPIRED", scenario)
+        self.assertIn(
+            'data-pt-agent-tool-recovery="request-again"',
+            scenario,
+        )
+        self.assertEqual(
+            scenario.count("api.submitAgentToolDecision(\n      decisionIntent"),
+            2,
+        )
+        self.assertEqual(scenario.count("recovery.click()"), 2)
+        self.assertIn("api.cancelAgentTurn(turn.turnId)", scenario)
+        self.assertEqual(
+            scenario.count("foundationToolSideEffectCount("),
+            3,
+        )
+        self.assertIn("retryToolStatus: toolStatusName(retryAfter.status)", scenario)
+        for counter in (
+            "retryExecutionAttemptCount",
+            "retrySideEffectCount",
+            "retryResultCount",
+            "retryContinuationCount",
+        ):
+            with self.subTest(counter=counter):
+                self.assertIn(counter, scenario)
+        self.assertNotIn(
+            "await useChatStore.getState().syncMessages()",
+            scenario,
+        )
+        self.assertIn("foundationToolExpiryCleanupFailed", scenario)
+        self.assertIn("cleanupFoundationToolConversation(", scenario)
+        self.assertIn("cell === 'BASE-APPROVAL_EXPIRED'", self.source)
+        self.assertIn(
+            "|| cell === 'BASE-APPROVAL_EXPIRED'\n"
+            "          ? 900_000",
+            self.source,
+        )
         self.assertNotIn("mock", scenario.lower())
 
     def test_harness_drives_as_f05_through_production_boundaries(self) -> None:
@@ -1375,12 +1426,21 @@ class AgentSelectorsBoundInProductSource(unittest.TestCase):
 
     def test_tool_approval_selectors_bound(self) -> None:
         source = (ROOT / "apps/desktop/src/components/messages/ToolCallCard.tsx").read_text(encoding="utf-8")
+        assistant = (
+            ROOT / "apps/desktop/src/components/messages/AssistantMessage.tsx"
+        ).read_text(encoding="utf-8")
+        detail = (
+            ROOT / "apps/desktop/src/components/portal/views/ToolDetailView.tsx"
+        ).read_text(encoding="utf-8")
+        chat_store = (
+            ROOT / "apps/desktop/src/store/chat.ts"
+        ).read_text(encoding="utf-8")
         self.assertIn("submitAgentToolDecision", source)
         self.assertIn("approval_required", source)
         self.assertIn("chat.message.toolCall.approve", source)
         self.assertIn("toolRuntime.getSnapshot", source)
-        self.assertIn("useState(actionableApproval)", source)
-        self.assertIn("if (actionableApproval) setExpanded(true)", source)
+        self.assertIn("useState(actionableToolState)", source)
+        self.assertIn("if (actionableToolState) setExpanded(true)", source)
         approve_decision = source.index("submitAgentToolDecision(tool.id, true)")
         recovery_selector = source.index(
             'data-pt-agent-tool-recovery="continue-without-tool"'
@@ -1388,6 +1448,41 @@ class AgentSelectorsBoundInProductSource(unittest.TestCase):
         deny_decision = source.index("submitAgentToolDecision(tool.id, false)")
         self.assertLess(approve_decision, recovery_selector)
         self.assertLess(recovery_selector, deny_decision)
+        request_again = source.index(
+            'data-pt-agent-tool-recovery="request-again"'
+        )
+        self.assertIn("void onRequestAgain()", source[request_again:])
+        self.assertNotIn(
+            "submitAgentToolDecision(tool.id",
+            source[request_again:],
+        )
+        self.assertIn("onRequestAgain={handleRetry}", assistant)
+        self.assertIn("pendingMessageRetries.get(retryKey)", chat_store)
+        self.assertIn("pendingMessageRetries.set(retryKey, request)", chat_store)
+        self.assertIn("pendingMessageRetries.delete(retryKey)", chat_store)
+        self.assertIn("resolveToolCallProjection(toolCall, projection)", detail)
+        self.assertIn(
+            "t(`chat.message.toolCall.status.${projected.status}`)",
+            detail,
+        )
+        for locale_key in (
+            "chat.message.toolCall.server",
+            "chat.message.toolCall.arguments",
+            "chat.message.toolCall.result",
+            "chat.message.toolCall.approval",
+            "chat.message.toolCall.progress",
+        ):
+            with self.subTest(locale_key=locale_key):
+                self.assertIn(locale_key, detail)
+        for literal in (
+            'label="Server"',
+            'label="Arguments"',
+            'label="Result"',
+            "Approved by",
+            'label="Progress"',
+        ):
+            with self.subTest(literal=literal):
+                self.assertNotIn(literal, detail)
 
 if __name__ == "__main__":
     unittest.main()

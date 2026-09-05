@@ -933,6 +933,13 @@ func TestStationToolDenyAndExpiryExecuteZeroTimes(t *testing.T) {
 				call.ResultID != "" {
 				t.Fatalf("%s Station tool state is invalid: %+v", test.name, call)
 			}
+			if test.expire && call.ErrorCode != string(errcode.AgentToolApprovalExpired) {
+				t.Fatalf(
+					"expired approval error code = %q, want %q",
+					call.ErrorCode,
+					errcode.AgentToolApprovalExpired,
+				)
+			}
 		})
 	}
 }
@@ -1400,11 +1407,19 @@ func TestToolDispatchServiceSettleExpiredToolCalls(t *testing.T) {
 		t.Fatalf("load settled tool calls: %v", err)
 	}
 	statusByID := make(map[string]string, len(calls))
+	errorCodeByID := make(map[string]string, len(calls))
 	for i := range calls {
 		statusByID[calls[i].ToolCallID] = calls[i].Status
+		errorCodeByID[calls[i].ToolCallID] = calls[i].ErrorCode
 	}
 	if statusByID["tool-call-dispatched"] != persistence.ToolCallStatusExpired {
 		t.Fatalf("unprepared call must expire, got %s", statusByID["tool-call-dispatched"])
+	}
+	if errorCodeByID["tool-call-dispatched"] != "tool_deadline_expired" {
+		t.Fatalf(
+			"committed dispatch must retain execution deadline code, got %s",
+			errorCodeByID["tool-call-dispatched"],
+		)
 	}
 	if statusByID["tool-call-prepared"] != persistence.ToolCallStatusPrepared {
 		t.Fatalf("prepared call must remain reconcilable, got %s", statusByID["tool-call-prepared"])
@@ -1633,6 +1648,127 @@ func TestToolDispatchServiceSubmitDeniedDecisionReturnsTypedOutcome(t *testing.T
 	}
 	if outboxCount != 0 || continuationCount != 0 {
 		t.Fatalf("denied decision dispatched work: outbox=%d continuation=%d", outboxCount, continuationCount)
+	}
+}
+
+func TestToolDispatchServiceSubmitExpiredDecisionReturnsTypedOutcome(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.authorizedProposal(
+		t,
+		"expired-decision",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+	)
+	proposal.Deadline = proposal.Deadline.Add(789 * time.Nanosecond)
+	decisions, err := fixture.service.ProposeAuthorizedBatch(context.Background(), proposal)
+	if err != nil {
+		t.Fatalf("propose manual tool: %v", err)
+	}
+	expectedDeadline := proposal.Deadline.UTC().Truncate(time.Microsecond)
+	if !decisions[0].ExpiresAt.Equal(expectedDeadline) {
+		t.Fatalf(
+			"proposal deadline = %s, want canonical %s",
+			decisions[0].ExpiresAt.Format(time.RFC3339Nano),
+			expectedDeadline.Format(time.RFC3339Nano),
+		)
+	}
+	fixture.service.now = func() time.Time {
+		return proposal.Deadline.Add(time.Second)
+	}
+	request := &model.SubmitToolApprovalDecisionRequest{
+		ApprovalId:       decisions[0].ApprovalID,
+		ToolCallId:       proposal.Calls[0].ToolCallID,
+		DecisionId:       "decision-expired-1",
+		ExpectedRevision: decisions[0].DecisionRevision,
+		Approved:         true,
+		IdempotencyKey:   "decision-expired-command-1",
+	}
+	request.PayloadHash = decisionPayloadHash(request)
+
+	first, err := fixture.service.SubmitDecision(
+		context.Background(),
+		fixture.actorID,
+		request,
+	)
+	if err != nil {
+		t.Fatalf("submit expired decision: %v", err)
+	}
+	outcome := first.GetOutcomeError()
+	if first.GetAccepted() ||
+		first.GetErrorCode() != model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED ||
+		outcome == nil {
+		t.Fatalf("unexpected expired acknowledgement: %+v", first)
+	}
+	if outcome.GetErrorType() != string(errcode.AgentToolApprovalExpired) ||
+		outcome.GetLocaleKey() != errcode.AgentToolApprovalExpiredLocaleKey ||
+		!outcome.GetRetryable() ||
+		!outcome.GetTerminal() ||
+		len(outcome.GetDetails()) != 2 ||
+		outcome.GetDetails()["decision_id"] != request.GetDecisionId() ||
+		outcome.GetDetails()["expires_at"] != expectedDeadline.Format(time.RFC3339Nano) {
+		t.Fatalf("unexpected expired outcome: %+v", outcome)
+	}
+
+	replayed, err := fixture.service.SubmitDecision(
+		context.Background(),
+		fixture.actorID,
+		request,
+	)
+	if err != nil {
+		t.Fatalf("replay expired decision: %v", err)
+	}
+	if !proto.Equal(first, replayed) {
+		t.Fatalf("expired rejection changed: first=%+v replayed=%+v", first, replayed)
+	}
+	conflicting := proto.Clone(request).(*model.SubmitToolApprovalDecisionRequest)
+	conflicting.Approved = false
+	conflicting.PayloadHash = decisionPayloadHash(conflicting)
+	conflict, err := fixture.service.SubmitDecision(
+		context.Background(),
+		fixture.actorID,
+		conflicting,
+	)
+	if err != nil {
+		t.Fatalf("submit conflicting expired decision: %v", err)
+	}
+	if conflict.GetAccepted() ||
+		conflict.GetErrorCode() != model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT {
+		t.Fatalf("unexpected expired decision conflict: %+v", conflict)
+	}
+	var commandCount int64
+	if err := fixture.db.Model(&persistence.ToolDecisionCommand{}).Count(&commandCount).Error; err != nil {
+		t.Fatalf("count expired decision commands: %v", err)
+	}
+	if commandCount != 1 {
+		t.Fatalf("expired decision command count = %d, want 1", commandCount)
+	}
+
+	var call persistence.ToolCall
+	if err := fixture.db.Where("tool_call_id = ?", request.GetToolCallId()).First(&call).Error; err != nil {
+		t.Fatalf("load expired tool call: %v", err)
+	}
+	if call.Status != persistence.ToolCallStatusExpired ||
+		call.DecisionID != "" ||
+		call.DecisionRevision != decisions[0].DecisionRevision ||
+		call.ExecutionAttemptCount != 0 ||
+		call.DuplicateDeliveryCount != 1 ||
+		call.ResultID != "" ||
+		call.ErrorCode != string(errcode.AgentToolApprovalExpired) {
+		t.Fatalf("expired tool call mutated incorrectly: %+v", call)
+	}
+	for name, modelValue := range map[string]interface{}{
+		"dispatch":     &persistence.ToolDispatchOutbox{},
+		"result":       &persistence.ToolResult{},
+		"continuation": &persistence.ToolContinuation{},
+	} {
+		var count int64
+		if err := fixture.db.Model(modelValue).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("expired approval created %d %s rows", count, name)
+		}
 	}
 }
 

@@ -18,6 +18,7 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter import (
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
+    evaluate_base_approval_expired,
     evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
     evaluate_as_f02,
@@ -181,6 +182,9 @@ def assert_group_one_capture(
     capture: Mapping[str, Any],
 ) -> None:
     evaluators = {
+        "BASE-APPROVAL_EXPIRED": (
+            lambda facts: evaluate_base_approval_expired(facts)
+        ),
         "BASE-APPROVAL_DENIED": (
             lambda facts: evaluate_base_approval_denied(facts)
         ),

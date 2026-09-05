@@ -150,12 +150,14 @@ func TestTurnServiceSaveTurnTraceUpsertsByTurn(t *testing.T) {
 }
 
 func TestToolDecisionTurnEventCarriesManualApprovalProjection(t *testing.T) {
+	expiresAt := time.Date(2026, 8, 29, 12, 30, 0, 123456789, time.UTC)
 	event := toolDecisionTurnEvent(ProposalDecision{
 		ToolCallID:       "tool-call-1",
 		ToolName:         "local_shell_safe",
 		Arguments:        `{"command_ref":"command-1"}`,
 		ApprovalID:       "approval-1",
 		DecisionRevision: 0,
+		ExpiresAt:        expiresAt,
 		Status:           persistence.ToolCallStatusWaitingApproval,
 	}, 2)
 
@@ -165,6 +167,7 @@ func TestToolDecisionTurnEventCarriesManualApprovalProjection(t *testing.T) {
 		event.Arguments != `{"command_ref":"command-1"}` ||
 		event.ApprovalID != "approval-1" ||
 		event.DecisionRevision != 0 ||
+		event.ExpiresAt != canonicalToolDeadline(expiresAt).Format(time.RFC3339Nano) ||
 		event.Iteration != 2 {
 		t.Fatalf("unexpected approval projection: %+v", event)
 	}

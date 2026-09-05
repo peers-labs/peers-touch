@@ -10,11 +10,18 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  RotateCcw,
   Workflow,
 } from 'lucide-react';
 import type { ToolCallInfo, DelegationTaskInfo } from '../../store/chat';
 import { usePortalStore } from '../../store/portal';
-import { logToolDecisionFailure, submitAgentToolDecision, toolRuntime } from '../../runtimes/toolRuntime';
+import {
+  logToolDecisionFailure,
+  logToolRecoveryFailure,
+  resolveToolCallProjection,
+  submitAgentToolDecision,
+  toolRuntime,
+} from '../../runtimes/toolRuntime';
 import { useTranslation } from 'react-i18next';
 
 // --- Delegation helpers ---
@@ -91,9 +98,18 @@ export function DelegationResultsBlock({ results }: { results: DelegationTaskInf
 
 // --- Single tool call row ---
 
-export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallInfo; messageId?: string }) {
+export function ToolCallItem({
+  tool: sourceTool,
+  messageId,
+  onRequestAgain,
+}: {
+  tool: ToolCallInfo;
+  messageId?: string;
+  onRequestAgain?: () => Promise<void>;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [submittingDecision, setSubmittingDecision] = useState(false);
+  const [requestingAgain, setRequestingAgain] = useState(false);
   const { token } = theme.useToken();
   const { t } = useTranslation(['chat', 'agent']);
   const projection = useSyncExternalStore(
@@ -101,46 +117,18 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
     () => toolRuntime.getProjection(sourceTool.id),
     () => undefined,
   );
-  const sourceIsTerminal = sourceTool.status === 'success' ||
-    sourceTool.status === 'error' ||
-    sourceTool.status === 'denied' ||
-    sourceTool.status === 'cancelled';
-  const projectionAddsDeniedOutcome = (
-    sourceTool.status === 'denied'
-    && projection?.status === 'denied'
-    && Boolean(projection.decisionErrorCode)
-  );
-  const useProjection = projection &&
-    (!sourceIsTerminal || projectionAddsDeniedOutcome) &&
-    projection.decisionRevision >= (sourceTool.decisionRevision ?? 0);
-  const tool: ToolCallInfo = useProjection
-    ? {
-      ...sourceTool,
-      id: projection.toolCallId,
-      name: projection.toolName,
-      args: projection.arguments,
-      result: projection.result,
-      pending: projection.pending,
-      status: projection.status,
-      progress: projection.progress,
-      progressPct: projection.progressPct,
-      approvalId: projection.approvalId,
-      serverName: projection.serverName,
-      source: projection.source,
-      approvalActor: projection.approvalActor,
-      approvedAt: projection.decidedAt,
-      decisionId: projection.decisionId,
-      decisionRevision: projection.decisionRevision,
-      payloadHash: projection.payloadHash,
-      error: projection.error || projection.decisionErrorCode,
-      delegationResults: projection.delegationResults,
-    }
-    : sourceTool;
+  const tool = resolveToolCallProjection(sourceTool, projection);
   const approvalRequired = tool.status === 'approval_required' && !!tool.approvalId;
   const canSubmitDecision = approvalRequired &&
     tool.decisionRevision !== undefined &&
     !submittingDecision;
-  const denied = tool.status === 'denied' || tool.status === 'error';
+  const denied =
+    tool.status === 'denied'
+    || tool.status === 'error'
+    || tool.status === 'expired';
+  const approvalExpired =
+    tool.status === 'expired'
+    && tool.error === 'agent.errors.toolApprovalExpired';
   const deniedMessage = denied && tool.error
     ? (
         tool.error.startsWith('agent.')
@@ -153,6 +141,8 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
     ? 'success'
     : status === 'error' || status === 'denied'
       ? 'error'
+      : status === 'expired'
+        ? 'warning'
       : status === 'cancelled'
         ? 'default'
         : status === 'approval_required'
@@ -313,6 +303,36 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
               {deniedMessage}
             </div>
           )}
+          {approvalExpired && onRequestAgain && (
+            <button
+              data-pt-agent-tool-recovery="request-again"
+              disabled={requestingAgain}
+              onClick={(event) => {
+                event.stopPropagation();
+                setRequestingAgain(true);
+                void onRequestAgain()
+                  .catch((error: unknown) =>
+                    logToolRecoveryFailure(tool.id, error))
+                  .finally(() => setRequestingAgain(false));
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                marginBottom: 8,
+                borderRadius: 6,
+                border: `1px solid ${token.colorBorder}`,
+                background: token.colorBgContainer,
+                color: token.colorText,
+                cursor: requestingAgain ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+              }}
+            >
+              <RotateCcw size={12} />
+              {t('agent.recovery.requestAgain', { ns: 'agent' })}
+            </button>
+          )}
           {delegationResults.length > 0 && (
             <DelegationResultsBlock results={delegationResults} />
           )}
@@ -340,35 +360,49 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
 
 // --- Collapsed tool calls block ---
 
-function hasActionableToolApproval(
+function hasActionableToolState(
   toolCalls: readonly ToolCallInfo[],
-  projections: ReturnType<typeof toolRuntime.getSnapshot>,
 ): boolean {
   return toolCalls.some((toolCall) => {
-    const projection = projections[toolCall.id];
+    const status = toolCall.status;
+    const error = toolCall.error;
     return (
-      (projection?.status ?? toolCall.status) === 'approval_required'
-      && Boolean(projection?.approvalId ?? toolCall.approvalId)
+      status === 'approval_required'
+      && Boolean(toolCall.approvalId)
+    ) || (
+      status === 'expired'
+      && error === 'agent.errors.toolApprovalExpired'
     );
   });
 }
 
-export function ToolCallsBlock({ toolCalls, messageId }: { toolCalls: ToolCallInfo[]; messageId?: string }) {
+export function ToolCallsBlock({
+  toolCalls,
+  messageId,
+  onRequestAgain,
+}: {
+  toolCalls: ToolCallInfo[];
+  messageId?: string;
+  onRequestAgain?: () => Promise<void>;
+}) {
   const projections = useSyncExternalStore(
     toolRuntime.subscribe,
     toolRuntime.getSnapshot,
     toolRuntime.getSnapshot,
   );
-  const actionableApproval = hasActionableToolApproval(toolCalls, projections);
-  const [expanded, setExpanded] = useState(actionableApproval);
+  const projectedToolCalls = toolCalls.map((toolCall) =>
+    resolveToolCallProjection(toolCall, projections[toolCall.id]));
+  const actionableToolState = hasActionableToolState(projectedToolCalls);
+  const [expanded, setExpanded] = useState(actionableToolState);
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const pendingCount = toolCalls.filter((tc) => tc.pending).length;
-  const doneCount = toolCalls.length - pendingCount;
+  const pendingCount = projectedToolCalls.filter((toolCall) =>
+    toolCall.pending).length;
+  const doneCount = projectedToolCalls.length - pendingCount;
 
   useEffect(() => {
-    if (actionableApproval) setExpanded(true);
-  }, [actionableApproval]);
+    if (actionableToolState) setExpanded(true);
+  }, [actionableToolState]);
 
   const summary = pendingCount > 0
     ? t('chat.message.toolCall.using', { count: toolCalls.length })
@@ -408,7 +442,12 @@ export function ToolCallsBlock({ toolCalls, messageId }: { toolCalls: ToolCallIn
       {expanded && (
         <div style={{ padding: '0 4px 4px', borderTop: `1px solid ${token.colorBorderSecondary}` }}>
           {toolCalls.map((tc) => (
-            <ToolCallItem key={tc.id} tool={tc} messageId={messageId} />
+            <ToolCallItem
+              key={tc.id}
+              tool={tc}
+              messageId={messageId}
+              onRequestAgain={onRequestAgain}
+            />
           ))}
         </div>
       )}

@@ -142,6 +142,7 @@ type TurnEvent struct {
 	ApprovalID       string `json:"approvalId,omitempty"`
 	DecisionID       string `json:"decisionId,omitempty"`
 	DecisionRevision uint64 `json:"decisionRevision,omitempty"`
+	ExpiresAt        string `json:"expiresAt,omitempty"`
 	Approved         bool   `json:"approved,omitempty"`
 	PayloadHash      string `json:"payloadHash,omitempty"`
 	Source           string `json:"source,omitempty"`
@@ -3498,6 +3499,7 @@ func toolDecisionTurnEvent(decision ProposalDecision, iteration int) TurnEvent {
 			Arguments:        decision.Arguments,
 			ApprovalID:       decision.ApprovalID,
 			DecisionRevision: decision.DecisionRevision,
+			ExpiresAt:        canonicalToolDeadline(decision.ExpiresAt).Format(time.RFC3339Nano),
 			Iteration:        iteration,
 		}
 	}

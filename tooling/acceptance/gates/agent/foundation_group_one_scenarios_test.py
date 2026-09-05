@@ -7,6 +7,7 @@ import unittest
 
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
+    evaluate_base_approval_expired,
     evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
     evaluate_as_f02,
@@ -976,6 +977,76 @@ def valid_approval_denied_capture() -> dict[str, object]:
     }
 
 
+def valid_approval_expired_capture() -> dict[str, object]:
+    return {
+        "outcome": {
+            "error": "agent.errors.toolApprovalExpired",
+            "error_type": "TOOL_APPROVAL_EXPIRED",
+            "locale_key": "agent.errors.toolApprovalExpired",
+            "retryable": True,
+            "terminal": True,
+            "details": {
+                "decision_id": "decision-expired",
+                "expires_at": "2026-09-04T22:00:00Z",
+            },
+        },
+        "receiver": {
+            "recoveryVisible": True,
+            "recoveryText": "Request again",
+            "expectedRecoveryText": "Request again",
+            "recoveryExecuted": True,
+            "errorVisible": True,
+            "errorText": "The tool approval request has expired.",
+            "expectedErrorText": "The tool approval request has expired.",
+        },
+        "decision": {
+            "accepted": False,
+            "approvalId": "approval-expired",
+            "toolCallId": "tool-call-expired",
+            "decisionId": "decision-expired",
+            "decisionRevision": 0,
+            "errorCode": "TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED",
+            "expiresAt": "2026-09-04T22:00:00Z",
+        },
+        "station": {
+            "policy": "manual",
+            "states": ["policy_check", "awaiting_user", "expired"],
+            "errorCode": "TOOL_APPROVAL_EXPIRED",
+            "executionAttemptCount": 0,
+            "sideEffectCount": 0,
+            "resultCount": 0,
+            "continuationCount": 0,
+            "lineage": {
+                "toolCallId": "tool-call-expired",
+                "decisionId": "",
+                "decisionRevision": 0,
+            },
+        },
+        "recovery": {
+            "attemptCountBefore": 1,
+            "attemptCountAfter": 2,
+            "newApprovalIdentityDistinct": True,
+            "cancellationStatus": "cancelled",
+            "retryToolStatus": "cancelled",
+            "retryExecutionAttemptCount": 0,
+            "retrySideEffectCount": 0,
+            "retryResultCount": 0,
+            "retryContinuationCount": 0,
+        },
+        "replay": {
+            "acknowledgementSourceHash": "a" * 64,
+            "acknowledgementReplayHash": "a" * 64,
+            "stationSourceHash": "b" * 64,
+            "stationReplayHash": "b" * 64,
+            "equal": True,
+        },
+        "cleanup": {
+            "bindingRestored": True,
+            "conversationDeleted": True,
+        },
+    }
+
+
 class FoundationGroupOneScenariosTest(unittest.TestCase):
     def test_as_f06_accepts_source_bound_recovery_facts(self) -> None:
         assertions = evaluate_as_f06(
@@ -1916,6 +1987,54 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "zeroSideEffect",
         ):
             evaluate_base_approval_denied(capture)
+
+    def test_approval_expired_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_approval_expired(
+            valid_approval_expired_capture()
+        )
+
+        self.assertEqual(len(assertions), 7)
+        self.assertTrue(all(assertions.values()))
+
+    def test_approval_expired_rejects_unsafe_details(self) -> None:
+        capture = valid_approval_expired_capture()
+        capture["outcome"]["details"]["tool_call_id"] = "tool-call-expired"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedExpiryProjected",
+        ):
+            evaluate_base_approval_expired(capture)
+
+    def test_approval_expired_rejects_decision_mutation(self) -> None:
+        capture = valid_approval_expired_capture()
+        capture["station"]["lineage"]["decisionId"] = "decision-expired"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "expiredDecisionImmutable",
+        ):
+            evaluate_base_approval_expired(capture)
+
+    def test_approval_expired_rejects_duplicate_retry_attempt(self) -> None:
+        capture = valid_approval_expired_capture()
+        capture["recovery"]["attemptCountAfter"] = 3
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "requestAgainCreatedOneAttempt",
+        ):
+            evaluate_base_approval_expired(capture)
+
+    def test_approval_expired_rejects_retry_side_effect(self) -> None:
+        capture = valid_approval_expired_capture()
+        capture["recovery"]["retrySideEffectCount"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroSideEffect",
+        ):
+            evaluate_base_approval_expired(capture)
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ import {
 export { useAgentStore } from './agent';
 export type { Session } from '../services/desktop_api';
 
-export type ToolCallStatus = 'queued' | 'approval_required' | 'approved' | 'denied' | 'pending' | 'success' | 'error' | 'cancelled';
+export type ToolCallStatus = 'queued' | 'approval_required' | 'approved' | 'denied' | 'pending' | 'success' | 'error' | 'cancelled' | 'expired';
 export type DelegationTaskStatus = 'completed' | 'failed' | 'timeout' | 'unknown';
 
 export interface DelegationTaskInfo {
@@ -650,6 +650,8 @@ interface ChatState {
 }
 
 let messageCounter = 0;
+const pendingMessageRetries = new Map<string, Promise<void>>();
+
 function tempId() {
   return `temp-${Date.now()}-${messageCounter++}`;
 }
@@ -1599,20 +1601,34 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     await get().loadSessions();
   },
 
-  retryMessage: async (messageId: string) => {
+  retryMessage: (messageId: string) => {
     const { currentSessionKey, messages, isStreaming } = get();
-    if (isStreaming) return;
+    if (isStreaming) return Promise.resolve();
     const source = messages.find((message) => message.id === messageId);
-    if (!source?.turnId) return;
-    const version = await stationConversationVersion(currentSessionKey);
-    await api.retryAgentTurn({
-      conversation_id: currentSessionKey,
-      source_turn_id: source.turnId,
-      client_idempotency_key: tempId(),
-      expected_conversation_version: version,
+    const sourceTurnId = source?.turnId;
+    if (!sourceTurnId) return Promise.resolve();
+
+    const retryKey = `${currentSessionKey}:${messageId}`;
+    const pending = pendingMessageRetries.get(retryKey);
+    if (pending) return pending;
+
+    const request = (async () => {
+      const version = await stationConversationVersion(currentSessionKey);
+      await api.retryAgentTurn({
+        conversation_id: currentSessionKey,
+        source_turn_id: sourceTurnId,
+        client_idempotency_key: tempId(),
+        expected_conversation_version: version,
+      });
+      if (get().currentSessionKey === currentSessionKey) {
+        await get().syncMessages();
+      }
+      await get().loadSessions();
+    })().finally(() => {
+      pendingMessageRetries.delete(retryKey);
     });
-    await get().syncMessages();
-    await get().loadSessions();
+    pendingMessageRetries.set(retryKey, request);
+    return request;
   },
 
   deleteAndRegenerateMessage: async (messageId: string) => {

@@ -178,6 +178,17 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-APPROVAL_EXPIRED": frozenset(
+        {
+            "typedExpiryProjected",
+            "localizedRecoveryVisible",
+            "expiredDecisionImmutable",
+            "requestAgainCreatedOneAttempt",
+            "zeroSideEffect",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
 }
 
 
