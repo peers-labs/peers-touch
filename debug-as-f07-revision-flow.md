@@ -369,3 +369,15 @@
   `BASE-APPROVAL-DENIED` assertion `denialPersisted`. Provisioner cleanup
   completed `DONE / PROVEN / passed`; the AS-F07 debug session remains
   `[OPEN]`.
+- Exact-source run
+  `20260904T222331747954Z-58f6c341ba8392c6b50a2c1712ec0388`
+  on `770e4ec8ae6d0e6fe2ed3d66a76ea89ffff27f55` again completed
+  both Browser AS-F07 sequences. The retained checkpoints show authoritative
+  `cancelled` responses, terminal stream cancellation, retry completion,
+  baseline completion, two regenerations, edit with `VERSION_CONFLICT` stale
+  rejection, branch projection, and unchanged original message/usage/attempt/
+  feedback hashes and counts.
+- The Gate advanced through manual approval denial to
+  `BASE-APPROVAL-EXPIRED`. AS-F07 has repeat exact-source runtime evidence;
+  instrumentation remains `[OPEN]` until the Owner explicitly authorizes
+  removal.

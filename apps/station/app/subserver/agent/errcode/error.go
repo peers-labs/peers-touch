@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 )
@@ -21,6 +22,7 @@ const (
 	AgentQueueFull           Code = "ADMISSION_QUEUE_FULL"
 	AgentAttachmentRejected  Code = "CONTEXT_ATTACHMENT_REJECTED"
 	AgentToolApprovalDenied  Code = "TOOL_APPROVAL_DENIED"
+	AgentToolApprovalExpired Code = "TOOL_APPROVAL_EXPIRED"
 	AgentToolBudgetExhausted Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
 	AgentProviderFailed      Code = "AGENT_5001"
 	AgentCompressionFailed   Code = "AGENT_5002"
@@ -36,6 +38,7 @@ const (
 	AgentCanvasSingleAgentNotReadyRequiredGate = "agent-v2-kernel-foundation-e2e"
 	AgentAttachmentRejectedLocaleKey           = "agent.errors.attachmentRejected"
 	AgentToolApprovalDeniedLocaleKey           = "agent.errors.toolApprovalDenied"
+	AgentToolApprovalExpiredLocaleKey          = "agent.errors.toolApprovalExpired"
 	AgentToolBudgetExhaustedLocaleKey          = "agent.errors.toolLoopBudgetExhausted"
 )
 
@@ -109,6 +112,20 @@ func NewToolApprovalDeniedPayload(toolCallID, decisionID string) *model.ErrorPay
 		Details: map[string]string{
 			"tool_call_id": toolCallID,
 			"decision_id":  decisionID,
+		},
+	}
+}
+
+func NewToolApprovalExpiredPayload(decisionID string, expiresAt time.Time) *model.ErrorPayload {
+	return &model.ErrorPayload{
+		Error:     AgentToolApprovalExpiredLocaleKey,
+		ErrorType: string(AgentToolApprovalExpired),
+		LocaleKey: AgentToolApprovalExpiredLocaleKey,
+		Retryable: true,
+		Terminal:  true,
+		Details: map[string]string{
+			"decision_id": decisionID,
+			"expires_at":  expiresAt.UTC().Format(time.RFC3339Nano),
 		},
 	}
 }

@@ -15,6 +15,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_probe import (
     group_one_tuples,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
+    evaluate_base_approval_expired,
     evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
     evaluate_as_f02,
@@ -27,6 +28,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f12,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
+    valid_approval_expired_capture,
     valid_approval_denied_capture,
     valid_active_mutation_conflict_capture,
     valid_as_f04_capture,
@@ -57,6 +59,11 @@ class RecordingHarnessClient:
 
 def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, Any]:
     result = capture(probe)
+    if probe.cell == "BASE-APPROVAL_EXPIRED":
+        facts = valid_approval_expired_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_approval_expired(facts)
+        return result
     if probe.cell == "AS-F03":
         facts = {
             "events": [
@@ -249,6 +256,31 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
 
 
 class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
+    def test_approval_expired_routes_to_independent_oracle(self) -> None:
+        facts = valid_approval_expired_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_approval_expired(facts),
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-APPROVAL_EXPIRED",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "expiredDecisionImmutable": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-APPROVAL_EXPIRED assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
     def test_approval_denied_routes_to_independent_oracle(self) -> None:
         facts = valid_approval_denied_capture()
         capture_value = {
