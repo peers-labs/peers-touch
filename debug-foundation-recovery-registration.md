@@ -106,4 +106,28 @@ synchronously against that frozen post-cut cursor.
   and any later cursor advancement fails closed as
   `agent.acceptance.foundationRecoveryCursorAdvancedAfterFault`.
 - Desktop check, 123 focused runtime/coordinator/static tests, and
-  `git diff --check` pass. Exact-source runtime verification remains pending.
+  `git diff --check` pass.
+
+## Transition-Ordering Follow-Up
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| F | Steady-state periodic reconciliation starts recovery while the live Turn is still `CONNECTED`, so `RECONNECTING/REPLAYING` precede the required `CONNECTION_LOST` transition. | Confirmed | Exact-source run `20260905T185006531870Z-ac3390c3b433b509109002e48a903ff0` recorded `fault-cut-requested` at `CONNECTED/cursor=3`, then `RECONNECTING/REPLAYING` at cursor `31`; the first `connection_lost` was recorded later. |
+| G | The transition oracle alone selected the wrong occurrence even though runtime state entered `CONNECTION_LOST` first. | Rejected | Timestamped recovery-store instrumentation has no `connection_lost` before the first `RECONNECTING`; the ordering defect is in runtime behavior, not only `indexOf` evaluation. |
+| H | The post-cut cursor correction broke replay identity or stale-event fencing. | Rejected | The failed tuple passed `replayAfterAcknowledgedCursor`, source/payload equality, duplicate/out-of-order idempotence, and stale generation/terminal/revision rejection; replay sequences matched Station exactly from `32` through `403`. |
+
+- The run was source-matched to
+  `6cc996f229bb0a1f977d5e0097f8174b00e79dfc`, advanced through AS-F05,
+  and failed only Browser AS-F06
+  `exactRecoveryTransitionOrdering`.
+- Inner client cleanup and outer Provisioner cleanup both passed; all client,
+  proxy, control, gateway, renderer, and WebDriver ports plus temporary storage
+  and actor identity were released.
+- The owning runtime correction leaves live `CONNECTED` records under their
+  stream owner during steady-state periodic reconciliation. Bootstrap still
+  recovers persisted `CONNECTED` records because no live-stream owner exists
+  after process start.
+- Focused `chatRuntime` tests pass `16/16`, Desktop check passes, the Agent
+  native static suite passes `68/68`, and `git diff --check` passes.
+- Exact-source post-fix runtime verification remains pending. Keep this session
+  and its instrumentation open.

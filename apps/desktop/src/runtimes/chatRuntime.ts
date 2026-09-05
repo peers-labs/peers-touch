@@ -603,6 +603,11 @@ function reconcileActiveTurns(
   preservedFailedConversations: ReadonlySet<string> = new Set(),
 ): void {
   for (const record of Object.values(activeRecords())) {
+    // A live stream owns CONNECTED until it reports transport loss. Bootstrap
+    // is the only reconciliation pass without an existing live-stream owner.
+    if (record.phase === 'CONNECTED' && reason !== 'bootstrap') {
+      continue;
+    }
     if (
       record.phase === 'RECOVERY_FAILED'
       && (

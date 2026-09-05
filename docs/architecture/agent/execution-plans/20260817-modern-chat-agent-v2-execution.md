@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260905T173017478667Z-2354616474f59352e5d26e4583395011` on `18d5ff27bd0c485adbff996067faec9e6489be90` passed both repaired Browser AS-F01 tuples and advanced to AS-F06; the local correction now freezes the acknowledged recovery cursor only after the proxy confirms the transport cut, while post-fix exact-source proof remains pending | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260905T185006531870Z-ac3390c3b433b509109002e48a903ff0` on `6cc996f229bb0a1f977d5e0097f8174b00e79dfc` proved the post-cut cursor, replay identity, idempotence, and stale-fence correction, then failed Browser AS-F06 only because steady-state periodic reconciliation entered recovery before the live stream reported `CONNECTION_LOST`; the local owner-layer correction preserves live `CONNECTED` ownership until transport loss, while post-fix exact-source proof remains pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5478,6 +5478,28 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   runtime/coordinator/static tests, 51 capability-isolation tests, and
   `git diff --check` pass. Foundation and G-F remain
   `PARTIAL / UNPROVEN` pending exact-source verification.
+- Exact-source Gate run
+  `20260905T185006531870Z-ac3390c3b433b509109002e48a903ff0`
+  (aggregate
+  `20260905T185006408999Z-0a6c221f3363b3af6391d1de73800b15`)
+  on `6cc996f229bb0a1f977d5e0097f8174b00e79dfc` advanced through
+  Browser AS-F05 and proved the AS-F06 post-cut cursor correction:
+  `replayAfterAcknowledgedCursor`, replay payload/source equality,
+  duplicate/out-of-order idempotence, and stale generation/terminal/revision
+  rejection all passed; client replay and independent Station readback matched
+  sequences `32..403`. The sole product assertion failure was
+  `exactRecoveryTransitionOrdering`. Timestamped runtime evidence showed
+  `fault-cut-requested` at `CONNECTED/cursor=3`, followed by
+  `RECONNECTING/REPLAYING` at cursor `31` before the first
+  `CONNECTION_LOST`. The source-backed owner is
+  `chatRuntime.reconcileActiveTurns`: steady-state periodic reconciliation
+  initiated recovery for a still-live `CONNECTED` record. The local correction
+  keeps such records under their live stream owner while retaining bootstrap
+  recovery for persisted `CONNECTED` records. Focused `chatRuntime` tests pass
+  `16/16`, Desktop check passes, the Agent native static suite passes `68/68`,
+  and `git diff --check` passes. Inner runtime cleanup and outer Provisioner
+  cleanup both completed cleanly. Foundation and G-F remain
+  `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
