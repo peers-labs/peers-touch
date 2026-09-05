@@ -3,6 +3,7 @@ package infrastructure_test
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"errors"
 	"testing"
@@ -453,6 +454,155 @@ func TestAuthorityCommitAtomicallyPartitionsRemoteHomeStationDelivery(t *testing
 	}
 	if outboxCount != 2 {
 		t.Fatalf("duplicate command changed federation outbox count to %d", outboxCount)
+	}
+}
+
+func TestFederatedPrepareUsesVerifiedRemoteSenderManifest(t *testing.T) {
+	limits := messaging.QueueLimits{
+		MaxUnackedItems: 100,
+		MaxUnackedBytes: 1024 * 1024,
+	}
+	db, _ := newAuthorityFixture(t, limits)
+	const conversationID = "group-federated-prepare"
+	seedDirectConversation(t, db, conversationID)
+	if err := db.Where("ptid = ?", "bob").Delete(&touchactor.DeviceRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&infrastructure.AuthorityMemberModel{}).
+		Where("conversation_id = ? AND ptid = ?", conversationID, "bob").
+		Update("home_station_id", "station:remote").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Unix(1_700_000_000, 0).UTC()
+	manifestRepository, err := infrastructure.NewEndpointManifestRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteManifest := &chat.FederatedEndpointManifest{
+		FormatVersion:    application.EndpointManifestFormatVersion,
+		ManifestId:       "manifest:bob:remote",
+		ActorPtid:        "bob",
+		HomeStationId:    "station:remote",
+		DirectoryVersion: 1,
+		ActiveEndpoints: []*chat.FederatedEndpointManifestEntry{{
+			Endpoint: &chat.CryptoEndpoint{
+				Ptid:     "bob",
+				DeviceId: "bob-1",
+			},
+			SigningKeyId:         "key:bob-1",
+			PublicMaterialSha256: [][]byte{bytes.Repeat([]byte{7}, sha256.Size)},
+		}},
+		IssuedAt:               timestamppb.New(now),
+		ExpiresAt:              timestamppb.New(now.Add(5 * time.Minute)),
+		ActorIdentityPublicKey: bytes.Repeat([]byte{2}, ed25519.PublicKeySize),
+		ActorProfileVersion:    1,
+	}
+	privateKey := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+	if err := application.SignEndpointManifest(
+		remoteManifest,
+		"test-remote-station-key",
+		privateKey,
+	); err != nil {
+		t.Fatal(err)
+	}
+	manifestBytes, manifestHash, err := application.EndpointManifestSHA256(remoteManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manifestRepository.SaveVerifiedManifest(
+		context.Background(),
+		remoteManifest,
+		manifestBytes,
+		manifestHash,
+	); err != nil {
+		t.Fatal(err)
+	}
+	localResolver := testEndpointManifestResolver(t, db, now)
+	manifestResolver := messaging.EndpointManifestResolveFunc(func(
+		ctx context.Context,
+		actorPTID string,
+	) (*chat.FederatedEndpointManifest, error) {
+		if actorPTID == remoteManifest.ActorPtid {
+			return proto.Clone(remoteManifest).(*chat.FederatedEndpointManifest), nil
+		}
+
+		return localResolver.ResolveEndpointManifest(ctx, actorPTID)
+	})
+	unitOfWork, err := infrastructure.NewAuthorityUnitOfWork(db, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := application.NewAuthorityService(
+		unitOfWork,
+		"station:local",
+		messaging.FederationFrameSignFunc(func(
+			context.Context,
+			*chat.MessagingFederationFrame,
+		) error {
+			return nil
+		}),
+		manifestResolver,
+		func() time.Time { return now },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &chat.PrepareMessagingSendRequest{
+		ConversationId: conversationID,
+		Sender: &chat.CryptoEndpoint{
+			Ptid:     "bob",
+			DeviceId: "bob-1",
+		},
+		AuthorityStationId: "station:local",
+	}
+
+	plan, err := service.PrepareFederatedSend(
+		context.Background(),
+		"station:remote",
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.RequiredEndpoints) != 3 {
+		t.Fatalf("required endpoints = %+v, want three active endpoints", plan.RequiredEndpoints)
+	}
+
+	tests := []struct {
+		name                string
+		sourceHomeStationID string
+		sender              *chat.CryptoEndpoint
+	}{
+		{
+			name:                "wrong Home Station",
+			sourceHomeStationID: "station:other",
+			sender:              request.Sender,
+		},
+		{
+			name:                "inactive endpoint",
+			sourceHomeStationID: "station:remote",
+			sender: &chat.CryptoEndpoint{
+				Ptid:     "bob",
+				DeviceId: "bob-revoked",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, prepareErr := service.PrepareFederatedSend(
+				context.Background(),
+				test.sourceHomeStationID,
+				&chat.PrepareMessagingSendRequest{
+					ConversationId:     conversationID,
+					Sender:             test.sender,
+					AuthorityStationId: "station:local",
+				},
+			)
+			if !errors.Is(prepareErr, messaging.ErrSenderUnauthorized) {
+				t.Fatalf("error = %v, want ErrSenderUnauthorized", prepareErr)
+			}
+		})
 	}
 }
 
