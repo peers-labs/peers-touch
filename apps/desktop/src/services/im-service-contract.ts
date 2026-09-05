@@ -33,12 +33,6 @@ export interface ConversationServiceContract {
   listEvents(conversationId: string, afterSeq?: number, limit?: number): Promise<CommittedConversationEvent[]>
   listMessages(conversationId: string, afterSeq?: number, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
   listThreadMessages(conversationId: string, rootId: string, afterSeq?: number, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
-  threadCounts(conversationId: string, rootIds: string[]): Promise<{ counts: ThreadCountResult[] }>
-  getMemberSettings(conversationId: string): Promise<MemberSettingsResult>
-  updateMemberSettings(
-    conversationId: string,
-    settings: Partial<MemberSettingsResult>,
-  ): Promise<MemberSettingsResult>
   syncFromStation(conversationId: string, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
 }
 
@@ -400,6 +394,15 @@ export interface MessagingServiceContract {
     conversationId: string,
     threadRootMessageId: string,
   ): Promise<MessagingProjection[]>
+  threadCounts(
+    conversationId: string,
+    rootMessageIds: string[],
+  ): Promise<{ counts: ThreadCountResult[] }>
+  getMemberSettings(conversationId: string): Promise<MemberSettingsResult>
+  updateMemberSettings(
+    conversationId: string,
+    settings: Partial<MemberSettingsResult>,
+  ): Promise<MemberSettingsResult>
   searchMessages(
     conversationId: string,
     query: string,

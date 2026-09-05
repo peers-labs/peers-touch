@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-08-08 | **Updated**: 2026-09-04
+> **Created**: 2026-08-08 | **Updated**: 2026-09-05
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/`, `apps/desktop/`, `apps/mobile/`
 
@@ -350,7 +350,7 @@ authority result不直接推进device authority head，ordered queue marker仍�
 
 ### 4.5 Home Station Follower Membership Projection
 
-> **Amendment status**: proposed (`MP-D29`, review required)
+> **Amendment status**: accepted (`MP-D29`, Owner accepted 2026-09-05)
 
 Runtime evidence from the Windows multi-Station product Gate established this
 gap:
@@ -362,9 +362,9 @@ gap:
 | `FederatedDeviceQueueBatch` already carries deterministic `DeviceEventDelivery` bytes containing the public `ConversationEvent`, but only for active endpoint writes | verified_fact | `model/domain/chat/event.proto`, `federation.proto`, and authority fan-out source | high |
 | Membership may remain active while an actor has zero active devices, and revoked endpoints receive no future device writes | verified_fact | Messaging data model plus authority fan-out rules | high |
 | Queue receipt history alone is insufficient membership truth after removal | inference | old queue rows survive after the final removal transition | high |
-| A Station-addressed authority projection stream can reuse public events, reach zero-device/removal targets, and remain endpoint-payload blind | proposal | `MP-D29` | review required |
+| A Station-addressed authority projection stream can reuse public events, reach zero-device/removal targets, and remain endpoint-payload blind | accepted_decision | `MP-D29`, Owner accepted 2026-09-05 | implementation proof pending |
 
-The proposed target relationship is:
+The accepted target relationship is:
 
 ```text
 Authority transaction
@@ -958,7 +958,8 @@ evidence 和 exact UI plaintext。
 
 ### 14.1 MP-D29 Follower Membership Gates
 
-`MP-D29`只有在以下evidence全部通过后才能从`proposed`进入`accepted`：
+`MP-D29`的架构决策已由Owner接受。实现只有在以下evidence全部通过后才能声明
+`DONE/PROVEN`：
 
 - two-Station Direct和MLS Group分别证明remote Home Station follower projection；
 - creation、ordinary event、membership add/remove、duplicate和restart按同一event

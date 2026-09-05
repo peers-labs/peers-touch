@@ -69,6 +69,16 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 		FederationPolicy: application.FederationPolicy{
 			MaxBatchWrites: 100,
 		},
+		FollowerProjectionPolicy: application.FollowerProjectionPolicy{
+			MaxPendingEvents: 128,
+			MaxPendingBytes:  4 << 20,
+			PendingTTL:       10 * time.Minute,
+			ReplayPageLimit:  128,
+		},
+		FollowerReplayPolicy: application.FollowerReplayPolicy{
+			MaxPageEvents: 128,
+			PageTTL:       time.Minute,
+		},
 		RecoveryPolicy: application.RecoveryPolicy{
 			MaxEncryptedArchiveBytes: 1024 * 1024,
 		},
@@ -100,8 +110,12 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 	}
 	if composition.AuthorityService == nil ||
 		composition.DeviceService == nil ||
+		composition.MembershipReader == nil ||
+		composition.MemberSettingsService == nil ||
 		composition.QueueService == nil ||
 		composition.FederationService == nil ||
+		composition.FollowerProjectionService == nil ||
+		composition.FollowerReplayService == nil ||
 		composition.EndpointManifestService == nil ||
 		composition.RecoveryService == nil ||
 		composition.AuthorityPlanService == nil ||
@@ -109,6 +123,8 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 		composition.QueueHandler == nil ||
 		composition.FederationHandler == nil ||
 		composition.FederationAuth == nil ||
+		composition.FollowerReplayHandler == nil ||
+		composition.FollowerReplayAuth == nil ||
 		composition.EndpointManifestHandler == nil ||
 		composition.EndpointManifestAuth == nil ||
 		composition.MlsKeyPackageClaimService == nil ||
@@ -127,6 +143,11 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 		&infrastructure.DeviceQueueLaneModel{},
 		&infrastructure.DeviceQueueItemModel{},
 		&infrastructure.FederationInboxModel{},
+		&infrastructure.FollowerConversationModel{},
+		&infrastructure.FollowerMemberModel{},
+		&infrastructure.FollowerEventReceiptModel{},
+		&infrastructure.FollowerPendingEventModel{},
+		&infrastructure.MemberSettingsModel{},
 		&infrastructure.FederationOutboxModel{},
 		&infrastructure.EndpointDirectoryVersionModel{},
 		&infrastructure.FederatedEndpointManifestModel{},

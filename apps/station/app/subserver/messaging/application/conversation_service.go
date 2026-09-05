@@ -18,6 +18,7 @@ import (
 
 type ConversationService struct {
 	uow              messaging.AuthorityUnitOfWork
+	memberships      *MembershipReader
 	localStationID   string
 	frameSigner      messaging.FederationFrameSigner
 	manifestResolver messaging.EndpointManifestResolver
@@ -26,12 +27,14 @@ type ConversationService struct {
 
 func NewConversationService(
 	uow messaging.AuthorityUnitOfWork,
+	memberships *MembershipReader,
 	localStationID string,
 	frameSigner messaging.FederationFrameSigner,
 	manifestResolver messaging.EndpointManifestResolver,
 	clock func() time.Time,
 ) (*ConversationService, error) {
 	if uow == nil ||
+		memberships == nil ||
 		localStationID == "" ||
 		frameSigner == nil ||
 		manifestResolver == nil ||
@@ -40,6 +43,7 @@ func NewConversationService(
 	}
 	return &ConversationService{
 		uow:              uow,
+		memberships:      memberships,
 		localStationID:   localStationID,
 		frameSigner:      frameSigner,
 		manifestResolver: manifestResolver,
@@ -74,6 +78,17 @@ func (s *ConversationService) CreateDirect(
 	if err != nil {
 		return nil, err
 	}
+	routedMembers, err := authorityMembersFromManifests(
+		actors,
+		creator.Ptid,
+		manifests,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if authorityMemberHomeStation(routedMembers, creator.Ptid) != s.localStationID {
+		return nil, messaging.ErrEndpointManifestConflict
+	}
 	var view *chat.MessagingConversationView
 	err = s.uow.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
 		active, err := repositories.Devices.IsActive(ctx, creator)
@@ -86,7 +101,7 @@ func (s *ConversationService) CreateDirect(
 		conversation := &messaging.AuthorityConversation{
 			ConversationID:  conversationID,
 			Kind:            messaging.AuthorityConversationKindDirect,
-			OwnerPTID:       actors[0],
+			OwnerPTID:       creator.Ptid,
 			CurrentSequence: 0,
 			MembershipEpoch: 1,
 			MlsEpoch:        0,
@@ -96,16 +111,13 @@ func (s *ConversationService) CreateDirect(
 		if err != nil {
 			return err
 		}
-		for _, actor := range actors {
-			role := "member"
-			if actor == conversation.OwnerPTID {
-				role = "owner"
-			}
+		for _, member := range routedMembers {
 			if err := repositories.Authority.AddMember(
 				ctx,
 				conversationID,
-				actor,
-				role,
+				member.PTID,
+				member.HomeStationID,
+				member.Role,
 				1,
 			); err != nil {
 				return err
@@ -127,7 +139,7 @@ func (s *ConversationService) CreateDirect(
 				repositories,
 				conversation,
 				creator,
-				actors,
+				routedMembers,
 				endpoints,
 			); err != nil {
 				return err
@@ -158,7 +170,6 @@ func (s *ConversationService) List(
 	if requester == nil {
 		return nil, messaging.ErrSenderUnauthorized
 	}
-	var views []*chat.MessagingConversationView
 	err := s.uow.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
 		active, err := repositories.Devices.IsActive(ctx, requester)
 		if err != nil {
@@ -167,20 +178,12 @@ func (s *ConversationService) List(
 		if !active {
 			return messaging.ErrSenderUnauthorized
 		}
-		rows, err := repositories.Authority.ListConversationsForActor(ctx, requester.Ptid)
-		if err != nil {
-			return err
-		}
-		views = make([]*chat.MessagingConversationView, 0, len(rows))
-		for _, row := range rows {
-			views = append(
-				views,
-				conversationView(row.Conversation, row.MemberPTIDs, s.localStationID),
-			)
-		}
 		return nil
 	})
-	return views, err
+	if err != nil {
+		return nil, err
+	}
+	return s.memberships.ListActiveForActor(ctx, requester.Ptid)
 }
 
 func (s *ConversationService) appendCreatedEvent(
@@ -188,9 +191,13 @@ func (s *ConversationService) appendCreatedEvent(
 	repositories messaging.AuthorityRepositories,
 	conversation *messaging.AuthorityConversation,
 	creator *chat.CryptoEndpoint,
-	memberPTIDs []string,
+	members []messaging.AuthorityMember,
 	endpoints []*chat.CryptoEndpoint,
 ) error {
+	routedMembers, err := conversationAuthorityMembers(members)
+	if err != nil {
+		return err
+	}
 	eventID := "created:" + conversation.ConversationID
 	commandID := "create:" + conversation.ConversationID
 	markerBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
@@ -224,10 +231,10 @@ func (s *ConversationService) appendCreatedEvent(
 		AuthorityStationId: s.localStationID,
 		Payload: &chat.ConversationEvent_ConversationCreated{
 			ConversationCreated: &chat.ConversationCreatedFact{
-				Kind:        conversationKind(conversation.Kind),
-				Name:        conversation.Name,
-				OwnerPtid:   conversation.OwnerPTID,
-				MemberPtids: memberPTIDs,
+				Kind:      conversationKind(conversation.Kind),
+				Name:      conversation.Name,
+				OwnerPtid: conversation.OwnerPTID,
+				Members:   routedMembers,
 			},
 		},
 	}
@@ -245,6 +252,18 @@ func (s *ConversationService) appendCreatedEvent(
 		return err
 	}
 	if err := repositories.Authority.AppendEvent(ctx, event); err != nil {
+		return err
+	}
+	if err := enqueueFollowerProjections(
+		ctx,
+		repositories,
+		event,
+		nil,
+		members,
+		s.localStationID,
+		s.frameSigner,
+		s.clock().UTC(),
+	); err != nil {
 		return err
 	}
 	senderActorIdentityKey, err := repositories.Devices.ActorIdentityPublicKey(

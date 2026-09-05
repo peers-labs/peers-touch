@@ -4981,31 +4981,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
             }
         }
-        "group_chat_thread_counts" => {
-            let input = match parse_args::<GroupChatThreadCountsInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.group_ulid.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "group_ulid is required",
-                    None,
-                ));
-            }
-            match chat_storage::group_thread_counts(
-                &token,
-                input.group_ulid.as_str(),
-                input.root_ulids.as_slice(),
-            ) {
-                Ok(data) => to_json(to_stub("group_chat_thread_counts", data)),
-                Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
-            }
-        }
         "group_chat_unread_count" => {
             let input = match parse_args::<GroupChatUnreadInput>(args) {
                 Ok(v) => v,
@@ -6947,43 +6922,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             None,
             "conversation list thread messages",
         ),
-        "conversation_thread_counts" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/conversation/thread/counts",
-            None,
-            Some(json!({
-                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "root_ids": args.get("root_ids").cloned().unwrap_or_else(|| json!([])),
-            })),
-            "conversation thread counts",
-        ),
-        "conversation_get_member_settings" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::GET,
-            "/conversation/member/settings",
-            Some(vec![(
-                "conversation_id",
-                args.get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            )]),
-            None,
-            "conversation get member settings",
-        ),
-        "conversation_update_member_settings" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::PUT,
-            "/conversation/member/settings",
-            None,
-            Some(json!({
-                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "nickname": args.get("nickname").cloned().unwrap_or(Value::Null),
-                "muted": args.get("muted").cloned().unwrap_or(Value::Null),
-            })),
-            "conversation update member settings",
-        ),
         "conversation_get_members" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
@@ -7143,6 +7081,89 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
+        }
+        "messaging_thread_counts" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingThreadCountsInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::messaging_thread_counts_result(
+                    &engine, &input,
+                ),
+            )
+        }
+        "messaging_get_member_settings" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingMemberSettingsInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::messaging_get_member_settings_result(
+                    &token, &engine, &input,
+                ),
+            )
+        }
+        "messaging_update_member_settings" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingUpdateMemberSettingsInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::
+                    messaging_update_member_settings_result(&token, &engine, input),
+            )
         }
         "messaging_drain" => {
             let (account_id, actor_ptid, token) = match gateway_access_context(state) {

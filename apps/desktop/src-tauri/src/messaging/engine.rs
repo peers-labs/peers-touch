@@ -15,7 +15,7 @@ use super::{
     SendTextIntent, StationAttachmentTransferTransport, StationCommandTransport,
     StationDeliveryReceiptTransport, StationDeviceTransport, StationGroupGenesisTransport,
     StationKeyBundleTransport, StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
-    StationPreKeyTransport, StationQueueTransport,
+    StationPreKeyTransport, StationQueueTransport, ThreadCountProjection,
 };
 use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::domain::crypto::IdentityKeyPair;
@@ -1071,6 +1071,18 @@ impl MessagingEngine {
     ) -> Result<Vec<ConversationMessageProjection>, String> {
         self.store
             .thread_message_projections(conversation_id, thread_root_message_id)
+    }
+
+    pub fn thread_counts(
+        &self,
+        conversation_id: &str,
+        thread_root_message_ids: &[String],
+    ) -> Result<Vec<ThreadCountProjection>, String> {
+        self.store.thread_count_projections(
+            conversation_id,
+            thread_root_message_ids,
+            &self.endpoint.ptid,
+        )
     }
 
     pub fn search_messages(
