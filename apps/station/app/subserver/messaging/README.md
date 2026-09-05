@@ -1,7 +1,8 @@
 # Station Messaging Platform
 
 This directory owns the target Station-side messaging authority, durable device
-queues, recovery revisions, and federation delivery.
+queues, authority-signed follower membership storage, recovery revisions, and
+federation delivery.
 
 ## Boundaries
 

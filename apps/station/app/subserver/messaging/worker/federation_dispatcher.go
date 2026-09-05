@@ -100,7 +100,12 @@ func (d *FederationDispatcher) DispatchOnce(ctx context.Context) (int, error) {
 		if result.ErrorCode == "" {
 			return processed, fmt.Errorf("messaging: federation transport returned no error code")
 		}
-		if !result.Retryable || claim.AttemptCount >= d.policy.MaxAttempts {
+		retainUntilDelivered := retainRetryableFollowerFrame(
+			claim.Frame,
+			result,
+		)
+		if !result.Retryable ||
+			(claim.AttemptCount >= d.policy.MaxAttempts && !retainUntilDelivered) {
 			if err := d.repository.MarkFederationDeadLetter(
 				ctx,
 				claim.Frame.FrameId,
@@ -131,6 +136,22 @@ func (d *FederationDispatcher) DispatchOnce(ctx context.Context) (int, error) {
 		processed++
 	}
 	return processed, nil
+}
+
+func retainRetryableFollowerFrame(
+	frame *chat.MessagingFederationFrame,
+	result FederationDeliveryResult,
+) bool {
+	if frame == nil || !result.Retryable {
+		return false
+	}
+	if frame.PayloadType ==
+		chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION {
+		return true
+	}
+	return frame.PayloadType ==
+		chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH &&
+		result.ErrorCode == "http_503"
 }
 
 func backoff(attempt uint32, base time.Duration, maximum time.Duration) time.Duration {

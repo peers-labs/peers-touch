@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-08-08 | **Updated**: 2026-09-04
+> **Created**: 2026-08-08 | **Updated**: 2026-09-05
 > **Owner**: Messaging Platform Team
 
 ---
@@ -35,7 +35,7 @@ native UI、Station truth 和 Device Engine durable evidence。
 | MP-C08 Recovery | J06 | A05/A07 | W08 | MP-G08 | fresh install 恢复并继续通信 |
 | MP-C09 Group MLS | J07/J08 | A08 | W07 | MP-G09 | add/remove/send/restart epoch 正确 |
 | MP-C10 Receipts | J10 | A02/A09 | W05 | MP-G10 | accepted/consumed/delivered/read 可区分 |
-| MP-C11 Federation | J09 | A02/A06 | W02/W06/W13 | MP-G11 | 跨站断线重试后有序到达，Home Station follower membership与authority一致 |
+| MP-C11 Federation | J09 | A02/A06 | W02/W06/W14 | MP-G11 | 跨站断线重试后有序到达，Home Station follower membership与authority一致 |
 | MP-C12 Failure recovery | J12; S20-S28 | A03-A06/A10 | W02-W09 | MP-G12 | 故障可行动且不静默丢失 |
 | MP-C13 Attachments | J11 | A05/A11 | W10 | MP-G13 | 附件 E2EE、重启和恢复可用 |
 | MP-C14 Search | J11 | A05 | W10 | MP-G14 | 仅本地 plaintext index 返回结果 |

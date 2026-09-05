@@ -370,6 +370,330 @@ func (x *ListMessagingConversationsResponse) GetConversations() []*MessagingConv
 	return nil
 }
 
+type MessagingMemberSettings struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Nickname        string                 `protobuf:"bytes,1,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	Muted           bool                   `protobuf:"varint,2,opt,name=muted,proto3" json:"muted,omitempty"`
+	AlertEnabled    bool                   `protobuf:"varint,3,opt,name=alert_enabled,json=alertEnabled,proto3" json:"alert_enabled,omitempty"`
+	Pinned          bool                   `protobuf:"varint,4,opt,name=pinned,proto3" json:"pinned,omitempty"`
+	Background      string                 `protobuf:"bytes,5,opt,name=background,proto3" json:"background,omitempty"`
+	ClearedAtUnixMs int64                  `protobuf:"varint,6,opt,name=cleared_at_unix_ms,json=clearedAtUnixMs,proto3" json:"cleared_at_unix_ms,omitempty"`
+	BackgroundImage string                 `protobuf:"bytes,7,opt,name=background_image,json=backgroundImage,proto3" json:"background_image,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *MessagingMemberSettings) Reset() {
+	*x = MessagingMemberSettings{}
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MessagingMemberSettings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessagingMemberSettings) ProtoMessage() {}
+
+func (x *MessagingMemberSettings) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessagingMemberSettings.ProtoReflect.Descriptor instead.
+func (*MessagingMemberSettings) Descriptor() ([]byte, []int) {
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *MessagingMemberSettings) GetNickname() string {
+	if x != nil {
+		return x.Nickname
+	}
+	return ""
+}
+
+func (x *MessagingMemberSettings) GetMuted() bool {
+	if x != nil {
+		return x.Muted
+	}
+	return false
+}
+
+func (x *MessagingMemberSettings) GetAlertEnabled() bool {
+	if x != nil {
+		return x.AlertEnabled
+	}
+	return false
+}
+
+func (x *MessagingMemberSettings) GetPinned() bool {
+	if x != nil {
+		return x.Pinned
+	}
+	return false
+}
+
+func (x *MessagingMemberSettings) GetBackground() string {
+	if x != nil {
+		return x.Background
+	}
+	return ""
+}
+
+func (x *MessagingMemberSettings) GetClearedAtUnixMs() int64 {
+	if x != nil {
+		return x.ClearedAtUnixMs
+	}
+	return 0
+}
+
+func (x *MessagingMemberSettings) GetBackgroundImage() string {
+	if x != nil {
+		return x.BackgroundImage
+	}
+	return ""
+}
+
+type GetMessagingMemberSettingsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetMessagingMemberSettingsRequest) Reset() {
+	*x = GetMessagingMemberSettingsRequest{}
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMessagingMemberSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMessagingMemberSettingsRequest) ProtoMessage() {}
+
+func (x *GetMessagingMemberSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMessagingMemberSettingsRequest.ProtoReflect.Descriptor instead.
+func (*GetMessagingMemberSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetMessagingMemberSettingsRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+type GetMessagingMemberSettingsResponse struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Settings      *MessagingMemberSettings `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMessagingMemberSettingsResponse) Reset() {
+	*x = GetMessagingMemberSettingsResponse{}
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMessagingMemberSettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMessagingMemberSettingsResponse) ProtoMessage() {}
+
+func (x *GetMessagingMemberSettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMessagingMemberSettingsResponse.ProtoReflect.Descriptor instead.
+func (*GetMessagingMemberSettingsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetMessagingMemberSettingsResponse) GetSettings() *MessagingMemberSettings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type UpdateMessagingMemberSettingsRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ConversationId  string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	Nickname        *string                `protobuf:"bytes,2,opt,name=nickname,proto3,oneof" json:"nickname,omitempty"`
+	Muted           *bool                  `protobuf:"varint,3,opt,name=muted,proto3,oneof" json:"muted,omitempty"`
+	AlertEnabled    *bool                  `protobuf:"varint,4,opt,name=alert_enabled,json=alertEnabled,proto3,oneof" json:"alert_enabled,omitempty"`
+	Pinned          *bool                  `protobuf:"varint,5,opt,name=pinned,proto3,oneof" json:"pinned,omitempty"`
+	Background      *string                `protobuf:"bytes,6,opt,name=background,proto3,oneof" json:"background,omitempty"`
+	ClearedAtUnixMs *int64                 `protobuf:"varint,7,opt,name=cleared_at_unix_ms,json=clearedAtUnixMs,proto3,oneof" json:"cleared_at_unix_ms,omitempty"`
+	BackgroundImage *string                `protobuf:"bytes,8,opt,name=background_image,json=backgroundImage,proto3,oneof" json:"background_image,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *UpdateMessagingMemberSettingsRequest) Reset() {
+	*x = UpdateMessagingMemberSettingsRequest{}
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateMessagingMemberSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateMessagingMemberSettingsRequest) ProtoMessage() {}
+
+func (x *UpdateMessagingMemberSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateMessagingMemberSettingsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateMessagingMemberSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *UpdateMessagingMemberSettingsRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *UpdateMessagingMemberSettingsRequest) GetNickname() string {
+	if x != nil && x.Nickname != nil {
+		return *x.Nickname
+	}
+	return ""
+}
+
+func (x *UpdateMessagingMemberSettingsRequest) GetMuted() bool {
+	if x != nil && x.Muted != nil {
+		return *x.Muted
+	}
+	return false
+}
+
+func (x *UpdateMessagingMemberSettingsRequest) GetAlertEnabled() bool {
+	if x != nil && x.AlertEnabled != nil {
+		return *x.AlertEnabled
+	}
+	return false
+}
+
+func (x *UpdateMessagingMemberSettingsRequest) GetPinned() bool {
+	if x != nil && x.Pinned != nil {
+		return *x.Pinned
+	}
+	return false
+}
+
+func (x *UpdateMessagingMemberSettingsRequest) GetBackground() string {
+	if x != nil && x.Background != nil {
+		return *x.Background
+	}
+	return ""
+}
+
+func (x *UpdateMessagingMemberSettingsRequest) GetClearedAtUnixMs() int64 {
+	if x != nil && x.ClearedAtUnixMs != nil {
+		return *x.ClearedAtUnixMs
+	}
+	return 0
+}
+
+func (x *UpdateMessagingMemberSettingsRequest) GetBackgroundImage() string {
+	if x != nil && x.BackgroundImage != nil {
+		return *x.BackgroundImage
+	}
+	return ""
+}
+
+type UpdateMessagingMemberSettingsResponse struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Settings      *MessagingMemberSettings `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateMessagingMemberSettingsResponse) Reset() {
+	*x = UpdateMessagingMemberSettingsResponse{}
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateMessagingMemberSettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateMessagingMemberSettingsResponse) ProtoMessage() {}
+
+func (x *UpdateMessagingMemberSettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateMessagingMemberSettingsResponse.ProtoReflect.Descriptor instead.
+func (*UpdateMessagingMemberSettingsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *UpdateMessagingMemberSettingsResponse) GetSettings() *MessagingMemberSettings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
 type ReservedMessagingMlsKeyPackage struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Target           *CryptoEndpoint        `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
@@ -382,7 +706,7 @@ type ReservedMessagingMlsKeyPackage struct {
 
 func (x *ReservedMessagingMlsKeyPackage) Reset() {
 	*x = ReservedMessagingMlsKeyPackage{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[5]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -394,7 +718,7 @@ func (x *ReservedMessagingMlsKeyPackage) String() string {
 func (*ReservedMessagingMlsKeyPackage) ProtoMessage() {}
 
 func (x *ReservedMessagingMlsKeyPackage) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[5]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -407,7 +731,7 @@ func (x *ReservedMessagingMlsKeyPackage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReservedMessagingMlsKeyPackage.ProtoReflect.Descriptor instead.
 func (*ReservedMessagingMlsKeyPackage) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{5}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ReservedMessagingMlsKeyPackage) GetTarget() *CryptoEndpoint {
@@ -450,7 +774,7 @@ type PrepareMessagingGroupGenesisRequest struct {
 
 func (x *PrepareMessagingGroupGenesisRequest) Reset() {
 	*x = PrepareMessagingGroupGenesisRequest{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[6]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -462,7 +786,7 @@ func (x *PrepareMessagingGroupGenesisRequest) String() string {
 func (*PrepareMessagingGroupGenesisRequest) ProtoMessage() {}
 
 func (x *PrepareMessagingGroupGenesisRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[6]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -475,7 +799,7 @@ func (x *PrepareMessagingGroupGenesisRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use PrepareMessagingGroupGenesisRequest.ProtoReflect.Descriptor instead.
 func (*PrepareMessagingGroupGenesisRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{6}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *PrepareMessagingGroupGenesisRequest) GetConversationId() string {
@@ -521,7 +845,7 @@ type PrepareMessagingGroupGenesisResponse struct {
 
 func (x *PrepareMessagingGroupGenesisResponse) Reset() {
 	*x = PrepareMessagingGroupGenesisResponse{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[7]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -533,7 +857,7 @@ func (x *PrepareMessagingGroupGenesisResponse) String() string {
 func (*PrepareMessagingGroupGenesisResponse) ProtoMessage() {}
 
 func (x *PrepareMessagingGroupGenesisResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[7]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -546,7 +870,7 @@ func (x *PrepareMessagingGroupGenesisResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use PrepareMessagingGroupGenesisResponse.ProtoReflect.Descriptor instead.
 func (*PrepareMessagingGroupGenesisResponse) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{7}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *PrepareMessagingGroupGenesisResponse) GetAuthorityPlanId() string {
@@ -612,7 +936,7 @@ type PrepareMessagingMembershipTransitionRequest struct {
 
 func (x *PrepareMessagingMembershipTransitionRequest) Reset() {
 	*x = PrepareMessagingMembershipTransitionRequest{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[8]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -624,7 +948,7 @@ func (x *PrepareMessagingMembershipTransitionRequest) String() string {
 func (*PrepareMessagingMembershipTransitionRequest) ProtoMessage() {}
 
 func (x *PrepareMessagingMembershipTransitionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[8]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -637,7 +961,7 @@ func (x *PrepareMessagingMembershipTransitionRequest) ProtoReflect() protoreflec
 
 // Deprecated: Use PrepareMessagingMembershipTransitionRequest.ProtoReflect.Descriptor instead.
 func (*PrepareMessagingMembershipTransitionRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{8}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *PrepareMessagingMembershipTransitionRequest) GetConversationId() string {
@@ -704,7 +1028,7 @@ type PrepareMessagingMembershipTransitionResponse struct {
 
 func (x *PrepareMessagingMembershipTransitionResponse) Reset() {
 	*x = PrepareMessagingMembershipTransitionResponse{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[9]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -716,7 +1040,7 @@ func (x *PrepareMessagingMembershipTransitionResponse) String() string {
 func (*PrepareMessagingMembershipTransitionResponse) ProtoMessage() {}
 
 func (x *PrepareMessagingMembershipTransitionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[9]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -729,7 +1053,7 @@ func (x *PrepareMessagingMembershipTransitionResponse) ProtoReflect() protorefle
 
 // Deprecated: Use PrepareMessagingMembershipTransitionResponse.ProtoReflect.Descriptor instead.
 func (*PrepareMessagingMembershipTransitionResponse) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{9}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *PrepareMessagingMembershipTransitionResponse) GetAuthorityPlanId() string {
@@ -841,7 +1165,7 @@ type PrepareMessagingSendRequest struct {
 
 func (x *PrepareMessagingSendRequest) Reset() {
 	*x = PrepareMessagingSendRequest{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[10]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -853,7 +1177,7 @@ func (x *PrepareMessagingSendRequest) String() string {
 func (*PrepareMessagingSendRequest) ProtoMessage() {}
 
 func (x *PrepareMessagingSendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[10]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -866,7 +1190,7 @@ func (x *PrepareMessagingSendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareMessagingSendRequest.ProtoReflect.Descriptor instead.
 func (*PrepareMessagingSendRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{10}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *PrepareMessagingSendRequest) GetConversationId() string {
@@ -908,7 +1232,7 @@ type PrepareMessagingSendResponse struct {
 
 func (x *PrepareMessagingSendResponse) Reset() {
 	*x = PrepareMessagingSendResponse{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[11]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -920,7 +1244,7 @@ func (x *PrepareMessagingSendResponse) String() string {
 func (*PrepareMessagingSendResponse) ProtoMessage() {}
 
 func (x *PrepareMessagingSendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[11]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -933,7 +1257,7 @@ func (x *PrepareMessagingSendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareMessagingSendResponse.ProtoReflect.Descriptor instead.
 func (*PrepareMessagingSendResponse) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{11}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PrepareMessagingSendResponse) GetConversationId() string {
@@ -1016,7 +1340,7 @@ type FederatedPrepareMessagingSendRequest struct {
 
 func (x *FederatedPrepareMessagingSendRequest) Reset() {
 	*x = FederatedPrepareMessagingSendRequest{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[12]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1028,7 +1352,7 @@ func (x *FederatedPrepareMessagingSendRequest) String() string {
 func (*FederatedPrepareMessagingSendRequest) ProtoMessage() {}
 
 func (x *FederatedPrepareMessagingSendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[12]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1041,7 +1365,7 @@ func (x *FederatedPrepareMessagingSendRequest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use FederatedPrepareMessagingSendRequest.ProtoReflect.Descriptor instead.
 func (*FederatedPrepareMessagingSendRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{12}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *FederatedPrepareMessagingSendRequest) GetRequest() *PrepareMessagingSendRequest {
@@ -1067,7 +1391,7 @@ type SubmitMessagingCommandRequest struct {
 
 func (x *SubmitMessagingCommandRequest) Reset() {
 	*x = SubmitMessagingCommandRequest{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[13]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1079,7 +1403,7 @@ func (x *SubmitMessagingCommandRequest) String() string {
 func (*SubmitMessagingCommandRequest) ProtoMessage() {}
 
 func (x *SubmitMessagingCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[13]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1092,7 +1416,7 @@ func (x *SubmitMessagingCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitMessagingCommandRequest.ProtoReflect.Descriptor instead.
 func (*SubmitMessagingCommandRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{13}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SubmitMessagingCommandRequest) GetCommand() *ChatCommand {
@@ -1114,7 +1438,7 @@ type SubmitMessagingCommandResponse struct {
 
 func (x *SubmitMessagingCommandResponse) Reset() {
 	*x = SubmitMessagingCommandResponse{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[14]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1126,7 +1450,7 @@ func (x *SubmitMessagingCommandResponse) String() string {
 func (*SubmitMessagingCommandResponse) ProtoMessage() {}
 
 func (x *SubmitMessagingCommandResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[14]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1139,7 +1463,7 @@ func (x *SubmitMessagingCommandResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitMessagingCommandResponse.ProtoReflect.Descriptor instead.
 func (*SubmitMessagingCommandResponse) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{14}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SubmitMessagingCommandResponse) GetEvent() *ConversationEvent {
@@ -1193,7 +1517,41 @@ const file_domain_chat_messaging_api_proto_rawDesc = "" +
 	"\fconversation\x18\x01 \x01(\v24.peers_touch.model.chat.v1.MessagingConversationViewR\fconversation\"#\n" +
 	"!ListMessagingConversationsRequest\"\x80\x01\n" +
 	"\"ListMessagingConversationsResponse\x12Z\n" +
-	"\rconversations\x18\x01 \x03(\v24.peers_touch.model.chat.v1.MessagingConversationViewR\rconversations\"\xd1\x01\n" +
+	"\rconversations\x18\x01 \x03(\v24.peers_touch.model.chat.v1.MessagingConversationViewR\rconversations\"\x80\x02\n" +
+	"\x17MessagingMemberSettings\x12\x1a\n" +
+	"\bnickname\x18\x01 \x01(\tR\bnickname\x12\x14\n" +
+	"\x05muted\x18\x02 \x01(\bR\x05muted\x12#\n" +
+	"\ralert_enabled\x18\x03 \x01(\bR\falertEnabled\x12\x16\n" +
+	"\x06pinned\x18\x04 \x01(\bR\x06pinned\x12\x1e\n" +
+	"\n" +
+	"background\x18\x05 \x01(\tR\n" +
+	"background\x12+\n" +
+	"\x12cleared_at_unix_ms\x18\x06 \x01(\x03R\x0fclearedAtUnixMs\x12)\n" +
+	"\x10background_image\x18\a \x01(\tR\x0fbackgroundImage\"L\n" +
+	"!GetMessagingMemberSettingsRequest\x12'\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"t\n" +
+	"\"GetMessagingMemberSettingsResponse\x12N\n" +
+	"\bsettings\x18\x01 \x01(\v22.peers_touch.model.chat.v1.MessagingMemberSettingsR\bsettings\"\xc8\x03\n" +
+	"$UpdateMessagingMemberSettingsRequest\x12'\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1f\n" +
+	"\bnickname\x18\x02 \x01(\tH\x00R\bnickname\x88\x01\x01\x12\x19\n" +
+	"\x05muted\x18\x03 \x01(\bH\x01R\x05muted\x88\x01\x01\x12(\n" +
+	"\ralert_enabled\x18\x04 \x01(\bH\x02R\falertEnabled\x88\x01\x01\x12\x1b\n" +
+	"\x06pinned\x18\x05 \x01(\bH\x03R\x06pinned\x88\x01\x01\x12#\n" +
+	"\n" +
+	"background\x18\x06 \x01(\tH\x04R\n" +
+	"background\x88\x01\x01\x120\n" +
+	"\x12cleared_at_unix_ms\x18\a \x01(\x03H\x05R\x0fclearedAtUnixMs\x88\x01\x01\x12.\n" +
+	"\x10background_image\x18\b \x01(\tH\x06R\x0fbackgroundImage\x88\x01\x01B\v\n" +
+	"\t_nicknameB\b\n" +
+	"\x06_mutedB\x10\n" +
+	"\x0e_alert_enabledB\t\n" +
+	"\a_pinnedB\r\n" +
+	"\v_backgroundB\x15\n" +
+	"\x13_cleared_at_unix_msB\x13\n" +
+	"\x11_background_image\"w\n" +
+	"%UpdateMessagingMemberSettingsResponse\x12N\n" +
+	"\bsettings\x18\x01 \x01(\v22.peers_touch.model.chat.v1.MessagingMemberSettingsR\bsettings\"\xd1\x01\n" +
 	"\x1eReservedMessagingMlsKeyPackage\x12A\n" +
 	"\x06target\x18\x01 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\x06target\x12\x1d\n" +
 	"\n" +
@@ -1290,7 +1648,7 @@ func file_domain_chat_messaging_api_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_chat_messaging_api_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_chat_messaging_api_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_domain_chat_messaging_api_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_domain_chat_messaging_api_proto_goTypes = []any{
 	(MessagingCommandRejectCode)(0),                      // 0: peers_touch.model.chat.v1.MessagingCommandRejectCode
 	(*MessagingConversationView)(nil),                    // 1: peers_touch.model.chat.v1.MessagingConversationView
@@ -1298,58 +1656,65 @@ var file_domain_chat_messaging_api_proto_goTypes = []any{
 	(*CreateMessagingDirectConversationResponse)(nil),    // 3: peers_touch.model.chat.v1.CreateMessagingDirectConversationResponse
 	(*ListMessagingConversationsRequest)(nil),            // 4: peers_touch.model.chat.v1.ListMessagingConversationsRequest
 	(*ListMessagingConversationsResponse)(nil),           // 5: peers_touch.model.chat.v1.ListMessagingConversationsResponse
-	(*ReservedMessagingMlsKeyPackage)(nil),               // 6: peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage
-	(*PrepareMessagingGroupGenesisRequest)(nil),          // 7: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisRequest
-	(*PrepareMessagingGroupGenesisResponse)(nil),         // 8: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse
-	(*PrepareMessagingMembershipTransitionRequest)(nil),  // 9: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest
-	(*PrepareMessagingMembershipTransitionResponse)(nil), // 10: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse
-	(*PrepareMessagingSendRequest)(nil),                  // 11: peers_touch.model.chat.v1.PrepareMessagingSendRequest
-	(*PrepareMessagingSendResponse)(nil),                 // 12: peers_touch.model.chat.v1.PrepareMessagingSendResponse
-	(*FederatedPrepareMessagingSendRequest)(nil),         // 13: peers_touch.model.chat.v1.FederatedPrepareMessagingSendRequest
-	(*SubmitMessagingCommandRequest)(nil),                // 14: peers_touch.model.chat.v1.SubmitMessagingCommandRequest
-	(*SubmitMessagingCommandResponse)(nil),               // 15: peers_touch.model.chat.v1.SubmitMessagingCommandResponse
-	(ConversationKind)(0),                                // 16: peers_touch.model.chat.v1.ConversationKind
-	(*CryptoEndpoint)(nil),                               // 17: peers_touch.model.chat.v1.CryptoEndpoint
-	(*timestamppb.Timestamp)(nil),                        // 18: google.protobuf.Timestamp
-	(*FederatedEndpointManifest)(nil),                    // 19: peers_touch.model.chat.v1.FederatedEndpointManifest
-	(MessagingMembershipAction)(0),                       // 20: peers_touch.model.chat.v1.MessagingMembershipAction
-	(*ChatCommand)(nil),                                  // 21: peers_touch.model.chat.v1.ChatCommand
-	(*ConversationEvent)(nil),                            // 22: peers_touch.model.chat.v1.ConversationEvent
+	(*MessagingMemberSettings)(nil),                      // 6: peers_touch.model.chat.v1.MessagingMemberSettings
+	(*GetMessagingMemberSettingsRequest)(nil),            // 7: peers_touch.model.chat.v1.GetMessagingMemberSettingsRequest
+	(*GetMessagingMemberSettingsResponse)(nil),           // 8: peers_touch.model.chat.v1.GetMessagingMemberSettingsResponse
+	(*UpdateMessagingMemberSettingsRequest)(nil),         // 9: peers_touch.model.chat.v1.UpdateMessagingMemberSettingsRequest
+	(*UpdateMessagingMemberSettingsResponse)(nil),        // 10: peers_touch.model.chat.v1.UpdateMessagingMemberSettingsResponse
+	(*ReservedMessagingMlsKeyPackage)(nil),               // 11: peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage
+	(*PrepareMessagingGroupGenesisRequest)(nil),          // 12: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisRequest
+	(*PrepareMessagingGroupGenesisResponse)(nil),         // 13: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse
+	(*PrepareMessagingMembershipTransitionRequest)(nil),  // 14: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest
+	(*PrepareMessagingMembershipTransitionResponse)(nil), // 15: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse
+	(*PrepareMessagingSendRequest)(nil),                  // 16: peers_touch.model.chat.v1.PrepareMessagingSendRequest
+	(*PrepareMessagingSendResponse)(nil),                 // 17: peers_touch.model.chat.v1.PrepareMessagingSendResponse
+	(*FederatedPrepareMessagingSendRequest)(nil),         // 18: peers_touch.model.chat.v1.FederatedPrepareMessagingSendRequest
+	(*SubmitMessagingCommandRequest)(nil),                // 19: peers_touch.model.chat.v1.SubmitMessagingCommandRequest
+	(*SubmitMessagingCommandResponse)(nil),               // 20: peers_touch.model.chat.v1.SubmitMessagingCommandResponse
+	(ConversationKind)(0),                                // 21: peers_touch.model.chat.v1.ConversationKind
+	(*CryptoEndpoint)(nil),                               // 22: peers_touch.model.chat.v1.CryptoEndpoint
+	(*timestamppb.Timestamp)(nil),                        // 23: google.protobuf.Timestamp
+	(*FederatedEndpointManifest)(nil),                    // 24: peers_touch.model.chat.v1.FederatedEndpointManifest
+	(MessagingMembershipAction)(0),                       // 25: peers_touch.model.chat.v1.MessagingMembershipAction
+	(*ChatCommand)(nil),                                  // 26: peers_touch.model.chat.v1.ChatCommand
+	(*ConversationEvent)(nil),                            // 27: peers_touch.model.chat.v1.ConversationEvent
 }
 var file_domain_chat_messaging_api_proto_depIdxs = []int32{
-	16, // 0: peers_touch.model.chat.v1.MessagingConversationView.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
-	17, // 1: peers_touch.model.chat.v1.CreateMessagingDirectConversationRequest.creator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	21, // 0: peers_touch.model.chat.v1.MessagingConversationView.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
+	22, // 1: peers_touch.model.chat.v1.CreateMessagingDirectConversationRequest.creator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
 	1,  // 2: peers_touch.model.chat.v1.CreateMessagingDirectConversationResponse.conversation:type_name -> peers_touch.model.chat.v1.MessagingConversationView
 	1,  // 3: peers_touch.model.chat.v1.ListMessagingConversationsResponse.conversations:type_name -> peers_touch.model.chat.v1.MessagingConversationView
-	17, // 4: peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage.target:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	17, // 5: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisRequest.creator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	18, // 6: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.expires_at:type_name -> google.protobuf.Timestamp
-	17, // 7: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.prospective_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	6,  // 8: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.reserved_key_packages:type_name -> peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage
-	19, // 9: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
-	17, // 10: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	20, // 11: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
-	18, // 12: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	17, // 13: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.pre_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	17, // 14: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.post_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	17, // 15: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.added_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	17, // 16: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.removed_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	6,  // 17: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.reserved_key_packages:type_name -> peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage
-	19, // 18: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
-	17, // 19: peers_touch.model.chat.v1.PrepareMessagingSendRequest.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	16, // 20: peers_touch.model.chat.v1.PrepareMessagingSendResponse.conversation_kind:type_name -> peers_touch.model.chat.v1.ConversationKind
-	17, // 21: peers_touch.model.chat.v1.PrepareMessagingSendResponse.required_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	19, // 22: peers_touch.model.chat.v1.PrepareMessagingSendResponse.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
-	11, // 23: peers_touch.model.chat.v1.FederatedPrepareMessagingSendRequest.request:type_name -> peers_touch.model.chat.v1.PrepareMessagingSendRequest
-	21, // 24: peers_touch.model.chat.v1.SubmitMessagingCommandRequest.command:type_name -> peers_touch.model.chat.v1.ChatCommand
-	22, // 25: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	0,  // 26: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.reject_code:type_name -> peers_touch.model.chat.v1.MessagingCommandRejectCode
-	12, // 27: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.current_send_plan:type_name -> peers_touch.model.chat.v1.PrepareMessagingSendResponse
-	28, // [28:28] is the sub-list for method output_type
-	28, // [28:28] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	6,  // 4: peers_touch.model.chat.v1.GetMessagingMemberSettingsResponse.settings:type_name -> peers_touch.model.chat.v1.MessagingMemberSettings
+	6,  // 5: peers_touch.model.chat.v1.UpdateMessagingMemberSettingsResponse.settings:type_name -> peers_touch.model.chat.v1.MessagingMemberSettings
+	22, // 6: peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage.target:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	22, // 7: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisRequest.creator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	23, // 8: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.expires_at:type_name -> google.protobuf.Timestamp
+	22, // 9: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.prospective_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	11, // 10: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.reserved_key_packages:type_name -> peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage
+	24, // 11: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
+	22, // 12: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	25, // 13: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
+	23, // 14: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	22, // 15: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.pre_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	22, // 16: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.post_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	22, // 17: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.added_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	22, // 18: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.removed_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	11, // 19: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.reserved_key_packages:type_name -> peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage
+	24, // 20: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
+	22, // 21: peers_touch.model.chat.v1.PrepareMessagingSendRequest.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	21, // 22: peers_touch.model.chat.v1.PrepareMessagingSendResponse.conversation_kind:type_name -> peers_touch.model.chat.v1.ConversationKind
+	22, // 23: peers_touch.model.chat.v1.PrepareMessagingSendResponse.required_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	24, // 24: peers_touch.model.chat.v1.PrepareMessagingSendResponse.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
+	16, // 25: peers_touch.model.chat.v1.FederatedPrepareMessagingSendRequest.request:type_name -> peers_touch.model.chat.v1.PrepareMessagingSendRequest
+	26, // 26: peers_touch.model.chat.v1.SubmitMessagingCommandRequest.command:type_name -> peers_touch.model.chat.v1.ChatCommand
+	27, // 27: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	0,  // 28: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.reject_code:type_name -> peers_touch.model.chat.v1.MessagingCommandRejectCode
+	17, // 29: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.current_send_plan:type_name -> peers_touch.model.chat.v1.PrepareMessagingSendResponse
+	30, // [30:30] is the sub-list for method output_type
+	30, // [30:30] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_messaging_api_proto_init() }
@@ -1362,13 +1727,14 @@ func file_domain_chat_messaging_api_proto_init() {
 	file_domain_chat_endpoint_proto_init()
 	file_domain_chat_event_proto_init()
 	file_domain_chat_federation_proto_init()
+	file_domain_chat_messaging_api_proto_msgTypes[8].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_messaging_api_proto_rawDesc), len(file_domain_chat_messaging_api_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   15,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -20,6 +20,17 @@ import (
 
 const deliveryCommitmentDomain = "peers-touch/device-delivery-commitment"
 const deliveryPlanDomain = "peers-touch/messaging-send-delivery-plan"
+const followerProjectionIdentityDomain = "peers-touch/messaging-follower-projection"
+
+const MessagingFollowerProjectionFormatVersion uint32 = 1
+
+const (
+	projectionEntitlementInitialMember = "initial_member"
+	projectionEntitlementActiveMember  = "active_member"
+	projectionEntitlementPreState      = "membership_pre_state"
+	projectionEntitlementPostState     = "membership_post_state"
+	projectionEntitlementPreAndPost    = "membership_pre_and_post_state"
+)
 
 type AuthorityService struct {
 	unitOfWork       messaging.AuthorityUnitOfWork
@@ -308,6 +319,13 @@ func (s *AuthorityService) Submit(
 			command.ObservedMlsEpoch != conversation.MlsEpoch {
 			return messaging.ErrStaleDeliveryPlan
 		}
+		preProjectionMembers, err := repositories.Authority.ListActiveMembers(
+			ctx,
+			command.ConversationId,
+		)
+		if err != nil {
+			return err
+		}
 
 		eventID := uuid.NewSHA1(
 			uuid.NameSpaceOID,
@@ -340,6 +358,25 @@ func (s *AuthorityService) Submit(
 			return err
 		}
 		if err := repositories.Authority.AppendEvent(ctx, event); err != nil {
+			return err
+		}
+		postProjectionMembers, err := repositories.Authority.ListActiveMembers(
+			ctx,
+			command.ConversationId,
+		)
+		if err != nil {
+			return err
+		}
+		if err := enqueueFollowerProjections(
+			ctx,
+			repositories,
+			event,
+			preProjectionMembers,
+			postProjectionMembers,
+			s.localStationID,
+			s.frameSigner,
+			s.clock().UTC(),
+		); err != nil {
 			return err
 		}
 		if send := command.GetSendMessage(); send != nil && len(send.Attachments) > 0 {
@@ -544,15 +581,12 @@ func commitMembershipTransitionFromPlan(
 	if err != nil {
 		return nil, err
 	}
-	committedChanges := make([]*chat.MessagingMembershipChangeCommitted, 0, len(transition.Changes))
-	for _, change := range transition.Changes {
-		committedChanges = append(committedChanges, &chat.MessagingMembershipChangeCommitted{
-			Action:        change.Action,
-			Ptid:          change.Ptid,
-			DeviceId:      change.DeviceId,
-			HomeStationId: change.HomeStationId,
-			Role:          change.Role,
-		})
+	preProjectionMembers, err := repositories.Authority.ListActiveMembers(
+		ctx,
+		command.ConversationId,
+	)
+	if err != nil {
+		return nil, err
 	}
 	if err := applyMembershipMutation(
 		ctx,
@@ -561,6 +595,21 @@ func commitMembershipTransitionFromPlan(
 		&snapshot,
 		conversation.CurrentSequence+1,
 	); err != nil {
+		return nil, err
+	}
+	postProjectionMembers, err := repositories.Authority.ListActiveMembers(
+		ctx,
+		command.ConversationId,
+	)
+	if err != nil {
+		return nil, err
+	}
+	committedChanges, err := buildCommittedMembershipChanges(
+		transition.Changes,
+		preProjectionMembers,
+		postProjectionMembers,
+	)
+	if err != nil {
 		return nil, err
 	}
 	postState, err := buildConversationAuthoritySnapshot(
@@ -612,6 +661,18 @@ func commitMembershipTransitionFromPlan(
 		return nil, err
 	}
 	if err := repositories.Authority.AppendEvent(ctx, event); err != nil {
+		return nil, err
+	}
+	if err := enqueueFollowerProjections(
+		ctx,
+		repositories,
+		event,
+		preProjectionMembers,
+		postProjectionMembers,
+		localStationID,
+		frameSigner,
+		now,
+	); err != nil {
 		return nil, err
 	}
 	if err := repositories.Authority.AdvanceEpochs(
@@ -892,10 +953,18 @@ func applyMembershipMutation(
 		if role == "" {
 			role = "member"
 		}
+		homeStationID, err := actorHomeStationFromManifests(
+			snapshot.EndpointManifests,
+			request.TargetPtid,
+		)
+		if err != nil {
+			return err
+		}
 		if err := repositories.Authority.AddMember(
 			ctx,
 			request.ConversationId,
 			request.TargetPtid,
+			homeStationID,
 			role,
 			sequence,
 		); err != nil {
@@ -1020,6 +1089,17 @@ func commitGroupGenesisFromPlan(
 	if !endpointSlicesEqual(currentEndpoints, snapshot.ProspectiveEndpoints) {
 		return nil, messaging.ErrAuthorityPlanStale
 	}
+	routedMembers, err := authorityMembersFromManifests(
+		actors,
+		command.Sender.Ptid,
+		currentManifests,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if authorityMemberHomeStation(routedMembers, command.Sender.Ptid) != localStationID {
+		return nil, messaging.ErrEndpointManifestConflict
+	}
 	if err := validateGenesisTransitionBinding(
 		command.Sender,
 		currentEndpoints,
@@ -1054,16 +1134,13 @@ func commitGroupGenesisFromPlan(
 	if !created {
 		return nil, messaging.ErrCommandConflict
 	}
-	for _, actor := range actors {
-		role := "member"
-		if actor == conversation.OwnerPTID {
-			role = "owner"
-		}
+	for _, member := range routedMembers {
 		if err := repositories.Authority.AddMember(
 			ctx,
 			command.ConversationId,
-			actor,
-			role,
+			member.PTID,
+			member.HomeStationID,
+			member.Role,
 			2,
 		); err != nil {
 			return nil, err
@@ -1082,7 +1159,7 @@ func commitGroupGenesisFromPlan(
 	createdEvent, createdPayloads, err := buildConversationCreatedEvent(
 		conversation,
 		command.Sender,
-		actors,
+		routedMembers,
 		currentEndpoints,
 		localStationID,
 		now,
@@ -1091,6 +1168,18 @@ func commitGroupGenesisFromPlan(
 		return nil, err
 	}
 	if err := repositories.Authority.AppendEvent(ctx, createdEvent); err != nil {
+		return nil, err
+	}
+	if err := enqueueFollowerProjections(
+		ctx,
+		repositories,
+		createdEvent,
+		nil,
+		routedMembers,
+		localStationID,
+		frameSigner,
+		now,
+	); err != nil {
 		return nil, err
 	}
 	senderActorIdentityKey, err := repositories.Devices.ActorIdentityPublicKey(
@@ -1136,6 +1225,25 @@ func commitGroupGenesisFromPlan(
 		return nil, err
 	}
 	if err := repositories.Authority.AppendEvent(ctx, event); err != nil {
+		return nil, err
+	}
+	postProjectionMembers, err := repositories.Authority.ListActiveMembers(
+		ctx,
+		command.ConversationId,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := enqueueFollowerProjections(
+		ctx,
+		repositories,
+		event,
+		routedMembers,
+		postProjectionMembers,
+		localStationID,
+		frameSigner,
+		now,
+	); err != nil {
 		return nil, err
 	}
 	if err := repositories.Authority.AdvanceEpochs(
@@ -1301,11 +1409,15 @@ func validateGenesisTransitionBinding(
 func buildConversationCreatedEvent(
 	conversation *messaging.AuthorityConversation,
 	creator *chat.CryptoEndpoint,
-	memberPTIDs []string,
+	members []messaging.AuthorityMember,
 	endpoints []*chat.CryptoEndpoint,
 	authorityStationID string,
 	now time.Time,
 ) (*chat.ConversationEvent, []*chat.PreparedEndpointPayload, error) {
+	routedMembers, err := conversationAuthorityMembers(members)
+	if err != nil {
+		return nil, nil, err
+	}
 	eventID := "created:" + conversation.ConversationID
 	markerBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
 		&chat.ConversationStateMarker{
@@ -1338,10 +1450,10 @@ func buildConversationCreatedEvent(
 		AuthorityStationId: authorityStationID,
 		Payload: &chat.ConversationEvent_ConversationCreated{
 			ConversationCreated: &chat.ConversationCreatedFact{
-				Kind:        chat.ConversationKind_CONVERSATION_KIND_GROUP,
-				Name:        conversation.Name,
-				OwnerPtid:   conversation.OwnerPTID,
-				MemberPtids: memberPTIDs,
+				Kind:      chat.ConversationKind_CONVERSATION_KIND_GROUP,
+				Name:      conversation.Name,
+				OwnerPtid: conversation.OwnerPTID,
+				Members:   routedMembers,
 			},
 		},
 	}
@@ -1660,15 +1772,9 @@ func buildConversationAuthoritySnapshot(
 	if err != nil {
 		return nil, err
 	}
-	activeMembers := make([]*chat.ConversationAuthorityMember, 0, len(members))
-	for _, member := range members {
-		if !member.Active || strings.TrimSpace(member.PTID) == "" || strings.TrimSpace(member.Role) == "" {
-			return nil, messaging.ErrConversationState
-		}
-		activeMembers = append(activeMembers, &chat.ConversationAuthorityMember{
-			Ptid: member.PTID,
-			Role: member.Role,
-		})
+	activeMembers, err := conversationAuthorityMembers(members)
+	if err != nil {
+		return nil, err
 	}
 	activeEndpoints := make([]*chat.CryptoEndpoint, 0, len(devices))
 	for _, device := range devices {
@@ -1927,7 +2033,6 @@ func buildMembershipTransitionEventAndPayloads(
 	for _, endpoint := range endpoints {
 		expectedChanges[endpointKey(endpoint)] = struct{}{}
 	}
-	committedChanges := make([]*chat.MessagingMembershipChangeCommitted, 0, len(transition.Changes))
 	for _, change := range transition.Changes {
 		if change == nil ||
 			change.Ptid == "" ||
@@ -1941,16 +2046,21 @@ func buildMembershipTransitionEventAndPayloads(
 			return nil, nil, messaging.ErrDeliverySet
 		}
 		delete(expectedChanges, key)
-		committedChanges = append(committedChanges, &chat.MessagingMembershipChangeCommitted{
-			Action:        change.Action,
-			Ptid:          change.Ptid,
-			DeviceId:      change.DeviceId,
-			HomeStationId: change.HomeStationId,
-			Role:          change.Role,
-		})
 	}
 	if len(expectedChanges) != 0 {
 		return nil, nil, messaging.ErrDeliverySet
+	}
+	members, err := repositories.Authority.ListActiveMembers(ctx, command.ConversationId)
+	if err != nil {
+		return nil, nil, err
+	}
+	committedChanges, err := buildCommittedMembershipChanges(
+		transition.Changes,
+		members,
+		members,
+	)
+	if err != nil {
+		return nil, nil, err
 	}
 	postState, err := buildConversationAuthoritySnapshot(ctx, repositories, conversation, 1, 1)
 	if err != nil {

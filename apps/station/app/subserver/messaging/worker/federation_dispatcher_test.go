@@ -105,6 +105,22 @@ func TestFederationDispatcherDeliversRetriesAndDeadLetters(t *testing.T) {
 				LeaseGeneration: 1,
 				AttemptCount:    3,
 			},
+			{
+				Frame: &chat.MessagingFederationFrame{
+					FrameId:     "projection-exhausted",
+					PayloadType: chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION,
+				},
+				LeaseGeneration: 1,
+				AttemptCount:    3,
+			},
+			{
+				Frame: &chat.MessagingFederationFrame{
+					FrameId:     "device-gap-exhausted",
+					PayloadType: chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH,
+				},
+				LeaseGeneration: 1,
+				AttemptCount:    3,
+			},
 		},
 	}
 	dispatcher, err := NewFederationDispatcher(
@@ -115,6 +131,14 @@ func TestFederationDispatcherDeliversRetriesAndDeadLetters(t *testing.T) {
 			"retry":     {Retryable: true, ErrorCode: "network"},
 			"terminal":  {Retryable: false, ErrorCode: "invalid_frame"},
 			"exhausted": {Retryable: true, ErrorCode: "network"},
+			"projection-exhausted": {
+				Retryable: true,
+				ErrorCode: "network",
+			},
+			"device-gap-exhausted": {
+				Retryable: true,
+				ErrorCode: "http_503",
+			},
 		}},
 		FederationDispatcherPolicy{
 			BatchSize:     10,
@@ -132,17 +156,20 @@ func TestFederationDispatcherDeliversRetriesAndDeadLetters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if processed != 4 {
-		t.Fatalf("processed = %d, want 4", processed)
+	if processed != 6 {
+		t.Fatalf("processed = %d, want 6", processed)
 	}
 	if len(repository.delivered) != 1 || repository.delivered[0] != "delivered" {
 		t.Fatalf("delivered = %v", repository.delivered)
 	}
-	if len(repository.retried) != 1 || repository.retried[0] != "retry" {
+	if len(repository.retried) != 3 ||
+		repository.retried[0] != "retry" ||
+		repository.retried[1] != "projection-exhausted" ||
+		repository.retried[2] != "device-gap-exhausted" {
 		t.Fatalf("retried = %v", repository.retried)
 	}
-	if repository.retryAt != now.Add(2*time.Second) {
-		t.Fatalf("retry at = %v, want %v", repository.retryAt, now.Add(2*time.Second))
+	if repository.retryAt != now.Add(4*time.Second) {
+		t.Fatalf("retry at = %v, want %v", repository.retryAt, now.Add(4*time.Second))
 	}
 	if len(repository.deadLettered) != 2 {
 		t.Fatalf("dead lettered = %v", repository.deadLettered)

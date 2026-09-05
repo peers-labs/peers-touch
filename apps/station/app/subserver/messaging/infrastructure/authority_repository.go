@@ -32,6 +32,7 @@ func (*AuthorityConversationModel) TableName() string {
 type AuthorityMemberModel struct {
 	ConversationID string `gorm:"column:conversation_id;size:128;primaryKey"`
 	PTID           string `gorm:"column:ptid;size:255;primaryKey"`
+	HomeStationID  string `gorm:"column:home_station_id;size:255;not null;default:''"`
 	Role           string `gorm:"column:role;size:32;not null"`
 	Active         bool   `gorm:"column:active;not null;index"`
 	JoinedSequence int64  `gorm:"column:joined_sequence;not null"`
@@ -170,32 +171,64 @@ func (r *AuthorityRepository) AddMember(
 	ctx context.Context,
 	conversationID string,
 	ptid string,
+	homeStationID string,
 	role string,
 	joinedSequence int64,
 ) error {
-	if conversationID == "" || ptid == "" || role == "" || joinedSequence <= 0 {
+	if conversationID == "" ||
+		ptid == "" ||
+		homeStationID == "" ||
+		role == "" ||
+		joinedSequence <= 0 {
 		return fmt.Errorf("messaging: actor membership is required")
 	}
-	return r.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns: []clause.Column{
-				{Name: "conversation_id"},
-				{Name: "ptid"},
-			},
-			DoUpdates: clause.Assignments(map[string]any{
-				"role":            role,
-				"active":          true,
-				"left_sequence":   0,
-				"joined_sequence": joinedSequence,
-			}),
-		}).
-		Create(&AuthorityMemberModel{
-			ConversationID: conversationID,
-			PTID:           ptid,
-			Role:           role,
-			Active:         true,
-			JoinedSequence: joinedSequence,
-		}).Error
+	model := &AuthorityMemberModel{
+		ConversationID: conversationID,
+		PTID:           ptid,
+		HomeStationID:  homeStationID,
+		Role:           role,
+		Active:         true,
+		JoinedSequence: joinedSequence,
+	}
+	result := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Create(model)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 1 {
+		return nil
+	}
+	var existing AuthorityMemberModel
+	if err := r.db.WithContext(ctx).
+		Where("conversation_id = ? AND ptid = ?", conversationID, ptid).
+		First(&existing).Error; err != nil {
+		return err
+	}
+	if existing.HomeStationID != homeStationID {
+		return messaging.ErrEndpointManifestConflict
+	}
+	update := r.db.WithContext(ctx).
+		Model(&AuthorityMemberModel{}).
+		Where(
+			"conversation_id = ? AND ptid = ? AND home_station_id = ?",
+			conversationID,
+			ptid,
+			homeStationID,
+		).
+		Updates(map[string]any{
+			"role":            role,
+			"active":          true,
+			"left_sequence":   0,
+			"joined_sequence": joinedSequence,
+		})
+	if update.Error != nil {
+		return update.Error
+	}
+	if update.RowsAffected != 1 {
+		return messaging.ErrEndpointManifestConflict
+	}
+	return nil
 }
 
 func (r *AuthorityRepository) AddMemberDevice(
@@ -248,9 +281,10 @@ func (r *AuthorityRepository) GetMember(
 		return nil, err
 	}
 	return &messaging.AuthorityMember{
-		PTID:   model.PTID,
-		Role:   model.Role,
-		Active: model.Active,
+		PTID:          model.PTID,
+		HomeStationID: model.HomeStationID,
+		Role:          model.Role,
+		Active:        model.Active,
 	}, nil
 }
 
@@ -268,9 +302,10 @@ func (r *AuthorityRepository) ListActiveMembers(
 	members := make([]messaging.AuthorityMember, 0, len(models))
 	for _, model := range models {
 		members = append(members, messaging.AuthorityMember{
-			PTID:   model.PTID,
-			Role:   model.Role,
-			Active: model.Active,
+			PTID:          model.PTID,
+			HomeStationID: model.HomeStationID,
+			Role:          model.Role,
+			Active:        model.Active,
 		})
 	}
 	return members, nil
@@ -386,59 +421,114 @@ func (r *AuthorityRepository) AutoMigrate() error {
 	); err != nil {
 		return err
 	}
-	if err := r.backfillMessageIdentity(); err != nil {
-		return err
-	}
-	if !r.db.Migrator().HasTable("messaging_member_devices") {
-		return nil
-	}
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		var legacyRows []AuthorityMemberDeviceModel
-		if err := tx.Table("messaging_member_devices").Find(&legacyRows).Error; err != nil {
-			return err
-		}
-		conversations := make(map[string]AuthorityConversationModel)
-		for _, legacy := range legacyRows {
-			conversation, ok := conversations[legacy.ConversationID]
-			if !ok {
-				if err := tx.First(
-					&conversation,
-					"conversation_id = ?",
-					legacy.ConversationID,
-				).Error; err != nil {
+	if r.db.Migrator().HasTable("messaging_member_devices") {
+		if err := r.db.Transaction(func(tx *gorm.DB) error {
+			var legacyRows []AuthorityMemberDeviceModel
+			if err := tx.Table("messaging_member_devices").Find(&legacyRows).Error; err != nil {
+				return err
+			}
+			conversations := make(map[string]AuthorityConversationModel)
+			for _, legacy := range legacyRows {
+				conversation, ok := conversations[legacy.ConversationID]
+				if !ok {
+					if err := tx.First(
+						&conversation,
+						"conversation_id = ?",
+						legacy.ConversationID,
+					).Error; err != nil {
+						return err
+					}
+					conversations[legacy.ConversationID] = conversation
+				}
+				homeStationID, err := authorityActorHomeStationID(
+					tx,
+					legacy.PTID,
+				)
+				if err != nil {
 					return err
 				}
-				conversations[legacy.ConversationID] = conversation
-			}
-			role := "member"
-			if conversation.OwnerPTID == legacy.PTID {
-				role = "owner"
-			}
-			if legacy.Active {
+				role := "member"
+				if conversation.OwnerPTID == legacy.PTID {
+					role = "owner"
+				}
+				if legacy.Active {
+					if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+						Create(&AuthorityMemberModel{
+							ConversationID: legacy.ConversationID,
+							PTID:           legacy.PTID,
+							HomeStationID:  homeStationID,
+							Role:           role,
+							Active:         true,
+							JoinedSequence: 1,
+						}).Error; err != nil {
+						return err
+					}
+				}
 				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
-					Create(&AuthorityMemberModel{
+					Create(&AuthorityMemberDeviceModel{
 						ConversationID: legacy.ConversationID,
 						PTID:           legacy.PTID,
-						Role:           role,
-						Active:         true,
+						DeviceID:       legacy.DeviceID,
+						Active:         legacy.Active,
 						JoinedSequence: 1,
 					}).Error; err != nil {
 					return err
 				}
 			}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
-				Create(&AuthorityMemberDeviceModel{
-					ConversationID: legacy.ConversationID,
-					PTID:           legacy.PTID,
-					DeviceID:       legacy.DeviceID,
-					Active:         legacy.Active,
-					JoinedSequence: 1,
-				}).Error; err != nil {
-				return err
-			}
+			return tx.Migrator().DropTable("messaging_member_devices")
+		}); err != nil {
+			return err
 		}
-		return tx.Migrator().DropTable("messaging_member_devices")
-	})
+	}
+	if err := r.backfillAuthorityMemberHomeStations(); err != nil {
+		return err
+	}
+	return r.backfillMessageIdentity()
+}
+
+func (r *AuthorityRepository) backfillAuthorityMemberHomeStations() error {
+	var members []AuthorityMemberModel
+	if err := r.db.
+		Where("home_station_id = '' OR home_station_id IS NULL").
+		Order("conversation_id ASC, ptid ASC").
+		Find(&members).Error; err != nil {
+		return err
+	}
+	for _, member := range members {
+		homeStationID, err := authorityActorHomeStationID(r.db, member.PTID)
+		if err != nil {
+			return fmt.Errorf(
+				"messaging: backfill authority member %s in conversation %s: %w",
+				member.PTID,
+				member.ConversationID,
+				err,
+			)
+		}
+		if err := r.db.Model(&AuthorityMemberModel{}).
+			Where(
+				"conversation_id = ? AND ptid = ? AND (home_station_id = '' OR home_station_id IS NULL)",
+				member.ConversationID,
+				member.PTID,
+			).
+			Update("home_station_id", homeStationID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func authorityActorHomeStationID(db *gorm.DB, ptid string) (string, error) {
+	var actor ActorFederationReadModel
+	if err := db.
+		Select("ptid", "home_station_peer_id").
+		Where("ptid = ?", ptid).
+		First(&actor).Error; err != nil {
+		return "", err
+	}
+	if actor.HomeStationPeerID == "" {
+		return "", messaging.ErrEndpointManifestInvalid
+	}
+	return actor.HomeStationPeerID, nil
 }
 
 func (r *AuthorityRepository) backfillMessageIdentity() error {

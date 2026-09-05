@@ -4,12 +4,11 @@ use crate::contracts::{
     ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput,
     GroupAckOfflineInput, GroupAddFederatedMemberInput, GroupChatCreateGroupInput,
     GroupChatEditInput, GroupChatFederatedActorInput, GroupChatLeaveGroupInput, GroupChatListInput,
-    GroupChatListMessagesInput, GroupChatMarkReadInput, GroupChatSyncInput,
-    GroupChatThreadCountsInput, GroupChatThreadInput, GroupChatUnreadInput, GroupInviteInput,
-    GroupJoinInput, GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
-    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupTransferOwnershipInput, GroupUlidInput,
-    GroupUpdateInput, GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput,
-    StubPayload,
+    GroupChatListMessagesInput, GroupChatMarkReadInput, GroupChatSyncInput, GroupChatThreadInput,
+    GroupChatUnreadInput, GroupInviteInput, GroupJoinInput, GroupMembersInput,
+    GroupMessageActionInput, GroupOfflineMessagesInput, GroupRemoveMemberInput,
+    GroupSearchMessagesInput, GroupTransferOwnershipInput, GroupUlidInput, GroupUpdateInput,
+    GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -235,30 +234,6 @@ pub fn group_chat_list_thread_messages(
         Err(error) => return error.into_app_result("station request failed"),
     };
     to_stub("group_chat_list_thread_messages", data)
-}
-
-#[tauri::command]
-pub fn group_chat_thread_counts(
-    input: GroupChatThreadCountsInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    if input.group_ulid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
-    }
-    let data = match chat_storage::group_thread_counts(
-        &token,
-        input.group_ulid.as_str(),
-        input.root_ulids.as_slice(),
-    ) {
-        Ok(data) => data,
-        Err(error) => return error.into_app_result("station request failed"),
-    };
-    to_stub("group_chat_thread_counts", data)
 }
 
 #[tauri::command]

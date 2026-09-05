@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.4
-> **Created**: 2026-08-08 | **Updated**: 2026-09-04
+> **Created**: 2026-08-08 | **Updated**: 2026-09-05
 > **Owner**: Messaging Platform Team
 
 ---
@@ -39,7 +39,7 @@
 | MP-D26 | Durable message interactions 共用 authority sequence 与 atomic device consumption | accepted |
 | MP-D27 | Typing 使用独立 ephemeral QoS，不进入 durable message lane | accepted |
 | MP-D28 | 采用行业基线：pending retry + accepted 后留痕 retract | accepted |
-| MP-D29 | Home Station 使用 authority-signed follower membership projection | proposed |
+| MP-D29 | Home Station 使用 authority-signed follower membership projection | accepted |
 
 ---
 
@@ -405,7 +405,7 @@ Owner accepted on 2026-08-17: “与业界保持一致，不要太复杂”。
 
 ## MP-D29: Home Station 使用 Authority-Signed Follower Membership Projection
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-09-04
 
 ### Context
@@ -567,6 +567,13 @@ projection提供，不再调用 legacy plaintext Conversation thread endpoint。
 只有当 future architecture取消 Home Station actor-local settings ownership，或
 Conversation Authority 不再产生可验证 public membership event时重新评估。性能压力
 不是回退到 queue-history/client-trust authorization 的理由。
+
+### Acceptance
+
+Owner accepted on 2026-09-05 by continuing from the explicit MP-D29 design
+gate. Implementation proof remains governed by the MP-D29 architecture gates;
+acceptance of the decision does not mark the follower projection as implemented
+or proven.
 
 ## MP-D23: Attachment Object 与 Transfer Session 由 Conversation Authority 拥有
 

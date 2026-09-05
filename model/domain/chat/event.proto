@@ -56,7 +56,9 @@ message ConversationCreatedFact {
   ConversationKind kind = 1;
   string name = 2;
   string owner_ptid = 3;
-  repeated string member_ptids = 4;
+  reserved 4;
+  reserved "member_ptids";
+  repeated ConversationAuthorityMember members = 5;
 }
 
 message MessagingMembershipChangeCommitted {
@@ -70,6 +72,7 @@ message MessagingMembershipChangeCommitted {
 message ConversationAuthorityMember {
   string ptid = 1;
   string role = 2;
+  string home_station_id = 3;
 }
 
 // Complete public state after one membership transition. It is embedded in

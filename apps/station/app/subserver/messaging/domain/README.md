@@ -5,6 +5,7 @@ This package is the Station Messaging Platform's dependency root.
 It owns:
 
 - authority conversation and event contracts;
+- authority projection grants and follower persistence contracts;
 - device queue repository and fencing contracts;
 - federation outbox/inbox contracts and authenticated claim names;
 - opaque recovery revision contracts;

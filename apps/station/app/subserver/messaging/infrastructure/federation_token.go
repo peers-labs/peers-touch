@@ -2,10 +2,12 @@ package infrastructure
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/application"
 	messaging "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/scope"
@@ -51,6 +53,20 @@ func RegisterMessagingFederationScope() {
 				AudienceRequired: true,
 				AllowedClaimKeys: []string{
 					messaging.FederationClaimConversationID,
+					messaging.FederationClaimSourceStationID,
+					messaging.FederationClaimTargetStationID,
+				},
+			},
+		})
+		scope.MustRegister(scope.Scope{
+			Name:        messaging.FollowerReplayScope,
+			Description: "read grant-scoped signed follower events from their Authority Station",
+			Policy: scope.Policy{
+				TTLMax:           time.Minute,
+				AudienceRequired: true,
+				AllowedClaimKeys: []string{
+					messaging.FederationClaimConversationID,
+					messaging.FederationClaimRequestSHA256,
 					messaging.FederationClaimSourceStationID,
 					messaging.FederationClaimTargetStationID,
 				},
@@ -178,6 +194,39 @@ func (m *PeerJWTFederationTokenMinter) MintAuthorityPrepare(
 		TTL:      time.Minute,
 		Custom: map[string]string{
 			messaging.FederationClaimConversationID:  conversationID,
+			messaging.FederationClaimSourceStationID: m.sourceStationID,
+			messaging.FederationClaimTargetStationID: targetStationID,
+		},
+	})
+}
+
+func (m *PeerJWTFederationTokenMinter) MintFollowerReplayRead(
+	ctx context.Context,
+	targetStationID string,
+	request *chat.GetMessagingFollowerEventsRequest,
+) (string, error) {
+	if targetStationID == "" ||
+		targetStationID == m.sourceStationID ||
+		request == nil ||
+		request.AuthorityStationId != targetStationID ||
+		request.TargetHomeStationId != m.sourceStationID ||
+		request.ConversationId == "" {
+		return "", fmt.Errorf("messaging: follower replay token binding is invalid")
+	}
+	requestHash, err := application.FollowerReplayRequestSHA256(request)
+	if err != nil {
+		return "", err
+	}
+	RegisterMessagingFederationScope()
+	return authfed.Mint(ctx, m.keyCache, authfed.MintRequest{
+		Scope:    messaging.FollowerReplayScope,
+		Issuer:   m.sourceStationID,
+		Audience: targetStationID,
+		Subject:  m.sourceStationID,
+		TTL:      time.Minute,
+		Custom: map[string]string{
+			messaging.FederationClaimConversationID:  request.ConversationId,
+			messaging.FederationClaimRequestSHA256:   hex.EncodeToString(requestHash),
 			messaging.FederationClaimSourceStationID: m.sourceStationID,
 			messaging.FederationClaimTargetStationID: targetStationID,
 		},

@@ -15,6 +15,7 @@ import (
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	actordb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/driver/sqlite"
@@ -111,6 +112,7 @@ func seedDirectConversation(t *testing.T, db *gorm.DB, conversationID string) {
 		{
 			ConversationID: conversationID,
 			PTID:           "alice",
+			HomeStationID:  "station:local",
 			Role:           "owner",
 			Active:         true,
 			JoinedSequence: 1,
@@ -118,6 +120,7 @@ func seedDirectConversation(t *testing.T, db *gorm.DB, conversationID string) {
 		{
 			ConversationID: conversationID,
 			PTID:           "bob",
+			HomeStationID:  "station:local",
 			Role:           "member",
 			Active:         true,
 			JoinedSequence: 1,
@@ -362,6 +365,11 @@ func TestAuthorityCommitAtomicallyPartitionsRemoteHomeStationDelivery(t *testing
 		Update("home_station_peer_id", "station:remote").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Model(&infrastructure.AuthorityMemberModel{}).
+		Where("conversation_id = ? AND ptid = ?", "direct-federated", "bob").
+		Update("home_station_id", "station:remote").Error; err != nil {
+		t.Fatal(err)
+	}
 	command := directCommand("direct-federated", "command-federated")
 	bindSendPlan(t, service, command)
 
@@ -379,29 +387,129 @@ func TestAuthorityCommitAtomicallyPartitionsRemoteHomeStationDelivery(t *testing
 	if queueCount != 2 {
 		t.Fatalf("local queue rows = %d, want 2", queueCount)
 	}
-	var outbox infrastructure.FederationOutboxModel
-	if err := db.First(&outbox).Error; err != nil {
+	var outbox []infrastructure.FederationOutboxModel
+	if err := db.Order("frame_id ASC").Find(&outbox).Error; err != nil {
 		t.Fatal(err)
 	}
-	if outbox.SourceStationID != "station:local" ||
-		outbox.TargetStationID != "station:remote" ||
-		outbox.State != "pending" {
+	if len(outbox) != 2 {
 		t.Fatalf("federation outbox = %+v", outbox)
 	}
-	frame := &chat.MessagingFederationFrame{}
-	if err := proto.Unmarshal(outbox.FrameBytes, frame); err != nil {
-		t.Fatal(err)
+	var deviceFrame *chat.MessagingFederationFrame
+	var projectionFrame *chat.MessagingFederationFrame
+	for _, row := range outbox {
+		frame := &chat.MessagingFederationFrame{}
+		if err := proto.Unmarshal(row.FrameBytes, frame); err != nil {
+			t.Fatal(err)
+		}
+		if frame.SourceStationId != "station:local" ||
+			frame.TargetStationId != "station:remote" ||
+			row.State != "pending" {
+			t.Fatalf("federation outbox row = %+v frame=%+v", row, frame)
+		}
+		switch frame.PayloadType {
+		case chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH:
+			deviceFrame = frame
+		case chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION:
+			projectionFrame = frame
+		}
+	}
+	if deviceFrame == nil || projectionFrame == nil {
+		t.Fatalf("missing device/projection frames: device=%v projection=%v", deviceFrame, projectionFrame)
 	}
 	batch := &chat.FederatedDeviceQueueBatch{}
-	if err := proto.Unmarshal(frame.OpaquePayload, batch); err != nil {
+	if err := proto.Unmarshal(deviceFrame.OpaquePayload, batch); err != nil {
 		t.Fatal(err)
 	}
-	if frame.EventId != event.EventId ||
-		frame.AuthoritySequence != event.Sequence ||
+	if deviceFrame.EventId != event.EventId ||
+		deviceFrame.AuthoritySequence != event.Sequence ||
 		len(batch.Writes) != 1 ||
 		batch.Writes[0].Recipient.Ptid != "bob" ||
 		batch.Writes[0].Recipient.DeviceId != "bob-1" {
-		t.Fatalf("federation frame = %+v batch=%+v", frame, batch)
+		t.Fatalf("federation frame = %+v batch=%+v", deviceFrame, batch)
+	}
+	var projection chat.MessagingFollowerProjection
+	if err := proto.Unmarshal(projectionFrame.OpaquePayload, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(projection.ConversationEvent, event) ||
+		projection.TargetHomeStationId != "station:remote" {
+		t.Fatalf("follower projection = %+v", projection)
+	}
+	var grants []infrastructure.EventProjectionGrantModel
+	if err := db.Find(&grants).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(grants) != 1 ||
+		grants[0].EventID != event.EventId ||
+		grants[0].TargetHomeStationID != "station:remote" {
+		t.Fatalf("event projection grants = %+v", grants)
+	}
+	if _, err := service.Submit(context.Background(), command); err != nil {
+		t.Fatal(err)
+	}
+	var outboxCount int64
+	if err := db.Model(&infrastructure.FederationOutboxModel{}).Count(&outboxCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if outboxCount != 2 {
+		t.Fatalf("duplicate command changed federation outbox count to %d", outboxCount)
+	}
+}
+
+func TestAuthorityCommitProjectsToZeroDeviceMemberHomeStation(t *testing.T) {
+	db, service := newAuthorityFixture(t, messaging.QueueLimits{
+		MaxUnackedItems: 100,
+		MaxUnackedBytes: 1024 * 1024,
+	})
+	const conversationID = "direct-zero-device-member"
+	seedDirectConversation(t, db, conversationID)
+	if err := db.Model(&infrastructure.AuthorityMemberModel{}).
+		Where("conversation_id = ? AND ptid = ?", conversationID, "bob").
+		Update("home_station_id", "station:remote").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&infrastructure.AuthorityMemberDeviceModel{}).
+		Where("conversation_id = ? AND ptid = ?", conversationID, "bob").
+		Updates(map[string]any{"active": false, "left_sequence": 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	command := directCommand(conversationID, "command-zero-device")
+	command.GetSendMessage().DirectPayloads = command.GetSendMessage().DirectPayloads[:1]
+	bindSendPlan(t, service, command)
+
+	event, err := service.Submit(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []infrastructure.FederationOutboxModel
+	if err := db.Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("zero-device federation rows = %d, want one projection", len(rows))
+	}
+	var frame chat.MessagingFederationFrame
+	if err := proto.Unmarshal(rows[0].FrameBytes, &frame); err != nil {
+		t.Fatal(err)
+	}
+	if frame.PayloadType !=
+		chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION ||
+		frame.TargetStationId != "station:remote" ||
+		frame.EventId != event.EventId {
+		t.Fatalf("zero-device projection frame = %+v", frame)
+	}
+	var grant infrastructure.EventProjectionGrantModel
+	if err := db.First(
+		&grant,
+		"conversation_id = ? AND event_id = ?",
+		conversationID,
+		event.EventId,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if grant.TargetHomeStationID != "station:remote" ||
+		grant.EntitlementReason != "active_member" {
+		t.Fatalf("zero-device projection grant = %+v", grant)
 	}
 }
 
@@ -411,6 +519,11 @@ func TestQueueQuotaRollsBackEntireAuthorityCommit(t *testing.T) {
 		MaxUnackedBytes: 1,
 	})
 	seedDirectConversation(t, db, "direct-quota")
+	if err := db.Model(&infrastructure.AuthorityMemberModel{}).
+		Where("conversation_id = ? AND ptid = ?", "direct-quota", "bob").
+		Update("home_station_id", "station:remote").Error; err != nil {
+		t.Fatal(err)
+	}
 
 	command := directCommand("direct-quota", "command-quota")
 	command.GetSendMessage().Attachments = []*chat.EncryptedObjectDescriptor{
@@ -427,11 +540,13 @@ func TestQueueQuotaRollsBackEntireAuthorityCommit(t *testing.T) {
 		t.Fatalf("submit error = %v, want ErrQueueQuotaExceeded", err)
 	}
 	for name, model := range map[string]any{
-		"events":   &infrastructure.AuthorityEventModel{},
-		"receipts": &infrastructure.AuthorityCommandReceiptModel{},
-		"items":    &infrastructure.DeviceQueueItemModel{},
-		"lanes":    &infrastructure.DeviceQueueLaneModel{},
-		"grants":   &infrastructure.AttachmentGrantModel{},
+		"events":            &infrastructure.AuthorityEventModel{},
+		"receipts":          &infrastructure.AuthorityCommandReceiptModel{},
+		"items":             &infrastructure.DeviceQueueItemModel{},
+		"lanes":             &infrastructure.DeviceQueueLaneModel{},
+		"attachment grants": &infrastructure.AttachmentGrantModel{},
+		"projection grants": &infrastructure.EventProjectionGrantModel{},
+		"federation outbox": &infrastructure.FederationOutboxModel{},
 	} {
 		var count int64
 		if err := db.Model(model).Count(&count).Error; err != nil {
@@ -705,10 +820,24 @@ func TestActorMembershipOwnsConversationVisibilityIndependentlyOfDeviceLeaves(t 
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.AddMember(ctx, "group-membership", "alice", "owner", 1); err != nil {
+	if err := repository.AddMember(
+		ctx,
+		"group-membership",
+		"alice",
+		"station:local",
+		"owner",
+		1,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.AddMember(ctx, "group-membership", "bob", "member", 1); err != nil {
+	if err := repository.AddMember(
+		ctx,
+		"group-membership",
+		"bob",
+		"station:local",
+		"member",
+		1,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if err := repository.AddMemberDevice(
@@ -762,8 +891,37 @@ func TestAuthorityMigrationReplacesLegacyMemberDeviceTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&infrastructure.AuthorityConversationModel{}); err != nil {
+	if err := db.AutoMigrate(
+		&actordb.Actor{},
+		&infrastructure.AuthorityConversationModel{},
+	); err != nil {
 		t.Fatal(err)
+	}
+	for _, actor := range []actordb.Actor{
+		{
+			PTID:              "alice",
+			Namespace:         "peers",
+			PreferredUsername: "alice",
+			Email:             "alice@example.invalid",
+			PasswordHash:      "not-used",
+			FederatedHandle:   "@alice@local.invalid",
+			HomeStationPeerID: "station:local",
+			Origin:            "local",
+		},
+		{
+			PTID:              "bob",
+			Namespace:         "peers",
+			PreferredUsername: "bob",
+			Email:             "bob@example.invalid",
+			PasswordHash:      "not-used",
+			FederatedHandle:   "@bob@remote.invalid",
+			HomeStationPeerID: "station:remote",
+			Origin:            "remote_cached",
+		},
+	} {
+		if err := db.Create(&actor).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := db.Create(&infrastructure.AuthorityConversationModel{
 		ConversationID:  "legacy-group",
@@ -806,8 +964,10 @@ func TestAuthorityMigrationReplacesLegacyMemberDeviceTable(t *testing.T) {
 	}
 	if len(members) != 2 ||
 		members[0].PTID != "alice" ||
+		members[0].HomeStationID != "station:local" ||
 		members[0].Role != "owner" ||
 		members[1].PTID != "bob" ||
+		members[1].HomeStationID != "station:remote" ||
 		members[1].Role != "member" {
 		t.Fatalf("migrated actor memberships = %+v", members)
 	}

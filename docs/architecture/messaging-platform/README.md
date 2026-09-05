@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-09-04
+> **Created**: 2026-08-08 | **Updated**: 2026-09-05
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/app/subserver/`, `apps/desktop/`, `apps/mobile/`
 
@@ -74,12 +74,13 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 ## 5. 当前门状态
 
 - Product：`PRODUCT_ACCEPTED`
-- Architecture：`ARCHITECTURE_ACCEPTED`（`MP-D01`–`MP-D27`；interaction/typing
-  amendment accepted through the 2026-08-16 completion Goal）；`MP-D29`
-  authority-signed Home Station follower membership projection is
-  `PROPOSED / DESIGN_READY_FOR_REVIEW`。
-- Plan：base plan `PLAN_APPROVED`；`MP-W13` corrective amendment pending review。
+- Architecture：`ARCHITECTURE_ACCEPTED`（`MP-D01`–`MP-D29`；`MP-D29`
+  authority-signed Home Station follower membership projection accepted by
+  Owner on 2026-09-05）。
+- Plan：base plan `PLAN_APPROVED`；`MP-W14` follower-membership amendment
+  `PLAN_APPROVED`（Owner continued execution on 2026-09-05）。
 - Execution：live product evidence invalidated the prior MP-W10-E/MP-W12/MP-W11
   receiver-proof claims；`MP-W13` defines projection、interaction UI、identity/Station
-  attribution、conversation actions/background、attachments and real Native proof
-  closures before MP-W11 can close again。
+  attribution、conversation actions/background、attachments and real Native proof；
+  `MP-W14` owns follower projection、replay、canonical membership authorization and
+  the dependent Windows Chat proof。

@@ -95,7 +95,7 @@ pub use store::{
     MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, MlsTransitionSendCommit,
     PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft, PendingMlsKeyPackage,
     PendingMlsTransitionState, PendingPreKeyBundle, PendingSenderProjection,
-    PublicEventReceiveCommit, ReceiveCommitResult,
+    PublicEventReceiveCommit, ReceiveCommitResult, ThreadCountProjection,
 };
 pub use transport::{
     StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,

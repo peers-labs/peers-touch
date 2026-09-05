@@ -283,10 +283,6 @@ func (r *memConvRepo) ListThreadEvents(_ context.Context, conversationID, thread
 	return nil, nil
 }
 
-func (r *memConvRepo) CountThreadReplies(_ context.Context, conversationID string, rootIDs []string) (map[string]conversation.ThreadSummary, error) {
-	return make(map[string]conversation.ThreadSummary), nil
-}
-
 type spyEnvelope struct {
 	mu         sync.Mutex
 	events     []*chat.CommittedConversationEvent

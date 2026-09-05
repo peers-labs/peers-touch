@@ -157,7 +157,6 @@ impl MembershipTransitionPreparer {
                 action: input.action as i32,
                 ptid: endpoint.ptid.clone(),
                 device_id: endpoint.device_id.clone(),
-                home_station_id: String::new(),
                 role: input.role.clone(),
             })
             .collect::<Vec<_>>();

@@ -233,10 +233,12 @@ mod tests {
                             ConversationAuthorityMember {
                                 ptid: "ptid:alice".to_string(),
                                 role: "owner".to_string(),
+                                home_station_id: "station-local".to_string(),
                             },
                             ConversationAuthorityMember {
                                 ptid: "ptid:carol".to_string(),
                                 role: "member".to_string(),
+                                home_station_id: "station-remote".to_string(),
                             },
                         ],
                         active_endpoints: vec![

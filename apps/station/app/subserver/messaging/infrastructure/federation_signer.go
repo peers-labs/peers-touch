@@ -67,6 +67,19 @@ func (s *FederationFrameSigner) VerifyLocalEndpointManifest(
 	)
 }
 
+func (s *FederationFrameSigner) SignFollowerEventsPage(
+	ctx context.Context,
+	request *chat.GetMessagingFollowerEventsRequest,
+	page *chat.MessagingFollowerEventsPage,
+) error {
+	key, err := s.keys.Get(ctx)
+	if err != nil {
+		return err
+	}
+	return application.SignFollowerEventsPage(request, page, key.Kid, key.Priv)
+}
+
 var _ messaging.FederationFrameSigner = (*FederationFrameSigner)(nil)
 var _ messaging.EndpointManifestSigner = (*FederationFrameSigner)(nil)
 var _ messaging.LocalEndpointManifestVerifier = (*FederationFrameSigner)(nil)
+var _ messaging.FollowerReplayPageSigner = (*FederationFrameSigner)(nil)

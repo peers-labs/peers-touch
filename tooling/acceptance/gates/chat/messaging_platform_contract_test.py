@@ -8,7 +8,135 @@ ROOT = Path(__file__).resolve().parents[4]
 CHAT_PROTO = ROOT / "model/domain/chat"
 
 
+def text_offenders(
+    paths: tuple[Path, ...],
+    forbidden: tuple[str, ...],
+) -> dict[str, list[str]]:
+    offenders: dict[str, list[str]] = {}
+    for path in paths:
+        source = path.read_text(encoding="utf-8")
+        matches = [value for value in forbidden if value in source]
+        if matches:
+            offenders[str(path.relative_to(ROOT))] = matches
+    return offenders
+
+
 class MessagingPlatformContractTest(unittest.TestCase):
+    def test_legacy_conversation_thread_and_member_settings_contracts_are_deleted(
+        self,
+    ) -> None:
+        # Protobuf cannot reserve top-level message names; this denylist prevents reuse.
+        contract_sources = (
+            CHAT_PROTO / "conversation_api.proto",
+            ROOT / "apps/station/frame/touch/model/chat/conversation_api.pb.go",
+            ROOT / "apps/desktop/src/gen/proto/domain/chat/conversation_api_pb.ts",
+            ROOT / "apps/mobile/src/gen/proto/domain/chat/conversation_api_pb.ts",
+        )
+        self.assertEqual(
+            text_offenders(
+                contract_sources,
+                (
+                    "GetThreadCountsRequest",
+                    "ThreadCountEntry",
+                    "GetThreadCountsResponse",
+                    "MemberSettings",
+                    "GetMemberSettingsRequest",
+                    "GetMemberSettingsResponse",
+                    "UpdateMemberSettingsRequest",
+                    "UpdateMemberSettingsResponse",
+                ),
+            ),
+            {},
+        )
+
+        conversation_sources = tuple(
+            (ROOT / "apps/station/app/subserver/conversation").rglob("*.go")
+        )
+        desktop_sources = tuple(
+            (ROOT / "apps/desktop/src-tauri/src").rglob("*.rs")
+        ) + tuple((ROOT / "apps/desktop/src").rglob("*.ts*"))
+        self.assertEqual(
+            text_offenders(
+                conversation_sources + desktop_sources,
+                (
+                    "/conversation/thread/counts",
+                    "/conversation/member/settings",
+                    "conv-thread-counts",
+                    "conv-member-settings-get",
+                    "conv-member-settings-put",
+                    "group_chat_thread_counts",
+                    "conversation_thread_counts",
+                    "conversation_get_member_settings",
+                    "conversation_update_member_settings",
+                ),
+            ),
+            {},
+        )
+        self.assertEqual(
+            text_offenders(
+                desktop_sources,
+                (
+                    "GroupChatThreadCountsInput",
+                    "ConversationThreadCountsInput",
+                    "ConversationMemberSettingsInput",
+                    "ConversationUpdateMemberSettingsInput",
+                ),
+            ),
+            {},
+        )
+        self.assertEqual(
+            text_offenders(
+                conversation_sources,
+                (
+                    "handleGetThreadCounts",
+                    "handleGetMemberSettings",
+                    "handleUpdateMemberSettings",
+                    "GetThreadCounts",
+                    "CountThreadReplies",
+                    "ThreadSummary",
+                    "threadCountsRequest",
+                    "threadCountEntry",
+                    "threadCountsResponse",
+                    "getMemberSettingsRequest",
+                    "memberSettingsResponse",
+                    "updateMemberSettingsRequest",
+                    "memberSettingsResponseFrom",
+                    "publishMemberSettingsChanged",
+                    "requireActiveMessagingMembership",
+                    "conversationMemberSettingsModel",
+                    "memberSettingsProjection",
+                    "memberSettingsPatch",
+                    "memberSettingsStore",
+                    "newMemberSettingsStore",
+                    "normalizeConversationBackground",
+                    "projectMemberSettings",
+                ),
+            ),
+            {},
+        )
+
+        messaging_api = (CHAT_PROTO / "messaging_api.proto").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("message MessagingMemberSettings", messaging_api)
+        self.assertIn("message GetMessagingMemberSettingsRequest", messaging_api)
+        self.assertIn("message UpdateMessagingMemberSettingsRequest", messaging_api)
+
+    def test_member_settings_invalidation_is_addressed_by_ptid(self) -> None:
+        messaging_subserver = (
+            ROOT / "apps/station/app/subserver/messaging/subserver.go"
+        ).read_text(encoding="utf-8")
+        publisher = messaging_subserver.split(
+            "func publishMemberSettingsChanged(",
+            maxsplit=1,
+        )[1].split("\nfunc ", maxsplit=1)[0]
+
+        self.assertIn("bus.Publish(ptid,", publisher)
+        self.assertIn("ActorPtid:       ptid,", publisher)
+        self.assertNotIn("touchactor.GetActorByPTID", publisher)
+        self.assertNotIn("fmt.Sprintf", publisher)
+        self.assertNotIn("actor.ID", publisher)
+
     def test_crypto_endpoint_has_one_canonical_source(self) -> None:
         endpoint = (CHAT_PROTO / "endpoint.proto").read_text(encoding="utf-8")
 

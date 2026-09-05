@@ -25,6 +25,8 @@ type CompositionConfig struct {
 	QueueLimits                  domain.QueueLimits
 	QueuePolicy                  application.QueuePolicy
 	FederationPolicy             application.FederationPolicy
+	FollowerProjectionPolicy     application.FollowerProjectionPolicy
+	FollowerReplayPolicy         application.FollowerReplayPolicy
 	RecoveryPolicy               application.RecoveryPolicy
 	AuthorityPlanPolicy          application.AuthorityPlanPolicy
 	AttachmentPolicy             application.AttachmentPolicy
@@ -43,9 +45,13 @@ type CompositionConfig struct {
 type Composition struct {
 	AuthorityService          *application.AuthorityService
 	ConversationService       *application.ConversationService
+	MembershipReader          *application.MembershipReader
+	MemberSettingsService     *application.MemberSettingsService
 	DeviceService             *application.DeviceService
 	QueueService              *application.QueueService
 	FederationService         *application.FederationService
+	FollowerProjectionService *application.FollowerProjectionService
+	FollowerReplayService     *application.FollowerReplayService
 	EndpointManifestService   *application.EndpointManifestService
 	RecoveryService           *application.RecoveryService
 	AuthorityPlanService      *application.AuthorityPlanService
@@ -60,6 +66,8 @@ type Composition struct {
 	QueueHandler               *httpinterface.QueueHandler
 	FederationHandler          *httpinterface.FederationHandler
 	FederationAuth             server.Wrapper
+	FollowerReplayHandler      *httpinterface.FollowerReplayHandler
+	FollowerReplayAuth         server.Wrapper
 	EndpointManifestHandler    *httpinterface.EndpointManifestHandler
 	EndpointManifestAuth       server.Wrapper
 	AuthorityPrepareHandler    *httpinterface.AuthorityPrepareHandler
@@ -79,6 +87,8 @@ type Composition struct {
 	deviceRepository    *infrastructure.DeviceRepository
 	authorityUnitOfWork *infrastructure.AuthorityUnitOfWork
 	federationInbox     *infrastructure.FederationInboxUnitOfWork
+	followerRepository  *infrastructure.FollowerRepository
+	memberSettings      *infrastructure.MemberSettingsRepository
 	federationOutbox    *infrastructure.FederationRepository
 	recoveryRepository  *infrastructure.RecoveryRepository
 	mlsClaimRepository  *infrastructure.FederatedMlsKeyPackageClaimStore
@@ -207,8 +217,35 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	if err != nil {
 		return nil, err
 	}
+	followerRepository, err := infrastructure.NewFollowerRepository(config.Database)
+	if err != nil {
+		return nil, err
+	}
+	membershipReader, err := application.NewMembershipReader(
+		authorityUnitOfWork,
+		followerRepository,
+		config.LocalStationID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	memberSettingsRepository, err := infrastructure.NewMemberSettingsRepository(
+		config.Database,
+		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
+	memberSettingsService, err := application.NewMemberSettingsService(
+		membershipReader,
+		memberSettingsRepository,
+	)
+	if err != nil {
+		return nil, err
+	}
 	conversationService, err := application.NewConversationService(
 		authorityUnitOfWork,
+		membershipReader,
 		config.LocalStationID,
 		frameSigner,
 		endpointManifestService,
@@ -256,12 +293,51 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		config.Database,
 		config.QueueLimits,
 	)
+	followerReplaySource, err := infrastructure.NewFollowerReplayRepository(config.Database)
+	if err != nil {
+		return nil, err
+	}
+	followerReplayService, err := application.NewFollowerReplayService(
+		followerReplaySource,
+		frameSigner,
+		config.LocalStationID,
+		config.FollowerReplayPolicy,
+		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
+	followerReplayClient, err := infrastructure.NewHTTPFollowerReplayClient(
+		&http.Client{Timeout: 15 * time.Second},
+		tokenMinter,
+		config.FederationStationURLResolver,
+		config.FederationRelay,
+		config.PeerKeys,
+		config.LocalStationID,
+		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
+	followerProjectionService, err := application.NewFollowerProjectionService(
+		federationInbox,
+		followerRepository,
+		followerReplayClient,
+		config.FederationPeerTrustResolver,
+		config.LocalStationID,
+		config.FollowerProjectionPolicy,
+		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
 	federationService, err := application.NewFederationService(
 		federationInbox,
 		deviceDirectory,
 		authorityService,
 		endpointManifestService,
 		frameSigner,
+		followerProjectionService,
 		config.FederationPolicy,
 	)
 	if err != nil {
@@ -302,6 +378,12 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	federationHandler, err := httpinterface.NewFederationHandler(
 		federationService,
 		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
+	followerReplayHandler, err := httpinterface.NewFollowerReplayHandler(
+		followerReplayService,
 	)
 	if err != nil {
 		return nil, err
@@ -369,9 +451,13 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	return &Composition{
 		AuthorityService:           authorityService,
 		ConversationService:        conversationService,
+		MembershipReader:           membershipReader,
+		MemberSettingsService:      memberSettingsService,
 		DeviceService:              deviceService,
 		QueueService:               queueService,
 		FederationService:          federationService,
+		FollowerProjectionService:  followerProjectionService,
+		FollowerReplayService:      followerReplayService,
 		EndpointManifestService:    endpointManifestService,
 		RecoveryService:            recoveryService,
 		AuthorityPlanService:       authorityPlanService,
@@ -384,6 +470,7 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		DeviceHandler:              deviceHandler,
 		QueueHandler:               queueHandler,
 		FederationHandler:          federationHandler,
+		FollowerReplayHandler:      followerReplayHandler,
 		EndpointManifestHandler:    endpointManifestHandler,
 		AuthorityPrepareHandler:    authorityPrepareHandler,
 		AuthorityPrepareFetcher:    authorityPrepareFetcher,
@@ -394,6 +481,11 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		ReceiptHandler:             receiptHandler,
 		FederationAuth: serverwrapper.RequireFederationToken(
 			domain.FederationScope,
+			config.PeerKeys,
+			httpadapter.StaticAudience(config.LocalStationID),
+		),
+		FollowerReplayAuth: serverwrapper.RequireFederationToken(
+			domain.FollowerReplayScope,
 			config.PeerKeys,
 			httpadapter.StaticAudience(config.LocalStationID),
 		),
@@ -422,6 +514,8 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		deviceRepository:     deviceRepository,
 		authorityUnitOfWork:  authorityUnitOfWork,
 		federationInbox:      federationInbox,
+		followerRepository:   followerRepository,
+		memberSettings:       memberSettingsRepository,
 		federationOutbox:     federationOutbox,
 		recoveryRepository:   recoveryRepository,
 		mlsClaimRepository:   mlsClaimRepository,
@@ -439,6 +533,9 @@ func (c *Composition) Migrate() error {
 		return err
 	}
 	if err := c.federationInbox.AutoMigrate(); err != nil {
+		return err
+	}
+	if err := c.memberSettings.AutoMigrate(); err != nil {
 		return err
 	}
 	if err := c.federationOutbox.AutoMigrate(); err != nil {

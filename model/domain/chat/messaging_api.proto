@@ -38,6 +38,39 @@ message ListMessagingConversationsResponse {
   repeated MessagingConversationView conversations = 1;
 }
 
+message MessagingMemberSettings {
+  string nickname = 1;
+  bool muted = 2;
+  bool alert_enabled = 3;
+  bool pinned = 4;
+  string background = 5;
+  int64 cleared_at_unix_ms = 6;
+  string background_image = 7;
+}
+
+message GetMessagingMemberSettingsRequest {
+  string conversation_id = 1;
+}
+
+message GetMessagingMemberSettingsResponse {
+  MessagingMemberSettings settings = 1;
+}
+
+message UpdateMessagingMemberSettingsRequest {
+  string conversation_id = 1;
+  optional string nickname = 2;
+  optional bool muted = 3;
+  optional bool alert_enabled = 4;
+  optional bool pinned = 5;
+  optional string background = 6;
+  optional int64 cleared_at_unix_ms = 7;
+  optional string background_image = 8;
+}
+
+message UpdateMessagingMemberSettingsResponse {
+  MessagingMemberSettings settings = 1;
+}
+
 message ReservedMessagingMlsKeyPackage {
   CryptoEndpoint target = 1;
   string package_id = 2;

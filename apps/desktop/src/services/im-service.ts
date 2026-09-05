@@ -607,66 +607,6 @@ const conversationService: ConversationServiceContract = {
     return { events: normalizeConversationEvents(resp.events), hasMore: resp.has_more ?? false }
   },
 
-  async threadCounts(conversationId, rootIds) {
-    const resp = await cmd<any, { counts: ThreadCountResult[] }>('conversation_thread_counts', {
-      conversation_id: conversationId,
-      root_ids: rootIds,
-    })
-    return { counts: resp.counts ?? [] }
-  },
-
-  async getMemberSettings(conversationId) {
-    const resp = await cmd<{ conversation_id: string }, MemberSettingsResult>(
-      'conversation_get_member_settings',
-      {
-      conversation_id: conversationId,
-      },
-    )
-    return {
-      nickname: resp.nickname ?? '',
-      muted: resp.muted ?? false,
-      alertEnabled: resp.alertEnabled ?? true,
-      pinned: resp.pinned ?? false,
-      background: resp.background ?? 'default',
-      backgroundImage: resp.backgroundImage ?? '',
-      clearedAtUnixMs: resp.clearedAtUnixMs ?? 0,
-    }
-  },
-
-  async updateMemberSettings(conversationId, settings) {
-    const resp = await cmd<
-      {
-        conversation_id: string
-        nickname?: string
-        muted?: boolean
-        alert_enabled?: boolean
-        pinned?: boolean
-        background?: string
-        background_image?: string
-        cleared_at_unix_ms?: number
-      },
-      MemberSettingsResult
-    >('conversation_update_member_settings', {
-        conversation_id: conversationId,
-        nickname: settings.nickname,
-        muted: settings.muted,
-        alert_enabled: settings.alertEnabled,
-        pinned: settings.pinned,
-        background: settings.background,
-        background_image: settings.backgroundImage,
-        cleared_at_unix_ms: settings.clearedAtUnixMs,
-      })
-    return {
-      nickname: resp.nickname ?? '',
-      muted: resp.muted ?? false,
-      alertEnabled: resp.alertEnabled ?? true,
-      pinned: resp.pinned ?? false,
-      background: resp.background ?? 'default',
-      backgroundImage: resp.backgroundImage ?? '',
-      clearedAtUnixMs: resp.clearedAtUnixMs ?? 0,
-    }
-  },
-
   async syncFromStation(conversationId, limit) {
     const resp = await cmd<any, { events: unknown[]; has_more: boolean }>('conversation_sync_from_station', {
       conversation_id: conversationId,
@@ -1561,6 +1501,67 @@ const messagingService: MessagingServiceContract = {
       thread_root_message_id: threadRootMessageId,
     })
     return response.messages.map(projectMessagingMessage)
+  },
+
+  async threadCounts(conversationId, rootMessageIds) {
+    const response = await cmd<
+      { conversation_id: string; root_message_ids: string[] },
+      { counts: ThreadCountResult[] }
+    >('messaging_thread_counts', {
+      conversation_id: conversationId,
+      root_message_ids: rootMessageIds,
+    })
+    return { counts: response.counts ?? [] }
+  },
+
+  async getMemberSettings(conversationId) {
+    const response = await cmd<{ conversation_id: string }, MemberSettingsResult>(
+      'messaging_get_member_settings',
+      { conversation_id: conversationId },
+    )
+    return {
+      nickname: response.nickname ?? '',
+      muted: response.muted ?? false,
+      alertEnabled: response.alertEnabled ?? true,
+      pinned: response.pinned ?? false,
+      background: response.background ?? 'default',
+      backgroundImage: response.backgroundImage ?? '',
+      clearedAtUnixMs: response.clearedAtUnixMs ?? 0,
+    }
+  },
+
+  async updateMemberSettings(conversationId, settings) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        nickname?: string
+        muted?: boolean
+        alert_enabled?: boolean
+        pinned?: boolean
+        background?: string
+        background_image?: string
+        cleared_at_unix_ms?: number
+      },
+      MemberSettingsResult
+    >('messaging_update_member_settings', {
+      conversation_id: conversationId,
+      nickname: settings.nickname,
+      muted: settings.muted,
+      alert_enabled: settings.alertEnabled,
+      pinned: settings.pinned,
+      background: settings.background,
+      background_image: settings.backgroundImage,
+      cleared_at_unix_ms: settings.clearedAtUnixMs,
+    })
+    return {
+      nickname: response.nickname ?? '',
+      muted: response.muted ?? false,
+      alertEnabled: response.alertEnabled ?? true,
+      pinned: response.pinned ?? false,
+      background: response.background ?? 'default',
+      backgroundImage: response.backgroundImage ?? '',
+      clearedAtUnixMs: response.clearedAtUnixMs ?? 0,
+    }
   },
 
   async searchMessages(conversationId, query, options = {}) {

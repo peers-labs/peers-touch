@@ -6,7 +6,9 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
+	"sort"
 	"testing"
 	"time"
 
@@ -49,6 +51,17 @@ func (federationAuthorityService) Submit(
 	return &chat.ConversationEvent{}, nil
 }
 
+type federationFollowerReplayClient struct{}
+
+func (federationFollowerReplayClient) FetchFollowerEvents(
+	context.Context,
+	string,
+	string,
+	*chat.GetMessagingFollowerEventsRequest,
+) (*chat.MessagingFollowerEventsPage, error) {
+	return nil, messaging.ErrFollowerReplayUnavailable
+}
+
 func newFederationInboxFixture(
 	t *testing.T,
 	limits messaging.QueueLimits,
@@ -64,6 +77,31 @@ func newFederationInboxFixture(
 	}
 	uow := infrastructure.NewFederationInboxUnitOfWork(db, limits)
 	if err := uow.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	followerRepository, err := infrastructure.NewFollowerRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	followerService, err := application.NewFollowerProjectionService(
+		uow,
+		followerRepository,
+		federationFollowerReplayClient{},
+		messaging.FederationPeerTrustResolveFunc(
+			func(context.Context, string, string) error {
+				return nil
+			},
+		),
+		"station-b",
+		application.FollowerProjectionPolicy{
+			MaxPendingEvents: 128,
+			MaxPendingBytes:  4 << 20,
+			PendingTTL:       10 * time.Minute,
+			ReplayPageLimit:  128,
+		},
+		time.Now,
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 	service, err := application.NewFederationService(
@@ -84,6 +122,7 @@ func newFederationInboxFixture(
 		) error {
 			return nil
 		}),
+		followerService,
 		application.FederationPolicy{MaxBatchWrites: 100},
 	)
 	if err != nil {
@@ -92,16 +131,44 @@ func newFederationInboxFixture(
 	return db, service
 }
 
-func federatedWrite(ptid, deviceID string) *chat.FederatedDeviceQueueWrite {
-	payload := []byte("delivery:" + ptid + ":" + deviceID)
-	hash := sha256.Sum256(payload)
+func federatedWrite(
+	t *testing.T,
+	event *chat.ConversationEvent,
+	ptid string,
+	deviceID string,
+) *chat.FederatedDeviceQueueWrite {
+	t.Helper()
+	endpointPayload := []byte("delivery:" + ptid + ":" + deviceID)
+	endpointPayloadHash := sha256.Sum256(endpointPayload)
+	recipient := &chat.CryptoEndpoint{Ptid: ptid, DeviceId: deviceID}
+	commitment := testDeliveryCommitment(
+		event.ConversationId,
+		event.EventId,
+		recipient,
+		chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_PUBLIC_EVENT,
+		endpointPayloadHash[:],
+	)
+	deliveryBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&chat.DeviceEventDelivery{
+			Event:                 event,
+			Recipient:             recipient,
+			PayloadKind:           chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_PUBLIC_EVENT,
+			EndpointPayload:       endpointPayload,
+			EndpointPayloadSha256: endpointPayloadHash[:],
+			DeliveryCommitment:    commitment,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(deliveryBytes)
 	return &chat.FederatedDeviceQueueWrite{
-		Recipient:      &chat.CryptoEndpoint{Ptid: ptid, DeviceId: deviceID},
-		EventId:        "event-1",
-		ConversationId: "conversation-1",
+		Recipient:      recipient,
+		EventId:        event.EventId,
+		ConversationId: event.ConversationId,
 		IdempotencyKey: "event-1:" + ptid + ":" + deviceID,
 		PayloadType:    chat.DeviceQueuePayloadType_DEVICE_QUEUE_PAYLOAD_TYPE_CONVERSATION_EVENT,
-		OpaquePayload:  payload,
+		OpaquePayload:  deliveryBytes,
 		PayloadSha256:  hash[:],
 	}
 }
@@ -114,11 +181,64 @@ func signedBatchFrame(
 	now time.Time,
 ) *chat.MessagingFederationFrame {
 	t.Helper()
+	event := &chat.ConversationEvent{
+		EventId:            "event-1",
+		ConversationId:     "conversation-1",
+		Sequence:           1,
+		CommandId:          "command-1",
+		Actor:              &chat.CryptoEndpoint{Ptid: "ptid:owner", DeviceId: "owner-device"},
+		CommittedAt:        timestamppb.New(now),
+		MembershipEpoch:    1,
+		AuthorityStationId: "station-a",
+		Payload: &chat.ConversationEvent_ConversationCreated{
+			ConversationCreated: &chat.ConversationCreatedFact{
+				Kind:      chat.ConversationKind_CONVERSATION_KIND_DIRECT,
+				OwnerPtid: "ptid:owner",
+				Members: []*chat.ConversationAuthorityMember{
+					{
+						Ptid:          "ptid:alice",
+						HomeStationId: "station-b",
+						Role:          "member",
+					},
+					{
+						Ptid:          "ptid:owner",
+						HomeStationId: "station-a",
+						Role:          "owner",
+					},
+				},
+			},
+		},
+	}
+	for _, deviceID := range []string{"active-device", "revoked-device"} {
+		payloadHash := sha256.Sum256(
+			[]byte("delivery:ptid:alice:" + deviceID),
+		)
+		event.DeliveryCommitments = append(
+			event.DeliveryCommitments,
+			testDeliveryCommitment(
+				event.ConversationId,
+				event.EventId,
+				&chat.CryptoEndpoint{Ptid: "ptid:alice", DeviceId: deviceID},
+				chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_PUBLIC_EVENT,
+				payloadHash[:],
+			),
+		)
+	}
+	sort.Slice(event.DeliveryCommitments, func(i, j int) bool {
+		return bytes.Compare(event.DeliveryCommitments[i], event.DeliveryCommitments[j]) < 0
+	})
+	hashInput := proto.Clone(event).(*chat.ConversationEvent)
+	eventHashInput, err := proto.MarshalOptions{Deterministic: true}.Marshal(hashInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventHash := sha256.Sum256(eventHashInput)
+	event.EventHash = eventHash[:]
 	batchBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
 		&chat.FederatedDeviceQueueBatch{
 			Writes: []*chat.FederatedDeviceQueueWrite{
-				federatedWrite("ptid:alice", "active-device"),
-				federatedWrite("ptid:alice", "revoked-device"),
+				federatedWrite(t, event, "ptid:alice", "active-device"),
+				federatedWrite(t, event, "ptid:alice", "revoked-device"),
 			},
 			EndpointManifests: []*chat.FederatedEndpointManifest{
 				testBatchManifest(),
@@ -147,6 +267,86 @@ func signedBatchFrame(
 		t.Fatal(err)
 	}
 	return frame
+}
+
+func signedProjectionFrame(
+	t *testing.T,
+	privateKey ed25519.PrivateKey,
+	deviceFrame *chat.MessagingFederationFrame,
+	now time.Time,
+) *chat.MessagingFederationFrame {
+	t.Helper()
+	batch := &chat.FederatedDeviceQueueBatch{}
+	if err := proto.Unmarshal(deviceFrame.OpaquePayload, batch); err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.Writes) == 0 {
+		t.Fatal("device frame has no writes")
+	}
+	delivery := &chat.DeviceEventDelivery{}
+	if err := proto.Unmarshal(batch.Writes[0].OpaquePayload, delivery); err != nil {
+		t.Fatal(err)
+	}
+	projectionBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&chat.MessagingFollowerProjection{
+			FormatVersion:       application.MessagingFollowerProjectionFormatVersion,
+			AuthorityStationId:  deviceFrame.SourceStationId,
+			TargetHomeStationId: deviceFrame.TargetStationId,
+			ConversationEvent:   delivery.Event,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadHash := sha256.Sum256(projectionBytes)
+	frame := &chat.MessagingFederationFrame{
+		FrameId:           "projection-" + deviceFrame.FrameId,
+		SourceStationId:   deviceFrame.SourceStationId,
+		TargetStationId:   deviceFrame.TargetStationId,
+		IdempotencyKey:    "projection-" + deviceFrame.IdempotencyKey,
+		PayloadType:       chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION,
+		ConversationId:    deviceFrame.ConversationId,
+		EventId:           deviceFrame.EventId,
+		AuthoritySequence: deviceFrame.AuthoritySequence,
+		OpaquePayload:     projectionBytes,
+		PayloadSha256:     payloadHash[:],
+		IssuedAt:          timestamppb.New(now),
+		ExpiresAt:         timestamppb.New(now.Add(time.Minute)),
+	}
+	if err := application.SignFederationFrame(frame, "key-1", privateKey); err != nil {
+		t.Fatal(err)
+	}
+	return frame
+}
+
+func testDeliveryCommitment(
+	conversationID string,
+	eventID string,
+	recipient *chat.CryptoEndpoint,
+	kind chat.PreparedEndpointPayloadKind,
+	payloadHash []byte,
+) []byte {
+	var input bytes.Buffer
+	input.WriteString("peers-touch/device-delivery-commitment")
+	input.WriteByte(0)
+	var encoded [4]byte
+	binary.BigEndian.PutUint32(encoded[:], 1)
+	input.Write(encoded[:])
+	for _, value := range []string{
+		conversationID,
+		eventID,
+		recipient.Ptid,
+		recipient.DeviceId,
+	} {
+		binary.BigEndian.PutUint32(encoded[:], uint32(len(value)))
+		input.Write(encoded[:])
+		input.WriteString(value)
+	}
+	binary.BigEndian.PutUint32(encoded[:], uint32(kind))
+	input.Write(encoded[:])
+	input.Write(payloadHash)
+	digest := sha256.Sum256(input.Bytes())
+	return digest[:]
 }
 
 func testBatchManifest() *chat.FederatedEndpointManifest {
@@ -198,6 +398,16 @@ func TestFederationIngestAtomicallyWritesOnlyActiveDeviceLanesAndDeduplicates(t 
 	)
 	now := time.Unix(1_700_000_000, 0).UTC()
 	frame := signedBatchFrame(t, privateKey, "frame-1", "idempotency-1", now)
+	projectionFrame := signedProjectionFrame(t, privateKey, frame, now)
+	if _, err := service.Deliver(
+		context.Background(),
+		projectionFrame,
+		"station-b",
+		publicKey,
+		now,
+	); err != nil {
+		t.Fatal(err)
+	}
 	response, err := service.Deliver(context.Background(), frame, "station-b", publicKey, now)
 	if err != nil {
 		t.Fatal(err)
@@ -230,8 +440,64 @@ func TestFederationIngestAtomicallyWritesOnlyActiveDeviceLanesAndDeduplicates(t 
 	var inboxCount, queueCount int64
 	db.Model(&infrastructure.FederationInboxModel{}).Count(&inboxCount)
 	db.Model(&infrastructure.DeviceQueueItemModel{}).Count(&queueCount)
-	if inboxCount != 1 || queueCount != 1 {
+	if inboxCount != 2 || queueCount != 1 {
 		t.Fatalf("replay duplicated state: inbox=%d queue=%d", inboxCount, queueCount)
+	}
+}
+
+func TestDeviceFrameWaitsForSeparateFollowerProjection(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, service := newFederationInboxFixture(
+		t,
+		messaging.QueueLimits{MaxUnackedItems: 100, MaxUnackedBytes: 1024 * 1024},
+		federationDeviceAccess{active: map[string]bool{
+			"ptid:alice\x00active-device": true,
+		}},
+	)
+	now := time.Unix(1_700_000_000, 0).UTC()
+	deviceFrame := signedBatchFrame(t, privateKey, "device-frame", "device-key", now)
+	if _, err := service.Deliver(
+		context.Background(),
+		deviceFrame,
+		"station-b",
+		publicKey,
+		now,
+	); !errors.Is(err, messaging.ErrFollowerGap) {
+		t.Fatalf("device-before-projection error = %v, want follower gap", err)
+	}
+	var inboxCount, queueCount int64
+	db.Model(&infrastructure.FederationInboxModel{}).Count(&inboxCount)
+	db.Model(&infrastructure.DeviceQueueItemModel{}).Count(&queueCount)
+	if inboxCount != 0 || queueCount != 0 {
+		t.Fatalf("device frame established follower truth: inbox=%d queue=%d", inboxCount, queueCount)
+	}
+
+	projectionFrame := signedProjectionFrame(t, privateKey, deviceFrame, now)
+	if _, err := service.Deliver(
+		context.Background(),
+		projectionFrame,
+		"station-b",
+		publicKey,
+		now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Deliver(
+		context.Background(),
+		deviceFrame,
+		"station-b",
+		publicKey,
+		now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	db.Model(&infrastructure.FederationInboxModel{}).Count(&inboxCount)
+	db.Model(&infrastructure.DeviceQueueItemModel{}).Count(&queueCount)
+	if inboxCount != 2 || queueCount != 1 {
+		t.Fatalf("projection/device convergence: inbox=%d queue=%d", inboxCount, queueCount)
 	}
 }
 
@@ -249,6 +515,16 @@ func TestFederationIngestConflictAndQueueFailureRollBackInbox(t *testing.T) {
 	)
 	now := time.Unix(1_700_000_000, 0).UTC()
 	frame := signedBatchFrame(t, privateKey, "frame-1", "idempotency-1", now)
+	projectionFrame := signedProjectionFrame(t, privateKey, frame, now)
+	if _, err := service.Deliver(
+		context.Background(),
+		projectionFrame,
+		"station-b",
+		publicKey,
+		now,
+	); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := service.Deliver(
 		context.Background(),
 		frame,
@@ -261,7 +537,7 @@ func TestFederationIngestConflictAndQueueFailureRollBackInbox(t *testing.T) {
 	var inboxCount, queueCount int64
 	db.Model(&infrastructure.FederationInboxModel{}).Count(&inboxCount)
 	db.Model(&infrastructure.DeviceQueueItemModel{}).Count(&queueCount)
-	if inboxCount != 0 || queueCount != 0 {
+	if inboxCount != 1 || queueCount != 0 {
 		t.Fatalf("partial ingest survived: inbox=%d queue=%d", inboxCount, queueCount)
 	}
 }
