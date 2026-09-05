@@ -100,6 +100,28 @@ function reportFoundationRecoveryRegistrationDebug(
 }
 // #endregion
 
+// #region debug-point A-D:foundation-recovery-error-key
+function reportFoundationRecoveryErrorKeyDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7782/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-recovery-error-key',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'agentTurnRecovery.ts',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 function stringField(
   data: Record<string, unknown>,
   camelCase: string,
@@ -362,6 +384,31 @@ export const useAgentTurnRecoveryStore = createDesktopStore<AgentTurnRecoverySta
             activePhaseAfter: activeAfter?.phase ?? 'MISSING',
           },
         );
+        if (payload.event === 'recovery_failed') {
+          reportFoundationRecoveryErrorKeyDebug(
+            'A-C',
+            'recovery-failed-event-consumed',
+            {
+              sequence,
+              sameSequenceAsCurrent: current?.cursor === sequence,
+              olderThanCurrent: Boolean(current && sequence < current.cursor),
+              eventErrorPresent:
+                typeof payload.data.error === 'string'
+                && payload.data.error.trim().length > 0,
+              eventReasonPresent:
+                typeof payload.data.reason === 'string'
+                && payload.data.reason.trim().length > 0,
+              eventErrorCodePresent:
+                typeof (payload.data.errorCode ?? payload.data.error_code) === 'string'
+                && String(
+                  payload.data.errorCode ?? payload.data.error_code,
+                ).trim().length > 0,
+              currentFailureKeyPresent: Boolean(current?.failureKey),
+              reducedFailureKeyPresent: Boolean(reduction.record?.failureKey),
+              activeFailureKeyPresent: Boolean(activeAfter?.failureKey),
+            },
+          );
+        }
       }
       return reduction;
     },
@@ -383,6 +430,21 @@ export const useAgentTurnRecoveryStore = createDesktopStore<AgentTurnRecoverySta
       set((state) => ({
         active: { ...state.active, [conversationId]: next },
       }));
+      if (phase === 'RECOVERY_FAILED' || current.phase === 'RECOVERY_FAILED') {
+        reportFoundationRecoveryErrorKeyDebug(
+          'A-D',
+          'phase-transitioned',
+          {
+            previousPhase: current.phase,
+            nextPhase: phase,
+            failureKeyArgumentPresent: Boolean(failureKey),
+            previousFailureKeyPresent: Boolean(current.failureKey),
+            nextFailureKeyPresent: Boolean(next.failureKey),
+            recoveryEpochBefore: current.recoveryEpoch,
+            recoveryEpochAfter: next.recoveryEpoch,
+          },
+        );
+      }
       return next;
     },
 

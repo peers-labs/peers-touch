@@ -4183,6 +4183,15 @@ async function observeFoundationRecoveryFailure(
       activeCursor: activeAtOutage?.cursor ?? 0,
     },
   );
+  await reportFoundationRecoveryErrorKeyDebug(
+    'D',
+    'outage-observer-sampled',
+    {
+      activeRecordPresent: activeAtOutage !== undefined,
+      activePhase: activeAtOutage?.phase ?? 'MISSING',
+      failureKeyPresent: Boolean(activeAtOutage?.failureKey),
+    },
+  );
   if (
     !activeAtOutage
     || activeAtOutage.actorId !== handoff.actorPtid
@@ -4230,6 +4239,16 @@ async function observeFoundationRecoveryFailure(
       && useChatStore.getState().operations[handoff.conversationId]?.status
         !== 'completed',
   };
+  await reportFoundationRecoveryErrorKeyDebug(
+    'A-D',
+    'recovery-failure-sampled',
+    {
+      activeRecordPresent: active !== undefined,
+      activePhase: active?.phase ?? 'MISSING',
+      failureKeyPresent: Boolean(active?.failureKey),
+      failureWaitErrorPresent: failureWaitError.length > 0,
+    },
+  );
   if (!active || active.phase !== 'RECOVERY_FAILED') {
     const evidence = {
       ...base,
@@ -4286,6 +4305,19 @@ async function observeFoundationRecoveryFailure(
   await flushAgentTurnRecoveryPersistence();
   const afterRetry =
     useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
+  await reportFoundationRecoveryErrorKeyDebug(
+    'C-D',
+    'retry-failure-sampled',
+    {
+      activeRecordPresent: afterRetry !== undefined,
+      activePhase: afterRetry?.phase ?? 'MISSING',
+      initialFailureKeyPresent: Boolean(active.failureKey),
+      retryFailureKeyPresent: Boolean(afterRetry?.failureKey),
+      recoveryEpochAdvanced: Boolean(
+        afterRetry && afterRetry.recoveryEpoch > retryEpochBefore,
+      ),
+    },
+  );
   const evidence = {
     ...base,
     blocker: afterRetry ? '' : 'AS_F06_RETRY_RESULT_NOT_OBSERVED',
@@ -5874,6 +5906,27 @@ function reportFoundationF06RegistrationDebug(
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:AS-F06',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:foundation-recovery-error-key
+function reportFoundationRecoveryErrorKeyDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7782/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-recovery-error-key',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:exerciseFoundationRecoveryFailure',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
