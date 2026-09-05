@@ -37,6 +37,28 @@ const WARM_RESUME_KEY = 'pt.auth.lastActiveAt';
 const LAST_ACTIVE_PAGE_KEY = 'pt.nav.lastActivePage';
 const RENDERER_AUTH_MARKER_KEY = 'pt.identity.rendererAuthenticated';
 
+// #region debug-point A-D:foundation-launch-context
+function reportFoundationLaunchContextDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7778/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-identity-boot',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'identityRuntime.ts:boot',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 export function clearWarmResume(): void {
   try {
     removeDesktopPreferenceSync(WARM_RESUME_KEY);
@@ -241,7 +263,25 @@ class IdentityRuntime {
     this.dispatch({ type: 'LAUNCH_CONTEXT_CHECK_STARTED' });
     markPhaseStart('identity');
 
-    api.appletsProductWindowLaunchContext().catch(() => ({ enabled: false })).then((context) => {
+    const launchContextStartedAt = performance.now();
+    reportFoundationLaunchContextDebug('A', 'launch-context-started', {
+      bootReason,
+    });
+    api.appletsProductWindowLaunchContext().then((context) => {
+      reportFoundationLaunchContextDebug('A-D', 'launch-context-resolved', {
+        bootReason,
+        durationMs: Math.round(performance.now() - launchContextStartedAt),
+        enabled: context.enabled,
+      });
+      return context;
+    }).catch((error: unknown) => {
+      reportFoundationLaunchContextDebug('A-D', 'launch-context-rejected', {
+        bootReason,
+        durationMs: Math.round(performance.now() - launchContextStartedAt),
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+      return { enabled: false };
+    }).then((context) => {
       if (activateAppletProductWindowLaunch(context)) {
         const launchUser = appletLaunchContextToSessionUser(context);
         void this.acceptAuthenticatedEdge(identityAuthenticatedEdge('applet_launch', launchUser));
