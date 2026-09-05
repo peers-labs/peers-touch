@@ -14,11 +14,11 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | The post-restart `applets_product_window_launch_context` invocation remains pending, so session restoration never starts. | High | Low | Supported: 119 successful snapshots remained at `checkingLaunchContext / cold_launch`; direct invocation start/settlement evidence is pending. |
+| A | The `applets_product_window_launch_context` invocation remains pending past the identity precondition, so session restoration never starts. | High | Low | Confirmed: Browser request started, remained pending through the 30-second login bound, and settled only after 54.7 seconds. |
 | B | Session restoration starts but `auth_restore_session` hangs or rejects. | Low | Low | Rejected for the latest failure: identity never advanced to `resolvingSession`. |
 | C | Browser renderer or WebDriver is dead while recovery polling continues. | Low | Low | Rejected for the latest failure: all 119 Harness snapshots succeeded and no command exception was retained. |
-| D | The Browser gateway receives the launch-context request, but its Rust handler never settles. | Medium | Medium | Inconclusive until gateway request/response checkpoints are captured. |
-| E | Identity restores, but the critical `agent-chat` runtime bootstrap or persisted recovery merge stalls. | Low | Medium | Rejected for the latest failure: identity never reached authenticated state or runtime bootstrap. |
+| D | Concurrent startup commands queue behind a Browser gateway worker/lock convoy before launch-context dispatch. | High | Medium | Supported: a live process sample found seven gateway workers waiting on mutexes while one sampled `context_action_dispatch`; exact per-command queue/dispatch timing is pending. |
+| E | Browser command parity is incomplete, so the eventual launch-context response is a typed command rejection rather than `{ enabled: false }`. | High | Low | Confirmed in source: the Tauri command exists but the HTTP gateway dispatch has no matching command; runtime recorded `RustCommandException` after HTTP 200. |
 
 ## Log Evidence
 - Exact-source run `20260904T110406527755Z-0a3cb161b052d5ff5c86e5176456b73c` timed out at `identity login precondition`.
@@ -40,6 +40,19 @@
   `accountGate / session_missing` state. The final AS-F06 polling snapshots
   were not individually reported, so the next run must collect a clean
   session-specific window.
+- Exact-source diagnostic run
+  `20260905T031223447524Z-7d464e53985440f393f32f49aec49e59`
+  reproduced the same boundary during initial Browser login. Identity and
+  gateway both recorded launch-context request start. The 30-second login
+  precondition expired while the request was still pending; the HTTP 200 and
+  JSON body arrived only after 54.7 seconds, then the shared Desktop adapter
+  raised `RustCommandException`. Native launch context resolved in 29
+  milliseconds. Cleanup completed `DONE / PROVEN / passed`.
+- A live sample of the affected Browser Rust process showed the eight-worker
+  HTTP gateway with seven worker threads waiting on mutexes and one sampled
+  inside `context_action_dispatch` / global-context persistence. This supports
+  a startup command convoy, but does not yet identify the exact command order
+  or lock owner.
 
 ## Instrumentation
 - `A`: identity phase and lifecycle transitions during the login precondition.
@@ -52,11 +65,14 @@
     and rejection;
   - identity-side launch-context start, resolution, and rejection;
   - Browser runtime restart generation plus storage/profile preservation.
+  - The next checkpoint adds gateway enqueue, worker-start, dispatch-complete,
+    and safe result-code timing for each startup command.
 
 ## Verification Conclusion
 The earlier dead-WebDriver defect was fixed and is not the latest failure.
-Current evidence places the new boundary before session restoration:
-`checkingLaunchContext` normally advances to `resolvingSession` in about
-300 milliseconds, but the latest AS-F06 Browser restart remained there for the
-entire 120-second recovery window. No behavior fix is authorized until the
-launch-context and gateway settlement checkpoints classify hypothesis A or D.
+Hypothesis A is confirmed: Browser identity waits on launch-context longer than
+the login and recovery bounds, so session restoration does not start in time.
+Hypothesis E is also confirmed as a separate Browser parity defect. The
+remaining root-cause question is D: which startup command owns the gateway
+worker/lock convoy. No behavior fix is authorized until per-command gateway
+timing identifies that owner.
