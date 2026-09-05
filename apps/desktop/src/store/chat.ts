@@ -227,7 +227,7 @@ function reportApprovalExpiryRetryDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'approval-expiry-retry',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'chat.ts:retryMessage',
       msg: `[DEBUG] ${stage}`,
@@ -946,6 +946,19 @@ export function applyOperationEventIdentity(
   };
 }
 
+export function isMessageRetryBlocked(
+  isStreaming: boolean,
+  operation: ChatOperation | undefined,
+  sourceTurnId: string | undefined,
+): boolean {
+  if (!isStreaming) return false;
+  return (
+    operation?.runState !== 'recovery_failed'
+    || !sourceTurnId
+    || operation.turnId !== sourceTurnId
+  );
+}
+
 async function loadSessionMessages(
   key: string,
   get: () => ChatState,
@@ -1627,6 +1640,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const { currentSessionKey, messages, isStreaming } = get();
     const source = messages.find((message) => message.id === messageId);
     const sourceTurnId = source?.turnId;
+    const operation = get().operations[currentSessionKey];
+    const retryBlocked = isMessageRetryBlocked(
+      isStreaming,
+      operation,
+      sourceTurnId,
+    );
     const retryKey = `${currentSessionKey}:${messageId}`;
     const pending = pendingMessageRetries.get(retryKey);
 
@@ -1637,13 +1656,16 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       sourceTurnPresent: Boolean(sourceTurnId),
       sourceTerminalStatus: source?.terminalStatus ?? null,
       sourceLoading: source?.loading === true,
-      operationPresent: Boolean(get().operations[currentSessionKey]),
-      operationRunState: get().operations[currentSessionKey]?.runState ?? null,
+      operationPresent: Boolean(operation),
+      operationRunState: operation?.runState ?? null,
+      operationTurnMatchesSource:
+        Boolean(sourceTurnId) && operation?.turnId === sourceTurnId,
+      retryBlocked,
       pendingRetryPresent: Boolean(pending),
     });
     // #endregion
 
-    if (isStreaming) {
+    if (retryBlocked) {
       // #region debug-point A:streaming-guard
       reportApprovalExpiryRetryDebug('A', 'retry-skipped-streaming', {});
       // #endregion
