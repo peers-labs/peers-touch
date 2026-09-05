@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/application"
 	messaging "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
@@ -15,21 +14,28 @@ var ErrAuthorityPrepareBinding = errors.New(
 	"messaging: authenticated authority prepare binding mismatch",
 )
 
+// AuthorityPrepareService prepares a command for a sender authenticated by its
+// Home Station.
+type AuthorityPrepareService interface {
+	PrepareFederatedSend(
+		ctx context.Context,
+		sourceHomeStationID string,
+		request *chat.PrepareMessagingSendRequest,
+	) (*chat.PrepareMessagingSendResponse, error)
+}
+
 type AuthorityPrepareHandler struct {
-	authority *application.AuthorityService
-	devices   messaging.DeviceDirectory
+	authority AuthorityPrepareService
 }
 
 func NewAuthorityPrepareHandler(
-	authority *application.AuthorityService,
-	devices messaging.DeviceDirectory,
+	authority AuthorityPrepareService,
 ) (*AuthorityPrepareHandler, error) {
-	if authority == nil || devices == nil {
+	if authority == nil {
 		return nil, errors.New("messaging: authority prepare handler dependencies are invalid")
 	}
 	return &AuthorityPrepareHandler{
 		authority: authority,
-		devices:   devices,
 	}, nil
 }
 
@@ -49,14 +55,11 @@ func (h *AuthorityPrepareHandler) PrepareAuthenticated(
 		) {
 		return nil, ErrAuthorityPrepareBinding
 	}
-	homeStationID, err := h.devices.HomeStationID(ctx, wrapper.Request.Sender)
-	if err != nil {
-		return nil, err
-	}
-	if homeStationID != wrapper.SourceHomeStationId {
-		return nil, ErrAuthorityPrepareBinding
-	}
-	return h.authority.PrepareSend(ctx, wrapper.Request)
+	return h.authority.PrepareFederatedSend(
+		ctx,
+		wrapper.SourceHomeStationId,
+		wrapper.Request,
+	)
 }
 
 func validAuthorityPrepareClaims(

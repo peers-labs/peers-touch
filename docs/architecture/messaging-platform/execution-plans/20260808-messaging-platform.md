@@ -1093,13 +1093,13 @@ Closure enforcement (deterministic):
 | MP-W10-E | completed for `desktop-linux-native` | W05/W10-D | Exact-source Product Closure proves Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, count conservation, restart, and cleanup on Linux. Other Desktop runtime cells and Mobile remain `UNPROVEN`. |
 | MP-W12 | correction implemented for `desktop-linux-native`; exact-source revalidation pending | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | The Typing Gate now exercises revoked-device submission rejection and receiver non-observation; focused tests pass. macOS, Windows, and Mobile parity remain `UNPROVEN`. |
 | MP-W13 | independent-review corrections implemented; macOS, Windows, and Mobile `UNPROVEN` | W10-E/W12 + Social Runtime Phase 3 | Fail-closed Desktop logout and Native lifecycle cleanup corrections pass focused and full local verification. A clean exact-source Linux aggregate remains required. |
-| MP-W14 | A-D implemented and locally verified; E pending | W01/W02/W06/W07/W13 + accepted MP-D29 | Proto and generated contracts, authority routes/grants/outbox, follower ingest/replay state machine, canonical membership/settings, Engine-local thread counts, and legacy Conversation deletion pass the approved local Chat matrix. Exact-source Windows two-Station product proof remains `UNPROVEN`. |
+| MP-W14 | A-D implemented, committed, and locally verified; E partial | W01/W02/W06/W07/W13 + accepted MP-D29 | Commit `f04e0dfd68513ab8d249a5cfe0ed93645d189536` passes the approved local Chat matrix. Windows run `20260905T114725741869Z-8894cc822a6bd05b8f187403b0c557e3` proves active follower membership and typed settings but exposes one remaining remote-authority prepare defect; full two-Station product proof remains `UNPROVEN`. |
 | MP-W11 | pending clean exact-source revalidation | W02-W10/W12-W14 | W11 remains the historical full-platform closure and now waits for MP-W14. Its existing scans and Completion Audit are not part of the reduced Windows iteration matrix. |
 
 ### 2026-09-05 MP-W14 A-D Local Implementation Closure
 
-`MP-W14-A` through `MP-W14-D` are implemented in the current uncommitted
-source. The final local Chat aggregate
+`MP-W14-A` through `MP-W14-D` are implemented in commit
+`f04e0dfd68513ab8d249a5cfe0ed93645d189536`. The final local Chat aggregate
 `20260905T045308233830Z-d8262898db418a6fcfd179ce939fe8f8` passed conditional
 `proto-build` plus `station-messaging-unit`, `messaging-platform-contract`,
 `desktop-check`, and `chat-native-visible-static`.
@@ -1116,9 +1116,57 @@ The old Conversation thread-count and member-settings proto, routes, commands,
 service/repository methods, and persistence owner have zero live references.
 Source scans also find no client-controlled membership `home_station_id`, no
 production parsing of `DeviceEventDelivery.endpoint_payload`, no new
-chat-owned presence path, and no new debug statements. `MP-W14-E` is not run:
-no commit, Station deployment, destructive fixture reset, or Windows Native
-Gate was performed.
+chat-owned presence path, and no new debug statements. `MP-W14-E` remains
+partial after the runtime checkpoint below.
+
+### 2026-09-05 MP-W14-E Windows Runtime Checkpoint
+
+After restoring the dedicated Relay/DHT environments and replacing stale Relay
+mount tokens, exact-source Windows Product Closure run
+`20260905T114725741869Z-8894cc822a6bd05b8f187403b0c557e3` at
+`f04e0dfd68513ab8d249a5cfe0ed93645d189536` crossed Direct create/reopen and
+materialized station-five follower membership for group
+`ffebb1c2-e3e0-4ec8-b181-7ebee91ca088`:
+
+- follower state is `ACTIVE` at authority sequence 3;
+- Alice and Bob are active members;
+- three follower receipts are applied and no pending event remains;
+- Bob's typed member-settings reads and group typing authorization succeed.
+
+The Gate still failed at `transcript.thread.ui` because Bob's outbound reply
+remained `not_queued:draft`. station-five forwarded
+`/messaging/command/prepare` to station-four, whose federated prepare handler
+returned `messaging: record not found`. Both
+`AuthorityPrepareHandler.PrepareAuthenticated` and
+`AuthorityService.PrepareSend` still validate a remote sender endpoint through
+station-four's local device directory. This contradicts MP-D19's accepted
+signed endpoint-manifest route and is an implementation gap, not a new
+architecture decision.
+
+The next correction must validate the federated sender Home Station and active
+endpoint against the verified endpoint manifest, preserve local-device
+authorization for local callers, add manifest-only remote-sender regressions,
+and rerun the four local Chat Gates before exact-source deployment. The
+remaining Windows Native matrix is dependency-blocked until Product Closure
+passes. Runtime cleanup for the failed run is `DONE/PROVEN`.
+
+The approved correction now implements that manifest boundary locally:
+
+- `AuthorityService.PrepareFederatedSend` binds the verified sender manifest
+  Home Station to the authenticated federation source;
+- sender authorization requires the endpoint to exist in the signed active
+  endpoint set;
+- the authority-local `actor_devices` sender check is no longer used for send
+  preparation;
+- local send preparation still resolves a fresh signed local manifest and
+  therefore retains device revocation enforcement;
+- a real repository-backed regression proves remote Bob can prepare without a
+  local authority device row, while wrong-Home-Station and inactive-endpoint
+  attempts fail closed.
+
+Focused tests and the four-Gate local Chat cohort pass in aggregate
+`20260905T125516816692Z-a1fe8cb980506bd4e86592a5e451136e`. Exact-source
+deployment and post-fix Windows Product Closure remain pending.
 
 The 2026-08-27 persistent Linux Desktop handoff exposed four additional MP-W13-F
 gaps: the installed runtime did not preserve the runtime-cell keyring boundary,
