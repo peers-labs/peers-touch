@@ -267,7 +267,7 @@ mod tests {
                             action: change.action,
                             ptid: change.ptid.clone(),
                             device_id: change.device_id.clone(),
-                            home_station_id: change.home_station_id.clone(),
+                            home_station_id: String::new(),
                             role: change.role.clone(),
                         })
                         .collect(),

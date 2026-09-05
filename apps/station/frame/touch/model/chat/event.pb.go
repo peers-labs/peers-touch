@@ -431,11 +431,11 @@ func (x *ConversationUpdatedFact) GetDisappearTimerSeconds() uint32 {
 }
 
 type ConversationCreatedFact struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          ConversationKind       `protobuf:"varint,1,opt,name=kind,proto3,enum=peers_touch.model.chat.v1.ConversationKind" json:"kind,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	OwnerPtid     string                 `protobuf:"bytes,3,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
-	MemberPtids   []string               `protobuf:"bytes,4,rep,name=member_ptids,json=memberPtids,proto3" json:"member_ptids,omitempty"`
+	state         protoimpl.MessageState         `protogen:"open.v1"`
+	Kind          ConversationKind               `protobuf:"varint,1,opt,name=kind,proto3,enum=peers_touch.model.chat.v1.ConversationKind" json:"kind,omitempty"`
+	Name          string                         `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	OwnerPtid     string                         `protobuf:"bytes,3,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
+	Members       []*ConversationAuthorityMember `protobuf:"bytes,5,rep,name=members,proto3" json:"members,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -491,9 +491,9 @@ func (x *ConversationCreatedFact) GetOwnerPtid() string {
 	return ""
 }
 
-func (x *ConversationCreatedFact) GetMemberPtids() []string {
+func (x *ConversationCreatedFact) GetMembers() []*ConversationAuthorityMember {
 	if x != nil {
-		return x.MemberPtids
+		return x.Members
 	}
 	return nil
 }
@@ -578,6 +578,7 @@ type ConversationAuthorityMember struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ptid          string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	Role          string                 `protobuf:"bytes,2,opt,name=role,proto3" json:"role,omitempty"`
+	HomeStationId string                 `protobuf:"bytes,3,opt,name=home_station_id,json=homeStationId,proto3" json:"home_station_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -622,6 +623,13 @@ func (x *ConversationAuthorityMember) GetPtid() string {
 func (x *ConversationAuthorityMember) GetRole() string {
 	if x != nil {
 		return x.Role
+	}
+	return ""
+}
+
+func (x *ConversationAuthorityMember) GetHomeStationId() string {
+	if x != nil {
+		return x.HomeStationId
 	}
 	return ""
 }
@@ -1437,22 +1445,23 @@ const file_domain_chat_event_proto_rawDesc = "" +
 	"\x05_nameB\x0e\n" +
 	"\f_descriptionB\x13\n" +
 	"\x11_avatar_object_idB\x1a\n" +
-	"\x18_disappear_timer_seconds\"\xb0\x01\n" +
+	"\x18_disappear_timer_seconds\"\xf3\x01\n" +
 	"\x17ConversationCreatedFact\x12?\n" +
 	"\x04kind\x18\x01 \x01(\x0e2+.peers_touch.model.chat.v1.ConversationKindR\x04kind\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
-	"owner_ptid\x18\x03 \x01(\tR\townerPtid\x12!\n" +
-	"\fmember_ptids\x18\x04 \x03(\tR\vmemberPtids\"\xdf\x01\n" +
+	"owner_ptid\x18\x03 \x01(\tR\townerPtid\x12P\n" +
+	"\amembers\x18\x05 \x03(\v26.peers_touch.model.chat.v1.ConversationAuthorityMemberR\amembersJ\x04\b\x04\x10\x05R\fmember_ptids\"\xdf\x01\n" +
 	"\"MessagingMembershipChangeCommitted\x12L\n" +
 	"\x06action\x18\x01 \x01(\x0e24.peers_touch.model.chat.v1.MessagingMembershipActionR\x06action\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x1b\n" +
 	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12&\n" +
 	"\x0fhome_station_id\x18\x04 \x01(\tR\rhomeStationId\x12\x12\n" +
-	"\x04role\x18\x05 \x01(\tR\x04role\"E\n" +
+	"\x04role\x18\x05 \x01(\tR\x04role\"m\n" +
 	"\x1bConversationAuthorityMember\x12\x12\n" +
 	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12\x12\n" +
-	"\x04role\x18\x02 \x01(\tR\x04role\"\x90\x03\n" +
+	"\x04role\x18\x02 \x01(\tR\x04role\x12&\n" +
+	"\x0fhome_station_id\x18\x03 \x01(\tR\rhomeStationId\"\x90\x03\n" +
 	"\x1dConversationAuthoritySnapshot\x12?\n" +
 	"\x04kind\x18\x01 \x01(\x0e2+.peers_touch.model.chat.v1.ConversationKindR\x04kind\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
@@ -1573,32 +1582,33 @@ var file_domain_chat_event_proto_depIdxs = []int32{
 	16, // 8: peers_touch.model.chat.v1.ReactionCommittedFact.actor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
 	16, // 9: peers_touch.model.chat.v1.MessagePinCommittedFact.actor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
 	20, // 10: peers_touch.model.chat.v1.ConversationCreatedFact.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
-	21, // 11: peers_touch.model.chat.v1.MessagingMembershipChangeCommitted.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
-	20, // 12: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
-	8,  // 13: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.active_members:type_name -> peers_touch.model.chat.v1.ConversationAuthorityMember
-	16, // 14: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.active_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	7,  // 15: peers_touch.model.chat.v1.MembershipTransitionCommittedFact.changes:type_name -> peers_touch.model.chat.v1.MessagingMembershipChangeCommitted
-	9,  // 16: peers_touch.model.chat.v1.MembershipTransitionCommittedFact.post_state:type_name -> peers_touch.model.chat.v1.ConversationAuthoritySnapshot
-	16, // 17: peers_touch.model.chat.v1.PublicEventMarker.sending_endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	16, // 18: peers_touch.model.chat.v1.MlsRetirementMarker.removed_endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	16, // 19: peers_touch.model.chat.v1.ConversationEvent.actor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	19, // 20: peers_touch.model.chat.v1.ConversationEvent.committed_at:type_name -> google.protobuf.Timestamp
-	0,  // 21: peers_touch.model.chat.v1.ConversationEvent.message_committed:type_name -> peers_touch.model.chat.v1.MessageCommittedFact
-	1,  // 22: peers_touch.model.chat.v1.ConversationEvent.message_edited:type_name -> peers_touch.model.chat.v1.MessageEditedFact
-	2,  // 23: peers_touch.model.chat.v1.ConversationEvent.message_retracted:type_name -> peers_touch.model.chat.v1.MessageRetractedFact
-	3,  // 24: peers_touch.model.chat.v1.ConversationEvent.reaction_committed:type_name -> peers_touch.model.chat.v1.ReactionCommittedFact
-	4,  // 25: peers_touch.model.chat.v1.ConversationEvent.message_pin_committed:type_name -> peers_touch.model.chat.v1.MessagePinCommittedFact
-	5,  // 26: peers_touch.model.chat.v1.ConversationEvent.conversation_updated:type_name -> peers_touch.model.chat.v1.ConversationUpdatedFact
-	10, // 27: peers_touch.model.chat.v1.ConversationEvent.membership_transition_committed:type_name -> peers_touch.model.chat.v1.MembershipTransitionCommittedFact
-	6,  // 28: peers_touch.model.chat.v1.ConversationEvent.conversation_created:type_name -> peers_touch.model.chat.v1.ConversationCreatedFact
-	14, // 29: peers_touch.model.chat.v1.DeviceEventDelivery.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	16, // 30: peers_touch.model.chat.v1.DeviceEventDelivery.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	22, // 31: peers_touch.model.chat.v1.DeviceEventDelivery.payload_kind:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayloadKind
-	32, // [32:32] is the sub-list for method output_type
-	32, // [32:32] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	8,  // 11: peers_touch.model.chat.v1.ConversationCreatedFact.members:type_name -> peers_touch.model.chat.v1.ConversationAuthorityMember
+	21, // 12: peers_touch.model.chat.v1.MessagingMembershipChangeCommitted.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
+	20, // 13: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
+	8,  // 14: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.active_members:type_name -> peers_touch.model.chat.v1.ConversationAuthorityMember
+	16, // 15: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.active_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	7,  // 16: peers_touch.model.chat.v1.MembershipTransitionCommittedFact.changes:type_name -> peers_touch.model.chat.v1.MessagingMembershipChangeCommitted
+	9,  // 17: peers_touch.model.chat.v1.MembershipTransitionCommittedFact.post_state:type_name -> peers_touch.model.chat.v1.ConversationAuthoritySnapshot
+	16, // 18: peers_touch.model.chat.v1.PublicEventMarker.sending_endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	16, // 19: peers_touch.model.chat.v1.MlsRetirementMarker.removed_endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	16, // 20: peers_touch.model.chat.v1.ConversationEvent.actor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	19, // 21: peers_touch.model.chat.v1.ConversationEvent.committed_at:type_name -> google.protobuf.Timestamp
+	0,  // 22: peers_touch.model.chat.v1.ConversationEvent.message_committed:type_name -> peers_touch.model.chat.v1.MessageCommittedFact
+	1,  // 23: peers_touch.model.chat.v1.ConversationEvent.message_edited:type_name -> peers_touch.model.chat.v1.MessageEditedFact
+	2,  // 24: peers_touch.model.chat.v1.ConversationEvent.message_retracted:type_name -> peers_touch.model.chat.v1.MessageRetractedFact
+	3,  // 25: peers_touch.model.chat.v1.ConversationEvent.reaction_committed:type_name -> peers_touch.model.chat.v1.ReactionCommittedFact
+	4,  // 26: peers_touch.model.chat.v1.ConversationEvent.message_pin_committed:type_name -> peers_touch.model.chat.v1.MessagePinCommittedFact
+	5,  // 27: peers_touch.model.chat.v1.ConversationEvent.conversation_updated:type_name -> peers_touch.model.chat.v1.ConversationUpdatedFact
+	10, // 28: peers_touch.model.chat.v1.ConversationEvent.membership_transition_committed:type_name -> peers_touch.model.chat.v1.MembershipTransitionCommittedFact
+	6,  // 29: peers_touch.model.chat.v1.ConversationEvent.conversation_created:type_name -> peers_touch.model.chat.v1.ConversationCreatedFact
+	14, // 30: peers_touch.model.chat.v1.DeviceEventDelivery.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	16, // 31: peers_touch.model.chat.v1.DeviceEventDelivery.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	22, // 32: peers_touch.model.chat.v1.DeviceEventDelivery.payload_kind:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayloadKind
+	33, // [33:33] is the sub-list for method output_type
+	33, // [33:33] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_event_proto_init() }

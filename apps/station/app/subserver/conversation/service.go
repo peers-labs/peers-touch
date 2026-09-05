@@ -60,9 +60,6 @@ type Service interface {
 
 	// ListThreadMessages returns message events for a specific thread.
 	ListThreadMessages(ctx context.Context, conversationID, threadRootID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error)
-
-	// GetThreadCounts returns reply count summaries for multiple thread roots.
-	GetThreadCounts(ctx context.Context, conversationID string, rootIDs []string) (map[string]ThreadSummary, error)
 }
 
 // Repository is the persistence contract for the conversation domain.
@@ -134,9 +131,6 @@ type Repository interface {
 	// ListThreadEvents returns events belonging to a specific thread (by root message ID).
 	// Uses partial index on thread_root_message_id for O(log n) lookup.
 	ListThreadEvents(ctx context.Context, conversationID, threadRootID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error)
-
-	// CountThreadReplies returns reply counts for multiple thread roots in one query.
-	CountThreadReplies(ctx context.Context, conversationID string, rootIDs []string) (map[string]ThreadSummary, error)
 }
 
 // TransitionRepositories are transaction-scoped adapters over one Station DB
@@ -151,14 +145,6 @@ type TransitionRepositories struct {
 // outbox/inbox facts.
 type TransitionUnitOfWork interface {
 	Execute(ctx context.Context, fn func(TransitionRepositories) error) error
-}
-
-// ThreadSummary holds denormalized thread counters per root message.
-type ThreadSummary struct {
-	RootMessageID   string
-	ReplyCount      int64
-	LatestReplyID   string
-	LatestReplyAtMs int64
 }
 
 // MemberDevice is the Station-owned routing projection for one MLS device.

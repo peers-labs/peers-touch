@@ -30,6 +30,20 @@ func (u *AuthorityUnitOfWork) AutoMigrate() error {
 	if err := NewAuthorityRepository(u.db).AutoMigrate(); err != nil {
 		return err
 	}
+	projectionGrants, err := NewEventProjectionGrantRepository(u.db)
+	if err != nil {
+		return err
+	}
+	if err := projectionGrants.AutoMigrate(); err != nil {
+		return err
+	}
+	followers, err := NewFollowerRepository(u.db)
+	if err != nil {
+		return err
+	}
+	if err := followers.AutoMigrate(); err != nil {
+		return err
+	}
 	if err := NewMlsKeyPackageStore(u.db).AutoMigrate(); err != nil {
 		return err
 	}
@@ -80,6 +94,10 @@ func (u *AuthorityUnitOfWork) Execute(
 		if err != nil {
 			return err
 		}
+		projectionGrants, err := NewEventProjectionGrantRepository(tx)
+		if err != nil {
+			return err
+		}
 		return fn(messaging.AuthorityRepositories{
 			Authority:         NewAuthorityRepository(tx),
 			Devices:           NewDeviceDirectory(tx),
@@ -90,6 +108,7 @@ func (u *AuthorityUnitOfWork) Execute(
 			Plans:             NewAuthorityPlanRepository(tx),
 			Attachments:       NewAttachmentRepository(tx),
 			ReadCursors:       readCursors,
+			ProjectionGrants:  projectionGrants,
 		})
 	})
 }

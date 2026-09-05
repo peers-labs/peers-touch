@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-09-04
+> **Created**: 2026-08-08 | **Updated**: 2026-09-05
 > **Owner**: Messaging Platform Team
 
 ---
@@ -322,7 +322,7 @@ Target Home Station以`(source_station_id, idempotency_key)`幂等ingest；相�
 
 ### 3.3.1 Authority-Signed Follower Membership
 
-> `MP-D29` amendment status: proposed
+> `MP-D29` amendment status: accepted (Owner accepted 2026-09-05)
 
 `messaging_follower_*`只保存 Authority 签名的 public event/projection，不保存
 endpoint-private payload、Direct ciphertext、MLS bytes、plaintext 或 key material。

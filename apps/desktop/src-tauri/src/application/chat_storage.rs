@@ -563,23 +563,6 @@ pub fn list_group_thread_messages(
     )
 }
 
-pub fn group_thread_counts(
-    token: &str,
-    group_ulid: &str,
-    root_ulids: &[String],
-) -> StationResult<Value> {
-    station_client::request_json(
-        Method::POST,
-        "/conversation/thread/counts",
-        token,
-        None,
-        Some(json!({
-            "conversation_id": group_ulid,
-            "root_ids": root_ulids,
-        })),
-    )
-}
-
 pub fn send_group_message(
     token: &str,
     group_ulid: &str,
