@@ -2980,13 +2980,38 @@ async function runFoundationApprovalDeniedScenario(input: {
       input.platform,
       replayed.facts[0],
     );
-    await waitFor(
-      () => Boolean(toolCallElement.querySelector(
-        '[data-pt-agent-tool-error="agent.errors.toolApprovalDenied"]',
-      )),
-      'approval-denied error surface',
-      10_000,
-    );
+    try {
+      await waitFor(
+        () => Boolean(toolCallElement.querySelector(
+          '[data-pt-agent-tool-error="agent.errors.toolApprovalDenied"]',
+        )),
+        'approval-denied error surface',
+        10_000,
+      );
+    } catch (error) {
+      const currentToolCallElement = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
+      ).find((element) => element.dataset.ptAgentToolCall === toolCallId);
+      const currentProjection = toolRuntime.getProjection(toolCallId);
+      await reportFoundationApprovalReceiverDebug(
+        'G-I',
+        'error-surface-timeout',
+        {
+          retainedElementConnected: toolCallElement.isConnected,
+          currentToolCallPresent: Boolean(currentToolCallElement),
+          currentElementMatchesRetained:
+            currentToolCallElement === toolCallElement,
+          currentErrorPresent: Boolean(currentToolCallElement?.querySelector(
+            '[data-pt-agent-tool-error="agent.errors.toolApprovalDenied"]',
+          )),
+          runtimeProjectionPresent: currentProjection !== undefined,
+          runtimeProjectionStatus: currentProjection?.status ?? 'MISSING',
+          runtimeErrorMatches:
+            currentProjection?.error === 'agent.errors.toolApprovalDenied',
+        },
+      );
+      throw error;
+    }
     const errorElement = toolCallElement.querySelector<HTMLElement>(
       '[data-pt-agent-tool-error="agent.errors.toolApprovalDenied"]',
     );
