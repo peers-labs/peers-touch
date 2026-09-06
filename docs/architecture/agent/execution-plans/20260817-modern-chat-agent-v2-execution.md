@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260906T055745423679Z-780884e75a8131b5a1a0fa38eef5ceb2` on `8b9790bd42af1747212f9aa662facc0f5ec356b9` confirmed the AS-F06 fault boundary: the run-local proxy closed four active sockets in `0-1 ms`, Gateway observed the upstream read failure in `2-3 ms`, but Browser SSE remained pending until its unchanged 30-second idle watchdog; the Gateway response body now converts an upstream transport read failure into immediate downstream EOF while preserving a warning, and post-fix exact-source proof is pending | W8a |
+| G-F Complete Foundation Gate | in progress: the Gateway response body now converts upstream SSE read failure to immediate downstream EOF at checkpoint `3d6435d825ff389f754b51cacede41df025928fa`; exact-source run `20260906T072618510941Z-4a3cd80ddc3239e5ea0f06069f471c48` then exposed the remaining Browser AS-F02 orchestration race, where waiting for the first provider event left only 142 ms before active completion and the queue reached `7/8`; the Harness now launches the active, duplicate, and eight queue admissions before awaiting provider output, with unchanged strict queue, overflow, cancellation, DOM, and lifecycle assertions; post-fix exact-source proof is pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5612,6 +5612,27 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   the chunked response immediately. The focused Rust regression test passes;
   post-fix exact-source proof remains pending. Outer Provisioner cleanup
   completed `DONE / PROVEN / passed`; Foundation and G-F remain
+  `PARTIAL / UNPROVEN`.
+- Exact-source Gate run
+  `20260906T072618510941Z-4a3cd80ddc3239e5ea0f06069f471c48`
+  (aggregate
+  `20260906T072618388474Z-42e1e9e034d39801f131a1c21c175fc0`)
+  on `3d6435d825ff389f754b51cacede41df025928fa` crossed the prior
+  Native and Browser cold-build startup boundary, then failed first at Browser
+  AS-F02 with `agent.acceptance.queueCapacitySnapshotMismatch`. The retained
+  queue trace proved the active request was admitted in 132 ms, but the Harness
+  waited until the first provider event at 1,404 ms before launching the
+  duplicate and eight queue requests. The active stream completed only 142 ms
+  later, so the authoritative queue reached `7/8` and drained to zero. Station
+  still reported capacity eight, the selected conversation matched, and every
+  Gateway request had zero worker-queue wait. The Harness now captures the
+  empty baseline first, launches all admission requests immediately after the
+  active stream starts, and only then awaits the first active event. No timeout,
+  queue-capacity, FIFO, overflow, cancellation, DOM, or lifecycle assertion
+  changed. Focused Agent tests pass `82/82`, Desktop checks and all `569`
+  Desktop tests pass with one unrelated skip, and `git diff --check` passes.
+  Inner runtime cleanup and outer Provisioner cleanup both passed. Exact-source
+  post-fix proof remains pending; Foundation and G-F remain
   `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
