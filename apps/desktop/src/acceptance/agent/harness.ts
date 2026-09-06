@@ -6060,6 +6060,24 @@ async function runFoundationF12Prepare(input: {
   }
 }
 
+async function runFoundationF12PrepareWithCapabilityFixture(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  scenarioKey: string;
+  platform: string;
+  locale: string;
+  sampleId: string;
+}): Promise<FoundationF12Handoff> {
+  return withFoundationReadyCapabilityFixture(
+    input.agent,
+    input.platform,
+    (authoritativeAgent) => runFoundationF12Prepare({
+      ...input,
+      agent: authoritativeAgent,
+    }),
+  );
+}
+
 async function traverseFoundationF12Branches(
   topic: FoundationF12TopicHandoff,
 ): Promise<{
@@ -10325,7 +10343,7 @@ export function installAcceptanceHarness(): void {
       if (!capabilitySessionId) {
         throw new Error('agent.acceptance.capabilitySessionUnavailable');
       }
-      const handoff = await runFoundationF12Prepare({
+      const handoff = await runFoundationF12PrepareWithCapabilityFixture({
         agent,
         capabilitySessionId,
         scenarioKey,
