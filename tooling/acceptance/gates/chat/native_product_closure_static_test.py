@@ -2147,7 +2147,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('aria-haspopup="dialog"', self.message_action_overlay)
 
-    def test_keyboard_navigation_waits_for_native_focus_transition(self) -> None:
+    def test_keyboard_navigation_uses_one_target_bound_sequence(self) -> None:
         keyboard_path_start = self.source.index(
             "def prove_keyboard_reaction_picker(",
         )
@@ -2163,29 +2163,38 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "return document.activeElement === row && Boolean(toolbar);",
             row_focus,
         )
-        enter_post = keyboard_path.index(
-            "self.native_adapter.post_key_to_process(\n"
+        sequence_post = keyboard_path.index(
+            "self.native_adapter.post_key_sequence_to_process(\n"
             "            process_id,\n"
-            "            NativeKey.ENTER,",
+            "            (",
             row_focus_wait,
         )
-        tab_post = keyboard_path.index(
-            "self.native_adapter.post_key_to_process(\n"
-            "                process_id,\n"
-            "                NativeKey.TAB,"
+        sequence_keys = keyboard_path.index(
+            "NativeKey.ENTER,\n"
+            "                NativeKey.TAB,\n"
+            "                NativeKey.ENTER,",
+            sequence_post,
         )
-        focus_wait = keyboard_path.index(
-            "WebDriverWait(client.driver, 5).until(",
-            tab_post,
+        picker_wait = keyboard_path.index(
+            "WebDriverWait(client.driver, 15).until(",
+            sequence_keys,
         )
-        changed_focus = keyboard_path.index("!= action", focus_wait)
         self.assertNotIn("self.click_element(actor, row)", keyboard_path)
         self.assertLess(row_focus, row_focus_wait)
-        self.assertLess(row_focus_wait, enter_post)
-        self.assertLess(enter_post, tab_post)
-        self.assertLess(tab_post, focus_wait)
-        self.assertLess(focus_wait, changed_focus)
+        self.assertLess(row_focus_wait, sequence_post)
+        self.assertLess(sequence_post, sequence_keys)
+        self.assertLess(sequence_keys, picker_wait)
+        self.assertIn(
+            "interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS",
+            keyboard_path,
+        )
         self.assertNotIn("self.native_adapter.post_key(", keyboard_path)
+        self.assertEqual(
+            keyboard_path.count(
+                "self.native_adapter.post_key_to_process("
+            ),
+            1,
+        )
 
     def test_reaction_connection_loss_proves_automatic_exact_retry(self) -> None:
         reaction_start = self.source.index("def prove_reaction(")

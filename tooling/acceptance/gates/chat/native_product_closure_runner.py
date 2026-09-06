@@ -78,6 +78,7 @@ MESSAGE_ACTION_SELECTORS = {
     "thread": '[data-message-action="thread"]',
 }
 NATIVE_INPUT_ACK_POLL_SECONDS = 0.01
+NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS = 0.2
 NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS = 30
 VALID_ATTACHMENT_IMAGE_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
@@ -2695,81 +2696,22 @@ class NativeProductClosureGate(AcceptanceGate):
                 )
             )
         )
-        self.native_adapter.post_key_to_process(
-            process_id,
-            NativeKey.ENTER,
-            private_source=True,
-        )
-        WebDriverWait(client.driver, 15).until(
-            lambda driver: driver.execute_script(
-                """
-                const active = document.activeElement;
-                return active?.closest(
-                  '[data-message-action-overlay="toolbar"]'
-                )?.getAttribute('data-message-action-message') || '';
-                """
-            )
-            == message_id
-        )
         # #region debug-point V-X:reaction-keyboard-lifecycle
         _debug_report(
             "V-X",
-            "native_product_closure_runner.py:reaction_toolbar_focused",
-            "reaction toolbar received keyboard focus",
+            "native_product_closure_runner.py:reaction_sequence_ready",
+            "message row is ready for one native keyboard sequence",
             client.execute_script(keyboard_debug_script),
         )
         # #endregion
-        focused_action_script = """
-            return document.activeElement
-              ?.getAttribute('data-message-action') || '';
-        """
-        for tab_index in range(10):
-            action = str(client.execute_script(focused_action_script) or "")
-            if action == "reaction":
-                break
-            self.native_adapter.post_key_to_process(
-                process_id,
+        self.native_adapter.post_key_sequence_to_process(
+            process_id,
+            (
+                NativeKey.ENTER,
                 NativeKey.TAB,
-                private_source=True,
-            )
-            try:
-                WebDriverWait(client.driver, 5).until(
-                    lambda driver: str(
-                        driver.execute_script(focused_action_script) or ""
-                    )
-                    != action,
-                    (
-                        "native Tab did not move message action focus "
-                        f"from {action!r} for message {message_id}"
-                    ),
-                )
-            except TimeoutException:
-                # #region debug-point V-X:reaction-keyboard-lifecycle
-                _debug_report(
-                    "V-X",
-                    "native_product_closure_runner.py:reaction_tab_timeout",
-                    "targeted Tab did not advance message action focus",
-                    {
-                        "beforeAction": action,
-                        "snapshot": client.execute_script(keyboard_debug_script),
-                        "tabIndex": tab_index,
-                    },
-                )
-                # #endregion
-                raise
-        else:
-            raise GateError("reaction action is not keyboard reachable")
-        # #region debug-point V-X:reaction-keyboard-lifecycle
-        _debug_report(
-            "V-X",
-            "native_product_closure_runner.py:reaction_action_focused",
-            "reaction action focused before targeted Enter",
-            client.execute_script(keyboard_debug_script),
-        )
-        # #endregion
-        self.native_adapter.post_key_to_process(
-            process_id,
-            NativeKey.ENTER,
+                NativeKey.ENTER,
+            ),
+            interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS,
             private_source=True,
         )
         try:
