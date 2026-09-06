@@ -161,7 +161,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             webdriver_port=int(
                 os.environ.get("PT_AGENT_V2_NATIVE_WEBDRIVER_PORT", "4445")
             ),
-            profile=f"agent-v2-native-{run_id}",
+            profile="agent-v2-foundation-native",
             storage_root=f"/tmp/pt-agent-v2-{run_id}/native/storage",
         )
         self._assert_client_ports_available(client)
@@ -208,7 +208,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             webdriver_port=int(
                 os.environ.get("PT_AGENT_V2_BROWSER_WEBDRIVER_PORT", "4446")
             ),
-            profile=f"agent-v2-browser-{run_id}",
+            profile="agent-v2-foundation-browser",
             storage_root=f"/tmp/pt-agent-v2-{run_id}/browser/storage",
         )
         self._assert_client_ports_available(client, resource_prefix="browser-")
