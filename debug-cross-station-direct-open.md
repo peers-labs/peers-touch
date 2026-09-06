@@ -36,6 +36,9 @@
 | S | The cross-Station Fixture publishes an accepted friend request but omits the reciprocal Social follow edges required by Conversation Direct policy. | High | Low | Confirmed by Windows run `20260906T050808799291Z-fa0eb0c4f955b6e8442c02cdaed89473`: Desktop rendered Bob as an accepted friend, while station-four returned `RELATIONSHIP_REQUIRED`. Source inspection showed `seed_cross_station_contact` inserted only `friend_chat_friend_requests`; commit `abea69ac4346a87aab74c45152be646906fabed4` now seeds and asserts both canonical `follows` edges on each disposable Station. |
 | T | Desktop still publishes MLS KeyPackages through the deleted `/keypackage/*` namespace after Station moved the capability to `/key-exchange/*`. | High | Low | Confirmed by run `20260906T060404502049Z-720b250fb534231a2a274d7f7cd9ab9a`: both clients repeatedly received 404 for `POST /keypackage/upload`; Alice's group creation then returned Station 500 and no MLS group projected. Commit `d30bf13e5` moves every Desktop MLS KeyPackage and DKX caller to the canonical Key Exchange routes and adds a no-legacy-route contract check. |
 | U | The route-level submit policy treats a prepared group-genesis command as an ordinary send and requires membership before genesis creates the first member rows. | High | Low | Confirmed by run `20260906T065145933373Z-a1b1fef54a2e6f48ebca7cbe2cb44ec0`: KeyPackage uploads and `/conversation/group/prepare` returned 200, then `/conversation/command` returned 403 before the authority service could consume the genesis plan. Commit `13dc0803a` removes the duplicate coarse wrapper; the Conversation authority retains command-aware device, plan, membership, epoch, role, and delivery validation. |
+| V | The second process-targeted Enter does not reach the focused reaction action as DOM key events or a click. | Medium | Low | Pending: capture keydown, keyup, click, and focused-action events around the exact Enter delivery. |
+| W | The reaction action opens the picker, but focusout schedules the 140 ms overlay dismissal before the remote round trip can observe it. | High | Low | Pending: capture overlay mutations and focus transitions around the reaction action click. |
+| X | The picker remains open, but its focus effect does not move focus to a `data-reaction-emoji` button. | Medium | Low | Pending: compare final overlay kind and active element after the 15-second assertion timeout. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -382,3 +385,27 @@ duplicate transport-level membership policy from canonical command submission;
 JWT and device identity wrappers remain. Focused Conversation package and
 ownership contract tests pass. Post-fix Windows Product Closure remains
 pending; the session stays `[OPEN]`.
+
+Exact-source Windows run
+`20260906T101255209221Z-ffc02b4884c79870ef39d707a192a047` at commit
+`b2a8a197961a0d0d61907e84d3838bb8d39f6b07`, runtime-cell run
+`20260906t101321373653z-d2fec1ec2bf7eafe`, and binary SHA-256
+`d73157f274848e0ac69b59299cacbde36d9fa84c632a83780a94b20f6fa60fa1`
+proved:
+
+- exact Direct create and repeat reopen;
+- group creation and active follower projection;
+- bidirectional transcript and thread projection;
+- pane-owned toolbar geometry; and
+- complete Windows process, port, storage, endpoint, tunnel, source-workspace,
+  and GUI-lease cleanup.
+
+The first failed step moved to `reaction.ui`. The exact message row received
+keyboard focus, the first process-targeted Enter opened its toolbar, and native
+Tab reached `data-message-action="reaction"`. The second process-targeted Enter
+did not leave a visible picker with an emoji-focused control before the
+15-second assertion expired. This rejects the earlier untargeted-process
+hypothesis but does not yet distinguish missing DOM key delivery from a
+transient picker dismissal or failed picker focus transfer. Hypotheses V-X and
+Gate-only event instrumentation now own the next comparison run; no product
+behavior has been changed.
