@@ -301,6 +301,47 @@ describe('toolRuntime projection authority', () => {
     });
   });
 
+  it('projects Station approval denial as a localized terminal error', async () => {
+    exportAgentTurnDiagnostics.mockResolvedValue({
+      replay: {
+        turnId: 'turn-1',
+        toolCalls: [{
+          toolCallId: 'tool-call-1',
+          toolName: 'filesystem.read',
+          redactedArguments: '{}',
+          status: AgentToolCallStatus.DENIED,
+          approvalId: 'approval-1',
+          decisionId: 'decision-1',
+          decisionRevision: 1n,
+          errorCode: 'TOOL_APPROVAL_DENIED',
+        }],
+      },
+    });
+
+    await expect(toolRuntime.reconcileMessages([{
+      turnId: 'turn-1',
+      toolCalls: [{
+        id: 'tool-call-1',
+        name: 'filesystem.read',
+        pending: false,
+        status: 'denied',
+        approvalId: 'approval-1',
+        decisionId: 'decision-1',
+        decisionRevision: 1,
+      }],
+    }])).resolves.toBe(true);
+
+    expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
+      status: 'denied',
+      pending: false,
+      error: 'agent.errors.toolApprovalDenied',
+      decisionErrorCode: 'TOOL_APPROVAL_DENIED',
+      approvalId: 'approval-1',
+      decisionId: 'decision-1',
+      decisionRevision: 1,
+    });
+  });
+
   it('deduplicates decision projections by identity and revision', () => {
     let state: ToolProjectionState = reduceToolProjection({}, approvalRequired);
     state = reduceToolProjection(state, {
@@ -422,9 +463,11 @@ describe('toolRuntime projection authority', () => {
 
     await toolRuntime.submitDecision('tool-call-1', false);
 
-    expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
+    const projection = toolRuntime.getProjection('tool-call-1');
+    expect(projection).toMatchObject({
       status: 'denied',
       pending: false,
+      error: 'agent.errors.toolApprovalDenied',
       decisionId: 'decision-generated-1',
       decisionRevision: 1,
       decisionErrorCode: 'agent.errors.toolApprovalDenied',
@@ -438,6 +481,17 @@ describe('toolRuntime projection authority', () => {
           decision_id: 'decision-generated-1',
         },
       },
+    });
+    expect(resolveToolCallProjection({
+      id: 'tool-call-1',
+      name: 'filesystem.read',
+      pending: false,
+      status: 'success',
+      decisionId: 'decision-generated-1',
+      decisionRevision: 1,
+    }, projection)).toMatchObject({
+      status: 'denied',
+      error: 'agent.errors.toolApprovalDenied',
     });
   });
 

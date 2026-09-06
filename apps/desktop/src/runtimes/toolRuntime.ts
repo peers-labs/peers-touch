@@ -71,6 +71,24 @@ function booleanValue(data: Record<string, unknown>, ...keys: string[]): boolean
   return false;
 }
 
+function decisionOutcomeError(
+  outcome: AgentTypedErrorPayload | null | undefined,
+): string | undefined {
+  return outcome?.locale_key?.trim()
+    || (
+      outcome?.error_type === 'TOOL_APPROVAL_DENIED'
+        ? 'agent.errors.toolApprovalDenied'
+        : undefined
+    )
+    || (
+      outcome?.error_type === 'TOOL_APPROVAL_EXPIRED'
+        ? 'agent.errors.toolApprovalExpired'
+        : undefined
+    )
+    || outcome?.error?.trim()
+    || undefined;
+}
+
 function projectionIdentity(data: Record<string, unknown>) {
   return {
     toolCallId: stringValue(data, 'toolCallId', 'tool_call_id', 'id'),
@@ -313,7 +331,10 @@ function toToolCallInfo(projection: ToolProjection): ToolCallInfo {
     decisionId: projection.decisionId,
     decisionRevision: projection.decisionRevision,
     payloadHash: projection.payloadHash,
-    error: projection.error || projection.decisionErrorCode,
+    error:
+      projection.error
+      || decisionOutcomeError(projection.decisionOutcome)
+      || projection.decisionErrorCode,
     delegationResults: projection.delegationResults,
   };
 }
@@ -327,8 +348,15 @@ export function resolveToolCallProjection(
   const sourceIsTerminal = isTerminalToolStatus(source.status);
   const projectionAddsTypedTerminalOutcome = (
     (projection.status === 'denied' || projection.status === 'expired')
-    && (source.status === projection.status || source.status === 'error')
-    && Boolean(projection.decisionErrorCode)
+    && Boolean(
+      projection.error
+      || decisionOutcomeError(projection.decisionOutcome)
+      || projection.decisionErrorCode,
+    )
+    && (
+      (source.status === projection.status || source.status === 'error')
+      || projection.decisionOutcome?.terminal === true
+    )
   );
   if (
     (sourceIsTerminal && !projectionAddsTypedTerminalOutcome)
@@ -398,6 +426,12 @@ function diagnosticToolError(
     && fact.errorCode === 'TOOL_APPROVAL_EXPIRED'
   ) {
     return 'agent.errors.toolApprovalExpired';
+  }
+  if (
+    fact.status === AgentToolCallStatus.DENIED
+    && fact.errorCode === 'TOOL_APPROVAL_DENIED'
+  ) {
+    return 'agent.errors.toolApprovalDenied';
   }
   return fact.errorCode || source.error;
 }
@@ -713,14 +747,16 @@ class ToolRuntime implements RuntimeDescriptor {
     };
     const request = api.submitAgentToolDecision(input)
       .then((response) => {
+        const outcomeError = decisionOutcomeError(response.outcome_error);
         if (!response.accepted) {
           const expired =
             response.error_code
             === 'TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED';
           this.patch(toolCallId, {
             ...(expired ? { status: 'expired' as const, pending: false } : {}),
+            error: outcomeError || response.error_code,
             decisionErrorCode:
-              response.outcome_error?.locale_key || response.error_code,
+              outcomeError || response.error_code,
             decisionOutcome: response.outcome_error ?? undefined,
           });
           return response;
@@ -739,7 +775,8 @@ class ToolRuntime implements RuntimeDescriptor {
         });
         if (response.outcome_error) {
           this.patch(toolCallId, {
-            decisionErrorCode: response.outcome_error.locale_key,
+            error: outcomeError,
+            decisionErrorCode: outcomeError,
             decisionOutcome: response.outcome_error,
           });
         }
