@@ -44,6 +44,7 @@
 | AA | Product Closure invalidates its proven keyboard picker by closing it, then races a second pointer worker while reopening the same transient action. | High | Low | Confirmed by run `20260906T124104139489Z-1980e06865f515f88d65c33cfe774e02`: the atomic keyboard sequence opened the picker and focused `👍`, then `choose_reaction` timed out reopening the picker after the separate Escape and pointer path. |
 | AB | Selecting an emoji from an already-open picker through a separately scheduled pointer worker repeats the same transient-focus race. | High | Low | Confirmed by run `20260906T132928020878Z-01d741beef2f02a02abd3630ff6f1da3`: `toolbar_keyboard_reachable` passed, but the picker disappeared before `_click_focused_element` observed the emoji click. |
 | AC | Splitting keyboard picker proof and keyboard selection into separate native workers still loses the stable row/toolbar boundary between phases. | High | Low | Confirmed by run `20260906T141937599501Z-9f41dd564758034a3fa8845ee2ecfd4f`: picker proof passed, but the subsequent selection helper timed out before its row-plus-toolbar precondition. |
+| AD | Repeating the now-valid keyboard picker path for fault-retry is rejected only because localization checkpoint registration is non-idempotent. | High | Low | Confirmed by run `20260906T150752731550Z-a549862769feb52b4ce1c35c6921151d`: both selection sequences completed, then the second call raised `duplicate localization checkpoint: reaction-picker`. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -494,3 +495,14 @@ hypothesis AC. The Gate now combines picker reachability, localized
 accessibility-label observation, and first-emoji activation into one native
 sequence, then verifies the captured DOM event chain after selection. Cleanup
 for the failed run remained `DONE/PROVEN`.
+
+Exact-source run
+`20260906T150752731550Z-a549862769feb52b4ce1c35c6921151d` at commit
+`12890cc88ddd5881089a22913fbeb6cfa485171e`, runtime-cell run
+`20260906t150820502704z-5a42a43dea862a78`, and binary SHA-256
+`985c65a454234ecff8067e1a0afc89f5e3cbf6c55bfa975ab79df406b8738f5d`
+proved both atomic keyboard selection sequences. It then failed solely because
+the second valid picker use encountered the one-shot localization-checkpoint
+guard. The checkpoint registration is now idempotent per actor while every
+picker invocation still validates its captured localized label. Cleanup for
+the failed run remained `DONE/PROVEN`.
