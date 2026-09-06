@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `e9ac80184b68eca6e5d761517f5ceb8c2a57c7d1` restores AS-F06 capability isolation after transport recovery and Station reauthentication; diagnostic checkpoint `b516ba444803d3ecec8122aa7c4284e74a3f8d6f` preserves denial receiver remount/projection evidence without changing behavior; exact-source run `20260906T183220470684Z-c0cf923e2b4e7da573bde939a067e9d9` passed all four AS-F06 tuples, AS-F10, AS-F12, `BASE-ACTIVE-MUTATION-CONFLICT`, both `BASE-APPROVAL-DENIED` locale tuples, and both `BASE-APPROVAL-EXPIRED` locale tuples, then failed closed at Browser English `BASE-ATTACHMENT-REJECTED` because the direct-runtime group is not implemented; Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `0409ac063d22d822df0439679a183442b915d7f3` closes the typed attachment-rejection vertical and checkpoint `7f5465a0126f7bd3a9e3e445e9d617fc62aebc03` prevents AS-F07 provider prompt-cache collapse; exact-source run `20260906T205904874431Z-fe83662d3907add636c428bdee8245d4` runtime-confirmed AS-F07 cancellation/revision closure and exposed the Browser Simplified Chinese `BASE-APPROVAL-DENIED` projection gap; the local `agent-tool` closure now normalizes typed denial outcomes into the canonical localized error and gives typed terminal Station outcomes precedence over stale message-cache terminal state, with Desktop and focused Foundation verification passing; checkpoint deployment and the unchanged Gate rerun remain pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5796,6 +5796,38 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `DONE / PROVEN / passed` Provisioner cleanup. TypeScript check, `204`
   focused Foundation/static tests, and `git diff --check` pass. G-F remains
   `PARTIAL / UNPROVEN` pending checkpoint deployment and an exact-source rerun.
+- Checkpoint `7f5465a0126f7bd3a9e3e445e9d617fc62aebc03` was deployed
+  exact-source to `chat-native-disposable-station`. Gate run
+  `20260906T205904874431Z-fe83662d3907add636c428bdee8245d4`
+  (aggregate
+  `20260906T205904760027Z-a8d697aedab4e34149ecfb2de522088e`)
+  runtime-confirmed AS-F07: the source cancellation settled as `cancelled`,
+  the source stream observed cancellation, and the revision attempt advanced
+  from one attempt to two. The first subsequent failure was
+  `foundation-browser-direct / browser / direct_model /
+  BASE-APPROVAL-DENIED / zh-CN / single / sample-001`. Station persisted the
+  exact manual-policy denial and typed `TOOL_APPROVAL_DENIED` outcome, the
+  retained ToolCall DOM node stayed mounted, and `agent-tool` held terminal
+  `denied`; however, its canonical projection omitted
+  `error=agent.errors.toolApprovalDenied`, so `ToolCallCard` rendered no
+  localized error surface. This is a Desktop projection-owner normalization
+  defect, not a Station, locale, DOM-lifetime, or Gate-predicate defect.
+  Provisioner cleanup completed `DONE / PROVEN / passed`, all six client ports
+  were released, source identity and redaction passed, and Foundation/G-F
+  remain `PARTIAL / UNPROVEN`.
+- The local Browser denial-projection closure keeps `toolRuntime` as the sole
+  Web owner: live typed decision outcomes now populate the canonical localized
+  `error`, diagnostic replay maps `TOOL_APPROVAL_DENIED` to
+  `agent.errors.toolApprovalDenied`, and a typed terminal Station outcome at
+  the same or newer revision overrides a stale terminal message-cache
+  projection. `ToolCallCard` remains a pure renderer. Focused Tool runtime and
+  component tests pass `16/16`; Desktop TypeScript check passes; all `573`
+  Desktop tests pass with one unrelated environment-dependent skip; Desktop
+  production build passes; focused Foundation/static tests pass `160/160`;
+  and `git diff --check` passes. Agent proof validation correctly remains
+  `UNPROVEN` because authoritative latest evidence still identifies the
+  pre-fix source commit. Exact-source checkpoint deployment and the unchanged
+  419-cell Gate rerun remain pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
