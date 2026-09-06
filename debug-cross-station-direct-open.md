@@ -42,6 +42,7 @@
 | Y | Re-running Win32 top-level activation before every key resets the WebView's descendant DOM focus. | High | Low | Rejected as the sole cause: commit `8f7d798f3` preserved descendant focus when the actor already owned the foreground window, but the comparison run still lost toolbar focus before Tab delivery. |
 | Z | Launching a separate interactive broker worker for each key steals focus long enough for the 140 ms overlay dismissal timer to remove the toolbar before the key is injected. | High | Low | Confirmed by post-fix event evidence: the thread button received `focusout`, the toolbar disappeared 149 ms later, and Tab reached `BODY` 583 ms after dismissal. |
 | AA | Product Closure invalidates its proven keyboard picker by closing it, then races a second pointer worker while reopening the same transient action. | High | Low | Confirmed by run `20260906T124104139489Z-1980e06865f515f88d65c33cfe774e02`: the atomic keyboard sequence opened the picker and focused `👍`, then `choose_reaction` timed out reopening the picker after the separate Escape and pointer path. |
+| AB | Selecting an emoji from an already-open picker through a separately scheduled pointer worker repeats the same transient-focus race. | High | Low | Confirmed by run `20260906T132928020878Z-01d741beef2f02a02abd3630ff6f1da3`: `toolbar_keyboard_reachable` passed, but the picker disappeared before `_click_focused_element` observed the emoji click. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -467,3 +468,16 @@ keyboard-opened picker for the selected reaction and repeats the same atomic
 keyboard-open path for the fault-retry reaction. This preserves the product
 assertions while removing a redundant transient-control reopen race. Cleanup
 for the failed run remained `DONE/PROVEN`.
+
+Exact-source run
+`20260906T132928020878Z-01d741beef2f02a02abd3630ff6f1da3` at commit
+`ee0739effc278418650728399a85bdac082ac939`, runtime-cell run
+`20260906t132954992174z-2564edcad5fca19f`, and binary SHA-256
+`77365ae00d0c7d6311ea3e21166ca184095c2f174b31dff620434720761843c8`
+again proved the complete keyboard-open path and
+`toolbar_keyboard_reachable`, then failed while the Gate selected the focused
+emoji through a separately scheduled pointer worker. This confirms hypothesis
+AB. Reaction selection now uses one self-contained native sequence from the
+stable message row through picker open and first-emoji activation; the same
+sequence owns initial delivery and fault-retry selection. Cleanup for the
+failed run remained `DONE/PROVEN`.
