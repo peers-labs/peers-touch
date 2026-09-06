@@ -2763,9 +2763,7 @@ class NativeProductClosureGate(AcceptanceGate):
             ),
             json.dumps(picker_labels, sort_keys=True),
         )
-        if "reaction-picker" in self.localization_checks:
-            raise GateError("duplicate localization checkpoint: reaction-picker")
-        self.localization_checks["reaction-picker"] = {actor: []}
+        self.localization_checks.setdefault("reaction-picker", {})[actor] = []
         return str(selected_emoji)
 
     def reaction_visible(self, actor: str, message_id: str, emoji: str) -> bool:

@@ -2051,7 +2051,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 self.source,
             )
         self.assertIn(
-            'self.localization_checks["reaction-picker"] = {actor: []}',
+            'self.localization_checks.setdefault("reaction-picker", {})[actor] = []',
             self.source,
         )
         self.assertIn(
