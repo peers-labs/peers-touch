@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260906T023932273619Z-9996d0d9df800ffb67685cc1635aabb3` on `7f7fc29de455905285fb688c830a0b7a17130cd1` proved both Browser AS-F02 locale tuples at strict `8/8`, FIFO positions `1..8`, and `ADMISSION_QUEUE_FULL`; the first failure advanced to Browser AS-F06 fault acknowledgement, where `CONNECTION_LOST` arrived about 30,004 ms after the cut request and raced the unchanged 30-second Harness boundary; fault-control/proxy/stream propagation is under source-backed diagnosis, and the independent oracle remains unchanged | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260906T055745423679Z-780884e75a8131b5a1a0fa38eef5ceb2` on `8b9790bd42af1747212f9aa662facc0f5ec356b9` confirmed the AS-F06 fault boundary: the run-local proxy closed four active sockets in `0-1 ms`, Gateway observed the upstream read failure in `2-3 ms`, but Browser SSE remained pending until its unchanged 30-second idle watchdog; the Gateway response body now converts an upstream transport read failure into immediate downstream EOF while preserving a warning, and post-fix exact-source proof is pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5592,6 +5592,27 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   timeout or behavior change. Inner runtime cleanup was `clean`; outer
   Provisioner cleanup completed `DONE / PROVEN / passed`; secret scanning and
   redaction passed. Foundation and G-F remain `PARTIAL / UNPROVEN`.
+- Instrumented exact-source Gate run
+  `20260906T055745423679Z-780884e75a8131b5a1a0fa38eef5ceb2`
+  (aggregate
+  `20260906T055745312844Z-a0da0927e45879b112f3bfe02f4585b4`,
+  child
+  `20260906T055752959671Z-9cf540ebe7db3b9c19f2d240801c1641`)
+  on `8b9790bd42af1747212f9aa662facc0f5ec356b9` reproduced Browser
+  AS-F06 English and isolated the transport boundary without changing the
+  timeout or oracle. Both fault cuts targeted the Gateway's actual loopback
+  Station port `57504`, found four active sockets, and closed them in `0-1 ms`.
+  Gateway upstream streaming returned `responseOk=false` within `2-3 ms`, but
+  Browser `reader.read()` remained pending until
+  `agent.error.streamIdleTimeout` about 30 seconds later before forwarding
+  `connection_lost`. Hypotheses that the stream bypassed the proxy, the proxy
+  had no active socket, or Gateway observed the cut late are rejected. The
+  owning-layer correction wraps the upstream reader so a transport read failure
+  is warned and translated to downstream EOF, allowing `tiny_http` to finalize
+  the chunked response immediately. The focused Rust regression test passes;
+  post-fix exact-source proof remains pending. Outer Provisioner cleanup
+  completed `DONE / PROVEN / passed`; Foundation and G-F remain
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
