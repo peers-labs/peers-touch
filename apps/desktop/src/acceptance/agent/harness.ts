@@ -10652,6 +10652,44 @@ export function installAcceptanceHarness(): void {
               capabilitySessions.selectedStationSession?.session_id,
           }),
         );
+        queuedTurns.forEach((queued, index) => {
+          void queued.firstEvent.then((event) => {
+            const admission =
+              event.data.admission && typeof event.data.admission === 'object'
+                ? event.data.admission as Record<string, unknown>
+                : {};
+            return reportFoundationQueueCapacityDebug(
+              'B,D',
+              'queued-first-event',
+              {
+                queueIndex: index + 1,
+                elapsedSinceActiveMs: performance.now() - activeStartedAt,
+                eventType: event.event,
+                queuePosition: Number(admission.queue_position ?? 0),
+                activeTerminal: active.events.some(
+                  (activeEvent) =>
+                    classifyAgentTurnTerminalEvent(activeEvent) !== null,
+                ),
+              },
+            );
+          });
+          void queued.result.then((result) =>
+            reportFoundationQueueCapacityDebug(
+              'B,D',
+              'queued-result',
+              {
+                queueIndex: index + 1,
+                elapsedSinceActiveMs: performance.now() - activeStartedAt,
+                ok: result.ok,
+                errorCode: observedErrorCode(result.error),
+                eventTypes: result.events.map((event) => event.event),
+                activeTerminal: active.events.some(
+                  (activeEvent) =>
+                    classifyAgentTurnTerminalEvent(activeEvent) !== null,
+                ),
+              },
+            ));
+        });
         void reportFoundationQueueCapacityDebug(
           'B,D',
           'queued-submissions-started',
