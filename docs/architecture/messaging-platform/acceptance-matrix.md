@@ -7,6 +7,11 @@
 
 ---
 
+Acceptance treats Conversation `/conversation/*` as the sole Chat entry point.
+Device, Inbox, Recovery, Key Exchange, and Federation evidence must exercise
+their resource-owner APIs, while Desktop/Mobile runtime evidence may retain the
+Device Messaging Engine name.
+
 ## 1. Acceptance Rule
 
 ```text
