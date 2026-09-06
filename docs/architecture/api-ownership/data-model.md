@@ -36,6 +36,15 @@ governed_prefixes:
   - /api/v1/social/friend-request
   - /api/v1/social/friend-requests
   - /federation/
+owner_roots:
+  station.conversation:
+    - apps/station/app/subserver/conversation/
+ddd_layers:
+  - name: conversation.domain
+    root: apps/station/app/subserver/conversation/domain/
+    forbidden_imports:
+      - gorm.io
+      - net/http
 capabilities: []
 ```
 
@@ -73,7 +82,24 @@ Rules:
 - `allowed_dependencies` are ports, not concrete package imports.
 - `superseded_symbols` must have zero live references at hard-cut completion.
 
-## 2. Exposure Types
+## 2. DDD Layer Rules
+
+Each `ddd_layers` entry binds a target source root to import prefixes that are
+forbidden in production Go files under that root. The Gate parses Go imports and
+ignores `_test.go` composition so black-box tests may wire real adapters.
+
+The accepted Conversation rules enforce:
+
+- `domain` has no HTTP, GORM, Station frame, generated transport, application,
+  infrastructure, or interface imports;
+- `application` has no HTTP, SQL/GORM, generated transport, concrete
+  infrastructure, or interface imports;
+- `infrastructure` does not import the HTTP interface layer;
+- `interface/http` does not import concrete infrastructure.
+
+Missing layer rules or any forbidden import make the registry Gate fail.
+
+## 3. Exposure Types
 
 | Exposure | Caller | Authentication | May own business truth |
 |---|---|---|---|
@@ -84,7 +110,7 @@ Rules:
 A capability cannot be both `client` and `peer` through one handler. The two trust
 boundaries require separate capability IDs even when they carry related payloads.
 
-## 3. Governed Chat And Social Capabilities
+## 4. Governed Chat And Social Capabilities
 
 | Capability ID | Canonical route | Owner |
 |---|---|---|
@@ -107,11 +133,12 @@ boundaries require separate capability IDs even when they carry related payloads
 | `social.friend_request.reject` | `POST /api/v1/social/friend-request/reject` | Social |
 | `social.friend_request.list` | `GET /api/v1/social/friend-requests` | Social |
 
-Attachment, typing, peer Federation, and the rest of the existing Conversation route
-family must be inventoried in the same registry before the Gate becomes required.
-They cannot be omitted from the governed prefixes in the accepted artifact.
+The registry inventories all current routes under the governed prefixes. Routes
+that have no target capability are listed under `target_absent_routes`, so their
+presence fails as explicit deletion debt instead of being misclassified as an
+undeclared capability.
 
-## 4. Canonical Conversation Persistence
+## 5. Canonical Conversation Persistence
 
 The target Conversation authority has one store family:
 
@@ -144,7 +171,7 @@ conversation_attachment_*
 Final exact table names must match the accepted architecture and generated migration
 manifest. A second table family may not be retained for compatibility.
 
-## 5. Typed Cross-Station Friend Request Contract
+## 6. Typed Cross-Station Friend Request Contract
 
 The exact field numbers are assigned proto-first during execution. The required
 semantic contract is:
@@ -200,7 +227,7 @@ outbox facts needed for sender-local projection. Conversation creation is a subs
 Social-owned integration call after accepted relationship convergence; it is not part of
 the Federation transport.
 
-## 6. Gate Result
+## 7. Gate Result
 
 The ownership Gate emits a canonical report:
 

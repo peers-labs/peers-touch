@@ -175,6 +175,9 @@ func discoverForbiddenTruthStores(
 
 	files, diagnostics := collectSourceFiles(root, stationRoots, map[string]struct{}{".go": {}})
 	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
 		absolutePath := filepath.Join(root, filepath.FromSlash(file))
 		content, readErr := os.ReadFile(absolutePath)
 		if readErr != nil {
@@ -223,6 +226,78 @@ func discoverForbiddenTruthStores(
 	}
 	sortLocationMap(locations)
 	return locations, diagnostics
+}
+
+func discoverForbiddenDDDImports(
+	root string,
+	rules []dddLayerRule,
+) []diagnostic {
+	var diagnostics []diagnostic
+	for _, rule := range rules {
+		files, sourceDiagnostics := collectSourceFiles(
+			root,
+			[]string{rule.Root},
+			map[string]struct{}{".go": {}},
+		)
+		diagnostics = append(diagnostics, sourceDiagnostics...)
+		for _, file := range files {
+			if strings.HasSuffix(file, "_test.go") {
+				continue
+			}
+			content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file)))
+			if err != nil {
+				diagnostics = append(diagnostics, diagnostic{
+					Code:      "source_inventory_failed",
+					Message:   fmt.Sprintf("read Go source %q: %v", file, err),
+					Locations: []sourceLocation{{File: file, Line: 1, Column: 1}},
+				})
+				continue
+			}
+			fileSet := token.NewFileSet()
+			parsed, err := parser.ParseFile(
+				fileSet,
+				file,
+				content,
+				parser.ImportsOnly,
+			)
+			if err != nil {
+				diagnostics = append(diagnostics, diagnostic{
+					Code:      "go_ast_parse_failed",
+					Message:   fmt.Sprintf("parse Go imports in %q: %v", file, err),
+					Locations: []sourceLocation{{File: file, Line: 1, Column: 1}},
+				})
+				continue
+			}
+			for _, importSpec := range parsed.Imports {
+				importPath, decodeErr := strconv.Unquote(importSpec.Path.Value)
+				if decodeErr != nil {
+					continue
+				}
+				for _, forbidden := range rule.ForbiddenImports {
+					if !importMatchesPrefix(importPath, forbidden) {
+						continue
+					}
+					position := fileSet.Position(importSpec.Path.Pos())
+					diagnostics = append(diagnostics, diagnostic{
+						Code:       "forbidden_ddd_import",
+						Message:    fmt.Sprintf("DDD layer %q imports forbidden package %q", rule.Name, importPath),
+						Identifier: importPath,
+						Owner:      rule.Name,
+						Expected:   []string{rule.Root},
+						Locations: []sourceLocation{{
+							File: file, Line: position.Line, Column: position.Column,
+						}},
+					})
+					break
+				}
+			}
+		}
+	}
+	return diagnostics
+}
+
+func importMatchesPrefix(importPath, prefix string) bool {
+	return importPath == prefix || strings.HasPrefix(importPath, prefix+"/")
 }
 
 func containsIdentifier(value, identifier string) bool {

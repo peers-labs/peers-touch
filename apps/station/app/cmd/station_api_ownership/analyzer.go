@@ -147,6 +147,11 @@ func analyze(options analysisOptions) analysisReport {
 		})
 	}
 
+	report.Diagnostics = append(
+		report.Diagnostics,
+		discoverForbiddenDDDImports(root, registry.DDDLayers)...,
+	)
+
 	finalizeReport(&report)
 	return report
 }
