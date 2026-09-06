@@ -34,6 +34,9 @@ const (
 	FederationErrorIdempotencyConflict FederationErrorCode = "SOCIAL_FEDERATION_IDEMPOTENCY_CONFLICT"
 	FederationErrorStateConflict       FederationErrorCode = "SOCIAL_FEDERATION_STATE_CONFLICT"
 	FederationErrorNotFound            FederationErrorCode = "SOCIAL_FEDERATION_NOT_FOUND"
+	FederationErrorBlocked             FederationErrorCode = "SOCIAL_FEDERATION_BLOCKED"
+	FederationErrorAlreadyFriends      FederationErrorCode = "SOCIAL_FEDERATION_ALREADY_FRIENDS"
+	FederationErrorIdentityUnavailable FederationErrorCode = "SOCIAL_FEDERATION_IDENTITY_UNAVAILABLE"
 	FederationErrorPersistence         FederationErrorCode = "SOCIAL_FEDERATION_PERSISTENCE"
 )
 
@@ -128,6 +131,12 @@ type FriendRequestCommandRecord struct {
 	ResolvedAt             *time.Time
 }
 
+// ReceiverFriendRequestPolicy is the receiver-local relationship policy snapshot.
+type ReceiverFriendRequestPolicy struct {
+	Blocked              bool
+	ExistingRelationship bool
+}
+
 // FriendRequestProjection is one Station-local projection of canonical Social truth.
 type FriendRequestProjection struct {
 	RequestID                 string
@@ -164,6 +173,48 @@ type DirectConversationEffect struct {
 	ActorBPTID      string
 	AcceptedEventID string
 	CreatedAt       time.Time
+}
+
+// ValidateReceiverFriendRequestPolicy applies the same receiver-local block
+// boundary as local Friend Request handling. Existing relationships reject only
+// new SEND commands and never invalidate a pending request's receiver decision.
+func ValidateReceiverFriendRequestPolicy(
+	action model.FriendRequestAction,
+	policy ReceiverFriendRequestPolicy,
+) error {
+	const operation = "social.validate_receiver_friend_request_policy"
+	if policy.Blocked &&
+		(action == model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND ||
+			action == model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT) {
+		return NewFederationError(
+			FederationErrorBlocked,
+			operation,
+			"relationship",
+			"is blocked by receiver-local policy",
+		)
+	}
+	if action == model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND &&
+		policy.ExistingRelationship {
+		return NewFederationError(
+			FederationErrorAlreadyFriends,
+			operation,
+			"relationship",
+			"already exists at the receiver Home Station",
+		)
+	}
+	switch action {
+	case model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_REJECT:
+		return nil
+	default:
+		return NewFederationError(
+			FederationErrorInvalidArgument,
+			operation,
+			"action",
+			"is unspecified",
+		)
+	}
 }
 
 // CanonicalFriendRequestCommandBytes returns deterministic bytes for exact persistence.
@@ -827,12 +878,21 @@ func ValidateFriendRequestCommandResult(
 			"must contain a SHA-256 digest",
 		)
 	}
+	if result.GetRetryable() ||
+		result.GetErrorCode() ==
+			model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_RETRY_LATER {
+		return NewFederationError(
+			FederationErrorInvalidArgument,
+			operation,
+			"result",
+			"retryable outcomes must retain and retry the original command frame",
+		)
+	}
 	switch result.GetKind() {
 	case model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_COMMITTED,
 		model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_DUPLICATE:
 		if result.GetErrorCode() !=
 			model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_UNSPECIFIED ||
-			result.GetRetryable() ||
 			result.GetEvent() == nil {
 			return NewFederationError(
 				FederationErrorInvalidArgument,
@@ -872,6 +932,110 @@ func ValidateFriendRequestCommandResult(
 			"is unspecified",
 		)
 	}
+}
+
+// ValidateOutgoingFriendRequestCommandResult binds a result to the exact
+// outgoing command bytes persisted by its authorizing Home Station.
+func ValidateOutgoingFriendRequestCommandResult(
+	record FriendRequestCommandRecord,
+	result *model.FriendRequestCommandResult,
+) error {
+	const operation = "social.validate_outgoing_friend_request_command_result"
+	if err := ValidateFriendRequestCommandResult(result); err != nil {
+		return err
+	}
+	if record.Role != FriendRequestCommandRoleOutgoing ||
+		record.AuthorityStationPeerID == "" ||
+		record.CommandID == "" ||
+		record.RequestID == "" ||
+		len(record.CommandBytes) == 0 ||
+		len(record.CommandPayloadSHA256) != sha256.Size {
+		return NewFederationError(
+			FederationErrorInvalidArgument,
+			operation,
+			"command_record",
+			"is not a complete outgoing command",
+		)
+	}
+	if record.CommandID != result.GetCommandId() ||
+		record.RequestID != result.GetRequestId() {
+		return NewFederationError(
+			FederationErrorIdempotencyConflict,
+			operation,
+			"command_id",
+			"does not match the persisted outgoing command identity",
+		)
+	}
+	persistedHash := sha256.Sum256(record.CommandBytes)
+	if !bytes.Equal(persistedHash[:], record.CommandPayloadSHA256) ||
+		!bytes.Equal(record.CommandPayloadSHA256, result.GetCommandPayloadSha256()) {
+		return NewFederationError(
+			FederationErrorIdempotencyConflict,
+			operation,
+			"command_payload_sha256",
+			"does not match the exact persisted outgoing command bytes",
+		)
+	}
+
+	command := &model.FriendRequestCommand{}
+	if err := proto.Unmarshal(record.CommandBytes, command); err != nil {
+		return WrapFederationError(FederationErrorPersistence, operation, err)
+	}
+	canonicalBytes, err := CanonicalFriendRequestCommandBytes(command)
+	if err != nil {
+		return err
+	}
+	body := command.GetBody()
+	if !bytes.Equal(canonicalBytes, record.CommandBytes) ||
+		body.GetCommandId() != record.CommandID ||
+		body.GetRequestId() != record.RequestID ||
+		body.GetReceiverHomeStationPeerId() != record.AuthorityStationPeerID {
+		return NewFederationError(
+			FederationErrorIdempotencyConflict,
+			operation,
+			"command_record",
+			"does not contain the exact canonical Friend Request command",
+		)
+	}
+	expectedState := model.FriendRequestState_FRIEND_REQUEST_STATE_UNSPECIFIED
+	switch body.GetAction() {
+	case model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND:
+		expectedState = model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING
+	case model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT:
+		expectedState = model.FriendRequestState_FRIEND_REQUEST_STATE_ACCEPTED
+	case model.FriendRequestAction_FRIEND_REQUEST_ACTION_REJECT:
+		expectedState = model.FriendRequestState_FRIEND_REQUEST_STATE_REJECTED
+	default:
+		return NewFederationError(
+			FederationErrorIdempotencyConflict,
+			operation,
+			"command_record",
+			"contains an unsupported action",
+		)
+	}
+	if event := result.GetEvent(); event != nil {
+		if event.GetState() != expectedState {
+			return NewFederationError(
+				FederationErrorStateConflict,
+				operation,
+				"event.state",
+				"does not match the exact outgoing command action",
+			)
+		}
+		if event.GetAuthorityStationPeerId() != body.GetReceiverHomeStationPeerId() ||
+			event.GetSenderHomeStationPeerId() != body.GetSenderHomeStationPeerId() ||
+			event.GetReceiverHomeStationPeerId() != body.GetReceiverHomeStationPeerId() ||
+			!proto.Equal(event.GetSender(), body.GetSender()) ||
+			!proto.Equal(event.GetReceiver(), body.GetReceiver()) {
+			return NewFederationError(
+				FederationErrorIdempotencyConflict,
+				operation,
+				"event",
+				"does not bind the exact outgoing command actors and Stations",
+			)
+		}
+	}
+	return nil
 }
 
 // DirectConversationEffectID is stable across retries and Station restarts.

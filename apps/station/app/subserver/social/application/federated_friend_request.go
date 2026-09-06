@@ -24,6 +24,7 @@ type FederatedFriendRequestService struct {
 	stationSigner  delivery.Signer
 	localStationID string
 	clock          delivery.Clock
+	keyHydrator    infrastructure.FriendRequestActorKeyHydrator
 }
 
 // SubmitFriendRequestCommandResult reports local durable acceptance, not remote success.
@@ -56,6 +57,14 @@ func NewFederatedFriendRequestService(
 		localStationID: localStationID,
 		clock:          clock,
 	}, nil
+}
+
+// WithActorKeyHydrator overrides the verified profile hydration port.
+func (s *FederatedFriendRequestService) WithActorKeyHydrator(
+	hydrator infrastructure.FriendRequestActorKeyHydrator,
+) *FederatedFriendRequestService {
+	s.keyHydrator = hydrator
+	return s
 }
 
 // SubmitFriendRequestCommand atomically persists exact command, projection, and outbox.
@@ -154,6 +163,8 @@ func (s *FederatedFriendRequestService) SubmitFriendRequestCommand(
 			ctx,
 			transaction,
 			command,
+			s.localStationID,
+			s.keyHydrator,
 		); verifyErr != nil {
 			return verifyErr
 		}
@@ -263,8 +274,37 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestCommand(
 		ctx,
 		transaction,
 		command,
+		s.localStationID,
+		s.keyHydrator,
 	); err != nil {
 		return deliveryResultForSocialError(err), nil
+	}
+	if body.GetAction() ==
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND ||
+		body.GetAction() ==
+			model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT {
+		policy, policyErr := transaction.LoadReceiverFriendRequestPolicy(
+			ctx,
+			body.GetReceiver().GetPtid(),
+			body.GetSender().GetPtid(),
+		)
+		if policyErr != nil {
+			return delivery.Result{}, policyErr
+		}
+		if policyErr := domain.ValidateReceiverFriendRequestPolicy(
+			body.GetAction(),
+			policy,
+		); policyErr != nil {
+			return s.persistRejectedCommand(
+				ctx,
+				transaction,
+				candidate,
+				body,
+				commandHash,
+				policyErr,
+				now,
+			)
+		}
 	}
 
 	current, err := transaction.LoadProjection(ctx, body.GetRequestId())
@@ -278,6 +318,17 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestCommand(
 		now,
 	)
 	if err != nil {
+		if _, _, durable := friendRequestCommandResultForError(err); durable {
+			return s.persistRejectedCommand(
+				ctx,
+				transaction,
+				candidate,
+				body,
+				commandHash,
+				err,
+				now,
+			)
+		}
 		return deliveryResultForSocialError(err), nil
 	}
 	resultPayload := &model.FriendRequestCommandResult{
@@ -340,6 +391,16 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestCommand(
 				return delivery.Result{}, err
 			}
 		}
+	}
+	if err := s.resolveAuthorizingOutgoingCommand(
+		ctx,
+		transaction,
+		body,
+		resultPayload,
+		resultBytes,
+		now,
+	); err != nil {
+		return delivery.Result{}, err
 	}
 
 	resultFrame, err := s.newSignedFrame(
@@ -433,14 +494,6 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestResult(
 	if err := domain.ValidateFriendRequestCommandResult(result); err != nil {
 		return deliveryResultForSocialError(err), nil
 	}
-	event := result.GetEvent()
-	if event == nil ||
-		frame.GetPayloadId() != result.GetCommandId() ||
-		frame.GetSourceStationPeerId() != event.GetAuthorityStationPeerId() ||
-		frame.GetTargetStationPeerId() != s.localStationID ||
-		frame.GetTargetStationPeerId() != event.GetSenderHomeStationPeerId() {
-		return delivery.TerminalResult(delivery.FrameErrorDomainRejected), nil
-	}
 	resultBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(result)
 	if err != nil {
 		return delivery.Result{}, domain.WrapFederationError(
@@ -449,8 +502,53 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestResult(
 			err,
 		)
 	}
-	if !bytes.Equal(resultBytes, frame.GetOpaquePayload()) {
+	if frame.GetPayloadId() != result.GetCommandId() ||
+		frame.GetTargetStationPeerId() != s.localStationID ||
+		!bytes.Equal(resultBytes, frame.GetOpaquePayload()) ||
+		!bytes.Equal(frame.GetPayloadSha256(), delivery.PayloadSHA256(resultBytes)) {
 		return delivery.TerminalResult(delivery.FrameErrorInvalidFrame), nil
+	}
+
+	event := result.GetEvent()
+	if event != nil &&
+		(frame.GetSourceStationPeerId() != event.GetAuthorityStationPeerId() ||
+			frame.GetTargetStationPeerId() != event.GetSenderHomeStationPeerId()) {
+		return delivery.TerminalResult(delivery.FrameErrorDomainRejected), nil
+	}
+
+	outgoing, err := transaction.LoadCommand(
+		ctx,
+		domain.FriendRequestCommandRoleOutgoing,
+		frame.GetSourceStationPeerId(),
+		result.GetCommandId(),
+	)
+	if err != nil {
+		return delivery.Result{}, err
+	}
+	if outgoing != nil {
+		if err := domain.ValidateOutgoingFriendRequestCommandResult(
+			*outgoing,
+			result,
+		); err != nil {
+			return deliveryResultForSocialError(err), nil
+		}
+	} else if event == nil ||
+		event.GetState() == model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING {
+		return delivery.TerminalResult(delivery.FrameErrorDomainRejected), nil
+	}
+
+	if event == nil {
+		if err := transaction.ResolveCommand(
+			ctx,
+			domain.FriendRequestCommandRoleOutgoing,
+			frame.GetSourceStationPeerId(),
+			result.GetCommandId(),
+			resultBytes,
+			s.clock.Now().UTC(),
+		); err != nil {
+			return delivery.Result{}, err
+		}
+		return delivery.AcceptedResult(), nil
 	}
 
 	current, err := transaction.LoadProjection(ctx, result.GetRequestId())
@@ -471,26 +569,11 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestResult(
 		}
 	}
 
-	outgoing, err := transaction.LoadCommand(
-		ctx,
-		domain.FriendRequestCommandRoleOutgoing,
-		event.GetAuthorityStationPeerId(),
-		result.GetCommandId(),
-	)
-	if err != nil {
-		return delivery.Result{}, err
-	}
 	if outgoing != nil {
-		if !bytes.Equal(
-			outgoing.CommandPayloadSHA256,
-			result.GetCommandPayloadSha256(),
-		) {
-			return delivery.PayloadHashConflictResult(), nil
-		}
 		if err := transaction.ResolveCommand(
 			ctx,
 			domain.FriendRequestCommandRoleOutgoing,
-			event.GetAuthorityStationPeerId(),
+			frame.GetSourceStationPeerId(),
 			result.GetCommandId(),
 			resultBytes,
 			s.clock.Now().UTC(),
@@ -519,10 +602,141 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestResult(
 	return delivery.AcceptedResult(), nil
 }
 
+func (s *FederatedFriendRequestService) persistRejectedCommand(
+	ctx context.Context,
+	transaction infrastructure.FederatedFriendRequestTransaction,
+	candidate domain.FriendRequestCommandRecord,
+	body *model.FriendRequestCommandBody,
+	commandHash []byte,
+	policyErr error,
+	now time.Time,
+) (delivery.Result, error) {
+	resultKind, errorCode, ok := friendRequestCommandResultForError(policyErr)
+	if !ok {
+		return deliveryResultForSocialError(policyErr), nil
+	}
+	resultPayload := &model.FriendRequestCommandResult{
+		CommandId:            body.GetCommandId(),
+		RequestId:            body.GetRequestId(),
+		CommandPayloadSha256: append([]byte(nil), commandHash...),
+		Kind:                 resultKind,
+		ErrorCode:            errorCode,
+		Retryable:            false,
+	}
+	resultBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(resultPayload)
+	if err != nil {
+		return delivery.Result{}, domain.WrapFederationError(
+			domain.FederationErrorInvalidArgument,
+			"social.encode_rejected_friend_request_result",
+			err,
+		)
+	}
+	candidate.ResultBytes = resultBytes
+	persisted, inserted, err := transaction.PutCommand(ctx, candidate)
+	if err != nil {
+		return delivery.Result{}, err
+	}
+	if !inserted {
+		if sameCommandRecord(persisted, candidate) &&
+			bytes.Equal(persisted.ResultBytes, candidate.ResultBytes) {
+			return delivery.DuplicateResult(), nil
+		}
+		return delivery.PayloadHashConflictResult(), nil
+	}
+	if err := s.resolveAuthorizingOutgoingCommand(
+		ctx,
+		transaction,
+		body,
+		resultPayload,
+		resultBytes,
+		now,
+	); err != nil {
+		return delivery.Result{}, err
+	}
+	if body.GetAction() !=
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND {
+		return delivery.AcceptedResult(), nil
+	}
+
+	resultFrame, err := s.newSignedFrame(
+		ctx,
+		delivery.PayloadKindSocialFriendRequestResult,
+		body.GetCommandId(),
+		body.GetRequestId(),
+		resultOrderingKey(body.GetRequestId()),
+		commandOrderingSequence(body.GetAction()),
+		body.GetSenderHomeStationPeerId(),
+		resultBytes,
+		now,
+		now.Add(friendRequestResultFrameLifetime),
+	)
+	if err != nil {
+		return delivery.Result{}, err
+	}
+	if transaction.Outbox() == nil {
+		return delivery.Result{}, domain.NewFederationError(
+			domain.FederationErrorPersistence,
+			"social.reject_friend_request_send",
+			"outbox",
+			"is not transaction-bound",
+		)
+	}
+	if _, err := transaction.Outbox().Enqueue(ctx, resultFrame, now); err != nil {
+		return delivery.Result{}, err
+	}
+	return delivery.AcceptedResult(), nil
+}
+
+func (s *FederatedFriendRequestService) resolveAuthorizingOutgoingCommand(
+	ctx context.Context,
+	transaction infrastructure.FederatedFriendRequestTransaction,
+	body *model.FriendRequestCommandBody,
+	result *model.FriendRequestCommandResult,
+	resultBytes []byte,
+	resolvedAt time.Time,
+) error {
+	if commandSourceStation(body) != s.localStationID {
+		return nil
+	}
+	outgoing, err := transaction.LoadCommand(
+		ctx,
+		domain.FriendRequestCommandRoleOutgoing,
+		body.GetReceiverHomeStationPeerId(),
+		body.GetCommandId(),
+	)
+	if err != nil {
+		return err
+	}
+	if outgoing == nil {
+		return domain.NewFederationError(
+			domain.FederationErrorStateConflict,
+			"social.resolve_authorizing_friend_request_command",
+			"outgoing_command",
+			"was not durably accepted by the authorizing Home Station",
+		)
+	}
+	if err := domain.ValidateOutgoingFriendRequestCommandResult(
+		*outgoing,
+		result,
+	); err != nil {
+		return err
+	}
+	return transaction.ResolveCommand(
+		ctx,
+		domain.FriendRequestCommandRoleOutgoing,
+		body.GetReceiverHomeStationPeerId(),
+		body.GetCommandId(),
+		resultBytes,
+		resolvedAt,
+	)
+}
+
 func verifyCommandSignatureInTransaction(
 	ctx context.Context,
 	transaction infrastructure.FederatedFriendRequestTransaction,
 	command *model.FriendRequestCommand,
+	localStationID string,
+	hydrator infrastructure.FriendRequestActorKeyHydrator,
 ) error {
 	signingBytes, err := domain.FriendRequestCommandSigningBytes(command)
 	if err != nil {
@@ -532,6 +746,8 @@ func verifyCommandSignatureInTransaction(
 		ctx,
 		command.GetBody().GetAuthorizingDevice(),
 		commandSourceStation(command.GetBody()),
+		localStationID,
+		hydrator,
 		command.GetSigningKeyId(),
 		signingBytes,
 		command.GetActorDeviceSignature(),
@@ -709,6 +925,41 @@ func sameCommandRecord(
 		bytes.Equal(existing.CommandPayloadSHA256, candidate.CommandPayloadSHA256)
 }
 
+func friendRequestCommandResultForError(
+	err error,
+) (
+	model.FriendRequestCommandResultKind,
+	model.FriendRequestCommandErrorCode,
+	bool,
+) {
+	switch domain.FederationErrorCodeOf(err) {
+	case domain.FederationErrorBlocked:
+		return model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_REJECTED,
+			model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_BLOCKED,
+			true
+	case domain.FederationErrorAlreadyFriends:
+		return model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_REJECTED,
+			model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_ALREADY_FRIENDS,
+			true
+	case domain.FederationErrorNotFound:
+		return model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_REJECTED,
+			model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_NOT_FOUND,
+			true
+	case domain.FederationErrorStateConflict:
+		return model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_CONFLICT,
+			model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_STATE_CONFLICT,
+			true
+	case domain.FederationErrorIdempotencyConflict:
+		return model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_CONFLICT,
+			model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_IDEMPOTENCY_CONFLICT,
+			true
+	default:
+		return model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_UNSPECIFIED,
+			model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_UNSPECIFIED,
+			false
+	}
+}
+
 func commandIdentityConflict(
 	operation string,
 	authorityStationPeerID string,
@@ -732,11 +983,15 @@ func deliveryResultForSocialError(err error) delivery.Result {
 		return delivery.PayloadHashConflictResult()
 	case domain.FederationErrorPersistence:
 		return delivery.RetryableResult(delivery.FrameErrorOverloaded)
+	case domain.FederationErrorIdentityUnavailable:
+		return delivery.RetryableResult(delivery.FrameErrorOverloaded)
 	case domain.FederationErrorInvalidArgument,
 		domain.FederationErrorUnauthorized,
 		domain.FederationErrorInvalidSignature,
 		domain.FederationErrorStateConflict,
-		domain.FederationErrorNotFound:
+		domain.FederationErrorNotFound,
+		domain.FederationErrorBlocked,
+		domain.FederationErrorAlreadyFriends:
 		return delivery.TerminalResult(delivery.FrameErrorDomainRejected)
 	default:
 		return delivery.TerminalResult(delivery.FrameErrorDomainRejected)
