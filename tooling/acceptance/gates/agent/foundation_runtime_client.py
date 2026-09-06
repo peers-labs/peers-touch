@@ -150,6 +150,17 @@ class FoundationClientSpec:
     def surface(self) -> str:
         return "desktop" if self.runtime == "native-tauri" else "browser"
 
+    @property
+    def cargo_target_dir(self) -> Path:
+        return (
+            self.worktree
+            / ".local"
+            / "acceptance"
+            / "cargo-target"
+            / "agent-v2"
+            / self.runtime
+        )
+
 
 class FoundationRuntimeClient:
     def __init__(
@@ -224,6 +235,7 @@ class FoundationRuntimeClient:
             "PT_DESKTOP_E2E": "true",
             "PT_AGENT_AS_F10_NEGATIVE_CONTROL": "1",
             "TAURI_WEBDRIVER_PORT": str(self.spec.webdriver_port),
+            "CARGO_TARGET_DIR": str(self.spec.cargo_target_dir),
             "RESTART": "1",
             "CARGO_BUILD_JOBS": "2",
         }
