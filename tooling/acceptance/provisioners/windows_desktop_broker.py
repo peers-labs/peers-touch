@@ -859,6 +859,11 @@ try:
         result = adapter.focused_control(process_id).to_dict()
     elif operation == "reveal_file_chooser_location":
         result = adapter.reveal_file_chooser_location() or {}
+    elif operation == "reveal_file_chooser_location_to_process":
+        process_id = int(payload["processId"])
+        adapter.activate_process(process_id)
+        adapter.reveal_file_chooser_location()
+        result = adapter.focused_control(process_id).to_dict()
     elif operation == "focused_control":
         result = adapter.focused_control(int(payload["processId"])).to_dict()
     elif operation == "window_stack_at_point":
