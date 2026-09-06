@@ -536,7 +536,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertLess(
             scenario.index("'Foundation AS-F02 queue projection'"),
-            scenario.index("const queueReceiver = foundationDomSnapshot()"),
+            scenario.index("return foundationDomSnapshot();"),
         )
 
     def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
@@ -1468,8 +1468,8 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         queue_start = scenario.index(
             "const queuedTurns = Array.from({ length: 8 }",
         )
-        first_active_event = scenario.index(
-            "const firstActiveEvent = await active.firstEvent;",
+        duplicate_first_event = scenario.index(
+            "const duplicateFirstEvent = await duplicate.firstEvent;",
         )
         capacity_snapshot = scenario.index(
             "const queueSnapshotStartedAt = performance.now();",
@@ -1477,18 +1477,26 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         overflow_start = scenario.index(
             "const overflow = startObservedFoundationTurn({",
         )
+        active_cancellation = scenario.index(
+            "const activeCancellation = await api.cancelAgentTurn(activeTurnId);",
+        )
+        remaining_queue_cleanup = scenario.index(
+            "await cancelFoundationQueuedTurns(conversation.conversation_id);",
+        )
         stream_completion = scenario.index(
-            "const [duplicateFirstEvent, queuedResults, overflowResult]",
+            "firstActiveEvent,\n          activeResult,",
         )
 
         self.assertLess(queue_baseline, active_start)
         self.assertLess(active_start, active_admission)
         self.assertLess(active_admission, duplicate_start)
         self.assertLess(duplicate_start, queue_start)
-        self.assertLess(queue_start, first_active_event)
-        self.assertLess(first_active_event, capacity_snapshot)
+        self.assertLess(queue_start, duplicate_first_event)
+        self.assertLess(duplicate_first_event, capacity_snapshot)
         self.assertLess(capacity_snapshot, overflow_start)
-        self.assertLess(overflow_start, stream_completion)
+        self.assertLess(overflow_start, active_cancellation)
+        self.assertLess(active_cancellation, remaining_queue_cleanup)
+        self.assertLess(remaining_queue_cleanup, stream_completion)
         self.assertNotIn(
             "const duplicateResult = await duplicate.result;",
             scenario,

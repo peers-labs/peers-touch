@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: the Gateway response body now converts upstream SSE read failure to immediate downstream EOF at checkpoint `3d6435d825ff389f754b51cacede41df025928fa`; exact-source run `20260906T075340212678Z-e65b29d46b4b615d3c557af76475a37b` on `abc0106849d2f1d65fcd6991d13a3e659ed342ab` proved strict Browser AS-F02 queue capacity in both locales, then exposed an idempotency-owner race because the duplicate could reach Station before the designated active request; the Harness now waits only for the Station-authored conversation-version admission barrier before launching the duplicate and queue burst, with all strict assertions unchanged; post-fix exact-source proof is pending | W8a |
+| G-F Complete Foundation Gate | in progress: the Gateway response body now converts upstream SSE read failure to immediate downstream EOF at checkpoint `3d6435d825ff389f754b51cacede41df025928fa`; exact-source run `20260906T084510093935Z-79cae3d5fd697244387d637f16143fac` on `b799410e00d0ce0bcc40a0bb02f101bf8670fa3a` proved strict Browser AS-F02 queue capacity and deterministic active admission, then exposed that residual queue cleanup delayed active cancellation until the real provider had completed; the Harness now gathers the unchanged at-capacity receiver, overflow, and active-dependency evidence concurrently, proves one queued cancellation, cancels the active Turn, and only then cleans the residual queue; post-fix exact-source proof is pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5653,6 +5653,38 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   changing any timeout or product assertion. Inner runtime cleanup and outer
   Provisioner cleanup both passed. Exact-source post-fix proof remains pending;
   Foundation and G-F remain `PARTIAL / UNPROVEN`.
+- Exact-source Gate run
+  `20260906T084510093935Z-79cae3d5fd697244387d637f16143fac`
+  (aggregate
+  `20260906T084509966139Z-9044fe74d9918f36e41ec42b35f99c01`,
+  child
+  `20260906T084518248396Z-3051ae403736ce99c11ecae1edd30e5c`)
+  on `b799410e00d0ce0bcc40a0bb02f101bf8670fa3a` proved the
+  Station-authored admission barrier and strict Browser AS-F02 queue behavior:
+  the original active request owned admission, the queue reached `8/8` with
+  FIFO positions `1..8`, the duplicate returned `admission_replayed`, and
+  overflow returned `ADMISSION_QUEUE_FULL`. The run then failed with
+  `agent.acceptance.foundationActiveTurnCancelRejected` because the active
+  provider stream completed naturally at 1,240 ms while the Harness performed
+  receiver/dependency checks and cancelled all queued entries first. The
+  Harness now proves one queued cancellation, cancels the active Turn
+  immediately after the at-capacity receiver, overflow, and dependency
+  observations, and then cleans the residual queue. No timeout or product
+  assertion changed. Focused Agent tests pass `82/82`, Desktop checks and all
+  `569` Desktop tests pass with one unrelated skip, and `git diff --check`
+  passes. Inner runtime cleanup and outer Provisioner cleanup both passed.
+  Exact-source post-fix proof remains pending; Foundation and G-F remain
+  `PARTIAL / UNPROVEN`.
+- The subsequent local closure keeps the admission barrier, derives the active
+  Turn ID from the already-admitted duplicate replay, and removes all
+  provider-output waits from the capacity snapshot. After `8/8` is observed,
+  receiver projection, overflow rejection, and active-dependency rejection run
+  concurrently. The Harness then cancels one queued entry for its existing
+  control assertion, cancels the active Turn, and only then drains the residual
+  queue. The strict assertions and all existing timeouts are unchanged.
+  Focused Agent tests pass `82/82`, Desktop checks and all `569` Desktop tests
+  pass with one unrelated skip, and `git diff --check` passes. Exact-source
+  runtime proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

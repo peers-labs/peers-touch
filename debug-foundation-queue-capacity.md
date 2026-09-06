@@ -104,15 +104,48 @@
     `agent.acceptance.foundationActiveTurnCancelMissing`; this is a deterministic
     idempotency-owner race, not a queue-capacity failure.
   - Inner runtime cleanup and outer Provisioner cleanup both passed.
+- Exact-source run
+  `20260906T084510093935Z-79cae3d5fd697244387d637f16143fac`
+  (aggregate
+  `20260906T084509966139Z-9044fe74d9918f36e41ec42b35f99c01`)
+  on `b799410e00d0ce0bcc40a0bb02f101bf8670fa3a`:
+  - The Station admission barrier completed at 137 ms and the original active
+    observer received the live `progress` event.
+  - Browser AS-F02 reached strict `8/8`, FIFO positions `1..8`, duplicate
+    `admission_replayed`, and overflow `ADMISSION_QUEUE_FULL`.
+  - The active provider stream completed naturally at 1,240 ms while the
+    Harness performed receiver/dependency checks and cancelled the entire
+    pending queue before requesting active cancellation.
+  - The Gate failed closed with
+    `agent.acceptance.foundationActiveTurnCancelRejected`.
+  - Inner runtime cleanup and outer Provisioner cleanup both passed.
+- Exact-source run
+  `20260906T084510093935Z-79cae3d5fd697244387d637f16143fac`
+  (aggregate
+  `20260906T084509966139Z-9044fe74d9918f36e41ec42b35f99c01`)
+  on `b799410e00d0ce0bcc40a0bb02f101bf8670fa3a`:
+  - The Station conversation-version barrier observed the original active
+    admission in 137 ms before any duplicate or queue request was launched.
+  - Browser AS-F02 reached strict `8/8`, FIFO positions `1..8`, and
+    `ADMISSION_QUEUE_FULL`; the duplicate correctly returned
+    `admission_replayed`.
+  - The active stream nevertheless completed naturally at 1,240 ms while the
+    Harness performed receiver/dependency checks and cancelled the full queue
+    before requesting active cancellation. The cancellation response was no
+    longer `cancelled`, so the Harness failed closed with
+    `agent.acceptance.foundationActiveTurnCancelRejected`.
+  - Inner runtime cleanup and outer Provisioner cleanup both passed.
 
 ## Verification Conclusion
-The first correction removed the provider-output delay and restored strict
-`8/8`, but launching the duplicate in the same scheduling turn made ownership
-of the shared idempotency key nondeterministic. The active request needs a
-Station-authored admission barrier before the duplicate and queue burst. The
-conversation-version increment is that existing authoritative signal and
-arrives before provider output. The session remains `[OPEN]` because post-fix
-exact-source comparison and explicit cleanup confirmation are still required.
+The admission barrier removed the idempotency-owner race and kept the strict
+queue proof intact. The remaining failure was caused by doing all residual
+queue cleanup before active cancellation, allowing a fast real provider to
+finish naturally. Queue visibility, overflow, and active-dependency checks can
+run concurrently after the capacity snapshot. The Harness can then cancel one
+queued entry for the required queue-control assertion, cancel the active Turn,
+and only afterward clean the residual queue. The session remains `[OPEN]`
+because post-fix exact-source comparison and explicit cleanup confirmation are
+still required.
 
 ## Fix
 - Capture the empty queue baseline before starting the active request.
@@ -123,17 +156,22 @@ exact-source comparison and explicit cleanup confirmation are still required.
 - Await the active first event only after all admission requests are in flight.
 - Poll the authoritative Station queue to the unchanged strict `8/8` condition.
 - Submit the overflow request only after the full-capacity snapshot exists.
-- Await duplicate, queued, and overflow results after their ordering-sensitive actions have been issued.
+- Capture receiver visibility, overflow rejection, and active-dependency
+  rejection concurrently while the queue is full.
+- Cancel one queued entry for the queue-control assertion, cancel the active
+  Turn immediately, then clean the residual queue.
+- Await active, duplicate, queued, and overflow results after their
+  ordering-sensitive actions have been issued.
 - Preserve the existing queue-capacity, FIFO, overflow, cancellation, DOM, and lifecycle assertions.
 
 ## Local Verification
 - `python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test`: 69/69 passed.
-- `python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test tooling.acceptance.gates.agent.foundation_group_one_probe_test`: 82/82 passed after moving queue launch ahead of the first-provider-event wait.
+- `python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test tooling.acceptance.gates.agent.foundation_group_one_probe_test`: 82/82 passed after adding the admission barrier and moving active cancellation ahead of residual queue cleanup.
 - `cd apps/desktop && pnpm run check`: passed.
 - `cd apps/desktop && pnpm run test`: 569 passed, one unrelated environment-dependent test skipped.
 - `git diff --check`: passed.
 - Post-instrumentation exact-source runtime comparison: English and Simplified
   Chinese both passed strict `8/8`, FIFO `1..8`, and
   `ADMISSION_QUEUE_FULL`; the Gate advanced to AS-F06.
-- The revised admission ordering has local verification only; exact-source
-  runtime comparison is pending.
+- The revised admission and cancellation ordering has local verification only;
+  exact-source runtime comparison is pending.

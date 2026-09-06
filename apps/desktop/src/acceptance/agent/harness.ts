@@ -10715,23 +10715,12 @@ export function installAcceptanceHarness(): void {
             activeEventTypes: active.events.map((event) => event.event),
           },
         );
-        const firstActiveEvent = await active.firstEvent;
-        preparedRuntimeEvent.current = {
-          eventType: firstActiveEvent.event,
-          sequence: Number(firstActiveEvent.data.seq ?? 0),
-          observedAt: new Date().toISOString(),
-        };
-        void reportFoundationQueueCapacityDebug(
-          'A',
-          'active-first-event',
-          {
-            eventType: firstActiveEvent.event,
-            sequence: Number(firstActiveEvent.data.seq ?? 0),
-            selectedConversationMatches:
-              useChatStore.getState().currentSessionKey
-                === conversation.conversation_id,
-          },
-        );
+        const duplicateFirstEvent = await duplicate.firstEvent;
+        const activeTurnId = observedTurnId([duplicateFirstEvent]);
+        if (!activeTurnId) {
+          active.controller.abort();
+          throw new Error('agent.acceptance.foundationTurnIdMissing');
+        }
         const queuedResultsPromise = Promise.all(
           queuedTurns.map((queued) => queued.result),
         );
@@ -10794,16 +10783,107 @@ export function installAcceptanceHarness(): void {
           clientCapabilitySessionId:
             capabilitySessions.selectedStationSession?.session_id,
         });
-        const [duplicateFirstEvent, queuedResults, overflowResult] = await Promise.all([
-          duplicate.firstEvent,
-          queuedResultsPromise,
-          overflow.result,
+        const overflowResultPromise = overflow.result;
+        const activeDependencyPromise = observeFoundationActiveDependency(
+          conversation.conversation_id,
+          queueAtCapacity.conversation_version,
+        );
+        const queueReceiverPromise = (async () => {
+          await useChatStore.getState().syncTurnQueue(
+            conversation.conversation_id,
+          );
+          await waitFor(
+            () => {
+              const queueProjection = foundationDomSnapshot();
+              return (
+                queueProjection.queueEntries.visibleCount > 0
+                && queueProjection.queuePositions.visibleCount
+                  === queueAtCapacity.entries.length
+              );
+            },
+            'Foundation AS-F02 queue projection',
+            30_000,
+          );
+          return foundationDomSnapshot();
+        })();
+        const [
+          overflowResult,
+          activeDependencyError,
+          queueReceiver,
+        ] = await Promise.all([
+          overflowResultPromise,
+          activeDependencyPromise,
+          queueReceiverPromise,
         ]);
-        const activeTurnId = observedTurnId([duplicateFirstEvent]);
-        if (!activeTurnId) {
+        const cancellationTarget = queueAtCapacity.entries[0];
+        if (!cancellationTarget) {
           active.controller.abort();
-          throw new Error('agent.acceptance.foundationTurnIdMissing');
+          throw new Error('agent.acceptance.queueCancellationTargetMissing');
         }
+        const cancellation = await api.cancelQueuedAgentTurn({
+          conversation_id: conversation.conversation_id,
+          queue_entry_id: cancellationTarget.queue_entry_id,
+          idempotency_key: crypto.randomUUID(),
+          expected_conversation_version: queueAtCapacity.conversation_version,
+        });
+        void reportFoundationQueueCapacityDebug(
+          'A,F',
+          'active-cancellation-requested',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            activeEventTypes: active.events.map((event) => event.event),
+          },
+        );
+        const activeCancellation = await api.cancelAgentTurn(activeTurnId);
+        void reportFoundationQueueCapacityDebug(
+          'A,F',
+          'active-cancellation-completed',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            status: activeCancellation?.status ?? null,
+            activeEventTypes: active.events.map((event) => event.event),
+          },
+        );
+        if (
+          activeCancellation
+          && String(activeCancellation.status).toLowerCase() !== 'cancelled'
+        ) {
+          active.controller.abort();
+          throw new Error('agent.acceptance.foundationActiveTurnCancelRejected');
+        }
+        await cancelFoundationQueuedTurns(conversation.conversation_id);
+        if (!active.events.some((event) =>
+          event.event === 'cancelled'
+          || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
+          active.controller.disconnectTransport();
+        }
+        const [
+          firstActiveEvent,
+          activeResult,
+          duplicateResult,
+          queuedResults,
+        ] = await Promise.all([
+          active.firstEvent,
+          active.result,
+          duplicate.result,
+          queuedResultsPromise,
+        ]);
+        preparedRuntimeEvent.current = {
+          eventType: firstActiveEvent.event,
+          sequence: Number(firstActiveEvent.data.seq ?? 0),
+          observedAt: new Date().toISOString(),
+        };
+        void reportFoundationQueueCapacityDebug(
+          'A',
+          'active-first-event',
+          {
+            eventType: firstActiveEvent.event,
+            sequence: Number(firstActiveEvent.data.seq ?? 0),
+            selectedConversationMatches:
+              useChatStore.getState().currentSessionKey
+                === conversation.conversation_id,
+          },
+        );
         void reportFoundationQueueCapacityDebug(
           'A,B,D',
           'queue-results-settled',
@@ -10830,46 +10910,6 @@ export function installAcceptanceHarness(): void {
             ),
           },
         );
-        await useChatStore.getState().syncTurnQueue(conversation.conversation_id);
-        await waitFor(
-          () => {
-            const queueProjection = foundationDomSnapshot();
-            return (
-              queueProjection.queueEntries.visibleCount > 0
-              && queueProjection.queuePositions.visibleCount
-                === queueAtCapacity.entries.length
-            );
-          },
-          'Foundation AS-F02 queue projection',
-          30_000,
-        );
-        const queueReceiver = foundationDomSnapshot();
-        const activeDependencyError = await observeFoundationActiveDependency(
-          conversation.conversation_id,
-          queueAtCapacity.conversation_version,
-        );
-
-        const cancellation = await cancelFoundationQueuedTurns(
-          conversation.conversation_id,
-        );
-
-        const activeCancellation = await api.cancelAgentTurn(activeTurnId);
-        if (
-          activeCancellation
-          && String(activeCancellation.status).toLowerCase() !== 'cancelled'
-        ) {
-          active.controller.abort();
-          throw new Error('agent.acceptance.foundationActiveTurnCancelRejected');
-        }
-        if (!active.events.some((event) =>
-          event.event === 'cancelled'
-          || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
-          active.controller.disconnectTransport();
-        }
-        const [activeResult, duplicateResult] = await Promise.all([
-          active.result,
-          duplicate.result,
-        ]);
         if (!activeResult.events.some((event) =>
           event.event === 'cancelled'
           || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
