@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from enum import Enum
@@ -156,6 +157,24 @@ class NativeDesktopAdapter(ABC):
             text=text,
             private_source=private_source,
         )
+
+    def post_key_sequence_to_process(
+        self,
+        process_id: int,
+        keys: tuple[NativeKey, ...],
+        *,
+        interval_seconds: float = 0.1,
+        private_source: bool = False,
+    ) -> None:
+        if not keys:
+            raise ValueError("Native key sequence must not be empty")
+        if interval_seconds < 0:
+            raise ValueError("Native key sequence interval must not be negative")
+        self.activate_process(process_id)
+        for index, key in enumerate(keys):
+            self.post_key(key, private_source=private_source)
+            if index + 1 < len(keys) and interval_seconds > 0:
+                time.sleep(interval_seconds)
 
     @abstractmethod
     def reveal_file_chooser_location(self) -> None:
