@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -98,6 +99,38 @@ func TestAttachmentAdmissionRejectsBeforeObjectUseWhenCountExceedsCapability(t *
 	)
 	if err == nil || reader.calls != 0 {
 		t.Fatalf("count rejection must happen before OSS lookup: err=%v calls=%d", err, reader.calls)
+	}
+}
+
+func TestAttachmentAdmissionRejectionIncludesSafeTypedDetails(t *testing.T) {
+	now := time.Now().UTC()
+	admission := NewAttachmentAdmissionService(&attachmentMetadataReaderStub{
+		err: errors.New("storage backend detail"),
+	})
+	admission.now = func() time.Time { return now }
+
+	_, err := admission.Admit(
+		context.Background(),
+		"actor-1",
+		"conversation-1",
+		[]*model.AgentAttachmentRef{validAttachment(now)},
+		attachmentCapabilities(true, true, 4, 1024),
+		nil,
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) || bizErr.Payload == nil {
+		t.Fatalf("attachment rejection lost typed payload: %T %v", err, err)
+	}
+	details := bizErr.Payload.GetDetails()
+	if bizErr.Code != errcode.AgentAttachmentRejected ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentAttachmentRejected) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentAttachmentRejectedLocaleKey ||
+		bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		len(details) != 2 ||
+		details["attachment_id"] != "attachment-1" ||
+		details["reason_code"] != "attachment_object_is_unavailable" {
+		t.Fatalf("unexpected typed attachment rejection: %+v", bizErr.Payload)
 	}
 }
 

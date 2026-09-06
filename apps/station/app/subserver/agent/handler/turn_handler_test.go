@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
@@ -172,6 +174,48 @@ func TestWriteTurnStreamEvent(t *testing.T) {
 	}
 	if !resp.flushed {
 		t.Fatal("expected SSE frame to flush")
+	}
+}
+
+func TestWriteTurnStreamErrorPreservesTypedAttachmentPayload(t *testing.T) {
+	resp := &fakeStreamResponse{}
+	if err := writeTurnStreamError(
+		resp,
+		errcode.NewAttachmentRejected(
+			"attachment-1",
+			"attachment_content_does_not_match_mime",
+		),
+	); err != nil {
+		t.Fatalf("write typed stream error: %v", err)
+	}
+
+	body := resp.body.String()
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(body, "\n")[1]),
+		"data: ",
+	)
+	var payload struct {
+		Type      string            `json:"type"`
+		Error     string            `json:"error"`
+		ErrorType string            `json:"error_type"`
+		LocaleKey string            `json:"locale_key"`
+		Retryable bool              `json:"retryable"`
+		Terminal  bool              `json:"terminal"`
+		Details   map[string]string `json:"details"`
+	}
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode typed stream error: %v", err)
+	}
+	if payload.Type != "error" ||
+		payload.Error != errcode.AgentAttachmentRejectedLocaleKey ||
+		payload.ErrorType != string(errcode.AgentAttachmentRejected) ||
+		payload.LocaleKey != errcode.AgentAttachmentRejectedLocaleKey ||
+		payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 2 ||
+		payload.Details["attachment_id"] != "attachment-1" ||
+		payload.Details["reason_code"] != "attachment_content_does_not_match_mime" {
+		t.Fatalf("typed stream error payload = %+v", payload)
 	}
 }
 

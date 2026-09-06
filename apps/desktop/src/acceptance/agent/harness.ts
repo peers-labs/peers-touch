@@ -89,6 +89,37 @@ interface FoundationAttachmentResolveInput {
   objectRef: string;
 }
 
+interface FoundationRuntimeEventObservation {
+  eventId?: string;
+  eventType: string;
+  sequence: number;
+  observedAt: string;
+  streamGeneration?: number;
+  streamIdHash?: string;
+  conversationIdHash?: string;
+  payloadHash?: string;
+  errorType?: string;
+}
+
+interface FoundationAttachmentDeletionReadback {
+  source: 'oss-owner-list';
+  objectRefHash: string;
+  keyHash: string;
+  deletedAt: string;
+  readAttempt: number;
+}
+
+interface FoundationAttachmentRejectionEvent {
+  data: Record<string, unknown>;
+  eventType: string;
+  observedAt: string;
+  streamId: string;
+  streamGeneration: number;
+  conversationId: string;
+  observationSequence: number;
+  timestampMs: number;
+}
+
 interface ObservedFoundationTurnResult {
   ok: boolean;
   error: string | null;
@@ -3737,6 +3768,79 @@ async function foundationResolvedBytes(objectRef: string): Promise<Uint8Array> {
   return new Uint8Array(await response.arrayBuffer());
 }
 
+function foundationAttachmentObjectKey(objectRef: string): string {
+  const normalized = objectRef.trim();
+  const key = normalized.startsWith('oss:')
+    ? normalized.slice('oss:'.length).trim()
+    : normalized;
+  if (
+    !key
+    || key.startsWith('/')
+    || key.includes('\\')
+    || key.includes('://')
+    || key.includes('..')
+  ) {
+    throw new Error('agent.acceptance.foundationAttachmentRefInvalid');
+  }
+  return key;
+}
+
+async function foundationAttachmentDeletionReadback(
+  objectRef: string,
+): Promise<FoundationAttachmentDeletionReadback> {
+  const key = foundationAttachmentObjectKey(objectRef);
+  let lastError: unknown =
+    new Error('agent.acceptance.foundationAttachmentDeletionPending');
+
+  for (let attempt = 1; attempt <= 20; attempt += 1) {
+    try {
+      const listing = await api.ossListMyFiles({
+        include_deleted: true,
+        mime: 'application/pdf',
+        page: 1,
+        page_size: 200,
+      });
+      const file = listing.files.find((candidate) => candidate.key === key);
+      const deletedAt = file?.deleted_at?.trim() ?? '';
+      if (deletedAt) {
+        return {
+          source: 'oss-owner-list',
+          objectRefHash: await sha256Hex(objectRef),
+          keyHash: await sha256Hex(key),
+          deletedAt,
+          readAttempt: attempt,
+        };
+      }
+      lastError = new Error(
+        file
+          ? 'agent.acceptance.foundationAttachmentDeletionPending'
+          : 'agent.acceptance.foundationAttachmentDeletionReadbackMissing',
+      );
+    } catch (error) {
+      lastError = error;
+      const code = (
+        error && typeof error === 'object'
+          ? (error as { code?: unknown }).code
+          : null
+      );
+      if (
+        typeof code === 'string'
+        && code !== 'INTERNAL_ERROR'
+      ) {
+        break;
+      }
+    }
+    if (attempt < 20) {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
+  }
+
+  throw Object.assign(
+    new Error('agent.acceptance.foundationAttachmentDeletionUnconfirmed'),
+    { cause: lastError },
+  );
+}
+
 async function runFoundationF05Scenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
@@ -4065,6 +4169,391 @@ async function runFoundationF05Scenario(input: {
     if (failed?.status === 'rejected' && scenarioError === null) {
       throw failed.reason;
     }
+  }
+}
+
+async function runFoundationAttachmentRejectedScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}> {
+  const agentId = input.agent.id || input.agent.name;
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation rejected attachment ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  let rejectionStartedAt = 0;
+  let attachmentId = '';
+  let objectRef = '';
+
+  const cleanupFailure = async () => {
+    const draft = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-composer-attachment]',
+      ),
+    ).find((element) =>
+      element.dataset.ptAgentComposerAttachment === attachmentId);
+    const remove = draft?.querySelector<HTMLElement>(
+      '[data-pt-agent-composer-attachment-remove]',
+    );
+    remove?.click();
+    if (objectRef) {
+      let deletionError: unknown = null;
+      try {
+        await api.ossDeleteAgentAttachment(objectRef);
+      } catch (error) {
+        deletionError = error;
+      }
+      try {
+        await foundationAttachmentDeletionReadback(objectRef);
+      } catch (readbackError) {
+        throw Object.assign(
+          new Error(
+            'agent.acceptance.foundationAttachmentDeletionUnconfirmed',
+          ),
+          { deletionError, readbackError },
+        );
+      }
+    }
+    await deleteFoundationConversation(conversation.conversation_id);
+  };
+
+  try {
+    await useChatStore.getState().selectSession(conversation.conversation_id);
+    const baseline = await withFoundationCapabilitiesDisabled(
+      input.agent,
+      input.capabilitySessionId,
+      () => runFoundationAttachmentTurn({
+        agentId,
+        conversationId: conversation.conversation_id,
+        provider: input.agent.provider || undefined,
+        model: input.agent.model || undefined,
+        capabilitySessionId: input.capabilitySessionId,
+        attachments: [],
+        content: 'Reply with ready.',
+      }),
+    );
+    if (!baseline.result.ok || !baseline.turnId) {
+      throw new Error(
+        baseline.result.error
+        || 'agent.acceptance.foundationAttachmentAttestationTurnFailed',
+      );
+    }
+    await useChatStore.getState().selectSession('');
+    await useChatStore.getState().selectSession(conversation.conversation_id);
+    await useChatStore.getState().syncMessages();
+    rejectionStartedAt = performance.now();
+    const before = await foundationExecutionSnapshot(
+      agentId,
+      conversation.conversation_id,
+    );
+    const beforeReadback = await foundationConversationReadback(
+      conversation.conversation_id,
+    );
+
+    const fileInput = document.querySelector<HTMLInputElement>(
+      '[data-pt-agent-attachment-input]',
+    );
+    if (!fileInput) {
+      throw new Error('agent.acceptance.foundationAttachmentInputMissing');
+    }
+    const invalidPdf = new File(
+      [new TextEncoder().encode('not a valid PDF payload')],
+      `foundation-rejected-${input.sampleId}.pdf`,
+      { type: 'application/pdf' },
+    );
+    const transfer = new DataTransfer();
+    transfer.items.add(invalidPdf);
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: transfer.files,
+    });
+    // eslint-disable-next-line no-restricted-syntax -- Drive the real file-input boundary.
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    await waitFor(
+      () => Boolean(document.querySelector(
+        '[data-pt-agent-composer-attachment-status="ready"]',
+      )),
+      'rejected attachment upload',
+      30_000,
+    );
+    const readyDraft = document.querySelector<HTMLElement>(
+      '[data-pt-agent-composer-attachment-status="ready"]',
+    );
+    attachmentId =
+      readyDraft?.dataset.ptAgentComposerAttachment?.trim() ?? '';
+    objectRef =
+      readyDraft?.dataset.ptAgentComposerAttachmentObjectRef?.trim() ?? '';
+    if (!attachmentId || !objectRef || !objectRef.startsWith('oss:')) {
+      throw new Error(
+        'agent.acceptance.foundationAttachmentDraftIdentityMissing',
+      );
+    }
+
+    const draftText =
+      `Reject the invalid attachment before execution ${input.sampleId}`;
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      '[data-pt-agent-composer-input]',
+    );
+    const setTextareaValue = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      'value',
+    )?.set;
+    if (!textarea || !setTextareaValue) {
+      throw new Error('agent.acceptance.foundationComposerInputMissing');
+    }
+    setTextareaValue.call(textarea, draftText);
+    // eslint-disable-next-line no-restricted-syntax -- Drive the real controlled textarea boundary.
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    await waitFor(
+      () => textarea.value === draftText,
+      'rejected attachment composer draft',
+      10_000,
+    );
+
+    let rejectionObservationSequence = 0;
+    const rejectionEventRef: {
+      current: FoundationAttachmentRejectionEvent | null;
+    } = { current: null };
+    const unsubscribe = eventBus.subscribe(
+      EVENT.AGENT_TURN_STREAM_EVENT,
+      (payload) => {
+        if (payload.conversationId !== conversation.conversation_id) {
+          return;
+        }
+        rejectionObservationSequence += 1;
+        if (
+          payload.event !== 'error'
+          || payload.data.error_type !== 'CONTEXT_ATTACHMENT_REJECTED'
+        ) return;
+        rejectionEventRef.current = {
+          data: evidenceValue(payload.data) as Record<string, unknown>,
+          eventType: payload.event,
+          observedAt: new Date(payload.timestampMs).toISOString(),
+          streamId: payload.streamId,
+          streamGeneration: payload.streamGeneration,
+          conversationId: payload.conversationId,
+          observationSequence: rejectionObservationSequence,
+          timestampMs: payload.timestampMs,
+        };
+      },
+    );
+    try {
+      const send = document.querySelector<HTMLElement>(
+        '[data-pt-agent-composer-send]',
+      );
+      if (!send) {
+        throw new Error('agent.acceptance.foundationComposerSendMissing');
+      }
+      send.click();
+      await waitFor(
+        () => rejectionEventRef.current !== null,
+        'typed attachment rejection',
+        60_000,
+      );
+      await waitFor(
+        () => Boolean(document.querySelector(
+          '[data-pt-agent-composer-attachment-status="rejected"]',
+        )),
+        'rejected attachment draft',
+        10_000,
+      );
+      await waitFor(
+        () => Boolean(document.querySelector(
+          '[data-pt-agent-message-error="agent.errors.attachmentRejected"]',
+        )),
+        'attachment rejection receiver',
+        10_000,
+      );
+    } finally {
+      unsubscribe();
+    }
+
+    const errorSurface = document.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error="agent.errors.attachmentRejected"]',
+    );
+    const errorToggle = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-toggle]',
+    );
+    if (
+      !errorSurface?.querySelector(
+        '[data-pt-agent-message-error-text="agent.errors.attachmentRejected"]',
+      )
+    ) {
+      errorToggle?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(
+          '[data-pt-agent-message-error-text="agent.errors.attachmentRejected"]',
+        )),
+        'localized attachment rejection text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-text="agent.errors.attachmentRejected"]',
+    );
+    const rejectedDraft = document.querySelector<HTMLElement>(
+      '[data-pt-agent-composer-attachment-status="rejected"]',
+    );
+    const removeAction = rejectedDraft?.querySelector<HTMLElement>(
+      '[data-pt-agent-composer-attachment-remove]',
+    );
+    const rejectionEvent =
+      rejectionEventRef.current as FoundationAttachmentRejectionEvent | null;
+    if (!rejectedDraft || !removeAction || !errorText || !rejectionEvent) {
+      throw new Error(
+        'agent.acceptance.foundationAttachmentRejectionSurfaceMissing',
+      );
+    }
+    if (
+      !rejectionEvent.streamId
+      || rejectionEvent.streamGeneration <= 0
+      || rejectionEvent.observationSequence <= 0
+      || rejectionEvent.timestampMs <= 0
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationAttachmentRuntimeEventMissing',
+      );
+    }
+    const rejectionIdentity = {
+      streamId: rejectionEvent.streamId,
+      streamGeneration: rejectionEvent.streamGeneration,
+      conversationId: rejectionEvent.conversationId,
+      observationSequence: rejectionEvent.observationSequence,
+      eventType: rejectionEvent.eventType,
+      timestampMs: rejectionEvent.timestampMs,
+      data: rejectionEvent.data,
+    };
+    const rejectionRuntimeEvent: FoundationRuntimeEventObservation = {
+      eventId: await sha256Hex(stableJson(rejectionIdentity)),
+      eventType: rejectionEvent.eventType,
+      sequence: rejectionEvent.observationSequence,
+      observedAt: rejectionEvent.observedAt,
+      streamGeneration: rejectionEvent.streamGeneration,
+      streamIdHash: await sha256Hex(rejectionEvent.streamId),
+      conversationIdHash: await sha256Hex(rejectionEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(rejectionEvent.data)),
+      errorType: String(rejectionEvent.data.error_type ?? ''),
+    };
+
+    const attachmentVisibleAfterReject =
+      rejectedDraft.getClientRects().length > 0;
+    const removalVisible = removeAction.getClientRects().length > 0;
+    const removalText =
+      removeAction.getAttribute('aria-label')
+      ?? removeAction.getAttribute('title')
+      ?? '';
+    const draftTextAfterRejection = textarea.value;
+    removeAction.click();
+    await waitFor(
+      () => !Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-pt-agent-composer-attachment]',
+        ),
+      ).some((element) =>
+        element.dataset.ptAgentComposerAttachment === attachmentId),
+      'attachment removal',
+      10_000,
+    );
+
+    const deletionReadback =
+      await foundationAttachmentDeletionReadback(objectRef);
+
+    const after = await foundationExecutionSnapshot(
+      agentId,
+      conversation.conversation_id,
+    );
+    const afterReadback = await foundationConversationReadback(
+      conversation.conversation_id,
+    );
+    const beforeHash = await sha256Hex(stableJson(beforeReadback));
+    const afterHash = await sha256Hex(stableJson(afterReadback));
+    const typedOutcome = rejectionEvent.data;
+    const details = evidenceRecord(
+      typedOutcome.details,
+      'foundationAttachmentRejectedDetails',
+    );
+
+    return {
+      conversationId: conversation.conversation_id,
+      turnId: baseline.turnId,
+      durationMs: performance.now() - rejectionStartedAt,
+      runtimeEvent: rejectionRuntimeEvent,
+      facts: {
+        runtimeEvent: rejectionRuntimeEvent,
+        outcome: typedOutcome,
+        receiver: {
+          errorVisible: errorText.getClientRects().length > 0,
+          errorText: errorText.textContent?.trim() ?? '',
+          expectedErrorText: i18n.t(
+            'agent.errors.attachmentRejected',
+            { ns: 'agent' },
+          ),
+          attachmentVisibleAfterReject,
+          attachmentStatusAfterReject:
+            rejectedDraft.dataset.ptAgentComposerAttachmentStatus,
+          draftTextBefore: draftText,
+          draftTextAfterRejection,
+          removalVisible,
+          removalText,
+          expectedRemovalText: i18n.t(
+            'chat.input.attachmentRemove',
+            { ns: 'chat' },
+          ),
+          removalExecuted: true,
+          attachmentPresentAfterRemoval: false,
+        },
+        station: {
+          attachmentId,
+          objectRefHash: await sha256Hex(objectRef),
+          reasonCode: details.reason_code,
+          conversationVersionBefore: beforeReadback.conversation.version,
+          conversationVersionAfter: afterReadback.conversation.version,
+          beforeHash,
+          afterHash,
+          turnDelta: after.turnCount - before.turnCount,
+          providerExecutionDelta:
+            after.providerCallCount - before.providerCallCount,
+          messageDelta:
+            afterReadback.messages.length - beforeReadback.messages.length,
+        },
+        replay: {
+          sourceHash: beforeHash,
+          replayHash: afterHash,
+          equal: beforeHash === afterHash,
+        },
+        cleanup: {
+          draftRemoved: true,
+          objectDeleted: true,
+          deletionReadback,
+          conversationDeleted: false,
+        },
+      },
+    };
+  } catch (error) {
+    try {
+      await cleanupFailure();
+    } catch (cleanupError) {
+      throw Object.assign(
+        new Error(
+          'agent.acceptance.foundationAttachmentRejectionCleanupFailed',
+        ),
+        {
+          primaryError: error,
+          cleanupError,
+        },
+      );
+    }
+    throw error;
   }
 }
 
@@ -8058,9 +8547,120 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseApprovalDenied(ctx);
     case 'BASE-APPROVAL_EXPIRED':
       return evaluateBaseApprovalExpired(ctx);
+    case 'BASE-ATTACHMENT-REJECTED':
+      return evaluateBaseAttachmentRejected(ctx);
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+function evaluateBaseAttachmentRejected(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationAttachmentRejectedFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationAttachmentRejectedOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationAttachmentRejectedDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationAttachmentRejectedReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationAttachmentRejectedStation',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationAttachmentRejectedReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationAttachmentRejectedCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationAttachmentRejectedRuntimeEvent',
+  );
+  const deletionReadback = evidenceRecord(
+    cleanup.deletionReadback,
+    'foundationAttachmentRejectedDeletionReadback',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+  const isSha256 = (value: unknown) =>
+    typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+
+  return {
+    typedAttachmentRejected: (
+      outcome.error === 'agent.errors.attachmentRejected'
+      && outcome.error_type === 'CONTEXT_ATTACHMENT_REJECTED'
+      && outcome.locale_key === 'agent.errors.attachmentRejected'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && safeDetailKeys.length === 2
+      && safeDetailKeys[0] === 'attachment_id'
+      && safeDetailKeys[1] === 'reason_code'
+      && details.attachment_id === station.attachmentId
+      && details.reason_code === station.reasonCode
+      && station.reasonCode === 'attachment_content_does_not_match_mime'
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'CONTEXT_ATTACHMENT_REJECTED'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.streamGeneration) > 0
+      && typeof runtimeEvent.observedAt === 'string'
+      && runtimeEvent.observedAt.length > 0
+      && isSha256(runtimeEvent.eventId)
+      && isSha256(runtimeEvent.streamIdHash)
+      && isSha256(runtimeEvent.conversationIdHash)
+      && isSha256(runtimeEvent.payloadHash)
+    ),
+    localizedRemovalVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.removalVisible === true
+      && receiver.removalText === receiver.expectedRemovalText
+    ),
+    rejectedDraftPreserved: (
+      receiver.attachmentVisibleAfterReject === true
+      && receiver.attachmentStatusAfterReject === 'rejected'
+      && receiver.draftTextAfterRejection === receiver.draftTextBefore
+    ),
+    removeAttachmentExecuted: (
+      receiver.removalExecuted === true
+      && receiver.attachmentPresentAfterRemoval === false
+    ),
+    stationStateUnchanged: (
+      Number(station.conversationVersionBefore)
+        === Number(station.conversationVersionAfter)
+      && station.beforeHash === station.afterHash
+      && Number(station.turnDelta) === 0
+      && Number(station.messageDelta) === 0
+    ),
+    zeroSideEffect: Number(station.providerExecutionDelta) === 0,
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.draftRemoved === true
+      && cleanup.objectDeleted === true
+      && deletionReadback.source === 'oss-owner-list'
+      && deletionReadback.objectRefHash === station.objectRefHash
+      && isSha256(deletionReadback.objectRefHash)
+      && isSha256(deletionReadback.keyHash)
+      && typeof deletionReadback.deletedAt === 'string'
+      && deletionReadback.deletedAt.length > 0
+      && Number(deletionReadback.readAttempt) > 0
+      && cleanup.conversationDeleted === true
+    ),
+  };
 }
 
 function evaluateBaseApprovalDenied(
@@ -10615,11 +11215,7 @@ export function installAcceptanceHarness(): void {
       let preparedConversationId: string | null = null;
       let preparedTurnId: string | null = null;
       const preparedRuntimeEvent: {
-        current: {
-          eventType: string;
-          sequence: number;
-          observedAt: string;
-        } | null;
+        current: FoundationRuntimeEventObservation | null;
       } = { current: null };
       let turnDurationMs: number | null = null;
       let scenarioFacts: Record<string, unknown> | null = null;
@@ -10653,6 +11249,24 @@ export function installAcceptanceHarness(): void {
         const scenario = await runFoundationApprovalExpiredScenario({
           agent,
           platform,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
+      if (cell === 'BASE-ATTACHMENT-REJECTED') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationAttachmentRejectedScenario({
+          agent,
+          capabilitySessionId,
           sampleId,
         });
         preparedConversationId = scenario.conversationId;
@@ -11794,6 +12408,7 @@ export function installAcceptanceHarness(): void {
         (
           cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
+          || cell === 'BASE-ATTACHMENT-REJECTED'
         )
         && scenarioFacts
         && currentConversationId
@@ -11817,7 +12432,9 @@ export function installAcceptanceHarness(): void {
             scenarioFacts.cleanup,
             cell === 'BASE-APPROVAL_DENIED'
               ? 'foundationApprovalDeniedCleanup'
-              : 'foundationApprovalExpiredCleanup',
+              : cell === 'BASE-APPROVAL_EXPIRED'
+                ? 'foundationApprovalExpiredCleanup'
+                : 'foundationAttachmentRejectedCleanup',
           ),
           conversationDeleted,
           deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
@@ -11946,6 +12563,26 @@ export function installAcceptanceHarness(): void {
         stationReadback.revision = Number(lineage.decisionRevision);
         stationReadback.stateHash = await sha256Hex(stableJson(station));
       }
+      if (cell === 'BASE-ATTACHMENT-REJECTED' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationAttachmentRejectedStation',
+        );
+        stationReadback.entityKind = 'agent-attachment-pre-admission';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.attachmentId),
+        );
+        stationReadback.revision = Number(
+          station.conversationVersionAfter,
+        );
+        stationReadback.stateHash = String(station.afterHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          turn: station.turnDelta,
+          message: station.messageDelta,
+          providerExecution: station.providerExecutionDelta,
+        };
+      }
       if (cell === 'AS-F12' && scenarioFacts) {
         const topics = evidenceRecord(
           scenarioFacts.topics,
@@ -12011,6 +12648,18 @@ export function installAcceptanceHarness(): void {
                 ).observedAt,
               ),
             }
+          : cell === 'BASE-ATTACHMENT-REJECTED' && observedRuntimeEvent
+            ? {
+                eventId: observedRuntimeEvent.eventId ?? '',
+                sequence: observedRuntimeEvent.sequence,
+                eventType: observedRuntimeEvent.eventType,
+                occurredAt: observedRuntimeEvent.observedAt,
+                streamGeneration: observedRuntimeEvent.streamGeneration,
+                streamIdHash: observedRuntimeEvent.streamIdHash,
+                conversationIdHash: observedRuntimeEvent.conversationIdHash,
+                payloadHash: observedRuntimeEvent.payloadHash,
+                errorType: observedRuntimeEvent.errorType,
+              }
           : cell === 'AS-F12' && scenarioFacts
             ? {
                 eventId: await sha256Hex(stableJson({
@@ -12079,6 +12728,24 @@ export function installAcceptanceHarness(): void {
               ),
               maximum: 0,
             }
+          : cell === 'BASE-ATTACHMENT-REJECTED' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationAttachmentRejectedStation',
+                );
+                return {
+                  counterId: String(station.attachmentId),
+                  count: Number(station.providerExecutionDelta),
+                  maximum: 0,
+                  measurements: {
+                    turnDelta: station.turnDelta,
+                    messageDelta: station.messageDelta,
+                    providerExecutionDelta:
+                      station.providerExecutionDelta,
+                  },
+                };
+              })()
           : (
             cell === 'BASE-APPROVAL_DENIED'
             || cell === 'BASE-APPROVAL_EXPIRED'
@@ -12223,6 +12890,21 @@ export function installAcceptanceHarness(): void {
                     'foundationActiveMutationConflictCleanup',
                   ).priorSelection
               )
+            : cell === 'BASE-ATTACHMENT-REJECTED' && scenarioFacts
+              ? (
+                  evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationAttachmentRejectedCleanup',
+                  ).draftRemoved === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationAttachmentRejectedCleanup',
+                  ).objectDeleted === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationAttachmentRejectedCleanup',
+                  ).conversationDeleted === true
+                )
             : (
               cell === 'BASE-APPROVAL_DENIED'
               || cell === 'BASE-APPROVAL_EXPIRED'
@@ -12284,6 +12966,8 @@ export function installAcceptanceHarness(): void {
           ? { proof: scenarioFacts.cleanup }
           : cell === 'AS-F12' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-ATTACHMENT-REJECTED' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : (
             cell === 'BASE-APPROVAL_DENIED'
             || cell === 'BASE-APPROVAL_EXPIRED'
@@ -12298,62 +12982,68 @@ export function installAcceptanceHarness(): void {
         cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
         || cell === 'BASE-APPROVAL_DENIED'
         || cell === 'BASE-APPROVAL_EXPIRED'
+        || cell === 'BASE-ATTACHMENT-REJECTED'
       ) && scenarioFacts
         ? evidenceRecord(
             scenarioFacts.receiver,
             'foundationTypedErrorReceiver',
           )
         : null;
+      let receiverVisible =
+        receiverDom.composer.visibleCount > 0
+        || receiverDom.assistantMessages.visibleCount > 0;
+      let receiverSelector =
+        '[data-pt-agent-composer],[data-pt-agent-message="assistant"]';
+      let receiverText: unknown = receiverDom.assistantMessages.text;
+      if (cell === 'AS-F05') {
+        receiverVisible = receiverDom.messageAttachments.visibleCount >= 2;
+        receiverSelector = '[data-pt-agent-message-attachment]';
+        receiverText = receiverDom.messageAttachments.text;
+      } else if (receiver) {
+        if (
+          cell === 'BASE-APPROVAL_DENIED'
+          || cell === 'BASE-APPROVAL_EXPIRED'
+        ) {
+          receiverVisible =
+            receiver.recoveryVisible === true
+            && receiver.errorVisible === true;
+          receiverSelector = cell === 'BASE-APPROVAL_DENIED'
+            ? '[data-pt-agent-tool-recovery="continue-without-tool"],[data-pt-agent-tool-error]'
+            : '[data-pt-agent-tool-recovery="request-again"],[data-pt-agent-tool-error]';
+          receiverText = {
+            recoveryText: receiver.recoveryText,
+            errorText: receiver.errorText,
+          };
+        } else if (cell === 'BASE-ATTACHMENT-REJECTED') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.removalVisible === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-text="agent.errors.attachmentRejected"],'
+            + '[data-pt-agent-composer-attachment-remove]';
+          receiverText = {
+            errorText: receiver.errorText,
+            removalText: receiver.removalText,
+          };
+        } else {
+          receiverVisible =
+            receiver.conflictVisible === true
+            && receiver.reloadVisible === true;
+          receiverSelector =
+            '[data-pt-agent-profile-conflict],[data-pt-agent-profile-reload]';
+          receiverText = {
+            conflictText: receiver.conflictText,
+            reloadText: receiver.reloadText,
+          };
+        }
+      }
       const receiverDomRole: Record<string, unknown> = {
         scenarioId: cell,
         cellId: cell,
-        visible: receiver
-          ? (
-            cell === 'BASE-APPROVAL_DENIED'
-            || cell === 'BASE-APPROVAL_EXPIRED'
-          )
-            ? (
-                receiver.recoveryVisible === true
-                && receiver.errorVisible === true
-              )
-            : receiver.conflictVisible === true && receiver.reloadVisible === true
-          : cell === 'AS-F05'
-          ? receiverDom.messageAttachments.visibleCount >= 2
-          : receiverDom.composer.visibleCount > 0
-            || receiverDom.assistantMessages.visibleCount > 0,
-        selector: receiver
-          ? (
-            cell === 'BASE-APPROVAL_DENIED'
-            || cell === 'BASE-APPROVAL_EXPIRED'
-          )
-            ? cell === 'BASE-APPROVAL_DENIED'
-              ? '[data-pt-agent-tool-recovery="continue-without-tool"],[data-pt-agent-tool-error]'
-              : '[data-pt-agent-tool-recovery="request-again"],[data-pt-agent-tool-error]'
-            : '[data-pt-agent-profile-conflict],[data-pt-agent-profile-reload]'
-          : cell === 'AS-F05'
-          ? '[data-pt-agent-message-attachment]'
-          : '[data-pt-agent-composer],[data-pt-agent-message="assistant"]',
+        visible: receiverVisible,
+        selector: receiverSelector,
         locale,
-        textHash: await sha256Hex(
-          receiver
-            ? (
-              cell === 'BASE-APPROVAL_DENIED'
-              || cell === 'BASE-APPROVAL_EXPIRED'
-            )
-              ? stableJson({
-                  recoveryText: receiver.recoveryText,
-                  errorText: receiver.errorText,
-                })
-              : stableJson({
-                  conflictText: receiver.conflictText,
-                  reloadText: receiver.reloadText,
-                })
-            : JSON.stringify(
-            cell === 'AS-F05'
-              ? receiverDom.messageAttachments.text
-              : receiverDom.assistantMessages.text,
-            ),
-        ),
+        textHash: await sha256Hex(stableJson(receiverText)),
       };
       if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts) {
         const winner = evidenceRecord(
@@ -12380,6 +13070,15 @@ export function installAcceptanceHarness(): void {
         );
         replayEvidence.sourceHash = replay.acknowledgementSourceHash;
         replayEvidence.replayHash = replay.acknowledgementReplayHash;
+        replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-ATTACHMENT-REJECTED' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationAttachmentRejectedReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
         replayEvidence.equal = replay.equal;
       }
       if (cell === 'AS-F12' && scenarioFacts) {
@@ -12464,6 +13163,24 @@ export function installAcceptanceHarness(): void {
           } catch (cleanupError) {
             throw Object.assign(
               new Error('agent.acceptance.foundationToolExpiryCleanupFailed'),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-ATTACHMENT-REJECTED'
+          && preparedConversationId
+        ) {
+          try {
+            await deleteFoundationConversation(preparedConversationId);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationAttachmentRejectionCleanupFailed',
+              ),
               {
                 primaryError: error,
                 cleanupError,

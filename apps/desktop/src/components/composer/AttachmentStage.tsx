@@ -34,7 +34,7 @@ function formatSize(size: number): string {
  */
 export function AttachmentStage({ drafts, onRemove, onRetry }: AttachmentStageProps) {
   const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
+  const { t } = useTranslation(['chat', 'agent']);
 
   if (drafts.length === 0) return null;
 
@@ -42,12 +42,18 @@ export function AttachmentStage({ drafts, onRemove, onRetry }: AttachmentStagePr
     <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
       {drafts.map((draft) => {
         const Icon = iconForMime(draft.mimeType);
-        const isFailed = draft.status === 'failed';
+        const isUploadFailed = draft.status === 'failed';
+        const isRejected = draft.status === 'rejected';
+        const isFailed = isUploadFailed || isRejected;
         const isUploading = draft.status === 'uploading';
+        const attachmentId = draft.attachment?.attachment_id ?? draft.id;
 
         return (
           <Flexbox
             key={draft.id}
+            data-pt-agent-composer-attachment={attachmentId}
+            data-pt-agent-composer-attachment-object-ref={draft.attachment?.object_ref}
+            data-pt-agent-composer-attachment-status={draft.status}
             horizontal
             align="center"
             gap={6}
@@ -91,14 +97,19 @@ export function AttachmentStage({ drafts, onRemove, onRetry }: AttachmentStagePr
               <span style={{ fontSize: 10, color: token.colorTextTertiary }}>
                 {isUploading
                   ? t('chat.input.attachmentUploading')
-                  : isFailed
+                  : isRejected
+                    ? t(
+                        draft.error || 'agent.errors.attachmentRejected',
+                        { ns: 'agent' },
+                      )
+                    : isUploadFailed
                     ? t('chat.input.attachmentUploadFailed')
                     : formatSize(draft.size)}
               </span>
             </Flexbox>
 
             {/* Retry button for failed uploads */}
-            {isFailed && onRetry && (
+            {isUploadFailed && onRetry && (
               <Tooltip title={t('chat.input.attachmentRetry')}>
                 <ActionIcon
                   icon={RotateCcw}
@@ -110,8 +121,10 @@ export function AttachmentStage({ drafts, onRemove, onRetry }: AttachmentStagePr
 
             {/* Remove button */}
             <ActionIcon
+              data-pt-agent-composer-attachment-remove={attachmentId}
               icon={X}
               size="small"
+              aria-label={t('chat.input.attachmentRemove')}
               title={t('chat.input.attachmentRemove')}
               onClick={() => onRemove(draft.id)}
             />

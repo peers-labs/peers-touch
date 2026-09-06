@@ -11,6 +11,7 @@ import {
   type SkillItem,
   type SchedulerStatusResponse,
   type AgentExecuteTurnInput,
+  type AgentTurnStreamError,
   type AgentTurnStreamController,
   type StreamEvent,
   streamAgentTurn,
@@ -104,7 +105,7 @@ export class AgentService {
     input: AgentExecuteTurnInput,
     onEvent: (event: StreamEvent) => void,
     onDone: () => void,
-    onError: (err: Error) => void,
+    onError: (err: AgentTurnStreamError) => void,
     sourcePtid: string,
   ): AgentTurnStreamController {
     return streamAgentTurn(input, onEvent, onDone, onError, sourcePtid);

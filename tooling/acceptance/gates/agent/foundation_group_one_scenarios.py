@@ -2482,6 +2482,241 @@ def evaluate_base_approval_denied(
     return assertions
 
 
+def evaluate_base_attachment_rejected(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-ATTACHMENT-REJECTED"
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    deletion_readback = _mapping(
+        cleanup,
+        "deletionReadback",
+        scenario=scenario,
+    )
+
+    attachment_id = _nonempty_string(
+        station,
+        "attachmentId",
+        scenario=scenario,
+    )
+    reason_code = _nonempty_string(
+        station,
+        "reasonCode",
+        scenario=scenario,
+    )
+    object_ref_hash = _sha256_string(
+        station,
+        "objectRefHash",
+        scenario=scenario,
+    )
+    before_hash = _sha256_string(
+        station,
+        "beforeHash",
+        scenario=scenario,
+    )
+    after_hash = _sha256_string(
+        station,
+        "afterHash",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedAttachmentRejected": (
+            outcome.get("error") == "agent.errors.attachmentRejected"
+            and outcome.get("error_type") == "CONTEXT_ATTACHMENT_REJECTED"
+            and outcome.get("locale_key")
+            == "agent.errors.attachmentRejected"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details) == ["attachment_id", "reason_code"]
+            and details.get("attachment_id") == attachment_id
+            and details.get("reason_code") == reason_code
+            and reason_code == "attachment_content_does_not_match_mime"
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType")
+            == "CONTEXT_ATTACHMENT_REJECTED"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            )
+            > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            )
+            > 0
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "observedAt",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "eventId",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "streamIdHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "conversationIdHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "payloadHash",
+                    scenario=scenario,
+                )
+            )
+        ),
+        "localizedRemovalVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("removalVisible") is True
+            and _nonempty_string(
+                receiver,
+                "removalText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRemovalText",
+                scenario=scenario,
+            )
+        ),
+        "rejectedDraftPreserved": (
+            receiver.get("attachmentVisibleAfterReject") is True
+            and receiver.get("attachmentStatusAfterReject") == "rejected"
+            and _nonempty_string(
+                receiver,
+                "draftTextAfterRejection",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "draftTextBefore",
+                scenario=scenario,
+            )
+        ),
+        "removeAttachmentExecuted": (
+            receiver.get("removalExecuted") is True
+            and receiver.get("attachmentPresentAfterRemoval") is False
+        ),
+        "stationStateUnchanged": (
+            _positive_int(
+                station,
+                "conversationVersionBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                station,
+                "conversationVersionAfter",
+                scenario=scenario,
+            )
+            and before_hash == after_hash
+            and _nonnegative_int(
+                station,
+                "turnDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "messageDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "zeroSideEffect": (
+            _nonnegative_int(
+                station,
+                "providerExecutionDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "sourceHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            )
+        ),
+        "cleanupComplete": (
+            cleanup.get("draftRemoved") is True
+            and cleanup.get("objectDeleted") is True
+            and deletion_readback.get("source") == "oss-owner-list"
+            and _sha256_string(
+                deletion_readback,
+                "objectRefHash",
+                scenario=scenario,
+            )
+            == object_ref_hash
+            and bool(
+                _sha256_string(
+                    deletion_readback,
+                    "keyHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _nonempty_string(
+                    deletion_readback,
+                    "deletedAt",
+                    scenario=scenario,
+                )
+            )
+            and _positive_int(
+                deletion_readback,
+                "readAttempt",
+                scenario=scenario,
+            )
+            > 0
+            and cleanup.get("conversationDeleted") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_approval_expired(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

@@ -7,6 +7,8 @@ import {
   type Session,
   type StreamEvent,
   type AgentAttachmentRefInput,
+  type AgentTypedErrorPayload,
+  type AgentTurnStreamError,
   type AgentTurnQueueListOutput,
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
@@ -110,7 +112,7 @@ export interface ChatComposerAttachment {
 
 export interface AgentSendLifecycle {
   onAccepted?: () => void;
-  onRejected?: () => void;
+  onRejected?: (error?: AgentTypedErrorPayload) => void;
 }
 
 export type BudgetExhaustionKind =
@@ -163,6 +165,7 @@ export interface ChatMessage {
   error?: string;
   cancelled?: boolean;
   terminalStatus?: 'completed' | 'failed' | 'cancelled' | 'interrupted';
+  typedError?: AgentTypedErrorPayload;
   errorDetail?: string;
   resolution?: ErrorResolutionAction | null;
   providerId?: string;
@@ -400,6 +403,7 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     || source.operation
     || source.replacementOf
     || source.replacedBy
+    || source.typedError
     || source.errorDetail
     || source.resolution
     || source.budgetNotice;
@@ -416,6 +420,8 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     replacementOf: target.replacementOf ?? source.replacementOf,
     replacedBy: target.replacedBy ?? source.replacedBy,
     error: targetOwnsTerminal ? target.error : target.error ?? source.error,
+    typedError:
+      targetOwnsTerminal ? target.typedError : target.typedError ?? source.typedError,
     errorDetail:
       targetOwnsTerminal ? target.errorDetail : target.errorDetail ?? source.errorDetail,
     resolution:
@@ -1562,24 +1568,31 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         void get().syncMessages();
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
-      (err: Error & { resolution?: ErrorResolutionAction; errorDetail?: string; providerId?: string }) => {
-        if (!acceptedByStation) lifecycle?.onRejected?.();
+      (err: AgentTurnStreamError) => {
+        if (!acceptedByStation) lifecycle?.onRejected?.(err.typedError);
         log.error('chat', 'Send message failed', { error: err.message });
+        const resolution = err.resolution as ErrorResolutionAction | undefined;
         set((state) => {
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
           const applyError = (m: ChatMessage): ChatMessage => {
             if (m.id !== assistantId) return m;
-            if (err.resolution) {
+            if (resolution) {
               return {
                 ...m,
                 error: err.message,
+                typedError: err.typedError ?? m.typedError,
                 errorDetail: err.errorDetail || m.errorDetail,
-                resolution: err.resolution,
+                resolution,
                 providerId: err.providerId || m.providerId,
                 loading: false,
               };
             }
-            return { ...m, error: presentChatRuntimeError(err.message), loading: false };
+            return {
+              ...m,
+              error: presentChatRuntimeError(err.message),
+              typedError: err.typedError ?? m.typedError,
+              loading: false,
+            };
           };
           return {
             messages: isCurrent ? state.messages.map(applyError) : state.messages,

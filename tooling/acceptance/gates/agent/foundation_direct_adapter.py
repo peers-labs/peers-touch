@@ -189,6 +189,18 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-ATTACHMENT-REJECTED": frozenset(
+        {
+            "typedAttachmentRejected",
+            "localizedRemovalVisible",
+            "rejectedDraftPreserved",
+            "removeAttachmentExecuted",
+            "stationStateUnchanged",
+            "zeroSideEffect",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
 }
 
 

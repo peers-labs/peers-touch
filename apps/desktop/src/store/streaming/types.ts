@@ -142,6 +142,11 @@ export interface ConversationCreatedPayload {
 export interface ErrorEventPayload {
   error: string;
   type?: string;
+  error_type?: string;
+  locale_key?: string;
+  retryable?: boolean;
+  terminal?: boolean;
+  details?: Record<string, string>;
   turnId?: string;
   conversationId?: string;
 }

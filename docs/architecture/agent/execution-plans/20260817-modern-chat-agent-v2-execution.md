@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `ed4c90a67ebb5100eb249cd08ad2234553be9c0c` scopes ToolBatch settlement to the latest live retry attempt; checkpoint `e9ac80184b68eca6e5d761517f5ceb8c2a57c7d1` defers AS-F06 capability restoration until transport recovery and Station reauthentication; exact-source run `20260906T180600621643Z-af6ef4f4aebdb588998a01b66f5d93c5` passed all four AS-F06 tuples, AS-F10, AS-F12, `BASE-ACTIVE-MUTATION-CONFLICT`, and Browser English `BASE-APPROVAL-DENIED`, then failed Browser Simplified Chinese `BASE-APPROVAL-DENIED` at the receiver error surface; bounded stale-node/remount/projection instrumentation is pending exact-source classification; Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `e9ac80184b68eca6e5d761517f5ceb8c2a57c7d1` restores AS-F06 capability isolation after transport recovery and Station reauthentication; diagnostic checkpoint `b516ba444803d3ecec8122aa7c4284e74a3f8d6f` preserves denial receiver remount/projection evidence without changing behavior; exact-source run `20260906T183220470684Z-c0cf923e2b4e7da573bde939a067e9d9` passed all four AS-F06 tuples, AS-F10, AS-F12, `BASE-ACTIVE-MUTATION-CONFLICT`, both `BASE-APPROVAL-DENIED` locale tuples, and both `BASE-APPROVAL-EXPIRED` locale tuples, then failed closed at Browser English `BASE-ATTACHMENT-REJECTED` because the direct-runtime group is not implemented; Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5741,6 +5741,42 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   the expected locale key. The Gate finished `FAILED / PARTIAL / UNPROVEN`;
   Provisioner cleanup finished `DONE / PROVEN / passed`, all six client ports
   were released, and redaction passed.
+- Diagnostic checkpoint `b516ba444803d3ecec8122aa7c4284e74a3f8d6f`
+  was deployed exact-source to `chat-native-disposable-station`. Gate run
+  `20260906T183220470684Z-c0cf923e2b4e7da573bde939a067e9d9`
+  (aggregate
+  `20260906T183220320147Z-e38b2d204f358fb5dc543bb4f7eb0759`)
+  did not reproduce the prior receiver timeout: both
+  `BASE-APPROVAL-DENIED` locale tuples and both
+  `BASE-APPROVAL-EXPIRED` locale tuples passed with the existing predicates.
+  The run then failed closed at
+  `foundation-browser-direct / browser / direct_model /
+  BASE-ATTACHMENT-REJECTED / en / single / sample-001` because the
+  direct-runtime group is not implemented. The Gate finished
+  `FAILED / PARTIAL / UNPROVEN`; Provisioner cleanup finished
+  `DONE / PROVEN / passed`, all six client ports were released, and redaction
+  passed. The next closure must preserve the Station-owned typed attachment
+  rejection payload, keep the real composer draft available, invoke the real
+  removal action, and prove zero Turn/provider/message side effects without
+  changing the 419-cell matrix or its predicates.
+- The local `BASE-ATTACHMENT-REJECTED` vertical now preserves the Station-owned
+  two-key typed error through SSE, Native, Desktop store, and localized
+  receiver projection; retains the rejected composer draft; invokes the real
+  remove action; and proves unchanged Station conversation/message/Turn and
+  provider-execution state. Final review found and the implementation closed
+  two evidence defects: `runtime-events` is now hash-bound to the observed
+  rejection stream event instead of the baseline attestation Turn, and object
+  cleanup now requires the authenticated OSS owner listing to return the exact
+  object's non-empty `deleted_at` tombstone. TypeScript check, all `572`
+  Desktop tests with one unrelated environment-dependent skip, Desktop
+  production build, focused Station Agent tests, Go style, `204` focused
+  Foundation/static tests, and `git diff --check` pass. The unchanged Rust
+  transport test previously passed `1/1`; a redundant rerun was stopped after
+  reproducing the environment's zero-CPU `rustc` sleep while linking the main
+  test binary. The broad Foundation fixture suite still has its two known
+  unrelated `receiver-dom` profile mismatches. Exact-source deployment and the
+  unchanged 419-cell Gate remain pending, so Foundation and G-F remain
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

@@ -7,6 +7,7 @@ import unittest
 
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
+    evaluate_base_attachment_rejected,
     evaluate_base_approval_expired,
     evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
@@ -915,6 +916,78 @@ def valid_active_mutation_conflict_capture() -> dict[str, object]:
             "deletedFromStation": True,
             "priorSelection": "assistant",
             "restoredSelection": "assistant",
+        },
+    }
+
+
+def valid_attachment_rejected_capture() -> dict[str, object]:
+    return {
+        "runtimeEvent": {
+            "eventId": "b" * 64,
+            "sequence": 1,
+            "eventType": "error",
+            "observedAt": "2026-09-06T18:32:20Z",
+            "streamGeneration": 1,
+            "streamIdHash": "c" * 64,
+            "conversationIdHash": "d" * 64,
+            "payloadHash": "e" * 64,
+            "errorType": "CONTEXT_ATTACHMENT_REJECTED",
+        },
+        "outcome": {
+            "error": "agent.errors.attachmentRejected",
+            "error_type": "CONTEXT_ATTACHMENT_REJECTED",
+            "locale_key": "agent.errors.attachmentRejected",
+            "retryable": False,
+            "terminal": True,
+            "details": {
+                "attachment_id": "attachment-rejected",
+                "reason_code": "attachment_content_does_not_match_mime",
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "An attachment cannot be used for this request.",
+            "expectedErrorText": (
+                "An attachment cannot be used for this request."
+            ),
+            "attachmentVisibleAfterReject": True,
+            "attachmentStatusAfterReject": "rejected",
+            "draftTextBefore": "Reject the invalid attachment",
+            "draftTextAfterRejection": "Reject the invalid attachment",
+            "removalVisible": True,
+            "removalText": "Remove attachment",
+            "expectedRemovalText": "Remove attachment",
+            "removalExecuted": True,
+            "attachmentPresentAfterRemoval": False,
+        },
+        "station": {
+            "attachmentId": "attachment-rejected",
+            "objectRefHash": "f" * 64,
+            "reasonCode": "attachment_content_does_not_match_mime",
+            "conversationVersionBefore": 2,
+            "conversationVersionAfter": 2,
+            "beforeHash": "a" * 64,
+            "afterHash": "a" * 64,
+            "turnDelta": 0,
+            "providerExecutionDelta": 0,
+            "messageDelta": 0,
+        },
+        "replay": {
+            "sourceHash": "a" * 64,
+            "replayHash": "a" * 64,
+            "equal": True,
+        },
+        "cleanup": {
+            "draftRemoved": True,
+            "objectDeleted": True,
+            "deletionReadback": {
+                "source": "oss-owner-list",
+                "objectRefHash": "f" * 64,
+                "keyHash": "0" * 64,
+                "deletedAt": "2026-09-06T18:32:21Z",
+                "readAttempt": 1,
+            },
+            "conversationDeleted": True,
         },
     }
 
@@ -1959,6 +2032,64 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "localizedRecoveryVisible",
         ):
             evaluate_base_active_mutation_conflict(capture)
+
+    def test_attachment_rejected_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_attachment_rejected(
+            valid_attachment_rejected_capture()
+        )
+
+        self.assertEqual(len(assertions), 8)
+        self.assertTrue(all(assertions.values()))
+
+    def test_attachment_rejected_rejects_unsafe_details(self) -> None:
+        capture = valid_attachment_rejected_capture()
+        capture["outcome"]["details"]["object_ref"] = "oss:private-object"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedAttachmentRejected",
+        ):
+            evaluate_base_attachment_rejected(capture)
+
+    def test_attachment_rejected_rejects_draft_loss(self) -> None:
+        capture = valid_attachment_rejected_capture()
+        capture["receiver"]["draftTextAfterRejection"] = "different draft"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "rejectedDraftPreserved",
+        ):
+            evaluate_base_attachment_rejected(capture)
+
+    def test_attachment_rejected_rejects_provider_execution(self) -> None:
+        capture = valid_attachment_rejected_capture()
+        capture["station"]["providerExecutionDelta"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroSideEffect",
+        ):
+            evaluate_base_attachment_rejected(capture)
+
+    def test_attachment_rejected_rejects_unrelated_runtime_event(self) -> None:
+        capture = valid_attachment_rejected_capture()
+        capture["runtimeEvent"]["eventType"] = "done"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedAttachmentRejected",
+        ):
+            evaluate_base_attachment_rejected(capture)
+
+    def test_attachment_rejected_requires_authoritative_deletion(self) -> None:
+        capture = valid_attachment_rejected_capture()
+        capture["cleanup"]["deletionReadback"]["source"] = "resolve-error"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_attachment_rejected(capture)
 
     def test_approval_denied_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_approval_denied(

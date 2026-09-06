@@ -24,6 +24,7 @@ func openTurnAdmissionDB(t *testing.T, name string) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&persistence.Conversation{},
+		&persistence.AgentMessage{},
 		&persistence.AgentTurn{},
 		&persistence.TurnAttempt{},
 		&persistence.TurnQueueEntry{},
@@ -118,9 +119,8 @@ func TestTurnAdmissionRejectsAttachmentBeforePersistence(t *testing.T) {
 	db := openTurnAdmissionDB(t, "turn_admission_attachment_preflight")
 	seedAdmissionConversation(t, db)
 	svc := newTurnAdmissionServiceWithDB(db)
-	providerCalls := 0
 	svc.SetRequestPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
-		return attachmentRejected("attachment checksum mismatch")
+		return attachmentRejected("attachment-1", "attachment checksum mismatch")
 	})
 	request := admissionRequest("attachment-rejected", "inspect")
 	request.Attachments = []*model.AgentAttachmentRef{{
@@ -128,8 +128,17 @@ func TestTurnAdmissionRejectsAttachmentBeforePersistence(t *testing.T) {
 		ObjectRef:    "oss:cas/01/object",
 	}}
 
-	if _, err := svc.Admit(context.Background(), "ptid:actor-1", request); err == nil {
+	_, err := svc.Admit(context.Background(), "ptid:actor-1", request)
+	if err == nil {
 		t.Fatal("expected attachment preflight rejection")
+	}
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentAttachmentRejected ||
+		bizErr.Payload == nil ||
+		bizErr.Payload.GetDetails()["attachment_id"] != "attachment-1" ||
+		bizErr.Payload.GetDetails()["reason_code"] != "attachment_checksum_mismatch" {
+		t.Fatalf("attachment preflight rejection lost typed details: %T %v", err, err)
 	}
 	var turnCount int64
 	if err := db.Model(&persistence.AgentTurn{}).Count(&turnCount).Error; err != nil {
@@ -139,12 +148,30 @@ func TestTurnAdmissionRejectsAttachmentBeforePersistence(t *testing.T) {
 	if err := db.Model(&persistence.TurnAttempt{}).Count(&attemptCount).Error; err != nil {
 		t.Fatalf("count attempts: %v", err)
 	}
-	if turnCount != 0 || attemptCount != 0 || providerCalls != 0 {
+	var queueEntryCount int64
+	if err := db.Model(&persistence.TurnQueueEntry{}).Count(&queueEntryCount).Error; err != nil {
+		t.Fatalf("count queue entries: %v", err)
+	}
+	var messageCount int64
+	if err := db.Model(&persistence.AgentMessage{}).Count(&messageCount).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	var conversation persistence.Conversation
+	if err := db.First(&conversation, "id = ?", "conversation-1").Error; err != nil {
+		t.Fatalf("read conversation: %v", err)
+	}
+	if turnCount != 0 ||
+		attemptCount != 0 ||
+		queueEntryCount != 0 ||
+		messageCount != 0 ||
+		conversation.Version != 1 {
 		t.Fatalf(
-			"rejected attachment produced side effects: turns=%d attempts=%d provider_calls=%d",
+			"rejected attachment produced persistence side effects: turns=%d attempts=%d queue=%d messages=%d conversation_version=%d",
 			turnCount,
 			attemptCount,
-			providerCalls,
+			queueEntryCount,
+			messageCount,
+			conversation.Version,
 		)
 	}
 }
@@ -194,7 +221,7 @@ func TestTurnAdmissionReplaysBeforeAttachmentRevalidation(t *testing.T) {
 	svc.SetRequestPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
 		preflightCalls++
 		if preflightCalls > 1 {
-			return attachmentRejected("attachment expired after admission")
+			return attachmentRejected("attachment-1", "attachment expired after admission")
 		}
 		return nil
 	})
@@ -357,7 +384,7 @@ func TestTurnAdmissionCancelsQueuedEntryWhenAttachmentExpiresBeforeDequeue(t *te
 	reject := false
 	svc.SetRequestPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
 		if reject {
-			return attachmentRejected("attachment expired before dequeue")
+			return attachmentRejected("attachment-1", "attachment expired before dequeue")
 		}
 		return nil
 	})

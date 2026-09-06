@@ -81,6 +81,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     failed,
     addFiles,
     clearDrafts,
+    rejectDraft,
     removeDraft,
     retryDraft,
   } = useAgentAttachmentDrafts({
@@ -152,8 +153,15 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         clearMentions();
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
       },
+      onRejected: (error) => {
+        if (error?.error_type !== 'CONTEXT_ATTACHMENT_REJECTED') return;
+        rejectDraft(
+          error.details.attachment_id,
+          error.locale_key || 'agent.errors.attachmentRejected',
+        );
+      },
     });
-  }, [input, readyAttachments.length, isStreaming, uploading, failed, capabilityWarning, sendMessage, toComposerAttachments, clearDrafts, clearMentions]);
+  }, [input, readyAttachments.length, isStreaming, uploading, failed, capabilityWarning, sendMessage, toComposerAttachments, clearDrafts, clearMentions, rejectDraft]);
 
   // Scan the draft for "@" triggers whenever it changes, driving the popup.
   const handleInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -505,6 +513,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
       </Flexbox>
 
       <input
+        data-pt-agent-attachment-input
         ref={fileInputRef}
         type="file"
         accept="image/*"

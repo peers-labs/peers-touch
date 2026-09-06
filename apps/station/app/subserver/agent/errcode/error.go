@@ -86,7 +86,7 @@ func NewCanvasSingleAgentNotReady() *BizError {
 	}
 }
 
-func NewAttachmentRejected(reasonCode string) *BizError {
+func NewAttachmentRejected(attachmentID, reasonCode string) *BizError {
 	return &BizError{
 		Code:       AgentAttachmentRejected,
 		HTTPStatus: http.StatusBadRequest,
@@ -97,7 +97,10 @@ func NewAttachmentRejected(reasonCode string) *BizError {
 			LocaleKey: AgentAttachmentRejectedLocaleKey,
 			Retryable: false,
 			Terminal:  true,
-			Details:   map[string]string{"reason_code": reasonCode},
+			Details: map[string]string{
+				"attachment_id": attachmentID,
+				"reason_code":   reasonCode,
+			},
 		},
 	}
 }
