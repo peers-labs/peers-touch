@@ -1,7 +1,6 @@
 pub mod build_identity;
 pub mod draft;
 pub mod health;
-pub mod key_exchange;
 pub mod ledger;
 pub mod native_events;
 pub mod oauth;
@@ -14,14 +13,36 @@ use tauri::ipc::Invoke;
 #[cfg(not(feature = "acceptance-harness"))]
 pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
-        // Crypto / key exchange
-        key_exchange::crypto_identity_key_bundle,
-        key_exchange::signaling_envelope_open,
-        key_exchange::signaling_envelope_seal,
         // Health
         health::mobile_health,
         // Native events
         native_events::mobile_native_event_emit,
+        // Messaging
+        crate::messaging::commands::messaging_activate,
+        crate::messaging::commands::messaging_attachment_stage_begin,
+        crate::messaging::commands::messaging_attachment_stage_complete,
+        crate::messaging::commands::messaging_attachment_stage_discard,
+        crate::messaging::commands::messaging_attachment_stage_write,
+        crate::messaging::commands::messaging_cancel_attachment,
+        crate::messaging::commands::messaging_command_status,
+        crate::messaging::commands::messaging_create_direct,
+        crate::messaging::commands::messaging_create_group,
+        crate::messaging::commands::messaging_deactivate,
+        crate::messaging::commands::messaging_list_conversations,
+        crate::messaging::commands::messaging_list_messages,
+        crate::messaging::commands::messaging_list_thread_messages,
+        crate::messaging::commands::messaging_open_attachment,
+        crate::messaging::commands::messaging_reconcile,
+        crate::messaging::commands::messaging_resume,
+        crate::messaging::commands::messaging_search_messages,
+        crate::messaging::commands::messaging_send_message,
+        crate::messaging::commands::messaging_status,
+        crate::messaging::commands::messaging_suspend,
+        crate::messaging::commands::messaging_submit_edit,
+        crate::messaging::commands::messaging_submit_metadata_interaction,
+        crate::messaging::commands::messaging_submit_read_cursor,
+        crate::messaging::commands::messaging_submit_typing,
+        crate::messaging::commands::messaging_wake,
         // OAuth
         oauth::oauth_cancel,
         oauth::oauth_logout_purge,
@@ -71,14 +92,36 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
     tauri::generate_handler![
         // Build identity (acceptance only)
         build_identity::mobile_build_identity,
-        // Crypto / key exchange
-        key_exchange::crypto_identity_key_bundle,
-        key_exchange::signaling_envelope_open,
-        key_exchange::signaling_envelope_seal,
         // Health
         health::mobile_health,
         // Native events
         native_events::mobile_native_event_emit,
+        // Messaging
+        crate::messaging::commands::messaging_activate,
+        crate::messaging::commands::messaging_attachment_stage_begin,
+        crate::messaging::commands::messaging_attachment_stage_complete,
+        crate::messaging::commands::messaging_attachment_stage_discard,
+        crate::messaging::commands::messaging_attachment_stage_write,
+        crate::messaging::commands::messaging_cancel_attachment,
+        crate::messaging::commands::messaging_command_status,
+        crate::messaging::commands::messaging_create_direct,
+        crate::messaging::commands::messaging_create_group,
+        crate::messaging::commands::messaging_deactivate,
+        crate::messaging::commands::messaging_list_conversations,
+        crate::messaging::commands::messaging_list_messages,
+        crate::messaging::commands::messaging_list_thread_messages,
+        crate::messaging::commands::messaging_open_attachment,
+        crate::messaging::commands::messaging_reconcile,
+        crate::messaging::commands::messaging_resume,
+        crate::messaging::commands::messaging_search_messages,
+        crate::messaging::commands::messaging_send_message,
+        crate::messaging::commands::messaging_status,
+        crate::messaging::commands::messaging_suspend,
+        crate::messaging::commands::messaging_submit_edit,
+        crate::messaging::commands::messaging_submit_metadata_interaction,
+        crate::messaging::commands::messaging_submit_read_cursor,
+        crate::messaging::commands::messaging_submit_typing,
+        crate::messaging::commands::messaging_wake,
         // OAuth (acceptance)
         oauth::oauth_acceptance_callback_replay_handle,
         oauth::oauth_acceptance_negative_callback,

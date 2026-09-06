@@ -2,18 +2,18 @@
  * socialApiTypes.ts — Shared domain types and utilities for the social API surface.
  *
  * Extracted from the former socialApi.ts monolith during W8 gateway migration.
- * All gateway modules, stores, pages, and E2EE runtimes import shared types
- * from this module instead of the old monolithic API client.
+ * All gateway modules, stores, and pages import shared types from this module
+ * instead of the old monolithic API client.
  *
  * Contains:
- * - Chat attachment and conversation settings types
+ * - Chat conversation settings types
  * - Chat background constants and normalizer
  * - Moment draft types and post request builder
- * - Media upload utilities (chat attachments, moment images)
+ * - Moment media upload utilities
  */
 
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
-import { encryptClientMediaBlob, encryptClientMediaBlobChunked, type ClientEncryptedMediaAsset } from '@peers-touch/client-media-security';
+import { encryptClientMediaBlobChunked, type ClientEncryptedMediaAsset } from '@peers-touch/client-media-security';
 
 import type { MobileAuthSession } from '../auth/authSession';
 import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
@@ -29,31 +29,6 @@ import {
   type Mention,
 } from '../../gen/proto/domain/social/post_pb';
 import { SocialApiError, readableErrorMessage } from './socialTypes';
-
-// ---------------------------------------------------------------------------
-// Chat attachment type (shared across friend and group chat)
-// ---------------------------------------------------------------------------
-
-export type ChatAttachmentInput = {
-  cid: string;
-  filename: string;
-  mime_type: string;
-  size: number;
-  thumbnail_cid?: string;
-  visibility?: string;
-  encryption_suite?: string;
-  encryption_key_b64?: string;
-  encryption_nonce_b64?: string;
-  plaintext_sha256_b64?: string;
-  ciphertext_sha256_b64?: string;
-  plaintext_size?: number;
-  ciphertext_size?: number;
-  chunking?: string;
-  chunk_size?: number;
-  chunk_count?: number;
-  tag_size?: number;
-  nonce_strategy?: string;
-};
 
 // ---------------------------------------------------------------------------
 // Chat background constants and types
@@ -164,40 +139,6 @@ interface UploadedOssAttachment {
   size?: number;
   mime?: string;
   filename?: string;
-}
-
-export async function uploadMobileChatAttachment(
-  session: MobileAuthSession,
-  file: File,
-  conversationId: string,
-): Promise<ChatAttachmentInput> {
-  const encrypted = await encryptClientMediaBlob(file);
-  const uploaded = await uploadMobileEncryptedAttachment(session, file, encrypted, {
-    bucket: 'chat',
-    visibility: 'chat',
-    chatSessionId: conversationId,
-  });
-
-  return {
-    cid: String(uploaded.cid ?? ''),
-    filename: String(uploaded.filename ?? file.name),
-    mime_type: String(uploaded.mime ?? file.type ?? 'application/octet-stream'),
-    size: file.size,
-    thumbnail_cid: '',
-    visibility: 'chat',
-    encryption_suite: encrypted.descriptor.suite,
-    encryption_key_b64: encrypted.descriptor.keyB64,
-    encryption_nonce_b64: encrypted.descriptor.nonceB64,
-    plaintext_sha256_b64: encrypted.descriptor.plaintextSha256B64,
-    ciphertext_sha256_b64: encrypted.descriptor.ciphertextSha256B64,
-    plaintext_size: encrypted.descriptor.plaintextSize,
-    ciphertext_size: Number(uploaded.size ?? encrypted.descriptor.ciphertextSize),
-    chunking: encrypted.descriptor.chunking,
-    chunk_size: encrypted.descriptor.chunkSize,
-    chunk_count: encrypted.descriptor.chunkCount,
-    tag_size: encrypted.descriptor.tagSize,
-    nonce_strategy: encrypted.descriptor.nonceStrategy,
-  };
 }
 
 export async function uploadMobileMomentImage(

@@ -41,6 +41,23 @@ EXPECTED_NATIVE_PLUGINS = {
     "tauri-plugin-deep-link": "=2.4.9",
     "tauri-plugin-opener": "=2.5.4",
 }
+FORBIDDEN_WEB_OAUTH_SECRET_FIELDS = (
+    "pkceVerifier",
+    "pkceChallenge",
+    "pkceMethod",
+    "nonce",
+    "nonceHash",
+    "attemptHandle",
+    "attemptSecret",
+    "deliveryPrivateKey",
+    "authorizationCode",
+    "callbackUrl",
+    "authorizeUrl",
+    "oauthAttemptId",
+    "credentialEnvelope",
+    "accessToken",
+    "refreshToken",
+)
 
 
 def load_json(path: Path) -> dict:
@@ -64,6 +81,123 @@ def runtime_manifest_fields() -> set[str]:
                 and isinstance(child.target, ast.Name)
             }
     raise ValueError("RuntimeManifest class is missing")
+
+
+def rust_function_body(source: str, function_name: str) -> str:
+    signature = re.search(
+        rf"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+{re.escape(function_name)}"
+        r"(?:\s*<[^{}]*>)?\s*\(",
+        source,
+    )
+    if signature is None:
+        raise ValueError(f"Rust function is missing: {function_name}")
+
+    opening_brace = source.find("{", signature.end())
+    if opening_brace < 0:
+        raise ValueError(f"Rust function body is missing: {function_name}")
+    body, _ = rust_block_body(source, opening_brace)
+    return body
+
+
+def rust_block_body(source: str, opening_brace: int) -> tuple[str, int]:
+    depth = 0
+    for index in range(opening_brace, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening_brace + 1:index], index
+    raise ValueError("Rust block is not closed")
+
+
+def validate_deep_link_emission_partition(deep_link_source: str) -> None:
+    dispatch_body = rust_function_body(deep_link_source, "dispatch_deep_link")
+    oauth_dispatch_body = rust_function_body(
+        deep_link_source,
+        "dispatch_oauth_callback",
+    )
+    native_callback_body = rust_function_body(
+        deep_link_source,
+        "handle_native_callback",
+    )
+    general_dispatch_body = rust_function_body(
+        deep_link_source,
+        "dispatch_general_deep_link",
+    )
+
+    oauth_branch = re.search(
+        r"\bif\s+is_oauth_callback\s*\(\s*&url\s*\)",
+        dispatch_body,
+    )
+    if oauth_branch is None:
+        raise ValueError("Deep-link dispatcher must classify OAuth callbacks")
+    oauth_opening_brace = dispatch_body.find("{", oauth_branch.end())
+    oauth_branch_body, oauth_closing_brace = rust_block_body(
+        dispatch_body,
+        oauth_opening_brace,
+    )
+    else_branch = re.match(
+        r"\s*else\s*",
+        dispatch_body[oauth_closing_brace + 1:],
+    )
+    if else_branch is None:
+        raise ValueError("Deep-link dispatcher must isolate non-OAuth routing")
+    else_opening_brace = dispatch_body.find(
+        "{",
+        oauth_closing_brace + 1 + else_branch.end(),
+    )
+    general_branch_body, _ = rust_block_body(
+        dispatch_body,
+        else_opening_brace,
+    )
+
+    if (
+        "dispatch_oauth_callback(app, url);" not in oauth_branch_body
+        or "dispatch_general_deep_link" in oauth_branch_body
+    ):
+        raise ValueError("OAuth deep links must route only to the OAuth coordinator")
+    if (
+        "dispatch_general_deep_link(app, url);" not in general_branch_body
+        or "dispatch_oauth_callback" in general_branch_body
+    ):
+        raise ValueError("Non-OAuth deep links must route only to the general emitter")
+
+    raw_emit_pattern = re.compile(r"\bnative_events::emit_deep_link\s*\(")
+    oauth_owned_source = "\n".join(
+        (dispatch_body, oauth_dispatch_body, native_callback_body)
+    )
+    if raw_emit_pattern.search(oauth_owned_source):
+        raise ValueError("OAuth deep links must not be forwarded raw to Mobile Web")
+
+    general_emit_count = len(raw_emit_pattern.findall(general_dispatch_body))
+    total_emit_count = len(raw_emit_pattern.findall(deep_link_source))
+    if general_emit_count != 1 or total_emit_count != general_emit_count:
+        raise ValueError(
+            "Raw deep links may be emitted only once from the non-OAuth handler"
+        )
+
+
+def validate_web_oauth_secret_boundary(
+    commands_source: str,
+    runtime_source: str,
+) -> None:
+    oauth_contract_marker = "export type MobileOAuthProvider"
+    oauth_contract_start = commands_source.find(oauth_contract_marker)
+    if oauth_contract_start < 0:
+        raise ValueError("Mobile Web OAuth contract types are missing")
+    oauth_owned_source = (
+        commands_source[oauth_contract_start:] + runtime_source
+    )
+    present_secret_fields = [
+        field
+        for field in FORBIDDEN_WEB_OAUTH_SECRET_FIELDS
+        if re.search(rf"\b{re.escape(field)}\b", oauth_owned_source)
+    ]
+    if present_secret_fields:
+        raise ValueError(
+            f"OAuth secret fields crossed into Mobile Web: {present_secret_fields}"
+        )
 
 
 def validate_native_oauth_adapters() -> None:
@@ -156,8 +290,7 @@ def validate_native_oauth_adapters() -> None:
         raise ValueError(
             "OAuth deep links must emit one sanitized public projection"
         )
-    if "native_events::emit_deep_link" in deep_link_source:
-        raise ValueError("OAuth deep links must not be forwarded raw to Mobile Web")
+    validate_deep_link_emission_partition(deep_link_source)
 
     package = load_json(mobile_root / "package.json")
     npm_dependencies = {
@@ -237,32 +370,7 @@ def validate_web_oauth_hard_cut() -> None:
             f"Web OAuth authority remains in authRuntime: {present_runtime_patterns}"
         )
 
-    forbidden_secret_fields = (
-        "pkceVerifier",
-        "pkceChallenge",
-        "pkceMethod",
-        "nonce",
-        "nonceHash",
-        "attemptHandle",
-        "attemptSecret",
-        "deliveryPrivateKey",
-        "authorizationCode",
-        "callbackUrl",
-        "authorizeUrl",
-        "oauthAttemptId",
-        "credentialEnvelope",
-        "accessToken",
-        "refreshToken",
-    )
-    present_secret_fields = [
-        field
-        for field in forbidden_secret_fields
-        if re.search(rf"\b{re.escape(field)}\b", combined_source)
-    ]
-    if present_secret_fields:
-        raise ValueError(
-            f"OAuth secret fields crossed into Mobile Web: {present_secret_fields}"
-        )
+    validate_web_oauth_secret_boundary(commands_source, runtime_source)
 
     oauth_commands_source = commands_source[commands_source.index(
         "export async function oauthStart"
@@ -357,10 +465,17 @@ def validate_hard_cut() -> None:
         raise ValueError(f"legacy RuntimeManifest paths remain: {present}")
 
 
-def main() -> int:
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["--"]:
+        arguments = arguments[1:]
     parser = argparse.ArgumentParser()
     parser.add_argument("--hard-cut", action="store_true")
-    args = parser.parse_args()
+    return parser.parse_args(arguments)
+
+
+def main() -> int:
+    args = parse_arguments()
     try:
         validate()
         if args.hard_cut:

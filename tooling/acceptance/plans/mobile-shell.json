@@ -6,6 +6,8 @@
     "mobile-contract-static",
     "mobile-identity-contract",
     "mobile-simulator-access-e2e",
+    "mobile-simulator-social-convergence-e2e",
+    "mobile-simulator-chat-contacts-e2e",
     "mobile-native-access-e2e",
     "mobile-native-lifecycle-e2e",
     "mobile-native-recovery-e2e",

@@ -11,6 +11,7 @@
 
 import type { MobileRuntimeDescriptor, RuntimeOperationResult } from '../app/lifecycle/types';
 import { installMobileNativeEventBridge } from './mobileNativeEventBridge';
+import { createMessagingRuntimeDescriptor } from './messagingRuntime';
 import {
   getRecoveryProjection,
   destroyRecoveryProjection,
@@ -139,8 +140,8 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
     id: 'social',
     title: 'Social Runtime',
     responsibility:
-      'Owns friend chat, contacts, notifications, realtime streams, presence, typing, and reconcile projection.',
-    dependsOn: ['auth', 'native-event-bridge'],
+      'Owns contacts, notifications, presence, shared realtime invalidation, and non-message social reconciliation.',
+    dependsOn: ['auth', 'native-event-bridge', 'messaging'],
 
     async bootstrap(): Promise<void> {
       // Social runtime bootstraps through useSocialRuntime hook
@@ -175,7 +176,7 @@ function createGroupRuntimeDescriptor(): MobileRuntimeDescriptor {
     id: 'group',
     title: 'Group Runtime',
     responsibility:
-      'Owns group list, group members, group messages, unread counts, and reconcile projection.',
+      'Owns group lifecycle, membership, settings, and presentation assembly over Messaging projections.',
     dependsOn: ['auth', 'social'],
 
     async bootstrap(): Promise<void> {
@@ -207,7 +208,7 @@ function createCommandRuntimeDescriptor(): MobileRuntimeDescriptor {
     id: 'command',
     title: 'Command Runtime',
     responsibility:
-      'Owns command admission, encrypted ledger persistence, four-key fair dispatch, pending/failed/unknown projection, and draft restoration.',
+      'Owns non-messaging command admission, encrypted ledger persistence, four-key fair dispatch, pending/failed/unknown projection, and draft restoration.',
     dependsOn: ['auth', 'secure-storage'],
 
     async bootstrap(): Promise<void> {
@@ -427,6 +428,7 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
     createSecureStorageDescriptor(),
     createAuthRuntimeDescriptor(),
     createNativeEventBridgeDescriptor(),
+    createMessagingRuntimeDescriptor(),
     createCommandRuntimeDescriptor(),
     createSocialRuntimeDescriptor(),
     createGroupRuntimeDescriptor(),

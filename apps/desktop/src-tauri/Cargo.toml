@@ -47,12 +47,6 @@ rfd = "0.15"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 futures-lite = "2"
 ulid = "1.1"
-openmls = { version = "0.8.1", features = ["test-utils"] }
-openmls_rust_crypto = "0.5.1"
-openmls_memory_storage = { version = "0.5.0", features = ["persistence"] }
-openmls_traits = "0.5.0"
-openmls_basic_credential = "0.5.0"
-tls_codec = "0.4.2"
 bip39 = { version = "2", features = ["rand"] }
 messaging-core = { path = "../../../packages/messaging-core" }
 

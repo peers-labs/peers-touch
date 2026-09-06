@@ -65,6 +65,12 @@ package peers_touch.model.chat.v1;
 message CreateRequest {}
 message CreateResponse {}
 `)
+	if err := os.MkdirAll(
+		filepath.Join(root, "apps/station/app/subserver/conversation/domain"),
+		0o755,
+	); err != nil {
+		t.Fatalf("create empty DDD layer root: %v", err)
+	}
 
 	report := analyze(testOptions(root))
 	if report.Status != "PASS" {
@@ -297,6 +303,81 @@ var _ *gorm.DB
 	if item.Code != "forbidden_ddd_import" ||
 		item.Identifier != "net/http" ||
 		item.Owner != "conversation.domain" {
+		t.Fatalf("unexpected diagnostic: %+v", item)
+	}
+}
+
+func TestDiscoverForbiddenDDDImportsRejectsMissingLayerRoot(t *testing.T) {
+	root := t.TempDir()
+	const layerRoot = "apps/station/app/subserver/conversation/domain"
+
+	diagnostics := discoverForbiddenDDDImports(root, []dddLayerRule{{
+		Name:             "conversation.domain",
+		Root:             layerRoot,
+		ForbiddenImports: []string{"net/http"},
+	}})
+
+	assertUnavailableDDDLayerRootDiagnostic(
+		t,
+		diagnostics,
+		layerRoot,
+		`DDD layer "conversation.domain" root "apps/station/app/subserver/conversation/domain" does not exist`,
+	)
+}
+
+func TestDiscoverForbiddenDDDImportsRejectsNonDirectoryLayerRoot(t *testing.T) {
+	root := t.TempDir()
+	const layerRoot = "apps/station/app/subserver/conversation/domain"
+	writeFixture(t, root, layerRoot, "not a directory")
+
+	diagnostics := discoverForbiddenDDDImports(root, []dddLayerRule{{
+		Name:             "conversation.domain",
+		Root:             layerRoot,
+		ForbiddenImports: []string{"net/http"},
+	}})
+
+	assertUnavailableDDDLayerRootDiagnostic(
+		t,
+		diagnostics,
+		layerRoot,
+		`DDD layer "conversation.domain" root "apps/station/app/subserver/conversation/domain" is not a directory`,
+	)
+}
+
+func TestDiscoverForbiddenDDDImportsAllowsPresentEmptyLayerRoot(t *testing.T) {
+	root := t.TempDir()
+	const layerRoot = "apps/station/app/subserver/conversation/domain"
+	if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(layerRoot)), 0o755); err != nil {
+		t.Fatalf("create empty DDD layer root: %v", err)
+	}
+
+	diagnostics := discoverForbiddenDDDImports(root, []dddLayerRule{{
+		Name:             "conversation.domain",
+		Root:             layerRoot,
+		ForbiddenImports: []string{"net/http"},
+	}})
+	if len(diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v, want none", diagnostics)
+	}
+}
+
+func assertUnavailableDDDLayerRootDiagnostic(
+	t *testing.T,
+	diagnostics []diagnostic,
+	layerRoot string,
+	message string,
+) {
+	t.Helper()
+	if len(diagnostics) != 1 {
+		t.Fatalf("diagnostics = %+v, want exactly one unavailable root diagnostic", diagnostics)
+	}
+	item := diagnostics[0]
+	if item.Code != "missing_ddd_layer_root" ||
+		item.Message != message ||
+		item.Identifier != layerRoot ||
+		item.Owner != "conversation.domain" ||
+		len(item.Expected) != 1 ||
+		item.Expected[0] != layerRoot {
 		t.Fatalf("unexpected diagnostic: %+v", item)
 	}
 }

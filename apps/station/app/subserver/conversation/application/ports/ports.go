@@ -74,6 +74,7 @@ type FederationOutboxIntent struct {
 	ConversationID valueobject.ConversationID
 	EventID        valueobject.EventID
 	EventSequence  valueobject.Sequence
+	Recipient      valueobject.Endpoint
 	TargetStation  valueobject.StationID
 	IdempotencyKey string
 	PayloadKind    DeviceInboxPayloadKind

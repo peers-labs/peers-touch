@@ -192,6 +192,7 @@ func (s *Service) AdvanceReadCursor(
 				ConversationID: conversationID,
 				EventID:        eventID,
 				EventSequence:  updated.Sequence,
+				Recipient:      route.Endpoint,
 				TargetStation:  route.HomeStation,
 				IdempotencyKey: idempotency,
 				PayloadKind:    ports.DeviceInboxPayloadDeviceReceipt,

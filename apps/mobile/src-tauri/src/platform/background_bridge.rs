@@ -48,10 +48,7 @@ pub struct BackgroundWakeupPayload {
 /// 3. Emit lifecycle event to the TS layer.
 /// 4. Perform Rust-side reconciliation (ledger, drafts, session).
 /// 5. Emit reconciliation report to the TS layer.
-pub fn handle_native_resume<R: Runtime>(
-    app: &AppHandle<R>,
-    source: NativeLifecycleSource,
-) {
+pub fn handle_native_resume<R: Runtime>(app: &AppHandle<R>, source: NativeLifecycleSource) {
     let generation = lifecycle_bridge::advance_generation();
     let timestamp_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -102,10 +99,7 @@ pub fn handle_native_resume<R: Runtime>(
 ///
 /// This reads ledger and draft counts synchronously (they are local SQLite)
 /// and checks session validity through the stored credential.
-pub fn perform_reconciliation<R: Runtime>(
-    app: &AppHandle<R>,
-    session_valid: bool,
-) {
+pub fn perform_reconciliation<R: Runtime>(app: &AppHandle<R>, session_valid: bool) {
     let generation = lifecycle_bridge::current_generation();
 
     // Read ledger counts — these are quick local reads.

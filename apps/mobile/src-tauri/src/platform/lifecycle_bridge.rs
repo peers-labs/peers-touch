@@ -91,7 +91,9 @@ pub struct LifecycleBridgeResult {
 ///
 /// Returns `Ok(result)` with `accepted: true` if the event is current,
 /// or `accepted: false` with a reason if the event is stale or duplicate.
-pub fn process_lifecycle_event(event: &NativeLifecycleEvent) -> MobileResult<LifecycleBridgeResult> {
+pub fn process_lifecycle_event(
+    event: &NativeLifecycleEvent,
+) -> MobileResult<LifecycleBridgeResult> {
     let current_gen = current_generation();
 
     // Reject stale generation

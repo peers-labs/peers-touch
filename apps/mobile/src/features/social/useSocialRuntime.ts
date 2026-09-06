@@ -22,7 +22,11 @@ export function useSocialRuntime(session: MobileAuthSession | null) {
     if (!session) return;
 
     const groupController = startGroupRuntime(session, useGroupStore.getState);
-    const socialController = startSocialRuntime(session, useSocialStore.getState(), useGroupStore.getState(), groupController);
+    const socialController = startSocialRuntime(
+      session,
+      useSocialStore.getState(),
+      useGroupStore.getState(),
+    );
 
     return () => {
       activeKeyRef.current = null;

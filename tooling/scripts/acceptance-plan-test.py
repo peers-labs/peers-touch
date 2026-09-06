@@ -33,6 +33,24 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ChangedPathsTests(unittest.TestCase):
+    def test_make_entrypoints_default_to_external_evidence_store(self) -> None:
+        makefile = (
+            ROOT / "tooling" / "make" / "acceptance.mk"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "tooling/acceptance/reports/latest-plan.json",
+            makefile,
+        )
+        self.assertIn(
+            'ACCEPTANCE_PLAN_OUTPUT_ARG = $(if $(ACCEPTANCE_PLAN),--output "$(ACCEPTANCE_PLAN)",)',
+            makefile,
+        )
+        self.assertIn(
+            'ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan "$(PLAN)",$(if $(ACCEPTANCE_PLAN),--plan "$(ACCEPTANCE_PLAN)",))',
+            makefile,
+        )
+
     def test_head_includes_untracked_files(self) -> None:
         responses = [
             subprocess.CompletedProcess(
@@ -190,6 +208,20 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertNotIn("chat-native-two-client-e2e", selected)
         self.assertIn("chat-desktop-gateway-e2e", selected)
+
+    def test_mobile_social_gateway_selects_chat_and_contacts_gates(self) -> None:
+        selected = self.selected_ids(
+            "apps/mobile/src/services/gateways/socialGateway.ts"
+        )
+        self.assertEqual(
+            selected,
+            {
+                "mobile-simulator-social-convergence-e2e",
+                "mobile-simulator-chat-contacts-e2e",
+                "mobile-native-social-convergence-e2e",
+                "mobile-native-chat-contacts-e2e",
+            },
+        )
 
     def test_acceptance_framework_change_selects_provisioning_self_gate(self) -> None:
         selected = self.selected_ids(

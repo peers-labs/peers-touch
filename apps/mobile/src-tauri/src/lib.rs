@@ -5,6 +5,7 @@ pub mod messaging;
 mod platform;
 pub mod runtime;
 
+use messaging::lifecycle::MobileMessagingRuntime;
 use platform::background_bridge;
 use platform::lifecycle_bridge::NativeLifecycleSource;
 #[cfg(not(target_os = "android"))]
@@ -20,9 +21,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         .manage(MobilePlatform::ios_first())
-        .manage(
-            OAuthCoordinator::new().expect("failed to initialize the native OAuth coordinator"),
-        )
+        .manage(OAuthCoordinator::new().expect("failed to initialize the native OAuth coordinator"))
+        .manage(MobileMessagingRuntime::default())
         .manage(CommandLedger::new())
         .manage(DraftStore::new());
 
@@ -41,7 +41,10 @@ pub fn run() {
             match event {
                 tauri::RunEvent::Resumed => {
                     // W7: Route through lifecycle bridge with generation tracking
-                    background_bridge::handle_native_resume(app, NativeLifecycleSource::TauriResumed);
+                    background_bridge::handle_native_resume(
+                        app,
+                        NativeLifecycleSource::TauriResumed,
+                    );
                 }
                 _ => {}
             }

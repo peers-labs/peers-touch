@@ -211,8 +211,8 @@ impl LedgerStorage {
 
         let mut entries = Vec::new();
         for raw_result in rows {
-            let raw = raw_result
-                .map_err(|e| MobileError::ledger(format!("row read failed: {e}")))?;
+            let raw =
+                raw_result.map_err(|e| MobileError::ledger(format!("row read failed: {e}")))?;
             entries.push(self.raw_to_entry(raw)?);
         }
 
@@ -240,10 +240,9 @@ impl LedgerStorage {
             status_filter = None;
         }
 
-        let mut stmt = self
-            .conn
-            .prepare(sql)
-            .map_err(|e| MobileError::ledger(format!("prepare list_by_ordering_key failed: {e}")))?;
+        let mut stmt = self.conn.prepare(sql).map_err(|e| {
+            MobileError::ledger(format!("prepare list_by_ordering_key failed: {e}"))
+        })?;
 
         let rows = if let Some(s) = status_filter {
             stmt.query_map(params![ordering_key, s.as_str()], row_mapper)
@@ -254,8 +253,8 @@ impl LedgerStorage {
 
         let mut entries = Vec::new();
         for raw_result in rows {
-            let raw = raw_result
-                .map_err(|e| MobileError::ledger(format!("row read failed: {e}")))?;
+            let raw =
+                raw_result.map_err(|e| MobileError::ledger(format!("row read failed: {e}")))?;
             entries.push(self.raw_to_entry(raw)?);
         }
 

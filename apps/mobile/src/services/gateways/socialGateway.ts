@@ -1,39 +1,29 @@
 /**
  * socialGateway.ts — Social domain API gateway
  *
- * Wraps friend-chat, contacts, presence, and typing APIs behind a typed
- * gateway with JSON quarantine and command outcome adapters.
+ * Wraps friend relationships, session metadata, and conversation settings
+ * behind a typed gateway with JSON quarantine and command outcome adapters.
  *
  * Temporary JSON compatibility is quarantined inside normalizer calls;
  * once Station endpoints migrate to proto, normalizers become pass-through.
  */
 
 import type { MobileAuthSession } from '../../features/auth/authSession';
-import { mobileAuthScope, mobileAuthScopeKey } from '../../features/auth/mobileAuthIdentity';
-import { create, toBinary } from '@bufbuild/protobuf';
-import {
-  ConversationCommandSchema,
-  TypingCommandSchema,
-} from '../../gen/proto/domain/chat/conversation_pb';
-import { FriendMessageType } from '../../gen/proto/domain/chat/friend_chat_pb';
 import {
   normalizeSession,
-  normalizeMessage,
   normalizeFriendRequest,
 } from '../../features/social/socialNormalizers';
 import type {
-  FriendChatMessage,
   FriendChatSession,
   FriendRequest,
   FriendshipStatus,
 } from '../../features/social/socialTypes';
 import { SocialApiError } from '../../features/social/socialTypes';
 import { FriendshipStatus as FriendshipStatusCode } from '../../gen/proto/domain/chat/chat_pb';
-import type { ChatAttachmentInput, ChatBackgroundId, FriendConversationSettings, UpdateFriendConversationSettingsInput } from '../../features/social/socialApiTypes';
+import type { ChatBackgroundId, FriendConversationSettings, UpdateFriendConversationSettingsInput } from '../../features/social/socialApiTypes';
 import { normalizeChatBackgroundId } from '../../features/social/socialApiTypes';
 import {
   createGatewayTransport,
-  gatewayBytesToBase64,
   type CommandOutcome,
 } from './gatewayTypes';
 
@@ -49,12 +39,6 @@ interface ListFriendRequestsRaw {
 interface ListSessionsRaw {
   sessions?: Partial<FriendChatSession>[];
   total?: number;
-}
-
-interface ListMessagesRaw {
-  messages?: Partial<FriendChatMessage>[];
-  hasMore?: boolean;
-  has_more?: boolean;
 }
 
 interface ListBlockedUsersRaw {
@@ -81,11 +65,6 @@ export interface SocialSessionsResult {
   readonly total: number;
 }
 
-export interface SocialMessagesResult {
-  readonly messages: FriendChatMessage[];
-  readonly hasMore: boolean;
-}
-
 // ---------------------------------------------------------------------------
 // Social gateway interface
 // ---------------------------------------------------------------------------
@@ -101,17 +80,6 @@ export interface SocialGateway {
   listSessions: (limit?: number, offset?: number) => Promise<CommandOutcome<SocialSessionsResult>>;
   createSession: (participantPtid: string) => Promise<CommandOutcome<{ session?: FriendChatSession; created?: boolean }>>;
 
-  // Messages
-  listMessages: (sessionUlid: string, beforeUlid?: string, limit?: number) => Promise<CommandOutcome<SocialMessagesResult>>;
-  sendMessage: (sessionUlid: string, receiverPtid: string, content: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<CommandOutcome<{ message?: FriendChatMessage }>>;
-  sendEncryptedMessage: (sessionUlid: string, receiverPtid: string, encryptedPayload: Uint8Array, messageType?: number) => Promise<CommandOutcome<{ message?: FriendChatMessage }>>;
-  sendSenderKeyDistribution: (sessionUlid: string, receiverPtid: string, encryptedPayload: Uint8Array) => Promise<CommandOutcome<{ message?: FriendChatMessage }>>;
-  editMessage: (sessionUlid: string, messageUlid: string, newEncryptedPayload: Uint8Array) => Promise<CommandOutcome<Record<string, unknown>>>;
-  recallMessage: (sessionUlid: string, messageUlid: string) => Promise<CommandOutcome<Record<string, unknown>>>;
-  deleteMessage: (sessionUlid: string, messageUlid: string) => Promise<CommandOutcome<Record<string, unknown>>>;
-  ackMessages: (ulids: string[], status: number) => Promise<CommandOutcome<Record<string, unknown>>>;
-  markMessageRead: (sessionUlid: string, lastReadUlid?: string) => Promise<CommandOutcome<Record<string, unknown>>>;
-
   // Conversation settings
   getConversationSettings: (sessionUlid: string) => Promise<CommandOutcome<FriendConversationSettings>>;
   updateConversationSettings: (sessionUlid: string, input: UpdateFriendConversationSettingsInput) => Promise<CommandOutcome<FriendConversationSettings>>;
@@ -121,9 +89,6 @@ export interface SocialGateway {
   unblockUser: (targetPtid: string) => Promise<CommandOutcome<Record<string, unknown>>>;
   listBlockedUsers: (limit?: number, offset?: number) => Promise<CommandOutcome<FriendshipStatus[]>>;
   getFriendshipStatus: (targetPtid: string) => Promise<CommandOutcome<FriendshipStatus>>;
-
-  // Typing (proto-first)
-  sendTypingState: (conversationId: string, typing: boolean) => Promise<CommandOutcome<Record<string, unknown>>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,73 +96,7 @@ export interface SocialGateway {
 // ---------------------------------------------------------------------------
 
 export function createSocialGateway(session: MobileAuthSession): SocialGateway {
-  const { command, stationUrl } = createGatewayTransport(session);
-
-  // Typing uses protobuf directly (proto-first)
-  async function sendTypingState(
-    conversationId: string,
-    typing: boolean,
-  ): Promise<CommandOutcome<Record<string, unknown>>> {
-    const senderPtid = mobileAuthScope(session).ptid;
-    const deviceId = `mobile-web-${mobileAuthScopeKey(session)}`;
-    if (!senderPtid || !conversationId.trim()) {
-      return {
-        ok: false,
-        error: {
-          code: 'SOCIAL_TYPING_INVALID_INPUT',
-          message: 'authenticated actor and conversation are required',
-          method: 'POST',
-          path: '/conversation/typing',
-        },
-      };
-    }
-
-    try {
-      const cmd = create(ConversationCommandSchema, {
-        conversationId,
-        senderPtid,
-        senderDeviceId: deviceId,
-        payload: {
-          case: 'typing',
-          value: create(TypingCommandSchema, { isTyping: typing }),
-        },
-      });
-      const response = await fetch(`${stationUrl}/conversation/typing`, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: {
-          Accept: 'application/x-protobuf',
-          Authorization: `Bearer ${session.accessToken}`,
-          'Content-Type': 'application/x-protobuf',
-          'X-Device-ID': deviceId,
-        },
-        body: toBinary(ConversationCommandSchema, cmd),
-      });
-      if (!response.ok) {
-        return {
-          ok: false,
-          error: {
-            code: 'SOCIAL_TYPING_FAILED',
-            message: `typing submit failed with status ${response.status}`,
-            status: response.status,
-            method: 'POST',
-            path: '/conversation/typing',
-          },
-        };
-      }
-      return { ok: true, data: {} };
-    } catch (error) {
-      return {
-        ok: false,
-        error: {
-          code: 'SOCIAL_TYPING_TRANSPORT_ERROR',
-          message: error instanceof Error ? error.message : 'typing_submit_failed',
-          method: 'POST',
-          path: '/conversation/typing',
-        },
-      };
-    }
-  }
+  const { command } = createGatewayTransport(session);
 
   return {
     // --- Friend requests ---
@@ -236,81 +135,6 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
 
     createSession: (participantPtid) =>
       command({ method: 'POST', path: '/friend-chat/session/create', body: { participant_ptid: participantPtid } }),
-
-    // --- Messages ---
-    listMessages: async (sessionUlid, beforeUlid, limit = 50) => {
-      const result = await command<ListMessagesRaw>({
-        method: 'GET',
-        path: '/friend-chat/messages',
-        query: { session_ulid: sessionUlid, before_ulid: beforeUlid, limit },
-      });
-      if (!result.ok) return result;
-      const messages = (result.data.messages ?? []).map(normalizeMessage);
-      return { ok: true, data: { messages, hasMore: Boolean(result.data.hasMore ?? result.data.has_more) } };
-    },
-
-    sendMessage: (sessionUlid, receiverPtid, content, attachments, messageType = 1) =>
-      command({
-        method: 'POST',
-        path: '/friend-chat/message/send',
-        body: {
-          session_ulid: sessionUlid,
-          receiver_ptid: receiverPtid,
-          content,
-          type: messageType,
-          ...(attachments?.length ? { attachments } : {}),
-        },
-      }),
-
-    sendEncryptedMessage: (sessionUlid, receiverPtid, encryptedPayload, messageType = 1) =>
-      command({
-        method: 'POST',
-        path: '/friend-chat/message/send',
-        body: {
-          session_ulid: sessionUlid,
-          receiver_ptid: receiverPtid,
-          content: '',
-          type: messageType,
-          encrypted_payload: gatewayBytesToBase64(encryptedPayload),
-        },
-      }),
-
-    sendSenderKeyDistribution: (sessionUlid, receiverPtid, encryptedPayload) =>
-      command({
-        method: 'POST',
-        path: '/friend-chat/message/send',
-        body: {
-          session_ulid: sessionUlid,
-          receiver_ptid: receiverPtid,
-          content: '',
-          type: FriendMessageType.SENDER_KEY_DISTRIBUTION,
-          encrypted_payload: gatewayBytesToBase64(encryptedPayload),
-        },
-      }),
-
-    editMessage: (sessionUlid, messageUlid, newEncryptedPayload) =>
-      command({
-        method: 'POST',
-        path: '/friend-chat/message/edit',
-        body: {
-          session_ulid: sessionUlid,
-          message_ulid: messageUlid,
-          new_content: '',
-          new_encrypted_payload: gatewayBytesToBase64(newEncryptedPayload),
-        },
-      }),
-
-    recallMessage: (sessionUlid, messageUlid) =>
-      command({ method: 'POST', path: '/friend-chat/message/recall', body: { session_ulid: sessionUlid, message_ulid: messageUlid } }),
-
-    deleteMessage: (sessionUlid, messageUlid) =>
-      command({ method: 'POST', path: '/friend-chat/message/delete', body: { session_ulid: sessionUlid, message_ulid: messageUlid } }),
-
-    ackMessages: (ulids, status) =>
-      command({ method: 'POST', path: '/friend-chat/message/ack', body: { ulids, status } }),
-
-    markMessageRead: (sessionUlid, lastReadUlid) =>
-      command({ method: 'POST', path: '/friend-chat/message/read', body: { session_ulid: sessionUlid, last_read_ulid: lastReadUlid } }),
 
     // --- Conversation settings ---
     getConversationSettings: async (sessionUlid) => {
@@ -370,8 +194,6 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
       if (!result.ok) return result;
       return { ok: true, data: normalizeFriendshipStatusFromRaw(result.data, targetPtid) };
     },
-
-    sendTypingState,
   };
 }
 

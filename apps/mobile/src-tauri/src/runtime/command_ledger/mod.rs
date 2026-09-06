@@ -25,9 +25,7 @@ pub mod storage;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use self::entry::{
-    CommandEntry, CommandProjection, CommandStatus, TypedCommandEnvelope,
-};
+use self::entry::{CommandEntry, CommandProjection, CommandStatus, TypedCommandEnvelope};
 use self::fairness::FairScheduler;
 use self::storage::LedgerStorage;
 use crate::error::{MobileError, MobileResult};
@@ -159,7 +157,10 @@ impl CommandLedger {
     }
 
     /// Readback all entries with a specific status.
-    pub fn readback_by_status(&self, status: CommandStatus) -> MobileResult<Vec<CommandProjection>> {
+    pub fn readback_by_status(
+        &self,
+        status: CommandStatus,
+    ) -> MobileResult<Vec<CommandProjection>> {
         let guard = self
             .inner
             .lock()

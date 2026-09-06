@@ -1,4 +1,9 @@
 pub mod adapter;
+pub mod attachment_blob;
+pub mod commands;
+pub mod engine;
+pub mod lifecycle;
+pub mod transport;
 
 pub use messaging_core::crypto::{
     double_ratchet::{DrSessionState, DrSkippedMessageKey},

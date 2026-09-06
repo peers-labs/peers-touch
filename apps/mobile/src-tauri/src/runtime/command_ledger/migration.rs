@@ -62,9 +62,11 @@ pub fn run_migrations(conn: &Connection) -> MobileResult<()> {
     .map_err(|e| MobileError::ledger(format!("failed to create schema_version table: {e}")))?;
 
     let current_version: u32 = conn
-        .query_row("SELECT version FROM schema_version WHERE id = 1", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT version FROM schema_version WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
         .map_err(|e| MobileError::ledger(format!("failed to read schema version: {e}")))?;
 
     for migration in MIGRATIONS {
@@ -79,10 +81,7 @@ pub fn run_migrations(conn: &Connection) -> MobileResult<()> {
         );
 
         conn.execute_batch(migration.sql).map_err(|e| {
-            MobileError::ledger(format!(
-                "migration v{} failed: {e}",
-                migration.version,
-            ))
+            MobileError::ledger(format!("migration v{} failed: {e}", migration.version,))
         })?;
 
         conn.execute(

@@ -125,9 +125,9 @@ fn platform_check_permission(kind: PermissionKind) -> PermissionStatus {
     // frameworks. For now, return NotDetermined as the base implementation;
     // actual native bridging will be added when the iOS plugin surface is ready.
     match kind {
-        PermissionKind::Camera
-        | PermissionKind::Microphone
-        | PermissionKind::Notifications => PermissionStatus::NotDetermined,
+        PermissionKind::Camera | PermissionKind::Microphone | PermissionKind::Notifications => {
+            PermissionStatus::NotDetermined
+        }
         // iOS does not have a separate storage permission for photos library
         // access — it uses PHPhotoLibrary which has its own authorization.
         PermissionKind::Storage => PermissionStatus::NotDetermined,

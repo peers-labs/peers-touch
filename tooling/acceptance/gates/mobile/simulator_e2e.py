@@ -1760,6 +1760,7 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
                             "resource": "product-harness",
                             "status": "failed",
                             "errorType": type(error).__name__,
+                            "reason": redact_text(str(error)),
                         }
                     )
             try:
@@ -1778,6 +1779,7 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
                         "resource": "appium-session",
                         "status": "failed",
                         "errorType": type(error).__name__,
+                            "reason": redact_text(str(error)),
                     }
                 )
         self.sessions.clear()

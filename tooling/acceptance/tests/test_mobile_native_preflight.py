@@ -1195,6 +1195,193 @@ class MobileNativeSourceProjectionTests(unittest.TestCase):
                 )
             )
 
+    def test_messaging_harness_responses_fail_closed(self) -> None:
+        valid_submission = {
+            "conversationId": "conversation-1",
+            "commandId": "command-1",
+            "messageId": "message-1",
+            "attachmentIds": [],
+            "state": "pending",
+        }
+        invalid_values = (
+            (
+                "messaging.createDirect",
+                {
+                    "conversationId": "conversation-1",
+                    "state": "failed",
+                },
+            ),
+            (
+                "messaging.createGroup",
+                {
+                    "conversationId": "group-1",
+                    "state": "pending",
+                },
+            ),
+            (
+                "messaging.attachment.stage",
+                {
+                    "stageId": "stage-1",
+                    "filename": "proof.txt",
+                    "mimeType": "text/plain",
+                    "plaintextSize": 4.0,
+                    "completed": True,
+                },
+            ),
+            (
+                "messaging.attachment.open",
+                {
+                    "state": "ready",
+                    "available": True,
+                    "nextAttemptAtUnixMs": 10,
+                },
+            ),
+            (
+                "messaging.send",
+                {
+                    **valid_submission,
+                    "state": "draft",
+                },
+            ),
+            (
+                "messaging.interact",
+                {
+                    **valid_submission,
+                    "attachmentIds": ["attachment-1"],
+                },
+            ),
+            (
+                "messaging.read",
+                {
+                    "conversationId": "conversation-1",
+                    "lastReadSequence": True,
+                    "submitted": True,
+                },
+            ),
+            (
+                "messaging.typing",
+                {
+                    "conversationId": "conversation-1",
+                    "isTyping": "true",
+                    "submitted": True,
+                },
+            ),
+            (
+                "messaging.reconcile",
+                {
+                    "deviceEnrolled": True,
+                    "processed": 0,
+                    "cursor": 4,
+                    "laneHead": 4,
+                    "consumerEpoch": 2,
+                    "deliveryReceiptSubmitted": False,
+                    "commandState": "retry_scheduled",
+                    "commandId": "command-1",
+                },
+            ),
+            (
+                "messaging.command.read",
+                {
+                    "commandId": "command-1",
+                    "conversationId": "conversation-1",
+                    "state": "unknown",
+                    "lastErrorCode": "",
+                },
+            ),
+            (
+                "messaging.search",
+                [
+                    {
+                        "messageId": "message-1",
+                        "senderPtid": "ptid:alice",
+                        "state": "delivered",
+                        "timestampUnixMs": 10,
+                        "retracted": False,
+                        "reactions": [],
+                        "readByPtids": [],
+                        "plaintext": "hello",
+                        "attachments": [],
+                        "storageRef": "must-not-cross",
+                    }
+                ],
+            ),
+            (
+                "messaging.projection.read",
+                {
+                    "runtime": {
+                        "active": True,
+                        "stationOrigin": "https://station.example",
+                        "deviceEnrolled": True,
+                        "laneSequence": 0,
+                        "consumerEpoch": 0,
+                        "conversationCount": 0,
+                        "activationGeneration": 1,
+                        "workerPhase": "running",
+                    },
+                    "conversations": [],
+                    "messages": {},
+                },
+            ),
+            (
+                "social.projection.read",
+                {
+                    "active": True,
+                    "activeSessionUlid": "conversation-1",
+                    "friendRequests": [],
+                    "typingPeers": {
+                        "conversation-1": {
+                            "bob": {
+                                "typing": True,
+                                "lastUpdate": 12,
+                            }
+                        }
+                    },
+                    "peerOnline": {"ptid:bob": True},
+                    "lastReconcileAt": 13,
+                },
+            ),
+        )
+
+        class Session:
+            def __init__(self, value: object) -> None:
+                self.value = value
+
+            def call_action(
+                self,
+                _action: str,
+                _payload: dict[str, Any],
+                *,
+                deadline_monotonic: float | None = None,
+                cancellation: threading.Event | None = None,
+            ) -> object:
+                del deadline_monotonic, cancellation
+                return self.value
+
+        for action, value in invalid_values:
+            with self.subTest(action=action):
+                session = Session(value)
+                handler = MobileNativeAppiumCapabilityHandler(
+                    session_factory=lambda _client_id: session,
+                    artifact_writer=object(),
+                    broker=object(),
+                    device_leases={},
+                    harness_actions=(action,),
+                )
+                handler._sessions["alice-ios"] = session
+                handler._session_refs["alice-ios"] = "opaque-session"
+                with self.assertRaises(BlockedError):
+                    handler.invoke(
+                        "harness_action",
+                        {
+                            "clientId": "alice-ios",
+                            "sessionRef": "opaque-session",
+                            "action": action,
+                            "actionPayload": {},
+                        },
+                        deadline_monotonic=float("inf"),
+                        cancellation=threading.Event(),
+                    )
+
     def test_provision_activates_e25_parent_authorities(self) -> None:
         source = inspect.getsource(MobileNativeProvisioner.provision)
 
@@ -2151,6 +2338,64 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
             "errorKey": None,
             "recovery": "check-status",
         }
+        messaging_message = {
+            "eventId": "event-1",
+            "eventSequence": 4,
+            "messageId": "message-1",
+            "senderPtid": "ptid:alice",
+            "state": "delivered",
+            "timestampUnixMs": 10,
+            "retracted": False,
+            "reactions": [
+                {
+                    "actorPtid": "ptid:bob",
+                    "reaction": "ack",
+                    "createdAtUnixMs": 11,
+                }
+            ],
+            "readByPtids": ["ptid:bob"],
+            "plaintext": "acceptance-message",
+            "attachments": [
+                {
+                    "attachmentId": "attachment-1",
+                    "filename": "proof.txt",
+                    "mimeType": "text/plain",
+                    "plaintextSize": 4,
+                    "ciphertextSize": 20,
+                    "availabilityState": "local",
+                }
+            ],
+        }
+        messaging_projection = {
+            "runtime": {
+                "active": True,
+                "profileId": "profile-1",
+                "stationPeerId": "station-a",
+                "actorPtid": "ptid:alice",
+                "deviceId": "device-1",
+                "deviceEnrolled": True,
+                "laneSequence": 8,
+                "consumerEpoch": 2,
+                "conversationCount": 1,
+                "activationGeneration": 3,
+                "workerPhase": "running",
+            },
+            "conversations": [
+                {
+                    "conversationId": "conversation-1",
+                    "authorityStationId": "station-a",
+                    "kind": 1,
+                    "name": "",
+                    "ownerPtid": "ptid:alice",
+                    "memberPtids": ["ptid:alice", "ptid:bob"],
+                    "membershipEpoch": 1,
+                    "mlsEpoch": 0,
+                    "active": True,
+                    "updatedAtUnixMs": 10,
+                }
+            ],
+            "messages": {"conversation-1": [messaging_message]},
+        }
         station = {
             "activeStationPeerId": "station-a",
             "verifiedStationPeerId": "station-a",
@@ -2187,6 +2432,89 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 },
                 "oauth": oauth,
             },
+            "messaging.createDirect": {
+                "conversationId": "conversation-1",
+                "state": "projected",
+            },
+            "messaging.createGroup": {
+                "conversationId": "group-1",
+                "commandId": "command-group-1",
+                "state": "pending",
+            },
+            "messaging.attachment.stage": {
+                "stageId": "stage-1",
+                "filename": "proof.txt",
+                "mimeType": "text/plain",
+                "plaintextSize": 4,
+                "completed": True,
+            },
+            "messaging.attachment.open": {
+                "state": "ready",
+                "available": True,
+            },
+            "messaging.send": {
+                "conversationId": "conversation-1",
+                "commandId": "command-1",
+                "messageId": "message-1",
+                "attachmentIds": [],
+                "state": "pending",
+            },
+            "messaging.interact": {
+                "conversationId": "conversation-1",
+                "commandId": "command-2",
+                "messageId": "message-1",
+                "attachmentIds": [],
+                "state": "pending",
+            },
+            "messaging.read": {
+                "conversationId": "conversation-1",
+                "lastReadSequence": 4,
+                "submitted": True,
+            },
+            "messaging.typing": {
+                "conversationId": "conversation-1",
+                "isTyping": True,
+                "submitted": True,
+            },
+            "messaging.reconcile": {
+                "deviceEnrolled": True,
+                "processed": 0,
+                "cursor": 4,
+                "laneHead": 4,
+                "consumerEpoch": 2,
+                "deliveryReceiptSubmitted": False,
+                "commandState": "idle",
+            },
+            "messaging.command.read": {
+                "commandId": "command-1",
+                "conversationId": "conversation-1",
+                "state": "committed",
+                "lastErrorCode": "",
+            },
+            "messaging.search": [messaging_message],
+            "messaging.projection.read": messaging_projection,
+            "social.request.send": {
+                "active": True,
+                "activeSessionUlid": "conversation-1",
+                "friendRequests": [
+                    {
+                        "requestId": "request-1",
+                        "senderPtid": "ptid:alice",
+                        "receiverPtid": "ptid:bob",
+                        "status": 1,
+                    }
+                ],
+                "typingPeers": {
+                    "conversation-1": {
+                        "ptid:bob": {
+                            "typing": True,
+                            "lastUpdate": 12,
+                        }
+                    }
+                },
+                "peerOnline": {"ptid:bob": True},
+                "lastReconcileAt": 13,
+            },
             "cleanup": {
                 "oauthPurge": {
                     "stationRevocation": "confirmed",
@@ -2202,6 +2530,9 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 "stationRegistryCleared": True,
             },
         }
+        values["social.request.accept"] = values["social.request.send"]
+        values["social.reconcile"] = values["social.request.send"]
+        values["social.projection.read"] = values["social.request.send"]
 
         class Session:
             def call_action(

@@ -2,7 +2,7 @@
   "id": "mobile-chat-contacts-groups",
   "status": "active",
   "product_area": "mobile",
-  "owners": ["apps/mobile/src/features/social/**", "apps/mobile/src/features/group/**", "apps/mobile/src/pages/ChatPage.tsx", "apps/mobile/src/pages/ContactsPage.tsx"],
+  "owners": ["apps/mobile/src/features/social/**", "apps/mobile/src/features/group/**", "apps/mobile/src/services/gateways/socialGateway.ts", "apps/mobile/src/pages/ChatPage.tsx", "apps/mobile/src/pages/ContactsPage.tsx"],
   "truth_sources": ["Station conversation and relationship domains", "shared Mobile Social projection ingress"],
   "visible_surfaces": [{"type": "mobile", "route": "chat"}, {"type": "mobile", "route": "contacts"}],
   "required_gates": ["mobile-native-social-convergence-e2e", "mobile-native-chat-contacts-e2e"],

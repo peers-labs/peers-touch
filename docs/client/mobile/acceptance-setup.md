@@ -196,11 +196,22 @@ pnpm --dir apps/mobile run check:mobile-shell-contracts
 ```bash
 # Run the simulator acceptance suite
 python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-access-e2e
+
+# Run supplemental two-actor/two-Station Messaging evidence
+MOBILE_ACCEPTANCE_RESET=1 \
+python3 tooling/scripts/acceptance-run.py \
+  --gate mobile-simulator-social-convergence-e2e
+MOBILE_ACCEPTANCE_RESET=1 \
+python3 tooling/scripts/acceptance-run.py \
+  --gate mobile-simulator-chat-contacts-e2e
 ```
 
 The runner reads `tooling/acceptance/environments/mobile-simulator.yaml`,
 provisions Appium, builds and installs the app, runs the gate scenarios from
 `tooling/acceptance/gates/mobile/simulator_e2e.py`, and collects evidence.
+The supplemental Social Gates use `mobile-social-simulator`, require an
+approved remote two-Station profile, and remain partial evidence; they do not
+replace physical-device Gates.
 
 ### 7.3 Native E2E Gates (Physical Devices)
 

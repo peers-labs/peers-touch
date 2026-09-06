@@ -3168,6 +3168,496 @@ def _response_number(value: object, *, label: str) -> None:
         )
 
 
+def _response_integer(
+    value: object,
+    *,
+    label: str,
+    minimum: int | None = None,
+) -> None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise EphemeralCapabilityBlocked(
+            f"{label} response field must be an integer",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    if minimum is not None and value < minimum:
+        raise EphemeralCapabilityBlocked(
+            f"{label} response field must be at least {minimum}",
+            resource="mobile.native.appium-session:harness-response",
+        )
+
+
+def _response_nonempty_string(value: object, *, label: str) -> None:
+    _response_string(value, label=label)
+    if not str(value).strip():
+        raise EphemeralCapabilityBlocked(
+            f"{label} response field must not be empty",
+            resource="mobile.native.appium-session:harness-response",
+        )
+
+
+def _response_ptid(value: object, *, label: str) -> None:
+    _response_nonempty_string(value, label=label)
+    if not str(value).startswith("ptid:"):
+        raise EphemeralCapabilityBlocked(
+            f"{label} response field must be a PTID",
+            resource="mobile.native.appium-session:harness-response",
+        )
+
+
+def _response_string_list(
+    value: object,
+    *,
+    label: str,
+    ptids: bool = False,
+) -> None:
+    if not isinstance(value, list):
+        raise EphemeralCapabilityBlocked(
+            f"{label} response field must be a list",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    for index, item in enumerate(value):
+        item_label = f"{label}[{index}]"
+        if ptids:
+            _response_ptid(item, label=item_label)
+        else:
+            _response_nonempty_string(item, label=item_label)
+
+
+def _validate_messaging_attachment(value: object) -> None:
+    attachment = _closed_mapping(
+        value,
+        required={
+            "attachmentId",
+            "filename",
+            "mimeType",
+            "plaintextSize",
+        },
+        optional={"ciphertextSize", "availabilityState"},
+        label="Messaging attachment",
+    )
+    for field in ("attachmentId", "filename", "mimeType"):
+        _response_nonempty_string(
+            attachment[field],
+            label=f"Messaging attachment {field}",
+        )
+    _response_integer(
+        attachment["plaintextSize"],
+        label="Messaging attachment plaintextSize",
+        minimum=0,
+    )
+    if "ciphertextSize" in attachment:
+        _response_integer(
+            attachment["ciphertextSize"],
+            label="Messaging attachment ciphertextSize",
+            minimum=0,
+        )
+    if (
+        "availabilityState" in attachment
+        and attachment["availabilityState"] not in {"remote", "local"}
+    ):
+        raise EphemeralCapabilityBlocked(
+            "Messaging attachment availabilityState is invalid",
+            resource="mobile.native.appium-session:harness-response",
+        )
+
+
+def _validate_messaging_message(value: object) -> None:
+    message = _closed_mapping(
+        value,
+        required={
+            "messageId",
+            "senderPtid",
+            "state",
+            "timestampUnixMs",
+            "retracted",
+            "reactions",
+            "readByPtids",
+            "plaintext",
+            "attachments",
+        },
+        optional={
+            "eventId",
+            "eventSequence",
+            "replyToMessageId",
+            "threadRootMessageId",
+            "editedText",
+            "editedAtUnixMs",
+            "pinnedByPtid",
+            "pinnedAtUnixMs",
+        },
+        label="Messaging message",
+    )
+    _response_nonempty_string(message["messageId"], label="Messaging message messageId")
+    _response_ptid(message["senderPtid"], label="Messaging message senderPtid")
+    if message["state"] not in {
+        "draft",
+        "pending",
+        "prepared",
+        "retry_wait",
+        "submitted",
+        "failed",
+        "terminal",
+        "accepted",
+        "delivered",
+        "read",
+    }:
+        raise EphemeralCapabilityBlocked(
+            "Messaging message state is invalid",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    _response_integer(
+        message["timestampUnixMs"],
+        label="Messaging message timestampUnixMs",
+        minimum=0,
+    )
+    if not isinstance(message["retracted"], bool):
+        raise EphemeralCapabilityBlocked(
+            "Messaging message retracted response field must be a boolean",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    _response_string(message["plaintext"], label="Messaging message plaintext")
+    for field in (
+        "eventId",
+        "replyToMessageId",
+        "threadRootMessageId",
+        "pinnedByPtid",
+    ):
+        if field in message:
+            if field == "pinnedByPtid":
+                _response_ptid(message[field], label=f"Messaging message {field}")
+            else:
+                _response_nonempty_string(
+                    message[field],
+                    label=f"Messaging message {field}",
+                )
+    for field in ("eventSequence", "editedAtUnixMs", "pinnedAtUnixMs"):
+        if field in message:
+            _response_integer(
+                message[field],
+                label=f"Messaging message {field}",
+                minimum=0,
+            )
+    if "editedText" in message:
+        _response_string(message["editedText"], label="Messaging message editedText")
+    _response_string_list(
+        message["readByPtids"],
+        label="Messaging message readByPtids",
+        ptids=True,
+    )
+    reactions = message["reactions"]
+    if not isinstance(reactions, list):
+        raise EphemeralCapabilityBlocked(
+            "Messaging message reactions response field must be a list",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    for reaction_value in reactions:
+        reaction = _closed_mapping(
+            reaction_value,
+            required={"actorPtid", "reaction", "createdAtUnixMs"},
+            label="Messaging reaction",
+        )
+        _response_ptid(reaction["actorPtid"], label="Messaging reaction actorPtid")
+        _response_nonempty_string(
+            reaction["reaction"],
+            label="Messaging reaction reaction",
+        )
+        _response_integer(
+            reaction["createdAtUnixMs"],
+            label="Messaging reaction createdAtUnixMs",
+            minimum=0,
+        )
+    attachments = message["attachments"]
+    if not isinstance(attachments, list):
+        raise EphemeralCapabilityBlocked(
+            "Messaging message attachments response field must be a list",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    for attachment in attachments:
+        _validate_messaging_attachment(attachment)
+
+
+def _validate_messaging_submission(
+    value: object,
+    *,
+    label: str,
+    interaction: bool,
+) -> None:
+    result = _closed_mapping(
+        value,
+        required={"conversationId", "messageId", "attachmentIds", "state"},
+        optional={"commandId"},
+        label=label,
+    )
+    _response_nonempty_string(result["conversationId"], label=f"{label} conversationId")
+    _response_nonempty_string(result["messageId"], label=f"{label} messageId")
+    _response_string_list(result["attachmentIds"], label=f"{label} attachmentIds")
+    allowed_states = {"pending"} if interaction else {"pending", "draft"}
+    if result["state"] not in allowed_states:
+        raise EphemeralCapabilityBlocked(
+            f"{label} state is invalid",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    if "commandId" in result:
+        _response_nonempty_string(result["commandId"], label=f"{label} commandId")
+    if result["state"] == "pending" and "commandId" not in result:
+        raise EphemeralCapabilityBlocked(
+            f"{label} pending response requires commandId",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    if result["state"] == "draft" and (
+        "commandId" in result or not result["attachmentIds"]
+    ):
+        raise EphemeralCapabilityBlocked(
+            f"{label} draft response requires attachments and no commandId",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    if interaction and result["attachmentIds"]:
+        raise EphemeralCapabilityBlocked(
+            f"{label} response must not add attachments",
+            resource="mobile.native.appium-session:harness-response",
+        )
+
+
+def _validate_messaging_projection(value: object) -> None:
+    projection = _closed_mapping(
+        value,
+        required={"runtime", "conversations", "messages"},
+        label="Messaging projection",
+    )
+    runtime = _closed_mapping(
+        projection["runtime"],
+        required={
+            "active",
+            "deviceEnrolled",
+            "laneSequence",
+            "consumerEpoch",
+            "conversationCount",
+            "activationGeneration",
+            "workerPhase",
+        },
+        optional={"profileId", "stationPeerId", "actorPtid", "deviceId"},
+        label="Messaging runtime",
+    )
+    for field in ("active", "deviceEnrolled"):
+        if not isinstance(runtime[field], bool):
+            raise EphemeralCapabilityBlocked(
+                f"Messaging runtime {field} response field must be a boolean",
+                resource="mobile.native.appium-session:harness-response",
+            )
+    for field in (
+        "laneSequence",
+        "consumerEpoch",
+        "conversationCount",
+        "activationGeneration",
+    ):
+        _response_integer(
+            runtime[field],
+            label=f"Messaging runtime {field}",
+            minimum=0,
+        )
+    if runtime["workerPhase"] not in {"running", "suspended", "stopping"}:
+        raise EphemeralCapabilityBlocked(
+            "Messaging runtime workerPhase is invalid",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    for field in ("profileId", "stationPeerId", "deviceId"):
+        if field in runtime:
+            _response_nonempty_string(runtime[field], label=f"Messaging runtime {field}")
+    if "actorPtid" in runtime:
+        _response_ptid(runtime["actorPtid"], label="Messaging runtime actorPtid")
+
+    conversations = projection["conversations"]
+    if not isinstance(conversations, list):
+        raise EphemeralCapabilityBlocked(
+            "Messaging conversations response field must be a list",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    conversation_ids: set[str] = set()
+    for conversation_value in conversations:
+        conversation = _closed_mapping(
+            conversation_value,
+            required={
+                "conversationId",
+                "authorityStationId",
+                "kind",
+                "name",
+                "ownerPtid",
+                "memberPtids",
+                "membershipEpoch",
+                "mlsEpoch",
+                "active",
+                "updatedAtUnixMs",
+            },
+            label="Messaging conversation",
+        )
+        conversation_id = str(conversation["conversationId"])
+        _response_nonempty_string(
+            conversation["conversationId"],
+            label="Messaging conversation conversationId",
+        )
+        if conversation_id in conversation_ids:
+            raise EphemeralCapabilityBlocked(
+                "Messaging projection contains duplicate conversations",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        conversation_ids.add(conversation_id)
+        _response_nonempty_string(
+            conversation["authorityStationId"],
+            label="Messaging conversation authorityStationId",
+        )
+        _response_integer(conversation["kind"], label="Messaging conversation kind")
+        if conversation["kind"] not in {1, 2}:
+            raise EphemeralCapabilityBlocked(
+                "Messaging conversation kind is invalid",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        _response_string(conversation["name"], label="Messaging conversation name")
+        _response_ptid(
+            conversation["ownerPtid"],
+            label="Messaging conversation ownerPtid",
+        )
+        _response_string_list(
+            conversation["memberPtids"],
+            label="Messaging conversation memberPtids",
+            ptids=True,
+        )
+        for field in ("membershipEpoch", "mlsEpoch", "updatedAtUnixMs"):
+            _response_integer(
+                conversation[field],
+                label=f"Messaging conversation {field}",
+                minimum=0,
+            )
+        if not isinstance(conversation["active"], bool):
+            raise EphemeralCapabilityBlocked(
+                "Messaging conversation active response field must be a boolean",
+                resource="mobile.native.appium-session:harness-response",
+            )
+
+    messages = projection["messages"]
+    if not isinstance(messages, Mapping) or any(
+        not isinstance(key, str) or not key or key not in conversation_ids
+        for key in messages
+    ):
+        raise EphemeralCapabilityBlocked(
+            "Messaging projection message map has an invalid conversation key",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    for conversation_id, message_values in messages.items():
+        if not isinstance(message_values, list):
+            raise EphemeralCapabilityBlocked(
+                f"Messaging projection messages for {conversation_id!r} must be a list",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        for message in message_values:
+            _validate_messaging_message(message)
+
+
+def _validate_social_projection(value: object) -> None:
+    projection = _closed_mapping(
+        value,
+        required={
+            "active",
+            "activeSessionUlid",
+            "friendRequests",
+            "typingPeers",
+            "peerOnline",
+            "lastReconcileAt",
+        },
+        label="Social runtime projection",
+    )
+    if not isinstance(projection["active"], bool):
+        raise EphemeralCapabilityBlocked(
+            "Social runtime active response field must be a boolean",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    friend_requests = projection["friendRequests"]
+    if not isinstance(friend_requests, list):
+        raise EphemeralCapabilityBlocked(
+            "Social runtime friendRequests response field must be a list",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    for raw_request in friend_requests:
+        request = _closed_mapping(
+            raw_request,
+            required={"requestId", "senderPtid", "receiverPtid", "status"},
+            label="Social friend request",
+        )
+        _response_nonempty_string(
+            request["requestId"],
+            label="Social friend request requestId",
+        )
+        _response_ptid(
+            request["senderPtid"],
+            label="Social friend request senderPtid",
+        )
+        _response_ptid(
+            request["receiverPtid"],
+            label="Social friend request receiverPtid",
+        )
+        _response_integer(
+            request["status"],
+            label="Social friend request status",
+            minimum=0,
+        )
+    if projection["activeSessionUlid"] is not None:
+        _response_nonempty_string(
+            projection["activeSessionUlid"],
+            label="Social runtime activeSessionUlid",
+        )
+    if projection["lastReconcileAt"] is not None:
+        _response_integer(
+            projection["lastReconcileAt"],
+            label="Social runtime lastReconcileAt",
+            minimum=0,
+        )
+    peer_online = projection["peerOnline"]
+    if not isinstance(peer_online, Mapping):
+        raise EphemeralCapabilityBlocked(
+            "Social runtime peerOnline response field must be an object",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    for ptid, online in peer_online.items():
+        _response_ptid(ptid, label="Social runtime peerOnline key")
+        if not isinstance(online, bool):
+            raise EphemeralCapabilityBlocked(
+                "Social runtime peerOnline value must be a boolean",
+                resource="mobile.native.appium-session:harness-response",
+            )
+    typing_peers = projection["typingPeers"]
+    if not isinstance(typing_peers, Mapping):
+        raise EphemeralCapabilityBlocked(
+            "Social runtime typingPeers response field must be an object",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    for conversation_id, peers in typing_peers.items():
+        _response_nonempty_string(
+            conversation_id,
+            label="Social runtime typingPeers conversation key",
+        )
+        if not isinstance(peers, Mapping):
+            raise EphemeralCapabilityBlocked(
+                "Social runtime typingPeers conversation value must be an object",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        for ptid, raw_entry in peers.items():
+            _response_ptid(ptid, label="Social runtime typingPeers actor key")
+            entry = _closed_mapping(
+                raw_entry,
+                required={"typing", "lastUpdate"},
+                label="Social runtime typing entry",
+            )
+            if not isinstance(entry["typing"], bool):
+                raise EphemeralCapabilityBlocked(
+                    "Social runtime typing flag must be a boolean",
+                    resource="mobile.native.appium-session:harness-response",
+                )
+            _response_integer(
+                entry["lastUpdate"],
+                label="Social runtime typing lastUpdate",
+                minimum=0,
+            )
+
+
 def _validate_station_entry(value: object) -> None:
     entry = _closed_mapping(
         value,
@@ -3427,6 +3917,258 @@ def _validate_harness_action_result(action: str, value: object) -> None:
             nullable=True,
         )
         _validate_oauth_projection(result["oauth"])
+        return
+    if action in {"messaging.createDirect", "messaging.createGroup"}:
+        result = _closed_mapping(
+            value,
+            required={"conversationId", "state"},
+            optional={"commandId"},
+            label=action,
+        )
+        _response_nonempty_string(
+            result["conversationId"],
+            label=f"{action} conversationId",
+        )
+        allowed_states = (
+            {"pending", "projected"}
+            if action == "messaging.createDirect"
+            else {"pending", "projected", "failed"}
+        )
+        if result["state"] not in allowed_states:
+            raise EphemeralCapabilityBlocked(
+                f"{action} state is invalid",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        if "commandId" in result:
+            _response_nonempty_string(
+                result["commandId"],
+                label=f"{action} commandId",
+            )
+        if action == "messaging.createGroup" and "commandId" not in result:
+            raise EphemeralCapabilityBlocked(
+                "messaging.createGroup response requires commandId",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        return
+    if action == "messaging.attachment.stage":
+        result = _closed_mapping(
+            value,
+            required={
+                "stageId",
+                "filename",
+                "mimeType",
+                "plaintextSize",
+                "completed",
+            },
+            label=action,
+        )
+        for field in ("stageId", "filename", "mimeType"):
+            _response_nonempty_string(result[field], label=f"{action} {field}")
+        _response_integer(
+            result["plaintextSize"],
+            label=f"{action} plaintextSize",
+            minimum=0,
+        )
+        if result["completed"] is not True:
+            raise EphemeralCapabilityBlocked(
+                "messaging.attachment.stage response is incomplete",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        return
+    if action == "messaging.attachment.open":
+        result = _closed_mapping(
+            value,
+            required={"state", "available"},
+            optional={"nextAttemptAtUnixMs"},
+            label=action,
+        )
+        state = result["state"]
+        if (
+            state == "ready"
+            and result["available"] is True
+            and "nextAttemptAtUnixMs" not in result
+        ):
+            return
+        if (
+            state == "pending"
+            and result["available"] is False
+            and "nextAttemptAtUnixMs" in result
+        ):
+            _response_integer(
+                result["nextAttemptAtUnixMs"],
+                label=f"{action} nextAttemptAtUnixMs",
+                minimum=0,
+            )
+            return
+        raise EphemeralCapabilityBlocked(
+            "messaging.attachment.open response is invalid",
+            resource="mobile.native.appium-session:harness-response",
+        )
+    if action in {"messaging.send", "messaging.interact"}:
+        _validate_messaging_submission(
+            value,
+            label=action,
+            interaction=action == "messaging.interact",
+        )
+        return
+    if action == "messaging.read":
+        result = _closed_mapping(
+            value,
+            required={"conversationId", "lastReadSequence", "submitted"},
+            label=action,
+        )
+        _response_nonempty_string(
+            result["conversationId"],
+            label=f"{action} conversationId",
+        )
+        _response_integer(
+            result["lastReadSequence"],
+            label=f"{action} lastReadSequence",
+            minimum=1,
+        )
+        if result["submitted"] is not True:
+            raise EphemeralCapabilityBlocked(
+                "messaging.read response was not submitted",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        return
+    if action == "messaging.typing":
+        result = _closed_mapping(
+            value,
+            required={"conversationId", "isTyping", "submitted"},
+            label=action,
+        )
+        _response_nonempty_string(
+            result["conversationId"],
+            label=f"{action} conversationId",
+        )
+        if not isinstance(result["isTyping"], bool) or result["submitted"] is not True:
+            raise EphemeralCapabilityBlocked(
+                "messaging.typing response is invalid",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        return
+    if action == "messaging.reconcile":
+        if value is None:
+            return
+        result = _closed_mapping(
+            value,
+            required={
+                "deviceEnrolled",
+                "processed",
+                "cursor",
+                "laneHead",
+                "consumerEpoch",
+                "deliveryReceiptSubmitted",
+                "commandState",
+            },
+            optional={"commandId", "nextAttemptAtUnixMs"},
+            label=action,
+        )
+        if not isinstance(result["deviceEnrolled"], bool) or not isinstance(
+            result["deliveryReceiptSubmitted"],
+            bool,
+        ):
+            raise EphemeralCapabilityBlocked(
+                "messaging.reconcile boolean response fields are invalid",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        for field in ("processed", "cursor", "laneHead", "consumerEpoch"):
+            _response_integer(
+                result[field],
+                label=f"{action} {field}",
+                minimum=0,
+            )
+        if result["commandState"] not in {
+            "idle",
+            "submitted",
+            "retry_scheduled",
+            "failed",
+            "stale_delivery_plan",
+            "stale_authority_plan",
+        }:
+            raise EphemeralCapabilityBlocked(
+                "messaging.reconcile commandState is invalid",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        command_state = result["commandState"]
+        if "commandId" in result:
+            _response_nonempty_string(
+                result["commandId"],
+                label=f"{action} commandId",
+            )
+        if "nextAttemptAtUnixMs" in result:
+            _response_integer(
+                result["nextAttemptAtUnixMs"],
+                label=f"{action} nextAttemptAtUnixMs",
+                minimum=0,
+            )
+        if command_state == "idle" and (
+            "commandId" in result or "nextAttemptAtUnixMs" in result
+        ):
+            raise EphemeralCapabilityBlocked(
+                "messaging.reconcile idle response has command metadata",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        if command_state == "retry_scheduled" and (
+            "commandId" not in result or "nextAttemptAtUnixMs" not in result
+        ):
+            raise EphemeralCapabilityBlocked(
+                "messaging.reconcile retry response is incomplete",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        if command_state not in {"idle", "retry_scheduled"} and (
+            "commandId" not in result or "nextAttemptAtUnixMs" in result
+        ):
+            raise EphemeralCapabilityBlocked(
+                "messaging.reconcile command response metadata is invalid",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        return
+    if action == "messaging.command.read":
+        result = _closed_mapping(
+            value,
+            required={"commandId", "conversationId", "state", "lastErrorCode"},
+            label=action,
+        )
+        for field in ("commandId", "conversationId"):
+            _response_nonempty_string(result[field], label=f"{action} {field}")
+        if result["state"] not in {
+            "pending",
+            "retry_wait",
+            "submitted",
+            "failed",
+            "superseded",
+            "committed",
+        }:
+            raise EphemeralCapabilityBlocked(
+                "messaging.command.read state is invalid",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        _response_string(
+            result["lastErrorCode"],
+            label=f"{action} lastErrorCode",
+        )
+        return
+    if action == "messaging.search":
+        if not isinstance(value, list):
+            raise EphemeralCapabilityBlocked(
+                "messaging.search response must be a list",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        for message in value:
+            _validate_messaging_message(message)
+        return
+    if action == "messaging.projection.read":
+        _validate_messaging_projection(value)
+        return
+    if action in {
+        "social.request.send",
+        "social.request.accept",
+        "social.reconcile",
+        "social.projection.read",
+    }:
+        _validate_social_projection(value)
         return
     if action == "cleanup":
         result = _closed_mapping(

@@ -7,11 +7,13 @@ import {
 import { dispatchSocialRuntimeExternalEvent } from '../features/social/socialRuntime';
 import type { OAuthPublicProjection } from '../services/mobileCommands';
 import { readableErrorMessage } from '../utils/errorMessage';
+import { getMobileLifecycleKernel } from '../app/lifecycle/MobileLifecycleKernel';
 import {
   applyAuthRuntimeProjection,
   restoreAuthRuntimeProjection,
 } from './authRuntime';
 import { installNativeLifecycleBridge } from './nativeLifecycleBridge';
+import { wakeActiveMessagingSession } from './messagingRuntime';
 
 interface NativeRuntimeEventErrorPayload {
   operation?: string;
@@ -24,6 +26,8 @@ const NATIVE_EVENT_NAMES = [
   'mobile:resume',
   'mobile:notification-tap',
 ] as const;
+
+let lifecycleTransition: Promise<void> = Promise.resolve();
 
 export function installMobileNativeEventBridge(): () => void {
   let disposed = false;
@@ -75,12 +79,20 @@ export function installMobileNativeEventBridge(): () => void {
     if (document.visibilityState === 'visible') {
       dispatchSocialRuntimeExternalEvent({ kind: 'app-resume', reason: 'visibility-visible' });
     }
+    enqueueLifecycleTransition(
+      document.visibilityState === 'visible',
+      'visibility-change',
+    );
   };
   const onFocus = () => {
     dispatchSocialRuntimeExternalEvent({ kind: 'app-resume', reason: 'window-focus' });
+    enqueueLifecycleTransition(true, 'window-focus');
   };
   const onOnline = () => {
     dispatchSocialRuntimeExternalEvent({ kind: 'network-online', reason: 'browser-online' });
+    void wakeActiveMessagingSession().catch((error) => {
+      reportBridgeError('messaging-network-wake', error);
+    });
   };
 
   document.addEventListener('visibilitychange', onVisibilityChange);
@@ -99,6 +111,31 @@ export function installMobileNativeEventBridge(): () => void {
 
 function dispatchNativePayload(eventName: string, payload: SocialHostEventPayloadLike | null | undefined) {
   dispatchSocialRuntimeExternalEvent(buildSocialHostEvent(eventName, payload));
+  if (eventName === 'mobile:resume') {
+    enqueueLifecycleTransition(true, 'native-resume');
+  }
+}
+
+function enqueueLifecycleTransition(foreground: boolean, reason: string): void {
+  lifecycleTransition = lifecycleTransition
+    .then(async () => {
+      const kernel = getMobileLifecycleKernel();
+      const phase = kernel.getPhase();
+      if (!foreground) {
+        if (phase === 'ACTIVE') await kernel.suspend();
+        return;
+      }
+      if (phase === 'SUSPENDED') {
+        await kernel.resume();
+        return;
+      }
+      if (phase === 'ACTIVE') {
+        await wakeActiveMessagingSession();
+      }
+    })
+    .catch((error) => {
+      reportBridgeError(`lifecycle-${reason}`, error);
+    });
 }
 
 function reportBridgeError(operation: string, error: unknown) {

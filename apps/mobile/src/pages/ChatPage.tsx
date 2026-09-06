@@ -10,7 +10,8 @@
  */
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
-import { Badge, Button, Empty, Input, List, Modal, Popconfirm, Spin, Switch, Tag, Typography } from 'antd';
+import { Badge, Button, Empty, Input, List, Modal, Spin, Switch, Tag, Typography } from 'antd';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { ArrowLeft, Ban, Bell, BellOff, Check, CheckCheck, FolderOpen, Image, Mic, MoreHorizontal, Paperclip, Pencil, Pin, Plus, RotateCcw, Scissors, Search, Send, Smile, Trash2, Users, VolumeX, X } from 'lucide-react';
 import { useShallow } from 'zustand/shallow';
 import {
@@ -18,22 +19,19 @@ import {
   canSubmitChatComposerDraft,
   canEditChatMessage,
   chatMediaKindForAttachment,
-  chatMessageTypeForAttachments,
   chatVisualCssVars,
   chatVisualLayoutForSurface,
   formatChatAttachmentSize,
   isRecalledChatMessage,
   shouldSendComposerEnter,
 } from '@peers-touch/client-chat-core';
-import { decryptClientMediaBlob, type ClientMediaEncryptionDescriptor } from '@peers-touch/client-media-security';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { MobileAvatar } from '../components/MobileAvatar';
 import { MobileNotice } from '../components/MobileNotice';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
-import type { ChatAttachmentInput } from '../features/social/socialApiTypes';
-import { uploadMobileChatAttachment, CHAT_BACKGROUND_OPTIONS, type ChatBackgroundId } from '../features/social/socialApiTypes';
+import { CHAT_BACKGROUND_OPTIONS, type ChatBackgroundId } from '../features/social/socialApiTypes';
 import {
   chatActionKey,
   defaultChatActionState,
@@ -45,13 +43,11 @@ import {
   dispatchSendMessage,
   dispatchEditMessage,
   dispatchRecallMessage,
-  dispatchDeleteMessage,
   dispatchBlockUser,
   dispatchUnblockUser,
   dispatchGroupSendMessage,
   dispatchGroupEditMessage,
   dispatchGroupRecallMessage,
-  dispatchGroupDeleteMessage,
   dispatchGroupUpdate,
   dispatchGroupInviteMembers,
   dispatchGroupLeave,
@@ -88,6 +84,14 @@ import { FriendMessageStatus } from '../gen/proto/domain/chat/friend_chat_pb';
 import { formatSocialError, useSocialStore } from '../features/social/socialStore';
 import { SocialApiError, readableErrorMessage, type FriendChatMessage, type FriendMessageAttachment, type PeerProfile } from '../features/social/socialTypes';
 import type { GroupGatewaySettings as GroupSettings } from '../services/gateways';
+import {
+  messagingDiscardAttachmentStage,
+  messagingOpenAttachment,
+  messagingStageAttachment,
+  type MessagingAccountInput,
+  type MessagingAttachmentStageProjection,
+  type MessagingSubmitCommandResult,
+} from '../services/mobileCommands';
 
 const { Text } = Typography;
 const TYPING_TRUE_INTERVAL_MS = 3000;
@@ -111,8 +115,14 @@ type EditingMessage = {
 
 type MobileChatAttachmentDraft = {
   id: string;
-  attachment: ChatAttachmentInput;
+  attachment: MessagingAttachmentStageProjection;
   previewUrl: string;
+};
+
+type PendingAttachmentSubmission = {
+  conversationId: string;
+  messageId: string;
+  attachmentIds: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -155,6 +165,7 @@ function ChatPageInner() {
   const [composerMoreOpen, setComposerMoreOpen] = useState(false);
   const [attachmentDrafts, setAttachmentDrafts] = useState<MobileChatAttachmentDraft[]>([]);
   const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [pendingAttachmentSubmission, setPendingAttachmentSubmission] = useState<PendingAttachmentSubmission | null>(null);
   const [chatActionStates, setChatActionStates] = useState<Record<string, ChatActionState>>({});
   const [highlightedMessageUlid, setHighlightedMessageUlid] = useState('');
   const [groupManageOpen, setGroupManageOpen] = useState(false);
@@ -223,7 +234,6 @@ function ChatPageInner() {
   const groupMessages = useGroupStore((s) => (activeGroupUlid ? s.messages[activeGroupUlid] ?? EMPTY_GROUP_MESSAGES : EMPTY_GROUP_MESSAGES));
   const groupMembers = useGroupStore((s) => (activeGroupUlid ? s.members[activeGroupUlid] ?? EMPTY_GROUP_MEMBERS : EMPTY_GROUP_MEMBERS));
   const groupSettings = activeGroupUlid ? groupSettingsByUlid[activeGroupUlid] : undefined;
-  const groupEncryptionReady = useGroupStore((s) => (activeGroupUlid ? Boolean(s.encryptionReady[activeGroupUlid]) : false));
   const groupSending = useGroupStore((s) => (activeGroupUlid ? Boolean(s.sendingGroups[activeGroupUlid]) : false));
 
   // --- Conversation list projection (single call to reduce store subscriptions) ---
@@ -249,6 +259,7 @@ function ChatPageInner() {
   const activeGroupConversation = groupConversations.find((c) => c.group.ulid === activeGroupUlid);
   const activeConversationKey = activeGroupUlid ? `group:${activeGroupUlid}` : activeSessionUlid ? `friend:${activeSessionUlid}` : '';
   const activeConversationKeyRef = useRef('');
+  const pendingAttachmentSubmissionRef = useRef<PendingAttachmentSubmission | null>(null);
   activeConversationKeyRef.current = activeConversationKey;
 
   const peerTyping = activeConversation
@@ -290,11 +301,39 @@ function ChatPageInner() {
     setEditingMessage(null);
     setLocalActionError('');
     setAttachmentDrafts((drafts) => {
+      if (!pendingAttachmentSubmissionRef.current) {
+        void discardStagedAttachments(authSession, drafts).catch((discardError) => {
+          setLocalActionError(`${t('mobile.chat.attachmentUploadFailed')}: ${formatChatOperationError(discardError)}`);
+        });
+      }
       drafts.forEach((item) => revokeObjectUrl(item.previewUrl));
       return [];
     });
+    pendingAttachmentSubmissionRef.current = null;
+    setPendingAttachmentSubmission(null);
     setDraft('');
-  }, [activeGroupUlid, activeSessionUlid]);
+  }, [activeGroupUlid, activeSessionUlid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (
+      !pendingAttachmentSubmission
+      || pendingAttachmentSubmission.conversationId !== activeConversationId
+    ) {
+      return;
+    }
+    const projectedMessages = activeGroupUlid
+      ? groupMessages
+      : activeSessionUlid
+        ? messages
+        : [];
+    const projected = projectedMessages.find((message) => message.ulid === pendingAttachmentSubmission.messageId);
+    if (!projected || !isQueuedAttachmentProjection(projected, pendingAttachmentSubmission.attachmentIds)) return;
+    attachmentDrafts.forEach((item) => revokeObjectUrl(item.previewUrl));
+    setAttachmentDrafts([]);
+    setDraft('');
+    pendingAttachmentSubmissionRef.current = null;
+    setPendingAttachmentSubmission(null);
+  }, [activeConversationId, activeGroupUlid, activeSessionUlid, attachmentDrafts, groupMessages, messages, pendingAttachmentSubmission]);
 
   useEffect(() => {
     if (!authSession) { setChatActionStates({}); return; }
@@ -367,19 +406,48 @@ function ChatPageInner() {
     typingIdleTimerRef.current = window.setTimeout(() => { void emitTypingState(false); }, TYPING_FALSE_DELAY_MS);
   }, [activeConversationId, emitTypingState]);
 
+  const clearAttachmentDrafts = useCallback(() => {
+    pendingAttachmentSubmissionRef.current = null;
+    setPendingAttachmentSubmission(null);
+    setAttachmentDrafts((drafts) => {
+      drafts.forEach((item) => revokeObjectUrl(item.previewUrl));
+      return [];
+    });
+  }, []);
+
+  const applySendOutcome = useCallback((
+    conversationId: string,
+    attachments: MessagingAttachmentStageProjection[],
+    outcome: MessagingSubmitCommandResult,
+  ) => {
+    const disposition = classifySendOutcome(outcome, attachments.length);
+    if (disposition === 'queued') {
+      setDraft('');
+      clearAttachmentDrafts();
+      return;
+    }
+    const submission = {
+      conversationId,
+      messageId: outcome.messageId!,
+      attachmentIds: outcome.attachmentIds,
+    };
+    pendingAttachmentSubmissionRef.current = submission;
+    setPendingAttachmentSubmission(submission);
+  }, [clearAttachmentDrafts]);
+
   const submitMessage = useCallback(async () => {
     if (!canSubmitChatComposerDraft({ text: draft, attachmentCount: attachmentDrafts.length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES })) return;
     const readyAttachments = attachmentDrafts.map((item) => item.attachment);
-    const messageType = chatMessageTypeForAttachments(readyAttachments) ?? 1;
 
     if (activeGroupConversation && activeGroupUlid) {
       if (editingMessage?.kind === 'group') {
-        const edited = await dispatchGroupEditMessage(activeGroupUlid, editingMessage.ulid, draft);
-        if (edited) { setEditingMessage(null); setDraft(''); } else { throw new Error(t('mobile.group.composerPending')); }
+        await dispatchGroupEditMessage(activeGroupUlid, editingMessage.ulid, draft);
+        setEditingMessage(null);
+        setDraft('');
         return;
       }
-      const sent = await dispatchGroupSendMessage(activeGroupUlid, draft, readyAttachments, messageType);
-      if (sent) { setDraft(''); clearAttachmentDrafts(); } else { throw new Error(t('mobile.group.composerPending')); }
+      const outcome = await dispatchGroupSendMessage(activeGroupUlid, draft, readyAttachments);
+      applySendOutcome(activeGroupUlid, readyAttachments, outcome);
       return;
     }
 
@@ -392,9 +460,9 @@ function ChatPageInner() {
       setEditingMessage(null); setDraft('');
       return;
     }
-    await dispatchSendMessage(activeConversation.session.ulid, draft, readyAttachments, messageType);
-    setDraft(''); clearAttachmentDrafts();
-  }, [activeConversation, activeGroupConversation, activeGroupUlid, attachmentDrafts, draft, editingMessage, emitTypingState, friendshipStatus, t]);
+    const outcome = await dispatchSendMessage(activeConversation.session.ulid, draft, readyAttachments);
+    if (outcome) applySendOutcome(activeConversation.session.ulid, readyAttachments, outcome);
+  }, [activeConversation, activeGroupConversation, activeGroupUlid, applySendOutcome, attachmentDrafts, draft, editingMessage, emitTypingState, friendshipStatus, t]);
 
   const handleComposerKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
     const native = event.nativeEvent;
@@ -407,20 +475,21 @@ function ChatPageInner() {
     void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed');
   }, [runChatOperation, submitMessage]);
 
-  const clearAttachmentDrafts = () => {
-    setAttachmentDrafts((drafts) => { drafts.forEach((item) => revokeObjectUrl(item.previewUrl)); return []; });
-  };
-
-  const removeAttachmentDraft = (id: string) => {
-    setAttachmentDrafts((drafts) => {
-      const removed = drafts.find((item) => item.id === id);
-      if (removed) revokeObjectUrl(removed.previewUrl);
-      return drafts.filter((item) => item.id !== id);
-    });
+  const removeAttachmentDraft = async (id: string) => {
+    if (pendingAttachmentSubmission) return;
+    const removed = attachmentDrafts.find((item) => item.id === id);
+    if (!removed) return;
+    try {
+      await discardStagedAttachments(authSession, [removed]);
+      revokeObjectUrl(removed.previewUrl);
+      setAttachmentDrafts((drafts) => drafts.filter((item) => item.id !== id));
+    } catch (discardError) {
+      setLocalActionError(`${t('mobile.chat.attachmentUploadFailed')}: ${formatChatOperationError(discardError)}`);
+    }
   };
 
   const openMobileFilePicker = () => {
-    if (editingMessage || attachmentUploading) return;
+    if (editingMessage || attachmentUploading || pendingAttachmentSubmission) return;
     setComposerMoreOpen(false);
     fileInputRef.current?.click();
   };
@@ -435,18 +504,28 @@ function ChatPageInner() {
     const uploadedDrafts: MobileChatAttachmentDraft[] = [];
     try {
       for (const file of Array.from(files)) {
-        const attachment = await uploadMobileChatAttachment(authSession, file, conversationId);
+        const attachment = await messagingStageAttachment({
+          ...messagingAccountFromSession(authSession),
+          file,
+        });
         const previewUrl = URL.createObjectURL(file);
-        uploadedDrafts.push({ id: `${attachment.cid || attachment.filename}:${Date.now()}:${uploadedDrafts.length}`, attachment, previewUrl });
+        uploadedDrafts.push({ id: attachment.stageId, attachment, previewUrl });
       }
       if (uploadConversationKey !== activeConversationKeyRef.current) {
+        await discardStagedAttachments(authSession, uploadedDrafts);
         uploadedDrafts.forEach((item) => revokeObjectUrl(item.previewUrl));
         return;
       }
       setAttachmentDrafts((current) => [...current, ...uploadedDrafts]);
     } catch (uploadError) {
+      let visibleError: unknown = uploadError;
+      try {
+        await discardStagedAttachments(authSession, uploadedDrafts);
+      } catch (discardError) {
+        visibleError = discardError;
+      }
       uploadedDrafts.forEach((item) => revokeObjectUrl(item.previewUrl));
-      setLocalActionError(`${t('mobile.chat.attachmentUploadFailed')}: ${formatChatOperationError(uploadError)}`);
+      setLocalActionError(`${t('mobile.chat.attachmentUploadFailed')}: ${formatChatOperationError(visibleError)}`);
     } finally {
       setAttachmentUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -600,7 +679,12 @@ function ChatPageInner() {
               const canEditMsg = canEditChatMessage({ own: mine, recalled, encrypted: groupDisplay?.kind === 'encrypted', content: msg.content });
 
               return (
-                <div key={msg.ulid} data-message-ulid={msg.ulid} className={`message-bubble-row ${mine ? 'mine' : 'peer'} ${highlightedMessageUlid === msg.ulid ? 'highlighted' : ''}`}>
+                <div
+                  key={msg.ulid}
+                  data-message-ulid={msg.ulid}
+                  data-message-state={(msg as FriendChatMessage & { messagingState?: string }).messagingState ?? ''}
+                  className={`message-bubble-row ${mine ? 'mine' : 'peer'} ${highlightedMessageUlid === msg.ulid ? 'highlighted' : ''}`}
+                >
                   {!mine ? <MessageAvatar src={messageAvatarUrl(msg, peerProfiles, peerMessageAvatar)} fallback={messageSenderFallback(msg, groupMemberByPtid, activeConversation?.peerName || title)} /> : null}
                   <div className="message-bubble">
                     {!hasAttachmentOnlyPreview ? (
@@ -634,14 +718,6 @@ function ChatPageInner() {
                             'mobile.chat.operationRecallFailed',
                           );
                         }}><RotateCcw size={13} /></button>
-                        <Popconfirm title={t('mobile.chat.deleteConfirm')} okText={t('common.action.delete')} cancelText={t('common.action.cancel')} onConfirm={() => {
-                          void runChatOperation(
-                            () => isGroupThread ? dispatchGroupDeleteMessage(activeGroupUlid!, msg.ulid) : dispatchDeleteMessage(activeSessionUlid!, msg.ulid),
-                            'mobile.chat.operationDeleteFailed',
-                          );
-                        }}>
-                          <button type="button" className="message-action-button" aria-label={t('common.action.delete')} onClick={(e) => e.stopPropagation()}><Trash2 size={13} /></button>
-                        </Popconfirm>
                       </span>
                     ) : null}
                   </div>
@@ -654,8 +730,6 @@ function ChatPageInner() {
 
         {!isGroupThread && activePeerBlocked ? (
           <footer className="message-composer readonly"><Text type="secondary">{t('mobile.chat.blockedComposer')}</Text></footer>
-        ) : isGroupThread && !groupEncryptionReady ? (
-          <footer className="message-composer readonly"><Text type="secondary">{t('mobile.group.composerPending')}</Text></footer>
         ) : (
           <footer className="message-composer">
             {editingMessage ? (
@@ -673,28 +747,29 @@ function ChatPageInner() {
             ) : null}
             {composerMoreOpen ? (
               <div className="message-composer-panel more-panel">
-                <ComposerToolButton icon={<FolderOpen size={16} />} label={t('mobile.chat.composerFile')} onClick={openMobileFilePicker} disabled={attachmentUploading || Boolean(editingMessage)} />
+                <ComposerToolButton icon={<FolderOpen size={16} />} label={t('mobile.chat.composerFile')} onClick={openMobileFilePicker} disabled={attachmentUploading || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)} />
                 <ComposerToolButton icon={<Scissors size={16} />} label={t('mobile.chat.composerScreenshot')} onClick={() => { setLocalActionError(t('mobile.chat.composerUnavailable')); setComposerMoreOpen(false); }} />
                 <ComposerToolButton icon={<Mic size={16} />} label={t('mobile.chat.composerVoice')} onClick={() => { setLocalActionError(t('mobile.chat.composerUnavailable')); setComposerMoreOpen(false); }} />
               </div>
             ) : null}
             {attachmentDrafts.length > 0 || attachmentUploading ? (
               <div className="message-composer-panel attachment-draft-panel">
-                {attachmentDrafts.map((item) => <AttachmentDraftChip key={item.id} draft={item} onRemove={() => removeAttachmentDraft(item.id)} />)}
+                {attachmentDrafts.map((item) => <AttachmentDraftChip key={item.id} draft={item} disabled={Boolean(pendingAttachmentSubmission)} onRemove={() => { void removeAttachmentDraft(item.id); }} />)}
                 {attachmentUploading ? <Spin size="small" /> : null}
+                {pendingAttachmentSubmission ? <Text type="secondary">{t('chat.social.messageArea.attachmentStateDownloading')}</Text> : null}
               </div>
             ) : null}
             <input ref={fileInputRef} className="visually-hidden-file-input" type="file" multiple onChange={(e) => { void handleMobileFilesSelected(e.target.files); }} />
             {MOBILE_THREAD_COMPOSER_CAPABILITIES.emoji ? (
-              <button type="button" className={`message-composer-tool ${composerEmojiOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerEmoji')} onClick={() => { setComposerEmojiOpen((o) => !o); setComposerMoreOpen(false); }} disabled={groupSending}><Smile size={18} /></button>
+              <button type="button" className={`message-composer-tool ${composerEmojiOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerEmoji')} onClick={() => { setComposerEmojiOpen((o) => !o); setComposerMoreOpen(false); }} disabled={groupSending || Boolean(pendingAttachmentSubmission)}><Smile size={18} /></button>
             ) : null}
             <Input className="message-composer-input" value={draft} onChange={(e) => handleDraftChange(e.target.value)}
               onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; lastCompositionEndRef.current = Date.now(); }}
-              onKeyDown={handleComposerKeyDown} placeholder={t('mobile.chat.messagePlaceholder')} disabled={groupSending} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} />
-            <button type="button" className={`message-composer-tool ${composerMoreOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerMore')} onClick={() => { setComposerMoreOpen((o) => !o); setComposerEmojiOpen(false); }} disabled={groupSending || Boolean(editingMessage)}><Plus size={18} /></button>
+              onKeyDown={handleComposerKeyDown} placeholder={t('mobile.chat.messagePlaceholder')} disabled={groupSending || Boolean(pendingAttachmentSubmission)} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} />
+            <button type="button" className={`message-composer-tool ${composerMoreOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerMore')} onClick={() => { setComposerMoreOpen((o) => !o); setComposerEmojiOpen(false); }} disabled={groupSending || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)}><Plus size={18} /></button>
             <Button className="message-send-button" type="primary" icon={<Send size={16} />}
-              disabled={!canSubmitChatComposerDraft({ text: draft, attachmentCount: attachmentDrafts.length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || groupSending || attachmentUploading}
-              loading={groupSending || attachmentUploading}
+              disabled={!canSubmitChatComposerDraft({ text: draft, attachmentCount: attachmentDrafts.length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || groupSending || attachmentUploading || Boolean(pendingAttachmentSubmission)}
+              loading={groupSending || attachmentUploading || Boolean(pendingAttachmentSubmission)}
               onClick={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')} />
           </footer>
         )}
@@ -763,7 +838,12 @@ function ChatPageInner() {
               const conv = item.conversation as MobileConversation;
               const { preference: preferenceState, updatedAt, visibleUnread } = item;
               return (
-                <List.Item className="conversation-item" onClick={() => openConversation(conv)}>
+                <List.Item
+                  className="conversation-item"
+                  data-conversation-id={conv.kind === 'friend' ? conv.conversation.session.ulid : conv.conversation.group.ulid}
+                  data-conversation-kind={conv.kind}
+                  onClick={() => openConversation(conv)}
+                >
                   <List.Item.Meta
                     avatar={
                       <span className="conversation-avatar-frame">
@@ -882,14 +962,18 @@ function ComposerToolButton({ icon, label, onClick, disabled }: { icon: ReactNod
   );
 }
 
-function AttachmentDraftChip({ draft, onRemove }: { draft: MobileChatAttachmentDraft; onRemove: () => void }) {
+function AttachmentDraftChip({ draft, disabled, onRemove }: {
+  draft: MobileChatAttachmentDraft;
+  disabled: boolean;
+  onRemove: () => void;
+}) {
   const { t } = useMobileI18n();
   const kind = chatMediaKindForAttachment(draft.attachment);
   return (
     <div className="attachment-draft-chip">
       {kind === 'image' ? <img src={draft.previewUrl} alt={draft.attachment.filename} /> : <Paperclip size={15} />}
       <span>{draft.attachment.filename}</span>
-      <button type="button" onClick={onRemove} aria-label={t('common.action.delete')}><X size={12} /></button>
+      <button type="button" onClick={onRemove} aria-label={t('common.action.delete')} disabled={disabled}><X size={12} /></button>
     </div>
   );
 }
@@ -908,30 +992,59 @@ function MobileMessageAttachments({ attachments, isOwn, session }: {
 
 function MobileMessageAttachmentItem({ attachment, session }: { attachment: FriendMessageAttachment | GroupMessageAttachment; session: MobileAuthSession | null }) {
   const { t } = useMobileI18n();
-  const [objectUrl, setObjectUrl] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [loadState, setLoadState] = useState<'idle' | 'loading' | 'pending' | 'failed' | 'ready'>('idle');
   const kind = chatMediaKindForAttachment(attachment);
   const filename = attachment.filename || t('mobile.chat.attachmentUnnamed');
   const sizeLabel = formatChatAttachmentSize(Number(attachment.size ?? 0));
 
-  useEffect(() => {
-    let cancelled = false;
-    let nextObjectUrl = '';
-    if (!session || !attachment.cid) { setObjectUrl(''); return undefined; }
-    void fetchAttachmentBlobUrl(session.stationUrl, session.accessToken, attachment)
-      .then((url) => { if (cancelled) { revokeObjectUrl(url); return; } nextObjectUrl = url; setObjectUrl(url); })
-      .catch(() => { if (!cancelled) setObjectUrl(''); });
-    return () => { cancelled = true; revokeObjectUrl(nextObjectUrl); };
+  const loadAttachment = useCallback(async (openWhenReady: boolean) => {
+    if (!session || !attachment.cid) return;
+    setLoadState('loading');
+    try {
+      const result = await messagingOpenAttachment({
+        ...messagingAccountFromSession(session),
+        attachmentId: attachment.cid,
+      });
+      if (result.state === 'pending') {
+        setLoadState('pending');
+        return;
+      }
+      const url = convertFileSrc(result.localPath);
+      setSourceUrl(url);
+      setLoadState('ready');
+      if (openWhenReady) window.open(url, '_blank');
+    } catch {
+      setLoadState('failed');
+    }
   }, [attachment.cid, session]);
 
-  const openAttachment = () => { if (objectUrl) window.open(objectUrl, '_blank'); };
+  useEffect(() => {
+    if (kind !== 'image' || !session || !attachment.cid) return undefined;
+    void loadAttachment(false);
+    return undefined;
+  }, [attachment.cid, attachmentAvailabilityState(attachment), kind, loadAttachment, session]);
 
-  if (kind === 'image' && objectUrl) {
-    return <button type="button" className="mobile-attachment-image" onClick={openAttachment}><img src={objectUrl} alt={filename} /></button>;
+  const openAttachment = () => {
+    if (sourceUrl) {
+      window.open(sourceUrl, '_blank');
+      return;
+    }
+    void loadAttachment(true);
+  };
+  const stateLabel = loadState === 'loading' || loadState === 'pending'
+    ? t('chat.social.messageArea.attachmentStateDownloading')
+    : loadState === 'failed'
+      ? t('chat.social.messageArea.attachmentDownloadFailed')
+      : sizeLabel || attachment.mimeType;
+
+  if (kind === 'image' && sourceUrl) {
+    return <button type="button" className="mobile-attachment-image" data-attachment-id={attachment.cid} onClick={openAttachment}><img src={sourceUrl} alt={filename} /></button>;
   }
   return (
-    <button type="button" className="mobile-attachment-card" onClick={openAttachment} disabled={!objectUrl}>
+    <button type="button" className="mobile-attachment-card" data-attachment-id={attachment.cid} onClick={openAttachment} disabled={!session || !attachment.cid || loadState === 'loading'}>
       <Paperclip size={16} />
-      <span className="mobile-attachment-info"><span>{filename}</span><small>{sizeLabel || attachment.mimeType}</small></span>
+      <span className="mobile-attachment-info"><span>{filename}</span><small>{stateLabel}</small></span>
     </button>
   );
 }
@@ -1079,67 +1192,64 @@ function formatChatOperationError(error: unknown): string {
 
 function revokeObjectUrl(url: string) { if (url) URL.revokeObjectURL(url); }
 
-async function fetchAttachmentBlobUrl(stationUrl: string, accessToken: string, attachment: FriendMessageAttachment | GroupMessageAttachment): Promise<string> {
-  const url = attachmentDownloadUrl(stationUrl, attachment.cid);
-  const response = await fetch(url, { cache: 'no-store', headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!response.ok) throw new Error(`attachment-fetch:${response.status}`);
-  const blob = await response.blob();
-  const plaintext = await decryptClientMediaBlob({
-    ciphertext: blob, descriptor: mediaEncryptionDescriptorForAttachment(attachment),
-    mimeType: attachment.mimeType || 'application/octet-stream',
-  });
-  return URL.createObjectURL(plaintext);
-}
-
-function mediaEncryptionDescriptorForAttachment(attachment: FriendMessageAttachment | GroupMessageAttachment): Partial<ClientMediaEncryptionDescriptor> | null {
-  const record = attachment as unknown as Partial<GroupMessageAttachment & FriendMessageAttachment>;
-  if (record.mediaEncryption?.encrypted) {
-    const d = record.mediaEncryption;
-    return { encrypted: true, version: Number(d.version) as ClientMediaEncryptionDescriptor['version'], suite: d.suite as ClientMediaEncryptionDescriptor['suite'], keyB64: d.keyB64, nonceB64: d.nonceB64, plaintextSha256B64: d.plaintextSha256B64, ciphertextSha256B64: d.ciphertextSha256B64, plaintextSize: Number(d.plaintextSize ?? record.size ?? 0), ciphertextSize: Number(d.ciphertextSize ?? record.size ?? 0) };
+function classifySendOutcome(
+  outcome: MessagingSubmitCommandResult,
+  expectedAttachmentCount: number,
+): 'queued' | 'deferred' {
+  if (outcome.attachmentIds.length !== expectedAttachmentCount) {
+    throw new Error('mobile.messaging.attachmentCountMismatch');
   }
-  const suite = record.encryptionSuite ?? '';
-  const keyB64 = record.encryptionKeyB64 ?? '';
-  const nonceB64 = record.encryptionNonceB64 ?? '';
-  const pSha = record.plaintextSha256B64 ?? '';
-  const cSha = record.ciphertextSha256B64 ?? '';
-  if (!suite || !keyB64 || !nonceB64 || !pSha || !cSha) return null;
-  return { encrypted: true, version: 1, suite: suite as ClientMediaEncryptionDescriptor['suite'], keyB64, nonceB64, plaintextSha256B64: pSha, ciphertextSha256B64: cSha, plaintextSize: Number(record.plaintextSize ?? record.size ?? 0), ciphertextSize: Number(record.ciphertextSize ?? record.size ?? 0) };
-}
-
-function attachmentDownloadUrl(stationUrl: string, cid: string): string {
-  const parsed = parseOssCid(cid, stationUrl);
-  const url = new URL('/sub-oss/file', parsed.origin);
-  url.searchParams.set('key', parsed.key);
-  return url.toString();
-}
-
-function parseOssCid(cid: string, stationUrl: string): { origin: string; key: string } {
-  const trimmed = cid.trim();
-  const fallbackOrigin = stationUrl.replace(/\/+$/, '');
-  const trustedOrigin = new URL(fallbackOrigin).origin;
-  if (!trimmed.startsWith('oss://')) return { origin: trustedOrigin, key: trimmed.replace(/^\/+/, '') };
-  const rest = trimmed.slice('oss://'.length);
-  const schemeIndex = rest.indexOf('://');
-  if (schemeIndex >= 0) {
-    const afterSchemeIndex = schemeIndex + 3;
-    const slashAfterHost = rest.slice(afterSchemeIndex).indexOf('/');
-    if (slashAfterHost < 0) throw new Error('attachment-cid-missing-key');
-    const split = afterSchemeIndex + slashAfterHost;
-    const origin = normalizeOssCidOrigin(rest.slice(0, split), trustedOrigin);
-    if (origin !== trustedOrigin) throw new Error('attachment-cid-origin-not-trusted');
-    return { origin: trustedOrigin, key: rest.slice(split + 1).replace(/^\/+/, '') };
+  if (outcome.state === 'pending' && outcome.commandId) return 'queued';
+  if (expectedAttachmentCount > 0 && outcome.state === 'draft' && outcome.messageId) {
+    return 'deferred';
   }
-  const slash = rest.indexOf('/');
-  if (slash < 0) throw new Error('attachment-cid-missing-key');
-  const origin = rest.slice(0, slash);
-  const normalizedOrigin = origin === 'self' ? trustedOrigin : normalizeOssCidOrigin(origin, trustedOrigin);
-  if (normalizedOrigin !== trustedOrigin) throw new Error('attachment-cid-origin-not-trusted');
-  return { origin: trustedOrigin, key: rest.slice(slash + 1).replace(/^\/+/, '') };
+  throw new Error('mobile.messaging.sendOutcomeInvalid');
 }
 
-function normalizeOssCidOrigin(origin: string, fallbackOrigin: string): string {
-  const normalized = origin.trim().replace(/\/+$/, '');
-  if (!normalized) return fallbackOrigin;
-  const fallbackProtocol = new URL(fallbackOrigin).protocol;
-  return new URL(normalized.includes('://') ? normalized : `${fallbackProtocol}//${normalized}`).origin;
+function isQueuedAttachmentProjection(
+  message: FriendChatMessage | GroupMessage,
+  expectedAttachmentIds: string[],
+): boolean {
+  const state = (message as { messagingState?: string }).messagingState;
+  if (!state || !['prepared', 'submitted', 'accepted', 'delivered', 'read', 'committed'].includes(state)) {
+    return false;
+  }
+  const projectedAttachmentIds = chatMessageAttachments(message)
+    .map((attachment) => attachment.cid)
+    .filter(Boolean);
+  return sameStringSet(projectedAttachmentIds, expectedAttachmentIds);
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const leftSorted = [...left].sort();
+  const rightSorted = [...right].sort();
+  return leftSorted.every((value, index) => value === rightSorted[index]);
+}
+
+function messagingAccountFromSession(session: MobileAuthSession): MessagingAccountInput {
+  const actorPtid = session.actorRef.ptid.trim();
+  if (!actorPtid) throw new Error('mobile.auth.missingIdentityScope');
+  return {
+    stationPeerId: session.stationPeerId,
+    actorPtid,
+  };
+}
+
+async function discardStagedAttachments(
+  session: MobileAuthSession | null,
+  drafts: MobileChatAttachmentDraft[],
+): Promise<void> {
+  if (!session || drafts.length === 0) return;
+  const account = messagingAccountFromSession(session);
+  await Promise.all(drafts.map((draft) => messagingDiscardAttachmentStage({
+    ...account,
+    stageId: draft.attachment.stageId,
+  })));
+}
+
+function attachmentAvailabilityState(
+  attachment: FriendMessageAttachment | GroupMessageAttachment,
+): 'remote' | 'local' | undefined {
+  return (attachment as { availabilityState?: 'remote' | 'local' }).availabilityState;
 }

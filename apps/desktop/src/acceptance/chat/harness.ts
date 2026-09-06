@@ -5,7 +5,7 @@ import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
 import { useSessionStore } from '../../store/session';
-import { createEncryptedChatPayloadBytes, decodeGroupMessages, useSocialChatStore } from '../../store/socialChat';
+import { useSocialChatStore } from '../../store/socialChat';
 import { messageGroupSeq } from '../../store/socialProjection';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { registerAcceptanceHarness } from '../registry';
@@ -491,30 +491,18 @@ export function installAcceptanceHarness(): void {
       if (startIndex < 1) {
         throw new Error('startIndex must be >= 1');
       }
-      const did = useSocialChatStore.getState().currentUserPtid ?? '';
-      if (!did) {
-        throw new Error('No active actor; cannot send group messages');
-      }
       const social = useSocialChatStore.getState();
       await social.loadGroups();
       await social.loadGroupMembers(groupUlid);
+      if (type !== 1) {
+        throw new Error('group pressure send supports text messages only');
+      }
 
       const startedAt = Date.now();
       const lastIndex = startIndex + count - 1;
       for (let index = startIndex; index <= lastIndex; index += 1) {
         const content = `${prefix}-${String(index).padStart(4, '0')}`;
-        const plaintextBytes = createEncryptedChatPayloadBytes(content, [], type);
-        const ciphertext = await imServiceV1.mlsGroup.encrypt(groupUlid, plaintextBytes);
-        const { create: createProto } = await import('@bufbuild/protobuf');
-        const { StationEnvelopeSchema, EnvelopePayloadType } = await import('../../gen/proto/domain/chat/envelope_pb');
-        const envelope = createProto(StationEnvelopeSchema, {
-          conversationId: groupUlid,
-          senderPtid: did,
-          payloadType: EnvelopePayloadType.COMMITTED_EVENT,
-          payloadBytes: ciphertext,
-          idempotencyKey: crypto.randomUUID(),
-        });
-        await imServiceV1.envelope.submit(envelope);
+        await imServiceV1.messaging.sendMessage(groupUlid, 'group', content);
       }
       await social.loadMessages(groupUlid, 'group').catch(() => {});
       return {
@@ -613,13 +601,10 @@ export function installAcceptanceHarness(): void {
       const ordered = orderedPressureMessages(state);
       const decodeSize = Math.max(1, Math.min(200, chunkSize));
       const chunk = ordered.slice(state.nextDecodeIndex, state.nextDecodeIndex + decodeSize);
-      if (chunk.length > 0) {
-        const decodedChunk = await decodeGroupMessages(groupUlid, chunk, 'acceptance pressure group ordered decrypt failed');
-        for (const message of decodedChunk) {
-          if (message.ulid) state.decodedByUlid.set(message.ulid, message);
-        }
-        state.nextDecodeIndex += chunk.length;
+      for (const message of chunk) {
+        if (message.ulid) state.decodedByUlid.set(message.ulid, message);
       }
+      state.nextDecodeIndex += chunk.length;
       const decoded = ordered.map((message) => state.decodedByUlid.get(message.ulid) ?? message);
       const decodedContents = decoded.map((message) => message.content || '');
       useSocialChatStore.setState((state) => {

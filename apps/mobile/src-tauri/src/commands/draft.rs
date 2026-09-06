@@ -62,10 +62,7 @@ pub async fn draft_store_initialize(
 }
 
 #[tauri::command]
-pub async fn draft_save(
-    input: DraftSaveInput,
-    store: State<'_, DraftStore>,
-) -> MobileResult<()> {
+pub async fn draft_save(input: DraftSaveInput, store: State<'_, DraftStore>) -> MobileResult<()> {
     let kind = parse_draft_kind(&input.kind)?;
     store.save(kind, &input.domain_key, &input.payload_json)
 }
@@ -98,14 +95,11 @@ pub async fn draft_list(
 }
 
 #[tauri::command]
-pub async fn draft_store_shutdown(
-    store: State<'_, DraftStore>,
-) -> MobileResult<()> {
+pub async fn draft_store_shutdown(store: State<'_, DraftStore>) -> MobileResult<()> {
     store.shutdown()
 }
 
 fn parse_draft_kind(value: &str) -> MobileResult<DraftKind> {
-    DraftKind::from_str(value).ok_or_else(|| {
-        MobileError::invalid_input(format!("unknown draft kind: {value}"))
-    })
+    DraftKind::from_str(value)
+        .ok_or_else(|| MobileError::invalid_input(format!("unknown draft kind: {value}")))
 }

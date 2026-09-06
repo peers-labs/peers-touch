@@ -4,12 +4,16 @@ from tooling.acceptance.core import (
     EnvironmentContract,
     EnvironmentProvisioner,
     ProvisioningError,
+    RuntimeCellLifecycle,
 )
 
 from .home_station import HomeStationProvisioner
 from .local_desktop_gateway import LocalDesktopGatewayProvisioner
 from .mobile_native import MobileNativeProvisioner
-from .mobile_simulator import MobileSimulatorProvisioner
+from .mobile_simulator import (
+    MobileSimulatorProvisioner,
+    MobileSocialSimulatorProvisioner,
+)
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
@@ -17,6 +21,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     LocalDesktopGatewayProvisioner.environment_id: LocalDesktopGatewayProvisioner,
     MobileNativeProvisioner.environment_id: MobileNativeProvisioner,
     MobileSimulatorProvisioner.environment_id: MobileSimulatorProvisioner,
+    MobileSocialSimulatorProvisioner.environment_id: (
+        MobileSocialSimulatorProvisioner
+    ),
 }
 
 
@@ -29,10 +36,18 @@ def get_provisioner(contract: EnvironmentContract) -> EnvironmentProvisioner:
     return provisioner_class(contract)
 
 
+def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
+    raise ProvisioningError(
+        f"runtime-cell lifecycle is not implemented for {cell_id!r}"
+    )
+
+
 __all__ = [
     "HomeStationProvisioner",
     "LocalDesktopGatewayProvisioner",
     "MobileNativeProvisioner",
     "MobileSimulatorProvisioner",
+    "MobileSocialSimulatorProvisioner",
     "get_provisioner",
+    "get_runtime_cell_lifecycle",
 ]

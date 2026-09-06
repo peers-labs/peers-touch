@@ -1,30 +1,21 @@
 import {
-  applyChatMessageMutationToList,
-  applyChatMessageReceiptToList,
   applyChatPresenceToMap,
   applyChatTypingStateToMap,
   filterUnreadChatNotifications,
-  mergeChatMessages,
   mergeChatNotifications,
   projectIMConversation,
   projectIMMessage,
   projectChatNotificationUnreadCount,
   pruneChatTypingPeers,
-  resolveChatMessageReceiptStatus,
-  type ChatAttachmentLike,
-  type ChatMessageMutationInput,
   type ChatMessageMutationKind,
   type IMConversationProjection,
   type IMMessageProjection,
 } from '@peers-touch/client-chat-core';
 
 import { timestampMillis } from './socialNormalizers';
-import { FriendMessageType } from '../../gen/proto/domain/chat/friend_chat_pb';
-import type { ChatEncryptedMessagePayload } from '../../gen/proto/domain/chat/group_chat_pb';
 import type {
   FriendChatMessage,
   FriendChatSession,
-  FriendMessageAttachment,
   FriendRequest,
   SocialConversation,
   SocialNotification,
@@ -32,13 +23,9 @@ import type {
 } from './socialTypes';
 
 const FRIEND_REQUEST_STATUS_PENDING = 1;
-const FRIEND_MESSAGE_STATUS_DELIVERED = 3;
-const FRIEND_MESSAGE_STATUS_READ = 4;
 const NOTIFICATION_STATUS_UNREAD = 1;
 
 export type MessageMutationKind = ChatMessageMutationKind;
-
-export interface MessageMutationProjection extends ChatMessageMutationInput {}
 
 export function projectConversations(input: {
   sessions: FriendChatSession[];
@@ -50,9 +37,7 @@ export function projectConversations(input: {
     .map((session) => {
       const peerPtid = peerPtidFromSession(session, input.currentUserPtid);
       const loadedLastMessage = input.messages[session.ulid]?.at(-1);
-      const sessionLastMessage = session.lastMessage && isVisibleFriendMessage(session.lastMessage)
-        ? session.lastMessage
-        : undefined;
+      const sessionLastMessage = session.lastMessage;
       const lastMessage = loadedLastMessage ?? sessionLastMessage;
       return {
         session,
@@ -140,68 +125,9 @@ export function projectMobileSocialIMMessage(
   });
 }
 
-export function mergeMessages(messages: FriendChatMessage[], incoming: FriendChatMessage): FriendChatMessage[] {
-  return mergeChatMessages(messages, incoming, {
-    resolveTimestampMs: (message) => timestampMillis(message.sentAt ?? message.createdAt),
-    shouldInclude: isVisibleFriendMessage,
-    mergeExisting: (current, next) => ({ ...current, ...next }),
-  });
-}
-
-export function visibleFriendMessages(messages: FriendChatMessage[]): FriendChatMessage[] {
-  return messages.filter(isVisibleFriendMessage);
-}
-
-export function isSenderKeyDistributionMessage(message: FriendChatMessage): boolean {
-  return message.type === FriendMessageType.SENDER_KEY_DISTRIBUTION;
-}
-
-export function isVisibleFriendMessage(message: FriendChatMessage): boolean {
-  return !isSenderKeyDistributionMessage(message);
-}
-
-export function applyFriendEncryptedPayloadToMessage(
-  message: FriendChatMessage,
-  payload: ChatEncryptedMessagePayload,
-): FriendChatMessage {
-  return {
-    ...message,
-    content: payload.text,
-    attachments: payload.attachments.map(friendAttachmentFromChatPayload),
-    type: payload.messageType || message.type,
-    encryptedPayload: new Uint8Array(),
-  };
-}
-
 export function mergeNotifications(current: SocialNotification[], incoming: SocialNotification[]): SocialNotification[] {
   return mergeChatNotifications(current, incoming, {
     resolveCreatedAt: (notification) => timestampMillis(notification.createdAt),
-  });
-}
-
-export function receiptStatus(kind: number | string): number | null {
-  return resolveChatMessageReceiptStatus(kind, {
-    delivered: FRIEND_MESSAGE_STATUS_DELIVERED,
-    read: FRIEND_MESSAGE_STATUS_READ,
-  });
-}
-
-export function applyMessageReceiptToList(
-  messages: FriendChatMessage[] | undefined,
-  messageUlid: string,
-  kind: number | string,
-): FriendChatMessage[] | null {
-  const nextStatus = receiptStatus(kind);
-  return applyChatMessageReceiptToList(messages, messageUlid, nextStatus);
-}
-
-export function applyMessageMutationToList(
-  messages: FriendChatMessage[] | undefined,
-  messageUlid: string,
-  mutation: MessageMutationProjection,
-): FriendChatMessage[] | null {
-  return applyChatMessageMutationToList(messages, messageUlid, mutation, {
-    createEditedAt: timestampFromUnixMs,
   });
 }
 
@@ -247,30 +173,4 @@ function peerAvatarFromSession(session: FriendChatSession, currentUserPtid: stri
 function unreadFromSession(session: FriendChatSession, currentUserPtid: string | null): number {
   if (session.participantAPtid === currentUserPtid) return session.unreadCountA;
   return session.unreadCountB;
-}
-
-function timestampFromUnixMs(value: number) {
-  return {
-    seconds: Math.floor(value / 1000),
-    nanos: (value % 1000) * 1_000_000,
-  };
-}
-
-function friendAttachmentFromChatPayload(attachment: ChatAttachmentLike): FriendMessageAttachment {
-  return {
-    cid: attachment.cid ?? '',
-    filename: attachment.filename ?? '',
-    mimeType: attachment.mimeType ?? attachment.mime_type ?? '',
-    size: Number(attachment.size ?? 0),
-    thumbnailCid: attachment.thumbnailCid ?? attachment.thumbnail_cid ?? '',
-    visibility: attachment.visibility ?? '',
-    mediaEncryption: attachment.mediaEncryption ?? attachment.media_encryption,
-    encryptionSuite: attachment.encryptionSuite ?? attachment.encryption_suite ?? '',
-    encryptionKeyB64: attachment.encryptionKeyB64 ?? attachment.encryption_key_b64 ?? '',
-    encryptionNonceB64: attachment.encryptionNonceB64 ?? attachment.encryption_nonce_b64 ?? '',
-    plaintextSha256B64: attachment.plaintextSha256B64 ?? attachment.plaintext_sha256_b64 ?? '',
-    ciphertextSha256B64: attachment.ciphertextSha256B64 ?? attachment.ciphertext_sha256_b64 ?? '',
-    plaintextSize: Number(attachment.plaintextSize ?? attachment.plaintext_size ?? 0),
-    ciphertextSize: Number(attachment.ciphertextSize ?? attachment.ciphertext_size ?? 0),
-  };
 }

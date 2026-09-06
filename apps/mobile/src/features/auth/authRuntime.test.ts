@@ -1,6 +1,6 @@
 // @ts-nocheck -- Vitest is supplied by the repository test runner, not the Mobile production bundle.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   applyAuthRuntimeProjection,
@@ -9,6 +9,48 @@ import {
 import { useAuthStore } from './authStore';
 
 describe('station-scoped authRuntime public projection', () => {
+  it('clears an invalid persisted session and retries once without it', async () => {
+    const decision = {
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'fresh-attempt',
+      gates: [],
+    };
+    const startAttempt = vi.fn()
+      .mockRejectedValueOnce(new Error('access session invalid: session not found'))
+      .mockResolvedValueOnce(decision);
+    const clearSession = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      authRuntimeTestContract.startAccessAttemptWithInvalidSessionRecovery(
+        'stale-session',
+        startAttempt,
+        clearSession,
+      ),
+    ).resolves.toBe(decision);
+
+    expect(clearSession).toHaveBeenCalledOnce();
+    expect(startAttempt).toHaveBeenNthCalledWith(1, 'stale-session');
+    expect(startAttempt).toHaveBeenNthCalledWith(2);
+  });
+
+  it('does not retry a non-session access failure', async () => {
+    const startAttempt = vi.fn().mockRejectedValue(
+      new Error('station network unavailable'),
+    );
+    const clearSession = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      authRuntimeTestContract.startAccessAttemptWithInvalidSessionRecovery(
+        'persisted-session',
+        startAttempt,
+        clearSession,
+      ),
+    ).rejects.toThrow('station network unavailable');
+
+    expect(clearSession).not.toHaveBeenCalled();
+    expect(startAttempt).toHaveBeenCalledOnce();
+  });
+
   it('preserves the Rust-owned snake_case lifecycle phases', () => {
     const snapshot = authRuntimeTestContract.snapshotFromProjection({
       phase: 'awaiting_provider',

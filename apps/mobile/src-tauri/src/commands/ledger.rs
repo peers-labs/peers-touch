@@ -136,15 +136,11 @@ pub async fn ledger_readback_by_status(
 }
 
 #[tauri::command]
-pub async fn ledger_purge_committed(
-    ledger: State<'_, CommandLedger>,
-) -> MobileResult<usize> {
+pub async fn ledger_purge_committed(ledger: State<'_, CommandLedger>) -> MobileResult<usize> {
     ledger.purge_committed()
 }
 
 #[tauri::command]
-pub async fn ledger_shutdown(
-    ledger: State<'_, CommandLedger>,
-) -> MobileResult<()> {
+pub async fn ledger_shutdown(ledger: State<'_, CommandLedger>) -> MobileResult<()> {
     ledger.shutdown()
 }

@@ -205,15 +205,3 @@ export function unwrapOutcome<T>(outcome: CommandOutcome<T>): T {
   }
   return outcome.data;
 }
-
-/**
- * Convert a Uint8Array to base64 string.
- * Shared across gateways that send encrypted payloads.
- */
-export function gatewayBytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
-  return globalThis.btoa(binary);
-}
