@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-06
+> **Created**: 2026-09-06 | **Updated**: 2026-09-07
 > **Owner**: Architecture Team
 > **Module**: `apps/station/`, `model/domain/`, `tooling/acceptance/`
 
@@ -73,6 +73,9 @@ D-07 on 2026-09-06. Conversation is the sole Chat entry point, and the internal
 Device Messaging Engine remains a client runtime. The Owner approved the
 dependency-ordered execution plan on 2026-09-06. CA-W0 has complete route and
 deletion inventory plus registry-driven DDD import enforcement. CA-W1 has
-established canonical resource-owned protobuf contracts and generated bindings;
-runtime owner and store migrations remain fail-closed work in CA-W2 through
-CA-W5.
+established canonical resource-owned protobuf contracts and generated bindings.
+CA-W2 through CA-W4 now have source-complete, test-only implementations for the
+Conversation DDD authority, resource-owner services, and shared
+Federation/Social reliability semantics. CA-W5 remains the atomic production
+registration, store migration, consumer cutover, and old-path deletion boundary;
+runtime convergence remains explicitly unproven until CA-W6.
