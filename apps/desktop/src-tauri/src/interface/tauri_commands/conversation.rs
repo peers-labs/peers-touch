@@ -706,7 +706,7 @@ pub fn keypackage_upload(
     });
     match station_client::request_json_auth(
         Method::POST,
-        "/keypackage/upload",
+        "/key-exchange/mls/key-package/upload",
         &token,
         None,
         Some(&body),
@@ -732,7 +732,7 @@ pub fn keypackage_fetch(
     }
     match station_client::request_json_auth(
         Method::POST,
-        "/keypackage/fetch",
+        "/key-exchange/mls/key-package/fetch",
         &token,
         None,
         Some(&body),
@@ -748,7 +748,13 @@ pub fn keypackage_count(state: State<'_, Arc<AppState>>, window: Window) -> AppR
         Ok(t) => t,
         Err(e) => return e,
     };
-    match station_client::request_json_auth(Method::GET, "/keypackage/count", &token, None, None) {
+    match station_client::request_json_auth(
+        Method::GET,
+        "/key-exchange/mls/key-package/count",
+        &token,
+        None,
+        None,
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "keypackage count failed"),
     }
@@ -890,7 +896,7 @@ pub fn dkx_send(
     });
     match station_client::request_json_auth_with_device_id(
         Method::POST,
-        "/dkx/send",
+        "/key-exchange/dkx/send",
         &token,
         None,
         Some(&body),

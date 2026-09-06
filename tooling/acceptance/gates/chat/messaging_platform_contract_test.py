@@ -232,6 +232,48 @@ class MessagingPlatformContractTest(unittest.TestCase):
 
         self.assertEqual(violations, [])
 
+    def test_desktop_uses_resource_owned_key_exchange_routes(self) -> None:
+        desktop_rust = ROOT / "apps/desktop/src-tauri/src"
+        legacy_route = re.compile(
+            r"""["']/(?:keypackage/(?:upload|fetch|count)|dkx/send)["']"""
+        )
+        violations: list[str] = []
+        for path in desktop_rust.rglob("*.rs"):
+            if any(part == "target" for part in path.parts):
+                continue
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8", errors="replace").splitlines(),
+                start=1,
+            ):
+                if legacy_route.search(line):
+                    violations.append(
+                        f"{path.relative_to(ROOT)}:{line_number}: {line.strip()}"
+                    )
+
+        self.assertEqual(violations, [])
+
+        mls_transport = (
+            desktop_rust / "messaging/mls_key_packages.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            '"/key-exchange/mls/key-package/upload"',
+            mls_transport,
+        )
+
+        canonical_routes = (
+            "/key-exchange/mls/key-package/upload",
+            "/key-exchange/mls/key-package/fetch",
+            "/key-exchange/mls/key-package/count",
+            "/key-exchange/dkx/send",
+        )
+        for relative_path in (
+            "interface/http_gateway/mod.rs",
+            "interface/tauri_commands/conversation.rs",
+        ):
+            source = (desktop_rust / relative_path).read_text(encoding="utf-8")
+            for route in canonical_routes:
+                self.assertIn(f'"{route}"', source)
+
     def test_profile_engine_owns_lifecycle_and_fresh_key_activation(self) -> None:
         messaging = ROOT / "apps/desktop/src-tauri/src/messaging"
         lifecycle = (messaging / "lifecycle.rs").read_text(encoding="utf-8")
