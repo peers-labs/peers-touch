@@ -431,6 +431,8 @@ func (s *subServer) Handlers() []server.Handler {
 			s.handleListMessages, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-thread-messages", "/conversation/thread/messages", server.GET,
 			s.handleListThreadMessages, logID, s.jwtWrapper),
+		server.NewTypedHandler("conv-thread-counts", "/conversation/thread/counts", server.POST,
+			s.handleGetThreadCounts, logID, s.jwtWrapper),
 		server.NewTypedHandler("kp-upload", "/key-exchange/mls/key-package/upload", server.POST,
 			s.handleUploadKeyPackage, logID, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("kp-fetch", "/key-exchange/mls/key-package/fetch", server.POST,
