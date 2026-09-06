@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.chat.v1;
 
 import "domain/chat/attachment.proto";
+import "domain/chat/conversation.proto";
 import "domain/chat/endpoint.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -76,6 +77,7 @@ message UpdateConversationIntent {
   optional string description = 2;
   optional string avatar_object_id = 3;
   optional uint32 disappear_timer_seconds = 4;
+  optional GroupVisibilityV1 visibility = 5;
 }
 
 enum MessagingMembershipAction {
@@ -110,6 +112,8 @@ message MembershipTransitionIntent {
   bytes authority_plan_sha256 = 11;
 }
 
+message DissolveConversationIntent {}
+
 // Durable client intent. The exact deterministic bytes are replayed until the
 // authority returns a terminal result.
 message ChatCommand {
@@ -130,5 +134,6 @@ message ChatCommand {
     PinMessageIntent pin_message = 24;
     UpdateConversationIntent update_conversation = 25;
     MembershipTransitionIntent membership_transition = 26;
+    DissolveConversationIntent dissolve_conversation = 27;
   }
 }

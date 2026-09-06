@@ -229,6 +229,8 @@ message MlsLeaveIntent {
   int64 created_at_unix_ms = 13;
   int64 expires_at_unix_ms = 14;
   bytes actor_signature = 15;
+  int64 authority_sequence = 16;
+  bytes authority_hash = 17;
 }
 
 // Exact deterministic protobuf input signed by the departing actor device.
@@ -247,6 +249,8 @@ message MlsLeaveIntentSigningInput {
   int64 observed_mls_epoch = 12;
   int64 created_at_unix_ms = 13;
   int64 expires_at_unix_ms = 14;
+  int64 authority_sequence = 15;
+  bytes authority_hash = 16;
 }
 
 message MembershipTransitionChange {
