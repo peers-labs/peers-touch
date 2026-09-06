@@ -2165,6 +2165,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         out.push(projectDesktopIMConversation({
           type: 'friend',
           ulid: convId,
+          authorityStationId: conv.authorityStationPeerId,
           name: peerName,
           avatar: profile?.avatar || '',
           peerPtid,
@@ -2182,6 +2183,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         out.push(projectDesktopIMConversation({
           type: 'group',
           ulid: convId,
+          authorityStationId: conv.authorityStationPeerId,
           name: conv.name || 'Group',
           avatar: groupAvatarRemoteUrl({ avatarCid: conv.avatarCid || '' }),
           memberCount,
