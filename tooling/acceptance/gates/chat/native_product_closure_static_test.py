@@ -2031,7 +2031,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"group-create", ("alice",)',
             '"group-open", ("alice", "bob")',
             '"thread", ("alice",)',
-            '"reaction-picker", (actor,)',
             '"reaction-error", ("alice",)',
             '"identity", ("alice", "bob")',
             '"background-picker", (actor,)',
@@ -2051,6 +2050,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 f"self.capture_visible_localization({checkpoint})",
                 self.source,
             )
+        self.assertIn(
+            'self.localization_checks["reaction-picker"] = {actor: []}',
+            self.source,
+        )
         self.assertIn(
             'self.step("localization.visible", self.prove_visible_localization)',
             self.source,
@@ -2189,19 +2192,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             keyboard_path,
         )
         self.assertNotIn("self.native_adapter.post_key(", keyboard_path)
-        self.assertEqual(
-            keyboard_path.count(
-                "self.native_adapter.post_key_to_process("
-            ),
-            1,
+        self.assertNotIn(
+            "self.native_adapter.post_key_to_process(",
+            keyboard_path,
         )
 
     def test_reaction_selection_uses_atomic_native_keyboard_sequences(self) -> None:
         selection_start = self.source.index(
-            "def choose_first_reaction_with_keyboard(",
+            "def prove_keyboard_reaction_picker(",
         )
         selection_end = self.source.index(
-            "def prove_keyboard_reaction_picker(",
+            "def reaction_visible(",
             selection_start,
         )
         selection_source = self.source[selection_start:selection_end]
@@ -2219,10 +2220,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "                NativeKey.ENTER,",
             selection_source,
         )
-        self.assertIn('return "👍"', selection_source)
+        self.assertIn("reaction_picker_localized", selection_source)
+        self.assertIn("return str(selected_emoji)", selection_source)
         self.assertEqual(
             reaction_source.count(
-                "self.choose_first_reaction_with_keyboard("
+                "self.prove_keyboard_reaction_picker("
             ),
             2,
         )
