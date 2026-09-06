@@ -635,6 +635,33 @@ class NativeProductClosureGate(AcceptanceGate):
             "height": float(rect["height"]) / scale,
         }
 
+    def native_content_origin(
+        self,
+        client: TauriSession,
+    ) -> tuple[float, float]:
+        process_id = client.process_id
+        if process_id is None:
+            raise GateError("Native content origin has no owning process")
+        viewport = client.driver.execute_script(
+            "return { width: innerWidth, height: innerHeight };"
+        )
+        window = self.native_window(client)
+        content_origin = self.native_adapter.content_origin(process_id)
+        if content_origin is not None:
+            return content_origin
+        return (
+            window["left"]
+            + max(
+                0.0,
+                (window["width"] - float(viewport["width"])) / 2,
+            ),
+            window["top"]
+            + max(
+                0.0,
+                window["height"] - float(viewport["height"]),
+            ),
+        )
+
     def choose_native_file(
         self,
         actor: str,
@@ -1396,7 +1423,12 @@ class NativeProductClosureGate(AcceptanceGate):
         element: Any,
         *,
         selector: str | None = None,
+        native_origin: tuple[float, float] | None = None,
+        focus_target: bool = True,
     ) -> Any:
+        process_id = client.process_id
+        if process_id is None:
+            raise GateError("Native click target has no owning process")
         WebDriverWait(client.driver, 30).until(
             lambda _: element.is_displayed() and element.is_enabled()
         )
@@ -1405,13 +1437,14 @@ class NativeProductClosureGate(AcceptanceGate):
             element,
             selector=selector,
         )
-        client.driver.execute_script(
-            "arguments[0].focus({ preventScroll: true });",
-            element,
-        )
-        if selector is not None:
-            element = client.find_element(selector, 30)
-            element = self._resolve_native_click_surface(client, element)
+        if focus_target:
+            client.driver.execute_script(
+                "arguments[0].focus({ preventScroll: true });",
+                element,
+            )
+            if selector is not None:
+                element = client.find_element(selector, 30)
+                element = self._resolve_native_click_surface(client, element)
         target = client.driver.execute_script(
             """
             const element = arguments[0];
@@ -1497,18 +1530,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 "Native click target center is occluded: "
                 f"{json.dumps(target, sort_keys=True)}"
             )
-        window = self.native_window(client)
-        content_offset_x = max(
-            0.0,
-            (window["width"] - float(target["viewportWidth"])) / 2,
-        )
-        content_offset_y = max(
-            0.0,
-            window["height"] - float(target["viewportHeight"]),
-        )
-        content_origin = self.native_adapter.content_origin(
-            client.process_id or 0
-        )
+        content_origin = native_origin or self.native_content_origin(client)
         if selector is not None:
             element = client.find_element(selector, 30)
             element = self._resolve_native_click_surface(client, element)
@@ -1538,18 +1560,8 @@ class NativeProductClosureGate(AcceptanceGate):
                 "Native click target changed before event delivery"
             )
         point = (
-            (
-                content_origin[0]
-                if content_origin is not None
-                else window["left"] + content_offset_x
-            )
-            + float(current_target["x"]),
-            (
-                content_origin[1]
-                if content_origin is not None
-                else window["top"] + content_offset_y
-            )
-            + float(current_target["y"]),
+            content_origin[0] + float(current_target["x"]),
+            content_origin[1] + float(current_target["y"]),
         )
         probe_id = self.install_native_input_probe(
             client,
@@ -1564,7 +1576,8 @@ class NativeProductClosureGate(AcceptanceGate):
         try:
             cursor = 0
             mouse_down_posted = True
-            self.native_adapter.post_mouse(
+            self.native_adapter.post_mouse_to_process(
+                process_id,
                 (
                     MouseAction.MOVE,
                     MouseAction.LEFT_DOWN,
@@ -1706,7 +1719,8 @@ class NativeProductClosureGate(AcceptanceGate):
         message_id: str,
         action: str,
     ) -> Any:
-        client = self.clients[actor]
+        client = self.focus_actor_window(actor)
+        native_origin = self.native_content_origin(client)
         toolbar = self.hover_message(actor, message_id)
         selector = MESSAGE_ACTION_SELECTORS.get(action)
         if selector is None:
@@ -1715,7 +1729,12 @@ class NativeProductClosureGate(AcceptanceGate):
             By.CSS_SELECTOR,
             selector,
         )
-        return self._click_focused_element(client, element)
+        return self._click_focused_element(
+            client,
+            element,
+            native_origin=native_origin,
+            focus_target=False,
+        )
 
     def composer_send(self, actor: str, text: str = "") -> None:
         client = self.clients[actor]

@@ -311,6 +311,21 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
 
         self.assertLess(activation, observation)
 
+    def test_targeted_mouse_activation_and_delivery_share_one_worker(self) -> None:
+        worker = WindowsDesktopBroker._adapter_worker_script()
+        targeted = worker[
+            worker.index('elif operation == "post_mouse_to_process":'):
+            worker.index('elif operation == "post_key":')
+        ]
+        activation = targeted.index("adapter.activate_process(process_id)")
+        delivery = targeted.index("adapter.post_mouse(")
+        observation = targeted.index(
+            "adapter.focused_control(process_id).to_dict()"
+        )
+
+        self.assertLess(activation, delivery)
+        self.assertLess(delivery, observation)
+
     def test_targeted_key_activation_and_delivery_share_one_worker(self) -> None:
         worker = WindowsDesktopBroker._adapter_worker_script()
         targeted = worker[

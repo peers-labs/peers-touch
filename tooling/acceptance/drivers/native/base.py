@@ -130,6 +130,15 @@ class NativeDesktopAdapter(ABC):
     ) -> None:
         ...
 
+    def post_mouse_to_process(
+        self,
+        process_id: int,
+        actions: tuple[MouseAction, ...],
+        point: tuple[float, float],
+    ) -> None:
+        self.activate_process(process_id)
+        self.post_mouse(actions, point)
+
     @abstractmethod
     def post_key(
         self,

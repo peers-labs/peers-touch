@@ -605,6 +605,24 @@ class RemoteNativeDesktopAdapter(NativeDesktopAdapter):
             },
         )
 
+    def post_mouse_to_process(
+        self,
+        process_id: int,
+        actions: tuple[MouseAction, ...],
+        point: tuple[float, float],
+    ) -> None:
+        if self._platform != "win32":
+            super().post_mouse_to_process(process_id, actions, point)
+            return
+        self._execute(
+            "post_mouse_to_process",
+            {
+                "processId": process_id,
+                "actions": [action.value for action in actions],
+                "point": list(point),
+            },
+        )
+
     def post_key(
         self,
         key: NativeKey,
