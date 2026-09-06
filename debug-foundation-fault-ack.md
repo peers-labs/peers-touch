@@ -1,7 +1,7 @@
 # Debug Session: foundation-fault-ack
 - **Status**: [OPEN]
 - **Issue**: Foundation AS-F06 fault control returns before the Browser recovery projection leaves CONNECTED; CONNECTION_LOST is observed about 30 seconds after the cut request, racing the existing acknowledgement deadline.
-- **Debug Server**: http://127.0.0.1:7779/event
+- **Debug Server**: http://127.0.0.1:7783/event
 - **Log File**: .dbg/trae-debug-log-foundation-fault-ack.ndjson
 
 ## Reproduction Steps

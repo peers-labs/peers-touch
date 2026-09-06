@@ -29,7 +29,7 @@ def _report_fault_debug(stage: str, data: dict[str, object], timestamp_ms: int) 
     def send() -> None:
         try:
             request = urllib.request.Request(
-                "http://127.0.0.1:7779/event",
+                "http://127.0.0.1:7783/event",
                 data=payload,
                 headers={"Content-Type": "application/json"},
                 method="POST",
