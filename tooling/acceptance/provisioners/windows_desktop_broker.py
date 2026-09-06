@@ -790,6 +790,7 @@ import base64
 import json
 import pathlib
 import sys
+import time
 
 request = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
 response_path = pathlib.Path(request["responsePath"])
@@ -830,6 +831,25 @@ try:
             text=str(payload.get("text") or ""),
             private_source=bool(payload.get("privateSource")),
         )
+        result = adapter.focused_control(process_id).to_dict()
+    elif operation == "post_key_sequence_to_process":
+        process_id = int(payload["processId"])
+        keys = tuple(NativeKey(item) for item in payload["keys"])
+        interval_seconds = float(payload.get("intervalSeconds") or 0)
+        if not keys:
+            raise ValueError("Native key sequence must not be empty")
+        if interval_seconds < 0 or interval_seconds > 1:
+            raise ValueError(
+                "Native key sequence interval must be between 0 and 1 second"
+            )
+        adapter.activate_process(process_id)
+        for index, key in enumerate(keys):
+            adapter.post_key(
+                key,
+                private_source=bool(payload.get("privateSource")),
+            )
+            if index + 1 < len(keys) and interval_seconds > 0:
+                time.sleep(interval_seconds)
         result = adapter.focused_control(process_id).to_dict()
     elif operation == "reveal_file_chooser_location":
         result = adapter.reveal_file_chooser_location() or {}
