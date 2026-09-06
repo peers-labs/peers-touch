@@ -554,7 +554,7 @@ matrices. Local/static success cannot replace native receiver proof.
 
 | Workstream | Status | Evidence |
 |---|---|---|
-| CA-W0 Ownership inventory and Gate | in progress | AST Gate implementation and focused race tests pass. Source-bound `station-messaging-unit` run `20260906T024832274841Z-9ebe35b704f3703e74968a83650b8e3a` and `messaging-platform-contract` run `20260906T024802637935Z-e29f8f07d6efe5df119e2691fe660601` pass. Source-bound ownership run `20260906T024832273993Z-95e26d25346aa1f6a76fd870478f0503` fails closed with 88 explicit target-debt diagnostics: 45 undeclared governed routes, 4 owner-root mismatches, 18 missing canonical proto symbols, 14 superseded proto symbols, and 7 forbidden truth-store identifiers. |
+| CA-W0 Ownership inventory and Gate | done | The registry declares 61 retained capabilities and classifies all 65 current governed routes; undeclared routes are zero. Four routes without a target role are explicit deletion obligations. The AST Gate enforces route ownership, canonical proto symbols, target-absent stores, and four registry-driven Conversation DDD import layers, with focused tests covering deterministic failure. Source-bound ownership run `20260906T033402732484Z-ee421c3782b56b551a1c0e828d5a67c8` fails closed with 84 downstream target-debt diagnostics only: 4 forbidden routes, 23 owner-root mismatches, 20 missing canonical proto symbols, 20 superseded proto symbols, and 17 forbidden truth-store identifiers. Source-bound `messaging-platform-contract` run `20260906T033402732485Z-5b16e97d8f829f252e20b7b7c1492ef0`, Gate race tests, and Gate `go vet` pass. |
 | CA-W1 Proto-first canonical contracts | pending | — |
 | CA-W2 Conversation DDD bounded context | pending | — |
 | CA-W3 Resource-owner services | pending | — |
@@ -587,8 +587,8 @@ matrices. Local/static success cannot replace native receiver proof.
 6. No compatibility shim, dual write, fallback read, mock business API, stale evidence,
    or undeclared route remains.
 
-Plan state: `PLAN_APPROVED`. CA-W0 has an executable fail-closed ownership Gate
-and a complete first diagnostic inventory. The public route checkpoint is under
-Conversation composition and retains modern engine behavior, but CA-W0 remains
-open until every governed route is declared. CA-W1 through CA-W5 remain open for
-canonical proto, owner-root, and truth-store consolidation.
+Plan state: `PLAN_APPROVED`. CA-W0 is complete: every governed route is either
+bound to one retained capability or classified as an explicit deletion, and the
+Conversation DDD import Gate is active. The public route checkpoint is under
+Conversation composition and retains modern engine behavior. CA-W1 through CA-W5
+remain open for canonical proto, owner-root, and truth-store consolidation.
