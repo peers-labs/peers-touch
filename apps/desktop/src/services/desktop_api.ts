@@ -6266,7 +6266,7 @@ function reportFoundationFaultAckDebug(
   data: Record<string, unknown>,
 ): void {
   if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
-  void fetch('http://127.0.0.1:7779/event', {
+  void fetch('http://127.0.0.1:7783/event', {
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'foundation-fault-ack',
