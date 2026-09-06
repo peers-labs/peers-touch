@@ -62,8 +62,7 @@ type subServer struct {
 }
 
 type Dependencies struct {
-	CreateDirectPolicy  server.Wrapper
-	SubmitCommandPolicy server.Wrapper
+	CreateDirectPolicy server.Wrapper
 }
 
 func New(dependencies Dependencies, _ ...option.Option) server.Subserver {
@@ -303,7 +302,6 @@ func (s *subServer) Handlers() []server.Handler {
 	logID := serverwrapper.LogID()
 	deviceID := serverwrapper.DeviceID()
 	createDirectWrappers := routeWrappers(logID, deviceID, s.dependencies.CreateDirectPolicy, s.jwtWrapper)
-	submitCommandWrappers := routeWrappers(logID, deviceID, s.dependencies.SubmitCommandPolicy, s.jwtWrapper)
 	return []server.Handler{
 		server.NewTypedHandler("conversation-create-direct", "/conversation/direct", server.POST,
 			s.handleCreateDirectConversation, createDirectWrappers...),
@@ -320,7 +318,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("conversation-command-prepare", "/conversation/command/prepare", server.POST,
 			s.handlePrepareSend, logID, deviceID, s.jwtWrapper),
 		server.NewTypedHandler("conversation-command-submit", "/conversation/command", server.POST,
-			s.handleSubmitCommand, submitCommandWrappers...),
+			s.handleSubmitCommand, logID, deviceID, s.jwtWrapper),
 		server.NewTypedHandler("device-enroll", "/device/enroll", server.POST,
 			s.handleEnrollDevice, logID, deviceID, s.jwtWrapper),
 		server.NewTypedHandler("device-inbox-claim", "/device/inbox/claim", server.POST,
