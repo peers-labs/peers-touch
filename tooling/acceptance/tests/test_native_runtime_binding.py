@@ -193,6 +193,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             (MouseAction.MOVE,),
             (14.5, 28.0),
         )
+        binding.native_adapter.post_mouse_to_process(
+            712,
+            (MouseAction.MOVE, MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
+            (18.0, 32.5),
+        )
         binding.native_adapter.post_key(NativeKey.ENTER, text="value")
         binding.native_adapter.post_key_to_process(
             712,
@@ -219,6 +224,20 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                         "modifiers": [],
                         "text": "",
                         "privateSource": True,
+                    },
+                ),
+            ),
+            lifecycle.calls,
+        )
+        self.assertIn(
+            (
+                "execute_adapter",
+                (
+                    "post_mouse_to_process",
+                    {
+                        "processId": 712,
+                        "actions": ["move", "left-down", "left-up"],
+                        "point": [18.0, 32.5],
                     },
                 ),
             ),
