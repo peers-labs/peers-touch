@@ -534,6 +534,7 @@ def seed_cross_station_contact(
     sql = f"""
 BEGIN;
 LOCK TABLE touch_actor IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE;
 DELETE FROM touch_actor
 WHERE origin = 'remote_cached'
   AND (
@@ -587,6 +588,40 @@ INSERT INTO touch_actor (
   clock_timestamp(),
   clock_timestamp()
 );
+WITH actor_pair AS (
+  SELECT
+    actor.id AS actor_id,
+    peer.id AS peer_id
+  FROM touch_actor AS actor
+  JOIN touch_actor AS peer
+    ON peer.ptid = {_sql_literal(peer.ptid)}
+  WHERE actor.ptid = {_sql_literal(actor_ptid)}
+),
+next_follow_id AS (
+  SELECT coalesce(max(id), 0) AS max_id
+  FROM follows
+),
+relationship_edges AS (
+  SELECT actor_id AS follower_id, peer_id AS following_id, 1 AS id_offset
+  FROM actor_pair
+  UNION ALL
+  SELECT peer_id AS follower_id, actor_id AS following_id, 2 AS id_offset
+  FROM actor_pair
+)
+INSERT INTO follows (
+  id,
+  follower_id,
+  following_id,
+  created_at
+)
+SELECT
+  next_follow_id.max_id + relationship_edges.id_offset,
+  relationship_edges.follower_id,
+  relationship_edges.following_id,
+  clock_timestamp()
+FROM relationship_edges
+CROSS JOIN next_follow_id
+ON CONFLICT (follower_id, following_id) DO NOTHING;
 DELETE FROM friend_chat_friend_requests
 WHERE request_id = 'acceptance-alice-bob';
 INSERT INTO friend_chat_friend_requests (
@@ -612,6 +647,27 @@ ON CONFLICT (pair_key, status) DO UPDATE SET
   sender_ptid = EXCLUDED.sender_ptid,
   receiver_ptid = EXCLUDED.receiver_ptid,
   updated_at = EXCLUDED.updated_at;
+DO $acceptance$
+DECLARE
+  relationship_edge_count integer;
+BEGIN
+  SELECT count(*) INTO relationship_edge_count
+  FROM follows
+  WHERE (follower_id, following_id) IN (
+    (
+      (SELECT id FROM touch_actor WHERE ptid = {_sql_literal(actor_ptid)}),
+      (SELECT id FROM touch_actor WHERE ptid = {_sql_literal(peer.ptid)})
+    ),
+    (
+      (SELECT id FROM touch_actor WHERE ptid = {_sql_literal(peer.ptid)}),
+      (SELECT id FROM touch_actor WHERE ptid = {_sql_literal(actor_ptid)})
+    )
+  );
+  IF relationship_edge_count <> 2 THEN
+    RAISE EXCEPTION 'cross-Station accepted relationship is incomplete';
+  END IF;
+END
+$acceptance$;
 COMMIT;
 """
     _remote_psql(environment, sql)

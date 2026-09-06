@@ -8,10 +8,12 @@ from unittest.mock import patch
 
 from tooling.acceptance.fixtures.chat_native_reset import (
     CHAT_TABLES,
+    FixtureActorRecord,
     _remote_transport,
     acceptance_station_environment,
     reset_local_client_storage,
     reset_station_messaging_state,
+    seed_cross_station_contact,
     verify_disposable_station_runtime,
 )
 
@@ -248,6 +250,67 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
 
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)
+
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset._remote_psql"
+    )
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset.verify_disposable_station_runtime"
+    )
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset.acceptance_station_environment",
+        return_value=DISPOSABLE_ENVIRONMENT,
+    )
+    def test_cross_station_contact_seeds_complete_accepted_relationship(
+        self,
+        _environment,
+        _runtime,
+        remote_psql,
+    ) -> None:
+        peer = FixtureActorRecord(
+            ptid="ptid:v1:actor:peers:p:bob:remote",
+            preferred_username="bob",
+            name="Bob",
+            summary="",
+            icon="",
+            image="",
+            url="https://station-five.example/actors/bob",
+            federated_handle="@bob@station-five.example",
+            home_station_peer_id="station-five",
+            home_station_domain="station-five.example",
+            visibility=1,
+            locator_seq=1,
+        )
+
+        seed_cross_station_contact(
+            "http://10.37.94.156:18132",
+            "chat-native-acceptance",
+            "ptid:v1:actor:peers:p:alice:local",
+            peer,
+        )
+
+        sql = remote_psql.call_args.args[1]
+        follow_insert = sql.index("INSERT INTO follows")
+        request_insert = sql.index("INSERT INTO friend_chat_friend_requests")
+        self.assertLess(follow_insert, request_insert)
+        self.assertIn("LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE", sql)
+        self.assertIn(
+            "ON CONFLICT (follower_id, following_id) DO NOTHING",
+            sql,
+        )
+        self.assertIn(
+            "SELECT actor_id AS follower_id, peer_id AS following_id",
+            sql,
+        )
+        self.assertIn(
+            "SELECT peer_id AS follower_id, actor_id AS following_id",
+            sql,
+        )
+        self.assertIn("relationship_edge_count <> 2", sql)
+        self.assertIn(
+            "cross-Station accepted relationship is incomplete",
+            sql,
+        )
 
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.SshTransport.run_argv"
