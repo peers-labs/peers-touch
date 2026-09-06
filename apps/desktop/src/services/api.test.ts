@@ -4,6 +4,7 @@ import { create, toBinary } from '@bufbuild/protobuf'
 import {
   AGENT_REPLAY_RETRY_DELAYS_MS,
   AGENT_SSE_IDLE_TIMEOUT_MS,
+  agentTurnStreamErrorFromData,
   api,
   classifyAgentTurnTerminalEvent,
   createAgentTurnSourceDelivery,
@@ -43,6 +44,36 @@ afterEach(() => {
   if (!hadWindow && typeof window !== 'undefined') {
     delete (globalThis as unknown as { window?: Window }).window
   }
+})
+
+describe('agentTurnStreamErrorFromData', () => {
+  it('preserves the Station attachment rejection contract', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.attachmentRejected',
+      error_type: 'CONTEXT_ATTACHMENT_REJECTED',
+      locale_key: 'agent.errors.attachmentRejected',
+      retryable: false,
+      terminal: true,
+      details: {
+        attachment_id: 'attachment-1',
+        reason_code: 'attachment_content_does_not_match_mime',
+      },
+    })
+
+    expect(error.message).toBe('agent.errors.attachmentRejected')
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.attachmentRejected',
+      error_type: 'CONTEXT_ATTACHMENT_REJECTED',
+      locale_key: 'agent.errors.attachmentRejected',
+      retryable: false,
+      terminal: true,
+      details: {
+        attachment_id: 'attachment-1',
+        reason_code: 'attachment_content_does_not_match_mime',
+      },
+    })
+  })
 })
 
 describe('api.health', () => {

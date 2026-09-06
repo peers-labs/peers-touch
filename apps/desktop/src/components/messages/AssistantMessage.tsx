@@ -181,7 +181,7 @@ function DiagnosticsBlock({
 }) {
   const [expanded, setExpanded] = useState(false);
   const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
+  const { t } = useTranslation(['chat', 'agent']);
   const toolCalls = message.toolCalls || [];
   const knowledgeChunks = message.knowledgeChunks || [];
   const delegationResults = collectDelegationResults(message);
@@ -189,7 +189,9 @@ function DiagnosticsBlock({
   const pendingTools = toolCalls.filter((tool) => tool.pending || tool.status === 'approval_required').length;
   const failedDelegations = delegationResults.filter((item) => item.status === 'failed' || item.status === 'timeout').length;
   const presentedError = message.error
-    ? t(message.error, { defaultValue: message.error })
+    ? message.error.startsWith('agent.')
+      ? t(message.error, { ns: 'agent', defaultValue: message.error })
+      : t(message.error, { defaultValue: message.error })
     : undefined;
   const hasRuntimeDiagnostics = !!message.thinking || !!message.error || !!message.processDuration || toolCalls.length > 0 || knowledgeChunks.length > 0 || delegationResults.length > 0;
   const hasDiagnostics = hasRuntimeDiagnostics;
@@ -197,14 +199,20 @@ function DiagnosticsBlock({
   if (!hasDiagnostics) return null;
 
   return (
-    <div style={{
+    <div
+      data-pt-agent-message-error={message.error}
+      data-pt-agent-error-type={message.typedError?.error_type}
+      data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
+      style={{
       borderRadius: 8,
       border: `1px solid ${message.error ? token.colorErrorBorder : token.colorBorderSecondary}`,
       background: message.error ? token.colorErrorBg : token.colorFillQuaternary,
       marginBottom: message.content ? 6 : 0,
       overflow: 'hidden',
-    }}>
+      }}
+    >
       <div
+        data-pt-agent-message-error-toggle={message.error ? 'true' : undefined}
         onClick={() => setExpanded(!expanded)}
         style={{
           display: 'flex',
@@ -231,7 +239,12 @@ function DiagnosticsBlock({
           {message.error && (
             <Flexbox gap={3}>
               <span style={{ fontSize: 12, fontWeight: 600, color: token.colorErrorText }}>{t('chat.message.diagnostics.error')}</span>
-              <span style={{ fontSize: 12, color: token.colorErrorText }}>{presentedError}</span>
+              <span
+                data-pt-agent-message-error-text={message.error}
+                style={{ fontSize: 12, color: token.colorErrorText }}
+              >
+                {presentedError}
+              </span>
             </Flexbox>
           )}
           {message.thinking && (
