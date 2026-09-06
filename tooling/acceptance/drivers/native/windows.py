@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes
+import json
 import struct
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -539,6 +541,129 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
                         value = title
                 if kind == "application" and dialog_count > 0:
                     kind = "application-dialog"
+
+            # #region debug-point AF-AJ:file-dialog-focus
+            try:
+                foreground_thread_id = (
+                    _user32.GetWindowThreadProcessId(foreground_hwnd, None)
+                    if foreground_hwnd
+                    else 0
+                )
+                gui_info = _GUITHREADINFO()
+                gui_info.cbSize = ctypes.sizeof(_GUITHREADINFO)
+                ctypes.set_last_error(0)
+                gui_info_ok = bool(
+                    foreground_thread_id
+                    and _user32.GetGUIThreadInfo(
+                        foreground_thread_id,
+                        ctypes.byref(gui_info),
+                    )
+                )
+                gui_info_error = ctypes.get_last_error()
+
+                def debug_handle(hwnd: ctypes.wintypes.HWND | int) -> int:
+                    return int(getattr(hwnd, "value", hwnd) or 0)
+
+                focused_ancestors: list[dict[str, object]] = []
+                ancestor = focused_hwnd
+                seen_ancestors: set[int] = set()
+                for _ in range(8):
+                    ancestor_value = debug_handle(ancestor)
+                    if not ancestor_value or ancestor_value in seen_ancestors:
+                        break
+                    seen_ancestors.add(ancestor_value)
+                    focused_ancestors.append(
+                        {
+                            "hwnd": ancestor_value,
+                            "class": self._window_class_name(ancestor),
+                            "processId": self._window_process_id(ancestor),
+                        }
+                    )
+                    ancestor = _user32.GetParent(ancestor)
+
+                child_classes: set[str] = set()
+
+                @_ENUM_WINDOWS_PROC
+                def collect_child_classes(
+                    child_hwnd: ctypes.wintypes.HWND,
+                    _lparam: ctypes.wintypes.LPARAM,
+                ) -> bool:
+                    child_class = self._window_class_name(child_hwnd)
+                    if child_class:
+                        child_classes.add(child_class)
+                    return True
+
+                if foreground_hwnd:
+                    _user32.EnumChildWindows(
+                        foreground_hwnd,
+                        collect_child_classes,
+                        0,
+                    )
+
+                foreground_class = (
+                    self._window_class_name(foreground_hwnd)
+                    if foreground_hwnd
+                    else ""
+                )
+                actor_windows = [
+                    {
+                        "hwnd": debug_handle(hwnd),
+                        "class": self._window_class_name(hwnd),
+                        "owner": debug_handle(_user32.GetWindow(hwnd, _GW_OWNER)),
+                    }
+                    for hwnd in windows
+                ]
+                dialog_visible = (
+                    dialog_count > 0
+                    or foreground_class == "#32770"
+                    or any(
+                        item["class"] == "#32770"
+                        for item in actor_windows
+                    )
+                )
+                if dialog_visible:
+                    event = {
+                        "sessionId": "cross-station-direct-open",
+                        "runId": "native-file-chooser-hwnd-probe",
+                        "hypothesisId": "AF-AJ",
+                        "location": "windows.py:focused_control",
+                        "msg": "[DEBUG] Win32 file-dialog focus hierarchy",
+                        "data": {
+                            "requestedProcessId": process_id,
+                            "foregroundHwnd": debug_handle(foreground_hwnd),
+                            "foregroundProcessId": foreground_pid,
+                            "foregroundThreadId": foreground_thread_id,
+                            "foregroundClass": foreground_class,
+                            "guiThreadInfoOk": gui_info_ok,
+                            "guiThreadInfoError": gui_info_error,
+                            "guiActiveHwnd": debug_handle(
+                                gui_info.hwndActive
+                            ),
+                            "guiFocusHwnd": debug_handle(gui_info.hwndFocus),
+                            "guiCaretHwnd": debug_handle(gui_info.hwndCaret),
+                            "resolvedFocusHwnd": debug_handle(focused_hwnd),
+                            "resolvedFocusProcessId": focused_pid,
+                            "resolvedFocusClass": platform_role,
+                            "resolvedKind": kind,
+                            "resolvedValueLength": len(value),
+                            "actorFrontmost": actor_frontmost,
+                            "actorFocused": actor_focused,
+                            "dialogCount": dialog_count,
+                            "actorWindows": actor_windows,
+                            "focusedAncestors": focused_ancestors,
+                            "childClasses": sorted(child_classes),
+                        },
+                    }
+                    request = urllib.request.Request(
+                        "http://10.4.43.34:7779/event",
+                        data=json.dumps(event).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    urllib.request.urlopen(request, timeout=0.25).close()
+            except Exception:
+                pass
+            # #endregion
 
             return NativeControlSnapshot(
                 kind=kind,
