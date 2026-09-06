@@ -652,6 +652,32 @@ class RemoteNativeDesktopAdapter(NativeDesktopAdapter):
             },
         )
 
+    def post_key_sequence_to_process(
+        self,
+        process_id: int,
+        keys: tuple[NativeKey, ...],
+        *,
+        interval_seconds: float = 0.1,
+        private_source: bool = False,
+    ) -> None:
+        if self._platform != "win32":
+            super().post_key_sequence_to_process(
+                process_id,
+                keys,
+                interval_seconds=interval_seconds,
+                private_source=private_source,
+            )
+            return
+        self._execute(
+            "post_key_sequence_to_process",
+            {
+                "processId": process_id,
+                "keys": [key.value for key in keys],
+                "intervalSeconds": interval_seconds,
+                "privateSource": private_source,
+            },
+        )
+
     def reveal_file_chooser_location(self) -> None:
         self._execute("reveal_file_chooser_location", {})
 
