@@ -37,7 +37,7 @@ impl MlsKeyPackageTransport for StationMlsKeyPackageTransport {
             UploadKeyPackageResponse,
         >(
             Method::POST,
-            "/keypackage/upload",
+            "/key-exchange/mls/key-package/upload",
             &self.token,
             None,
             Some(request),
