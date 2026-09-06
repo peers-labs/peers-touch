@@ -41,7 +41,7 @@ impl StationGroupGenesisTransport {
             PrepareMessagingGroupGenesisResponse,
         >(
             Method::POST,
-            "/messaging/group/genesis/prepare",
+            "/conversation/group/prepare",
             &self.token,
             None,
             Some(&PrepareMessagingGroupGenesisRequest {
