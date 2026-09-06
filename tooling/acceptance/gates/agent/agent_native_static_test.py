@@ -1225,6 +1225,48 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn('"oss_resolve_url"', gateway)
         self.assertIn('"oss_delete_file"', gateway)
 
+    def test_attachment_rejection_uses_real_composer_and_remove_action(self) -> None:
+        agent_turn = DESKTOP_AGENT_TURN.read_text(encoding="utf-8")
+        scenario_start = self.source.index(
+            "async function runFoundationAttachmentRejectedScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationF06Prepare",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("[data-pt-agent-attachment-input]", scenario)
+        self.assertIn("new File(", scenario)
+        self.assertIn("[data-pt-agent-composer-send]", scenario)
+        self.assertIn("CONTEXT_ATTACHMENT_REJECTED", scenario)
+        self.assertIn(
+            "[data-pt-agent-composer-attachment-status=\"rejected\"]",
+            scenario,
+        )
+        self.assertIn(
+            "[data-pt-agent-composer-attachment-remove]",
+            scenario,
+        )
+        self.assertIn("removeAction.click()", scenario)
+        self.assertIn("foundationExecutionSnapshot(", scenario)
+        self.assertIn("foundationConversationReadback(", scenario)
+        self.assertIn(
+            "foundationAttachmentDeletionReadback(objectRef)",
+            scenario,
+        )
+        self.assertIn("api.ossListMyFiles({", self.source)
+        self.assertIn("file?.deleted_at?.trim()", self.source)
+        self.assertNotIn("foundationResolvedBytes(objectRef)", scenario)
+        self.assertIn(
+            "eventId: await sha256Hex(stableJson(rejectionIdentity))",
+            scenario,
+        )
+        self.assertNotIn("baselineRuntimeEvent", scenario)
+        self.assertIn("station_stream_error_payload", agent_turn)
+        self.assertIn('get("error_type")', agent_turn)
+        self.assertNotIn("mock", scenario.lower())
+
     def test_as_f04_budget_uses_browser_and_tauri_production_streams(self) -> None:
         desktop_api = DESKTOP_API.read_text(encoding="utf-8")
         contracts = DESKTOP_CONTRACTS.read_text(encoding="utf-8")

@@ -18,6 +18,7 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter import (
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
+    evaluate_base_attachment_rejected,
     evaluate_base_approval_expired,
     evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
@@ -182,6 +183,9 @@ def assert_group_one_capture(
     capture: Mapping[str, Any],
 ) -> None:
     evaluators = {
+        "BASE-ATTACHMENT-REJECTED": (
+            lambda facts: evaluate_base_attachment_rejected(facts)
+        ),
         "BASE-APPROVAL_EXPIRED": (
             lambda facts: evaluate_base_approval_expired(facts)
         ),
@@ -229,6 +233,32 @@ def assert_group_one_capture(
         raise GroupOneProbeError(
             f"{probe_input.cell} capture must contain assertions"
         )
+    if probe_input.cell == "BASE-ATTACHMENT-REJECTED":
+        runtime_event = scenario_facts.get("runtimeEvent")
+        runtime_role = capture.get("runtime-events")
+        if not isinstance(runtime_event, Mapping) or not isinstance(
+            runtime_role,
+            Mapping,
+        ):
+            raise GroupOneProbeError(
+                "BASE-ATTACHMENT-REJECTED runtime event evidence is missing"
+            )
+        expected_role = {
+            "eventId": runtime_event.get("eventId"),
+            "sequence": runtime_event.get("sequence"),
+            "eventType": runtime_event.get("eventType"),
+            "occurredAt": runtime_event.get("observedAt"),
+            "streamGeneration": runtime_event.get("streamGeneration"),
+            "streamIdHash": runtime_event.get("streamIdHash"),
+            "conversationIdHash": runtime_event.get("conversationIdHash"),
+            "payloadHash": runtime_event.get("payloadHash"),
+            "errorType": runtime_event.get("errorType"),
+        }
+        if dict(runtime_role) != expected_role:
+            raise GroupOneProbeError(
+                "BASE-ATTACHMENT-REJECTED runtime-events role does not "
+                "match the observed rejection event"
+            )
     try:
         evaluated = evaluator(scenario_facts)
     except GroupOneScenarioError as error:

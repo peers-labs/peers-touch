@@ -972,11 +972,8 @@ async fn stream_station_turn(
                     continue;
                 }
                 error_emitted = true;
-                let raw = data
-                    .get("error")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown error");
-                emit_resolved_error_to(app, window_label, stream_id, ptid, effective_provider, raw);
+                let payload = station_stream_error_payload(effective_provider, data);
+                emit_turn_stream_event_to(app, window_label, stream_id, ptid, "error", payload);
             } else {
                 emit_turn_stream_event_to(app, window_label, stream_id, ptid, &event, data);
             }
@@ -999,11 +996,8 @@ async fn stream_station_turn(
                 terminal_received = true;
             }
             if event == "error" {
-                let raw = data
-                    .get("error")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("Unknown error");
-                emit_resolved_error_to(app, window_label, stream_id, ptid, effective_provider, raw);
+                let payload = station_stream_error_payload(effective_provider, data);
+                emit_turn_stream_event_to(app, window_label, stream_id, ptid, "error", payload);
             } else {
                 emit_turn_stream_event_to(app, window_label, stream_id, ptid, &event, data);
             }
@@ -1626,6 +1620,21 @@ fn emit_resolved_error_to(
     let wrapped =
         error_resolver::wrap_stream_error(provider_id, ProviderKind::Direct, raw_error, None);
     emit_turn_stream_event_to(app, window_label, stream_id, ptid, "error", wrapped);
+}
+
+fn station_stream_error_payload(provider_id: &str, data: Value) -> Value {
+    let typed = data
+        .get("error_type")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.trim().is_empty());
+    if typed {
+        return data;
+    }
+    let raw = data
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or("Unknown error");
+    error_resolver::wrap_stream_error(provider_id, ProviderKind::Direct, raw, None)
 }
 
 fn emit_turn_stream_event_to(
@@ -2558,6 +2567,27 @@ mod tests {
                     "decision_id": "decision-1",
                 },
             })),
+        );
+    }
+
+    #[test]
+    fn station_stream_error_preserves_typed_attachment_contract() {
+        let payload = json!({
+            "type": "error",
+            "error": "agent.errors.attachmentRejected",
+            "error_type": "CONTEXT_ATTACHMENT_REJECTED",
+            "locale_key": "agent.errors.attachmentRejected",
+            "retryable": false,
+            "terminal": true,
+            "details": {
+                "attachment_id": "attachment-1",
+                "reason_code": "attachment_content_does_not_match_mime",
+            },
+        });
+
+        assert_eq!(
+            station_stream_error_payload("bytedance-ark", payload.clone()),
+            payload,
         );
     }
 

@@ -132,7 +132,10 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 
 	createdConversation := false
 	if strings.TrimSpace(req.GetConversationId()) == "" && len(req.GetAttachments()) > 0 {
-		return nil, toHandlerError(errcode.NewAttachmentRejected("conversation_scope_required"))
+		return nil, toHandlerError(errcode.NewAttachmentRejected(
+			firstTurnAttachmentID(req.GetAttachments()),
+			"conversation_scope_required",
+		))
 	}
 	if strings.TrimSpace(req.GetConversationId()) == "" && h.convService != nil {
 		ptid := subjectActorID(ctx)
@@ -296,19 +299,16 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 
 	createdConversation := false
 	if strings.TrimSpace(input.GetConversationId()) == "" && len(input.GetAttachments()) > 0 {
-		_ = writeTurnStreamEvent(resp, "error", map[string]any{
-			"type":  "error",
-			"error": errcode.NewAttachmentRejected("conversation_scope_required").Error(),
-		})
+		_ = writeTurnStreamError(resp, errcode.NewAttachmentRejected(
+			firstTurnAttachmentID(input.GetAttachments()),
+			"conversation_scope_required",
+		))
 		return nil
 	}
 	if strings.TrimSpace(input.GetConversationId()) == "" && h.convService != nil {
 		ptid := subjectActorID(ctx)
 		if preflightErr := h.turnService.PreflightTurn(ctx, ptid, &input); preflightErr != nil {
-			_ = writeTurnStreamEvent(resp, "error", map[string]any{
-				"type":  "error",
-				"error": preflightErr.Error(),
-			})
+			_ = writeTurnStreamError(resp, preflightErr)
 			return nil
 		}
 		conv, err := h.convService.CreateConversation(ctx, input.GetAgentId(), ptid, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
@@ -323,10 +323,7 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		existing, getErr := h.convService.GetConversation(ctx, ptid, input.GetConversationId())
 		if getErr != nil || existing == nil {
 			if preflightErr := h.turnService.PreflightTurn(ctx, ptid, &input); preflightErr != nil {
-				_ = writeTurnStreamEvent(resp, "error", map[string]any{
-					"type":  "error",
-					"error": preflightErr.Error(),
-				})
+				_ = writeTurnStreamError(resp, preflightErr)
 				return nil
 			}
 			conv, err := h.convService.CreateConversationWithID(ctx, input.GetConversationId(), input.GetAgentId(), ptid, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
@@ -368,10 +365,7 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 					logger.Errorf(ctx, "failed to remove unadmitted Agent conversation: conversation_id=%s err=%v", input.GetConversationId(), cleanupErr)
 				}
 			}
-			_ = writeTurnStreamEvent(resp, "error", map[string]any{
-				"type":  "error",
-				"error": err.Error(),
-			})
+			_ = writeTurnStreamError(resp, err)
 			return nil
 		}
 		if admission.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
@@ -698,6 +692,41 @@ func writeTurnStreamEvent(resp server.Response, event string, payload any) error
 		return err
 	}
 	return resp.Flush()
+}
+
+func writeTurnStreamError(resp server.Response, err error) error {
+	return writeTurnStreamEvent(resp, "error", turnStreamErrorPayload(err))
+}
+
+func turnStreamErrorPayload(err error) map[string]any {
+	payload := map[string]any{
+		"type":  "error",
+		"error": err.Error(),
+	}
+	var biz *errcode.BizError
+	if !errors.As(err, &biz) || biz.Payload == nil {
+		return payload
+	}
+	details := make(map[string]string, len(biz.Payload.GetDetails()))
+	for key, value := range biz.Payload.GetDetails() {
+		details[key] = value
+	}
+	payload["error"] = biz.Payload.GetError()
+	payload["error_type"] = biz.Payload.GetErrorType()
+	payload["locale_key"] = biz.Payload.GetLocaleKey()
+	payload["retryable"] = biz.Payload.GetRetryable()
+	payload["terminal"] = biz.Payload.GetTerminal()
+	payload["details"] = details
+	return payload
+}
+
+func firstTurnAttachmentID(attachments []*model.AgentAttachmentRef) string {
+	for _, attachment := range attachments {
+		if attachmentID := strings.TrimSpace(attachment.GetAttachmentId()); attachmentID != "" {
+			return attachmentID
+		}
+	}
+	return ""
 }
 
 func domainTurnToProto(t *domain.Turn) *model.Turn {

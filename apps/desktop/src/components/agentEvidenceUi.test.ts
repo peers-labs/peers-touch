@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
+import { agentAttachmentDraftsBlockSend } from './composer/useAgentAttachmentDrafts';
 import { collectSourceAttributions } from './messages/SourceAttributionBadges';
 import {
   acceptTurnDiagnostics,
@@ -9,6 +10,7 @@ import {
 } from './portal/views/TurnDetailsView';
 import {
   BUDGET_ERROR_TYPE,
+  projectAgentTypedError,
   projectBudgetNotice,
   reduceStreamEvent,
 } from '../store/streaming/handler';
@@ -87,6 +89,34 @@ describe('Agent evidence UI projections', () => {
       .toMatchObject({ kind: 'tool_calls' });
   });
 
+  it('preserves typed attachment rejection details on the receiver message', () => {
+    const data = {
+      error: 'agent.errors.attachmentRejected',
+      error_type: 'CONTEXT_ATTACHMENT_REJECTED',
+      locale_key: 'agent.errors.attachmentRejected',
+      retryable: false,
+      terminal: true,
+      details: {
+        attachment_id: 'attachment-1',
+        reason_code: 'attachment_content_does_not_match_mime',
+      },
+    };
+
+    expect(projectAgentTypedError(data)).toEqual(data);
+    expect(reduceStreamEvent(assistantMessage, { event: 'error', data }))
+      .toMatchObject({
+        error: 'agent.errors.attachmentRejected',
+        typedError: data,
+        terminalStatus: 'failed',
+        loading: false,
+      });
+  });
+
+  it('keeps a Station-rejected attachment blocked until removal', () => {
+    expect(agentAttachmentDraftsBlockSend([{ status: 'rejected' }])).toBe(true);
+    expect(agentAttachmentDraftsBlockSend([{ status: 'ready' }])).toBe(false);
+  });
+
   it('blocks image submission only when the selected model explicitly lacks vision', () => {
     const attachment = {
       cid: 'attachment-1',
@@ -118,12 +148,18 @@ describe('Agent evidence UI projections', () => {
     const assistant = readFileSync(new URL('./messages/AssistantMessage.tsx', import.meta.url), 'utf8');
     const sources = readFileSync(new URL('./messages/SourceAttributionBadges.tsx', import.meta.url), 'utf8');
     const composer = readFileSync(new URL('./ChatInput.tsx', import.meta.url), 'utf8');
+    const attachments = readFileSync(new URL('./composer/AttachmentStage.tsx', import.meta.url), 'utf8');
     const details = readFileSync(new URL('./portal/views/TurnDetailsView.tsx', import.meta.url), 'utf8');
 
     expect(assistant).toContain('data-budget-notice');
+    expect(assistant).toContain('data-pt-agent-message-error-text');
+    expect(assistant).toContain("ns: 'agent'");
     expect(sources).toContain('data-source-badges');
     expect(sources).toContain('data-source-badge');
     expect(composer).toContain('data-agent-capability-warning');
+    expect(composer).toContain('data-pt-agent-attachment-input');
+    expect(attachments).toContain('data-pt-agent-composer-attachment-status');
+    expect(attachments).toContain('data-pt-agent-composer-attachment-remove');
     expect(details).toContain('data-turn-details');
     expect(details).toContain('data-turn-diagnostics-export');
     expect(details).toContain('requestId !== loadRequestRef.current');

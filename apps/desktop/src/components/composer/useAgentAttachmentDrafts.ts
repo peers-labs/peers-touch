@@ -8,7 +8,7 @@ import type { AgentAttachmentRefInput } from '../../services/desktop_api';
 import { conversationIdFromAgentDraftKey } from '../../store/agentDraft';
 import { log } from '../../utils/logger';
 
-export type AgentDraftStatus = 'uploading' | 'ready' | 'failed';
+export type AgentDraftStatus = 'uploading' | 'ready' | 'failed' | 'rejected';
 
 export interface AgentAttachmentDraft {
   id: string;
@@ -50,7 +50,12 @@ function deleteUploadedAttachment(draft: AgentAttachmentDraft): void {
 export function agentAttachmentDraftsBlockSend(
   drafts: readonly Pick<AgentAttachmentDraft, 'status'>[],
 ): boolean {
-  return drafts.some((draft) => draft.status === 'uploading' || draft.status === 'failed');
+  return drafts.some(
+    (draft) =>
+      draft.status === 'uploading'
+      || draft.status === 'failed'
+      || draft.status === 'rejected',
+  );
 }
 
 /** File types accepted by the agent attachment flow. */
@@ -90,6 +95,18 @@ export function useAgentAttachmentDrafts({
     revokePreviewUrl(target);
     deleteUploadedAttachment(target);
   }, []);
+
+  const rejectDraft = useCallback((attachmentId: string, error: string) => {
+    const target = draftsRef.current.find(
+      (draft) => draft.attachment?.attachment_id === attachmentId,
+    );
+    if (!target) return;
+    patchDraft(target.id, {
+      status: 'rejected',
+      progress: 100,
+      error,
+    });
+  }, [patchDraft]);
 
   const uploadDraft = useCallback((draft: AgentAttachmentDraft) => {
     patchDraft(draft.id, { status: 'uploading', progress: 10, error: undefined });
@@ -131,7 +148,7 @@ export function useAgentAttachmentDrafts({
 
   const retryDraft = useCallback((id: string) => {
     const draft = draftsRef.current.find((item) => item.id === id);
-    if (draft) uploadDraft(draft);
+    if (draft?.status === 'failed') uploadDraft(draft);
   }, [uploadDraft]);
 
   useEffect(() => () => {
@@ -150,12 +167,16 @@ export function useAgentAttachmentDrafts({
   return {
     drafts,
     readyAttachments: drafts
+      .filter((draft) => draft.status === 'ready')
       .map((draft) => draft.attachment)
       .filter((attachment): attachment is AgentAttachmentRefInput => Boolean(attachment)),
     uploading: drafts.some((draft) => draft.status === 'uploading'),
-    failed: drafts.some((draft) => draft.status === 'failed'),
+    failed: drafts.some(
+      (draft) => draft.status === 'failed' || draft.status === 'rejected',
+    ),
     addFiles,
     clearDrafts,
+    rejectDraft,
     removeDraft,
     retryDraft,
   };
