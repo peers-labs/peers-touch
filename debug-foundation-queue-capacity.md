@@ -18,6 +18,7 @@
 | C | Station reports a queue capacity other than eight for this conversation. | Medium | Low | Rejected: both tuples reported authoritative capacity eight. |
 | D | Gateway worker queueing is the primary delay. | Medium | Medium | Rejected: all queue requests entered the Gateway together with `queueWaitMs=0`; the active Turn's remaining provider lifetime was already only 142 ms. |
 | E | Conversation cleanup or selection drift makes the readback target differ from the created queue conversation. | Low | Low | Rejected: both tuples retained the selected conversation. |
+| F | Launching the duplicate before the original request has a Station admission can let the duplicate win the shared idempotency key. | High | Low | Confirmed on `abc010684`: the second locale reached strict `8/8`, but the designated active observer received only `admission_replayed` while the duplicate observer carried the real active stream. |
 
 ## Log Evidence
 - Existing exact-source Gate evidence:
@@ -88,21 +89,37 @@
   - The authoritative queue reached only `7/8` and drained to zero during the
     unchanged 30-second observation window.
   - Inner runtime cleanup and outer Provisioner cleanup both passed.
+- Exact-source run
+  `20260906T075340212678Z-e65b29d46b4b615d3c557af76475a37b`
+  (aggregate
+  `20260906T075340099875Z-da9fc494b2a14391f7e00ca19e7f1f40`)
+  on `abc0106849d2f1d65fcd6991d13a3e659ed342ab`:
+  - Both Browser locale tuples reached strict `8/8` with FIFO positions
+    `1..8`, and both overflow requests returned `ADMISSION_QUEUE_FULL`.
+  - The second tuple launched the original and duplicate requests in the same
+    scheduling turn. The designated active observer received
+    `admission_replayed` at 159 ms while the duplicate observer owned the live
+    provider stream.
+  - The Gate therefore failed at
+    `agent.acceptance.foundationActiveTurnCancelMissing`; this is a deterministic
+    idempotency-owner race, not a queue-capacity failure.
+  - Inner runtime cleanup and outer Provisioner cleanup both passed.
 
 ## Verification Conclusion
-The original duplicate-result wait exposed one action-ordering race, but the
-subsequent correction still waited for the provider's first SSE event before
-launching queue admissions. Provider output duration is not a valid queue-hold
-primitive: on `3d6435d82` that wait consumed all but 142 ms of the active
-Turn's lifetime. The admission requests must be issued immediately after the
-active stream request is initiated, before awaiting provider output. The
-session remains `[OPEN]` because post-fix exact-source comparison and explicit
-cleanup confirmation are still required.
+The first correction removed the provider-output delay and restored strict
+`8/8`, but launching the duplicate in the same scheduling turn made ownership
+of the shared idempotency key nondeterministic. The active request needs a
+Station-authored admission barrier before the duplicate and queue burst. The
+conversation-version increment is that existing authoritative signal and
+arrives before provider output. The session remains `[OPEN]` because post-fix
+exact-source comparison and explicit cleanup confirmation are still required.
 
 ## Fix
 - Capture the empty queue baseline before starting the active request.
-- Start the active request, duplicate replay, and all eight unique queue
-  submissions without first awaiting provider output.
+- Start the active request and wait only for the Station-authored conversation
+  version to advance, proving that request owns the active admission.
+- Start duplicate replay and all eight unique queue submissions immediately
+  after that admission barrier, without first awaiting provider output.
 - Await the active first event only after all admission requests are in flight.
 - Poll the authoritative Station queue to the unchanged strict `8/8` condition.
 - Submit the overflow request only after the full-capacity snapshot exists.
