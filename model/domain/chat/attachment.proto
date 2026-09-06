@@ -194,6 +194,60 @@ message GetAttachmentObjectResponse {
   uint64 total_ciphertext_size = 3;
 }
 
+message GetFederatedConversationAttachmentObjectRequest {
+  GetAttachmentObjectRequest request = 1;
+  string source_home_station_peer_id = 2;
+}
+
+message GetFederatedConversationAttachmentObjectResponse {
+  GetAttachmentObjectResponse response = 1;
+}
+
+message GetFederatedConversationAttachmentUploadRequest {
+  GetAttachmentUploadRequest request = 1;
+  string source_home_station_peer_id = 2;
+}
+
+message GetFederatedConversationAttachmentUploadResponse {
+  GetAttachmentUploadResponse response = 1;
+}
+
+message BeginFederatedConversationAttachmentUploadRequest {
+  BeginAttachmentUploadRequest request = 1;
+  string source_home_station_peer_id = 2;
+}
+
+message BeginFederatedConversationAttachmentUploadResponse {
+  BeginAttachmentUploadResponse response = 1;
+}
+
+message PutFederatedConversationAttachmentChunkRequest {
+  PutAttachmentChunkRequest request = 1;
+  string source_home_station_peer_id = 2;
+}
+
+message PutFederatedConversationAttachmentChunkResponse {
+  PutAttachmentChunkResponse response = 1;
+}
+
+message CompleteFederatedConversationAttachmentUploadRequest {
+  CompleteAttachmentUploadRequest request = 1;
+  string source_home_station_peer_id = 2;
+}
+
+message CompleteFederatedConversationAttachmentUploadResponse {
+  CompleteAttachmentUploadResponse response = 1;
+}
+
+message CancelFederatedConversationAttachmentUploadRequest {
+  CancelAttachmentUploadRequest request = 1;
+  string source_home_station_peer_id = 2;
+}
+
+message CancelFederatedConversationAttachmentUploadResponse {
+  CancelAttachmentUploadResponse response = 1;
+}
+
 message AttachmentTransferCheckpoint {
   string attachment_id = 1;
   AttachmentTransferDirection direction = 2;
