@@ -2189,12 +2189,22 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             keyboard_path,
         )
         self.assertNotIn("self.native_adapter.post_key(", keyboard_path)
-        self.assertNotIn(
-            "self.native_adapter.post_key_to_process(",
-            keyboard_path,
+        self.assertEqual(
+            keyboard_path.count(
+                "self.native_adapter.post_key_to_process("
+            ),
+            1,
         )
 
-    def test_reaction_selection_reuses_keyboard_opened_picker(self) -> None:
+    def test_reaction_selection_uses_atomic_native_keyboard_sequences(self) -> None:
+        selection_start = self.source.index(
+            "def choose_first_reaction_with_keyboard(",
+        )
+        selection_end = self.source.index(
+            "def prove_keyboard_reaction_picker(",
+            selection_start,
+        )
+        selection_source = self.source[selection_start:selection_end]
         reaction_start = self.source.index("def prove_reaction(")
         reaction_end = self.source.index(
             "def prove_identity_station(",
@@ -2202,14 +2212,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         reaction_source = self.source[reaction_start:reaction_end]
 
+        self.assertIn(
+            "NativeKey.ENTER,\n"
+            "                NativeKey.TAB,\n"
+            "                NativeKey.ENTER,\n"
+            "                NativeKey.ENTER,",
+            selection_source,
+        )
+        self.assertIn('return "👍"', selection_source)
         self.assertEqual(
             reaction_source.count(
-                'self.prove_keyboard_reaction_picker("alice", message_id)'
+                "self.choose_first_reaction_with_keyboard("
             ),
-            2,
-        )
-        self.assertEqual(
-            reaction_source.count("picker_open=True"),
             2,
         )
 
