@@ -199,6 +199,12 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             NativeKey.ENTER,
             private_source=True,
         )
+        binding.native_adapter.post_key_sequence_to_process(
+            712,
+            (NativeKey.ENTER, NativeKey.TAB, NativeKey.ENTER),
+            interval_seconds=0.2,
+            private_source=True,
+        )
         control = binding.native_adapter.focused_control(712)
         self.assertTrue(control.frontmost)
         self.assertEqual(control.actual_frontmost_pid, 712)
@@ -212,6 +218,21 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                         "key": "enter",
                         "modifiers": [],
                         "text": "",
+                        "privateSource": True,
+                    },
+                ),
+            ),
+            lifecycle.calls,
+        )
+        self.assertIn(
+            (
+                "execute_adapter",
+                (
+                    "post_key_sequence_to_process",
+                    {
+                        "processId": 712,
+                        "keys": ["enter", "tab", "enter"],
+                        "intervalSeconds": 0.2,
                         "privateSource": True,
                     },
                 ),
