@@ -12,7 +12,7 @@ from typing import Any
 from tooling.acceptance.fixtures.chat_native_reset import acceptance_station_environment
 
 
-CREATE_DIRECT_PATH = "/messaging/conversation/direct"
+CREATE_DIRECT_PATH = "/conversation/direct"
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",

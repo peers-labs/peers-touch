@@ -63,7 +63,7 @@ impl StationDeliveryReceiptTransport {
             SubmitConversationReceiptResponse,
         >(
             Method::POST,
-            "/messaging/receipt/delivery",
+            "/conversation/delivery/receipt",
             &self.token,
             None,
             Some(&SubmitConversationReceiptRequest {
@@ -101,7 +101,7 @@ impl StationCommandTransport {
         }
         station_client::request_proto_for_device(
             Method::POST,
-            "/messaging/command/prepare",
+            "/conversation/command/prepare",
             &self.token,
             None,
             Some(request),
@@ -134,7 +134,7 @@ impl CommandTransport for StationCommandTransport {
             SubmitMessagingCommandResponse,
         >(
             Method::POST,
-            "/messaging/command/submit",
+            "/conversation/command",
             &self.token,
             None,
             Some(&SubmitMessagingCommandRequest {
@@ -254,7 +254,7 @@ impl StationDeviceTransport {
         }
         station_client::request_proto_for_device(
             Method::POST,
-            "/messaging/device/enroll",
+            "/device/enroll",
             &self.token,
             None,
             Some(request),
@@ -275,7 +275,7 @@ impl QueueTransport for StationQueueTransport {
         request.device_id = self.device_id.clone();
         station_client::request_proto_for_device(
             Method::POST,
-            "/messaging/queue/claim",
+            "/device/inbox/claim",
             &self.token,
             None,
             Some(&request),
@@ -293,7 +293,7 @@ impl QueueTransport for StationQueueTransport {
             AcknowledgeDeviceQueueItemResponse,
         >(
             Method::POST,
-            "/messaging/queue/ack",
+            "/device/inbox/ack",
             &self.token,
             None,
             Some(&request),

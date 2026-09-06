@@ -1127,7 +1127,7 @@ impl MessagingEngine {
             CreateMessagingDirectConversationResponse,
         >(
             Method::POST,
-            "/messaging/conversation/direct",
+            "/conversation/direct",
             token,
             None,
             Some(&CreateMessagingDirectConversationRequest {
@@ -1326,7 +1326,7 @@ impl MessagingEngine {
             SubmitMessagingReceiptResponse,
         >(
             Method::POST,
-            "/messaging/typing/submit",
+            "/conversation/typing",
             token,
             None,
             Some(&ConversationCommand {
@@ -1368,7 +1368,7 @@ impl MessagingEngine {
             SubmitMessagingReceiptResponse,
         >(
             Method::POST,
-            "/messaging/receipt/submit",
+            "/conversation/read-cursor",
             token,
             None,
             Some(&SubmitMessagingReceiptRequest {

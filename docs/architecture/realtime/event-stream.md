@@ -7,6 +7,11 @@
 > typing, read receipts, future voice/video signaling, and future
 > server-to-server federation. Does **not** cover the file plane (see
 > `docs/architecture/oss/file-storage.md`).
+>
+> API ownership: Conversation is the sole Chat business entry point under
+> `/conversation/*`. Device delivery, device identity, recovery, key exchange,
+> and peer transport use `/device/inbox/*`, `/device/*`, `/recovery/*`,
+> `/key-exchange/*`, and peer-only `/federation/*`.
 
 This document is the long-term, non-negotiable architecture for the
 realtime plane. Sections marked **Invariant** never change without a
@@ -230,7 +235,7 @@ Server maintains a per-actor in-memory ring buffer of recent events
    → emit a single `Resync` event carrying `newest_event_id`, then
    continue live from `newest_event_id`. The client is responsible
    for performing a cold catch-up
-   (`/friend-chat/pending`-equivalent; bulk message sync) before
+   through `/device/inbox/*` plus authoritative `/conversation/*` readback before
    trusting any event delivered after `Resync`.
 3. **No cursor (first connect)** → emit live events only. Client
    should run its normal cold-load on first launch independent of the
@@ -299,7 +304,7 @@ chat-message ratchet's output.
 
 ##### 2.7.2.1 Why not the chat ratchet
 
-The friend-chat E2EE primitive uses a strict in-order receive
+The Direct Conversation E2EE primitive uses a strict in-order receive
 ratchet: a missing counter stalls subsequent decryption until the
 gap is filled. That property is correct for chat (a small set of
 strictly-ordered messages) but **wrong for signaling**:
@@ -469,7 +474,7 @@ Every business subsystem that wants to emit a real-time event calls
 `EventBus.Publish(actorID, event)`. There are no other paths. In
 particular:
 
-- `friend_chat.handleSendMessage` calls
+- the Conversation application service calls
   `EventBus.Publish(receiverID, MessageEnvelope{...})` after persisting.
 - `presence` publishes `PresenceFlip{...}` after authenticated actor
   heartbeat/offline lease transitions.
@@ -480,8 +485,8 @@ particular:
 
 ### 3.4 What goes away on Station
 
-- `apps/station/app/subserver/friend_chat/handler.go::handlePresenceStream`
-  and the per-feature presence SSE — replaced by `events` subserver.
+- Feature-specific presence streams do not exist; the `events` subserver is the
+  single realtime fan-out owner.
 - Chat-owned `s.online` reachability state is removed. Actor presence is
   owned by `apps/station/app/subserver/presence` and represented by
   authenticated leases. The pending queue remains as the cold-recovery
@@ -564,7 +569,7 @@ Sender (A on station S1)                 Receiver (B on station S2)
 
 client                                   client
   │                                        ▲ SSE event {
-  │  POST /friend-chat/message/send        │   id: e_42,
+  │  POST /conversation/command            │   id: e_42,
   │     { ciphertext, recipient: B, ... }  │   message: MessageEnvelope{
   │                                        │     sender_actor_id: A,
   ▼                                        │     session_ulid,
@@ -670,7 +675,7 @@ endpoints remain the same.
 1. Realtime proto schema + generated code (Go + Rust + TS).
 2. Station `events` subserver + `EventBus` + ring buffer + Resume.
 3. Desktop `event_stream` infra (Rust) + `eventStream.ts` dispatch.
-4. Wire `friend_chat.handleSendMessage` to publish `MessageEnvelope`;
+4. Wire the Conversation command application service to publish `MessageEnvelope`;
    client subscribes; delete the 60s `setInterval`.
 5. Migrate presence: `events` subserver publishes `PresenceFlip`,
    delete the dedicated presence SSE endpoint and standalone client
