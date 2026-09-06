@@ -365,6 +365,23 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
         self.assertLess(delivery, interval)
         self.assertLess(interval, observation)
 
+    def test_targeted_file_chooser_reveal_uses_one_worker(self) -> None:
+        worker = WindowsDesktopBroker._adapter_worker_script()
+        targeted = worker[
+            worker.index(
+                'elif operation == "reveal_file_chooser_location_to_process":'
+            ):
+            worker.index('elif operation == "focused_control":')
+        ]
+        activation = targeted.index("adapter.activate_process(process_id)")
+        reveal = targeted.index("adapter.reveal_file_chooser_location()")
+        observation = targeted.index(
+            "adapter.focused_control(process_id).to_dict()"
+        )
+
+        self.assertLess(activation, reveal)
+        self.assertLess(reveal, observation)
+
 
 if __name__ == "__main__":
     unittest.main()
