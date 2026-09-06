@@ -112,6 +112,59 @@ fn report_foundation_gateway_debug(stage: &str, data: Value) {
 }
 // #endregion
 
+// #region debug-point B-D:foundation-queue-stream
+fn foundation_queue_stream_request(body: &str) -> Option<(&'static str, u64)> {
+    let payload: Value = serde_json::from_str(body).ok()?;
+    let user_input = payload.get("user_input").and_then(Value::as_str)?;
+    if user_input == "Write a detailed 1200-word numbered response about reliable queues." {
+        return Some(("active", 0));
+    }
+    if user_input == "Overflow" {
+        return Some(("overflow", 0));
+    }
+    let queue_index = user_input.strip_prefix("Queued ")?.parse::<u64>().ok()?;
+    Some(("queued", queue_index))
+}
+
+fn report_foundation_queue_stream_debug(
+    stage: &str,
+    request_kind: &str,
+    queue_index: u64,
+    data: Value,
+) {
+    if std::env::var("PT_DESKTOP_E2E").as_deref() != Ok("true") {
+        return;
+    }
+    let payload = json!({
+        "sessionId": "foundation-queue-capacity",
+        "runId": "post-fix-2",
+        "hypothesisId": "B-D",
+        "location": "http_gateway/mod.rs:handle_agent_stream_proxy",
+        "msg": format!("[DEBUG] {stage}"),
+        "data": {
+            "requestKind": request_kind,
+            "queueIndex": queue_index,
+            "transport": data,
+        },
+        "ts": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0),
+    });
+    let _ = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_millis(100))
+        .timeout(std::time::Duration::from_millis(250))
+        .build()
+        .and_then(|client| {
+            client
+                .post("http://127.0.0.1:7786/event")
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(payload.to_string())
+                .send()
+        });
+}
+// #endregion
+
 #[derive(Clone)]
 enum GatewayRuntime {
     Tauri { app_handle: AppHandle },
@@ -284,11 +337,16 @@ fn handle_request(
     }
 
     if request.url() == "/agent/turn/stream" {
-        handle_agent_stream_proxy(request, state, "/sub-agent/agent/turn/stream");
+        handle_agent_stream_proxy(request, state, "/sub-agent/agent/turn/stream", &diagnostics);
         return;
     }
     if request.url() == "/agent/turn/events" {
-        handle_agent_stream_proxy(request, state, "/sub-agent/agent/conversation/events");
+        handle_agent_stream_proxy(
+            request,
+            state,
+            "/sub-agent/agent/conversation/events",
+            &diagnostics,
+        );
         return;
     }
 
@@ -363,6 +421,7 @@ fn handle_agent_stream_proxy(
     mut request: tiny_http::Request,
     state: &AppState,
     station_path: &'static str,
+    diagnostics: &GatewayRequestDiagnostics,
 ) {
     let Some(token) = http_gateway_bearer_token(state) else {
         let response = tiny_http::Response::from_string(
@@ -381,6 +440,22 @@ fn handle_agent_stream_proxy(
             .with_header(cors_origin());
         let _ = request.respond(response);
         return;
+    }
+    let queue_request = (std::env::var("PT_DESKTOP_E2E").as_deref() == Ok("true"))
+        .then(|| foundation_queue_stream_request(&body))
+        .flatten();
+    let stream_started_at = std::time::Instant::now();
+    if let Some((request_kind, queue_index)) = queue_request {
+        report_foundation_queue_stream_debug(
+            "stream-proxy-started",
+            request_kind,
+            queue_index,
+            json!({
+                "activeWorkersAtEnqueue": diagnostics.active_workers_at_enqueue,
+                "queuedAtEnqueue": diagnostics.queued_at_enqueue,
+                "queueWaitMs": diagnostics.queue_wait_ms,
+            }),
+        );
     }
     let client = match reqwest::blocking::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
@@ -424,6 +499,18 @@ fn handle_agent_stream_proxy(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .and_then(|value| format!("X-Agent-Turn-ID: {value}").parse().ok());
+    if let Some((request_kind, queue_index)) = queue_request {
+        report_foundation_queue_stream_debug(
+            "stream-upstream-admitted",
+            request_kind,
+            queue_index,
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "status": status,
+                "turnIdPresent": turn_id_header.is_some(),
+            }),
+        );
+    }
     let mut response_headers = vec![
         "Content-Type: text/event-stream; charset=utf-8"
             .parse()
@@ -444,7 +531,18 @@ fn handle_agent_stream_proxy(
         None,
         None,
     );
-    let _ = request.respond(response);
+    let response_result = request.respond(response);
+    if let Some((request_kind, queue_index)) = queue_request {
+        report_foundation_queue_stream_debug(
+            "stream-proxy-completed",
+            request_kind,
+            queue_index,
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "responseOk": response_result.is_ok(),
+            }),
+        );
+    }
 }
 
 // -------------------------------------------------------------------------

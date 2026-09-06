@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source diagnostic run `20260905T214027259590Z-8a11e2ddc9dccfce48c4e62d723e2e35` on `1b332d7865ff1cfd6aaf5f8a23c30d7b0b33f514` confirmed Browser AS-F02 awaited duplicate completion before creating the queue workload; the fast zh-CN active Turn completed first, one follow-up executed, the queue fell from seven to zero, and the overflow request was accepted; the local correction establishes and snapshots the strict `8/8` queue before awaiting stream completion, with the oracle unchanged | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260905T234558072900Z-17f15e201c317c1bb83b69190eab7734` on `b10bb73e41aa6069ef707f6f2b6698a7d0e964de` proved the reordered English AS-F02 queue at strict `8/8`, but the Simplified Chinese tuple still observed only seven completed admissions before the active Turn finished; per-index Browser/Gateway/Station admission timing is being collected before a second behavior change, and the independent oracle remains unchanged | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5552,6 +5552,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `git diff --check` pass. Cleanup completed `DONE / PROVEN / passed`;
   post-fix exact-source proof remains pending, so Foundation and G-F remain
   `PARTIAL / UNPROVEN`.
+- First post-fix exact-source Gate run
+  `20260905T234558072900Z-17f15e201c317c1bb83b69190eab7734`
+  (aggregate
+  `20260905T234557952732Z-40da1f8ecf9e59e5ded0fae1a0840974`)
+  on `b10bb73e41aa6069ef707f6f2b6698a7d0e964de` proved the reordered
+  Browser AS-F02 English tuple at strict `8/8`, FIFO positions `1..8`, and
+  overflow code `ADMISSION_QUEUE_FULL`. The Simplified Chinese tuple started
+  all eight queue streams with zero observed events, but its first Station
+  readback contained seven entries. The active Turn completed during the
+  unchanged 30-second poll and the queue drained to zero. Existing HTTP gateway
+  diagnostics recorded zero worker queue wait for every queue-list command, so
+  a saturated Rust gateway pool is rejected; the remaining unknown is the
+  Browser-to-Gateway-to-Station boundary of the delayed eighth admission.
+  Per-index first-event/result and stream-proxy arrival/admission timing is now
+  retained before any second behavior change. Outer Provisioner cleanup
+  completed `DONE / PROVEN / passed`, but inner Browser logout timed out even
+  though its ports, storage, and actor identity were released. Foundation and
+  G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
