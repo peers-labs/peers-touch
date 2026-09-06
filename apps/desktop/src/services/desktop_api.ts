@@ -6249,6 +6249,8 @@ function isHttpGatewayMode() {
 export const AGENT_REPLAY_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000] as const;
 const AGENT_REPLAY_CATCHUP_TIMEOUT_MS = 30_000;
 export const AGENT_SSE_IDLE_TIMEOUT_MS = 30_000;
+const FOUNDATION_F06_STREAM_PROBE_INPUT =
+  'Write a detailed 2000-word numbered guide to durable event stream recovery.';
 const AGENT_REPLAY_CONTROL_EVENTS = new Set([
   'reconnecting',
   'replaying',
@@ -6257,6 +6259,27 @@ const AGENT_REPLAY_CONTROL_EVENTS = new Set([
   'recovery_failed',
   'catchup_done',
 ]);
+
+// #region debug-point B-D:foundation-fault-ack
+function reportFoundationFaultAckDebug(
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7779/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-fault-ack',
+      runId: 'pre-fix',
+      hypothesisId: 'B-D',
+      location: 'desktop_api.ts:streamAgentTurn',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
 
 function waitForAgentReplay(delayMs: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -6504,6 +6527,9 @@ export function streamAgentTurn(
   if (isHttpGatewayMode()) {
     const transportController = new AbortController();
     let transportDisconnectRequested = false;
+    const foundationFaultProbe =
+      input.user_input === FOUNDATION_F06_STREAM_PROBE_INPUT;
+    const foundationFaultProbeStartedAt = performance.now();
     Object.defineProperty(controller, 'disconnectTransport', {
       value: () => {
         if (transportDisconnectRequested || controller.signal.aborted) return;
@@ -6571,6 +6597,12 @@ export function streamAgentTurn(
         let terminal = false;
         let liveTransportError: Error | null = null;
         try {
+          if (foundationFaultProbe) {
+            reportFoundationFaultAckDebug('browser-stream-started', {
+              streamGeneration,
+              transportDisconnectRequested,
+            });
+          }
           const response = await fetch(`${gatewayBase}/agent/turn/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
@@ -6579,6 +6611,13 @@ export function streamAgentTurn(
           });
           const admittedTurnId = response.headers.get('x-agent-turn-id')?.trim() || '';
           if (admittedTurnId) turnId = admittedTurnId;
+          if (foundationFaultProbe) {
+            reportFoundationFaultAckDebug('browser-upstream-admitted', {
+              elapsedMs: performance.now() - foundationFaultProbeStartedAt,
+              status: response.status,
+              turnIdPresent: Boolean(admittedTurnId),
+            });
+          }
           if (controller.signal.aborted) {
             if (turnId) {
               await api.cancelAgentTurn(turnId);
@@ -6599,12 +6638,38 @@ export function streamAgentTurn(
               ),
             }),
           );
+          if (foundationFaultProbe) {
+            reportFoundationFaultAckDebug('browser-sse-consume-finished', {
+              elapsedMs: performance.now() - foundationFaultProbeStartedAt,
+              terminal,
+              lastSequence,
+              transportDisconnectRequested,
+            });
+          }
         } catch (error) {
           liveTransportError = error instanceof Error ? error : new Error(String(error));
+          if (foundationFaultProbe) {
+            reportFoundationFaultAckDebug('browser-sse-consume-error', {
+              elapsedMs: performance.now() - foundationFaultProbeStartedAt,
+              errorName: liveTransportError.name,
+              errorMessage: liveTransportError.message,
+              lastSequence,
+              transportDisconnectRequested,
+            });
+          }
         }
         if (!terminal && !controller.signal.aborted) {
           if (!turnId || !conversationId) {
             throw liveTransportError ?? new Error('agent.error.streamIdentityMissing');
+          }
+          if (foundationFaultProbe) {
+            reportFoundationFaultAckDebug('browser-connection-lost-forwarded', {
+              elapsedMs: performance.now() - foundationFaultProbeStartedAt,
+              lastSequence,
+              reason: transportDisconnectRequested
+                ? 'transport_disconnect_requested'
+                : liveTransportError?.message || 'station_stream_closed',
+            });
           }
           forward({
             event: 'connection_lost',

@@ -16,7 +16,7 @@
 | A | The active Turn becomes terminal before the capacity snapshot, allowing Station to drain the queue below eight. | High | Low | Confirmed again for the post-fix zh-CN tuple: the first read was seven, `done` arrived while polling, and the queue drained to zero. |
 | B | Starting eight queue streams concurrently does not prove that all eight admissions have completed before queue readback. | High | Low | Confirmed: the post-fix zh-CN tuple started all eight with zero observed events, but the first Station readback contained only seven entries and never reached eight. |
 | C | Station reports a queue capacity other than eight for this conversation. | Medium | Low | Rejected: both tuples reported authoritative capacity eight. |
-| D | One queued request is delayed in Browser dispatch, Gateway forwarding, or Station admission until the active Turn completes. | High | Medium | Pending: record each queue index's first event/result and Gateway stream-proxy arrival/admission timing. Existing Gateway command diagnostics reject general worker-pool saturation because queue-list had zero worker wait. |
+| D | One queued request is delayed in Browser dispatch, Gateway forwarding, or Station admission until the active Turn completes. | High | Medium | Rejected by the `7f7fc29de` comparison: all eight indexes reached the Gateway, completed Station admission, and returned `queued` while the active Turn remained non-terminal. |
 | E | Conversation cleanup or selection drift makes the readback target differ from the created queue conversation. | Low | Low | Rejected: both tuples retained the selected conversation. |
 
 ## Log Evidence
@@ -56,13 +56,27 @@
   - Outer Provisioner cleanup completed `DONE / PROVEN / passed`, but inner
     Browser logout timed out. Ports, storage, and actor identity were still
     released. Cleanup is therefore not globally passed.
+- Post-instrumentation exact-source run
+  `20260906T023932273619Z-9996d0d9df800ffb67685cc1635aabb3`
+  (aggregate
+  `20260906T023932171556Z-a13d704b7b75842d85ce918b4e0da535`)
+  on `7f7fc29de455905285fb688c830a0b7a17130cd1`:
+  - Both English and Simplified Chinese Browser tuples sampled strict `8/8`
+    with authoritative capacity eight and FIFO positions `1..8`.
+  - Every queue index reached the Gateway, completed Station admission, and
+    returned `queued` while the active Turn remained non-terminal.
+  - Both overflow requests returned `ADMISSION_QUEUE_FULL`.
+  - Inner runtime cleanup was `clean`; outer Provisioner cleanup completed
+    `DONE / PROVEN / passed`.
+  - The Gate advanced to Browser AS-F06, so no remaining AS-F02 failure was
+    observed in this exact-source comparison.
 
 ## Verification Conclusion
-The original duplicate-result wait was one race, but removing it was
-insufficient. Concurrent stream construction still does not establish eight
-completed admissions before readback. The next evidence pass must identify the
-delayed queue index and its Browser -> Gateway -> Station boundary before a
-second behavioral correction.
+The original duplicate-result wait exposed an action-ordering race. The
+per-index comparison on `7f7fc29de` demonstrated that the corrected concurrent
+admission order can establish all eight completed admissions before readback
+for both locale tuples without changing the strict oracle. The session remains
+`[OPEN]` because instrumentation cleanup requires explicit confirmation.
 
 ## Fix
 - Capture the empty queue baseline before starting duplicate replay.
@@ -77,6 +91,6 @@ second behavioral correction.
 - `cd apps/desktop && pnpm run check`: passed.
 - `cd apps/desktop && pnpm run test`: 569 passed, one unrelated environment-dependent test skipped.
 - `git diff --check`: passed.
-- First post-fix exact-source runtime comparison: English passed the queue
-  boundary; Simplified Chinese remained `7/8`; further instrumentation is
-  required before another fix.
+- Post-instrumentation exact-source runtime comparison: English and Simplified
+  Chinese both passed strict `8/8`, FIFO `1..8`, and
+  `ADMISSION_QUEUE_FULL`; the Gate advanced to AS-F06.
