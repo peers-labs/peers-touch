@@ -41,6 +41,7 @@
 | X | The picker remains open, but its focus effect does not move focus to a `data-reaction-emoji` button. | Medium | Low | Pending: compare final overlay kind and active element after the 15-second assertion timeout. |
 | Y | Re-running Win32 top-level activation before every key resets the WebView's descendant DOM focus. | High | Low | Rejected as the sole cause: commit `8f7d798f3` preserved descendant focus when the actor already owned the foreground window, but the comparison run still lost toolbar focus before Tab delivery. |
 | Z | Launching a separate interactive broker worker for each key steals focus long enough for the 140 ms overlay dismissal timer to remove the toolbar before the key is injected. | High | Low | Confirmed by post-fix event evidence: the thread button received `focusout`, the toolbar disappeared 149 ms later, and Tab reached `BODY` 583 ms after dismissal. |
+| AA | Product Closure invalidates its proven keyboard picker by closing it, then races a second pointer worker while reopening the same transient action. | High | Low | Confirmed by run `20260906T124104139489Z-1980e06865f515f88d65c33cfe774e02`: the atomic keyboard sequence opened the picker and focused `👍`, then `choose_reaction` timed out reopening the picker after the separate Escape and pointer path. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -448,3 +449,21 @@ a separate interactive worker, and that process boundary outlives the overlay's
 dismissal budget. The owning-layer correction is one target-bound broker
 operation for the complete `Enter -> Tab -> Enter` sequence, with bounded
 inter-key intervals.
+
+Exact-source run
+`20260906T124104139489Z-1980e06865f515f88d65c33cfe774e02` at commit
+`c388e1d6ff7f0a91fb6816560cac37d034130485`, runtime-cell run
+`20260906t124140085099z-874b55248bfac231`, and binary SHA-256
+`c15e1a96b35349ee83e948dba336b69e9de3e65c12e49a46a4d63b1108983aee`
+proved hypothesis Z's correction. Its event trace records native
+`Enter -> Tab -> Enter`, focus moving from the row to `thread`, then
+`reaction`, a click on the reaction action, and the picker retaining focus on
+`👍`. The `toolbar_keyboard_reachable` assertion passed.
+
+The Gate then failed in `choose_reaction`: it had closed the proven picker with
+a separately scheduled Escape worker and tried to reopen the same transient
+action through a separate pointer worker. The correction reuses the
+keyboard-opened picker for the selected reaction and repeats the same atomic
+keyboard-open path for the fault-retry reaction. This preserves the product
+assertions while removing a redundant transient-control reopen race. Cleanup
+for the failed run remained `DONE/PROVEN`.

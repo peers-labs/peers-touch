@@ -2189,11 +2189,28 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             keyboard_path,
         )
         self.assertNotIn("self.native_adapter.post_key(", keyboard_path)
+        self.assertNotIn(
+            "self.native_adapter.post_key_to_process(",
+            keyboard_path,
+        )
+
+    def test_reaction_selection_reuses_keyboard_opened_picker(self) -> None:
+        reaction_start = self.source.index("def prove_reaction(")
+        reaction_end = self.source.index(
+            "def prove_identity_station(",
+            reaction_start,
+        )
+        reaction_source = self.source[reaction_start:reaction_end]
+
         self.assertEqual(
-            keyboard_path.count(
-                "self.native_adapter.post_key_to_process("
+            reaction_source.count(
+                'self.prove_keyboard_reaction_picker("alice", message_id)'
             ),
-            1,
+            2,
+        )
+        self.assertEqual(
+            reaction_source.count("picker_open=True"),
+            2,
         )
 
     def test_reaction_connection_loss_proves_automatic_exact_retry(self) -> None:
