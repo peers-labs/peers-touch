@@ -72,5 +72,7 @@ The Owner accepted AO-D01 through AO-D06, revised MP-D30, and Federated Social
 D-07 on 2026-09-06. Conversation is the sole Chat entry point, and the internal
 Device Messaging Engine remains a client runtime. The Owner approved the
 dependency-ordered execution plan on 2026-09-06. CA-W0 has complete route and
-deletion inventory plus registry-driven DDD import enforcement; downstream
-owner, proto, and store migrations remain fail-closed work.
+deletion inventory plus registry-driven DDD import enforcement. CA-W1 has
+established canonical resource-owned protobuf contracts and generated bindings;
+runtime owner and store migrations remain fail-closed work in CA-W2 through
+CA-W5.

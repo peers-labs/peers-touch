@@ -9,6 +9,7 @@ package model
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -207,6 +208,61 @@ func (ActorVisibility) EnumDescriptor() ([]byte, []int) {
 	return file_domain_actor_actor_proto_rawDescGZIP(), []int{2}
 }
 
+type ActorDeviceStatus int32
+
+const (
+	ActorDeviceStatus_ACTOR_DEVICE_STATUS_UNSPECIFIED    ActorDeviceStatus = 0
+	ActorDeviceStatus_ACTOR_DEVICE_STATUS_ENROLLING      ActorDeviceStatus = 1
+	ActorDeviceStatus_ACTOR_DEVICE_STATUS_ACTIVE         ActorDeviceStatus = 2
+	ActorDeviceStatus_ACTOR_DEVICE_STATUS_REVOKE_PENDING ActorDeviceStatus = 3
+	ActorDeviceStatus_ACTOR_DEVICE_STATUS_REVOKED        ActorDeviceStatus = 4
+)
+
+// Enum value maps for ActorDeviceStatus.
+var (
+	ActorDeviceStatus_name = map[int32]string{
+		0: "ACTOR_DEVICE_STATUS_UNSPECIFIED",
+		1: "ACTOR_DEVICE_STATUS_ENROLLING",
+		2: "ACTOR_DEVICE_STATUS_ACTIVE",
+		3: "ACTOR_DEVICE_STATUS_REVOKE_PENDING",
+		4: "ACTOR_DEVICE_STATUS_REVOKED",
+	}
+	ActorDeviceStatus_value = map[string]int32{
+		"ACTOR_DEVICE_STATUS_UNSPECIFIED":    0,
+		"ACTOR_DEVICE_STATUS_ENROLLING":      1,
+		"ACTOR_DEVICE_STATUS_ACTIVE":         2,
+		"ACTOR_DEVICE_STATUS_REVOKE_PENDING": 3,
+		"ACTOR_DEVICE_STATUS_REVOKED":        4,
+	}
+)
+
+func (x ActorDeviceStatus) Enum() *ActorDeviceStatus {
+	p := new(ActorDeviceStatus)
+	*p = x
+	return p
+}
+
+func (x ActorDeviceStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ActorDeviceStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_actor_actor_proto_enumTypes[3].Descriptor()
+}
+
+func (ActorDeviceStatus) Type() protoreflect.EnumType {
+	return &file_domain_actor_actor_proto_enumTypes[3]
+}
+
+func (x ActorDeviceStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ActorDeviceStatus.Descriptor instead.
+func (ActorDeviceStatus) EnumDescriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{3}
+}
+
 type ActorSigningKeyVerificationSource int32
 
 const (
@@ -243,11 +299,11 @@ func (x ActorSigningKeyVerificationSource) String() string {
 }
 
 func (ActorSigningKeyVerificationSource) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_actor_actor_proto_enumTypes[3].Descriptor()
+	return file_domain_actor_actor_proto_enumTypes[4].Descriptor()
 }
 
 func (ActorSigningKeyVerificationSource) Type() protoreflect.EnumType {
-	return &file_domain_actor_actor_proto_enumTypes[3]
+	return &file_domain_actor_actor_proto_enumTypes[4]
 }
 
 func (x ActorSigningKeyVerificationSource) Number() protoreflect.EnumNumber {
@@ -256,7 +312,7 @@ func (x ActorSigningKeyVerificationSource) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ActorSigningKeyVerificationSource.Descriptor instead.
 func (ActorSigningKeyVerificationSource) EnumDescriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{3}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{4}
 }
 
 type ActorRef struct {
@@ -319,6 +375,951 @@ func (x *ActorRef) GetKind() ActorKind {
 	return ActorKind_ACTOR_KIND_UNSPECIFIED
 }
 
+type ActorDeviceRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Actor         *ActorRef              `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
+	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActorDeviceRef) Reset() {
+	*x = ActorDeviceRef{}
+	mi := &file_domain_actor_actor_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorDeviceRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorDeviceRef) ProtoMessage() {}
+
+func (x *ActorDeviceRef) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorDeviceRef.ProtoReflect.Descriptor instead.
+func (*ActorDeviceRef) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ActorDeviceRef) GetActor() *ActorRef {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *ActorDeviceRef) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+// Deterministic actor-signed authorization for one fresh device.
+type ActorDeviceCertificate struct {
+	state                       protoimpl.MessageState `protogen:"open.v1"`
+	FormatVersion               uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	Device                      *ActorDeviceRef        `protobuf:"bytes,2,opt,name=device,proto3" json:"device,omitempty"`
+	ActorIdentityPublicKey      []byte                 `protobuf:"bytes,3,opt,name=actor_identity_public_key,json=actorIdentityPublicKey,proto3" json:"actor_identity_public_key,omitempty"`
+	ActorIdentityKeyFingerprint []byte                 `protobuf:"bytes,4,opt,name=actor_identity_key_fingerprint,json=actorIdentityKeyFingerprint,proto3" json:"actor_identity_key_fingerprint,omitempty"`
+	DeviceSigningPublicKey      []byte                 `protobuf:"bytes,5,opt,name=device_signing_public_key,json=deviceSigningPublicKey,proto3" json:"device_signing_public_key,omitempty"`
+	SigningKeyId                string                 `protobuf:"bytes,6,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	ObservedProfileVersion      uint64                 `protobuf:"varint,7,opt,name=observed_profile_version,json=observedProfileVersion,proto3" json:"observed_profile_version,omitempty"`
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
+}
+
+func (x *ActorDeviceCertificate) Reset() {
+	*x = ActorDeviceCertificate{}
+	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorDeviceCertificate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorDeviceCertificate) ProtoMessage() {}
+
+func (x *ActorDeviceCertificate) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorDeviceCertificate.ProtoReflect.Descriptor instead.
+func (*ActorDeviceCertificate) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ActorDeviceCertificate) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *ActorDeviceCertificate) GetDevice() *ActorDeviceRef {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+func (x *ActorDeviceCertificate) GetActorIdentityPublicKey() []byte {
+	if x != nil {
+		return x.ActorIdentityPublicKey
+	}
+	return nil
+}
+
+func (x *ActorDeviceCertificate) GetActorIdentityKeyFingerprint() []byte {
+	if x != nil {
+		return x.ActorIdentityKeyFingerprint
+	}
+	return nil
+}
+
+func (x *ActorDeviceCertificate) GetDeviceSigningPublicKey() []byte {
+	if x != nil {
+		return x.DeviceSigningPublicKey
+	}
+	return nil
+}
+
+func (x *ActorDeviceCertificate) GetSigningKeyId() string {
+	if x != nil {
+		return x.SigningKeyId
+	}
+	return ""
+}
+
+func (x *ActorDeviceCertificate) GetObservedProfileVersion() uint64 {
+	if x != nil {
+		return x.ObservedProfileVersion
+	}
+	return 0
+}
+
+type ActorDevice struct {
+	state                       protoimpl.MessageState `protogen:"open.v1"`
+	Ref                         *ActorDeviceRef        `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	Status                      ActorDeviceStatus      `protobuf:"varint,2,opt,name=status,proto3,enum=peers_touch.model.actor.v1.ActorDeviceStatus" json:"status,omitempty"`
+	Label                       string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
+	ActorIdentityKeyFingerprint []byte                 `protobuf:"bytes,4,opt,name=actor_identity_key_fingerprint,json=actorIdentityKeyFingerprint,proto3" json:"actor_identity_key_fingerprint,omitempty"`
+	SigningKeyId                string                 `protobuf:"bytes,5,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	DeviceSigningPublicKey      []byte                 `protobuf:"bytes,6,opt,name=device_signing_public_key,json=deviceSigningPublicKey,proto3" json:"device_signing_public_key,omitempty"`
+	ProfileVersion              uint64                 `protobuf:"varint,7,opt,name=profile_version,json=profileVersion,proto3" json:"profile_version,omitempty"`
+	ActivationSequence          int64                  `protobuf:"varint,8,opt,name=activation_sequence,json=activationSequence,proto3" json:"activation_sequence,omitempty"`
+	EnrolledAt                  *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=enrolled_at,json=enrolledAt,proto3" json:"enrolled_at,omitempty"`
+	RevokedAt                   *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
+}
+
+func (x *ActorDevice) Reset() {
+	*x = ActorDevice{}
+	mi := &file_domain_actor_actor_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorDevice) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorDevice) ProtoMessage() {}
+
+func (x *ActorDevice) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorDevice.ProtoReflect.Descriptor instead.
+func (*ActorDevice) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ActorDevice) GetRef() *ActorDeviceRef {
+	if x != nil {
+		return x.Ref
+	}
+	return nil
+}
+
+func (x *ActorDevice) GetStatus() ActorDeviceStatus {
+	if x != nil {
+		return x.Status
+	}
+	return ActorDeviceStatus_ACTOR_DEVICE_STATUS_UNSPECIFIED
+}
+
+func (x *ActorDevice) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *ActorDevice) GetActorIdentityKeyFingerprint() []byte {
+	if x != nil {
+		return x.ActorIdentityKeyFingerprint
+	}
+	return nil
+}
+
+func (x *ActorDevice) GetSigningKeyId() string {
+	if x != nil {
+		return x.SigningKeyId
+	}
+	return ""
+}
+
+func (x *ActorDevice) GetDeviceSigningPublicKey() []byte {
+	if x != nil {
+		return x.DeviceSigningPublicKey
+	}
+	return nil
+}
+
+func (x *ActorDevice) GetProfileVersion() uint64 {
+	if x != nil {
+		return x.ProfileVersion
+	}
+	return 0
+}
+
+func (x *ActorDevice) GetActivationSequence() int64 {
+	if x != nil {
+		return x.ActivationSequence
+	}
+	return 0
+}
+
+func (x *ActorDevice) GetEnrolledAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EnrolledAt
+	}
+	return nil
+}
+
+func (x *ActorDevice) GetRevokedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RevokedAt
+	}
+	return nil
+}
+
+type EnrollActorDeviceRequest struct {
+	state               protoimpl.MessageState  `protogen:"open.v1"`
+	Certificate         *ActorDeviceCertificate `protobuf:"bytes,1,opt,name=certificate,proto3" json:"certificate,omitempty"`
+	Label               string                  `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	ActorCrossSignature []byte                  `protobuf:"bytes,3,opt,name=actor_cross_signature,json=actorCrossSignature,proto3" json:"actor_cross_signature,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *EnrollActorDeviceRequest) Reset() {
+	*x = EnrollActorDeviceRequest{}
+	mi := &file_domain_actor_actor_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnrollActorDeviceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnrollActorDeviceRequest) ProtoMessage() {}
+
+func (x *EnrollActorDeviceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnrollActorDeviceRequest.ProtoReflect.Descriptor instead.
+func (*EnrollActorDeviceRequest) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *EnrollActorDeviceRequest) GetCertificate() *ActorDeviceCertificate {
+	if x != nil {
+		return x.Certificate
+	}
+	return nil
+}
+
+func (x *EnrollActorDeviceRequest) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *EnrollActorDeviceRequest) GetActorCrossSignature() []byte {
+	if x != nil {
+		return x.ActorCrossSignature
+	}
+	return nil
+}
+
+type EnrollActorDeviceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Device        *ActorDevice           `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnrollActorDeviceResponse) Reset() {
+	*x = EnrollActorDeviceResponse{}
+	mi := &file_domain_actor_actor_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnrollActorDeviceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnrollActorDeviceResponse) ProtoMessage() {}
+
+func (x *EnrollActorDeviceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnrollActorDeviceResponse.ProtoReflect.Descriptor instead.
+func (*EnrollActorDeviceResponse) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *EnrollActorDeviceResponse) GetDevice() *ActorDevice {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+type ListActorDevicesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListActorDevicesRequest) Reset() {
+	*x = ListActorDevicesRequest{}
+	mi := &file_domain_actor_actor_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListActorDevicesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListActorDevicesRequest) ProtoMessage() {}
+
+func (x *ListActorDevicesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListActorDevicesRequest.ProtoReflect.Descriptor instead.
+func (*ListActorDevicesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{6}
+}
+
+type ListActorDevicesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Devices       []*ActorDevice         `protobuf:"bytes,1,rep,name=devices,proto3" json:"devices,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListActorDevicesResponse) Reset() {
+	*x = ListActorDevicesResponse{}
+	mi := &file_domain_actor_actor_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListActorDevicesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListActorDevicesResponse) ProtoMessage() {}
+
+func (x *ListActorDevicesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListActorDevicesResponse.ProtoReflect.Descriptor instead.
+func (*ListActorDevicesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ListActorDevicesResponse) GetDevices() []*ActorDevice {
+	if x != nil {
+		return x.Devices
+	}
+	return nil
+}
+
+type RevokeActorDeviceRequest struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId               string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	ObservedProfileVersion uint64                 `protobuf:"varint,2,opt,name=observed_profile_version,json=observedProfileVersion,proto3" json:"observed_profile_version,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *RevokeActorDeviceRequest) Reset() {
+	*x = RevokeActorDeviceRequest{}
+	mi := &file_domain_actor_actor_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeActorDeviceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeActorDeviceRequest) ProtoMessage() {}
+
+func (x *RevokeActorDeviceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeActorDeviceRequest.ProtoReflect.Descriptor instead.
+func (*RevokeActorDeviceRequest) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RevokeActorDeviceRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *RevokeActorDeviceRequest) GetObservedProfileVersion() uint64 {
+	if x != nil {
+		return x.ObservedProfileVersion
+	}
+	return 0
+}
+
+type RevokeActorDeviceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Device        *ActorDevice           `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeActorDeviceResponse) Reset() {
+	*x = RevokeActorDeviceResponse{}
+	mi := &file_domain_actor_actor_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeActorDeviceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeActorDeviceResponse) ProtoMessage() {}
+
+func (x *RevokeActorDeviceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeActorDeviceResponse.ProtoReflect.Descriptor instead.
+func (*RevokeActorDeviceResponse) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RevokeActorDeviceResponse) GetDevice() *ActorDevice {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+type ActorEndpointManifestEntry struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Endpoint             *ActorDeviceRef        `protobuf:"bytes,1,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	SigningKeyId         string                 `protobuf:"bytes,2,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	PublicMaterialSha256 [][]byte               `protobuf:"bytes,3,rep,name=public_material_sha256,json=publicMaterialSha256,proto3" json:"public_material_sha256,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ActorEndpointManifestEntry) Reset() {
+	*x = ActorEndpointManifestEntry{}
+	mi := &file_domain_actor_actor_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorEndpointManifestEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorEndpointManifestEntry) ProtoMessage() {}
+
+func (x *ActorEndpointManifestEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorEndpointManifestEntry.ProtoReflect.Descriptor instead.
+func (*ActorEndpointManifestEntry) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ActorEndpointManifestEntry) GetEndpoint() *ActorDeviceRef {
+	if x != nil {
+		return x.Endpoint
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifestEntry) GetSigningKeyId() string {
+	if x != nil {
+		return x.SigningKeyId
+	}
+	return ""
+}
+
+func (x *ActorEndpointManifestEntry) GetPublicMaterialSha256() [][]byte {
+	if x != nil {
+		return x.PublicMaterialSha256
+	}
+	return nil
+}
+
+type ActorEndpointManifestSigningInput struct {
+	state                  protoimpl.MessageState        `protogen:"open.v1"`
+	FormatVersion          uint32                        `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	ManifestId             string                        `protobuf:"bytes,2,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	Actor                  *ActorRef                     `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	HomeStationPeerId      string                        `protobuf:"bytes,4,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	DirectoryVersion       uint64                        `protobuf:"varint,5,opt,name=directory_version,json=directoryVersion,proto3" json:"directory_version,omitempty"`
+	ActiveEndpoints        []*ActorEndpointManifestEntry `protobuf:"bytes,6,rep,name=active_endpoints,json=activeEndpoints,proto3" json:"active_endpoints,omitempty"`
+	IssuedAt               *timestamppb.Timestamp        `protobuf:"bytes,7,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt              *timestamppb.Timestamp        `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	SigningKeyId           string                        `protobuf:"bytes,9,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	ActorIdentityPublicKey []byte                        `protobuf:"bytes,10,opt,name=actor_identity_public_key,json=actorIdentityPublicKey,proto3" json:"actor_identity_public_key,omitempty"`
+	ActorProfileVersion    uint64                        `protobuf:"varint,11,opt,name=actor_profile_version,json=actorProfileVersion,proto3" json:"actor_profile_version,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ActorEndpointManifestSigningInput) Reset() {
+	*x = ActorEndpointManifestSigningInput{}
+	mi := &file_domain_actor_actor_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorEndpointManifestSigningInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorEndpointManifestSigningInput) ProtoMessage() {}
+
+func (x *ActorEndpointManifestSigningInput) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorEndpointManifestSigningInput.ProtoReflect.Descriptor instead.
+func (*ActorEndpointManifestSigningInput) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ActorEndpointManifestSigningInput) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *ActorEndpointManifestSigningInput) GetManifestId() string {
+	if x != nil {
+		return x.ManifestId
+	}
+	return ""
+}
+
+func (x *ActorEndpointManifestSigningInput) GetActor() *ActorRef {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifestSigningInput) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+func (x *ActorEndpointManifestSigningInput) GetDirectoryVersion() uint64 {
+	if x != nil {
+		return x.DirectoryVersion
+	}
+	return 0
+}
+
+func (x *ActorEndpointManifestSigningInput) GetActiveEndpoints() []*ActorEndpointManifestEntry {
+	if x != nil {
+		return x.ActiveEndpoints
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifestSigningInput) GetIssuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.IssuedAt
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifestSigningInput) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifestSigningInput) GetSigningKeyId() string {
+	if x != nil {
+		return x.SigningKeyId
+	}
+	return ""
+}
+
+func (x *ActorEndpointManifestSigningInput) GetActorIdentityPublicKey() []byte {
+	if x != nil {
+		return x.ActorIdentityPublicKey
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifestSigningInput) GetActorProfileVersion() uint64 {
+	if x != nil {
+		return x.ActorProfileVersion
+	}
+	return 0
+}
+
+type ActorEndpointManifest struct {
+	state                  protoimpl.MessageState        `protogen:"open.v1"`
+	FormatVersion          uint32                        `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	ManifestId             string                        `protobuf:"bytes,2,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	Actor                  *ActorRef                     `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	HomeStationPeerId      string                        `protobuf:"bytes,4,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	DirectoryVersion       uint64                        `protobuf:"varint,5,opt,name=directory_version,json=directoryVersion,proto3" json:"directory_version,omitempty"`
+	ActiveEndpoints        []*ActorEndpointManifestEntry `protobuf:"bytes,6,rep,name=active_endpoints,json=activeEndpoints,proto3" json:"active_endpoints,omitempty"`
+	IssuedAt               *timestamppb.Timestamp        `protobuf:"bytes,7,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt              *timestamppb.Timestamp        `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	SigningKeyId           string                        `protobuf:"bytes,9,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	StationSignature       []byte                        `protobuf:"bytes,10,opt,name=station_signature,json=stationSignature,proto3" json:"station_signature,omitempty"`
+	ActorIdentityPublicKey []byte                        `protobuf:"bytes,11,opt,name=actor_identity_public_key,json=actorIdentityPublicKey,proto3" json:"actor_identity_public_key,omitempty"`
+	ActorProfileVersion    uint64                        `protobuf:"varint,12,opt,name=actor_profile_version,json=actorProfileVersion,proto3" json:"actor_profile_version,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ActorEndpointManifest) Reset() {
+	*x = ActorEndpointManifest{}
+	mi := &file_domain_actor_actor_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorEndpointManifest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorEndpointManifest) ProtoMessage() {}
+
+func (x *ActorEndpointManifest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorEndpointManifest.ProtoReflect.Descriptor instead.
+func (*ActorEndpointManifest) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ActorEndpointManifest) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *ActorEndpointManifest) GetManifestId() string {
+	if x != nil {
+		return x.ManifestId
+	}
+	return ""
+}
+
+func (x *ActorEndpointManifest) GetActor() *ActorRef {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifest) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+func (x *ActorEndpointManifest) GetDirectoryVersion() uint64 {
+	if x != nil {
+		return x.DirectoryVersion
+	}
+	return 0
+}
+
+func (x *ActorEndpointManifest) GetActiveEndpoints() []*ActorEndpointManifestEntry {
+	if x != nil {
+		return x.ActiveEndpoints
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifest) GetIssuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.IssuedAt
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifest) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifest) GetSigningKeyId() string {
+	if x != nil {
+		return x.SigningKeyId
+	}
+	return ""
+}
+
+func (x *ActorEndpointManifest) GetStationSignature() []byte {
+	if x != nil {
+		return x.StationSignature
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifest) GetActorIdentityPublicKey() []byte {
+	if x != nil {
+		return x.ActorIdentityPublicKey
+	}
+	return nil
+}
+
+func (x *ActorEndpointManifest) GetActorProfileVersion() uint64 {
+	if x != nil {
+		return x.ActorProfileVersion
+	}
+	return 0
+}
+
+type GetActorEndpointManifestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Actor         *ActorRef              `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetActorEndpointManifestRequest) Reset() {
+	*x = GetActorEndpointManifestRequest{}
+	mi := &file_domain_actor_actor_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetActorEndpointManifestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetActorEndpointManifestRequest) ProtoMessage() {}
+
+func (x *GetActorEndpointManifestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetActorEndpointManifestRequest.ProtoReflect.Descriptor instead.
+func (*GetActorEndpointManifestRequest) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GetActorEndpointManifestRequest) GetActor() *ActorRef {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+type GetActorEndpointManifestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Manifest      *ActorEndpointManifest `protobuf:"bytes,1,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetActorEndpointManifestResponse) Reset() {
+	*x = GetActorEndpointManifestResponse{}
+	mi := &file_domain_actor_actor_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetActorEndpointManifestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetActorEndpointManifestResponse) ProtoMessage() {}
+
+func (x *GetActorEndpointManifestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetActorEndpointManifestResponse.ProtoReflect.Descriptor instead.
+func (*GetActorEndpointManifestResponse) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetActorEndpointManifestResponse) GetManifest() *ActorEndpointManifest {
+	if x != nil {
+		return x.Manifest
+	}
+	return nil
+}
+
 type Actor struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Username    string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
@@ -349,7 +1350,7 @@ type Actor struct {
 
 func (x *Actor) Reset() {
 	*x = Actor{}
-	mi := &file_domain_actor_actor_proto_msgTypes[1]
+	mi := &file_domain_actor_actor_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -361,7 +1362,7 @@ func (x *Actor) String() string {
 func (*Actor) ProtoMessage() {}
 
 func (x *Actor) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[1]
+	mi := &file_domain_actor_actor_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -374,7 +1375,7 @@ func (x *Actor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Actor.ProtoReflect.Descriptor instead.
 func (*Actor) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{1}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Actor) GetUsername() string {
@@ -509,7 +1510,7 @@ type VerifiedActorDeviceSigningKey struct {
 
 func (x *VerifiedActorDeviceSigningKey) Reset() {
 	*x = VerifiedActorDeviceSigningKey{}
-	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	mi := &file_domain_actor_actor_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -521,7 +1522,7 @@ func (x *VerifiedActorDeviceSigningKey) String() string {
 func (*VerifiedActorDeviceSigningKey) ProtoMessage() {}
 
 func (x *VerifiedActorDeviceSigningKey) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	mi := &file_domain_actor_actor_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -534,7 +1535,7 @@ func (x *VerifiedActorDeviceSigningKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifiedActorDeviceSigningKey.ProtoReflect.Descriptor instead.
 func (*VerifiedActorDeviceSigningKey) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{2}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *VerifiedActorDeviceSigningKey) GetActorPtid() string {
@@ -610,7 +1611,7 @@ type UserLink struct {
 
 func (x *UserLink) Reset() {
 	*x = UserLink{}
-	mi := &file_domain_actor_actor_proto_msgTypes[3]
+	mi := &file_domain_actor_actor_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -622,7 +1623,7 @@ func (x *UserLink) String() string {
 func (*UserLink) ProtoMessage() {}
 
 func (x *UserLink) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[3]
+	mi := &file_domain_actor_actor_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -635,7 +1636,7 @@ func (x *UserLink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserLink.ProtoReflect.Descriptor instead.
 func (*UserLink) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{3}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UserLink) GetLabel() string {
@@ -661,7 +1662,7 @@ type PeersTouchInfo struct {
 
 func (x *PeersTouchInfo) Reset() {
 	*x = PeersTouchInfo{}
-	mi := &file_domain_actor_actor_proto_msgTypes[4]
+	mi := &file_domain_actor_actor_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -673,7 +1674,7 @@ func (x *PeersTouchInfo) String() string {
 func (*PeersTouchInfo) ProtoMessage() {}
 
 func (x *PeersTouchInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[4]
+	mi := &file_domain_actor_actor_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -686,7 +1687,7 @@ func (x *PeersTouchInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeersTouchInfo.ProtoReflect.Descriptor instead.
 func (*PeersTouchInfo) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{4}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PeersTouchInfo) GetNetworkId() string {
@@ -732,7 +1733,7 @@ type ActorProfile struct {
 
 func (x *ActorProfile) Reset() {
 	*x = ActorProfile{}
-	mi := &file_domain_actor_actor_proto_msgTypes[5]
+	mi := &file_domain_actor_actor_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -744,7 +1745,7 @@ func (x *ActorProfile) String() string {
 func (*ActorProfile) ProtoMessage() {}
 
 func (x *ActorProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[5]
+	mi := &file_domain_actor_actor_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -757,7 +1758,7 @@ func (x *ActorProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActorProfile.ProtoReflect.Descriptor instead.
 func (*ActorProfile) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{5}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ActorProfile) GetId() string {
@@ -976,7 +1977,7 @@ type UpdateProfileRequest struct {
 
 func (x *UpdateProfileRequest) Reset() {
 	*x = UpdateProfileRequest{}
-	mi := &file_domain_actor_actor_proto_msgTypes[6]
+	mi := &file_domain_actor_actor_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -988,7 +1989,7 @@ func (x *UpdateProfileRequest) String() string {
 func (*UpdateProfileRequest) ProtoMessage() {}
 
 func (x *UpdateProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[6]
+	mi := &file_domain_actor_actor_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1001,7 +2002,7 @@ func (x *UpdateProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProfileRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProfileRequest) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{6}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UpdateProfileRequest) GetDisplayName() string {
@@ -1098,7 +2099,7 @@ type ActorList struct {
 
 func (x *ActorList) Reset() {
 	*x = ActorList{}
-	mi := &file_domain_actor_actor_proto_msgTypes[7]
+	mi := &file_domain_actor_actor_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1110,7 +2111,7 @@ func (x *ActorList) String() string {
 func (*ActorList) ProtoMessage() {}
 
 func (x *ActorList) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[7]
+	mi := &file_domain_actor_actor_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1123,7 +2124,7 @@ func (x *ActorList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActorList.ProtoReflect.Descriptor instead.
 func (*ActorList) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{7}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ActorList) GetItems() []*Actor {
@@ -1150,7 +2151,7 @@ type SearchUsersRequest struct {
 
 func (x *SearchUsersRequest) Reset() {
 	*x = SearchUsersRequest{}
-	mi := &file_domain_actor_actor_proto_msgTypes[8]
+	mi := &file_domain_actor_actor_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1162,7 +2163,7 @@ func (x *SearchUsersRequest) String() string {
 func (*SearchUsersRequest) ProtoMessage() {}
 
 func (x *SearchUsersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[8]
+	mi := &file_domain_actor_actor_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1175,7 +2176,7 @@ func (x *SearchUsersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchUsersRequest.ProtoReflect.Descriptor instead.
 func (*SearchUsersRequest) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{8}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *SearchUsersRequest) GetQ() string {
@@ -1194,7 +2195,7 @@ type GetMeRequest struct {
 
 func (x *GetMeRequest) Reset() {
 	*x = GetMeRequest{}
-	mi := &file_domain_actor_actor_proto_msgTypes[9]
+	mi := &file_domain_actor_actor_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1206,7 +2207,7 @@ func (x *GetMeRequest) String() string {
 func (*GetMeRequest) ProtoMessage() {}
 
 func (x *GetMeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[9]
+	mi := &file_domain_actor_actor_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1219,18 +2220,96 @@ func (x *GetMeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMeRequest.ProtoReflect.Descriptor instead.
 func (*GetMeRequest) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{9}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{23}
 }
 
 var File_domain_actor_actor_proto protoreflect.FileDescriptor
 
 const file_domain_actor_actor_proto_rawDesc = "" +
 	"\n" +
-	"\x18domain/actor/actor.proto\x12\x1apeers_touch.model.actor.v1\"}\n" +
+	"\x18domain/actor/actor.proto\x12\x1apeers_touch.model.actor.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"}\n" +
 	"\bActorRef\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x12\n" +
 	"\x04acct\x18\x03 \x01(\tR\x04acct\x129\n" +
-	"\x04kind\x18\x04 \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kindJ\x04\b\x01\x10\x02R\bactor_id\"\xb1\x06\n" +
+	"\x04kind\x18\x04 \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kindJ\x04\b\x01\x10\x02R\bactor_id\"i\n" +
+	"\x0eActorDeviceRef\x12:\n" +
+	"\x05actor\x18\x01 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\"\x9e\x03\n" +
+	"\x16ActorDeviceCertificate\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12B\n" +
+	"\x06device\x18\x02 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\x129\n" +
+	"\x19actor_identity_public_key\x18\x03 \x01(\fR\x16actorIdentityPublicKey\x12C\n" +
+	"\x1eactor_identity_key_fingerprint\x18\x04 \x01(\fR\x1bactorIdentityKeyFingerprint\x129\n" +
+	"\x19device_signing_public_key\x18\x05 \x01(\fR\x16deviceSigningPublicKey\x12$\n" +
+	"\x0esigning_key_id\x18\x06 \x01(\tR\fsigningKeyId\x128\n" +
+	"\x18observed_profile_version\x18\a \x01(\x04R\x16observedProfileVersion\"\xa0\x04\n" +
+	"\vActorDevice\x12<\n" +
+	"\x03ref\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x03ref\x12E\n" +
+	"\x06status\x18\x02 \x01(\x0e2-.peers_touch.model.actor.v1.ActorDeviceStatusR\x06status\x12\x14\n" +
+	"\x05label\x18\x03 \x01(\tR\x05label\x12C\n" +
+	"\x1eactor_identity_key_fingerprint\x18\x04 \x01(\fR\x1bactorIdentityKeyFingerprint\x12$\n" +
+	"\x0esigning_key_id\x18\x05 \x01(\tR\fsigningKeyId\x129\n" +
+	"\x19device_signing_public_key\x18\x06 \x01(\fR\x16deviceSigningPublicKey\x12'\n" +
+	"\x0fprofile_version\x18\a \x01(\x04R\x0eprofileVersion\x12/\n" +
+	"\x13activation_sequence\x18\b \x01(\x03R\x12activationSequence\x12;\n" +
+	"\venrolled_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"enrolledAt\x129\n" +
+	"\n" +
+	"revoked_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\"\xba\x01\n" +
+	"\x18EnrollActorDeviceRequest\x12T\n" +
+	"\vcertificate\x18\x01 \x01(\v22.peers_touch.model.actor.v1.ActorDeviceCertificateR\vcertificate\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x122\n" +
+	"\x15actor_cross_signature\x18\x03 \x01(\fR\x13actorCrossSignature\"\\\n" +
+	"\x19EnrollActorDeviceResponse\x12?\n" +
+	"\x06device\x18\x01 \x01(\v2'.peers_touch.model.actor.v1.ActorDeviceR\x06device\"\x19\n" +
+	"\x17ListActorDevicesRequest\"]\n" +
+	"\x18ListActorDevicesResponse\x12A\n" +
+	"\adevices\x18\x01 \x03(\v2'.peers_touch.model.actor.v1.ActorDeviceR\adevices\"q\n" +
+	"\x18RevokeActorDeviceRequest\x12\x1b\n" +
+	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x128\n" +
+	"\x18observed_profile_version\x18\x02 \x01(\x04R\x16observedProfileVersion\"\\\n" +
+	"\x19RevokeActorDeviceResponse\x12?\n" +
+	"\x06device\x18\x01 \x01(\v2'.peers_touch.model.actor.v1.ActorDeviceR\x06device\"\xc0\x01\n" +
+	"\x1aActorEndpointManifestEntry\x12F\n" +
+	"\bendpoint\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\bendpoint\x12$\n" +
+	"\x0esigning_key_id\x18\x02 \x01(\tR\fsigningKeyId\x124\n" +
+	"\x16public_material_sha256\x18\x03 \x03(\fR\x14publicMaterialSha256\"\xf1\x04\n" +
+	"!ActorEndpointManifestSigningInput\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x1f\n" +
+	"\vmanifest_id\x18\x02 \x01(\tR\n" +
+	"manifestId\x12:\n" +
+	"\x05actor\x18\x03 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\x12/\n" +
+	"\x14home_station_peer_id\x18\x04 \x01(\tR\x11homeStationPeerId\x12+\n" +
+	"\x11directory_version\x18\x05 \x01(\x04R\x10directoryVersion\x12a\n" +
+	"\x10active_endpoints\x18\x06 \x03(\v26.peers_touch.model.actor.v1.ActorEndpointManifestEntryR\x0factiveEndpoints\x127\n" +
+	"\tissued_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12$\n" +
+	"\x0esigning_key_id\x18\t \x01(\tR\fsigningKeyId\x129\n" +
+	"\x19actor_identity_public_key\x18\n" +
+	" \x01(\fR\x16actorIdentityPublicKey\x122\n" +
+	"\x15actor_profile_version\x18\v \x01(\x04R\x13actorProfileVersion\"\x92\x05\n" +
+	"\x15ActorEndpointManifest\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x1f\n" +
+	"\vmanifest_id\x18\x02 \x01(\tR\n" +
+	"manifestId\x12:\n" +
+	"\x05actor\x18\x03 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\x12/\n" +
+	"\x14home_station_peer_id\x18\x04 \x01(\tR\x11homeStationPeerId\x12+\n" +
+	"\x11directory_version\x18\x05 \x01(\x04R\x10directoryVersion\x12a\n" +
+	"\x10active_endpoints\x18\x06 \x03(\v26.peers_touch.model.actor.v1.ActorEndpointManifestEntryR\x0factiveEndpoints\x127\n" +
+	"\tissued_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12$\n" +
+	"\x0esigning_key_id\x18\t \x01(\tR\fsigningKeyId\x12+\n" +
+	"\x11station_signature\x18\n" +
+	" \x01(\fR\x10stationSignature\x129\n" +
+	"\x19actor_identity_public_key\x18\v \x01(\fR\x16actorIdentityPublicKey\x122\n" +
+	"\x15actor_profile_version\x18\f \x01(\x04R\x13actorProfileVersion\"]\n" +
+	"\x1fGetActorEndpointManifestRequest\x12:\n" +
+	"\x05actor\x18\x01 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\"q\n" +
+	" GetActorEndpointManifestResponse\x12M\n" +
+	"\bmanifest\x18\x01 \x01(\v21.peers_touch.model.actor.v1.ActorEndpointManifestR\bmanifest\"\xb1\x06\n" +
 	"\x05Actor\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x14\n" +
@@ -1351,7 +2430,13 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x1cACTOR_VISIBILITY_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17ACTOR_VISIBILITY_HIDDEN\x10\x01\x12\x1e\n" +
 	"\x1aACTOR_VISIBILITY_BY_HANDLE\x10\x02\x12\x1c\n" +
-	"\x18ACTOR_VISIBILITY_INDEXED\x10\x03*\x97\x02\n" +
+	"\x18ACTOR_VISIBILITY_INDEXED\x10\x03*\xc4\x01\n" +
+	"\x11ActorDeviceStatus\x12#\n" +
+	"\x1fACTOR_DEVICE_STATUS_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dACTOR_DEVICE_STATUS_ENROLLING\x10\x01\x12\x1e\n" +
+	"\x1aACTOR_DEVICE_STATUS_ACTIVE\x10\x02\x12&\n" +
+	"\"ACTOR_DEVICE_STATUS_REVOKE_PENDING\x10\x03\x12\x1f\n" +
+	"\x1bACTOR_DEVICE_STATUS_REVOKED\x10\x04*\x97\x02\n" +
 	"!ActorSigningKeyVerificationSource\x125\n" +
 	"1ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_UNSPECIFIED\x10\x00\x12C\n" +
 	"?ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION\x10\x01\x12:\n" +
@@ -1370,43 +2455,80 @@ func file_domain_actor_actor_proto_rawDescGZIP() []byte {
 	return file_domain_actor_actor_proto_rawDescData
 }
 
-var file_domain_actor_actor_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_domain_actor_actor_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_domain_actor_actor_proto_goTypes = []any{
-	(ActorKind)(0),                         // 0: peers_touch.model.actor.v1.ActorKind
-	(ActorOrigin)(0),                       // 1: peers_touch.model.actor.v1.ActorOrigin
-	(ActorVisibility)(0),                   // 2: peers_touch.model.actor.v1.ActorVisibility
-	(ActorSigningKeyVerificationSource)(0), // 3: peers_touch.model.actor.v1.ActorSigningKeyVerificationSource
-	(*ActorRef)(nil),                       // 4: peers_touch.model.actor.v1.ActorRef
-	(*Actor)(nil),                          // 5: peers_touch.model.actor.v1.Actor
-	(*VerifiedActorDeviceSigningKey)(nil),  // 6: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
-	(*UserLink)(nil),                       // 7: peers_touch.model.actor.v1.UserLink
-	(*PeersTouchInfo)(nil),                 // 8: peers_touch.model.actor.v1.PeersTouchInfo
-	(*ActorProfile)(nil),                   // 9: peers_touch.model.actor.v1.ActorProfile
-	(*UpdateProfileRequest)(nil),           // 10: peers_touch.model.actor.v1.UpdateProfileRequest
-	(*ActorList)(nil),                      // 11: peers_touch.model.actor.v1.ActorList
-	(*SearchUsersRequest)(nil),             // 12: peers_touch.model.actor.v1.SearchUsersRequest
-	(*GetMeRequest)(nil),                   // 13: peers_touch.model.actor.v1.GetMeRequest
-	nil,                                    // 14: peers_touch.model.actor.v1.Actor.EndpointsEntry
+	(ActorKind)(0),                            // 0: peers_touch.model.actor.v1.ActorKind
+	(ActorOrigin)(0),                          // 1: peers_touch.model.actor.v1.ActorOrigin
+	(ActorVisibility)(0),                      // 2: peers_touch.model.actor.v1.ActorVisibility
+	(ActorDeviceStatus)(0),                    // 3: peers_touch.model.actor.v1.ActorDeviceStatus
+	(ActorSigningKeyVerificationSource)(0),    // 4: peers_touch.model.actor.v1.ActorSigningKeyVerificationSource
+	(*ActorRef)(nil),                          // 5: peers_touch.model.actor.v1.ActorRef
+	(*ActorDeviceRef)(nil),                    // 6: peers_touch.model.actor.v1.ActorDeviceRef
+	(*ActorDeviceCertificate)(nil),            // 7: peers_touch.model.actor.v1.ActorDeviceCertificate
+	(*ActorDevice)(nil),                       // 8: peers_touch.model.actor.v1.ActorDevice
+	(*EnrollActorDeviceRequest)(nil),          // 9: peers_touch.model.actor.v1.EnrollActorDeviceRequest
+	(*EnrollActorDeviceResponse)(nil),         // 10: peers_touch.model.actor.v1.EnrollActorDeviceResponse
+	(*ListActorDevicesRequest)(nil),           // 11: peers_touch.model.actor.v1.ListActorDevicesRequest
+	(*ListActorDevicesResponse)(nil),          // 12: peers_touch.model.actor.v1.ListActorDevicesResponse
+	(*RevokeActorDeviceRequest)(nil),          // 13: peers_touch.model.actor.v1.RevokeActorDeviceRequest
+	(*RevokeActorDeviceResponse)(nil),         // 14: peers_touch.model.actor.v1.RevokeActorDeviceResponse
+	(*ActorEndpointManifestEntry)(nil),        // 15: peers_touch.model.actor.v1.ActorEndpointManifestEntry
+	(*ActorEndpointManifestSigningInput)(nil), // 16: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput
+	(*ActorEndpointManifest)(nil),             // 17: peers_touch.model.actor.v1.ActorEndpointManifest
+	(*GetActorEndpointManifestRequest)(nil),   // 18: peers_touch.model.actor.v1.GetActorEndpointManifestRequest
+	(*GetActorEndpointManifestResponse)(nil),  // 19: peers_touch.model.actor.v1.GetActorEndpointManifestResponse
+	(*Actor)(nil),                             // 20: peers_touch.model.actor.v1.Actor
+	(*VerifiedActorDeviceSigningKey)(nil),     // 21: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
+	(*UserLink)(nil),                          // 22: peers_touch.model.actor.v1.UserLink
+	(*PeersTouchInfo)(nil),                    // 23: peers_touch.model.actor.v1.PeersTouchInfo
+	(*ActorProfile)(nil),                      // 24: peers_touch.model.actor.v1.ActorProfile
+	(*UpdateProfileRequest)(nil),              // 25: peers_touch.model.actor.v1.UpdateProfileRequest
+	(*ActorList)(nil),                         // 26: peers_touch.model.actor.v1.ActorList
+	(*SearchUsersRequest)(nil),                // 27: peers_touch.model.actor.v1.SearchUsersRequest
+	(*GetMeRequest)(nil),                      // 28: peers_touch.model.actor.v1.GetMeRequest
+	nil,                                       // 29: peers_touch.model.actor.v1.Actor.EndpointsEntry
+	(*timestamppb.Timestamp)(nil),             // 30: google.protobuf.Timestamp
 }
 var file_domain_actor_actor_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.actor.v1.ActorRef.kind:type_name -> peers_touch.model.actor.v1.ActorKind
-	14, // 1: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
-	0,  // 2: peers_touch.model.actor.v1.Actor.kind:type_name -> peers_touch.model.actor.v1.ActorKind
-	2,  // 3: peers_touch.model.actor.v1.Actor.visibility:type_name -> peers_touch.model.actor.v1.ActorVisibility
-	1,  // 4: peers_touch.model.actor.v1.Actor.origin:type_name -> peers_touch.model.actor.v1.ActorOrigin
-	4,  // 5: peers_touch.model.actor.v1.Actor.ref:type_name -> peers_touch.model.actor.v1.ActorRef
-	3,  // 6: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey.verification_source:type_name -> peers_touch.model.actor.v1.ActorSigningKeyVerificationSource
-	7,  // 7: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
-	8,  // 8: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
-	4,  // 9: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
-	7,  // 10: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
-	5,  // 11: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	5,  // 1: peers_touch.model.actor.v1.ActorDeviceRef.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	6,  // 2: peers_touch.model.actor.v1.ActorDeviceCertificate.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	6,  // 3: peers_touch.model.actor.v1.ActorDevice.ref:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	3,  // 4: peers_touch.model.actor.v1.ActorDevice.status:type_name -> peers_touch.model.actor.v1.ActorDeviceStatus
+	30, // 5: peers_touch.model.actor.v1.ActorDevice.enrolled_at:type_name -> google.protobuf.Timestamp
+	30, // 6: peers_touch.model.actor.v1.ActorDevice.revoked_at:type_name -> google.protobuf.Timestamp
+	7,  // 7: peers_touch.model.actor.v1.EnrollActorDeviceRequest.certificate:type_name -> peers_touch.model.actor.v1.ActorDeviceCertificate
+	8,  // 8: peers_touch.model.actor.v1.EnrollActorDeviceResponse.device:type_name -> peers_touch.model.actor.v1.ActorDevice
+	8,  // 9: peers_touch.model.actor.v1.ListActorDevicesResponse.devices:type_name -> peers_touch.model.actor.v1.ActorDevice
+	8,  // 10: peers_touch.model.actor.v1.RevokeActorDeviceResponse.device:type_name -> peers_touch.model.actor.v1.ActorDevice
+	6,  // 11: peers_touch.model.actor.v1.ActorEndpointManifestEntry.endpoint:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	5,  // 12: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	15, // 13: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.active_endpoints:type_name -> peers_touch.model.actor.v1.ActorEndpointManifestEntry
+	30, // 14: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.issued_at:type_name -> google.protobuf.Timestamp
+	30, // 15: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.expires_at:type_name -> google.protobuf.Timestamp
+	5,  // 16: peers_touch.model.actor.v1.ActorEndpointManifest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	15, // 17: peers_touch.model.actor.v1.ActorEndpointManifest.active_endpoints:type_name -> peers_touch.model.actor.v1.ActorEndpointManifestEntry
+	30, // 18: peers_touch.model.actor.v1.ActorEndpointManifest.issued_at:type_name -> google.protobuf.Timestamp
+	30, // 19: peers_touch.model.actor.v1.ActorEndpointManifest.expires_at:type_name -> google.protobuf.Timestamp
+	5,  // 20: peers_touch.model.actor.v1.GetActorEndpointManifestRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	17, // 21: peers_touch.model.actor.v1.GetActorEndpointManifestResponse.manifest:type_name -> peers_touch.model.actor.v1.ActorEndpointManifest
+	29, // 22: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
+	0,  // 23: peers_touch.model.actor.v1.Actor.kind:type_name -> peers_touch.model.actor.v1.ActorKind
+	2,  // 24: peers_touch.model.actor.v1.Actor.visibility:type_name -> peers_touch.model.actor.v1.ActorVisibility
+	1,  // 25: peers_touch.model.actor.v1.Actor.origin:type_name -> peers_touch.model.actor.v1.ActorOrigin
+	5,  // 26: peers_touch.model.actor.v1.Actor.ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	4,  // 27: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey.verification_source:type_name -> peers_touch.model.actor.v1.ActorSigningKeyVerificationSource
+	22, // 28: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
+	23, // 29: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
+	5,  // 30: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	22, // 31: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
+	20, // 32: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
+	33, // [33:33] is the sub-list for method output_type
+	33, // [33:33] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_proto_init() }
@@ -1414,14 +2536,14 @@ func file_domain_actor_actor_proto_init() {
 	if File_domain_actor_actor_proto != nil {
 		return
 	}
-	file_domain_actor_actor_proto_msgTypes[6].OneofWrappers = []any{}
+	file_domain_actor_actor_proto_msgTypes[20].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_actor_actor_proto_rawDesc), len(file_domain_actor_actor_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   11,
+			NumEnums:      5,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -138,6 +138,24 @@ that have no target capability are listed under `target_absent_routes`, so their
 presence fails as explicit deletion debt instead of being misclassified as an
 undeclared capability.
 
+### 4.1 Canonical Proto Sources
+
+CA-W1 assigns each canonical request/response symbol to exactly one capability:
+
+| Resource owner | Proto source | Canonical responsibility |
+|---|---|---|
+| Conversation | `model/domain/chat/conversation_api.proto` | create/list/query, prepare/submit, membership, settings, read, and typing |
+| Conversation Delivery | `model/domain/chat/queue.proto`, `model/domain/chat/receipt.proto` | fenced Device Inbox and typed receipt/read-cursor submission |
+| Actor Identity | `model/domain/actor/actor.proto` | Actor Device enrollment, listing, revocation, and endpoint manifests |
+| Recovery | `model/domain/recovery/recovery.proto` | opaque encrypted archive revisions |
+| Key Exchange | `model/domain/key_exchange/key_exchange.proto` | Direct public material, MLS KeyPackages, exact-once claims, and DKX |
+| Federation | `model/domain/federation/delivery.proto` | authenticated domain-neutral frame, disposition, and typed transport failure |
+| Social | `model/domain/social/relationship.proto` | Friend Request API plus signed command/event/result payloads |
+
+The target types are additive until CA-W5. Existing handlers and clients remain on
+their current generated types until the atomic route/consumer cutover; the registry
+marks those types as superseded deletion obligations rather than aliases.
+
 ## 5. Canonical Conversation Persistence
 
 The target Conversation authority has one store family:
@@ -178,15 +196,20 @@ semantic contract is:
 
 ```text
 FriendRequestCommand
-  command_id
-  request_id
-  action: SEND | ACCEPT | REJECT
-  sender_actor_ref
-  receiver_actor_ref
-  message
-  observed_request_state
-  created_at
-  expires_at
+  body: FriendRequestCommandBody
+    command_id
+    request_id
+    action: SEND | ACCEPT | REJECT
+    sender_actor_ref
+    receiver_actor_ref
+    sender_home_station_peer_id
+    receiver_home_station_peer_id
+    message
+    observed_request_state
+    created_at
+    expires_at
+    authorizing_device
+  signing_key_id
   actor_device_signature
 
 FriendRequestEvent

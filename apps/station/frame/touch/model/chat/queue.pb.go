@@ -7,6 +7,7 @@
 package chat
 
 import (
+	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -139,6 +140,182 @@ func (x DeviceQueueItemState) Number() protoreflect.EnumNumber {
 // Deprecated: Use DeviceQueueItemState.Descriptor instead.
 func (DeviceQueueItemState) EnumDescriptor() ([]byte, []int) {
 	return file_domain_chat_queue_proto_rawDescGZIP(), []int{1}
+}
+
+// Canonical /device/inbox contract. The DeviceQueue messages above remain
+// available only until the CA-W5 atomic consumer cutover.
+type DeviceInboxPayloadType int32
+
+const (
+	DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_UNSPECIFIED         DeviceInboxPayloadType = 0
+	DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_CONVERSATION_EVENT  DeviceInboxPayloadType = 1
+	DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_DIRECT_SESSION_INIT DeviceInboxPayloadType = 2
+	DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_MLS_TRANSITION      DeviceInboxPayloadType = 3
+	DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_COMMAND_RESULT      DeviceInboxPayloadType = 4
+	DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_DEVICE_RECEIPT      DeviceInboxPayloadType = 5
+)
+
+// Enum value maps for DeviceInboxPayloadType.
+var (
+	DeviceInboxPayloadType_name = map[int32]string{
+		0: "DEVICE_INBOX_PAYLOAD_TYPE_UNSPECIFIED",
+		1: "DEVICE_INBOX_PAYLOAD_TYPE_CONVERSATION_EVENT",
+		2: "DEVICE_INBOX_PAYLOAD_TYPE_DIRECT_SESSION_INIT",
+		3: "DEVICE_INBOX_PAYLOAD_TYPE_MLS_TRANSITION",
+		4: "DEVICE_INBOX_PAYLOAD_TYPE_COMMAND_RESULT",
+		5: "DEVICE_INBOX_PAYLOAD_TYPE_DEVICE_RECEIPT",
+	}
+	DeviceInboxPayloadType_value = map[string]int32{
+		"DEVICE_INBOX_PAYLOAD_TYPE_UNSPECIFIED":         0,
+		"DEVICE_INBOX_PAYLOAD_TYPE_CONVERSATION_EVENT":  1,
+		"DEVICE_INBOX_PAYLOAD_TYPE_DIRECT_SESSION_INIT": 2,
+		"DEVICE_INBOX_PAYLOAD_TYPE_MLS_TRANSITION":      3,
+		"DEVICE_INBOX_PAYLOAD_TYPE_COMMAND_RESULT":      4,
+		"DEVICE_INBOX_PAYLOAD_TYPE_DEVICE_RECEIPT":      5,
+	}
+)
+
+func (x DeviceInboxPayloadType) Enum() *DeviceInboxPayloadType {
+	p := new(DeviceInboxPayloadType)
+	*p = x
+	return p
+}
+
+func (x DeviceInboxPayloadType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DeviceInboxPayloadType) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_chat_queue_proto_enumTypes[2].Descriptor()
+}
+
+func (DeviceInboxPayloadType) Type() protoreflect.EnumType {
+	return &file_domain_chat_queue_proto_enumTypes[2]
+}
+
+func (x DeviceInboxPayloadType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DeviceInboxPayloadType.Descriptor instead.
+func (DeviceInboxPayloadType) EnumDescriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{2}
+}
+
+type DeviceInboxItemState int32
+
+const (
+	DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_UNSPECIFIED DeviceInboxItemState = 0
+	DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_PENDING     DeviceInboxItemState = 1
+	DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_CLAIMED     DeviceInboxItemState = 2
+	DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_RETRY_WAIT  DeviceInboxItemState = 3
+	DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_ACKED       DeviceInboxItemState = 4
+	DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_DEAD_LETTER DeviceInboxItemState = 5
+)
+
+// Enum value maps for DeviceInboxItemState.
+var (
+	DeviceInboxItemState_name = map[int32]string{
+		0: "DEVICE_INBOX_ITEM_STATE_UNSPECIFIED",
+		1: "DEVICE_INBOX_ITEM_STATE_PENDING",
+		2: "DEVICE_INBOX_ITEM_STATE_CLAIMED",
+		3: "DEVICE_INBOX_ITEM_STATE_RETRY_WAIT",
+		4: "DEVICE_INBOX_ITEM_STATE_ACKED",
+		5: "DEVICE_INBOX_ITEM_STATE_DEAD_LETTER",
+	}
+	DeviceInboxItemState_value = map[string]int32{
+		"DEVICE_INBOX_ITEM_STATE_UNSPECIFIED": 0,
+		"DEVICE_INBOX_ITEM_STATE_PENDING":     1,
+		"DEVICE_INBOX_ITEM_STATE_CLAIMED":     2,
+		"DEVICE_INBOX_ITEM_STATE_RETRY_WAIT":  3,
+		"DEVICE_INBOX_ITEM_STATE_ACKED":       4,
+		"DEVICE_INBOX_ITEM_STATE_DEAD_LETTER": 5,
+	}
+)
+
+func (x DeviceInboxItemState) Enum() *DeviceInboxItemState {
+	p := new(DeviceInboxItemState)
+	*p = x
+	return p
+}
+
+func (x DeviceInboxItemState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DeviceInboxItemState) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_chat_queue_proto_enumTypes[3].Descriptor()
+}
+
+func (DeviceInboxItemState) Type() protoreflect.EnumType {
+	return &file_domain_chat_queue_proto_enumTypes[3]
+}
+
+func (x DeviceInboxItemState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DeviceInboxItemState.Descriptor instead.
+func (DeviceInboxItemState) EnumDescriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{3}
+}
+
+type DeviceInboxRejectCode int32
+
+const (
+	DeviceInboxRejectCode_DEVICE_INBOX_REJECT_CODE_UNSPECIFIED              DeviceInboxRejectCode = 0
+	DeviceInboxRejectCode_DEVICE_INBOX_REJECT_CODE_PAYLOAD_INVALID          DeviceInboxRejectCode = 1
+	DeviceInboxRejectCode_DEVICE_INBOX_REJECT_CODE_CRYPTO_STATE_UNAVAILABLE DeviceInboxRejectCode = 2
+	DeviceInboxRejectCode_DEVICE_INBOX_REJECT_CODE_INTEGRITY_FAILED         DeviceInboxRejectCode = 3
+	DeviceInboxRejectCode_DEVICE_INBOX_REJECT_CODE_RECIPIENT_MISMATCH       DeviceInboxRejectCode = 4
+	DeviceInboxRejectCode_DEVICE_INBOX_REJECT_CODE_RETRY_LATER              DeviceInboxRejectCode = 5
+)
+
+// Enum value maps for DeviceInboxRejectCode.
+var (
+	DeviceInboxRejectCode_name = map[int32]string{
+		0: "DEVICE_INBOX_REJECT_CODE_UNSPECIFIED",
+		1: "DEVICE_INBOX_REJECT_CODE_PAYLOAD_INVALID",
+		2: "DEVICE_INBOX_REJECT_CODE_CRYPTO_STATE_UNAVAILABLE",
+		3: "DEVICE_INBOX_REJECT_CODE_INTEGRITY_FAILED",
+		4: "DEVICE_INBOX_REJECT_CODE_RECIPIENT_MISMATCH",
+		5: "DEVICE_INBOX_REJECT_CODE_RETRY_LATER",
+	}
+	DeviceInboxRejectCode_value = map[string]int32{
+		"DEVICE_INBOX_REJECT_CODE_UNSPECIFIED":              0,
+		"DEVICE_INBOX_REJECT_CODE_PAYLOAD_INVALID":          1,
+		"DEVICE_INBOX_REJECT_CODE_CRYPTO_STATE_UNAVAILABLE": 2,
+		"DEVICE_INBOX_REJECT_CODE_INTEGRITY_FAILED":         3,
+		"DEVICE_INBOX_REJECT_CODE_RECIPIENT_MISMATCH":       4,
+		"DEVICE_INBOX_REJECT_CODE_RETRY_LATER":              5,
+	}
+)
+
+func (x DeviceInboxRejectCode) Enum() *DeviceInboxRejectCode {
+	p := new(DeviceInboxRejectCode)
+	*p = x
+	return p
+}
+
+func (x DeviceInboxRejectCode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DeviceInboxRejectCode) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_chat_queue_proto_enumTypes[4].Descriptor()
+}
+
+func (DeviceInboxRejectCode) Type() protoreflect.EnumType {
+	return &file_domain_chat_queue_proto_enumTypes[4]
+}
+
+func (x DeviceInboxRejectCode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DeviceInboxRejectCode.Descriptor instead.
+func (DeviceInboxRejectCode) EnumDescriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{4}
 }
 
 type DeviceQueueLease struct {
@@ -819,11 +996,687 @@ func (x *DeviceQueueWakeHint) GetLaneHeadSequence() int64 {
 	return 0
 }
 
+type DeviceInboxLease struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ConsumerId    string                 `protobuf:"bytes,1,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	ConsumerEpoch uint64                 `protobuf:"varint,2,opt,name=consumer_epoch,json=consumerEpoch,proto3" json:"consumer_epoch,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceInboxLease) Reset() {
+	*x = DeviceInboxLease{}
+	mi := &file_domain_chat_queue_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceInboxLease) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceInboxLease) ProtoMessage() {}
+
+func (x *DeviceInboxLease) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_queue_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceInboxLease.ProtoReflect.Descriptor instead.
+func (*DeviceInboxLease) Descriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *DeviceInboxLease) GetConsumerId() string {
+	if x != nil {
+		return x.ConsumerId
+	}
+	return ""
+}
+
+func (x *DeviceInboxLease) GetConsumerEpoch() uint64 {
+	if x != nil {
+		return x.ConsumerEpoch
+	}
+	return 0
+}
+
+func (x *DeviceInboxLease) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+type DurableDeviceInboxItem struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ItemId         string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	Recipient      *model.ActorDeviceRef  `protobuf:"bytes,2,opt,name=recipient,proto3" json:"recipient,omitempty"`
+	LaneSequence   int64                  `protobuf:"varint,3,opt,name=lane_sequence,json=laneSequence,proto3" json:"lane_sequence,omitempty"`
+	EventId        string                 `protobuf:"bytes,4,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	ConversationId string                 `protobuf:"bytes,5,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	PayloadType    DeviceInboxPayloadType `protobuf:"varint,7,opt,name=payload_type,json=payloadType,proto3,enum=peers_touch.model.chat.v1.DeviceInboxPayloadType" json:"payload_type,omitempty"`
+	OpaquePayload  []byte                 `protobuf:"bytes,8,opt,name=opaque_payload,json=opaquePayload,proto3" json:"opaque_payload,omitempty"`
+	PayloadSha256  []byte                 `protobuf:"bytes,9,opt,name=payload_sha256,json=payloadSha256,proto3" json:"payload_sha256,omitempty"`
+	State          DeviceInboxItemState   `protobuf:"varint,10,opt,name=state,proto3,enum=peers_touch.model.chat.v1.DeviceInboxItemState" json:"state,omitempty"`
+	AttemptCount   uint32                 `protobuf:"varint,11,opt,name=attempt_count,json=attemptCount,proto3" json:"attempt_count,omitempty"`
+	Lease          *DeviceInboxLease      `protobuf:"bytes,12,opt,name=lease,proto3" json:"lease,omitempty"`
+	FirstQueuedAt  *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=first_queued_at,json=firstQueuedAt,proto3" json:"first_queued_at,omitempty"`
+	NextAttemptAt  *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=next_attempt_at,json=nextAttemptAt,proto3" json:"next_attempt_at,omitempty"`
+	ExpiresAt      *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	AckedAt        *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=acked_at,json=ackedAt,proto3" json:"acked_at,omitempty"`
+	LastErrorCode  DeviceInboxRejectCode  `protobuf:"varint,17,opt,name=last_error_code,json=lastErrorCode,proto3,enum=peers_touch.model.chat.v1.DeviceInboxRejectCode" json:"last_error_code,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DurableDeviceInboxItem) Reset() {
+	*x = DurableDeviceInboxItem{}
+	mi := &file_domain_chat_queue_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DurableDeviceInboxItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DurableDeviceInboxItem) ProtoMessage() {}
+
+func (x *DurableDeviceInboxItem) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_queue_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DurableDeviceInboxItem.ProtoReflect.Descriptor instead.
+func (*DurableDeviceInboxItem) Descriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DurableDeviceInboxItem) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *DurableDeviceInboxItem) GetRecipient() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Recipient
+	}
+	return nil
+}
+
+func (x *DurableDeviceInboxItem) GetLaneSequence() int64 {
+	if x != nil {
+		return x.LaneSequence
+	}
+	return 0
+}
+
+func (x *DurableDeviceInboxItem) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *DurableDeviceInboxItem) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *DurableDeviceInboxItem) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *DurableDeviceInboxItem) GetPayloadType() DeviceInboxPayloadType {
+	if x != nil {
+		return x.PayloadType
+	}
+	return DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_UNSPECIFIED
+}
+
+func (x *DurableDeviceInboxItem) GetOpaquePayload() []byte {
+	if x != nil {
+		return x.OpaquePayload
+	}
+	return nil
+}
+
+func (x *DurableDeviceInboxItem) GetPayloadSha256() []byte {
+	if x != nil {
+		return x.PayloadSha256
+	}
+	return nil
+}
+
+func (x *DurableDeviceInboxItem) GetState() DeviceInboxItemState {
+	if x != nil {
+		return x.State
+	}
+	return DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_UNSPECIFIED
+}
+
+func (x *DurableDeviceInboxItem) GetAttemptCount() uint32 {
+	if x != nil {
+		return x.AttemptCount
+	}
+	return 0
+}
+
+func (x *DurableDeviceInboxItem) GetLease() *DeviceInboxLease {
+	if x != nil {
+		return x.Lease
+	}
+	return nil
+}
+
+func (x *DurableDeviceInboxItem) GetFirstQueuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FirstQueuedAt
+	}
+	return nil
+}
+
+func (x *DurableDeviceInboxItem) GetNextAttemptAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NextAttemptAt
+	}
+	return nil
+}
+
+func (x *DurableDeviceInboxItem) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *DurableDeviceInboxItem) GetAckedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.AckedAt
+	}
+	return nil
+}
+
+func (x *DurableDeviceInboxItem) GetLastErrorCode() DeviceInboxRejectCode {
+	if x != nil {
+		return x.LastErrorCode
+	}
+	return DeviceInboxRejectCode_DEVICE_INBOX_REJECT_CODE_UNSPECIFIED
+}
+
+type ClaimDeviceInboxRequest struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Device                *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	ConsumerId            string                 `protobuf:"bytes,2,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	ExpectedConsumerEpoch uint64                 `protobuf:"varint,3,opt,name=expected_consumer_epoch,json=expectedConsumerEpoch,proto3" json:"expected_consumer_epoch,omitempty"`
+	AfterLaneSequence     int64                  `protobuf:"varint,4,opt,name=after_lane_sequence,json=afterLaneSequence,proto3" json:"after_lane_sequence,omitempty"`
+	BatchLimit            uint32                 `protobuf:"varint,5,opt,name=batch_limit,json=batchLimit,proto3" json:"batch_limit,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *ClaimDeviceInboxRequest) Reset() {
+	*x = ClaimDeviceInboxRequest{}
+	mi := &file_domain_chat_queue_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimDeviceInboxRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimDeviceInboxRequest) ProtoMessage() {}
+
+func (x *ClaimDeviceInboxRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_queue_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimDeviceInboxRequest.ProtoReflect.Descriptor instead.
+func (*ClaimDeviceInboxRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ClaimDeviceInboxRequest) GetDevice() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+func (x *ClaimDeviceInboxRequest) GetConsumerId() string {
+	if x != nil {
+		return x.ConsumerId
+	}
+	return ""
+}
+
+func (x *ClaimDeviceInboxRequest) GetExpectedConsumerEpoch() uint64 {
+	if x != nil {
+		return x.ExpectedConsumerEpoch
+	}
+	return 0
+}
+
+func (x *ClaimDeviceInboxRequest) GetAfterLaneSequence() int64 {
+	if x != nil {
+		return x.AfterLaneSequence
+	}
+	return 0
+}
+
+func (x *ClaimDeviceInboxRequest) GetBatchLimit() uint32 {
+	if x != nil {
+		return x.BatchLimit
+	}
+	return 0
+}
+
+type ClaimDeviceInboxResponse struct {
+	state                protoimpl.MessageState    `protogen:"open.v1"`
+	ConsumerEpoch        uint64                    `protobuf:"varint,1,opt,name=consumer_epoch,json=consumerEpoch,proto3" json:"consumer_epoch,omitempty"`
+	Items                []*DurableDeviceInboxItem `protobuf:"bytes,2,rep,name=items,proto3" json:"items,omitempty"`
+	LaneHeadSequence     int64                     `protobuf:"varint,3,opt,name=lane_head_sequence,json=laneHeadSequence,proto3" json:"lane_head_sequence,omitempty"`
+	AckedThroughSequence int64                     `protobuf:"varint,4,opt,name=acked_through_sequence,json=ackedThroughSequence,proto3" json:"acked_through_sequence,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ClaimDeviceInboxResponse) Reset() {
+	*x = ClaimDeviceInboxResponse{}
+	mi := &file_domain_chat_queue_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimDeviceInboxResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimDeviceInboxResponse) ProtoMessage() {}
+
+func (x *ClaimDeviceInboxResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_queue_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimDeviceInboxResponse.ProtoReflect.Descriptor instead.
+func (*ClaimDeviceInboxResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ClaimDeviceInboxResponse) GetConsumerEpoch() uint64 {
+	if x != nil {
+		return x.ConsumerEpoch
+	}
+	return 0
+}
+
+func (x *ClaimDeviceInboxResponse) GetItems() []*DurableDeviceInboxItem {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *ClaimDeviceInboxResponse) GetLaneHeadSequence() int64 {
+	if x != nil {
+		return x.LaneHeadSequence
+	}
+	return 0
+}
+
+func (x *ClaimDeviceInboxResponse) GetAckedThroughSequence() int64 {
+	if x != nil {
+		return x.AckedThroughSequence
+	}
+	return 0
+}
+
+type AcknowledgeDeviceInboxItemRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Device        *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	ItemId        string                 `protobuf:"bytes,2,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	LaneSequence  int64                  `protobuf:"varint,3,opt,name=lane_sequence,json=laneSequence,proto3" json:"lane_sequence,omitempty"`
+	ConsumerEpoch uint64                 `protobuf:"varint,4,opt,name=consumer_epoch,json=consumerEpoch,proto3" json:"consumer_epoch,omitempty"`
+	PayloadSha256 []byte                 `protobuf:"bytes,5,opt,name=payload_sha256,json=payloadSha256,proto3" json:"payload_sha256,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AcknowledgeDeviceInboxItemRequest) Reset() {
+	*x = AcknowledgeDeviceInboxItemRequest{}
+	mi := &file_domain_chat_queue_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcknowledgeDeviceInboxItemRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcknowledgeDeviceInboxItemRequest) ProtoMessage() {}
+
+func (x *AcknowledgeDeviceInboxItemRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_queue_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcknowledgeDeviceInboxItemRequest.ProtoReflect.Descriptor instead.
+func (*AcknowledgeDeviceInboxItemRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *AcknowledgeDeviceInboxItemRequest) GetDevice() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+func (x *AcknowledgeDeviceInboxItemRequest) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *AcknowledgeDeviceInboxItemRequest) GetLaneSequence() int64 {
+	if x != nil {
+		return x.LaneSequence
+	}
+	return 0
+}
+
+func (x *AcknowledgeDeviceInboxItemRequest) GetConsumerEpoch() uint64 {
+	if x != nil {
+		return x.ConsumerEpoch
+	}
+	return 0
+}
+
+func (x *AcknowledgeDeviceInboxItemRequest) GetPayloadSha256() []byte {
+	if x != nil {
+		return x.PayloadSha256
+	}
+	return nil
+}
+
+type AcknowledgeDeviceInboxItemResponse struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	AckedThroughSequence int64                  `protobuf:"varint,1,opt,name=acked_through_sequence,json=ackedThroughSequence,proto3" json:"acked_through_sequence,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *AcknowledgeDeviceInboxItemResponse) Reset() {
+	*x = AcknowledgeDeviceInboxItemResponse{}
+	mi := &file_domain_chat_queue_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcknowledgeDeviceInboxItemResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcknowledgeDeviceInboxItemResponse) ProtoMessage() {}
+
+func (x *AcknowledgeDeviceInboxItemResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_queue_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcknowledgeDeviceInboxItemResponse.ProtoReflect.Descriptor instead.
+func (*AcknowledgeDeviceInboxItemResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AcknowledgeDeviceInboxItemResponse) GetAckedThroughSequence() int64 {
+	if x != nil {
+		return x.AckedThroughSequence
+	}
+	return 0
+}
+
+type RejectDeviceInboxItemRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Device        *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	ItemId        string                 `protobuf:"bytes,2,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	LaneSequence  int64                  `protobuf:"varint,3,opt,name=lane_sequence,json=laneSequence,proto3" json:"lane_sequence,omitempty"`
+	ConsumerEpoch uint64                 `protobuf:"varint,4,opt,name=consumer_epoch,json=consumerEpoch,proto3" json:"consumer_epoch,omitempty"`
+	ErrorCode     DeviceInboxRejectCode  `protobuf:"varint,5,opt,name=error_code,json=errorCode,proto3,enum=peers_touch.model.chat.v1.DeviceInboxRejectCode" json:"error_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RejectDeviceInboxItemRequest) Reset() {
+	*x = RejectDeviceInboxItemRequest{}
+	mi := &file_domain_chat_queue_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RejectDeviceInboxItemRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RejectDeviceInboxItemRequest) ProtoMessage() {}
+
+func (x *RejectDeviceInboxItemRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_queue_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RejectDeviceInboxItemRequest.ProtoReflect.Descriptor instead.
+func (*RejectDeviceInboxItemRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RejectDeviceInboxItemRequest) GetDevice() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+func (x *RejectDeviceInboxItemRequest) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *RejectDeviceInboxItemRequest) GetLaneSequence() int64 {
+	if x != nil {
+		return x.LaneSequence
+	}
+	return 0
+}
+
+func (x *RejectDeviceInboxItemRequest) GetConsumerEpoch() uint64 {
+	if x != nil {
+		return x.ConsumerEpoch
+	}
+	return 0
+}
+
+func (x *RejectDeviceInboxItemRequest) GetErrorCode() DeviceInboxRejectCode {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return DeviceInboxRejectCode_DEVICE_INBOX_REJECT_CODE_UNSPECIFIED
+}
+
+type RejectDeviceInboxItemResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         DeviceInboxItemState   `protobuf:"varint,1,opt,name=state,proto3,enum=peers_touch.model.chat.v1.DeviceInboxItemState" json:"state,omitempty"`
+	NextAttemptAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=next_attempt_at,json=nextAttemptAt,proto3" json:"next_attempt_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RejectDeviceInboxItemResponse) Reset() {
+	*x = RejectDeviceInboxItemResponse{}
+	mi := &file_domain_chat_queue_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RejectDeviceInboxItemResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RejectDeviceInboxItemResponse) ProtoMessage() {}
+
+func (x *RejectDeviceInboxItemResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_queue_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RejectDeviceInboxItemResponse.ProtoReflect.Descriptor instead.
+func (*RejectDeviceInboxItemResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *RejectDeviceInboxItemResponse) GetState() DeviceInboxItemState {
+	if x != nil {
+		return x.State
+	}
+	return DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_UNSPECIFIED
+}
+
+func (x *RejectDeviceInboxItemResponse) GetNextAttemptAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NextAttemptAt
+	}
+	return nil
+}
+
+type DeviceInboxWakeHint struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Device           *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	LaneHeadSequence int64                  `protobuf:"varint,2,opt,name=lane_head_sequence,json=laneHeadSequence,proto3" json:"lane_head_sequence,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *DeviceInboxWakeHint) Reset() {
+	*x = DeviceInboxWakeHint{}
+	mi := &file_domain_chat_queue_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceInboxWakeHint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceInboxWakeHint) ProtoMessage() {}
+
+func (x *DeviceInboxWakeHint) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_queue_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceInboxWakeHint.ProtoReflect.Descriptor instead.
+func (*DeviceInboxWakeHint) Descriptor() ([]byte, []int) {
+	return file_domain_chat_queue_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *DeviceInboxWakeHint) GetDevice() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+func (x *DeviceInboxWakeHint) GetLaneHeadSequence() int64 {
+	if x != nil {
+		return x.LaneHeadSequence
+	}
+	return 0
+}
+
 var File_domain_chat_queue_proto protoreflect.FileDescriptor
 
 const file_domain_chat_queue_proto_rawDesc = "" +
 	"\n" +
-	"\x17domain/chat/queue.proto\x12\x19peers_touch.model.chat.v1\x1a\x1adomain/chat/endpoint.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x95\x01\n" +
+	"\x17domain/chat/queue.proto\x12\x19peers_touch.model.chat.v1\x1a\x18domain/actor/actor.proto\x1a\x1adomain/chat/endpoint.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x95\x01\n" +
 	"\x10DeviceQueueLease\x12\x1f\n" +
 	"\vconsumer_id\x18\x01 \x01(\tR\n" +
 	"consumerId\x12%\n" +
@@ -884,6 +1737,66 @@ const file_domain_chat_queue_proto_rawDesc = "" +
 	"\x1dRejectDeviceQueueItemResponse\"`\n" +
 	"\x13DeviceQueueWakeHint\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12,\n" +
+	"\x12lane_head_sequence\x18\x02 \x01(\x03R\x10laneHeadSequence\"\x95\x01\n" +
+	"\x10DeviceInboxLease\x12\x1f\n" +
+	"\vconsumer_id\x18\x01 \x01(\tR\n" +
+	"consumerId\x12%\n" +
+	"\x0econsumer_epoch\x18\x02 \x01(\x04R\rconsumerEpoch\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xb4\a\n" +
+	"\x16DurableDeviceInboxItem\x12\x17\n" +
+	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12H\n" +
+	"\trecipient\x18\x02 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\trecipient\x12#\n" +
+	"\rlane_sequence\x18\x03 \x01(\x03R\flaneSequence\x12\x19\n" +
+	"\bevent_id\x18\x04 \x01(\tR\aeventId\x12'\n" +
+	"\x0fconversation_id\x18\x05 \x01(\tR\x0econversationId\x12'\n" +
+	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12T\n" +
+	"\fpayload_type\x18\a \x01(\x0e21.peers_touch.model.chat.v1.DeviceInboxPayloadTypeR\vpayloadType\x12%\n" +
+	"\x0eopaque_payload\x18\b \x01(\fR\ropaquePayload\x12%\n" +
+	"\x0epayload_sha256\x18\t \x01(\fR\rpayloadSha256\x12E\n" +
+	"\x05state\x18\n" +
+	" \x01(\x0e2/.peers_touch.model.chat.v1.DeviceInboxItemStateR\x05state\x12#\n" +
+	"\rattempt_count\x18\v \x01(\rR\fattemptCount\x12A\n" +
+	"\x05lease\x18\f \x01(\v2+.peers_touch.model.chat.v1.DeviceInboxLeaseR\x05lease\x12B\n" +
+	"\x0ffirst_queued_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\rfirstQueuedAt\x12B\n" +
+	"\x0fnext_attempt_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\rnextAttemptAt\x129\n" +
+	"\n" +
+	"expires_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x125\n" +
+	"\backed_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\aackedAt\x12X\n" +
+	"\x0flast_error_code\x18\x11 \x01(\x0e20.peers_touch.model.chat.v1.DeviceInboxRejectCodeR\rlastErrorCode\"\x87\x02\n" +
+	"\x17ClaimDeviceInboxRequest\x12B\n" +
+	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\x12\x1f\n" +
+	"\vconsumer_id\x18\x02 \x01(\tR\n" +
+	"consumerId\x126\n" +
+	"\x17expected_consumer_epoch\x18\x03 \x01(\x04R\x15expectedConsumerEpoch\x12.\n" +
+	"\x13after_lane_sequence\x18\x04 \x01(\x03R\x11afterLaneSequence\x12\x1f\n" +
+	"\vbatch_limit\x18\x05 \x01(\rR\n" +
+	"batchLimit\"\xee\x01\n" +
+	"\x18ClaimDeviceInboxResponse\x12%\n" +
+	"\x0econsumer_epoch\x18\x01 \x01(\x04R\rconsumerEpoch\x12G\n" +
+	"\x05items\x18\x02 \x03(\v21.peers_touch.model.chat.v1.DurableDeviceInboxItemR\x05items\x12,\n" +
+	"\x12lane_head_sequence\x18\x03 \x01(\x03R\x10laneHeadSequence\x124\n" +
+	"\x16acked_through_sequence\x18\x04 \x01(\x03R\x14ackedThroughSequence\"\xf3\x01\n" +
+	"!AcknowledgeDeviceInboxItemRequest\x12B\n" +
+	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\x12\x17\n" +
+	"\aitem_id\x18\x02 \x01(\tR\x06itemId\x12#\n" +
+	"\rlane_sequence\x18\x03 \x01(\x03R\flaneSequence\x12%\n" +
+	"\x0econsumer_epoch\x18\x04 \x01(\x04R\rconsumerEpoch\x12%\n" +
+	"\x0epayload_sha256\x18\x05 \x01(\fR\rpayloadSha256\"Z\n" +
+	"\"AcknowledgeDeviceInboxItemResponse\x124\n" +
+	"\x16acked_through_sequence\x18\x01 \x01(\x03R\x14ackedThroughSequence\"\x98\x02\n" +
+	"\x1cRejectDeviceInboxItemRequest\x12B\n" +
+	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\x12\x17\n" +
+	"\aitem_id\x18\x02 \x01(\tR\x06itemId\x12#\n" +
+	"\rlane_sequence\x18\x03 \x01(\x03R\flaneSequence\x12%\n" +
+	"\x0econsumer_epoch\x18\x04 \x01(\x04R\rconsumerEpoch\x12O\n" +
+	"\n" +
+	"error_code\x18\x05 \x01(\x0e20.peers_touch.model.chat.v1.DeviceInboxRejectCodeR\terrorCode\"\xaa\x01\n" +
+	"\x1dRejectDeviceInboxItemResponse\x12E\n" +
+	"\x05state\x18\x01 \x01(\x0e2/.peers_touch.model.chat.v1.DeviceInboxItemStateR\x05state\x12B\n" +
+	"\x0fnext_attempt_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\rnextAttemptAt\"\x87\x01\n" +
+	"\x13DeviceInboxWakeHint\x12B\n" +
+	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\x12,\n" +
 	"\x12lane_head_sequence\x18\x02 \x01(\x03R\x10laneHeadSequence*\xb2\x02\n" +
 	"\x16DeviceQueuePayloadType\x12)\n" +
 	"%DEVICE_QUEUE_PAYLOAD_TYPE_UNSPECIFIED\x10\x00\x120\n" +
@@ -899,7 +1812,28 @@ const file_domain_chat_queue_proto_rawDesc = "" +
 	"\"DEVICE_QUEUE_ITEM_STATE_RETRY_WAIT\x10\x03\x12$\n" +
 	" DEVICE_QUEUE_ITEM_STATE_CONSUMED\x10\x04\x12!\n" +
 	"\x1dDEVICE_QUEUE_ITEM_STATE_ACKED\x10\x05\x12'\n" +
-	"#DEVICE_QUEUE_ITEM_STATE_DEAD_LETTER\x10\x06BGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
+	"#DEVICE_QUEUE_ITEM_STATE_DEAD_LETTER\x10\x06*\xb2\x02\n" +
+	"\x16DeviceInboxPayloadType\x12)\n" +
+	"%DEVICE_INBOX_PAYLOAD_TYPE_UNSPECIFIED\x10\x00\x120\n" +
+	",DEVICE_INBOX_PAYLOAD_TYPE_CONVERSATION_EVENT\x10\x01\x121\n" +
+	"-DEVICE_INBOX_PAYLOAD_TYPE_DIRECT_SESSION_INIT\x10\x02\x12,\n" +
+	"(DEVICE_INBOX_PAYLOAD_TYPE_MLS_TRANSITION\x10\x03\x12,\n" +
+	"(DEVICE_INBOX_PAYLOAD_TYPE_COMMAND_RESULT\x10\x04\x12,\n" +
+	"(DEVICE_INBOX_PAYLOAD_TYPE_DEVICE_RECEIPT\x10\x05*\xfd\x01\n" +
+	"\x14DeviceInboxItemState\x12'\n" +
+	"#DEVICE_INBOX_ITEM_STATE_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fDEVICE_INBOX_ITEM_STATE_PENDING\x10\x01\x12#\n" +
+	"\x1fDEVICE_INBOX_ITEM_STATE_CLAIMED\x10\x02\x12&\n" +
+	"\"DEVICE_INBOX_ITEM_STATE_RETRY_WAIT\x10\x03\x12!\n" +
+	"\x1dDEVICE_INBOX_ITEM_STATE_ACKED\x10\x04\x12'\n" +
+	"#DEVICE_INBOX_ITEM_STATE_DEAD_LETTER\x10\x05*\xb0\x02\n" +
+	"\x15DeviceInboxRejectCode\x12(\n" +
+	"$DEVICE_INBOX_REJECT_CODE_UNSPECIFIED\x10\x00\x12,\n" +
+	"(DEVICE_INBOX_REJECT_CODE_PAYLOAD_INVALID\x10\x01\x125\n" +
+	"1DEVICE_INBOX_REJECT_CODE_CRYPTO_STATE_UNAVAILABLE\x10\x02\x12-\n" +
+	")DEVICE_INBOX_REJECT_CODE_INTEGRITY_FAILED\x10\x03\x12/\n" +
+	"+DEVICE_INBOX_REJECT_CODE_RECIPIENT_MISMATCH\x10\x04\x12(\n" +
+	"$DEVICE_INBOX_REJECT_CODE_RETRY_LATER\x10\x05BGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
 
 var (
 	file_domain_chat_queue_proto_rawDescOnce sync.Once
@@ -913,40 +1847,71 @@ func file_domain_chat_queue_proto_rawDescGZIP() []byte {
 	return file_domain_chat_queue_proto_rawDescData
 }
 
-var file_domain_chat_queue_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_domain_chat_queue_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_domain_chat_queue_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_domain_chat_queue_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_domain_chat_queue_proto_goTypes = []any{
 	(DeviceQueuePayloadType)(0),                // 0: peers_touch.model.chat.v1.DeviceQueuePayloadType
 	(DeviceQueueItemState)(0),                  // 1: peers_touch.model.chat.v1.DeviceQueueItemState
-	(*DeviceQueueLease)(nil),                   // 2: peers_touch.model.chat.v1.DeviceQueueLease
-	(*DeviceQueueItem)(nil),                    // 3: peers_touch.model.chat.v1.DeviceQueueItem
-	(*ClaimDeviceQueueRequest)(nil),            // 4: peers_touch.model.chat.v1.ClaimDeviceQueueRequest
-	(*ClaimDeviceQueueResponse)(nil),           // 5: peers_touch.model.chat.v1.ClaimDeviceQueueResponse
-	(*AcknowledgeDeviceQueueItemRequest)(nil),  // 6: peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemRequest
-	(*AcknowledgeDeviceQueueItemResponse)(nil), // 7: peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemResponse
-	(*RejectDeviceQueueItemRequest)(nil),       // 8: peers_touch.model.chat.v1.RejectDeviceQueueItemRequest
-	(*RejectDeviceQueueItemResponse)(nil),      // 9: peers_touch.model.chat.v1.RejectDeviceQueueItemResponse
-	(*DeviceQueueWakeHint)(nil),                // 10: peers_touch.model.chat.v1.DeviceQueueWakeHint
-	(*timestamppb.Timestamp)(nil),              // 11: google.protobuf.Timestamp
-	(*CryptoEndpoint)(nil),                     // 12: peers_touch.model.chat.v1.CryptoEndpoint
+	(DeviceInboxPayloadType)(0),                // 2: peers_touch.model.chat.v1.DeviceInboxPayloadType
+	(DeviceInboxItemState)(0),                  // 3: peers_touch.model.chat.v1.DeviceInboxItemState
+	(DeviceInboxRejectCode)(0),                 // 4: peers_touch.model.chat.v1.DeviceInboxRejectCode
+	(*DeviceQueueLease)(nil),                   // 5: peers_touch.model.chat.v1.DeviceQueueLease
+	(*DeviceQueueItem)(nil),                    // 6: peers_touch.model.chat.v1.DeviceQueueItem
+	(*ClaimDeviceQueueRequest)(nil),            // 7: peers_touch.model.chat.v1.ClaimDeviceQueueRequest
+	(*ClaimDeviceQueueResponse)(nil),           // 8: peers_touch.model.chat.v1.ClaimDeviceQueueResponse
+	(*AcknowledgeDeviceQueueItemRequest)(nil),  // 9: peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemRequest
+	(*AcknowledgeDeviceQueueItemResponse)(nil), // 10: peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemResponse
+	(*RejectDeviceQueueItemRequest)(nil),       // 11: peers_touch.model.chat.v1.RejectDeviceQueueItemRequest
+	(*RejectDeviceQueueItemResponse)(nil),      // 12: peers_touch.model.chat.v1.RejectDeviceQueueItemResponse
+	(*DeviceQueueWakeHint)(nil),                // 13: peers_touch.model.chat.v1.DeviceQueueWakeHint
+	(*DeviceInboxLease)(nil),                   // 14: peers_touch.model.chat.v1.DeviceInboxLease
+	(*DurableDeviceInboxItem)(nil),             // 15: peers_touch.model.chat.v1.DurableDeviceInboxItem
+	(*ClaimDeviceInboxRequest)(nil),            // 16: peers_touch.model.chat.v1.ClaimDeviceInboxRequest
+	(*ClaimDeviceInboxResponse)(nil),           // 17: peers_touch.model.chat.v1.ClaimDeviceInboxResponse
+	(*AcknowledgeDeviceInboxItemRequest)(nil),  // 18: peers_touch.model.chat.v1.AcknowledgeDeviceInboxItemRequest
+	(*AcknowledgeDeviceInboxItemResponse)(nil), // 19: peers_touch.model.chat.v1.AcknowledgeDeviceInboxItemResponse
+	(*RejectDeviceInboxItemRequest)(nil),       // 20: peers_touch.model.chat.v1.RejectDeviceInboxItemRequest
+	(*RejectDeviceInboxItemResponse)(nil),      // 21: peers_touch.model.chat.v1.RejectDeviceInboxItemResponse
+	(*DeviceInboxWakeHint)(nil),                // 22: peers_touch.model.chat.v1.DeviceInboxWakeHint
+	(*timestamppb.Timestamp)(nil),              // 23: google.protobuf.Timestamp
+	(*CryptoEndpoint)(nil),                     // 24: peers_touch.model.chat.v1.CryptoEndpoint
+	(*model.ActorDeviceRef)(nil),               // 25: peers_touch.model.actor.v1.ActorDeviceRef
 }
 var file_domain_chat_queue_proto_depIdxs = []int32{
-	11, // 0: peers_touch.model.chat.v1.DeviceQueueLease.expires_at:type_name -> google.protobuf.Timestamp
-	12, // 1: peers_touch.model.chat.v1.DeviceQueueItem.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	23, // 0: peers_touch.model.chat.v1.DeviceQueueLease.expires_at:type_name -> google.protobuf.Timestamp
+	24, // 1: peers_touch.model.chat.v1.DeviceQueueItem.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
 	0,  // 2: peers_touch.model.chat.v1.DeviceQueueItem.payload_type:type_name -> peers_touch.model.chat.v1.DeviceQueuePayloadType
 	1,  // 3: peers_touch.model.chat.v1.DeviceQueueItem.state:type_name -> peers_touch.model.chat.v1.DeviceQueueItemState
-	2,  // 4: peers_touch.model.chat.v1.DeviceQueueItem.lease:type_name -> peers_touch.model.chat.v1.DeviceQueueLease
-	11, // 5: peers_touch.model.chat.v1.DeviceQueueItem.first_queued_at:type_name -> google.protobuf.Timestamp
-	11, // 6: peers_touch.model.chat.v1.DeviceQueueItem.next_attempt_at:type_name -> google.protobuf.Timestamp
-	11, // 7: peers_touch.model.chat.v1.DeviceQueueItem.expires_at:type_name -> google.protobuf.Timestamp
-	11, // 8: peers_touch.model.chat.v1.DeviceQueueItem.consumed_at:type_name -> google.protobuf.Timestamp
-	11, // 9: peers_touch.model.chat.v1.DeviceQueueItem.acked_at:type_name -> google.protobuf.Timestamp
-	3,  // 10: peers_touch.model.chat.v1.ClaimDeviceQueueResponse.items:type_name -> peers_touch.model.chat.v1.DeviceQueueItem
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	5,  // 4: peers_touch.model.chat.v1.DeviceQueueItem.lease:type_name -> peers_touch.model.chat.v1.DeviceQueueLease
+	23, // 5: peers_touch.model.chat.v1.DeviceQueueItem.first_queued_at:type_name -> google.protobuf.Timestamp
+	23, // 6: peers_touch.model.chat.v1.DeviceQueueItem.next_attempt_at:type_name -> google.protobuf.Timestamp
+	23, // 7: peers_touch.model.chat.v1.DeviceQueueItem.expires_at:type_name -> google.protobuf.Timestamp
+	23, // 8: peers_touch.model.chat.v1.DeviceQueueItem.consumed_at:type_name -> google.protobuf.Timestamp
+	23, // 9: peers_touch.model.chat.v1.DeviceQueueItem.acked_at:type_name -> google.protobuf.Timestamp
+	6,  // 10: peers_touch.model.chat.v1.ClaimDeviceQueueResponse.items:type_name -> peers_touch.model.chat.v1.DeviceQueueItem
+	23, // 11: peers_touch.model.chat.v1.DeviceInboxLease.expires_at:type_name -> google.protobuf.Timestamp
+	25, // 12: peers_touch.model.chat.v1.DurableDeviceInboxItem.recipient:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	2,  // 13: peers_touch.model.chat.v1.DurableDeviceInboxItem.payload_type:type_name -> peers_touch.model.chat.v1.DeviceInboxPayloadType
+	3,  // 14: peers_touch.model.chat.v1.DurableDeviceInboxItem.state:type_name -> peers_touch.model.chat.v1.DeviceInboxItemState
+	14, // 15: peers_touch.model.chat.v1.DurableDeviceInboxItem.lease:type_name -> peers_touch.model.chat.v1.DeviceInboxLease
+	23, // 16: peers_touch.model.chat.v1.DurableDeviceInboxItem.first_queued_at:type_name -> google.protobuf.Timestamp
+	23, // 17: peers_touch.model.chat.v1.DurableDeviceInboxItem.next_attempt_at:type_name -> google.protobuf.Timestamp
+	23, // 18: peers_touch.model.chat.v1.DurableDeviceInboxItem.expires_at:type_name -> google.protobuf.Timestamp
+	23, // 19: peers_touch.model.chat.v1.DurableDeviceInboxItem.acked_at:type_name -> google.protobuf.Timestamp
+	4,  // 20: peers_touch.model.chat.v1.DurableDeviceInboxItem.last_error_code:type_name -> peers_touch.model.chat.v1.DeviceInboxRejectCode
+	25, // 21: peers_touch.model.chat.v1.ClaimDeviceInboxRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	15, // 22: peers_touch.model.chat.v1.ClaimDeviceInboxResponse.items:type_name -> peers_touch.model.chat.v1.DurableDeviceInboxItem
+	25, // 23: peers_touch.model.chat.v1.AcknowledgeDeviceInboxItemRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	25, // 24: peers_touch.model.chat.v1.RejectDeviceInboxItemRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	4,  // 25: peers_touch.model.chat.v1.RejectDeviceInboxItemRequest.error_code:type_name -> peers_touch.model.chat.v1.DeviceInboxRejectCode
+	3,  // 26: peers_touch.model.chat.v1.RejectDeviceInboxItemResponse.state:type_name -> peers_touch.model.chat.v1.DeviceInboxItemState
+	23, // 27: peers_touch.model.chat.v1.RejectDeviceInboxItemResponse.next_attempt_at:type_name -> google.protobuf.Timestamp
+	25, // 28: peers_touch.model.chat.v1.DeviceInboxWakeHint.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	29, // [29:29] is the sub-list for method output_type
+	29, // [29:29] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_queue_proto_init() }
@@ -960,8 +1925,8 @@ func file_domain_chat_queue_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_queue_proto_rawDesc), len(file_domain_chat_queue_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   9,
+			NumEnums:      5,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
