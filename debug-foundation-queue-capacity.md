@@ -13,10 +13,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | The active Turn becomes terminal before the capacity snapshot, allowing Station to drain the queue below eight. | High | Low | Confirmed again for the post-fix zh-CN tuple: the first read was seven, `done` arrived while polling, and the queue drained to zero. |
-| B | Starting eight queue streams concurrently does not prove that all eight admissions have completed before queue readback. | High | Low | Confirmed: the post-fix zh-CN tuple started all eight with zero observed events, but the first Station readback contained only seven entries and never reached eight. |
+| A | The active Turn becomes terminal before the capacity snapshot, allowing Station to drain the queue below eight. | High | Low | Confirmed again on `3d6435d82`: the active stream completed 142 ms after queue launch, the first read was seven, and the queue drained to zero. |
+| B | Waiting for the active Turn's first provider event consumes the admission window before the eight queue requests are launched. | High | Low | Confirmed on `3d6435d82`: upstream admission completed at 132 ms, the first provider event arrived at 1,404 ms, and queue launch followed at 1,511 ms. |
 | C | Station reports a queue capacity other than eight for this conversation. | Medium | Low | Rejected: both tuples reported authoritative capacity eight. |
-| D | One queued request is delayed in Browser dispatch, Gateway forwarding, or Station admission until the active Turn completes. | High | Medium | Rejected by the `7f7fc29de` comparison: all eight indexes reached the Gateway, completed Station admission, and returned `queued` while the active Turn remained non-terminal. |
+| D | Gateway worker queueing is the primary delay. | Medium | Medium | Rejected: all queue requests entered the Gateway together with `queueWaitMs=0`; the active Turn's remaining provider lifetime was already only 142 ms. |
 | E | Conversation cleanup or selection drift makes the readback target differ from the created queue conversation. | Low | Low | Rejected: both tuples retained the selected conversation. |
 
 ## Log Evidence
@@ -70,17 +70,40 @@
     `DONE / PROVEN / passed`.
   - The Gate advanced to Browser AS-F06, so no remaining AS-F02 failure was
     observed in this exact-source comparison.
+- Exact-source run
+  `20260906T072618510941Z-4a3cd80ddc3239e5ea0f06069f471c48`
+  (aggregate
+  `20260906T072618388474Z-42e1e9e034d39801f131a1c21c175fc0`)
+  on `3d6435d825ff389f754b51cacede41df025928fa`:
+  - Runtime and Station source identity matched and both runtime clients
+    launched.
+  - Browser AS-F02 started its active request at `1788680447555`; Gateway
+    completed upstream admission 132 ms later.
+  - The Harness waited until the first provider event at
+    `1788680448959`, then launched the duplicate and eight queue requests
+    at `1788680449066`.
+  - The active stream completed at `1788680449208`, only 142 ms after queue
+    launch. Later admissions therefore ran immediately instead of remaining
+    queued.
+  - The authoritative queue reached only `7/8` and drained to zero during the
+    unchanged 30-second observation window.
+  - Inner runtime cleanup and outer Provisioner cleanup both passed.
 
 ## Verification Conclusion
-The original duplicate-result wait exposed an action-ordering race. The
-per-index comparison on `7f7fc29de` demonstrated that the corrected concurrent
-admission order can establish all eight completed admissions before readback
-for both locale tuples without changing the strict oracle. The session remains
-`[OPEN]` because instrumentation cleanup requires explicit confirmation.
+The original duplicate-result wait exposed one action-ordering race, but the
+subsequent correction still waited for the provider's first SSE event before
+launching queue admissions. Provider output duration is not a valid queue-hold
+primitive: on `3d6435d82` that wait consumed all but 142 ms of the active
+Turn's lifetime. The admission requests must be issued immediately after the
+active stream request is initiated, before awaiting provider output. The
+session remains `[OPEN]` because post-fix exact-source comparison and explicit
+cleanup confirmation are still required.
 
 ## Fix
-- Capture the empty queue baseline before starting duplicate replay.
-- Start duplicate replay and all eight unique queue submissions without awaiting duplicate completion.
+- Capture the empty queue baseline before starting the active request.
+- Start the active request, duplicate replay, and all eight unique queue
+  submissions without first awaiting provider output.
+- Await the active first event only after all admission requests are in flight.
 - Poll the authoritative Station queue to the unchanged strict `8/8` condition.
 - Submit the overflow request only after the full-capacity snapshot exists.
 - Await duplicate, queued, and overflow results after their ordering-sensitive actions have been issued.
@@ -88,9 +111,12 @@ for both locale tuples without changing the strict oracle. The session remains
 
 ## Local Verification
 - `python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test`: 69/69 passed.
+- `python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test tooling.acceptance.gates.agent.foundation_group_one_probe_test`: 82/82 passed after moving queue launch ahead of the first-provider-event wait.
 - `cd apps/desktop && pnpm run check`: passed.
 - `cd apps/desktop && pnpm run test`: 569 passed, one unrelated environment-dependent test skipped.
 - `git diff --check`: passed.
 - Post-instrumentation exact-source runtime comparison: English and Simplified
   Chinese both passed strict `8/8`, FIFO `1..8`, and
   `ADMISSION_QUEUE_FULL`; the Gate advanced to AS-F06.
+- The revised admission ordering has local verification only; exact-source
+  runtime comparison is pending.
