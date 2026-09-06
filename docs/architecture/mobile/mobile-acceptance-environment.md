@@ -154,6 +154,7 @@ different PTID-scoped accounts.
 | File | Tier | Content |
 |---|---|---|
 | `tooling/acceptance/environments/mobile-simulator.yaml` | Simulator | Build commands, Appium config, client definitions, harness contract, cleanup order |
+| `tooling/acceptance/environments/mobile-social-simulator.yaml` | Simulator, partial social evidence | Reuses the simulator build/runtime base and adds two remote Station bindings, disposable actors, Messaging Harness actions, and explicit unproven scope |
 | `tooling/acceptance/environments/mobile-native.yaml` | Physical | Service dependencies, fixtures, credentials, device leases, provider accounts, browser profiles |
 
 These YAML files are the authoritative machine-readable definitions consumed by

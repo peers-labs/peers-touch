@@ -1,5 +1,4 @@
 pub mod attachment_blob;
-pub mod attachment_transfer;
 pub mod clock;
 pub mod direct_crypto;
 pub mod encrypted_store;
@@ -9,7 +8,6 @@ pub mod projection_sink;
 pub mod queue_transport;
 
 pub use attachment_blob::AttachmentBlob;
-pub use attachment_transfer::AttachmentTransferPort;
 pub use clock::Clock;
 pub use direct_crypto::{DirectCrypto, DrCiphertextWire, DrDecryptOutcome, X3dhReceiverParams};
 pub use encrypted_store::EncryptedStore;

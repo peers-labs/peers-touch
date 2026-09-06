@@ -83,7 +83,7 @@ export async function dispatchCreateGroup(input: {
 }): Promise<string | null> {
   const commandId = await getInteractionAdmission().admit({
     commandType: CMD_CREATE_GROUP,
-    category: 'chat',
+    category: 'social',
     orderingKey: `group:create:${Date.now()}`,
     payloadJson: JSON.stringify({ name: input.name }),
   });

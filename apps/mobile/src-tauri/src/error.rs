@@ -37,6 +37,13 @@ impl MobileError {
         }
     }
 
+    pub fn messaging(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_MESSAGING",
+            message: message.into(),
+        }
+    }
+
     pub fn station_identity(message: impl Into<String>) -> Self {
         Self {
             code: "MOBILE_STATION_IDENTITY",

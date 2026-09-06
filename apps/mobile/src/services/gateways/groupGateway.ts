@@ -1,20 +1,19 @@
 /**
  * groupGateway.ts — Group domain API gateway
  *
- * Wraps group-chat management, messaging, and settings APIs behind a
- * typed gateway with JSON quarantine and command outcome adapters.
+ * Wraps group lifecycle, membership, and settings APIs behind a typed
+ * gateway with JSON quarantine and command outcome adapters.
  *
  * groupRuntime remains a subordinate projection descriptor to socialProjection;
  * this gateway provides the data layer for the group runtime.
  */
 
 import type { MobileAuthSession } from '../../features/auth/authSession';
-import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
-import type { ChatAttachmentInput, ChatBackgroundId } from '../../features/social/socialApiTypes';
+import type { Group, GroupMember } from '../../gen/proto/domain/chat/group_chat_pb';
+import type { ChatBackgroundId } from '../../features/social/socialApiTypes';
 import { normalizeChatBackgroundId } from '../../features/social/socialApiTypes';
 import {
   createGatewayTransport,
-  gatewayBytesToBase64,
   type CommandOutcome,
 } from './gatewayTypes';
 
@@ -27,22 +26,9 @@ interface ListGroupsRaw {
   total?: number;
 }
 
-interface ListGroupMessagesRaw {
-  messages?: GroupMessage[];
-  hasMore?: boolean;
-  has_more?: boolean;
-  nextCursor?: string;
-  next_cursor?: string;
-}
-
 interface ListGroupMembersRaw {
   members?: GroupMember[];
   total?: number;
-}
-
-interface GroupUnreadCountRaw {
-  unreadCount?: number;
-  unread_count?: number;
 }
 
 interface GroupSettingsRaw {
@@ -68,12 +54,6 @@ interface GroupSettingsRaw {
 export interface GroupListResult {
   readonly groups: Group[];
   readonly total: number;
-}
-
-export interface GroupMessagesResult {
-  readonly messages: GroupMessage[];
-  readonly hasMore: boolean;
-  readonly nextCursor: string;
 }
 
 export interface GroupMembersResult {
@@ -137,15 +117,6 @@ export interface GroupGateway {
   updateMember: (groupUlid: string, actorPtid: string, input: UpdateGroupMemberInput) => Promise<CommandOutcome<{ member?: GroupMember }>>;
   updateMyNickname: (groupUlid: string, nickname: string) => Promise<CommandOutcome<{ member?: GroupMember }>>;
   transferOwnership: (groupUlid: string, nextOwnerPtid: string) => Promise<CommandOutcome<{ group?: Group }>>;
-
-  // Messages
-  listMessages: (groupUlid: string, beforeUlid?: string, limit?: number) => Promise<CommandOutcome<GroupMessagesResult>>;
-  sendMessage: (groupUlid: string, encryptedPayload: Uint8Array, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<CommandOutcome<{ message?: GroupMessage }>>;
-  editMessage: (groupUlid: string, messageUlid: string, encryptedPayload: Uint8Array) => Promise<CommandOutcome<Record<string, unknown>>>;
-  recallMessage: (groupUlid: string, messageUlid: string) => Promise<CommandOutcome<Record<string, unknown>>>;
-  deleteMessage: (groupUlid: string, messageUlid: string) => Promise<CommandOutcome<Record<string, unknown>>>;
-  markRead: (groupUlid: string, upToUlid?: string) => Promise<CommandOutcome<Record<string, unknown>>>;
-  unreadCount: (groupUlid: string) => Promise<CommandOutcome<{ unreadCount: number }>>;
 
   // Settings
   getMySettings: (groupUlid: string) => Promise<CommandOutcome<GroupSettings>>;
@@ -239,68 +210,6 @@ export function createGroupGateway(session: MobileAuthSession): GroupGateway {
 
     transferOwnership: (groupUlid, nextOwnerPtid) =>
       command({ method: 'POST', path: '/group-chat/ownership/transfer', body: { group_ulid: groupUlid, next_owner_ptid: nextOwnerPtid } }),
-
-    // --- Messages ---
-    listMessages: async (groupUlid, beforeUlid, limit = 50) => {
-      const result = await command<ListGroupMessagesRaw>({
-        method: 'GET',
-        path: '/group-chat/messages',
-        query: { group_ulid: groupUlid, before_ulid: beforeUlid, limit },
-      });
-      if (!result.ok) return result;
-      return {
-        ok: true,
-        data: {
-          messages: result.data.messages ?? [],
-          hasMore: Boolean(result.data.hasMore ?? result.data.has_more),
-          nextCursor: String(result.data.nextCursor ?? result.data.next_cursor ?? ''),
-        },
-      };
-    },
-
-    sendMessage: (groupUlid, encryptedPayload, attachments, messageType = 1) =>
-      command({
-        method: 'POST',
-        path: '/group-chat/message/send',
-        body: {
-          group_ulid: groupUlid,
-          content: '',
-          type: messageType,
-          encrypted_payload: gatewayBytesToBase64(encryptedPayload),
-          ...(attachments?.length ? { attachments } : {}),
-        },
-      }),
-
-    editMessage: (groupUlid, messageUlid, encryptedPayload) =>
-      command({
-        method: 'POST',
-        path: '/group-chat/message/edit',
-        body: {
-          group_ulid: groupUlid,
-          message_ulid: messageUlid,
-          new_content: '',
-          new_encrypted_payload: gatewayBytesToBase64(encryptedPayload),
-        },
-      }),
-
-    recallMessage: (groupUlid, messageUlid) =>
-      command({ method: 'POST', path: '/group-chat/message/recall', body: { group_ulid: groupUlid, message_ulid: messageUlid } }),
-
-    deleteMessage: (groupUlid, messageUlid) =>
-      command({ method: 'POST', path: '/group-chat/message/delete', body: { group_ulid: groupUlid, message_ulid: messageUlid } }),
-
-    markRead: (groupUlid, upToUlid) =>
-      command({ method: 'POST', path: '/group-chat/mark-read', body: { group_ulid: groupUlid, up_to_ulid: upToUlid } }),
-
-    unreadCount: async (groupUlid) => {
-      const result = await command<GroupUnreadCountRaw>({
-        method: 'GET',
-        path: '/group-chat/unread-count',
-        query: { group_ulid: groupUlid },
-      });
-      if (!result.ok) return result;
-      return { ok: true, data: { unreadCount: Number(result.data.unreadCount ?? result.data.unread_count ?? 0) } };
-    },
 
     // --- Settings ---
     getMySettings: async (groupUlid) => {
