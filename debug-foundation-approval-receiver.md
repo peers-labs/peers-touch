@@ -19,6 +19,9 @@
 | D | The matching ToolCall exists in the DOM but is hidden or collapsed. | Low | Low | Confirmed as a receiver-surface contributor: the ToolCall group remained collapsed, so no `[data-pt-agent-tool-call]` row was mounted even after Chat-store membership became true. |
 | E | The approval event and rendered ToolCall use different IDs. | Low | Medium | Rejected: the expected ToolCall matched both Station and Chat-store records at timeout. |
 | F | Final denied ToolCall evidence drops the prior manual-approval wait state. | High | Low | Confirmed: Station settlement was already `DENIED`, but `diagnosticToolCase` emitted `policy_check -> denied` while the accepted oracle requires `policy_check -> awaiting_user -> denied`. |
+| G | The Harness retains a detached pre-denial ToolCall element after authoritative reconciliation remounts the message subtree. | High | Low | Pending: compare `toolCallElement.isConnected` with a fresh matching DOM query at the error-surface timeout. |
+| H | A remounted denied ToolCall block initializes collapsed because denied recovery is absent from `hasActionableToolState`. | High | Low | Pending: require a fresh matching ToolCall with terminal denied runtime projection but no mounted error element. |
+| I | The Tool runtime projection regresses or disappears after Station denial settlement. | Medium | Low | Pending: capture current projection presence, status, and locale-key equality at the timeout. |
 
 ## Log Evidence
 - Exact-source run `20260904T171932940301Z-1ffb7349f89aa4d4977ac5235a458a6d`
@@ -171,3 +174,20 @@ approval. Post-fix runtime evidence remains pending.
 - The Gate advanced to `BASE-APPROVAL-EXPIRED`; the receiver and manual-denial
   projection defects are runtime-confirmed closed. The debug session remains
   `[OPEN]` until the Owner explicitly authorizes instrumentation removal.
+
+## Fifth Investigation
+- Exact-source Gate run
+  `20260906T180600621643Z-af6ef4f4aebdb588998a01b66f5d93c5`
+  on `e9ac80184b68eca6e5d761517f5ceb8c2a57c7d1` passed all four
+  AS-F06 tuples, AS-F10, AS-F12, `BASE-ACTIVE-MUTATION-CONFLICT`, and Browser
+  English `BASE-APPROVAL-DENIED`.
+- Browser Simplified Chinese `BASE-APPROVAL-DENIED` reached the authoritative
+  ToolCall reconciliation path and then timed out waiting for
+  `data-pt-agent-tool-error="agent.errors.toolApprovalDenied"`.
+- The run finished `FAILED / PARTIAL / UNPROVEN`; Provisioner cleanup finished
+  `DONE / PROVEN / passed`, all six client ports were released, and redaction
+  passed.
+- The next diagnostic point records only DOM connection/mount booleans and
+  typed runtime projection status/error-key equality at the existing
+  error-surface timeout. No timeout, action, assertion, or product behavior
+  changes before that evidence.

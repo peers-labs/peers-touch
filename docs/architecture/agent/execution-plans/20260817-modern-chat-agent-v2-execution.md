@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260906T162356921705Z-bd8243d2bcba6f391d2fc537322daad3` passed AS-F01 through AS-F12 before exposing a prior-attempt blocked ToolBatch interrupting the retried Turn in `BASE-APPROVAL-EXPIRED`; checkpoint `ed4c90a67ebb5100eb249cd08ad2234553be9c0c` scopes blocked-batch and reconciliation-required settlement to the latest live attempt; its exact-source run `20260906T173326762286Z-6bcc98e4b7baa4312dbd608a35189ff4` failed earlier at Browser AS-F06 because capability restoration ran while the intentional fault transport was still cut; the current local closure defers that persisted restoration until transport recovery and Station reauthentication, then verifies and persists the restored counts and hashes before durable reload; exact-source proof is pending | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `ed4c90a67ebb5100eb249cd08ad2234553be9c0c` scopes ToolBatch settlement to the latest live retry attempt; checkpoint `e9ac80184b68eca6e5d761517f5ceb8c2a57c7d1` defers AS-F06 capability restoration until transport recovery and Station reauthentication; exact-source run `20260906T180600621643Z-af6ef4f4aebdb588998a01b66f5d93c5` passed all four AS-F06 tuples, AS-F10, AS-F12, `BASE-ACTIVE-MUTATION-CONFLICT`, and Browser English `BASE-APPROVAL-DENIED`, then failed Browser Simplified Chinese `BASE-APPROVAL-DENIED` at the receiver error surface; bounded stale-node/remount/projection instrumentation is pending exact-source classification; Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5725,6 +5725,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Broader Foundation discovery retains the two known unrelated `receiver-dom`
   fixture/profile mismatches. Exact-source post-fix proof remains pending, so
   Foundation and G-F remain `PARTIAL / UNPROVEN`.
+- Checkpoint `e9ac80184b68eca6e5d761517f5ceb8c2a57c7d1` was deployed
+  exact-source to `chat-native-disposable-station`. Gate run
+  `20260906T180600621643Z-af6ef4f4aebdb588998a01b66f5d93c5`
+  (aggregate
+  `20260906T180600507696Z-c603178cdef6c5687191f82eb0156c1a`)
+  passed all four AS-F06 tuples with no residual isolation journal, then passed
+  AS-F10, AS-F12, `BASE-ACTIVE-MUTATION-CONFLICT`, and Browser English
+  `BASE-APPROVAL-DENIED`. Browser Simplified Chinese
+  `BASE-APPROVAL-DENIED` reached Station denial settlement and authoritative
+  ToolCall reconciliation but timed out waiting for the receiver error
+  element. The next diagnostic checkpoint records whether the retained
+  ToolCall node was detached, whether a fresh matching node/error element
+  exists, and whether the current Tool runtime projection remains denied with
+  the expected locale key. The Gate finished `FAILED / PARTIAL / UNPROVEN`;
+  Provisioner cleanup finished `DONE / PROVEN / passed`, all six client ports
+  were released, and redaction passed.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
