@@ -480,6 +480,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         scenario = self.source[scenario_start:scenario_end]
 
         self.assertIn("withFoundationCapabilitiesDisabled(", scenario)
+        self.assertIn("withFoundationReadyCapabilityFixture(", scenario)
+        self.assertIn("runFoundationF10WithCapabilityIsolation", scenario)
+        self.assertIn("const readiness = await api.getAgentCapabilityReadiness(", scenario)
+        self.assertIn("    true,\n  );", scenario)
         self.assertIn("toolIsolation", scenario)
         self.assertIn("runAgentCapabilityNegativeControl(", scenario)
         for control in (
