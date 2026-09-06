@@ -206,9 +206,13 @@ Station Dashboard 证明了普通管理面可以接入 acceptance，但它仍偏
 
 ### Decision
 
-将 `chat` 从 `planned` 升级为 active `managed_domain`。Chat domain 覆盖 Station、realtime、Desktop typed surface 和 Desktop DOM visibility 能力，并保留 app-runtime optional evidence：
+将 `chat` 从 `planned` 升级为 active `managed_domain`。Conversation
+`/conversation/*` 是唯一 Chat 入口；Device、Inbox、Recovery、Key Exchange 与
+Federation 使用各自 resource-owner API，Desktop/Mobile Device Messaging Engine
+保留为内部 runtime 名称。Chat domain 覆盖 Station、realtime、Desktop typed
+surface 和 Desktop DOM visibility 能力，并保留 app-runtime optional evidence：
 
-- `chat-proto-service-contract`：Proto-first 和 Station messaging/conversation/envelope contracts。
+- `chat-proto-service-contract`：Proto-first Conversation 与 resource-owner contracts。
 - `chat-desktop-gateway-message-flow`：运行中 Desktop HTTP gateway 上的 actor auth、key publication、direct conversation、E2EE send、hydrate 与 decrypt。
 - `chat-realtime-contract`：Station per-device queue / envelope 与 Desktop messaging lifecycle 的 typed contract。
 - `desktop-chat-typed-surface`：Desktop chat page/components/store 的 typed visible-surface contract。

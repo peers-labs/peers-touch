@@ -31,8 +31,8 @@ RECEIVER_VISIBLE_PATHS = {
     "apps/desktop/src/services/chatReceipt.ts",
     "apps/desktop/src/store/socialChat.ts",
     "apps/desktop/src/store/socialProjection.ts",
-    "apps/station/app/subserver/messaging/application/receipt_service.go",
-    "apps/station/app/subserver/messaging/interface/http/receipt_handler.go",
+    "apps/station/app/subserver/conversation/engine/application/receipt_service.go",
+    "apps/station/app/subserver/conversation/engine/interface/http/receipt_handler.go",
 }
 
 SCAN_TYPE_TO_GATE = {

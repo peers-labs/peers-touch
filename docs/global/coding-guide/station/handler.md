@@ -2,6 +2,12 @@
 
 本文档基于 `apps/station/frame/core/server/` 的真实代码，指导如何在 Station 中编写和注册 HTTP Handler。
 
+Handler 路径必须服从 capability owner：Conversation 是唯一 Chat 业务入口
+并使用 `/conversation/*`；Device、Inbox、Recovery、Key Exchange 与
+Federation 分别使用 `/device/*`、`/device/inbox/*`、`/recovery/*`、
+`/key-exchange/*` 与 peer-only `/federation/*`。内部 Messaging Engine
+不能注册 Station Messaging 业务 API。
+
 ---
 
 ## 核心抽象
@@ -85,7 +91,7 @@ type TypedHandler[Req, Resp any] func(context.Context, *Req) (*Resp, error)
 | 参数 | 说明 |
 |---|---|
 | `name` | Handler 唯一标识名，用于日志和调试 |
-| `path` | 路由路径，如 `/group-chat/create` |
+| `path` | capability owner 的规范路由，如 `/conversation/command` |
 | `method` | HTTP 方法：`server.GET`、`server.POST`、`server.PUT`、`server.DELETE` 等 |
 | `handler` | 业务处理函数，接收类型化的请求，返回类型化的响应 |
 | `wrappers` | 中间件链，按顺序执行 |
@@ -98,21 +104,19 @@ type TypedHandler[Req, Resp any] func(context.Context, *Req) (*Resp, error)
 4. 如果返回 `*HandlerError`，以对应状态码和错误信息响应
 5. 序列化 `*Resp` 并写入响应
 
-### 真实示例：group_chat
+### Conversation 路由示例
 
 ```go
 // handler.go — 路由注册
 func (s *subServer) Handlers() []server.Handler {
     logIDWrapper := serverwrapper.LogID()
     return []server.Handler{
-        server.NewTypedHandler("gc-create", "/group-chat/create", server.POST,
+        server.NewTypedHandler("conversation-create-direct", "/conversation/direct", server.POST,
             s.handleCreate, logIDWrapper, s.jwtWrapper),
-        server.NewTypedHandler("gc-list", "/group-chat/list", server.GET,
+        server.NewTypedHandler("conversation-list", "/conversation/list", server.GET,
             s.handleList, logIDWrapper, s.jwtWrapper),
-        server.NewTypedHandler("gc-info", "/group-chat/info", server.GET,
-            s.handleInfo, logIDWrapper, s.jwtWrapper),
-        server.NewTypedHandler("gc-update", "/group-chat/update", server.PUT,
-            s.handleUpdate, logIDWrapper, s.jwtWrapper),
+        server.NewTypedHandler("conversation-command", "/conversation/command", server.POST,
+            s.handleCommand, logIDWrapper, s.jwtWrapper),
     }
 }
 
@@ -749,9 +753,11 @@ func (s *subServer) handleCreate(
 
 | 场景 | 路径格式 | 示例 |
 |---|---|---|
-| Subserver 业务路由 | `/<module>/<resource>/<action>` | `/group-chat/message/send` |
+| Conversation 业务路由 | `/conversation/<capability>` | `/conversation/command` |
+| Resource-owner 支持路由 | `/<resource>/<capability>` | `/device/inbox/claim` |
+| Peer-only Federation 路由 | `/federation/<capability>` | `/federation/delivery` |
 | 框架级/API 路由 | `/api/v1/<module>/<action>` | `/api/v1/relay/invite` |
-| Handler name | `<module-abbr>-<action>` | `gc-create`、`fc-message-send` |
+| Handler name | `<owner>-<action>` | `conversation-command`、`device-inbox-claim` |
 
 Subserver 路由不要加 `/api/` 前缀，由主服务统一管理路由挂载。
 

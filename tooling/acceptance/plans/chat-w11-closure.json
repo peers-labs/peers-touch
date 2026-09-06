@@ -30,13 +30,25 @@
       ]
     },
     {
+      "id": "station-api-ownership",
+      "command": "go run ./apps/station/app/cmd/station_api_ownership --root . --registry docs/architecture/api-ownership/station-api-capabilities.yaml",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "provisioner": "",
+      "tier": "ci-structure",
+      "description": "Validate Station route, owner, contract, and truth-store ownership against the accepted capability registry.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    },
+    {
       "id": "station-messaging-unit",
-      "command": "go test ./apps/station/app/subserver/messaging/... ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/envelope/...",
+      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/envelope/...",
       "timeout_seconds": 600,
       "environment": "local",
       "provisioner": "",
       "tier": "ci-cheap",
-      "description": "Run Station messaging, conversation, and envelope package tests.",
+      "description": "Run Station Conversation and envelope package tests.",
       "required_by": [
         "closure:MP-W11"
       ]

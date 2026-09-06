@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.4
-> **Created**: 2026-08-08 | **Updated**: 2026-09-05
+> **Created**: 2026-08-08 | **Updated**: 2026-09-06
 > **Owner**: Messaging Platform Team
 
 ---
@@ -40,6 +40,7 @@
 | MP-D27 | Typing 使用独立 ephemeral QoS，不进入 durable message lane | accepted |
 | MP-D28 | 采用行业基线：pending retry + accepted 后留痕 retract | accepted |
 | MP-D29 | Home Station 使用 authority-signed follower membership projection | accepted |
+| MP-D30 | Conversation DDD 与 Device Messaging Engine 分离 | accepted |
 
 ---
 
@@ -281,6 +282,67 @@ Command response 只更新 durable command submission state，不改变 authorit
 ### Acceptance
 
 Owner accepted on 2026-08-09.
+
+## MP-D30: Conversation API 与 Device Messaging Delivery Plane 分离
+
+**Status**: accepted
+**Date**: 2026-09-06
+
+### Context
+
+Source and history audit found two independently registered Chat authority
+surfaces and two truth-store families.
+
+This contradicts MP-D09's unified Conversation framework and MP-D10's hard-cut rule.
+The duplicate was not detected because the existing W11 Gate checks retired path
+prefixes and crypto implementation symbols, not semantic capability ownership.
+
+### Decision
+
+Adopt AO-D01 through AO-D05 from
+`docs/architecture/api-ownership/decisions.md`:
+
+- `/conversation/*` is the only client-facing Chat business API;
+- Conversation owns create/list/command/membership/settings/read and one authority
+  store family;
+- internal Desktop/Mobile Device Messaging Engine code remains a client runtime and
+  never defines a Station business API;
+- device identity, inbox, recovery, key exchange, attachment, and peer transport routes
+  move to their accepted resource owners;
+- Conversation becomes the AO-D06 DDD bounded context before modern authority
+  semantics move into it;
+- peer transport moves behind domain-neutral `/federation/*` infrastructure;
+- duplicate routes, proto request families, services, tables, callers, and Gates are
+  deleted atomically with no aliases or fallback reads.
+
+### Rationale
+
+Conversation is the stable business concept and was already the unified API before the
+Device Messaging Engine existed. Messaging is a required delivery plane, but endpoint
+delivery does not own Conversation truth.
+
+### Rejected Patterns
+
+- An implementation-shaped Chat API was rejected because it conflates the delivery
+  plane with business authority and discards the established Conversation boundary.
+- Retaining multiple route families was rejected by MP-D10; a live alias preserves
+  the split.
+- Routing one family to the other was rejected because the duplicate public contract and caller
+  choice remain.
+
+### Consequences
+
+- Modern authority transaction semantics move under the Conversation DDD owner.
+- Device inbox, recovery, attachment transfer, key exchange, and delivery receipts move
+  to their resource owners; no Station Messaging facade remains.
+- Desktop, Mobile, Model, Station, Acceptance, docs, and schema change in one approved
+  execution closure.
+- The architecture ownership Gate becomes a required W11 predecessor.
+
+### Acceptance
+
+Owner accepted the revised decision on 2026-09-06 together with AO-D01..AO-D06 and
+Federated Social D-07.
 
 ## MP-D26: Durable Message Interactions 共用 Authority Sequence
 
