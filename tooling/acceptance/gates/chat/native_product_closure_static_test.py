@@ -2156,6 +2156,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             keyboard_path_start,
         )
         keyboard_path = self.source[keyboard_path_start:keyboard_path_end]
+        row_focus = keyboard_path.index(
+            '"arguments[0].focus({ preventScroll: true });"'
+        )
+        row_focus_wait = keyboard_path.index(
+            "return document.activeElement === row && Boolean(toolbar);",
+            row_focus,
+        )
+        enter_post = keyboard_path.index(
+            "self.native_adapter.post_key(NativeKey.ENTER, private_source=True)",
+            row_focus_wait,
+        )
         tab_post = keyboard_path.index(
             "self.native_adapter.post_key("
             "NativeKey.TAB, private_source=True)"
@@ -2165,6 +2176,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             tab_post,
         )
         changed_focus = keyboard_path.index("!= action", focus_wait)
+        self.assertNotIn("self.click_element(actor, row)", keyboard_path)
+        self.assertLess(row_focus, row_focus_wait)
+        self.assertLess(row_focus_wait, enter_post)
+        self.assertLess(enter_post, tab_post)
         self.assertLess(tab_post, focus_wait)
         self.assertLess(focus_wait, changed_focus)
 

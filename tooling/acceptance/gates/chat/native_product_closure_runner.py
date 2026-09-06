@@ -2590,7 +2590,26 @@ class NativeProductClosureGate(AcceptanceGate):
     def prove_keyboard_reaction_picker(self, actor: str, message_id: str) -> None:
         client = self.focus_actor_window(actor)
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 20)
-        self.click_element(actor, row)
+        client.execute_script(
+            "arguments[0].focus({ preventScroll: true });",
+            row,
+        )
+        WebDriverWait(client.driver, 15).until(
+            lambda driver: bool(
+                driver.execute_script(
+                    """
+                    const row = arguments[0];
+                    const toolbar = document.querySelector(
+                      `[data-message-action-overlay="toolbar"]`
+                      + `[data-message-action-message="${arguments[1]}"]`
+                    );
+                    return document.activeElement === row && Boolean(toolbar);
+                    """,
+                    row,
+                    message_id,
+                )
+            )
+        )
         self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
         WebDriverWait(client.driver, 15).until(
             lambda driver: driver.execute_script(
