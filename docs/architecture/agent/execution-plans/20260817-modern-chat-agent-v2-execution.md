@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: the Gateway response body now converts upstream SSE read failure to immediate downstream EOF at checkpoint `3d6435d825ff389f754b51cacede41df025928fa`; exact-source run `20260906T072618510941Z-4a3cd80ddc3239e5ea0f06069f471c48` then exposed the remaining Browser AS-F02 orchestration race, where waiting for the first provider event left only 142 ms before active completion and the queue reached `7/8`; the Harness now launches the active, duplicate, and eight queue admissions before awaiting provider output, with unchanged strict queue, overflow, cancellation, DOM, and lifecycle assertions; post-fix exact-source proof is pending | W8a |
+| G-F Complete Foundation Gate | in progress: the Gateway response body now converts upstream SSE read failure to immediate downstream EOF at checkpoint `3d6435d825ff389f754b51cacede41df025928fa`; exact-source run `20260906T075340212678Z-e65b29d46b4b615d3c557af76475a37b` on `abc0106849d2f1d65fcd6991d13a3e659ed342ab` proved strict Browser AS-F02 queue capacity in both locales, then exposed an idempotency-owner race because the duplicate could reach Station before the designated active request; the Harness now waits only for the Station-authored conversation-version admission barrier before launching the duplicate and queue burst, with all strict assertions unchanged; post-fix exact-source proof is pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5634,6 +5634,25 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Inner runtime cleanup and outer Provisioner cleanup both passed. Exact-source
   post-fix proof remains pending; Foundation and G-F remain
   `PARTIAL / UNPROVEN`.
+- Exact-source Gate run
+  `20260906T075340212678Z-e65b29d46b4b615d3c557af76475a37b`
+  (aggregate
+  `20260906T075340099875Z-da9fc494b2a14391f7e00ca19e7f1f40`,
+  child
+  `20260906T075348177215Z-bf4515a4918b19f7b0a99a6eff8af8d7`)
+  on `abc0106849d2f1d65fcd6991d13a3e659ed342ab` proved that launching
+  admissions before awaiting provider output restores strict Browser AS-F02
+  queue capacity in both locales: each sampled `8/8`, reported FIFO positions
+  `1..8`, and rejected overflow with `ADMISSION_QUEUE_FULL`. The Simplified
+  Chinese tuple then exposed a separate shared-idempotency race: the designated
+  active observer received only `admission_replayed` while the duplicate
+  observer owned the live stream, so active cancellation evidence was missing.
+  The Harness now waits for the existing Station-authored conversation-version
+  increment before launching the duplicate and queue burst. This makes the
+  original request the admitted owner without waiting for provider output or
+  changing any timeout or product assertion. Inner runtime cleanup and outer
+  Provisioner cleanup both passed. Exact-source post-fix proof remains pending;
+  Foundation and G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

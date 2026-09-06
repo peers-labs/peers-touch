@@ -10612,6 +10612,38 @@ export function installAcceptanceHarness(): void {
           clientCapabilitySessionId:
             capabilitySessions.selectedStationSession?.session_id,
         });
+        let activeAdmission = await api.listAgentTurnQueue(
+          conversation.conversation_id,
+        );
+        const activeAdmissionDeadline = Date.now() + 10_000;
+        while (
+          activeAdmission.conversation_version
+            <= queueBeforeAdmissions.conversation_version
+          && Date.now() < activeAdmissionDeadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          activeAdmission = await api.listAgentTurnQueue(
+            conversation.conversation_id,
+          );
+        }
+        if (
+          activeAdmission.conversation_version
+            <= queueBeforeAdmissions.conversation_version
+        ) {
+          active.controller.abort();
+          throw new Error('agent.acceptance.foundationActiveTurnAdmissionMissing');
+        }
+        void reportFoundationQueueCapacityDebug(
+          'A,B',
+          'active-admission-observed',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            conversationVersionBefore:
+              queueBeforeAdmissions.conversation_version,
+            conversationVersionAfter: activeAdmission.conversation_version,
+            queueSize: activeAdmission.entries.length,
+          },
+        );
         const duplicate = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
           agentId,
