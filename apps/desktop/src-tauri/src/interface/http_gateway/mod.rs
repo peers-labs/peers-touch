@@ -6679,7 +6679,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         "keypackage_upload" => proxy_authenticated_station_json(
             state,
             reqwest::Method::POST,
-            "/keypackage/upload",
+            "/key-exchange/mls/key-package/upload",
             None,
             Some(json!({
                 "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
@@ -6690,7 +6690,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         "keypackage_fetch" => proxy_authenticated_station_json(
             state,
             reqwest::Method::POST,
-            "/keypackage/fetch",
+            "/key-exchange/mls/key-package/fetch",
             None,
             Some(json!({
                 "ptid": args.get("ptid").and_then(|v| v.as_str()).unwrap_or(""),
@@ -6701,7 +6701,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         "keypackage_count" => proxy_authenticated_station_json(
             state,
             reqwest::Method::GET,
-            "/keypackage/count",
+            "/key-exchange/mls/key-package/count",
             None,
             None,
             "key package count",
@@ -6741,7 +6741,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         "dkx_send" => proxy_authenticated_station_json(
             state,
             reqwest::Method::POST,
-            "/dkx/send",
+            "/key-exchange/dkx/send",
             None,
             Some(json!({
                 "recipient_ptid": args.get("recipient_ptid").and_then(|v| v.as_str()).unwrap_or(""),
