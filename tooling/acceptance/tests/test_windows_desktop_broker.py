@@ -311,6 +311,21 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
 
         self.assertLess(activation, observation)
 
+    def test_targeted_key_activation_and_delivery_share_one_worker(self) -> None:
+        worker = WindowsDesktopBroker._adapter_worker_script()
+        targeted = worker[
+            worker.index('elif operation == "post_key_to_process":'):
+            worker.index('elif operation == "reveal_file_chooser_location":')
+        ]
+        activation = targeted.index("adapter.activate_process(process_id)")
+        delivery = targeted.index("adapter.post_key(")
+        observation = targeted.index(
+            "adapter.focused_control(process_id).to_dict()"
+        )
+
+        self.assertLess(activation, delivery)
+        self.assertLess(delivery, observation)
+
 
 if __name__ == "__main__":
     unittest.main()

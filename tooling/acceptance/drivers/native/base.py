@@ -140,6 +140,23 @@ class NativeDesktopAdapter(ABC):
     ) -> None:
         ...
 
+    def post_key_to_process(
+        self,
+        process_id: int,
+        key: NativeKey,
+        *,
+        modifiers: tuple[NativeModifier, ...] = (),
+        text: str = "",
+        private_source: bool = False,
+    ) -> None:
+        self.activate_process(process_id)
+        self.post_key(
+            key,
+            modifiers=modifiers,
+            text=text,
+            private_source=private_source,
+        )
+
     @abstractmethod
     def reveal_file_chooser_location(self) -> None:
         ...

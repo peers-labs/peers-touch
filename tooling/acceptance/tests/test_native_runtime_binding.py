@@ -194,9 +194,30 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             (14.5, 28.0),
         )
         binding.native_adapter.post_key(NativeKey.ENTER, text="value")
+        binding.native_adapter.post_key_to_process(
+            712,
+            NativeKey.ENTER,
+            private_source=True,
+        )
         control = binding.native_adapter.focused_control(712)
         self.assertTrue(control.frontmost)
         self.assertEqual(control.actual_frontmost_pid, 712)
+        self.assertIn(
+            (
+                "execute_adapter",
+                (
+                    "post_key_to_process",
+                    {
+                        "processId": 712,
+                        "key": "enter",
+                        "modifiers": [],
+                        "text": "",
+                        "privateSource": True,
+                    },
+                ),
+            ),
+            lifecycle.calls,
+        )
 
         with tempfile.TemporaryDirectory() as directory:
             screenshot = Path(directory) / "native.bmp"
