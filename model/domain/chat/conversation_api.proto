@@ -265,6 +265,23 @@ message ListThreadMessagesResponse {
   bool has_more = 2;
 }
 
+message GetThreadCountsRequest {
+  string conversation_id = 1;
+  repeated string root_ids = 2;
+}
+
+message ThreadCountEntry {
+  string root_message_id = 1;
+  int64 reply_count = 2;
+  string latest_reply_id = 3;
+  int64 latest_reply_at_ms = 4;
+  int64 unread_count = 5;
+}
+
+message GetThreadCountsResponse {
+  repeated ThreadCountEntry counts = 1;
+}
+
 // --- Read Cursors & Unread ---
 
 message SetReadCursorRequest {
@@ -282,6 +299,35 @@ message GetUnreadRequest {
 
 message GetUnreadResponse {
   int64 unread_count = 1;
+}
+
+// --- Member Settings ---
+
+message MemberSettings {
+  string nickname = 1;
+  bool muted = 2;
+  bool alert_enabled = 3;
+  bool pinned = 4;
+  string background = 5;
+  int64 cleared_at_ms = 6;
+  string background_image = 7;
+}
+
+message GetMemberSettingsRequest {
+  string conversation_id = 1;
+}
+
+message GetMemberSettingsResponse {
+  MemberSettings settings = 1;
+}
+
+message UpdateMemberSettingsRequest {
+  string conversation_id = 1;
+  MemberSettings settings = 2;
+}
+
+message UpdateMemberSettingsResponse {
+  bool success = 1;
 }
 
 // --- Search ---

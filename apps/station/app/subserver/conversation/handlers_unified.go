@@ -30,6 +30,23 @@ type listThreadMessagesRequest struct {
 	Limit          int    `json:"limit,string" query:"limit"`
 }
 
+type threadCountsRequest struct {
+	ConversationID string   `json:"conversation_id"`
+	RootIDs        []string `json:"root_ids"`
+}
+
+type threadCountEntry struct {
+	RootID        string `json:"rootUlid"`
+	ReplyCount    int64  `json:"replyCount"`
+	LatestReplyID string `json:"latestReplyUlid"`
+	LatestReplyAt int64  `json:"latestReplyAt"`
+	UnreadCount   int    `json:"unreadCount"`
+}
+
+type threadCountsResponse struct {
+	Counts []threadCountEntry `json:"counts"`
+}
+
 // --- Handlers ---
 
 func (s *subServer) handleListMessages(ctx context.Context, req *listMessagesRequest) (*listMessagesResponse, error) {
@@ -75,4 +92,29 @@ func (s *subServer) handleListThreadMessages(ctx context.Context, req *listThrea
 		Events:  events,
 		HasMore: len(events) >= limit,
 	}, nil
+}
+
+func (s *subServer) handleGetThreadCounts(ctx context.Context, req *threadCountsRequest) (*threadCountsResponse, error) {
+	if req.ConversationID == "" {
+		return nil, server.BadRequest("conversation_id is required")
+	}
+	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
+		return nil, err
+	}
+	summaries, err := s.service.GetThreadCounts(ctx, req.ConversationID, req.RootIDs)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("get thread counts failed", err)
+	}
+	counts := make([]threadCountEntry, 0, len(req.RootIDs))
+	for _, rootID := range req.RootIDs {
+		summary := summaries[rootID]
+		counts = append(counts, threadCountEntry{
+			RootID:        rootID,
+			ReplyCount:    summary.ReplyCount,
+			LatestReplyID: summary.LatestReplyID,
+			LatestReplyAt: summary.LatestReplyAtMs,
+			UnreadCount:   0,
+		})
+	}
+	return &threadCountsResponse{Counts: counts}, nil
 }

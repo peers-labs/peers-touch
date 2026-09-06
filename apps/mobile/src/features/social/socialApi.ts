@@ -310,25 +310,25 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
     listFriendRequests: (status = 0, limit = 50, offset = 0) =>
       request<ListFriendRequestsPayload>({
         method: 'GET',
-        path: '/friend-chat/friend-requests',
+        path: '/api/v1/social/friend-requests',
         query: { status, limit, offset },
       }),
     acceptFriendRequest: (requestId) =>
       request({
         method: 'POST',
-        path: '/friend-chat/friend-request/accept',
+        path: '/api/v1/social/friend-request/accept',
         body: { request_id: requestId },
       }),
     rejectFriendRequest: (requestId) =>
       request({
         method: 'POST',
-        path: '/friend-chat/friend-request/reject',
+        path: '/api/v1/social/friend-request/reject',
         body: { request_id: requestId },
       }),
     sendFriendRequest: (receiverPtid, message = '') =>
       request({
         method: 'POST',
-        path: '/friend-chat/friend-request/send',
+        path: '/api/v1/social/friend-request/send',
         body: { receiver_ptid: receiverPtid, message },
       }),
     listSessions: (limit = 50, offset = 0) =>
