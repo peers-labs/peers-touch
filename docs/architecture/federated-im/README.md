@@ -1,10 +1,19 @@
 # Federated IM Architecture
 
-> **Status**: draft
+> **Status**: superseded by Messaging Platform and the approved CA-HC plan
 > **Version**: v0.4
-> **Created**: 2026-07-04 | **Updated**: 2026-08-03
+> **Created**: 2026-07-04 | **Updated**: 2026-09-06
 > **Owner**: Architecture Team
 > **Module**: `apps/station/app/subserver/conversation/`, `apps/station/app/subserver/envelope/`, `apps/station/frame/touch/actor/`, `apps/station/frame/touch/federation/`, `model/domain/chat/`, `model/domain/federation/`, `apps/desktop/src/store/socialChat.ts`
+>
+> **Source consolidation (2026-09-06)**: Conversation is the sole Chat entry
+> point at `/conversation/*`. Device, Inbox, Recovery, Key Exchange, and
+> Federation APIs are exposed by their resource owners. Accepted authority
+> semantics from this document set are incorporated into Messaging Platform;
+> the remaining text and linked execution plans are retained only as
+> pre-consolidation history. See
+> [`../api-ownership/README.md`](../api-ownership/README.md) and the approved
+> [CA-HC plan](../api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md).
 
 > **v1 unification update (2026-07-11)**: Decisions D-08…D-12 (see `decisions.md`)
 > set group E2EE to MLS (RFC 9420, D-06 superseded), one Station signaling-envelope
@@ -81,13 +90,14 @@ The current group lifecycle source of truth defines local Station group behavior
 | [decisions.md](./decisions.md) | ADR-lite decisions and alternatives |
 | [integration.md](./integration.md) | D-17 evidence ledger, current-to-target cross-runtime mapping, failure semantics, and deletion boundary |
 | [module-layout.md](./module-layout.md) | D-17 target ownership, module responsibilities, dependency direction, and forbidden duplication |
+| [../api-ownership/README.md](../api-ownership/README.md) | Current canonical API ownership contract |
 | [proposals/20260711-im-unification-review.md](./proposals/20260711-im-unification-review.md) | v1 IM unification review (approved decisions D-08…D-12) |
-| [execution-plans/20260712-v1-im-execution-plan.md](./execution-plans/20260712-v1-im-execution-plan.md) | v1 IM dependency-ordered execution plan (P0…P7) |
-| [execution-plans/20260802-d13-atomic-mls-membership-transition.md](./execution-plans/20260802-d13-atomic-mls-membership-transition.md) | D-13 atomic membership/MLS transition and three-Station C-4/C-5 closure plan |
-| [execution-plans/20260803-d17-generic-conversation-command-proposal.md](./execution-plans/20260803-d17-generic-conversation-command-proposal.md) | Accepted D-17 generic remote command hard-cut and C6 remote-send closure plan |
-| [execution-plans/20260731-debt-zero-dm-group.md](./execution-plans/20260731-debt-zero-dm-group.md) | Full-stack DM/group single-path cutover subplan; P3.0 strict decoding complete, awaiting parent Mobile/three-Station gates |
-| [execution-plans/20260712-g0-mls-verification.md](./execution-plans/20260712-g0-mls-verification.md) | G0 MLS two-platform verification plan (unblocks D-08 / P3) |
-| [execution-plans/20260729-signal-level-chat-modernization.md](./execution-plans/20260729-signal-level-chat-modernization.md) | Signal-level UX modernization (read receipts, media, reactions, calls) |
+| [execution-plans/20260712-v1-im-execution-plan.md](./execution-plans/20260712-v1-im-execution-plan.md) | **Superseded by CA-HC for authority/API execution.** Pre-consolidation v1 IM plan |
+| [execution-plans/20260802-d13-atomic-mls-membership-transition.md](./execution-plans/20260802-d13-atomic-mls-membership-transition.md) | **Superseded by CA-HC for authority/API execution.** Historical D-13 transition plan |
+| [execution-plans/20260803-d17-generic-conversation-command-proposal.md](./execution-plans/20260803-d17-generic-conversation-command-proposal.md) | **Superseded by CA-HC for authority/API execution.** Historical D-17 remote-command plan |
+| [execution-plans/20260731-debt-zero-dm-group.md](./execution-plans/20260731-debt-zero-dm-group.md) | **Superseded by CA-HC for authority/API execution.** Historical DM/group cutover plan |
+| [execution-plans/20260712-g0-mls-verification.md](./execution-plans/20260712-g0-mls-verification.md) | Historical MLS verification evidence; runtime terminology remains valid |
+| [execution-plans/20260729-signal-level-chat-modernization.md](./execution-plans/20260729-signal-level-chat-modernization.md) | Historical UX modernization plan; no public API authority |
 | [execution-plans/20260704-foundation-federated-im.md](./execution-plans/20260704-foundation-federated-im.md) | **Superseded (D-08…D-12).** Historical Sender Keys landing plan |
 
 ## 5. Related Sources

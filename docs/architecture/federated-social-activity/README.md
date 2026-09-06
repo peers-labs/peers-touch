@@ -2,8 +2,14 @@
 
 > **Status**: draft
 > **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-06-17
+> **Created**: 2026-06-17 | **Updated**: 2026-09-06
 > **Owner**: Architecture Team
+>
+> **Friend Request federation amendment (accepted, 2026-09-06)**: D-07 defines
+> receiver-Home-Station Social authority over Friend Request and reuse of one
+> domain-neutral durable Federation transport. It does not introduce a Mobile,
+> Desktop, Social, or Messaging-specific network stack. See
+> [`../api-ownership/README.md`](../api-ownership/README.md).
 
 ---
 
@@ -101,6 +107,7 @@ Agent、A2A、Applet 将来会接入同一社会活动层，但当前阶段只�
 | [integration.md](./integration.md) | 与现有 Actor、Social、Federation、Desktop Runtime 的映射 |
 | [moderation-projection.md](./moderation-projection.md) | Actor / Station block 与 moderation projection 边界 |
 | [decisions.md](./decisions.md) | 当前阶段关键设计决策 |
+| [../api-ownership/README.md](../api-ownership/README.md) | API owner, shared Federation transport, and hard-cut governance |
 | [e2e-acceptance.md](./e2e-acceptance.md) | Human 联邦社交 E2E 验收机制 |
 | [execution-plans/20260617-federated-human-social-activity.md](./execution-plans/20260617-federated-human-social-activity.md) | 分阶段执行计划与任务跟踪 |
 

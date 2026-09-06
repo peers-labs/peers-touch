@@ -121,7 +121,7 @@ fn latest_revision(
 > {
     let mut revision: GetLatestRecoveryRevisionResponse = station_client::request_proto_for_device(
         Method::GET,
-        "/messaging/recovery/latest",
+        "/recovery/latest",
         &session.token,
         None,
         None::<&GetLatestRecoveryRevisionRequest>,
@@ -213,7 +213,7 @@ pub fn messaging_recovery_create_revision(
     };
     let response: PutRecoveryRevisionResponse = match station_client::request_proto_for_device(
         Method::POST,
-        "/messaging/recovery/revision",
+        "/recovery/revision",
         &session.token,
         None,
         Some(&request),

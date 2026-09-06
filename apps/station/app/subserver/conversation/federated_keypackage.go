@@ -66,7 +66,7 @@ func (f *FederatedKeyPackageFetcher) FetchRemote(ctx context.Context, targetStat
 	}
 
 	body, _ := json.Marshal(map[string]string{"ptid": ptid})
-	endpoint := strings.TrimRight(targetURL, "/") + "/keypackage/fetch"
+	endpoint := strings.TrimRight(targetURL, "/") + "/key-exchange/mls/key-package/fetch"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {

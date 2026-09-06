@@ -7,6 +7,10 @@
 
 ---
 
+Conversation is the sole Chat entry point. Resource-owner APIs provide Device,
+Inbox, Recovery, Key Exchange, and Federation support; Device Messaging Engine
+names only the Desktop/Mobile runtime that projects these states.
+
 ## 1. Message State
 
 ```text

@@ -3,6 +3,11 @@
 > Durable-command ledger、unknown-outcome readback 与 platform
 > `InteractionAdmission` ownership 已随 Mobile PRODUCT/DESIGN package 于
 > 2026-08-27 接受。
+>
+> Chat 业务唯一入口是 Conversation 的 `/conversation/*`。Device、Inbox、
+> Recovery、Key Exchange 与 Federation 分别暴露 `/device/*`、
+> `/device/inbox/*`、`/recovery/*`、`/key-exchange/*` 与 peer-only
+> `/federation/*`；客户端内部 Messaging Engine 名称不定义 Station API。
 
 ## 1. 文档目标
 
@@ -190,15 +195,15 @@
 ```text
 ┌─────────────────────────────────────────────────────────┐
 │                    消息发送流程                            │
-│  Client → POST /friend-chat/message/send → Station      │
+│  Client → POST /conversation/command → Station          │
 │  Station → 持久化 → 生成事件 → SSE 推送 → 接收端        │
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
 │                    消息接收流程                            │
 │  在线：SSE 实时推送 chat.message.appended 事件           │
-│  离线：GET /friend-chat/message/pending → 拉取离线消息    │
-│  历史：GET /friend-chat/messages?before_ulid=X&limit=N   │
+│  离线：POST /device/inbox/claim → 领取设备待投递消息       │
+│  历史：GET /conversation/messages?cursor=X&limit=N       │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -208,13 +213,15 @@
   `sender_ptid`、content 摘要与 timestamp。
 
 **离线补齐**：
-- 客户端启动后调用 `GET /friend-chat/message/pending` 拉取离线期间的待投递消息。
-- 群聊调用 `GET /group-chat/offline-messages?limit=N` 拉取离线群消息。
-- 拉取后调用 `POST /friend-chat/message/ack` 或 `POST /group-chat/offline-messages/ack` 确认。
+- 客户端启动后调用 `POST /device/inbox/claim` 领取当前设备的待投递消息。
+- Direct 与 Group 使用同一个 Device Inbox 协议，不按聊天类型建立第二套离线 API。
+- 本地事务提交后调用 `POST /device/inbox/ack`；处理失败时使用
+  `/device/inbox/*` 的 typed reject/lease 语义，不能绕回业务 API 确认。
 
 **消息历史加载**：
-- 基于 cursor 的向上翻页：`before_ulid` 作为游标，`limit` 控制条数。
-- 群聊：`GET /group-chat/{group_ulid}/messages?before_ulid=X&limit=N`。
+- 基于 cursor 的向上翻页：`cursor` 作为游标，`limit` 控制条数。
+- Direct 与 Group 都通过 `GET /conversation/messages` 查询；conversation
+  kind 只影响领域投影，不改变 API owner。
 
 #### 4.1.4 消息排序
 - 消息 ID 使用 ULID（Universally Unique Lexicographically Sortable Identifier），天然有序。
@@ -222,8 +229,8 @@
 - 端侧展示按 ULID 字典序排列，ULID 内嵌时间戳保证时间单调性。
 
 #### 4.1.5 已读状态同步
-- 私聊：客户端调用 `POST /friend-chat/mark-read`，携带 `session_ulid` + `last_read_ulid`。
-- 群聊：客户端调用 `POST /group-chat/{group_ulid}/mark-read`，携带 `up_to_ulid`。
+- Direct 与 Group 都调用 `POST /conversation/read-cursor`，携带
+  `conversation_id` 与单调递增的已读位置。
 - Station 更新未读计数后，通过 SSE 推送 `chat.message.read` 事件到对端。
 - 端侧收到已读事件后更新本地消息状态为 `READ`。
 

@@ -275,7 +275,7 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
     if (!senderPtid || !conversationId.trim()) {
       throw new SocialApiError({
         method: 'POST',
-        path: '/messaging/typing/submit',
+        path: '/conversation/typing',
         message: 'authenticated actor and conversation are required',
       });
     }
@@ -288,7 +288,7 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
         value: create(TypingCommandSchema, { isTyping: typing }),
       },
     });
-    const response = await fetch(buildUrl(stationUrl, '/messaging/typing/submit'), {
+    const response = await fetch(buildUrl(stationUrl, '/conversation/typing'), {
       method: 'POST',
       cache: 'no-store',
       headers: {
@@ -301,7 +301,7 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
     });
     if (!response.ok) {
       const payload = await readJson(response);
-      throw buildApiError('POST', '/messaging/typing/submit', response.status, payload);
+      throw buildApiError('POST', '/conversation/typing', response.status, payload);
     }
     return {};
   }

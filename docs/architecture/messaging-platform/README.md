@@ -2,9 +2,20 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-09-05
+> **Created**: 2026-08-08 | **Updated**: 2026-09-06
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/app/subserver/`, `apps/desktop/`, `apps/mobile/`
+>
+> **API ownership correction (accepted, 2026-09-06)**: source and history audit
+> confirmed that Conversation business capabilities were simultaneously exposed and
+> persisted by `conversation` and `messaging` before consolidation. Conversation is
+> now the sole Chat entry point at `/conversation/*`; Device, Inbox, Recovery, Key
+> Exchange, and Federation APIs are exposed by their resource owners at `/device/*`,
+> `/device/inbox/*`, `/recovery/*`, `/key-exchange/*`, and peer-only
+> `/federation/*`. Conversation is a DDD bounded context, and a machine ownership
+> Gate protects this single-owner model. Read
+> [`../api-ownership/README.md`](../api-ownership/README.md) before further route or
+> authority work.
 
 ---
 
@@ -68,17 +79,21 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 | [data-model.md](./data-model.md) | Proto、状态机和持久化模型 |
 | [module-layout.md](./module-layout.md) | 目标模块布局与依赖方向 |
 | [integration.md](./integration.md) | 影响面、原子切换与删除矩阵 |
+| [../api-ownership/README.md](../api-ownership/README.md) | Accepted canonical API owner, route/store hard cut, Conversation DDD, and cross-domain Federation boundary |
 | [execution-plans/20260808-messaging-platform.md](./execution-plans/20260808-messaging-platform.md) | 依赖化执行计划 |
 | [execution-plans/20260808-review-prompt.md](./execution-plans/20260808-review-prompt.md) | 独立产品/架构/计划评审提示 |
 
 ## 5. 当前门状态
 
 - Product：`PRODUCT_ACCEPTED`
-- Architecture：`ARCHITECTURE_ACCEPTED`（`MP-D01`–`MP-D29`；`MP-D29`
-  authority-signed Home Station follower membership projection accepted by
-  Owner on 2026-09-05）。
-- Plan：base plan `PLAN_APPROVED`；`MP-W14` follower-membership amendment
-  `PLAN_APPROVED`（Owner continued execution on 2026-09-05）。
+- Architecture：`ARCHITECTURE_ACCEPTED` through revised `MP-D30` and
+  `AO-D01..AO-D06`; `MP-D29` follower projection evidence remains valid under
+  the Conversation owner, and Conversation DDD plus resource-owned APIs are
+  accepted.
+- Plan：CA-HC hard-cut plan `PLAN_APPROVED`; the older Messaging Platform plan is
+  superseded for Station authority/API ownership while its Device Messaging Engine
+  and MP-W14 follower-projection evidence remain historical input. `MP-W13`
+  corrective amendment remains separate.
 - Execution：live product evidence invalidated the prior MP-W10-E/MP-W12/MP-W11
   receiver-proof claims；`MP-W13` defines projection、interaction UI、identity/Station
   attribution、conversation actions/background、attachments and real Native proof；

@@ -14,7 +14,7 @@ from typing import Any
 from tooling.acceptance.fixtures.chat_native_reset import acceptance_station_environment
 
 
-SUBMIT_PATH = "/messaging/command/submit"
+SUBMIT_PATH = "/conversation/command"
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",

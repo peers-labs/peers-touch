@@ -415,7 +415,7 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
         let body = Self::require_success(
             self.request(
                 reqwest::Method::POST,
-                "/messaging/attachments/uploads:begin",
+                "/conversation/attachments/uploads:begin",
             )
             .header(CONTENT_TYPE, "application/x-protobuf")
             .header(ACCEPT, "application/x-protobuf")
@@ -466,7 +466,7 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             self.request(
                 reqwest::Method::PUT,
                 &format!(
-                    "/messaging/attachments/uploads/{}/chunks/{}",
+                    "/conversation/attachments/uploads/{}/chunks/{}",
                     transfer.upload_id, chunk.chunk_index
                 ),
             )
@@ -498,7 +498,7 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             self.request(
                 reqwest::Method::POST,
                 &format!(
-                    "/messaging/attachments/uploads/{}/complete",
+                    "/conversation/attachments/uploads/{}/complete",
                     transfer.upload_id
                 ),
             )
@@ -533,7 +533,7 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
         end: u64,
     ) -> Result<Vec<u8>, AttachmentTransferFailure> {
         let mut url = reqwest::Url::parse(&format!(
-            "{}/messaging/attachments/objects/{}",
+            "{}/conversation/attachments/objects/{}",
             crate::infrastructure::station_client::station_base_url(),
             descriptor.object_id
         ))
@@ -586,7 +586,7 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             self.request(
                 reqwest::Method::POST,
                 &format!(
-                    "/messaging/attachments/uploads/{}/cancel",
+                    "/conversation/attachments/uploads/{}/cancel",
                     transfer.upload_id
                 ),
             )
@@ -2526,7 +2526,7 @@ mod tests {
                     ListMessagingConversationsResponse,
                 >(
                     Method::GET,
-                    "/messaging/conversation/list",
+                    "/conversation/list",
                     &session.token,
                     None,
                     None::<&ListMessagingConversationsRequest>,

@@ -351,7 +351,7 @@ pub(crate) fn messaging_get_member_settings_result(
         GetMessagingMemberSettingsResponse,
     >(
         Method::GET,
-        "/messaging/member/settings",
+        "/conversation/member/settings",
         token,
         Some(&query),
         None,
@@ -387,7 +387,7 @@ pub(crate) fn messaging_update_member_settings_result(
         UpdateMessagingMemberSettingsResponse,
     >(
         Method::PUT,
-        "/messaging/member/settings",
+        "/conversation/member/settings",
         token,
         None,
         Some(&UpdateMessagingMemberSettingsRequest {

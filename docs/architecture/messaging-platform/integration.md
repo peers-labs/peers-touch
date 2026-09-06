@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-09-05
+> **Created**: 2026-08-08 | **Updated**: 2026-09-06
 > **Owner**: Messaging Platform Team
 
 ---
@@ -21,11 +21,30 @@ new contract/owner ready
 
 回滚通过 commit/deployment rollback，不通过永久 compatibility shim。
 
-## 2. Current-To-Target Ownership Map
+### 1.1 Accepted API Ownership Correction
+
+Conversation is the sole Chat entry point at `/conversation/*`. Device, Inbox,
+Recovery, Key Exchange, and Federation APIs are exposed by their resource owners.
+MP-D30 corrects a verified pre-consolidation violation of this rule: the tree had
+parallel business surfaces and authority-store families. The hard cut is defined
+by `docs/architecture/api-ownership/integration.md` and requires:
+
+```text
+modern authority semantics -> Conversation owner and /conversation/*
+device identity/inbox/recovery/key exchange -> their resource owners
+attachment/typing/receipt -> Conversation-owned routes
+cross-Station mechanics -> shared Federation transport
+duplicate routes/types/stores/callers -> deleted in the same closure
+```
+
+Existing duplicate paths are implementation debt and may not be cited as an API
+precedent or extended by new callers.
+
+## 2. Pre-Consolidation-To-Target Ownership Map
 
 | 当前责任 | 目标 owner | 切换要求 |
 |---|---|---|
-| conversation command/event | Station Messaging Authority | 单一 typed framework |
+| conversation command/event | Station Conversation DDD Authority | 单一 typed framework + aggregate/UOW |
 | envelope inbox/outbox | Device Queue/Federation services | lane/lease/ACK semantics 完整 |
 | Web `imRuntime` receive | Device Messaging Engine inbox | Web 不再 resume/ACK |
 | Web `cryptoRuntime` protocol | Device Messaging Engine direct/MLS | Web 只投影 security state |
@@ -41,8 +60,8 @@ new contract/owner ready
 | Concern | New source | Cutover condition | Required deletion proof |
 |---|---|---|---|
 | Contracts | `model/domain/chat/*` | W01 catalog generated；W05/W07/W09 按 runtime owner 原子切换 | obsolete proto/messages 在对应 cutover 后 zero refs |
-| Station authority | messaging command/event domain | Direct/Group command gates pass | old conversation mutation paths zero |
-| Device queues | lane/lease queue service | replay/crash/fencing gates pass | envelope ACK/resume paths zero |
+| Station authority | Conversation DDD command/event domain | Direct/Group command gates pass | flat Conversation + Messaging authority owners zero |
+| Device inbox | Conversation delivery lane/lease service | replay/crash/fencing gates pass | superseded queue and envelope ACK/resume paths zero |
 | Federation routing | signed endpoint manifest + authority outbox | D19 accepted；two-Station disconnect/restart gate passes | old Envelope/Conversation federation messaging zero |
 | Follower membership | authority-signed public event projection at Home Station | D29 accepted；create/remove/gap/restart/settings gate passes | legacy Conversation membership authorization for Messaging IDs zero |
 | Device Engine | native Messaging Engine | receive/send transaction gates pass | Web crypto/inbox ownership zero |
@@ -231,7 +250,7 @@ Replaced：
 Required deletion proof：
 
 - UI 不调用 upload part/complete、decrypt/hash-accept 或维护 durable transfer cursor；
-- Station Messaging authority 是 descriptor validation 与 recipient grant 的唯一 owner；
+- Station Conversation authority 是 descriptor validation 与 recipient grant 的唯一 owner；
 - `conversation_search_messages` 和 server plaintext search 在 canonical Chat path zero refs；
 - attachment filename/key/nonce/plaintext hash 不出现在 Station row/log/federation frame。
 

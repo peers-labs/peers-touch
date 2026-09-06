@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -22,56 +23,16 @@ def text_offenders(
 
 
 class MessagingPlatformContractTest(unittest.TestCase):
-    def test_legacy_conversation_thread_and_member_settings_contracts_are_deleted(
-        self,
-    ) -> None:
-        # Protobuf cannot reserve top-level message names; this denylist prevents reuse.
-        contract_sources = (
-            CHAT_PROTO / "conversation_api.proto",
-            ROOT / "apps/station/frame/touch/model/chat/conversation_api.pb.go",
-            ROOT / "apps/desktop/src/gen/proto/domain/chat/conversation_api_pb.ts",
-            ROOT / "apps/mobile/src/gen/proto/domain/chat/conversation_api_pb.ts",
-        )
-        self.assertEqual(
-            text_offenders(
-                contract_sources,
-                (
-                    "GetThreadCountsRequest",
-                    "ThreadCountEntry",
-                    "GetThreadCountsResponse",
-                    "MemberSettings",
-                    "GetMemberSettingsRequest",
-                    "GetMemberSettingsResponse",
-                    "UpdateMemberSettingsRequest",
-                    "UpdateMemberSettingsResponse",
-                ),
-            ),
-            {},
-        )
-
-        conversation_sources = tuple(
-            (ROOT / "apps/station/app/subserver/conversation").rglob("*.go")
-        )
+    def test_conversation_owns_member_settings_during_engine_checkpoint(self) -> None:
+        engine_subserver = (
+            ROOT / "apps/station/app/subserver/conversation/engine/subserver.go"
+        ).read_text(encoding="utf-8")
         desktop_sources = tuple(
             (ROOT / "apps/desktop/src-tauri/src").rglob("*.rs")
         ) + tuple((ROOT / "apps/desktop/src").rglob("*.ts*"))
-        self.assertEqual(
-            text_offenders(
-                conversation_sources + desktop_sources,
-                (
-                    "/conversation/thread/counts",
-                    "/conversation/member/settings",
-                    "conv-thread-counts",
-                    "conv-member-settings-get",
-                    "conv-member-settings-put",
-                    "group_chat_thread_counts",
-                    "conversation_thread_counts",
-                    "conversation_get_member_settings",
-                    "conversation_update_member_settings",
-                ),
-            ),
-            {},
-        )
+
+        self.assertIn('"/conversation/member/settings"', engine_subserver)
+        self.assertNotIn('"/messaging/member/settings"', engine_subserver)
         self.assertEqual(
             text_offenders(
                 desktop_sources,
@@ -80,36 +41,6 @@ class MessagingPlatformContractTest(unittest.TestCase):
                     "ConversationThreadCountsInput",
                     "ConversationMemberSettingsInput",
                     "ConversationUpdateMemberSettingsInput",
-                ),
-            ),
-            {},
-        )
-        self.assertEqual(
-            text_offenders(
-                conversation_sources,
-                (
-                    "handleGetThreadCounts",
-                    "handleGetMemberSettings",
-                    "handleUpdateMemberSettings",
-                    "GetThreadCounts",
-                    "CountThreadReplies",
-                    "ThreadSummary",
-                    "threadCountsRequest",
-                    "threadCountEntry",
-                    "threadCountsResponse",
-                    "getMemberSettingsRequest",
-                    "memberSettingsResponse",
-                    "updateMemberSettingsRequest",
-                    "memberSettingsResponseFrom",
-                    "publishMemberSettingsChanged",
-                    "requireActiveMessagingMembership",
-                    "conversationMemberSettingsModel",
-                    "memberSettingsProjection",
-                    "memberSettingsPatch",
-                    "memberSettingsStore",
-                    "newMemberSettingsStore",
-                    "normalizeConversationBackground",
-                    "projectMemberSettings",
                 ),
             ),
             {},
@@ -124,7 +55,7 @@ class MessagingPlatformContractTest(unittest.TestCase):
 
     def test_member_settings_invalidation_is_addressed_by_ptid(self) -> None:
         messaging_subserver = (
-            ROOT / "apps/station/app/subserver/messaging/subserver.go"
+            ROOT / "apps/station/app/subserver/conversation/engine/subserver.go"
         ).read_text(encoding="utf-8")
         publisher = messaging_subserver.split(
             "func publishMemberSettingsChanged(",
@@ -216,10 +147,10 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn("message SubmitMessagingCommandRequest", api)
         self.assertIn("message SubmitMessagingCommandResponse", api)
 
-    def test_production_runtime_registers_messaging_owner_and_profile_engine(self) -> None:
+    def test_production_runtime_registers_resource_routes_and_profile_engine(self) -> None:
         station_main = (ROOT / "apps/station/app/main.go").read_text(encoding="utf-8")
-        station_subserver = (
-            ROOT / "apps/station/app/subserver/messaging/subserver.go"
+        delivery_subserver = (
+            ROOT / "apps/station/app/subserver/conversation/engine/subserver.go"
         ).read_text(encoding="utf-8")
         desktop_state = (
             ROOT / "apps/desktop/src-tauri/src/state/mod.rs"
@@ -228,24 +159,78 @@ class MessagingPlatformContractTest(unittest.TestCase):
             ROOT / "apps/desktop/src-tauri/src/application/auth/service.rs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('server.WithSubServer("messaging"', station_main)
+        self.assertEqual(
+            station_main.count('server.WithSubServer("conversation"'),
+            1,
+        )
+        self.assertNotIn('"conversation_engine"', station_main)
+        self.assertIn("conversationengine.New(", (
+            ROOT / "apps/station/app/subserver/conversation/subserver.go"
+        ).read_text(encoding="utf-8"))
+        self.assertNotIn('server.WithSubServer("messaging"', station_main)
         for route in (
-            "/messaging/conversation/direct",
-            "/messaging/group/genesis/prepare",
-            "/messaging/membership/transition/prepare",
-            "/messaging/conversation/list",
-            "/messaging/command/prepare",
-            "/messaging/command/submit",
-            "/messaging/device/enroll",
-            "/messaging/queue/claim",
-            "/messaging/queue/ack",
+            "/conversation/direct",
+            "/conversation/group/prepare",
+            "/conversation/membership/prepare",
+            "/conversation/list",
+            "/conversation/command/prepare",
+            "/conversation/command",
+            "/device/enroll",
+            "/device/inbox/claim",
+            "/device/inbox/ack",
+            "/device/inbox/reject",
+            "/recovery/revision",
+            "/recovery/latest",
+            "/conversation/attachments/uploads:begin",
+            "/federation/delivery",
+            "/federation/actor/endpoint-manifest",
+            "/federation/conversation/command/prepare",
+            "/federation/key-exchange/mls-key-package/claim",
+            "/conversation/typing",
+            "/conversation/read-cursor",
+            "/conversation/delivery/receipt",
         ):
-            self.assertIn(route, station_subserver)
-        self.assertNotIn("/messaging/conversation/group", station_subserver)
-        self.assertNotIn("/messaging/mls/key-package/claim", station_subserver)
+            self.assertIn(route, delivery_subserver)
+        self.assertNotIn('"/messaging/', delivery_subserver)
         self.assertIn("pub messaging_engines: EngineRegistry", desktop_state)
         self.assertIn("activate_messaging_profile(", auth_service)
         self.assertIn("deactivate_messaging_profile(", auth_service)
+
+    def test_conversation_is_the_only_public_chat_route_owner(self) -> None:
+        self.assertFalse(
+            (ROOT / "apps/station/app/subserver/messaging").exists(),
+            "the deleted Station Messaging facade must not be restored",
+        )
+
+        route_literal = re.compile(r"""["']/messaging/""")
+        source_roots = (
+            ROOT / "apps/station/app",
+            ROOT / "apps/desktop/src",
+            ROOT / "apps/desktop/src-tauri/src",
+            ROOT / "apps/mobile/src",
+            ROOT / "apps/mobile/src-tauri/src",
+            ROOT / "model/domain",
+        )
+        violations: list[str] = []
+        for source_root in source_roots:
+            for path in source_root.rglob("*"):
+                if (
+                    not path.is_file()
+                    or path.suffix not in {".go", ".proto", ".rs", ".ts", ".tsx"}
+                    or path.name.endswith("_test.go")
+                    or any(part in {"gen", "node_modules", "target"} for part in path.parts)
+                ):
+                    continue
+                for line_number, line in enumerate(
+                    path.read_text(encoding="utf-8", errors="replace").splitlines(),
+                    start=1,
+                ):
+                    if route_literal.search(line):
+                        violations.append(
+                            f"{path.relative_to(ROOT)}:{line_number}: {line.strip()}"
+                        )
+
+        self.assertEqual(violations, [])
 
     def test_profile_engine_owns_lifecycle_and_fresh_key_activation(self) -> None:
         messaging = ROOT / "apps/desktop/src-tauri/src/messaging"
@@ -331,7 +316,7 @@ class MessagingPlatformContractTest(unittest.TestCase):
 
     def test_inter_station_messaging_control_plane_uses_protobuf(self) -> None:
         infrastructure = (
-            ROOT / "apps/station/app/subserver/messaging/infrastructure"
+            ROOT / "apps/station/app/subserver/conversation/engine/infrastructure"
         )
         for name in (
             "authority_prepare_fetcher.go",

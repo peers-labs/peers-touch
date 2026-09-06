@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-06-17
+> **Created**: 2026-06-17 | **Updated**: 2026-09-06
 > **Owner**: Architecture Team
 
 ---
@@ -17,6 +17,7 @@
 | D-04 | Agent / A2A / Applet 只做扩展预留 | accepted |
 | D-05 | 不引入办公、任务、项目等上层形态 | accepted |
 | D-06 | Runtime projection 继续拥有 Feed 新鲜度 | accepted |
+| D-07 | Friend Request 由 receiver Home Station 授权并复用共享 Federation transport | accepted |
 
 ---
 
@@ -182,3 +183,56 @@ Human social feed freshness 由 momentsRuntime 或后续 humanSocialRuntime 负�
 ### Consequences
 
 所有页面和组件只能渲染 projection 和触发用户动作。
+
+---
+
+## D-07: Friend Request 由 Receiver Home Station 授权并复用共享 Federation Transport
+
+**Status**: accepted
+**Date**: 2026-09-06
+
+### Context
+
+The current Social Friend Request service writes only the local Station database. In a
+two-Station journey, the sender receives success while the receiver Home Station never
+materializes a pending request. Chat transport does not own Social Graph truth, and a
+Mobile-specific delivery path would create another platform silo.
+
+### Decision
+
+- Public Friend Request APIs remain under `/api/v1/social/*` for every client.
+- The receiver actor's Home Station owns pending/accepted/rejected request state.
+- Sender Home Station persists the exact signed command and a shared Federation outbox
+  row atomically before returning durable acceptance.
+- Receiver Home Station validates and materializes the request idempotently, then owns
+  accept/reject policy and the committed result.
+- Accepted/rejected results return through the same shared Federation transport; both
+  Home Stations project their actor-local relationship state.
+- Social may request Direct Conversation creation only after accepted relationship
+  convergence. Conversation does not own Friend Request.
+
+### Rationale
+
+The receiver is the decision authority, Social remains the business owner, and shared
+Federation mechanics provide retry/dedup without becoming a second Social service.
+
+### Alternatives Considered
+
+- Put Friend Request into a Chat envelope: rejected because message delivery is not a
+  Social Graph authority.
+- Add a Social-only network stack: rejected because retry/auth/dedup infrastructure would
+  be duplicated.
+- Let Mobile/Desktop call the receiver Station directly: rejected because it bypasses
+  Home Station identity, policy, audit, and durable retry.
+
+### Consequences
+
+- Proto-first Social command/event contracts are required.
+- Same-Station and cross-Station flows use the same domain handler through local or remote
+  transport adapters.
+- W9-D Social must prove outage/restart, exact retry, receiver materialization, result
+  return, mutual relationship convergence, and event-after-commit.
+- This proposal is governed jointly by AO-D05 in
+  `docs/architecture/api-ownership/decisions.md`.
+
+Owner accepted D-07 with AO-D01..AO-D06 and revised MP-D30 on 2026-09-06.
