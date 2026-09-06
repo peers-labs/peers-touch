@@ -46,6 +46,11 @@
 | AC | Splitting keyboard picker proof and keyboard selection into separate native workers still loses the stable row/toolbar boundary between phases. | High | Low | Confirmed by run `20260906T141937599501Z-9f41dd564758034a3fa8845ee2ecfd4f`: picker proof passed, but the subsequent selection helper timed out before its row-plus-toolbar precondition. |
 | AD | Repeating the now-valid keyboard picker path for fault-retry is rejected only because localization checkpoint registration is non-idempotent. | High | Low | Confirmed by run `20260906T150752731550Z-a549862769feb52b4ce1c35c6921151d`: both selection sequences completed, then the second call raised `duplicate localization checkpoint: reaction-picker`. |
 | AE | The overlay's initial-focus effect reruns after a geometry update and moves focus from `reaction` back to the first `thread` action. | High | Low | Confirmed by run `20260906T155406249942Z-b0038735441e8977379d7256d52967f0`: one worker focused `reaction`, then 13 ms later focus returned to `thread` before the next Enter. |
+| AF | `GetGUIThreadInfo` fails or returns no focused HWND for the foreground file-dialog thread. | Medium | Low | Pending: record API success, last error, foreground thread, and returned focus/active HWNDs. |
+| AG | `GetGUIThreadInfo` succeeds, but the focused HWND is a non-`Edit` shell control. | High | Low | Pending: record the focused class and its parent chain after `Ctrl+L`. |
+| AH | The editable location control exists deeper in the dialog child tree instead of being the direct focused HWND. | High | Low | Pending: enumerate foreground-window child classes and compare focused and `Edit` descendants. |
+| AI | The foreground file dialog belongs to a process other than the Tauri actor. | Medium | Low | Pending: compare requested, foreground, focused, and actor-window process IDs. |
+| AJ | The file dialog is actor-owned but has no Win32 owner handle, so `dialog_count` remains zero. | Medium | Low | Pending: record actor top-level class names and owner handles while the chooser is open. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -521,3 +526,23 @@ first action after every placement recalculation. The product correction makes
 that focus one-shot for each `MessageActionTarget` activation, preserving the
 user's keyboard position across geometry updates. Cleanup for the failed run
 remained `DONE/PROVEN`.
+
+Exact-source Windows run
+`20260906T212907832204Z-d8921400a03599733414c5470c508a3b` at commit
+`a4e1312cc52943f31a49c10655016eb4b2334a85`, runtime-cell run
+`20260906t212930721616z-0abf27917ccd2036`, and binary SHA-256
+`f6b595e8ebdad81a617b24c57a9d009cd001eb0b111fc5676109c8cc961d7ca9`
+reproduced the `settings.background.ui` timeout at
+`native_product_closure_runner.py:731`. Direct create/reopen, Group creation,
+bidirectional transcript/thread, toolbar geometry, reaction, and
+`identity.station.dom` all passed. The run therefore rejects a general actor
+focus or input-delivery regression.
+
+The first Win32 correction replaced worker-thread `GetFocus()` with
+foreground-thread `GetGUIThreadInfo`, preserved a detected `text-field` or
+`list` kind inside a dialog, and exposed edit text as the snapshot value.
+Focused tests and the four local Chat Gates passed, but the exact Windows run
+still never observed `control.kind == "text-field"` after `Ctrl+L`. Cleanup
+released every process, port, storage root, endpoint, tunnel, source workspace,
+and GUI lease. Hypotheses AF-AJ now own a read-only Win32 hierarchy probe before
+another behavioral change.
