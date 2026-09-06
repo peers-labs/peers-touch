@@ -2592,6 +2592,88 @@ class NativeProductClosureGate(AcceptanceGate):
         if client.process_id is None:
             raise GateError(f"{actor} Native window has no running process")
         process_id = client.process_id
+        # #region debug-point V-X:reaction-keyboard-lifecycle
+        client.execute_script(
+            """
+            window.__PT_REACTION_KEYBOARD_DEBUG__?.dispose?.();
+            const controller = new AbortController();
+            const state = {
+              events: [],
+              dispose: () => controller.abort(),
+            };
+            const describe = (element) => ({
+              action: element?.getAttribute?.('data-message-action') || '',
+              emoji: element?.getAttribute?.('data-reaction-emoji') || '',
+              overlay: element?.closest?.('[data-message-action-overlay]')
+                ?.getAttribute('data-message-action-overlay') || '',
+              tag: element?.tagName || '',
+            });
+            const record = (kind, event = null) => {
+              const active = document.activeElement;
+              const overlay = document.querySelector(
+                '[data-message-action-overlay]',
+              );
+              state.events.push({
+                active: describe(active),
+                eventKey: event?.key || '',
+                kind,
+                overlayKind: overlay?.getAttribute(
+                  'data-message-action-overlay',
+                ) || '',
+                target: describe(event?.target),
+                ts: Date.now(),
+              });
+            };
+            for (const kind of [
+              'keydown',
+              'keyup',
+              'click',
+              'focusin',
+              'focusout',
+            ]) {
+              document.addEventListener(
+                kind,
+                (event) => record(kind, event),
+                { capture: true, signal: controller.signal },
+              );
+            }
+            const observer = new MutationObserver(() => record('mutation'));
+            observer.observe(document.body, {
+              attributes: true,
+              attributeFilter: ['data-message-action-overlay'],
+              childList: true,
+              subtree: true,
+            });
+            const dispose = state.dispose;
+            state.dispose = () => {
+              observer.disconnect();
+              dispose();
+            };
+            window.__PT_REACTION_KEYBOARD_DEBUG__ = state;
+            record('instrumented');
+            """
+        )
+        keyboard_debug_script = """
+            const state = window.__PT_REACTION_KEYBOARD_DEBUG__;
+            const active = document.activeElement;
+            const overlay = document.querySelector(
+              '[data-message-action-overlay]',
+            );
+            return {
+              activeAction: active?.getAttribute(
+                'data-message-action',
+              ) || '',
+              activeEmoji: active?.getAttribute(
+                'data-reaction-emoji',
+              ) || '',
+              activeTag: active?.tagName || '',
+              events: state?.events || [],
+              overlayKind: overlay?.getAttribute(
+                'data-message-action-overlay',
+              ) || '',
+            };
+        """
+        # #endregion
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 20)
         client.execute_script(
             "arguments[0].focus({ preventScroll: true });",
@@ -2654,26 +2736,53 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         else:
             raise GateError("reaction action is not keyboard reachable")
+        # #region debug-point V-X:reaction-keyboard-lifecycle
+        _debug_report(
+            "V-X",
+            "native_product_closure_runner.py:reaction_action_focused",
+            "reaction action focused before targeted Enter",
+            client.execute_script(keyboard_debug_script),
+        )
+        # #endregion
         self.native_adapter.post_key_to_process(
             process_id,
             NativeKey.ENTER,
             private_source=True,
         )
-        WebDriverWait(client.driver, 15).until(
-            lambda driver: bool(
-                driver.execute_script(
-                    """
-                    const picker = document.querySelector(
-                      '[data-message-action-overlay="reaction-picker"]'
-                    );
-                    return picker
-                      && document.activeElement?.hasAttribute(
-                        'data-reaction-emoji'
-                      );
-                    """
+        try:
+            WebDriverWait(client.driver, 15).until(
+                lambda driver: bool(
+                    driver.execute_script(
+                        """
+                        const picker = document.querySelector(
+                          '[data-message-action-overlay="reaction-picker"]'
+                        );
+                        return picker
+                          && document.activeElement?.hasAttribute(
+                            'data-reaction-emoji'
+                          );
+                        """
+                    )
                 )
             )
+        except TimeoutException:
+            # #region debug-point V-X:reaction-keyboard-lifecycle
+            _debug_report(
+                "V-X",
+                "native_product_closure_runner.py:reaction_picker_timeout",
+                "reaction picker did not retain keyboard focus",
+                client.execute_script(keyboard_debug_script),
+            )
+            # #endregion
+            raise
+        # #region debug-point V-X:reaction-keyboard-lifecycle
+        _debug_report(
+            "V-X",
+            "native_product_closure_runner.py:reaction_picker_focused",
+            "reaction picker retained keyboard focus",
+            client.execute_script(keyboard_debug_script),
         )
+        # #endregion
         self.capture_visible_localization("reaction-picker", (actor,))
         self.native_adapter.post_key_to_process(
             process_id,
