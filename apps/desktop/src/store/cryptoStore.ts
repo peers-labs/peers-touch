@@ -7,11 +7,30 @@
 // This store is the single source of truth for all crypto-related UI.
 import { createDesktopStore } from './createDesktopStore';
 import { log } from '../utils/logger';
-import type { CryptoDeviceAddress, DeviceEnrollment, KeyRotationStatus } from '../services/crypto-service';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export interface CryptoDeviceAddress {
+  ptid: string;
+  deviceId: string;
+}
+
+export interface DeviceEnrollment {
+  deviceId: string;
+  deviceLabel: string;
+  enrolledAtUnixMs: number;
+  lastSeenUnixMs: number;
+  isCurrentDevice: boolean;
+}
+
+export interface KeyRotationStatus {
+  signedPreKeyAgeMs: number;
+  oneTimePreKeysRemaining: number;
+  rotationNeeded: boolean;
+  lastRotationUnixMs: number;
+}
 
 export type SessionSecurityLevel =
   | 'idle'

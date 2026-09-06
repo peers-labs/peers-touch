@@ -32,7 +32,17 @@ from tooling.acceptance.core import (
     RuntimeManifest,
 )
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR, REPO_ROOT
+from tooling.acceptance.core.attestation import (
+    produce_service_attestation,
+    produce_station_attestation,
+)
 from tooling.acceptance.core.redaction import redact_value
+from tooling.acceptance.fixtures.chat_native_actors import (
+    ACTOR_PASSWORD,
+    reset_fixture,
+    resolve_actor_identity,
+    verify_reset_target,
+)
 
 
 IOS_RUNTIME = "iOS 17.4"
@@ -42,6 +52,12 @@ ANDROID_ABI = "arm64-v8a"
 ANDROID_BROWSER_PACKAGES = (
     "com.android.chrome",
     "com.google.android.webview",
+)
+ANDROID_MANIFEST_RELATIVE_PATH = Path(
+    "apps/mobile/src-tauri/gen/android/app/src/main/AndroidManifest.xml"
+)
+ANDROID_DEEP_LINK_MARKER = (
+    "<!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 VERSION_PATTERN = re.compile(r"(?<!\d)(\d+)(?:\.\d+){1,3}(?!\d)")
@@ -119,6 +135,186 @@ def _resolve_command(
     if executable.is_file() and os.access(executable, os.X_OK):
         resolved[0] = str(executable)
     return resolved
+
+
+def _is_valid_android_ndk(path: Path) -> bool:
+    try:
+        prebuilt_root = path / "toolchains" / "llvm" / "prebuilt"
+        return (
+            path.is_dir()
+            and (path / "source.properties").is_file()
+            and prebuilt_root.is_dir()
+            and any(child.is_dir() for child in prebuilt_root.iterdir())
+        )
+    except OSError:
+        return False
+
+
+def _resolve_android_ndk_home(env: Mapping[str, str]) -> str:
+    explicit = env.get("NDK_HOME", "").strip()
+    if explicit:
+        try:
+            ndk_home = Path(explicit).expanduser().resolve(strict=True)
+        except OSError as error:
+            raise BlockedError(
+                reason="Configured NDK_HOME does not resolve to an installed NDK",
+                resource="mobile-simulator:android-ndk-home",
+            ) from error
+        if not _is_valid_android_ndk(ndk_home):
+            raise BlockedError(
+                reason="Configured NDK_HOME is not a valid Android NDK",
+                resource="mobile-simulator:android-ndk-home",
+            )
+        return str(ndk_home)
+
+    sdk_root_value = (
+        env.get("ANDROID_HOME", "").strip()
+        or env.get("ANDROID_SDK_ROOT", "").strip()
+    )
+    if not sdk_root_value:
+        raise BlockedError(
+            reason=(
+                "Android NDK discovery requires NDK_HOME, ANDROID_HOME, or "
+                "ANDROID_SDK_ROOT"
+            ),
+            resource="mobile-simulator:android-ndk-discovery",
+        )
+
+    ndk_root = Path(sdk_root_value).expanduser() / "ndk"
+    try:
+        candidates = sorted(
+            {
+                child.resolve(strict=True)
+                for child in ndk_root.iterdir()
+                if _is_valid_android_ndk(child)
+            },
+            key=lambda path: path.as_posix(),
+        )
+    except OSError as error:
+        raise BlockedError(
+            reason="Configured Android SDK contains no readable NDK directory",
+            resource="mobile-simulator:android-ndk-discovery",
+        ) from error
+
+    if not candidates:
+        raise BlockedError(
+            reason="Configured Android SDK contains no valid NDK installation",
+            resource="mobile-simulator:android-ndk-discovery",
+        )
+    if len(candidates) != 1:
+        raise BlockedError(
+            reason=(
+                "Configured Android SDK contains multiple valid NDK "
+                "installations; set NDK_HOME explicitly"
+            ),
+            resource="mobile-simulator:android-ndk-discovery",
+        )
+    return str(candidates[0])
+
+
+def _resolve_android_ndk_tool(ndk_home: str, tool_name: str) -> str:
+    prebuilt_root = Path(ndk_home) / "toolchains" / "llvm" / "prebuilt"
+    try:
+        candidates = sorted(
+            {
+                candidate.absolute()
+                for candidate in prebuilt_root.glob(f"*/bin/{tool_name}")
+                if candidate.is_file() and os.access(candidate, os.X_OK)
+            },
+            key=lambda path: path.as_posix(),
+        )
+    except OSError as error:
+        raise BlockedError(
+            reason=f"Android NDK tool {tool_name!r} is unreadable",
+            resource=f"mobile-simulator:android-ndk-tool:{tool_name}",
+        ) from error
+    if len(candidates) != 1:
+        raise BlockedError(
+            reason=(
+                f"Android NDK must contain exactly one executable "
+                f"{tool_name!r}, found {len(candidates)}"
+            ),
+            resource=f"mobile-simulator:android-ndk-tool:{tool_name}",
+        )
+    return str(candidates[0])
+
+
+def _normalize_android_manifest_generator_whitespace(content: bytes) -> bytes:
+    try:
+        lines = content.decode("utf-8").splitlines(keepends=True)
+    except UnicodeDecodeError:
+        return content
+
+    normalized: list[str] = []
+    inside_deep_link_block = False
+    marker_count = 0
+    for line in lines:
+        if ANDROID_DEEP_LINK_MARKER in line:
+            marker_count += 1
+            inside_deep_link_block = not inside_deep_link_block
+            normalized.append(line)
+            continue
+        if inside_deep_link_block and not line.strip():
+            continue
+        normalized.append(line)
+
+    if marker_count == 0 or marker_count % 2 != 0:
+        return content
+    return "".join(normalized).encode("utf-8")
+
+
+class _GeneratedAndroidManifestGuard:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        try:
+            self.baseline = path.read_bytes()
+        except OSError as error:
+            raise BlockedError(
+                reason="Android build manifest is unavailable",
+                resource="mobile-simulator:android-manifest",
+            ) from error
+        if (
+            _normalize_android_manifest_generator_whitespace(self.baseline)
+            != self.baseline
+        ):
+            raise BlockedError(
+                reason=(
+                    "Android build manifest contains generated whitespace "
+                    "drift before the build"
+                ),
+                resource="mobile-simulator:android-manifest",
+            )
+
+    def restore(self) -> None:
+        try:
+            current = self.path.read_bytes()
+        except OSError as error:
+            raise ProvisioningError(
+                "Android build manifest is unavailable during restoration"
+            ) from error
+        if current == self.baseline:
+            return
+        if (
+            _normalize_android_manifest_generator_whitespace(current)
+            != self.baseline
+        ):
+            raise ProvisioningError(
+                "Android build changed the manifest beyond generated whitespace"
+            )
+
+        temporary_path = self.path.with_name(
+            f".{self.path.name}.{os.getpid()}.restore"
+        )
+        try:
+            temporary_path.write_bytes(self.baseline)
+            temporary_path.chmod(self.path.stat().st_mode)
+            os.replace(temporary_path, self.path)
+        except OSError as error:
+            raise ProvisioningError(
+                "Android build manifest restoration failed"
+            ) from error
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
 
 class _SubprocessHandle:
@@ -1087,6 +1283,18 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                     resource="mobile-simulator:source-identity",
                 )
             spec = load_mobile_simulator_spec(self.contract_path)
+            command_env = {
+                **os.environ,
+                **spec.build_environment,
+            }
+            command_env["NDK_HOME"] = _resolve_android_ndk_home(command_env)
+            command_env["TARGET_RANLIB"] = _resolve_android_ndk_tool(
+                command_env["NDK_HOME"],
+                "llvm-ranlib",
+            )
+            android_manifest_guard = _GeneratedAndroidManifestGuard(
+                self.repo_root / ANDROID_MANIFEST_RELATIVE_PATH
+            )
             manifest = self._preflighted(
                 self._manifest,
                 profile_name="mobile-simulator",
@@ -1094,6 +1302,10 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             )
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
             self.acquire_profile_lease("mobile-simulator", owner)
+            self.register_cleanup(
+                "source:android-manifest",
+                android_manifest_guard.restore,
+            )
 
             runtime_root = self.runtime_base / manifest.run_id
             runtime_root.mkdir(parents=True, exist_ok=False)
@@ -1102,10 +1314,6 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 lambda: shutil.rmtree(runtime_root),
             )
 
-            command_env = {
-                **os.environ,
-                **spec.build_environment,
-            }
             ios_device, ios_owned = self._ready_ios_simulator(
                 spec,
                 command_env,
@@ -1150,12 +1358,16 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                     )
                     for item in spec.build_commands[name]
                 )
-                self._run_checked(
-                    command,
-                    env=command_env,
-                    timeout=1800,
-                    resource=f"mobile-simulator:build:{name}",
-                )
+                try:
+                    self._run_checked(
+                        command,
+                        env=command_env,
+                        timeout=1800,
+                        resource=f"mobile-simulator:build:{name}",
+                    )
+                finally:
+                    if name == "android":
+                        android_manifest_guard.restore()
 
             applications = {
                 platform: self._stage_application(
@@ -2327,3 +2539,396 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         if not isinstance(payload, dict):
             raise OSError("Appium status response is not an object")
         return payload
+
+
+class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
+    environment_id = "mobile-social-simulator"
+
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        base_factory: Any = MobileSimulatorProvisioner,
+        overlay_path: Path | None = None,
+    ) -> None:
+        super().__init__(contract)
+        self.base_factory = base_factory
+        self.overlay_path = overlay_path or (
+            ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        )
+
+    def provision(self, gate_id: str) -> RuntimeManifest:
+        self._manifest = self._new_base_manifest(gate_id)
+        base: MobileSimulatorProvisioner | None = None
+        try:
+            overlay = self._load_overlay()
+            if os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1":
+                raise BlockedError(
+                    reason=(
+                        "Mobile social simulator actor reset requires "
+                        "MOBILE_ACCEPTANCE_RESET=1"
+                    ),
+                    resource=(
+                        "fixture-authorization:MOBILE_ACCEPTANCE_RESET"
+                    ),
+                )
+            profile_name, _, slot, profile_env = self._resolve_active_profile()
+            if profile_env.get("PT_STATION_MODE") != "remote":
+                raise BlockedError(
+                    reason=(
+                        "Mobile social simulator requires PT_STATION_MODE=remote"
+                    ),
+                    resource="profile:station-mode",
+                )
+            service_specs = self._service_specs(profile_env)
+            for service_id in ("station-primary", "station-secondary"):
+                _, station_url, deployment_environment, _ = service_specs[
+                    service_id
+                ]
+                verify_reset_target(station_url, deployment_environment)
+            owner = f"acceptance:{gate_id}:{self._manifest.run_id}"
+            self.acquire_profile_lease(profile_name, owner)
+            for deployment_environment in {
+                values[2] for values in service_specs.values()
+            }:
+                self.acquire_remote_git_source_lease(
+                    deployment_environment,
+                    owner,
+                )
+            services = self._attest_services(
+                self._manifest.run_id,
+                service_specs,
+                profile_env,
+            )
+
+            base_contract = EnvironmentContract.from_yaml(
+                ENVIRONMENTS_DIR / "mobile-simulator.yaml"
+            )
+            base = self.base_factory(base_contract)
+            base.bind_evidence_run(self.evidence_run)
+            self.register_cleanup("mobile-simulator-base", base.cleanup)
+            base_manifest = base.provision(gate_id)
+            if base_manifest.is_blocked():
+                raise BlockedError(
+                    reason=base_manifest.blocked_reason
+                    or "Mobile simulator base provisioning was blocked",
+                    resource=base_manifest.blocked_resource
+                    or "mobile-social-simulator:base",
+                )
+
+            actor_manifest_ref = self._prepare_actor_fixture(
+                gate_id,
+                profile_env,
+                overlay,
+            )
+            contract_clients = {
+                client.id: client for client in self.contract.clients
+            }
+            clients = tuple(
+                dataclasses.replace(
+                    client,
+                    id=client_id,
+                    actor=contract_clients[client_id].actor,
+                    required_service_roles=(
+                        contract_clients[client_id].required_service_roles
+                    ),
+                    service_bindings=(
+                        contract_clients[client_id].service_bindings
+                    ),
+                )
+                for client_id, client in zip(
+                    ("sim-ios", "sim-android"),
+                    base_manifest.clients,
+                )
+            )
+            resources = dict(
+                getattr(base_manifest, "simulator_resources", {})
+            )
+            resources["harness"] = {
+                "namespace": overlay["harness"]["namespace"],
+                "requiredActions": list(
+                    overlay["harness"]["required_actions"]
+                ),
+            }
+            resources["proofScope"] = {
+                "proves": list(overlay["proof_scope"]["proves"]),
+                "doesNotProve": list(
+                    overlay["proof_scope"]["does_not_prove"]
+                ),
+            }
+            resources["clientAssignments"] = {
+                client.id: {
+                    "actor": client.actor,
+                    "serviceId": client.service_bindings[
+                        "station"
+                    ].service_id,
+                }
+                for client in self.contract.clients
+            }
+            manifest = MobileSimulatorRuntimeManifest(
+                **{
+                    field.name: (
+                        self.environment_id
+                        if field.name == "environment_id"
+                        else ProvisioningState.PROVISIONED
+                        if field.name == "state"
+                        else profile_name
+                        if field.name in {
+                            "profile_requested",
+                            "profile_resolved",
+                        }
+                        else slot
+                        if field.name == "profile_slot"
+                        else services
+                        if field.name == "services"
+                        else actor_manifest_ref
+                        if field.name == "actor_manifest_ref"
+                        else clients
+                        if field.name == "clients"
+                        else self.contract.cleanup.resources
+                        if field.name == "cleanup_resources"
+                        else getattr(base_manifest, field.name)
+                    )
+                    for field in dataclasses.fields(RuntimeManifest)
+                },
+                simulator_resources=resources,
+            )
+            self._manifest = manifest
+            return self._ready(manifest)
+        except (BlockedError, ProvisioningError, ValueError, OSError) as error:
+            blocked = (
+                error
+                if isinstance(error, BlockedError)
+                else BlockedError(
+                    reason=f"Mobile social simulator provisioning failed: {error}",
+                    resource="mobile-social-simulator:provisioning",
+                )
+            )
+            return self._blocked(
+                self._manifest,
+                reason=blocked.reason,
+                resource=blocked.resource,
+            )
+
+    def _load_overlay(self) -> dict[str, Any]:
+        try:
+            payload = json.loads(self.overlay_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise BlockedError(
+                reason=(
+                    "Cannot load Mobile social simulator environment contract"
+                ),
+                resource="mobile-social-simulator:environment",
+            ) from error
+        if (
+            not isinstance(payload, dict)
+            or payload.get("id") != self.environment_id
+            or payload.get("base_environment") != "mobile-simulator"
+        ):
+            raise BlockedError(
+                reason="Mobile social simulator environment identity is invalid",
+                resource="mobile-social-simulator:environment",
+            )
+        harness = payload.get("harness")
+        proof_scope = payload.get("proof_scope")
+        if (
+            not isinstance(harness, dict)
+            or not isinstance(harness.get("namespace"), str)
+            or not isinstance(harness.get("required_actions"), list)
+            or not isinstance(proof_scope, dict)
+            or not isinstance(proof_scope.get("proves"), list)
+            or not isinstance(proof_scope.get("does_not_prove"), list)
+        ):
+            raise BlockedError(
+                reason="Mobile social simulator overlay is incomplete",
+                resource="mobile-social-simulator:environment",
+            )
+        return payload
+
+    def _service_specs(
+        self,
+        profile_env: Mapping[str, str],
+    ) -> dict[str, tuple[str, str, str, str]]:
+        specs = {
+            "station-primary": (
+                "station",
+                profile_env.get("PT_MOBILE_STATION_PRIMARY_URL", ""),
+                profile_env.get(
+                    "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV",
+                    "",
+                ),
+                "station-deployment",
+            ),
+            "station-secondary": (
+                "station",
+                profile_env.get("PT_MOBILE_STATION_SECONDARY_URL", ""),
+                profile_env.get(
+                    "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV",
+                    "",
+                ),
+                "station-deployment",
+            ),
+            "relay": (
+                "relay",
+                profile_env.get("PT_RELAY_URL", ""),
+                profile_env.get("PT_RELAY_DEPLOY_ENV", ""),
+                "relay-deployment",
+            ),
+        }
+        missing = [
+            service_id
+            for service_id, values in specs.items()
+            if not values[1] or not values[2]
+        ]
+        if missing:
+            raise BlockedError(
+                reason=(
+                    "Mobile social simulator profile is missing services: "
+                    + ", ".join(missing)
+                ),
+                resource="profile:mobile-social-simulator-services",
+            )
+        return specs
+
+    def _attest_services(
+        self,
+        run_id: str,
+        service_specs: Mapping[str, tuple[str, str, str, str]],
+        profile_env: Mapping[str, str],
+    ) -> dict[str, Any]:
+        services: dict[str, Any] = {}
+        for service_id, (
+            service_kind,
+            endpoint,
+            deployment_environment,
+            producer,
+        ) in service_specs.items():
+            health_url = (
+                profile_env.get("PT_RELAY_HEALTH_URL", "")
+                if service_kind == "relay"
+                else ""
+            )
+            if not self._station_ready(endpoint, health_url):
+                raise BlockedError(
+                    reason=f"Required service {service_id!r} is unhealthy",
+                    resource=f"service-health:{service_id}",
+                )
+            if service_kind == "station":
+                attestation = produce_station_attestation(
+                    environment_id=self.environment_id,
+                    run_id=run_id,
+                    service_id=service_id,
+                    station_url=endpoint,
+                    profile_env={
+                        "PT_STATION_MODE": "remote",
+                        "PT_STATION_DEPLOY_ENV": deployment_environment,
+                    },
+                    require_runtime_identity=True,
+                )
+            else:
+                attestation = produce_service_attestation(
+                    environment_id=self.environment_id,
+                    run_id=run_id,
+                    service_id=service_id,
+                    service_kind=service_kind,
+                    endpoint=endpoint,
+                    mode="remote",
+                    deployment_environment=deployment_environment,
+                    producer=producer,
+                    require_runtime_identity=True,
+                )
+            services[service_id] = attestation
+        return services
+
+    def _prepare_actor_fixture(
+        self,
+        gate_id: str,
+        profile_env: Mapping[str, str],
+        overlay: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1":
+            raise BlockedError(
+                reason=(
+                    "Mobile social simulator actor reset requires "
+                    "MOBILE_ACCEPTANCE_RESET=1"
+                ),
+                resource="fixture-authorization:MOBILE_ACCEPTANCE_RESET",
+            )
+        stations: dict[str, Any] = {}
+        station_inputs = {
+            "station-primary": (
+                profile_env["PT_MOBILE_STATION_PRIMARY_URL"],
+                profile_env["PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV"],
+            ),
+            "station-secondary": (
+                profile_env["PT_MOBILE_STATION_SECONDARY_URL"],
+                profile_env["PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV"],
+            ),
+        }
+        for service_id, (station_url, deployment_environment) in (
+            station_inputs.items()
+        ):
+            verify_reset_target(station_url, deployment_environment)
+            reset_fixture(deployment_environment, ("alice", "bob"))
+            self.register_cleanup(
+                f"actor-fixture:{service_id}",
+                lambda station_url=station_url, deployment_environment=deployment_environment: self._reset_actor_fixture_target(
+                    station_url,
+                    deployment_environment,
+                ),
+            )
+            actors = [
+                resolve_actor_identity(
+                    station_url,
+                    role,
+                    ACTOR_PASSWORD,
+                )
+                for role in ("alice", "bob")
+            ]
+            stations[service_id] = {
+                "targetVerified": True,
+                "actors": [
+                    {
+                        "role": actor.role,
+                        "accountRef": actor.account_ref,
+                        "ptid": actor.ptid,
+                        "devicePolicy": actor.device_policy,
+                    }
+                    for actor in actors
+                ],
+            }
+        payload = {
+            "artifactKind": "mobile-social-simulator-actor-manifest",
+            "environmentId": self.environment_id,
+            "gateId": gate_id,
+            "runId": self.evidence_run.run_id,
+            "initialState": "ready",
+            "stations": stations,
+            "clients": [
+                {
+                    "id": client.id,
+                    "actor": client.actor,
+                    "serviceId": client.service_bindings[
+                        "station"
+                    ].service_id,
+                }
+                for client in self.contract.clients
+            ],
+            "reset": {
+                "authorized": True,
+                "targetVerified": True,
+            },
+            "proofScope": dict(overlay["proof_scope"]),
+        }
+        return self.evidence_run.write_json(
+            "runtime/mobile-social-simulator-actors.json",
+            payload,
+        ).to_dict()
+
+    @staticmethod
+    def _reset_actor_fixture_target(
+        station_url: str,
+        deployment_environment: str,
+    ) -> None:
+        verify_reset_target(station_url, deployment_environment)
+        reset_fixture(deployment_environment, ("alice", "bob"))

@@ -5,7 +5,6 @@ import { useLifecyclePhase } from './app/lifecycle';
 import { useMobileI18n } from './app/mobileI18n';
 import { MobileShell } from './components/MobileShell';
 import {
-  startStationAccessAttempt,
   submitStationLoginGate,
   submitStationInviteCodeGate,
   isAccessGranted,
@@ -19,6 +18,7 @@ import { AccessGateHost } from './features/auth/AccessGateHost';
 import { useAuthStore } from './features/auth/authStore';
 import { probeStation, verifyStationIdentity, type StationIdentityResult } from './features/station/stationConnection';
 import { StationLaunchScreen } from './features/station/StationLaunchScreen';
+import { startStationAccessAttemptWithRecovery } from './runtimes/authRuntime';
 import {
   activateStationEntry,
   activeStationEntry,
@@ -267,10 +267,10 @@ function MobileAppRoot() {
     try {
       const verified = await verifyStationIdentity(station.url);
       requireMatchingStationIdentity(station, verified.stationPeerId);
-      const decision = await startStationAccessAttempt(
+      const decision = await startStationAccessAttemptWithRecovery(
         station.stationPeerId,
         station.url,
-        session?.sessionId,
+        session,
       );
       setAccessDecision(decision);
       if (isAccessGranted(decision)) {
@@ -280,22 +280,6 @@ function MobileAppRoot() {
       setLaunchState('access-gate-chain');
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
-      if (session && isRevokedSessionError(msg)) {
-        await clearSession();
-        setAuthSession(null);
-        setAccessDecision(null);
-        try {
-          const decision = await startStationAccessAttempt(station.stationPeerId, station.url);
-          setAccessDecision(decision);
-          setLaunchState(isAccessGranted(decision) ? 'shell' : 'access-gate-chain');
-          return;
-        } catch (retryError) {
-          const retryMsg = retryError instanceof Error ? retryError.message : '';
-          setStationError(t(retryMsg) !== retryMsg ? t(retryMsg) : (retryMsg || t('mobile.launch.stationUnavailable')));
-          setLaunchState('station-selection');
-          return;
-        }
-      }
       setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
       setLaunchState('station-selection');
     } finally {
@@ -434,8 +418,4 @@ export function App() {
       <MobileAppRoot />
     </AppProviders>
   );
-}
-
-function isRevokedSessionError(message: string): boolean {
-  return /session\s+(invalid|revoked|expired)|invalid\s+session|revoked/i.test(message);
 }

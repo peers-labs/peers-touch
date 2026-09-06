@@ -65,7 +65,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 ) from error
             refs.append(credential.source_ref)
             values[credential.id] = value
-        return tuple(refs), values
+        return self._remember_resolved_credentials(tuple(refs), values)
 
     def _clients(
         self,
