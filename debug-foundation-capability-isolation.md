@@ -17,6 +17,7 @@
 | B | Enabled bindings exist, but none are READY for the selected Browser capability session. | Rejected | Low | No enabled binding existed; the only readiness row was `BLOCKED` with `binding_disabled`. |
 | C | The selected Agent differs from the Agent configured by fixture bootstrap. | Rejected | Low | The selected Agent resolved by name without fallback, and selected/authoritative versions both equaled `1`. |
 | D | Entry restoration removes or reverts the only usable capability fixture before AS-F01. | Rejected | Medium | Both isolation and fixture journals were absent before and after entry restoration. |
+| E | AS-F10 invokes capability isolation without the reversible READY fixture, so an already-disabled binding yields a vacuous restoration with an empty hash. | Confirmed | Low | Exact-source run `20260906T112704879353Z-5e1f364c3649ec3e0e19e68668401c7c` reached AS-F10 with one disabled binding, zero READY capabilities, and failed on empty `restoredReadyCapabilityHash`. |
 
 ## Log Evidence
 - Exact-source aggregate
@@ -42,6 +43,16 @@
   and one `READY / capability_ready` row; the Gate then advanced through
   AS-F02-AS-F05 to the independent AS-F06 cursor boundary. Provisioner and
   client cleanup completed `DONE / PROVEN / passed`.
+- Exact-source run
+  `20260906T112704879353Z-5e1f364c3649ec3e0e19e68668401c7c`
+  (aggregate
+  `20260906T112704758489Z-c21aabe8aad755ba7e0b4bd8e98b6ee9`)
+  on `e68a5b4c000b1a649667addae279b6e0dd54c726` passed AS-F02 and
+  AS-F06, then failed at Browser AS-F10 because its isolation precondition
+  observed one disabled binding and zero READY capabilities. The no-binding
+  path marked restoration verified without a restored READY hash, while the
+  unchanged AS-F10 oracle correctly required non-empty restored/source hashes.
+  Inner runtime cleanup and outer Provisioner cleanup both passed.
 
 ## Instrumentation
 - `foundationDirectProbe` records journal presence before and after restoration,
@@ -57,19 +68,19 @@
   and `git diff --check` pass.
 
 ## Verification Conclusion
-Hypothesis A is confirmed. AS-F01 requires a positive READY capability before
-testing that capability isolation removes effective tools, but unlike AS-F07 it
-does not establish a deterministic reversible capability fixture. It therefore
-depends on mutable residual Station binding state. The correction must remain
-inside Acceptance business injection: reuse one revision-fenced fixture
-lifecycle for AS-F01 and AS-F07, then retain the existing strict isolation and
-restoration assertions. Product readiness semantics and Station authority do
-not change.
+Hypotheses A and E are confirmed in separate cells. AS-F01 and AS-F10 require a
+positive READY capability before testing that capability isolation removes
+effective tools. AS-F01 and AS-F07 already establish a deterministic reversible
+fixture, while AS-F10 still depended on mutable residual Station binding state.
+The correction remains inside Acceptance business injection: AS-F10 now uses
+the same revision-fenced fixture lifecycle, refreshes session/readiness after
+fixture setup, and retains the existing strict isolation/restoration
+assertions. Product readiness semantics and Station authority do not change.
 
 ## Fix
 - Added one shared `withFoundationReadyCapabilityFixture` lifecycle around the
   existing Station binding APIs and durable fixture journal.
-- AS-F01 and AS-F07 now use the same platform-specific fixture setup,
+- AS-F01, AS-F07, and AS-F10 now use the same platform-specific fixture setup,
   revision-fenced isolation, reverse restoration, and fail-closed cleanup.
 - The strict prerequisite still requires a positive READY capability before
   isolation and zero READY capabilities during the isolated Turn.
