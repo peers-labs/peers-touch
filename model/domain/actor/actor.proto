@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package peers_touch.model.actor.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
 enum ActorKind {
@@ -52,6 +54,111 @@ message ActorRef {
   string ptid = 2;
   string acct = 3;
   ActorKind kind = 4;
+}
+
+enum ActorDeviceStatus {
+  ACTOR_DEVICE_STATUS_UNSPECIFIED = 0;
+  ACTOR_DEVICE_STATUS_ENROLLING = 1;
+  ACTOR_DEVICE_STATUS_ACTIVE = 2;
+  ACTOR_DEVICE_STATUS_REVOKE_PENDING = 3;
+  ACTOR_DEVICE_STATUS_REVOKED = 4;
+}
+
+message ActorDeviceRef {
+  ActorRef actor = 1;
+  string device_id = 2;
+}
+
+// Deterministic actor-signed authorization for one fresh device.
+message ActorDeviceCertificate {
+  uint32 format_version = 1;
+  ActorDeviceRef device = 2;
+  bytes actor_identity_public_key = 3;
+  bytes actor_identity_key_fingerprint = 4;
+  bytes device_signing_public_key = 5;
+  string signing_key_id = 6;
+  uint64 observed_profile_version = 7;
+}
+
+message ActorDevice {
+  ActorDeviceRef ref = 1;
+  ActorDeviceStatus status = 2;
+  string label = 3;
+  bytes actor_identity_key_fingerprint = 4;
+  string signing_key_id = 5;
+  bytes device_signing_public_key = 6;
+  uint64 profile_version = 7;
+  int64 activation_sequence = 8;
+  google.protobuf.Timestamp enrolled_at = 9;
+  google.protobuf.Timestamp revoked_at = 10;
+}
+
+message EnrollActorDeviceRequest {
+  ActorDeviceCertificate certificate = 1;
+  string label = 2;
+  bytes actor_cross_signature = 3;
+}
+
+message EnrollActorDeviceResponse {
+  ActorDevice device = 1;
+}
+
+message ListActorDevicesRequest {}
+
+message ListActorDevicesResponse {
+  repeated ActorDevice devices = 1;
+}
+
+message RevokeActorDeviceRequest {
+  string device_id = 1;
+  uint64 observed_profile_version = 2;
+}
+
+message RevokeActorDeviceResponse {
+  ActorDevice device = 1;
+}
+
+message ActorEndpointManifestEntry {
+  ActorDeviceRef endpoint = 1;
+  string signing_key_id = 2;
+  repeated bytes public_material_sha256 = 3;
+}
+
+message ActorEndpointManifestSigningInput {
+  uint32 format_version = 1;
+  string manifest_id = 2;
+  ActorRef actor = 3;
+  string home_station_peer_id = 4;
+  uint64 directory_version = 5;
+  repeated ActorEndpointManifestEntry active_endpoints = 6;
+  google.protobuf.Timestamp issued_at = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  string signing_key_id = 9;
+  bytes actor_identity_public_key = 10;
+  uint64 actor_profile_version = 11;
+}
+
+message ActorEndpointManifest {
+  uint32 format_version = 1;
+  string manifest_id = 2;
+  ActorRef actor = 3;
+  string home_station_peer_id = 4;
+  uint64 directory_version = 5;
+  repeated ActorEndpointManifestEntry active_endpoints = 6;
+  google.protobuf.Timestamp issued_at = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  string signing_key_id = 9;
+  bytes station_signature = 10;
+  bytes actor_identity_public_key = 11;
+  uint64 actor_profile_version = 12;
+}
+
+message GetActorEndpointManifestRequest {
+  ActorRef actor = 1;
+}
+
+message GetActorEndpointManifestResponse {
+  ActorEndpointManifest manifest = 1;
 }
 
 message Actor {
