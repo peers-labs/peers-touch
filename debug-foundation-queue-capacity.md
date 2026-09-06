@@ -20,6 +20,7 @@
 | E | Conversation cleanup or selection drift makes the readback target differ from the created queue conversation. | Low | Low | Rejected: both tuples retained the selected conversation. |
 | F | Launching the duplicate before the original request has a Station admission can let the duplicate win the shared idempotency key. | High | Low | Confirmed on `abc010684`: the second locale reached strict `8/8`, but the designated active observer received only `admission_replayed` while the duplicate observer carried the real active stream. |
 | G | A queued Turn is admitted during post-cancellation cleanup and mutates the conversation between the source and replay readbacks. | High | Low | Consistent with the `6de266738` failure; the next run records only readback hashes, versions, message counts/statuses, and final queue size to confirm or reject it. |
+| H | The active Turn completes after the strict capacity snapshot but before the first queued cancellation, making the snapshot version or selected queue entry stale. | High | Low | Consistent with `19e0ec1c`: capacity was `8/8` at 1,012 ms, the active stream completed at 1,644 ms, and the next action failed with `agent.turnQueueCancelFailed`. The next run records the exact pre-cancel timing and bounded post-failure queue state. |
 
 ## Log Evidence
 - Existing exact-source Gate evidence:
@@ -121,6 +122,21 @@
     `agent.acceptance.foundationActiveTurnCancelRejected`.
   - Inner runtime cleanup and outer Provisioner cleanup both passed.
 - Exact-source run
+  `20260906T101159638946Z-fc655c580ff9d5a11bdb0c02cc9d7bc6`
+  (aggregate
+  `20260906T101159522763Z-05a93d0ca5041bef88c3621828f1025d`)
+  on `19e0ec1cb7bdf40a12516324e9f6ee87e3431548`:
+  - Browser AS-F02 reached strict `8/8` with FIFO positions `1..8` at
+    1,012 ms and the overflow request completed.
+  - The active provider stream completed naturally at 1,644 ms.
+  - The first queued cancellation then failed with
+    `agent.turnQueueCancelFailed`, before the replay comparison.
+  - Inner runtime cleanup and outer Provisioner cleanup both passed.
+  - Bounded instrumentation now records the completion time of all
+    at-capacity observations, the queued-cancellation request, and on failure
+    the safe error code plus current queue version/size/positions and whether
+    the selected entry remains pending.
+- Exact-source run
   `20260906T092327804315Z-110a210664701b15a8495ad6120ea9c2`
   (aggregate
   `20260906T092327677006Z-ede0d99faab81d07650e89953bea06a7`)
@@ -159,12 +175,13 @@ finish naturally. Queue visibility, overflow, and active-dependency checks can
 run concurrently after the capacity snapshot. The Harness can then cancel one
 queued entry for the required queue-control assertion, cancel the active Turn,
 and only afterward clean the residual queue. That ordering now succeeds, but
-the final two readbacks differ, consistent with one residual queued Turn being
-admitted during cleanup. The next run records bounded readback versions,
-message counts/statuses, hashes, and final queue size to identify the changing
-source without exposing content or identifiers. The session remains `[OPEN]`
-because post-fix exact-source comparison and explicit cleanup confirmation are
-still required.
+provider duration remains nondeterministic: the latest exact-source run reached
+strict capacity but the active stream completed before the first queued
+cancellation. The next run records the precise cancellation boundary and
+current Station queue state before any action ordering is changed. The final
+readback mismatch hypothesis remains pending because this run did not reach
+replay. The session remains `[OPEN]` because post-fix exact-source comparison
+and explicit cleanup confirmation are still required.
 
 ## Fix
 - Capture the empty queue baseline before starting the active request.
