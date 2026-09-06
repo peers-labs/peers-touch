@@ -12,8 +12,11 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
+	domainservice "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/service"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/persistence"
+	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -57,11 +60,8 @@ func (r *ReceiptRecorder) Record(
 
 	var recorded interaction.DeliveryRecordResult
 	err = r.transaction(ctx, func(tx *gorm.DB) error {
-		item, err := lockReceiptItem(tx, itemID)
+		expected, err := lockAuthorityDeliveryCommitment(tx, receipt)
 		if err != nil {
-			return err
-		}
-		if err := validateReceiptItem(item, receipt); err != nil {
 			return err
 		}
 		event, err := loadReceiptEvent(tx, receipt.EventID)
@@ -71,10 +71,43 @@ func (r *ReceiptRecorder) Record(
 		if err := validateReceiptEvent(event, receipt); err != nil {
 			return err
 		}
+		if err := validateReceiptExpectation(expected, event, receipt, itemID); err != nil {
+			return err
+		}
 
-		replay, err := persistExactReceipt(tx, item, receipt)
+		item, localItemExists, err := lockReceiptItemIfPresent(tx, itemID)
 		if err != nil {
 			return err
+		}
+		if localItemExists {
+			if err := validateReceiptItem(item, receipt); err != nil {
+				return err
+			}
+			if err := validateReceiptDelivery(item, event, expected); err != nil {
+				return err
+			}
+		} else if expected.HomeStation == string(event.AuthorityStation) {
+			return receiptIntegrityError(
+				"item_id",
+				"does not identify the expected authority-local Device Inbox item",
+			)
+		}
+
+		replay, err := persistAuthorityReceipt(tx, expected, receipt)
+		if err != nil {
+			return err
+		}
+		if localItemExists {
+			localReplay, err := persistExactReceipt(tx, item, receipt)
+			if err != nil {
+				return err
+			}
+			if localReplay != replay {
+				return receiptIntegrityError(
+					"receipt",
+					"authority and local consumption ledgers disagree",
+				)
+			}
 		}
 		aggregate, err := loadDeliveryAggregate(tx, event)
 		if err != nil {
@@ -126,6 +159,9 @@ func validateReceipt(receipt interaction.DeliveryReceipt) (string, error) {
 		receipt.ConversationID == "" ||
 		receipt.EventID == "" ||
 		receipt.Consumer.Validate() != nil ||
+		(receipt.SourceStation != "" &&
+			string(receipt.SourceStation) !=
+				strings.TrimSpace(string(receipt.SourceStation))) ||
 		receipt.EventSequence == 0 ||
 		receipt.LaneSequence <= 0 ||
 		receipt.PayloadHash.IsZero() ||
@@ -141,25 +177,151 @@ func validateReceipt(receipt interaction.DeliveryReceipt) (string, error) {
 	return itemID, nil
 }
 
-func lockReceiptItem(
+func lockAuthorityDeliveryCommitment(
 	tx *gorm.DB,
-	itemID string,
-) (*DeviceQueueItemModel, error) {
-	var item DeviceQueueItemModel
+	receipt interaction.DeliveryReceipt,
+) (*AuthorityDeliveryCommitmentModel, error) {
+	var commitment AuthorityDeliveryCommitmentModel
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		First(&item, "item_id = ?", itemID).
+		First(
+			&commitment,
+			"event_id = ? AND recipient_ptid = ? AND recipient_device_id = ?",
+			string(receipt.EventID),
+			string(receipt.Consumer.Actor),
+			string(receipt.Consumer.Device),
+		).
 		Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, receiptIntegrityError(
-			"item_id",
-			"does not identify a canonical Device Inbox item",
+			"consumer",
+			"does not identify an expected authority delivery endpoint",
 		)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	return &item, nil
+	return &commitment, nil
+}
+
+func lockReceiptItemIfPresent(
+	tx *gorm.DB,
+	itemID string,
+) (*DeviceQueueItemModel, bool, error) {
+	var item DeviceQueueItemModel
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&item, "item_id = ?", itemID).
+		Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	return &item, true, nil
+}
+
+func validateReceiptExpectation(
+	expected *AuthorityDeliveryCommitmentModel,
+	event domainevent.Record,
+	receipt interaction.DeliveryReceipt,
+	itemID string,
+) error {
+	if expected.EventID != string(receipt.EventID) ||
+		expected.ConversationID != string(receipt.ConversationID) ||
+		expected.EventSequence != uint64(receipt.EventSequence) ||
+		expected.RecipientPTID != string(receipt.Consumer.Actor) ||
+		expected.RecipientDeviceID != string(receipt.Consumer.Device) ||
+		expected.QueueItemID != itemID ||
+		!bytes.Equal(expected.QueuePayloadSHA256, receipt.PayloadHash.Bytes()) {
+		return receiptIntegrityError(
+			"receipt",
+			"does not match the exact authority delivery expectation",
+		)
+	}
+	switch {
+	case receipt.SourceStation == "" &&
+		expected.HomeStation != string(event.AuthorityStation):
+		return receiptIntegrityError(
+			"source_station",
+			"is required for a remote Home Station receipt",
+		)
+	case receipt.SourceStation != "" &&
+		expected.HomeStation != string(receipt.SourceStation):
+		return receiptIntegrityError(
+			"source_station",
+			"does not own the expected delivery endpoint",
+		)
+	}
+	if err := validateAuthorityCommitmentModel(expected, event); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateAuthorityCommitmentModel(
+	expected *AuthorityDeliveryCommitmentModel,
+	event domainevent.Record,
+) error {
+	endpoint := valueobject.Endpoint{
+		Actor:  valueobject.PTID(expected.RecipientPTID),
+		Device: valueobject.DeviceID(expected.RecipientDeviceID),
+	}
+	endpointPayloadHash, err := valueobject.NewHash(expected.EndpointPayloadSHA256)
+	if err != nil {
+		return receiptIntegrityError(
+			"endpoint_payload_sha256",
+			"is not a canonical SHA-256 hash",
+		)
+	}
+	commitmentHash, err := valueobject.NewHash(expected.CommitmentSHA256)
+	if err != nil {
+		return receiptIntegrityError(
+			"delivery_commitment",
+			"is not a canonical SHA-256 hash",
+		)
+	}
+	queuePayloadHash, err := valueobject.NewHash(expected.QueuePayloadSHA256)
+	if err != nil {
+		return receiptIntegrityError(
+			"queue_payload_sha256",
+			"is not a canonical SHA-256 hash",
+		)
+	}
+	kind := valueobject.DeliveryKind(expected.PayloadKind)
+	commitments, err := domainservice.BuildDeliveryCommitments(
+		event.ConversationID,
+		event.ID,
+		[]valueobject.PreparedDelivery{{
+			Recipient:   endpoint,
+			HomeStation: valueobject.StationID(expected.HomeStation),
+			Kind:        kind,
+			PayloadHash: endpointPayloadHash,
+		}},
+	)
+	if expected.EventID != string(event.ID) ||
+		expected.ConversationID != string(event.ConversationID) ||
+		expected.EventSequence != uint64(event.Sequence) ||
+		expected.OriginatorPTID != string(event.Actor.Actor) ||
+		endpoint.Validate() != nil ||
+		expected.HomeStation == "" ||
+		queuePayloadHash.IsZero() ||
+		expected.RequiredRecipient !=
+			(endpoint.Actor != event.Actor.Actor) ||
+		!expected.CreatedAt.Equal(event.CommittedAt) ||
+		err != nil ||
+		len(commitments) != 1 ||
+		commitments[0].Hash != commitmentHash ||
+		!containsReceiptCommitment(event.DeliveryCommitments, commitmentHash) {
+		return receiptIntegrityError(
+			"delivery_commitment",
+			"does not preserve exact event, endpoint, payload, and commitment provenance",
+		)
+	}
+
+	return nil
 }
 
 func validateReceiptItem(
@@ -167,15 +329,43 @@ func validateReceiptItem(
 	receipt interaction.DeliveryReceipt,
 ) error {
 	if item.ItemID == "" ||
-		item.ConversationID != string(receipt.ConversationID) ||
-		item.EventID != string(receipt.EventID) ||
-		item.EventSequence != uint64(receipt.EventSequence) ||
-		item.RecipientPTID != string(receipt.Consumer.Actor) ||
-		item.RecipientDeviceID != string(receipt.Consumer.Device) ||
-		item.LaneSequence != receipt.LaneSequence ||
 		item.PayloadType != storagePayloadTypeConversationEvent ||
-		!bytes.Equal(item.PayloadSHA256, receipt.PayloadHash.Bytes()) ||
 		!payloadMatches(item) {
+		return receiptIntegrityError(
+			"item",
+			"is not a valid canonical Conversation delivery",
+		)
+	}
+	exactMatch := item.ConversationID == string(receipt.ConversationID) &&
+		item.EventID == string(receipt.EventID) &&
+		item.EventSequence == uint64(receipt.EventSequence) &&
+		item.RecipientPTID == string(receipt.Consumer.Actor) &&
+		item.RecipientDeviceID == string(receipt.Consumer.Device) &&
+		item.LaneSequence == receipt.LaneSequence &&
+		bytes.Equal(item.PayloadSHA256, receipt.PayloadHash.Bytes())
+	if item.ConsumptionReceiptID != nil {
+		if *item.ConsumptionReceiptID != receipt.ReceiptID ||
+			item.ConsumedAt == nil ||
+			!item.ConsumedAt.Equal(receipt.ConsumedAt) ||
+			!exactMatch {
+			return interaction.NewError(
+				interaction.ErrorCodeIdempotencyConflict,
+				"delivery_receipt_recorder.record",
+				"receipt_id",
+				"already identifies a different persisted receipt",
+			)
+		}
+		if item.State != storageStateConsumed &&
+			item.State != storageStateAcked {
+			return receiptIntegrityError(
+				"state",
+				"is inconsistent with its persisted consumption receipt",
+			)
+		}
+
+		return nil
+	}
+	if !exactMatch {
 		return receiptIntegrityError(
 			"receipt",
 			"does not match the canonical item, conversation, event, sequence, payload, and consumer tuple",
@@ -199,7 +389,9 @@ func loadReceiptEvent(
 	eventID valueobject.EventID,
 ) (domainevent.Record, error) {
 	var model persistence.ConversationEventModel
-	err := tx.First(&model, "event_id = ?", string(eventID)).Error
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&model, "event_id = ?", string(eventID)).
+		Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return domainevent.Record{}, receiptIntegrityError(
 			"event_id",
@@ -229,9 +421,16 @@ func loadReceiptEvent(
 	if rehydrated.ID != valueobject.EventID(model.EventID) ||
 		rehydrated.ConversationID != valueobject.ConversationID(model.ConversationID) ||
 		rehydrated.Sequence != valueobject.Sequence(model.Sequence) ||
+		rehydrated.CommandID != valueobject.CommandID(model.CommandID) ||
 		rehydrated.Actor.Actor != valueobject.PTID(model.ActorPTID) ||
 		rehydrated.Actor.Device != valueobject.DeviceID(model.ActorDeviceID) ||
+		!bytes.Equal(optionalReceiptHash(rehydrated.PreviousHash), model.PreviousHash) ||
 		!bytes.Equal(rehydrated.Hash.Bytes(), model.EventHash) ||
+		rehydrated.MembershipEpoch != valueobject.Epoch(model.MembershipEpoch) ||
+		rehydrated.MLSEpoch != valueobject.Epoch(model.MLSEpoch) ||
+		rehydrated.AuthorityStation != valueobject.StationID(model.AuthorityStation) ||
+		rehydrated.Fact.Kind != domainevent.Kind(model.EventKind) ||
+		!receiptEventMessageBindingMatches(rehydrated, model) ||
 		!rehydrated.CommittedAt.Equal(model.CommittedAt) {
 		return domainevent.Record{}, receiptIntegrityError(
 			"event",
@@ -240,6 +439,27 @@ func loadReceiptEvent(
 	}
 
 	return rehydrated, nil
+}
+
+func optionalReceiptHash(hash valueobject.Hash) []byte {
+	if hash.IsZero() {
+		return nil
+	}
+
+	return hash.Bytes()
+}
+
+func receiptEventMessageBindingMatches(
+	event domainevent.Record,
+	model persistence.ConversationEventModel,
+) bool {
+	if event.Fact.Kind == domainevent.KindMessageCommitted {
+		return model.MessageID != nil &&
+			*model.MessageID == string(event.Fact.MessageID) &&
+			model.MessageAuthor == string(event.Actor.Actor)
+	}
+
+	return model.MessageID == nil && model.MessageAuthor == ""
 }
 
 func validateReceiptEvent(
@@ -260,6 +480,248 @@ func validateReceiptEvent(
 	return nil
 }
 
+func validateReceiptDelivery(
+	item *DeviceQueueItemModel,
+	event domainevent.Record,
+	expected *AuthorityDeliveryCommitmentModel,
+) error {
+	var delivery chat.DeviceEventDelivery
+	if err := proto.Unmarshal(item.OpaquePayload, &delivery); err != nil {
+		return receiptIntegrityError(
+			"opaque_payload",
+			"is not a canonical DeviceEventDelivery",
+		)
+	}
+	if delivery.GetEvent() == nil || delivery.GetRecipient() == nil {
+		return receiptIntegrityError(
+			"opaque_payload",
+			"is missing its Conversation event or recipient",
+		)
+	}
+	eventBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		delivery.GetEvent(),
+	)
+	if err != nil || !bytes.Equal(eventBytes, event.Bytes()) {
+		return receiptIntegrityError(
+			"opaque_payload",
+			"does not contain the exact canonical Conversation event",
+		)
+	}
+	if delivery.GetRecipient().GetPtid() != item.RecipientPTID ||
+		delivery.GetRecipient().GetDeviceId() != item.RecipientDeviceID ||
+		item.ItemID != expected.QueueItemID ||
+		!bytes.Equal(item.PayloadSHA256, expected.QueuePayloadSHA256) {
+		return receiptIntegrityError(
+			"opaque_payload",
+			"does not match the exact authority delivery and Device Inbox item",
+		)
+	}
+	endpointPayloadHash := valueobject.HashBytes(delivery.GetEndpointPayload())
+	if !bytes.Equal(
+		endpointPayloadHash.Bytes(),
+		delivery.GetEndpointPayloadSha256(),
+	) || !bytes.Equal(
+		delivery.GetEndpointPayloadSha256(),
+		expected.EndpointPayloadSHA256,
+	) {
+		return receiptIntegrityError(
+			"endpoint_payload_sha256",
+			"does not match the endpoint payload and authority expectation",
+		)
+	}
+	kind, err := deliveryKindFromProto(delivery.GetPayloadKind())
+	if err != nil {
+		return err
+	}
+	if string(kind) != expected.PayloadKind {
+		return receiptIntegrityError(
+			"payload_kind",
+			"does not match the authority expectation",
+		)
+	}
+	commitments, err := domainservice.BuildDeliveryCommitments(
+		event.ConversationID,
+		event.ID,
+		[]valueobject.PreparedDelivery{{
+			Recipient: valueobject.Endpoint{
+				Actor:  valueobject.PTID(item.RecipientPTID),
+				Device: valueobject.DeviceID(item.RecipientDeviceID),
+			},
+			HomeStation: event.AuthorityStation,
+			Kind:        kind,
+			Opaque:      append([]byte(nil), delivery.GetEndpointPayload()...),
+			PayloadHash: endpointPayloadHash,
+		}},
+	)
+	if err != nil ||
+		len(commitments) != 1 ||
+		!bytes.Equal(
+			commitments[0].Hash.Bytes(),
+			delivery.GetDeliveryCommitment(),
+		) ||
+		!bytes.Equal(
+			delivery.GetDeliveryCommitment(),
+			expected.CommitmentSHA256,
+		) ||
+		!containsReceiptCommitment(
+			event.DeliveryCommitments,
+			commitments[0].Hash,
+		) {
+		return receiptIntegrityError(
+			"delivery_commitment",
+			"does not belong to the canonical Conversation event delivery set",
+		)
+	}
+
+	return nil
+}
+
+func deliveryKindFromProto(
+	kind chat.PreparedEndpointPayloadKind,
+) (valueobject.DeliveryKind, error) {
+	switch kind {
+	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_CIPHERTEXT:
+		return valueobject.DeliveryKindDirectCiphertext, nil
+	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_APPLICATION:
+		return valueobject.DeliveryKindMLSApplication, nil
+	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_COMMIT:
+		return valueobject.DeliveryKindMLSCommit, nil
+	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_WELCOME:
+		return valueobject.DeliveryKindMLSWelcome, nil
+	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_PUBLIC_EVENT:
+		return valueobject.DeliveryKindPublicEvent, nil
+	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_CONVERSATION_STATE:
+		return valueobject.DeliveryKindConversation, nil
+	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_RETIREMENT:
+		return valueobject.DeliveryKindMLSRetirement, nil
+	default:
+		return "", receiptIntegrityError(
+			"payload_kind",
+			"is not supported by the canonical delivery contract",
+		)
+	}
+}
+
+func containsReceiptCommitment(
+	commitments []valueobject.Hash,
+	expected valueobject.Hash,
+) bool {
+	for _, commitment := range commitments {
+		if commitment == expected {
+			return true
+		}
+	}
+
+	return false
+}
+
+func persistAuthorityReceipt(
+	tx *gorm.DB,
+	expected *AuthorityDeliveryCommitmentModel,
+	receipt interaction.DeliveryReceipt,
+) (bool, error) {
+	candidate := AuthorityDeliveryReceiptModel{
+		ReceiptID:          receipt.ReceiptID,
+		EventID:            string(receipt.EventID),
+		RecipientPTID:      string(receipt.Consumer.Actor),
+		RecipientDeviceID:  string(receipt.Consumer.Device),
+		SourceHomeStation:  expected.HomeStation,
+		ConversationID:     string(receipt.ConversationID),
+		EventSequence:      uint64(receipt.EventSequence),
+		LaneSequence:       receipt.LaneSequence,
+		QueuePayloadSHA256: receipt.PayloadHash.Bytes(),
+		CommitmentSHA256:   append([]byte(nil), expected.CommitmentSHA256...),
+		ConsumedAt:         receipt.ConsumedAt,
+	}
+	existing, found, err := findAuthorityReceipt(tx, receipt)
+	if err != nil {
+		return false, err
+	}
+	if found {
+		if !authorityReceiptMatches(existing, candidate) {
+			return false, receiptConflictError()
+		}
+
+		return true, nil
+	}
+
+	result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&candidate)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 1 {
+		return false, nil
+	}
+	existing, found, err = findAuthorityReceipt(tx, receipt)
+	if err != nil {
+		return false, err
+	}
+	if !found || !authorityReceiptMatches(existing, candidate) {
+		return false, receiptConflictError()
+	}
+
+	return true, nil
+}
+
+func findAuthorityReceipt(
+	tx *gorm.DB,
+	receipt interaction.DeliveryReceipt,
+) (AuthorityDeliveryReceiptModel, bool, error) {
+	var models []AuthorityDeliveryReceiptModel
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"receipt_id = ? OR (event_id = ? AND recipient_ptid = ? AND recipient_device_id = ?)",
+			receipt.ReceiptID,
+			string(receipt.EventID),
+			string(receipt.Consumer.Actor),
+			string(receipt.Consumer.Device),
+		).
+		Limit(2).
+		Find(&models).Error; err != nil {
+		return AuthorityDeliveryReceiptModel{}, false, err
+	}
+	if len(models) == 0 {
+		return AuthorityDeliveryReceiptModel{}, false, nil
+	}
+	if len(models) != 1 {
+		return AuthorityDeliveryReceiptModel{}, false, receiptConflictError()
+	}
+
+	return models[0], true, nil
+}
+
+func authorityReceiptMatches(
+	existing AuthorityDeliveryReceiptModel,
+	candidate AuthorityDeliveryReceiptModel,
+) bool {
+	return existing.ReceiptID == candidate.ReceiptID &&
+		existing.EventID == candidate.EventID &&
+		existing.RecipientPTID == candidate.RecipientPTID &&
+		existing.RecipientDeviceID == candidate.RecipientDeviceID &&
+		existing.SourceHomeStation == candidate.SourceHomeStation &&
+		existing.ConversationID == candidate.ConversationID &&
+		existing.EventSequence == candidate.EventSequence &&
+		existing.LaneSequence == candidate.LaneSequence &&
+		bytes.Equal(
+			existing.QueuePayloadSHA256,
+			candidate.QueuePayloadSHA256,
+		) &&
+		bytes.Equal(
+			existing.CommitmentSHA256,
+			candidate.CommitmentSHA256,
+		) &&
+		existing.ConsumedAt.Equal(candidate.ConsumedAt)
+}
+
+func receiptConflictError() error {
+	return interaction.NewError(
+		interaction.ErrorCodeIdempotencyConflict,
+		"delivery_receipt_recorder.record",
+		"receipt_id",
+		"already identifies a different persisted receipt",
+	)
+}
+
 func persistExactReceipt(
 	tx *gorm.DB,
 	item *DeviceQueueItemModel,
@@ -269,23 +731,19 @@ func persistExactReceipt(
 		if *item.ConsumptionReceiptID != receipt.ReceiptID ||
 			item.ConsumedAt == nil ||
 			!item.ConsumedAt.Equal(receipt.ConsumedAt) {
-			return false, interaction.NewError(
-				interaction.ErrorCodeIdempotencyConflict,
-				"delivery_receipt_recorder.record",
-				"receipt_id",
-				"already identifies a different persisted receipt",
-			)
+			return false, receiptConflictError()
 		}
 
 		return true, nil
 	}
 
 	result := tx.Model(&DeviceQueueItemModel{}).
-		Where("item_id = ? AND consumption_receipt_id IS NULL", item.ItemID).
-		Updates(map[string]any{
-			"consumption_receipt_id": receipt.ReceiptID,
-			"consumed_at":            receipt.ConsumedAt,
-		})
+		Where(
+			"item_id = ? AND consumption_receipt_id IS NULL AND state = ?",
+			item.ItemID,
+			item.State,
+		).
+		Updates(receiptUpdates(item.State, receipt))
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -300,39 +758,174 @@ func persistExactReceipt(
 	item.ConsumptionReceiptID = &receipt.ReceiptID
 	consumedAt := receipt.ConsumedAt
 	item.ConsumedAt = &consumedAt
+	if item.State == storageStateClaimed {
+		item.State = storageStateConsumed
+	}
 
 	return false, nil
+}
+
+func receiptUpdates(
+	currentState int32,
+	receipt interaction.DeliveryReceipt,
+) map[string]any {
+	updates := map[string]any{
+		"consumption_receipt_id": receipt.ReceiptID,
+		"consumed_at":            receipt.ConsumedAt,
+	}
+	if currentState == storageStateClaimed {
+		updates["state"] = storageStateConsumed
+	}
+
+	return updates
 }
 
 func loadDeliveryAggregate(
 	tx *gorm.DB,
 	event domainevent.Record,
 ) (interaction.DeliveryAggregate, error) {
-	requiredCount := len(event.DeliveryCommitments)
-	if requiredCount == 0 || requiredCount > math.MaxUint32 {
+	var commitments []AuthorityDeliveryCommitmentModel
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("event_id = ?", string(event.ID)).
+		Order("recipient_ptid ASC, recipient_device_id ASC").
+		Find(&commitments).Error; err != nil {
+		return interaction.DeliveryAggregate{}, err
+	}
+	if len(commitments) == 0 ||
+		len(commitments) != len(event.DeliveryCommitments) {
 		return interaction.DeliveryAggregate{}, receiptIntegrityError(
 			"delivery_commitments",
-			"contains an invalid required device count",
+			"does not exactly map the committed authority delivery set",
 		)
 	}
 
-	var items []DeviceQueueItemModel
+	eventCommitments := make(
+		map[valueobject.Hash]struct{},
+		len(event.DeliveryCommitments),
+	)
+	for _, commitment := range event.DeliveryCommitments {
+		if commitment.IsZero() {
+			return interaction.DeliveryAggregate{}, receiptIntegrityError(
+				"delivery_commitments",
+				"contains an empty commitment",
+			)
+		}
+		eventCommitments[commitment] = struct{}{}
+	}
+	if len(eventCommitments) != len(event.DeliveryCommitments) {
+		return interaction.DeliveryAggregate{}, receiptIntegrityError(
+			"delivery_commitments",
+			"contains duplicate commitments",
+		)
+	}
+
+	commitmentsByEndpoint := make(
+		map[string]AuthorityDeliveryCommitmentModel,
+		len(commitments),
+	)
+	persistedCommitments := make(
+		map[valueobject.Hash]struct{},
+		len(commitments),
+	)
+	requiredCommitments := make(
+		[]AuthorityDeliveryCommitmentModel,
+		0,
+		len(commitments),
+	)
+	for index := range commitments {
+		commitment := &commitments[index]
+		if err := validateAuthorityCommitmentModel(commitment, event); err != nil {
+			return interaction.DeliveryAggregate{}, err
+		}
+		commitmentHash, err := valueobject.NewHash(commitment.CommitmentSHA256)
+		if err != nil {
+			return interaction.DeliveryAggregate{}, receiptIntegrityError(
+				"delivery_commitment",
+				"is not a canonical SHA-256 hash",
+			)
+		}
+		if _, exists := eventCommitments[commitmentHash]; !exists {
+			return interaction.DeliveryAggregate{}, receiptIntegrityError(
+				"delivery_commitment",
+				"is not present in the canonical event",
+			)
+		}
+		if _, duplicate := persistedCommitments[commitmentHash]; duplicate {
+			return interaction.DeliveryAggregate{}, receiptIntegrityError(
+				"delivery_commitments",
+				"maps one authority commitment to multiple endpoints",
+			)
+		}
+		persistedCommitments[commitmentHash] = struct{}{}
+		endpoint := valueobject.Endpoint{
+			Actor:  valueobject.PTID(commitment.RecipientPTID),
+			Device: valueobject.DeviceID(commitment.RecipientDeviceID),
+		}
+		key := endpoint.Key()
+		if _, duplicate := commitmentsByEndpoint[key]; duplicate {
+			return interaction.DeliveryAggregate{}, receiptIntegrityError(
+				"delivery_commitments",
+				"contains duplicate endpoint deliveries",
+			)
+		}
+		commitmentsByEndpoint[key] = *commitment
+		if commitment.RequiredRecipient {
+			requiredCommitments = append(requiredCommitments, *commitment)
+		}
+	}
+	if len(requiredCommitments) > math.MaxUint32 {
+		return interaction.DeliveryAggregate{}, receiptIntegrityError(
+			"delivery_commitments",
+			"contains too many required recipient endpoints",
+		)
+	}
+
+	var receipts []AuthorityDeliveryReceiptModel
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where(
-			"conversation_id = ? AND event_id = ? AND payload_type = ?",
-			string(event.ConversationID),
-			string(event.ID),
-			storagePayloadTypeConversationEvent,
-		).
+		Where("event_id = ?", string(event.ID)).
 		Order("recipient_ptid ASC, recipient_device_id ASC").
-		Find(&items).Error; err != nil {
+		Find(&receipts).Error; err != nil {
 		return interaction.DeliveryAggregate{}, err
 	}
-	if len(items) == 0 || len(items) > requiredCount {
-		return interaction.DeliveryAggregate{}, receiptIntegrityError(
-			"device_queue_items",
-			"does not match the committed delivery-set cardinality",
-		)
+	receiptsByEndpoint := make(
+		map[string]AuthorityDeliveryReceiptModel,
+		len(receipts),
+	)
+	for index := range receipts {
+		receipt := receipts[index]
+		endpoint := valueobject.Endpoint{
+			Actor:  valueobject.PTID(receipt.RecipientPTID),
+			Device: valueobject.DeviceID(receipt.RecipientDeviceID),
+		}
+		expected, exists := commitmentsByEndpoint[endpoint.Key()]
+		if !exists ||
+			receipt.ReceiptID != "device-consumed:"+expected.QueueItemID ||
+			receipt.ConversationID != expected.ConversationID ||
+			receipt.EventID != expected.EventID ||
+			receipt.SourceHomeStation != expected.HomeStation ||
+			receipt.EventSequence != expected.EventSequence ||
+			receipt.LaneSequence <= 0 ||
+			receipt.ConsumedAt.IsZero() ||
+			!bytes.Equal(
+				receipt.QueuePayloadSHA256,
+				expected.QueuePayloadSHA256,
+			) ||
+			!bytes.Equal(
+				receipt.CommitmentSHA256,
+				expected.CommitmentSHA256,
+			) {
+			return interaction.DeliveryAggregate{}, receiptIntegrityError(
+				"delivery_receipts",
+				"contains a receipt outside its exact authority commitment",
+			)
+		}
+		if _, duplicate := receiptsByEndpoint[endpoint.Key()]; duplicate {
+			return interaction.DeliveryAggregate{}, receiptIntegrityError(
+				"delivery_receipts",
+				"contains duplicate endpoint receipts",
+			)
+		}
+		receiptsByEndpoint[endpoint.Key()] = receipt
 	}
 
 	var devices []persistence.ConversationMemberDeviceModel
@@ -351,29 +944,15 @@ func loadDeliveryAggregate(
 		devicesByEndpoint[endpoint.Key()] = device
 	}
 
-	seen := make(map[string]struct{}, len(items))
 	var consumedCount uint32
 	var revokedCount uint32
-	for index := range items {
-		item := &items[index]
-		if item.EventSequence != uint64(event.Sequence) || !payloadMatches(item) {
-			return interaction.DeliveryAggregate{}, receiptIntegrityError(
-				"device_queue_items",
-				"contains an item that disagrees with the canonical event",
-			)
-		}
+	for index := range requiredCommitments {
+		commitment := requiredCommitments[index]
 		endpoint := valueobject.Endpoint{
-			Actor:  valueobject.PTID(item.RecipientPTID),
-			Device: valueobject.DeviceID(item.RecipientDeviceID),
+			Actor:  valueobject.PTID(commitment.RecipientPTID),
+			Device: valueobject.DeviceID(commitment.RecipientDeviceID),
 		}
 		key := endpoint.Key()
-		if _, duplicate := seen[key]; duplicate {
-			return interaction.DeliveryAggregate{}, receiptIntegrityError(
-				"device_queue_items",
-				"contains duplicate endpoint deliveries for one event",
-			)
-		}
-		seen[key] = struct{}{}
 		device, exists := devicesByEndpoint[key]
 		if !exists {
 			return interaction.DeliveryAggregate{}, receiptIntegrityError(
@@ -381,7 +960,7 @@ func loadDeliveryAggregate(
 				"is missing a required delivery endpoint",
 			)
 		}
-		if item.ConsumptionReceiptID != nil {
+		if _, consumed := receiptsByEndpoint[key]; consumed {
 			consumedCount++
 		} else if !device.Active {
 			revokedCount++
@@ -399,7 +978,7 @@ func loadDeliveryAggregate(
 		Count(&readCount).Error; err != nil {
 		return interaction.DeliveryAggregate{}, err
 	}
-	required := uint32(requiredCount)
+	required := uint32(len(requiredCommitments))
 
 	return interaction.DeliveryAggregate{
 		ConversationID:      event.ConversationID,
@@ -409,8 +988,9 @@ func loadDeliveryAggregate(
 		ConsumedDeviceCount: consumedCount,
 		RevokedDeviceCount:  revokedCount,
 		Delivered:           consumedCount > 0,
-		FullyDelivered:      consumedCount+revokedCount == required,
-		Read:                readCount > 0,
+		FullyDelivered: required > 0 &&
+			consumedCount+revokedCount == required,
+		Read: readCount > 0,
 	}, nil
 }
 

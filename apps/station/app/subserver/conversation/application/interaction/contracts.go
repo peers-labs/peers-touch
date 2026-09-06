@@ -42,10 +42,13 @@ type DeliveryReceipt struct {
 	ConversationID valueobject.ConversationID
 	EventID        valueobject.EventID
 	Consumer       valueobject.Endpoint
-	EventSequence  valueobject.Sequence
-	LaneSequence   int64
-	PayloadHash    valueobject.Hash
-	ConsumedAt     time.Time
+	// SourceStation is the authenticated forwarding peer for a remote receipt.
+	// Authority-local receipts leave it empty.
+	SourceStation valueobject.StationID
+	EventSequence valueobject.Sequence
+	LaneSequence  int64
+	PayloadHash   valueobject.Hash
+	ConsumedAt    time.Time
 }
 
 // DeliveryAggregate is the Conversation Delivery projection for one authority event.

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-06
+> **Created**: 2026-09-06 | **Updated**: 2026-09-07
 > **Owner**: Architecture Team
 
 ---
@@ -557,8 +557,8 @@ matrices. Local/static success cannot replace native receiver proof.
 | CA-W0 Ownership inventory and Gate | done | The registry declares 61 retained capabilities and classifies all 65 current governed routes; undeclared routes are zero. Four routes without a target role are explicit deletion obligations. The AST Gate enforces route ownership, canonical proto symbols, target-absent stores, and four registry-driven Conversation DDD import layers, with focused tests covering deterministic failure. Source-bound ownership run `20260906T033402732484Z-ee421c3782b56b551a1c0e828d5a67c8` fails closed with 84 downstream target-debt diagnostics only: 4 forbidden routes, 23 owner-root mismatches, 20 missing canonical proto symbols, 20 superseded proto symbols, and 17 forbidden truth-store identifiers. Source-bound `messaging-platform-contract` run `20260906T033402732485Z-5b16e97d8f829f252e20b7b7c1492ef0`, Gate race tests, and Gate `go vet` pass. |
 | CA-W1 Proto-first canonical contracts | done | Canonical Actor Device, Device Inbox, Recovery, Key Exchange, generic Federation, Social Friend Request, and Conversation preparation/read/typing/receipt contracts are defined and generated for Station Go, Desktop TypeScript/Rust, Mobile TypeScript, and portable Messaging Core Rust. The catalog maps 61 capabilities to 122 unique request/response symbols with zero missing canonical symbols or registry-invalid diagnostics. Exact-index generation passed with sorted descriptor SHA-256 `18ed449617ce3a06e0dbc13eb5cb9705344d88326c36441c9cc25babc7fffe1c`; 30 generated artifacts reproduce exactly, and new TypeScript outputs are newline-stable. Exact-index focused Station packages, Messaging Core (30 unit + 2 integration tests), Mobile Rust, Desktop Rust library, Social wire/runtime boundaries, and 14 `messaging-platform-contract` tests pass. The exact-index ownership Gate fails closed only on 148 enumerated CA-W2..CA-W5 debts: 4 forbidden routes, 17 forbidden truth-store identifiers, 23 owner-root mismatches, and 104 superseded proto symbols. Full Mobile TypeScript is blocked by the pre-existing `StationIdentityResult.verifiedAt` mismatch; Desktop full checks remain blocked by unrelated Agent/OAuth/OSS source failures. No production route or store cutover is claimed. |
 | CA-W2 Conversation DDD bounded context | done | Conversation now has a test-only Station DDD composition with aggregate, entity, value-object, domain-event, typed-error, repository/UOW, application command/query, persistence, delivery, identity, Federation, and HTTP-mapping boundaries. Focused tests cover deterministic event hashes and optional-field presence, exact accepted/terminal-rejected command replay, authenticated forwarded replay and key-state admission, authority plans, exact delivery commitments, membership/MLS epochs and retirement, delegated leave, follower buffering/convergence/fork rejection, settings/read cursors, aggregate rehydration, PostgreSQL timestamp precision, schema keys, and post-commit notification. `(cd apps/station && go test -race -count=1 ./app/subserver/conversation/...)`, focused `go vet`, `./tooling/scripts/check-go-style.sh`, Desktop/Mobile generated-TypeScript compilation, and isolated proto regeneration pass. Isolated `HEAD + CA-W2-only` tree `faf1879f9f54af6cfa814d2a2d1d4844f8586602` passes the full Conversation race suite; independent command/security, persistence, aggregate, follower, timestamp, and query reviews found no remaining blocker. The ownership Gate fails closed only on the same 148 enumerated CA-W3..CA-W5 debts: 4 forbidden routes, 17 forbidden truth-store identifiers, 23 owner-root mismatches, and 104 superseded proto symbols, with no missing DDD layer or forbidden DDD import. The PostgreSQL runtime test is registered but skipped when `MESSAGING_TEST_POSTGRES_DSN` is absent. No production handler, route, store, consumer, or runtime cutover is claimed before CA-W5. |
-| CA-W3 Resource-owner services | pending | — |
-| CA-W4 Shared Federation and Social | pending | — |
+| CA-W3 Resource-owner services | done | Actor Identity, Recovery, Key Exchange, Conversation Device Inbox, attachments, interactions, and delivery receipts now have typed owner ports and test-only composition without Station Messaging imports. Device Inbox claims advance a consumer epoch for every lease attempt; stale ACK/reject cannot mutate a reclaimed item. Attachment mutations revalidate Conversation membership and Actor Identity device state inside the owning SQL transaction, actor/message quota admission is serialized, grants commit as one exact batch, verification uses an exclusive bounded lease, and cleanup reclaims expired uploads/parts/verification blobs and unattached objects with fenced retries. The Conversation authority persists the exact per-endpoint delivery commitment set atomically with each event and derives delivery status from authority receipts, excluding originator synchronization markers without fabricating remote queue rows. The exact CA-W3 race command, focused `go vet`, `gofmt`, `git diff --check`, and Go style pass. PostgreSQL contention coverage is registered but remains `UNPROVEN` because `MESSAGING_TEST_POSTGRES_DSN` is absent. No production route/store cutover or old-path deletion is claimed before CA-W5. |
+| CA-W4 Shared Federation and Social | done | Shared Federation supplies authenticated frames, durable outbox/inbox leases, retry/dedup/hash-conflict behavior, typed Conversation and Social receivers, and same-Station loopback. Conversation command conflicts return durable authority results bound to the originating command SHA-256; remote Device Inbox lane sequence remains target-owned. Social enforces receiver-local block/existing-relationship policy, atomically persists command/projection/result-outbox state, binds results to exact outgoing command bytes, rejects retryable result frames before durable resolution, and resolves remote actor keys from PTID plus a pinned Home Station profile/locator chain rather than `ActorRef.acct`; cached remote keys are revalidated against the latest signed active-key profile. The exact CA-W4 race command, focused `go vet`, `gofmt`, `git diff --check`, Go style, and `messaging-platform-contract` run `20260906T204614333077Z-6c52a4241e67fb14b3a0663a346aa7a5` pass. Two independent post-fix reviews report zero P0/P1 findings. Live DHT/Relay two-Station convergence remains `UNPROVEN` until CA-W5 production composition and CA-W6 runtime Acceptance. |
 | CA-W5 Atomic production hard cut | pending | — |
 | CA-W6 Runtime Acceptance | pending | — |
 | CA-W7 Completion/docs/knowledge audit | pending | — |
@@ -587,10 +587,15 @@ matrices. Local/static success cannot replace native receiver proof.
 6. No compatibility shim, dual write, fallback read, mock business API, stale evidence,
    or undeclared route remains.
 
-Plan state: `PLAN_APPROVED`. CA-W0 through CA-W2 are complete: every governed
-route is classified, all retained capabilities have unique generated canonical
-request/response contracts, and the test-only Conversation DDD bounded context
-passes its focused gates. The public route checkpoint remains under Conversation
-composition and retains modern engine behavior. CA-W3 through CA-W5 remain open
-for owner-root, Federation/Social, production composition, and truth-store
-consolidation.
+Plan state: `PLAN_APPROVED`. CA-W0 through CA-W4 are complete at the source and
+deterministic-test boundary: governed routes are classified, retained
+capabilities have unique generated canonical contracts, Conversation has a
+test-only DDD composition, resource owners are separated, and shared
+Federation/Social fault semantics pass focused race tests. The latest
+`station-api-ownership` run
+`20260906T204513002878Z-bc117d01f6ba3e7fe9e63f99a4308e85` still fails closed
+with exactly the expected 148 CA-W5 deletion/cutover diagnostics: 4 forbidden
+routes, 17 forbidden truth-store identifiers, 23 owner-root mismatches, and 104
+superseded proto symbols. CA-W5 through CA-W7 remain open; production
+composition, native two-Station convergence, and PostgreSQL contention evidence
+remain `UNPROVEN`.
