@@ -207,11 +207,6 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 			"create_direct",
 			extractCreateDirectOp,
 		),
-		SubmitCommandPolicy: social_gate.NewGateWrapper(
-			s.gateEval,
-			"send_message",
-			extractSubmitCommandOp,
-		),
 	})
 	if err := s.engine.Init(ctx, opts...); err != nil {
 		s.status = server.StatusError
