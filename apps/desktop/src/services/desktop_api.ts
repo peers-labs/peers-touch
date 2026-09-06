@@ -2476,6 +2476,13 @@ export interface AgentTypedErrorPayload {
   details: Record<string, string>;
 }
 
+export interface AgentTurnStreamError extends Error {
+  typedError?: AgentTypedErrorPayload;
+  resolution?: unknown;
+  errorDetail?: string;
+  providerId?: string;
+}
+
 export interface AgentToolDecisionIntentResponse {
   accepted: boolean;
   decision_revision: number;
@@ -6373,6 +6380,45 @@ export function classifyAgentTurnTerminalEvent(
   return null;
 }
 
+export function agentTurnStreamErrorFromData(
+  data: Record<string, unknown>,
+): AgentTurnStreamError {
+  const details = data.details && typeof data.details === 'object' && !Array.isArray(data.details)
+    ? Object.fromEntries(
+        Object.entries(data.details as Record<string, unknown>)
+          .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+      )
+    : {};
+  const errorType = typeof data.error_type === 'string' ? data.error_type : '';
+  const localeKey = typeof data.locale_key === 'string' ? data.locale_key : '';
+  const typedError = (
+    errorType
+    && localeKey
+    && typeof data.retryable === 'boolean'
+    && typeof data.terminal === 'boolean'
+  )
+    ? {
+        error: typeof data.error === 'string' ? data.error : localeKey,
+        error_type: errorType,
+        locale_key: localeKey,
+        retryable: data.retryable,
+        terminal: data.terminal,
+        details,
+      }
+    : undefined;
+  const error = new Error(
+    typedError?.locale_key
+    || (typeof data.error === 'string' ? data.error : 'agent.error.streamFailed'),
+  ) as AgentTurnStreamError;
+  error.typedError = typedError;
+  if (data.resolution && typeof data.resolution === 'object') {
+    error.resolution = data.resolution;
+  }
+  if (typeof data.detail === 'string') error.errorDetail = data.detail;
+  if (typeof data.providerId === 'string') error.providerId = data.providerId;
+  return error;
+}
+
 export function createAgentTurnSourceDelivery(
   event: string,
   data: Record<string, unknown>,
@@ -6513,7 +6559,7 @@ export function streamAgentTurn(
   input: AgentExecuteTurnInput,
   onEvent: (event: StreamEvent) => void,
   onDone: () => void,
-  onError: (err: Error) => void,
+  onError: (err: AgentTurnStreamError) => void,
   sourcePtid = '',
 ): AgentTurnStreamController {
   const controller = new AbortController() as AgentTurnStreamController;
@@ -6565,11 +6611,7 @@ export function streamAgentTurn(
         onEvent(projectedEvent);
         const terminal = classifyAgentTurnTerminalEvent(projectedEvent);
         if (terminal === 'failed') {
-          onError(new Error(String(
-            projectedEvent.data?.error
-            || projectedEvent.data?.terminal_reason
-            || 'agent.error.streamFailed',
-          )));
+          onError(agentTurnStreamErrorFromData(projectedEvent.data));
           settled = true;
           return true;
         }
@@ -6840,16 +6882,7 @@ export function streamAgentTurn(
         if (terminal === 'failed') {
           unlistenLive?.();
           unlistenLive = undefined;
-          const data = payload.data || {};
-          const err = new Error(typeof data.error === 'string' ? data.error : 'agent.error.streamFailed') as Error & {
-            resolution?: unknown;
-            errorDetail?: string;
-            providerId?: string;
-          };
-          if (data.resolution && typeof data.resolution === 'object') err.resolution = data.resolution;
-          if (typeof data.detail === 'string') err.errorDetail = data.detail;
-          if (typeof data.providerId === 'string') err.providerId = data.providerId;
-          onError(err);
+          onError(agentTurnStreamErrorFromData(payload.data || {}));
           settle();
         }
         if (terminal === 'interrupted') {
