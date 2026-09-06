@@ -19,6 +19,7 @@
 | D | Gateway worker queueing is the primary delay. | Medium | Medium | Rejected: all queue requests entered the Gateway together with `queueWaitMs=0`; the active Turn's remaining provider lifetime was already only 142 ms. |
 | E | Conversation cleanup or selection drift makes the readback target differ from the created queue conversation. | Low | Low | Rejected: both tuples retained the selected conversation. |
 | F | Launching the duplicate before the original request has a Station admission can let the duplicate win the shared idempotency key. | High | Low | Confirmed on `abc010684`: the second locale reached strict `8/8`, but the designated active observer received only `admission_replayed` while the duplicate observer carried the real active stream. |
+| G | A queued Turn is admitted during post-cancellation cleanup and mutates the conversation between the source and replay readbacks. | High | Low | Consistent with the `6de266738` failure; the next run records only readback hashes, versions, message counts/statuses, and final queue size to confirm or reject it. |
 
 ## Log Evidence
 - Existing exact-source Gate evidence:
@@ -120,6 +121,20 @@
     `agent.acceptance.foundationActiveTurnCancelRejected`.
   - Inner runtime cleanup and outer Provisioner cleanup both passed.
 - Exact-source run
+  `20260906T092327804315Z-110a210664701b15a8495ad6120ea9c2`
+  (aggregate
+  `20260906T092327677006Z-ede0d99faab81d07650e89953bea06a7`)
+  on `6de2667380f7dc9096be5433f8adf1ab46d09b2f`:
+  - The admission barrier completed at 572 ms and the queue reached strict
+    `8/8` with FIFO positions `1..8`.
+  - Overflow returned `ADMISSION_QUEUE_FULL`.
+  - Active cancellation was requested at 1,429 ms and returned authoritative
+    `cancelled` at 1,566 ms; the observed stream ended with one `cancelled`
+    terminal event.
+  - The Gate advanced past all AS-F02 production assertions but failed the
+    generic replay equality check with `AS-F02: replay differs from source`.
+  - Inner runtime cleanup and outer Provisioner cleanup both passed.
+- Exact-source run
   `20260906T084510093935Z-79cae3d5fd697244387d637f16143fac`
   (aggregate
   `20260906T084509966139Z-9044fe74d9918f36e41ec42b35f99c01`)
@@ -143,7 +158,11 @@ queue cleanup before active cancellation, allowing a fast real provider to
 finish naturally. Queue visibility, overflow, and active-dependency checks can
 run concurrently after the capacity snapshot. The Harness can then cancel one
 queued entry for the required queue-control assertion, cancel the active Turn,
-and only afterward clean the residual queue. The session remains `[OPEN]`
+and only afterward clean the residual queue. That ordering now succeeds, but
+the final two readbacks differ, consistent with one residual queued Turn being
+admitted during cleanup. The next run records bounded readback versions,
+message counts/statuses, hashes, and final queue size to identify the changing
+source without exposing content or identifiers. The session remains `[OPEN]`
 because post-fix exact-source comparison and explicit cleanup confirmation are
 still required.
 
@@ -160,6 +179,8 @@ still required.
   rejection concurrently while the queue is full.
 - Cancel one queued entry for the queue-control assertion, cancel the active
   Turn immediately, then clean the residual queue.
+- Record a bounded final readback comparison to distinguish residual Turn
+  settlement from hash normalization without changing the equality predicate.
 - Await active, duplicate, queued, and overflow results after their
   ordering-sensitive actions have been issued.
 - Preserve the existing queue-capacity, FIFO, overflow, cancellation, DOM, and lifecycle assertions.
