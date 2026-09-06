@@ -1459,6 +1459,9 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         active_start = scenario.index(
             "const active = startObservedFoundationTurn({",
         )
+        active_admission = scenario.index(
+            "const activeAdmissionDeadline = Date.now() + 10_000;",
+        )
         duplicate_start = scenario.index(
             "const duplicate = startObservedFoundationTurn({",
         )
@@ -1479,7 +1482,8 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         )
 
         self.assertLess(queue_baseline, active_start)
-        self.assertLess(active_start, duplicate_start)
+        self.assertLess(active_start, active_admission)
+        self.assertLess(active_admission, duplicate_start)
         self.assertLess(duplicate_start, queue_start)
         self.assertLess(queue_start, first_active_event)
         self.assertLess(first_active_event, capacity_snapshot)
