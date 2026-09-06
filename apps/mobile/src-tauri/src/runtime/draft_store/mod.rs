@@ -111,26 +111,25 @@ impl DraftStore {
 
         let composite_key = format!("{}:{}", kind.as_str(), domain_key);
 
-        let result = inner
-            .conn
-            .query_row(
-                "SELECT key, kind, payload_blob, updated_at_ms FROM drafts WHERE key = ?1",
-                params![composite_key],
-                |row| {
-                    Ok(RawDraftRow {
-                        key: row.get(0)?,
-                        kind: row.get(1)?,
-                        payload_blob: row.get(2)?,
-                        updated_at_ms: row.get(3)?,
-                    })
-                },
-            );
+        let result = inner.conn.query_row(
+            "SELECT key, kind, payload_blob, updated_at_ms FROM drafts WHERE key = ?1",
+            params![composite_key],
+            |row| {
+                Ok(RawDraftRow {
+                    key: row.get(0)?,
+                    kind: row.get(1)?,
+                    payload_blob: row.get(2)?,
+                    updated_at_ms: row.get(3)?,
+                })
+            },
+        );
 
         match result {
             Ok(raw) => {
                 let decrypted = decrypt_payload(&inner.cipher, &raw.payload_blob)?;
-                let payload_json = String::from_utf8(decrypted)
-                    .map_err(|e| MobileError::draft(format!("draft payload not valid UTF-8: {e}")))?;
+                let payload_json = String::from_utf8(decrypted).map_err(|e| {
+                    MobileError::draft(format!("draft payload not valid UTF-8: {e}"))
+                })?;
 
                 let kind = DraftKind::from_str(&raw.kind).ok_or_else(|| {
                     MobileError::draft(format!("unknown draft kind: {}", raw.kind))
@@ -180,15 +179,14 @@ impl DraftStore {
 
         let mut projections = Vec::new();
         for raw_result in rows {
-            let raw = raw_result
-                .map_err(|e| MobileError::draft(format!("row read failed: {e}")))?;
+            let raw =
+                raw_result.map_err(|e| MobileError::draft(format!("row read failed: {e}")))?;
             let decrypted = decrypt_payload(&inner.cipher, &raw.payload_blob)?;
             let payload_json = String::from_utf8(decrypted)
                 .map_err(|e| MobileError::draft(format!("draft payload not valid UTF-8: {e}")))?;
 
-            let draft_kind = DraftKind::from_str(&raw.kind).ok_or_else(|| {
-                MobileError::draft(format!("unknown draft kind: {}", raw.kind))
-            })?;
+            let draft_kind = DraftKind::from_str(&raw.kind)
+                .ok_or_else(|| MobileError::draft(format!("unknown draft kind: {}", raw.kind)))?;
 
             projections.push(DraftProjection {
                 key: raw.key,

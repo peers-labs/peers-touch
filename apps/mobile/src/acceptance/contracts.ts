@@ -20,6 +20,22 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'lifecycle.restart',
   'native.deliverDeepLink',
   'projection.read',
+  'messaging.createDirect',
+  'messaging.createGroup',
+  'messaging.attachment.stage',
+  'messaging.attachment.open',
+  'messaging.send',
+  'messaging.interact',
+  'messaging.read',
+  'messaging.typing',
+  'messaging.reconcile',
+  'messaging.command.read',
+  'messaging.search',
+  'messaging.projection.read',
+  'social.request.send',
+  'social.request.accept',
+  'social.reconcile',
+  'social.projection.read',
   'cleanup',
 ] as const;
 
@@ -309,6 +325,247 @@ export interface NativeDeepLinkOutput {
   owner: 'appium-native-context';
 }
 
+export interface MessagingCreateDirectActionInput {
+  peerPtid: string;
+}
+
+export interface MessagingCreateGroupActionInput {
+  conversationId: string;
+  name: string;
+  memberPtids: string[];
+}
+
+export type MessagingCreateDirectActionOutput = {
+  conversationId: string;
+  state: 'pending' | 'projected';
+};
+
+export type MessagingCreateGroupActionOutput = {
+  conversationId: string;
+  commandId: string;
+  state: 'pending' | 'projected' | 'failed';
+};
+
+export interface MessagingStageAttachmentActionInput {
+  filename: string;
+  mimeType: string;
+  bytesBase64: string;
+  sha256: string;
+}
+
+export interface MessagingStageAttachmentActionOutput {
+  stageId: string;
+  filename: string;
+  mimeType: string;
+  plaintextSize: number;
+  completed: boolean;
+}
+
+export interface MessagingOpenAttachmentActionInput {
+  attachmentId: string;
+}
+
+export type MessagingOpenAttachmentActionOutput =
+  | { state: 'ready'; available: true }
+  | { state: 'pending'; available: false; nextAttemptAtUnixMs: number };
+
+export interface MessagingSendActionInput {
+  conversationId: string;
+  plaintext: string;
+  replyToMessageId?: string;
+  threadRootMessageId?: string;
+  attachmentStageIds?: string[];
+}
+
+export type MessagingSendActionOutput =
+  | {
+    conversationId: string;
+    commandId: string;
+    messageId: string;
+    attachmentIds: string[];
+    state: 'pending';
+  }
+  | {
+    conversationId: string;
+    messageId: string;
+    attachmentIds: string[];
+    state: 'draft';
+  };
+
+export type MessagingInteractionActionInput =
+  | {
+    kind: 'edit';
+    conversationId: string;
+    messageId: string;
+    plaintext: string;
+  }
+  | {
+    kind: 'retract';
+    conversationId: string;
+    messageId: string;
+  }
+  | {
+    kind: 'reaction';
+    conversationId: string;
+    messageId: string;
+    reaction: string;
+    remove: boolean;
+  }
+  | {
+    kind: 'pin';
+    conversationId: string;
+    messageId: string;
+    remove: boolean;
+  };
+
+export interface MessagingInteractionActionOutput {
+  conversationId: string;
+  commandId: string;
+  messageId: string;
+  attachmentIds: string[];
+  state: 'pending';
+}
+
+export interface MessagingReadActionInput {
+  conversationId: string;
+  lastReadSequence: number;
+}
+
+export interface MessagingTypingActionInput {
+  conversationId: string;
+  isTyping: boolean;
+}
+
+export interface MessagingCommandReadActionInput {
+  commandId: string;
+}
+
+export interface MessagingSearchActionInput {
+  conversationId: string;
+  query: string;
+  limit?: number;
+}
+
+export interface MessagingProjectionReadActionInput {
+  conversationId?: string;
+}
+
+export interface MessagingReconcileActionOutput {
+  deviceEnrolled: boolean;
+  processed: number;
+  cursor: number;
+  laneHead: number;
+  consumerEpoch: number;
+  deliveryReceiptSubmitted: boolean;
+  commandState:
+    | 'idle'
+    | 'submitted'
+    | 'retry_scheduled'
+    | 'failed'
+    | 'stale_delivery_plan'
+    | 'stale_authority_plan';
+  commandId?: string;
+  nextAttemptAtUnixMs?: number;
+}
+
+export interface PublicMessagingAttachmentProjection {
+  attachmentId: string;
+  filename: string;
+  mimeType: string;
+  plaintextSize: number;
+  ciphertextSize?: number;
+  availabilityState?: 'remote' | 'local';
+}
+
+export interface PublicMessagingMessageProjection {
+  eventId?: string;
+  eventSequence?: number;
+  messageId: string;
+  senderPtid: string;
+  state:
+    | 'draft'
+    | 'pending'
+    | 'prepared'
+    | 'retry_wait'
+    | 'submitted'
+    | 'failed'
+    | 'terminal'
+    | 'accepted'
+    | 'delivered'
+    | 'read';
+  timestampUnixMs: number;
+  replyToMessageId?: string;
+  threadRootMessageId?: string;
+  editedText?: string;
+  editedAtUnixMs?: number;
+  retracted: boolean;
+  reactions: Array<{
+    actorPtid: string;
+    reaction: string;
+    createdAtUnixMs: number;
+  }>;
+  pinnedByPtid?: string;
+  pinnedAtUnixMs?: number;
+  readByPtids: string[];
+  plaintext: string;
+  attachments: PublicMessagingAttachmentProjection[];
+}
+
+export interface PublicMessagingProjection {
+  runtime: {
+    active: boolean;
+    profileId?: string;
+    stationPeerId?: string;
+    actorPtid?: string;
+    deviceId?: string;
+    deviceEnrolled: boolean;
+    laneSequence: number;
+    consumerEpoch: number;
+    conversationCount: number;
+    activationGeneration: number;
+    workerPhase: 'running' | 'suspended' | 'stopping';
+  };
+  conversations: Array<{
+    conversationId: string;
+    authorityStationId: string;
+    kind: number;
+    name: string;
+    ownerPtid: string;
+    memberPtids: string[];
+    membershipEpoch: number;
+    mlsEpoch: number;
+    active: boolean;
+    updatedAtUnixMs: number;
+  }>;
+  messages: Record<string, PublicMessagingMessageProjection[]>;
+}
+
+export interface PublicSocialRuntimeProjection {
+  active: boolean;
+  activeSessionUlid: string | null;
+  friendRequests: Array<{
+    requestId: string;
+    senderPtid: string;
+    receiverPtid: string;
+    status: number;
+  }>;
+  typingPeers: Record<string, Record<string, {
+    typing: boolean;
+    lastUpdate: number;
+  }>>;
+  peerOnline: Record<string, boolean>;
+  lastReconcileAt: number | null;
+}
+
+export interface SocialRequestSendActionInput {
+  receiverPtid: string;
+  message?: string;
+}
+
+export interface SocialRequestAcceptActionInput {
+  requestId: string;
+}
+
 export interface CleanupOutput {
   oauthPurge: OAuthPurgeOutput;
   webSessionProjectionCleared: true;
@@ -363,6 +620,81 @@ export interface MobileAcceptanceActionContract {
   'projection.read': {
     input: undefined;
     output: MobilePublicProjection;
+  };
+  'messaging.createDirect': {
+    input: MessagingCreateDirectActionInput;
+    output: MessagingCreateDirectActionOutput;
+  };
+  'messaging.createGroup': {
+    input: MessagingCreateGroupActionInput;
+    output: MessagingCreateGroupActionOutput;
+  };
+  'messaging.attachment.stage': {
+    input: MessagingStageAttachmentActionInput;
+    output: MessagingStageAttachmentActionOutput;
+  };
+  'messaging.attachment.open': {
+    input: MessagingOpenAttachmentActionInput;
+    output: MessagingOpenAttachmentActionOutput;
+  };
+  'messaging.send': {
+    input: MessagingSendActionInput;
+    output: MessagingSendActionOutput;
+  };
+  'messaging.interact': {
+    input: MessagingInteractionActionInput;
+    output: MessagingInteractionActionOutput;
+  };
+  'messaging.read': {
+    input: MessagingReadActionInput;
+    output: MessagingReadActionInput & { submitted: boolean };
+  };
+  'messaging.typing': {
+    input: MessagingTypingActionInput;
+    output: MessagingTypingActionInput & { submitted: boolean };
+  };
+  'messaging.reconcile': {
+    input: undefined;
+    output: MessagingReconcileActionOutput | null;
+  };
+  'messaging.command.read': {
+    input: MessagingCommandReadActionInput;
+    output: {
+      commandId: string;
+      conversationId: string;
+      state:
+        | 'pending'
+        | 'retry_wait'
+        | 'submitted'
+        | 'failed'
+        | 'superseded'
+        | 'committed';
+      lastErrorCode: string;
+    };
+  };
+  'messaging.search': {
+    input: MessagingSearchActionInput;
+    output: PublicMessagingMessageProjection[];
+  };
+  'messaging.projection.read': {
+    input: MessagingProjectionReadActionInput;
+    output: PublicMessagingProjection;
+  };
+  'social.request.send': {
+    input: SocialRequestSendActionInput;
+    output: PublicSocialRuntimeProjection;
+  };
+  'social.request.accept': {
+    input: SocialRequestAcceptActionInput;
+    output: PublicSocialRuntimeProjection;
+  };
+  'social.reconcile': {
+    input: undefined;
+    output: PublicSocialRuntimeProjection;
+  };
+  'social.projection.read': {
+    input: undefined;
+    output: PublicSocialRuntimeProjection;
   };
   cleanup: {
     input: undefined;

@@ -103,3 +103,4 @@ export type StationIdentityResponse = Message<"peers_touch.model.peer.v1.Station
  */
 export const StationIdentityResponseSchema: GenMessage<StationIdentityResponse> = /*@__PURE__*/
   messageDesc(file_domain_peer_station_identity, 2);
+

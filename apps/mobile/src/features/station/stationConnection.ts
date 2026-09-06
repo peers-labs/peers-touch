@@ -26,6 +26,7 @@ export interface StationProbeResult {
 export interface StationIdentityResult {
   stationPeerId: string;
   canonicalOrigin: string;
+  verifiedAt: number;
   identityVerified: boolean;
 }
 
@@ -102,6 +103,7 @@ export async function verifyStationIdentity(url: string): Promise<StationIdentit
   return {
     stationPeerId: verified.stationPeerId.trim(),
     canonicalOrigin: verified.canonicalOrigin.replace(/\/+$/, ''),
+    verifiedAt: verified.verifiedAt,
     identityVerified: true,
   };
 }
@@ -113,6 +115,7 @@ async function deriveUnverifiedIdentity(origin: string): Promise<StationIdentity
   return {
     stationPeerId: `unverified:${hex.slice(0, 32)}`,
     canonicalOrigin: origin,
+    verifiedAt: Date.now(),
     identityVerified: false,
   };
 }

@@ -336,6 +336,25 @@ Those claims require `mobile-native-access-e2e`, physical iOS and Android
 devices, approved disposable provider accounts, authoritative Station proof
 snapshots, and all required negative cells.
 
+### 8.1 Supplemental Social Simulator Gates
+
+`mobile-simulator-social-convergence-e2e` and
+`mobile-simulator-chat-contacts-e2e` use
+`mobile-social-simulator` with two isolated simulator clients bound to two
+source-attested disposable Stations. They exercise the shared
+`MobileMessagingJourney` through production Harness actions.
+
+Successful execution is recorded as `PASS / PARTIAL / UNPROVEN`. It does not
+replace the physical `mobile-native-social-convergence-e2e` or
+`mobile-native-chat-contacts-e2e` Gates and cannot prove physical lifecycle,
+forced event-loss recovery, authoritative Station history, or full MS-AG04 /
+MS-AG06.
+
+Each supplemental result uses the canonical
+`acceptance-gate-evidence-report` shape so the outer runner retains its
+Gate/Phase/BOM/Spec traceability. Cleanup failures preserve a redacted reason
+separately from the primary product failure.
+
 ## 9. Gate Runner Workflow
 
 ### 9.1 Simulator E2E (`simulator_e2e.py`)

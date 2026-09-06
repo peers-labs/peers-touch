@@ -1,8 +1,10 @@
+pub mod attachment;
 pub mod codec;
 pub mod contracts;
 pub mod crypto;
 pub mod identity;
 pub mod inbox;
+pub mod mls;
 pub mod outbox;
 pub mod ports;
 pub mod proto;

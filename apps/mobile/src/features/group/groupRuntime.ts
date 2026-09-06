@@ -1,40 +1,28 @@
 import type { MobileAuthSession } from '../auth/authSession';
-import { startGroupE2eeRuntime, type GroupE2eeRuntimeController } from './groupE2eeRuntime';
 import type { GroupState } from './groupStore';
 
 const GROUP_RECONCILE_INTERVAL_MS = 30000;
 
-export interface GroupRuntimeController extends GroupE2eeRuntimeController {
+export interface GroupRuntimeController {
   teardown: () => void;
 }
 
-export function startGroupRuntime(session: MobileAuthSession, getStore: () => GroupState): GroupRuntimeController {
+export function startGroupRuntime(
+  _session: MobileAuthSession,
+  getStore: () => GroupState,
+): GroupRuntimeController {
   let cancelled = false;
 
   getStore().reconcile();
-  const e2eeRuntime = startGroupE2eeRuntime(session, getStore);
-  getStore().bindEncryptedSender(e2eeRuntime.sendEncryptedMessage);
-  getStore().bindEncryptedEditor(e2eeRuntime.editEncryptedMessage);
-  getStore().bindEncryptionPreparer(e2eeRuntime.canEncryptGroup);
   const reconcileTimer = window.setInterval(() => {
     if (!cancelled) {
-      void getStore().reconcile().then(() => e2eeRuntime.repairEncryptedMessages());
+      void getStore().reconcile();
     }
   }, GROUP_RECONCILE_INTERVAL_MS);
 
   return {
-    consumeSkdmControlMessage: e2eeRuntime.consumeSkdmControlMessage,
-    canEncryptGroup: e2eeRuntime.canEncryptGroup,
-    repairEncryptedMessages: e2eeRuntime.repairEncryptedMessages,
-    rotateAfterMembershipChange: e2eeRuntime.rotateAfterMembershipChange,
-    sendEncryptedMessage: e2eeRuntime.sendEncryptedMessage,
-    editEncryptedMessage: e2eeRuntime.editEncryptedMessage,
     teardown: () => {
       cancelled = true;
-      getStore().bindEncryptedSender(null);
-      getStore().bindEncryptedEditor(null);
-      getStore().bindEncryptionPreparer(null);
-      e2eeRuntime.teardown();
       window.clearInterval(reconcileTimer);
     },
   };

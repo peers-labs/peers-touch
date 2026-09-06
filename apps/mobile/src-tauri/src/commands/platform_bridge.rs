@@ -27,9 +27,7 @@ pub fn lifecycle_advance_generation() -> u64 {
 }
 
 #[command]
-pub fn lifecycle_process_event(
-    input: NativeLifecycleEvent,
-) -> MobileResult<LifecycleBridgeResult> {
+pub fn lifecycle_process_event(input: NativeLifecycleEvent) -> MobileResult<LifecycleBridgeResult> {
     lifecycle_bridge::process_lifecycle_event(&input)
 }
 
