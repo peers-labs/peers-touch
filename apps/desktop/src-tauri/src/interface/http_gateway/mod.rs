@@ -8,6 +8,7 @@
 //
 // 2026-04-09: Initial creation. Full 1:1 mapping of all 237 tauri commands.
 
+use std::io::{self, Read};
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -79,6 +80,49 @@ struct GatewayRequestDiagnostics {
     active_workers_at_enqueue: usize,
     queue_wait_ms: u128,
     queued_at_enqueue: usize,
+}
+
+struct AgentStreamBody<R> {
+    inner: R,
+    station_path: &'static str,
+    closed: bool,
+}
+
+impl<R> AgentStreamBody<R> {
+    fn new(inner: R, station_path: &'static str) -> Self {
+        Self {
+            inner,
+            station_path,
+            closed: false,
+        }
+    }
+}
+
+impl<R: Read> Read for AgentStreamBody<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if self.closed {
+            return Ok(0);
+        }
+        loop {
+            match self.inner.read(buffer) {
+                Ok(0) => {
+                    self.closed = true;
+                    return Ok(0);
+                }
+                Ok(read) => return Ok(read),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => {
+                    self.closed = true;
+                    tracing::warn!(
+                        path = self.station_path,
+                        error = %error,
+                        "Agent stream upstream transport closed"
+                    );
+                    return Ok(0);
+                }
+            }
+        }
+    }
 }
 
 // #region debug-point D-E:foundation-gateway-dispatch
@@ -609,7 +653,7 @@ fn handle_agent_stream_proxy(
     let response = tiny_http::Response::new(
         tiny_http::StatusCode(status),
         response_headers,
-        upstream,
+        AgentStreamBody::new(upstream, station_path),
         None,
         None,
     );
@@ -8281,8 +8325,51 @@ mod tests {
     use crate::infrastructure::i18n::I18nService;
     use crate::infrastructure::storage::{StorageKind, StorageLayout};
     use std::collections::HashMap;
+    use std::io::Cursor;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct ErrorAfterBody {
+        body: Cursor<Vec<u8>>,
+        failed: bool,
+    }
+
+    impl Read for ErrorAfterBody {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let read = self.body.read(buffer)?;
+            if read > 0 {
+                return Ok(read);
+            }
+            if self.failed {
+                panic!("stream body was read again after transport failure");
+            }
+            self.failed = true;
+            Err(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "upstream disconnected",
+            ))
+        }
+    }
+
+    #[test]
+    fn agent_stream_body_converts_upstream_failure_to_eof() {
+        let upstream = ErrorAfterBody {
+            body: Cursor::new(b"data: partial\n\n".to_vec()),
+            failed: false,
+        };
+        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream");
+        let mut received = Vec::new();
+
+        body.read_to_end(&mut received)
+            .expect("upstream failure should terminate the downstream body");
+
+        assert_eq!(received, b"data: partial\n\n");
+        assert_eq!(
+            body.read(&mut [0_u8; 1])
+                .expect("terminated body should stay at EOF"),
+            0
+        );
+    }
 
     fn temp_layout(name: &str) -> StorageLayout {
         let stamp = SystemTime::now()
