@@ -39,6 +39,7 @@
 | V | The second process-targeted Enter does not reach the focused reaction action as DOM key events or a click. | Medium | Low | Pending: capture keydown, keyup, click, and focused-action events around the exact Enter delivery. |
 | W | The reaction action opens the picker, but focusout schedules the 140 ms overlay dismissal before the remote round trip can observe it. | High | Low | Pending: capture overlay mutations and focus transitions around the reaction action click. |
 | X | The picker remains open, but its focus effect does not move focus to a `data-reaction-emoji` button. | Medium | Low | Pending: compare final overlay kind and active element after the 15-second assertion timeout. |
+| Y | Re-running Win32 top-level activation before every key resets the WebView's descendant DOM focus. | High | Low | Confirmed: run `20260906T110222481453Z-08a43aea8a53e6b456b13736ef6ebbc1` reached the toolbar, then a targeted Tab left `data-message-action` empty and could not advance it. `Win32NativeDesktopAdapter.activate_process` unconditionally called `SetFocus(hwnd)` even when the actor already owned the foreground window. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -409,3 +410,25 @@ hypothesis but does not yet distinguish missing DOM key delivery from a
 transient picker dismissal or failed picker focus transfer. Hypotheses V-X and
 Gate-only event instrumentation now own the next comparison run; no product
 behavior has been changed.
+
+The instrumentation comparison run
+`20260906T110222481453Z-08a43aea8a53e6b456b13736ef6ebbc1` at commit
+`437ecca5eb76d4bf04efbdc522b7dfa8b933603d`, runtime-cell run
+`20260906t110249323576z-22bda009f0db576c`, and binary SHA-256
+`7494746b9fbcfc31f7b4821ba3b14fe5265b02a5ed9adf0fa012b899a93602b8`
+again proved Direct create/reopen, group creation, bidirectional
+transcript/thread projection, toolbar geometry, exact source identity, and
+complete cleanup.
+
+This run failed earlier inside `reaction.ui`: after the toolbar received focus,
+a separate `post_key_to_process(Tab)` call left
+`document.activeElement[data-message-action]` empty and another targeted Tab
+could not advance it. Combined with the previous run, where focus reached the
+reaction action but the next targeted Enter did not leave the picker active,
+this confirms hypothesis Y. Each key operation unconditionally reactivated the
+already-foreground top-level Tauri window through `SetFocus(hwnd)`, replacing
+the WebView's descendant focus before `SendInput`. The native adapter correction
+therefore preserves the existing descendant focus when the requested actor
+already owns the foreground window; activation remains mandatory when another
+process owns it. Gate instrumentation remains active for the post-fix
+comparison.
