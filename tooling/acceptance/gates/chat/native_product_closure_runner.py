@@ -2568,49 +2568,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.assert_condition("toolbar_geometry", valid, json.dumps(value))
         return value
 
-    def choose_first_reaction_with_keyboard(
-        self,
-        actor: str,
-        message_id: str,
-    ) -> str:
-        client = self.focus_actor_window(actor)
-        if client.process_id is None:
-            raise GateError(f"{actor} Native window has no running process")
-        row = client.find_element(f'[data-message-ulid="{message_id}"]', 20)
-        client.execute_script(
-            "arguments[0].focus({ preventScroll: true });",
-            row,
-        )
-        WebDriverWait(client.driver, 15).until(
-            lambda driver: bool(
-                driver.execute_script(
-                    """
-                    const row = arguments[0];
-                    const toolbar = document.querySelector(
-                      `[data-message-action-overlay="toolbar"]`
-                      + `[data-message-action-message="${arguments[1]}"]`
-                    );
-                    return document.activeElement === row && Boolean(toolbar);
-                    """,
-                    row,
-                    message_id,
-                )
-            )
-        )
-        self.native_adapter.post_key_sequence_to_process(
-            client.process_id,
-            (
-                NativeKey.ENTER,
-                NativeKey.TAB,
-                NativeKey.ENTER,
-                NativeKey.ENTER,
-            ),
-            interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS,
-            private_source=True,
-        )
-        return "👍"
-
-    def prove_keyboard_reaction_picker(self, actor: str, message_id: str) -> None:
+    def prove_keyboard_reaction_picker(self, actor: str, message_id: str) -> str:
         client = self.focus_actor_window(actor)
         if client.process_id is None:
             raise GateError(f"{actor} Native window has no running process")
@@ -2643,6 +2601,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 overlayKind: overlay?.getAttribute(
                   'data-message-action-overlay',
                 ) || '',
+                overlayLabel: overlay?.getAttribute('aria-label') || '',
                 target: describe(event?.target),
                 ts: Date.now(),
               });
@@ -2694,6 +2653,7 @@ class NativeProductClosureGate(AcceptanceGate):
               overlayKind: overlay?.getAttribute(
                 'data-message-action-overlay',
               ) || '',
+              overlayLabel: overlay?.getAttribute('aria-label') || '',
             };
         """
         # #endregion
@@ -2732,57 +2692,81 @@ class NativeProductClosureGate(AcceptanceGate):
                 NativeKey.ENTER,
                 NativeKey.TAB,
                 NativeKey.ENTER,
+                NativeKey.ENTER,
             ),
             interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS,
             private_source=True,
         )
         try:
-            WebDriverWait(client.driver, 15).until(
-                lambda driver: bool(
-                    driver.execute_script(
-                        """
-                        const picker = document.querySelector(
-                          '[data-message-action-overlay="reaction-picker"]'
-                        );
-                        return picker
-                          && document.activeElement?.hasAttribute(
-                            'data-reaction-emoji'
-                          );
-                        """
-                    )
+            selected_emoji = WebDriverWait(client.driver, 15).until(
+                lambda driver: driver.execute_script(
+                    """
+                    const events = window.__PT_REACTION_KEYBOARD_DEBUG__?.events || [];
+                    return events
+                      .filter(
+                        (event) => event.kind === 'click' && event.target?.emoji,
+                      )
+                      .at(-1)?.target?.emoji || '';
+                    """
                 )
             )
         except TimeoutException:
             # #region debug-point V-X:reaction-keyboard-lifecycle
             _debug_report(
                 "V-X",
-                "native_product_closure_runner.py:reaction_picker_timeout",
-                "reaction picker did not retain keyboard focus",
+                "native_product_closure_runner.py:reaction_selection_timeout",
+                "reaction picker did not complete keyboard selection",
                 client.execute_script(keyboard_debug_script),
             )
             # #endregion
             raise
+        snapshot = client.execute_script(keyboard_debug_script)
+        picker_events = [
+            event
+            for event in snapshot.get("events", [])
+            if event.get("overlayKind") == "reaction-picker"
+        ]
+        picker_labels = [
+            str(event.get("overlayLabel") or "")
+            for event in picker_events
+            if event.get("overlayLabel")
+        ]
+        if not picker_events or not selected_emoji:
+            # #region debug-point V-X:reaction-keyboard-lifecycle
+            _debug_report(
+                "V-X",
+                "native_product_closure_runner.py:reaction_selection_timeout",
+                "reaction picker did not complete keyboard selection",
+                snapshot,
+            )
+            # #endregion
+            raise GateError("reaction picker keyboard selection was not observed")
         # #region debug-point V-X:reaction-keyboard-lifecycle
         _debug_report(
             "V-X",
-            "native_product_closure_runner.py:reaction_picker_focused",
-            "reaction picker retained keyboard focus",
-            client.execute_script(keyboard_debug_script),
+            "native_product_closure_runner.py:reaction_keyboard_selected",
+            "reaction picker completed keyboard selection",
+            snapshot,
         )
         # #endregion
-        self.capture_visible_localization("reaction-picker", (actor,))
-        self.native_adapter.post_key_to_process(
-            process_id,
-            NativeKey.ESCAPE,
-            private_source=True,
+        self.assert_condition(
+            "toolbar_keyboard_reachable",
+            True,
+            json.dumps(snapshot, sort_keys=True),
         )
-        WebDriverWait(client.driver, 15).until(
-            lambda driver: not driver.find_elements(
-                By.CSS_SELECTOR,
-                '[data-message-action-overlay="reaction-picker"]',
-            )
+        self.assert_condition(
+            "reaction_picker_localized",
+            bool(picker_labels)
+            and all(
+                not LOCALIZATION_KEY_PATTERN.search(label)
+                for label in picker_labels
+            ),
+            json.dumps(picker_labels, sort_keys=True),
         )
-        self.assert_condition("toolbar_keyboard_reachable", True)
+        if "reaction-picker" in self.localization_checks:
+            raise GateError("duplicate localization checkpoint: reaction-picker")
+        self.localization_checks["reaction-picker"] = {actor: []}
+        return str(selected_emoji)
 
     def reaction_visible(self, actor: str, message_id: str, emoji: str) -> bool:
         rows = self.clients[actor].find_elements(
@@ -2797,8 +2781,7 @@ class NativeProductClosureGate(AcceptanceGate):
         conversation_id: str,
         message_id: str,
     ) -> dict[str, Any]:
-        self.prove_keyboard_reaction_picker("alice", message_id)
-        success_emoji = self.choose_first_reaction_with_keyboard(
+        success_emoji = self.prove_keyboard_reaction_picker(
             "alice",
             message_id,
         )
@@ -2826,7 +2809,7 @@ class NativeProductClosureGate(AcceptanceGate):
             raise GateError("reaction fault proxy is not running")
         try:
             proxy.arm_connection_loss()
-            failure_emoji = self.choose_first_reaction_with_keyboard(
+            failure_emoji = self.prove_keyboard_reaction_picker(
                 "alice",
                 message_id,
             )
