@@ -18,6 +18,7 @@
 | C | The selected Agent differs from the Agent configured by fixture bootstrap. | Rejected | Low | The selected Agent resolved by name without fallback, and selected/authoritative versions both equaled `1`. |
 | D | Entry restoration removes or reverts the only usable capability fixture before AS-F01. | Rejected | Medium | Both isolation and fixture journals were absent before and after entry restoration. |
 | E | AS-F10 invokes capability isolation without the reversible READY fixture, so an already-disabled binding yields a vacuous restoration with an empty hash. | Confirmed | Low | Exact-source run `20260906T112704879353Z-5e1f364c3649ec3e0e19e68668401c7c` reached AS-F10 with one disabled binding, zero READY capabilities, and failed on empty `restoredReadyCapabilityHash`. |
+| F | AS-F12 assumes a READY capability remains after AS-F10 restores the actor's original disabled binding. | Confirmed | Low | Exact-source run `20260906T154109631399Z-f8e7c6f12606844928a56a5ff1d1c87c` passed through AS-F10, then AS-F12 observed zero enabled bindings and zero READY capabilities before failing closed. |
 
 ## Log Evidence
 - Exact-source aggregate
@@ -53,6 +54,18 @@
   path marked restoration verified without a restored READY hash, while the
   unchanged AS-F10 oracle correctly required non-empty restored/source hashes.
   Inner runtime cleanup and outer Provisioner cleanup both passed.
+- Exact-source run
+  `20260906T154109631399Z-f8e7c6f12606844928a56a5ff1d1c87c`
+  (aggregate
+  `20260906T154109496998Z-364edeb89cc3b13c87a7bc1ce27b94d6`)
+  on `31f8208ad1fa5640356108b837d9a6e8cf0549ef` passed AS-F01 through
+  AS-F10, including a non-vacuous AS-F10 precondition with one enabled binding
+  and one `READY / capability_ready` row. It then failed first at Browser
+  AS-F12 with `agent.acceptance.foundationCapabilityIsolationUnavailable`.
+  The final isolation precondition recorded one disabled binding and zero
+  READY capabilities, proving that AS-F10 had restored the original state and
+  AS-F12 still depended on ambient fixture state. Inner and outer cleanup both
+  passed.
 
 ## Instrumentation
 - `foundationDirectProbe` records journal presence before and after restoration,
@@ -68,20 +81,21 @@
   and `git diff --check` pass.
 
 ## Verification Conclusion
-Hypotheses A and E are confirmed in separate cells. AS-F01 and AS-F10 require a
-positive READY capability before testing that capability isolation removes
-effective tools. AS-F01 and AS-F07 already establish a deterministic reversible
-fixture, while AS-F10 still depended on mutable residual Station binding state.
-The correction remains inside Acceptance business injection: AS-F10 now uses
-the same revision-fenced fixture lifecycle, refreshes session/readiness after
-fixture setup, and retains the existing strict isolation/restoration
-assertions. Product readiness semantics and Station authority do not change.
+Hypotheses A, E, and F are confirmed in separate cells. AS-F01, AS-F10, and
+AS-F12 require a positive READY capability before testing that capability
+isolation removes effective tools. Each scenario must own that precondition
+instead of depending on mutable residual Station binding state. The correction
+remains inside Acceptance business injection: AS-F10 and AS-F12 use the same
+revision-fenced fixture lifecycle and retain the existing strict
+isolation/restoration assertions. Product readiness semantics and Station
+authority do not change.
 
 ## Fix
 - Added one shared `withFoundationReadyCapabilityFixture` lifecycle around the
   existing Station binding APIs and durable fixture journal.
-- AS-F01, AS-F07, and AS-F10 now use the same platform-specific fixture setup,
-  revision-fenced isolation, reverse restoration, and fail-closed cleanup.
+- AS-F01, AS-F07, AS-F10, and AS-F12 now use the same platform-specific
+  fixture setup, revision-fenced isolation, reverse restoration, and
+  fail-closed cleanup.
 - The strict prerequisite still requires a positive READY capability before
   isolation and zero READY capabilities during the isolated Turn.
 - Diagnostic instrumentation remains active for post-fix comparison.
@@ -95,4 +109,8 @@ assertions. Product readiness semantics and Station authority do not change.
 - Focused Harness lint: five pre-existing findings remain; the new helper adds
   no lint finding.
 - Exact-source runtime comparison: AS-F01 passed for both Browser locale
-  tuples; the complete Foundation Gate remains `PARTIAL / UNPROVEN`.
+  tuples, AS-F10 passed with a non-vacuous READY fixture, and the first
+  subsequent failure was AS-F12's missing fixture ownership.
+- AS-F12 fixture ownership static tests: `69/69` PASS.
+- AS-F12 fixture ownership Desktop check: PASS.
+- The complete Foundation Gate remains `PARTIAL / UNPROVEN`.

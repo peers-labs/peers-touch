@@ -560,6 +560,15 @@ class AgentHarnessStaticTest(unittest.TestCase):
             prepare_start,
         )
         prepare = self.source[prepare_start:complete_start]
+        fixture_helper_start = self.source.index(
+            "async function runFoundationF12PrepareWithCapabilityFixture",
+            prepare_start,
+        )
+        fixture_helper_end = self.source.index(
+            "async function traverseFoundationF12Branches",
+            fixture_helper_start,
+        )
+        fixture_helper = self.source[fixture_helper_start:fixture_helper_end]
         complete_end = self.source.index(
             "async function foundationRevisionMessageFact",
             complete_start,
@@ -567,6 +576,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
         complete = self.source[complete_start:complete_end]
 
         self.assertIn("withFoundationCapabilitiesDisabled(", prepare)
+        self.assertIn("withFoundationReadyCapabilityFixture(", fixture_helper)
+        self.assertIn("runFoundationF12Prepare({", fixture_helper)
+        self.assertIn(
+            "runFoundationF12PrepareWithCapabilityFixture({",
+            self.source,
+        )
         self.assertIn("JSON.parse(stableJson(snapshot))", snapshot)
         self.assertIn("topicLabel: topic.key", snapshot)
         self.assertNotIn("key: topic.key", snapshot)
