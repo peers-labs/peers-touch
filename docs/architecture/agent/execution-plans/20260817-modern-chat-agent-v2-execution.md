@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260905T234558072900Z-17f15e201c317c1bb83b69190eab7734` on `b10bb73e41aa6069ef707f6f2b6698a7d0e964de` proved the reordered English AS-F02 queue at strict `8/8`, but the Simplified Chinese tuple still observed only seven completed admissions before the active Turn finished; per-index Browser/Gateway/Station admission timing is being collected before a second behavior change, and the independent oracle remains unchanged | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260906T023932273619Z-9996d0d9df800ffb67685cc1635aabb3` on `7f7fc29de455905285fb688c830a0b7a17130cd1` proved both Browser AS-F02 locale tuples at strict `8/8`, FIFO positions `1..8`, and `ADMISSION_QUEUE_FULL`; the first failure advanced to Browser AS-F06 fault acknowledgement, where `CONNECTION_LOST` arrived about 30,004 ms after the cut request and raced the unchanged 30-second Harness boundary; fault-control/proxy/stream propagation is under source-backed diagnosis, and the independent oracle remains unchanged | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5570,6 +5570,28 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   completed `DONE / PROVEN / passed`, but inner Browser logout timed out even
   though its ports, storage, and actor identity were released. Foundation and
   G-F remain `PARTIAL / UNPROVEN`.
+- Post-instrumentation exact-source Gate run
+  `20260906T023932273619Z-9996d0d9df800ffb67685cc1635aabb3`
+  (aggregate
+  `20260906T023932171556Z-a13d704b7b75842d85ce918b4e0da535`,
+  child
+  `20260906T023940792920Z-738886258057b4304fd6c95f89cc1fdb`)
+  on `7f7fc29de455905285fb688c830a0b7a17130cd1` proved both Browser
+  AS-F02 locale tuples at strict `8/8`, authoritative FIFO positions `1..8`,
+  capacity eight, and overflow code `ADMISSION_QUEUE_FULL`. Every queued index
+  reached the Gateway, completed Station admission, and returned `queued`
+  while the active Turn was non-terminal, closing the prior action-ordering
+  diagnosis without changing the independent oracle. The first failure
+  advanced to
+  `foundation-browser-direct / browser / direct_model / AS-F06 / en /
+  single / sample-001`: `fault-cut-requested` was recorded at cursor three
+  while phase `CONNECTED`, but `CONNECTION_LOST` arrived with sequence 36 about
+  30,004 ms later and raced the unchanged 30-second fault-acknowledgement
+  boundary. The retained stream advanced after the requested cut, so the
+  fault-control/proxy-to-stream boundary is being instrumented before any
+  timeout or behavior change. Inner runtime cleanup was `clean`; outer
+  Provisioner cleanup completed `DONE / PROVEN / passed`; secret scanning and
+  redaction passed. Foundation and G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
