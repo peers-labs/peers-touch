@@ -16,7 +16,7 @@
 | A | Native and hidden-browser Tauri configurations invalidate one shared Cargo target, consuming most of the Gate budget on sequential rebuilds. | High | Low | Confirmed by two sequential `cargo build --bins --no-default-features --features e2e-testing,tauri/native-tls` trees under one `apps/desktop/src-tauri/target` directory; each configuration took about 15 minutes. |
 | B | The remaining product scenarios fit the unchanged Gate budget when both runtime configurations start from independent warm build caches. | Medium | Medium | Pending an exact-source Gate after per-runtime cache preparation. |
 | C | The outer Gate timeout does not terminate nested runtime process groups created with `start_new_session=True`, so cleanup can report passed while clients remain alive. | High | Low | Confirmed on run `20260906T133344461560Z-c620ac933b899e0d466b41ac32a70f5b`: process groups `58058` and `77420` remained after a `timedOut=true` manifest and were terminated separately. |
-| D | Stable per-runtime Cargo target directories eliminate cross-configuration fingerprint churn without changing product behavior, Gate timeout, or evidence assertions. | High | Medium | Pending implementation and repeated startup evidence. |
+| D | Stable per-runtime Cargo target directories and stable Foundation process profiles eliminate cross-configuration and per-run fingerprint churn without changing product behavior, Gate timeout, or evidence assertions. | High | Medium | The first isolated-cache prewarm completed cleanly for both runtimes; a subsequent Gate still rebuilt because its run-random profile differed from the prewarm profile, confirming the remaining cache-key drift. |
 
 ## Log Evidence
 - Exact-source run `20260906T125759409828Z-9641e70157e74de764e8e5640e5249e3`
@@ -46,6 +46,8 @@ Gate timeout and every product assertion remain unchanged.
 ## Fix
 - Derive one stable worktree-local Cargo target for each Foundation runtime:
   `native-tauri` and `browser`.
+- Use stable Foundation process profiles for native and browser; per-run
+  isolation remains owned by storage roots, ports, and process lifecycles.
 - Inject the selected target through the existing client launch environment.
 - Keep runtime storage, ports, profiles, Station binding, Gate timeout, and
   product assertions unchanged.
@@ -53,7 +55,7 @@ Gate timeout and every product assertion remain unchanged.
   artifacts, not product state or evidence.
 
 ## Local Verification
-- `foundation_runtime_client_test`, `foundation_scenario_runner_test`, and
-  `agent_native_static_test`: 124/124 passed.
+- Foundation runtime, Provisioner, scenario, static, and Group One focused
+  suites: 206/206 passed.
 - `git diff --check`: passed.
 - Exact-source warm-cache Gate evidence: pending.
