@@ -2568,33 +2568,47 @@ class NativeProductClosureGate(AcceptanceGate):
         self.assert_condition("toolbar_geometry", valid, json.dumps(value))
         return value
 
-    def choose_reaction(
+    def choose_first_reaction_with_keyboard(
         self,
         actor: str,
         message_id: str,
-        emoji: str,
-        *,
-        picker_open: bool = False,
-    ) -> None:
-        if not picker_open:
-            self.click_message_action(actor, message_id, "reaction")
-        picker = self.clients[actor].find_element(
-            f'[data-message-action-overlay="reaction-picker"]'
-            f'[data-message-action-message="{message_id}"]',
-            15,
+    ) -> str:
+        client = self.focus_actor_window(actor)
+        if client.process_id is None:
+            raise GateError(f"{actor} Native window has no running process")
+        row = client.find_element(f'[data-message-ulid="{message_id}"]', 20)
+        client.execute_script(
+            "arguments[0].focus({ preventScroll: true });",
+            row,
         )
-        candidates = picker.find_elements(By.CSS_SELECTOR, "[data-reaction-emoji]")
-        target = next(
+        WebDriverWait(client.driver, 15).until(
+            lambda driver: bool(
+                driver.execute_script(
+                    """
+                    const row = arguments[0];
+                    const toolbar = document.querySelector(
+                      `[data-message-action-overlay="toolbar"]`
+                      + `[data-message-action-message="${arguments[1]}"]`
+                    );
+                    return document.activeElement === row && Boolean(toolbar);
+                    """,
+                    row,
+                    message_id,
+                )
+            )
+        )
+        self.native_adapter.post_key_sequence_to_process(
+            client.process_id,
             (
-                item
-                for item in candidates
-                if item.get_attribute("data-reaction-emoji") == emoji
+                NativeKey.ENTER,
+                NativeKey.TAB,
+                NativeKey.ENTER,
+                NativeKey.ENTER,
             ),
-            None,
+            interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS,
+            private_source=True,
         )
-        if target is None:
-            raise GateError(f"reaction picker does not contain {emoji}")
-        self.click_element(actor, target)
+        return "👍"
 
     def prove_keyboard_reaction_picker(self, actor: str, message_id: str) -> None:
         client = self.focus_actor_window(actor)
@@ -2757,6 +2771,17 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         # #endregion
         self.capture_visible_localization("reaction-picker", (actor,))
+        self.native_adapter.post_key_to_process(
+            process_id,
+            NativeKey.ESCAPE,
+            private_source=True,
+        )
+        WebDriverWait(client.driver, 15).until(
+            lambda driver: not driver.find_elements(
+                By.CSS_SELECTOR,
+                '[data-message-action-overlay="reaction-picker"]',
+            )
+        )
         self.assert_condition("toolbar_keyboard_reachable", True)
 
     def reaction_visible(self, actor: str, message_id: str, emoji: str) -> bool:
@@ -2773,12 +2798,9 @@ class NativeProductClosureGate(AcceptanceGate):
         message_id: str,
     ) -> dict[str, Any]:
         self.prove_keyboard_reaction_picker("alice", message_id)
-        success_emoji = "❤️"
-        self.choose_reaction(
+        success_emoji = self.choose_first_reaction_with_keyboard(
             "alice",
             message_id,
-            success_emoji,
-            picker_open=True,
         )
         wait_until(
             lambda: self.reaction_visible("alice", message_id, success_emoji)
@@ -2799,18 +2821,14 @@ class NativeProductClosureGate(AcceptanceGate):
             timeout=120,
         )
 
-        failure_emoji = "🔥"
         proxy = self.reaction_proxy
         if proxy is None:
             raise GateError("reaction fault proxy is not running")
         try:
             proxy.arm_connection_loss()
-            self.prove_keyboard_reaction_picker("alice", message_id)
-            self.choose_reaction(
+            failure_emoji = self.choose_first_reaction_with_keyboard(
                 "alice",
                 message_id,
-                failure_emoji,
-                picker_open=True,
             )
 
             def actionable_error() -> bool:
