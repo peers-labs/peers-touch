@@ -11498,6 +11498,32 @@ export function installAcceptanceHarness(): void {
       const replayReadbackHash = replayReadback
         ? await sha256Hex(stableJson(replayReadback))
         : '';
+      if (cell === 'AS-F02') {
+        void reportFoundationQueueCapacityDebug(
+          'G',
+          'replay-readback-compared',
+          {
+            sourceHash: sourceReadbackHash,
+            replayHash: replayReadbackHash,
+            equal:
+              Boolean(sourceReadbackHash)
+              && sourceReadbackHash === replayReadbackHash,
+            sourceConversationVersion:
+              conversationReadback?.conversation.version ?? null,
+            replayConversationVersion:
+              replayReadback?.conversation.version ?? null,
+            sourceMessageCount: conversationReadback?.messages.length ?? 0,
+            replayMessageCount: replayReadback?.messages.length ?? 0,
+            sourceMessageStatuses:
+              conversationReadback?.messages.map((message) => message.status)
+              ?? [],
+            replayMessageStatuses:
+              replayReadback?.messages.map((message) => message.status)
+              ?? [],
+            finalQueueSize: turnQueue?.entries.length ?? 0,
+          },
+        );
+      }
       const observedRuntimeEvent = preparedRuntimeEvent.current;
 
       // Build role evidence

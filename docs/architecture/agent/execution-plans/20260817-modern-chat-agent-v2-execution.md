@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: the Gateway response body now converts upstream SSE read failure to immediate downstream EOF at checkpoint `3d6435d825ff389f754b51cacede41df025928fa`; exact-source run `20260906T084510093935Z-79cae3d5fd697244387d637f16143fac` on `b799410e00d0ce0bcc40a0bb02f101bf8670fa3a` proved strict Browser AS-F02 queue capacity and deterministic active admission, then exposed that residual queue cleanup delayed active cancellation until the real provider had completed; the Harness now gathers the unchanged at-capacity receiver, overflow, and active-dependency evidence concurrently, proves one queued cancellation, cancels the active Turn, and only then cleans the residual queue; post-fix exact-source proof is pending | W8a |
+| G-F Complete Foundation Gate | in progress: the Gateway response body now converts upstream SSE read failure to immediate downstream EOF at checkpoint `3d6435d825ff389f754b51cacede41df025928fa`; exact-source run `20260906T092327804315Z-110a210664701b15a8495ad6120ea9c2` on `6de2667380f7dc9096be5433f8adf1ab46d09b2f` proved strict Browser AS-F02 queue capacity, deterministic active admission, and authoritative active cancellation, then failed the generic replay-equality check; bounded readback comparison instrumentation now distinguishes residual queued-Turn settlement from hash normalization without changing the equality predicate; post-fix exact-source proof is pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5685,6 +5685,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Focused Agent tests pass `82/82`, Desktop checks and all `569` Desktop tests
   pass with one unrelated skip, and `git diff --check` passes. Exact-source
   runtime proof remains pending.
+- Exact-source Gate run
+  `20260906T092327804315Z-110a210664701b15a8495ad6120ea9c2`
+  (aggregate
+  `20260906T092327677006Z-ede0d99faab81d07650e89953bea06a7`,
+  child
+  `20260906T092335637540Z-1cc9e702ede0dd21c2f50cc28e8f14c5`)
+  on `6de2667380f7dc9096be5433f8adf1ab46d09b2f` proved the revised
+  admission and cancellation ordering: Browser AS-F02 reached strict `8/8`
+  with FIFO positions `1..8`, duplicate replay, overflow rejection, and an
+  authoritative `cancelled` response for the active Turn. The run advanced
+  past the AS-F02 product assertions and failed the generic replay-equality
+  check. This is consistent with a queued Turn being admitted during residual
+  cleanup and mutating the conversation between two readbacks. Bounded
+  instrumentation now records only source/replay hashes, conversation
+  versions, message counts/statuses, and final queue size. Inner runtime cleanup
+  and outer Provisioner cleanup both passed. Foundation and G-F remain
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
