@@ -1509,17 +1509,28 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn("def native_app_baseline_ready(", self.source)
+        self.assertIn(
+            "control = self.native_adapter.activate_and_focused_control(",
+            self.source,
+        )
         self.assertIn("control.window_count >= 1", self.source)
         self.assertIn("control.main_window", self.source)
         self.assertIn("control.frontmost", self.source)
         self.assertIn('control.kind != "application-dialog"', self.source)
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn(
-            "NativeKey.A,\n"
+            "self.native_adapter.post_key_to_process(\n"
+            "            client.process_id or 0,\n"
+            "            NativeKey.A,\n"
             "            modifiers=(NativeModifier.PRIMARY,),",
             self.source,
         )
-        self.assertIn("NativeKey.DELETE, private_source=True", self.source)
+        self.assertIn(
+            "client.process_id or 0,\n"
+            "            NativeKey.DELETE,\n"
+            "            private_source=True,",
+            self.source,
+        )
         self.assertIn('control.value == ""', self.source)
         self.assertIn(
             "poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS",
@@ -1532,7 +1543,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('control.value == str(selected_path)', self.source)
         self.assertIn(
-            "self.native_adapter.reveal_file_chooser_location()",
+            "self.native_adapter.reveal_file_chooser_location_to_process(",
             self.source,
         )
         self.assertNotIn(
@@ -1541,7 +1552,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn(
-            "NativeKey.V,\n"
+            "self.native_adapter.post_key_to_process(\n"
+            "                client.process_id or 0,\n"
+            "                NativeKey.V,\n"
             "                modifiers=(NativeModifier.PRIMARY,),",
             self.source,
         )

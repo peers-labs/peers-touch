@@ -699,11 +699,17 @@ class RemoteNativeDesktopAdapter(NativeDesktopAdapter):
     def reveal_file_chooser_location(self) -> None:
         self._execute("reveal_file_chooser_location", {})
 
-    def focused_control(self, process_id: int) -> NativeControlSnapshot:
-        payload = self._execute(
-            "focused_control",
+    def reveal_file_chooser_location_to_process(self, process_id: int) -> None:
+        if self._platform != "win32":
+            super().reveal_file_chooser_location_to_process(process_id)
+            return
+        self._execute(
+            "reveal_file_chooser_location_to_process",
             {"processId": process_id},
         )
+
+    @staticmethod
+    def _control_snapshot(payload: dict[str, Any]) -> NativeControlSnapshot:
         return NativeControlSnapshot(
             kind=str(payload.get("kind") or "unknown"),
             title=str(payload.get("title") or ""),
@@ -719,6 +725,26 @@ class RemoteNativeDesktopAdapter(NativeDesktopAdapter):
             platform_role=str(payload.get("platformRole") or ""),
             platform_subrole=str(payload.get("platformSubrole") or ""),
             error=str(payload.get("error") or ""),
+        )
+
+    def focused_control(self, process_id: int) -> NativeControlSnapshot:
+        payload = self._execute(
+            "focused_control",
+            {"processId": process_id},
+        )
+        return self._control_snapshot(payload)
+
+    def activate_and_focused_control(
+        self,
+        process_id: int,
+    ) -> NativeControlSnapshot:
+        if self._platform != "win32":
+            return super().activate_and_focused_control(process_id)
+        return self._control_snapshot(
+            self._execute(
+                "activate_process",
+                {"processId": process_id},
+            )
         )
 
     def window_stack_at_point(

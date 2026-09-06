@@ -681,7 +681,9 @@ class NativeProductClosureGate(AcceptanceGate):
         )
 
         def native_app_baseline_ready(_: Any) -> NativeControlSnapshot | None:
-            control = self.native_adapter.focused_control(client.process_id or 0)
+            control = self.native_adapter.activate_and_focused_control(
+                client.process_id or 0
+            )
             return (
                 control
                 if control.window_count >= 1
@@ -723,18 +725,25 @@ class NativeProductClosureGate(AcceptanceGate):
             control = self.native_adapter.focused_control(client.process_id or 0)
             return control if control.kind == "text-field" else None
 
-        self.native_adapter.reveal_file_chooser_location()
+        self.native_adapter.reveal_file_chooser_location_to_process(
+            client.process_id or 0
+        )
         WebDriverWait(
             client.driver,
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(go_to_field_ready)
 
-        self.native_adapter.post_key(
+        self.native_adapter.post_key_to_process(
+            client.process_id or 0,
             NativeKey.A,
             modifiers=(NativeModifier.PRIMARY,),
         )
-        self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
+        self.native_adapter.post_key_to_process(
+            client.process_id or 0,
+            NativeKey.DELETE,
+            private_source=True,
+        )
 
         def location_field_cleared(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
@@ -754,7 +763,8 @@ class NativeProductClosureGate(AcceptanceGate):
             self.native_adapter.write_clipboard(
                 str(selected_path).encode("utf-8")
             )
-            self.native_adapter.post_key(
+            self.native_adapter.post_key_to_process(
+                client.process_id or 0,
                 NativeKey.V,
                 modifiers=(NativeModifier.PRIMARY,),
             )
@@ -777,7 +787,11 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         finally:
             self.native_adapter.write_clipboard(original_clipboard)
-        self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
+        self.native_adapter.post_key_to_process(
+            client.process_id or 0,
+            NativeKey.ENTER,
+            private_source=True,
+        )
 
         baseline_window_count = baseline_control.window_count
 
@@ -805,13 +819,16 @@ class NativeProductClosureGate(AcceptanceGate):
         ).until(selection_or_browser_ready)
 
         if not intermediate["selected"]:
-            self.native_adapter.post_key(
+            self.native_adapter.post_key_to_process(
+                client.process_id or 0,
                 NativeKey.ENTER,
                 private_source=True,
             )
 
         def native_window_restored(_: Any) -> NativeControlSnapshot | None:
-            control = self.native_adapter.focused_control(client.process_id or 0)
+            control = self.native_adapter.activate_and_focused_control(
+                client.process_id or 0
+            )
             return (
                 control
                 if control.window_count >= baseline_window_count

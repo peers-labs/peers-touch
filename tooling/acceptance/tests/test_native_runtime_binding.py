@@ -113,7 +113,7 @@ class SyntheticRemoteNativeLifecycle:
             return {
                 "content": base64.b64encode(b"clipboard").decode("ascii"),
             }
-        if operation == "focused_control":
+        if operation in {"activate_process", "focused_control"}:
             return {
                 "kind": "window",
                 "actualFrontmostPid": payload["processId"],
@@ -210,7 +210,10 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             interval_seconds=0.2,
             private_source=True,
         )
+        binding.native_adapter.reveal_file_chooser_location_to_process(712)
+        activated_control = binding.native_adapter.activate_and_focused_control(712)
         control = binding.native_adapter.focused_control(712)
+        self.assertTrue(activated_control.frontmost)
         self.assertTrue(control.frontmost)
         self.assertEqual(control.actual_frontmost_pid, 712)
         self.assertIn(
@@ -239,6 +242,16 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                         "actions": ["move", "left-down", "left-up"],
                         "point": [18.0, 32.5],
                     },
+                ),
+            ),
+            lifecycle.calls,
+        )
+        self.assertIn(
+            (
+                "execute_adapter",
+                (
+                    "reveal_file_chooser_location_to_process",
+                    {"processId": 712},
                 ),
             ),
             lifecycle.calls,

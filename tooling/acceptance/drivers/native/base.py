@@ -189,9 +189,20 @@ class NativeDesktopAdapter(ABC):
     def reveal_file_chooser_location(self) -> None:
         ...
 
+    def reveal_file_chooser_location_to_process(self, process_id: int) -> None:
+        self.activate_process(process_id)
+        self.reveal_file_chooser_location()
+
     @abstractmethod
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         ...
+
+    def activate_and_focused_control(
+        self,
+        process_id: int,
+    ) -> NativeControlSnapshot:
+        self.activate_process(process_id)
+        return self.focused_control(process_id)
 
     @abstractmethod
     def window_stack_at_point(
