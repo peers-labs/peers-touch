@@ -139,6 +139,20 @@ class _INPUT(ctypes.Structure):
     ]
 
 
+class _GUITHREADINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", ctypes.wintypes.DWORD),
+        ("flags", ctypes.wintypes.DWORD),
+        ("hwndActive", ctypes.wintypes.HWND),
+        ("hwndFocus", ctypes.wintypes.HWND),
+        ("hwndCapture", ctypes.wintypes.HWND),
+        ("hwndMenuOwner", ctypes.wintypes.HWND),
+        ("hwndMoveSize", ctypes.wintypes.HWND),
+        ("hwndCaret", ctypes.wintypes.HWND),
+        ("rcCaret", ctypes.wintypes.RECT),
+    ]
+
+
 # BITMAPINFOHEADER for GDI screenshot
 class _BITMAPINFOHEADER(ctypes.Structure):
     _fields_ = [
@@ -273,6 +287,19 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
         pid = ctypes.wintypes.DWORD(0)
         _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         return int(pid.value)
+
+    @staticmethod
+    def _focused_window_for_gui_thread(
+        hwnd: ctypes.wintypes.HWND,
+    ) -> ctypes.wintypes.HWND | int:
+        thread_id = _user32.GetWindowThreadProcessId(hwnd, None)
+        if not thread_id:
+            return 0
+        info = _GUITHREADINFO()
+        info.cbSize = ctypes.sizeof(_GUITHREADINFO)
+        if not _user32.GetGUIThreadInfo(thread_id, ctypes.byref(info)):
+            return 0
+        return info.hwndFocus or info.hwndActive or 0
 
     @staticmethod
     def _window_text(hwnd: ctypes.wintypes.HWND) -> str:
@@ -469,9 +496,21 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
         try:
             windows = self._find_windows_by_pid(process_id)
             foreground_hwnd = _user32.GetForegroundWindow()
-            foreground_pid = self._window_process_id(foreground_hwnd) if foreground_hwnd else -1
-            focused_hwnd = _user32.GetFocus()
-            focused_pid = self._window_process_id(focused_hwnd) if focused_hwnd else -1
+            foreground_pid = (
+                self._window_process_id(foreground_hwnd)
+                if foreground_hwnd
+                else -1
+            )
+            focused_hwnd = (
+                self._focused_window_for_gui_thread(foreground_hwnd)
+                if foreground_hwnd
+                else 0
+            )
+            focused_pid = (
+                self._window_process_id(focused_hwnd)
+                if focused_hwnd
+                else -1
+            )
 
             dialog_count = sum(
                 1
@@ -487,8 +526,7 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             value = ""
             platform_role = ""
             if actor_frontmost and foreground_hwnd:
-                # Walk focused child
-                child = _user32.GetFocus()
+                child = focused_hwnd
                 if child:
                     cls = self._window_class_name(child)
                     platform_role = cls
@@ -497,7 +535,9 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
                     elif "listbox" in cls.lower() or "syslistview" in cls.lower():
                         kind = "list"
                     title = self._window_text(child)
-                if dialog_count > 0:
+                    if kind == "text-field":
+                        value = title
+                if kind == "application" and dialog_count > 0:
                     kind = "application-dialog"
 
             return NativeControlSnapshot(

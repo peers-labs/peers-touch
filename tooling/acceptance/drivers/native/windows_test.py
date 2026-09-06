@@ -55,6 +55,43 @@ class Win32NativeDesktopAdapterContractTest(unittest.TestCase):
         self.assertLess(foreground_guard, early_return)
         self.assertLess(early_return, top_level_focus)
 
+    def test_focus_probe_reads_the_foreground_gui_thread(self) -> None:
+        source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
+        helper = source[
+            source.index("    def _focused_window_for_gui_thread("):
+            source.index("    def _window_text(")
+        ]
+        probe = source[
+            source.index("    def focused_control("):
+            source.index("    def window_stack_at_point(")
+        ]
+
+        self.assertIn("GetWindowThreadProcessId(hwnd, None)", helper)
+        self.assertIn("GetGUIThreadInfo(thread_id, ctypes.byref(info))", helper)
+        self.assertIn(
+            "self._focused_window_for_gui_thread(foreground_hwnd)",
+            probe,
+        )
+        self.assertNotIn("GetFocus(", probe)
+
+    def test_dialog_probe_preserves_specific_control_kind_and_value(self) -> None:
+        source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
+        probe = source[
+            source.index("    def focused_control("):
+            source.index("    def window_stack_at_point(")
+        ]
+
+        self.assertIn('kind = "text-field"', probe)
+        self.assertIn("value = title", probe)
+        self.assertIn(
+            'if kind == "application" and dialog_count > 0:',
+            probe,
+        )
+        self.assertNotIn(
+            'if dialog_count > 0:\n                    kind = "application-dialog"',
+            probe,
+        )
+
 
 @unittest.skipUnless(sys.platform == "win32", "Windows-only native smoke")
 class Win32NativeDesktopAdapterSmokeTest(unittest.TestCase):
