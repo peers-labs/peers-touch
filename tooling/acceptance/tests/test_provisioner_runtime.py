@@ -471,8 +471,9 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(browser.gateway_port, 23031)
         self.assertEqual(browser.renderer_port, 23211)
         self.assertEqual(browser.webdriver_port, 24446)
+        self.assertEqual(native.profile, "agent-v2-foundation-native")
+        self.assertEqual(browser.profile, "agent-v2-foundation-browser")
         for client in manifest.clients:
-            self.assertIn(manifest.run_id, client.profile)
             self.assertIn(manifest.run_id, client.storage_root)
         self.assertTrue(manifest.cleanup_registered)
         self.assertEqual(
