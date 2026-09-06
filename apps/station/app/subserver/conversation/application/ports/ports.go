@@ -87,16 +87,45 @@ type FederationOutboxWriter interface {
 	Enqueue(ctx context.Context, intent FederationOutboxIntent) error
 }
 
-type ObjectGrant struct {
-	ObjectID       valueobject.ObjectID
+// AuthorityDeliveryCommitment preserves the exact endpoint delivery accepted
+// with an authority event without retaining endpoint-private payload bytes.
+type AuthorityDeliveryCommitment struct {
+	ConversationID      valueobject.ConversationID
+	EventID             valueobject.EventID
+	EventSequence       valueobject.Sequence
+	Originator          valueobject.PTID
+	Recipient           valueobject.Endpoint
+	HomeStation         valueobject.StationID
+	PayloadKind         valueobject.DeliveryKind
+	EndpointPayloadHash valueobject.Hash
+	Commitment          valueobject.Hash
+	QueueItemID         string
+	QueuePayloadHash    valueobject.Hash
+	RequiredRecipient   bool
+	CreatedAt           time.Time
+}
+
+// AuthorityDeliveryCommitmentWriter persists the complete endpoint commitment
+// set in the same transaction as its event and delivery intents.
+type AuthorityDeliveryCommitmentWriter interface {
+	RecordCommitments(
+		ctx context.Context,
+		commitments []AuthorityDeliveryCommitment,
+	) error
+}
+
+type ObjectGrantBatch struct {
 	ConversationID valueobject.ConversationID
+	MessageID      valueobject.MessageID
+	Uploader       valueobject.PTID
 	EventID        valueobject.EventID
-	Recipient      valueobject.PTID
+	ObjectIDs      []valueobject.ObjectID
+	Recipients     []valueobject.PTID
 	GrantedAt      time.Time
 }
 
 type ObjectGrantWriter interface {
-	Grant(ctx context.Context, grant ObjectGrant) error
+	GrantBatch(ctx context.Context, grant ObjectGrantBatch) error
 }
 
 type KeyPackageReservations interface {
@@ -124,6 +153,7 @@ type Transaction struct {
 	Federation             FederationDirectory
 	DeviceInbox            DeviceInboxWriter
 	FederationOutbox       FederationOutboxWriter
+	DeliveryCommitments    AuthorityDeliveryCommitmentWriter
 	ObjectGrants           ObjectGrantWriter
 	KeyPackageReservations KeyPackageReservations
 }

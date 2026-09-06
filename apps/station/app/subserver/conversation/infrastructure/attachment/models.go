@@ -3,31 +3,41 @@ package attachment
 import "time"
 
 type UploadModel struct {
-	UploadID                   string    `gorm:"column:upload_id;size:64;primaryKey"`
-	Generation                 uint64    `gorm:"column:generation;not null"`
-	ConversationID             string    `gorm:"column:conversation_id;size:128;not null;index"`
-	MessageID                  string    `gorm:"column:message_id;size:128;not null"`
-	AttachmentID               string    `gorm:"column:attachment_id;size:128;not null"`
-	UploaderPTID               string    `gorm:"column:uploader_ptid;size:255;not null;uniqueIndex:uidx_conversation_attachment_upload_idempotency,priority:1"`
-	UploaderDeviceID           string    `gorm:"column:uploader_device_id;size:255;not null;uniqueIndex:uidx_conversation_attachment_upload_idempotency,priority:2"`
-	CiphertextSize             uint64    `gorm:"column:ciphertext_size;not null"`
-	CiphertextSHA256           []byte    `gorm:"column:ciphertext_sha256;type:bytea;not null"`
-	MediaType                  string    `gorm:"column:media_type;size:255;not null"`
-	ChunkSize                  uint32    `gorm:"column:chunk_size;not null"`
-	ChunkCount                 uint32    `gorm:"column:chunk_count;not null"`
-	EncryptionSuite            int32     `gorm:"column:encryption_suite;not null"`
-	TagSize                    uint32    `gorm:"column:tag_size;not null"`
-	NonceStrategy              int32     `gorm:"column:nonce_strategy;not null"`
-	ChunkCiphertextSHA256      []byte    `gorm:"column:chunk_ciphertext_sha256;type:bytea;not null"`
-	DescriptorCommitmentSHA256 []byte    `gorm:"column:descriptor_commitment_sha256;type:bytea;not null"`
-	IdempotencyKey             string    `gorm:"column:idempotency_key;size:128;not null;uniqueIndex:uidx_conversation_attachment_upload_idempotency,priority:3"`
-	State                      int32     `gorm:"column:state;not null;index"`
-	ReceivedChunkBitmap        []byte    `gorm:"column:received_chunk_bitmap;type:bytea;not null"`
-	ObjectID                   string    `gorm:"column:object_id;size:64"`
-	StorageRef                 string    `gorm:"column:storage_ref;size:128"`
-	ExpiresAt                  time.Time `gorm:"column:expires_at;not null;index"`
-	CreatedAt                  time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt                  time.Time `gorm:"column:updated_at;not null"`
+	UploadID                   string     `gorm:"column:upload_id;size:64;primaryKey"`
+	Generation                 uint64     `gorm:"column:generation;not null"`
+	ConversationID             string     `gorm:"column:conversation_id;size:128;not null;index"`
+	MessageID                  string     `gorm:"column:message_id;size:128;not null"`
+	AttachmentID               string     `gorm:"column:attachment_id;size:128;not null"`
+	UploaderPTID               string     `gorm:"column:uploader_ptid;size:255;not null;uniqueIndex:uidx_conversation_attachment_upload_idempotency,priority:1"`
+	UploaderDeviceID           string     `gorm:"column:uploader_device_id;size:255;not null;uniqueIndex:uidx_conversation_attachment_upload_idempotency,priority:2"`
+	CiphertextSize             uint64     `gorm:"column:ciphertext_size;not null"`
+	CiphertextSHA256           []byte     `gorm:"column:ciphertext_sha256;type:bytea;not null"`
+	MediaType                  string     `gorm:"column:media_type;size:255;not null"`
+	ChunkSize                  uint32     `gorm:"column:chunk_size;not null"`
+	ChunkCount                 uint32     `gorm:"column:chunk_count;not null"`
+	EncryptionSuite            int32      `gorm:"column:encryption_suite;not null"`
+	TagSize                    uint32     `gorm:"column:tag_size;not null"`
+	NonceStrategy              int32      `gorm:"column:nonce_strategy;not null"`
+	ChunkCiphertextSHA256      []byte     `gorm:"column:chunk_ciphertext_sha256;type:bytea;not null"`
+	DescriptorCommitmentSHA256 []byte     `gorm:"column:descriptor_commitment_sha256;type:bytea;not null"`
+	IdempotencyKey             string     `gorm:"column:idempotency_key;size:128;not null;uniqueIndex:uidx_conversation_attachment_upload_idempotency,priority:3"`
+	State                      int32      `gorm:"column:state;not null;index"`
+	ReceivedChunkBitmap        []byte     `gorm:"column:received_chunk_bitmap;type:bytea;not null"`
+	ObjectID                   string     `gorm:"column:object_id;size:64"`
+	StorageRef                 string     `gorm:"column:storage_ref;size:128"`
+	VerificationToken          string     `gorm:"column:verification_token;size:64"`
+	VerificationStorageKey     string     `gorm:"column:verification_storage_key;size:255"`
+	VerificationStartedAt      *time.Time `gorm:"column:verification_started_at"`
+	VerificationLeaseExpiresAt *time.Time `gorm:"column:verification_lease_expires_at;index"`
+	VerificationAttemptCount   uint32     `gorm:"column:verification_attempt_count;not null"`
+	ExpiresAt                  time.Time  `gorm:"column:expires_at;not null;index"`
+	CleanupLeaseOwner          string     `gorm:"column:cleanup_lease_owner;size:128"`
+	CleanupLeaseExpiresAt      *time.Time `gorm:"column:cleanup_lease_expires_at;index"`
+	CleanupAttemptCount        uint32     `gorm:"column:cleanup_attempt_count;not null"`
+	CleanupNextAttemptAt       time.Time  `gorm:"column:cleanup_next_attempt_at;not null;index"`
+	CleanupCompletedAt         *time.Time `gorm:"column:cleanup_completed_at"`
+	CreatedAt                  time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt                  time.Time  `gorm:"column:updated_at;not null"`
 }
 
 func (*UploadModel) TableName() string {
@@ -50,26 +60,32 @@ func (*UploadPartModel) TableName() string {
 }
 
 type ObjectModel struct {
-	ObjectID                   string    `gorm:"column:object_id;size:64;primaryKey"`
-	StorageRef                 string    `gorm:"column:storage_ref;size:128;not null;uniqueIndex"`
-	StorageKey                 string    `gorm:"column:storage_key;size:255;not null"`
-	ConversationID             string    `gorm:"column:conversation_id;size:128;not null;index"`
-	MessageID                  string    `gorm:"column:message_id;size:128;not null"`
-	AttachmentID               string    `gorm:"column:attachment_id;size:128;not null"`
-	UploaderPTID               string    `gorm:"column:uploader_ptid;size:255;not null"`
-	CiphertextSize             uint64    `gorm:"column:ciphertext_size;not null"`
-	CiphertextSHA256           []byte    `gorm:"column:ciphertext_sha256;type:bytea;not null"`
-	MediaType                  string    `gorm:"column:media_type;size:255;not null"`
-	ChunkSize                  uint32    `gorm:"column:chunk_size;not null"`
-	ChunkCount                 uint32    `gorm:"column:chunk_count;not null"`
-	EncryptionSuite            int32     `gorm:"column:encryption_suite;not null"`
-	TagSize                    uint32    `gorm:"column:tag_size;not null"`
-	NonceStrategy              int32     `gorm:"column:nonce_strategy;not null"`
-	ChunkCiphertextSHA256      []byte    `gorm:"column:chunk_ciphertext_sha256;type:bytea;not null"`
-	DescriptorCommitmentSHA256 []byte    `gorm:"column:descriptor_commitment_sha256;type:bytea;not null"`
-	EventID                    string    `gorm:"column:event_id;size:128;index"`
-	State                      string    `gorm:"column:state;size:32;not null;index"`
-	CreatedAt                  time.Time `gorm:"column:created_at;not null"`
+	ObjectID                   string     `gorm:"column:object_id;size:64;primaryKey"`
+	StorageRef                 string     `gorm:"column:storage_ref;size:128;not null;uniqueIndex"`
+	StorageKey                 string     `gorm:"column:storage_key;size:255;not null"`
+	ConversationID             string     `gorm:"column:conversation_id;size:128;not null;index"`
+	MessageID                  string     `gorm:"column:message_id;size:128;not null"`
+	AttachmentID               string     `gorm:"column:attachment_id;size:128;not null"`
+	UploaderPTID               string     `gorm:"column:uploader_ptid;size:255;not null"`
+	CiphertextSize             uint64     `gorm:"column:ciphertext_size;not null"`
+	CiphertextSHA256           []byte     `gorm:"column:ciphertext_sha256;type:bytea;not null"`
+	MediaType                  string     `gorm:"column:media_type;size:255;not null"`
+	ChunkSize                  uint32     `gorm:"column:chunk_size;not null"`
+	ChunkCount                 uint32     `gorm:"column:chunk_count;not null"`
+	EncryptionSuite            int32      `gorm:"column:encryption_suite;not null"`
+	TagSize                    uint32     `gorm:"column:tag_size;not null"`
+	NonceStrategy              int32      `gorm:"column:nonce_strategy;not null"`
+	ChunkCiphertextSHA256      []byte     `gorm:"column:chunk_ciphertext_sha256;type:bytea;not null"`
+	DescriptorCommitmentSHA256 []byte     `gorm:"column:descriptor_commitment_sha256;type:bytea;not null"`
+	EventID                    string     `gorm:"column:event_id;size:128;index"`
+	State                      string     `gorm:"column:state;size:32;not null;index"`
+	ExpiresAt                  time.Time  `gorm:"column:expires_at;not null;index"`
+	CleanupLeaseOwner          string     `gorm:"column:cleanup_lease_owner;size:128"`
+	CleanupLeaseExpiresAt      *time.Time `gorm:"column:cleanup_lease_expires_at;index"`
+	CleanupAttemptCount        uint32     `gorm:"column:cleanup_attempt_count;not null"`
+	CleanupNextAttemptAt       time.Time  `gorm:"column:cleanup_next_attempt_at;not null;index"`
+	CleanupCompletedAt         *time.Time `gorm:"column:cleanup_completed_at"`
+	CreatedAt                  time.Time  `gorm:"column:created_at;not null"`
 }
 
 func (*ObjectModel) TableName() string {
@@ -81,6 +97,7 @@ type GrantModel struct {
 	ConversationID string    `gorm:"column:conversation_id;size:128;primaryKey"`
 	RecipientPTID  string    `gorm:"column:recipient_ptid;size:255;primaryKey"`
 	MessageID      string    `gorm:"column:message_id;size:128;not null"`
+	UploaderPTID   string    `gorm:"column:uploader_ptid;size:255;not null"`
 	EventID        string    `gorm:"column:event_id;size:128;not null;index"`
 	GrantedAt      time.Time `gorm:"column:granted_at;not null"`
 }

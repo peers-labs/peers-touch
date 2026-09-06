@@ -11,14 +11,22 @@ import (
 )
 
 const (
-	ChunkSize                  uint32 = 1024 * 1024
-	TagSize                    uint32 = 16
-	MaximumChunkCount          uint32 = 2048
-	MaximumPlaintextSize       uint64 = 2 * 1024 * 1024 * 1024
-	MaximumMessageObjects             = 10
-	MaximumActiveUploadCount          = 4
-	MaximumConcurrentPartCount        = 4
-	MaximumUploadTTL                  = 24 * time.Hour
+	ChunkSize                       uint32 = 1024 * 1024
+	TagSize                         uint32 = 16
+	MaximumChunkCount               uint32 = 2048
+	MaximumPlaintextSize            uint64 = 2 * 1024 * 1024 * 1024
+	MaximumMessageObjects                  = 10
+	MaximumActiveUploadCount               = 4
+	MaximumConcurrentPartCount             = 4
+	MaximumUploadTTL                       = 24 * time.Hour
+	MaximumUnattachedObjectTTL             = 24 * time.Hour
+	MaximumVerificationLeaseTTL            = time.Hour
+	MaximumVerificationAttemptCount        = 3
+	MaximumCleanupLeaseTTL                 = 5 * time.Minute
+	MaximumCleanupBatchSize                = 100
+	MaximumCleanupAttemptCount             = 10
+	MinimumCleanupRetryDelay               = time.Second
+	MaximumCleanupRetryDelay               = 5 * time.Minute
 )
 
 type EncryptionSuite int32
@@ -36,13 +44,15 @@ const (
 type TransferState int32
 
 const (
-	TransferStateQueued       TransferState = 1
-	TransferStateTransferring TransferState = 2
-	TransferStateVerifying    TransferState = 3
-	TransferStateComplete     TransferState = 4
-	TransferStateRetryWait    TransferState = 5
-	TransferStateCancelled    TransferState = 6
-	TransferStateTerminal     TransferState = 7
+	TransferStateQueued         TransferState = 1
+	TransferStateTransferring   TransferState = 2
+	TransferStateVerifying      TransferState = 3
+	TransferStateComplete       TransferState = 4
+	TransferStateRetryWait      TransferState = 5
+	TransferStateCancelled      TransferState = 6
+	TransferStateTerminal       TransferState = 7
+	TransferStateCleanupClaimed TransferState = 8
+	TransferStateCleanupFailed  TransferState = 9
 )
 
 type ObjectState string
@@ -50,6 +60,9 @@ type ObjectState string
 const (
 	ObjectStateCompleteUnattached ObjectState = "complete_unattached"
 	ObjectStateAttached           ObjectState = "attached"
+	ObjectStateCleanupClaimed     ObjectState = "cleanup_claimed"
+	ObjectStateGarbageCollected   ObjectState = "garbage_collected"
+	ObjectStateCleanupFailed      ObjectState = "cleanup_failed"
 )
 
 type UploadSpec struct {
@@ -65,22 +78,32 @@ type UploadSpec struct {
 }
 
 type Upload struct {
-	UploadID             string
-	Generation           uint64
-	ConversationID       valueobject.ConversationID
-	MessageID            valueobject.MessageID
-	AttachmentID         string
-	Uploader             valueobject.Endpoint
-	Spec                 UploadSpec
-	DescriptorCommitment valueobject.Hash
-	IdempotencyKey       string
-	State                TransferState
-	ReceivedChunkBitmap  []byte
-	ObjectID             valueobject.ObjectID
-	StorageRef           string
-	ExpiresAt            time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	UploadID                   string
+	Generation                 uint64
+	ConversationID             valueobject.ConversationID
+	MessageID                  valueobject.MessageID
+	AttachmentID               string
+	Uploader                   valueobject.Endpoint
+	Spec                       UploadSpec
+	DescriptorCommitment       valueobject.Hash
+	IdempotencyKey             string
+	State                      TransferState
+	ReceivedChunkBitmap        []byte
+	ObjectID                   valueobject.ObjectID
+	StorageRef                 string
+	VerificationToken          string
+	VerificationStorageKey     string
+	VerificationStartedAt      time.Time
+	VerificationLeaseExpiresAt time.Time
+	VerificationAttempt        uint32
+	ExpiresAt                  time.Time
+	CleanupLeaseOwner          string
+	CleanupLeaseExpiresAt      time.Time
+	CleanupAttempt             uint32
+	CleanupNextAttemptAt       time.Time
+	CleanupCompletedAt         time.Time
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
 }
 
 type Part struct {
@@ -95,18 +118,24 @@ type Part struct {
 }
 
 type Object struct {
-	ObjectID             valueobject.ObjectID
-	StorageRef           string
-	StorageKey           string
-	ConversationID       valueobject.ConversationID
-	MessageID            valueobject.MessageID
-	AttachmentID         string
-	Uploader             valueobject.PTID
-	Spec                 UploadSpec
-	DescriptorCommitment valueobject.Hash
-	EventID              valueobject.EventID
-	State                ObjectState
-	CreatedAt            time.Time
+	ObjectID              valueobject.ObjectID
+	StorageRef            string
+	StorageKey            string
+	ConversationID        valueobject.ConversationID
+	MessageID             valueobject.MessageID
+	AttachmentID          string
+	Uploader              valueobject.PTID
+	Spec                  UploadSpec
+	DescriptorCommitment  valueobject.Hash
+	EventID               valueobject.EventID
+	State                 ObjectState
+	ExpiresAt             time.Time
+	CleanupLeaseOwner     string
+	CleanupLeaseExpiresAt time.Time
+	CleanupAttempt        uint32
+	CleanupNextAttemptAt  time.Time
+	CleanupCompletedAt    time.Time
+	CreatedAt             time.Time
 }
 
 type AuditAction string
@@ -118,6 +147,9 @@ const (
 	AuditActionCancel   AuditAction = "cancel"
 	AuditActionGrant    AuditAction = "grant"
 	AuditActionDownload AuditAction = "download"
+	AuditActionGCClaim  AuditAction = "gc_claim"
+	AuditActionGCRetry  AuditAction = "gc_retry"
+	AuditActionGCFinish AuditAction = "gc_finish"
 )
 
 type AuditOutcome string
@@ -223,15 +255,69 @@ type DownloadResult struct {
 	End       int64
 }
 
+type MutationAuthorization struct {
+	ConversationID valueobject.ConversationID
+	Endpoint       valueobject.Endpoint
+}
+
+type CleanupClaim struct {
+	Object         Object
+	StorageKeys    []string
+	LeaseOwner     string
+	Attempt        uint32
+	LeaseExpiresAt time.Time
+}
+
+type UploadCleanupClaim struct {
+	Upload         Upload
+	StorageKeys    []string
+	LeaseOwner     string
+	Attempt        uint32
+	LeaseExpiresAt time.Time
+}
+
+type Verification struct {
+	Upload Upload
+	Parts  []Part
+	Object Object
+	Lease  VerificationLease
+}
+
+type VerificationLease struct {
+	Token     string
+	Attempt   uint32
+	ExpiresAt time.Time
+}
+
+type CleanupRetryResult struct {
+	Replay   bool
+	Terminal bool
+}
+
+type SweepResult struct {
+	Claimed   int
+	Finalized int
+	Retried   int
+	Terminal  int
+}
+
 // Repository owns only the canonical conversation_attachment_* metadata family.
 type Repository interface {
+	ExecuteAuthorizedMutation(
+		ctx context.Context,
+		authorization MutationAuthorization,
+		operation string,
+		fn func(Repository) error,
+	) error
 	CreateUpload(
 		ctx context.Context,
 		upload Upload,
 		maximumActiveUploads int,
+		maximumMessageObjects int,
 		audit AuditRecord,
 	) (Upload, bool, error)
 	GetUpload(ctx context.Context, uploadID string, generation uint64) (Upload, error)
+	LockUpload(ctx context.Context, uploadID string, generation uint64) (Upload, error)
 	PutPart(
 		ctx context.Context,
 		part Part,
@@ -239,14 +325,23 @@ type Repository interface {
 		audit AuditRecord,
 	) (bool, []byte, error)
 	ListParts(ctx context.Context, uploadID string, generation uint64) ([]Part, error)
-	CompleteUpload(
+	StageUploadVerification(
 		ctx context.Context,
 		uploadID string,
 		generation uint64,
+		lease VerificationLease,
 		object Object,
-		completedAt time.Time,
+		stagedAt time.Time,
+	) (Upload, error)
+	FinalizeUploadVerification(
+		ctx context.Context,
+		uploadID string,
+		generation uint64,
+		lease VerificationLease,
+		object Object,
+		finalizedAt time.Time,
 		audit AuditRecord,
-	) (bool, error)
+	) (Object, bool, error)
 	CancelUpload(
 		ctx context.Context,
 		uploadID string,
@@ -261,8 +356,44 @@ type Repository interface {
 		objectID valueobject.ObjectID,
 		recipient valueobject.PTID,
 	) (Object, error)
+	ClaimExpiredUnattachedObjects(
+		ctx context.Context,
+		now time.Time,
+		leaseOwner string,
+		leaseTTL time.Duration,
+		limit int,
+	) ([]CleanupClaim, error)
+	FinalizeObjectCleanup(
+		ctx context.Context,
+		claim CleanupClaim,
+		completedAt time.Time,
+	) (bool, error)
+	RetryObjectCleanup(
+		ctx context.Context,
+		claim CleanupClaim,
+		failedAt time.Time,
+		nextAttemptAt time.Time,
+	) (CleanupRetryResult, error)
+	ClaimExpiredUploads(
+		ctx context.Context,
+		now time.Time,
+		leaseOwner string,
+		leaseTTL time.Duration,
+		limit int,
+	) ([]UploadCleanupClaim, error)
+	FinalizeUploadCleanup(
+		ctx context.Context,
+		claim UploadCleanupClaim,
+		completedAt time.Time,
+	) (bool, error)
+	RetryUploadCleanup(
+		ctx context.Context,
+		claim UploadCleanupClaim,
+		failedAt time.Time,
+		nextAttemptAt time.Time,
+	) (CleanupRetryResult, error)
 	AppendAudit(ctx context.Context, record AuditRecord) error
-	Grant(ctx context.Context, grant ports.ObjectGrant) error
+	GrantBatch(ctx context.Context, grant ports.ObjectGrantBatch) error
 }
 
 type BlobStore interface {
@@ -298,7 +429,11 @@ type IDGenerator interface {
 }
 
 type Policy struct {
-	UploadTTL              time.Duration
-	MaximumActiveUploads   int
-	MaximumConcurrentParts int
+	UploadTTL               time.Duration
+	UnattachedObjectTTL     time.Duration
+	VerificationLeaseTTL    time.Duration
+	CleanupLeaseTTL         time.Duration
+	MaximumActiveUploads    int
+	MaximumConcurrentParts  int
+	MaximumCleanupBatchSize int
 }

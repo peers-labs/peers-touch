@@ -18,6 +18,7 @@ const (
 	ErrorCodeFutureProfileVersion ErrorCode = "ACTOR_IDENTITY_FUTURE_PROFILE_VERSION"
 	ErrorCodeDeviceNotFound       ErrorCode = "ACTOR_IDENTITY_DEVICE_NOT_FOUND"
 	ErrorCodeDeviceRevoked        ErrorCode = "ACTOR_IDENTITY_DEVICE_REVOKED"
+	ErrorCodeIdentityUnavailable  ErrorCode = "ACTOR_IDENTITY_UNAVAILABLE"
 	ErrorCodePersistence          ErrorCode = "ACTOR_IDENTITY_PERSISTENCE_FAILURE"
 )
 

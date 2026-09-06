@@ -56,15 +56,23 @@ func NewService(
 	}
 	if policy.UploadTTL <= 0 ||
 		policy.UploadTTL > MaximumUploadTTL ||
+		policy.UnattachedObjectTTL <= 0 ||
+		policy.UnattachedObjectTTL > MaximumUnattachedObjectTTL ||
+		policy.VerificationLeaseTTL <= 0 ||
+		policy.VerificationLeaseTTL > MaximumVerificationLeaseTTL ||
+		policy.CleanupLeaseTTL <= 0 ||
+		policy.CleanupLeaseTTL > MaximumCleanupLeaseTTL ||
 		policy.MaximumActiveUploads <= 0 ||
 		policy.MaximumActiveUploads > MaximumActiveUploadCount ||
 		policy.MaximumConcurrentParts <= 0 ||
-		policy.MaximumConcurrentParts > MaximumConcurrentPartCount {
+		policy.MaximumConcurrentParts > MaximumConcurrentPartCount ||
+		policy.MaximumCleanupBatchSize <= 0 ||
+		policy.MaximumCleanupBatchSize > MaximumCleanupBatchSize {
 		return nil, NewError(
 			ErrorCodeInvalidArgument,
 			"attachment.new_service",
 			"policy",
-			"upload TTL and concurrency limits must be positive",
+			"upload, verification, orphan cleanup, concurrency, and batch limits must be bounded",
 		)
 	}
 
@@ -125,15 +133,6 @@ func (s *Service) Begin(
 			"does not match the canonical upload descriptor",
 		)
 	}
-	if err := s.authorizeMemberEndpoint(
-		ctx,
-		request.ConversationID,
-		authenticated,
-		"attachment.begin",
-	); err != nil {
-		return BeginResult{}, err
-	}
-
 	now := s.clock.Now().UTC()
 	uploadID, err := s.newIdentifier("attachment.begin", "upload_id")
 	if err != nil {
@@ -152,6 +151,7 @@ func (s *Service) Begin(
 		State:                TransferStateQueued,
 		ReceivedChunkBitmap:  make([]byte, (request.Spec.ChunkCount+7)/8),
 		ExpiresAt:            now.Add(s.policy.UploadTTL),
+		CleanupNextAttemptAt: now.Add(s.policy.UploadTTL),
 		CreatedAt:            now,
 		UpdatedAt:            now,
 	}
@@ -167,11 +167,24 @@ func (s *Service) Begin(
 	if err != nil {
 		return BeginResult{}, err
 	}
-	persisted, inserted, err := s.repository.CreateUpload(
+	var persisted Upload
+	var inserted bool
+	err = s.repository.ExecuteAuthorizedMutation(
 		ctx,
-		upload,
-		s.policy.MaximumActiveUploads,
-		audit,
+		mutationAuthorization(request.ConversationID, authenticated),
+		"attachment.begin",
+		func(transaction Repository) error {
+			var createErr error
+			persisted, inserted, createErr = transaction.CreateUpload(
+				ctx,
+				upload,
+				s.policy.MaximumActiveUploads,
+				MaximumMessageObjects,
+				audit,
+			)
+
+			return createErr
+		},
 	)
 	if err != nil {
 		return BeginResult{}, err
@@ -250,53 +263,61 @@ func (s *Service) PutChunk(
 	}
 	defer s.releasePart(request.UploadID)
 
-	if err := s.authorizeMemberEndpoint(
-		ctx,
-		request.ConversationID,
-		authenticated,
-		"attachment.put_chunk",
-	); err != nil {
-		return PutChunkResult{}, err
-	}
-	upload, err := s.repository.GetUpload(ctx, request.UploadID, request.Generation)
-	if err != nil {
-		return PutChunkResult{}, err
-	}
 	now := s.clock.Now().UTC()
-	if err := validateChunk(upload, authenticated, request, body, now); err != nil {
-		return PutChunkResult{}, err
-	}
+	var duplicate bool
+	var bitmap []byte
+	err := s.repository.ExecuteAuthorizedMutation(
+		ctx,
+		mutationAuthorization(request.ConversationID, authenticated),
+		"attachment.put_chunk",
+		func(transaction Repository) error {
+			upload, lockErr := transaction.LockUpload(
+				ctx,
+				request.UploadID,
+				request.Generation,
+			)
+			if lockErr != nil {
+				return lockErr
+			}
+			if validateErr := validateChunk(upload, authenticated, request, body, now); validateErr != nil {
+				return validateErr
+			}
 
-	storageKey := partStorageKey(upload, request)
-	if err := s.blobs.Save(ctx, storageKey, bytes.NewReader(body)); err != nil {
-		return PutChunkResult{}, WrapError(
-			ErrorCodePersistence,
-			"attachment.put_chunk.save_blob",
-			err,
-		)
-	}
-	audit, err := s.audit(
-		AuditActionPart,
-		AuditOutcomeCommitted,
-		upload,
-		Object{},
-		request.ChunkIndex,
-		request.CiphertextSize,
-		now,
+			storageKey := partStorageKey(upload, request)
+			if saveErr := s.blobs.Save(ctx, storageKey, bytes.NewReader(body)); saveErr != nil {
+				return WrapError(
+					ErrorCodePersistence,
+					"attachment.put_chunk.save_blob",
+					saveErr,
+				)
+			}
+			audit, auditErr := s.audit(
+				AuditActionPart,
+				AuditOutcomeCommitted,
+				upload,
+				Object{},
+				request.ChunkIndex,
+				request.CiphertextSize,
+				now,
+			)
+			if auditErr != nil {
+				return auditErr
+			}
+			var putErr error
+			duplicate, bitmap, putErr = transaction.PutPart(ctx, Part{
+				UploadID:       upload.UploadID,
+				Generation:     upload.Generation,
+				ChunkIndex:     request.ChunkIndex,
+				ByteOffset:     request.ByteOffset,
+				CiphertextSize: request.CiphertextSize,
+				CiphertextHash: request.CiphertextHash,
+				StorageKey:     storageKey,
+				CreatedAt:      now,
+			}, now, audit)
+
+			return putErr
+		},
 	)
-	if err != nil {
-		return PutChunkResult{}, err
-	}
-	duplicate, bitmap, err := s.repository.PutPart(ctx, Part{
-		UploadID:       upload.UploadID,
-		Generation:     upload.Generation,
-		ChunkIndex:     request.ChunkIndex,
-		ByteOffset:     request.ByteOffset,
-		CiphertextSize: request.CiphertextSize,
-		CiphertextHash: request.CiphertextHash,
-		StorageKey:     storageKey,
-		CreatedAt:      now,
-	}, now, audit)
 	if err != nil {
 		return PutChunkResult{}, err
 	}
@@ -330,123 +351,82 @@ func (s *Service) Complete(
 			"is required",
 		)
 	}
-	if err := s.authorizeMemberEndpoint(
+
+	verification, completed, err := s.stageVerification(
 		ctx,
-		request.ConversationID,
 		authenticated,
-		"attachment.complete",
-	); err != nil {
-		return CompleteResult{}, err
-	}
-	upload, err := s.repository.GetUpload(ctx, request.UploadID, request.Generation)
+		request,
+	)
 	if err != nil {
 		return CompleteResult{}, err
 	}
-	if upload.ConversationID != request.ConversationID || upload.Uploader != authenticated {
-		return CompleteResult{}, NewError(
-			ErrorCodeUnauthorized,
-			"attachment.complete",
-			"upload",
-			"is not owned by the authenticated conversation endpoint",
-		)
+	if completed {
+		if err := s.deletePartBlobs(ctx, verification.Parts); err != nil {
+			return CompleteResult{
+				Object:    CloneObject(verification.Object),
+				Duplicate: true,
+			}, err
+		}
+
+		return CompleteResult{Object: CloneObject(verification.Object), Duplicate: true}, nil
 	}
-	if upload.DescriptorCommitment != request.DescriptorCommitment {
-		return CompleteResult{}, NewError(
-			ErrorCodePartConflict,
-			"attachment.complete",
-			"descriptor_commitment_sha256",
-			"does not match the upload",
-		)
-	}
-	if upload.State == TransferStateComplete {
-		return s.completedReplay(ctx, upload)
-	}
-	if upload.State != TransferStateTransferring {
-		return CompleteResult{}, NewError(
-			ErrorCodeInvalidState,
-			"attachment.complete",
-			"state",
-			"is not receiving chunks",
-		)
-	}
-	now := s.clock.Now().UTC()
-	if !upload.ExpiresAt.After(now) {
-		return CompleteResult{}, NewError(
-			ErrorCodeUploadExpired,
-			"attachment.complete",
-			"expires_at",
-			"has elapsed",
-		)
-	}
-	parts, err := s.repository.ListParts(ctx, upload.UploadID, upload.Generation)
-	if err != nil {
-		return CompleteResult{}, err
-	}
-	if err := validateCompleteParts(upload, parts); err != nil {
+	if err := s.deleteSupersededVerificationBlobs(ctx, verification); err != nil {
 		return CompleteResult{}, err
 	}
 
-	object := objectFromUpload(upload, now)
-	sequenceReader := &partSequenceReader{ctx: ctx, blobs: s.blobs, parts: parts}
-	defer sequenceReader.Close()
-	wholeHash := sha256.New()
-	counting := &countingReader{reader: io.TeeReader(sequenceReader, wholeHash)}
-	if err := s.blobs.Save(ctx, object.StorageKey, counting); err != nil {
-		return CompleteResult{}, WrapError(
-			ErrorCodePersistence,
-			"attachment.complete.save_object",
-			err,
-		)
+	if err := s.assembleVerificationObject(ctx, verification); err != nil {
+		return CompleteResult{}, err
 	}
-	if counting.read != upload.Spec.CiphertextSize ||
-		!bytes.Equal(wholeHash.Sum(nil), upload.Spec.CiphertextHash.Bytes()) {
-		return CompleteResult{}, errors.Join(
-			NewError(
-				ErrorCodeIntegrityFailed,
-				"attachment.complete",
-				"ciphertext_sha256",
-				"does not match the immutable upload commitment",
-			),
-			s.blobs.Delete(ctx, object.StorageKey),
-		)
-	}
+
+	finalizedAt := s.clock.Now().UTC()
 	audit, err := s.audit(
 		AuditActionComplete,
 		AuditOutcomeCommitted,
-		upload,
-		object,
+		verification.Upload,
+		verification.Object,
 		0,
-		object.Spec.CiphertextSize,
-		now,
+		verification.Object.Spec.CiphertextSize,
+		finalizedAt,
 	)
 	if err != nil {
 		return CompleteResult{}, err
 	}
-	duplicate, err := s.repository.CompleteUpload(
+	var object Object
+	var duplicate bool
+	err = s.repository.ExecuteAuthorizedMutation(
 		ctx,
-		upload.UploadID,
-		upload.Generation,
-		object,
-		now,
-		audit,
+		mutationAuthorization(request.ConversationID, authenticated),
+		"attachment.complete.finalize",
+		func(transaction Repository) error {
+			var finalizeErr error
+			object, duplicate, finalizeErr = transaction.FinalizeUploadVerification(
+				ctx,
+				request.UploadID,
+				request.Generation,
+				verification.Lease,
+				verification.Object,
+				finalizedAt,
+				audit,
+			)
+
+			return finalizeErr
+		},
 	)
 	if err != nil {
-		return CompleteResult{}, err
-	}
-	if duplicate {
-		return CompleteResult{Object: CloneObject(object), Duplicate: true}, nil
-	}
-	for _, part := range parts {
-		if err := s.blobs.Delete(ctx, part.StorageKey); err != nil {
-			return CompleteResult{Object: CloneObject(object)}, WrapError(
-				ErrorCodePersistence,
-				"attachment.complete.delete_part",
+		if IsCode(err, ErrorCodeRetryLater) {
+			return CompleteResult{}, errors.Join(
 				err,
+				s.blobs.Delete(ctx, verification.Object.StorageKey),
 			)
 		}
+
+		return CompleteResult{}, err
+	}
+	if err := s.deletePartBlobs(ctx, verification.Parts); err != nil {
+		return CompleteResult{Object: CloneObject(object), Duplicate: duplicate}, err
 	}
 
-	return CompleteResult{Object: CloneObject(object)}, nil
+	return CompleteResult{Object: CloneObject(object), Duplicate: duplicate}, nil
 }
 
 func (s *Service) Cancel(
@@ -463,45 +443,53 @@ func (s *Service) Cancel(
 	); err != nil {
 		return 0, err
 	}
-	if err := s.authorizeMemberEndpoint(
-		ctx,
-		request.ConversationID,
-		authenticated,
-		"attachment.cancel",
-	); err != nil {
-		return 0, err
-	}
-	upload, err := s.repository.GetUpload(ctx, request.UploadID, request.Generation)
-	if err != nil {
-		return 0, err
-	}
-	if upload.ConversationID != request.ConversationID || upload.Uploader != authenticated {
-		return 0, NewError(
-			ErrorCodeUnauthorized,
-			"attachment.cancel",
-			"upload",
-			"is not owned by the authenticated conversation endpoint",
-		)
-	}
 	now := s.clock.Now().UTC()
-	audit, err := s.audit(
-		AuditActionCancel,
-		AuditOutcomeCommitted,
-		upload,
-		Object{},
-		0,
-		0,
-		now,
-	)
-	if err != nil {
-		return 0, err
-	}
-	parts, _, err := s.repository.CancelUpload(
+	var parts []Part
+	err := s.repository.ExecuteAuthorizedMutation(
 		ctx,
-		upload.UploadID,
-		upload.Generation,
-		now,
-		audit,
+		mutationAuthorization(request.ConversationID, authenticated),
+		"attachment.cancel",
+		func(transaction Repository) error {
+			upload, lockErr := transaction.LockUpload(
+				ctx,
+				request.UploadID,
+				request.Generation,
+			)
+			if lockErr != nil {
+				return lockErr
+			}
+			if upload.ConversationID != request.ConversationID ||
+				upload.Uploader != authenticated {
+				return NewError(
+					ErrorCodeUnauthorized,
+					"attachment.cancel",
+					"upload",
+					"is not owned by the authenticated conversation endpoint",
+				)
+			}
+			audit, auditErr := s.audit(
+				AuditActionCancel,
+				AuditOutcomeCommitted,
+				upload,
+				Object{},
+				0,
+				0,
+				now,
+			)
+			if auditErr != nil {
+				return auditErr
+			}
+			var cancelErr error
+			parts, _, cancelErr = transaction.CancelUpload(
+				ctx,
+				upload.UploadID,
+				upload.Generation,
+				now,
+				audit,
+			)
+
+			return cancelErr
+		},
 	)
 	if err != nil {
 		return 0, err
@@ -517,6 +505,127 @@ func (s *Service) Cancel(
 	}
 
 	return TransferStateCancelled, nil
+}
+
+// SweepExpired runs the bounded, lease-fenced attachment reclamation lifecycle.
+func (s *Service) SweepExpired(
+	ctx context.Context,
+	workerID string,
+) (SweepResult, error) {
+	if !validIdentifier(workerID, 128) {
+		return SweepResult{}, NewError(
+			ErrorCodeInvalidArgument,
+			"attachment.sweep_expired",
+			"worker_id",
+			"is required",
+		)
+	}
+
+	now := s.clock.Now().UTC()
+	claims, err := s.repository.ClaimExpiredUnattachedObjects(
+		ctx,
+		now,
+		workerID,
+		s.policy.CleanupLeaseTTL,
+		s.policy.MaximumCleanupBatchSize,
+	)
+	if err != nil {
+		return SweepResult{}, err
+	}
+	remaining := s.policy.MaximumCleanupBatchSize - len(claims)
+	var uploadClaims []UploadCleanupClaim
+	if remaining > 0 {
+		uploadClaims, err = s.repository.ClaimExpiredUploads(
+			ctx,
+			now,
+			workerID,
+			s.policy.CleanupLeaseTTL,
+			remaining,
+		)
+		if err != nil {
+			return SweepResult{}, err
+		}
+	}
+	result := SweepResult{Claimed: len(claims) + len(uploadClaims)}
+	failures := make([]error, 0)
+	for _, claim := range claims {
+		if deleteErr := s.deleteStorageKeys(ctx, claim.StorageKeys); deleteErr != nil {
+			failedAt := s.clock.Now().UTC()
+			failures = append(failures, WrapError(
+				ErrorCodePersistence,
+				"attachment.sweep_expired.delete_object_blobs",
+				deleteErr,
+			))
+			retry, retryErr := s.retryObjectCleanup(ctx, claim, failedAt)
+			if retryErr != nil {
+				failures = append(failures, retryErr)
+			} else if retry.Terminal {
+				result.Terminal++
+			} else {
+				result.Retried++
+			}
+			continue
+		}
+
+		finalizedAt := s.clock.Now().UTC()
+		if _, finalizeErr := s.repository.FinalizeObjectCleanup(
+			ctx,
+			claim,
+			finalizedAt,
+		); finalizeErr != nil {
+			failures = append(failures, finalizeErr)
+			retry, retryErr := s.retryObjectCleanup(ctx, claim, finalizedAt)
+			if retryErr != nil {
+				failures = append(failures, retryErr)
+			} else if retry.Terminal {
+				result.Terminal++
+			} else {
+				result.Retried++
+			}
+			continue
+		}
+		result.Finalized++
+	}
+	for _, claim := range uploadClaims {
+		if deleteErr := s.deleteStorageKeys(ctx, claim.StorageKeys); deleteErr != nil {
+			failedAt := s.clock.Now().UTC()
+			failures = append(failures, WrapError(
+				ErrorCodePersistence,
+				"attachment.sweep_expired.delete_upload_blobs",
+				deleteErr,
+			))
+			retry, retryErr := s.retryUploadCleanup(ctx, claim, failedAt)
+			if retryErr != nil {
+				failures = append(failures, retryErr)
+			} else if retry.Terminal {
+				result.Terminal++
+			} else {
+				result.Retried++
+			}
+			continue
+		}
+
+		finalizedAt := s.clock.Now().UTC()
+		if _, finalizeErr := s.repository.FinalizeUploadCleanup(
+			ctx,
+			claim,
+			finalizedAt,
+		); finalizeErr != nil {
+			failures = append(failures, finalizeErr)
+			retry, retryErr := s.retryUploadCleanup(ctx, claim, finalizedAt)
+			if retryErr != nil {
+				failures = append(failures, retryErr)
+			} else if retry.Terminal {
+				result.Terminal++
+			} else {
+				result.Retried++
+			}
+			continue
+		}
+		result.Finalized++
+	}
+
+	return result, errors.Join(failures...)
 }
 
 // Download authorizes through the immutable event-time grant. Current
@@ -723,33 +832,6 @@ func CloneObject(object Object) Object {
 	return cloned
 }
 
-func (s *Service) completedReplay(
-	ctx context.Context,
-	upload Upload,
-) (CompleteResult, error) {
-	object, err := s.repository.GetObject(ctx, upload.ObjectID)
-	if err != nil {
-		return CompleteResult{}, err
-	}
-	audit, err := s.audit(
-		AuditActionComplete,
-		AuditOutcomeReplay,
-		upload,
-		object,
-		0,
-		object.Spec.CiphertextSize,
-		s.clock.Now().UTC(),
-	)
-	if err != nil {
-		return CompleteResult{}, err
-	}
-	if err := s.repository.AppendAudit(ctx, audit); err != nil {
-		return CompleteResult{}, err
-	}
-
-	return CompleteResult{Object: CloneObject(object), Duplicate: true}, nil
-}
-
 func (s *Service) validateAuthorityRequest(
 	operation string,
 	conversationID valueobject.ConversationID,
@@ -788,6 +870,453 @@ func (s *Service) validateUploadReference(
 	}
 
 	return nil
+}
+
+func mutationAuthorization(
+	conversationID valueobject.ConversationID,
+	endpoint valueobject.Endpoint,
+) MutationAuthorization {
+	return MutationAuthorization{
+		ConversationID: conversationID,
+		Endpoint:       endpoint,
+	}
+}
+
+func (s *Service) stageVerification(
+	ctx context.Context,
+	authenticated valueobject.Endpoint,
+	request CompleteRequest,
+) (Verification, bool, error) {
+	now := s.clock.Now().UTC()
+	var verification Verification
+	var completed bool
+	err := s.repository.ExecuteAuthorizedMutation(
+		ctx,
+		mutationAuthorization(request.ConversationID, authenticated),
+		"attachment.complete.stage",
+		func(transaction Repository) error {
+			upload, lockErr := transaction.LockUpload(
+				ctx,
+				request.UploadID,
+				request.Generation,
+			)
+			if lockErr != nil {
+				return lockErr
+			}
+			if upload.ConversationID != request.ConversationID ||
+				upload.Uploader != authenticated {
+				return NewError(
+					ErrorCodeUnauthorized,
+					"attachment.complete",
+					"upload",
+					"is not owned by the authenticated conversation endpoint",
+				)
+			}
+			if upload.DescriptorCommitment != request.DescriptorCommitment {
+				return NewError(
+					ErrorCodePartConflict,
+					"attachment.complete",
+					"descriptor_commitment_sha256",
+					"does not match the upload",
+				)
+			}
+			parts, listErr := transaction.ListParts(
+				ctx,
+				upload.UploadID,
+				upload.Generation,
+			)
+			if listErr != nil {
+				return listErr
+			}
+			stage := func(attempt uint32) error {
+				lease := newVerificationLease(
+					upload,
+					attempt,
+					now,
+					s.policy.VerificationLeaseTTL,
+				)
+				object := objectFromUpload(
+					upload,
+					lease,
+					now,
+					now.Add(s.policy.UnattachedObjectTTL),
+				)
+				staged, stageErr := transaction.StageUploadVerification(
+					ctx,
+					upload.UploadID,
+					upload.Generation,
+					lease,
+					object,
+					now,
+				)
+				if stageErr != nil {
+					return stageErr
+				}
+				stagedLease, leaseErr := verificationLeaseFromUpload(staged)
+				if leaseErr != nil {
+					return leaseErr
+				}
+				verification = Verification{
+					Upload: staged,
+					Parts:  parts,
+					Object: objectFromUpload(
+						staged,
+						stagedLease,
+						staged.VerificationStartedAt,
+						staged.VerificationStartedAt.Add(s.policy.UnattachedObjectTTL),
+					),
+					Lease: stagedLease,
+				}
+
+				return nil
+			}
+
+			switch upload.State {
+			case TransferStateComplete:
+				object, objectErr := transaction.GetObject(ctx, upload.ObjectID)
+				if objectErr != nil {
+					return objectErr
+				}
+				if object.State != ObjectStateCompleteUnattached &&
+					object.State != ObjectStateAttached {
+					return NewError(
+						ErrorCodeInvalidState,
+						"attachment.complete",
+						"object",
+						"is no longer available for completion replay",
+					)
+				}
+				audit, auditErr := s.audit(
+					AuditActionComplete,
+					AuditOutcomeReplay,
+					upload,
+					object,
+					0,
+					object.Spec.CiphertextSize,
+					now,
+				)
+				if auditErr != nil {
+					return auditErr
+				}
+				if auditErr = transaction.AppendAudit(ctx, audit); auditErr != nil {
+					return auditErr
+				}
+				verification = Verification{
+					Upload: upload,
+					Parts:  parts,
+					Object: object,
+				}
+				completed = true
+
+				return nil
+			case TransferStateTransferring:
+				if !upload.ExpiresAt.After(now) {
+					return NewError(
+						ErrorCodeUploadExpired,
+						"attachment.complete",
+						"expires_at",
+						"has elapsed",
+					)
+				}
+				if validationErr := validateCompleteParts(upload, parts); validationErr != nil {
+					return validationErr
+				}
+
+				return stage(1)
+			case TransferStateVerifying:
+				if validationErr := validateCompleteParts(upload, parts); validationErr != nil {
+					return validationErr
+				}
+				lease, leaseErr := verificationLeaseFromUpload(upload)
+				if leaseErr != nil {
+					return leaseErr
+				}
+				if lease.ExpiresAt.After(now) {
+					return NewRetryError(
+						"attachment.complete",
+						lease.ExpiresAt.Sub(now),
+						"another verifier owns the active upload lease",
+					)
+				}
+				if lease.Attempt >= MaximumVerificationAttemptCount {
+					return NewError(
+						ErrorCodeInvalidState,
+						"attachment.complete",
+						"verification_attempt",
+						"has reached the bounded verification attempt limit",
+					)
+				}
+
+				return stage(lease.Attempt + 1)
+			default:
+				return NewError(
+					ErrorCodeInvalidState,
+					"attachment.complete",
+					"state",
+					"is not eligible for completion",
+				)
+			}
+		},
+	)
+	if err != nil {
+		return Verification{}, false, err
+	}
+
+	return verification, completed, nil
+}
+
+func (s *Service) assembleVerificationObject(
+	ctx context.Context,
+	verification Verification,
+) error {
+	sequenceReader := &partSequenceReader{
+		ctx:   ctx,
+		blobs: s.blobs,
+		parts: verification.Parts,
+	}
+	defer sequenceReader.Close()
+	wholeHash := sha256.New()
+	counting := &countingReader{reader: io.TeeReader(sequenceReader, wholeHash)}
+	if err := s.blobs.Save(
+		ctx,
+		verification.Object.StorageKey,
+		counting,
+	); err != nil {
+		return errors.Join(
+			WrapError(
+				ErrorCodePersistence,
+				"attachment.complete.save_object",
+				err,
+			),
+			s.blobs.Delete(ctx, verification.Object.StorageKey),
+		)
+	}
+	if counting.read != verification.Upload.Spec.CiphertextSize ||
+		!bytes.Equal(
+			wholeHash.Sum(nil),
+			verification.Upload.Spec.CiphertextHash.Bytes(),
+		) {
+		return errors.Join(
+			NewError(
+				ErrorCodeIntegrityFailed,
+				"attachment.complete",
+				"ciphertext_sha256",
+				"does not match the immutable upload commitment",
+			),
+			s.blobs.Delete(ctx, verification.Object.StorageKey),
+		)
+	}
+
+	return nil
+}
+
+func newVerificationLease(
+	upload Upload,
+	attempt uint32,
+	startedAt time.Time,
+	ttl time.Duration,
+) VerificationLease {
+	return VerificationLease{
+		Token: VerificationToken(
+			upload.UploadID,
+			upload.Generation,
+			upload.DescriptorCommitment,
+			attempt,
+		),
+		Attempt:   attempt,
+		ExpiresAt: startedAt.Add(ttl),
+	}
+}
+
+func verificationLeaseFromUpload(upload Upload) (VerificationLease, error) {
+	expectedToken := VerificationToken(
+		upload.UploadID,
+		upload.Generation,
+		upload.DescriptorCommitment,
+		upload.VerificationAttempt,
+	)
+	if upload.VerificationStartedAt.IsZero() ||
+		upload.VerificationLeaseExpiresAt.IsZero() ||
+		!upload.VerificationLeaseExpiresAt.After(upload.VerificationStartedAt) ||
+		upload.VerificationLeaseExpiresAt.Sub(upload.VerificationStartedAt) >
+			MaximumVerificationLeaseTTL ||
+		upload.VerificationAttempt == 0 ||
+		upload.VerificationAttempt > MaximumVerificationAttemptCount ||
+		upload.VerificationToken != expectedToken {
+		return VerificationLease{}, NewError(
+			ErrorCodeIntegrityFailed,
+			"attachment.complete",
+			"verification_lease",
+			"does not match the durable bounded verification fence",
+		)
+	}
+
+	return VerificationLease{
+		Token:     upload.VerificationToken,
+		Attempt:   upload.VerificationAttempt,
+		ExpiresAt: upload.VerificationLeaseExpiresAt,
+	}, nil
+}
+
+// VerificationToken derives the durable fencing token for one bounded
+// verification attempt.
+func VerificationToken(
+	uploadID string,
+	generation uint64,
+	descriptorCommitment valueobject.Hash,
+	attempt uint32,
+) string {
+	objectID, storageRef, _ := ImmutableObjectIdentity(uploadID, descriptorCommitment)
+
+	return valueobject.HashBytes(valueobject.CanonicalTuple(
+		[]byte("conversation-attachment-verification"),
+		[]byte(uploadID),
+		[]byte(fmt.Sprintf("%d", generation)),
+		descriptorCommitment.Bytes(),
+		[]byte(objectID),
+		[]byte(storageRef),
+		[]byte(fmt.Sprintf("%d", attempt)),
+	)).String()
+}
+
+// VerificationObjectStorageKey isolates verifier attempts so a stale verifier
+// cannot delete or overwrite the blob finalized by a newer fencing token.
+func VerificationObjectStorageKey(storageRef string, token string) string {
+	return fmt.Sprintf(
+		"conversation-attachments/verifications/%s/%s",
+		storageRef,
+		token,
+	)
+}
+
+func (s *Service) deleteSupersededVerificationBlobs(
+	ctx context.Context,
+	verification Verification,
+) error {
+	keys := make([]string, 0, verification.Lease.Attempt-1)
+	for attempt := uint32(1); attempt < verification.Lease.Attempt; attempt++ {
+		token := VerificationToken(
+			verification.Upload.UploadID,
+			verification.Upload.Generation,
+			verification.Upload.DescriptorCommitment,
+			attempt,
+		)
+		keys = append(
+			keys,
+			VerificationObjectStorageKey(verification.Object.StorageRef, token),
+		)
+	}
+	if err := s.deleteStorageKeys(ctx, keys); err != nil {
+		return WrapError(
+			ErrorCodePersistence,
+			"attachment.complete.delete_superseded_verifications",
+			err,
+		)
+	}
+
+	return nil
+}
+
+func (s *Service) deletePartBlobs(ctx context.Context, parts []Part) error {
+	keys := make([]string, 0, len(parts))
+	for _, part := range parts {
+		keys = append(keys, part.StorageKey)
+	}
+	if err := s.deleteStorageKeys(ctx, keys); err != nil {
+		return WrapError(
+			ErrorCodePersistence,
+			"attachment.complete.delete_parts",
+			err,
+		)
+	}
+
+	return nil
+}
+
+func (s *Service) deleteStorageKeys(ctx context.Context, keys []string) error {
+	canonical := append([]string(nil), keys...)
+	sort.Strings(canonical)
+	previous := ""
+	for _, key := range canonical {
+		if key == previous {
+			continue
+		}
+		if !validAttachmentStorageKey(key) {
+			return NewError(
+				ErrorCodeIntegrityFailed,
+				"attachment.cleanup.delete",
+				"storage_key",
+				"is not owned by the cleanup claim",
+			)
+		}
+		if err := s.blobs.Delete(ctx, key); err != nil {
+			return err
+		}
+		previous = key
+	}
+
+	return nil
+}
+
+func (s *Service) retryObjectCleanup(
+	ctx context.Context,
+	claim CleanupClaim,
+	failedAt time.Time,
+) (CleanupRetryResult, error) {
+	delay := cleanupRetryDelay(claim.Object.ObjectID, claim.Attempt)
+	result, err := s.repository.RetryObjectCleanup(
+		ctx,
+		claim,
+		failedAt,
+		failedAt.Add(delay),
+	)
+
+	return result, err
+}
+
+func (s *Service) retryUploadCleanup(
+	ctx context.Context,
+	claim UploadCleanupClaim,
+	failedAt time.Time,
+) (CleanupRetryResult, error) {
+	delay := cleanupRetryDelay(valueobject.ObjectID(claim.Upload.UploadID), claim.Attempt)
+	result, err := s.repository.RetryUploadCleanup(
+		ctx,
+		claim,
+		failedAt,
+		failedAt.Add(delay),
+	)
+
+	return result, err
+}
+
+func cleanupRetryDelay(objectID valueobject.ObjectID, attempt uint32) time.Duration {
+	exponent := uint32(0)
+	if attempt > 0 {
+		exponent = attempt - 1
+	}
+	if exponent > 8 {
+		exponent = 8
+	}
+	delay := MinimumCleanupRetryDelay << exponent
+	if delay >= MaximumCleanupRetryDelay {
+		return MaximumCleanupRetryDelay
+	}
+	jitterRange := delay / 2
+	if jitterRange <= 0 {
+		return delay
+	}
+	hash := valueobject.HashBytes(valueobject.CanonicalTuple(
+		[]byte("conversation-attachment-cleanup-retry"),
+		[]byte(objectID),
+		[]byte(fmt.Sprintf("%d", attempt)),
+	))
+	jitter := time.Duration(binary.BigEndian.Uint64(hash[:8]) % uint64(jitterRange))
+	if delay+jitter > MaximumCleanupRetryDelay {
+		return MaximumCleanupRetryDelay
+	}
+
+	return delay + jitter
 }
 
 func (s *Service) authorizeMemberEndpoint(
@@ -918,9 +1447,20 @@ func validateCompleteParts(upload Upload, parts []Part) error {
 	sort.Slice(parts, func(left int, right int) bool {
 		return parts[left].ChunkIndex < parts[right].ChunkIndex
 	})
+	var totalSize uint64
 	for index, part := range parts {
-		if part.ChunkIndex != uint32(index) ||
-			part.CiphertextHash != upload.Spec.ChunkHashes[index] {
+		expectedSize := uint64(upload.Spec.ChunkSize + upload.Spec.TagSize)
+		if index == len(parts)-1 {
+			expectedSize = upload.Spec.CiphertextSize -
+				uint64(upload.Spec.ChunkCount-1)*uint64(upload.Spec.ChunkSize+upload.Spec.TagSize)
+		}
+		if part.UploadID != upload.UploadID ||
+			part.Generation != upload.Generation ||
+			part.ChunkIndex != uint32(index) ||
+			part.ByteOffset != uint64(index)*uint64(upload.Spec.ChunkSize+upload.Spec.TagSize) ||
+			part.CiphertextSize != expectedSize ||
+			part.CiphertextHash != upload.Spec.ChunkHashes[index] ||
+			!validAttachmentStorageKey(part.StorageKey) {
 			return NewError(
 				ErrorCodePartConflict,
 				"attachment.complete",
@@ -928,28 +1468,35 @@ func validateCompleteParts(upload Upload, parts []Part) error {
 				"do not match the immutable chunk commitments",
 			)
 		}
+		totalSize += part.CiphertextSize
+	}
+	if totalSize != upload.Spec.CiphertextSize {
+		return NewError(
+			ErrorCodePartConflict,
+			"attachment.complete",
+			"ciphertext_size",
+			"does not match the immutable upload",
+		)
 	}
 
 	return nil
 }
 
-func objectFromUpload(upload Upload, createdAt time.Time) Object {
-	objectHash := valueobject.HashBytes(valueobject.CanonicalTuple(
-		[]byte("conversation-attachment-object"),
-		[]byte(upload.UploadID),
-		upload.DescriptorCommitment.Bytes(),
-	))
-	storageHash := valueobject.HashBytes(valueobject.CanonicalTuple(
-		[]byte("conversation-attachment-storage"),
-		[]byte(upload.UploadID),
-		upload.DescriptorCommitment.Bytes(),
-	))
-	storageRef := storageHash.String()
+func objectFromUpload(
+	upload Upload,
+	lease VerificationLease,
+	createdAt time.Time,
+	expiresAt time.Time,
+) Object {
+	objectID, storageRef, _ := ImmutableObjectIdentity(
+		upload.UploadID,
+		upload.DescriptorCommitment,
+	)
 
 	return Object{
-		ObjectID:             valueobject.ObjectID(objectHash.String()),
+		ObjectID:             objectID,
 		StorageRef:           storageRef,
-		StorageKey:           objectStorageKey(storageRef),
+		StorageKey:           VerificationObjectStorageKey(storageRef, lease.Token),
 		ConversationID:       upload.ConversationID,
 		MessageID:            upload.MessageID,
 		AttachmentID:         upload.AttachmentID,
@@ -957,22 +1504,70 @@ func objectFromUpload(upload Upload, createdAt time.Time) Object {
 		Spec:                 CloneUploadSpec(upload.Spec),
 		DescriptorCommitment: upload.DescriptorCommitment,
 		State:                ObjectStateCompleteUnattached,
+		ExpiresAt:            expiresAt,
+		CleanupNextAttemptAt: expiresAt,
 		CreatedAt:            createdAt,
 	}
 }
 
+// ImmutableObjectIdentity derives the only object and storage identity allowed
+// for a completed upload.
+func ImmutableObjectIdentity(
+	uploadID string,
+	descriptorCommitment valueobject.Hash,
+) (valueobject.ObjectID, string, string) {
+	objectHash := valueobject.HashBytes(valueobject.CanonicalTuple(
+		[]byte("conversation-attachment-object"),
+		[]byte(uploadID),
+		descriptorCommitment.Bytes(),
+	))
+	storageHash := valueobject.HashBytes(valueobject.CanonicalTuple(
+		[]byte("conversation-attachment-storage"),
+		[]byte(uploadID),
+		descriptorCommitment.Bytes(),
+	))
+	storageRef := storageHash.String()
+
+	return valueobject.ObjectID(objectHash.String()), storageRef, objectStorageKey(storageRef)
+}
+
 func partStorageKey(upload Upload, request PutChunkRequest) string {
-	return fmt.Sprintf(
-		"conversation-attachments/uploads/%s/%d/%d/%s",
+	return ImmutablePartStorageKey(
 		upload.UploadID,
 		upload.Generation,
 		request.ChunkIndex,
-		request.CiphertextHash.String(),
+		request.CiphertextHash,
+	)
+}
+
+// ImmutablePartStorageKey derives the only blob key allowed for an upload part.
+func ImmutablePartStorageKey(
+	uploadID string,
+	generation uint64,
+	chunkIndex uint32,
+	ciphertextHash valueobject.Hash,
+) string {
+	return fmt.Sprintf(
+		"conversation-attachments/uploads/%s/%d/%d/%s",
+		uploadID,
+		generation,
+		chunkIndex,
+		ciphertextHash.String(),
 	)
 }
 
 func objectStorageKey(storageRef string) string {
 	return "conversation-attachments/objects/" + storageRef
+}
+
+func validAttachmentStorageKey(key string) bool {
+	return key != "" &&
+		len(key) <= 512 &&
+		strings.TrimSpace(key) == key &&
+		strings.HasPrefix(key, "conversation-attachments/") &&
+		!strings.HasPrefix(key, "/") &&
+		!strings.Contains(key, `\`) &&
+		!strings.Contains(key, "..")
 }
 
 func normalizeRange(start int64, end int64, size uint64) (int64, int64, error) {

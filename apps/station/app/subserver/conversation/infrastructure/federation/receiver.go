@@ -5,10 +5,14 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	conversationports "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	chatmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
@@ -259,16 +263,11 @@ func (r *Receiver) receiveAuthorityCommand(
 			fmt.Errorf("committed event does not identify the local authority Station"),
 		)
 	}
-	if outcome.Result.GetRejectCode() ==
-		chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_COMMAND_CONFLICT {
-		return federationdelivery.PayloadHashConflictResult(), nil
-	}
 	if _, err := r.sender.EnqueueAuthorityResult(
 		ctx,
 		transaction.Outbox(),
 		proposal,
 		outcome.Result,
-		frame.GetOrderingSequence(),
 	); err != nil {
 		return federationdelivery.Result{}, err
 	}
@@ -309,6 +308,7 @@ func (r *Receiver) deliverProposalRejection(
 		proposal.GetHomeStationPeerId() != frame.GetSourceStationPeerId() ||
 		proposal.GetAuthorityStationPeerId() != frame.GetTargetStationPeerId() ||
 		proposal.GetAuthorityStationPeerId() != r.localStationPeerID ||
+		len(proposal.GetCommandSha256()) != sha256.Size ||
 		proposal.GetCreatedAtUnixMs() <= 0 ||
 		!time.UnixMilli(proposal.GetCreatedAtUnixMs()).
 			Add(r.sender.frameLifetime).
@@ -326,7 +326,6 @@ func (r *Receiver) deliverProposalRejection(
 		transaction.Outbox(),
 		proposal,
 		result,
-		frame.GetOrderingSequence(),
 	); err != nil {
 		return federationdelivery.Result{}, err
 	}
@@ -346,17 +345,24 @@ func (r *Receiver) receiveAuthorityResult(
 			fmt.Errorf("transaction-bound database is required"),
 		)
 	}
-	if err := validateCanonicalFramePayload(frame, result); err != nil ||
-		validateAuthorityResult(result, frame) != nil {
+	if err := validateCanonicalFramePayload(frame, result); err != nil {
+		return federationdelivery.TerminalResult(federationdelivery.FrameErrorInvalidFrame), nil
+	}
+	originatingCommandSHA256, err := validateAuthorityResult(result, frame)
+	if err != nil {
 		return federationdelivery.TerminalResult(federationdelivery.FrameErrorInvalidFrame), nil
 	}
 	duplicate, err := r.authorityResults.ApplyAuthorityResult(
 		ctx,
 		transaction,
 		proto.Clone(result).(*chatmodel.ConversationCommandResultDelivery),
+		originatingCommandSHA256,
 		frame.GetSourceStationPeerId(),
 	)
 	if err != nil {
+		if errors.Is(err, ErrAuthorityResultCommandHashMismatch) {
+			return federationdelivery.PayloadHashConflictResult(), nil
+		}
 		return federationdelivery.Result{}, fmt.Errorf(
 			"conversation Federation: apply authority result: %w",
 			err,
@@ -381,14 +387,21 @@ func (r *Receiver) receiveDeviceDelivery(
 			fmt.Errorf("transaction-bound database is required"),
 		)
 	}
-	if err := validateCanonicalFramePayload(frame, item); err != nil ||
-		validateDeviceDelivery(item, frame) != nil {
+	if err := validateCanonicalFramePayload(frame, item); err != nil {
+		return federationdelivery.TerminalResult(federationdelivery.FrameErrorInvalidFrame), nil
+	}
+	intent, orderingSequence, err := canonicalDeviceDelivery(
+		item,
+		frame.GetSourceStationPeerId(),
+	)
+	if err != nil ||
+		validateDeviceDeliveryFrame(item, intent, orderingSequence, frame) != nil {
 		return federationdelivery.TerminalResult(federationdelivery.FrameErrorInvalidFrame), nil
 	}
 	duplicate, err := r.deviceDeliveries.ApplyDeviceDelivery(
 		ctx,
 		transaction,
-		proto.Clone(item).(*chatmodel.DurableDeviceInboxItem),
+		intent,
 		frame.GetSourceStationPeerId(),
 	)
 	if err != nil {
@@ -620,14 +633,30 @@ func validateAuthorityOutcome(
 func validateAuthorityResult(
 	delivery *chatmodel.ConversationCommandResultDelivery,
 	frame *federationdelivery.Frame,
-) error {
-	if delivery == nil ||
-		delivery.GetConversationId() == "" ||
+) ([]byte, error) {
+	if delivery == nil || frame == nil {
+		return nil, fmt.Errorf("authority result identity is incomplete")
+	}
+	payload, err := canonicalPayloadBytes(delivery)
+	if err != nil {
+		return nil, err
+	}
+	originatingCommandSHA256, err := authorityResultCommandSHA256(
+		frame.GetPayloadId(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if delivery.GetConversationId() == "" ||
 		delivery.GetCommandId() == "" ||
 		delivery.GetResult() == nil ||
 		delivery.GetResult().GetCommandId() != delivery.GetCommandId() ||
-		frame.GetPayloadId() != delivery.GetCommandId() {
-		return fmt.Errorf("authority result identity is incomplete")
+		frame.GetPayloadId() != authorityResultPayloadID(
+			delivery,
+			payload,
+			originatingCommandSHA256,
+		) {
+		return nil, fmt.Errorf("authority result identity is incomplete")
 	}
 	result := delivery.GetResult()
 	switch delivery.GetState() {
@@ -640,55 +669,106 @@ func validateAuthorityResult(
 			event.GetCommittedByStationPeerId() != frame.GetSourceStationPeerId() ||
 			event.GetGroupSeq() != result.GetAuthorityGroupSeq() ||
 			!bytes.Equal(event.GetEventHash(), result.GetAuthorityEventHash()) {
-			return fmt.Errorf("accepted authority result is inconsistent")
+			return nil, fmt.Errorf("accepted authority result is inconsistent")
 		}
 	case chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_TERMINAL_REJECTED:
 		if result.GetAccepted() ||
 			result.GetRetryable() ||
 			result.GetCommittedEvent() != nil ||
 			result.GetRejectCode() == chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED {
-			return fmt.Errorf("terminal authority result is inconsistent")
+			return nil, fmt.Errorf("terminal authority result is inconsistent")
 		}
 	default:
-		return fmt.Errorf("authority result state is not final or retryable")
+		return nil, fmt.Errorf("authority result state is not final or retryable")
 	}
-	return nil
+	return originatingCommandSHA256, nil
 }
 
-func validateDeviceDelivery(
+func authorityResultCommandSHA256(payloadID string) ([]byte, error) {
+	binding := strings.TrimPrefix(
+		payloadID,
+		authorityResultFrameDomain+":",
+	)
+	if binding == payloadID {
+		return nil, fmt.Errorf("authority result command hash binding is missing")
+	}
+	commandSHA256Hex, resultIdentity, found := strings.Cut(binding, ":")
+	if !found || resultIdentity == "" {
+		return nil, fmt.Errorf("authority result command hash binding is malformed")
+	}
+	commandSHA256, err := hex.DecodeString(commandSHA256Hex)
+	if err != nil || len(commandSHA256) != sha256.Size {
+		return nil, fmt.Errorf("authority result command hash binding is invalid")
+	}
+	return commandSHA256, nil
+}
+
+func canonicalDeviceDelivery(
 	item *chatmodel.DurableDeviceInboxItem,
-	frame *federationdelivery.Frame,
-) error {
+	sourceStationPeerID string,
+) (conversationports.DeviceInboxIntent, int64, error) {
 	if item == nil ||
 		item.GetRecipient() == nil ||
 		item.GetRecipient().GetActor() == nil ||
-		item.GetRecipient().GetActor().GetPtid() == "" ||
-		item.GetRecipient().GetDeviceId() == "" ||
+		strings.TrimSpace(item.GetRecipient().GetActor().GetPtid()) == "" ||
+		item.GetRecipient().GetActor().GetPtid() !=
+			strings.TrimSpace(item.GetRecipient().GetActor().GetPtid()) ||
+		strings.TrimSpace(item.GetRecipient().GetDeviceId()) == "" ||
+		item.GetRecipient().GetDeviceId() !=
+			strings.TrimSpace(item.GetRecipient().GetDeviceId()) ||
 		item.GetItemId() == "" ||
 		item.GetEventId() == "" ||
 		item.GetConversationId() == "" ||
 		item.GetIdempotencyKey() == "" ||
-		item.GetLaneSequence() <= 0 ||
+		item.GetLaneSequence() != 0 ||
 		len(item.GetOpaquePayload()) == 0 ||
 		len(item.GetPayloadSha256()) != sha256.Size ||
 		!bytes.Equal(
 			item.GetPayloadSha256(),
 			federationdelivery.PayloadSHA256(item.GetOpaquePayload()),
-		) ||
-		frame.GetPayloadId() != item.GetItemId() ||
-		frame.GetIdempotencyKey() != item.GetIdempotencyKey() ||
-		frame.GetOrderingSequence() != item.GetLaneSequence() {
-		return fmt.Errorf("device delivery identity is incomplete or inconsistent")
+		) {
+		return conversationports.DeviceInboxIntent{}, 0,
+			fmt.Errorf("device delivery identity is incomplete or inconsistent")
 	}
-	if item.GetState() != chatmodel.DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_UNSPECIFIED &&
-		item.GetState() != chatmodel.DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_PENDING {
-		return fmt.Errorf("device delivery carries receiver-local lifecycle state")
+	if item.GetState() !=
+		chatmodel.DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_UNSPECIFIED ||
+		item.GetAttemptCount() != 0 ||
+		item.GetLease() != nil ||
+		item.GetNextAttemptAt() != nil ||
+		item.GetExpiresAt() != nil ||
+		item.GetAckedAt() != nil ||
+		item.GetLastErrorCode() !=
+			chatmodel.DeviceInboxRejectCode_DEVICE_INBOX_REJECT_CODE_UNSPECIFIED {
+		return conversationports.DeviceInboxIntent{}, 0,
+			fmt.Errorf("device delivery carries receiver-local queue state")
 	}
+	if item.GetFirstQueuedAt() == nil || !item.GetFirstQueuedAt().IsValid() {
+		return conversationports.DeviceInboxIntent{}, 0,
+			fmt.Errorf("device delivery creation time is invalid")
+	}
+	payloadHash, err := valueobject.NewHash(item.GetPayloadSha256())
+	if err != nil {
+		return conversationports.DeviceInboxIntent{}, 0, err
+	}
+	intent := conversationports.DeviceInboxIntent{
+		IntentID:       item.GetItemId(),
+		ConversationID: valueobject.ConversationID(item.GetConversationId()),
+		EventID:        valueobject.EventID(item.GetEventId()),
+		Recipient: valueobject.Endpoint{
+			Actor:  valueobject.PTID(item.GetRecipient().GetActor().GetPtid()),
+			Device: valueobject.DeviceID(item.GetRecipient().GetDeviceId()),
+		},
+		IdempotencyKey: item.GetIdempotencyKey(),
+		OpaquePayload:  append([]byte(nil), item.GetOpaquePayload()...),
+		PayloadHash:    payloadHash,
+		CreatedAt:      item.GetFirstQueuedAt().AsTime().UTC(),
+	}
+	var orderingSequence int64
 	switch item.GetPayloadType() {
 	case chatmodel.DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_CONVERSATION_EVENT:
 		eventDelivery := &chatmodel.DeviceEventDelivery{}
 		if err := decodeCanonicalInnerPayload(item.GetOpaquePayload(), eventDelivery); err != nil {
-			return err
+			return conversationports.DeviceInboxIntent{}, 0, err
 		}
 		if eventDelivery.GetRecipient() == nil ||
 			eventDelivery.GetEvent() == nil ||
@@ -696,20 +776,61 @@ func validateDeviceDelivery(
 			eventDelivery.GetRecipient().GetDeviceId() != item.GetRecipient().GetDeviceId() ||
 			eventDelivery.GetEvent().GetEventId() != item.GetEventId() ||
 			eventDelivery.GetEvent().GetConversationId() != item.GetConversationId() ||
-			eventDelivery.GetEvent().GetAuthorityStationId() != frame.GetSourceStationPeerId() {
-			return fmt.Errorf("Conversation event delivery is not bound to its device item")
+			eventDelivery.GetEvent().GetSequence() <= 0 ||
+			eventDelivery.GetEvent().GetAuthorityStationId() != sourceStationPeerID {
+			return conversationports.DeviceInboxIntent{}, 0,
+				fmt.Errorf("Conversation event delivery is not bound to its device item")
 		}
+		commitment, err := valueobject.NewHash(eventDelivery.GetDeliveryCommitment())
+		if err != nil || commitment.IsZero() {
+			return conversationports.DeviceInboxIntent{}, 0,
+				fmt.Errorf("Conversation event delivery commitment is invalid")
+		}
+		intent.EventSequence = valueobject.Sequence(eventDelivery.GetEvent().GetSequence())
+		intent.PayloadKind = conversationports.DeviceInboxPayloadConversationEvent
+		intent.Commitment = commitment
+		orderingSequence = eventDelivery.GetEvent().GetSequence()
 	case chatmodel.DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_DEVICE_RECEIPT:
 		cursor := &chatmodel.ActorReadCursor{}
 		if err := decodeCanonicalInnerPayload(item.GetOpaquePayload(), cursor); err != nil {
-			return err
+			return conversationports.DeviceInboxIntent{}, 0, err
 		}
 		if cursor.GetConversationId() != item.GetConversationId() ||
-			cursor.GetReaderPtid() != item.GetRecipient().GetActor().GetPtid() {
-			return fmt.Errorf("read cursor delivery is not bound to its device item")
+			strings.TrimSpace(cursor.GetReaderPtid()) == "" ||
+			cursor.GetLastReadSequence() <= 0 ||
+			item.GetEventId() != valueobject.HashBytes(item.GetOpaquePayload()).String() {
+			return conversationports.DeviceInboxIntent{}, 0,
+				fmt.Errorf("read cursor delivery is not bound to its device item")
 		}
+		intent.EventSequence = valueobject.Sequence(cursor.GetLastReadSequence())
+		intent.PayloadKind = conversationports.DeviceInboxPayloadDeviceReceipt
 	default:
-		return fmt.Errorf("device delivery payload type is not owned by the Conversation adapter")
+		return conversationports.DeviceInboxIntent{}, 0,
+			fmt.Errorf("device delivery payload type is not owned by the Conversation adapter")
+	}
+	return intent, orderingSequence, nil
+}
+
+func validateDeviceDeliveryFrame(
+	item *chatmodel.DurableDeviceInboxItem,
+	intent conversationports.DeviceInboxIntent,
+	orderingSequence int64,
+	frame *federationdelivery.Frame,
+) error {
+	if frame == nil ||
+		frame.GetIssuedAt() == nil ||
+		!frame.GetIssuedAt().IsValid() ||
+		frame.GetPayloadId() != item.GetItemId() ||
+		frame.GetIdempotencyKey() != item.GetIdempotencyKey() ||
+		frame.GetOrderingKey() != deviceOrderingKey(
+			string(intent.Recipient.Actor),
+			string(intent.Recipient.Device),
+			string(intent.ConversationID),
+			string(intent.PayloadKind),
+		) ||
+		frame.GetOrderingSequence() != orderingSequence ||
+		!frame.GetIssuedAt().AsTime().Equal(intent.CreatedAt) {
+		return fmt.Errorf("device delivery frame is not bound to its target-local intent")
 	}
 	return nil
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	domainservice "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/service"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
+	deliveryinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/persistence"
 	conversationhttp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface/http"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
@@ -147,11 +148,16 @@ type dddAdapterFactory struct {
 func (f *dddAdapterFactory) Bind(
 	tx *gorm.DB,
 ) (persistence.TransactionalAdapters, error) {
+	deliveryCommitments, err := deliveryinfra.NewAuthorityLedgerWriter(tx)
+	if err != nil {
+		return persistence.TransactionalAdapters{}, err
+	}
 	return persistence.TransactionalAdapters{
 		Identity:               dddIdentityDirectory{db: tx, factory: f},
 		Federation:             dddFederationDirectory{factory: f},
 		DeviceInbox:            &dddDeviceInboxWriter{db: tx, factory: f},
 		FederationOutbox:       dddFederationWriter{db: tx},
+		DeliveryCommitments:    deliveryCommitments,
 		ObjectGrants:           dddObjectGrantWriter{db: tx},
 		KeyPackageReservations: dddReservationWriter{db: tx},
 	}, nil
@@ -335,18 +341,26 @@ type dddObjectGrantWriter struct {
 	db *gorm.DB
 }
 
-func (w dddObjectGrantWriter) Grant(
+func (w dddObjectGrantWriter) GrantBatch(
 	ctx context.Context,
-	grant ports.ObjectGrant,
+	grant ports.ObjectGrantBatch,
 ) error {
-	return w.db.WithContext(ctx).
-		Clauses(clause.OnConflict{DoNothing: true}).
-		Create(&dddObjectGrantModel{
-			ObjectID:       string(grant.ObjectID),
-			RecipientPTID:  string(grant.Recipient),
-			ConversationID: string(grant.ConversationID),
-			EventID:        string(grant.EventID),
-		}).Error
+	for _, objectID := range grant.ObjectIDs {
+		for _, recipient := range grant.Recipients {
+			if err := w.db.WithContext(ctx).
+				Clauses(clause.OnConflict{DoNothing: true}).
+				Create(&dddObjectGrantModel{
+					ObjectID:       string(objectID),
+					RecipientPTID:  string(recipient),
+					ConversationID: string(grant.ConversationID),
+					EventID:        string(grant.EventID),
+				}).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 type dddReservationWriter struct {
@@ -521,6 +535,8 @@ func newDDDComposition(t *testing.T) dddFixture {
 		&dddFederationOutboxModel{},
 		&dddObjectGrantModel{},
 		&dddKeyPackageReservationModel{},
+		&deliveryinfra.AuthorityDeliveryCommitmentModel{},
+		&deliveryinfra.AuthorityDeliveryReceiptModel{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -752,6 +768,7 @@ func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing
 	assertCount(t, fixture.db, &persistence.ConversationEventModel{}, 1)
 	assertCount(t, fixture.db, &dddDeviceInboxModel{}, 1)
 	assertCount(t, fixture.db, &dddFederationOutboxModel{}, 1)
+	assertCount(t, fixture.db, &deliveryinfra.AuthorityDeliveryCommitmentModel{}, 2)
 	var persistedGenesis persistence.ConversationEventModel
 	if err := fixture.db.First(
 		&persistedGenesis,
@@ -911,6 +928,21 @@ func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing
 	if committed.Event.Sequence != 2 || committed.Event.PreviousHash != created.Event.Hash {
 		t.Fatalf("committed event = %+v", committed.Event)
 	}
+	var committedDeliveries []deliveryinfra.AuthorityDeliveryCommitmentModel
+	if err := fixture.db.
+		Where("event_id = ?", string(committed.Event.ID)).
+		Order("recipient_ptid ASC, recipient_device_id ASC").
+		Find(&committedDeliveries).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(committedDeliveries) != 2 ||
+		committedDeliveries[0].RecipientPTID != string(alice.Actor) ||
+		committedDeliveries[0].RequiredRecipient ||
+		committedDeliveries[1].RecipientPTID != string(bob.Actor) ||
+		!committedDeliveries[1].RequiredRecipient ||
+		committedDeliveries[1].HomeStation != "station-b" {
+		t.Fatalf("authority delivery commitments = %+v", committedDeliveries)
+	}
 	replayed, err := fixture.commands.Submit(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -945,6 +977,7 @@ func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing
 	}
 	assertCount(t, fixture.db, &persistence.ConversationEventModel{}, 2)
 	assertCount(t, fixture.db, &persistence.ConversationCommandReceiptModel{}, 2)
+	assertCount(t, fixture.db, &deliveryinfra.AuthorityDeliveryCommitmentModel{}, 4)
 
 	rollbackPreparation, err := fixture.commands.PrepareCommand(
 		context.Background(),
@@ -989,6 +1022,7 @@ func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing
 	}
 	assertCount(t, fixture.db, &persistence.ConversationEventModel{}, 2)
 	assertCount(t, fixture.db, &persistence.ConversationCommandReceiptModel{}, 2)
+	assertCount(t, fixture.db, &deliveryinfra.AuthorityDeliveryCommitmentModel{}, 4)
 }
 
 func TestConversationDDDDirectFanoutUsesCurrentActiveActorDevices(t *testing.T) {

@@ -128,6 +128,14 @@ func TestFederatedFriendRequestCrossStationAcceptConvergesAndCreatesDirectEffect
 		t.Fatal(err)
 	}
 	fixture.dispatchOnce(t, fixture.b)
+	assertOutgoingCommandResult(
+		t,
+		fixture.b,
+		accept,
+		model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_COMMITTED,
+		model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_UNSPECIFIED,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_ACCEPTED,
+	)
 	assertProjectionState(
 		t,
 		fixture.b,
@@ -246,6 +254,14 @@ func TestFederatedFriendRequestRejectReturnsWithoutRelationshipOrEffect(t *testi
 		t.Fatal(err)
 	}
 	fixture.dispatchOnce(t, fixture.b)
+	assertOutgoingCommandResult(
+		t,
+		fixture.b,
+		reject,
+		model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_COMMITTED,
+		model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_UNSPECIFIED,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_REJECTED,
+	)
 	fixture.dispatchOnce(t, fixture.b)
 
 	for _, station := range []*friendRequestStation{fixture.a, fixture.b} {
@@ -270,6 +286,459 @@ func TestFederatedFriendRequestRejectReturnsWithoutRelationshipOrEffect(t *testi
 		domain.DirectConversationEffectID(requestID),
 	); err != nil || effect != nil {
 		t.Fatalf("reject Direct effect = %+v, %v", effect, err)
+	}
+
+}
+
+func TestMissingDecisionClosesLocalOutgoingWithDurableRejection(t *testing.T) {
+	fixture := newFederatedFriendRequestFixture(t)
+	accept := fixture.command(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT,
+		"command-accept-missing",
+		"request-missing",
+		stationA,
+		stationB,
+		fixture.clock.Now(),
+	)
+	if _, err := fixture.b.service.SubmitFriendRequestCommand(
+		context.Background(),
+		accept,
+	); err != nil {
+		t.Fatal(err)
+	}
+	fixture.dispatchOnce(t, fixture.b)
+	assertOutgoingCommandResult(
+		t,
+		fixture.b,
+		accept,
+		model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_REJECTED,
+		model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_NOT_FOUND,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_UNSPECIFIED,
+	)
+	if projection, err := fixture.b.store.Projection(
+		context.Background(),
+		accept.GetBody().GetRequestId(),
+	); err != nil || projection != nil {
+		t.Fatalf("missing decision projection = %+v, %v", projection, err)
+	}
+}
+
+func TestFederatedFriendRequestAcceptRechecksReceiverBlockPolicy(t *testing.T) {
+	fixture := newFederatedFriendRequestFixture(t)
+	requestID := "request-blocked-after-pending"
+	send := fixture.command(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		"command-send-before-block",
+		requestID,
+		stationA,
+		stationB,
+		fixture.clock.Now(),
+	)
+	if _, err := fixture.a.service.SubmitFriendRequestCommand(
+		context.Background(),
+		send,
+	); err != nil {
+		t.Fatal(err)
+	}
+	fixture.dispatchOnce(t, fixture.a)
+	fixture.dispatchOnce(t, fixture.b)
+
+	now := fixture.clock.Now()
+	if err := fixture.b.db.Table("friend_chat_friendships").Create(
+		map[string]any{
+			"actor_ptid": bobPTID,
+			"peer_ptid":  alicePTID,
+			"status":     int32(3),
+			"created_at": now,
+			"updated_at": now,
+		},
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	fixture.clock.Advance(time.Minute)
+	accept := fixture.command(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT,
+		"command-accept-blocked",
+		requestID,
+		stationA,
+		stationB,
+		fixture.clock.Now(),
+	)
+	if _, err := fixture.b.service.SubmitFriendRequestCommand(
+		context.Background(),
+		accept,
+	); err != nil {
+		t.Fatal(err)
+	}
+	fixture.dispatchOnce(t, fixture.b)
+
+	assertOutgoingCommandResult(
+		t,
+		fixture.b,
+		accept,
+		model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_REJECTED,
+		model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_BLOCKED,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_UNSPECIFIED,
+	)
+	assertProjectionState(
+		t,
+		fixture.b,
+		requestID,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING,
+		1,
+		true,
+	)
+	if relationship, err := fixture.b.store.Relationship(
+		context.Background(),
+		bobPTID,
+		alicePTID,
+	); err != nil || relationship != nil {
+		t.Fatalf("blocked accept relationship = %+v, %v", relationship, err)
+	}
+	if effect, _, err := fixture.b.store.DirectConversationEffect(
+		context.Background(),
+		domain.DirectConversationEffectID(requestID),
+	); err != nil || effect != nil {
+		t.Fatalf("blocked accept Direct effect = %+v, %v", effect, err)
+	}
+}
+
+func TestFederatedFriendRequestAcceptIgnoresSendOnlyExistingRelationshipGuard(
+	t *testing.T,
+) {
+	fixture := newFederatedFriendRequestFixture(t)
+	requestID := "request-existing-before-accept"
+	send := fixture.command(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		"command-send-before-existing",
+		requestID,
+		stationA,
+		stationB,
+		fixture.clock.Now(),
+	)
+	if _, err := fixture.a.service.SubmitFriendRequestCommand(
+		context.Background(),
+		send,
+	); err != nil {
+		t.Fatal(err)
+	}
+	fixture.dispatchOnce(t, fixture.a)
+	fixture.dispatchOnce(t, fixture.b)
+
+	now := fixture.clock.Now()
+	if err := fixture.b.db.Table("friend_chat_friendships").Create(
+		map[string]any{
+			"actor_ptid": bobPTID,
+			"peer_ptid":  alicePTID,
+			"status":     int32(2),
+			"created_at": now,
+			"updated_at": now,
+		},
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	fixture.clock.Advance(time.Minute)
+	accept := fixture.command(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT,
+		"command-accept-existing",
+		requestID,
+		stationA,
+		stationB,
+		fixture.clock.Now(),
+	)
+	if _, err := fixture.b.service.SubmitFriendRequestCommand(
+		context.Background(),
+		accept,
+	); err != nil {
+		t.Fatal(err)
+	}
+	fixture.dispatchOnce(t, fixture.b)
+
+	assertOutgoingCommandResult(
+		t,
+		fixture.b,
+		accept,
+		model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_COMMITTED,
+		model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_UNSPECIFIED,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_ACCEPTED,
+	)
+	assertProjectionState(
+		t,
+		fixture.b,
+		requestID,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_ACCEPTED,
+		2,
+		true,
+	)
+}
+
+func TestReceiverRejectsSendPolicyBeforePendingMaterialization(t *testing.T) {
+	tests := []struct {
+		name      string
+		seed      func(*testing.T, *friendRequestStation)
+		errorCode model.FriendRequestCommandErrorCode
+	}{
+		{
+			name: "receiver-local block",
+			seed: func(t *testing.T, station *friendRequestStation) {
+				t.Helper()
+				now := station.clock.Now()
+				if err := station.db.Table("friend_chat_friendships").Create(
+					map[string]any{
+						"actor_ptid": bobPTID,
+						"peer_ptid":  alicePTID,
+						"status":     int32(3),
+						"created_at": now,
+						"updated_at": now,
+					},
+				).Error; err != nil {
+					t.Fatal(err)
+				}
+			},
+			errorCode: model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_BLOCKED,
+		},
+		{
+			name: "existing receiver-local relationship",
+			seed: func(t *testing.T, station *friendRequestStation) {
+				t.Helper()
+				err := station.store.Execute(
+					context.Background(),
+					func(transaction infrastructure.FederatedFriendRequestTransaction) error {
+						return transaction.PutRelationship(
+							context.Background(),
+							domain.FriendRequestRelationshipProjection{
+								OwnerPTID:         bobPTID,
+								PeerPTID:          alicePTID,
+								RequestID:         "existing-request",
+								AcceptedEventID:   "existing-event",
+								AcceptedEventHash: bytes.Repeat([]byte{0x71}, sha256.Size),
+								AcceptedAt:        station.clock.Now(),
+							},
+						)
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+			},
+			errorCode: model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_ALREADY_FRIENDS,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newFederatedFriendRequestFixture(t)
+			test.seed(t, fixture.b)
+			command := fixture.command(
+				t,
+				model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+				"command-policy",
+				"request-policy",
+				stationA,
+				stationB,
+				fixture.clock.Now(),
+			)
+			if _, err := fixture.a.service.SubmitFriendRequestCommand(
+				context.Background(),
+				command,
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			fixture.dispatchOnce(t, fixture.a)
+			if projection, err := fixture.b.store.Projection(
+				context.Background(),
+				command.GetBody().GetRequestId(),
+			); err != nil || projection != nil {
+				t.Fatalf("receiver policy materialized projection = %+v, %v", projection, err)
+			}
+			authority, err := fixture.b.store.Command(
+				context.Background(),
+				domain.FriendRequestCommandRoleAuthority,
+				stationB,
+				command.GetBody().GetCommandId(),
+			)
+			if err != nil || authority == nil {
+				t.Fatalf("receiver policy command = %+v, %v", authority, err)
+			}
+			var policyResult model.FriendRequestCommandResult
+			if err := proto.Unmarshal(authority.ResultBytes, &policyResult); err != nil {
+				t.Fatal(err)
+			}
+			if policyResult.GetKind() !=
+				model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_REJECTED ||
+				policyResult.GetErrorCode() != test.errorCode ||
+				policyResult.GetEvent() != nil {
+				t.Fatalf("receiver policy result = %+v", &policyResult)
+			}
+
+			fixture.dispatchOnce(t, fixture.b)
+			outgoing, err := fixture.a.store.Command(
+				context.Background(),
+				domain.FriendRequestCommandRoleOutgoing,
+				stationB,
+				command.GetBody().GetCommandId(),
+			)
+			if err != nil ||
+				outgoing == nil ||
+				outgoing.ResolvedAt == nil ||
+				!bytes.Equal(outgoing.ResultBytes, authority.ResultBytes) {
+				t.Fatalf("sender policy result = %+v, %v", outgoing, err)
+			}
+			assertProjectionState(
+				t,
+				fixture.a,
+				command.GetBody().GetRequestId(),
+				model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING,
+				0,
+				false,
+			)
+		})
+	}
+}
+
+func TestPendingResultHashConflictDoesNotAdvanceSenderProjection(t *testing.T) {
+	fixture := newFederatedFriendRequestFixture(t)
+	command := fixture.command(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		"command-result-conflict",
+		"request-result-conflict",
+		stationA,
+		stationB,
+		fixture.clock.Now(),
+	)
+	if _, err := fixture.a.service.SubmitFriendRequestCommand(
+		context.Background(),
+		command,
+	); err != nil {
+		t.Fatal(err)
+	}
+	commandHash, err := domain.FriendRequestCommandPayloadSHA256(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, event, err := domain.ApplyFriendRequestCommand(
+		nil,
+		command,
+		stationB,
+		fixture.clock.Now(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandHash[0] ^= 0xff
+	resultPayload := &model.FriendRequestCommandResult{
+		CommandId:            command.GetBody().GetCommandId(),
+		RequestId:            command.GetBody().GetRequestId(),
+		CommandPayloadSha256: commandHash,
+		Kind:                 model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_COMMITTED,
+		Event:                event,
+	}
+	result, err := fixture.a.receiver.Receive(
+		context.Background(),
+		friendRequestResultFrame(t, fixture.b, fixture.a, resultPayload),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != delivery.PayloadHashConflictResult() {
+		t.Fatalf("pending result hash conflict = %+v", result)
+	}
+	assertProjectionState(
+		t,
+		fixture.a,
+		command.GetBody().GetRequestId(),
+		model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING,
+		0,
+		false,
+	)
+	outgoing, err := fixture.a.store.Command(
+		context.Background(),
+		domain.FriendRequestCommandRoleOutgoing,
+		stationB,
+		command.GetBody().GetCommandId(),
+	)
+	if err != nil || outgoing == nil || outgoing.ResolvedAt != nil {
+		t.Fatalf("conflicting result resolved outgoing command = %+v, %v", outgoing, err)
+	}
+}
+
+func TestRetryableResultFrameDoesNotResolveOrConsumeOriginalCommand(t *testing.T) {
+	fixture := newFederatedFriendRequestFixture(t)
+	command := fixture.command(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		"command-retryable-result",
+		"request-retryable-result",
+		stationA,
+		stationB,
+		fixture.clock.Now(),
+	)
+	if _, err := fixture.a.service.SubmitFriendRequestCommand(
+		context.Background(),
+		command,
+	); err != nil {
+		t.Fatal(err)
+	}
+	commandHash, err := domain.FriendRequestCommandPayloadSHA256(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultPayload := &model.FriendRequestCommandResult{
+		CommandId:            command.GetBody().GetCommandId(),
+		RequestId:            command.GetBody().GetRequestId(),
+		CommandPayloadSha256: commandHash,
+		Kind:                 model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_REJECTED,
+		ErrorCode:            model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_RETRY_LATER,
+		Retryable:            true,
+	}
+
+	result, err := fixture.a.receiver.Receive(
+		context.Background(),
+		friendRequestResultFrame(t, fixture.b, fixture.a, resultPayload),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != delivery.TerminalResult(delivery.FrameErrorDomainRejected) {
+		t.Fatalf("retryable result frame outcome = %+v", result)
+	}
+
+	outgoing, err := fixture.a.store.Command(
+		context.Background(),
+		domain.FriendRequestCommandRoleOutgoing,
+		stationB,
+		command.GetBody().GetCommandId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outgoing == nil ||
+		outgoing.ResolvedAt != nil ||
+		len(outgoing.ResultBytes) != 0 {
+		t.Fatalf("retryable result resolved outgoing command = %+v", outgoing)
+	}
+
+	var originalFrame delivery.OutboxRecord
+	if err := fixture.a.db.
+		Where(
+			"payload_kind = ? AND payload_id = ?",
+			delivery.PayloadKindSocialFriendRequestCommand,
+			command.GetBody().GetCommandId(),
+		).
+		First(&originalFrame).Error; err != nil {
+		t.Fatal(err)
+	}
+	if originalFrame.State != delivery.OutboxStatePending {
+		t.Fatalf("original command outbox state = %s, want pending", originalFrame.State)
 	}
 }
 
@@ -545,8 +1014,251 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 		)
 	})
 
+	t.Run("cold cache hydrates verified remote projection", func(t *testing.T) {
+		fixture := newFederatedFriendRequestFixture(t)
+		if err := fixture.b.db.
+			Where("ptid = ? AND device_id = ?", alicePTID, alicePTID+":device").
+			Delete(&touchactor.DeviceRecord{}).Error; err != nil {
+			t.Fatal(err)
+		}
+		hydrationCalls := 0
+		fixture.b.service.WithActorKeyHydrator(
+			friendRequestActorKeyHydratorFunc(func(
+				_ context.Context,
+				actorPTID string,
+				homeStationPeerID string,
+			) ([]*model.VerifiedActorDeviceSigningKey, error) {
+				hydrationCalls++
+				if actorPTID != alicePTID ||
+					homeStationPeerID != stationA {
+					return nil, errors.New("unexpected hydration identity")
+				}
+				key := fixture.actorKeys[alicePTID]
+				return []*model.VerifiedActorDeviceSigningKey{
+					&model.VerifiedActorDeviceSigningKey{
+						ActorPtid:          actorPTID,
+						ActorDeviceId:      actorPTID + ":device",
+						HomeStationPeerId:  homeStationPeerID,
+						SigningKeyId:       key.keyID,
+						Ed25519PublicKey:   append([]byte(nil), key.publicKey...),
+						ProfileVersion:     1,
+						VerificationSource: model.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+						ValidFromUnixMs:    fixture.clock.Now().UnixMilli(),
+					},
+				}, nil
+			}),
+		)
+		command := fixture.command(
+			t,
+			model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+			"command-cold-cache",
+			"request-cold-cache",
+			stationA,
+			stationB,
+			fixture.clock.Now(),
+		)
+		command.GetBody().GetSender().Acct = ""
+		command.GetBody().GetReceiver().Acct = ""
+		command.GetBody().GetAuthorizingDevice().GetActor().Acct = ""
+		fixture.signActorCommand(t, command)
+		result, err := fixture.b.receiver.Receive(
+			context.Background(),
+			fixture.frame(
+				t,
+				fixture.a,
+				command,
+				"cold-cache-frame",
+				"cold-cache-idempotency",
+			),
+		)
+		if err != nil || result != delivery.AcceptedResult() {
+			t.Fatalf("cold-cache command result = %+v, %v", result, err)
+		}
+		if hydrationCalls != 1 {
+			t.Fatalf("cold-cache hydration calls = %d, want 1", hydrationCalls)
+		}
+		assertProjectionState(
+			t,
+			fixture.b,
+			command.GetBody().GetRequestId(),
+			model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING,
+			1,
+			true,
+		)
+	})
+
+	t.Run("latest verified profile omission rejects cached remote key", func(t *testing.T) {
+		fixture := newFederatedFriendRequestFixture(t)
+		hydrationCalls := 0
+		fixture.b.service.WithActorKeyHydrator(
+			friendRequestActorKeyHydratorFunc(func(
+				_ context.Context,
+				actorPTID string,
+				homeStationPeerID string,
+			) ([]*model.VerifiedActorDeviceSigningKey, error) {
+				hydrationCalls++
+				if actorPTID != alicePTID || homeStationPeerID != stationA {
+					return nil, errors.New("unexpected hydration identity")
+				}
+
+				return nil, nil
+			}),
+		)
+		command := fixture.command(
+			t,
+			model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+			"command-profile-omission",
+			"request-profile-omission",
+			stationA,
+			stationB,
+			fixture.clock.Now(),
+		)
+		assertReceiverRejectedWithoutSocialMutation(
+			t,
+			fixture.b,
+			command,
+			fixture.frame(
+				t,
+				fixture.a,
+				command,
+				"profile-omission-frame",
+				"profile-omission-idempotency",
+			),
+		)
+		if hydrationCalls != 1 {
+			t.Fatalf("profile omission hydration calls = %d, want 1", hydrationCalls)
+		}
+	})
+
+	t.Run("latest verified profile rejects revoked cached remote key", func(t *testing.T) {
+		fixture := newFederatedFriendRequestFixture(t)
+		hydrationCalls := 0
+		fixture.b.service.WithActorKeyHydrator(
+			friendRequestActorKeyHydratorFunc(func(
+				_ context.Context,
+				actorPTID string,
+				homeStationPeerID string,
+			) ([]*model.VerifiedActorDeviceSigningKey, error) {
+				hydrationCalls++
+				key := fixture.actorKeys[alicePTID]
+				return []*model.VerifiedActorDeviceSigningKey{{
+					ActorPtid:          actorPTID,
+					ActorDeviceId:      actorPTID + ":device",
+					HomeStationPeerId:  homeStationPeerID,
+					SigningKeyId:       key.keyID,
+					Ed25519PublicKey:   append([]byte(nil), key.publicKey...),
+					ProfileVersion:     2,
+					VerificationSource: model.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+					ValidFromUnixMs:    fixture.clock.Now().Add(-time.Hour).UnixMilli(),
+					RevokedAtUnixMs:    fixture.clock.Now().UnixMilli(),
+				}}, nil
+			}),
+		)
+		command := fixture.command(
+			t,
+			model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+			"command-profile-revoked",
+			"request-profile-revoked",
+			stationA,
+			stationB,
+			fixture.clock.Now(),
+		)
+		assertReceiverRejectedWithoutSocialMutation(
+			t,
+			fixture.b,
+			command,
+			fixture.frame(
+				t,
+				fixture.a,
+				command,
+				"profile-revoked-frame",
+				"profile-revoked-idempotency",
+			),
+		)
+		if hydrationCalls != 1 {
+			t.Fatalf("profile revocation hydration calls = %d, want 1", hydrationCalls)
+		}
+	})
+
+	t.Run("missing remote identity projection is retryable", func(t *testing.T) {
+		fixture := newFederatedFriendRequestFixture(t)
+		if err := fixture.b.db.
+			Where("ptid = ? AND device_id = ?", alicePTID, alicePTID+":device").
+			Delete(&touchactor.DeviceRecord{}).Error; err != nil {
+			t.Fatal(err)
+		}
+		command := fixture.command(
+			t,
+			model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+			"command-missing-identity",
+			"request-missing-identity",
+			stationA,
+			stationB,
+			fixture.clock.Now(),
+		)
+		frame := fixture.frame(
+			t,
+			fixture.a,
+			command,
+			"missing-identity-frame",
+			"missing-identity-idempotency",
+		)
+		hydrationCalls := 0
+		fixture.b.service.WithActorKeyHydrator(
+			friendRequestActorKeyHydratorFunc(func(
+				_ context.Context,
+				actorPTID string,
+				homeStationPeerID string,
+			) ([]*model.VerifiedActorDeviceSigningKey, error) {
+				hydrationCalls++
+				if hydrationCalls == 1 {
+					return nil, errors.New("verified profile is temporarily unavailable")
+				}
+				key := fixture.actorKeys[alicePTID]
+				return []*model.VerifiedActorDeviceSigningKey{
+					&model.VerifiedActorDeviceSigningKey{
+						ActorPtid:          actorPTID,
+						ActorDeviceId:      actorPTID + ":device",
+						HomeStationPeerId:  homeStationPeerID,
+						SigningKeyId:       key.keyID,
+						Ed25519PublicKey:   append([]byte(nil), key.publicKey...),
+						ProfileVersion:     1,
+						VerificationSource: model.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+						ValidFromUnixMs:    fixture.clock.Now().UnixMilli(),
+					},
+				}, nil
+			}),
+		)
+		assertReceiverResultWithoutSocialMutation(
+			t,
+			fixture.b,
+			command,
+			frame,
+			delivery.RetryableResult(delivery.FrameErrorOverloaded),
+		)
+
+		result, err := fixture.b.receiver.Receive(context.Background(), frame)
+		if err != nil || result != delivery.AcceptedResult() {
+			t.Fatalf("retried command result = %+v, %v", result, err)
+		}
+		if hydrationCalls != 2 {
+			t.Fatalf("retry hydration calls = %d, want 2", hydrationCalls)
+		}
+	})
+
 	t.Run("revoked remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
+		hydrationCalls := 0
+		fixture.b.service.WithActorKeyHydrator(
+			friendRequestActorKeyHydratorFunc(func(
+				context.Context,
+				string,
+				string,
+			) ([]*model.VerifiedActorDeviceSigningKey, error) {
+				hydrationCalls++
+				return nil, nil
+			}),
+		)
 		if err := touchactor.NewDeviceStore(fixture.b.db).Revoke(
 			context.Background(),
 			alicePTID,
@@ -575,10 +1287,24 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 				"revoked-idempotency",
 			),
 		)
+		if hydrationCalls != 0 {
+			t.Fatalf("revoked key hydration calls = %d, want 0", hydrationCalls)
+		}
 	})
 
 	t.Run("unverified remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
+		hydrationCalls := 0
+		fixture.b.service.WithActorKeyHydrator(
+			friendRequestActorKeyHydratorFunc(func(
+				context.Context,
+				string,
+				string,
+			) ([]*model.VerifiedActorDeviceSigningKey, error) {
+				hydrationCalls++
+				return nil, nil
+			}),
+		)
 		if err := fixture.b.db.Model(&touchactor.DeviceRecord{}).
 			Where("ptid = ? AND device_id = ?", alicePTID, alicePTID+":device").
 			Update(
@@ -608,6 +1334,50 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 				"unverified-idempotency",
 			),
 		)
+		if hydrationCalls != 0 {
+			t.Fatalf("unverified key hydration calls = %d, want 0", hydrationCalls)
+		}
+	})
+
+	t.Run("unproven rotated remote key", func(t *testing.T) {
+		fixture := newFederatedFriendRequestFixture(t)
+		hydrationCalls := 0
+		fixture.b.service.WithActorKeyHydrator(
+			friendRequestActorKeyHydratorFunc(func(
+				context.Context,
+				string,
+				string,
+			) ([]*model.VerifiedActorDeviceSigningKey, error) {
+				hydrationCalls++
+				return nil, nil
+			}),
+		)
+		rotatedKey := newTestKey(0x72)
+		command := signedFriendRequestCommand(
+			t,
+			model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+			"command-unproven-rotation",
+			"request-unproven-rotation",
+			stationA,
+			stationB,
+			fixture.clock.Now(),
+			rotatedKey,
+		)
+		assertReceiverRejectedWithoutSocialMutation(
+			t,
+			fixture.b,
+			command,
+			fixture.frame(
+				t,
+				fixture.a,
+				command,
+				"unproven-rotation-frame",
+				"unproven-rotation-idempotency",
+			),
+		)
+		if hydrationCalls != 0 {
+			t.Fatalf("unproven rotation hydration calls = %d, want 0", hydrationCalls)
+		}
 	})
 }
 
@@ -726,6 +1496,90 @@ func TestReceiverTransactionRollsBackMaterializationWhenResultOutboxConflicts(
 	if inboxCount != 0 {
 		t.Fatalf("rolled-back receiver inbox rows = %d, want 0", inboxCount)
 	}
+}
+
+func TestReceiverPolicyRejectionRollsBackCommandWhenResultOutboxConflicts(
+	t *testing.T,
+) {
+	fixture := newFederatedFriendRequestFixture(t)
+	now := fixture.clock.Now()
+	if err := fixture.b.db.Table("friend_chat_friendships").Create(
+		map[string]any{
+			"actor_ptid": bobPTID,
+			"peer_ptid":  alicePTID,
+			"status":     int32(3),
+			"created_at": now,
+			"updated_at": now,
+		},
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	command := fixture.command(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		"command-policy-rollback",
+		"request-policy-rollback",
+		stationA,
+		stationB,
+		now,
+	)
+	conflicting := conflictingOutboxFrame(
+		t,
+		fixture.b,
+		delivery.PayloadKindSocialFriendRequestResult,
+		command.GetBody().GetCommandId(),
+		command.GetBody().GetRequestId(),
+		stationA,
+		1,
+	)
+	if _, err := fixture.b.deliveryStore.Enqueue(
+		context.Background(),
+		conflicting,
+		now,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := fixture.b.receiver.Receive(
+		context.Background(),
+		fixture.frame(
+			t,
+			fixture.a,
+			command,
+			"policy-rollback-frame",
+			"policy-rollback-idempotency",
+		),
+	); !errors.Is(err, delivery.ErrPayloadHashConflict) {
+		t.Fatalf("receiver policy result outbox conflict error = %v", err)
+	}
+	if projection, err := fixture.b.store.Projection(
+		context.Background(),
+		command.GetBody().GetRequestId(),
+	); err != nil || projection != nil {
+		t.Fatalf("rolled-back policy projection = %+v, %v", projection, err)
+	}
+	if record, err := fixture.b.store.Command(
+		context.Background(),
+		domain.FriendRequestCommandRoleAuthority,
+		stationB,
+		command.GetBody().GetCommandId(),
+	); err != nil || record != nil {
+		t.Fatalf("rolled-back policy command = %+v, %v", record, err)
+	}
+}
+
+type friendRequestActorKeyHydratorFunc func(
+	context.Context,
+	string,
+	string,
+) ([]*model.VerifiedActorDeviceSigningKey, error)
+
+func (f friendRequestActorKeyHydratorFunc) Hydrate(
+	ctx context.Context,
+	actorPTID string,
+	homeStationPeerID string,
+) ([]*model.VerifiedActorDeviceSigningKey, error) {
+	return f(ctx, actorPTID, homeStationPeerID)
 }
 
 type federatedFriendRequestFixture struct {
@@ -962,6 +1816,33 @@ func newFriendRequestStation(
 	if err != nil {
 		t.Fatal(err)
 	}
+	service.WithActorKeyHydrator(friendRequestActorKeyHydratorFunc(func(
+		_ context.Context,
+		actorPTID string,
+		homeStationPeerID string,
+	) ([]*model.VerifiedActorDeviceSigningKey, error) {
+		key, ok := actorKeys[actorPTID]
+		if !ok {
+			return nil, nil
+		}
+		expectedHome := stationA
+		if actorPTID == bobPTID {
+			expectedHome = stationB
+		}
+		if homeStationPeerID != expectedHome {
+			return nil, nil
+		}
+		return []*model.VerifiedActorDeviceSigningKey{{
+			ActorPtid:          actorPTID,
+			ActorDeviceId:      actorPTID + ":device",
+			HomeStationPeerId:  homeStationPeerID,
+			SigningKeyId:       key.keyID,
+			Ed25519PublicKey:   append([]byte(nil), key.publicKey...),
+			ProfileVersion:     1,
+			VerificationSource: model.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+			ValidFromUnixMs:    clock.Now().UnixMilli(),
+		}}, nil
+	}))
 	registry := delivery.NewRegistry()
 	if err := infrastructure.RegisterFederatedFriendRequestReceivers(
 		registry,
@@ -1209,6 +2090,42 @@ func commandSourceStationForTest(body *model.FriendRequestCommandBody) string {
 	return body.GetReceiverHomeStationPeerId()
 }
 
+func friendRequestResultFrame(
+	t *testing.T,
+	source *friendRequestStation,
+	target *friendRequestStation,
+	result *model.FriendRequestCommandResult,
+) *delivery.Frame {
+	t.Helper()
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := &delivery.Frame{
+		FormatVersion:       delivery.CurrentFormatVersion,
+		FrameId:             "result-frame:" + result.GetCommandId(),
+		SourceStationPeerId: source.id,
+		TargetStationPeerId: target.id,
+		IdempotencyKey:      "result-idempotency:" + result.GetCommandId(),
+		PayloadKind:         delivery.PayloadKindSocialFriendRequestResult,
+		PayloadId:           result.GetCommandId(),
+		OrderingKey:         "test-result:" + result.GetRequestId(),
+		OrderingSequence:    1,
+		OpaquePayload:       payload,
+		IssuedAt:            timestamppb.New(source.clock.Now()),
+		ExpiresAt:           timestamppb.New(source.clock.Now().Add(time.Hour)),
+	}
+	if err := delivery.SignFrame(
+		context.Background(),
+		frame,
+		delivery.DefaultFramePolicy(target.id),
+		source.stationSigner,
+	); err != nil {
+		t.Fatal(err)
+	}
+	return frame
+}
+
 func assertProjectionState(
 	t *testing.T,
 	station *friendRequestStation,
@@ -1230,6 +2147,58 @@ func assertProjectionState(
 	}
 }
 
+func assertOutgoingCommandResult(
+	t *testing.T,
+	station *friendRequestStation,
+	command *model.FriendRequestCommand,
+	kind model.FriendRequestCommandResultKind,
+	errorCode model.FriendRequestCommandErrorCode,
+	eventState model.FriendRequestState,
+) {
+	t.Helper()
+	body := command.GetBody()
+	record, err := station.store.Command(
+		context.Background(),
+		domain.FriendRequestCommandRoleOutgoing,
+		body.GetReceiverHomeStationPeerId(),
+		body.GetCommandId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record == nil || record.ResolvedAt == nil || len(record.ResultBytes) == 0 {
+		t.Fatalf("outgoing command is not durably resolved: %+v", record)
+	}
+	var result model.FriendRequestCommandResult
+	if err := proto.Unmarshal(record.ResultBytes, &result); err != nil {
+		t.Fatal(err)
+	}
+	if err := domain.ValidateOutgoingFriendRequestCommandResult(
+		*record,
+		&result,
+	); err != nil {
+		t.Fatalf("outgoing result binding error = %v", err)
+	}
+	expectedHash, err := domain.FriendRequestCommandPayloadSHA256(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(result.GetCommandPayloadSha256(), expectedHash) ||
+		result.GetKind() != kind ||
+		result.GetErrorCode() != errorCode {
+		t.Fatalf("outgoing result = %+v", &result)
+	}
+	if eventState == model.FriendRequestState_FRIEND_REQUEST_STATE_UNSPECIFIED {
+		if result.GetEvent() != nil {
+			t.Fatalf("rejected outgoing result has event = %+v", result.GetEvent())
+		}
+		return
+	}
+	if result.GetEvent() == nil || result.GetEvent().GetState() != eventState {
+		t.Fatalf("outgoing result event = %+v, want state %s", result.GetEvent(), eventState)
+	}
+}
+
 func assertReceiverRejectedWithoutSocialMutation(
 	t *testing.T,
 	station *friendRequestStation,
@@ -1237,12 +2206,29 @@ func assertReceiverRejectedWithoutSocialMutation(
 	frame *delivery.Frame,
 ) {
 	t.Helper()
+	assertReceiverResultWithoutSocialMutation(
+		t,
+		station,
+		command,
+		frame,
+		delivery.TerminalResult(delivery.FrameErrorDomainRejected),
+	)
+}
+
+func assertReceiverResultWithoutSocialMutation(
+	t *testing.T,
+	station *friendRequestStation,
+	command *model.FriendRequestCommand,
+	frame *delivery.Frame,
+	expected delivery.Result,
+) {
+	t.Helper()
 	result, err := station.receiver.Receive(context.Background(), frame)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result != delivery.TerminalResult(delivery.FrameErrorDomainRejected) {
-		t.Fatalf("receiver rejection = %+v", result)
+	if result != expected {
+		t.Fatalf("receiver result = %+v, want %+v", result, expected)
 	}
 	if projection, err := station.store.Projection(
 		context.Background(),

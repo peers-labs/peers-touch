@@ -2,6 +2,11 @@ package infrastructure
 
 import "time"
 
+const (
+	friendRequestPolicyRelationshipAccepted int32 = 2
+	friendRequestPolicyRelationshipBlocked  int32 = 3
+)
+
 type federatedFriendRequestCommandModel struct {
 	Role                   string     `gorm:"column:role;size:32;primaryKey"`
 	AuthorityStationPeerID string     `gorm:"column:authority_station_peer_id;size:255;primaryKey"`

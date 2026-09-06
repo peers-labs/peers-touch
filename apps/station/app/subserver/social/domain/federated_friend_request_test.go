@@ -3,6 +3,7 @@ package domain_test
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"testing"
 	"time"
 
@@ -128,6 +129,163 @@ func TestFriendRequestEventHashChainAndExactReplay(t *testing.T) {
 	if err := domain.ValidateFriendRequestEvent(tampered); domain.FederationErrorCodeOf(err) !=
 		domain.FederationErrorIdempotencyConflict {
 		t.Fatalf("tampered hash-chain error = %v", err)
+	}
+}
+
+func TestReceiverFriendRequestPolicyMatchesActionSemantics(t *testing.T) {
+	tests := []struct {
+		name   string
+		action model.FriendRequestAction
+		policy domain.ReceiverFriendRequestPolicy
+		code   domain.FederationErrorCode
+	}{
+		{
+			name:   "receiver-local block takes precedence",
+			action: model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+			policy: domain.ReceiverFriendRequestPolicy{
+				Blocked:              true,
+				ExistingRelationship: true,
+			},
+			code: domain.FederationErrorBlocked,
+		},
+		{
+			name:   "existing relationship rejects duplicate request",
+			action: model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+			policy: domain.ReceiverFriendRequestPolicy{
+				ExistingRelationship: true,
+			},
+			code: domain.FederationErrorAlreadyFriends,
+		},
+		{
+			name:   "accept rechecks block",
+			action: model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT,
+			policy: domain.ReceiverFriendRequestPolicy{Blocked: true},
+			code:   domain.FederationErrorBlocked,
+		},
+		{
+			name:   "accept ignores existing relationship send guard",
+			action: model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT,
+			policy: domain.ReceiverFriendRequestPolicy{ExistingRelationship: true},
+		},
+		{
+			name:   "reject remains available while blocked",
+			action: model.FriendRequestAction_FRIEND_REQUEST_ACTION_REJECT,
+			policy: domain.ReceiverFriendRequestPolicy{Blocked: true},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := domain.ValidateReceiverFriendRequestPolicy(test.action, test.policy)
+			if domain.FederationErrorCodeOf(err) != test.code {
+				t.Fatalf("policy error = %v, want code %s", err, test.code)
+			}
+		})
+	}
+	if err := domain.ValidateReceiverFriendRequestPolicy(
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		domain.ReceiverFriendRequestPolicy{},
+	); err != nil {
+		t.Fatalf("clear receiver policy error = %v", err)
+	}
+}
+
+func TestOutgoingFriendRequestResultRequiresExactPersistedCommandHash(t *testing.T) {
+	now := time.Date(2026, time.September, 6, 12, 0, 0, 0, time.UTC)
+	send := signedDomainFriendRequestCommand(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		"command-send",
+		"request-1",
+		now,
+	)
+	pending, _, err := domain.ApplyFriendRequestCommand(
+		nil,
+		send,
+		"station-b",
+		now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		command *model.FriendRequestCommand
+		current *domain.FriendRequestProjection
+	}{
+		{name: "send", command: send},
+		{
+			name: "accept",
+			command: signedDomainFriendRequestCommand(
+				t,
+				model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT,
+				"command-accept",
+				"request-1",
+				now.Add(time.Minute),
+			),
+			current: &pending,
+		},
+		{
+			name: "reject",
+			command: signedDomainFriendRequestCommand(
+				t,
+				model.FriendRequestAction_FRIEND_REQUEST_ACTION_REJECT,
+				"command-reject",
+				"request-1",
+				now.Add(time.Minute),
+			),
+			current: &pending,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			commandBytes, err := domain.CanonicalFriendRequestCommandBytes(test.command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			commandHash := sha256.Sum256(commandBytes)
+			_, event, err := domain.ApplyFriendRequestCommand(
+				test.current,
+				test.command,
+				"station-b",
+				now.Add(time.Minute),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			record := domain.FriendRequestCommandRecord{
+				Role:                   domain.FriendRequestCommandRoleOutgoing,
+				AuthorityStationPeerID: "station-b",
+				CommandID:              test.command.GetBody().GetCommandId(),
+				RequestID:              test.command.GetBody().GetRequestId(),
+				CommandBytes:           commandBytes,
+				CommandPayloadSHA256:   commandHash[:],
+				CreatedAt:              now,
+			}
+			result := &model.FriendRequestCommandResult{
+				CommandId:            record.CommandID,
+				RequestId:            record.RequestID,
+				CommandPayloadSha256: append([]byte(nil), commandHash[:]...),
+				Kind:                 model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_COMMITTED,
+				Event:                event,
+			}
+			if err := domain.ValidateOutgoingFriendRequestCommandResult(
+				record,
+				result,
+			); err != nil {
+				t.Fatalf("exact outgoing result error = %v", err)
+			}
+
+			conflict := proto.Clone(result).(*model.FriendRequestCommandResult)
+			conflict.CommandPayloadSha256[0] ^= 0xff
+			if err := domain.ValidateOutgoingFriendRequestCommandResult(
+				record,
+				conflict,
+			); domain.FederationErrorCodeOf(err) != domain.FederationErrorIdempotencyConflict {
+				t.Fatalf("conflicting outgoing result error = %v", err)
+			}
+		})
 	}
 }
 
