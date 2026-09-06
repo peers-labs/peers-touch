@@ -7247,6 +7247,7 @@ async function runFoundationF07Scenario(input: {
   });
   await useChatStore.getState().selectSession(retryConversation.conversation_id);
   const retryCapabilitySession = await resolveFoundationToolTurnSession();
+  const retrySourceNonce = crypto.randomUUID();
 
   let cancellationRequested = false;
   let resolveCancellation!: (value: {
@@ -7262,7 +7263,9 @@ async function runFoundationF07Scenario(input: {
   const retrySource = startObservedFoundationTurn({
     conversationId: retryConversation.conversation_id,
     agentId,
-    content: `Reply with 20 short numbered items for retry sample ${input.sampleId}.`,
+    content:
+      `Reply with 20 short numbered items for retry sample ${input.sampleId}. `
+      + `Include nonce ${retrySourceNonce} in every item.`,
     idempotencyKey: crypto.randomUUID(),
     provider: input.agent.provider || undefined,
     model: input.agent.model || undefined,
