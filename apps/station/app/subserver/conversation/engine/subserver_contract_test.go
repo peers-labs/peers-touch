@@ -6,13 +6,12 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
-func TestCanonicalCommandRoutesIncludeConversationPolicies(t *testing.T) {
+func TestCanonicalCommandRoutesKeepPolicyAtTheOwningLayer(t *testing.T) {
 	policy := func(next server.EndpointHandler) server.EndpointHandler { return next }
 	subserver := &subServer{
 		composition: &Composition{},
 		dependencies: Dependencies{
-			CreateDirectPolicy:  policy,
-			SubmitCommandPolicy: policy,
+			CreateDirectPolicy: policy,
 		},
 		jwtWrapper: policy,
 	}
@@ -27,9 +26,9 @@ func TestCanonicalCommandRoutesIncludeConversationPolicies(t *testing.T) {
 			wrapperCounts["conversation-create-direct"],
 		)
 	}
-	if wrapperCounts["conversation-command-submit"] != 4 {
+	if wrapperCounts["conversation-command-submit"] != 3 {
 		t.Fatalf(
-			"command submission must include log, device, social-policy, and JWT wrappers; got %d",
+			"command submission must defer command-aware authorization to the authority service; got %d wrappers",
 			wrapperCounts["conversation-command-submit"],
 		)
 	}
