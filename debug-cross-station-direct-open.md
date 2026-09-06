@@ -34,6 +34,7 @@
 | Q | Federated command preparation still validates Bob's endpoint through station-four's local `actor_devices` instead of the verified remote endpoint manifest. | High | Low | Confirmed: station-five forwards `/messaging/command/prepare`; station-four receives `/messaging/federation/command/prepare`, then returns `messaging: record not found`. The authority has Bob's verified manifest but no local Bob device row, and both `AuthorityPrepareHandler` and `AuthorityService.PrepareSend` still use the local device directory. |
 | R | Bob's Device Messaging Engine lacks the MLS session required to prepare the reply. | Low | Low | Rejected as the first failure: the Station prepare request returns 500 before local MLS outbound preparation runs. |
 | S | The cross-Station Fixture publishes an accepted friend request but omits the reciprocal Social follow edges required by Conversation Direct policy. | High | Low | Confirmed by Windows run `20260906T050808799291Z-fa0eb0c4f955b6e8442c02cdaed89473`: Desktop rendered Bob as an accepted friend, while station-four returned `RELATIONSHIP_REQUIRED`. Source inspection showed `seed_cross_station_contact` inserted only `friend_chat_friend_requests`; commit `abea69ac4346a87aab74c45152be646906fabed4` now seeds and asserts both canonical `follows` edges on each disposable Station. |
+| T | Desktop still publishes MLS KeyPackages through the deleted `/keypackage/*` namespace after Station moved the capability to `/key-exchange/*`. | High | Low | Confirmed by run `20260906T060404502049Z-720b250fb534231a2a274d7f7cd9ab9a`: both clients repeatedly received 404 for `POST /keypackage/upload`; Alice's group creation then returned Station 500 and no MLS group projected. Commit `d30bf13e5` moves every Desktop MLS KeyPackage and DKX caller to the canonical Key Exchange routes and adds a no-legacy-route contract check. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -337,3 +338,26 @@ truth layer: it inserts both follow directions and aborts the transaction unless
 both edges exist. The SQL executed successfully on station-four and
 station-five, and the clean-HEAD four-Gate local Chat matrix passed. Post-fix
 Windows Product Closure remains pending; the session stays `[OPEN]`.
+
+Exact-source Windows run
+`20260906T060404502049Z-720b250fb534231a2a274d7f7cd9ab9a` at commit
+`b9745a20ee04db0c50c36c2f3579f1c2a3db1c4c` and binary SHA-256
+`56e1951071978b631e6c8939f53f9ee37be14bd61084a65b63167f3b0362729e`
+proved the relationship-Fixture correction:
+
+- the first exact Bob click created Direct conversation
+  `d-f4d4aaa25c831bb05fdd53cd1cdd6120`;
+- the second search reopened the same Station-authored conversation;
+- `conversation.search.ui` passed; and
+- cleanup released all clients, ports, storage roots, tunnels, source
+  workspace and the GUI lease.
+
+The first failed step moved to `group.create.ui`. Both clients repeatedly
+called deleted `POST /keypackage/upload` and received 404, leaving Station
+without the MLS KeyPackages needed for group genesis. Alice's create-group
+command consequently returned Station 500 and no active MLS group appeared.
+The canonical ownership registry and Station already expose
+`/key-exchange/mls/key-package/{upload,fetch,count}` and
+`/key-exchange/dkx/send`; commit `d30bf13e5` switches all Desktop callers to
+those routes and rejects restoration of the old literals. Post-fix Windows
+Product Closure remains pending; the session stays `[OPEN]`.
