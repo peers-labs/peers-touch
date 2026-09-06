@@ -165,6 +165,52 @@ fn report_foundation_queue_stream_debug(
 }
 // #endregion
 
+// #region debug-point B-D:foundation-fault-ack
+fn foundation_fault_stream_request(body: &str) -> bool {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|payload| {
+            payload
+                .get("user_input")
+                .and_then(Value::as_str)
+                .map(|user_input| {
+                    user_input
+                        == "Write a detailed 2000-word numbered guide to durable event stream recovery."
+                })
+        })
+        .unwrap_or(false)
+}
+
+fn report_foundation_fault_stream_debug(stage: &str, data: Value) {
+    if std::env::var("PT_DESKTOP_E2E").as_deref() != Ok("true") {
+        return;
+    }
+    let payload = json!({
+        "sessionId": "foundation-fault-ack",
+        "runId": "pre-fix",
+        "hypothesisId": "B-D",
+        "location": "http_gateway/mod.rs:handle_agent_stream_proxy",
+        "msg": format!("[DEBUG] {stage}"),
+        "data": data,
+        "ts": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0),
+    });
+    let _ = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_millis(100))
+        .timeout(std::time::Duration::from_millis(250))
+        .build()
+        .and_then(|client| {
+            client
+                .post("http://127.0.0.1:7779/event")
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(payload.to_string())
+                .send()
+        });
+}
+// #endregion
+
 #[derive(Clone)]
 enum GatewayRuntime {
     Tauri { app_handle: AppHandle },
@@ -444,6 +490,8 @@ fn handle_agent_stream_proxy(
     let queue_request = (std::env::var("PT_DESKTOP_E2E").as_deref() == Ok("true"))
         .then(|| foundation_queue_stream_request(&body))
         .flatten();
+    let fault_request = std::env::var("PT_DESKTOP_E2E").as_deref() == Ok("true")
+        && foundation_fault_stream_request(&body);
     let stream_started_at = std::time::Instant::now();
     if let Some((request_kind, queue_index)) = queue_request {
         report_foundation_queue_stream_debug(
@@ -470,12 +518,26 @@ fn handle_agent_stream_proxy(
             return;
         }
     };
+    let station_url = station_client::station_base_url();
+    if fault_request {
+        let route = reqwest::Url::parse(&station_url).ok();
+        report_foundation_fault_stream_debug(
+            "gateway-stream-started",
+            json!({
+                "stationPath": station_path,
+                "stationIsLoopback": route
+                    .as_ref()
+                    .and_then(reqwest::Url::host_str)
+                    == Some("127.0.0.1"),
+                "stationPort": route.as_ref().and_then(reqwest::Url::port_or_known_default),
+                "activeWorkersAtEnqueue": diagnostics.active_workers_at_enqueue,
+                "queuedAtEnqueue": diagnostics.queued_at_enqueue,
+                "queueWaitMs": diagnostics.queue_wait_ms,
+            }),
+        );
+    }
     let upstream = client
-        .post(format!(
-            "{}{}",
-            station_client::station_base_url(),
-            station_path
-        ))
+        .post(format!("{station_url}{station_path}"))
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .header(reqwest::header::ACCEPT, "text/event-stream")
         .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
@@ -484,6 +546,16 @@ fn handle_agent_stream_proxy(
     let upstream = match upstream {
         Ok(response) => response,
         Err(error) => {
+            if fault_request {
+                report_foundation_fault_stream_debug(
+                    "gateway-upstream-error",
+                    json!({
+                        "elapsedMs": stream_started_at.elapsed().as_millis(),
+                        "isConnect": error.is_connect(),
+                        "isTimeout": error.is_timeout(),
+                    }),
+                );
+            }
             let response = tiny_http::Response::from_string(error.to_string())
                 .with_status_code(502)
                 .with_header(cors_origin());
@@ -499,6 +571,16 @@ fn handle_agent_stream_proxy(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .and_then(|value| format!("X-Agent-Turn-ID: {value}").parse().ok());
+    if fault_request {
+        report_foundation_fault_stream_debug(
+            "gateway-upstream-admitted",
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "status": status,
+                "turnIdPresent": turn_id_header.is_some(),
+            }),
+        );
+    }
     if let Some((request_kind, queue_index)) = queue_request {
         report_foundation_queue_stream_debug(
             "stream-upstream-admitted",
@@ -532,6 +614,15 @@ fn handle_agent_stream_proxy(
         None,
     );
     let response_result = request.respond(response);
+    if fault_request {
+        report_foundation_fault_stream_debug(
+            "gateway-stream-completed",
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "responseOk": response_result.is_ok(),
+            }),
+        );
+    }
     if let Some((request_kind, queue_index)) = queue_request {
         report_foundation_queue_stream_debug(
             "stream-proxy-completed",
