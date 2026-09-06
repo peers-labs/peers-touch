@@ -20,6 +20,7 @@ type ownershipRegistry struct {
 	Activation              registryActivation  `yaml:"activation"`
 	GovernedPrefixes        []string            `yaml:"governed_prefixes"`
 	OwnerRoots              map[string][]string `yaml:"owner_roots"`
+	DDDLayers               []dddLayerRule      `yaml:"ddd_layers"`
 	Capabilities            []capability        `yaml:"capabilities"`
 	TargetAbsentRoutes      []routeKey          `yaml:"target_absent_routes"`
 	TargetAbsentPrefixes    []string            `yaml:"target_absent_prefixes"`
@@ -30,6 +31,12 @@ type registryActivation struct {
 	State        string   `yaml:"state"`
 	GateEnabled  bool     `yaml:"gate_enabled"`
 	Requirements []string `yaml:"requirements"`
+}
+
+type dddLayerRule struct {
+	Name             string   `yaml:"name"`
+	Root             string   `yaml:"root"`
+	ForbiddenImports []string `yaml:"forbidden_imports"`
 }
 
 type capability struct {
