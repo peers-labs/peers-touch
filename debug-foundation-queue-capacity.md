@@ -1,6 +1,6 @@
 # Debug Session: foundation-queue-capacity
 - **Status**: [OPEN]
-- **Issue**: Exact-source Foundation Browser AS-F02 zh-CN fails with `agent.acceptance.queueCapacitySnapshotMismatch` before the eight-entry Station queue snapshot is captured.
+- **Issue**: Exact-source Foundation Browser AS-F02 depends on provider duration after reaching the strict eight-entry queue, allowing the active Turn to complete before overflow rejection and cancellation are observed.
 - **Debug Server**: http://127.0.0.1:7786/event
 - **Log File**: `.dbg/trae-debug-log-foundation-queue-capacity.ndjson`
 
@@ -21,6 +21,7 @@
 | F | Launching the duplicate before the original request has a Station admission can let the duplicate win the shared idempotency key. | High | Low | Confirmed on `abc010684`: the second locale reached strict `8/8`, but the designated active observer received only `admission_replayed` while the duplicate observer carried the real active stream. |
 | G | A queued Turn is admitted during post-cancellation cleanup and mutates the conversation between the source and replay readbacks. | High | Low | Confirmed on `a30862ee`: source readback was version 21 with two messages, replay was version 22 with three messages, and the final queue was empty. |
 | H | The active Turn completes after the strict capacity snapshot but before the first queued cancellation, making the snapshot version or selected queue entry stale. | High | Low | Consistent with `19e0ec1c`: capacity was `8/8` at 1,012 ms, the active stream completed at 1,644 ms, and the next action failed with `agent.turnQueueCancelFailed`. The next run records the exact pre-cancel timing and bounded post-failure queue state. |
+| I | A fast provider can complete after the strict capacity snapshot but before the overflow admission reaches Station, so overflow and active cancellation observe a different lifecycle state. | High | Low | Confirmed on `ec32dbf2`: capacity was `8/8` at 1,182 ms, the active Turn completed at 1,219 ms, overflow was admitted at 1,351 ms, and cancellation later returned `completed`. |
 
 ## Log Evidence
 - Existing exact-source Gate evidence:
@@ -182,6 +183,25 @@
     longer `cancelled`, so the Harness failed closed with
     `agent.acceptance.foundationActiveTurnCancelRejected`.
   - Inner runtime cleanup and outer Provisioner cleanup both passed.
+- Exact-source run
+  `20260906T122833633196Z-74c858bed2c6c53a7e8e8854013a012b`
+  (aggregate
+  `20260906T122833459442Z-c0ee0d4972cd0d50973c5df231526f34`)
+  on `ec32dbf284efbb36b825c2cc9f6264cff90f0af3`:
+  - Runtime and Station source identity matched, and Provisioner cleanup
+    completed `DONE / PROVEN / passed`.
+  - Browser AS-F02 reached strict `8/8` with FIFO positions `1..8` at
+    1,182 ms.
+  - The real provider completed the active Turn at 1,219 ms, only 37 ms after
+    the capacity snapshot.
+  - The overflow request reached Station after the active completion and was
+    admitted instead of returning `ADMISSION_QUEUE_FULL`.
+  - Queue cancellation still committed, while active cancellation correctly
+    returned the already-terminal `completed` status.
+  - The Gate failed closed with
+    `agent.acceptance.foundationActiveTurnCancelRejected`; AS-F10 was not
+    reached, so its `ec32dbf2` fix remains locally verified but exact-source
+    unproven.
 
 ## Verification Conclusion
 The admission barrier removed the idempotency-owner race and kept the strict
@@ -202,13 +222,25 @@ stream, then terminally settles every residual admitted Turn before the source
 readback. The session remains `[OPEN]` because post-fix exact-source comparison
 and explicit cleanup confirmation are still required.
 
+The `ec32dbf2` rerun exposed one remaining duration dependency before that
+settlement path: a strict capacity snapshot does not freeze the active Turn
+while the overflow request crosses the Gateway. The next fix reuses the
+existing reversible READY capability fixture and holds the active Turn in the
+production manual-approval state. Queue admissions are already in flight
+before the approval barrier is awaited. Once approval is visible, the active
+Turn cannot finish on provider timing, so strict capacity, real overflow
+rejection, queue cancellation, and Station-authoritative active cancellation
+can be observed without sleeps, timeout changes, or Station policy changes.
+
 ## Fix
 - Capture the empty queue baseline before starting the active request.
 - Start the active request and wait only for the Station-authored conversation
   version to advance, proving that request owns the active admission.
 - Start duplicate replay and all eight unique queue submissions immediately
   after that admission barrier, without first awaiting provider output.
-- Await the active first event only after all admission requests are in flight.
+- Use the existing reversible READY capability fixture with manual approval,
+  and await its real `tool_approval_required` event only after all admission
+  requests are in flight.
 - Poll the authoritative Station queue to the unchanged strict `8/8` condition.
 - Submit the overflow request only after the full-capacity snapshot exists.
 - Capture receiver visibility, overflow rejection, and active-dependency
@@ -226,6 +258,12 @@ and explicit cleanup confirmation are still required.
 - Preserve the existing queue-capacity, FIFO, overflow, cancellation, DOM, and lifecycle assertions.
 
 ## Local Verification
+- Current manual-approval hold:
+  - focused Python suites: 150/150 passed;
+  - `cd apps/desktop && pnpm run check`: passed;
+  - `cd apps/desktop && pnpm run test`: 569 passed, one unrelated
+    environment-dependent test skipped;
+  - `git diff --check`: passed.
 - `python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test`: 69/69 passed.
 - `python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test tooling.acceptance.gates.agent.foundation_group_one_probe_test`: 82/82 passed after adding the admission barrier and moving active cancellation ahead of residual queue cleanup.
 - `cd apps/desktop && pnpm run check`: passed.
