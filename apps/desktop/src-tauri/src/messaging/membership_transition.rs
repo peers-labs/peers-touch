@@ -47,7 +47,7 @@ impl StationMembershipTransitionTransport {
             PrepareMessagingMembershipTransitionResponse,
         >(
             Method::POST,
-            "/messaging/membership/transition/prepare",
+            "/conversation/membership/prepare",
             &self.token,
             None,
             Some(&PrepareMessagingMembershipTransitionRequest {

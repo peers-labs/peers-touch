@@ -7,6 +7,12 @@
 
 ---
 
+Conversation is the sole Chat entry point at `/conversation/*`. Device, Inbox,
+Recovery, Key Exchange, and Federation resources are exposed only by their
+owners. `messaging_*` Station schemas and request names retained below describe
+pre-consolidation implementation evidence unless explicitly identified as
+Device Messaging Engine local state.
+
 ## 1. Canonical Identifiers
 
 | Identifier | Scope |

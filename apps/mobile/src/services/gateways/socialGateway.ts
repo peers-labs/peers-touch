@@ -147,7 +147,7 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
           code: 'SOCIAL_TYPING_INVALID_INPUT',
           message: 'authenticated actor and conversation are required',
           method: 'POST',
-          path: '/messaging/typing/submit',
+          path: '/conversation/typing',
         },
       };
     }
@@ -162,7 +162,7 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
           value: create(TypingCommandSchema, { isTyping: typing }),
         },
       });
-      const response = await fetch(`${stationUrl}/messaging/typing/submit`, {
+      const response = await fetch(`${stationUrl}/conversation/typing`, {
         method: 'POST',
         cache: 'no-store',
         headers: {
@@ -181,7 +181,7 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
             message: `typing submit failed with status ${response.status}`,
             status: response.status,
             method: 'POST',
-            path: '/messaging/typing/submit',
+            path: '/conversation/typing',
           },
         };
       }
@@ -193,7 +193,7 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
           code: 'SOCIAL_TYPING_TRANSPORT_ERROR',
           message: error instanceof Error ? error.message : 'typing_submit_failed',
           method: 'POST',
-          path: '/messaging/typing/submit',
+          path: '/conversation/typing',
         },
       };
     }
@@ -204,7 +204,7 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
     listFriendRequests: async (status = 0, limit = 50, offset = 0) => {
       const result = await command<ListFriendRequestsRaw>({
         method: 'GET',
-        path: '/friend-chat/friend-requests',
+        path: '/api/v1/social/friend-requests',
         query: { status, limit, offset },
       });
       if (!result.ok) return result;
@@ -214,13 +214,13 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
     },
 
     sendFriendRequest: (receiverPtid, message = '') =>
-      command({ method: 'POST', path: '/friend-chat/friend-request/send', body: { receiver_ptid: receiverPtid, message } }),
+      command({ method: 'POST', path: '/api/v1/social/friend-request/send', body: { receiver_ptid: receiverPtid, message } }),
 
     acceptFriendRequest: (requestId) =>
-      command({ method: 'POST', path: '/friend-chat/friend-request/accept', body: { request_id: requestId } }),
+      command({ method: 'POST', path: '/api/v1/social/friend-request/accept', body: { request_id: requestId } }),
 
     rejectFriendRequest: (requestId) =>
-      command({ method: 'POST', path: '/friend-chat/friend-request/reject', body: { request_id: requestId } }),
+      command({ method: 'POST', path: '/api/v1/social/friend-request/reject', body: { request_id: requestId } }),
 
     // --- Sessions ---
     listSessions: async (limit = 50, offset = 0) => {
