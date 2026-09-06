@@ -975,11 +975,13 @@ async function cleanupFoundationToolConversation(
 
 async function cancelFoundationQueuedTurns(
   conversationId: string,
+  maximumCancellations = Number.POSITIVE_INFINITY,
 ): Promise<Awaited<ReturnType<typeof api.cancelQueuedAgentTurn>> | null> {
   const idempotencyKeys = new Map<string, string>();
   let firstCancellation: Awaited<
     ReturnType<typeof api.cancelQueuedAgentTurn>
   > | null = null;
+  let cancellationCount = 0;
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const queue = await api.listAgentTurnQueue(conversationId);
@@ -999,6 +1001,10 @@ async function cancelFoundationQueuedTurns(
           expected_conversation_version: expectedVersion,
         });
         firstCancellation ??= cancellation;
+        cancellationCount += 1;
+        if (cancellationCount >= maximumCancellations) {
+          return firstCancellation;
+        }
         expectedVersion = cancellation.conversation_version;
       } catch (error) {
         if (observedErrorCode(error) !== 'VERSION_CONFLICT') throw error;
@@ -10836,22 +10842,34 @@ export function installAcceptanceHarness(): void {
           'queue-cancellation-requested',
           {
             elapsedSinceActiveMs: performance.now() - activeStartedAt,
-            expectedConversationVersion:
+            snapshotConversationVersion:
               queueAtCapacity.conversation_version,
             targetQueuePosition: cancellationTarget.queue_position,
             activeEventTypes: active.events.map((event) => event.event),
           },
         );
+        void reportFoundationQueueCapacityDebug(
+          'A,F',
+          'active-cancellation-requested',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            activeEventTypes: active.events.map((event) => event.event),
+          },
+        );
         let cancellation: Awaited<
           ReturnType<typeof api.cancelQueuedAgentTurn>
+        > | null;
+        let activeCancellation: Awaited<
+          ReturnType<typeof api.cancelAgentTurn>
         >;
         try {
-          cancellation = await api.cancelQueuedAgentTurn({
-            conversation_id: conversation.conversation_id,
-            queue_entry_id: cancellationTarget.queue_entry_id,
-            idempotency_key: crypto.randomUUID(),
-            expected_conversation_version: queueAtCapacity.conversation_version,
-          });
+          [cancellation, activeCancellation] = await Promise.all([
+            cancelFoundationQueuedTurns(
+              conversation.conversation_id,
+              1,
+            ),
+            api.cancelAgentTurn(activeTurnId),
+          ]);
         } catch (error) {
           const currentQueue = await api.listAgentTurnQueue(
             conversation.conversation_id,
@@ -10862,7 +10880,7 @@ export function installAcceptanceHarness(): void {
             {
               elapsedSinceActiveMs: performance.now() - activeStartedAt,
               errorCode: observedErrorCode(error),
-              expectedConversationVersion:
+              snapshotConversationVersion:
                 queueAtCapacity.conversation_version,
               currentConversationVersion:
                 currentQueue?.conversation_version ?? null,
@@ -10879,6 +10897,9 @@ export function installAcceptanceHarness(): void {
           );
           throw error;
         }
+        if (!cancellation) {
+          throw new Error('agent.acceptance.queueCancellationTargetMissing');
+        }
         void reportFoundationQueueCapacityDebug(
           'A,H',
           'queue-cancellation-completed',
@@ -10889,15 +10910,6 @@ export function installAcceptanceHarness(): void {
             activeEventTypes: active.events.map((event) => event.event),
           },
         );
-        void reportFoundationQueueCapacityDebug(
-          'A,F',
-          'active-cancellation-requested',
-          {
-            elapsedSinceActiveMs: performance.now() - activeStartedAt,
-            activeEventTypes: active.events.map((event) => event.event),
-          },
-        );
-        const activeCancellation = await api.cancelAgentTurn(activeTurnId);
         void reportFoundationQueueCapacityDebug(
           'A,F',
           'active-cancellation-completed',
@@ -10931,6 +10943,45 @@ export function installAcceptanceHarness(): void {
           duplicate.result,
           queuedResultsPromise,
         ]);
+        await cancelFoundationQueuedTurns(conversation.conversation_id);
+        const residualTurnIds = Array.from(new Set(
+          (
+            await api.listAgentConversationMessages({
+              conversation_id: conversation.conversation_id,
+              limit: 200,
+            })
+          ).messages
+            .map((message) => message.turn_id)
+            .filter(
+              (turnId): turnId is string =>
+                Boolean(turnId) && turnId !== activeTurnId,
+            ),
+        ));
+        const residualTurnStatuses: string[] = [];
+        for (const residualTurnId of residualTurnIds) {
+          const residualCancellation = await api.cancelAgentTurn(
+            residualTurnId,
+          );
+          const residualStatus = String(
+            residualCancellation?.status ?? '',
+          ).toLowerCase();
+          if (!['cancelled', 'completed'].includes(residualStatus)) {
+            throw new Error(
+              'agent.acceptance.foundationResidualTurnNotSettled',
+            );
+          }
+          residualTurnStatuses.push(residualStatus);
+        }
+        await cancelFoundationQueuedTurns(conversation.conversation_id);
+        void reportFoundationQueueCapacityDebug(
+          'G,H',
+          'residual-turns-settled',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            residualTurnCount: residualTurnIds.length,
+            residualTurnStatuses,
+          },
+        );
         preparedRuntimeEvent.current = {
           eventType: firstActiveEvent.event,
           sequence: Number(firstActiveEvent.data.seq ?? 0),

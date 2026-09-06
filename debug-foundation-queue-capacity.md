@@ -19,7 +19,7 @@
 | D | Gateway worker queueing is the primary delay. | Medium | Medium | Rejected: all queue requests entered the Gateway together with `queueWaitMs=0`; the active Turn's remaining provider lifetime was already only 142 ms. |
 | E | Conversation cleanup or selection drift makes the readback target differ from the created queue conversation. | Low | Low | Rejected: both tuples retained the selected conversation. |
 | F | Launching the duplicate before the original request has a Station admission can let the duplicate win the shared idempotency key. | High | Low | Confirmed on `abc010684`: the second locale reached strict `8/8`, but the designated active observer received only `admission_replayed` while the duplicate observer carried the real active stream. |
-| G | A queued Turn is admitted during post-cancellation cleanup and mutates the conversation between the source and replay readbacks. | High | Low | Consistent with the `6de266738` failure; the next run records only readback hashes, versions, message counts/statuses, and final queue size to confirm or reject it. |
+| G | A queued Turn is admitted during post-cancellation cleanup and mutates the conversation between the source and replay readbacks. | High | Low | Confirmed on `a30862ee`: source readback was version 21 with two messages, replay was version 22 with three messages, and the final queue was empty. |
 | H | The active Turn completes after the strict capacity snapshot but before the first queued cancellation, making the snapshot version or selected queue entry stale. | High | Low | Consistent with `19e0ec1c`: capacity was `8/8` at 1,012 ms, the active stream completed at 1,644 ms, and the next action failed with `agent.turnQueueCancelFailed`. The next run records the exact pre-cancel timing and bounded post-failure queue state. |
 
 ## Log Evidence
@@ -137,6 +137,22 @@
     the safe error code plus current queue version/size/positions and whether
     the selected entry remains pending.
 - Exact-source run
+  `20260906T110008007460Z-3708060aaf16eae23b9ccf7fed80014d`
+  (aggregate
+  `20260906T110007890146Z-7af26a2f4e85c2e83e6a00d29dfbb182`)
+  on `a30862ee1f0c24f9f94a4f3c241b1f606f4f6d07`:
+  - Strict queue capacity, FIFO positions, overflow rejection, queue
+    cancellation, and active cancellation all passed.
+  - At-capacity observations completed at 1,296 ms, the queue cancellation
+    completed at 1,411 ms, and active cancellation returned `cancelled` at
+    1,574 ms.
+  - The source readback was conversation version 21 with two messages; the
+    replay readback was version 22 with three messages while the final queue
+    was empty.
+  - This confirms that Station admitted one residual queued Turn during
+    cancellation cleanup and it settled between the two readbacks.
+  - Inner runtime cleanup and outer Provisioner cleanup both passed.
+- Exact-source run
   `20260906T092327804315Z-110a210664701b15a8495ad6120ea9c2`
   (aggregate
   `20260906T092327677006Z-ede0d99faab81d07650e89953bea06a7`)
@@ -175,12 +191,15 @@ finish naturally. Queue visibility, overflow, and active-dependency checks can
 run concurrently after the capacity snapshot. The Harness can then cancel one
 queued entry for the required queue-control assertion, cancel the active Turn,
 and only afterward clean the residual queue. That ordering now succeeds, but
-provider duration remains nondeterministic: the latest exact-source run reached
-strict capacity but the active stream completed before the first queued
-cancellation. The next run records the precise cancellation boundary and
-current Station queue state before any action ordering is changed. The final
-readback mismatch hypothesis remains pending because this run did not reach
-replay. The session remains `[OPEN]` because post-fix exact-source comparison
+provider duration remains nondeterministic, and Station correctly admits the
+next pending Turn when the active Turn terminates. The source/replay mismatch
+is therefore an Acceptance settlement bug: the Harness drains pending queue
+entries but does not terminally settle the one residual Turn that can cross
+from pending to admitted during cancellation. The fix starts active and
+single-entry queue cancellation together, retries the queue mutation against
+the current Station version, drains pending entries, awaits the original
+stream, then terminally settles every residual admitted Turn before the source
+readback. The session remains `[OPEN]` because post-fix exact-source comparison
 and explicit cleanup confirmation are still required.
 
 ## Fix
@@ -194,8 +213,12 @@ and explicit cleanup confirmation are still required.
 - Submit the overflow request only after the full-capacity snapshot exists.
 - Capture receiver visibility, overflow rejection, and active-dependency
   rejection concurrently while the queue is full.
-- Cancel one queued entry for the queue-control assertion, cancel the active
-  Turn immediately, then clean the residual queue.
+- Start active cancellation and one queued-entry cancellation together after
+  all at-capacity observations; retry the queue mutation against current
+  Station version.
+- Drain pending queue entries, await the original stream, then cancel or
+  acknowledge every residual Turn that Station admitted during the
+  cancellation handoff before taking source evidence.
 - Record a bounded final readback comparison to distinguish residual Turn
   settlement from hash normalization without changing the equality predicate.
 - Await active, duplicate, queued, and overflow results after their
