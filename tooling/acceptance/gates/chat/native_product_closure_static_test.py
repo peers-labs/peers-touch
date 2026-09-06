@@ -2164,12 +2164,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             row_focus,
         )
         enter_post = keyboard_path.index(
-            "self.native_adapter.post_key(NativeKey.ENTER, private_source=True)",
+            "self.native_adapter.post_key_to_process(\n"
+            "            process_id,\n"
+            "            NativeKey.ENTER,",
             row_focus_wait,
         )
         tab_post = keyboard_path.index(
-            "self.native_adapter.post_key("
-            "NativeKey.TAB, private_source=True)"
+            "self.native_adapter.post_key_to_process(\n"
+            "                process_id,\n"
+            "                NativeKey.TAB,"
         )
         focus_wait = keyboard_path.index(
             "WebDriverWait(client.driver, 5).until(",
@@ -2182,6 +2185,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertLess(enter_post, tab_post)
         self.assertLess(tab_post, focus_wait)
         self.assertLess(focus_wait, changed_focus)
+        self.assertNotIn("self.native_adapter.post_key(", keyboard_path)
 
     def test_reaction_connection_loss_proves_automatic_exact_retry(self) -> None:
         reaction_start = self.source.index("def prove_reaction(")
