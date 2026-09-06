@@ -2,11 +2,49 @@
 
 from __future__ import annotations
 
+import json
 import socket
 import threading
+import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from secrets import token_urlsafe
 from urllib.parse import urlparse
+
+
+# #region debug-point A-B-D:foundation-fault-ack
+def _report_fault_debug(stage: str, data: dict[str, object], timestamp_ms: int) -> None:
+    payload = json.dumps(
+        {
+            "sessionId": "foundation-fault-ack",
+            "runId": "pre-fix",
+            "hypothesisId": "A-B-D",
+            "location": "tcp_fault_proxy.py",
+            "msg": f"[DEBUG] {stage}",
+            "data": data,
+            "ts": timestamp_ms,
+        }
+    ).encode("utf-8")
+
+    def send() -> None:
+        try:
+            request = urllib.request.Request(
+                "http://127.0.0.1:7779/event",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=0.25):
+                pass
+        except Exception:
+            pass
+
+    threading.Thread(
+        target=send,
+        name="agent-fault-debug-report",
+        daemon=True,
+    ).start()
+# #endregion
 
 
 class TcpFaultProxyError(RuntimeError):
@@ -78,6 +116,7 @@ class TcpFaultProxy:
         self._thread.start()
 
     def cut(self) -> None:
+        cut_started_at = time.time_ns() // 1_000_000
         with self._lock:
             if self._stopped.is_set():
                 raise TcpFaultProxyError("TCP fault proxy is closed")
@@ -85,7 +124,30 @@ class TcpFaultProxy:
             self._generation += 1
             active = tuple(self._connections)
             self._connections.clear()
+            generation = self._generation
+        _report_fault_debug(
+            "proxy-cut-started",
+            {
+                "proxyPort": self.port,
+                "generation": generation,
+                "activeSocketCount": len(active),
+                "activeSocketFileDescriptors": sorted(
+                    connection.fileno() for connection in active
+                ),
+            },
+            cut_started_at,
+        )
         self._close_connections(active)
+        _report_fault_debug(
+            "proxy-cut-completed",
+            {
+                "proxyPort": self.port,
+                "generation": generation,
+                "closedSocketCount": len(active),
+                "elapsedMs": (time.time_ns() // 1_000_000) - cut_started_at,
+            },
+            time.time_ns() // 1_000_000,
+        )
 
     def restore(self) -> None:
         with self._lock:
