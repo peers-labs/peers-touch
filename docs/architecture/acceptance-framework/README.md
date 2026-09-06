@@ -68,6 +68,9 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 11. 跨平台 Native 声明必须由 Gate × Runtime Cell 矩阵证明，任何平台不得替代另一平台。
 12. 多服务环境中的每个客户端必须通过 typed service binding 选择依赖服务，禁止
     通过客户端顺序、裸 URL 或业务常量推断 Station。
+13. Chat 验收只承认 Conversation `/conversation/*` 入口；Device、Inbox、
+    Recovery、Key Exchange 与 Federation 必须通过各自 resource-owner API
+    取证。Desktop/Mobile 的 Device Messaging Engine 名称只描述内部 runtime。
 
 ---
 

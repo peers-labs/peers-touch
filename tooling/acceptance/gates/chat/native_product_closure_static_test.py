@@ -2133,9 +2133,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("len(command_hashes) < 2", reaction_source)
         self.assertIn("len(set(command_hashes)) != 1", reaction_source)
         self.assertIn(
-            'forwarded_paths.get("/messaging/command/submit")',
+            'forwarded_paths.get("/conversation/command")',
             reaction_source,
         )
+        self.assertNotIn('forwarded_paths.get("/messaging/', reaction_source)
         self.assertNotIn(
             "f'[data-message-reaction-retry=\"{message_id}\"]'",
             reaction_source,
