@@ -2568,8 +2568,16 @@ class NativeProductClosureGate(AcceptanceGate):
         self.assert_condition("toolbar_geometry", valid, json.dumps(value))
         return value
 
-    def choose_reaction(self, actor: str, message_id: str, emoji: str) -> None:
-        self.click_message_action(actor, message_id, "reaction")
+    def choose_reaction(
+        self,
+        actor: str,
+        message_id: str,
+        emoji: str,
+        *,
+        picker_open: bool = False,
+    ) -> None:
+        if not picker_open:
+            self.click_message_action(actor, message_id, "reaction")
         picker = self.clients[actor].find_element(
             f'[data-message-action-overlay="reaction-picker"]'
             f'[data-message-action-message="{message_id}"]',
@@ -2749,11 +2757,6 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         # #endregion
         self.capture_visible_localization("reaction-picker", (actor,))
-        self.native_adapter.post_key_to_process(
-            process_id,
-            NativeKey.ESCAPE,
-            private_source=True,
-        )
         self.assert_condition("toolbar_keyboard_reachable", True)
 
     def reaction_visible(self, actor: str, message_id: str, emoji: str) -> bool:
@@ -2771,7 +2774,12 @@ class NativeProductClosureGate(AcceptanceGate):
     ) -> dict[str, Any]:
         self.prove_keyboard_reaction_picker("alice", message_id)
         success_emoji = "❤️"
-        self.choose_reaction("alice", message_id, success_emoji)
+        self.choose_reaction(
+            "alice",
+            message_id,
+            success_emoji,
+            picker_open=True,
+        )
         wait_until(
             lambda: self.reaction_visible("alice", message_id, success_emoji)
             and self.reaction_visible("bob", message_id, success_emoji),
@@ -2797,7 +2805,13 @@ class NativeProductClosureGate(AcceptanceGate):
             raise GateError("reaction fault proxy is not running")
         try:
             proxy.arm_connection_loss()
-            self.choose_reaction("alice", message_id, failure_emoji)
+            self.prove_keyboard_reaction_picker("alice", message_id)
+            self.choose_reaction(
+                "alice",
+                message_id,
+                failure_emoji,
+                picker_open=True,
+            )
 
             def actionable_error() -> bool:
                 row = self.clients["alice"].find_element(
