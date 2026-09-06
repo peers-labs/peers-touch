@@ -17,6 +17,7 @@
 | B | The ToolCall reaches `EXPIRED`, but the owning ToolBatch/Turn remains non-terminal. | Medium | Low | Timeout evidence has one expired ToolCall and a non-terminal Turn. | Pending |
 | C | The provider emits more than one ToolCall, so the strict exact-one predicate cannot settle. | Medium | Low | Timeout evidence reports more than one ToolCall fact. | Pending |
 | D | Diagnostic replay is unavailable or stale while the Station worker settles the underlying state. | Low | Medium | Repeated diagnostics fail or retain an unchanged pre-expiry revision after the deadline. | Pending |
+| E | The Station persistence layer cannot commit expiry settlement because the deployment disk is full. | Confirmed | Low | PostgreSQL repeatedly reported `could not extend file ... No space left on device` for `agent_turn_attempts` terminal updates during the failed run. |
 
 ## Log Evidence
 - Exact-source run
@@ -28,6 +29,16 @@
   on `31f8208ad1fa5640356108b837d9a6e8cf0549ef` that later reached AS-F12.
 - Inner and outer cleanup both passed, and all six Foundation product ports
   were released.
+- Whole-host inspection showed `/dev/vda2` at 100% usage with zero available
+  bytes. Docker accounted for `26.73 GB` of build cache and `8.257 GB` of
+  reclaimable images.
+- PostgreSQL logs showed the AS-F04 settlement update failing repeatedly with
+  `No space left on device`, followed by a checkpoint panic and restart loop.
+- Removing only unused Docker build cache and dangling images older than 24
+  hours recovered `12 GB`; named volumes and running-container images were
+  preserved.
+- The next exact-source run passed both AS-F04 locale tuples without emitting a
+  timeout diagnostic, confirming the environment cause.
 
 ## Instrumentation
 - The existing bounded settlement wait now records ToolCall count/statuses,
@@ -45,4 +56,8 @@
 - `git diff --check`: PASS.
 
 ## Verification Conclusion
-Pending exact-source runtime evidence.
+Hypothesis E is confirmed. AS-F04's source behavior is intact; the failed run
+could not persist the Station-owned ToolCall and Turn terminal state because
+the remote root filesystem was full. The cleaned deployment passed AS-F04
+without assertion or timeout changes. The debug session remains open until the
+overall Foundation closure is confirmed.

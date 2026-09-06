@@ -2867,6 +2867,260 @@ func TestTurnServiceSettlesReconciliationRequiredTurn(t *testing.T) {
 	}
 }
 
+func TestTurnServiceSettlesBlockedToolBatchForCurrentAttempt(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	now := fixture.now
+	conversation := &persistence.Conversation{
+		ID:        "conversation-current-blocked",
+		AgentID:   "agent-1",
+		Ptid:      fixture.actorID,
+		Title:     "Current blocked batch",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	turn := &persistence.AgentTurn{
+		ID:             "turn-current-blocked",
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      now,
+	}
+	attempt := &persistence.TurnAttempt{
+		ID:           "attempt-current-blocked",
+		TurnID:       turn.ID,
+		AttemptIndex: 1,
+		Status:       string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:    now,
+	}
+	batch := &persistence.ToolBatch{
+		ID:             "batch-current-blocked",
+		ActorID:        fixture.actorID,
+		TurnID:         turn.ID,
+		AttemptID:      attempt.ID,
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Provider:       "provider-1",
+		Model:          "model-1",
+		SystemPrompt:   "system",
+		Iteration:      1,
+		Status:         persistence.ToolBatchStatusBlocked,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	for label, value := range map[string]interface{}{
+		"conversation": conversation,
+		"turn":         turn,
+		"attempt":      attempt,
+		"batch":        batch,
+	} {
+		if err := fixture.db.Create(value).Error; err != nil {
+			t.Fatalf("seed %s: %v", label, err)
+		}
+	}
+
+	service := &TurnService{}
+	if err := service.settleBlockedToolBatches(context.Background()); err != nil {
+		t.Fatalf("settle blocked tool batches: %v", err)
+	}
+
+	var reloadedTurn persistence.AgentTurn
+	if err := fixture.db.First(&reloadedTurn, "id = ?", turn.ID).Error; err != nil {
+		t.Fatalf("reload turn: %v", err)
+	}
+	if reloadedTurn.Status != string(domain.TurnStatusInterrupted) {
+		t.Fatalf("expected interrupted turn, got %s", reloadedTurn.Status)
+	}
+	var reloadedAttempt persistence.TurnAttempt
+	if err := fixture.db.First(&reloadedAttempt, "id = ?", attempt.ID).Error; err != nil {
+		t.Fatalf("reload attempt: %v", err)
+	}
+	if reloadedAttempt.Status != string(domain.TurnStatusInterrupted) ||
+		reloadedAttempt.EndedAt == nil {
+		t.Fatalf("expected interrupted terminal attempt, got %+v", reloadedAttempt)
+	}
+}
+
+func TestTurnServiceIgnoresBlockedToolBatchFromPreviousAttempt(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	now := fixture.now
+	endedAt := now.Add(-time.Minute)
+	conversation := &persistence.Conversation{
+		ID:        "conversation-retry-blocked",
+		AgentID:   "agent-1",
+		Ptid:      fixture.actorID,
+		Title:     "Retry blocked batch",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	turn := &persistence.AgentTurn{
+		ID:             "turn-retry-blocked",
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      now,
+	}
+	previousAttempt := &persistence.TurnAttempt{
+		ID:           "attempt-retry-blocked-1",
+		TurnID:       turn.ID,
+		AttemptIndex: 1,
+		Status:       string(domain.TurnStatusInterrupted),
+		StartedAt:    now.Add(-2 * time.Minute),
+		EndedAt:      &endedAt,
+	}
+	currentAttempt := &persistence.TurnAttempt{
+		ID:           "attempt-retry-blocked-2",
+		TurnID:       turn.ID,
+		AttemptIndex: 2,
+		Status:       string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:    now,
+	}
+	staleBatch := &persistence.ToolBatch{
+		ID:             "batch-retry-blocked-1",
+		ActorID:        fixture.actorID,
+		TurnID:         turn.ID,
+		AttemptID:      previousAttempt.ID,
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Provider:       "provider-1",
+		Model:          "model-1",
+		SystemPrompt:   "system",
+		Iteration:      1,
+		Status:         persistence.ToolBatchStatusBlocked,
+		CreatedAt:      now.Add(-2 * time.Minute),
+		UpdatedAt:      endedAt,
+		SettledAt:      &endedAt,
+	}
+	for label, value := range map[string]interface{}{
+		"conversation":     conversation,
+		"turn":             turn,
+		"previous attempt": previousAttempt,
+		"current attempt":  currentAttempt,
+		"stale batch":      staleBatch,
+	} {
+		if err := fixture.db.Create(value).Error; err != nil {
+			t.Fatalf("seed %s: %v", label, err)
+		}
+	}
+
+	service := &TurnService{}
+	if err := service.settleBlockedToolBatches(context.Background()); err != nil {
+		t.Fatalf("settle blocked tool batches: %v", err)
+	}
+
+	var reloadedTurn persistence.AgentTurn
+	if err := fixture.db.First(&reloadedTurn, "id = ?", turn.ID).Error; err != nil {
+		t.Fatalf("reload turn: %v", err)
+	}
+	if reloadedTurn.Status != string(domain.TurnStatusWaitingLocalTool) {
+		t.Fatalf("stale batch interrupted current retry: %s", reloadedTurn.Status)
+	}
+	var reloadedAttempt persistence.TurnAttempt
+	if err := fixture.db.First(&reloadedAttempt, "id = ?", currentAttempt.ID).Error; err != nil {
+		t.Fatalf("reload current attempt: %v", err)
+	}
+	if reloadedAttempt.Status != string(domain.TurnStatusWaitingLocalTool) ||
+		reloadedAttempt.EndedAt != nil {
+		t.Fatalf("current retry attempt was settled by stale batch: %+v", reloadedAttempt)
+	}
+}
+
+func TestTurnServiceIgnoresReconciliationFromPreviousAttempt(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	now := fixture.now
+	endedAt := now.Add(-time.Minute)
+	conversation := &persistence.Conversation{
+		ID:        "conversation-retry-reconciliation",
+		AgentID:   "agent-1",
+		Ptid:      fixture.actorID,
+		Title:     "Retry reconciliation",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	turn := &persistence.AgentTurn{
+		ID:             "turn-retry-reconciliation",
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      now,
+	}
+	previousAttempt := &persistence.TurnAttempt{
+		ID:           "attempt-retry-reconciliation-1",
+		TurnID:       turn.ID,
+		AttemptIndex: 1,
+		Status:       string(domain.TurnStatusInterrupted),
+		StartedAt:    now.Add(-2 * time.Minute),
+		EndedAt:      &endedAt,
+	}
+	currentAttempt := &persistence.TurnAttempt{
+		ID:           "attempt-retry-reconciliation-2",
+		TurnID:       turn.ID,
+		AttemptIndex: 2,
+		Status:       string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:    now,
+	}
+	staleBatch := &persistence.ToolBatch{
+		ID:             "batch-retry-reconciliation-1",
+		ActorID:        fixture.actorID,
+		TurnID:         turn.ID,
+		AttemptID:      previousAttempt.ID,
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Provider:       "provider-1",
+		Model:          "model-1",
+		SystemPrompt:   "system",
+		Iteration:      1,
+		Status:         persistence.ToolBatchStatusReadyForContinuation,
+		CreatedAt:      now.Add(-2 * time.Minute),
+		UpdatedAt:      endedAt,
+	}
+	staleContinuation := &persistence.ToolContinuation{
+		ID:                     "continuation-retry-reconciliation-1",
+		TurnID:                 turn.ID,
+		AttemptID:              previousAttempt.ID,
+		ToolBatchID:            staleBatch.ID,
+		Status:                 persistence.ToolContinuationStatusReconciliationRequired,
+		ProviderRequestEmitted: true,
+		CreatedAt:              now.Add(-2 * time.Minute),
+		UpdatedAt:              endedAt,
+	}
+	for label, value := range map[string]interface{}{
+		"conversation":       conversation,
+		"turn":               turn,
+		"previous attempt":   previousAttempt,
+		"current attempt":    currentAttempt,
+		"stale batch":        staleBatch,
+		"stale continuation": staleContinuation,
+	} {
+		if err := fixture.db.Create(value).Error; err != nil {
+			t.Fatalf("seed %s: %v", label, err)
+		}
+	}
+
+	service := &TurnService{}
+	if err := service.settleReconciliationRequiredTurns(context.Background()); err != nil {
+		t.Fatalf("settle reconciliation-required turns: %v", err)
+	}
+
+	var reloadedTurn persistence.AgentTurn
+	if err := fixture.db.First(&reloadedTurn, "id = ?", turn.ID).Error; err != nil {
+		t.Fatalf("reload turn: %v", err)
+	}
+	if reloadedTurn.Status != string(domain.TurnStatusWaitingLocalTool) {
+		t.Fatalf("stale continuation interrupted current retry: %s", reloadedTurn.Status)
+	}
+	var reloadedAttempt persistence.TurnAttempt
+	if err := fixture.db.First(&reloadedAttempt, "id = ?", currentAttempt.ID).Error; err != nil {
+		t.Fatalf("reload current attempt: %v", err)
+	}
+	if reloadedAttempt.Status != string(domain.TurnStatusWaitingLocalTool) ||
+		reloadedAttempt.EndedAt != nil {
+		t.Fatalf("current retry attempt was settled by stale continuation: %+v", reloadedAttempt)
+	}
+}
+
 func TestTurnServiceCancelWaitingToolTurnBlocksBatch(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
 	now := fixture.now

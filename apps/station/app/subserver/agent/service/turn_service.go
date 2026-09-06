@@ -3862,9 +3862,11 @@ func (s *TurnService) settleBlockedToolBatches(ctx context.Context) error {
 		Table("agent_tool_batches AS batch").
 		Select("batch.turn_id, batch.agent_id, batch.conversation_id, batch.task_id, batch.step_id").
 		Joins("JOIN agent_turns AS turn_record ON turn_record.id = batch.turn_id").
+		Joins("JOIN agent_turn_attempts AS attempt ON attempt.id = batch.attempt_id AND attempt.turn_id = batch.turn_id").
 		Where(
-			"batch.status = ? AND turn_record.status = ?",
+			"batch.status = ? AND turn_record.status = ? AND attempt.status = ? AND attempt.ended_at IS NULL AND attempt.attempt_index = (SELECT MAX(latest_attempt.attempt_index) FROM agent_turn_attempts AS latest_attempt WHERE latest_attempt.turn_id = batch.turn_id)",
 			persistence.ToolBatchStatusBlocked,
+			string(domain.TurnStatusWaitingLocalTool),
 			string(domain.TurnStatusWaitingLocalTool),
 		).
 		Scan(&rows).Error; err != nil {
@@ -3903,9 +3905,11 @@ func (s *TurnService) settleReconciliationRequiredTurns(ctx context.Context) err
 		Select("batch.turn_id, batch.agent_id, batch.conversation_id, batch.task_id, batch.step_id").
 		Joins("JOIN agent_tool_batches AS batch ON batch.id = continuation.tool_batch_id").
 		Joins("JOIN agent_turns AS turn_record ON turn_record.id = batch.turn_id").
+		Joins("JOIN agent_turn_attempts AS attempt ON attempt.id = continuation.attempt_id AND attempt.id = batch.attempt_id AND attempt.turn_id = batch.turn_id").
 		Where(
-			"continuation.status = ? AND turn_record.status = ?",
+			"continuation.status = ? AND turn_record.status = ? AND attempt.status = ? AND attempt.ended_at IS NULL AND attempt.attempt_index = (SELECT MAX(latest_attempt.attempt_index) FROM agent_turn_attempts AS latest_attempt WHERE latest_attempt.turn_id = batch.turn_id)",
 			persistence.ToolContinuationStatusReconciliationRequired,
+			string(domain.TurnStatusWaitingLocalTool),
 			string(domain.TurnStatusWaitingLocalTool),
 		).
 		Scan(&rows).Error; err != nil {
