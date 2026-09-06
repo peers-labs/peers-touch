@@ -315,7 +315,7 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
         worker = WindowsDesktopBroker._adapter_worker_script()
         targeted = worker[
             worker.index('elif operation == "post_key_to_process":'):
-            worker.index('elif operation == "reveal_file_chooser_location":')
+            worker.index('elif operation == "post_key_sequence_to_process":')
         ]
         activation = targeted.index("adapter.activate_process(process_id)")
         delivery = targeted.index("adapter.post_key(")
@@ -325,6 +325,30 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
 
         self.assertLess(activation, delivery)
         self.assertLess(delivery, observation)
+
+    def test_targeted_key_sequence_uses_one_worker_and_bounded_intervals(self) -> None:
+        worker = WindowsDesktopBroker._adapter_worker_script()
+        targeted = worker[
+            worker.index('elif operation == "post_key_sequence_to_process":'):
+            worker.index('elif operation == "reveal_file_chooser_location":')
+        ]
+        activation = targeted.index("adapter.activate_process(process_id)")
+        sequence = targeted.index("for index, key in enumerate(keys):")
+        delivery = targeted.index("adapter.post_key(", sequence)
+        interval = targeted.index("time.sleep(interval_seconds)", delivery)
+        observation = targeted.index(
+            "adapter.focused_control(process_id).to_dict()"
+        )
+
+        self.assertIn("if not keys:", targeted)
+        self.assertIn(
+            "if interval_seconds < 0 or interval_seconds > 1:",
+            targeted,
+        )
+        self.assertLess(activation, sequence)
+        self.assertLess(sequence, delivery)
+        self.assertLess(delivery, interval)
+        self.assertLess(interval, observation)
 
 
 if __name__ == "__main__":
