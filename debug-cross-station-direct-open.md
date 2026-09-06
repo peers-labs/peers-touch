@@ -39,7 +39,8 @@
 | V | The second process-targeted Enter does not reach the focused reaction action as DOM key events or a click. | Medium | Low | Pending: capture keydown, keyup, click, and focused-action events around the exact Enter delivery. |
 | W | The reaction action opens the picker, but focusout schedules the 140 ms overlay dismissal before the remote round trip can observe it. | High | Low | Pending: capture overlay mutations and focus transitions around the reaction action click. |
 | X | The picker remains open, but its focus effect does not move focus to a `data-reaction-emoji` button. | Medium | Low | Pending: compare final overlay kind and active element after the 15-second assertion timeout. |
-| Y | Re-running Win32 top-level activation before every key resets the WebView's descendant DOM focus. | High | Low | Confirmed: run `20260906T110222481453Z-08a43aea8a53e6b456b13736ef6ebbc1` reached the toolbar, then a targeted Tab left `data-message-action` empty and could not advance it. `Win32NativeDesktopAdapter.activate_process` unconditionally called `SetFocus(hwnd)` even when the actor already owned the foreground window. |
+| Y | Re-running Win32 top-level activation before every key resets the WebView's descendant DOM focus. | High | Low | Rejected as the sole cause: commit `8f7d798f3` preserved descendant focus when the actor already owned the foreground window, but the comparison run still lost toolbar focus before Tab delivery. |
+| Z | Launching a separate interactive broker worker for each key steals focus long enough for the 140 ms overlay dismissal timer to remove the toolbar before the key is injected. | High | Low | Confirmed by post-fix event evidence: the thread button received `focusout`, the toolbar disappeared 149 ms later, and Tab reached `BODY` 583 ms after dismissal. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -432,3 +433,18 @@ therefore preserves the existing descendant focus when the requested actor
 already owns the foreground window; activation remains mandatory when another
 process owns it. Gate instrumentation remains active for the post-fix
 comparison.
+
+The post-fix comparison
+`20260906T115001199130Z-207404ff3da9814a0384128177c3a722` at commit
+`8f7d798f345ea9846349bce5fbd3757ccf4ff6cf`, runtime-cell run
+`20260906t115027174800z-59214774f052016e`, and binary SHA-256
+`b2ce086254e778e31d4eadac362cf0fac9e9a79023001eb39f8372dfca2ed959`
+preserved top-level activation when the actor was already foreground, but the
+event trace still showed the toolbar's thread button losing focus before the
+Tab event. The toolbar was removed 149 ms after `focusout`; Tab arrived on
+`BODY` 583 ms later. Cleanup remained `DONE/PROVEN`. This rejects hypothesis Y
+as the complete cause and confirms hypothesis Z: each remote key call launches
+a separate interactive worker, and that process boundary outlives the overlay's
+dismissal budget. The owning-layer correction is one target-bound broker
+operation for the complete `Enter -> Tab -> Enter` sequence, with bounded
+inter-key intervals.
