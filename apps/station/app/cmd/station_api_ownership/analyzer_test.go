@@ -176,6 +176,7 @@ message SupersededRequest {}
 		"missing_canonical_proto_symbol",
 		"missing_canonical_route",
 		"owner_root_mismatch",
+		"registry_invalid",
 		"superseded_proto_symbol",
 		"undeclared_governed_route",
 	} {

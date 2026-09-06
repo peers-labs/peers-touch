@@ -94,7 +94,11 @@ dependency direction may not change without another architecture decision.
 | `recovery/` | encrypted cross-domain archive revisions | plaintext, live crypto state, Conversation authority |
 | `key_exchange/` | Direct/MLS public material and exact-once claims | Conversation membership or device lifecycle |
 | `frame/core/federation/delivery/` | authenticated durable delivery mechanics | domain authorization or mutation |
-| `model/domain/chat/` | Conversation and device-delivery protobuf contracts | manually duplicated request families |
+| `model/domain/actor/` | Actor and Actor Device identity protobuf contracts | Conversation or delivery policy |
+| `model/domain/chat/` | Conversation, attachment, receipt, and Device Inbox protobuf contracts | Actor lifecycle, Recovery, Key Exchange, or Federation transport ownership |
+| `model/domain/key_exchange/` | Direct/MLS public-material and DKX protobuf contracts | Conversation membership or Actor lifecycle |
+| `model/domain/recovery/` | opaque encrypted recovery revision contracts | plaintext or live cryptographic state |
+| `model/domain/federation/` | domain-neutral durable Station transport contracts | Conversation or Social authorization |
 | `model/domain/social/` | relationship and Friend Request protobuf contracts | Chat payload aliases |
 | `api-ownership/` | reviewed human and machine ownership contract | runtime business implementation |
 

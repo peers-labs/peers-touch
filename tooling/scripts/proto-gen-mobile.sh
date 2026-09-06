@@ -101,6 +101,17 @@ generate_web_ts() {
         return 1
     fi
 
+    TS_TRAILING_NEWLINES=$(mktemp)
+    trap 'rm -f "$TS_TRAILING_NEWLINES"' EXIT
+    if [ -d "$WEB_TS_OUT" ]; then
+        find "$WEB_TS_OUT" -type f -name '*_pb.ts' -print0 |
+            while IFS= read -r -d '' file; do
+                REL_PATH="${file#$WEB_TS_OUT/}"
+                TRAILING_NEWLINES=$(perl -0ne 'print length($1) if /(\n*)\z/' "$file")
+                printf '%s\t%s\n' "$REL_PATH" "$TRAILING_NEWLINES"
+            done > "$TS_TRAILING_NEWLINES"
+    fi
+
     rm -rf "$WEB_TS_OUT"
     mkdir -p "$WEB_TS_OUT"
 
@@ -114,6 +125,26 @@ generate_web_ts() {
             -I"$PROTO_ROOT" \
             "$file"
     done
+
+    while IFS=$'\t' read -r relative_path trailing_newlines; do
+        generated_file="$WEB_TS_OUT/$relative_path"
+        if [ -f "$generated_file" ]; then
+            TRAILING_NEWLINES="$trailing_newlines" \
+                perl -0pi -e 's/\n*\z/"\n" x $ENV{TRAILING_NEWLINES}/e' \
+                "$generated_file"
+        fi
+    done < "$TS_TRAILING_NEWLINES"
+
+    # New generated files have no historical ending to preserve. Normalize them
+    # to one trailing newline so adding a proto cannot introduce diff-check failures.
+    find "$WEB_TS_OUT" -type f -name '*_pb.ts' -print0 |
+        while IFS= read -r -d '' file; do
+            REL_PATH="${file#$WEB_TS_OUT/}"
+            if ! awk -F '\t' -v path="$REL_PATH" '$1 == path { found = 1 } END { exit !found }' \
+                "$TS_TRAILING_NEWLINES"; then
+                perl -0pi -e 's/\n*\z/\n/' "$file"
+            fi
+        done
 
     echo "Web TypeScript generation complete."
     echo ""

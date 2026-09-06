@@ -7,6 +7,7 @@ fn main() {
     }
 
     let proto_files: Vec<PathBuf> = [
+        "domain/actor/actor.proto",
         "domain/chat/announcement.proto",
         "domain/chat/attachment.proto",
         "domain/chat/chat.proto",
@@ -28,6 +29,10 @@ fn main() {
         "domain/chat/recovery.proto",
         "domain/chat/sticker.proto",
         "domain/common/common.proto",
+        "domain/federation/delivery.proto",
+        "domain/key_exchange/key_exchange.proto",
+        "domain/recovery/recovery.proto",
+        "domain/social/relationship.proto",
     ]
     .iter()
     .map(|p| proto_root.join(p))

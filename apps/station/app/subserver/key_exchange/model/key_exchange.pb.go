@@ -7,8 +7,10 @@
 package model
 
 import (
+	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -20,6 +22,58 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
+
+type DirectKeyExchangePayloadKind int32
+
+const (
+	DirectKeyExchangePayloadKind_DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_UNSPECIFIED        DirectKeyExchangePayloadKind = 0
+	DirectKeyExchangePayloadKind_DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_PREKEY_BUNDLE      DirectKeyExchangePayloadKind = 1
+	DirectKeyExchangePayloadKind_DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_INITIAL_MESSAGE    DirectKeyExchangePayloadKind = 2
+	DirectKeyExchangePayloadKind_DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_RATCHET_KEY_UPDATE DirectKeyExchangePayloadKind = 3
+)
+
+// Enum value maps for DirectKeyExchangePayloadKind.
+var (
+	DirectKeyExchangePayloadKind_name = map[int32]string{
+		0: "DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_UNSPECIFIED",
+		1: "DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_PREKEY_BUNDLE",
+		2: "DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_INITIAL_MESSAGE",
+		3: "DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_RATCHET_KEY_UPDATE",
+	}
+	DirectKeyExchangePayloadKind_value = map[string]int32{
+		"DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_UNSPECIFIED":        0,
+		"DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_PREKEY_BUNDLE":      1,
+		"DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_INITIAL_MESSAGE":    2,
+		"DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_RATCHET_KEY_UPDATE": 3,
+	}
+)
+
+func (x DirectKeyExchangePayloadKind) Enum() *DirectKeyExchangePayloadKind {
+	p := new(DirectKeyExchangePayloadKind)
+	*p = x
+	return p
+}
+
+func (x DirectKeyExchangePayloadKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DirectKeyExchangePayloadKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_key_exchange_key_exchange_proto_enumTypes[0].Descriptor()
+}
+
+func (DirectKeyExchangePayloadKind) Type() protoreflect.EnumType {
+	return &file_domain_key_exchange_key_exchange_proto_enumTypes[0]
+}
+
+func (x DirectKeyExchangePayloadKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DirectKeyExchangePayloadKind.Descriptor instead.
+func (DirectKeyExchangePayloadKind) EnumDescriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{0}
+}
 
 // X3DH key bundle upload — base64-encoded public keys.
 type UploadKeyBundleRequest struct {
@@ -579,11 +633,1199 @@ func (x *OpkCountResponse) GetCount() int64 {
 	return 0
 }
 
+type DirectOneTimePreKey struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyId         int32                  `protobuf:"varint,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	PublicKey     string                 `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DirectOneTimePreKey) Reset() {
+	*x = DirectOneTimePreKey{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DirectOneTimePreKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DirectOneTimePreKey) ProtoMessage() {}
+
+func (x *DirectOneTimePreKey) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DirectOneTimePreKey.ProtoReflect.Descriptor instead.
+func (*DirectOneTimePreKey) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *DirectOneTimePreKey) GetKeyId() int32 {
+	if x != nil {
+		return x.KeyId
+	}
+	return 0
+}
+
+func (x *DirectOneTimePreKey) GetPublicKey() string {
+	if x != nil {
+		return x.PublicKey
+	}
+	return ""
+}
+
+type DirectKeyBundle struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Device                *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	IdentityKeyPublic     string                 `protobuf:"bytes,2,opt,name=identity_key_public,json=identityKeyPublic,proto3" json:"identity_key_public,omitempty"`
+	SignedPreKeyId        int32                  `protobuf:"varint,3,opt,name=signed_pre_key_id,json=signedPreKeyId,proto3" json:"signed_pre_key_id,omitempty"`
+	SignedPreKeyPublic    string                 `protobuf:"bytes,4,opt,name=signed_pre_key_public,json=signedPreKeyPublic,proto3" json:"signed_pre_key_public,omitempty"`
+	SignedPreKeySignature string                 `protobuf:"bytes,5,opt,name=signed_pre_key_signature,json=signedPreKeySignature,proto3" json:"signed_pre_key_signature,omitempty"`
+	OneTimePreKeys        []*DirectOneTimePreKey `protobuf:"bytes,6,rep,name=one_time_pre_keys,json=oneTimePreKeys,proto3" json:"one_time_pre_keys,omitempty"`
+	PublishedAtUnixMs     int64                  `protobuf:"varint,7,opt,name=published_at_unix_ms,json=publishedAtUnixMs,proto3" json:"published_at_unix_ms,omitempty"`
+	SupportedWireVersions []uint32               `protobuf:"varint,8,rep,packed,name=supported_wire_versions,json=supportedWireVersions,proto3" json:"supported_wire_versions,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *DirectKeyBundle) Reset() {
+	*x = DirectKeyBundle{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DirectKeyBundle) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DirectKeyBundle) ProtoMessage() {}
+
+func (x *DirectKeyBundle) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DirectKeyBundle.ProtoReflect.Descriptor instead.
+func (*DirectKeyBundle) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DirectKeyBundle) GetDevice() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+func (x *DirectKeyBundle) GetIdentityKeyPublic() string {
+	if x != nil {
+		return x.IdentityKeyPublic
+	}
+	return ""
+}
+
+func (x *DirectKeyBundle) GetSignedPreKeyId() int32 {
+	if x != nil {
+		return x.SignedPreKeyId
+	}
+	return 0
+}
+
+func (x *DirectKeyBundle) GetSignedPreKeyPublic() string {
+	if x != nil {
+		return x.SignedPreKeyPublic
+	}
+	return ""
+}
+
+func (x *DirectKeyBundle) GetSignedPreKeySignature() string {
+	if x != nil {
+		return x.SignedPreKeySignature
+	}
+	return ""
+}
+
+func (x *DirectKeyBundle) GetOneTimePreKeys() []*DirectOneTimePreKey {
+	if x != nil {
+		return x.OneTimePreKeys
+	}
+	return nil
+}
+
+func (x *DirectKeyBundle) GetPublishedAtUnixMs() int64 {
+	if x != nil {
+		return x.PublishedAtUnixMs
+	}
+	return 0
+}
+
+func (x *DirectKeyBundle) GetSupportedWireVersions() []uint32 {
+	if x != nil {
+		return x.SupportedWireVersions
+	}
+	return nil
+}
+
+type UploadDirectKeyBundleRequest struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Device                *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	IdentityKeyPublic     string                 `protobuf:"bytes,2,opt,name=identity_key_public,json=identityKeyPublic,proto3" json:"identity_key_public,omitempty"`
+	SignedPreKeyId        int32                  `protobuf:"varint,3,opt,name=signed_pre_key_id,json=signedPreKeyId,proto3" json:"signed_pre_key_id,omitempty"`
+	SignedPreKeyPublic    string                 `protobuf:"bytes,4,opt,name=signed_pre_key_public,json=signedPreKeyPublic,proto3" json:"signed_pre_key_public,omitempty"`
+	SignedPreKeySignature string                 `protobuf:"bytes,5,opt,name=signed_pre_key_signature,json=signedPreKeySignature,proto3" json:"signed_pre_key_signature,omitempty"`
+	OneTimePreKeys        []*DirectOneTimePreKey `protobuf:"bytes,6,rep,name=one_time_pre_keys,json=oneTimePreKeys,proto3" json:"one_time_pre_keys,omitempty"`
+	SupportedWireVersions []uint32               `protobuf:"varint,7,rep,packed,name=supported_wire_versions,json=supportedWireVersions,proto3" json:"supported_wire_versions,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *UploadDirectKeyBundleRequest) Reset() {
+	*x = UploadDirectKeyBundleRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadDirectKeyBundleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadDirectKeyBundleRequest) ProtoMessage() {}
+
+func (x *UploadDirectKeyBundleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadDirectKeyBundleRequest.ProtoReflect.Descriptor instead.
+func (*UploadDirectKeyBundleRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *UploadDirectKeyBundleRequest) GetDevice() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+func (x *UploadDirectKeyBundleRequest) GetIdentityKeyPublic() string {
+	if x != nil {
+		return x.IdentityKeyPublic
+	}
+	return ""
+}
+
+func (x *UploadDirectKeyBundleRequest) GetSignedPreKeyId() int32 {
+	if x != nil {
+		return x.SignedPreKeyId
+	}
+	return 0
+}
+
+func (x *UploadDirectKeyBundleRequest) GetSignedPreKeyPublic() string {
+	if x != nil {
+		return x.SignedPreKeyPublic
+	}
+	return ""
+}
+
+func (x *UploadDirectKeyBundleRequest) GetSignedPreKeySignature() string {
+	if x != nil {
+		return x.SignedPreKeySignature
+	}
+	return ""
+}
+
+func (x *UploadDirectKeyBundleRequest) GetOneTimePreKeys() []*DirectOneTimePreKey {
+	if x != nil {
+		return x.OneTimePreKeys
+	}
+	return nil
+}
+
+func (x *UploadDirectKeyBundleRequest) GetSupportedWireVersions() []uint32 {
+	if x != nil {
+		return x.SupportedWireVersions
+	}
+	return nil
+}
+
+type UploadDirectKeyBundleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadDirectKeyBundleResponse) Reset() {
+	*x = UploadDirectKeyBundleResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadDirectKeyBundleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadDirectKeyBundleResponse) ProtoMessage() {}
+
+func (x *UploadDirectKeyBundleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadDirectKeyBundleResponse.ProtoReflect.Descriptor instead.
+func (*UploadDirectKeyBundleResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{12}
+}
+
+type FetchDirectKeyBundlesRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Actor             *model.ActorRef        `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
+	TargetDeviceId    string                 `protobuf:"bytes,2,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
+	HomeStationPeerId string                 `protobuf:"bytes,3,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *FetchDirectKeyBundlesRequest) Reset() {
+	*x = FetchDirectKeyBundlesRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchDirectKeyBundlesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchDirectKeyBundlesRequest) ProtoMessage() {}
+
+func (x *FetchDirectKeyBundlesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchDirectKeyBundlesRequest.ProtoReflect.Descriptor instead.
+func (*FetchDirectKeyBundlesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *FetchDirectKeyBundlesRequest) GetActor() *model.ActorRef {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *FetchDirectKeyBundlesRequest) GetTargetDeviceId() string {
+	if x != nil {
+		return x.TargetDeviceId
+	}
+	return ""
+}
+
+func (x *FetchDirectKeyBundlesRequest) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+type FetchDirectKeyBundlesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Bundles       []*DirectKeyBundle     `protobuf:"bytes,1,rep,name=bundles,proto3" json:"bundles,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FetchDirectKeyBundlesResponse) Reset() {
+	*x = FetchDirectKeyBundlesResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchDirectKeyBundlesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchDirectKeyBundlesResponse) ProtoMessage() {}
+
+func (x *FetchDirectKeyBundlesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchDirectKeyBundlesResponse.ProtoReflect.Descriptor instead.
+func (*FetchDirectKeyBundlesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *FetchDirectKeyBundlesResponse) GetBundles() []*DirectKeyBundle {
+	if x != nil {
+		return x.Bundles
+	}
+	return nil
+}
+
+type ReplenishDirectOneTimePreKeysRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Device         *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	OneTimePreKeys []*DirectOneTimePreKey `protobuf:"bytes,2,rep,name=one_time_pre_keys,json=oneTimePreKeys,proto3" json:"one_time_pre_keys,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ReplenishDirectOneTimePreKeysRequest) Reset() {
+	*x = ReplenishDirectOneTimePreKeysRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplenishDirectOneTimePreKeysRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplenishDirectOneTimePreKeysRequest) ProtoMessage() {}
+
+func (x *ReplenishDirectOneTimePreKeysRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplenishDirectOneTimePreKeysRequest.ProtoReflect.Descriptor instead.
+func (*ReplenishDirectOneTimePreKeysRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ReplenishDirectOneTimePreKeysRequest) GetDevice() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+func (x *ReplenishDirectOneTimePreKeysRequest) GetOneTimePreKeys() []*DirectOneTimePreKey {
+	if x != nil {
+		return x.OneTimePreKeys
+	}
+	return nil
+}
+
+type ReplenishDirectOneTimePreKeysResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplenishDirectOneTimePreKeysResponse) Reset() {
+	*x = ReplenishDirectOneTimePreKeysResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplenishDirectOneTimePreKeysResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplenishDirectOneTimePreKeysResponse) ProtoMessage() {}
+
+func (x *ReplenishDirectOneTimePreKeysResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplenishDirectOneTimePreKeysResponse.ProtoReflect.Descriptor instead.
+func (*ReplenishDirectOneTimePreKeysResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{16}
+}
+
+type CountDirectOneTimePreKeysRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Device        *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountDirectOneTimePreKeysRequest) Reset() {
+	*x = CountDirectOneTimePreKeysRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountDirectOneTimePreKeysRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountDirectOneTimePreKeysRequest) ProtoMessage() {}
+
+func (x *CountDirectOneTimePreKeysRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountDirectOneTimePreKeysRequest.ProtoReflect.Descriptor instead.
+func (*CountDirectOneTimePreKeysRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CountDirectOneTimePreKeysRequest) GetDevice() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+type CountDirectOneTimePreKeysResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Count         int64                  `protobuf:"varint,1,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountDirectOneTimePreKeysResponse) Reset() {
+	*x = CountDirectOneTimePreKeysResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountDirectOneTimePreKeysResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountDirectOneTimePreKeysResponse) ProtoMessage() {}
+
+func (x *CountDirectOneTimePreKeysResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountDirectOneTimePreKeysResponse.ProtoReflect.Descriptor instead.
+func (*CountDirectOneTimePreKeysResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CountDirectOneTimePreKeysResponse) GetCount() int64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+type MlsKeyPackageReservation struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Target           *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	PackageId        string                 `protobuf:"bytes,2,opt,name=package_id,json=packageId,proto3" json:"package_id,omitempty"`
+	KeyPackage       []byte                 `protobuf:"bytes,3,opt,name=key_package,json=keyPackage,proto3" json:"key_package,omitempty"`
+	KeyPackageSha256 []byte                 `protobuf:"bytes,4,opt,name=key_package_sha256,json=keyPackageSha256,proto3" json:"key_package_sha256,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *MlsKeyPackageReservation) Reset() {
+	*x = MlsKeyPackageReservation{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MlsKeyPackageReservation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MlsKeyPackageReservation) ProtoMessage() {}
+
+func (x *MlsKeyPackageReservation) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MlsKeyPackageReservation.ProtoReflect.Descriptor instead.
+func (*MlsKeyPackageReservation) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *MlsKeyPackageReservation) GetTarget() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *MlsKeyPackageReservation) GetPackageId() string {
+	if x != nil {
+		return x.PackageId
+	}
+	return ""
+}
+
+func (x *MlsKeyPackageReservation) GetKeyPackage() []byte {
+	if x != nil {
+		return x.KeyPackage
+	}
+	return nil
+}
+
+func (x *MlsKeyPackageReservation) GetKeyPackageSha256() []byte {
+	if x != nil {
+		return x.KeyPackageSha256
+	}
+	return nil
+}
+
+type UploadMlsKeyPackageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Device        *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	KeyPackage    []byte                 `protobuf:"bytes,2,opt,name=key_package,json=keyPackage,proto3" json:"key_package,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadMlsKeyPackageRequest) Reset() {
+	*x = UploadMlsKeyPackageRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadMlsKeyPackageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadMlsKeyPackageRequest) ProtoMessage() {}
+
+func (x *UploadMlsKeyPackageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadMlsKeyPackageRequest.ProtoReflect.Descriptor instead.
+func (*UploadMlsKeyPackageRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *UploadMlsKeyPackageRequest) GetDevice() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+func (x *UploadMlsKeyPackageRequest) GetKeyPackage() []byte {
+	if x != nil {
+		return x.KeyPackage
+	}
+	return nil
+}
+
+type UploadMlsKeyPackageResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	PackageId        string                 `protobuf:"bytes,1,opt,name=package_id,json=packageId,proto3" json:"package_id,omitempty"`
+	KeyPackageSha256 []byte                 `protobuf:"bytes,2,opt,name=key_package_sha256,json=keyPackageSha256,proto3" json:"key_package_sha256,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *UploadMlsKeyPackageResponse) Reset() {
+	*x = UploadMlsKeyPackageResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadMlsKeyPackageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadMlsKeyPackageResponse) ProtoMessage() {}
+
+func (x *UploadMlsKeyPackageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadMlsKeyPackageResponse.ProtoReflect.Descriptor instead.
+func (*UploadMlsKeyPackageResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *UploadMlsKeyPackageResponse) GetPackageId() string {
+	if x != nil {
+		return x.PackageId
+	}
+	return ""
+}
+
+func (x *UploadMlsKeyPackageResponse) GetKeyPackageSha256() []byte {
+	if x != nil {
+		return x.KeyPackageSha256
+	}
+	return nil
+}
+
+type FetchMlsKeyPackageRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Actor             *model.ActorRef        `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
+	HomeStationPeerId string                 `protobuf:"bytes,2,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *FetchMlsKeyPackageRequest) Reset() {
+	*x = FetchMlsKeyPackageRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchMlsKeyPackageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchMlsKeyPackageRequest) ProtoMessage() {}
+
+func (x *FetchMlsKeyPackageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchMlsKeyPackageRequest.ProtoReflect.Descriptor instead.
+func (*FetchMlsKeyPackageRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *FetchMlsKeyPackageRequest) GetActor() *model.ActorRef {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *FetchMlsKeyPackageRequest) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+type FetchMlsKeyPackageResponse struct {
+	state             protoimpl.MessageState    `protogen:"open.v1"`
+	Reservation       *MlsKeyPackageReservation `protobuf:"bytes,1,opt,name=reservation,proto3" json:"reservation,omitempty"`
+	Available         bool                      `protobuf:"varint,2,opt,name=available,proto3" json:"available,omitempty"`
+	HomeStationPeerId string                    `protobuf:"bytes,3,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *FetchMlsKeyPackageResponse) Reset() {
+	*x = FetchMlsKeyPackageResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchMlsKeyPackageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchMlsKeyPackageResponse) ProtoMessage() {}
+
+func (x *FetchMlsKeyPackageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchMlsKeyPackageResponse.ProtoReflect.Descriptor instead.
+func (*FetchMlsKeyPackageResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *FetchMlsKeyPackageResponse) GetReservation() *MlsKeyPackageReservation {
+	if x != nil {
+		return x.Reservation
+	}
+	return nil
+}
+
+func (x *FetchMlsKeyPackageResponse) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
+}
+
+func (x *FetchMlsKeyPackageResponse) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+type CountMlsKeyPackagesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Device        *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountMlsKeyPackagesRequest) Reset() {
+	*x = CountMlsKeyPackagesRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountMlsKeyPackagesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountMlsKeyPackagesRequest) ProtoMessage() {}
+
+func (x *CountMlsKeyPackagesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountMlsKeyPackagesRequest.ProtoReflect.Descriptor instead.
+func (*CountMlsKeyPackagesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *CountMlsKeyPackagesRequest) GetDevice() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+type CountMlsKeyPackagesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Count         int64                  `protobuf:"varint,1,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountMlsKeyPackagesResponse) Reset() {
+	*x = CountMlsKeyPackagesResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountMlsKeyPackagesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountMlsKeyPackagesResponse) ProtoMessage() {}
+
+func (x *CountMlsKeyPackagesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountMlsKeyPackagesResponse.ProtoReflect.Descriptor instead.
+func (*CountMlsKeyPackagesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *CountMlsKeyPackagesResponse) GetCount() int64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+type ClaimMlsKeyPackageRequest struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	AuthorityPlanId        string                 `protobuf:"bytes,1,opt,name=authority_plan_id,json=authorityPlanId,proto3" json:"authority_plan_id,omitempty"`
+	AuthorityStationPeerId string                 `protobuf:"bytes,2,opt,name=authority_station_peer_id,json=authorityStationPeerId,proto3" json:"authority_station_peer_id,omitempty"`
+	Target                 *model.ActorDeviceRef  `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	PlanExpiresAt          *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=plan_expires_at,json=planExpiresAt,proto3" json:"plan_expires_at,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ClaimMlsKeyPackageRequest) Reset() {
+	*x = ClaimMlsKeyPackageRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimMlsKeyPackageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimMlsKeyPackageRequest) ProtoMessage() {}
+
+func (x *ClaimMlsKeyPackageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimMlsKeyPackageRequest.ProtoReflect.Descriptor instead.
+func (*ClaimMlsKeyPackageRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ClaimMlsKeyPackageRequest) GetAuthorityPlanId() string {
+	if x != nil {
+		return x.AuthorityPlanId
+	}
+	return ""
+}
+
+func (x *ClaimMlsKeyPackageRequest) GetAuthorityStationPeerId() string {
+	if x != nil {
+		return x.AuthorityStationPeerId
+	}
+	return ""
+}
+
+func (x *ClaimMlsKeyPackageRequest) GetTarget() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *ClaimMlsKeyPackageRequest) GetPlanExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PlanExpiresAt
+	}
+	return nil
+}
+
+type ClaimMlsKeyPackageResponse struct {
+	state                protoimpl.MessageState    `protogen:"open.v1"`
+	Reservation          *MlsKeyPackageReservation `protobuf:"bytes,1,opt,name=reservation,proto3" json:"reservation,omitempty"`
+	HomeStationPeerId    string                    `protobuf:"bytes,2,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	IrreversiblyConsumed bool                      `protobuf:"varint,3,opt,name=irreversibly_consumed,json=irreversiblyConsumed,proto3" json:"irreversibly_consumed,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ClaimMlsKeyPackageResponse) Reset() {
+	*x = ClaimMlsKeyPackageResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimMlsKeyPackageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimMlsKeyPackageResponse) ProtoMessage() {}
+
+func (x *ClaimMlsKeyPackageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimMlsKeyPackageResponse.ProtoReflect.Descriptor instead.
+func (*ClaimMlsKeyPackageResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ClaimMlsKeyPackageResponse) GetReservation() *MlsKeyPackageReservation {
+	if x != nil {
+		return x.Reservation
+	}
+	return nil
+}
+
+func (x *ClaimMlsKeyPackageResponse) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+func (x *ClaimMlsKeyPackageResponse) GetIrreversiblyConsumed() bool {
+	if x != nil {
+		return x.IrreversiblyConsumed
+	}
+	return false
+}
+
+type SendDirectKeyExchangeRequest struct {
+	state                      protoimpl.MessageState       `protogen:"open.v1"`
+	Recipient                  *model.ActorDeviceRef        `protobuf:"bytes,1,opt,name=recipient,proto3" json:"recipient,omitempty"`
+	RecipientHomeStationPeerId string                       `protobuf:"bytes,2,opt,name=recipient_home_station_peer_id,json=recipientHomeStationPeerId,proto3" json:"recipient_home_station_peer_id,omitempty"`
+	SessionId                  string                       `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Kind                       DirectKeyExchangePayloadKind `protobuf:"varint,4,opt,name=kind,proto3,enum=peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind" json:"kind,omitempty"`
+	OpaqueKeyMaterial          []byte                       `protobuf:"bytes,5,opt,name=opaque_key_material,json=opaqueKeyMaterial,proto3" json:"opaque_key_material,omitempty"`
+	ConversationId             string                       `protobuf:"bytes,6,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
+}
+
+func (x *SendDirectKeyExchangeRequest) Reset() {
+	*x = SendDirectKeyExchangeRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SendDirectKeyExchangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SendDirectKeyExchangeRequest) ProtoMessage() {}
+
+func (x *SendDirectKeyExchangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SendDirectKeyExchangeRequest.ProtoReflect.Descriptor instead.
+func (*SendDirectKeyExchangeRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *SendDirectKeyExchangeRequest) GetRecipient() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Recipient
+	}
+	return nil
+}
+
+func (x *SendDirectKeyExchangeRequest) GetRecipientHomeStationPeerId() string {
+	if x != nil {
+		return x.RecipientHomeStationPeerId
+	}
+	return ""
+}
+
+func (x *SendDirectKeyExchangeRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *SendDirectKeyExchangeRequest) GetKind() DirectKeyExchangePayloadKind {
+	if x != nil {
+		return x.Kind
+	}
+	return DirectKeyExchangePayloadKind_DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_UNSPECIFIED
+}
+
+func (x *SendDirectKeyExchangeRequest) GetOpaqueKeyMaterial() []byte {
+	if x != nil {
+		return x.OpaqueKeyMaterial
+	}
+	return nil
+}
+
+func (x *SendDirectKeyExchangeRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+type SendDirectKeyExchangeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EnvelopeId    string                 `protobuf:"bytes,1,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SendDirectKeyExchangeResponse) Reset() {
+	*x = SendDirectKeyExchangeResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SendDirectKeyExchangeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SendDirectKeyExchangeResponse) ProtoMessage() {}
+
+func (x *SendDirectKeyExchangeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SendDirectKeyExchangeResponse.ProtoReflect.Descriptor instead.
+func (*SendDirectKeyExchangeResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *SendDirectKeyExchangeResponse) GetEnvelopeId() string {
+	if x != nil {
+		return x.EnvelopeId
+	}
+	return ""
+}
+
 var File_domain_key_exchange_key_exchange_proto protoreflect.FileDescriptor
 
 const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\n" +
-	"&domain/key_exchange/key_exchange.proto\x12!peers_touch.model.key_exchange.v1\"\xf8\x01\n" +
+	"&domain/key_exchange/key_exchange.proto\x12!peers_touch.model.key_exchange.v1\x1a\x18domain/actor/actor.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf8\x01\n" +
 	"\x16UploadKeyBundleRequest\x12\x15\n" +
 	"\x06ik_pub\x18\x01 \x01(\tR\x05ikPub\x12\x15\n" +
 	"\x06spk_id\x18\x02 \x01(\x05R\x05spkId\x12\x17\n" +
@@ -620,7 +1862,94 @@ const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\x0fOpkCountRequest\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\"(\n" +
 	"\x10OpkCountResponse\x12\x14\n" +
-	"\x05count\x18\x01 \x01(\x03R\x05countBRZPgithub.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model;modelb\x06proto3"
+	"\x05count\x18\x01 \x01(\x03R\x05count\"K\n" +
+	"\x13DirectOneTimePreKey\x12\x15\n" +
+	"\x06key_id\x18\x01 \x01(\x05R\x05keyId\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x02 \x01(\tR\tpublicKey\"\xe8\x03\n" +
+	"\x0fDirectKeyBundle\x12B\n" +
+	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\x12.\n" +
+	"\x13identity_key_public\x18\x02 \x01(\tR\x11identityKeyPublic\x12)\n" +
+	"\x11signed_pre_key_id\x18\x03 \x01(\x05R\x0esignedPreKeyId\x121\n" +
+	"\x15signed_pre_key_public\x18\x04 \x01(\tR\x12signedPreKeyPublic\x127\n" +
+	"\x18signed_pre_key_signature\x18\x05 \x01(\tR\x15signedPreKeySignature\x12a\n" +
+	"\x11one_time_pre_keys\x18\x06 \x03(\v26.peers_touch.model.key_exchange.v1.DirectOneTimePreKeyR\x0eoneTimePreKeys\x12/\n" +
+	"\x14published_at_unix_ms\x18\a \x01(\x03R\x11publishedAtUnixMs\x126\n" +
+	"\x17supported_wire_versions\x18\b \x03(\rR\x15supportedWireVersions\"\xc4\x03\n" +
+	"\x1cUploadDirectKeyBundleRequest\x12B\n" +
+	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\x12.\n" +
+	"\x13identity_key_public\x18\x02 \x01(\tR\x11identityKeyPublic\x12)\n" +
+	"\x11signed_pre_key_id\x18\x03 \x01(\x05R\x0esignedPreKeyId\x121\n" +
+	"\x15signed_pre_key_public\x18\x04 \x01(\tR\x12signedPreKeyPublic\x127\n" +
+	"\x18signed_pre_key_signature\x18\x05 \x01(\tR\x15signedPreKeySignature\x12a\n" +
+	"\x11one_time_pre_keys\x18\x06 \x03(\v26.peers_touch.model.key_exchange.v1.DirectOneTimePreKeyR\x0eoneTimePreKeys\x126\n" +
+	"\x17supported_wire_versions\x18\a \x03(\rR\x15supportedWireVersions\"\x1f\n" +
+	"\x1dUploadDirectKeyBundleResponse\"\xb5\x01\n" +
+	"\x1cFetchDirectKeyBundlesRequest\x12:\n" +
+	"\x05actor\x18\x01 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\x12(\n" +
+	"\x10target_device_id\x18\x02 \x01(\tR\x0etargetDeviceId\x12/\n" +
+	"\x14home_station_peer_id\x18\x03 \x01(\tR\x11homeStationPeerId\"m\n" +
+	"\x1dFetchDirectKeyBundlesResponse\x12L\n" +
+	"\abundles\x18\x01 \x03(\v22.peers_touch.model.key_exchange.v1.DirectKeyBundleR\abundles\"\xcd\x01\n" +
+	"$ReplenishDirectOneTimePreKeysRequest\x12B\n" +
+	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\x12a\n" +
+	"\x11one_time_pre_keys\x18\x02 \x03(\v26.peers_touch.model.key_exchange.v1.DirectOneTimePreKeyR\x0eoneTimePreKeys\"'\n" +
+	"%ReplenishDirectOneTimePreKeysResponse\"f\n" +
+	" CountDirectOneTimePreKeysRequest\x12B\n" +
+	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\"9\n" +
+	"!CountDirectOneTimePreKeysResponse\x12\x14\n" +
+	"\x05count\x18\x01 \x01(\x03R\x05count\"\xcc\x01\n" +
+	"\x18MlsKeyPackageReservation\x12B\n" +
+	"\x06target\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06target\x12\x1d\n" +
+	"\n" +
+	"package_id\x18\x02 \x01(\tR\tpackageId\x12\x1f\n" +
+	"\vkey_package\x18\x03 \x01(\fR\n" +
+	"keyPackage\x12,\n" +
+	"\x12key_package_sha256\x18\x04 \x01(\fR\x10keyPackageSha256\"\x81\x01\n" +
+	"\x1aUploadMlsKeyPackageRequest\x12B\n" +
+	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\x12\x1f\n" +
+	"\vkey_package\x18\x02 \x01(\fR\n" +
+	"keyPackage\"j\n" +
+	"\x1bUploadMlsKeyPackageResponse\x12\x1d\n" +
+	"\n" +
+	"package_id\x18\x01 \x01(\tR\tpackageId\x12,\n" +
+	"\x12key_package_sha256\x18\x02 \x01(\fR\x10keyPackageSha256\"\x88\x01\n" +
+	"\x19FetchMlsKeyPackageRequest\x12:\n" +
+	"\x05actor\x18\x01 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\x12/\n" +
+	"\x14home_station_peer_id\x18\x02 \x01(\tR\x11homeStationPeerId\"\xca\x01\n" +
+	"\x1aFetchMlsKeyPackageResponse\x12]\n" +
+	"\vreservation\x18\x01 \x01(\v2;.peers_touch.model.key_exchange.v1.MlsKeyPackageReservationR\vreservation\x12\x1c\n" +
+	"\tavailable\x18\x02 \x01(\bR\tavailable\x12/\n" +
+	"\x14home_station_peer_id\x18\x03 \x01(\tR\x11homeStationPeerId\"`\n" +
+	"\x1aCountMlsKeyPackagesRequest\x12B\n" +
+	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\"3\n" +
+	"\x1bCountMlsKeyPackagesResponse\x12\x14\n" +
+	"\x05count\x18\x01 \x01(\x03R\x05count\"\x8a\x02\n" +
+	"\x19ClaimMlsKeyPackageRequest\x12*\n" +
+	"\x11authority_plan_id\x18\x01 \x01(\tR\x0fauthorityPlanId\x129\n" +
+	"\x19authority_station_peer_id\x18\x02 \x01(\tR\x16authorityStationPeerId\x12B\n" +
+	"\x06target\x18\x03 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06target\x12B\n" +
+	"\x0fplan_expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\rplanExpiresAt\"\xe1\x01\n" +
+	"\x1aClaimMlsKeyPackageResponse\x12]\n" +
+	"\vreservation\x18\x01 \x01(\v2;.peers_touch.model.key_exchange.v1.MlsKeyPackageReservationR\vreservation\x12/\n" +
+	"\x14home_station_peer_id\x18\x02 \x01(\tR\x11homeStationPeerId\x123\n" +
+	"\x15irreversibly_consumed\x18\x03 \x01(\bR\x14irreversiblyConsumed\"\xf9\x02\n" +
+	"\x1cSendDirectKeyExchangeRequest\x12H\n" +
+	"\trecipient\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\trecipient\x12B\n" +
+	"\x1erecipient_home_station_peer_id\x18\x02 \x01(\tR\x1arecipientHomeStationPeerId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\x12S\n" +
+	"\x04kind\x18\x04 \x01(\x0e2?.peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKindR\x04kind\x12.\n" +
+	"\x13opaque_key_material\x18\x05 \x01(\fR\x11opaqueKeyMaterial\x12'\n" +
+	"\x0fconversation_id\x18\x06 \x01(\tR\x0econversationId\"@\n" +
+	"\x1dSendDirectKeyExchangeResponse\x12\x1f\n" +
+	"\venvelope_id\x18\x01 \x01(\tR\n" +
+	"envelopeId*\xf3\x01\n" +
+	"\x1cDirectKeyExchangePayloadKind\x120\n" +
+	",DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_UNSPECIFIED\x10\x00\x122\n" +
+	".DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_PREKEY_BUNDLE\x10\x01\x124\n" +
+	"0DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_INITIAL_MESSAGE\x10\x02\x127\n" +
+	"3DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_RATCHET_KEY_UPDATE\x10\x03BRZPgithub.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model;modelb\x06proto3"
 
 var (
 	file_domain_key_exchange_key_exchange_proto_rawDescOnce sync.Once
@@ -634,25 +1963,70 @@ func file_domain_key_exchange_key_exchange_proto_rawDescGZIP() []byte {
 	return file_domain_key_exchange_key_exchange_proto_rawDescData
 }
 
-var file_domain_key_exchange_key_exchange_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_domain_key_exchange_key_exchange_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_domain_key_exchange_key_exchange_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_domain_key_exchange_key_exchange_proto_goTypes = []any{
-	(*UploadKeyBundleRequest)(nil),  // 0: peers_touch.model.key_exchange.v1.UploadKeyBundleRequest
-	(*UploadKeyBundleResponse)(nil), // 1: peers_touch.model.key_exchange.v1.UploadKeyBundleResponse
-	(*KeyBundle)(nil),               // 2: peers_touch.model.key_exchange.v1.KeyBundle
-	(*FetchKeyBundleRequest)(nil),   // 3: peers_touch.model.key_exchange.v1.FetchKeyBundleRequest
-	(*FetchKeyBundleResponse)(nil),  // 4: peers_touch.model.key_exchange.v1.FetchKeyBundleResponse
-	(*ReplenishOpksRequest)(nil),    // 5: peers_touch.model.key_exchange.v1.ReplenishOpksRequest
-	(*ReplenishOpksResponse)(nil),   // 6: peers_touch.model.key_exchange.v1.ReplenishOpksResponse
-	(*OpkCountRequest)(nil),         // 7: peers_touch.model.key_exchange.v1.OpkCountRequest
-	(*OpkCountResponse)(nil),        // 8: peers_touch.model.key_exchange.v1.OpkCountResponse
+	(DirectKeyExchangePayloadKind)(0),             // 0: peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
+	(*UploadKeyBundleRequest)(nil),                // 1: peers_touch.model.key_exchange.v1.UploadKeyBundleRequest
+	(*UploadKeyBundleResponse)(nil),               // 2: peers_touch.model.key_exchange.v1.UploadKeyBundleResponse
+	(*KeyBundle)(nil),                             // 3: peers_touch.model.key_exchange.v1.KeyBundle
+	(*FetchKeyBundleRequest)(nil),                 // 4: peers_touch.model.key_exchange.v1.FetchKeyBundleRequest
+	(*FetchKeyBundleResponse)(nil),                // 5: peers_touch.model.key_exchange.v1.FetchKeyBundleResponse
+	(*ReplenishOpksRequest)(nil),                  // 6: peers_touch.model.key_exchange.v1.ReplenishOpksRequest
+	(*ReplenishOpksResponse)(nil),                 // 7: peers_touch.model.key_exchange.v1.ReplenishOpksResponse
+	(*OpkCountRequest)(nil),                       // 8: peers_touch.model.key_exchange.v1.OpkCountRequest
+	(*OpkCountResponse)(nil),                      // 9: peers_touch.model.key_exchange.v1.OpkCountResponse
+	(*DirectOneTimePreKey)(nil),                   // 10: peers_touch.model.key_exchange.v1.DirectOneTimePreKey
+	(*DirectKeyBundle)(nil),                       // 11: peers_touch.model.key_exchange.v1.DirectKeyBundle
+	(*UploadDirectKeyBundleRequest)(nil),          // 12: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest
+	(*UploadDirectKeyBundleResponse)(nil),         // 13: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleResponse
+	(*FetchDirectKeyBundlesRequest)(nil),          // 14: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest
+	(*FetchDirectKeyBundlesResponse)(nil),         // 15: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse
+	(*ReplenishDirectOneTimePreKeysRequest)(nil),  // 16: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest
+	(*ReplenishDirectOneTimePreKeysResponse)(nil), // 17: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysResponse
+	(*CountDirectOneTimePreKeysRequest)(nil),      // 18: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest
+	(*CountDirectOneTimePreKeysResponse)(nil),     // 19: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysResponse
+	(*MlsKeyPackageReservation)(nil),              // 20: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
+	(*UploadMlsKeyPackageRequest)(nil),            // 21: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest
+	(*UploadMlsKeyPackageResponse)(nil),           // 22: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageResponse
+	(*FetchMlsKeyPackageRequest)(nil),             // 23: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest
+	(*FetchMlsKeyPackageResponse)(nil),            // 24: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse
+	(*CountMlsKeyPackagesRequest)(nil),            // 25: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest
+	(*CountMlsKeyPackagesResponse)(nil),           // 26: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesResponse
+	(*ClaimMlsKeyPackageRequest)(nil),             // 27: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest
+	(*ClaimMlsKeyPackageResponse)(nil),            // 28: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse
+	(*SendDirectKeyExchangeRequest)(nil),          // 29: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest
+	(*SendDirectKeyExchangeResponse)(nil),         // 30: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeResponse
+	(*model.ActorDeviceRef)(nil),                  // 31: peers_touch.model.actor.v1.ActorDeviceRef
+	(*model.ActorRef)(nil),                        // 32: peers_touch.model.actor.v1.ActorRef
+	(*timestamppb.Timestamp)(nil),                 // 33: google.protobuf.Timestamp
 }
 var file_domain_key_exchange_key_exchange_proto_depIdxs = []int32{
-	2, // 0: peers_touch.model.key_exchange.v1.FetchKeyBundleResponse.bundles:type_name -> peers_touch.model.key_exchange.v1.KeyBundle
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3,  // 0: peers_touch.model.key_exchange.v1.FetchKeyBundleResponse.bundles:type_name -> peers_touch.model.key_exchange.v1.KeyBundle
+	31, // 1: peers_touch.model.key_exchange.v1.DirectKeyBundle.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	10, // 2: peers_touch.model.key_exchange.v1.DirectKeyBundle.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
+	31, // 3: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	10, // 4: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
+	32, // 5: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	11, // 6: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse.bundles:type_name -> peers_touch.model.key_exchange.v1.DirectKeyBundle
+	31, // 7: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	10, // 8: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
+	31, // 9: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	31, // 10: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation.target:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	31, // 11: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	32, // 12: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	20, // 13: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse.reservation:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
+	31, // 14: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	31, // 15: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest.target:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	33, // 16: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest.plan_expires_at:type_name -> google.protobuf.Timestamp
+	20, // 17: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse.reservation:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
+	31, // 18: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest.recipient:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	0,  // 19: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest.kind:type_name -> peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
+	20, // [20:20] is the sub-list for method output_type
+	20, // [20:20] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_domain_key_exchange_key_exchange_proto_init() }
@@ -665,13 +2039,14 @@ func file_domain_key_exchange_key_exchange_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_key_exchange_key_exchange_proto_rawDesc), len(file_domain_key_exchange_key_exchange_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   9,
+			NumEnums:      1,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_domain_key_exchange_key_exchange_proto_goTypes,
 		DependencyIndexes: file_domain_key_exchange_key_exchange_proto_depIdxs,
+		EnumInfos:         file_domain_key_exchange_key_exchange_proto_enumTypes,
 		MessageInfos:      file_domain_key_exchange_key_exchange_proto_msgTypes,
 	}.Build()
 	File_domain_key_exchange_key_exchange_proto = out.File

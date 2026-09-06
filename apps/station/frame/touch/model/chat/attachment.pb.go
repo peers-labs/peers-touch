@@ -1619,6 +1619,582 @@ func (x *GetAttachmentObjectResponse) GetTotalCiphertextSize() uint64 {
 	return 0
 }
 
+type GetFederatedConversationAttachmentObjectRequest struct {
+	state                   protoimpl.MessageState      `protogen:"open.v1"`
+	Request                 *GetAttachmentObjectRequest `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	SourceHomeStationPeerId string                      `protobuf:"bytes,2,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *GetFederatedConversationAttachmentObjectRequest) Reset() {
+	*x = GetFederatedConversationAttachmentObjectRequest{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFederatedConversationAttachmentObjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFederatedConversationAttachmentObjectRequest) ProtoMessage() {}
+
+func (x *GetFederatedConversationAttachmentObjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFederatedConversationAttachmentObjectRequest.ProtoReflect.Descriptor instead.
+func (*GetFederatedConversationAttachmentObjectRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *GetFederatedConversationAttachmentObjectRequest) GetRequest() *GetAttachmentObjectRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *GetFederatedConversationAttachmentObjectRequest) GetSourceHomeStationPeerId() string {
+	if x != nil {
+		return x.SourceHomeStationPeerId
+	}
+	return ""
+}
+
+type GetFederatedConversationAttachmentObjectResponse struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	Response      *GetAttachmentObjectResponse `protobuf:"bytes,1,opt,name=response,proto3" json:"response,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetFederatedConversationAttachmentObjectResponse) Reset() {
+	*x = GetFederatedConversationAttachmentObjectResponse{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFederatedConversationAttachmentObjectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFederatedConversationAttachmentObjectResponse) ProtoMessage() {}
+
+func (x *GetFederatedConversationAttachmentObjectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFederatedConversationAttachmentObjectResponse.ProtoReflect.Descriptor instead.
+func (*GetFederatedConversationAttachmentObjectResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *GetFederatedConversationAttachmentObjectResponse) GetResponse() *GetAttachmentObjectResponse {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
+type GetFederatedConversationAttachmentUploadRequest struct {
+	state                   protoimpl.MessageState      `protogen:"open.v1"`
+	Request                 *GetAttachmentUploadRequest `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	SourceHomeStationPeerId string                      `protobuf:"bytes,2,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *GetFederatedConversationAttachmentUploadRequest) Reset() {
+	*x = GetFederatedConversationAttachmentUploadRequest{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFederatedConversationAttachmentUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFederatedConversationAttachmentUploadRequest) ProtoMessage() {}
+
+func (x *GetFederatedConversationAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFederatedConversationAttachmentUploadRequest.ProtoReflect.Descriptor instead.
+func (*GetFederatedConversationAttachmentUploadRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *GetFederatedConversationAttachmentUploadRequest) GetRequest() *GetAttachmentUploadRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *GetFederatedConversationAttachmentUploadRequest) GetSourceHomeStationPeerId() string {
+	if x != nil {
+		return x.SourceHomeStationPeerId
+	}
+	return ""
+}
+
+type GetFederatedConversationAttachmentUploadResponse struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	Response      *GetAttachmentUploadResponse `protobuf:"bytes,1,opt,name=response,proto3" json:"response,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetFederatedConversationAttachmentUploadResponse) Reset() {
+	*x = GetFederatedConversationAttachmentUploadResponse{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFederatedConversationAttachmentUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFederatedConversationAttachmentUploadResponse) ProtoMessage() {}
+
+func (x *GetFederatedConversationAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFederatedConversationAttachmentUploadResponse.ProtoReflect.Descriptor instead.
+func (*GetFederatedConversationAttachmentUploadResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *GetFederatedConversationAttachmentUploadResponse) GetResponse() *GetAttachmentUploadResponse {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
+type BeginFederatedConversationAttachmentUploadRequest struct {
+	state                   protoimpl.MessageState        `protogen:"open.v1"`
+	Request                 *BeginAttachmentUploadRequest `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	SourceHomeStationPeerId string                        `protobuf:"bytes,2,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *BeginFederatedConversationAttachmentUploadRequest) Reset() {
+	*x = BeginFederatedConversationAttachmentUploadRequest{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginFederatedConversationAttachmentUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginFederatedConversationAttachmentUploadRequest) ProtoMessage() {}
+
+func (x *BeginFederatedConversationAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginFederatedConversationAttachmentUploadRequest.ProtoReflect.Descriptor instead.
+func (*BeginFederatedConversationAttachmentUploadRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *BeginFederatedConversationAttachmentUploadRequest) GetRequest() *BeginAttachmentUploadRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *BeginFederatedConversationAttachmentUploadRequest) GetSourceHomeStationPeerId() string {
+	if x != nil {
+		return x.SourceHomeStationPeerId
+	}
+	return ""
+}
+
+type BeginFederatedConversationAttachmentUploadResponse struct {
+	state         protoimpl.MessageState         `protogen:"open.v1"`
+	Response      *BeginAttachmentUploadResponse `protobuf:"bytes,1,opt,name=response,proto3" json:"response,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginFederatedConversationAttachmentUploadResponse) Reset() {
+	*x = BeginFederatedConversationAttachmentUploadResponse{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginFederatedConversationAttachmentUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginFederatedConversationAttachmentUploadResponse) ProtoMessage() {}
+
+func (x *BeginFederatedConversationAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginFederatedConversationAttachmentUploadResponse.ProtoReflect.Descriptor instead.
+func (*BeginFederatedConversationAttachmentUploadResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *BeginFederatedConversationAttachmentUploadResponse) GetResponse() *BeginAttachmentUploadResponse {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
+type PutFederatedConversationAttachmentChunkRequest struct {
+	state                   protoimpl.MessageState     `protogen:"open.v1"`
+	Request                 *PutAttachmentChunkRequest `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	SourceHomeStationPeerId string                     `protobuf:"bytes,2,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *PutFederatedConversationAttachmentChunkRequest) Reset() {
+	*x = PutFederatedConversationAttachmentChunkRequest{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutFederatedConversationAttachmentChunkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutFederatedConversationAttachmentChunkRequest) ProtoMessage() {}
+
+func (x *PutFederatedConversationAttachmentChunkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutFederatedConversationAttachmentChunkRequest.ProtoReflect.Descriptor instead.
+func (*PutFederatedConversationAttachmentChunkRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *PutFederatedConversationAttachmentChunkRequest) GetRequest() *PutAttachmentChunkRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *PutFederatedConversationAttachmentChunkRequest) GetSourceHomeStationPeerId() string {
+	if x != nil {
+		return x.SourceHomeStationPeerId
+	}
+	return ""
+}
+
+type PutFederatedConversationAttachmentChunkResponse struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	Response      *PutAttachmentChunkResponse `protobuf:"bytes,1,opt,name=response,proto3" json:"response,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutFederatedConversationAttachmentChunkResponse) Reset() {
+	*x = PutFederatedConversationAttachmentChunkResponse{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutFederatedConversationAttachmentChunkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutFederatedConversationAttachmentChunkResponse) ProtoMessage() {}
+
+func (x *PutFederatedConversationAttachmentChunkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutFederatedConversationAttachmentChunkResponse.ProtoReflect.Descriptor instead.
+func (*PutFederatedConversationAttachmentChunkResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *PutFederatedConversationAttachmentChunkResponse) GetResponse() *PutAttachmentChunkResponse {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
+type CompleteFederatedConversationAttachmentUploadRequest struct {
+	state                   protoimpl.MessageState           `protogen:"open.v1"`
+	Request                 *CompleteAttachmentUploadRequest `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	SourceHomeStationPeerId string                           `protobuf:"bytes,2,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *CompleteFederatedConversationAttachmentUploadRequest) Reset() {
+	*x = CompleteFederatedConversationAttachmentUploadRequest{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteFederatedConversationAttachmentUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteFederatedConversationAttachmentUploadRequest) ProtoMessage() {}
+
+func (x *CompleteFederatedConversationAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteFederatedConversationAttachmentUploadRequest.ProtoReflect.Descriptor instead.
+func (*CompleteFederatedConversationAttachmentUploadRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *CompleteFederatedConversationAttachmentUploadRequest) GetRequest() *CompleteAttachmentUploadRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *CompleteFederatedConversationAttachmentUploadRequest) GetSourceHomeStationPeerId() string {
+	if x != nil {
+		return x.SourceHomeStationPeerId
+	}
+	return ""
+}
+
+type CompleteFederatedConversationAttachmentUploadResponse struct {
+	state         protoimpl.MessageState            `protogen:"open.v1"`
+	Response      *CompleteAttachmentUploadResponse `protobuf:"bytes,1,opt,name=response,proto3" json:"response,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteFederatedConversationAttachmentUploadResponse) Reset() {
+	*x = CompleteFederatedConversationAttachmentUploadResponse{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteFederatedConversationAttachmentUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteFederatedConversationAttachmentUploadResponse) ProtoMessage() {}
+
+func (x *CompleteFederatedConversationAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteFederatedConversationAttachmentUploadResponse.ProtoReflect.Descriptor instead.
+func (*CompleteFederatedConversationAttachmentUploadResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *CompleteFederatedConversationAttachmentUploadResponse) GetResponse() *CompleteAttachmentUploadResponse {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
+type CancelFederatedConversationAttachmentUploadRequest struct {
+	state                   protoimpl.MessageState         `protogen:"open.v1"`
+	Request                 *CancelAttachmentUploadRequest `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	SourceHomeStationPeerId string                         `protobuf:"bytes,2,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *CancelFederatedConversationAttachmentUploadRequest) Reset() {
+	*x = CancelFederatedConversationAttachmentUploadRequest{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelFederatedConversationAttachmentUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelFederatedConversationAttachmentUploadRequest) ProtoMessage() {}
+
+func (x *CancelFederatedConversationAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelFederatedConversationAttachmentUploadRequest.ProtoReflect.Descriptor instead.
+func (*CancelFederatedConversationAttachmentUploadRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *CancelFederatedConversationAttachmentUploadRequest) GetRequest() *CancelAttachmentUploadRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *CancelFederatedConversationAttachmentUploadRequest) GetSourceHomeStationPeerId() string {
+	if x != nil {
+		return x.SourceHomeStationPeerId
+	}
+	return ""
+}
+
+type CancelFederatedConversationAttachmentUploadResponse struct {
+	state         protoimpl.MessageState          `protogen:"open.v1"`
+	Response      *CancelAttachmentUploadResponse `protobuf:"bytes,1,opt,name=response,proto3" json:"response,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelFederatedConversationAttachmentUploadResponse) Reset() {
+	*x = CancelFederatedConversationAttachmentUploadResponse{}
+	mi := &file_domain_chat_attachment_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelFederatedConversationAttachmentUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelFederatedConversationAttachmentUploadResponse) ProtoMessage() {}
+
+func (x *CancelFederatedConversationAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_attachment_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelFederatedConversationAttachmentUploadResponse.ProtoReflect.Descriptor instead.
+func (*CancelFederatedConversationAttachmentUploadResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *CancelFederatedConversationAttachmentUploadResponse) GetResponse() *CancelAttachmentUploadResponse {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
 type AttachmentTransferCheckpoint struct {
 	state                protoimpl.MessageState      `protogen:"open.v1"`
 	AttachmentId         string                      `protobuf:"bytes,1,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
@@ -1638,7 +2214,7 @@ type AttachmentTransferCheckpoint struct {
 
 func (x *AttachmentTransferCheckpoint) Reset() {
 	*x = AttachmentTransferCheckpoint{}
-	mi := &file_domain_chat_attachment_proto_msgTypes[17]
+	mi := &file_domain_chat_attachment_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1650,7 +2226,7 @@ func (x *AttachmentTransferCheckpoint) String() string {
 func (*AttachmentTransferCheckpoint) ProtoMessage() {}
 
 func (x *AttachmentTransferCheckpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_attachment_proto_msgTypes[17]
+	mi := &file_domain_chat_attachment_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1663,7 +2239,7 @@ func (x *AttachmentTransferCheckpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachmentTransferCheckpoint.ProtoReflect.Descriptor instead.
 func (*AttachmentTransferCheckpoint) Descriptor() ([]byte, []int) {
-	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{17}
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *AttachmentTransferCheckpoint) GetAttachmentId() string {
@@ -1882,7 +2458,37 @@ const file_domain_chat_attachment_proto_rawDesc = "" +
 	"\x06object\x18\x01 \x01(\v24.peers_touch.model.chat.v1.EncryptedObjectDescriptorR\x06object\x12\x1f\n" +
 	"\vetag_sha256\x18\x02 \x01(\fR\n" +
 	"etagSha256\x122\n" +
-	"\x15total_ciphertext_size\x18\x03 \x01(\x04R\x13totalCiphertextSize\"\xea\x04\n" +
+	"\x15total_ciphertext_size\x18\x03 \x01(\x04R\x13totalCiphertextSize\"\xc0\x01\n" +
+	"/GetFederatedConversationAttachmentObjectRequest\x12O\n" +
+	"\arequest\x18\x01 \x01(\v25.peers_touch.model.chat.v1.GetAttachmentObjectRequestR\arequest\x12<\n" +
+	"\x1bsource_home_station_peer_id\x18\x02 \x01(\tR\x17sourceHomeStationPeerId\"\x86\x01\n" +
+	"0GetFederatedConversationAttachmentObjectResponse\x12R\n" +
+	"\bresponse\x18\x01 \x01(\v26.peers_touch.model.chat.v1.GetAttachmentObjectResponseR\bresponse\"\xc0\x01\n" +
+	"/GetFederatedConversationAttachmentUploadRequest\x12O\n" +
+	"\arequest\x18\x01 \x01(\v25.peers_touch.model.chat.v1.GetAttachmentUploadRequestR\arequest\x12<\n" +
+	"\x1bsource_home_station_peer_id\x18\x02 \x01(\tR\x17sourceHomeStationPeerId\"\x86\x01\n" +
+	"0GetFederatedConversationAttachmentUploadResponse\x12R\n" +
+	"\bresponse\x18\x01 \x01(\v26.peers_touch.model.chat.v1.GetAttachmentUploadResponseR\bresponse\"\xc4\x01\n" +
+	"1BeginFederatedConversationAttachmentUploadRequest\x12Q\n" +
+	"\arequest\x18\x01 \x01(\v27.peers_touch.model.chat.v1.BeginAttachmentUploadRequestR\arequest\x12<\n" +
+	"\x1bsource_home_station_peer_id\x18\x02 \x01(\tR\x17sourceHomeStationPeerId\"\x8a\x01\n" +
+	"2BeginFederatedConversationAttachmentUploadResponse\x12T\n" +
+	"\bresponse\x18\x01 \x01(\v28.peers_touch.model.chat.v1.BeginAttachmentUploadResponseR\bresponse\"\xbe\x01\n" +
+	".PutFederatedConversationAttachmentChunkRequest\x12N\n" +
+	"\arequest\x18\x01 \x01(\v24.peers_touch.model.chat.v1.PutAttachmentChunkRequestR\arequest\x12<\n" +
+	"\x1bsource_home_station_peer_id\x18\x02 \x01(\tR\x17sourceHomeStationPeerId\"\x84\x01\n" +
+	"/PutFederatedConversationAttachmentChunkResponse\x12Q\n" +
+	"\bresponse\x18\x01 \x01(\v25.peers_touch.model.chat.v1.PutAttachmentChunkResponseR\bresponse\"\xca\x01\n" +
+	"4CompleteFederatedConversationAttachmentUploadRequest\x12T\n" +
+	"\arequest\x18\x01 \x01(\v2:.peers_touch.model.chat.v1.CompleteAttachmentUploadRequestR\arequest\x12<\n" +
+	"\x1bsource_home_station_peer_id\x18\x02 \x01(\tR\x17sourceHomeStationPeerId\"\x90\x01\n" +
+	"5CompleteFederatedConversationAttachmentUploadResponse\x12W\n" +
+	"\bresponse\x18\x01 \x01(\v2;.peers_touch.model.chat.v1.CompleteAttachmentUploadResponseR\bresponse\"\xc6\x01\n" +
+	"2CancelFederatedConversationAttachmentUploadRequest\x12R\n" +
+	"\arequest\x18\x01 \x01(\v28.peers_touch.model.chat.v1.CancelAttachmentUploadRequestR\arequest\x12<\n" +
+	"\x1bsource_home_station_peer_id\x18\x02 \x01(\tR\x17sourceHomeStationPeerId\"\x8c\x01\n" +
+	"3CancelFederatedConversationAttachmentUploadResponse\x12U\n" +
+	"\bresponse\x18\x01 \x01(\v29.peers_touch.model.chat.v1.CancelAttachmentUploadResponseR\bresponse\"\xea\x04\n" +
 	"\x1cAttachmentTransferCheckpoint\x12#\n" +
 	"\rattachment_id\x18\x01 \x01(\tR\fattachmentId\x12T\n" +
 	"\tdirection\x18\x02 \x01(\x0e26.peers_touch.model.chat.v1.AttachmentTransferDirectionR\tdirection\x12H\n" +
@@ -1941,61 +2547,85 @@ func file_domain_chat_attachment_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_chat_attachment_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_domain_chat_attachment_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_domain_chat_attachment_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_domain_chat_attachment_proto_goTypes = []any{
-	(AttachmentEncryptionSuite)(0),           // 0: peers_touch.model.chat.v1.AttachmentEncryptionSuite
-	(AttachmentNonceStrategy)(0),             // 1: peers_touch.model.chat.v1.AttachmentNonceStrategy
-	(AttachmentTransferDirection)(0),         // 2: peers_touch.model.chat.v1.AttachmentTransferDirection
-	(AttachmentTransferState)(0),             // 3: peers_touch.model.chat.v1.AttachmentTransferState
-	(AttachmentTransferErrorCode)(0),         // 4: peers_touch.model.chat.v1.AttachmentTransferErrorCode
-	(*AttachmentTransferError)(nil),          // 5: peers_touch.model.chat.v1.AttachmentTransferError
-	(*EncryptedObjectUploadSpec)(nil),        // 6: peers_touch.model.chat.v1.EncryptedObjectUploadSpec
-	(*EncryptedObjectDescriptor)(nil),        // 7: peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	(*AttachmentPlaintextMetadata)(nil),      // 8: peers_touch.model.chat.v1.AttachmentPlaintextMetadata
-	(*MessagePrivateContent)(nil),            // 9: peers_touch.model.chat.v1.MessagePrivateContent
-	(*BeginAttachmentUploadRequest)(nil),     // 10: peers_touch.model.chat.v1.BeginAttachmentUploadRequest
-	(*BeginAttachmentUploadResponse)(nil),    // 11: peers_touch.model.chat.v1.BeginAttachmentUploadResponse
-	(*GetAttachmentUploadRequest)(nil),       // 12: peers_touch.model.chat.v1.GetAttachmentUploadRequest
-	(*GetAttachmentUploadResponse)(nil),      // 13: peers_touch.model.chat.v1.GetAttachmentUploadResponse
-	(*PutAttachmentChunkRequest)(nil),        // 14: peers_touch.model.chat.v1.PutAttachmentChunkRequest
-	(*PutAttachmentChunkResponse)(nil),       // 15: peers_touch.model.chat.v1.PutAttachmentChunkResponse
-	(*CompleteAttachmentUploadRequest)(nil),  // 16: peers_touch.model.chat.v1.CompleteAttachmentUploadRequest
-	(*CompleteAttachmentUploadResponse)(nil), // 17: peers_touch.model.chat.v1.CompleteAttachmentUploadResponse
-	(*CancelAttachmentUploadRequest)(nil),    // 18: peers_touch.model.chat.v1.CancelAttachmentUploadRequest
-	(*CancelAttachmentUploadResponse)(nil),   // 19: peers_touch.model.chat.v1.CancelAttachmentUploadResponse
-	(*GetAttachmentObjectRequest)(nil),       // 20: peers_touch.model.chat.v1.GetAttachmentObjectRequest
-	(*GetAttachmentObjectResponse)(nil),      // 21: peers_touch.model.chat.v1.GetAttachmentObjectResponse
-	(*AttachmentTransferCheckpoint)(nil),     // 22: peers_touch.model.chat.v1.AttachmentTransferCheckpoint
-	(*durationpb.Duration)(nil),              // 23: google.protobuf.Duration
-	(*CryptoEndpoint)(nil),                   // 24: peers_touch.model.chat.v1.CryptoEndpoint
-	(*timestamppb.Timestamp)(nil),            // 25: google.protobuf.Timestamp
+	(AttachmentEncryptionSuite)(0),                                // 0: peers_touch.model.chat.v1.AttachmentEncryptionSuite
+	(AttachmentNonceStrategy)(0),                                  // 1: peers_touch.model.chat.v1.AttachmentNonceStrategy
+	(AttachmentTransferDirection)(0),                              // 2: peers_touch.model.chat.v1.AttachmentTransferDirection
+	(AttachmentTransferState)(0),                                  // 3: peers_touch.model.chat.v1.AttachmentTransferState
+	(AttachmentTransferErrorCode)(0),                              // 4: peers_touch.model.chat.v1.AttachmentTransferErrorCode
+	(*AttachmentTransferError)(nil),                               // 5: peers_touch.model.chat.v1.AttachmentTransferError
+	(*EncryptedObjectUploadSpec)(nil),                             // 6: peers_touch.model.chat.v1.EncryptedObjectUploadSpec
+	(*EncryptedObjectDescriptor)(nil),                             // 7: peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	(*AttachmentPlaintextMetadata)(nil),                           // 8: peers_touch.model.chat.v1.AttachmentPlaintextMetadata
+	(*MessagePrivateContent)(nil),                                 // 9: peers_touch.model.chat.v1.MessagePrivateContent
+	(*BeginAttachmentUploadRequest)(nil),                          // 10: peers_touch.model.chat.v1.BeginAttachmentUploadRequest
+	(*BeginAttachmentUploadResponse)(nil),                         // 11: peers_touch.model.chat.v1.BeginAttachmentUploadResponse
+	(*GetAttachmentUploadRequest)(nil),                            // 12: peers_touch.model.chat.v1.GetAttachmentUploadRequest
+	(*GetAttachmentUploadResponse)(nil),                           // 13: peers_touch.model.chat.v1.GetAttachmentUploadResponse
+	(*PutAttachmentChunkRequest)(nil),                             // 14: peers_touch.model.chat.v1.PutAttachmentChunkRequest
+	(*PutAttachmentChunkResponse)(nil),                            // 15: peers_touch.model.chat.v1.PutAttachmentChunkResponse
+	(*CompleteAttachmentUploadRequest)(nil),                       // 16: peers_touch.model.chat.v1.CompleteAttachmentUploadRequest
+	(*CompleteAttachmentUploadResponse)(nil),                      // 17: peers_touch.model.chat.v1.CompleteAttachmentUploadResponse
+	(*CancelAttachmentUploadRequest)(nil),                         // 18: peers_touch.model.chat.v1.CancelAttachmentUploadRequest
+	(*CancelAttachmentUploadResponse)(nil),                        // 19: peers_touch.model.chat.v1.CancelAttachmentUploadResponse
+	(*GetAttachmentObjectRequest)(nil),                            // 20: peers_touch.model.chat.v1.GetAttachmentObjectRequest
+	(*GetAttachmentObjectResponse)(nil),                           // 21: peers_touch.model.chat.v1.GetAttachmentObjectResponse
+	(*GetFederatedConversationAttachmentObjectRequest)(nil),       // 22: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectRequest
+	(*GetFederatedConversationAttachmentObjectResponse)(nil),      // 23: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectResponse
+	(*GetFederatedConversationAttachmentUploadRequest)(nil),       // 24: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadRequest
+	(*GetFederatedConversationAttachmentUploadResponse)(nil),      // 25: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadResponse
+	(*BeginFederatedConversationAttachmentUploadRequest)(nil),     // 26: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadRequest
+	(*BeginFederatedConversationAttachmentUploadResponse)(nil),    // 27: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadResponse
+	(*PutFederatedConversationAttachmentChunkRequest)(nil),        // 28: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkRequest
+	(*PutFederatedConversationAttachmentChunkResponse)(nil),       // 29: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkResponse
+	(*CompleteFederatedConversationAttachmentUploadRequest)(nil),  // 30: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadRequest
+	(*CompleteFederatedConversationAttachmentUploadResponse)(nil), // 31: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadResponse
+	(*CancelFederatedConversationAttachmentUploadRequest)(nil),    // 32: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadRequest
+	(*CancelFederatedConversationAttachmentUploadResponse)(nil),   // 33: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadResponse
+	(*AttachmentTransferCheckpoint)(nil),                          // 34: peers_touch.model.chat.v1.AttachmentTransferCheckpoint
+	(*durationpb.Duration)(nil),                                   // 35: google.protobuf.Duration
+	(*CryptoEndpoint)(nil),                                        // 36: peers_touch.model.chat.v1.CryptoEndpoint
+	(*timestamppb.Timestamp)(nil),                                 // 37: google.protobuf.Timestamp
 }
 var file_domain_chat_attachment_proto_depIdxs = []int32{
 	4,  // 0: peers_touch.model.chat.v1.AttachmentTransferError.code:type_name -> peers_touch.model.chat.v1.AttachmentTransferErrorCode
-	23, // 1: peers_touch.model.chat.v1.AttachmentTransferError.retry_after:type_name -> google.protobuf.Duration
+	35, // 1: peers_touch.model.chat.v1.AttachmentTransferError.retry_after:type_name -> google.protobuf.Duration
 	0,  // 2: peers_touch.model.chat.v1.EncryptedObjectUploadSpec.encryption_suite:type_name -> peers_touch.model.chat.v1.AttachmentEncryptionSuite
 	1,  // 3: peers_touch.model.chat.v1.EncryptedObjectUploadSpec.nonce_strategy:type_name -> peers_touch.model.chat.v1.AttachmentNonceStrategy
 	0,  // 4: peers_touch.model.chat.v1.EncryptedObjectDescriptor.encryption_suite:type_name -> peers_touch.model.chat.v1.AttachmentEncryptionSuite
 	1,  // 5: peers_touch.model.chat.v1.EncryptedObjectDescriptor.nonce_strategy:type_name -> peers_touch.model.chat.v1.AttachmentNonceStrategy
 	7,  // 6: peers_touch.model.chat.v1.AttachmentPlaintextMetadata.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
 	8,  // 7: peers_touch.model.chat.v1.MessagePrivateContent.attachments:type_name -> peers_touch.model.chat.v1.AttachmentPlaintextMetadata
-	24, // 8: peers_touch.model.chat.v1.BeginAttachmentUploadRequest.uploader:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	36, // 8: peers_touch.model.chat.v1.BeginAttachmentUploadRequest.uploader:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
 	6,  // 9: peers_touch.model.chat.v1.BeginAttachmentUploadRequest.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectUploadSpec
-	25, // 10: peers_touch.model.chat.v1.BeginAttachmentUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
+	37, // 10: peers_touch.model.chat.v1.BeginAttachmentUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
 	3,  // 11: peers_touch.model.chat.v1.GetAttachmentUploadResponse.state:type_name -> peers_touch.model.chat.v1.AttachmentTransferState
-	25, // 12: peers_touch.model.chat.v1.GetAttachmentUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
+	37, // 12: peers_touch.model.chat.v1.GetAttachmentUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
 	7,  // 13: peers_touch.model.chat.v1.GetAttachmentUploadResponse.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
 	7,  // 14: peers_touch.model.chat.v1.CompleteAttachmentUploadResponse.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
 	3,  // 15: peers_touch.model.chat.v1.CancelAttachmentUploadResponse.state:type_name -> peers_touch.model.chat.v1.AttachmentTransferState
 	7,  // 16: peers_touch.model.chat.v1.GetAttachmentObjectResponse.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	2,  // 17: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.direction:type_name -> peers_touch.model.chat.v1.AttachmentTransferDirection
-	3,  // 18: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.state:type_name -> peers_touch.model.chat.v1.AttachmentTransferState
-	4,  // 19: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.last_error_code:type_name -> peers_touch.model.chat.v1.AttachmentTransferErrorCode
-	20, // [20:20] is the sub-list for method output_type
-	20, // [20:20] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	20, // 17: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectRequest.request:type_name -> peers_touch.model.chat.v1.GetAttachmentObjectRequest
+	21, // 18: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectResponse.response:type_name -> peers_touch.model.chat.v1.GetAttachmentObjectResponse
+	12, // 19: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.GetAttachmentUploadRequest
+	13, // 20: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.GetAttachmentUploadResponse
+	10, // 21: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.BeginAttachmentUploadRequest
+	11, // 22: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.BeginAttachmentUploadResponse
+	14, // 23: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkRequest.request:type_name -> peers_touch.model.chat.v1.PutAttachmentChunkRequest
+	15, // 24: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkResponse.response:type_name -> peers_touch.model.chat.v1.PutAttachmentChunkResponse
+	16, // 25: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.CompleteAttachmentUploadRequest
+	17, // 26: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.CompleteAttachmentUploadResponse
+	18, // 27: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.CancelAttachmentUploadRequest
+	19, // 28: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.CancelAttachmentUploadResponse
+	2,  // 29: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.direction:type_name -> peers_touch.model.chat.v1.AttachmentTransferDirection
+	3,  // 30: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.state:type_name -> peers_touch.model.chat.v1.AttachmentTransferState
+	4,  // 31: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.last_error_code:type_name -> peers_touch.model.chat.v1.AttachmentTransferErrorCode
+	32, // [32:32] is the sub-list for method output_type
+	32, // [32:32] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_attachment_proto_init() }
@@ -2010,7 +2640,7 @@ func file_domain_chat_attachment_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_attachment_proto_rawDesc), len(file_domain_chat_attachment_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   18,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
