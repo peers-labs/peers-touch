@@ -5,7 +5,7 @@
  * knowing the internal file layout.
  */
 
-export { createGatewayTransport, gatewayBytesToBase64, unwrapOutcome } from './gatewayTypes';
+export { createGatewayTransport, unwrapOutcome } from './gatewayTypes';
 export type {
   CommandOutcome,
   CommandWithReadback,
@@ -16,13 +16,12 @@ export type {
 } from './gatewayTypes';
 
 export { createSocialGateway } from './socialGateway';
-export type { SocialGateway, SocialFriendRequestsResult, SocialSessionsResult, SocialMessagesResult } from './socialGateway';
+export type { SocialGateway, SocialFriendRequestsResult, SocialSessionsResult } from './socialGateway';
 
 export { createGroupGateway } from './groupGateway';
 export type {
   GroupGateway,
   GroupListResult,
-  GroupMessagesResult,
   GroupMembersResult,
   GroupSettings as GroupGatewaySettings,
   CreateGroupInput as GroupGatewayCreateInput,
