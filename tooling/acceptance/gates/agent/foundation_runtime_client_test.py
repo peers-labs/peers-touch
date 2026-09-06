@@ -179,6 +179,16 @@ class FoundationClientSpecTest(unittest.TestCase):
             (browser.make_target, browser.surface),
             ("desktop-web", "browser"),
         )
+        self.assertEqual(
+            native.cargo_target_dir,
+            root.resolve()
+            / ".local"
+            / "acceptance"
+            / "cargo-target"
+            / "agent-v2"
+            / "native-tauri",
+        )
+        self.assertNotEqual(native.cargo_target_dir, browser.cargo_target_dir)
 
     def test_rejects_unknown_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -211,6 +221,17 @@ class FoundationClientSpecTest(unittest.TestCase):
         self.assertEqual(environment["GATEWAY_PORT"], "23030")
         self.assertEqual(environment["WEB_PORT"], "23210")
         self.assertEqual(environment["PT_DESKTOP_E2E"], "true")
+        self.assertEqual(
+            environment["CARGO_TARGET_DIR"],
+            str(
+                root.resolve()
+                / ".local"
+                / "acceptance"
+                / "cargo-target"
+                / "agent-v2"
+                / "browser"
+            ),
+        )
         self.assertEqual(
             environment["PEERS_ACTOR_IDENTITY_ROOT"],
             str(root / "actor-identity"),
