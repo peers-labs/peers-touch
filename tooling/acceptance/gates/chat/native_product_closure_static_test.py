@@ -1130,6 +1130,60 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("onPointerEnter={() => {", self.message_action_overlay)
         self.assertNotIn("onPointerLeave={() => {", self.message_action_overlay)
 
+    def test_message_action_click_stays_scoped_after_native_hover(self) -> None:
+        action_start = self.source.index(
+            "    def click_message_action("
+        )
+        action_end = self.source.index(
+            "    def composer_send(",
+            action_start,
+        )
+        action_source = self.source[action_start:action_end]
+
+        self.assertIn(
+            "toolbar = self.hover_message(actor, message_id)",
+            action_source,
+        )
+        self.assertIn(
+            "element = toolbar.find_element(",
+            action_source,
+        )
+        self.assertIn(
+            "selector = MESSAGE_ACTION_SELECTORS.get(action)",
+            action_source,
+        )
+        self.assertIn(
+            'raise GateError(f"unsupported message action: {action}")',
+            action_source,
+        )
+        self.assertIn(
+            "return self._click_focused_element(client, element)",
+            action_source,
+        )
+        self.assertNotIn("self.focus_actor_window(", action_source)
+        self.assertNotIn("self.click(", action_source)
+
+        transcript_start = self.source.index(
+            "    def prove_transcript_thread("
+        )
+        transcript_end = self.source.index(
+            "    def overlay_geometry(",
+            transcript_start,
+        )
+        transcript_source = self.source[transcript_start:transcript_end]
+        self.assertIn(
+            'self.click_message_action("alice", str(bob_root["id"]), "reply")',
+            transcript_source,
+        )
+        self.assertIn(
+            'self.click_message_action("alice", str(bob_root["id"]), "thread")',
+            transcript_source,
+        )
+        self.assertNotIn(
+            'self.click("alice", \'[data-message-action=',
+            transcript_source,
+        )
+
     def test_message_actions_are_owned_by_the_conversation_pane_overlay(self) -> None:
         self.assertIn("<ChatMessageActionOverlay", self.message_timeline)
         self.assertIn("onActionTargetChange={activateActions}", self.message_timeline)
