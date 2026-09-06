@@ -53,16 +53,17 @@ func (s *AttachmentAdmissionService) Admit(
 	if len(attachments) == 0 {
 		return nil, nil
 	}
+	firstAttachmentID := attachmentIDForRejection(attachments)
 	if s == nil || s.objects == nil {
-		return nil, attachmentRejected("attachment storage authority is unavailable")
+		return nil, attachmentRejected(firstAttachmentID, "attachment storage authority is unavailable")
 	}
 	if capabilities == nil || capabilities.GetInput() == nil || capabilities.GetLimits() == nil {
-		return nil, attachmentRejected("model attachment capability is unavailable")
+		return nil, attachmentRejected(firstAttachmentID, "model attachment capability is unavailable")
 	}
 
 	maxCount := capabilities.GetLimits().GetAttachmentCount()
 	if maxCount == 0 || uint32(len(attachments)) > maxCount {
-		return nil, attachmentRejected("attachment count exceeds model capability")
+		return nil, attachmentRejected(firstAttachmentID, "attachment count exceeds model capability")
 	}
 	maxBytes := capabilities.GetLimits().GetAttachmentBytes()
 	if budget != nil && budget.GetMaxAttachmentBytes() > 0 &&
@@ -78,72 +79,72 @@ func (s *AttachmentAdmissionService) Admit(
 
 	for _, candidate := range attachments {
 		if candidate == nil {
-			return nil, attachmentRejected("attachment reference is required")
+			return nil, attachmentRejected("", "attachment reference is required")
 		}
 		attachmentID := strings.TrimSpace(candidate.GetAttachmentId())
 		if attachmentID == "" {
-			return nil, attachmentRejected("attachment_id is required")
+			return nil, attachmentRejected("", "attachment_id is required")
 		}
 		if _, exists := seenIDs[attachmentID]; exists {
-			return nil, attachmentRejected("duplicate attachment_id")
+			return nil, attachmentRejected(attachmentID, "duplicate attachment_id")
 		}
 		seenIDs[attachmentID] = struct{}{}
 		if strings.TrimSpace(candidate.GetExtractedContentRef()) != "" {
-			return nil, attachmentRejected("extracted_content_ref is Station-owned")
+			return nil, attachmentRejected(attachmentID, "extracted_content_ref is Station-owned")
 		}
 
 		if strings.TrimSpace(candidate.GetAuthorizationScope()) != expectedScope {
-			return nil, attachmentRejected("attachment authorization scope is invalid")
+			return nil, attachmentRejected(attachmentID, "attachment authorization scope is invalid")
 		}
 		if candidate.GetExpiresAt() == nil || !candidate.GetExpiresAt().IsValid() ||
 			!candidate.GetExpiresAt().AsTime().After(now) {
-			return nil, attachmentRejected("attachment reference is expired")
+			return nil, attachmentRejected(attachmentID, "attachment reference is expired")
 		}
 
 		objectKey, err := attachmentObjectKey(candidate.GetObjectRef())
 		if err != nil {
-			return nil, attachmentRejected(err.Error())
+			return nil, attachmentRejected(attachmentID, err.Error())
 		}
 		meta, body, err := s.objects.ReadOwnedFile(ctx, actorID, objectKey, maxBytes-totalBytes)
 		if err != nil || meta == nil {
-			return nil, attachmentRejected("attachment object is unavailable")
+			return nil, attachmentRejected(attachmentID, "attachment object is unavailable")
 		}
 		if meta.OwnerPTID != strings.TrimSpace(actorID) ||
 			meta.Visibility != ossmodel.VisibilityPrivate ||
 			meta.DeletedAt != nil {
-			return nil, attachmentRejected("attachment object is unauthorized")
+			return nil, attachmentRejected(attachmentID, "attachment object is unauthorized")
 		}
 		if meta.ExpiresAt != nil {
 			if !meta.ExpiresAt.After(now) || candidate.GetExpiresAt().AsTime().After(*meta.ExpiresAt) {
-				return nil, attachmentRejected("attachment object is expired")
+				return nil, attachmentRejected(attachmentID, "attachment object is expired")
 			}
 		}
 
 		mimeType := strings.ToLower(strings.TrimSpace(candidate.GetMimeType()))
 		if mimeType != strings.ToLower(strings.TrimSpace(meta.Mime)) {
-			return nil, attachmentRejected("attachment MIME metadata does not match stored object")
+			return nil, attachmentRejected(attachmentID, "attachment MIME metadata does not match stored object")
 		}
 		if !attachmentMimeAllowed(mimeType) {
-			return nil, attachmentRejected("attachment MIME is unsupported")
+			return nil, attachmentRejected(attachmentID, "attachment MIME is unsupported")
 		}
 		if !attachmentContentMatches(mimeType, body) {
-			return nil, attachmentRejected("attachment content does not match MIME")
+			return nil, attachmentRejected(attachmentID, "attachment content does not match MIME")
 		}
 		if meta.Size < 0 || candidate.GetSizeBytes() != uint64(meta.Size) {
-			return nil, attachmentRejected("attachment size metadata does not match stored object")
+			return nil, attachmentRejected(attachmentID, "attachment size metadata does not match stored object")
 		}
 		totalBytes += candidate.GetSizeBytes()
 		if maxBytes == 0 || totalBytes > maxBytes {
-			return nil, attachmentRejected("attachment bytes exceed model or turn budget")
+			return nil, attachmentRejected(attachmentID, "attachment bytes exceed model or turn budget")
 		}
 
 		checksum := normalizedSHA256(candidate.GetChecksum())
 		if checksum == "" || checksum != normalizedSHA256(meta.Sha256) {
-			return nil, attachmentRejected("attachment checksum does not match stored object")
+			return nil, attachmentRejected(attachmentID, "attachment checksum does not match stored object")
 		}
 		bodyChecksum := sha256.Sum256(body)
 		if checksum != hex.EncodeToString(bodyChecksum[:]) {
-			return nil, attachmentRejected("attachment body checksum does not match stored object")
+			return nil, attachmentRejected(attachmentID, "attachment body checksum does not match stored object")
 		}
 
 		normalized := proto.Clone(candidate).(*model.AgentAttachmentRef)
@@ -220,11 +221,22 @@ func normalizedSHA256(value string) string {
 	return value
 }
 
-func attachmentRejected(message string) error {
+func attachmentIDForRejection(
+	attachments []*model.AgentAttachmentRef,
+) string {
+	for _, attachment := range attachments {
+		if attachmentID := strings.TrimSpace(attachment.GetAttachmentId()); attachmentID != "" {
+			return attachmentID
+		}
+	}
+	return ""
+}
+
+func attachmentRejected(attachmentID, message string) error {
 	reasonCode := strings.NewReplacer(" ", "_", "-", "_").Replace(
 		strings.ToLower(strings.TrimSpace(message)),
 	)
-	return errcode.NewAttachmentRejected(reasonCode)
+	return errcode.NewAttachmentRejected(strings.TrimSpace(attachmentID), reasonCode)
 }
 
 func attachmentRefs(attachments []AdmittedAttachment) []*model.AgentAttachmentRef {

@@ -15,6 +15,35 @@ function s(v: unknown): string {
 
 export const BUDGET_ERROR_TYPE = 'TOOL_LOOP_BUDGET_EXHAUSTED';
 
+export function projectAgentTypedError(
+  data: Record<string, unknown>,
+): ChatMessage['typedError'] {
+  const errorType = s(data.error_type || data.errorType);
+  const localeKey = s(data.locale_key || data.localeKey);
+  if (
+    !errorType
+    || !localeKey
+    || typeof data.retryable !== 'boolean'
+    || typeof data.terminal !== 'boolean'
+  ) {
+    return undefined;
+  }
+  const details = data.details && typeof data.details === 'object' && !Array.isArray(data.details)
+    ? Object.fromEntries(
+        Object.entries(data.details as Record<string, unknown>)
+          .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+      )
+    : {};
+  return {
+    error: s(data.error) || localeKey,
+    error_type: errorType,
+    locale_key: localeKey,
+    retryable: data.retryable,
+    terminal: data.terminal,
+    details,
+  };
+}
+
 function budgetKind(reason: string): BudgetExhaustionKind {
   if (reason.includes('tool_call')) return 'tool_calls';
   if (reason.includes('wall_time')) return 'wall_time';
@@ -106,9 +135,11 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
     case 'error': {
       const errMsg = s(d.error) || 'Unknown error';
       const budgetNotice = projectBudgetNotice(d);
+      const typedError = projectAgentTypedError(d);
       return {
         ...msg,
-        error: budgetNotice?.localeKey || errMsg,
+        error: budgetNotice?.localeKey || typedError?.locale_key || errMsg,
+        typedError: typedError ?? msg.typedError,
         budgetNotice: budgetNotice ?? msg.budgetNotice,
         terminalStatus: 'failed',
         errorDetail: s(d.detail),
