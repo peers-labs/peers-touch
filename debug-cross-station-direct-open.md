@@ -35,6 +35,7 @@
 | R | Bob's Device Messaging Engine lacks the MLS session required to prepare the reply. | Low | Low | Rejected as the first failure: the Station prepare request returns 500 before local MLS outbound preparation runs. |
 | S | The cross-Station Fixture publishes an accepted friend request but omits the reciprocal Social follow edges required by Conversation Direct policy. | High | Low | Confirmed by Windows run `20260906T050808799291Z-fa0eb0c4f955b6e8442c02cdaed89473`: Desktop rendered Bob as an accepted friend, while station-four returned `RELATIONSHIP_REQUIRED`. Source inspection showed `seed_cross_station_contact` inserted only `friend_chat_friend_requests`; commit `abea69ac4346a87aab74c45152be646906fabed4` now seeds and asserts both canonical `follows` edges on each disposable Station. |
 | T | Desktop still publishes MLS KeyPackages through the deleted `/keypackage/*` namespace after Station moved the capability to `/key-exchange/*`. | High | Low | Confirmed by run `20260906T060404502049Z-720b250fb534231a2a274d7f7cd9ab9a`: both clients repeatedly received 404 for `POST /keypackage/upload`; Alice's group creation then returned Station 500 and no MLS group projected. Commit `d30bf13e5` moves every Desktop MLS KeyPackage and DKX caller to the canonical Key Exchange routes and adds a no-legacy-route contract check. |
+| U | The route-level submit policy treats a prepared group-genesis command as an ordinary send and requires membership before genesis creates the first member rows. | High | Low | Confirmed by run `20260906T065145933373Z-a1b1fef54a2e6f48ebca7cbe2cb44ec0`: KeyPackage uploads and `/conversation/group/prepare` returned 200, then `/conversation/command` returned 403 before the authority service could consume the genesis plan. Commit `13dc0803a` removes the duplicate coarse wrapper; the Conversation authority retains command-aware device, plan, membership, epoch, role, and delivery validation. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -361,3 +362,23 @@ The canonical ownership registry and Station already expose
 `/key-exchange/dkx/send`; commit `d30bf13e5` switches all Desktop callers to
 those routes and rejects restoration of the old literals. Post-fix Windows
 Product Closure remains pending; the session stays `[OPEN]`.
+
+Exact-source Windows run
+`20260906T065145933373Z-a1b1fef54a2e6f48ebca7cbe2cb44ec0` at commit
+`9cb18b53efc63cb18deddc52f1d05c560725b910` and binary SHA-256
+`a590a945638af9d43cb323a78ad7368a3b723d77f1e3210d07b33546819e434d`
+proved all client KeyPackage uploads through
+`/key-exchange/mls/key-package/upload` and a successful
+`/conversation/group/prepare`. The next request,
+`POST /conversation/command`, returned 403 because the route-level
+`send_message` policy required an existing member row before the prepared
+group-genesis command could create that row.
+
+The Conversation authority already owns command-aware validation: local device
+activity, prepared-plan identity and expiry, endpoint manifests, membership and
+MLS epochs, member/role checks for established conversations, delivery plans,
+and command replay/conflict handling. Commit `13dc0803a` removes only the
+duplicate transport-level membership policy from canonical command submission;
+JWT and device identity wrappers remain. Focused Conversation package and
+ownership contract tests pass. Post-fix Windows Product Closure remains
+pending; the session stays `[OPEN]`.
