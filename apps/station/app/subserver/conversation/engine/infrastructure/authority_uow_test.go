@@ -457,7 +457,7 @@ func TestAuthorityCommitAtomicallyPartitionsRemoteHomeStationDelivery(t *testing
 	}
 }
 
-func TestFederatedPrepareUsesVerifiedRemoteSenderManifest(t *testing.T) {
+func TestFederatedPrepareAndSubmitUseVerifiedRemoteSenderManifest(t *testing.T) {
 	limits := messaging.QueueLimits{
 		MaxUnackedItems: 100,
 		MaxUnackedBytes: 1024 * 1024,
@@ -568,6 +568,67 @@ func TestFederatedPrepareUsesVerifiedRemoteSenderManifest(t *testing.T) {
 	if len(plan.RequiredEndpoints) != 3 {
 		t.Fatalf("required endpoints = %+v, want three active endpoints", plan.RequiredEndpoints)
 	}
+	command := directCommand(conversationID, "command-federated-submit")
+	command.Sender = proto.Clone(request.Sender).(*chat.CryptoEndpoint)
+	command.GetSendMessage().DirectPayloads[0].Recipient = &chat.CryptoEndpoint{
+		Ptid:     "alice",
+		DeviceId: "alice-1",
+	}
+	command.GetSendMessage().DirectPayloads[1].Recipient = &chat.CryptoEndpoint{
+		Ptid:     "alice",
+		DeviceId: "alice-2",
+	}
+	command.ObservedMembershipEpoch = plan.MembershipEpoch
+	command.ObservedMlsEpoch = plan.MlsEpoch
+	command.DeliveryPlanSha256 = plan.DeliveryPlanSha256
+	if _, err := service.Submit(context.Background(), command); err == nil {
+		t.Fatal("local submit unexpectedly authorized a manifest-only remote sender")
+	}
+	event, err := service.SubmitFederated(
+		context.Background(),
+		"station:remote",
+		command,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Actor == nil ||
+		event.Actor.Ptid != "bob" ||
+		event.Actor.DeviceId != "bob-1" {
+		t.Fatalf("federated event actor = %+v", event.Actor)
+	}
+	var remoteDeviceRows int64
+	if err := db.Model(&touchactor.DeviceRecord{}).
+		Where("ptid = ?", "bob").
+		Count(&remoteDeviceRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if remoteDeviceRows != 0 {
+		t.Fatalf("authority local device rows for Bob = %d, want 0", remoteDeviceRows)
+	}
+	var queueRows []infrastructure.DeviceQueueItemModel
+	if err := db.Find(&queueRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(queueRows) != 2 {
+		t.Fatalf("federated submit local queue rows = %d, want 2", len(queueRows))
+	}
+	for _, row := range queueRows {
+		var delivery chat.DeviceEventDelivery
+		if err := proto.Unmarshal(row.OpaquePayload, &delivery); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(
+			delivery.SenderActorIdentityPublicKey,
+			remoteManifest.ActorIdentityPublicKey,
+		) {
+			t.Fatalf(
+				"sender actor identity key = %x, want manifest key %x",
+				delivery.SenderActorIdentityPublicKey,
+				remoteManifest.ActorIdentityPublicKey,
+			)
+		}
+	}
 
 	tests := []struct {
 		name                string
@@ -601,6 +662,22 @@ func TestFederatedPrepareUsesVerifiedRemoteSenderManifest(t *testing.T) {
 			)
 			if !errors.Is(prepareErr, messaging.ErrSenderUnauthorized) {
 				t.Fatalf("error = %v, want ErrSenderUnauthorized", prepareErr)
+			}
+			_, submitErr := service.SubmitFederated(
+				context.Background(),
+				test.sourceHomeStationID,
+				&chat.ChatCommand{
+					CommandId:          "rejected-" + test.name,
+					ConversationId:     conversationID,
+					AuthorityStationId: "station:local",
+					Sender:             test.sender,
+				},
+			)
+			if !errors.Is(submitErr, messaging.ErrSenderUnauthorized) {
+				t.Fatalf(
+					"submit error = %v, want ErrSenderUnauthorized",
+					submitErr,
+				)
 			}
 		})
 	}

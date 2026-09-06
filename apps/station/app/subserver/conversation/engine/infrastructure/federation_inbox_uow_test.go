@@ -36,14 +36,27 @@ func (a federationDeviceAccess) IsActiveDevice(
 }
 
 type federationAuthorityService struct {
-	submitted int
+	submitted                   int
+	receivedSourceHomeStationID string
+	expectedSourceHomeStationID string
+	expectedSender              *chat.CryptoEndpoint
 }
 
-func (s *federationAuthorityService) Submit(
-	context.Context,
-	*chat.ChatCommand,
+func (s *federationAuthorityService) SubmitFederated(
+	_ context.Context,
+	sourceHomeStationID string,
+	command *chat.ChatCommand,
 ) (*chat.ConversationEvent, error) {
+	if command == nil ||
+		command.Sender == nil ||
+		sourceHomeStationID != s.expectedSourceHomeStationID ||
+		s.expectedSender == nil ||
+		command.Sender.Ptid != s.expectedSender.Ptid ||
+		command.Sender.DeviceId != s.expectedSender.DeviceId {
+		return nil, messaging.ErrSenderUnauthorized
+	}
 	s.submitted++
+	s.receivedSourceHomeStationID = sourceHomeStationID
 
 	return &chat.ConversationEvent{}, nil
 }
@@ -119,6 +132,10 @@ func newFederationInboxFixtureWithManifest(
 		t.Fatal(err)
 	}
 	authority := &federationAuthorityService{}
+	if manifest != nil && len(manifest.ActiveEndpoints) > 0 {
+		authority.expectedSourceHomeStationID = manifest.HomeStationId
+		authority.expectedSender = manifest.ActiveEndpoints[0].Endpoint
+	}
 	service, err := application.NewFederationService(
 		uow,
 		devices,
@@ -478,6 +495,12 @@ func TestFederationAuthorityCommandUsesRemoteSenderManifest(t *testing.T) {
 	}
 	if authority.submitted != 1 {
 		t.Fatalf("submitted commands = %d, want 1", authority.submitted)
+	}
+	if authority.receivedSourceHomeStationID != "station-b" {
+		t.Fatalf(
+			"source Home Station = %q, want station-b",
+			authority.receivedSourceHomeStationID,
+		)
 	}
 	var inboxCount int64
 	if err := db.Model(&infrastructure.FederationInboxModel{}).
