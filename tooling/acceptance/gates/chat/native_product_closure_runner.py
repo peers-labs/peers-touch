@@ -2711,11 +2711,19 @@ class NativeProductClosureGate(AcceptanceGate):
             )
             == message_id
         )
+        # #region debug-point V-X:reaction-keyboard-lifecycle
+        _debug_report(
+            "V-X",
+            "native_product_closure_runner.py:reaction_toolbar_focused",
+            "reaction toolbar received keyboard focus",
+            client.execute_script(keyboard_debug_script),
+        )
+        # #endregion
         focused_action_script = """
             return document.activeElement
               ?.getAttribute('data-message-action') || '';
         """
-        for _ in range(10):
+        for tab_index in range(10):
             action = str(client.execute_script(focused_action_script) or "")
             if action == "reaction":
                 break
@@ -2724,16 +2732,31 @@ class NativeProductClosureGate(AcceptanceGate):
                 NativeKey.TAB,
                 private_source=True,
             )
-            WebDriverWait(client.driver, 5).until(
-                lambda driver: str(
-                    driver.execute_script(focused_action_script) or ""
+            try:
+                WebDriverWait(client.driver, 5).until(
+                    lambda driver: str(
+                        driver.execute_script(focused_action_script) or ""
+                    )
+                    != action,
+                    (
+                        "native Tab did not move message action focus "
+                        f"from {action!r} for message {message_id}"
+                    ),
                 )
-                != action,
-                (
-                    "native Tab did not move message action focus "
-                    f"from {action!r} for message {message_id}"
-                ),
-            )
+            except TimeoutException:
+                # #region debug-point V-X:reaction-keyboard-lifecycle
+                _debug_report(
+                    "V-X",
+                    "native_product_closure_runner.py:reaction_tab_timeout",
+                    "targeted Tab did not advance message action focus",
+                    {
+                        "beforeAction": action,
+                        "snapshot": client.execute_script(keyboard_debug_script),
+                        "tabIndex": tab_index,
+                    },
+                )
+                # #endregion
+                raise
         else:
             raise GateError("reaction action is not keyboard reachable")
         # #region debug-point V-X:reaction-keyboard-lifecycle

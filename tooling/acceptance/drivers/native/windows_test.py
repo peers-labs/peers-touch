@@ -40,6 +40,21 @@ class Win32NativeDesktopAdapterContractTest(unittest.TestCase):
         self.assertNotIn("win32api", source)
         self.assertNotIn("pywinauto", source)
 
+    def test_activation_preserves_focus_when_process_is_already_foreground(self) -> None:
+        source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
+        activation = source[
+            source.index("    def activate_process("):
+            source.index("    def post_mouse(")
+        ]
+        foreground_guard = activation.index(
+            "self._window_process_id(foreground) == process_id"
+        )
+        early_return = activation.index("return", foreground_guard)
+        top_level_focus = activation.index("_user32.SetFocus(hwnd)")
+
+        self.assertLess(foreground_guard, early_return)
+        self.assertLess(early_return, top_level_focus)
+
 
 @unittest.skipUnless(sys.platform == "win32", "Windows-only native smoke")
 class Win32NativeDesktopAdapterSmokeTest(unittest.TestCase):
