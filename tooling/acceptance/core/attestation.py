@@ -19,6 +19,11 @@ from .evidence_store import (
 from .provisioning import ServiceAttestation, utc_now
 
 
+GENERATED_COVERAGE_REPORT = (
+    "docs/architecture/acceptance-framework/coverage-report.md"
+)
+
+
 def commits_match(actual: str, expected: str) -> bool:
     return (
         len(actual) >= 7
@@ -28,11 +33,21 @@ def commits_match(actual: str, expected: str) -> bool:
 
 
 def source_proto_digest(root: Path) -> str:
-    paths = [
-        *(root / "model" / "domain").rglob("*.proto"),
-        *(root / "apps" / "desktop" / "src" / "gen" / "proto").rglob("*.ts"),
-        *(root / "apps" / "station").rglob("*.pb.go"),
-    ]
+    tracked = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--",
+            ":(glob)model/domain/**/*.proto",
+            ":(glob)apps/desktop/src/gen/proto/**/*.ts",
+            ":(glob)apps/station/**/*.pb.go",
+        ],
+        cwd=root,
+        capture_output=True,
+        check=True,
+    ).stdout.split(b"\0")
+    paths = [root / path.decode() for path in tracked if path]
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix()):
         relative = path.relative_to(root).as_posix().encode()
@@ -45,7 +60,15 @@ def source_proto_digest(root: Path) -> str:
 
 def source_workspace_digest(root: Path) -> str:
     diff = subprocess.run(
-        ["git", "diff", "--binary", "HEAD"],
+        [
+            "git",
+            "diff",
+            "--binary",
+            "HEAD",
+            "--",
+            ".",
+            f":(exclude){GENERATED_COVERAGE_REPORT}",
+        ],
         cwd=root,
         capture_output=True,
         check=True,
@@ -56,7 +79,11 @@ def source_workspace_digest(root: Path) -> str:
         capture_output=True,
         check=True,
     ).stdout.split(b"\0")
-    paths = sorted(path for path in untracked if path)
+    paths = sorted(
+        path
+        for path in untracked
+        if path and path.decode() != GENERATED_COVERAGE_REPORT
+    )
     if not diff and not paths:
         return "clean"
 
@@ -136,6 +163,9 @@ def _load_env(path: Path) -> dict[str, str]:
 
 
 def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
+    # Keep Core importable when an isolated Fixture imports SSH transport first.
+    from ..transports.ssh import SshTarget, SshTransport
+
     environment_path = (
         REPO_ROOT / ".local" / "deploy" / "envs" / f"{deploy_environment}.env"
     )
@@ -177,21 +207,28 @@ def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
         "if test -z \"$status\"; then echo clean; else echo dirty; fi && "
         f"python3 -c {shlex.quote(digest_script)}"
     )
-    completed = subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{user}@{host}",
-            remote_command,
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
+    try:
+        transport = SshTransport(
+            SshTarget(
+                host=host,
+                user=user,
+                port=int(environment.get("PT_DEPLOY_SSH_PORT", "22")),
+                known_hosts_file=environment.get(
+                    "PT_DEPLOY_KNOWN_HOSTS_FILE",
+                    "",
+                ),
+            )
+        )
+    except (ValueError, ProvisioningError) as error:
+        raise BlockedError(
+            reason=(
+                f"SSH contract is invalid for Station deployment "
+                f"{deploy_environment}: {error}"
+            ),
+            resource=f"station-deployment:{deploy_environment}",
+        ) from error
+    completed = transport.run_argv(
+        ("/bin/sh", "-lc", remote_command),
         timeout=30,
         check=False,
     )

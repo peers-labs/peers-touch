@@ -1,0 +1,30 @@
+{
+  "value": {
+    "station": {
+      "activeStationPeerId": "",
+      "entries": []
+    },
+    "access": {
+      "decision": null,
+      "session": null,
+      "loading": false,
+      "errorKey": null,
+      "restored": true
+    },
+    "oauth": {
+      "phase": "idle",
+      "stationPeerId": null,
+      "provider": null,
+      "accessAttemptId": null,
+      "gateId": null,
+      "expiresAtUnixMs": null,
+      "result": null,
+      "errorCode": null,
+      "candidatePtid": null,
+      "accessDecision": null,
+      "session": null,
+      "errorKey": null,
+      "recovery": "none"
+    }
+  }
+}

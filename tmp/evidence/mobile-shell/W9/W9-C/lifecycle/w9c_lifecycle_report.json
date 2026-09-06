@@ -1,29 +1,25 @@
 {
-  "timestamp": "2026-09-03T03:38:47Z",
+  "timestamp": "2026-09-03T08:35:05Z",
+  "station": "http://10.37.246.80:18080",
+  "account": "mobiletest@test.com",
+  "device": "iPhone 15 Pro",
   "results": {
-    "T0_api_login": {
+    "email_login": {
       "passed": true,
-      "detail": "actor=simtest email=simtest@test.com"
+      "detail": "Already in Shell (session persisted)"
     },
-    "T1_auth_gate": {
+    "tab_navigation": {
+      "passed": false,
+      "detail": "3/4 tabs navigated"
+    },
+    "session_restore": {
       "passed": true,
-      "detail": "email=True pwd=True login=True github=True"
+      "detail": "Session restored \u2014 Shell visible"
     },
-    "T2_tabs": {
-      "passed": false,
-      "detail": "BLOCKED: no WEBVIEW for React input, need tauri devtools fix"
-    },
-    "T3_restore": {
-      "passed": false,
-      "detail": "BLOCKED: depends on T2"
-    },
-    "T4_resume": {
-      "passed": false,
-      "detail": "BLOCKED: depends on T2"
+    "background_resume": {
+      "passed": true,
+      "detail": "App resumed to Shell"
     }
   },
-  "summary": "2/5",
-  "blocker": "WKWebView not inspectable - React controlled inputs need JS access",
-  "api_login_proven": true,
-  "auth_gate_ui_proven": true
+  "summary": "3/4"
 }

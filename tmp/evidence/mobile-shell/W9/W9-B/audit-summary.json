@@ -1,0 +1,13 @@
+{
+  "session_id": "fc07aa2b-b514-4854-ad2b-9f9e4da71b57",
+  "webview_context": "WEBVIEW_82332.1",
+  "current_url": "tauri://localhost",
+  "keyboard_result": "NOT_TESTED",
+  "lang_switch_result": "NOT_FOUND",
+  "ax_analysis": {
+    "total": 15,
+    "interactive": 0,
+    "with_labels": 0,
+    "without_labels": 0
+  }
+}

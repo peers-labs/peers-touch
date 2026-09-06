@@ -1,0 +1,16 @@
+{
+  "platform": "ios",
+  "device": "iPhone 15 Pro (Simulator)",
+  "udid": "FE067914-701D-45E9-AD5F-74B3BD1117D7",
+  "appiumSession": "b6b5afd1-021a-4b16-b3b0-a2ea69e0d463",
+  "harnessActions": 13,
+  "stagesCompleted": [
+    "initial",
+    "warm-invalid",
+    "restart-reconnected",
+    "cleanup"
+  ],
+  "projectionReadCount": 4,
+  "failClosedVerified": true,
+  "timestamp": "2026-09-02T17:46:58Z"
+}

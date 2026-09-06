@@ -8,6 +8,8 @@ use crate::model::chat::{
     SubmitConversationReceiptResponse, SubmitMessagingCommandRequest,
     SubmitMessagingCommandResponse,
 };
+use messaging_core::identity::DeviceEnrollmentTransport;
+use messaging_core::outbox::DeliveryReceiptTransport;
 use prost::Message;
 use reqwest::Method;
 
@@ -76,6 +78,12 @@ impl StationDeliveryReceiptTransport {
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
+    }
+}
+
+impl DeliveryReceiptTransport for StationDeliveryReceiptTransport {
+    fn submit(&self, receipt: &MessageReceipt) -> Result<(), String> {
+        StationDeliveryReceiptTransport::submit(self, receipt)
     }
 }
 
@@ -261,6 +269,15 @@ impl StationDeviceTransport {
             &self.device_id,
         )
         .map_err(|error| error.to_string())
+    }
+}
+
+impl DeviceEnrollmentTransport for StationDeviceTransport {
+    fn enroll(
+        &self,
+        request: &EnrollMessagingDeviceRequest,
+    ) -> Result<EnrollMessagingDeviceResponse, String> {
+        StationDeviceTransport::enroll(self, request)
     }
 }
 

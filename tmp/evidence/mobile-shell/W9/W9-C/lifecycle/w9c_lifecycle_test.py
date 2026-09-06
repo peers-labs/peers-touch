@@ -19,7 +19,7 @@ import urllib.error
 APPIUM_URL = "http://127.0.0.1:4723"
 STATION_URL = "http://10.37.246.80:18080"
 TEST_EMAIL = "mobiletest@test.com"
-TEST_PASSWORD = "Test@1234"
+TEST_PASSWORD = "Test@1234!"
 EVIDENCE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)))
 
@@ -203,6 +203,16 @@ def test_email_login(sid):
         screenshot(sid, "T1_10_shell")
         return True
 
+    # Auth gate has Quick Login / Email Login tabs — click Email Login tab
+    email_tab = find_button_by_text(sid, "Email Login", timeout=5)
+    if not email_tab:
+        email_tab = find_button_by_text(sid, "邮箱登录", timeout=3)
+    if email_tab:
+        click(sid, email_tab)
+        time.sleep(1)
+        screenshot(sid, "T1_02b_email_tab")
+        print("  Switched to Email Login tab")
+
     # Look for email input
     email_input = find_el(sid, "css selector", "input[type='email']", timeout=5)
     if not email_input:
@@ -243,8 +253,10 @@ def test_email_login(sid):
     time.sleep(0.5)
     screenshot(sid, "T1_05_creds_filled")
 
-    # Find and click login button
-    login_btn = find_button_by_text(sid, "Log", timeout=5)
+    # Find and click login button (prototype uses "Sign In")
+    login_btn = find_button_by_text(sid, "Sign In", timeout=5)
+    if not login_btn:
+        login_btn = find_button_by_text(sid, "Log", timeout=3)
     if not login_btn:
         login_btn = find_button_by_text(sid, "登", timeout=3)
     if not login_btn:

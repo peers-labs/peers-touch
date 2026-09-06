@@ -1038,6 +1038,10 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
             result["cleanupReason"],
             "one or more simulator cleanup actions failed",
         )
+        self.assertEqual(
+            result["cleanup"][0]["reason"],
+            "cleanup harness unavailable",
+        )
 
     def test_pass_claim_is_limited_to_simulator_callback_routing(self) -> None:
         artifacts = FakeEvidenceWriter()

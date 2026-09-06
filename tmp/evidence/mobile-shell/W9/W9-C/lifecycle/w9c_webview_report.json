@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-09-03T08:56:59Z",
+  "station": "http://10.37.246.80:18080",
+  "account": "mobiletest@test.com",
+  "device": "iPhone 15 Pro",
+  "webview_mode": "dev-url",
+  "results": {
+    "full_login": {
+      "passed": false,
+      "detail": "Login error visible"
+    },
+    "tab_navigation": {
+      "passed": false,
+      "detail": "SKIPPED (login failed)"
+    },
+    "session_restore": {
+      "passed": false,
+      "detail": "SKIPPED (login failed)"
+    },
+    "background_resume": {
+      "passed": false,
+      "detail": "SKIPPED (login failed)"
+    }
+  },
+  "summary": "0/4"
+}
