@@ -21,6 +21,10 @@ governed_prefixes: [/conversation/]
 owner_roots:
   station.conversation:
     - apps/station/app/subserver/conversation/subserver.go
+ddd_layers:
+  - name: conversation.domain
+    root: apps/station/app/subserver/conversation/domain
+    forbidden_imports: [net/http]
 capabilities:
   - id: chat.create
     domain_owner: station.conversation
@@ -92,6 +96,10 @@ governed_prefixes:
 owner_roots:
   station.conversation:
     - apps/station/app/subserver/owner
+ddd_layers:
+  - name: conversation.domain
+    root: apps/station/app/subserver/conversation/domain
+    forbidden_imports: [net/http]
 capabilities:
   - id: chat.canonical
     domain_owner: station.conversation
@@ -189,6 +197,10 @@ activation:
   requirements: []
 governed_prefixes: [/conversation/]
 owner_roots: {}
+ddd_layers:
+  - name: conversation.domain
+    root: apps/station/app/subserver/conversation/domain
+    forbidden_imports: [net/http]
 capabilities:
   - id: chat.missing
     domain_owner: station.conversation
@@ -232,6 +244,59 @@ message Response {}
 	}
 	if string(first) != string(second) {
 		t.Fatalf("reports differ:\nfirst:  %s\nsecond: %s", first, second)
+	}
+}
+
+func TestAnalyzeRejectsForbiddenConversationDDDImport(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "docs/registry.yaml", `
+schema_version: 1
+status: accepted_target
+scope: test
+activation:
+  state: active
+  gate_enabled: true
+  requirements: []
+governed_prefixes: [/conversation/]
+owner_roots: {}
+ddd_layers:
+  - name: conversation.domain
+    root: apps/station/app/subserver/conversation/domain
+    forbidden_imports:
+      - net/http
+      - gorm.io
+capabilities: []
+target_absent_routes: []
+target_absent_prefixes: []
+target_absent_truth_stores: []
+`)
+	writeFixture(t, root, "apps/station/app/subserver/conversation/domain/aggregate.go", `
+package domain
+
+import "net/http"
+
+var _ = http.MethodGet
+`)
+	writeFixture(t, root, "apps/station/app/subserver/conversation/domain/aggregate_test.go", `
+package domain_test
+
+import "gorm.io/gorm"
+
+var _ *gorm.DB
+`)
+
+	report := analyze(testOptions(root))
+	if report.Status != "FAIL" {
+		t.Fatalf("status = %s, want FAIL", report.Status)
+	}
+	if len(report.Diagnostics) != 1 {
+		t.Fatalf("diagnostics = %+v, want exactly one forbidden import", report.Diagnostics)
+	}
+	item := report.Diagnostics[0]
+	if item.Code != "forbidden_ddd_import" ||
+		item.Identifier != "net/http" ||
+		item.Owner != "conversation.domain" {
+		t.Fatalf("unexpected diagnostic: %+v", item)
 	}
 }
 
