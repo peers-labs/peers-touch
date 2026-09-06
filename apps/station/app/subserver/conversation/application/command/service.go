@@ -1567,11 +1567,25 @@ func (s *Service) persistTransition(
 	for _, commitment := range commitments {
 		commitmentByEndpoint[commitment.Recipient.Key()] = commitment.Hash
 	}
+	type encodedDelivery struct {
+		delivery         valueobject.PreparedDelivery
+		opaque           []byte
+		queueItemID      string
+		queuePayloadHash valueobject.Hash
+		commitment       valueobject.Hash
+	}
+	encodedDeliveries := make([]encodedDelivery, 0, len(transition.Deliveries))
+	authorityCommitments := make(
+		[]ports.AuthorityDeliveryCommitment,
+		0,
+		len(transition.Deliveries),
+	)
 	for _, delivery := range transition.Deliveries {
+		commitment := commitmentByEndpoint[delivery.Recipient.Key()]
 		opaque, err := s.eventEncoder.EncodeDeviceEvent(
 			transition.Event,
 			delivery,
-			commitmentByEndpoint[delivery.Recipient.Key()],
+			commitment,
 			senderActorIdentityKey,
 		)
 		if err != nil {
@@ -1583,18 +1597,54 @@ func (s *Service) persistTransition(
 			[]byte(delivery.Recipient.Actor),
 			[]byte(delivery.Recipient.Device),
 		)).String()
+		queuePayloadHash := valueobject.HashBytes(opaque)
+		encodedDeliveries = append(encodedDeliveries, encodedDelivery{
+			delivery:         delivery,
+			opaque:           opaque,
+			queueItemID:      idempotencyKey,
+			queuePayloadHash: queuePayloadHash,
+			commitment:       commitment,
+		})
+		authorityCommitments = append(
+			authorityCommitments,
+			ports.AuthorityDeliveryCommitment{
+				ConversationID:      conversation.ID(),
+				EventID:             transition.Event.ID,
+				EventSequence:       transition.Event.Sequence,
+				Originator:          transition.Event.Actor.Actor,
+				Recipient:           delivery.Recipient,
+				HomeStation:         delivery.HomeStation,
+				PayloadKind:         delivery.Kind,
+				EndpointPayloadHash: delivery.PayloadHash,
+				Commitment:          commitment,
+				QueueItemID:         idempotencyKey,
+				QueuePayloadHash:    queuePayloadHash,
+				RequiredRecipient: delivery.Recipient.Actor !=
+					transition.Event.Actor.Actor,
+				CreatedAt: transition.Event.CommittedAt,
+			},
+		)
+	}
+	if err := transaction.DeliveryCommitments.RecordCommitments(
+		ctx,
+		authorityCommitments,
+	); err != nil {
+		return err
+	}
+	for _, encoded := range encodedDeliveries {
+		delivery := encoded.delivery
 		if delivery.HomeStation == localStation {
 			if err := transaction.DeviceInbox.Enqueue(ctx, ports.DeviceInboxIntent{
-				IntentID:       idempotencyKey,
+				IntentID:       encoded.queueItemID,
 				ConversationID: conversation.ID(),
 				EventID:        transition.Event.ID,
 				EventSequence:  transition.Event.Sequence,
 				Recipient:      delivery.Recipient,
-				IdempotencyKey: idempotencyKey,
+				IdempotencyKey: encoded.queueItemID,
 				PayloadKind:    ports.DeviceInboxPayloadConversationEvent,
-				OpaquePayload:  opaque,
-				PayloadHash:    valueobject.HashBytes(opaque),
-				Commitment:     commitmentByEndpoint[delivery.Recipient.Key()],
+				OpaquePayload:  encoded.opaque,
+				PayloadHash:    encoded.queuePayloadHash,
+				Commitment:     encoded.commitment,
 				CreatedAt:      transition.Event.CommittedAt,
 			}); err != nil {
 				return err
@@ -1602,31 +1652,32 @@ func (s *Service) persistTransition(
 			continue
 		}
 		if err := transaction.FederationOutbox.Enqueue(ctx, ports.FederationOutboxIntent{
-			IntentID:       idempotencyKey,
+			IntentID:       encoded.queueItemID,
 			ConversationID: conversation.ID(),
 			EventID:        transition.Event.ID,
 			EventSequence:  transition.Event.Sequence,
+			Recipient:      delivery.Recipient,
 			TargetStation:  delivery.HomeStation,
-			IdempotencyKey: idempotencyKey,
+			IdempotencyKey: encoded.queueItemID,
 			PayloadKind:    ports.DeviceInboxPayloadConversationEvent,
-			OpaquePayload:  opaque,
-			PayloadHash:    valueobject.HashBytes(opaque),
+			OpaquePayload:  encoded.opaque,
+			PayloadHash:    encoded.queuePayloadHash,
 			CreatedAt:      transition.Event.CommittedAt,
 		}); err != nil {
 			return err
 		}
 	}
-	for _, objectID := range transition.ObjectIDs {
-		for _, recipient := range transition.RecipientActors {
-			if err := transaction.ObjectGrants.Grant(ctx, ports.ObjectGrant{
-				ObjectID:       objectID,
-				ConversationID: conversation.ID(),
-				EventID:        transition.Event.ID,
-				Recipient:      recipient,
-				GrantedAt:      transition.Event.CommittedAt,
-			}); err != nil {
-				return err
-			}
+	if len(transition.ObjectIDs) > 0 {
+		if err := transaction.ObjectGrants.GrantBatch(ctx, ports.ObjectGrantBatch{
+			ConversationID: conversation.ID(),
+			MessageID:      transition.Event.Fact.MessageID,
+			Uploader:       transition.Event.Actor.Actor,
+			EventID:        transition.Event.ID,
+			ObjectIDs:      append([]valueobject.ObjectID(nil), transition.ObjectIDs...),
+			Recipients:     append([]valueobject.PTID(nil), transition.RecipientActors...),
+			GrantedAt:      transition.Event.CommittedAt,
+		}); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1865,7 +1916,9 @@ func validateTransaction(transaction ports.Transaction) error {
 		repositories.Receipts == nil || repositories.AuthorityPlans == nil ||
 		transaction.Identity == nil || transaction.Federation == nil ||
 		transaction.DeviceInbox == nil ||
-		transaction.FederationOutbox == nil || transaction.ObjectGrants == nil ||
+		transaction.FederationOutbox == nil ||
+		transaction.DeliveryCommitments == nil ||
+		transaction.ObjectGrants == nil ||
 		transaction.KeyPackageReservations == nil {
 		return invalid(
 			"application.validate_transaction",
