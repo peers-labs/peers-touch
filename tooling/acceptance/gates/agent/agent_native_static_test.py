@@ -1477,14 +1477,37 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         overflow_start = scenario.index(
             "const overflow = startObservedFoundationTurn({",
         )
+        parallel_cancellation = scenario.index(
+            "[cancellation, activeCancellation] = await Promise.all([",
+        )
+        single_queue_cancellation = scenario.index(
+            "cancelFoundationQueuedTurns(\n"
+            "              conversation.conversation_id,\n"
+            "              1,",
+            parallel_cancellation,
+        )
         active_cancellation = scenario.index(
-            "const activeCancellation = await api.cancelAgentTurn(activeTurnId);",
+            "api.cancelAgentTurn(activeTurnId),",
+            parallel_cancellation,
         )
         remaining_queue_cleanup = scenario.index(
             "await cancelFoundationQueuedTurns(conversation.conversation_id);",
+            active_cancellation,
         )
         stream_completion = scenario.index(
             "firstActiveEvent,\n          activeResult,",
+        )
+        post_stream_queue_cleanup = scenario.index(
+            "await cancelFoundationQueuedTurns(conversation.conversation_id);",
+            stream_completion,
+        )
+        residual_turn_settlement = scenario.index(
+            "const residualTurnIds = Array.from(new Set(",
+            post_stream_queue_cleanup,
+        )
+        later_conversation_readback = scenario.index(
+            "const afterQueue = await api.getAgentConversation(",
+            residual_turn_settlement,
         )
 
         self.assertLess(queue_baseline, active_start)
@@ -1494,9 +1517,14 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertLess(queue_start, duplicate_first_event)
         self.assertLess(duplicate_first_event, capacity_snapshot)
         self.assertLess(capacity_snapshot, overflow_start)
-        self.assertLess(overflow_start, active_cancellation)
+        self.assertLess(overflow_start, parallel_cancellation)
+        self.assertLess(parallel_cancellation, single_queue_cancellation)
+        self.assertLess(parallel_cancellation, active_cancellation)
         self.assertLess(active_cancellation, remaining_queue_cleanup)
         self.assertLess(remaining_queue_cleanup, stream_completion)
+        self.assertLess(stream_completion, post_stream_queue_cleanup)
+        self.assertLess(post_stream_queue_cleanup, residual_turn_settlement)
+        self.assertLess(residual_turn_settlement, later_conversation_readback)
         self.assertNotIn(
             "const duplicateResult = await duplicate.result;",
             scenario,
@@ -1506,7 +1534,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         source = HARNESS.read_text(encoding="utf-8")
         self.assertIn("const queuedTurns = Array.from({ length: 8 }", source)
         self.assertIn("queuedTurns.map((queued) => queued.result)", source)
-        self.assertIn("await api.cancelAgentTurn(activeTurnId)", source)
+        self.assertIn("api.cancelAgentTurn(activeTurnId),", source)
         self.assertIn("event.event === 'cancelled'", source)
         self.assertIn("preparedTurnId = activeTurnId", source)
 
