@@ -28,41 +28,6 @@ func extractCreateDirectOp(body []byte) social_gate.Operation {
 	}
 }
 
-// extractSubmitCommandOp extracts the conversation_id from a SubmitConversationCommandRequest body.
-// The gate uses "send_message" as a general membership check for all command submissions.
-// The command-level action dispatching (add_member, remove_member, dissolve) is handled
-// at the service layer, which has full access to the deserialized protobuf command.
-func extractSubmitCommandOp(body []byte) social_gate.Operation {
-	var protobufRequest chat.SubmitMessagingCommandRequest
-	if err := proto.Unmarshal(body, &protobufRequest); err == nil &&
-		protobufRequest.Command != nil &&
-		protobufRequest.Command.ConversationId != "" {
-		return social_gate.Operation{
-			ConversationID: protobufRequest.Command.ConversationId,
-		}
-	}
-	var partial struct {
-		Command struct {
-			ConversationID string `json:"conversation_id"`
-		} `json:"command"`
-	}
-	_ = json.Unmarshal(body, &partial)
-
-	// Fallback: try top-level conversation_id for flat payloads
-	convID := partial.Command.ConversationID
-	if convID == "" {
-		var flat struct {
-			ConversationID string `json:"conversation_id"`
-		}
-		_ = json.Unmarshal(body, &flat)
-		convID = flat.ConversationID
-	}
-
-	return social_gate.Operation{
-		ConversationID: convID,
-	}
-}
-
 // extractFetchKeyPackageOp extracts the target actor PTID from a FetchKeyPackageRequest body.
 func extractFetchKeyPackageOp(body []byte) social_gate.Operation {
 	var partial struct {

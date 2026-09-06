@@ -34,17 +34,3 @@ func TestCreateDirectGateExtractorReadsProtobufRequest(t *testing.T) {
 		t.Fatalf("unexpected target PTID %q", operation.TargetPtid)
 	}
 }
-
-func TestSubmitCommandGateExtractorReadsProtobufRequest(t *testing.T) {
-	body, err := proto.Marshal(&chat.SubmitMessagingCommandRequest{
-		Command: &chat.ChatCommand{ConversationId: "conversation-1"},
-	})
-	if err != nil {
-		t.Fatalf("marshal request: %v", err)
-	}
-
-	operation := extractSubmitCommandOp(body)
-	if operation.ConversationID != "conversation-1" {
-		t.Fatalf("unexpected conversation ID %q", operation.ConversationID)
-	}
-}
