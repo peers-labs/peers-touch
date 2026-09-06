@@ -25,10 +25,42 @@ owner_roots:
     - apps/station/app/subserver/actor_identity/subserver.go
   station.recovery:
     - apps/station/app/subserver/recovery/subserver.go
+  station.key_exchange:
+    - apps/station/app/subserver/key_exchange/
   station.social:
     - apps/station/app/subserver/social/handler.go
   station.federation:
     - apps/station/frame/core/federation/
+
+ddd_layers:
+  - name: conversation.domain
+    root: apps/station/app/subserver/conversation/domain/
+    forbidden_imports:
+      - database/sql
+      - github.com/peers-labs/peers-touch/station/app/subserver/conversation/application
+      - github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure
+      - github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface
+      - github.com/peers-labs/peers-touch/station/frame
+      - gorm.io
+      - net/http
+  - name: conversation.application
+    root: apps/station/app/subserver/conversation/application/
+    forbidden_imports:
+      - database/sql
+      - github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure
+      - github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface
+      - github.com/peers-labs/peers-touch/station/frame/core/server
+      - github.com/peers-labs/peers-touch/station/frame/touch/model
+      - gorm.io
+      - net/http
+  - name: conversation.infrastructure
+    root: apps/station/app/subserver/conversation/infrastructure/
+    forbidden_imports:
+      - github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface
+  - name: conversation.interface.http
+    root: apps/station/app/subserver/conversation/interface/http/
+    forbidden_imports:
+      - github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure
 
 capabilities:
   - id: chat.conversation.create_direct
@@ -305,9 +337,511 @@ capabilities:
     forbidden_aliases:
       - { method: POST, path: /messaging/federation/deliver }
       - { method: POST, path: /conversation/federation/command-proposal }
+    superseded_symbols:
+      - peers_touch.model.chat.v1.DeliverMessagingFederationFrameRequest
+      - peers_touch.model.chat.v1.DeliverMessagingFederationFrameResponse
+
+  - id: chat.attachment.object.download
+    domain_owner: station.conversation
+    truth_owner: conversation.attachment
+    exposure: client
+    canonical_route: { method: GET, path: "/conversation/attachments/objects/:object_id" }
+    request_proto: peers_touch.model.chat.v1.GetAttachmentObjectRequest
+    response_proto: peers_touch.model.chat.v1.GetAttachmentObjectResponse
+    truth_stores: [conversation_attachment_objects, conversation_attachment_grants]
+    allowed_dependencies: [conversation.membership.read, attachment.blob.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.attachment.upload.status
+    domain_owner: station.conversation
+    truth_owner: conversation.attachment
+    exposure: client
+    canonical_route: { method: GET, path: "/conversation/attachments/uploads/:upload_id" }
+    request_proto: peers_touch.model.chat.v1.GetAttachmentUploadRequest
+    response_proto: peers_touch.model.chat.v1.GetAttachmentUploadResponse
+    truth_stores: [conversation_attachment_uploads, conversation_attachment_upload_parts]
+    allowed_dependencies: [conversation.membership.read, attachment.blob.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.attachment.upload.begin
+    domain_owner: station.conversation
+    truth_owner: conversation.attachment
+    exposure: client
+    canonical_route: { method: POST, path: "/conversation/attachments/uploads:begin" }
+    request_proto: peers_touch.model.chat.v1.BeginAttachmentUploadRequest
+    response_proto: peers_touch.model.chat.v1.BeginAttachmentUploadResponse
+    truth_stores: [conversation_attachment_uploads]
+    allowed_dependencies: [conversation.membership.read, attachment.blob.write]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.attachment.upload.chunk.put
+    domain_owner: station.conversation
+    truth_owner: conversation.attachment
+    exposure: client
+    canonical_route: { method: PUT, path: "/conversation/attachments/uploads/:upload_id/chunks/:chunk_index" }
+    request_proto: peers_touch.model.chat.v1.PutAttachmentChunkRequest
+    response_proto: peers_touch.model.chat.v1.PutAttachmentChunkResponse
+    truth_stores: [conversation_attachment_uploads, conversation_attachment_upload_parts]
+    allowed_dependencies: [conversation.membership.read, attachment.blob.write]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.attachment.upload.complete
+    domain_owner: station.conversation
+    truth_owner: conversation.attachment
+    exposure: client
+    canonical_route: { method: POST, path: "/conversation/attachments/uploads/:upload_id/complete" }
+    request_proto: peers_touch.model.chat.v1.CompleteAttachmentUploadRequest
+    response_proto: peers_touch.model.chat.v1.CompleteAttachmentUploadResponse
+    truth_stores: [conversation_attachment_uploads, conversation_attachment_upload_parts, conversation_attachment_objects]
+    allowed_dependencies: [conversation.membership.read, attachment.blob.commit]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.attachment.upload.cancel
+    domain_owner: station.conversation
+    truth_owner: conversation.attachment
+    exposure: client
+    canonical_route: { method: POST, path: "/conversation/attachments/uploads/:upload_id/cancel" }
+    request_proto: peers_touch.model.chat.v1.CancelAttachmentUploadRequest
+    response_proto: peers_touch.model.chat.v1.CancelAttachmentUploadResponse
+    truth_stores: [conversation_attachment_uploads, conversation_attachment_upload_parts]
+    allowed_dependencies: [conversation.membership.read, attachment.blob.delete]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.conversation.get
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: GET, path: /conversation/get }
+    request_proto: peers_touch.model.chat.v1.GetConversationRequest
+    response_proto: peers_touch.model.chat.v1.GetConversationResponse
+    truth_stores: [conversations, conversation_members]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.conversation.public_head.get
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: GET, path: /conversation/public-head }
+    request_proto: peers_touch.model.chat.v1.GetConversationPublicHeadRequest
+    response_proto: peers_touch.model.chat.v1.GetConversationPublicHeadResponse
+    truth_stores: [conversations, conversation_members, conversation_events]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.conversation.members.list
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: GET, path: /conversation/members }
+    request_proto: peers_touch.model.chat.v1.GetConversationMembersRequest
+    response_proto: peers_touch.model.chat.v1.GetConversationMembersResponse
+    truth_stores: [conversation_members, conversation_member_devices]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.conversation.events.list
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: GET, path: /conversation/events }
+    request_proto: peers_touch.model.chat.v1.ListConversationEventsRequest
+    response_proto: peers_touch.model.chat.v1.ListConversationEventsResponse
+    truth_stores: [conversation_events]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.conversation.messages.list
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: GET, path: /conversation/messages }
+    request_proto: peers_touch.model.chat.v1.ListConversationMessagesRequest
+    response_proto: peers_touch.model.chat.v1.ListConversationMessagesResponse
+    truth_stores: [conversation_events]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.conversation.thread_messages.list
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: GET, path: /conversation/thread/messages }
+    request_proto: peers_touch.model.chat.v1.ListThreadMessagesRequest
+    response_proto: peers_touch.model.chat.v1.ListThreadMessagesResponse
+    truth_stores: [conversation_events]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.conversation.thread_counts.get
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/thread/counts }
+    request_proto: peers_touch.model.chat.v1.GetThreadCountsRequest
+    response_proto: peers_touch.model.chat.v1.GetThreadCountsResponse
+    truth_stores: [conversation_events]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.member_settings.get
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: GET, path: /conversation/member/settings }
+    request_proto: peers_touch.model.chat.v1.GetMemberSettingsRequest
+    response_proto: peers_touch.model.chat.v1.GetMemberSettingsResponse
+    truth_stores: [conversation_member_settings]
+    allowed_dependencies: [conversation.membership.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.member_settings.update
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: PUT, path: /conversation/member/settings }
+    request_proto: peers_touch.model.chat.v1.UpdateMemberSettingsRequest
+    response_proto: peers_touch.model.chat.v1.UpdateMemberSettingsResponse
+    truth_stores: [conversation_member_settings]
+    allowed_dependencies: [conversation.membership.read, conversation.realtime.publish]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.typing.submit
+    domain_owner: station.conversation
+    truth_owner: conversation.presence
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/typing }
+    request_proto: peers_touch.model.chat.v1.SubmitConversationTypingRequest
+    response_proto: peers_touch.model.chat.v1.SubmitConversationTypingResponse
+    truth_stores: []
+    allowed_dependencies: [conversation.membership.read, actor.device_directory.read, conversation.realtime.publish]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.membership.leave_intent.submit
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/mls/leave-intent }
+    request_proto: peers_touch.model.chat.v1.SubmitMlsLeaveIntentRequest
+    response_proto: peers_touch.model.chat.v1.SubmitMlsLeaveIntentResponse
+    truth_stores: [conversation_mls_leave_intents]
+    allowed_dependencies: [conversation.membership.read, actor.device_directory.read, federation.delivery.enqueue]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.membership.leave_intent.list
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: GET, path: /conversation/mls/leave-intents }
+    request_proto: peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsRequest
+    response_proto: peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsResponse
+    truth_stores: [conversation_mls_leave_intents]
+    allowed_dependencies: [conversation.membership.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: actor.device.list
+    domain_owner: station.actor_identity
+    truth_owner: actor.device_identity
+    exposure: client
+    canonical_route: { method: GET, path: /device/list }
+    request_proto: peers_touch.model.chat.v1.ListMessagingDevicesRequest
+    response_proto: peers_touch.model.chat.v1.ListMessagingDevicesResponse
+    truth_stores: [actor_devices]
+    allowed_dependencies: [actor.identity.verify]
+    forbidden_aliases: []
+    superseded_symbols:
+      - peers_touch.model.chat.v1.ListDevicesRequest
+      - peers_touch.model.chat.v1.ListDevicesResponse
+
+  - id: actor.device.revoke
+    domain_owner: station.actor_identity
+    truth_owner: actor.device_identity
+    exposure: client
+    canonical_route: { method: POST, path: /device/revoke }
+    request_proto: peers_touch.model.chat.v1.RevokeMessagingDeviceRequest
+    response_proto: peers_touch.model.chat.v1.RevokeMessagingDeviceResponse
+    truth_stores: [actor_devices]
+    allowed_dependencies: [actor.identity.verify]
+    forbidden_aliases: []
+    superseded_symbols:
+      - peers_touch.model.chat.v1.RevokeDeviceRequest
+      - peers_touch.model.chat.v1.RevokeDeviceResponse
+
+  - id: key_exchange.direct_bundle.upload
+    domain_owner: station.key_exchange
+    truth_owner: key_exchange.direct_public_material
+    exposure: client
+    canonical_route: { method: POST, path: /key-exchange/keys/bundle }
+    request_proto: peers_touch.model.key_exchange.v1.UploadKeyBundleRequest
+    response_proto: peers_touch.model.key_exchange.v1.UploadKeyBundleResponse
+    truth_stores: [key_exchange_identity_keys, key_exchange_signed_pre_keys, key_exchange_one_time_pre_keys]
+    allowed_dependencies: [actor.device_directory.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: key_exchange.direct_bundle.fetch
+    domain_owner: station.key_exchange
+    truth_owner: key_exchange.direct_public_material
+    exposure: client
+    canonical_route: { method: POST, path: /key-exchange/keys/bundle/fetch }
+    request_proto: peers_touch.model.key_exchange.v1.FetchKeyBundleRequest
+    response_proto: peers_touch.model.key_exchange.v1.FetchKeyBundleResponse
+    truth_stores: [key_exchange_identity_keys, key_exchange_signed_pre_keys, key_exchange_one_time_pre_keys]
+    allowed_dependencies: [actor.device_directory.read, federation.delivery.enqueue]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: key_exchange.direct_bundle.replenish
+    domain_owner: station.key_exchange
+    truth_owner: key_exchange.direct_public_material
+    exposure: client
+    canonical_route: { method: POST, path: /key-exchange/keys/replenish }
+    request_proto: peers_touch.model.key_exchange.v1.ReplenishOpksRequest
+    response_proto: peers_touch.model.key_exchange.v1.ReplenishOpksResponse
+    truth_stores: [key_exchange_one_time_pre_keys]
+    allowed_dependencies: [actor.device_directory.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: key_exchange.direct_bundle.count
+    domain_owner: station.key_exchange
+    truth_owner: key_exchange.direct_public_material
+    exposure: client
+    canonical_route: { method: GET, path: /key-exchange/keys/count }
+    request_proto: peers_touch.model.key_exchange.v1.OpkCountRequest
+    response_proto: peers_touch.model.key_exchange.v1.OpkCountResponse
+    truth_stores: [key_exchange_one_time_pre_keys]
+    allowed_dependencies: [actor.device_directory.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: key_exchange.mls_key_package.upload
+    domain_owner: station.key_exchange
+    truth_owner: key_exchange.mls_public_material
+    exposure: client
+    canonical_route: { method: POST, path: /key-exchange/mls/key-package/upload }
+    request_proto: peers_touch.model.chat.v1.UploadKeyPackageRequest
+    response_proto: peers_touch.model.chat.v1.UploadKeyPackageResponse
+    truth_stores: [mls_key_packages]
+    allowed_dependencies: [actor.device_directory.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: key_exchange.mls_key_package.fetch
+    domain_owner: station.key_exchange
+    truth_owner: key_exchange.mls_public_material
+    exposure: client
+    canonical_route: { method: POST, path: /key-exchange/mls/key-package/fetch }
+    request_proto: peers_touch.model.chat.v1.FetchKeyPackageRequest
+    response_proto: peers_touch.model.chat.v1.FetchKeyPackageResponse
+    truth_stores: [mls_key_packages]
+    allowed_dependencies: [actor.device_directory.read, federation.delivery.enqueue]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: key_exchange.mls_key_package.count
+    domain_owner: station.key_exchange
+    truth_owner: key_exchange.mls_public_material
+    exposure: client
+    canonical_route: { method: GET, path: /key-exchange/mls/key-package/count }
+    request_proto: peers_touch.model.chat.v1.CountKeyPackagesRequest
+    response_proto: peers_touch.model.chat.v1.CountKeyPackagesResponse
+    truth_stores: [mls_key_packages]
+    allowed_dependencies: [actor.device_directory.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: key_exchange.dkx.send
+    domain_owner: station.key_exchange
+    truth_owner: key_exchange.delivery
+    exposure: client
+    canonical_route: { method: POST, path: /key-exchange/dkx/send }
+    request_proto: peers_touch.model.chat.v1.SendDkxRequest
+    response_proto: peers_touch.model.chat.v1.SendDkxResponse
+    truth_stores: []
+    allowed_dependencies: [actor.device_directory.read, conversation.delivery.enqueue, federation.delivery.enqueue]
+    forbidden_aliases:
+      - { method: POST, path: /dkx/send }
+    superseded_symbols: []
+
+  - id: federation.conversation.attachment.object.download
+    domain_owner: station.federation
+    truth_owner: conversation.attachment
+    exposure: peer
+    canonical_route: { method: GET, path: "/federation/conversation/attachments/objects/:object_id" }
+    request_proto: peers_touch.model.chat.v1.GetAttachmentObjectRequest
+    response_proto: peers_touch.model.chat.v1.GetAttachmentObjectResponse
+    truth_stores: [conversation_attachment_objects, conversation_attachment_grants]
+    allowed_dependencies: [federation.auth.verify, conversation.attachment.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.attachment.upload.status
+    domain_owner: station.federation
+    truth_owner: conversation.attachment
+    exposure: peer
+    canonical_route: { method: GET, path: "/federation/conversation/attachments/uploads/:upload_id" }
+    request_proto: peers_touch.model.chat.v1.GetAttachmentUploadRequest
+    response_proto: peers_touch.model.chat.v1.GetAttachmentUploadResponse
+    truth_stores: [conversation_attachment_uploads, conversation_attachment_upload_parts]
+    allowed_dependencies: [federation.auth.verify, conversation.attachment.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.attachment.upload.begin
+    domain_owner: station.federation
+    truth_owner: conversation.attachment
+    exposure: peer
+    canonical_route: { method: POST, path: "/federation/conversation/attachments/uploads:begin" }
+    request_proto: peers_touch.model.chat.v1.BeginAttachmentUploadRequest
+    response_proto: peers_touch.model.chat.v1.BeginAttachmentUploadResponse
+    truth_stores: [conversation_attachment_uploads]
+    allowed_dependencies: [federation.auth.verify, conversation.attachment.write]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.attachment.upload.chunk.put
+    domain_owner: station.federation
+    truth_owner: conversation.attachment
+    exposure: peer
+    canonical_route: { method: PUT, path: "/federation/conversation/attachments/uploads/:upload_id/chunks/:chunk_index" }
+    request_proto: peers_touch.model.chat.v1.PutAttachmentChunkRequest
+    response_proto: peers_touch.model.chat.v1.PutAttachmentChunkResponse
+    truth_stores: [conversation_attachment_uploads, conversation_attachment_upload_parts]
+    allowed_dependencies: [federation.auth.verify, conversation.attachment.write]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.attachment.upload.complete
+    domain_owner: station.federation
+    truth_owner: conversation.attachment
+    exposure: peer
+    canonical_route: { method: POST, path: "/federation/conversation/attachments/uploads/:upload_id/complete" }
+    request_proto: peers_touch.model.chat.v1.CompleteAttachmentUploadRequest
+    response_proto: peers_touch.model.chat.v1.CompleteAttachmentUploadResponse
+    truth_stores: [conversation_attachment_uploads, conversation_attachment_upload_parts, conversation_attachment_objects]
+    allowed_dependencies: [federation.auth.verify, conversation.attachment.write]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.attachment.upload.cancel
+    domain_owner: station.federation
+    truth_owner: conversation.attachment
+    exposure: peer
+    canonical_route: { method: POST, path: "/federation/conversation/attachments/uploads/:upload_id/cancel" }
+    request_proto: peers_touch.model.chat.v1.CancelAttachmentUploadRequest
+    response_proto: peers_touch.model.chat.v1.CancelAttachmentUploadResponse
+    truth_stores: [conversation_attachment_uploads, conversation_attachment_upload_parts]
+    allowed_dependencies: [federation.auth.verify, conversation.attachment.write]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.actor.endpoint_manifest.get
+    domain_owner: station.federation
+    truth_owner: actor.device_identity
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/actor/endpoint-manifest }
+    request_proto: peers_touch.model.chat.v1.GetFederatedEndpointManifestRequest
+    response_proto: peers_touch.model.chat.v1.GetFederatedEndpointManifestResponse
+    truth_stores: [actor_devices, actor_identity_keys, actor_endpoint_directory_versions]
+    allowed_dependencies: [federation.auth.verify, actor.device_directory.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.command.prepare
+    domain_owner: station.federation
+    truth_owner: conversation.authority
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/conversation/command/prepare }
+    request_proto: peers_touch.model.chat.v1.FederatedPrepareMessagingSendRequest
+    response_proto: peers_touch.model.chat.v1.PrepareMessagingSendResponse
+    truth_stores: [conversations, conversation_members, conversation_member_devices, conversation_authority_plans]
+    allowed_dependencies: [federation.auth.verify, conversation.command.prepare]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.key_exchange.mls_key_package.claim
+    domain_owner: station.federation
+    truth_owner: key_exchange.mls_public_material
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/key-exchange/mls-key-package/claim }
+    request_proto: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageRequest
+    response_proto: peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageResponse
+    truth_stores: [mls_key_packages, federated_mls_key_package_claims]
+    allowed_dependencies: [federation.auth.verify, key_exchange.mls_key_package.claim]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.command_proposal.forward
+    domain_owner: station.federation
+    truth_owner: conversation.authority
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/conversation/command-proposal }
+    request_proto: peers_touch.model.chat.v1.ForwardConversationCommandProposalRequest
+    response_proto: peers_touch.model.chat.v1.ForwardConversationCommandProposalResponse
+    truth_stores: [conversations, conversation_events, conversation_command_receipts]
+    allowed_dependencies: [federation.auth.verify, conversation.command.submit]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.leave_intent.submit
+    domain_owner: station.federation
+    truth_owner: conversation.authority
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/conversation/mls/leave-intent }
+    request_proto: peers_touch.model.chat.v1.SubmitMlsLeaveIntentRequest
+    response_proto: peers_touch.model.chat.v1.SubmitMlsLeaveIntentResponse
+    truth_stores: [conversation_mls_leave_intents]
+    allowed_dependencies: [federation.auth.verify, conversation.membership.leave_intent.submit]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.leave_intent.list
+    domain_owner: station.federation
+    truth_owner: conversation.authority
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/conversation/mls/leave-intents }
+    request_proto: peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsRequest
+    response_proto: peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsResponse
+    truth_stores: [conversation_mls_leave_intents]
+    allowed_dependencies: [federation.auth.verify, conversation.membership.leave_intent.list]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.events.sync
+    domain_owner: station.federation
+    truth_owner: conversation.authority
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/conversation/events/sync }
+    request_proto: peers_touch.model.chat.v1.SyncAuthorityConversationEventsRequest
+    response_proto: peers_touch.model.chat.v1.SyncAuthorityConversationEventsResponse
+    truth_stores: [conversation_events]
+    allowed_dependencies: [federation.auth.verify, conversation.events.read]
+    forbidden_aliases: []
     superseded_symbols: []
 
 target_absent_routes:
+  - { method: GET, path: /conversation/command-proposal/result }
+  - { method: GET, path: /conversation/identity }
+  - { method: POST, path: /conversation/command-proposal }
   - { method: POST, path: /messaging/conversation/direct }
   - { method: GET, path: /messaging/conversation/list }
   - { method: POST, path: /messaging/command/prepare }
@@ -321,6 +855,7 @@ target_absent_routes:
   - { method: POST, path: /keypackage/fetch }
   - { method: GET, path: /keypackage/count }
   - { method: POST, path: /dkx/send }
+  - { method: POST, path: /key-exchange/keys/bundle/federated-fetch }
   - { method: POST, path: /messaging/federation/deliver }
   - { method: POST, path: /conversation/federation/command-proposal }
 
@@ -335,3 +870,13 @@ target_absent_truth_stores:
   - messaging_command_receipts
   - messaging_authority_plans
   - messaging_recovery_revisions
+  - messaging_federation_inbox
+  - messaging_federation_outbox
+  - messaging_endpoint_directory_versions
+  - messaging_read_cursors
+  - messaging_attachment_uploads
+  - messaging_attachment_upload_parts
+  - messaging_attachment_objects
+  - messaging_attachment_grants
+  - messaging_attachment_audit
+  - conversation_command_proposals
