@@ -7235,6 +7235,7 @@ async function runFoundationF10Scenario(input: {
         toolIsolation,
       };
     },
+    true,
   );
 
   const controls = Object.fromEntries(await Promise.all(
@@ -7323,6 +7324,34 @@ async function runFoundationF10Scenario(input: {
       },
     },
   };
+}
+
+async function runFoundationF10WithCapabilityIsolation(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  platform: string;
+  sampleId: string;
+}): Promise<Awaited<ReturnType<typeof runFoundationF10Scenario>>> {
+  return withFoundationReadyCapabilityFixture(
+    input.agent,
+    input.platform,
+    async (authoritativeAgent) => {
+      const capabilitySessions = await waitForCapabilitySessionEvidence();
+      const stationSession = capabilitySessions.selectedStationSession;
+      if (!stationSession) {
+        throw new Error('agent.acceptance.capabilitySessionUnavailable');
+      }
+      const readiness = await api.getAgentCapabilityReadiness({
+        agent_id: authoritativeAgent.id || authoritativeAgent.name,
+        client_capability_session_id: stationSession.session_id,
+      });
+      return runFoundationF10Scenario({
+        ...input,
+        agent: authoritativeAgent,
+        capabilitySessions,
+        readiness,
+      });
+    },
+  );
 }
 
 interface DirectCellAssertionContext {
@@ -11396,11 +11425,9 @@ export function installAcceptanceHarness(): void {
               === localSession.capability_session_id_hash
           ),
         });
-        const scenario = await runFoundationF10Scenario({
+        const scenario = await runFoundationF10WithCapabilityIsolation({
           agent,
           platform,
-          capabilitySessions,
-          readiness,
           sampleId,
         });
         preparedConversationId = scenario.conversationId;
