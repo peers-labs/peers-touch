@@ -10596,6 +10596,9 @@ export function installAcceptanceHarness(): void {
         const draftBeforeHash = await sha256Hex(draftText);
 
         const sharedIdempotencyKey = crypto.randomUUID();
+        const queueBeforeAdmissions = await api.listAgentTurnQueue(
+          conversation.conversation_id,
+        );
         const activeTurnInput =
           'Write a detailed 1200-word numbered response about reliable queues.';
         const activeStartedAt = performance.now();
@@ -10609,27 +10612,6 @@ export function installAcceptanceHarness(): void {
           clientCapabilitySessionId:
             capabilitySessions.selectedStationSession?.session_id,
         });
-        const firstActiveEvent = await active.firstEvent;
-        preparedRuntimeEvent.current = {
-          eventType: firstActiveEvent.event,
-          sequence: Number(firstActiveEvent.data.seq ?? 0),
-          observedAt: new Date().toISOString(),
-        };
-        void reportFoundationQueueCapacityDebug(
-          'A',
-          'active-first-event',
-          {
-            eventType: firstActiveEvent.event,
-            sequence: Number(firstActiveEvent.data.seq ?? 0),
-            selectedConversationMatches:
-              useChatStore.getState().currentSessionKey
-                === conversation.conversation_id,
-          },
-        );
-
-        const duplicateQueue = await api.listAgentTurnQueue(
-          conversation.conversation_id,
-        );
         const duplicate = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
           agentId,
@@ -10699,6 +10681,23 @@ export function installAcceptanceHarness(): void {
               (queued) => queued.events.length,
             ),
             activeEventTypes: active.events.map((event) => event.event),
+          },
+        );
+        const firstActiveEvent = await active.firstEvent;
+        preparedRuntimeEvent.current = {
+          eventType: firstActiveEvent.event,
+          sequence: Number(firstActiveEvent.data.seq ?? 0),
+          observedAt: new Date().toISOString(),
+        };
+        void reportFoundationQueueCapacityDebug(
+          'A',
+          'active-first-event',
+          {
+            eventType: firstActiveEvent.event,
+            sequence: Number(firstActiveEvent.data.seq ?? 0),
+            selectedConversationMatches:
+              useChatStore.getState().currentSessionKey
+                === conversation.conversation_id,
           },
         );
         const queuedResultsPromise = Promise.all(
@@ -10917,7 +10916,7 @@ export function installAcceptanceHarness(): void {
             firstTurnId: activeTurnId,
             replayedTurnId: observedTurnId(duplicateResult.events),
             turnDelta: 1,
-            queueEntryDelta: duplicateQueue.entries.length,
+            queueEntryDelta: queueBeforeAdmissions.entries.length,
           },
           queueSubmission: {
             entries: queueAtCapacity.entries,

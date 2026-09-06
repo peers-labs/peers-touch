@@ -1445,7 +1445,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("queueCapacitySnapshotMismatch", source)
         self.assertIn("receiverDomAtCapacity", source)
 
-    def test_group_one_queue_probe_captures_capacity_before_stream_completion(
+    def test_group_one_queue_probe_launches_admissions_before_provider_event(
         self,
     ) -> None:
         source = HARNESS.read_text(encoding="utf-8")
@@ -1453,11 +1453,20 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         end = source.index("if (cell === 'AS-F03')", start)
         scenario = source[start:end]
 
+        queue_baseline = scenario.index(
+            "const queueBeforeAdmissions = await api.listAgentTurnQueue(",
+        )
+        active_start = scenario.index(
+            "const active = startObservedFoundationTurn({",
+        )
         duplicate_start = scenario.index(
             "const duplicate = startObservedFoundationTurn({",
         )
         queue_start = scenario.index(
             "const queuedTurns = Array.from({ length: 8 }",
+        )
+        first_active_event = scenario.index(
+            "const firstActiveEvent = await active.firstEvent;",
         )
         capacity_snapshot = scenario.index(
             "const queueSnapshotStartedAt = performance.now();",
@@ -1469,8 +1478,11 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "const [duplicateFirstEvent, queuedResults, overflowResult]",
         )
 
+        self.assertLess(queue_baseline, active_start)
+        self.assertLess(active_start, duplicate_start)
         self.assertLess(duplicate_start, queue_start)
-        self.assertLess(queue_start, capacity_snapshot)
+        self.assertLess(queue_start, first_active_event)
+        self.assertLess(first_active_event, capacity_snapshot)
         self.assertLess(capacity_snapshot, overflow_start)
         self.assertLess(overflow_start, stream_completion)
         self.assertNotIn(
