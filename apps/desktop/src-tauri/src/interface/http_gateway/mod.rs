@@ -203,7 +203,7 @@ fn report_foundation_fault_stream_debug(stage: &str, data: Value) {
         .build()
         .and_then(|client| {
             client
-                .post("http://127.0.0.1:7779/event")
+                .post("http://127.0.0.1:7783/event")
                 .header(reqwest::header::CONTENT_TYPE, "application/json")
                 .body(payload.to_string())
                 .send()
