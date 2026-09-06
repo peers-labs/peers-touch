@@ -10815,17 +10815,80 @@ export function installAcceptanceHarness(): void {
           activeDependencyPromise,
           queueReceiverPromise,
         ]);
+        void reportFoundationQueueCapacityDebug(
+          'A,H',
+          'capacity-observations-completed',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            overflowErrorCode: observedErrorCode(overflowResult.error),
+            activeDependencyError,
+            visibleQueuePositions: queueReceiver.queuePositions.visibleCount,
+            activeEventTypes: active.events.map((event) => event.event),
+          },
+        );
         const cancellationTarget = queueAtCapacity.entries[0];
         if (!cancellationTarget) {
           active.controller.abort();
           throw new Error('agent.acceptance.queueCancellationTargetMissing');
         }
-        const cancellation = await api.cancelQueuedAgentTurn({
-          conversation_id: conversation.conversation_id,
-          queue_entry_id: cancellationTarget.queue_entry_id,
-          idempotency_key: crypto.randomUUID(),
-          expected_conversation_version: queueAtCapacity.conversation_version,
-        });
+        void reportFoundationQueueCapacityDebug(
+          'A,H',
+          'queue-cancellation-requested',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            expectedConversationVersion:
+              queueAtCapacity.conversation_version,
+            targetQueuePosition: cancellationTarget.queue_position,
+            activeEventTypes: active.events.map((event) => event.event),
+          },
+        );
+        let cancellation: Awaited<
+          ReturnType<typeof api.cancelQueuedAgentTurn>
+        >;
+        try {
+          cancellation = await api.cancelQueuedAgentTurn({
+            conversation_id: conversation.conversation_id,
+            queue_entry_id: cancellationTarget.queue_entry_id,
+            idempotency_key: crypto.randomUUID(),
+            expected_conversation_version: queueAtCapacity.conversation_version,
+          });
+        } catch (error) {
+          const currentQueue = await api.listAgentTurnQueue(
+            conversation.conversation_id,
+          ).catch(() => null);
+          await reportFoundationQueueCapacityDebug(
+            'A,H',
+            'queue-cancellation-failed',
+            {
+              elapsedSinceActiveMs: performance.now() - activeStartedAt,
+              errorCode: observedErrorCode(error),
+              expectedConversationVersion:
+                queueAtCapacity.conversation_version,
+              currentConversationVersion:
+                currentQueue?.conversation_version ?? null,
+              currentQueueSize: currentQueue?.entries.length ?? null,
+              currentQueuePositions: currentQueue?.entries.map(
+                (entry) => entry.queue_position,
+              ) ?? [],
+              targetStillQueued: currentQueue?.entries.some(
+                (entry) =>
+                  entry.queue_entry_id === cancellationTarget.queue_entry_id,
+              ) ?? false,
+              activeEventTypes: active.events.map((event) => event.event),
+            },
+          );
+          throw error;
+        }
+        void reportFoundationQueueCapacityDebug(
+          'A,H',
+          'queue-cancellation-completed',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            conversationVersion: cancellation.conversation_version,
+            status: cancellation.entry.status,
+            activeEventTypes: active.events.map((event) => event.event),
+          },
+        );
         void reportFoundationQueueCapacityDebug(
           'A,F',
           'active-cancellation-requested',
