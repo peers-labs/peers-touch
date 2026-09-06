@@ -5777,6 +5777,25 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   unrelated `receiver-dom` profile mismatches. Exact-source deployment and the
   unchanged 419-cell Gate remain pending, so Foundation and G-F remain
   `PARTIAL / UNPROVEN`.
+- Checkpoint `0409ac063d22d822df0439679a183442b915d7f3` was deployed
+  exact-source to `chat-native-disposable-station`. The first invocation,
+  run `20260906T201815658284Z-2dd4217f0c463ac979bd2f14cd0ce491`,
+  stopped before the AS-F06 restart because
+  `PT_ACCEPTANCE_DISPOSABLE=1` was not exported; the corrected invocation,
+  run `20260906T203517078204Z-0f6c2dc927eb78566a929943b6feca81`,
+  passed the AS-F06 restart boundary and failed first at Browser AS-F07 with
+  `agent.acceptance.foundationRevisionRetrySourceNotCancelled`. The retained
+  trace proves the cancellation request still followed the durable
+  `provider_call_started` sequence-2 event, but the fixed, repeatedly reused
+  source prompt completed before the cancel transaction returned
+  (`status=completed` after 186 ms). The local fixture correction adds a
+  per-run nonce to the same bounded 20-item prompt so external provider prompt
+  caching cannot collapse the cancellation window; cancellation timing,
+  product behavior, assertions, and budgets remain unchanged. Both runs
+  retained exact source identity, passed redaction, and completed
+  `DONE / PROVEN / passed` Provisioner cleanup. TypeScript check, `204`
+  focused Foundation/static tests, and `git diff --check` pass. G-F remains
+  `PARTIAL / UNPROVEN` pending checkpoint deployment and an exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
