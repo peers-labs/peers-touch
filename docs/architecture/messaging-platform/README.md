@@ -90,7 +90,8 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
   `AO-D01..AO-D06`; Conversation DDD and resource-owned APIs are accepted.
 - Plan：CA-HC hard-cut plan `PLAN_APPROVED`; the older Messaging Platform plan is
   superseded for Station authority/API ownership while its Device Messaging Engine
-  evidence remains historical input. `MP-W13` corrective amendment remains separate.
+  evidence remains historical input. CA-W1 canonical resource-owned contracts are
+  complete; `MP-W13` corrective amendment remains separate.
 - Execution：live product evidence invalidated the prior MP-W10-E/MP-W12/MP-W11
   receiver-proof claims；`MP-W13` defines projection、interaction UI、identity/Station
   attribution、conversation actions/background、attachments and real Native proof

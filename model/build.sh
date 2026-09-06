@@ -94,8 +94,8 @@ if [ ! -x "$PROTOC_GEN_ES" ]; then
     echo "  protoc-gen-es not found at $PROTOC_GEN_ES"
     echo "  → run 'pnpm install' from the repo root, then re-run this script"
     echo ""
-    echo "=== Proto generation complete (Go only) ==="
-    exit 0
+    echo "=== Proto generation failed: Desktop TypeScript bindings are required ==="
+    exit 1
 fi
 
 TS_TRAILING_NEWLINES=$(mktemp)
@@ -123,8 +123,8 @@ for file in $GO_PROTO_FILES; do
         "$file"
 done
 
-# Preserve each tracked output's existing file ending. New outputs keep the
-# generator default, while repeated generation remains byte-for-byte stable.
+# Preserve each tracked output's existing file ending so repeated generation
+# remains byte-for-byte stable.
 while IFS=$'\t' read -r relative_path trailing_newlines; do
     generated_file="$TS_OUT/$relative_path"
     if [ -f "$generated_file" ]; then
@@ -133,6 +133,17 @@ while IFS=$'\t' read -r relative_path trailing_newlines; do
             "$generated_file"
     fi
 done < "$TS_TRAILING_NEWLINES"
+
+# New generated files have no historical ending to preserve. Normalize them to
+# one trailing newline so adding a proto cannot introduce diff-check failures.
+find "$TS_OUT" -type f -name '*_pb.ts' -print0 |
+    while IFS= read -r -d '' file; do
+        REL_PATH="${file#$TS_OUT/}"
+        if ! awk -F '\t' -v path="$REL_PATH" '$1 == path { found = 1 } END { exit !found }' \
+            "$TS_TRAILING_NEWLINES"; then
+            perl -0pi -e 's/\n*\z/\n/' "$file"
+        fi
+    done
 
 echo ""
 echo "=== Proto generation complete (Go + TS) ==="
