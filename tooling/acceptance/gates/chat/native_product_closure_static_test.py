@@ -798,6 +798,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source.index("arguments[0].scrollIntoView({"),
             click_source.index("target = client.driver.execute_script("),
         )
+        self.assertIn("if focus_target:", click_source)
         self.assertLess(
             click_source.index(
                 '"arguments[0].focus({ preventScroll: true });"'
@@ -822,12 +823,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source,
         )
         self.assertIn(
-            "content_origin = self.native_adapter.content_origin(",
+            "content_origin = native_origin or self.native_content_origin(client)",
             click_source,
         )
         self.assertLess(
             click_source.index(
-                "content_origin = self.native_adapter.content_origin("
+                "content_origin = native_origin or self.native_content_origin(client)"
             ),
             click_source.index("current_target = client.driver.execute_script("),
         )
@@ -838,7 +839,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertLess(
             click_source.index("probe_id = self.install_native_input_probe("),
             click_source.index(
-                "self.native_adapter.post_mouse(\n"
+                "self.native_adapter.post_mouse_to_process(\n"
+                "                process_id,\n"
                 "                (\n"
                 "                    MouseAction.MOVE,\n"
                 "                    MouseAction.LEFT_DOWN,\n"
@@ -847,7 +849,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            click_source.count("self.native_adapter.post_mouse("),
+            click_source.count("self.native_adapter.post_mouse_to_process("),
             1,
         )
         self.assertNotIn(
@@ -1141,6 +1143,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         action_source = self.source[action_start:action_end]
 
         self.assertIn(
+            "client = self.focus_actor_window(actor)",
+            action_source,
+        )
+        self.assertIn(
+            "native_origin = self.native_content_origin(client)",
+            action_source,
+        )
+        self.assertIn(
             "toolbar = self.hover_message(actor, message_id)",
             action_source,
         )
@@ -1157,11 +1167,19 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             action_source,
         )
         self.assertIn(
-            "return self._click_focused_element(client, element)",
+            "return self._click_focused_element(\n"
+            "            client,\n"
+            "            element,\n"
+            "            native_origin=native_origin,\n"
+            "            focus_target=False,\n"
+            "        )",
             action_source,
         )
-        self.assertNotIn("self.focus_actor_window(", action_source)
         self.assertNotIn("self.click(", action_source)
+        self.assertLess(
+            action_source.index("native_origin = self.native_content_origin(client)"),
+            action_source.index("toolbar = self.hover_message(actor, message_id)"),
+        )
 
         transcript_start = self.source.index(
             "    def prove_transcript_thread("

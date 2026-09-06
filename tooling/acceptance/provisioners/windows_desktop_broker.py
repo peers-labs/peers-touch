@@ -811,6 +811,12 @@ try:
     elif operation == "post_mouse":
         actions = tuple(MouseAction(item) for item in payload["actions"])
         result = adapter.post_mouse(actions, tuple(payload["point"])) or {}
+    elif operation == "post_mouse_to_process":
+        process_id = int(payload["processId"])
+        actions = tuple(MouseAction(item) for item in payload["actions"])
+        adapter.activate_process(process_id)
+        adapter.post_mouse(actions, tuple(payload["point"]))
+        result = adapter.focused_control(process_id).to_dict()
     elif operation == "post_key":
         result = adapter.post_key(
             NativeKey(payload["key"]),
