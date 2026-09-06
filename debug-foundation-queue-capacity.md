@@ -13,10 +13,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | The active Turn becomes terminal before the capacity snapshot, allowing Station to drain the queue below eight. | High | Low | Confirmed for the failing zh-CN tuple: `done` preceded queued submission, the first read was seven, and the queue drained to zero. |
-| B | Awaiting queued stream results delays the snapshot until after queue drain begins. | High | Low | Confirmed at the earlier duplicate-result await boundary: the fast active Turn completed before the eight follow-ups were started. |
+| A | The active Turn becomes terminal before the capacity snapshot, allowing Station to drain the queue below eight. | High | Low | Confirmed again for the post-fix zh-CN tuple: the first read was seven, `done` arrived while polling, and the queue drained to zero. |
+| B | Starting eight queue streams concurrently does not prove that all eight admissions have completed before queue readback. | High | Low | Confirmed: the post-fix zh-CN tuple started all eight with zero observed events, but the first Station readback contained only seven entries and never reached eight. |
 | C | Station reports a queue capacity other than eight for this conversation. | Medium | Low | Rejected: both tuples reported authoritative capacity eight. |
-| D | One or more queued submissions are rejected before admission. | Medium | Low | Rejected: all eight submissions succeeded; one became active after the original Turn completed. |
+| D | One queued request is delayed in Browser dispatch, Gateway forwarding, or Station admission until the active Turn completes. | High | Medium | Pending: record each queue index's first event/result and Gateway stream-proxy arrival/admission timing. Existing Gateway command diagnostics reject general worker-pool saturation because queue-list had zero worker wait. |
 | E | Conversation cleanup or selection drift makes the readback target differ from the created queue conversation. | Low | Low | Rejected: both tuples retained the selected conversation. |
 
 ## Log Evidence
@@ -37,9 +37,32 @@
   - All eight submissions succeeded, but one was executed immediately; the first queue read was seven and the queue drained to zero during the unchanged 30-second window.
   - The supposed overflow request also executed successfully because capacity was no longer full.
   - Station capacity remained eight and the selected conversation remained correct.
+- First post-fix run
+  `20260905T234558072900Z-17f15e201c317c1bb83b69190eab7734`
+  (aggregate
+  `20260905T234557952732Z-40da1f8ecf9e59e5ded0fae1a0840974`)
+  on `b10bb73e41aa6069ef707f6f2b6698a7d0e964de`:
+  - English AS-F02 sampled `8/8` in 689 ms with FIFO positions `1..8`;
+    duplicate replay returned `admission_replayed`, and the overflow request
+    returned `ADMISSION_QUEUE_FULL`.
+  - Simplified Chinese AS-F02 started all eight submissions with zero observed
+    events, but the first queue read returned seven. The unchanged 30-second
+    poll never observed eight, the active Turn emitted `done`, and the queue
+    drained to zero.
+  - Gateway command diagnostics recorded zero queue wait for every
+    `agent_turn_queue_list` dispatch, rejecting a saturated Rust worker pool.
+  - The remaining unknown is which queue index is delayed and whether it
+    reaches the Gateway before the active Turn finishes.
+  - Outer Provisioner cleanup completed `DONE / PROVEN / passed`, but inner
+    Browser logout timed out. Ports, storage, and actor identity were still
+    released. Cleanup is therefore not globally passed.
 
 ## Verification Conclusion
-The Harness awaited duplicate stream completion before it launched the queue workload. A fast provider response could therefore finish the active Turn and release dequeue before the eight queue requests existed. The queue and oracle behaved correctly; the Acceptance action ordering was nondeterministic. The minimal correction is to launch the duplicate and all eight queue requests while the original Turn is active, capture the strict Station `8/8` snapshot, and only then submit the overflow request and await stream completion.
+The original duplicate-result wait was one race, but removing it was
+insufficient. Concurrent stream construction still does not establish eight
+completed admissions before readback. The next evidence pass must identify the
+delayed queue index and its Browser -> Gateway -> Station boundary before a
+second behavioral correction.
 
 ## Fix
 - Capture the empty queue baseline before starting duplicate replay.
@@ -54,4 +77,6 @@ The Harness awaited duplicate stream completion before it launched the queue wor
 - `cd apps/desktop && pnpm run check`: passed.
 - `cd apps/desktop && pnpm run test`: 569 passed, one unrelated environment-dependent test skipped.
 - `git diff --check`: passed.
-- Post-fix exact-source runtime comparison: pending.
+- First post-fix exact-source runtime comparison: English passed the queue
+  boundary; Simplified Chinese remained `7/8`; further instrumentation is
+  required before another fix.
