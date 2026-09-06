@@ -349,11 +349,13 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             )
         # EnumWindows returns top-level windows in top-to-bottom z-order.
         hwnd = windows[0]
+        foreground = _user32.GetForegroundWindow()
+        if foreground and self._window_process_id(foreground) == process_id:
+            return
         if self._is_window_minimized(hwnd):
             _user32.ShowWindow(hwnd, _SW_RESTORE)
         current_thread = _kernel32.GetCurrentThreadId()
         target_thread = _user32.GetWindowThreadProcessId(hwnd, None)
-        foreground = _user32.GetForegroundWindow()
         foreground_thread = (
             _user32.GetWindowThreadProcessId(foreground, None)
             if foreground
