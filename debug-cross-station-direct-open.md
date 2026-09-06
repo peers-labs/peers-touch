@@ -1,7 +1,7 @@
 # Debug Session: cross-station-direct-open
 - **Status**: [OPEN]
 - **Issue**: The Windows native Chat Gate selects the exact station-five Bob search result, but Alice's direct conversation does not open.
-- **Debug Server**: `http://10.4.33.34:7779/event`
+- **Debug Server**: `http://10.4.43.34:7779/event`
 - **Log File**: `.dbg/trae-debug-log-cross-station-direct-open.ndjson`
 
 ## Reproduction Steps
@@ -33,6 +33,7 @@
 | P | MP-W14 fails because station-five did not apply the authority-signed follower projection. | Medium | Low | Rejected: station-five has an `ACTIVE` follower group at sequence 3, both members active, three applied receipts, no pending gap, successful member-settings reads, and Bob's group typing authorization succeeds. |
 | Q | Federated command preparation still validates Bob's endpoint through station-four's local `actor_devices` instead of the verified remote endpoint manifest. | High | Low | Confirmed: station-five forwards `/messaging/command/prepare`; station-four receives `/messaging/federation/command/prepare`, then returns `messaging: record not found`. The authority has Bob's verified manifest but no local Bob device row, and both `AuthorityPrepareHandler` and `AuthorityService.PrepareSend` still use the local device directory. |
 | R | Bob's Device Messaging Engine lacks the MLS session required to prepare the reply. | Low | Low | Rejected as the first failure: the Station prepare request returns 500 before local MLS outbound preparation runs. |
+| S | The cross-Station Fixture publishes an accepted friend request but omits the reciprocal Social follow edges required by Conversation Direct policy. | High | Low | Confirmed by Windows run `20260906T050808799291Z-fa0eb0c4f955b6e8442c02cdaed89473`: Desktop rendered Bob as an accepted friend, while station-four returned `RELATIONSHIP_REQUIRED`. Source inspection showed `seed_cross_station_contact` inserted only `friend_chat_friend_requests`; commit `abea69ac4346a87aab74c45152be646906fabed4` now seeds and asserts both canonical `follows` edges on each disposable Station. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -318,3 +319,21 @@ The approved four-Gate local Chat cohort passes in aggregate
 `20260905T125516816692Z-a1fe8cb980506bd4e86592a5e451136e`.
 Post-fix Windows evidence is not yet collected, so hypotheses Q and R retain
 their pre-fix conclusions and the debug session remains `[OPEN]`.
+
+Exact-source Windows run
+`20260906T050808799291Z-fa0eb0c4f955b6e8442c02cdaed89473` at commit
+`9e9b8a79f23be736639a4754010cc77eda2148c1` and binary SHA-256
+`0abd4c18988c513881d0fc649707a4dc518b0d665c4bb1c2b13a2126da4710dc`
+failed at `conversation.search.ui`. The peer-bound intent pane was visible with
+inline error and retry, so the frontend recovery contract was working. The
+actual create request failed with `403 RELATIONSHIP_REQUIRED`.
+
+The cross-Station Fixture had materialized an accepted
+`friend_chat_friend_requests` row for Desktop but omitted the reciprocal
+`follows` rows read by `ConversationGateEvaluator`. This split one accepted
+relationship into inconsistent Social projections. Commit
+`abea69ac4346a87aab74c45152be646906fabed4` fixes the Fixture at the Social
+truth layer: it inserts both follow directions and aborts the transaction unless
+both edges exist. The SQL executed successfully on station-four and
+station-five, and the clean-HEAD four-Gate local Chat matrix passed. Post-fix
+Windows Product Closure remains pending; the session stays `[OPEN]`.
