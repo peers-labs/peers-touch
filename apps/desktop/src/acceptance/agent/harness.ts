@@ -118,6 +118,11 @@ interface FoundationCapabilityIsolation {
   restorationVerified: boolean;
 }
 
+interface FoundationCapabilityIsolationOptions {
+  requireEffectiveCapabilities?: boolean;
+  restorationMode?: 'immediate' | 'deferred';
+}
+
 interface FoundationF06Transition {
   phase: string;
   sequence: number;
@@ -323,6 +328,19 @@ function readFoundationF06Handoffs(): Record<string, FoundationF06Handoff> {
         || !value.toolIsolation
         || !Number.isSafeInteger(value.toolIsolation.disabledBindingCount)
         || !Number.isSafeInteger(value.toolIsolation.readyCapabilityCount)
+        || !Number.isSafeInteger(
+          value.toolIsolation.originalReadyCapabilityCount,
+        )
+        || typeof value.toolIsolation.originalReadyCapabilityHash !== 'string'
+        || !/^[0-9a-f]{64}$/.test(
+          value.toolIsolation.originalReadyCapabilityHash,
+        )
+        || !Number.isSafeInteger(value.toolIsolation.restoredBindingCount)
+        || !Number.isSafeInteger(
+          value.toolIsolation.restoredReadyCapabilityCount,
+        )
+        || typeof value.toolIsolation.restoredReadyCapabilityHash !== 'string'
+        || typeof value.toolIsolation.restorationVerified !== 'boolean'
         || typeof value.preparedAt !== 'string'
       ) {
         return {};
@@ -1799,8 +1817,12 @@ async function withFoundationCapabilitiesDisabled<T>(
   agent: NonNullable<ReturnType<typeof selectedAgent>>,
   capabilitySessionId: string,
   operation: (isolation: FoundationCapabilityIsolation) => Promise<T>,
-  requireEffectiveCapabilities = false,
+  options: FoundationCapabilityIsolationOptions = {},
 ): Promise<T> {
+  const {
+    requireEffectiveCapabilities = false,
+    restorationMode = 'immediate',
+  } = options;
   await restorePersistedFoundationCapabilityIsolation();
   const agentId = agent.id || agent.name;
   const authoritativeAgent = await api.getAgent(agentId);
@@ -1895,6 +1917,7 @@ async function withFoundationCapabilitiesDisabled<T>(
     restorationVerified: false,
   };
   if (journalBindings.length === 0) {
+    isolation.restoredReadyCapabilityHash = originalReadyCapabilityHash;
     isolation.restorationVerified = true;
     return operation(isolation);
   }
@@ -1911,8 +1934,9 @@ async function withFoundationCapabilitiesDisabled<T>(
     FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY,
     serializedJournal,
   );
-  let operationError: unknown = null;
-
+  let outcome:
+    | { ok: true; value: T }
+    | { ok: false; error: unknown };
   try {
     for (const binding of originalBindings) {
       await updateFoundationCapabilityBindingEnabled(
@@ -1934,11 +1958,14 @@ async function withFoundationCapabilitiesDisabled<T>(
       );
     }
     isolation.readyCapabilityCount = readyCapabilityCount;
-    return await operation(isolation);
+    outcome = {
+      ok: true,
+      value: await operation(isolation),
+    };
   } catch (error) {
-    operationError = error;
-    throw error;
-  } finally {
+    outcome = { ok: false, error };
+  }
+  if (restorationMode === 'immediate') {
     try {
       const restoration = await restorePersistedFoundationCapabilityIsolation();
       if (restoration) Object.assign(isolation, restoration);
@@ -1946,12 +1973,14 @@ async function withFoundationCapabilitiesDisabled<T>(
       throw Object.assign(
         new Error('agent.acceptance.foundationCapabilityBindingRestoreFailed'),
         {
-          primaryError: operationError,
+          primaryError: outcome.ok ? null : outcome.error,
           cleanupError,
         },
       );
     }
   }
+  if (!outcome.ok) throw outcome.error;
+  return outcome.value;
 }
 
 async function prepareFoundationReadyCapabilityFixture(
@@ -4051,6 +4080,7 @@ async function runFoundationF06Prepare(input: {
         scenarioStartedAt,
         toolIsolation,
       ),
+      { restorationMode: 'deferred' },
     );
   } catch (error) {
     const activeTurnId = useAgentTurnRecoveryStore.getState()
@@ -4564,6 +4594,48 @@ async function finalizeFoundationF06Preparation(
     'Foundation AS-F06 page switch',
     30_000,
   );
+  return handoff;
+}
+
+async function restoreFoundationF06CapabilityIsolation(
+  scenarioKey: string,
+): Promise<FoundationF06Handoff> {
+  const handoff = readFoundationF06Handoff(scenarioKey);
+  if (!handoff) {
+    throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
+  }
+  const journal = readFoundationCapabilityIsolationJournal();
+  if (handoff.toolIsolation.restorationVerified) {
+    if (journal) {
+      throw new Error(
+        'agent.acceptance.foundationCapabilityIsolationStateConflict',
+      );
+    }
+    return handoff;
+  }
+  const agent = selectedAgent();
+  if (
+    !journal
+    || !agent
+    || journal.agentId !== (agent.id || agent.name)
+    || journal.bindings.length !== handoff.toolIsolation.disabledBindingCount
+    || journal.originalReadyCapabilityCount
+      !== handoff.toolIsolation.originalReadyCapabilityCount
+    || journal.originalReadyCapabilityHash
+      !== handoff.toolIsolation.originalReadyCapabilityHash
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationCapabilityIsolationScopeMismatch',
+    );
+  }
+  const restoration = await restorePersistedFoundationCapabilityIsolation();
+  if (!restoration) {
+    throw new Error(
+      'agent.acceptance.foundationCapabilityBindingRestoreVerificationFailed',
+    );
+  }
+  Object.assign(handoff.toolIsolation, restoration);
+  writeFoundationF06Handoff(handoff);
   return handoff;
 }
 
@@ -6065,7 +6137,7 @@ async function runFoundationF12Prepare(input: {
           },
         };
       },
-      true,
+      { requireEffectiveCapabilities: true },
     );
 
     const handoff: FoundationF12Handoff = {
@@ -7338,7 +7410,7 @@ async function runFoundationF10Scenario(input: {
         toolIsolation,
       };
     },
-    true,
+    { requireEffectiveCapabilities: true },
   );
 
   const controls = Object.fromEntries(await Promise.all(
@@ -8793,7 +8865,7 @@ async function runFoundationF07WithCapabilityIsolation(input: {
             },
           };
         },
-        true,
+        { requireEffectiveCapabilities: true },
       );
     },
   );
@@ -10369,6 +10441,16 @@ export function installAcceptanceHarness(): void {
       );
     },
 
+    async foundationF06RestoreCapabilityIsolation({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      return evidenceValue(
+        await restoreFoundationF06CapabilityIsolation(scenarioKey),
+      );
+    },
+
     async foundationF06DurableReload({
       scenarioKey,
     }: {
@@ -10685,7 +10767,7 @@ export function installAcceptanceHarness(): void {
                 turnDurationMs = performance.now() - turnStartedAt;
                 scenarioFacts = { toolIsolation };
               },
-              true,
+              { requireEffectiveCapabilities: true },
             );
           },
         );

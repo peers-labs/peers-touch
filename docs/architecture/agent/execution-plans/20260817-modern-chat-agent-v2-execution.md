@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: the Gateway response body now converts upstream SSE read failure to immediate downstream EOF at checkpoint `3d6435d825ff389f754b51cacede41df025928fa`; exact-source run `20260906T110008007460Z-3708060aaf16eae23b9ccf7fed80014d` on `a30862ee1f0c24f9f94a4f3c241b1f606f4f6d07` confirmed the AS-F02 replay mismatch owner as one residual queued Turn admitted during cancellation handoff; checkpoint `e68a5b4c000b1a649667addae279b6e0dd54c726` terminally settles residual admitted Turns and its exact-source run `20260906T112704879353Z-5e1f364c3649ec3e0e19e68668401c7c` passed AS-F02 replay equality plus AS-F06 immediate Gateway EOF before exposing vacuous AS-F10 isolation; checkpoint `ec32dbf284efbb36b825c2cc9f6264cff90f0af3` adds the reversible READY fixture for AS-F10, while checkpoint `2e3f702f8144c08898419b6ef5813dd2f5805fbe` uses that fixture to hold AS-F02 in real manual approval; exact-source run `20260906T133344461560Z-c620ac933b899e0d466b41ac32a70f5b` passed both AS-F02 locales and AS-F06 but exhausted the unchanged 3600-second Gate budget after sequential native/browser rebuilds; checkpoints `f9484ca60ac30c85615de630233e6d8a64e0fa6e` and `31f8208ad1fa5640356108b837d9a6e8cf0549ef` isolate Cargo targets by Foundation runtime and stabilize the two Foundation process profile names; exact-source run `20260906T154109631399Z-f8e7c6f12606844928a56a5ff1d1c87c` on `31f8208ad1fa5640356108b837d9a6e8cf0549ef` completed AS-F01 through AS-F10 before exposing AS-F12's ambient-capability dependency; checkpoint `368497d7150f76943e1d6278463c01463cdc2146` gives AS-F12 the same reversible READY fixture, and exact-source run `20260906T162356921705Z-bd8243d2bcba6f391d2fc537322daad3` passed AS-F01 through AS-F12 before exposing a prior-attempt blocked ToolBatch interrupting the retried Turn in `BASE-APPROVAL-EXPIRED`; the current local closure scopes blocked-batch and reconciliation-required settlement to the latest live attempt; exact-source proof is pending | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260906T162356921705Z-bd8243d2bcba6f391d2fc537322daad3` passed AS-F01 through AS-F12 before exposing a prior-attempt blocked ToolBatch interrupting the retried Turn in `BASE-APPROVAL-EXPIRED`; checkpoint `ed4c90a67ebb5100eb249cd08ad2234553be9c0c` scopes blocked-batch and reconciliation-required settlement to the latest live attempt; its exact-source run `20260906T173326762286Z-6bcc98e4b7baa4312dbd608a35189ff4` failed earlier at Browser AS-F06 because capability restoration ran while the intentional fault transport was still cut; the current local closure defers that persisted restoration until transport recovery and Station reauthentication, then verifies and persists the restored counts and hashes before durable reload; exact-source proof is pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5702,6 +5702,29 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   versions, message counts/statuses, and final queue size. Inner runtime cleanup
   and outer Provisioner cleanup both passed. Foundation and G-F remain
   `PARTIAL / UNPROVEN`.
+- Exact-source Gate run
+  `20260906T173326762286Z-6bcc98e4b7baa4312dbd608a35189ff4`
+  (aggregate
+  `20260906T173326581012Z-f13979b954b3a297eebff980bc8a0068`)
+  on `ed4c90a67ebb5100eb249cd08ad2234553be9c0c` failed first at
+  `foundation-browser-direct / browser / direct_model / AS-F06 / en /
+  single / sample-001` with
+  `agent.acceptance.foundationCapabilityBindingRestoreFailed`. The fault proxy
+  had already acknowledged the intentional Station-path cut, while
+  `withFoundationCapabilitiesDisabled` immediately attempted its Station-owned
+  binding restoration in `finally`; runs with no enabled binding had hidden
+  that ordering defect. The local closure preserves the revision-fenced
+  isolation journal through the outage, restores the proxy, reauthenticates the
+  owning client, invokes a scenario-bound Harness restoration, verifies exact
+  binding/readiness counts and hashes, persists the restored AS-F06 handoff,
+  and only then performs durable reload and client restart. No timeout, fault,
+  retry, or product assertion changed. Agent native static tests pass `70/70`,
+  focused Foundation coordinator/oracle tests pass `121/121`, Desktop check,
+  all `569` Desktop tests with one unrelated environment-dependent skip,
+  Desktop production build, Python compilation, and `git diff --check` pass.
+  Broader Foundation discovery retains the two known unrelated `receiver-dom`
+  fixture/profile mismatches. Exact-source post-fix proof remains pending, so
+  Foundation and G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

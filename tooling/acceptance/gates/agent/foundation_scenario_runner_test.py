@@ -93,6 +93,7 @@ class F06HarnessClient:
         fail_finalize: bool = False,
         lose_prepare_response: bool = False,
         invalid_reload_delivery: bool = False,
+        invalid_restoration: bool = False,
     ) -> None:
         self.platform = platform
         self.station_url = "http://127.0.0.1:28080"
@@ -102,12 +103,14 @@ class F06HarnessClient:
         self.fail_finalize = fail_finalize
         self.lose_prepare_response = lose_prepare_response
         self.invalid_reload_delivery = invalid_reload_delivery
+        self.invalid_restoration = invalid_restoration
         self.restart_count = 0
         self.transport_cut_count = 0
         self.transport_restore_count = 0
         self.prepare_calls: list[dict[str, object]] = []
         self.finalize_calls: list[dict[str, object]] = []
         self.failure_calls: list[dict[str, object]] = []
+        self.restoration_calls: list[dict[str, object]] = []
         self.reload_calls: list[dict[str, object]] = []
         self.complete_calls: list[dict[str, object]] = []
         self.cleanup_calls: list[dict[str, object]] = []
@@ -160,8 +163,19 @@ class F06HarnessClient:
                 raise RuntimeError("prepare failed")
             suffix = f"{self.platform}-{len(self.prepare_calls)}"
             handoff = {
+                "scenarioKey": str(request["scenarioKey"]),
                 "conversationId": f"conversation-{suffix}",
                 "turnId": f"turn-{suffix}",
+                "toolIsolation": {
+                    "disabledBindingCount": 1,
+                    "readyCapabilityCount": 0,
+                    "originalReadyCapabilityCount": 1,
+                    "originalReadyCapabilityHash": "a" * 64,
+                    "restoredBindingCount": 0,
+                    "restoredReadyCapabilityCount": 0,
+                    "restoredReadyCapabilityHash": "",
+                    "restorationVerified": False,
+                },
             }
             self.handoffs[str(request["scenarioKey"])] = handoff
             return handoff
@@ -181,6 +195,24 @@ class F06HarnessClient:
                 "blocker": "",
                 "retry": {"observed": True},
             }
+        if method == "foundationF06RestoreCapabilityIsolation":
+            self.restoration_calls.append(request)
+            scenario_key = str(request["scenarioKey"])
+            handoff = self.handoffs[scenario_key]
+            isolation = handoff["toolIsolation"]
+            if not isinstance(isolation, dict):
+                raise AssertionError("invalid fake tool isolation")
+            isolation.update({
+                "restoredBindingCount": 0 if self.invalid_restoration else 1,
+                "restoredReadyCapabilityCount": 1,
+                "restoredReadyCapabilityHash": "a" * 64,
+                "restorationVerified": not self.invalid_restoration,
+            })
+            if self.event_log is not None:
+                self.event_log.append(
+                    f"{self.platform}:capability-restored"
+                )
+            return handoff
         if method == "foundationF06DurableReload":
             self.reload_calls.append(request)
             if self.event_log is not None:
@@ -566,6 +598,26 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(browser.calls, 1)
         self.assertEqual(native.calls, 1)
+
+    def test_f06_restoration_accepts_an_empty_original_capability_set(
+        self,
+    ) -> None:
+        error = foundation_scenario_runner._capability_isolation_restoration_error(
+            "browser",
+            {
+                "disabledBindingCount": 0,
+                "readyCapabilityCount": 0,
+                "originalReadyCapabilityCount": 0,
+                "originalReadyCapabilityHash": "a" * 64,
+                "restoredBindingCount": 0,
+                "restoredReadyCapabilityCount": 0,
+                "restoredReadyCapabilityHash": "a" * 64,
+                "restorationVerified": True,
+            },
+            allow_empty=True,
+        )
+
+        self.assertIsNone(error)
 
     def test_cleanup_restarts_client_before_retrying_isolation_restore(self) -> None:
         native = CapabilityIsolationCleanupClient(
@@ -1182,6 +1234,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                     "station:ready",
                     f"{platform}:transport-restore",
                     f"{platform}:authenticate:station-restart",
+                    f"{platform}:capability-restored",
                     f"{platform}:durable-reload",
                     f"{platform}:client-restart",
                     f"{platform}:authenticate:client-restart",
@@ -1195,6 +1248,8 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(len(browser.finalize_calls), 2)
         self.assertEqual(len(native.failure_calls), 2)
         self.assertEqual(len(browser.failure_calls), 2)
+        self.assertEqual(len(native.restoration_calls), 2)
+        self.assertEqual(len(browser.restoration_calls), 2)
         self.assertEqual(len(native.reload_calls), 2)
         self.assertEqual(len(browser.reload_calls), 2)
         self.assertEqual(len(native.complete_calls), 2)
@@ -1366,6 +1421,46 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             with self.assertRaisesRegex(
                 foundation_scenario_runner.ScenarioRunnerError,
                 "durable reload source delivery is invalid",
+            ):
+                coordinator.capture(
+                    DirectRuntimeProbeInput(
+                        platform="browser",
+                        locale="en",
+                        cell="AS-F06",
+                        sample_id="sample-001",
+                    )
+                )
+
+    def test_as_f06_rejects_unverified_capability_restoration(self) -> None:
+        native = F06HarnessClient("desktop_app")
+        browser = F06HarnessClient(
+            "browser",
+            invalid_restoration=True,
+        )
+        coordinator = foundation_scenario_runner.FoundationF06Coordinator(
+            SimpleNamespace(native=native, browser=browser),
+            {"profile": {"resolvedName": "two"}},
+            {},
+        )
+
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "restart_foundation_station",
+                side_effect=lambda *_args, **kwargs: (
+                    kwargs["during_outage"](time.monotonic() + 165),
+                    kwargs["after_restart"](time.monotonic() + 180),
+                    {"containerId": "container"},
+                )[-1],
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_authenticate_clients",
+            ),
+        ):
+            with self.assertRaisesRegex(
+                foundation_scenario_runner.ScenarioRunnerError,
+                "capability-isolation restoration failed",
             ):
                 coordinator.capture(
                     DirectRuntimeProbeInput(

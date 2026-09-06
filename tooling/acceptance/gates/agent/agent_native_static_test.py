@@ -386,6 +386,60 @@ class AgentHarnessStaticTest(unittest.TestCase):
             self.source[observe_start:observe_end],
         )
 
+    def test_recovery_restores_capabilities_after_transport_recovery(self) -> None:
+        prepare_start = self.source.index("async function runFoundationF06Prepare")
+        prepare_end = self.source.index(
+            "async function prepareFoundationF06Conversation",
+            prepare_start,
+        )
+        prepare = self.source[prepare_start:prepare_end]
+        restore_start = self.source.index(
+            "async function restoreFoundationF06CapabilityIsolation",
+            prepare_end,
+        )
+        restore_end = self.source.index(
+            "async function observeFoundationRecoveryFailure",
+            restore_start,
+        )
+        restore = self.source[restore_start:restore_end]
+
+        self.assertIn("{ restorationMode: 'deferred' },", prepare)
+        self.assertIn("readFoundationCapabilityIsolationJournal()", restore)
+        self.assertIn(
+            "await restorePersistedFoundationCapabilityIsolation()",
+            restore,
+        )
+        self.assertIn("Object.assign(handoff.toolIsolation, restoration)", restore)
+        self.assertIn("writeFoundationF06Handoff(handoff)", restore)
+        self.assertIn(
+            "async foundationF06RestoreCapabilityIsolation",
+            self.source,
+        )
+
+        runner = FOUNDATION_SCENARIO_RUNNER.read_text(encoding="utf-8")
+        coordinator_start = runner.index("class FoundationF06Coordinator")
+        coordinator_end = runner.index(
+            "class FoundationF12Coordinator",
+            coordinator_start,
+        )
+        coordinator = runner[coordinator_start:coordinator_end]
+        active_start = coordinator.index("    def _execute_active(")
+        active = coordinator[active_start:]
+        transport_restore = active.index("client.restore_station_transport()")
+        station_auth = active.index('recovery_boundary="station-restart"')
+        capability_restore = active.index(
+            "self._restore_capability_isolation(",
+            station_auth,
+        )
+        durable_reload = active.index(
+            '"foundationF06DurableReload"',
+            capability_restore,
+        )
+
+        self.assertLess(transport_restore, station_auth)
+        self.assertLess(station_auth, capability_restore)
+        self.assertLess(capability_restore, durable_reload)
+
     def test_recovery_completion_reads_failure_after_evidence_sync(self) -> None:
         completion_start = self.source.index(
             "async function runFoundationF06Complete",
@@ -483,7 +537,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("withFoundationReadyCapabilityFixture(", scenario)
         self.assertIn("runFoundationF10WithCapabilityIsolation", scenario)
         self.assertIn("const readiness = await api.getAgentCapabilityReadiness(", scenario)
-        self.assertIn("    true,\n  );", scenario)
+        self.assertIn(
+            "{ requireEffectiveCapabilities: true },",
+            scenario,
+        )
         self.assertIn("toolIsolation", scenario)
         self.assertIn("runAgentCapabilityNegativeControl(", scenario)
         for control in (
@@ -518,7 +575,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn("thinkingMode: 'disabled'", scenario)
         self.assertIn("scenarioFacts = { toolIsolation }", scenario)
-        self.assertIn("      true,", scenario)
+        self.assertIn(
+            "{ requireEffectiveCapabilities: true },",
+            scenario,
+        )
         self.assertNotIn("streamAgentTurn({", scenario)
 
     def test_queue_scenario_waits_for_receiver_projection(self) -> None:
@@ -723,7 +783,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("withFoundationReadyCapabilityFixture(", helper)
         self.assertIn("await resolveFoundationToolTurnSession()", helper)
         self.assertIn("withFoundationCapabilitiesDisabled(", helper)
-        self.assertIn("      true,", helper)
+        self.assertIn(
+            "{ requireEffectiveCapabilities: true },",
+            helper,
+        )
 
         fixture_start = self.source.index(
             "async function prepareFoundationReadyCapabilityFixture",

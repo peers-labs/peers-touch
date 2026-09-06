@@ -360,6 +360,43 @@ class FoundationF06Coordinator:
                 f"{self._scenario_key(probe_input)}"
             )
 
+    def _restore_capability_isolation(
+        self,
+        client: Any,
+        probe_input: DirectRuntimeProbeInput,
+        operation_deadline: float,
+    ) -> None:
+        remaining = operation_deadline - time.monotonic()
+        if remaining <= 0:
+            raise ScenarioRunnerError(
+                "AS-F06 Station restart deadline expired "
+                "during capability-isolation restoration"
+            )
+        scenario_key = self._scenario_key(probe_input)
+        result = client.harness(
+            "foundationF06RestoreCapabilityIsolation",
+            {"scenarioKey": scenario_key},
+            timeout=remaining,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("scenarioKey") != scenario_key
+        ):
+            raise ScenarioRunnerError(
+                f"AS-F06 capability-isolation restoration returned invalid "
+                f"scope for {scenario_key}"
+            )
+        validation_error = _capability_isolation_restoration_error(
+            probe_input.platform,
+            result.get("toolIsolation"),
+            allow_empty=True,
+        )
+        if validation_error:
+            raise ScenarioRunnerError(
+                f"AS-F06 capability-isolation restoration failed for "
+                f"{scenario_key}: {validation_error}"
+            )
+
     def _cleanup_prepared(
         self,
         prepared: list[
@@ -555,6 +592,11 @@ class FoundationF06Coordinator:
                 require_existing_session=True,
                 session_deadline=operation_deadline,
                 recovery_boundary="station-restart",
+            )
+            self._restore_capability_isolation(
+                client,
+                probe_input,
+                operation_deadline,
             )
             remaining = operation_deadline - time.monotonic()
             if remaining <= 0:
@@ -1291,6 +1333,47 @@ def _authenticate_clients(
             )
 
 
+def _capability_isolation_restoration_error(
+    runtime: str,
+    restoration: Any,
+    *,
+    allow_empty: bool,
+) -> str | None:
+    if not isinstance(restoration, Mapping):
+        return f"{runtime} capability isolation restoration is missing"
+
+    def exact_int(name: str) -> int | None:
+        value = restoration.get(name)
+        return value if type(value) is int else None
+
+    disabled = exact_int("disabledBindingCount")
+    isolated_ready = exact_int("readyCapabilityCount")
+    original_ready = exact_int("originalReadyCapabilityCount")
+    restored_bindings = exact_int("restoredBindingCount")
+    restored_ready = exact_int("restoredReadyCapabilityCount")
+    original_hash = restoration.get("originalReadyCapabilityHash")
+    restored_hash = restoration.get("restoredReadyCapabilityHash")
+    valid = (
+        disabled is not None
+        and (disabled >= 0 if allow_empty else disabled > 0)
+        and isolated_ready == 0
+        and original_ready is not None
+        and original_ready >= 0
+        and (disabled > 0 or original_ready == 0)
+        and restored_bindings == disabled
+        and restored_ready == original_ready
+        and isinstance(original_hash, str)
+        and re.fullmatch(r"[0-9a-f]{64}", original_hash) is not None
+        and restored_hash == original_hash
+        and restoration.get("restorationVerified") is True
+    )
+    return (
+        None
+        if valid
+        else f"{runtime} capability isolation restoration was not verified"
+    )
+
+
 def _restore_capability_isolation_for_cleanup(
     runtime_pair: FoundationRuntimePair,
     profile_env: Mapping[str, str],
@@ -1322,37 +1405,10 @@ def _restore_capability_isolation_for_cleanup(
                 else f"{runtime} capability isolation restore returned "
                 "contradictory evidence"
             )
-        if not isinstance(restoration, Mapping):
-            return f"{runtime} capability isolation restoration is missing"
-
-        def exact_int(name: str) -> int | None:
-            value = restoration.get(name)
-            return value if type(value) is int else None
-
-        disabled = exact_int("disabledBindingCount")
-        isolated_ready = exact_int("readyCapabilityCount")
-        original_ready = exact_int("originalReadyCapabilityCount")
-        restored_bindings = exact_int("restoredBindingCount")
-        restored_ready = exact_int("restoredReadyCapabilityCount")
-        original_hash = restoration.get("originalReadyCapabilityHash")
-        restored_hash = restoration.get("restoredReadyCapabilityHash")
-        valid = (
-            disabled is not None
-            and disabled > 0
-            and isolated_ready == 0
-            and original_ready is not None
-            and original_ready >= 0
-            and restored_bindings == disabled
-            and restored_ready == original_ready
-            and isinstance(original_hash, str)
-            and re.fullmatch(r"[0-9a-f]{64}", original_hash) is not None
-            and restored_hash == original_hash
-            and restoration.get("restorationVerified") is True
-        )
-        return (
-            None
-            if valid
-            else f"{runtime} capability isolation restoration was not verified"
+        return _capability_isolation_restoration_error(
+            runtime,
+            restoration,
+            allow_empty=False,
         )
 
     errors: list[str] = []

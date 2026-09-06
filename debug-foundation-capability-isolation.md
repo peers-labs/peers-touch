@@ -19,6 +19,7 @@
 | D | Entry restoration removes or reverts the only usable capability fixture before AS-F01. | Rejected | Medium | Both isolation and fixture journals were absent before and after entry restoration. |
 | E | AS-F10 invokes capability isolation without the reversible READY fixture, so an already-disabled binding yields a vacuous restoration with an empty hash. | Confirmed | Low | Exact-source run `20260906T112704879353Z-5e1f364c3649ec3e0e19e68668401c7c` reached AS-F10 with one disabled binding, zero READY capabilities, and failed on empty `restoredReadyCapabilityHash`. |
 | F | AS-F12 assumes a READY capability remains after AS-F10 restores the actor's original disabled binding. | Confirmed | Low | Exact-source run `20260906T154109631399Z-f8e7c6f12606844928a56a5ff1d1c87c` passed through AS-F10, then AS-F12 observed zero enabled bindings and zero READY capabilities before failing closed. |
+| G | AS-F06 restores its capability-isolation journal before the intentional Station fault transport is restored. | Confirmed | Low | Exact-source run `20260906T173326762286Z-6bcc98e4b7baa4312dbd608a35189ff4` failed with `foundationCapabilityBindingRestoreFailed` immediately after the fault-bound prepare returned. The helper's `finally` required Station access while the proxy still rejected new connections. |
 
 ## Log Evidence
 - Exact-source aggregate
@@ -66,6 +67,15 @@
   READY capabilities, proving that AS-F10 had restored the original state and
   AS-F12 still depended on ambient fixture state. Inner and outer cleanup both
   passed.
+- Exact-source run
+  `20260906T173326762286Z-6bcc98e4b7baa4312dbd608a35189ff4`
+  (aggregate
+  `20260906T173326581012Z-f13979b954b3a297eebff980bc8a0068`)
+  on `ed4c90a67ebb5100eb249cd08ad2234553be9c0c` passed the earlier
+  Foundation prefix and failed at Browser AS-F06 preparation with
+  `agent.acceptance.foundationCapabilityBindingRestoreFailed`. The run had an
+  enabled binding to restore, and the fault proxy was intentionally still cut,
+  proving the restoration order depended on prior ambient zero-binding state.
 
 ## Instrumentation
 - `foundationDirectProbe` records journal presence before and after restoration,
@@ -96,6 +106,11 @@ authority do not change.
 - AS-F01, AS-F07, AS-F10, and AS-F12 now use the same platform-specific
   fixture setup, revision-fenced isolation, reverse restoration, and
   fail-closed cleanup.
+- AS-F06 retains the same isolation journal through its intentional transport
+  outage. After the coordinator restores transport and reauthenticates the
+  owning client, a scenario-bound Harness method restores the journal, verifies
+  exact binding/readiness counts and hashes, and persists the restored handoff
+  before durable reload.
 - The strict prerequisite still requires a positive READY capability before
   isolation and zero READY capabilities during the isolated Turn.
 - Diagnostic instrumentation remains active for post-fix comparison.
@@ -103,10 +118,12 @@ authority do not change.
 ## Local Verification
 - Desktop check: PASS.
 - Capability-isolation unit tests: `51/51` PASS.
-- Agent native static tests: `68/68` PASS.
-- Foundation scenario runner tests: `38/38` PASS.
+- Agent native static tests: `70/70` PASS.
+- Focused Foundation coordinator/oracle tests: `121/121` PASS.
+- Desktop tests: `569/569` PASS with one unrelated environment-dependent skip.
+- Desktop production build: PASS.
 - `git diff --check`: PASS.
-- Focused Harness lint: five pre-existing findings remain; the new helper adds
+- Focused Harness lint: four pre-existing findings remain; the new helper adds
   no lint finding.
 - Exact-source runtime comparison: AS-F01 passed for both Browser locale
   tuples, AS-F10 passed with a non-vacuous READY fixture, and the first
