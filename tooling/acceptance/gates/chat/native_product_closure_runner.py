@@ -2589,6 +2589,9 @@ class NativeProductClosureGate(AcceptanceGate):
 
     def prove_keyboard_reaction_picker(self, actor: str, message_id: str) -> None:
         client = self.focus_actor_window(actor)
+        if client.process_id is None:
+            raise GateError(f"{actor} Native window has no running process")
+        process_id = client.process_id
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 20)
         client.execute_script(
             "arguments[0].focus({ preventScroll: true });",
@@ -2610,7 +2613,11 @@ class NativeProductClosureGate(AcceptanceGate):
                 )
             )
         )
-        self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
+        self.native_adapter.post_key_to_process(
+            process_id,
+            NativeKey.ENTER,
+            private_source=True,
+        )
         WebDriverWait(client.driver, 15).until(
             lambda driver: driver.execute_script(
                 """
@@ -2630,7 +2637,11 @@ class NativeProductClosureGate(AcceptanceGate):
             action = str(client.execute_script(focused_action_script) or "")
             if action == "reaction":
                 break
-            self.native_adapter.post_key(NativeKey.TAB, private_source=True)
+            self.native_adapter.post_key_to_process(
+                process_id,
+                NativeKey.TAB,
+                private_source=True,
+            )
             WebDriverWait(client.driver, 5).until(
                 lambda driver: str(
                     driver.execute_script(focused_action_script) or ""
@@ -2643,7 +2654,11 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         else:
             raise GateError("reaction action is not keyboard reachable")
-        self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
+        self.native_adapter.post_key_to_process(
+            process_id,
+            NativeKey.ENTER,
+            private_source=True,
+        )
         WebDriverWait(client.driver, 15).until(
             lambda driver: bool(
                 driver.execute_script(
@@ -2660,7 +2675,11 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         )
         self.capture_visible_localization("reaction-picker", (actor,))
-        self.native_adapter.post_key(NativeKey.ESCAPE, private_source=True)
+        self.native_adapter.post_key_to_process(
+            process_id,
+            NativeKey.ESCAPE,
+            private_source=True,
+        )
         self.assert_condition("toolbar_keyboard_reachable", True)
 
     def reaction_visible(self, actor: str, message_id: str, emoji: str) -> bool:
