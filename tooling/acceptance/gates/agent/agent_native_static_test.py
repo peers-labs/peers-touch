@@ -711,7 +711,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("      true,", helper)
 
         fixture_start = self.source.index(
-            "async function withFoundationReadyCapabilityFixture",
+            "async function prepareFoundationReadyCapabilityFixture",
         )
         fixture_end = self.source.index(
             "async function startFoundationToolTurn",
@@ -1449,7 +1449,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("queueCapacitySnapshotMismatch", source)
         self.assertIn("receiverDomAtCapacity", source)
 
-    def test_group_one_queue_probe_launches_admissions_before_provider_event(
+    def test_group_one_queue_probe_holds_active_turn_before_capacity_observation(
         self,
     ) -> None:
         source = HARNESS.read_text(encoding="utf-8")
@@ -1457,6 +1457,9 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         end = source.index("if (cell === 'AS-F03')", start)
         scenario = source[start:end]
 
+        ready_fixture = scenario.index(
+            "await prepareFoundationReadyCapabilityFixture(",
+        )
         queue_baseline = scenario.index(
             "const queueBeforeAdmissions = await api.listAgentTurnQueue(",
         )
@@ -1474,6 +1477,9 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         )
         duplicate_first_event = scenario.index(
             "const duplicateFirstEvent = await duplicate.firstEvent;",
+        )
+        approval_wait = scenario.index(
+            "await waitForToolApprovalEvent({",
         )
         capacity_snapshot = scenario.index(
             "const queueSnapshotStartedAt = performance.now();",
@@ -1513,13 +1519,19 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "const afterQueue = await api.getAgentConversation(",
             residual_turn_settlement,
         )
+        fixture_restore = scenario.index(
+            "await restorePersistedFoundationCapabilityFixture();",
+            later_conversation_readback,
+        )
 
+        self.assertLess(ready_fixture, queue_baseline)
         self.assertLess(queue_baseline, active_start)
         self.assertLess(active_start, active_admission)
         self.assertLess(active_admission, duplicate_start)
         self.assertLess(duplicate_start, queue_start)
         self.assertLess(queue_start, duplicate_first_event)
-        self.assertLess(duplicate_first_event, capacity_snapshot)
+        self.assertLess(duplicate_first_event, approval_wait)
+        self.assertLess(approval_wait, capacity_snapshot)
         self.assertLess(capacity_snapshot, overflow_start)
         self.assertLess(overflow_start, parallel_cancellation)
         self.assertLess(parallel_cancellation, single_queue_cancellation)
@@ -1529,6 +1541,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertLess(stream_completion, post_stream_queue_cleanup)
         self.assertLess(post_stream_queue_cleanup, residual_turn_settlement)
         self.assertLess(residual_turn_settlement, later_conversation_readback)
+        self.assertLess(later_conversation_readback, fixture_restore)
         self.assertNotIn(
             "const duplicateResult = await duplicate.result;",
             scenario,
