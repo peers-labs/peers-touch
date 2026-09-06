@@ -2150,6 +2150,32 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('aria-haspopup="dialog"', self.message_action_overlay)
 
+    def test_toolbar_initial_focus_is_one_shot_per_activation(self) -> None:
+        focus_ref = self.message_action_overlay.index(
+            "const focusedActivationRef = useRef<MessageActionTarget | null>(null);"
+        )
+        focus_effect = self.message_action_overlay.index(
+            "if (!target?.requestFocus || !geometry || pickerOpen) return;",
+            focus_ref,
+        )
+        activation_guard = self.message_action_overlay.index(
+            "if (focusedActivationRef.current === target) return;",
+            focus_effect,
+        )
+        activation_mark = self.message_action_overlay.index(
+            "focusedActivationRef.current = target;",
+            activation_guard,
+        )
+        toolbar_focus = self.message_action_overlay.index(
+            "surfaceRef.current?.querySelector<HTMLButtonElement>"
+            "('[data-message-action]')?.focus();",
+            activation_mark,
+        )
+
+        self.assertLess(focus_effect, activation_guard)
+        self.assertLess(activation_guard, activation_mark)
+        self.assertLess(activation_mark, toolbar_focus)
+
     def test_keyboard_navigation_uses_one_target_bound_sequence(self) -> None:
         keyboard_path_start = self.source.index(
             "def prove_keyboard_reaction_picker(",

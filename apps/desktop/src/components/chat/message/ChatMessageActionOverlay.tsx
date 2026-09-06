@@ -106,6 +106,7 @@ export function ChatMessageActionOverlay({
   const surfaceRef = useRef<HTMLDivElement>(null);
   const pointerInsideRef = useRef(false);
   const restoreReactionFocusRef = useRef(false);
+  const focusedActivationRef = useRef<MessageActionTarget | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [geometry, setGeometry] = useState<MessageActionGeometryResult | null>(null);
 
@@ -189,6 +190,8 @@ export function ChatMessageActionOverlay({
 
   useEffect(() => {
     if (!target?.requestFocus || !geometry || pickerOpen) return;
+    if (focusedActivationRef.current === target) return;
+    focusedActivationRef.current = target;
     surfaceRef.current?.querySelector<HTMLButtonElement>('[data-message-action]')?.focus();
   }, [geometry, pickerOpen, target]);
 

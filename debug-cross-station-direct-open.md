@@ -45,6 +45,7 @@
 | AB | Selecting an emoji from an already-open picker through a separately scheduled pointer worker repeats the same transient-focus race. | High | Low | Confirmed by run `20260906T132928020878Z-01d741beef2f02a02abd3630ff6f1da3`: `toolbar_keyboard_reachable` passed, but the picker disappeared before `_click_focused_element` observed the emoji click. |
 | AC | Splitting keyboard picker proof and keyboard selection into separate native workers still loses the stable row/toolbar boundary between phases. | High | Low | Confirmed by run `20260906T141937599501Z-9f41dd564758034a3fa8845ee2ecfd4f`: picker proof passed, but the subsequent selection helper timed out before its row-plus-toolbar precondition. |
 | AD | Repeating the now-valid keyboard picker path for fault-retry is rejected only because localization checkpoint registration is non-idempotent. | High | Low | Confirmed by run `20260906T150752731550Z-a549862769feb52b4ce1c35c6921151d`: both selection sequences completed, then the second call raised `duplicate localization checkpoint: reaction-picker`. |
+| AE | The overlay's initial-focus effect reruns after a geometry update and moves focus from `reaction` back to the first `thread` action. | High | Low | Confirmed by run `20260906T155406249942Z-b0038735441e8977379d7256d52967f0`: one worker focused `reaction`, then 13 ms later focus returned to `thread` before the next Enter. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -506,3 +507,17 @@ the second valid picker use encountered the one-shot localization-checkpoint
 guard. The checkpoint registration is now idempotent per actor while every
 picker invocation still validates its captured localized label. Cleanup for
 the failed run remained `DONE/PROVEN`.
+
+Exact-source run
+`20260906T155406249942Z-b0038735441e8977379d7256d52967f0` at commit
+`93c2f1a2664007584049fa5c37763ad17f60faaa`, runtime-cell run
+`20260906t155431525156z-9d4d96fbe4c01038`, and binary SHA-256
+`bcad17549c3baf751d412d5e463d7c0ba7c0189aebf9dedaaba9a4914455ffef`
+crossed the duplicate localization checkpoint but exposed hypothesis AE. The
+second selection trace focused `reaction`, then focus returned to `thread`
+13 ms later while the same native worker was still active. Source inspection
+shows the toolbar initial-focus effect depends on `geometry` and refocuses the
+first action after every placement recalculation. The product correction makes
+that focus one-shot for each `MessageActionTarget` activation, preserving the
+user's keyboard position across geometry updates. Cleanup for the failed run
+remained `DONE/PROVEN`.
