@@ -7,6 +7,11 @@
 
 ---
 
+Peers-Touch applies these benchmarks behind one public ownership model:
+Conversation is the sole Chat entry point, resource owners expose Device, Inbox,
+Recovery, Key Exchange, and Federation APIs, and Device Messaging Engine remains
+an internal Desktop/Mobile runtime term.
+
 ## 1. Evidence Sources
 
 本地源码基线：

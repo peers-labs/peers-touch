@@ -1,6 +1,14 @@
 # Signal-Level Chat Modernization — Execution Plan
 
-> **Status**: executing — P0 adapter implemented, awaiting deploy+test (2026-07-29)
+> **Status: SUPERSEDED / HISTORICAL — DO NOT EXECUTE**
+>
+> Superseded by
+> `docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`.
+> The feature plan, route references, ownership statements, checklists, and
+> deployment instructions below are retained only as historical context. They
+> are not current guidance or alternatives to Conversation and resource-owned
+> APIs.
+>
 > **Created**: 2026-07-29
 > **Parent**: `docs/architecture/federated-im/design.md`
 > **Branch**: `feat/group-detail-history-ux-pr` (peers-chat-high-chat)

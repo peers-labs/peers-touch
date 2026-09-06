@@ -58,8 +58,9 @@ apps/station/app/subserver/<domain>/
 示例（当前代码库中存在的域）：
 
 - `agent`
-- `friend_chat`
-- `group_chat`
+- `conversation`
+- `federation`
+- `key_exchange`
 - `social`
 - `activitypub`
 - `dashboard`
@@ -248,14 +249,20 @@ Subserver 路由必须避免与主服务器系统路由冲突。
 
 约束：
 
-- Subserver 使用独立的域名前缀
+- 路由前缀由 capability/resource owner 决定，不由 Go package 或内部组件名决定
+- Conversation 是唯一 Chat 业务入口并使用 `/conversation/*`
+- Device、Inbox、Recovery、Key Exchange 与 Federation 分别使用
+  `/device/*`、`/device/inbox/*`、`/recovery/*`、`/key-exchange/*` 与
+  peer-only `/federation/*`
+- 内部 Messaging Engine 不得注册 Station Messaging 业务 API 或 facade
 - 避免伪装成主系统 `/api/v1/...` 路由
 - 避免与 `/activitypub/...`、`/.well-known/...` 等主路径混淆
 
 示例：
 
-- 合理：`/<domain>/...`
-- 不合理：把域内路由强行挂到与主协议层冲突的公共前缀下
+- 合理：Conversation command 注册为 `/conversation/command`
+- 合理：设备投递领取注册为 `/device/inbox/claim`
+- 不合理：按内部 package 名另建与 resource owner 平行的公共 API
 
 具体协议兼容与路由文档更新，参见 Station API 文档与路由协议文档。
 

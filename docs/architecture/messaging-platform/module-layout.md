@@ -2,10 +2,21 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-08-10
+> **Created**: 2026-08-08 | **Updated**: 2026-09-06
 > **Owner**: Messaging Platform Team
+>
+> **Accepted MP-D30 correction**: Station has no target
+> `app/subserver/messaging/` facade. Conversation is a DDD bounded context;
+> Device, Recovery, Key Exchange, Attachment, and Federation capabilities live
+> under their resource owners. The complete Station tree is governed by
+> [`../api-ownership/module-layout.md`](../api-ownership/module-layout.md).
 
 ---
+
+Conversation is the sole Chat entry point at `/conversation/*`. The target tree
+exposes Device, Inbox, Recovery, Key Exchange, and Federation through
+`/device/*`, `/device/inbox/*`, `/recovery/*`, `/key-exchange/*`, and peer-only
+`/federation/*`. Device Messaging Engine remains the Desktop/Mobile runtime name.
 
 ## 1. Target Layout
 
@@ -23,33 +34,31 @@ model/domain/chat/
 ├── recovery.proto
 └── attachment.proto
 
-apps/station/app/subserver/messaging/
+apps/station/app/subserver/conversation/
 ├── domain/
-│   ├── conversation.go
-│   ├── command.go
-│   ├── event.go
-│   ├── device.go
-│   ├── queue.go
-│   ├── attachment.go
-│   └── federation.go
+│   ├── aggregate/
+│   ├── entity/
+│   ├── event/
+│   ├── repository/
+│   ├── service/
+│   └── valueobject/
 ├── application/
-│   ├── command_service.go
-│   ├── device_service.go
-│   ├── queue_service.go
-│   ├── receipt_service.go
-│   ├── recovery_service.go
-│   ├── attachment_transfer_service.go
-│   └── federation_service.go
+│   ├── command/
+│   ├── query/
+│   └── ports/
 ├── infrastructure/
-│   ├── postgres/
-│   ├── object_store/
-│   │   └── attachment_blob_store.go
+│   ├── persistence/
+│   ├── delivery/
+│   ├── attachment/
 │   └── federation/
-├── worker/
-│   ├── federation_dispatcher.go
-│   ├── attachment_orphan_gc.go
-│   └── queue_notifier.go
-└── interface/http/
+├── interface/http/
+├── composition.go
+└── subserver.go
+
+apps/station/app/subserver/actor_identity/  # /device/*
+apps/station/app/subserver/recovery/        # /recovery/*
+apps/station/app/subserver/key_exchange/    # /key-exchange/*
+apps/station/frame/core/federation/         # peer-only /federation/*
 
 apps/desktop/src-tauri/src/messaging/
 ├── engine.rs
@@ -130,15 +139,19 @@ queue FSM、recovery codec 或 duplicated SQL schema definition。
 | Concern | 唯一注册/真源 |
 |---|---|
 | Shared commands/events/states | `model/domain/chat/*.proto` |
-| Station routes/workers | Station messaging composition root |
-| Authority state machine | `messaging/application/command_service` |
-| Device queue state machine | `messaging/application/queue_service` |
+| Conversation routes and authority | Conversation DDD composition root |
+| Authority state machine | Conversation aggregate + application commands |
+| Device inbox state machine | Conversation Delivery infrastructure |
+| Device identity | Actor Identity resource owner |
+| Recovery revisions | Recovery resource owner |
+| Direct/MLS public material | Key Exchange resource owner |
+| Peer delivery mechanics | `frame/core/federation/` |
 | Device runtime lifecycle | one `MessagingEngine` per authenticated profile |
 | Direct sessions | Device Engine `direct` |
 | MLS groups | Device Engine `mls` |
 | Local durable projection | Device Engine `store` |
-| Attachment transfer/grant | Authority `attachment_transfer_service` |
-| Attachment bytes | Authority object-store port |
+| Attachment transfer/grant | Conversation application port and grant policy |
+| Attachment bytes | Conversation opaque object-store adapter |
 | Attachment crypto/checkpoint | Device Engine `attachment` |
 | Plaintext search | Device Engine `search` + SQLCipher FTS |
 | Web projection | one `messaging/runtime.ts` |
@@ -152,8 +165,8 @@ UI components
   -> generated TS contracts + Tauri client
   -> Desktop/Mobile Messaging Engine
   -> generated Rust contracts
-  -> Station generated API contracts
-  -> Station application/domain/persistence
+  -> canonical Station resource APIs
+  -> Conversation / Device / Recovery / Key Exchange application ports
 ```
 
 Reverse communication：
@@ -176,11 +189,11 @@ Station SSE wake
 | Engine direct | X3DH/Double Ratchet | actor-wide sessions |
 | Engine MLS | RFC 9420 private state | membership authority |
 | Engine store | SQLCipher transactions/projections | Station truth |
-| Station command | admission/event/fan-out | plaintext decrypt |
-| Station queue | lane/lease/replay/ACK | content interpretation |
-| Station federation | durable forwarding | new event identity |
-| Station recovery | opaque revisions | phrase/key access |
-| Station attachment | opaque session/object/grant | filename/key/nonce/plaintext |
+| Conversation DDD | admission/event/fan-out intents | plaintext decrypt |
+| Conversation Delivery | lane/lease/replay/ACK | content interpretation |
+| Shared Federation | durable forwarding | new event identity or domain policy |
+| Recovery | opaque revisions | phrase/key access |
+| Conversation Attachment | opaque session/object/grant | filename/key/nonce/plaintext |
 | Engine attachment | chunk crypto/resume/cache | authority ACL/object retention |
 | Engine search | SQLCipher FTS query/projection | Station plaintext query |
 
@@ -188,8 +201,9 @@ Station SSE wake
 
 - `apps/desktop/src/**` 不得导入 crypto/key-exchange command wrappers。
 - Web messaging runtime 不得调用 queue ACK/resume。
-- Station messaging domain 不得依赖 UI/client packages。
+- Station resource-owner domains 不得依赖 UI/client packages。
 - Queue service 不得调用 Direct/MLS crypto。
 - Direct/MLS modules 不得直接发送 HTTP。
 - Page/component 不得成为 runtime bootstrap owner。
 - 任何第二个 message store、device registry、queue worker registry 均禁止。
+- Conversation 之外不得出现第二个 Station Chat business handler 或 facade。

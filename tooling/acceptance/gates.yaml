@@ -203,8 +203,15 @@
       "tier": "ci-cheap",
       "description": "Run Station Dashboard web TypeScript checks."
     },
+    "station-api-ownership": {
+      "command": "go run ./apps/station/app/cmd/station_api_ownership --root . --registry docs/architecture/api-ownership/station-api-capabilities.yaml",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Parse Station handler registrations with Go AST and fail closed on API ownership, canonical route, owner root, superseded proto, and forbidden truth-store violations."
+    },
     "station-messaging-unit": {
-      "command": "go test ./apps/station/app/subserver/messaging/... ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/envelope/...",
+      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/envelope/...",
       "timeout_seconds": 600,
       "environment": "local",
       "tier": "ci-cheap",

@@ -145,6 +145,10 @@
 
 ### Step 6: Mobile group E2EE domain
 
+> Superseded on 2026-09-04 by MP-D16 / MP-W09. The Sender Keys implementation
+> below is historical; `packages/messaging-core/` now owns Direct/OpenMLS
+> protocol state and Mobile retains only platform adapters and projections.
+
 - 已新增 Mobile group E2EE domain 执行计划：`20260603-mobile-group-e2ee-domain.md`。
 - 已按 Desktop Sender Keys 现状对齐 Mobile 目标分层：
   - Rust capability kernel 承载 sender chain、SKDM、encrypt/decrypt、signature verify；

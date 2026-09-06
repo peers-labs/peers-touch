@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/social_gate"
+	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
 )
 
 // --- Operation extractors for gate wrappers ---
@@ -12,6 +14,11 @@ import (
 
 // extractCreateDirectOp extracts the target actor PTID from a CreateDirectConversationRequest body.
 func extractCreateDirectOp(body []byte) social_gate.Operation {
+	var protobufRequest chat.CreateMessagingDirectConversationRequest
+	if err := proto.Unmarshal(body, &protobufRequest); err == nil &&
+		protobufRequest.PeerPtid != "" {
+		return social_gate.Operation{TargetPtid: protobufRequest.PeerPtid}
+	}
 	var partial struct {
 		PeerPtid string `json:"peer_ptid"`
 	}
@@ -26,6 +33,14 @@ func extractCreateDirectOp(body []byte) social_gate.Operation {
 // The command-level action dispatching (add_member, remove_member, dissolve) is handled
 // at the service layer, which has full access to the deserialized protobuf command.
 func extractSubmitCommandOp(body []byte) social_gate.Operation {
+	var protobufRequest chat.SubmitMessagingCommandRequest
+	if err := proto.Unmarshal(body, &protobufRequest); err == nil &&
+		protobufRequest.Command != nil &&
+		protobufRequest.Command.ConversationId != "" {
+		return social_gate.Operation{
+			ConversationID: protobufRequest.Command.ConversationId,
+		}
+	}
 	var partial struct {
 		Command struct {
 			ConversationID string `json:"conversation_id"`

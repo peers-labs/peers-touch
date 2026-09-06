@@ -1,0 +1,337 @@
+schema_version: 1
+status: accepted_target
+scope: chat-social-federation-ownership-remediation
+activation:
+  state: implemented_expected_debt
+  gate_enabled: true
+  requirements:
+    - complete_inventory_for_every_governed_prefix
+    - implementation_gate_and_schema_validation_land_together
+governed_prefixes:
+  - /conversation/
+  - /messaging/
+  - /device/
+  - /recovery/
+  - /key-exchange/
+  - /api/v1/social/friend-request
+  - /api/v1/social/friend-requests
+  - /federation/
+owner_roots:
+  station.conversation:
+    - apps/station/app/subserver/conversation/
+  station.conversation.delivery:
+    - apps/station/app/subserver/conversation/
+  station.actor_identity:
+    - apps/station/app/subserver/actor_identity/subserver.go
+  station.recovery:
+    - apps/station/app/subserver/recovery/subserver.go
+  station.social:
+    - apps/station/app/subserver/social/handler.go
+  station.federation:
+    - apps/station/frame/core/federation/
+
+capabilities:
+  - id: chat.conversation.create_direct
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/direct }
+    request_proto: peers_touch.model.chat.v1.CreateDirectConversationRequest
+    response_proto: peers_touch.model.chat.v1.CreateDirectConversationResponse
+    truth_stores: [conversations, conversation_members, conversation_member_devices]
+    allowed_dependencies: [actor.device_directory.read, conversation.delivery.enqueue]
+    forbidden_aliases:
+      - { method: POST, path: /messaging/conversation/direct }
+    superseded_symbols:
+      - peers_touch.model.chat.v1.CreateMessagingDirectConversationRequest
+      - peers_touch.model.chat.v1.CreateMessagingDirectConversationResponse
+
+  - id: chat.conversation.create_group
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/group }
+    request_proto: peers_touch.model.chat.v1.CreateGroupConversationRequest
+    response_proto: peers_touch.model.chat.v1.CreateGroupConversationResponse
+    truth_stores: [conversations, conversation_members, conversation_member_devices]
+    allowed_dependencies: [actor.device_directory.read, conversation.delivery.enqueue]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.conversation.list
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: GET, path: /conversation/list }
+    request_proto: peers_touch.model.chat.v1.ListConversationsRequest
+    response_proto: peers_touch.model.chat.v1.ListConversationsResponse
+    truth_stores: [conversations, conversation_members]
+    allowed_dependencies: []
+    forbidden_aliases:
+      - { method: GET, path: /messaging/conversation/list }
+    superseded_symbols:
+      - peers_touch.model.chat.v1.ListMessagingConversationsRequest
+      - peers_touch.model.chat.v1.ListMessagingConversationsResponse
+
+  - id: chat.command.prepare
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/command/prepare }
+    request_proto: peers_touch.model.chat.v1.PrepareConversationCommandRequest
+    response_proto: peers_touch.model.chat.v1.PrepareConversationCommandResponse
+    truth_stores: [conversations, conversation_members, conversation_member_devices]
+    allowed_dependencies: [actor.device_directory.read, federation.endpoint_manifest.read]
+    forbidden_aliases:
+      - { method: POST, path: /messaging/command/prepare }
+    superseded_symbols:
+      - peers_touch.model.chat.v1.PrepareMessagingSendRequest
+      - peers_touch.model.chat.v1.PrepareMessagingSendResponse
+
+  - id: chat.command.submit
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/command }
+    request_proto: peers_touch.model.chat.v1.SubmitConversationCommandRequest
+    response_proto: peers_touch.model.chat.v1.SubmitConversationCommandResponse
+    truth_stores: [conversations, conversation_events, conversation_command_receipts]
+    allowed_dependencies: [conversation.delivery.enqueue, federation.delivery.enqueue]
+    forbidden_aliases:
+      - { method: POST, path: /messaging/command/submit }
+    superseded_symbols:
+      - peers_touch.model.chat.v1.SubmitMessagingCommandRequest
+      - peers_touch.model.chat.v1.SubmitMessagingCommandResponse
+
+  - id: chat.group.genesis.prepare
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/group/prepare }
+    request_proto: peers_touch.model.chat.v1.PrepareConversationGroupRequest
+    response_proto: peers_touch.model.chat.v1.PrepareConversationGroupResponse
+    truth_stores: [conversation_authority_plans]
+    allowed_dependencies: [actor.device_directory.read, federation.endpoint_manifest.read]
+    forbidden_aliases:
+      - { method: POST, path: /messaging/group/genesis/prepare }
+    superseded_symbols:
+      - peers_touch.model.chat.v1.PrepareMessagingGroupGenesisRequest
+      - peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse
+
+  - id: chat.membership.prepare
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/membership/prepare }
+    request_proto: peers_touch.model.chat.v1.PrepareConversationMembershipRequest
+    response_proto: peers_touch.model.chat.v1.PrepareConversationMembershipResponse
+    truth_stores: [conversation_authority_plans]
+    allowed_dependencies: [actor.device_directory.read, federation.endpoint_manifest.read]
+    forbidden_aliases:
+      - { method: POST, path: /messaging/membership/transition/prepare }
+    superseded_symbols:
+      - peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest
+      - peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse
+
+  - id: chat.read_cursor.submit
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/read-cursor }
+    request_proto: peers_touch.model.chat.v1.SubmitConversationReadCursorRequest
+    response_proto: peers_touch.model.chat.v1.SubmitConversationReadCursorResponse
+    truth_stores: [conversation_read_cursors]
+    allowed_dependencies: [conversation.delivery.enqueue]
+    forbidden_aliases:
+      - { method: POST, path: /messaging/receipt/submit }
+    superseded_symbols: []
+
+  - id: chat.delivery.receipt
+    domain_owner: station.conversation.delivery
+    truth_owner: conversation.delivery
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/delivery/receipt }
+    request_proto: peers_touch.model.chat.v1.SubmitConversationReceiptRequest
+    response_proto: peers_touch.model.chat.v1.SubmitConversationReceiptResponse
+    truth_stores: [device_queue_items]
+    allowed_dependencies: [conversation.membership.read]
+    forbidden_aliases:
+      - { method: POST, path: /messaging/receipt/delivery }
+      - { method: POST, path: /conversation/receipt }
+    superseded_symbols: []
+
+  - id: actor.device.enroll
+    domain_owner: station.actor_identity
+    truth_owner: actor.device_identity
+    exposure: client
+    canonical_route: { method: POST, path: /device/enroll }
+    request_proto: peers_touch.model.chat.v1.EnrollMessagingDeviceRequest
+    response_proto: peers_touch.model.chat.v1.EnrollMessagingDeviceResponse
+    truth_stores: [actor_devices]
+    allowed_dependencies: [actor.identity.verify]
+    forbidden_aliases:
+      - { method: POST, path: /messaging/device/enroll }
+      - { method: POST, path: /device/register }
+    superseded_symbols:
+      - peers_touch.model.chat.v1.RegisterDeviceRequest
+      - peers_touch.model.chat.v1.RegisterDeviceResponse
+
+  - id: chat.device.queue.claim
+    domain_owner: station.conversation.delivery
+    truth_owner: conversation.delivery
+    exposure: client
+    canonical_route: { method: POST, path: /device/inbox/claim }
+    request_proto: peers_touch.model.chat.v1.ClaimDeviceQueueRequest
+    response_proto: peers_touch.model.chat.v1.ClaimDeviceQueueResponse
+    truth_stores: [device_queue_lanes, device_queue_items]
+    allowed_dependencies: []
+    forbidden_aliases:
+      - { method: POST, path: /messaging/queue/claim }
+    superseded_symbols: []
+
+  - id: chat.device.queue.ack
+    domain_owner: station.conversation.delivery
+    truth_owner: conversation.delivery
+    exposure: client
+    canonical_route: { method: POST, path: /device/inbox/ack }
+    request_proto: peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemRequest
+    response_proto: peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemResponse
+    truth_stores: [device_queue_lanes, device_queue_items]
+    allowed_dependencies: []
+    forbidden_aliases:
+      - { method: POST, path: /messaging/queue/ack }
+    superseded_symbols: []
+
+  - id: chat.device.queue.reject
+    domain_owner: station.conversation.delivery
+    truth_owner: conversation.delivery
+    exposure: client
+    canonical_route: { method: POST, path: /device/inbox/reject }
+    request_proto: peers_touch.model.chat.v1.RejectDeviceQueueItemRequest
+    response_proto: peers_touch.model.chat.v1.RejectDeviceQueueItemResponse
+    truth_stores: [device_queue_lanes, device_queue_items]
+    allowed_dependencies: []
+    forbidden_aliases:
+      - { method: POST, path: /messaging/queue/reject }
+    superseded_symbols: []
+
+  - id: recovery.revision.put
+    domain_owner: station.recovery
+    truth_owner: recovery.archive
+    exposure: client
+    canonical_route: { method: POST, path: /recovery/revision }
+    request_proto: peers_touch.model.chat.v1.PutRecoveryRevisionRequest
+    response_proto: peers_touch.model.chat.v1.PutRecoveryRevisionResponse
+    truth_stores: [recovery_revisions]
+    allowed_dependencies: []
+    forbidden_aliases:
+      - { method: POST, path: /messaging/recovery/revision }
+    superseded_symbols: []
+
+  - id: recovery.revision.latest
+    domain_owner: station.recovery
+    truth_owner: recovery.archive
+    exposure: client
+    canonical_route: { method: GET, path: /recovery/latest }
+    request_proto: peers_touch.model.chat.v1.GetLatestRecoveryRevisionRequest
+    response_proto: peers_touch.model.chat.v1.GetLatestRecoveryRevisionResponse
+    truth_stores: [recovery_revisions]
+    allowed_dependencies: []
+    forbidden_aliases:
+      - { method: GET, path: /messaging/recovery/latest }
+    superseded_symbols: []
+
+  - id: social.friend_request.send
+    domain_owner: station.social
+    truth_owner: social.relationship
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/friend-request/send }
+    request_proto: peers_touch.model.social.v1.SendFriendRequestRequest
+    response_proto: peers_touch.model.social.v1.SendFriendRequestResponse
+    truth_stores: [friend_chat_friend_requests]
+    allowed_dependencies: [federation.delivery.enqueue]
+    forbidden_aliases:
+      - { method: POST, path: /friend-chat/friend-request/send }
+    superseded_symbols: []
+
+  - id: social.friend_request.accept
+    domain_owner: station.social
+    truth_owner: social.relationship
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/friend-request/accept }
+    request_proto: peers_touch.model.social.v1.AcceptFriendRequestRequest
+    response_proto: peers_touch.model.social.v1.AcceptFriendRequestResponse
+    truth_stores: [friend_chat_friend_requests, friend_chat_friendships]
+    allowed_dependencies: [federation.delivery.enqueue, conversation.create_direct]
+    forbidden_aliases:
+      - { method: POST, path: /friend-chat/friend-request/accept }
+    superseded_symbols: []
+
+  - id: social.friend_request.reject
+    domain_owner: station.social
+    truth_owner: social.relationship
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/friend-request/reject }
+    request_proto: peers_touch.model.social.v1.RejectFriendRequestRequest
+    response_proto: peers_touch.model.social.v1.RejectFriendRequestResponse
+    truth_stores: [friend_chat_friend_requests]
+    allowed_dependencies: [federation.delivery.enqueue]
+    forbidden_aliases:
+      - { method: POST, path: /friend-chat/friend-request/reject }
+    superseded_symbols: []
+
+  - id: social.friend_request.list
+    domain_owner: station.social
+    truth_owner: social.relationship
+    exposure: client
+    canonical_route: { method: GET, path: /api/v1/social/friend-requests }
+    request_proto: peers_touch.model.social.v1.ListFriendRequestsRequest
+    response_proto: peers_touch.model.social.v1.ListFriendRequestsResponse
+    truth_stores: [friend_chat_friend_requests]
+    allowed_dependencies: []
+    forbidden_aliases:
+      - { method: GET, path: /friend-chat/friend-requests }
+    superseded_symbols: []
+
+  - id: federation.delivery.receive
+    domain_owner: station.federation
+    truth_owner: federation.delivery
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/delivery }
+    request_proto: peers_touch.model.federation.v1.DeliverFederatedDomainFrameRequest
+    response_proto: peers_touch.model.federation.v1.DeliverFederatedDomainFrameResponse
+    truth_stores: [federation_delivery_inbox]
+    allowed_dependencies: [federation.domain_receiver.dispatch]
+    forbidden_aliases:
+      - { method: POST, path: /messaging/federation/deliver }
+      - { method: POST, path: /conversation/federation/command-proposal }
+    superseded_symbols: []
+
+target_absent_routes:
+  - { method: POST, path: /messaging/conversation/direct }
+  - { method: GET, path: /messaging/conversation/list }
+  - { method: POST, path: /messaging/command/prepare }
+  - { method: POST, path: /messaging/command/submit }
+  - { method: POST, path: /messaging/group/genesis/prepare }
+  - { method: POST, path: /messaging/membership/transition/prepare }
+  - { method: POST, path: /messaging/receipt/submit }
+  - { method: POST, path: /conversation/receipt }
+  - { method: POST, path: /device/register }
+  - { method: POST, path: /keypackage/upload }
+  - { method: POST, path: /keypackage/fetch }
+  - { method: GET, path: /keypackage/count }
+  - { method: POST, path: /dkx/send }
+  - { method: POST, path: /messaging/federation/deliver }
+  - { method: POST, path: /conversation/federation/command-proposal }
+
+target_absent_prefixes:
+  - /messaging/
+
+target_absent_truth_stores:
+  - messaging_conversations
+  - messaging_conversation_members
+  - messaging_conversation_member_devices
+  - messaging_events
+  - messaging_command_receipts
+  - messaging_authority_plans
+  - messaging_recovery_revisions
