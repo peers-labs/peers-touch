@@ -72,6 +72,11 @@ RECOVERY_SELECTORS = {
     "restore_input": "[data-recovery-restore-input]",
     "restore_submit": "[data-recovery-restore-submit]",
 }
+MESSAGE_ACTION_SELECTORS = {
+    "reaction": '[data-message-action="reaction"]',
+    "reply": '[data-message-action="reply"]',
+    "thread": '[data-message-action="thread"]',
+}
 NATIVE_INPUT_ACK_POLL_SECONDS = 0.01
 NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS = 30
 VALID_ATTACHMENT_IMAGE_BYTES = bytes.fromhex(
@@ -1694,6 +1699,23 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         )
 
+    def click_message_action(
+        self,
+        actor: str,
+        message_id: str,
+        action: str,
+    ) -> Any:
+        client = self.clients[actor]
+        toolbar = self.hover_message(actor, message_id)
+        selector = MESSAGE_ACTION_SELECTORS.get(action)
+        if selector is None:
+            raise GateError(f"unsupported message action: {action}")
+        element = toolbar.find_element(
+            By.CSS_SELECTOR,
+            selector,
+        )
+        return self._click_focused_element(client, element)
+
     def composer_send(self, actor: str, text: str = "") -> None:
         client = self.clients[actor]
         composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
@@ -2302,8 +2324,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 if item
             ],
         }
-        self.hover_message(actor, root_id)
-        self.click(actor, '[data-message-action="thread"]')
+        self.click_message_action(actor, root_id, "thread")
         panel = self.clients[actor].find_element(
             "[data-chat-thread-panel='open']",
             30,
@@ -2388,8 +2409,7 @@ class NativeProductClosureGate(AcceptanceGate):
         bob_root = self.wait_message_text("bob", bob_text)
         self.wait_message_text("alice", bob_text)
 
-        self.hover_message("alice", str(bob_root["id"]))
-        self.click("alice", '[data-message-action="reply"]')
+        self.click_message_action("alice", str(bob_root["id"]), "reply")
         self.composer_send("alice", reply_text)
         reply = self.wait_message_text("alice", reply_text)
         self.wait_message_text("bob", reply_text)
@@ -2410,8 +2430,7 @@ class NativeProductClosureGate(AcceptanceGate):
             return {"count": count, "ids": ids} if count == 1 and ids else None
 
         thread_summary = wait_until(summary, "thread summary projection", timeout=120)
-        self.hover_message("alice", str(bob_root["id"]))
-        self.click("alice", '[data-message-action="thread"]')
+        self.click_message_action("alice", str(bob_root["id"]), "thread")
         panel = self.clients["alice"].find_element("[data-chat-thread-panel='open']", 30)
         panel_snapshot = self.clients["alice"].execute_script(
             """
@@ -2549,8 +2568,7 @@ class NativeProductClosureGate(AcceptanceGate):
         return value
 
     def choose_reaction(self, actor: str, message_id: str, emoji: str) -> None:
-        self.hover_message(actor, message_id)
-        self.click(actor, '[data-message-action="reaction"]')
+        self.click_message_action(actor, message_id, "reaction")
         picker = self.clients[actor].find_element(
             f'[data-message-action-overlay="reaction-picker"]'
             f'[data-message-action-message="{message_id}"]',
@@ -2916,8 +2934,7 @@ class NativeProductClosureGate(AcceptanceGate):
             self.open_details(actor)
             phases.append(capture_phase({"details"}))
             self.click(actor, "[data-chat-detail-toggle]")
-            self.hover_message(actor, thread_root_id)
-            self.click(actor, '[data-message-action="thread"]')
+            self.click_message_action(actor, thread_root_id, "thread")
             self.clients[actor].find_element("[data-chat-thread-panel='open']", 30)
             phases.append(capture_phase({"thread"}))
             self.click(actor, "[data-chat-thread-close]")
