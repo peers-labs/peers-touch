@@ -819,6 +819,18 @@ try:
             text=str(payload.get("text") or ""),
             private_source=bool(payload.get("privateSource")),
         ) or {}
+    elif operation == "post_key_to_process":
+        process_id = int(payload["processId"])
+        adapter.activate_process(process_id)
+        adapter.post_key(
+            NativeKey(payload["key"]),
+            modifiers=tuple(
+                NativeModifier(item) for item in payload.get("modifiers", [])
+            ),
+            text=str(payload.get("text") or ""),
+            private_source=bool(payload.get("privateSource")),
+        )
+        result = adapter.focused_control(process_id).to_dict()
     elif operation == "reveal_file_chooser_location":
         result = adapter.reveal_file_chooser_location() or {}
     elif operation == "focused_control":
