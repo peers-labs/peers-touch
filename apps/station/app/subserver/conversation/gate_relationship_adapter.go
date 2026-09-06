@@ -15,12 +15,15 @@ const blockStatusFriendship = 3
 // existing social infrastructure (follows/blocks) still uses uint64 actor_id
 // internally. The adapter resolves ptid → actor_id via the touch_actor table.
 type ConversationRelationshipAdapter struct {
-	repo Repository
-	db   *gorm.DB
+	db        *gorm.DB
+	authority conversationAuthorityReader
 }
 
-func NewConversationRelationshipAdapter(repo Repository, db *gorm.DB) *ConversationRelationshipAdapter {
-	return &ConversationRelationshipAdapter{repo: repo, db: db}
+func NewConversationRelationshipAdapter(
+	db *gorm.DB,
+	authority conversationAuthorityReader,
+) *ConversationRelationshipAdapter {
+	return &ConversationRelationshipAdapter{db: db, authority: authority}
 }
 
 func (a *ConversationRelationshipAdapter) AreMutualFollowers(ctx context.Context, ptidA, ptidB string) (bool, error) {
@@ -77,7 +80,24 @@ func (a *ConversationRelationshipAdapter) IsBlocked(ctx context.Context, blocker
 }
 
 func (a *ConversationRelationshipAdapter) HaveSharedConversation(ctx context.Context, ptidA, ptidB string) (bool, error) {
-	return a.repo.HaveSharedConversation(ctx, ptidA, ptidB)
+	if a.authority == nil {
+		return false, nil
+	}
+	conversations, err := a.authority.ListConversationsForActor(ctx, ptidA)
+	if err != nil {
+		return false, err
+	}
+	for _, conversation := range conversations {
+		if conversation.Conversation == nil || !conversation.Conversation.Active {
+			continue
+		}
+		for _, memberPTID := range conversation.MemberPTIDs {
+			if memberPTID == ptidB {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func (a *ConversationRelationshipAdapter) resolveActorPair(ctx context.Context, ptidA, ptidB string) (uint64, uint64, error) {

@@ -287,7 +287,7 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
     }
     let resp = station_client::request_json_auth_with_device_id(
         Method::GET,
-        "/messaging/conversation/list",
+        "/conversation/list",
         token,
         None,
         None,
