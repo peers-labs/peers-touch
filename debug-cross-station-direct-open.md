@@ -43,6 +43,7 @@
 | Z | Launching a separate interactive broker worker for each key steals focus long enough for the 140 ms overlay dismissal timer to remove the toolbar before the key is injected. | High | Low | Confirmed by post-fix event evidence: the thread button received `focusout`, the toolbar disappeared 149 ms later, and Tab reached `BODY` 583 ms after dismissal. |
 | AA | Product Closure invalidates its proven keyboard picker by closing it, then races a second pointer worker while reopening the same transient action. | High | Low | Confirmed by run `20260906T124104139489Z-1980e06865f515f88d65c33cfe774e02`: the atomic keyboard sequence opened the picker and focused `👍`, then `choose_reaction` timed out reopening the picker after the separate Escape and pointer path. |
 | AB | Selecting an emoji from an already-open picker through a separately scheduled pointer worker repeats the same transient-focus race. | High | Low | Confirmed by run `20260906T132928020878Z-01d741beef2f02a02abd3630ff6f1da3`: `toolbar_keyboard_reachable` passed, but the picker disappeared before `_click_focused_element` observed the emoji click. |
+| AC | Splitting keyboard picker proof and keyboard selection into separate native workers still loses the stable row/toolbar boundary between phases. | High | Low | Confirmed by run `20260906T141937599501Z-9f41dd564758034a3fa8845ee2ecfd4f`: picker proof passed, but the subsequent selection helper timed out before its row-plus-toolbar precondition. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -481,3 +482,15 @@ AB. Reaction selection now uses one self-contained native sequence from the
 stable message row through picker open and first-emoji activation; the same
 sequence owns initial delivery and fault-retry selection. Cleanup for the
 failed run remained `DONE/PROVEN`.
+
+Exact-source run
+`20260906T141937599501Z-9f41dd564758034a3fa8845ee2ecfd4f` at commit
+`ca5090fa3cf67c85bdef2ad4913d622dc7207cfb`, runtime-cell run
+`20260906t142004377905z-cba94f6584bc55da`, and binary SHA-256
+`09b0aabd56a07b414434554f2fddf836a08b9c2c4e325192ba012b7b1a484423`
+again passed the picker-open proof but failed before the second native worker
+could establish its stable row-plus-toolbar precondition. This confirms
+hypothesis AC. The Gate now combines picker reachability, localized
+accessibility-label observation, and first-emoji activation into one native
+sequence, then verifies the captured DOM event chain after selection. Cleanup
+for the failed run remained `DONE/PROVEN`.
