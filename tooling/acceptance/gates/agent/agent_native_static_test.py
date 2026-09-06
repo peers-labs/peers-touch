@@ -1329,6 +1329,14 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         )
         for label in ("'auto'", "'manual'", "'deny'", "'expiry'"):
             self.assertIn(label, scenario)
+        self.assertIn(
+            "reportFoundationF04ExpirySettlementDebug(",
+            run_case,
+        )
+        self.assertIn("'settlement-timeout'", run_case)
+        self.assertIn("toolFactCount: facts.length", run_case)
+        self.assertIn("toolStatuses: facts.map", run_case)
+        self.assertIn("replayTerminal: diagnosticReplayTerminal(replay)", run_case)
         self.assertLess(
             loop_start,
             scenario.index("const loopTurn = await startFoundationToolTurn"),

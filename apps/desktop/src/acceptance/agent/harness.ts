@@ -2368,14 +2368,66 @@ async function runFoundationF04Scenario(input: {
       }
     }
 
-    const beforeReplay = await waitForFoundationToolFacts(
-      turn.turnId,
-      (facts, replay) =>
-        facts.length === 1
-        && Number(facts[0].status) === targetStatus
-        && diagnosticReplayTerminal(replay),
-      `Foundation ${label} ToolCall settlement`,
-    );
+    let beforeReplay: Awaited<ReturnType<typeof waitForFoundationToolFacts>>;
+    try {
+      beforeReplay = await waitForFoundationToolFacts(
+        turn.turnId,
+        (facts, replay) =>
+          facts.length === 1
+          && Number(facts[0].status) === targetStatus
+          && diagnosticReplayTerminal(replay),
+        `Foundation ${label} ToolCall settlement`,
+      );
+    } catch (error) {
+      if (label === 'expiry') {
+        try {
+          const replay = await foundationDiagnosticReplay(turn.turnId);
+          const facts = foundationDiagnosticToolFacts(replay);
+          await reportFoundationF04ExpirySettlementDebug(
+            'A-D',
+            'settlement-timeout',
+            {
+              toolFactCount: facts.length,
+              toolStatuses: facts.map((fact) => Number(fact.status)),
+              executionDeadlines: facts.map((fact) =>
+                String(
+                  evidenceField(
+                    fact,
+                    'executionDeadline',
+                    'execution_deadline',
+                  ) ?? '',
+                )),
+              replayStatus: Number(replay.status),
+              replayTerminal: diagnosticReplayTerminal(replay),
+              terminalReason: String(
+                evidenceField(
+                  replay,
+                  'terminalReason',
+                  'terminal_reason',
+                ) ?? '',
+              ),
+              observedEventTypes: turn.observed.events.map(
+                (event) => event.event,
+              ),
+              errorType: error instanceof Error
+                ? error.name
+                : typeof error,
+            },
+          );
+        } catch (diagnosticError) {
+          await reportFoundationF04ExpirySettlementDebug(
+            'D',
+            'settlement-diagnostic-failed',
+            {
+              errorType: diagnosticError instanceof Error
+                ? diagnosticError.name
+                : typeof diagnosticError,
+            },
+          );
+        }
+      }
+      throw error;
+    }
     let replayedDecision = firstDecision;
     if (decisionIntent && firstDecision) {
       replayedDecision = await api.submitAgentToolDecision(decisionIntent);
@@ -6402,6 +6454,27 @@ function reportFoundationRecoveryErrorKeyDebug(
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:exerciseFoundationRecoveryFailure',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:foundation-f04-expiry-settlement
+function reportFoundationF04ExpirySettlementDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7784/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-f04-expiry-settlement',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationF04Scenario',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
