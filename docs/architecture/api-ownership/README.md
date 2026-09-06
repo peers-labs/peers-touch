@@ -62,7 +62,7 @@ machine ownership registry and regression fixtures.
 | [data-model.md](./data-model.md) | Machine-readable capability registry contract |
 | [module-layout.md](./module-layout.md) | Target module and dependency layout |
 | [integration.md](./integration.md) | Evidence ledger, root cause, current-to-target mapping, and deletions |
-| [station-api-capabilities.yaml](./station-api-capabilities.yaml) | Accepted target projection; implementation inventory and Gate remain pending |
+| [station-api-capabilities.yaml](./station-api-capabilities.yaml) | Complete governed-route inventory, target deletion set, DDD layer rules, and fail-closed Gate input |
 | [execution-plans/20260906-conversation-authority-hard-cut.md](./execution-plans/20260906-conversation-authority-hard-cut.md) | Dependency-ordered Conversation DDD and full Messaging facade hard cut |
 | [execution-plans/20260906-conversation-authority-hard-cut-review-prompt.md](./execution-plans/20260906-conversation-authority-hard-cut-review-prompt.md) | Independent plan review prompt |
 
@@ -71,4 +71,6 @@ machine ownership registry and regression fixtures.
 The Owner accepted AO-D01 through AO-D06, revised MP-D30, and Federated Social
 D-07 on 2026-09-06. Conversation is the sole Chat entry point, and the internal
 Device Messaging Engine remains a client runtime. The Owner approved the
-dependency-ordered execution plan on 2026-09-06; CA-W0 is in progress.
+dependency-ordered execution plan on 2026-09-06. CA-W0 has complete route and
+deletion inventory plus registry-driven DDD import enforcement; downstream
+owner, proto, and store migrations remain fail-closed work.

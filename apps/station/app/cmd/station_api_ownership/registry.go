@@ -84,6 +84,36 @@ func validateAndNormalizeRegistry(registry *ownershipRegistry, registryPath stri
 		registry.OwnerRoots[owner] = deduplicateStrings(normalizedRoots)
 	}
 
+	if len(registry.DDDLayers) == 0 {
+		addInvalid("ddd_layers must not be empty")
+	}
+	layerNames := make(map[string]struct{}, len(registry.DDDLayers))
+	for index := range registry.DDDLayers {
+		rule := &registry.DDDLayers[index]
+		rule.Name = strings.TrimSpace(rule.Name)
+		if rule.Name == "" {
+			addInvalid(fmt.Sprintf("ddd_layers[%d].name must not be empty", index))
+		} else if _, exists := layerNames[rule.Name]; exists {
+			addInvalid(fmt.Sprintf("duplicate DDD layer name %q", rule.Name))
+		} else {
+			layerNames[rule.Name] = struct{}{}
+		}
+
+		normalizedRoot, err := normalizeRepoPath(rule.Root)
+		if err != nil {
+			addInvalid(fmt.Sprintf("DDD layer %q root: %v", rule.Name, err))
+		} else {
+			rule.Root = normalizedRoot
+		}
+		rule.ForbiddenImports = normalizeImportPrefixes(rule.ForbiddenImports)
+		if len(rule.ForbiddenImports) == 0 {
+			addInvalid(fmt.Sprintf("DDD layer %q forbidden_imports must not be empty", rule.Name))
+		}
+	}
+	sort.Slice(registry.DDDLayers, func(i, j int) bool {
+		return registry.DDDLayers[i].Name < registry.DDDLayers[j].Name
+	})
+
 	capabilityIDs := make(map[string]struct{}, len(registry.Capabilities))
 	canonicalRoutes := make(map[string]string, len(registry.Capabilities))
 	truthStoreOwners := make(map[string]string)
@@ -261,6 +291,18 @@ func normalizeIdentifiers(values []string) []string {
 	normalized := make([]string, 0, len(values))
 	for _, value := range values {
 		value = strings.TrimSpace(value)
+		if value != "" {
+			normalized = append(normalized, value)
+		}
+	}
+	sort.Strings(normalized)
+	return deduplicateStrings(normalized)
+}
+
+func normalizeImportPrefixes(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.Trim(strings.TrimSpace(value), "/")
 		if value != "" {
 			normalized = append(normalized, value)
 		}
