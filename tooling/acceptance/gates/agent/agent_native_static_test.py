@@ -502,6 +502,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "Reply with 20 short numbered items for retry sample",
             scenario,
         )
+        self.assertIn(
+            "const retrySourceNonce = crypto.randomUUID()",
+            scenario,
+        )
+        self.assertIn(
+            "Include nonce ${retrySourceNonce} in every item.",
+            scenario,
+        )
         self.assertNotIn(
             "100 short items",
             scenario,
