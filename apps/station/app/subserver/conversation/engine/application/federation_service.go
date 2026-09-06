@@ -19,8 +19,9 @@ type FederationPolicy struct {
 }
 
 type AuthorityCommandService interface {
-	Submit(
+	SubmitFederated(
 		ctx context.Context,
+		sourceHomeStationID string,
 		command *chat.ChatCommand,
 	) (*chat.ConversationEvent, error)
 }
@@ -223,28 +224,11 @@ func (s *FederationService) deliverAuthorityCommand(
 		frame.AuthoritySequence != 0 {
 		return nil, messaging.ErrFederationFrameInvalid
 	}
-	manifests, err := resolveEndpointManifestSnapshots(
+	if _, err := s.authority.SubmitFederated(
 		ctx,
-		s.manifestResolver,
-		[]string{payload.Command.Sender.Ptid},
-	)
-	if err != nil {
-		return nil, err
-	}
-	senderManifest, _, err := manifestEntryForEndpoint(
-		manifests,
-		payload.Command.Sender,
-	)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"messaging: authority command sender endpoint is absent from the verified manifest: %w",
-			messaging.ErrSenderUnauthorized,
-		)
-	}
-	if senderManifest.HomeStationId != frame.SourceStationId {
-		return nil, messaging.ErrSenderUnauthorized
-	}
-	if _, err := s.authority.Submit(ctx, payload.Command); err != nil {
+		frame.SourceStationId,
+		payload.Command,
+	); err != nil {
 		return nil, err
 	}
 	duplicate, acknowledged, err := s.unitOfWork.IngestFederationFrame(

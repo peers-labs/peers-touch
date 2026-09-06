@@ -3,6 +3,7 @@ package application
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -38,6 +39,10 @@ type AuthorityService struct {
 	frameSigner      messaging.FederationFrameSigner
 	manifestResolver messaging.EndpointManifestResolver
 	clock            func() time.Time
+}
+
+type federatedCommandAuthorization struct {
+	actorIdentityPublicKey []byte
 }
 
 func NewAuthorityService(
@@ -225,6 +230,55 @@ func (s *AuthorityService) Submit(
 	ctx context.Context,
 	command *chat.ChatCommand,
 ) (*chat.ConversationEvent, error) {
+	return s.submit(ctx, command, nil)
+}
+
+// SubmitFederated authorizes a remote endpoint from its verified Home Station
+// manifest before entering the shared authority commit transaction.
+func (s *AuthorityService) SubmitFederated(
+	ctx context.Context,
+	sourceHomeStationID string,
+	command *chat.ChatCommand,
+) (*chat.ConversationEvent, error) {
+	sourceHomeStationID = strings.TrimSpace(sourceHomeStationID)
+	if sourceHomeStationID == "" || command == nil || command.Sender == nil {
+		return nil, messaging.ErrSenderUnauthorized
+	}
+	manifests, err := resolveEndpointManifestSnapshots(
+		ctx,
+		s.manifestResolver,
+		[]string{command.Sender.Ptid},
+	)
+	if err != nil {
+		return nil, err
+	}
+	senderManifest, _, err := manifestEntryForEndpoint(manifests, command.Sender)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"conversation: federated sender endpoint is absent from the verified manifest: %w",
+			messaging.ErrSenderUnauthorized,
+		)
+	}
+	if senderManifest.HomeStationId != sourceHomeStationID ||
+		len(senderManifest.ActorIdentityPublicKey) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf(
+			"conversation: federated sender Home Station does not match authenticated source: %w",
+			messaging.ErrSenderUnauthorized,
+		)
+	}
+	return s.submit(ctx, command, &federatedCommandAuthorization{
+		actorIdentityPublicKey: append(
+			[]byte(nil),
+			senderManifest.ActorIdentityPublicKey...,
+		),
+	})
+}
+
+func (s *AuthorityService) submit(
+	ctx context.Context,
+	command *chat.ChatCommand,
+	federatedAuthorization *federatedCommandAuthorization,
+) (*chat.ConversationEvent, error) {
 	if command == nil || command.CommandId == "" || command.ConversationId == "" ||
 		command.Sender == nil ||
 		command.Sender.Ptid == "" ||
@@ -313,12 +367,14 @@ func (s *AuthorityService) Submit(
 		if !conversation.Active {
 			return messaging.ErrConversationState
 		}
-		active, err := repositories.Devices.IsActive(ctx, command.Sender)
-		if err != nil {
-			return err
-		}
-		if !active {
-			return messaging.ErrSenderUnauthorized
+		if federatedAuthorization == nil {
+			active, err := repositories.Devices.IsActive(ctx, command.Sender)
+			if err != nil {
+				return err
+			}
+			if !active {
+				return messaging.ErrSenderUnauthorized
+			}
 		}
 		plan, err := buildSendPlan(
 			ctx,
@@ -434,12 +490,20 @@ func (s *AuthorityService) Submit(
 				return err
 			}
 		}
-		senderActorIdentityKey, err := repositories.Devices.ActorIdentityPublicKey(
-			ctx,
-			command.Sender.Ptid,
-		)
-		if err != nil {
-			return err
+		var senderActorIdentityKey []byte
+		if federatedAuthorization == nil {
+			senderActorIdentityKey, err = repositories.Devices.ActorIdentityPublicKey(
+				ctx,
+				command.Sender.Ptid,
+			)
+			if err != nil {
+				return err
+			}
+		} else {
+			senderActorIdentityKey = append(
+				[]byte(nil),
+				federatedAuthorization.actorIdentityPublicKey...,
+			)
 		}
 		if err := enqueueEventPayloads(
 			ctx,
