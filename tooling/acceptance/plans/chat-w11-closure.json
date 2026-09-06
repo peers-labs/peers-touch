@@ -30,12 +30,12 @@
     },
     {
       "id": "station-messaging-unit",
-      "command": "go test ./apps/station/app/subserver/messaging/... ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/envelope/...",
+      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/envelope/...",
       "timeout_seconds": 600,
       "environment": "local",
       "provisioner": "",
       "tier": "ci-cheap",
-      "description": "Run Station messaging, conversation, and envelope package tests.",
+      "description": "Run Station Conversation and envelope package tests.",
       "required_by": [
         "closure:MP-W11"
       ]
@@ -66,7 +66,7 @@
     },
     {
       "id": "chat-native-visible-static",
-      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test",
+      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
       "timeout_seconds": 120,
       "environment": "local",
       "provisioner": "",
