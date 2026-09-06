@@ -1954,6 +1954,50 @@ async function withFoundationCapabilitiesDisabled<T>(
   }
 }
 
+async function prepareFoundationReadyCapabilityFixture(
+  agent: NonNullable<ReturnType<typeof selectedAgent>>,
+  platform: string,
+): Promise<{
+  authoritativeAgent: NonNullable<ReturnType<typeof selectedAgent>>;
+  fixture: FoundationToolFixture;
+}> {
+  await restorePersistedFoundationCapabilityIsolation();
+  await restorePersistedFoundationCapabilityFixture();
+  const agentId = agent.id || agent.name;
+  const authoritativeAgent = await api.getAgent(agentId);
+  const fixture = await foundationToolFixture(agentId, platform);
+  const originalBinding = fixture.binding;
+  if (
+    !originalBinding
+    || !originalBinding.enabled
+    || originalBinding.approvalPolicy !== CapabilityApprovalPolicy.MANUAL
+  ) {
+    const journal: FoundationCapabilityFixtureJournal = {
+      agentId,
+      agentVersion: authoritativeAgent.version,
+      capabilityId: fixture.manifest.capabilityId,
+      capabilityVersion: fixture.manifest.version,
+      setupIdempotencyKey: crypto.randomUUID(),
+      originalBinding: originalBinding
+        ? {
+            bindingId: originalBinding.bindingId,
+            enabled: originalBinding.enabled,
+            approvalPolicy: originalBinding.approvalPolicy,
+            revision: originalBinding.revision.toString(),
+          }
+        : null,
+    };
+    const serializedJournal = JSON.stringify(journal);
+    parseFoundationCapabilityFixtureJournal(serializedJournal);
+    window.localStorage.setItem(
+      FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY,
+      serializedJournal,
+    );
+    await prepareFoundationCapabilityFixture(journal);
+  }
+  return { authoritativeAgent, fixture };
+}
+
 async function withFoundationReadyCapabilityFixture<T>(
   agent: NonNullable<ReturnType<typeof selectedAgent>>,
   platform: string,
@@ -1961,45 +2005,13 @@ async function withFoundationReadyCapabilityFixture<T>(
     authoritativeAgent: NonNullable<ReturnType<typeof selectedAgent>>,
   ) => Promise<T>,
 ): Promise<T> {
-  await restorePersistedFoundationCapabilityIsolation();
-  await restorePersistedFoundationCapabilityFixture();
-  const agentId = agent.id || agent.name;
-  const authoritativeAgent = await api.getAgent(agentId);
-  const fixture = await foundationToolFixture(agentId, platform);
-  const originalBinding = fixture.binding;
+  const { authoritativeAgent } =
+    await prepareFoundationReadyCapabilityFixture(agent, platform);
   let outcome:
     | { ok: true; value: T }
     | { ok: false; error: unknown };
 
   try {
-    if (
-      !originalBinding
-      || !originalBinding.enabled
-      || originalBinding.approvalPolicy !== CapabilityApprovalPolicy.MANUAL
-    ) {
-      const journal: FoundationCapabilityFixtureJournal = {
-        agentId,
-        agentVersion: authoritativeAgent.version,
-        capabilityId: fixture.manifest.capabilityId,
-        capabilityVersion: fixture.manifest.version,
-        setupIdempotencyKey: crypto.randomUUID(),
-        originalBinding: originalBinding
-          ? {
-              bindingId: originalBinding.bindingId,
-              enabled: originalBinding.enabled,
-              approvalPolicy: originalBinding.approvalPolicy,
-              revision: originalBinding.revision.toString(),
-            }
-          : null,
-      };
-      const serializedJournal = JSON.stringify(journal);
-      parseFoundationCapabilityFixtureJournal(serializedJournal);
-      window.localStorage.setItem(
-        FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY,
-        serializedJournal,
-      );
-      await prepareFoundationCapabilityFixture(journal);
-    }
     outcome = {
       ok: true,
       value: await operation(authoritativeAgent),
@@ -10589,6 +10601,8 @@ export function installAcceptanceHarness(): void {
       }
 
       if (cell === 'AS-F02') {
+        const { fixture: queueFixture } =
+          await prepareFoundationReadyCapabilityFixture(agent, platform);
         await cleanupStaleFoundationQueueConversations(agentId);
         const conversation = await api.createAgentConversation({
           agent_id: agentId,
@@ -10635,7 +10649,9 @@ export function installAcceptanceHarness(): void {
           conversation.conversation_id,
         );
         const activeTurnInput =
-          'Write a detailed 1200-word numbered response about reliable queues.';
+          `Call ${queueFixture.toolName} exactly once with `
+          + `${JSON.stringify(queueFixture.arguments)}. Wait for approval before `
+          + 'continuing, then answer with one short sentence.';
         const activeStartedAt = performance.now();
         const active = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
@@ -10756,6 +10772,19 @@ export function installAcceptanceHarness(): void {
           active.controller.abort();
           throw new Error('agent.acceptance.foundationTurnIdMissing');
         }
+        await waitForToolApprovalEvent({
+          conversationId: conversation.conversation_id,
+          turnId: activeTurnId,
+          observed: active,
+        });
+        void reportFoundationQueueCapacityDebug(
+          'A,H',
+          'active-approval-observed',
+          {
+            elapsedSinceActiveMs: performance.now() - activeStartedAt,
+            activeEventTypes: active.events.map((event) => event.event),
+          },
+        );
         const queuedResultsPromise = Promise.all(
           queuedTurns.map((queued) => queued.result),
         );
@@ -11174,6 +11203,8 @@ export function installAcceptanceHarness(): void {
             deletedAfterSettlement,
           },
         };
+        await restorePersistedFoundationCapabilityIsolation();
+        await restorePersistedFoundationCapabilityFixture();
       }
 
       if (cell === 'AS-F03') {
