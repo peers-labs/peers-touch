@@ -20,6 +20,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
     evaluate_base_cancelled,
+    evaluate_base_context_overflow,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -35,6 +36,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_approval_denied_capture,
     valid_active_mutation_conflict_capture,
     valid_cancelled_capture,
+    valid_context_overflow_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -102,6 +104,12 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
         facts = valid_attachment_rejected_capture()
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_base_attachment_rejected(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        return result
+    if probe.cell == "BASE-CONTEXT_OVERFLOW":
+        facts = valid_context_overflow_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_context_overflow(facts)
         result["runtime-events"] = typed_runtime_role(facts)
         return result
     if probe.cell == "BASE-APPROVAL_EXPIRED":
@@ -451,6 +459,35 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneProbeError,
             "BASE-CANCELLED assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_context_overflow_routes_to_independent_oracle(self) -> None:
+        facts = valid_context_overflow_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_context_overflow(facts),
+            "runtime-events": typed_runtime_role(facts),
+            "runtimeAttestation": {
+                "actorIdentityHash": facts["runtimeEvent"]["sourcePtidHash"],
+            },
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-CONTEXT_OVERFLOW",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroPersistenceAndProvider": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-CONTEXT_OVERFLOW assertions do not match",
         ):
             assert_group_one_capture(probe, capture_value)
 

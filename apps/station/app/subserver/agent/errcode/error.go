@@ -24,6 +24,7 @@ const (
 	AgentToolApprovalDenied  Code = "TOOL_APPROVAL_DENIED"
 	AgentToolApprovalExpired Code = "TOOL_APPROVAL_EXPIRED"
 	AgentToolBudgetExhausted Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
+	AgentContextOverflow     Code = "CONTEXT_OVERFLOW"
 	AgentLifecycleCancelled  Code = "LIFECYCLE_CANCELLED"
 	AgentProviderFailed      Code = "AGENT_5001"
 	AgentCompressionFailed   Code = "AGENT_5002"
@@ -41,6 +42,7 @@ const (
 	AgentToolApprovalDeniedLocaleKey           = "agent.errors.toolApprovalDenied"
 	AgentToolApprovalExpiredLocaleKey          = "agent.errors.toolApprovalExpired"
 	AgentToolBudgetExhaustedLocaleKey          = "agent.errors.toolLoopBudgetExhausted"
+	AgentContextOverflowLocaleKey              = "agent.errors.contextOverflow"
 	AgentLifecycleCancelledLocaleKey           = "agent.errors.lifecycleCancelled"
 )
 
@@ -145,6 +147,25 @@ func NewLifecycleCancelledPayload(resourceKind, resourceID string) *model.ErrorP
 		Details: map[string]string{
 			"resource_kind": resourceKind,
 			"resource_id":   resourceID,
+		},
+	}
+}
+
+func NewContextOverflow(limitTokens, actualTokens uint64) *BizError {
+	return &BizError{
+		Code:       AgentContextOverflow,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentContextOverflowLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentContextOverflowLocaleKey,
+			ErrorType: string(AgentContextOverflow),
+			LocaleKey: AgentContextOverflowLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"limit_tokens":  strconv.FormatUint(limitTokens, 10),
+				"actual_tokens": strconv.FormatUint(actualTokens, 10),
+			},
 		},
 	}
 }

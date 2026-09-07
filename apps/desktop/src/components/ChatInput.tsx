@@ -60,7 +60,9 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const readinessErrorKey = useChatStore(s => s.readinessErrorKey);
   const composerFill = useChatStore(s => s.composerFill);
+  const composerFocusNonce = useChatStore(s => s.composerFocusNonce);
   const consumeComposerFill = useChatStore(s => s.consumeComposerFill);
+  const consumeComposerFocus = useChatStore(s => s.consumeComposerFocus);
   const selectedModel = useAgentStore(s => s.selectedModel);
   const selectedProviderId = useAgentStore(s => s.selectedProviderId);
   const defaultModel = useAgentStore(s => s.defaultModel);
@@ -121,6 +123,12 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
       }
     });
   }, [composerFill, consumeComposerFill]);
+
+  useEffect(() => {
+    if (composerFocusNonce === 0) return;
+    consumeComposerFocus();
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [composerFocusNonce, consumeComposerFocus]);
 
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
