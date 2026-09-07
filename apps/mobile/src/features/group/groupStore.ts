@@ -164,6 +164,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         conversationId,
         name: input.name,
         memberPtids: input.initialMemberPtids,
+        federationId: input.federationId,
       });
       if (created.state === 'failed') {
         throw new SocialApiError({

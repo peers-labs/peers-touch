@@ -140,6 +140,7 @@ type ReceiverFriendRequestPolicy struct {
 // FriendRequestProjection is one Station-local projection of canonical Social truth.
 type FriendRequestProjection struct {
 	RequestID                 string
+	FederationID              string
 	AuthorityStationPeerID    string
 	Sender                    *model.ActorRef
 	Receiver                  *model.ActorRef
@@ -169,6 +170,7 @@ type FriendRequestRelationshipProjection struct {
 type DirectConversationEffect struct {
 	EffectID        string
 	RequestID       string
+	FederationID    string
 	ActorAPTID      string
 	ActorBPTID      string
 	AcceptedEventID string
@@ -334,6 +336,7 @@ func ValidateFriendRequestCommand(
 	}{
 		{field: "command_id", value: body.GetCommandId()},
 		{field: "request_id", value: body.GetRequestId()},
+		{field: "federation_id", value: body.GetFederationId()},
 		{field: "sender_home_station_peer_id", value: body.GetSenderHomeStationPeerId()},
 		{field: "receiver_home_station_peer_id", value: body.GetReceiverHomeStationPeerId()},
 		{field: "signing_key_id", value: command.GetSigningKeyId()},
@@ -493,6 +496,7 @@ func NewOutgoingFriendRequestProjection(
 	body := command.GetBody()
 	return FriendRequestProjection{
 		RequestID:                 body.GetRequestId(),
+		FederationID:              body.GetFederationId(),
 		AuthorityStationPeerID:    body.GetReceiverHomeStationPeerId(),
 		Sender:                    cloneActorRef(body.GetSender()),
 		Receiver:                  cloneActorRef(body.GetReceiver()),
@@ -597,6 +601,7 @@ func ApplyFriendRequestCommand(
 		Sequence:                  sequence,
 		CommittedAt:               timestamppb.New(committedAt.UTC()),
 		PreviousHash:              previousHash,
+		FederationId:              body.GetFederationId(),
 	}
 	if err := SealFriendRequestEvent(event); err != nil {
 		return FriendRequestProjection{}, nil, err
@@ -668,6 +673,7 @@ func ValidateFriendRequestEvent(event *model.FriendRequestEvent) error {
 		{field: "event_id", value: event.GetEventId()},
 		{field: "request_id", value: event.GetRequestId()},
 		{field: "command_id", value: event.GetCommandId()},
+		{field: "federation_id", value: event.GetFederationId()},
 		{field: "authority_station_peer_id", value: event.GetAuthorityStationPeerId()},
 		{field: "sender_home_station_peer_id", value: event.GetSenderHomeStationPeerId()},
 		{field: "receiver_home_station_peer_id", value: event.GetReceiverHomeStationPeerId()},
@@ -795,6 +801,7 @@ func ApplyFriendRequestEvent(
 		}
 		projection := FriendRequestProjection{
 			RequestID:                 event.GetRequestId(),
+			FederationID:              event.GetFederationId(),
 			AuthorityStationPeerID:    event.GetAuthorityStationPeerId(),
 			Sender:                    cloneActorRef(event.GetSender()),
 			Receiver:                  cloneActorRef(event.GetReceiver()),
@@ -1023,6 +1030,7 @@ func ValidateOutgoingFriendRequestCommandResult(
 			)
 		}
 		if event.GetAuthorityStationPeerId() != body.GetReceiverHomeStationPeerId() ||
+			event.GetFederationId() != body.GetFederationId() ||
 			event.GetSenderHomeStationPeerId() != body.GetSenderHomeStationPeerId() ||
 			event.GetReceiverHomeStationPeerId() != body.GetReceiverHomeStationPeerId() ||
 			!proto.Equal(event.GetSender(), body.GetSender()) ||
@@ -1176,6 +1184,7 @@ func sameProjectionIdentity(
 	body *model.FriendRequestCommandBody,
 ) bool {
 	return current.RequestID == body.GetRequestId() &&
+		current.FederationID == body.GetFederationId() &&
 		current.AuthorityStationPeerID == body.GetReceiverHomeStationPeerId() &&
 		current.Sender.GetPtid() == body.GetSender().GetPtid() &&
 		current.Receiver.GetPtid() == body.GetReceiver().GetPtid() &&
@@ -1188,6 +1197,7 @@ func sameEventProjectionIdentity(
 	event *model.FriendRequestEvent,
 ) bool {
 	return current.RequestID == event.GetRequestId() &&
+		current.FederationID == event.GetFederationId() &&
 		current.AuthorityStationPeerID == event.GetAuthorityStationPeerId() &&
 		current.Sender.GetPtid() == event.GetSender().GetPtid() &&
 		current.Receiver.GetPtid() == event.GetReceiver().GetPtid() &&

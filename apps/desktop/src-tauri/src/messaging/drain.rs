@@ -1,25 +1,27 @@
 use crate::model::chat::{
-    AcknowledgeDeviceQueueItemRequest, ClaimDeviceQueueRequest, ClaimDeviceQueueResponse,
-    DeviceQueueItem,
+    AcknowledgeDeviceInboxItemRequest, ClaimDeviceInboxRequest, ClaimDeviceInboxResponse,
+    DurableDeviceInboxItem,
 };
+use messaging_core::proto::actor::ActorDeviceRef;
+use messaging_core::proto::actor_device_ptid;
 use std::sync::Arc;
 
-pub type AcknowledgedItemObserver = Arc<dyn Fn(&DeviceQueueItem) + Send + Sync>;
+pub type AcknowledgedItemObserver = Arc<dyn Fn(&DurableDeviceInboxItem) + Send + Sync>;
 pub type ConsumerEpochObserver = Arc<dyn Fn(u64) + Send + Sync>;
 
 pub trait QueueTransport {
-    fn claim(&self, request: ClaimDeviceQueueRequest) -> Result<ClaimDeviceQueueResponse, String>;
+    fn claim(&self, request: ClaimDeviceInboxRequest) -> Result<ClaimDeviceInboxResponse, String>;
 
-    fn acknowledge(&self, request: AcknowledgeDeviceQueueItemRequest) -> Result<(), String>;
+    fn acknowledge(&self, request: AcknowledgeDeviceInboxItemRequest) -> Result<(), String>;
 }
 
 pub trait ClaimedItemConsumer {
     // Success means the local durable receive transaction committed.
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String>;
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String>;
 }
 
 impl<C: ClaimedItemConsumer + ?Sized> ClaimedItemConsumer for Arc<C> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.as_ref().consume(item, consumer_epoch)
     }
 }
@@ -35,7 +37,7 @@ pub struct DrainProgress {
 pub struct QueueDrain<T, C> {
     transport: T,
     consumer: C,
-    device_id: String,
+    device: ActorDeviceRef,
     consumer_id: String,
     batch_limit: u32,
     consumer_epoch_observer: Option<ConsumerEpochObserver>,
@@ -46,11 +48,12 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
     pub fn new(
         transport: T,
         consumer: C,
-        device_id: String,
+        device: ActorDeviceRef,
         consumer_id: String,
         batch_limit: u32,
     ) -> Result<Self, String> {
-        if device_id.trim().is_empty()
+        if actor_device_ptid(&device).is_err()
+            || device.device_id.trim().is_empty()
             || consumer_id.trim().is_empty()
             || batch_limit == 0
             || batch_limit > 100
@@ -60,7 +63,7 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
         Ok(Self {
             transport,
             consumer,
-            device_id,
+            device,
             consumer_id,
             batch_limit,
             consumer_epoch_observer: None,
@@ -86,8 +89,8 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
         if cursor < 0 {
             return Err("messaging drain cursor cannot be negative".to_string());
         }
-        let response = self.transport.claim(ClaimDeviceQueueRequest {
-            device_id: self.device_id.clone(),
+        let response = self.transport.claim(ClaimDeviceInboxRequest {
+            device: Some(self.device.clone()),
             consumer_id: self.consumer_id.clone(),
             expected_consumer_epoch,
             after_lane_sequence: cursor,
@@ -112,8 +115,8 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
             }
             self.consumer.consume(item, response.consumer_epoch)?;
             self.transport
-                .acknowledge(AcknowledgeDeviceQueueItemRequest {
-                    device_id: self.device_id.clone(),
+                .acknowledge(AcknowledgeDeviceInboxItemRequest {
+                    device: Some(self.device.clone()),
                     item_id: item.item_id.clone(),
                     lane_sequence: item.lane_sequence,
                     consumer_epoch: response.consumer_epoch,
@@ -138,21 +141,26 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use messaging_core::proto::actor_device_ref;
     use std::cell::RefCell;
 
+    fn device() -> ActorDeviceRef {
+        actor_device_ref("ptid:alice", "device-1")
+    }
+
     struct Transport {
-        items: Vec<DeviceQueueItem>,
-        claims: RefCell<Vec<ClaimDeviceQueueRequest>>,
-        acknowledgements: RefCell<Vec<AcknowledgeDeviceQueueItemRequest>>,
+        items: Vec<DurableDeviceInboxItem>,
+        claims: RefCell<Vec<ClaimDeviceInboxRequest>>,
+        acknowledgements: RefCell<Vec<AcknowledgeDeviceInboxItemRequest>>,
     }
 
     impl QueueTransport for Transport {
         fn claim(
             &self,
-            request: ClaimDeviceQueueRequest,
-        ) -> Result<ClaimDeviceQueueResponse, String> {
+            request: ClaimDeviceInboxRequest,
+        ) -> Result<ClaimDeviceInboxResponse, String> {
             self.claims.borrow_mut().push(request.clone());
-            Ok(ClaimDeviceQueueResponse {
+            Ok(ClaimDeviceInboxResponse {
                 consumer_epoch: 3,
                 items: self
                     .items
@@ -165,7 +173,7 @@ mod tests {
             })
         }
 
-        fn acknowledge(&self, request: AcknowledgeDeviceQueueItemRequest) -> Result<(), String> {
+        fn acknowledge(&self, request: AcknowledgeDeviceInboxItemRequest) -> Result<(), String> {
             self.acknowledgements.borrow_mut().push(request);
             Ok(())
         }
@@ -177,7 +185,11 @@ mod tests {
     }
 
     impl ClaimedItemConsumer for Consumer {
-        fn consume(&self, item: &DeviceQueueItem, _consumer_epoch: u64) -> Result<(), String> {
+        fn consume(
+            &self,
+            item: &DurableDeviceInboxItem,
+            _consumer_epoch: u64,
+        ) -> Result<(), String> {
             if self.fail_at == Some(item.lane_sequence) {
                 return Err("injected local commit failure".to_string());
             }
@@ -186,8 +198,8 @@ mod tests {
         }
     }
 
-    fn item(sequence: i64) -> DeviceQueueItem {
-        DeviceQueueItem {
+    fn item(sequence: i64) -> DurableDeviceInboxItem {
+        DurableDeviceInboxItem {
             item_id: format!("item-{sequence}"),
             event_id: format!("event-{sequence}"),
             conversation_id: "conversation-1".to_string(),
@@ -211,7 +223,7 @@ mod tests {
                 fail_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
-            "device-1".to_string(),
+            device(),
             "consumer-1".to_string(),
             10,
         )
@@ -249,7 +261,7 @@ mod tests {
                 fail_at: Some(1),
                 consumed: RefCell::new(Vec::new()),
             },
-            "device-1".to_string(),
+            device(),
             "consumer-1".to_string(),
             10,
         )
@@ -278,7 +290,7 @@ mod tests {
                 fail_at: Some(2),
                 consumed: RefCell::new(Vec::new()),
             },
-            "device-1".to_string(),
+            device(),
             "consumer-1".to_string(),
             10,
         )
@@ -303,7 +315,7 @@ mod tests {
                 fail_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
-            "device-1".to_string(),
+            device(),
             "consumer-after-restart".to_string(),
             10,
         )
@@ -327,7 +339,7 @@ mod tests {
                 fail_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
-            "device-1".to_string(),
+            device(),
             "consumer-1".to_string(),
             10,
         )

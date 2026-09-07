@@ -10,10 +10,10 @@ use crate::contracts::{
 use crate::inbox::ClaimedItemConsumer;
 use crate::proto::chat::{
     conversation_event, ConversationAuthoritySnapshot, ConversationEvent,
-    CryptoEndpoint as ProtoCryptoEndpoint, DeviceConsumptionReceipt, DeviceQueueItem, MemberRole,
-    MembershipTransitionChange, MembershipTransitionCommittedFact, MessagingMembershipAction,
-    MlsQueuePayload, MlsQueuePayloadKind, MlsRetirementMarker, PreparedEndpointPayloadKind,
-    PublicEventMarker,
+    CryptoEndpoint as ProtoCryptoEndpoint, DeviceConsumptionReceipt, DurableDeviceInboxItem,
+    MemberRole, MembershipTransitionChange, MembershipTransitionCommittedFact,
+    MessagingMembershipAction, MlsQueuePayload, MlsQueuePayloadKind, MlsRetirementMarker,
+    PreparedEndpointPayloadKind, PublicEventMarker,
 };
 use crate::store::MlsInboundRepository;
 use prost::Message;
@@ -46,7 +46,7 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         persist_claim(self.store.as_ref(), item, consumer_epoch, now)?;
         if self
@@ -180,7 +180,7 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsApplicationProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -223,7 +223,7 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
         Ok(())
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         persist_claim(self.store.as_ref(), item, consumer_epoch, now)?;
         if self
@@ -299,7 +299,7 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
             .iter()
             .map(|change| MembershipTransitionChange {
                 ptid: change.ptid.clone(),
-                actor_home_station_peer_id: change.home_station_id.clone(),
+                actor_home_station_peer_id: change.home_station_peer_id.clone(),
                 action: change.action,
                 role: MemberRole::Unspecified as i32,
                 device_id: change.device_id.clone(),
@@ -364,7 +364,7 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsTransitionProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -395,7 +395,7 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         persist_claim(self.store.as_ref(), item, consumer_epoch, now)?;
         if self
@@ -479,7 +479,7 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsSenderTransitionProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -510,7 +510,7 @@ impl<R: MlsInboundRepository> MlsRetirementProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         persist_claim(self.store.as_ref(), item, consumer_epoch, now)?;
         if self
@@ -603,7 +603,7 @@ impl<R: MlsInboundRepository> MlsRetirementProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsRetirementProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -668,7 +668,7 @@ pub fn authority_snapshot_projection(
     validate_authority_snapshot(event, Some(snapshot))?;
     Ok(MlsConversationProjection {
         conversation_id: event.conversation_id.clone(),
-        authority_station_id: event.authority_station_id.clone(),
+        authority_station_id: event.authority_station_peer_id.clone(),
         kind: snapshot.kind,
         name: snapshot.name.clone(),
         owner_ptid: snapshot.owner_ptid.clone(),
@@ -743,7 +743,7 @@ fn transition_fact(
 
 fn persist_claim<R: MlsInboundRepository>(
     store: &R,
-    item: &DeviceQueueItem,
+    item: &DurableDeviceInboxItem,
     consumer_epoch: u64,
     now: i64,
 ) -> Result<(), String> {
@@ -760,7 +760,7 @@ fn persist_claim<R: MlsInboundRepository>(
 }
 
 fn consumption_receipt(
-    item: &DeviceQueueItem,
+    item: &DurableDeviceInboxItem,
     event: &ConversationEvent,
     endpoint: &CryptoEndpoint,
     now: i64,
@@ -826,10 +826,11 @@ mod tests {
     use crate::mls::test_support::TestMlsRepository;
     use crate::proto::chat::{
         chat_command, ConversationAuthorityMember, ConversationKind, DeviceEventDelivery,
-        DeviceQueuePayloadType, MembershipTransitionCommittedFact, MessageCommittedFact,
-        MessagingContentKind, MessagingMembershipChangeCommitted,
-        PrepareMessagingGroupGenesisResponse, ReservedMessagingMlsKeyPackage,
+        DeviceInboxPayloadType, MembershipTransitionCommittedFact, MessageCommittedFact,
+        MessagingContentKind, MessagingMembershipChangeCommitted, PrepareConversationGroupResponse,
     };
+    use crate::proto::key_exchange::MlsKeyPackageReservation;
+    use crate::proto::{actor_device_from_chat_endpoint, actor_device_ref};
 
     fn now() -> i64 {
         100
@@ -851,12 +852,12 @@ mod tests {
                 ConversationAuthorityMember {
                     ptid: "ptid:alice".to_string(),
                     role: "owner".to_string(),
-                    home_station_id: "station-local".to_string(),
+                    home_station_peer_id: "station-local".to_string(),
                 },
                 ConversationAuthorityMember {
                     ptid: "ptid:bob".to_string(),
                     role: "member".to_string(),
-                    home_station_id: "station-remote".to_string(),
+                    home_station_peer_id: "station-remote".to_string(),
                 },
             ],
             active_endpoints: vec![
@@ -869,7 +870,7 @@ mod tests {
         }
     }
 
-    fn queue_item(ciphertext: Vec<u8>) -> DeviceQueueItem {
+    fn queue_item(ciphertext: Vec<u8>) -> DurableDeviceInboxItem {
         let recipient = proto_endpoint(&endpoint("ptid:bob", "bob-device"));
         let payload_hash = Sha256::digest(&ciphertext).to_vec();
         let mut event = ConversationEvent {
@@ -887,7 +888,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 1,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MessageCommitted(
                 MessageCommittedFact {
                     message_id: "message-1".to_string(),
@@ -917,9 +918,9 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "item-1".to_string(),
-            recipient: Some(recipient),
+            recipient: Some(actor_device_from_chat_endpoint(&recipient)),
             lane_sequence: 1,
             event_id: "event-1".to_string(),
             conversation_id: "group-1".to_string(),
@@ -930,7 +931,7 @@ mod tests {
         }
     }
 
-    fn welcome_queue_item(transition_id: &str, welcome_bytes: Vec<u8>) -> DeviceQueueItem {
+    fn welcome_queue_item(transition_id: &str, welcome_bytes: Vec<u8>) -> DurableDeviceInboxItem {
         let recipient = proto_endpoint(&endpoint("ptid:bob", "bob-device"));
         let welcome_hash = Sha256::digest(&welcome_bytes).to_vec();
         let mls_payload = MlsQueuePayload {
@@ -964,7 +965,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 1,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MembershipTransitionCommitted(
                 MembershipTransitionCommittedFact {
                     transition_id: transition_id.to_string(),
@@ -976,7 +977,7 @@ mod tests {
                         action: MessagingMembershipAction::AddActor as i32,
                         ptid: "ptid:bob".to_string(),
                         device_id: "bob-device".to_string(),
-                        home_station_id: "station-b".to_string(),
+                        home_station_peer_id: "station-b".to_string(),
                         role: "member".to_string(),
                     }],
                     post_state: Some(authority_snapshot(1, 1)),
@@ -1004,9 +1005,9 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "welcome-item-1".to_string(),
-            recipient: Some(recipient),
+            recipient: Some(actor_device_from_chat_endpoint(&recipient)),
             lane_sequence: 1,
             event_id: "welcome-event-1".to_string(),
             conversation_id: "group-welcome".to_string(),
@@ -1025,7 +1026,7 @@ mod tests {
         transition_id: &str,
         commit_bytes: Vec<u8>,
         change: MessagingMembershipChangeCommitted,
-    ) -> DeviceQueueItem {
+    ) -> DurableDeviceInboxItem {
         let recipient = proto_endpoint(&endpoint("ptid:bob", recipient_device_id));
         let commit_hash = Sha256::digest(&commit_bytes).to_vec();
         let mls_payload = MlsQueuePayload {
@@ -1059,7 +1060,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 2,
             mls_epoch: 2,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MembershipTransitionCommitted(
                 MembershipTransitionCommittedFact {
                     transition_id: transition_id.to_string(),
@@ -1093,9 +1094,9 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: item_id.to_string(),
-            recipient: Some(recipient),
+            recipient: Some(actor_device_from_chat_endpoint(&recipient)),
             lane_sequence: 1,
             event_id: event_id.to_string(),
             conversation_id: conversation_id.to_string(),
@@ -1106,7 +1107,7 @@ mod tests {
         }
     }
 
-    fn retirement_item() -> DeviceQueueItem {
+    fn retirement_item() -> DurableDeviceInboxItem {
         let local = proto_endpoint(&endpoint("ptid:carol", "carol-device-2"));
         let marker = MlsRetirementMarker {
             conversation_id: "group-1".to_string(),
@@ -1131,7 +1132,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 7,
             mls_epoch: 7,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MembershipTransitionCommitted(
                 MembershipTransitionCommittedFact {
                     transition_id: "transition-12".to_string(),
@@ -1155,12 +1156,12 @@ mod tests {
                             ConversationAuthorityMember {
                                 ptid: "ptid:alice".to_string(),
                                 role: "owner".to_string(),
-                                home_station_id: "station-local".to_string(),
+                                home_station_peer_id: "station-local".to_string(),
                             },
                             ConversationAuthorityMember {
                                 ptid: "ptid:carol".to_string(),
                                 role: "member".to_string(),
-                                home_station_id: "station-c".to_string(),
+                                home_station_peer_id: "station-c".to_string(),
                             },
                         ],
                         active_endpoints: vec![
@@ -1195,14 +1196,17 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "item-12".to_string(),
-            recipient: delivery.recipient,
+            recipient: delivery
+                .recipient
+                .as_ref()
+                .map(actor_device_from_chat_endpoint),
             lane_sequence: 1,
             event_id: "event-12".to_string(),
             conversation_id: "group-1".to_string(),
             idempotency_key: "event:event-12".to_string(),
-            payload_type: DeviceQueuePayloadType::ConversationEvent as i32,
+            payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()
@@ -1215,7 +1219,7 @@ mod tests {
         snapshot.active_members[1].role = "admin".to_string();
         let event = ConversationEvent {
             conversation_id: "group-role-projection".to_string(),
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             membership_epoch: 3,
             mls_epoch: 4,
             ..Default::default()
@@ -1461,7 +1465,7 @@ mod tests {
                         action: MessagingMembershipAction::AddActor as i32,
                         ptid: "ptid:charlie".to_string(),
                         device_id: "charlie-device".to_string(),
-                        home_station_id: "station-c".to_string(),
+                        home_station_peer_id: "station-c".to_string(),
                         role: "member".to_string(),
                     },
                 ),
@@ -1557,7 +1561,7 @@ mod tests {
                         action: MessagingMembershipAction::RemoveDevice as i32,
                         ptid: "ptid:bob".to_string(),
                         device_id: "bob-device-2".to_string(),
-                        home_station_id: "station-b".to_string(),
+                        home_station_peer_id: "station-b".to_string(),
                         role: "member".to_string(),
                     },
                 ),
@@ -1604,19 +1608,19 @@ mod tests {
         bob.actor_identity().init("ptid:bob", "bob-device").unwrap();
         let local_endpoint = endpoint("ptid:alice", "alice-device");
         let bob_key_package = bob.generate_key_package().unwrap();
-        let plan = PrepareMessagingGroupGenesisResponse {
+        let plan = PrepareConversationGroupResponse {
             authority_plan_id: "plan-1".to_string(),
             expires_at: Some(prost_types::Timestamp {
                 seconds: 1,
                 nanos: 0,
             }),
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             prospective_endpoints: vec![
-                proto_endpoint(&local_endpoint),
-                proto_endpoint(&endpoint("ptid:bob", "bob-device")),
+                actor_device_ref(&local_endpoint.ptid, &local_endpoint.device_id),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
-            reserved_key_packages: vec![ReservedMessagingMlsKeyPackage {
-                target: Some(proto_endpoint(&endpoint("ptid:bob", "bob-device"))),
+            reserved_key_packages: vec![MlsKeyPackageReservation {
+                target: Some(actor_device_ref("ptid:bob", "bob-device")),
                 package_id: "package-1".to_string(),
                 key_package_sha256: Sha256::digest(&bob_key_package).to_vec(),
                 key_package: bob_key_package,
@@ -1659,7 +1663,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 1,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MembershipTransitionCommitted(
                 MembershipTransitionCommittedFact {
                     transition_id: transition.transition_id.clone(),
@@ -1674,7 +1678,7 @@ mod tests {
                             action: change.action,
                             ptid: change.ptid.clone(),
                             device_id: change.device_id.clone(),
-                            home_station_id: if change.ptid == local_endpoint.ptid {
+                            home_station_peer_id: if change.ptid == local_endpoint.ptid {
                                 "station-local"
                             } else {
                                 "station-remote"
@@ -1709,14 +1713,17 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        let item = DeviceQueueItem {
+        let item = DurableDeviceInboxItem {
             item_id: "item-2".to_string(),
-            recipient: Some(proto_endpoint(&local_endpoint)),
+            recipient: Some(actor_device_ref(
+                &local_endpoint.ptid,
+                &local_endpoint.device_id,
+            )),
             lane_sequence: 1,
             event_id: "event-2".to_string(),
             conversation_id: "group-1".to_string(),
             idempotency_key: "event:event-2".to_string(),
-            payload_type: DeviceQueuePayloadType::ConversationEvent as i32,
+            payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()

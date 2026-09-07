@@ -19,6 +19,7 @@ interface Contact {
   did: string;
   name: string;
   avatar: string;
+  federationId: string;
 }
 
 function getFirstLetter(name: string): string {
@@ -60,6 +61,20 @@ export function CreateGroupModal({ open, onClose }: Props) {
   const contacts: Contact[] = useMemo(() => {
     if (!ownDid) return [];
     const seen = new Map<string, Contact>();
+    const federationByPtid = new Map<string, string>();
+
+    for (const req of friendRequests) {
+      if (req.status !== 2) continue;
+      const peerId = req.senderPtid === ownDid ? req.receiverPtid : req.senderPtid;
+      if (peerId && req.federationId) {
+        federationByPtid.set(peerId, req.federationId);
+      }
+    }
+    for (const conversation of getIMConversations()) {
+      if (conversation.kind === 'friend' && conversation.peerPtid && conversation.federationId) {
+        federationByPtid.set(conversation.peerPtid, conversation.federationId);
+      }
+    }
 
     for (const s of sessions) {
       const peer = peerOfSession(s, ownDid);
@@ -68,6 +83,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         did: peer.did,
         name: peer.name || t('chat.social.sessionList.unknown'),
         avatar: peer.avatar,
+        federationId: federationByPtid.get(peer.did) || '',
       });
     }
 
@@ -78,6 +94,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         did: conv.peerPtid,
         name: conv.title || t('chat.social.sessionList.unknown'),
         avatar: conv.avatar || '',
+        federationId: conv.federationId || '',
       });
     }
 
@@ -92,6 +109,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         did: peerId,
         name: peerName || t('chat.social.sessionList.unknown'),
         avatar: peerAvatar || '',
+        federationId: req.federationId,
       });
     }
 
@@ -164,6 +182,19 @@ export function CreateGroupModal({ open, onClose }: Props) {
 
     const memberPtids = Array.from(selectedDids).filter((did) => did !== ownDid);
     if (memberPtids.length === 0) { setCreating(false); return; }
+    const selectedFederationIds = new Set(
+      selectedContacts.map(contact => contact.federationId),
+    );
+    if (
+      selectedContacts.length !== memberPtids.length
+      || selectedContacts.some(contact => !contact.federationId)
+      || selectedFederationIds.size !== 1
+    ) {
+      setCreating(false);
+      toast.error(t('chat.social.createGroup.failed'));
+      return;
+    }
+    const [federationId] = selectedFederationIds;
 
     const namesByDid = new Map(contacts.map((c) => [c.did, c.name]));
     const groupName =
@@ -180,6 +211,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         conversationId,
         groupName,
         memberPtids,
+        federationId,
       );
       if (created.state === 'failed') {
         useSocialChatStore.getState().setGroupSecurityState(conversationId, 'error');

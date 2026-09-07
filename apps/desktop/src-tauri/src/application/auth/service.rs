@@ -1294,21 +1294,6 @@ fn station_verification_rejects_session(error: &station_client::StationClientErr
     )
 }
 
-fn handle_session_verification_failure(
-    state: &AppState,
-    error: station_client::StationClientError,
-) -> AppResult<AuthSessionPayload> {
-    if station_verification_rejects_session(&error) {
-        let _ = clear_session(state);
-    } else {
-        tracing::warn!(
-            error_kind = ?error.kind,
-            "session validation unavailable; retaining local session"
-        );
-    }
-    error.into_app_result("Session validation failed")
-}
-
 #[cfg(test)]
 mod tests {
     use super::{

@@ -3158,3 +3158,37 @@ manifest-only sender regressions plus the complete reduced local cohort:
 The correction is committed in this checkpoint but not yet deployed. Windows
 Product Closure and the remaining seven Windows Native Chat Gates remain
 `UNPROVEN`.
+
+### 2026-09-07 Conversation Authority Blocking Subplan
+
+NDR-W9-D and the Windows portion of NDR-W10-D remain the main delivery target.
+Their next exact-source runtime run is dependency-blocked by CA-W5 in
+`docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`.
+CA-W5 is a blocking implementation subplan, not a replacement for this plan.
+
+The Owner accepted AO-D07 on 2026-09-07. It defines caller-owned creation
+identity, Station-derived authority scope, plan-bound group genesis,
+local-versus-remote command submission, one committed `ConversationEvent`, and
+exact-response replay for destructive Key Exchange reads. The accepted amendment is
+`docs/architecture/api-ownership/proposals/20260907-ca-w5-canonical-wire-contract-amendment.md`.
+
+CA-W5 reached a locally verified source checkpoint on 2026-09-07. The AO-D07
+protobuf cut, production owner composition, Desktop/Mobile/Messaging Core
+consumer migration, remote KeyPackage and attachment paths, and retired
+Messaging/Envelope/engine deletion are present in the checkpoint. Source-bound runs
+`20260907T095814186121Z-b39852f3e6f655416a20f3194dc3699d` (`proto-build`),
+`20260907T095552389681Z-9035a2fbed82ec5a54b98f5b260fe383`
+(`station-api-ownership`), `20260907T095534375916Z-3761b27ef989ec4449bf94b82a4a2523`
+(`station-messaging-unit`), `20260907T095650555959Z-0f85322adf5c78105d9ca8f15a4a351b`
+(`messaging-platform-contract`), and
+`20260907T095738644264Z-aa04882b997b2eeb5f7e9b2001600a10`
+(`desktop-check`), and
+`20260907T100757881125Z-070fde35dba471e1da0351dc8d030cb0`
+(`chat-native-visible-static`) pass.
+
+The next dependency-ready step is a local CA-W5 checkpoint commit followed by
+CA-W6 exact-source deployment to `station-four`, `station-five`, and `sixwin`.
+The Acceptance Gap Detector keeps the delivery claim `UNPROVEN` until those
+native receiver/runtime cells execute. Windows Product Closure, Windows
+multi-Station Chat proof, and PostgreSQL contention remain `UNPROVEN`; macOS
+W8 remains deferred.

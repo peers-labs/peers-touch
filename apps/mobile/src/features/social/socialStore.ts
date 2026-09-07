@@ -13,7 +13,6 @@ import type {
   UpdateFriendConversationSettingsInput,
 } from './socialApiTypes';
 import {
-  messagingCreateDirect,
   messagingListConversations,
   messagingListMessages,
   messagingSendMessage,
@@ -135,7 +134,12 @@ export interface SocialState {
   deleteNotification: (notificationId: string) => Promise<void>;
   acceptFriendRequest: (requestId: string) => Promise<void>;
   rejectFriendRequest: (requestId: string) => Promise<void>;
-  sendFriendRequest: (receiverPtid: string, message?: string) => Promise<void>;
+  sendFriendRequest: (
+    receiverPtid: string,
+    receiverHomeStationPeerId: string,
+    federationId: string,
+    message?: string,
+  ) => Promise<void>;
   selectSession: (sessionUlid: string | null) => Promise<void>;
   loadMessages: (sessionUlid: string) => Promise<void>;
   loadCurrentUserProfile: (force?: boolean) => Promise<void>;
@@ -519,48 +523,28 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     const gw = requireSocialGateway(state);
     const request = state.friendRequests.find((item) => requestKey(item) === requestId);
     try {
-      const payload = unwrapOutcome(await gw.acceptFriendRequest(requestId));
-      const peerPtid = request?.senderPtid === state.currentUserPtid
-        ? request.receiverPtid
-        : request?.senderPtid;
-      if (!peerPtid) {
+      if (
+        !request
+        || request.receiverPtid !== state.currentUserPtid
+        || !request.federationId.trim()
+        || !request.senderHomeStationPeerId.trim()
+        || !request.receiverHomeStationPeerId.trim()
+      ) {
         throw new SocialApiError({
           method: 'POST',
-          path: '/conversation/direct',
-          message: 'mobile.social.friendRequestPeerMissing',
+          path: '/api/v1/social/friend-request/accept',
+          message: 'mobile.contacts.requestFailed',
         });
       }
-      const created = await messagingCreateDirect({
-        ...messagingAccount(state),
-        peerPtid,
-      });
-      const legacySession = payload.session
-        ? normalizeSession(payload.session)
-        : undefined;
-      const canonicalSession = friendSessionFromMessaging({
-        conversationId: created.conversationId,
-        authorityStationId: state.authSession?.stationPeerId ?? '',
-        kind: 1,
-        name: '',
-        ownerPtid: state.currentUserPtid ?? '',
-        memberPtids: [state.currentUserPtid ?? '', peerPtid].filter(Boolean),
-        membershipEpoch: 1,
-        mlsEpoch: 0,
-        active: true,
-        updatedAtUnixMs: Date.now(),
-      }, state.currentUserPtid ?? '', legacySession);
+      const payload = unwrapOutcome(await gw.acceptFriendRequest(request));
       set((state) => ({
         friendRequests: state.friendRequests.map((request) =>
           requestKey(request) === requestId
             ? normalizeFriendRequest(payload.request ?? { ...request, status: FRIEND_REQUEST_STATUS_ACCEPTED })
             : request,
         ),
-        sessions: [
-          canonicalSession,
-          ...state.sessions.filter((item) => item.ulid !== canonicalSession.ulid),
-        ],
       }));
-      if (created.state === 'projected') await get().reconcile();
+      await get().reconcile();
     } catch (error) {
       set({ error: normalizeError(error) });
       throw error;
@@ -568,9 +552,24 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   rejectFriendRequest: async (requestId) => {
-    const gw = requireSocialGateway(get());
+    const state = get();
+    const gw = requireSocialGateway(state);
+    const request = state.friendRequests.find((item) => requestKey(item) === requestId);
     try {
-      const payload = unwrapOutcome(await gw.rejectFriendRequest(requestId));
+      if (
+        !request
+        || request.receiverPtid !== state.currentUserPtid
+        || !request.federationId.trim()
+        || !request.senderHomeStationPeerId.trim()
+        || !request.receiverHomeStationPeerId.trim()
+      ) {
+        throw new SocialApiError({
+          method: 'POST',
+          path: '/api/v1/social/friend-request/reject',
+          message: 'mobile.contacts.requestFailed',
+        });
+      }
+      const payload = unwrapOutcome(await gw.rejectFriendRequest(request));
       set((state) => ({
         friendRequests: state.friendRequests.map((request) =>
           requestKey(request) === requestId
@@ -585,10 +584,23 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }
   },
 
-  sendFriendRequest: async (receiverPtid, message) => {
-    const gw = requireSocialGateway(get());
+  sendFriendRequest: async (receiverPtid, receiverHomeStationPeerId, federationId, message) => {
+    const state = get();
+    const gw = requireSocialGateway(state);
     try {
-      unwrapOutcome(await gw.sendFriendRequest(receiverPtid, message));
+      if (!receiverHomeStationPeerId.trim() || !federationId.trim()) {
+        throw new SocialApiError({
+          method: 'POST',
+          path: '/api/v1/social/friend-request/send',
+          message: 'mobile.contacts.requestFailed',
+        });
+      }
+      unwrapOutcome(await gw.sendFriendRequest(
+        receiverPtid,
+        receiverHomeStationPeerId,
+        federationId,
+        message,
+      ));
       await get().refreshFriendRequests();
     } catch (error) {
       set({ error: normalizeError(error) });
