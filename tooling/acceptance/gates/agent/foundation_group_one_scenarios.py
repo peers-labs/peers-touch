@@ -2919,6 +2919,234 @@ def evaluate_base_context_overflow(
     return assertions
 
 
+def evaluate_base_credential_missing(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-CREDENTIAL_MISSING"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+
+    provider_id = _nonempty_string(
+        station,
+        "providerId",
+        scenario=scenario,
+    )
+    conversation_id = _nonempty_string(
+        station,
+        "conversationId",
+        scenario=scenario,
+    )
+    before_hash = _sha256_string(
+        station,
+        "beforeHash",
+        scenario=scenario,
+    )
+    after_hash = _sha256_string(
+        station,
+        "afterHash",
+        scenario=scenario,
+    )
+    source_hash = _sha256_string(
+        replay,
+        "sourceHash",
+        scenario=scenario,
+    )
+    replay_hash = _sha256_string(
+        replay,
+        "replayHash",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedProviderConfigMissing": (
+            outcome.get("error")
+            == "agent.errors.providerCredentialMissing"
+            and outcome.get("error_type")
+            == "PROVIDER_CREDENTIAL_MISSING"
+            and outcome.get("locale_key")
+            == "agent.errors.providerCredentialMissing"
+            and outcome.get("retryable") is True
+            and outcome.get("terminal") is True
+            and sorted(details) == ["provider_id"]
+            and details.get("provider_id") == provider_id
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType")
+            == "PROVIDER_CREDENTIAL_MISSING"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            )
+            > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            )
+            > 0
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "eventId",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "streamIdHash",
+                    scenario=scenario,
+                )
+            )
+            and _sha256_string(
+                runtime_event,
+                "conversationIdHash",
+                scenario=scenario,
+            )
+            == hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "payloadHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "observedAt",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "sourcePtidHash",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceConversationId") == conversation_id
+            and _optional_string(
+                runtime_event,
+                "sourceTurnId",
+                scenario=scenario,
+            )
+            == ""
+            and _nonnegative_int(
+                runtime_event,
+                "sourceSequence",
+                scenario=scenario,
+            )
+            == 0
+            and runtime_event.get("sourceEventType")
+            == runtime_event.get("eventType")
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "configureProviderExecuted": (
+            receiver.get("configureProviderExecuted") is True
+        ),
+        "providerConfigAbsentAtAdmission": (
+            station.get("providerStatusBefore") == "not_configured"
+            and station.get("providerConfiguredBefore") is False
+            and station.get("providerStatusAfter")
+            == station.get("providerStatusBefore")
+            and station.get("providerConfiguredAfter") is False
+        ),
+        "stationStateUnchanged": (
+            _positive_int(
+                station,
+                "conversationVersionBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                station,
+                "conversationVersionAfter",
+                scenario=scenario,
+            )
+            and before_hash == after_hash
+            and _nonnegative_int(
+                station,
+                "turnDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "messageDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "queueDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "zeroProviderCall": (
+            _nonnegative_int(
+                station,
+                "providerExecutionDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and source_hash == replay_hash == before_hash == after_hash
+        ),
+        "cleanupComplete": (
+            cleanup.get("conversationDeleted") is True
+            and cleanup.get("disposableAgentDeleted") is True
+            and _nonempty_string(
+                cleanup,
+                "restoredSelection",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                cleanup,
+                "priorSelection",
+                scenario=scenario,
+            )
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_attachment_rejected(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

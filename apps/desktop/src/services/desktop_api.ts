@@ -6414,9 +6414,22 @@ export function agentTurnStreamErrorFromData(
   error.typedError = typedError;
   if (data.resolution && typeof data.resolution === 'object') {
     error.resolution = data.resolution;
+  } else if (
+    typedError?.error_type === 'PROVIDER_CREDENTIAL_MISSING'
+    && typedError.details.provider_id
+  ) {
+    error.resolution = {
+      type: 'openProviderSettings',
+      providerId: typedError.details.provider_id,
+      label: 'agent.recovery.configureCredential',
+    };
   }
   if (typeof data.detail === 'string') error.errorDetail = data.detail;
-  if (typeof data.providerId === 'string') error.providerId = data.providerId;
+  if (typeof data.providerId === 'string') {
+    error.providerId = data.providerId;
+  } else if (typedError?.details.provider_id) {
+    error.providerId = typedError.details.provider_id;
+  }
   return error;
 }
 

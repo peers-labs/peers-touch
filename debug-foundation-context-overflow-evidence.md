@@ -36,4 +36,10 @@ Pre-fix evidence confirms an Agent-domain evidence serialization defect, not a p
 - Python compilation for the producer, producer test, and independent scenario oracle: passed.
 - `git diff --check`: passed.
 - The regression fixture accepts only canonical numeric `actual_tokens` and `limit_tokens` evidence while continuing to reject `api_token`.
-- Exact-source runtime verification remains pending; this session stays `[OPEN]`.
+- Exact-source run
+  `20260907T200003771360Z-b929bc53a314187d9947ef9e4a824613`
+  on `1f5cf2e31bcd8091a937d41816c42120004bb6a8` crossed
+  `BASE-CONTEXT-OVERFLOW` without another secret-field rejection and advanced
+  to `BASE-CREDENTIAL_MISSING`.
+- The fix is runtime-confirmed, but this session stays `[OPEN]` and its
+  diagnostics remain until Owner confirmation permits cleanup.

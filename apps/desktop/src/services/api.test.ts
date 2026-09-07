@@ -74,6 +74,37 @@ describe('agentTurnStreamErrorFromData', () => {
       },
     })
   })
+
+  it('adds the credential settings recovery without changing the typed payload', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.providerCredentialMissing',
+      error_type: 'PROVIDER_CREDENTIAL_MISSING',
+      locale_key: 'agent.errors.providerCredentialMissing',
+      retryable: true,
+      terminal: true,
+      details: {
+        provider_id: 'provider-1',
+      },
+    })
+
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.providerCredentialMissing',
+      error_type: 'PROVIDER_CREDENTIAL_MISSING',
+      locale_key: 'agent.errors.providerCredentialMissing',
+      retryable: true,
+      terminal: true,
+      details: {
+        provider_id: 'provider-1',
+      },
+    })
+    expect(error.providerId).toBe('provider-1')
+    expect(error.resolution).toEqual({
+      type: 'openProviderSettings',
+      providerId: 'provider-1',
+      label: 'agent.recovery.configureCredential',
+    })
+  })
 })
 
 describe('api.health', () => {

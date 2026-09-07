@@ -57,6 +57,15 @@ DESKTOP_HTTP_GATEWAY = (
     ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "http_gateway" / "mod.rs"
 )
 DESKTOP_API = ROOT / "apps" / "desktop" / "src" / "services" / "desktop_api.ts"
+DESKTOP_ASSISTANT_MESSAGE = (
+    ROOT
+    / "apps"
+    / "desktop"
+    / "src"
+    / "components"
+    / "messages"
+    / "AssistantMessage.tsx"
+)
 DESKTOP_APP_RUNTIME = (
     ROOT / "apps" / "desktop" / "src" / "services" / "appRuntime.ts"
 )
@@ -1296,6 +1305,84 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("conversationVersionAfter", scenario)
         self.assertIn("await deleteFoundationConversation(", scenario)
         self.assertIn("if (cell === 'BASE-CONTEXT_OVERFLOW')", self.source)
+        self.assertNotIn("mock", scenario.lower())
+
+    def test_credential_missing_uses_typed_pre_admission_recovery_path(
+        self,
+    ) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationCredentialMissingScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationF06Prepare",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+        desktop_api = DESKTOP_API.read_text(encoding="utf-8")
+        assistant_message = DESKTOP_ASSISTANT_MESSAGE.read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("provider.requires_api_key", scenario)
+        self.assertIn("provider.has_api_key", scenario)
+        self.assertIn("providerConfiguredBefore: false", scenario)
+        self.assertIn("useChatStore.getState().sendMessage(", scenario)
+        self.assertIn("PROVIDER_CREDENTIAL_MISSING", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            "foundationCredentialMissingSourceIdentityMismatch",
+            scenario,
+        )
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="configure-credential"]',
+            scenario,
+        )
+        self.assertIn("recoveryAction.click()", scenario)
+        for delta in (
+            "turnDelta",
+            "messageDelta",
+            "queueDelta",
+            "providerExecutionDelta",
+        ):
+            with self.subTest(delta=delta):
+                self.assertIn(delta, scenario)
+        self.assertIn("beforeHash === afterHash", self.source)
+        self.assertIn("await deleteFoundationConversation(", scenario)
+        self.assertIn("await api.deleteAgent(disposableAgentId)", scenario)
+        self.assertIn("await api.setSelectedAgent(priorSelection)", scenario)
+        self.assertIn(
+            "case 'BASE-CREDENTIAL_MISSING':",
+            self.source,
+        )
+        self.assertIn(
+            "return evaluateBaseCredentialMissing(ctx)",
+            self.source,
+        )
+        self.assertIn(
+            "typedError?.error_type === 'PROVIDER_CREDENTIAL_MISSING'",
+            desktop_api,
+        )
+        self.assertIn(
+            "label: 'agent.recovery.configureCredential'",
+            desktop_api,
+        )
+        self.assertIn(
+            "message.resolution.type === 'openProviderSettings'",
+            assistant_message,
+        )
+        self.assertIn(
+            "eventBus.publish(EVENT.NAVIGATION_REQUESTED",
+            assistant_message,
+        )
+        self.assertIn("id: 'providers'", assistant_message)
+        self.assertIn(
+            "t(message.resolution.label, { ns: 'agent' })",
+            assistant_message,
+        )
+        self.assertIn(
+            "await api.resolveErrorAction(message.resolution!)",
+            assistant_message,
+        )
         self.assertNotIn("mock", scenario.lower())
 
     def test_approval_denied_uses_product_action_and_station_readback(self) -> None:

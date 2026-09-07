@@ -262,6 +262,48 @@ func TestWriteTurnStreamErrorPreservesContextOverflowPayload(t *testing.T) {
 	}
 }
 
+func TestWriteTurnStreamErrorPreservesProviderCredentialMissingPayload(t *testing.T) {
+	resp := &fakeStreamResponse{}
+	if err := writeTurnStreamErrorWithIdentity(
+		resp,
+		errcode.NewProviderCredentialMissing("provider-1"),
+		"conversation-1",
+		"agent-1",
+	); err != nil {
+		t.Fatalf("write typed stream error: %v", err)
+	}
+
+	body := resp.body.String()
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(body, "\n")[1]),
+		"data: ",
+	)
+	var payload struct {
+		Error          string            `json:"error"`
+		ErrorType      string            `json:"error_type"`
+		LocaleKey      string            `json:"locale_key"`
+		Retryable      bool              `json:"retryable"`
+		Terminal       bool              `json:"terminal"`
+		Details        map[string]string `json:"details"`
+		ConversationID string            `json:"conversationId"`
+		AgentID        string            `json:"agentId"`
+	}
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode typed stream error: %v", err)
+	}
+	if payload.Error != errcode.AgentProviderCredentialMissingLocaleKey ||
+		payload.ErrorType != string(errcode.AgentProviderCredentialMissing) ||
+		payload.LocaleKey != errcode.AgentProviderCredentialMissingLocaleKey ||
+		!payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 1 ||
+		payload.Details["provider_id"] != "provider-1" ||
+		payload.ConversationID != "conversation-1" ||
+		payload.AgentID != "agent-1" {
+		t.Fatalf("typed stream error payload = %+v", payload)
+	}
+}
+
 func TestExposeTurnStreamIdentityFlushesDurableTurnID(t *testing.T) {
 	resp := &fakeStreamResponse{}
 

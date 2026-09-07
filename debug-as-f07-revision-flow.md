@@ -403,3 +403,16 @@ The next instrumentation records only numeric versions, active-target
 relationships, typed transport status/code/reason, and the Station error code
 and message. It does not record actor identity, message content, credentials,
 or raw tokens.
+
+## Latest Runtime Comparison
+- Exact-source run
+  `20260907T200003771360Z-b929bc53a314187d9947ef9e4a824613`
+  on `04396b37ddddc89300e35eb9e214930e31df0aa6` completed both
+  Browser AS-F07 tuples.
+- Both `selected-branch-started` checkpoints recorded version `8`, the original
+  branch active, and the target branch inactive; both production mutations
+  then emitted `branch-projection-finished`.
+- No `selected-branch-failed` event was emitted. Hypotheses V, W, and X are
+  rejected for this run, so no branch behavior change is justified.
+- The first subsequent failure was the planned unimplemented
+  `BASE-CREDENTIAL_MISSING` direct-runtime group.

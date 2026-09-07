@@ -191,6 +191,18 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-CREDENTIAL_MISSING": frozenset(
+        {
+            "typedProviderConfigMissing",
+            "localizedRecoveryVisible",
+            "configureProviderExecuted",
+            "providerConfigAbsentAtAdmission",
+            "stationStateUnchanged",
+            "zeroProviderCall",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
     "BASE-APPROVAL_DENIED": frozenset(
         {
             "typedDenialProjected",

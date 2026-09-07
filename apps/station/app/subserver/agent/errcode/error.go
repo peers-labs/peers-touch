@@ -12,27 +12,28 @@ import (
 type Code string
 
 const (
-	AgentInvalidRequest      Code = "AGENT_4001"
-	AgentUnauthorized        Code = "AGENT_4002"
-	AgentNotFound            Code = "AGENT_4004"
-	AgentVersionConflict     Code = "AGENT_4009"
-	AgentIdempotencyConflict Code = "IDEMPOTENCY_CONFLICT"
-	AgentInvalidSourceState  Code = "INVALID_SOURCE_STATE"
-	AgentActiveDependency    Code = "ACTIVE_DEPENDENCY"
-	AgentQueueFull           Code = "ADMISSION_QUEUE_FULL"
-	AgentAttachmentRejected  Code = "CONTEXT_ATTACHMENT_REJECTED"
-	AgentToolApprovalDenied  Code = "TOOL_APPROVAL_DENIED"
-	AgentToolApprovalExpired Code = "TOOL_APPROVAL_EXPIRED"
-	AgentToolBudgetExhausted Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
-	AgentContextOverflow     Code = "CONTEXT_OVERFLOW"
-	AgentLifecycleCancelled  Code = "LIFECYCLE_CANCELLED"
-	AgentProviderFailed      Code = "AGENT_5001"
-	AgentCompressionFailed   Code = "AGENT_5002"
-	AgentDelegationFailed    Code = "AGENT_5003"
-	AgentCredentialFailed    Code = "AGENT_5004"
-	AgentProviderDisabled    Code = "AGENT_5005"
-	AgentSecurityViolation   Code = "AGENT_4003"
-	AgentInternal            Code = "AGENT_5000"
+	AgentInvalidRequest            Code = "AGENT_4001"
+	AgentUnauthorized              Code = "AGENT_4002"
+	AgentNotFound                  Code = "AGENT_4004"
+	AgentVersionConflict           Code = "AGENT_4009"
+	AgentIdempotencyConflict       Code = "IDEMPOTENCY_CONFLICT"
+	AgentInvalidSourceState        Code = "INVALID_SOURCE_STATE"
+	AgentActiveDependency          Code = "ACTIVE_DEPENDENCY"
+	AgentQueueFull                 Code = "ADMISSION_QUEUE_FULL"
+	AgentAttachmentRejected        Code = "CONTEXT_ATTACHMENT_REJECTED"
+	AgentToolApprovalDenied        Code = "TOOL_APPROVAL_DENIED"
+	AgentToolApprovalExpired       Code = "TOOL_APPROVAL_EXPIRED"
+	AgentToolBudgetExhausted       Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
+	AgentContextOverflow           Code = "CONTEXT_OVERFLOW"
+	AgentLifecycleCancelled        Code = "LIFECYCLE_CANCELLED"
+	AgentProviderCredentialMissing Code = "PROVIDER_CREDENTIAL_MISSING"
+	AgentProviderFailed            Code = "AGENT_5001"
+	AgentCompressionFailed         Code = "AGENT_5002"
+	AgentDelegationFailed          Code = "AGENT_5003"
+	AgentCredentialFailed          Code = "AGENT_5004"
+	AgentProviderDisabled          Code = "AGENT_5005"
+	AgentSecurityViolation         Code = "AGENT_4003"
+	AgentInternal                  Code = "AGENT_5000"
 
 	AgentCanvasSingleAgentNotReady Code = "AGENT_CANVAS_SINGLE_AGENT_NOT_READY"
 
@@ -44,6 +45,7 @@ const (
 	AgentToolBudgetExhaustedLocaleKey          = "agent.errors.toolLoopBudgetExhausted"
 	AgentContextOverflowLocaleKey              = "agent.errors.contextOverflow"
 	AgentLifecycleCancelledLocaleKey           = "agent.errors.lifecycleCancelled"
+	AgentProviderCredentialMissingLocaleKey    = "agent.errors.providerCredentialMissing"
 )
 
 const AgentActiveMutationConflict Code = "ADMISSION_ACTIVE_MUTATION_CONFLICT"
@@ -165,6 +167,24 @@ func NewContextOverflow(limitTokens, actualTokens uint64) *BizError {
 			Details: map[string]string{
 				"limit_tokens":  strconv.FormatUint(limitTokens, 10),
 				"actual_tokens": strconv.FormatUint(actualTokens, 10),
+			},
+		},
+	}
+}
+
+func NewProviderCredentialMissing(providerID string) *BizError {
+	return &BizError{
+		Code:       AgentProviderCredentialMissing,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentProviderCredentialMissingLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentProviderCredentialMissingLocaleKey,
+			ErrorType: string(AgentProviderCredentialMissing),
+			LocaleKey: AgentProviderCredentialMissingLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"provider_id": providerID,
 			},
 		},
 	}

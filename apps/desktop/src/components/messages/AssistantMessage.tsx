@@ -20,6 +20,7 @@ import {
   Workflow,
   ExternalLink,
   Minimize2,
+  Settings,
 } from 'lucide-react';
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact } from '../../store/chat';
 import { extractMessageArtifacts, useChatStore } from '../../store/chat';
@@ -27,6 +28,7 @@ import { useAgentStore } from '../../store/agent';
 import { usePortalStore } from '../../store/portal';
 import { useTTSStore } from '../../store/tts';
 import { parseAgentChatConfig, api } from '../../services/desktop_api';
+import { EVENT, eventBus } from '../../kernel/events';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
 import { AgentIconTile } from '../agent/AgentIconTile';
 import { ProviderIcon } from '../settings/ProviderIcon';
@@ -374,6 +376,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const agentDisplayName = activeAgent?.title || activeAgent?.name;
   const isContextOverflow =
     message.typedError?.error_type === 'CONTEXT_OVERFLOW';
+  const resolutionLabel = message.resolution?.label.startsWith('agent.')
+    ? t(message.resolution.label, { ns: 'agent' })
+    : message.resolution?.label;
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
 
   const handleCopy = useCallback(() => {
@@ -690,19 +695,39 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                 )}
                 {message.resolution && (
                   <Button
-                    data-pt-agent-message-error-recovery
+                    data-pt-agent-message-error-recovery={
+                      message.resolution.type === 'openProviderSettings'
+                        ? 'configure-credential'
+                        : 'true'
+                    }
                     type="primary"
                     size="small"
                     danger
+                    icon={
+                      message.resolution.type === 'openProviderSettings'
+                        ? <Settings size={14} />
+                        : undefined
+                    }
                     style={{ marginTop: 8 }}
                     onClick={async () => {
                       try {
+                        if (message.resolution!.type === 'openProviderSettings') {
+                          eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
+                            resource: 'settings',
+                            id: 'providers',
+                          });
+                          toast.success(t('chat.message.resolution.settingsOpened'));
+                          return;
+                        }
                         const result = await api.resolveErrorAction(message.resolution!);
                         if (result.message) {
                           toast.success(result.message);
                         } else if (result.reauth) {
                           toast.success(t('chat.message.resolution.authOpened'));
                         } else if (result.opened) {
+                          eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
+                            resource: 'settings',
+                          });
                           toast.success(t('chat.message.resolution.settingsOpened'));
                         }
                       } catch (err: unknown) {
@@ -711,7 +736,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       }
                     }}
                   >
-                    {message.resolution.label}
+                    {resolutionLabel}
                   </Button>
                 )}
               </div>
