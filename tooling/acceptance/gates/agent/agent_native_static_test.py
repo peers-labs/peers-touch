@@ -478,8 +478,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
             completion[replay_boundary:station_readback],
         )
         self.assertIn(
+            "const replayAfterCursor = handoff.acknowledgedCursor",
+            completion[replay_boundary:station_readback],
+        )
+        self.assertIn(
             "acknowledgedCursor: replayAfterCursor",
             completion[station_readback:],
+        )
+        self.assertNotIn(
+            "const replayAfterCursor = replayStartTransition.sequence",
+            completion[replay_boundary:station_readback],
         )
         self.assertIn("afterCursor: replayAfterCursor", completion[station_readback:])
 

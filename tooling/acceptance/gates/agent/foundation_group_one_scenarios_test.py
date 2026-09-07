@@ -1305,6 +1305,44 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         self.assertEqual(len(assertions), 12)
         self.assertTrue(all(assertions.values()))
 
+    def test_as_f06_accepts_wire_string_replay_sequences(self) -> None:
+        capture = valid_as_f06_capture()
+        for key in ("deliveries", "stationReadbackDeliveries"):
+            deliveries = capture["replay"][key]
+            assert isinstance(deliveries, list)
+            for delivery in deliveries:
+                assert isinstance(delivery, dict)
+                raw_payload = delivery["rawPayload"]
+                assert isinstance(raw_payload, dict)
+                raw_data = raw_payload["data"]
+                assert isinstance(raw_data, dict)
+                raw_data["seq"] = str(delivery["sequence"])
+                delivery["payloadHash"] = canonical_payload_hash(raw_payload)
+        for deliveries_key, hash_key in (
+            ("deliveries", "sourceHash"),
+            ("stationReadbackDeliveries", "replayHash"),
+        ):
+            replay_identities = [
+                {
+                    key: value
+                    for key, value in delivery.items()
+                    if key not in {"streamId", "streamGeneration", "observedAt"}
+                }
+                for delivery in capture["replay"][deliveries_key]
+            ]
+            capture["replay"][hash_key] = canonical_payload_hash(
+                replay_identities
+            )
+
+        assertions = evaluate_as_f06(
+            capture,
+            platform="desktop_app",
+            locale="en",
+            sample_id="sample-001",
+        )
+
+        self.assertTrue(all(assertions.values()))
+
     def test_as_f06_rejects_transition_reordering(self) -> None:
         capture = valid_as_f06_capture()
         capture["transitions"][2], capture["transitions"][3] = (

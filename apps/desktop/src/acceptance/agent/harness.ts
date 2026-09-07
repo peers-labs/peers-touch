@@ -6241,7 +6241,9 @@ async function runFoundationF06Complete(
   if (!replayStartTransition) {
     throw new Error('agent.acceptance.foundationRecoveryReplayBoundaryMissing');
   }
-  const replayAfterCursor = replayStartTransition.sequence;
+  // Runtime phase observation may already include the first replayed event.
+  // Compare readback from the frozen cursor used by the original replay request.
+  const replayAfterCursor = handoff.acknowledgedCursor;
   const stationReplayDeliveries = await foundationStationReplayReadback({
     ...handoff,
     acknowledgedCursor: replayAfterCursor,

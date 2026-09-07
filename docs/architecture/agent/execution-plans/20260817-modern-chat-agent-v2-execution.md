@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `244f7a61d926b6f10ad0d8be5bc6b55ea3dcd503` passed Browser English and Simplified Chinese `BASE-CANCELLED` in run `20260907T120307080667Z-8452fb7d9d650470a5dc6a1f396fb3cb`, then advanced to `BASE-CONTEXT_OVERFLOW`. The context-overflow vertical passes local Station, Desktop, and independent Acceptance checks; checkpoint deployment and the unchanged 419-cell rerun remain pending. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `e093c2c4774fe4a84470943a55b3a9f32f59dfba` crossed Browser English `BASE-CONTEXT_OVERFLOW` and advanced to an AS-F06 replay-boundary comparison failure in run `20260907T153830485835Z-c4bbc331c8137f7b8c111e8cb3eb00cb`. The frozen-cursor correction passes local Desktop and independent Acceptance checks; checkpoint deployment and the unchanged 419-cell rerun remain pending. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6006,6 +6006,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   tests pass after the correction. Provisioner cleanup was
   `DONE / PROVEN / passed`; product proof remains `PARTIAL / UNPROVEN` pending
   a new exact-source rerun.
+- Exact-source Gate run
+  `20260907T153830485835Z-c4bbc331c8137f7b8c111e8cb3eb00cb`
+  on checkpoint `e093c2c4774fe4a84470943a55b3a9f32f59dfba` crossed
+  Browser English `BASE-CONTEXT_OVERFLOW` and failed first at Browser English
+  `AS-F06 / single / sample-001` on
+  `replayAfterAcknowledgedCursor`. The client retained source-bound deliveries
+  `22..132`, while the independent Station readback incorrectly started after
+  the observed `REPLAYING` cursor `22` and therefore returned `23..132`. The
+  phase observation may already include the first replayed event, so it is not
+  the replay request boundary. The correction keeps the required
+  `REPLAYING` transition but compares both streams from the frozen post-cut
+  handoff cursor used by the original request; the Python oracle also
+  normalizes the wire-permitted integer/string sequence representation while
+  retaining exact raw-payload hashing. Focused `183/183`, full `330/330`
+  Agent Acceptance tests, Desktop check, Python compilation, and
+  `git diff --check` pass. Provisioner cleanup was
+  `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`
+  pending a new exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
