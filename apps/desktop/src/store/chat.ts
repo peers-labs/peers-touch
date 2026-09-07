@@ -26,6 +26,7 @@ import type { CachedAgentConversation, CachedAgentMessage } from '@peers-touch/c
 import type { AgentTurnSnapshotReloadResult } from '../runtimes/chatRuntime';
 import {
   reduceStreamEvent,
+  projectAgentTypedError,
   createOperation,
   completeOperation,
   failOperation,
@@ -261,6 +262,17 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
   const terminalStatus = (
     ['completed', 'failed', 'cancelled', 'interrupted'] as const
   ).find((status) => status === persistedStatus);
+  let typedError: AgentTypedErrorPayload | undefined;
+  if (message.errorJson) {
+    try {
+      const parsed = JSON.parse(message.errorJson);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        typedError = projectAgentTypedError(parsed as Record<string, unknown>);
+      }
+    } catch {
+      typedError = undefined;
+    }
+  }
   const chatMessage: ChatMessage = {
     id: message.messageId,
     role: message.role,
@@ -270,6 +282,8 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
     timestamp: new Date(message.createdAt).getTime(),
     model: message.modelName,
     turnId: message.turnId,
+    error: typedError?.locale_key,
+    typedError,
     attachments: message.attachments?.map((attachment) => ({
       cid: attachment.objectRef,
       filename: attachment.filename,
