@@ -936,8 +936,9 @@ def evaluate_as_f06(
         ),
         "replayAfterAcknowledgedCursor": (
             bool(replay_sequences)
-            and after_cursor == replay_request_cursor
+            and after_cursor == acknowledged_cursor
             and acknowledged_cursor >= replay_request_cursor
+            and acknowledged_cursor == cursor_before_mutation
             and replay_sequences == sorted(set(replay_sequences))
             and replay_sequences == replay_delivery_sequences
             and all(sequence > after_cursor for sequence in replay_sequences)

@@ -6244,7 +6244,11 @@ async function runFoundationF06Complete(
   if (!replayStartTransition) {
     throw new Error('agent.acceptance.foundationRecoveryReplayBoundaryMissing');
   }
-  const replayAfterCursor = latestHandoff.replayRequestCursor;
+  const replayAfterCursor = latestHandoff.acknowledgedCursor;
+  const replayDeliveries = latestHandoff.replayDeliveries.filter(
+    (delivery) => delivery.sequence > replayAfterCursor,
+  );
+  const replaySequences = replayDeliveries.map((delivery) => delivery.sequence);
   const stationReplayDeliveries = await foundationStationReplayReadback({
     ...handoff,
     acknowledgedCursor: replayAfterCursor,
@@ -6374,11 +6378,11 @@ async function runFoundationF06Complete(
       transitions: latestHandoff.transitions,
       replay: {
         afterCursor: replayAfterCursor,
-        eventSequences: latestHandoff.replayedSequences,
-        deliveries: latestHandoff.replayDeliveries,
+        eventSequences: replaySequences,
+        deliveries: replayDeliveries,
         stationReadbackDeliveries: stationReplayDeliveries,
         sourceHash: await sha256Hex(stableJson(
-          latestHandoff.replayDeliveries.map(replayIdentity),
+          replayDeliveries.map(replayIdentity),
         )),
         replayHash: await sha256Hex(stableJson(
           stationReplayDeliveries.map(replayIdentity),
@@ -10549,7 +10553,8 @@ async function evaluateF06(
       && replayRequestCursor > 0
       && Number.isSafeInteger(acknowledgedCursor)
       && acknowledgedCursor >= replayRequestCursor
-      && Number(replay.afterCursor) === replayRequestCursor
+      && Number(replay.afterCursor) === acknowledgedCursor
+      && acknowledgedCursor === Number(idempotence.cursorBeforeMutation)
       && replaySequences.length > 0
       && replaySequences.every((sequence) =>
         Number.isSafeInteger(sequence)
