@@ -27,6 +27,15 @@
 - The first failed tuple was Browser / Direct / `BASE-CANCELLED` / English.
 - The only failed scenario assertion was `localizedCancellationVisible`.
 - Provisioner cleanup completed `DONE / PROVEN / passed`.
+- Instrumented exact-source run:
+  `20260907T112711453558Z-6b870ca13c5a9444eb1fa09d538dffe4`.
+- Debug log lines 1-3 show that live, reload, and replay all used locale `en`,
+  projected `LIFECYCLE_CANCELLED`, rendered `This operation was cancelled.`,
+  matched the expected translation, omitted recovery/resolution, and carried
+  the expected phase-specific error detail.
+- All three phases used the same canonical Station message ID
+  `msg_590070f35487047fad23fb41`. The oracle alone expected the live phase to
+  use synthetic `recovered-${turnId}` identity.
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/agent/harness.ts` reports one sanitized event for
@@ -38,4 +47,25 @@
   state, or cleanup.
 
 ## Verification Conclusion
-Pending phase-specific runtime instrumentation.
+Hypothesis E is confirmed. Hypotheses A-D are rejected. Product cancellation
+state and localization are correct in all three phases; the business
+Acceptance oracle incorrectly rejects the stronger canonical Station message
+identity during the live phase. The minimal fix requires canonical
+`station.messageId` in live, reload, and replay in both the TypeScript producer
+oracle and independent Python oracle. Instrumentation remains active for
+post-fix comparison.
+
+## Local Correction
+- The TypeScript producer oracle now requires `station.messageId` for live,
+  reload, and replay receiver phases.
+- The independent Python oracle enforces the same canonical identity.
+- The Python fixture models canonical identity in all phases and rejects a
+  synthetic `recovered-${turnId}` live identity.
+- Instrumentation now emits `runId=post-fix`.
+
+## Local Verification
+- Desktop TypeScript check: passed.
+- Focused Foundation/oracle/static tests: `170/170` passed.
+- Full Agent Acceptance discovery: `321/321` passed.
+- Python compilation and `git diff --check`: passed.
+- Exact-source post-fix runtime verification remains pending.

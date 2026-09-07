@@ -947,10 +947,7 @@ def valid_cancelled_capture() -> dict[str, object]:
         "recoveryVisible": False,
         "resolutionPresent": False,
     }
-    live_receiver = {
-        **receiver,
-        "messageId": "recovered-turn-cancelled",
-    }
+    live_receiver = copy.deepcopy(receiver)
     reload_receiver = {
         **receiver,
         "errorDetail": "",
@@ -2180,6 +2177,18 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
     ) -> None:
         capture = valid_cancelled_capture()
         capture["receiver"]["phases"]["replaySnapshot"]["errorType"] = None
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "localizedCancellationVisible",
+        ):
+            evaluate_base_cancelled(capture)
+
+    def test_cancelled_rejects_synthetic_live_message_identity(self) -> None:
+        capture = valid_cancelled_capture()
+        capture["receiver"]["phases"]["live"][
+            "messageId"
+        ] = "recovered-turn-cancelled"
 
         with self.assertRaisesRegex(
             GroupOneScenarioError,
