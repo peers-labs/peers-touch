@@ -66,7 +66,9 @@ func (c RejectCode) Valid() bool {
 	}
 }
 
-// Lease binds a claimed item to one consumer generation until its expiry.
+// Lease binds a claimed item to one claim-attempt generation until its expiry.
+// ConsumerEpoch changes whenever a non-empty batch is leased, even when the
+// consumer ID is unchanged, so delayed outcomes cannot affect a later attempt.
 type Lease struct {
 	ConsumerID    string
 	ConsumerEpoch uint64
