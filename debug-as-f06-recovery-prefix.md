@@ -66,14 +66,40 @@ event exists. Instrumentation remains active for post-fix comparison.
 | ID | Hypothesis | Status | Evidence |
 |----|------------|--------|----------|
 | I | The observed `REPLAYING` transition cursor is always the cursor sent in the original replay request. | Rejected | Exact-source run `20260907T153830485835Z-c4bbc331c8137f7b8c111e8cb3eb00cb` recorded `afterCursor=22` while the client retained source-bound replay delivery `22`; the separate Station readback from `22` therefore began at `23`. |
-| J | The frozen post-cut handoff cursor remains the authoritative original replay boundary. | Confirmed | The recovery request is created from `handoff.acknowledgedCursor`; replay recording admits only source deliveries greater than that same frozen cursor. |
+| J | The frozen post-cut handoff cursor remains the authoritative original replay boundary. | Rejected by follow-up | Runtime instrumentation showed the original request cursor can be `3` while the post-cut cursor advances to `34`; one mutable field had represented both boundaries. |
 | K | Wire sequence values may be numeric strings even though normalized delivery identity is numeric. | Confirmed contract risk | `createAgentTurnSourceDelivery` accepts numeric and string `seq` values; the Python oracle previously compared the raw value to the normalized integer without conversion. |
 
-- The correction keeps the required `REPLAYING` phase observation, but uses
-  `handoff.acknowledgedCursor` for the independent Station replay and reported
-  `afterCursor`.
+- The first correction kept the required `REPLAYING` phase observation and
+  used `handoff.acknowledgedCursor` for independent Station replay. The
+  follow-up evidence below supersedes that boundary choice.
 - The independent oracle converts only a valid positive integer or digit string
   before comparing sequence identity; exact raw-payload hashes remain required.
 - Focused `183/183` and full `330/330` Agent Acceptance tests plus Desktop check
   and `git diff --check` pass.
 - Runtime proof remains pending. Keep this session and its instrumentation open.
+
+## Replay Request Cursor Follow-Up
+
+- Exact-source run
+  `20260907T161810060757Z-aaa9b164cc9d9a8d6d5e7fd730bc175a`
+  on `b5b3fe8209b74926ebaa996147680124ae7e986d` reproduced Browser English
+  AS-F06 with client replay deliveries `12..183` and independent Station
+  readback `13..183` when `afterCursor=12`.
+- The controlled diagnostic run
+  `20260907T163617263286Z-4fc7227e804a51714f2b1b842acef785`
+  crossed AS-F06 and later failed at Browser English `BASE-CANCELLED`.
+  Debug log lines 1-12 record four AS-F06 preparations. All four original
+  replay requests used cursor `3`; the post-cut acknowledged cursor advanced
+  to `34` and `33` in two samples and remained `3` in two samples.
+- Hypothesis J is rejected. `handoff.acknowledgedCursor` is the post-cut
+  projection cursor, not an immutable record of the original replay request.
+  The same field was initialized from the request cursor and then overwritten
+  after the transport cut, so its meaning depended on callback timing.
+- The correction splits immutable `replayRequestCursor` from post-cut
+  `acknowledgedCursor`. Replay recording and independent Station readback use
+  the request cursor; prefix, duplicate/out-of-order, and mutation checks
+  continue to use the post-cut cursor. Both TypeScript and Python oracles
+  require `afterCursor == replayRequestCursor <= acknowledgedCursor` and retain
+  exact raw-payload hash and source-identity equality.
+- Runtime post-fix proof remains pending. Keep this session and all
+  instrumentation open.
