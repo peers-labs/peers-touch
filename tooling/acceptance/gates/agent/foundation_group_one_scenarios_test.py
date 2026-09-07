@@ -430,6 +430,7 @@ def valid_as_f06_capture(
         ],
         "replay": {
             "afterCursor": 4,
+            "throughCursor": 6,
             "eventSequences": [5, 6],
             "deliveries": replay_deliveries,
             "stationReadbackDeliveries": copy.deepcopy(replay_deliveries),
@@ -1414,6 +1415,12 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             (
                 lambda capture: capture["handoff"].update(
                     {"acknowledgedCursor": 1}
+                ),
+                "replayAfterAcknowledgedCursor",
+            ),
+            (
+                lambda capture: capture["replay"].update(
+                    {"throughCursor": 5}
                 ),
                 "replayAfterAcknowledgedCursor",
             ),
