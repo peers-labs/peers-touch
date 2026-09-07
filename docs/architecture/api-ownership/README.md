@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-06
+> **Created**: 2026-09-06 | **Updated**: 2026-09-07
 > **Owner**: Architecture Team
 > **Module**: `apps/station/`, `model/domain/`, `tooling/acceptance/`
 
@@ -72,10 +72,10 @@ The Owner accepted AO-D01 through AO-D06, revised MP-D30, and Federated Social
 D-07 on 2026-09-06. Conversation is the sole Chat entry point, and the internal
 Device Messaging Engine remains a client runtime. The Owner approved the
 dependency-ordered execution plan on 2026-09-06. CA-W0 has complete route and
-deletion inventory plus registry-driven DDD import enforcement. CA-W1 canonical
-resource-owned protobuf contracts and CA-W2 test-only Conversation DDD
-composition are complete. Commit
-`a1c921ea77737e221d47e54371a4b02a2f77bbe6` checkpoints CA-W3 resource-owner
-services and CA-W4 shared Federation/Social source, but does not prove
-production composition, route/store cutover, PostgreSQL behavior, or runtime
-convergence. Those claims remain `UNPROVEN` through CA-W5 and CA-W6.
+deletion inventory plus registry-driven DDD import enforcement. CA-W1 has
+established canonical resource-owned protobuf contracts and generated bindings.
+CA-W2 through CA-W4 now have source-complete, test-only implementations for the
+Conversation DDD authority, resource-owner services, and shared
+Federation/Social reliability semantics. CA-W5 remains the atomic production
+registration, store migration, consumer cutover, and old-path deletion boundary;
+runtime convergence remains explicitly unproven until CA-W6.

@@ -457,17 +457,8 @@ func TestConsumerFencingLeaseExpiryAndRepositoryRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if takeover.ConsumerEpoch != first.ConsumerEpoch+1 || len(takeover.Items) != 0 {
+	if takeover.ConsumerEpoch != first.ConsumerEpoch || len(takeover.Items) != 0 {
 		t.Fatalf("early takeover = %+v", takeover)
-	}
-	if _, err := fixture.service.Acknowledge(context.Background(), application.AcknowledgeRequest{
-		Recipient:     fixture.recipient,
-		ItemID:        item.ItemID,
-		LaneSequence:  item.LaneSequence,
-		ConsumerEpoch: first.ConsumerEpoch,
-		PayloadHash:   item.PayloadHash,
-	}); !application.IsCode(err, application.ErrorCodeConsumerFenced) {
-		t.Fatalf("stale consumer acknowledge error = %v", err)
 	}
 
 	fixture.clock.now = fixture.clock.now.Add(time.Minute + time.Nanosecond)
@@ -482,10 +473,19 @@ func TestConsumerFencingLeaseExpiryAndRepositoryRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recovered.ConsumerEpoch != takeover.ConsumerEpoch ||
+	if recovered.ConsumerEpoch != takeover.ConsumerEpoch+1 ||
 		len(recovered.Items) != 1 ||
 		recovered.Items[0].AttemptCount != 2 {
 		t.Fatalf("recovered claim = %+v", recovered)
+	}
+	if _, err := fixture.service.Acknowledge(context.Background(), application.AcknowledgeRequest{
+		Recipient:     fixture.recipient,
+		ItemID:        item.ItemID,
+		LaneSequence:  item.LaneSequence,
+		ConsumerEpoch: first.ConsumerEpoch,
+		PayloadHash:   item.PayloadHash,
+	}); !application.IsCode(err, application.ErrorCodeConsumerFenced) {
+		t.Fatalf("stale consumer acknowledge error = %v", err)
 	}
 
 	fixture.clock.now = fixture.clock.now.Add(time.Minute + time.Nanosecond)
@@ -497,6 +497,73 @@ func TestConsumerFencingLeaseExpiryAndRepositoryRestart(t *testing.T) {
 		PayloadHash:   item.PayloadHash,
 	}); !application.IsCode(err, application.ErrorCodeLeaseExpired) {
 		t.Fatalf("expired lease acknowledge error = %v", err)
+	}
+}
+
+func TestEmptyClaimInitializesEpochWithoutTransferringLiveAttempt(t *testing.T) {
+	fixture := newDeliveryFixture(t, standardLimits(), standardPolicy())
+	empty, err := fixture.service.Claim(
+		context.Background(),
+		fixture.recipient,
+		"consumer-a",
+		0,
+		0,
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.ConsumerEpoch != 1 || len(empty.Items) != 0 {
+		t.Fatalf("initial empty claim = %+v", empty)
+	}
+
+	item, err := fixture.repository.Enqueue(
+		context.Background(),
+		enqueueRequest(fixture.recipient, "live-attempt", "ciphertext"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := fixture.service.Claim(
+		context.Background(),
+		fixture.recipient,
+		"consumer-a",
+		empty.ConsumerEpoch,
+		0,
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ConsumerEpoch != empty.ConsumerEpoch+1 || len(claimed.Items) != 1 {
+		t.Fatalf("claimed attempt = %+v", claimed)
+	}
+
+	waiting, err := fixture.service.Claim(
+		context.Background(),
+		fixture.recipient,
+		"consumer-b",
+		claimed.ConsumerEpoch,
+		0,
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if waiting.ConsumerEpoch != claimed.ConsumerEpoch || len(waiting.Items) != 0 {
+		t.Fatalf("waiting consumer changed live attempt = %+v", waiting)
+	}
+	if _, err := fixture.service.Acknowledge(
+		context.Background(),
+		application.AcknowledgeRequest{
+			Recipient:     fixture.recipient,
+			ItemID:        item.ItemID,
+			LaneSequence:  item.LaneSequence,
+			ConsumerEpoch: claimed.ConsumerEpoch,
+			PayloadHash:   item.PayloadHash,
+		},
+	); err != nil {
+		t.Fatalf("live attempt was fenced by empty competing claim: %v", err)
 	}
 }
 
@@ -674,8 +741,22 @@ func TestRetryDeadLetterAndHeadBlocking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(secondAttempt.Items) != 2 || secondAttempt.Items[0].AttemptCount != 2 {
+	if secondAttempt.ConsumerEpoch != claim.ConsumerEpoch+1 ||
+		len(secondAttempt.Items) != 2 ||
+		secondAttempt.Items[0].AttemptCount != 2 {
 		t.Fatalf("second attempt claim = %+v", secondAttempt)
+	}
+	if _, err := fixture.service.Reject(
+		context.Background(),
+		application.RejectRequest{
+			Recipient:     fixture.recipient,
+			ItemID:        first.ItemID,
+			LaneSequence:  first.LaneSequence,
+			ConsumerEpoch: claim.ConsumerEpoch,
+			Code:          application.RejectCodeCryptoStateUnavailable,
+		},
+	); !application.IsCode(err, application.ErrorCodeConsumerFenced) {
+		t.Fatalf("delayed first-attempt reject error = %v", err)
 	}
 	deadLetter, err := fixture.service.Reject(context.Background(), application.RejectRequest{
 		Recipient:     fixture.recipient,

@@ -2,12 +2,20 @@ package federation
 
 import (
 	"context"
+	"errors"
 	"io"
 
+	conversationports "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	keyexchangemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	chatmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+)
+
+// ErrAuthorityResultCommandHashMismatch marks a signed result that does not
+// belong to the Home Station's persisted outgoing proposal.
+var ErrAuthorityResultCommandHashMismatch = errors.New(
+	"authority result command hash does not match persisted outgoing proposal",
 )
 
 // VerifiedActorDeviceKeyResolver reads identity-owned signing-key projections.
@@ -64,24 +72,27 @@ type AuthorityCommandPort interface {
 }
 
 // AuthorityResultPort atomically stores a Home Station command result and its
-// addressed device-inbox effect. It returns true only for an exact replay.
+// addressed device-inbox effect. The originating command hash comes from the
+// signed Federation frame and must match the persisted outgoing proposal. It
+// returns true only for an exact replay.
 type AuthorityResultPort interface {
 	ApplyAuthorityResult(
 		ctx context.Context,
 		transaction federationdelivery.Transaction,
 		result *chatmodel.ConversationCommandResultDelivery,
+		originatingCommandSHA256 []byte,
 		sourceAuthorityStationPeerID string,
 	) (bool, error)
 }
 
 // DeviceDeliveryPort atomically applies an authority event to the follower
-// projection and enqueues the enclosed local device item. It returns true only
-// for an exact replay.
+// projection and enqueues the target-local intent. The canonical Device Inbox
+// repository allocates lane sequence; remote Stations never supply it.
 type DeviceDeliveryPort interface {
 	ApplyDeviceDelivery(
 		ctx context.Context,
 		transaction federationdelivery.Transaction,
-		item *chatmodel.DurableDeviceInboxItem,
+		intent conversationports.DeviceInboxIntent,
 		sourceAuthorityStationPeerID string,
 	) (bool, error)
 }

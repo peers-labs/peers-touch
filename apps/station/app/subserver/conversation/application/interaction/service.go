@@ -346,15 +346,15 @@ func validateDeliveryAggregate(
 	if aggregate.ConversationID != receipt.ConversationID ||
 		aggregate.EventID != receipt.EventID ||
 		aggregate.EventSequence != receipt.EventSequence ||
-		aggregate.RequiredDeviceCount == 0 ||
 		aggregate.ConsumedDeviceCount > aggregate.RequiredDeviceCount ||
 		aggregate.RevokedDeviceCount > aggregate.RequiredDeviceCount ||
 		aggregate.ConsumedDeviceCount+aggregate.RevokedDeviceCount >
 			aggregate.RequiredDeviceCount ||
 		aggregate.Delivered != (aggregate.ConsumedDeviceCount > 0) ||
 		aggregate.FullyDelivered !=
-			(aggregate.ConsumedDeviceCount+aggregate.RevokedDeviceCount ==
-				aggregate.RequiredDeviceCount) ||
+			(aggregate.RequiredDeviceCount > 0 &&
+				aggregate.ConsumedDeviceCount+aggregate.RevokedDeviceCount ==
+					aggregate.RequiredDeviceCount) ||
 		(aggregate.Read && !aggregate.Delivered) {
 		return NewError(
 			ErrorCodeIntegrityFailed,
