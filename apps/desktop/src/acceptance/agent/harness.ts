@@ -4276,16 +4276,46 @@ async function runFoundationAttachmentRejectedScenario(input: {
       configurable: true,
       value: transfer.files,
     });
+    void reportFoundationAttachmentTimeoutDebug('A-C', 'input-dispatch', {
+      fileCount: fileInput.files?.length ?? 0,
+      firstFileMimeType: fileInput.files?.item(0)?.type ?? '',
+      firstFileSize: fileInput.files?.item(0)?.size ?? 0,
+      conversationIdPresent: conversation.conversation_id.length > 0,
+    });
     // eslint-disable-next-line no-restricted-syntax -- Drive the real file-input boundary.
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-    await waitFor(
-      () => Boolean(document.querySelector(
+    try {
+      await waitFor(
+        () => Boolean(document.querySelector(
+          '[data-pt-agent-composer-attachment-status="ready"]',
+        )),
+        'rejected attachment upload',
+        30_000,
+      );
+    } catch (error) {
+      await reportFoundationAttachmentTimeoutDebug('A-D', 'ready-timeout', {
+        error: error instanceof Error ? error.message : String(error),
+        drafts: Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '[data-pt-agent-composer-attachment]',
+          ),
+        ).map((draft) => ({
+          attachmentId: draft.dataset.ptAgentComposerAttachment ?? '',
+          objectRefPresent: Boolean(
+            draft.dataset.ptAgentComposerAttachmentObjectRef,
+          ),
+          status: draft.dataset.ptAgentComposerAttachmentStatus ?? '',
+          text: draft.textContent?.trim() ?? '',
+        })),
+      });
+      throw error;
+    }
+    void reportFoundationAttachmentTimeoutDebug('A-D', 'upload-ready', {
+      readyCount: document.querySelectorAll(
         '[data-pt-agent-composer-attachment-status="ready"]',
-      )),
-      'rejected attachment upload',
-      30_000,
-    );
+      ).length,
+    });
     const readyDraft = document.querySelector<HTMLElement>(
       '[data-pt-agent-composer-attachment-status="ready"]',
     );
@@ -6956,6 +6986,27 @@ function reportFoundationQueueCapacityDebug(
       runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:foundationDirectProbe:AS-F02',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:foundation-attachment-timeout
+function reportFoundationAttachmentTimeoutDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7787/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-attachment-timeout',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationAttachmentRejectedScenario',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
