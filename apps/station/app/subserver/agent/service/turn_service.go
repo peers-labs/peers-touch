@@ -128,28 +128,29 @@ type TurnConfig struct {
 type TurnEventSink func(ctx context.Context, event TurnEvent)
 
 type TurnEvent struct {
-	Type             string `json:"type"`
-	Seq              int64  `json:"seq,omitempty"`
-	TurnID           string `json:"turnId,omitempty"`
-	AttemptID        string `json:"attemptId,omitempty"`
-	ConversationID   string `json:"conversationId,omitempty"`
-	AgentID          string `json:"agentId,omitempty"`
-	Stage            string `json:"stage,omitempty"`
-	Text             string `json:"text,omitempty"`
-	ToolCallID       string `json:"toolCallId,omitempty"`
-	ToolName         string `json:"toolName,omitempty"`
-	Arguments        string `json:"arguments,omitempty"`
-	ApprovalID       string `json:"approvalId,omitempty"`
-	DecisionID       string `json:"decisionId,omitempty"`
-	DecisionRevision uint64 `json:"decisionRevision,omitempty"`
-	ExpiresAt        string `json:"expiresAt,omitempty"`
-	Approved         bool   `json:"approved,omitempty"`
-	PayloadHash      string `json:"payloadHash,omitempty"`
-	Source           string `json:"source,omitempty"`
-	ServerName       string `json:"serverName,omitempty"`
-	Result           string `json:"result,omitempty"`
-	Error            string `json:"error,omitempty"`
-	Iteration        int    `json:"iteration,omitempty"`
+	Type             string          `json:"type"`
+	Seq              int64           `json:"seq,omitempty"`
+	TurnID           string          `json:"turnId,omitempty"`
+	AttemptID        string          `json:"attemptId,omitempty"`
+	ConversationID   string          `json:"conversationId,omitempty"`
+	AgentID          string          `json:"agentId,omitempty"`
+	Stage            string          `json:"stage,omitempty"`
+	Text             string          `json:"text,omitempty"`
+	ToolCallID       string          `json:"toolCallId,omitempty"`
+	ToolName         string          `json:"toolName,omitempty"`
+	Arguments        string          `json:"arguments,omitempty"`
+	ApprovalID       string          `json:"approvalId,omitempty"`
+	DecisionID       string          `json:"decisionId,omitempty"`
+	DecisionRevision uint64          `json:"decisionRevision,omitempty"`
+	ExpiresAt        string          `json:"expiresAt,omitempty"`
+	Approved         bool            `json:"approved,omitempty"`
+	PayloadHash      string          `json:"payloadHash,omitempty"`
+	Source           string          `json:"source,omitempty"`
+	ServerName       string          `json:"serverName,omitempty"`
+	Result           string          `json:"result,omitempty"`
+	Error            string          `json:"error,omitempty"`
+	OutcomeError     json.RawMessage `json:"outcome_error,omitempty"`
+	Iteration        int             `json:"iteration,omitempty"`
 }
 
 var errTurnEventPersistence = errors.New("turn event persistence failed")
@@ -6322,6 +6323,14 @@ func (s *TurnService) cancelTurnWithResult(
 			if err != nil {
 				return err
 			}
+			outcomeError := errcode.NewLifecycleCancelledPayload("turn", turnID)
+			outcomeErrorJSON, err := (protojson.MarshalOptions{
+				UseProtoNames:   true,
+				EmitUnpopulated: true,
+			}).Marshal(outcomeError)
+			if err != nil {
+				return err
+			}
 			conversationID = turn.ConversationID
 			if err := tx.Model(&turn).
 				Where("status IN ?", []string{
@@ -6348,6 +6357,7 @@ func (s *TurnService) cancelTurnWithResult(
 				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
 				Updates(map[string]interface{}{
 					"status":     string(domain.TurnStatusCancelled),
+					"error_json": outcomeErrorJSON,
 					"updated_at": now,
 				}).Error; err != nil {
 				return err
@@ -6433,6 +6443,7 @@ func (s *TurnService) cancelTurnWithResult(
 				AgentID:        turn.AgentID,
 				Stage:          "turn_cancelled",
 				Error:          "cancelled_by_user",
+				OutcomeError:   outcomeErrorJSON,
 			}
 			payload, err := json.Marshal(event)
 			if err != nil {

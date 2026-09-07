@@ -1031,6 +1031,28 @@ func TestRequestCancelWaitingToolPersistsCancelledEvent(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed turn: %v", err)
 	}
+	if err := db.Create(&persistence.TurnAttempt{
+		ID:           "attempt_cancel",
+		TurnID:       "turn_cancel",
+		AttemptIndex: 1,
+		Status:       string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed turn attempt: %v", err)
+	}
+	if err := db.Create(&persistence.AgentMessage{
+		ID:             "message_cancel",
+		ConversationID: "conv_cancel",
+		TurnID:         optionalString("turn_cancel"),
+		Role:           string(domain.MessageRoleAssistant),
+		Status:         "pending",
+		Content:        optionalString("partial"),
+		Seq:            1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed assistant message: %v", err)
+	}
 
 	svc := TurnService{convService: NewConversationService()}
 	status, err := svc.RequestCancelTurn(context.Background(), "actor_1", "turn_cancel")
@@ -1047,6 +1069,62 @@ func TestRequestCancelWaitingToolPersistsCancelledEvent(t *testing.T) {
 	}
 	if event.EventSeq != 1 {
 		t.Fatalf("cancelled event sequence = %d, want 1", event.EventSeq)
+	}
+	var payload TurnEvent
+	if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+		t.Fatalf("decode cancelled event payload: %v", err)
+	}
+	var eventError model.ErrorPayload
+	if err := json.Unmarshal(payload.OutcomeError, &eventError); err != nil {
+		t.Fatalf("decode cancelled event outcome: %v", err)
+	}
+	assertLifecycleCancelledJSON(t, payload.OutcomeError)
+	assertLifecycleCancelledPayload(t, &eventError, "turn_cancel")
+
+	var message persistence.AgentMessage
+	if err := db.First(&message, "id = ?", "message_cancel").Error; err != nil {
+		t.Fatalf("load cancelled assistant message: %v", err)
+	}
+	if message.Status != string(domain.TurnStatusCancelled) {
+		t.Fatalf("assistant message status = %q, want cancelled", message.Status)
+	}
+	var messageError model.ErrorPayload
+	if err := json.Unmarshal(message.ErrorJSON, &messageError); err != nil {
+		t.Fatalf("decode cancelled assistant error: %v", err)
+	}
+	assertLifecycleCancelledJSON(t, message.ErrorJSON)
+	assertLifecycleCancelledPayload(t, &messageError, "turn_cancel")
+}
+
+func assertLifecycleCancelledJSON(t *testing.T, encoded []byte) {
+	t.Helper()
+	var payload map[string]interface{}
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatalf("decode lifecycle cancellation JSON: %v", err)
+	}
+	retryable, retryablePresent := payload["retryable"]
+	terminal, terminalPresent := payload["terminal"]
+	if !retryablePresent || retryable != false || !terminalPresent || terminal != true {
+		t.Fatalf("lifecycle cancellation booleans are incomplete: %+v", payload)
+	}
+}
+
+func assertLifecycleCancelledPayload(
+	t *testing.T,
+	payload *model.ErrorPayload,
+	turnID string,
+) {
+	t.Helper()
+	if payload == nil ||
+		payload.GetError() != errcode.AgentLifecycleCancelledLocaleKey ||
+		payload.GetErrorType() != string(errcode.AgentLifecycleCancelled) ||
+		payload.GetLocaleKey() != errcode.AgentLifecycleCancelledLocaleKey ||
+		payload.GetRetryable() ||
+		!payload.GetTerminal() ||
+		len(payload.GetDetails()) != 2 ||
+		payload.GetDetails()["resource_kind"] != "turn" ||
+		payload.GetDetails()["resource_id"] != turnID {
+		t.Fatalf("lifecycle cancellation payload = %+v", payload)
 	}
 }
 

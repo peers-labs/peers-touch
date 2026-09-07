@@ -2349,6 +2349,225 @@ def evaluate_base_active_mutation_conflict(
     return assertions
 
 
+def evaluate_base_cancelled(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-CANCELLED"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    receiver_phases = _mapping(receiver, "phases", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    persisted_outcome = _mapping(
+        station,
+        "persistedOutcome",
+        scenario=scenario,
+    )
+    persisted_details = _mapping(
+        persisted_outcome,
+        "details",
+        scenario=scenario,
+    )
+    replay = _mapping(capture, "replay", scenario=scenario)
+    replay_snapshot = _mapping(replay, "snapshot", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    cancellation = _mapping(capture, "cancellation", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+    turn_id = _nonempty_string(station, "turnId", scenario=scenario)
+    source_hash = _sha256_string(
+        replay,
+        "sourceHash",
+        scenario=scenario,
+    )
+
+    def receiver_phase_matches(
+        phase_name: str,
+        expected_message_id: str,
+        expected_error_detail: str,
+    ) -> bool:
+        phase = _mapping(receiver_phases, phase_name, scenario=scenario)
+        return (
+            phase.get("visible") is True
+            and phase.get("terminalStatus") == "cancelled"
+            and phase.get("errorType") == "LIFECYCLE_CANCELLED"
+            and phase.get("resourceKind") == "turn"
+            and phase.get("resourceId") == turn_id
+            and _nonempty_string(
+                phase,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                phase,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and phase.get("recoveryVisible") is False
+            and phase.get("resolutionPresent") is False
+            and phase.get("messageId") == expected_message_id
+            and phase.get("errorDetail") == expected_error_detail
+        )
+
+    assertions = {
+        "typedCancellationProjected": (
+            outcome.get("error") == "agent.errors.lifecycleCancelled"
+            and outcome.get("error_type") == "LIFECYCLE_CANCELLED"
+            and outcome.get("locale_key")
+            == "agent.errors.lifecycleCancelled"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details) == ["resource_id", "resource_kind"]
+            and details.get("resource_kind") == "turn"
+            and details.get("resource_id") == turn_id
+            and runtime_event.get("eventType") == "cancelled"
+            and runtime_event.get("errorType") == "LIFECYCLE_CANCELLED"
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and _sha256_string(
+                runtime_event,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            and runtime_event.get("sourceConversationId")
+            == station.get("conversationId")
+            and runtime_event.get("sourceTurnId") == turn_id
+            and runtime_event.get("sourceSequence")
+            == runtime_event.get("sequence")
+            and runtime_event.get("sourceEventType")
+            == runtime_event.get("eventType")
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            ) > 0
+        ),
+        "localizedCancellationVisible": (
+            receiver.get("visible") is True
+            and receiver.get("terminalStatus") == "cancelled"
+            and receiver.get("errorType") == "LIFECYCLE_CANCELLED"
+            and receiver.get("resourceKind") == "turn"
+            and receiver.get("resourceId") == turn_id
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is False
+            and receiver.get("resolutionPresent") is False
+            and receiver_phase_matches(
+                "live",
+                f"recovered-{turn_id}",
+                "cancelled_by_user",
+            )
+            and receiver_phase_matches(
+                "reload",
+                str(station.get("messageId")),
+                "",
+            )
+            and receiver_phase_matches(
+                "replaySnapshot",
+                str(station.get("messageId")),
+                "cancelled_by_user",
+            )
+        ),
+        "cancelledPersisted": (
+            station.get("turnStatus") == "cancelled"
+            and station.get("attemptStatus") == "cancelled"
+            and station.get("messageStatus") == "cancelled"
+            and station.get("terminalReason") == "cancelled_by_user"
+            and persisted_outcome.get("error") == outcome.get("error")
+            and persisted_outcome.get("error_type")
+            == outcome.get("error_type")
+            and persisted_outcome.get("locale_key")
+            == outcome.get("locale_key")
+            and persisted_outcome.get("retryable")
+            == outcome.get("retryable")
+            and persisted_outcome.get("terminal")
+            == outcome.get("terminal")
+            and sorted(persisted_details) == sorted(details)
+            and persisted_details.get("resource_kind")
+            == details.get("resource_kind")
+            and persisted_details.get("resource_id")
+            == details.get("resource_id")
+            and cancellation.get("status") == "cancelled"
+        ),
+        "exactlyOneAuthoritativeTerminal": (
+            _positive_int(
+                station,
+                "terminalEventCount",
+                scenario=scenario,
+            ) == 1
+            and _positive_int(
+                station,
+                "cancelledEventCount",
+                scenario=scenario,
+            ) == 1
+            and _nonnegative_int(
+                station,
+                "errorEventCount",
+                scenario=scenario,
+            ) == 0
+        ),
+        "zeroLateSuccess": (
+            _nonnegative_int(
+                station,
+                "doneEventCount",
+                scenario=scenario,
+            ) == 0
+            and _nonnegative_int(
+                station,
+                "liveDoneEventCount",
+                scenario=scenario,
+            ) == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            ) == source_hash
+            and replay_snapshot.get("sourceTransport") == "station-sse"
+            and _sha256_string(
+                replay_snapshot,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            == runtime_event.get("sourcePtidHash")
+            and replay_snapshot.get("sourceConversationId")
+            == station.get("conversationId")
+            and replay_snapshot.get("sourceTurnId") == turn_id
+            and replay_snapshot.get("sourceSequence")
+            == runtime_event.get("sourceSequence")
+            and replay_snapshot.get("sourceEventType") == "snapshot"
+            and replay_snapshot.get("status") == "cancelled"
+        ),
+        "cleanupComplete": (
+            _positive_int(
+                cleanup,
+                "cancellationRequestCount",
+                scenario=scenario,
+            ) == 1
+            and _positive_int(
+                cleanup,
+                "terminalCleanupCount",
+                scenario=scenario,
+            ) == 1
+            and cleanup.get("conversationDeleted") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_approval_denied(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

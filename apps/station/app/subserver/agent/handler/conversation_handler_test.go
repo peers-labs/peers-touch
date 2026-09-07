@@ -64,6 +64,26 @@ func TestMessagesToJSONIncludesPersistedLineage(t *testing.T) {
 	}
 }
 
+func TestMessagesToJSONIncludesPersistedStatusAndTypedError(t *testing.T) {
+	errorJSON := json.RawMessage(`{"error":"agent.errors.lifecycleCancelled","error_type":"LIFECYCLE_CANCELLED","locale_key":"agent.errors.lifecycleCancelled","retryable":false,"terminal":true,"details":{"resource_kind":"turn","resource_id":"turn-1"}}`)
+	items, err := messagesToJSON([]*domain.Message{{
+		MessageID:      "message-1",
+		ConversationID: "conversation-1",
+		TurnID:         "turn-1",
+		Role:           domain.MessageRoleAssistant,
+		Status:         "cancelled",
+		ErrorJSON:      errorJSON,
+	}})
+	if err != nil {
+		t.Fatalf("messagesToJSON: %v", err)
+	}
+	if len(items) != 1 ||
+		items[0]["status"] != "cancelled" ||
+		items[0]["error_json"] != string(errorJSON) {
+		t.Fatalf("message terminal outcome missing from response: %+v", items)
+	}
+}
+
 func TestMessagesToJSONRejectsCorruptAttachmentMetadata(t *testing.T) {
 	_, err := messagesToJSON([]*domain.Message{{
 		MessageID:       "message-1",

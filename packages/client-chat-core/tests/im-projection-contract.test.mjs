@@ -104,6 +104,7 @@ const interruptedSnapshot = {
   role: 'assistant',
   status: 'interrupted',
   content: '',
+  errorJson: '{"error_type":"LIFECYCLE_INTERRUPTED"}',
   seq: 5,
   reconciliationSource: 'station-snapshot',
   createdAt: '2026-08-30T00:00:00Z',
@@ -123,6 +124,7 @@ const retainedSnapshot = mergeAgentMessages(
 )[0];
 assert.equal(retainedSnapshot.status, 'interrupted');
 assert.equal(retainedSnapshot.content, '');
+assert.equal(retainedSnapshot.errorJson, interruptedSnapshot.errorJson);
 assert.equal(retainedSnapshot.updatedAt, interruptedSnapshot.updatedAt);
 
 const acceptedSnapshot = mergeAgentMessages(

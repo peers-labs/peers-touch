@@ -108,6 +108,30 @@ class AgentEventProtocolTest(unittest.TestCase):
             "assistant messages must expose the stable budget-notice selector",
         )
 
+    def test_cancellation_event_carries_station_owned_typed_outcome(self) -> None:
+        contract = _read("model/domain/agent/turn_stream.proto")
+        station = _read("apps/station/app/subserver/agent/service/turn_service.go")
+        message_projection = _read(
+            "apps/station/app/subserver/agent/handler/conversation_handler.go"
+        )
+        projection = _read("apps/desktop/src/store/streaming/handler.ts")
+        cache_projection = _read(
+            "apps/desktop/src/storage/desktopAgentChatCache.ts"
+        )
+        self.assertRegex(
+            contract,
+            r"message CancelledPayload \{[^}]*ErrorPayload outcome_error = 2;",
+        )
+        self.assertIn("OutcomeError:   outcomeErrorJSON", station)
+        self.assertIn(
+            'errcode.NewLifecycleCancelledPayload("turn", turnID)',
+            station,
+        )
+        self.assertIn('item["error_json"]', message_projection)
+        self.assertIn("cancellationTypedError(d)", projection)
+        self.assertIn("terminalStatus: 'cancelled'", projection)
+        self.assertIn("errorJson: message.error_json", cache_projection)
+
 
 class AgentDeadCodeRemovalTest(unittest.TestCase):
     def test_no_legacy_sse_approval_interception_in_rust(self) -> None:

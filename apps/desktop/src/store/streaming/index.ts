@@ -18,6 +18,7 @@ export type {
   ImageEventPayload,
   ConversationCreatedPayload,
   ErrorEventPayload,
+  CancelledEventPayload,
   DoneEventPayload,
   StreamingAccumulator,
   StreamingHandlerOptions,
@@ -37,6 +38,7 @@ export {
 
 export {
   reduceStreamEvent,
+  projectAgentTypedError,
   isTerminalEvent,
   isApprovalEvent,
   createStreamingAccumulator,

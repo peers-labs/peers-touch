@@ -1201,6 +1201,47 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("activeMutationCleanup.conversationDeleted === true", self.source)
         self.assertNotIn("mock", scenario.lower())
 
+    def test_cancelled_uses_station_owned_payload_replay_and_cleanup(self) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationCancelledScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationDirectAttestationTurn",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("startObservedFoundationTurn({", scenario)
+        self.assertIn("thinkingMode: 'disabled'", scenario)
+        self.assertIn("api.cancelAgentTurn(turnId)", scenario)
+        self.assertIn("foundationCancellationLostRace", scenario)
+        self.assertNotIn("terminalRaceStatuses.push", scenario)
+        self.assertNotIn("terminalRaceCount:", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            "foundationCancellationSnapshotIdentityMismatch",
+            scenario,
+        )
+        self.assertIn("snapshotDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn("waitForFoundationDiagnosticReplay(", scenario)
+        self.assertIn("AgentTurnStatus.CANCELLED", scenario)
+        self.assertIn("foundationStationReplayReadback({", scenario)
+        self.assertIn("applyRecoveredTurnEvent(", scenario)
+        self.assertGreaterEqual(scenario.count("messages: []"), 2)
+        self.assertIn("reconcileRecoveredTurn(", scenario)
+        self.assertIn("Foundation live cancellation receiver", scenario)
+        self.assertIn("Foundation reloaded cancellation receiver", scenario)
+        self.assertIn("Foundation replayed cancellation receiver", scenario)
+        self.assertIn("onSnapshot:", scenario)
+        self.assertIn("data-pt-agent-terminal-status", self.source)
+        self.assertIn("data-pt-agent-error-type", self.source)
+        self.assertIn("data-pt-agent-error-resource-id", self.source)
+        self.assertIn("data-pt-agent-message-error-text", self.source)
+        self.assertIn("data-pt-agent-message-error-recovery", self.source)
+        self.assertIn("await cleanupFoundationToolConversation(", scenario)
+        self.assertIn("if (cell === 'BASE-CANCELLED')", self.source)
+        self.assertNotIn("mock", scenario.lower())
+
     def test_approval_denied_uses_product_action_and_station_readback(self) -> None:
         scenario_start = self.source.index(
             "async function runFoundationApprovalDeniedScenario"

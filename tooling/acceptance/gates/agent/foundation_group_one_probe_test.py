@@ -19,6 +19,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_approval_expired,
     evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
+    evaluate_base_cancelled,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -33,6 +34,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_approval_expired_capture,
     valid_approval_denied_capture,
     valid_active_mutation_conflict_capture,
+    valid_cancelled_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -59,12 +61,12 @@ class RecordingHarnessClient:
         return {"locale": "wrong" if self.reject_locale else locale}
 
 
-def attachment_runtime_role(
+def typed_runtime_role(
     facts: dict[str, object],
 ) -> dict[str, object]:
     runtime_event = facts["runtimeEvent"]
     assert isinstance(runtime_event, dict)
-    return {
+    role = {
         "eventId": runtime_event["eventId"],
         "sequence": runtime_event["sequence"],
         "eventType": runtime_event["eventType"],
@@ -75,15 +77,32 @@ def attachment_runtime_role(
         "payloadHash": runtime_event["payloadHash"],
         "errorType": runtime_event["errorType"],
     }
+    for key in (
+        "sourceTransport",
+        "sourcePtidHash",
+        "sourceConversationId",
+        "sourceTurnId",
+        "sourceSequence",
+        "sourceEventType",
+    ):
+        if key in runtime_event:
+            role[key] = runtime_event[key]
+    return role
 
 
 def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, Any]:
     result = capture(probe)
+    if probe.cell == "BASE-CANCELLED":
+        facts = valid_cancelled_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_cancelled(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        return result
     if probe.cell == "BASE-ATTACHMENT_REJECTED":
         facts = valid_attachment_rejected_capture()
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_base_attachment_rejected(facts)
-        result["runtime-events"] = attachment_runtime_role(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
         return result
     if probe.cell == "BASE-APPROVAL_EXPIRED":
         facts = valid_approval_expired_capture()
@@ -287,7 +306,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         capture_value = {
             "scenarioFacts": facts,
             "assertions": evaluate_base_attachment_rejected(facts),
-            "runtime-events": attachment_runtime_role(facts),
+            "runtime-events": typed_runtime_role(facts),
         }
         probe = DirectRuntimeProbeInput(
             platform="browser",
@@ -314,7 +333,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             "scenarioFacts": facts,
             "assertions": evaluate_base_attachment_rejected(facts),
             "runtime-events": {
-                **attachment_runtime_role(facts),
+                **typed_runtime_role(facts),
                 "eventType": "done",
             },
         }
@@ -403,6 +422,35 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneProbeError,
             "BASE-ACTIVE_MUTATION_CONFLICT assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_cancelled_routes_to_independent_oracle(self) -> None:
+        facts = valid_cancelled_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_cancelled(facts),
+            "runtime-events": typed_runtime_role(facts),
+            "runtimeAttestation": {
+                "actorIdentityHash": facts["runtimeEvent"]["sourcePtidHash"],
+            },
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-CANCELLED",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroLateSuccess": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-CANCELLED assertions do not match",
         ):
             assert_group_one_capture(probe, capture_value)
 

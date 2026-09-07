@@ -44,6 +44,16 @@ export function projectAgentTypedError(
   };
 }
 
+function cancellationTypedError(
+  data: Record<string, unknown>,
+): ChatMessage['typedError'] {
+  const outcome = data.outcome_error ?? data.outcomeError;
+  if (!outcome || typeof outcome !== 'object' || Array.isArray(outcome)) {
+    return undefined;
+  }
+  return projectAgentTypedError(outcome as Record<string, unknown>);
+}
+
 function budgetKind(reason: string): BudgetExhaustionKind {
   if (reason.includes('tool_call')) return 'tool_calls';
   if (reason.includes('wall_time')) return 'wall_time';
@@ -149,14 +159,20 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       };
     }
 
-    case 'cancelled':
+    case 'cancelled': {
+      const typedError = cancellationTypedError(d);
       return {
         ...msg,
+        error: typedError?.locale_key ?? msg.error,
+        typedError: typedError ?? msg.typedError,
+        errorDetail: s(d.reason || d.error) || msg.errorDetail,
+        resolution: null,
         cancelled: true,
         terminalStatus: 'cancelled',
         loading: false,
         lastEventAt: Date.now(),
       };
+    }
 
     case 'connection_lost':
     case 'reconnecting':
@@ -207,6 +223,12 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       const terminalReason = s(d.terminal_reason || d.terminalReason);
       const budgetNotice = projectBudgetNotice(d);
       const hasSnapshotText = typeof d.text === 'string';
+      const cancelledError = (
+        status === 'cancelled'
+        && msg.typedError?.error_type === 'LIFECYCLE_CANCELLED'
+      )
+        ? msg.typedError
+        : undefined;
       const terminalStatus = ['completed', 'failed', 'cancelled', 'interrupted'].includes(status)
         ? status as NonNullable<ChatMessage['terminalStatus']>
         : msg.terminalStatus;
@@ -217,13 +239,20 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
         error:
           status === 'failed' || status === 'interrupted'
             ? terminalReason || msg.error
-            : status === 'completed' || status === 'cancelled'
+            : status === 'cancelled'
+              ? cancelledError?.locale_key
+              : status === 'completed'
               ? undefined
               : msg.error,
+        typedError:
+          status === 'cancelled'
+            ? cancelledError
+            : msg.typedError,
         errorDetail:
           status === 'failed' || status === 'cancelled' || status === 'interrupted'
             ? terminalReason || msg.errorDetail
             : msg.errorDetail,
+        resolution: status === 'cancelled' ? null : msg.resolution,
         budgetNotice: budgetNotice ?? msg.budgetNotice,
         terminalStatus,
         loading: status === 'running',
@@ -301,8 +330,20 @@ export function accumulateEvent(acc: StreamingAccumulator, event: TurnStreamEven
       return { ...acc, images: [...acc.images, s(d.url)], lastEventAt: Date.now() };
     case 'error':
       return { ...acc, error: { message: s(d.error), detail: s(d.detail), providerId: s(d.providerId) }, lastEventAt: Date.now() };
-    case 'cancelled':
-      return { ...acc, isCancelled: true, lastEventAt: Date.now() };
+    case 'cancelled': {
+      const typedError = cancellationTypedError(d);
+      return {
+        ...acc,
+        error: typedError
+          ? {
+              message: typedError.locale_key,
+              detail: s(d.reason || d.error) || undefined,
+            }
+          : acc.error,
+        isCancelled: true,
+        lastEventAt: Date.now(),
+      };
+    }
     case 'done':
       return { ...acc, isDone: true, model: s(d.model) || acc.model, lastEventAt: Date.now() };
     default:

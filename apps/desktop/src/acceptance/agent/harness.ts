@@ -99,6 +99,12 @@ interface FoundationRuntimeEventObservation {
   conversationIdHash?: string;
   payloadHash?: string;
   errorType?: string;
+  sourceTransport?: string;
+  sourcePtidHash?: string;
+  sourceConversationId?: string;
+  sourceTurnId?: string;
+  sourceSequence?: number;
+  sourceEventType?: string;
 }
 
 interface FoundationAttachmentDeletionReadback {
@@ -127,6 +133,7 @@ interface ObservedFoundationTurnResult {
     event: string;
     data: Record<string, unknown>;
     observedAt: string;
+    sourceDelivery?: AgentTurnSourceDelivery;
   }>;
 }
 
@@ -215,6 +222,16 @@ interface FoundationF06Handoff {
   recoveryFailure?: Record<string, unknown>;
   preparedAt: string;
 }
+
+type FoundationTurnReplayLocator = Pick<
+  FoundationF06Handoff,
+  | 'conversationId'
+  | 'turnId'
+  | 'streamId'
+  | 'streamGeneration'
+  | 'actorPtid'
+  | 'acknowledgedCursor'
+>;
 
 interface FoundationF06FaultBoundary {
   handoff: FoundationF06Handoff;
@@ -664,9 +681,14 @@ function installFoundationF06Observation(): void {
 }
 
 async function foundationStationReplayReadback(
-  handoff: FoundationF06Handoff,
+  handoff: FoundationTurnReplayLocator,
+  options: {
+    finishOnTerminal?: boolean;
+    onSnapshot?: (event: StreamEvent) => void;
+  } = {},
 ): Promise<FoundationF06ReplayDelivery[]> {
   const deliveries: FoundationF06ReplayDelivery[] = [];
+  const finishOnTerminal = options.finishOnTerminal ?? true;
   let recording = Promise.resolve();
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -721,13 +743,23 @@ async function foundationStationReplayReadback(
         }).catch((error) => {
           finish(error instanceof Error ? error : new Error(String(error)));
         });
-        if (classifyAgentTurnTerminalEvent(event) !== null) finish();
+        if (
+          finishOnTerminal
+          && classifyAgentTurnTerminalEvent(event) !== null
+        ) {
+          finish();
+        }
         return;
       }
       if (
         event.event === 'catchup_done'
-        || classifyAgentTurnTerminalEvent(event) !== null
+        || event.event === 'snapshot'
+        || (
+          finishOnTerminal
+          && classifyAgentTurnTerminalEvent(event) !== null
+        )
       ) {
+        if (event.event === 'snapshot') options.onSnapshot?.(event);
         finish();
       }
     }, finish, handoff.actorPtid);
@@ -790,6 +822,7 @@ function startObservedFoundationTurn(input: {
       event: event.event,
       data: evidenceValue(event.data) as Record<string, unknown>,
       observedAt: new Date().toISOString(),
+      sourceDelivery: event.sourceDelivery,
     };
     events.push(observed);
     input.onEvent?.(observed, events, controller, () => finish(true, null));
@@ -1318,6 +1351,7 @@ async function foundationConversationReadback(conversationId: string) {
       role: message.role,
       status: message.status,
       content: message.content,
+      errorJson: message.error_json ?? '',
       attachments: message.attachments ?? [],
       seq: message.seq,
       branchId: message.branch_id ?? null,
@@ -1529,6 +1563,29 @@ async function foundationDiagnosticReplay(
     'turnDiagnostics',
   );
   return evidenceRecord(response.replay, 'turnDiagnosticReplay');
+}
+
+async function waitForFoundationDiagnosticReplay(
+  turnId: string,
+  predicate: (replay: Record<string, unknown>) => boolean,
+  description: string,
+  timeoutMs = FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+): Promise<Record<string, unknown>> {
+  const startedAt = Date.now();
+  let lastError: unknown = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const replay = await foundationDiagnosticReplay(turnId);
+      if (predicate(replay)) return replay;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw Object.assign(
+    new Error(`timed out waiting for: ${description}`),
+    { cause: lastError },
+  );
 }
 
 function foundationDiagnosticToolFacts(
@@ -8175,6 +8232,103 @@ interface FoundationActiveMutationConflictResult {
   facts: Record<string, unknown>;
 }
 
+interface FoundationCancelledResult {
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}
+
+interface FoundationCancelledReceiverSnapshot {
+  messageId: string | null;
+  visible: boolean;
+  terminalStatus: string | null;
+  errorType: string | null;
+  resourceKind: string | null;
+  resourceId: string | null;
+  errorDetail: string;
+  errorText: string;
+  expectedErrorText: string;
+  recoveryVisible: boolean;
+  resolutionPresent: boolean;
+}
+
+async function foundationCancelledReceiverSnapshot(
+  turnId: string,
+  description: string,
+): Promise<FoundationCancelledReceiverSnapshot> {
+  const selector =
+    '[data-pt-agent-message="assistant"]'
+    + `[data-pt-agent-error-resource-id="${turnId}"]`;
+  await waitFor(
+    () => {
+      const element = document.querySelector<HTMLElement>(selector);
+      return Boolean(
+        element
+        && element.getAttribute('data-pt-agent-terminal-status') === 'cancelled'
+        && element.getClientRects().length > 0,
+      );
+    },
+    description,
+    30_000,
+  );
+  const messageElement = document.querySelector<HTMLElement>(selector);
+  if (!messageElement) {
+    throw new Error('agent.acceptance.foundationCancellationReceiverMissing');
+  }
+  const errorSelector =
+    '[data-pt-agent-message-error-text="agent.errors.lifecycleCancelled"]';
+  let receiverError = messageElement.querySelector<HTMLElement>(errorSelector);
+  if (!receiverError) {
+    const errorToggle = messageElement.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-toggle]',
+    );
+    if (!errorToggle) {
+      throw new Error('agent.acceptance.foundationCancellationErrorToggleMissing');
+    }
+    errorToggle.click();
+    await waitFor(
+      () => Boolean(messageElement.querySelector(errorSelector)),
+      `${description} localized text`,
+      10_000,
+    );
+    receiverError = messageElement.querySelector<HTMLElement>(errorSelector);
+  }
+  const receiverMessage = [...useChatStore.getState().messages]
+    .reverse()
+    .find((message) =>
+      message.role === 'assistant'
+      && message.typedError?.details.resource_id === turnId);
+
+  return {
+    messageId: messageElement.getAttribute('data-pt-agent-message-id'),
+    visible: messageElement.getClientRects().length > 0,
+    terminalStatus: messageElement.getAttribute(
+      'data-pt-agent-terminal-status',
+    ),
+    errorType: messageElement.getAttribute('data-pt-agent-error-type'),
+    resourceKind: messageElement.getAttribute(
+      'data-pt-agent-error-resource-kind',
+    ),
+    resourceId: messageElement.getAttribute(
+      'data-pt-agent-error-resource-id',
+    ),
+    errorDetail: receiverMessage?.errorDetail ?? '',
+    errorText: receiverError?.textContent?.trim() ?? '',
+    expectedErrorText: i18n.t(
+      'agent.errors.lifecycleCancelled',
+      { ns: 'agent' },
+    ),
+    recoveryVisible: Boolean(
+      messageElement.querySelector(
+        '[data-pt-agent-message-error-recovery]',
+      ),
+    ),
+    resolutionPresent: Boolean(receiverMessage?.resolution),
+  };
+}
+
 function typedActiveMutationConflict(error: unknown): Record<string, unknown> {
   const record = evidenceRecord(error, 'activeMutationConflictError');
   const details = evidenceRecord(record.details, 'activeMutationConflictDetails');
@@ -8194,6 +8348,412 @@ function typedActiveMutationConflict(error: unknown): Record<string, unknown> {
 
 async function agentAuthorityHash(agent: Awaited<ReturnType<typeof api.getAgent>>): Promise<string> {
   return sha256Hex(stableJson(agent));
+}
+
+async function runFoundationCancelledScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<FoundationCancelledResult> {
+  const agentId = input.agent.id || input.agent.name;
+  const actorPtid = authenticatedFoundationActorPtid();
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation cancelled ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  let turnId = '';
+
+  try {
+      await useChatStore.getState().selectSession(conversation.conversation_id);
+      const startedAt = performance.now();
+      let cancellationRequestedAt = 0;
+      let cancellationRequestCount = 0;
+      const streamId = crypto.randomUUID();
+
+      const result = await withFoundationCapabilitiesDisabled(
+        input.agent,
+        input.capabilitySessionId,
+        async (toolIsolation) => {
+          let resolveCancellation!: (value: {
+            turnId: string;
+            result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
+          }) => void;
+          const cancellation = new Promise<{
+            turnId: string;
+            result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
+          }>((resolve) => {
+            resolveCancellation = resolve;
+          });
+          const observed = startObservedFoundationTurn({
+            conversationId: conversation.conversation_id,
+            agentId,
+            content:
+              'Write a detailed 2000-word numbered guide to reliable queues. '
+              + 'Continue until the full guide is complete.',
+            idempotencyKey: crypto.randomUUID(),
+            provider: input.agent.provider || undefined,
+            model: input.agent.model || undefined,
+            effort: 'low',
+            thinkingMode: 'disabled',
+            clientCapabilitySessionId: input.capabilitySessionId,
+            requestedBudget: {
+              max_output_tokens: 4096,
+              wall_time_ms: 90_000,
+            },
+            streamId,
+            timeoutMs: 90_000,
+            onEvent: (event, events) => {
+              if (cancellationRequestCount > 0 || event.event !== 'text') return;
+              const observedTurn = observedTurnId(events);
+              if (!observedTurn) return;
+              turnId = observedTurn;
+              cancellationRequestCount += 1;
+              cancellationRequestedAt = performance.now();
+              resolveCancellation({
+                turnId,
+                result: api.cancelAgentTurn(turnId),
+              });
+            },
+          });
+          const cancellationAttempt = await Promise.race([
+            cancellation,
+            observed.result.then((turnResult) => {
+              throw new Error(
+                turnResult.error
+                || 'agent.acceptance.foundationCancellationTextMissing',
+              );
+            }),
+          ]);
+          turnId = cancellationAttempt.turnId;
+          const cancellationResponse = await cancellationAttempt.result;
+          const cancellationStatus = String(
+            cancellationResponse.status ?? '',
+          ).toLowerCase();
+          const turnResult = await observed.result;
+          const liveDeliveries = turnResult.events.filter(
+            (event) => Boolean(event.sourceDelivery),
+          );
+          const terminalEvents = liveDeliveries.filter((event) =>
+            ['done', 'error', 'cancelled'].includes(event.event));
+          const terminalEvent = terminalEvents[terminalEvents.length - 1];
+
+          if (
+            cancellationStatus === 'completed'
+            || terminalEvent?.event === 'done'
+          ) {
+            throw new Error('agent.acceptance.foundationCancellationLostRace');
+          }
+          if (
+            cancellationStatus !== 'cancelled'
+            || !turnId
+            || terminalEvent?.event !== 'cancelled'
+            || !terminalEvent.sourceDelivery
+          ) {
+            throw new Error('agent.acceptance.foundationCancellationTerminalMissing');
+          }
+
+          const sourceDelivery = terminalEvent.sourceDelivery;
+          if (
+            sourceDelivery.transport !== 'station-sse'
+            || sourceDelivery.ptid !== actorPtid
+            || sourceDelivery.conversationId !== conversation.conversation_id
+            || sourceDelivery.turnId !== turnId
+            || sourceDelivery.sequence <= 0
+            || sourceDelivery.rawPayload.eventType !== 'cancelled'
+          ) {
+            throw new Error(
+              'agent.acceptance.foundationCancellationSourceIdentityMismatch',
+            );
+          }
+          const sourcePayload = evidenceRecord(
+            evidenceValue(sourceDelivery.rawPayload.data),
+            'foundationCancelledSourcePayload',
+          );
+          const outcome = evidenceRecord(
+            evidenceField(sourcePayload, 'outcomeError', 'outcome_error'),
+            'foundationCancelledOutcome',
+          );
+          useChatStore.getState().applyRecoveredTurnEvent(
+            conversation.conversation_id,
+            agentId,
+            turnId,
+            {
+              event: terminalEvent.event,
+              data: terminalEvent.data,
+            },
+          );
+          const liveReceiver = await foundationCancelledReceiverSnapshot(
+            turnId,
+            'Foundation live cancellation receiver',
+          );
+          const diagnostics = await waitForFoundationDiagnosticReplay(
+            turnId,
+            (replay) => {
+              const attempts = optionalEvidenceArray(
+                replay.attempts,
+                'foundationCancelledAttempts',
+              );
+              const attempt = attempts.length > 0
+                ? evidenceRecord(
+                    attempts[attempts.length - 1],
+                    'foundationCancelledAttempt',
+                  )
+                : null;
+              return (
+                Number(replay.status) === AgentTurnStatus.CANCELLED
+                && Number(attempt?.status) === AgentTurnStatus.CANCELLED
+                && Boolean(replay.trace)
+              );
+            },
+            'Foundation cancelled Turn diagnostics',
+          );
+          const attempts = evidenceArray(
+            diagnostics.attempts,
+            'foundationCancelledAttempts',
+          );
+          const attempt = evidenceRecord(
+            attempts[attempts.length - 1],
+            'foundationCancelledAttempt',
+          );
+          const readback = await foundationConversationReadback(
+            conversation.conversation_id,
+          );
+          const assistant = [...readback.messages].reverse().find(
+            (message) => message.role === 'assistant' && message.turnId === turnId,
+          );
+          if (!assistant) {
+            throw new Error('agent.acceptance.foundationCancelledMessageMissing');
+          }
+          const persistedOutcome = evidenceRecord(
+            JSON.parse(String(assistant.errorJson || '{}')),
+            'foundationCancelledPersistedOutcome',
+          );
+
+          useChatStore.setState((state) => ({
+            messages: [],
+            sessionBuffers: {
+              ...state.sessionBuffers,
+              [conversation.conversation_id]: [],
+            },
+          }));
+          await useChatStore.getState().syncMessages();
+          const reloadedReceiver = await foundationCancelledReceiverSnapshot(
+            turnId,
+            'Foundation reloaded cancellation receiver',
+          );
+
+          const replaySnapshot = { current: null as StreamEvent | null };
+          const replayDeliveries = await foundationStationReplayReadback({
+            conversationId: conversation.conversation_id,
+            turnId,
+            acknowledgedCursor: 0,
+            streamId,
+            streamGeneration: observed.controller.streamGeneration,
+            actorPtid,
+          }, {
+            finishOnTerminal: false,
+            onSnapshot: (event) => {
+              replaySnapshot.current = event;
+            },
+          });
+          const replayCancellation = replayDeliveries.find(
+            (delivery) => (
+              delivery.eventType === 'cancelled'
+              && delivery.sequence === sourceDelivery.sequence
+            ),
+          );
+          if (!replayCancellation) {
+            throw new Error('agent.acceptance.foundationCancellationReplayMissing');
+          }
+          const authoritativeSnapshot = replaySnapshot.current;
+          const snapshotDelivery = authoritativeSnapshot?.sourceDelivery;
+          const snapshotSequence = Number(
+            authoritativeSnapshot?.data.seq
+            ?? authoritativeSnapshot?.data.sequence
+            ?? 0,
+          );
+          if (
+            !authoritativeSnapshot
+            || String(authoritativeSnapshot.data.status).toLowerCase()
+              !== 'cancelled'
+            || !snapshotDelivery
+            || snapshotDelivery.transport !== 'station-sse'
+            || snapshotDelivery.ptid !== actorPtid
+            || snapshotDelivery.conversationId
+              !== conversation.conversation_id
+            || snapshotDelivery.turnId !== turnId
+            || snapshotDelivery.sequence !== snapshotSequence
+            || snapshotDelivery.rawPayload.eventType !== 'snapshot'
+          ) {
+            throw new Error(
+              'agent.acceptance.foundationCancellationSnapshotIdentityMismatch',
+            );
+          }
+          useChatStore.setState((state) => ({
+            messages: [],
+            sessionBuffers: {
+              ...state.sessionBuffers,
+              [conversation.conversation_id]: [],
+            },
+          }));
+          await useChatStore.getState().reconcileRecoveredTurn(
+            conversation.conversation_id,
+            turnId,
+            {
+              status: 'cancelled',
+              reason: String(
+                authoritativeSnapshot.data.terminal_reason
+                ?? authoritativeSnapshot.data.terminalReason
+                ?? '',
+              ),
+              ...(typeof authoritativeSnapshot.data.text === 'string'
+                ? { content: authoritativeSnapshot.data.text }
+                : {}),
+            },
+          );
+          const replayedReceiver = await foundationCancelledReceiverSnapshot(
+            turnId,
+            'Foundation replayed cancellation receiver',
+          );
+          const sourceHash = await sha256Hex(
+            stableJson(sourceDelivery.rawPayload),
+          );
+          const replayHash = await sha256Hex(
+            stableJson(replayCancellation.rawPayload),
+          );
+          const terminalDeliveries = replayDeliveries.filter((delivery) =>
+            ['done', 'error', 'cancelled'].includes(delivery.eventType));
+          const payloadHash = await sha256Hex(
+            stableJson(sourceDelivery.rawPayload),
+          );
+          const runtimeEvent: FoundationRuntimeEventObservation = {
+            eventId: await sha256Hex(stableJson({
+              turnId,
+              sequence: sourceDelivery.sequence,
+              payloadHash,
+            })),
+            eventType: terminalEvent.event,
+            sequence: sourceDelivery.sequence,
+            observedAt: terminalEvent.observedAt,
+            streamGeneration: observed.controller.streamGeneration,
+            streamIdHash: await sha256Hex(streamId),
+            conversationIdHash: await sha256Hex(conversation.conversation_id),
+            payloadHash,
+            errorType: String(outcome.error_type ?? ''),
+            sourceTransport: sourceDelivery.transport,
+            sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+            sourceConversationId: sourceDelivery.conversationId,
+            sourceTurnId: sourceDelivery.turnId,
+            sourceSequence: sourceDelivery.sequence,
+            sourceEventType: sourceDelivery.rawPayload.eventType,
+          };
+
+          return {
+            result: {
+              conversationId: conversation.conversation_id,
+              turnId,
+              durationMs: performance.now() - startedAt,
+              runtimeEvent,
+              facts: {
+                outcome,
+                receiver: {
+                  ...replayedReceiver,
+                  phases: {
+                    live: liveReceiver,
+                    reload: reloadedReceiver,
+                    replaySnapshot: replayedReceiver,
+                  },
+                },
+                station: {
+                  conversationId: conversation.conversation_id,
+                  messageId: assistant.messageId,
+                  turnId,
+                  turnStatus: Number(diagnostics.status)
+                    === AgentTurnStatus.CANCELLED
+                    ? 'cancelled'
+                    : 'unknown',
+                  attemptStatus: Number(attempt.status)
+                    === AgentTurnStatus.CANCELLED
+                    ? 'cancelled'
+                    : 'unknown',
+                  messageStatus: String(assistant.status)
+                    .toLowerCase()
+                    .endsWith('cancelled')
+                    ? 'cancelled'
+                    : 'unknown',
+                  terminalReason: String(
+                    evidenceField(
+                      diagnostics,
+                      'terminalReason',
+                      'terminal_reason',
+                    ) ?? '',
+                  ),
+                  persistedOutcome,
+                  terminalEventCount: terminalDeliveries.length,
+                  cancelledEventCount: terminalDeliveries.filter(
+                    (delivery) => delivery.eventType === 'cancelled',
+                  ).length,
+                  doneEventCount: terminalDeliveries.filter(
+                    (delivery) => delivery.eventType === 'done',
+                  ).length,
+                  errorEventCount: terminalDeliveries.filter(
+                    (delivery) => delivery.eventType === 'error',
+                  ).length,
+                  liveTerminalEventCount: terminalEvents.length,
+                  liveDoneEventCount: liveDeliveries.filter(
+                    (delivery) => delivery.event === 'done',
+                  ).length,
+                },
+                replay: {
+                  sourceHash,
+                  replayHash,
+                  equal: sourceHash === replayHash,
+                  snapshot: {
+                    sourceTransport: snapshotDelivery.transport,
+                    sourcePtidHash: await sha256Hex(snapshotDelivery.ptid),
+                    sourceConversationId: snapshotDelivery.conversationId,
+                    sourceTurnId: snapshotDelivery.turnId,
+                    sourceSequence: snapshotDelivery.sequence,
+                    sourceEventType: snapshotDelivery.rawPayload.eventType,
+                    status: String(
+                      authoritativeSnapshot.data.status,
+                    ).toLowerCase(),
+                  },
+                },
+                cleanup: {
+                  cancellationRequestCount,
+                  terminalCleanupCount: terminalDeliveries.filter(
+                    (delivery) => delivery.eventType === 'cancelled',
+                  ).length,
+                },
+                toolIsolation,
+                cancellation: {
+                  status: cancellationStatus,
+                  latencyMs: performance.now() - cancellationRequestedAt,
+                },
+                runtimeEvent,
+              },
+            } satisfies FoundationCancelledResult,
+          };
+        },
+      );
+    return result.result;
+  } catch (error) {
+    try {
+      await cleanupFoundationToolConversation(
+        conversation.conversation_id,
+        turnId,
+      );
+    } catch (cleanupError) {
+      throw Object.assign(
+        new Error('agent.acceptance.foundationCancellationCleanupFailed'),
+        { primaryError: error, cleanupError },
+      );
+    }
+    throw error;
+  }
 }
 
 async function runFoundationDirectAttestationTurn(input: {
@@ -8772,6 +9332,8 @@ async function evaluateDirectCellAssertions(
       return evaluateF12(ctx);
     case 'BASE-ACTIVE_MUTATION_CONFLICT':
       return evaluateBaseActiveMutationConflict(ctx);
+    case 'BASE-CANCELLED':
+      return evaluateBaseCancelled(ctx);
     case 'BASE-APPROVAL_DENIED':
       return evaluateBaseApprovalDenied(ctx);
     case 'BASE-APPROVAL_EXPIRED':
@@ -8781,6 +9343,173 @@ async function evaluateDirectCellAssertions(
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+function evaluateBaseCancelled(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(ctx.scenarioFacts, 'foundationCancelledFacts');
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationCancelledOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationCancelledDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationCancelledReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationCancelledStation',
+  );
+  const receiverPhases = evidenceRecord(
+    receiver.phases,
+    'foundationCancelledReceiverPhases',
+  );
+  const receiverPhaseMatches = (
+    phaseName: string,
+    expectedMessageId: string,
+    expectedErrorDetail: string,
+  ): boolean => {
+    const phase = evidenceRecord(
+      receiverPhases[phaseName],
+      `foundationCancelledReceiverPhase.${phaseName}`,
+    );
+    return (
+      phase.visible === true
+      && phase.terminalStatus === 'cancelled'
+      && phase.errorType === 'LIFECYCLE_CANCELLED'
+      && phase.resourceKind === 'turn'
+      && phase.resourceId === station.turnId
+      && phase.errorText === phase.expectedErrorText
+      && phase.recoveryVisible === false
+      && phase.resolutionPresent === false
+      && phase.messageId === expectedMessageId
+      && phase.errorDetail === expectedErrorDetail
+    );
+  };
+  const persistedOutcome = evidenceRecord(
+    station.persistedOutcome,
+    'foundationCancelledPersistedOutcome',
+  );
+  const persistedDetails = evidenceRecord(
+    persistedOutcome.details,
+    'foundationCancelledPersistedDetails',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationCancelledReplay',
+  );
+  const replaySnapshot = evidenceRecord(
+    replay.snapshot,
+    'foundationCancelledReplaySnapshot',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationCancelledCleanup',
+  );
+  const cancellation = evidenceRecord(
+    facts.cancellation,
+    'foundationCancelledCommand',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationCancelledRuntimeEvent',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+
+  return {
+    typedCancellationProjected: (
+      outcome.error === 'agent.errors.lifecycleCancelled'
+      && outcome.error_type === 'LIFECYCLE_CANCELLED'
+      && outcome.locale_key === 'agent.errors.lifecycleCancelled'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && safeDetailKeys.length === 2
+      && safeDetailKeys[0] === 'resource_id'
+      && safeDetailKeys[1] === 'resource_kind'
+      && details.resource_kind === 'turn'
+      && details.resource_id === station.turnId
+      && runtimeEvent.eventType === 'cancelled'
+      && runtimeEvent.errorType === 'LIFECYCLE_CANCELLED'
+      && Number(runtimeEvent.sequence) > 0
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === station.turnId
+      && runtimeEvent.sourceSequence === runtimeEvent.sequence
+      && runtimeEvent.sourceEventType === runtimeEvent.eventType
+    ),
+    localizedCancellationVisible: (
+      receiver.visible === true
+      && receiver.terminalStatus === 'cancelled'
+      && receiver.errorType === 'LIFECYCLE_CANCELLED'
+      && receiver.resourceKind === 'turn'
+      && receiver.resourceId === station.turnId
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === false
+      && receiver.resolutionPresent === false
+      && receiverPhaseMatches(
+        'live',
+        `recovered-${String(station.turnId)}`,
+        'cancelled_by_user',
+      )
+      && receiverPhaseMatches(
+        'reload',
+        String(station.messageId),
+        '',
+      )
+      && receiverPhaseMatches(
+        'replaySnapshot',
+        String(station.messageId),
+        'cancelled_by_user',
+      )
+    ),
+    cancelledPersisted: (
+      station.turnStatus === 'cancelled'
+      && station.attemptStatus === 'cancelled'
+      && station.messageStatus === 'cancelled'
+      && station.terminalReason === 'cancelled_by_user'
+      && persistedOutcome.error === outcome.error
+      && persistedOutcome.error_type === outcome.error_type
+      && persistedOutcome.locale_key === outcome.locale_key
+      && persistedOutcome.retryable === outcome.retryable
+      && persistedOutcome.terminal === outcome.terminal
+      && stableJson(Object.keys(persistedDetails).sort())
+        === stableJson(safeDetailKeys)
+      && persistedDetails.resource_kind === details.resource_kind
+      && persistedDetails.resource_id === details.resource_id
+      && cancellation.status === 'cancelled'
+    ),
+    exactlyOneAuthoritativeTerminal: (
+      Number(station.terminalEventCount) === 1
+      && Number(station.cancelledEventCount) === 1
+      && Number(station.errorEventCount) === 0
+    ),
+    zeroLateSuccess: (
+      Number(station.doneEventCount) === 0
+      && Number(station.liveDoneEventCount) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && replaySnapshot.sourceTransport === 'station-sse'
+      && replaySnapshot.sourcePtidHash === runtimeEvent.sourcePtidHash
+      && replaySnapshot.sourceConversationId === station.conversationId
+      && replaySnapshot.sourceTurnId === station.turnId
+      && replaySnapshot.sourceSequence === runtimeEvent.sourceSequence
+      && replaySnapshot.sourceEventType === 'snapshot'
+      && replaySnapshot.status === 'cancelled'
+    ),
+    cleanupComplete: (
+      Number(cleanup.cancellationRequestCount) === 1
+      && Number(cleanup.terminalCleanupCount) === 1
+      && cleanup.conversationDeleted === true
+    ),
+  };
 }
 
 function evaluateBaseAttachmentRejected(
@@ -11472,6 +12201,24 @@ export function installAcceptanceHarness(): void {
         scenarioFacts = scenario.facts;
       }
 
+      if (cell === 'BASE-CANCELLED') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationCancelledScenario({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
       if (cell === 'BASE-APPROVAL_DENIED') {
         const scenario = await runFoundationApprovalDeniedScenario({
           agent,
@@ -12654,6 +13401,7 @@ export function installAcceptanceHarness(): void {
           || cell === 'BASE-APPROVAL_EXPIRED'
           || cell === 'BASE-ATTACHMENT_REJECTED'
           || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
+          || cell === 'BASE-CANCELLED'
         )
         && scenarioFacts
         && currentConversationId
@@ -12677,6 +13425,8 @@ export function installAcceptanceHarness(): void {
             scenarioFacts.cleanup,
             cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
               ? 'foundationActiveMutationConflictCleanup'
+              : cell === 'BASE-CANCELLED'
+                ? 'foundationCancelledCleanup'
               : cell === 'BASE-APPROVAL_DENIED'
                 ? 'foundationApprovalDeniedCleanup'
                 : cell === 'BASE-APPROVAL_EXPIRED'
@@ -12795,6 +13545,17 @@ export function installAcceptanceHarness(): void {
         stationReadback.revision = Number(winner.revisionAfterReload);
         stationReadback.stateHash = String(winner.hashAfterReload);
       }
+      if (cell === 'BASE-CANCELLED' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationCancelledStation',
+        );
+        stationReadback.entityKind = 'agent-turn-cancellation';
+        stationReadback.entityIdHash = await sha256Hex(String(station.turnId));
+        stationReadback.revision = Number(station.terminalEventCount);
+        stationReadback.stateHash = await sha256Hex(stableJson(station));
+        stationReadback.typedError = scenarioFacts.outcome;
+      }
       if (
         (
           cell === 'BASE-APPROVAL_DENIED'
@@ -12906,7 +13667,10 @@ export function installAcceptanceHarness(): void {
                 ).observedAt,
               ),
             }
-          : cell === 'BASE-ATTACHMENT_REJECTED' && observedRuntimeEvent
+          : (
+            cell === 'BASE-ATTACHMENT_REJECTED'
+            || cell === 'BASE-CANCELLED'
+          ) && observedRuntimeEvent
             ? {
                 eventId: observedRuntimeEvent.eventId ?? '',
                 sequence: observedRuntimeEvent.sequence,
@@ -12917,6 +13681,17 @@ export function installAcceptanceHarness(): void {
                 conversationIdHash: observedRuntimeEvent.conversationIdHash,
                 payloadHash: observedRuntimeEvent.payloadHash,
                 errorType: observedRuntimeEvent.errorType,
+                ...(cell === 'BASE-CANCELLED'
+                  ? {
+                      sourceTransport: observedRuntimeEvent.sourceTransport,
+                      sourcePtidHash: observedRuntimeEvent.sourcePtidHash,
+                      sourceConversationId:
+                        observedRuntimeEvent.sourceConversationId,
+                      sourceTurnId: observedRuntimeEvent.sourceTurnId,
+                      sourceSequence: observedRuntimeEvent.sourceSequence,
+                      sourceEventType: observedRuntimeEvent.sourceEventType,
+                    }
+                  : {}),
               }
           : cell === 'AS-F12' && scenarioFacts
             ? {
@@ -12986,6 +13761,24 @@ export function installAcceptanceHarness(): void {
               ),
               maximum: 0,
             }
+          : cell === 'BASE-CANCELLED' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationCancelledStation',
+                );
+                return {
+                  counterId: String(station.turnId),
+                  count: Number(station.doneEventCount),
+                  maximum: 0,
+                  measurements: {
+                    terminalEventCount: station.terminalEventCount,
+                    cancelledEventCount: station.cancelledEventCount,
+                    liveTerminalEventCount: station.liveTerminalEventCount,
+                    liveDoneEventCount: station.liveDoneEventCount,
+                  },
+                };
+              })()
           : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
             ? (() => {
                 const station = evidenceRecord(
@@ -13138,6 +13931,13 @@ export function installAcceptanceHarness(): void {
               'foundationActiveMutationConflictCleanup',
             )
           : null;
+      const cancellationCleanup =
+        cell === 'BASE-CANCELLED' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationCancelledCleanup',
+            )
+          : null;
       const cleanup: Record<string, unknown> = {
         status: (
           activeMutationCleanup
@@ -13148,6 +13948,12 @@ export function installAcceptanceHarness(): void {
                 && activeMutationCleanup.restoredSelection
                   === activeMutationCleanup.priorSelection
               )
+            : cancellationCleanup
+              ? (
+                  Number(cancellationCleanup.cancellationRequestCount) === 1
+                  && Number(cancellationCleanup.terminalCleanupCount) === 1
+                  && cancellationCleanup.conversationDeleted === true
+                )
             : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
               ? (
                   evidenceRecord(
@@ -13233,11 +14039,14 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-CANCELLED' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : {}),
       };
 
       const receiver = (
         cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
+        || cell === 'BASE-CANCELLED'
         || cell === 'BASE-APPROVAL_DENIED'
         || cell === 'BASE-APPROVAL_EXPIRED'
         || cell === 'BASE-ATTACHMENT_REJECTED'
@@ -13283,6 +14092,19 @@ export function installAcceptanceHarness(): void {
             errorText: receiver.errorText,
             removalText: receiver.removalText,
           };
+        } else if (cell === 'BASE-CANCELLED') {
+          receiverVisible =
+            receiver.visible === true
+            && receiver.terminalStatus === 'cancelled'
+            && receiver.errorType === 'LIFECYCLE_CANCELLED';
+          receiverSelector =
+            '[data-pt-agent-terminal-status="cancelled"]'
+            + '[data-pt-agent-error-resource-kind="turn"]'
+            + '[data-pt-agent-error-type="LIFECYCLE_CANCELLED"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryVisible: receiver.recoveryVisible,
+          };
         } else {
           receiverVisible =
             receiver.conflictVisible === true
@@ -13312,6 +14134,15 @@ export function installAcceptanceHarness(): void {
         replayEvidence.replayHash = winner.hashAfterReload;
         replayEvidence.equal = winner.hashBeforeStale === winner.hashAfterReload;
         replayEvidence.turnId = null;
+      }
+      if (cell === 'BASE-CANCELLED' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationCancelledReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
       }
       if (
         (
@@ -13421,6 +14252,25 @@ export function installAcceptanceHarness(): void {
           } catch (cleanupError) {
             throw Object.assign(
               new Error('agent.acceptance.foundationToolExpiryCleanupFailed'),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-CANCELLED'
+          && preparedConversationId
+        ) {
+          try {
+            await cleanupFoundationToolConversation(
+              preparedConversationId,
+              preparedTurnId ?? '',
+            );
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error('agent.acceptance.foundationCancellationCleanupFailed'),
               {
                 primaryError: error,
                 cleanupError,

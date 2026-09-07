@@ -11,6 +11,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_approval_expired,
     evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
+    evaluate_base_cancelled,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -917,6 +918,108 @@ def valid_active_mutation_conflict_capture() -> dict[str, object]:
             "conversationDeleted": True,
             "priorSelection": "assistant",
             "restoredSelection": "assistant",
+        },
+    }
+
+
+def valid_cancelled_capture() -> dict[str, object]:
+    outcome = {
+        "error": "agent.errors.lifecycleCancelled",
+        "error_type": "LIFECYCLE_CANCELLED",
+        "locale_key": "agent.errors.lifecycleCancelled",
+        "retryable": False,
+        "terminal": True,
+        "details": {
+            "resource_kind": "turn",
+            "resource_id": "turn-cancelled",
+        },
+    }
+    receiver = {
+        "messageId": "message-cancelled",
+        "visible": True,
+        "terminalStatus": "cancelled",
+        "errorType": "LIFECYCLE_CANCELLED",
+        "resourceKind": "turn",
+        "resourceId": "turn-cancelled",
+        "errorDetail": "cancelled_by_user",
+        "errorText": "This operation was cancelled.",
+        "expectedErrorText": "This operation was cancelled.",
+        "recoveryVisible": False,
+        "resolutionPresent": False,
+    }
+    live_receiver = {
+        **receiver,
+        "messageId": "recovered-turn-cancelled",
+    }
+    reload_receiver = {
+        **receiver,
+        "errorDetail": "",
+    }
+    return {
+        "outcome": outcome,
+        "receiver": {
+            **receiver,
+            "phases": {
+                "live": live_receiver,
+                "reload": reload_receiver,
+                "replaySnapshot": copy.deepcopy(receiver),
+            },
+        },
+        "station": {
+            "conversationId": "conversation-cancelled",
+            "messageId": "message-cancelled",
+            "turnId": "turn-cancelled",
+            "turnStatus": "cancelled",
+            "attemptStatus": "cancelled",
+            "messageStatus": "cancelled",
+            "terminalReason": "cancelled_by_user",
+            "persistedOutcome": copy.deepcopy(outcome),
+            "terminalEventCount": 1,
+            "cancelledEventCount": 1,
+            "doneEventCount": 0,
+            "errorEventCount": 0,
+            "liveTerminalEventCount": 1,
+            "liveDoneEventCount": 0,
+        },
+        "replay": {
+            "sourceHash": "a" * 64,
+            "replayHash": "a" * 64,
+            "equal": True,
+            "snapshot": {
+                "sourceTransport": "station-sse",
+                "sourcePtidHash": "a" * 64,
+                "sourceConversationId": "conversation-cancelled",
+                "sourceTurnId": "turn-cancelled",
+                "sourceSequence": 3,
+                "sourceEventType": "snapshot",
+                "status": "cancelled",
+            },
+        },
+        "cleanup": {
+            "cancellationRequestCount": 1,
+            "terminalCleanupCount": 1,
+            "conversationDeleted": True,
+        },
+        "cancellation": {
+            "status": "cancelled",
+            "latencyMs": 25,
+        },
+        "runtimeEvent": {
+            "eventId": "b" * 64,
+            "eventType": "cancelled",
+            "sequence": 3,
+            "observedAt": "2026-09-07T08:30:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "c" * 64,
+            "conversationIdHash": "d" * 64,
+            "payloadHash": "e" * 64,
+            "errorType": "LIFECYCLE_CANCELLED",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "a" * 64,
+            "sourceConversationId": "conversation-cancelled",
+            "sourceTurnId": "turn-cancelled",
+            "sourceSequence": 3,
+            "sourceEventType": "cancelled",
         },
     }
 
@@ -2045,6 +2148,66 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "cleanupComplete",
         ):
             evaluate_base_active_mutation_conflict(capture)
+
+    def test_cancelled_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_cancelled(valid_cancelled_capture())
+
+        self.assertEqual(len(assertions), 7)
+        self.assertTrue(all(assertions.values()))
+
+    def test_cancelled_rejects_unsafe_details(self) -> None:
+        capture = valid_cancelled_capture()
+        capture["outcome"]["details"]["actor_id"] = "private-actor"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedCancellationProjected",
+        ):
+            evaluate_base_cancelled(capture)
+
+    def test_cancelled_rejects_late_success(self) -> None:
+        capture = valid_cancelled_capture()
+        capture["station"]["doneEventCount"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroLateSuccess",
+        ):
+            evaluate_base_cancelled(capture)
+
+    def test_cancelled_requires_live_reload_and_replay_projection_parity(
+        self,
+    ) -> None:
+        capture = valid_cancelled_capture()
+        capture["receiver"]["phases"]["replaySnapshot"]["errorType"] = None
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "localizedCancellationVisible",
+        ):
+            evaluate_base_cancelled(capture)
+
+    def test_cancelled_rejects_wrong_source_replay_snapshot(self) -> None:
+        capture = valid_cancelled_capture()
+        capture["replay"]["snapshot"]["sourceTurnId"] = "turn-other"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "replayEqual",
+        ):
+            evaluate_base_cancelled(capture)
+
+    def test_cancelled_requires_one_cleanup_and_conversation_deletion(
+        self,
+    ) -> None:
+        capture = valid_cancelled_capture()
+        capture["cleanup"]["terminalCleanupCount"] = 2
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_cancelled(capture)
 
     def test_attachment_rejected_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_attachment_rejected(

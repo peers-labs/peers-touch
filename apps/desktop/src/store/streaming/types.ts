@@ -151,6 +151,12 @@ export interface ErrorEventPayload {
   conversationId?: string;
 }
 
+export interface CancelledEventPayload {
+  reason: string;
+  outcome_error?: ErrorEventPayload;
+  outcomeError?: ErrorEventPayload;
+}
+
 export interface DoneEventPayload {
   task_id?: string;
   turn?: Record<string, unknown>;
@@ -177,6 +183,7 @@ export type TurnStreamEventPayload =
   | ImageEventPayload
   | ConversationCreatedPayload
   | ErrorEventPayload
+  | CancelledEventPayload
   | DoneEventPayload
   | CatchupDoneEventPayload;
 

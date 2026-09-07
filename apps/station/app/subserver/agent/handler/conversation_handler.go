@@ -534,6 +534,7 @@ func messagesToJSON(msgs []*domain.Message) ([]map[string]any, error) {
 			"conversation_id": m.ConversationID,
 			"turn_id":         m.TurnID,
 			"role":            string(m.Role),
+			"status":          m.Status,
 			"content":         m.Content,
 			"seq":             m.Seq,
 			"created_at":      m.CreatedAt,
@@ -550,6 +551,9 @@ func messagesToJSON(msgs []*domain.Message) ([]map[string]any, error) {
 		}
 		if len(m.MetadataJSON) > 0 {
 			item["metadata_json"] = string(m.MetadataJSON)
+		}
+		if len(m.ErrorJSON) > 0 {
+			item["error_json"] = string(m.ErrorJSON)
 		}
 		if len(m.AttachmentsJSON) > 0 {
 			var attachments []*model.AgentAttachmentRef

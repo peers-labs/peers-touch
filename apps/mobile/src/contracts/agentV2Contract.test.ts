@@ -66,6 +66,7 @@ import {
   SubmitHomeTaskCommandResponseSchema,
 } from '../gen/proto/domain/agent/home_pb';
 import {
+  CancelledPayloadSchema,
   CatchupDonePayloadSchema,
   ErrorPayloadSchema,
   StreamTurnEventsRequestSchema,
@@ -182,20 +183,61 @@ describe('Modern Chat Agent V2 Mobile Foundation contracts', () => {
       turnId: 'turn-1',
       idempotencyKey: 'cancel-1',
     });
+    const cancelled = create(TurnStreamEventSchema, {
+      type: TurnStreamEventType.CANCELLED,
+      turnId: 'turn-1',
+      conversationId: 'conversation-1',
+      sequence: 3n,
+      eventId: 'event-3',
+      payload: {
+        case: 'cancelled',
+        value: create(CancelledPayloadSchema, {
+          reason: 'cancelled_by_user',
+          outcomeError: create(ErrorPayloadSchema, {
+            error: 'agent.errors.lifecycleCancelled',
+            errorType: 'LIFECYCLE_CANCELLED',
+            localeKey: 'agent.errors.lifecycleCancelled',
+            retryable: false,
+            terminal: true,
+            details: {
+              resource_kind: 'turn',
+              resource_id: 'turn-1',
+            },
+          }),
+        }),
+      },
+    });
     const terminal = create(TurnSnapshotSchema, {
       turnId: 'turn-1',
       conversationId: 'conversation-1',
-      status: TurnStatus.COMPLETED,
-      lastSequence: 2n,
+      status: TurnStatus.CANCELLED,
+      lastSequence: 3n,
     });
 
     expect(events.map((event) =>
       roundTrip(TurnStreamEventSchema, event).sequence)).toEqual([1n, 2n]);
     expect(roundTrip(CancelTurnRequestSchema, cancel).idempotencyKey)
       .toBe('cancel-1');
+    expect(roundTrip(TurnStreamEventSchema, cancelled).payload).toMatchObject({
+      case: 'cancelled',
+      value: {
+        reason: 'cancelled_by_user',
+        outcomeError: {
+          errorType: 'LIFECYCLE_CANCELLED',
+          localeKey: 'agent.errors.lifecycleCancelled',
+          retryable: false,
+          terminal: true,
+          details: {
+            resource_kind: 'turn',
+            resource_id: 'turn-1',
+          },
+        },
+      },
+    });
     expect(roundTrip(TurnSnapshotSchema, terminal)).toMatchObject({
       turnId: 'turn-1',
-      lastSequence: 2n,
+      status: TurnStatus.CANCELLED,
+      lastSequence: 3n,
     });
   });
 

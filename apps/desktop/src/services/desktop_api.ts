@@ -2849,6 +2849,7 @@ export interface AgentMessage {
   reasoning_json?: string;
   tool_calls_json?: string;
   metadata_json?: string;
+  error_json?: string;
   attachments?: AgentAttachmentRefInput[];
   created_at: string;
   updated_at: string;

@@ -90,4 +90,11 @@ Server and instrumentation remain active for post-fix comparison.
 - Acceptance plan self-check and `git diff --check`: passed.
 - Agent Domain validation: expected fail-closed because latest runtime evidence
   is source-bound to the prior checkpoint.
-- Exact-source post-fix runtime comparison: pending.
+- Exact-source post-fix Gate:
+  `20260907T081328279276Z-0783821f1a985ba756eec42588629ed5`.
+- Browser English attestation Turn completed in `1079.1ms`; Browser Simplified
+  Chinese completed in `2583.1ms`.
+- Both rows emitted exact conversation/Turn hashes and
+  `conversationDeleted=true`; the Gate advanced to `BASE-CANCELLED`.
+- Foundation remains `PARTIAL / UNPROVEN` because `BASE-CANCELLED` is the next
+  unimplemented direct-runtime group.

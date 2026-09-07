@@ -329,9 +329,11 @@ interface AssistantMessageProps {
  */
 export function AssistantMessage({ message, onOpenArtifact }: AssistantMessageProps) {
   const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
+  const { t } = useTranslation(['chat', 'agent']);
   const presentedError = message.error
-    ? t(message.error, { defaultValue: message.error })
+    ? message.error.startsWith('agent.')
+      ? t(message.error, { ns: 'agent', defaultValue: message.error })
+      : t(message.error, { ns: 'chat', defaultValue: message.error })
     : undefined;
   const [hovered, setHovered] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -436,6 +438,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     <Flexbox
       data-pt-agent-message="assistant"
       data-pt-agent-message-id={message.id}
+      data-pt-agent-terminal-status={message.terminalStatus}
+      data-pt-agent-error-type={message.typedError?.error_type}
+      data-pt-agent-error-resource-kind={message.typedError?.details.resource_kind}
+      data-pt-agent-error-resource-id={message.typedError?.details.resource_id}
       id={`agent-message-${message.id}`}
       align="flex-start"
       gap={8}
@@ -667,6 +673,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                 <div>{presentedError}</div>
                 {message.resolution && (
                   <Button
+                    data-pt-agent-message-error-recovery
                     type="primary"
                     size="small"
                     danger
