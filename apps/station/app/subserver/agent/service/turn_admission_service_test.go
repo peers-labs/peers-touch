@@ -185,23 +185,34 @@ func TestTurnAdmissionRejectsInputOverflowBeforePersistence(t *testing.T) {
 		string,
 		*model.ExecuteTurnRequest,
 	) error {
-		return runtimeBudgetExhaustedWithDetails(
-			maxInputTokensExhaustedReason,
-			"1",
-			"2",
-		)
+		return errcode.NewContextOverflow(1, 2)
 	})
 
-	if _, err := svc.Admit(
+	_, err := svc.Admit(
 		context.Background(),
 		"ptid:actor-1",
 		admissionRequest("input-overflow", "oversized"),
-	); err == nil {
+	)
+	if err == nil {
 		t.Fatal("expected input overflow rejection")
 	}
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentContextOverflow ||
+		bizErr.Payload == nil ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentContextOverflowLocaleKey ||
+		bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		len(bizErr.Payload.GetDetails()) != 2 ||
+		bizErr.Payload.GetDetails()["limit_tokens"] != "1" ||
+		bizErr.Payload.GetDetails()["actual_tokens"] != "2" {
+		t.Fatalf("input overflow rejection lost typed details: %T %v", err, err)
+	}
 	for name, record := range map[string]interface{}{
-		"turn":    &persistence.AgentTurn{},
-		"attempt": &persistence.TurnAttempt{},
+		"turn":        &persistence.AgentTurn{},
+		"attempt":     &persistence.TurnAttempt{},
+		"queue entry": &persistence.TurnQueueEntry{},
+		"message":     &persistence.AgentMessage{},
 	} {
 		var count int64
 		if err := db.Model(record).Count(&count).Error; err != nil {
@@ -210,6 +221,16 @@ func TestTurnAdmissionRejectsInputOverflowBeforePersistence(t *testing.T) {
 		if count != 0 {
 			t.Fatalf("input overflow persisted %d %s rows", count, name)
 		}
+	}
+	var conversation persistence.Conversation
+	if err := db.First(&conversation, "id = ?", "conversation-1").Error; err != nil {
+		t.Fatalf("read conversation: %v", err)
+	}
+	if conversation.Version != 1 {
+		t.Fatalf(
+			"input overflow changed conversation version to %d",
+			conversation.Version,
+		)
 	}
 }
 
