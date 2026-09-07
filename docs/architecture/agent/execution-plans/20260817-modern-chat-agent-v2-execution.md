@@ -6115,6 +6115,50 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   behavior, tuple, timeout, or assertion changed. Desktop check and `176/176`
   focused Foundation/static tests pass. Provisioner cleanup completed
   `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Exact-source diagnostic run
+  `20260907T200003771360Z-b929bc53a314187d9947ef9e4a824613`
+  on checkpoint `04396b37ddddc89300e35eb9e214930e31df0aa6`
+  completed both Browser AS-F07 revision flows. Each selected-branch
+  transition began at version `8` with the original branch active and the
+  target branch inactive, then completed its Station mutation and receiver DOM
+  projection. The prior branch failure did not recur, so no branch behavior
+  change is justified. The run crossed `BASE-CANCELLED` and
+  `BASE-CONTEXT-OVERFLOW`, proving the context-budget evidence allowlist fix,
+  then failed first at the planned unimplemented Browser English
+  `BASE-CREDENTIAL_MISSING` direct-runtime group. The local vertical now adds
+  the canonical Station pre-admission typed error, a missing-provider
+  credential fixture that does not modify the configured provider, localized
+  receiver recovery into Provider Settings, exact source identity and
+  readback parity, zero persistence/provider-call assertions, fixture cleanup,
+  and independent TS/Python oracles. Station Agent service/handler tests, Go
+  style, Desktop check, all `584` Desktop tests with one unrelated
+  environment-dependent skip, all `342` Agent Acceptance tests, Python
+  compilation, and `git diff --check` pass. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; exact-source post-fix proof remains pending, so
+  Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Exact-source diagnostic run
+  `20260907T200003771360Z-b929bc53a314187d9947ef9e4a824613`
+  on checkpoint `04396b37ddddc89300e35eb9e214930e31df0aa6`
+  completed both Browser AS-F07 revision flows, including the production
+  branch mutation and receiver DOM projection, so the prior intermittent
+  branch-selection failure did not justify a behavior change. The run crossed
+  `BASE-CANCELLED` and the repaired context-overflow evidence boundary, then
+  failed first at the planned unimplemented Browser English
+  `BASE-CREDENTIAL_MISSING` group. The local vertical now emits the canonical
+  `PROVIDER_CREDENTIAL_MISSING / agent.errors.providerCredentialMissing`
+  pre-admission payload with only `provider_id`, derives a localized
+  `Configure credential` recovery action in Desktop without changing the raw
+  Station source payload, and exercises it against an enabled catalog provider
+  that has no actor credential. The fixture creates and deletes its own Agent
+  and conversation, leaves provider state unchanged, and requires zero Turn,
+  message, queue, and provider-call deltas. Independent TypeScript/Python
+  oracles and role cross-checks remain fail closed. Focused Station
+  service/handler tests, Go style, Desktop check, all `584` Desktop tests with
+  one unrelated environment-dependent skip, all `342` Agent Acceptance tests,
+  production build, Python compilation, evidence-key safety, and
+  `git diff --check` pass. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; exact-source post-fix proof remains pending, so
+  Foundation/G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

@@ -3,10 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"gorm.io/driver/sqlite"
@@ -72,6 +75,7 @@ func openAdmissionTestDB(t *testing.T, name string) *gorm.DB {
 	if err := db.AutoMigrate(
 		&persistence.AgentProvider{},
 		&persistence.AgentModel{},
+		&persistence.Credential{},
 		&persistence.TurnAttempt{},
 	); err != nil {
 		t.Fatalf("migrate admission test database: %v", err)
@@ -208,6 +212,40 @@ func TestRuntimeAdmissionResolveRejectsMissingCredential(t *testing.T) {
 	_, err := resolver.Resolve(ctx, "actor-1", "test-provider", "test-model")
 	if err == nil {
 		t.Fatal("expected error for missing credential, got nil")
+	}
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) {
+		t.Fatalf("missing credential error type = %T, want *errcode.BizError", err)
+	}
+	if bizErr.Code != errcode.AgentProviderCredentialMissing ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentProviderCredentialMissing) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentProviderCredentialMissingLocaleKey ||
+		!bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		bizErr.Payload.GetDetails()["provider_id"] != "test-provider" {
+		t.Fatalf("missing credential payload = %+v", bizErr)
+	}
+}
+
+func TestCredentialPoolLeaseRejectsMissingCredentialWithTypedPayload(t *testing.T) {
+	openAdmissionTestDB(t, "credential_pool_missing")
+
+	_, err := NewCredentialPoolService().Lease(
+		context.Background(),
+		"actor-1",
+		"test-provider",
+		domain.RotationRoundRobin,
+	)
+	if err == nil {
+		t.Fatal("expected error for missing credential, got nil")
+	}
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) {
+		t.Fatalf("missing credential error type = %T, want *errcode.BizError", err)
+	}
+	if bizErr.Code != errcode.AgentProviderCredentialMissing ||
+		bizErr.Payload.GetDetails()["provider_id"] != "test-provider" {
+		t.Fatalf("missing credential payload = %+v", bizErr)
 	}
 }
 
