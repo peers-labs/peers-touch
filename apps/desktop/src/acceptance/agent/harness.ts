@@ -7252,7 +7252,7 @@ function reportFoundationF12ProjectionDebug(
 }
 // #endregion
 
-// #region debug-point A-E:base-active-mutation-conflict
+// #region debug-point A-H:base-active-mutation-conflict
 function reportActiveMutationConflictDebug(
   stage: string,
   data: Record<string, unknown> = {},
@@ -7261,9 +7261,9 @@ function reportActiveMutationConflictDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'base-active-mutation-conflict',
-      runId: 'pre-fix',
-      hypothesisId: 'A-E',
-      location: 'harness.ts:runFoundationActiveMutationConflictScenario',
+      runId: 'post-fix',
+      hypothesisId: 'A-H',
+      location: 'harness.ts:foundationActiveMutationConflict',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
@@ -8168,7 +8168,10 @@ interface DirectCellAssertionContext {
 }
 
 interface FoundationActiveMutationConflictResult {
+  conversationId: string;
+  turnId: string;
   durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
   facts: Record<string, unknown>;
 }
 
@@ -8193,10 +8196,112 @@ async function agentAuthorityHash(agent: Awaited<ReturnType<typeof api.getAgent>
   return sha256Hex(stableJson(agent));
 }
 
+async function runFoundationDirectAttestationTurn(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+}> {
+  const agentId = input.agent.id || input.agent.name;
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation conflict attestation ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  let attestationTurnId = '';
+
+  try {
+    await useChatStore.getState().selectSession(conversation.conversation_id);
+    let turnStartedAt = 0;
+    let turnCompletedAt = 0;
+    const result = await withFoundationCapabilitiesDisabled(
+      input.agent,
+      input.capabilitySessionId,
+      async () => {
+        turnStartedAt = performance.now();
+        const observed = startObservedFoundationTurn({
+          conversationId: conversation.conversation_id,
+          agentId,
+          content: 'Reply with ready.',
+          idempotencyKey: crypto.randomUUID(),
+          provider: input.agent.provider || undefined,
+          model: input.agent.model || undefined,
+          effort: 'low',
+          thinkingMode: 'disabled',
+          clientCapabilitySessionId: input.capabilitySessionId,
+        });
+        const turnResult = await observed.result;
+        turnCompletedAt = performance.now();
+        attestationTurnId = observedTurnId(turnResult.events);
+        return turnResult;
+      },
+    );
+    if (!result.ok) {
+      throw new Error(
+        result.error
+        || 'agent.acceptance.foundationActiveMutationAttestationTurnFailed',
+      );
+    }
+    const terminal = [...result.events].reverse().find((event) =>
+      classifyAgentTurnTerminalEvent(event) === 'completed');
+    if (!attestationTurnId || !terminal) {
+      throw new Error(
+        'agent.acceptance.foundationActiveMutationAttestationTurnMissing',
+      );
+    }
+    const durationMs = turnCompletedAt - turnStartedAt;
+    await reportActiveMutationConflictDebug('attestation-turn-complete', {
+      conversationIdHash: await sha256Hex(conversation.conversation_id),
+      turnIdHash: await sha256Hex(attestationTurnId),
+      eventType: terminal.event,
+      sequence: Number(terminal.data.seq ?? 0),
+      durationMs,
+    });
+    return {
+      conversationId: conversation.conversation_id,
+      turnId: attestationTurnId,
+      durationMs,
+      runtimeEvent: {
+        eventType: terminal.event,
+        sequence: Number(terminal.data.seq ?? 0),
+        observedAt: terminal.observedAt,
+      },
+    };
+  } catch (error) {
+    try {
+      await cleanupFoundationToolConversation(
+        conversation.conversation_id,
+        attestationTurnId,
+      );
+      await reportActiveMutationConflictDebug(
+        'attestation-failure-cleanup-complete',
+        {
+          conversationIdHash: await sha256Hex(conversation.conversation_id),
+          turnIdPresent: Boolean(attestationTurnId),
+        },
+      );
+    } catch (cleanupError) {
+      throw Object.assign(
+        new Error(
+          'agent.acceptance.foundationActiveMutationAttestationCleanupFailed',
+        ),
+        { primaryError: error, cleanupError },
+      );
+    }
+    throw error;
+  }
+}
+
 async function runFoundationActiveMutationConflictScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
   sampleId: string;
 }): Promise<FoundationActiveMutationConflictResult> {
-  const startedAt = performance.now();
   const store = useAgentStore.getState();
   const priorSelection = store.selectedAgent;
   const priorSurface = store.getAgentSurface(priorSelection);
@@ -8205,6 +8310,7 @@ async function runFoundationActiveMutationConflictScenario(input: {
     title: `Foundation conflict ${input.sampleId}`,
     description: 'Foundation active mutation conflict fixture',
   });
+  let scenarioError: unknown = null;
   let cleanupError: unknown = null;
   let facts: Record<string, unknown> | null = null;
 
@@ -8346,6 +8452,8 @@ async function runFoundationActiveMutationConflictScenario(input: {
           )?.version ?? 0,
       },
     };
+  } catch (error) {
+    scenarioError = error;
   } finally {
     try {
       await api.deleteAgent(disposable.id);
@@ -8358,32 +8466,51 @@ async function runFoundationActiveMutationConflictScenario(input: {
       const deletedFromRoster = !useAgentStore.getState().agents.some(
         (agent) => agent.id === disposable.id,
       );
-      if (!facts) {
-        throw new Error('agent.acceptance.activeMutationConflictFactsMissing');
+      const deletedFromStation = await api.getAgent(disposable.id).then(
+        () => false,
+        (error: unknown) => JSON.stringify(
+          (error as { details?: unknown })?.details ?? {},
+        ).includes('AGENT_4004'),
+      );
+      if (!deletedFromRoster || !deletedFromStation) {
+        cleanupError = new Error(
+          'agent.acceptance.activeMutationConflictCleanupIncomplete',
+        );
       }
-      facts.cleanup = {
-        disposableAgentId: disposable.id,
-        deletedFromRoster,
-        deletedFromStation: await api.getAgent(disposable.id).then(
-          () => false,
-          (error: unknown) => JSON.stringify(
-            (error as { details?: unknown })?.details ?? {},
-          ).includes('AGENT_4004'),
-        ),
-        priorSelection,
-        restoredSelection: useAgentStore.getState().selectedAgent,
-      };
+      if (facts) {
+        facts.cleanup = {
+          disposableAgentId: disposable.id,
+          deletedFromRoster,
+          deletedFromStation,
+          priorSelection,
+          restoredSelection: useAgentStore.getState().selectedAgent,
+        };
+      }
     } catch (error) {
       cleanupError = error;
     }
   }
 
-  if (cleanupError) throw cleanupError;
+  if (cleanupError) {
+    throw Object.assign(
+      new Error('agent.acceptance.activeMutationConflictCleanupFailed'),
+      { primaryError: scenarioError, cleanupError },
+    );
+  }
+  if (scenarioError) throw scenarioError;
   if (!facts) {
     throw new Error('agent.acceptance.activeMutationConflictFactsMissing');
   }
+  const attestation = await runFoundationDirectAttestationTurn({
+    agent: input.agent,
+    capabilitySessionId: input.capabilitySessionId,
+    sampleId: input.sampleId,
+  });
   return {
-    durationMs: performance.now() - startedAt,
+    conversationId: attestation.conversationId,
+    turnId: attestation.turnId,
+    durationMs: attestation.durationMs,
+    runtimeEvent: attestation.runtimeEvent,
     facts,
   };
 }
@@ -9025,6 +9152,7 @@ function evaluateBaseActiveMutationConflict(
     cleanupComplete: (
       cleanup.deletedFromRoster === true
       && cleanup.deletedFromStation === true
+      && cleanup.conversationDeleted === true
       && cleanup.restoredSelection === cleanup.priorSelection
     ),
   };
@@ -11327,9 +11455,19 @@ export function installAcceptanceHarness(): void {
 
       try {
       if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
         const scenario = await runFoundationActiveMutationConflictScenario({
+          agent,
+          capabilitySessionId,
           sampleId,
         });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
         turnDurationMs = scenario.durationMs;
         scenarioFacts = scenario.facts;
       }
@@ -12408,7 +12546,9 @@ export function installAcceptanceHarness(): void {
 
       const chatState = useChatStore.getState();
       const currentConversationId =
-        preparedConversationId ?? chatState.currentSessionKey;
+        cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
+          ? preparedConversationId
+          : preparedConversationId ?? chatState.currentSessionKey;
       const [conversationReadback, turnQueue] = await Promise.all([
         currentConversationId
           ? foundationConversationReadback(currentConversationId)
@@ -12421,7 +12561,9 @@ export function installAcceptanceHarness(): void {
       const lastAssistant = [...chatState.messages]
         .reverse()
         .find((message) => message.role === 'assistant');
-      const turnId = preparedTurnId ?? lastAssistant?.turnId ?? null;
+      const turnId = cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
+        ? preparedTurnId
+        : preparedTurnId ?? lastAssistant?.turnId ?? null;
       const turnEvidence = currentConversationId && turnId
         ? await foundationTurnEvidence(currentConversationId, turnId)
         : null;
@@ -12511,6 +12653,7 @@ export function installAcceptanceHarness(): void {
           cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
           || cell === 'BASE-ATTACHMENT_REJECTED'
+          || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
         )
         && scenarioFacts
         && currentConversationId
@@ -12532,20 +12675,33 @@ export function installAcceptanceHarness(): void {
         scenarioFacts.cleanup = {
           ...evidenceRecord(
             scenarioFacts.cleanup,
-            cell === 'BASE-APPROVAL_DENIED'
-              ? 'foundationApprovalDeniedCleanup'
-              : cell === 'BASE-APPROVAL_EXPIRED'
-                ? 'foundationApprovalExpiredCleanup'
-                : 'foundationAttachmentRejectedCleanup',
+            cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
+              ? 'foundationActiveMutationConflictCleanup'
+              : cell === 'BASE-APPROVAL_DENIED'
+                ? 'foundationApprovalDeniedCleanup'
+                : cell === 'BASE-APPROVAL_EXPIRED'
+                  ? 'foundationApprovalExpiredCleanup'
+                  : 'foundationAttachmentRejectedCleanup',
           ),
           conversationDeleted,
           deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
         };
+        if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT') {
+          await reportActiveMutationConflictDebug(
+            'attestation-cleanup-complete',
+            {
+              conversationIdHash: await sha256Hex(currentConversationId),
+              conversationDeleted,
+            },
+          );
+        }
       }
 
       const sessionState = useSessionStore.getState();
       const providerState = useProviderStore.getState();
-      const operation = chatState.operations[currentConversationId];
+      const operation = currentConversationId
+        ? chatState.operations[currentConversationId]
+        : undefined;
 
       const assertionContext: DirectCellAssertionContext = {
         cell,
@@ -12975,22 +13131,22 @@ export function installAcceptanceHarness(): void {
             'foundationF05CleanupObjects',
           )
         : [];
+      const activeMutationCleanup =
+        cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationActiveMutationConflictCleanup',
+            )
+          : null;
       const cleanup: Record<string, unknown> = {
         status: (
-          cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
+          activeMutationCleanup
             ? (
-                evidenceRecord(
-                  scenarioFacts.cleanup,
-                  'foundationActiveMutationConflictCleanup',
-                ).deletedFromRoster === true
-                && evidenceRecord(
-                  scenarioFacts.cleanup,
-                  'foundationActiveMutationConflictCleanup',
-                ).restoredSelection
-                  === evidenceRecord(
-                    scenarioFacts.cleanup,
-                    'foundationActiveMutationConflictCleanup',
-                  ).priorSelection
+                activeMutationCleanup.deletedFromRoster === true
+                && activeMutationCleanup.deletedFromStation === true
+                && activeMutationCleanup.conversationDeleted === true
+                && activeMutationCleanup.restoredSelection
+                  === activeMutationCleanup.priorSelection
               )
             : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
               ? (
@@ -13265,6 +13421,24 @@ export function installAcceptanceHarness(): void {
           } catch (cleanupError) {
             throw Object.assign(
               new Error('agent.acceptance.foundationToolExpiryCleanupFailed'),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
+          && preparedConversationId
+        ) {
+          try {
+            await deleteFoundationConversation(preparedConversationId);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationActiveMutationAttestationCleanupFailed',
+              ),
               {
                 primaryError: error,
                 cleanupError,

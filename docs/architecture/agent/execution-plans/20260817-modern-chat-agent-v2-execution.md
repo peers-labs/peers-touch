@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `504c543b8186f3033654750d5070bd6abfdda306` restored Browser HTTP gateway parity for `oss_list_my_files`. Exact-source runtime then completed valid upload, authenticated tombstone readback, real Send rejection, and post-rejection readback; candidate validation rejected only the secret-bearing evidence field name `keyHash`. The local correction renames it to `objectPathHash` without changing the SHA-256 value or assertion strength. Post-fix proof remains pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `87aa51437a2faea4803d34d08bf2bcfaed5980b1` was rebuilt, smoke-tested, and deployed exact-source. One unchanged-source retry exposed `BASE-ACTIVE_MUTATION_CONFLICT` depending on incidental prior chat state for generic direct-runtime attestation. The local producer now creates an explicit bounded conversation/Turn, binds the exact IDs into runtime evidence, forbids this cell's stale chat fallback, and requires deletion of both the attestation conversation and disposable Agent. Local checks pass; post-fix exact-source proof remains pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5890,6 +5890,42 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `145/145` focused Foundation/oracle tests pass; the broader candidate
   producer invocation retains its two known unrelated `receiver-dom`
   fixture/profile errors. Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Checkpoint `87aa51437a2faea4803d34d08bf2bcfaed5980b1` was rebuilt,
+  passed embedded-WebDriver smoke with Acceptance binary SHA-256
+  `4a8274d4ee1e0d97184e42a5e613e1717c8510c7888c428e89fb1884d0956020`,
+  and was deployed exact-source to `chat-native-disposable-station`. Gate run
+  `20260907T063744088649Z-3ed2a221c2462d34c844053006475112`
+  failed first at Browser `BASE-APPROVAL_DENIED` because the ToolCall receiver
+  projection arrived after its bounded wait even though Station denial had
+  settled correctly. Because this checkpoint changed only later attachment
+  evidence naming and its predecessor crossed the same tuple, one controlled
+  unchanged-source retry was justified. Retry
+  `20260907T070147144683Z-7245b23cfd64bf4ec824427fca07bf12`
+  crossed that boundary and failed first at Browser English
+  `BASE-ACTIVE_MUTATION_CONFLICT` with
+  `agent.acceptance.directRuntimeFactsMissing`. The conflict scenario creates
+  no conversation or Turn, while generic direct-runtime attestation requires
+  a capability session, exact conversation readback, and exact Turn evidence.
+  Earlier passes therefore depended on incidental stale chat state from a
+  previous tuple. The Acceptance producer must create a bounded attestation
+  Turn, bind `preparedConversationId` and `preparedTurnId` to it, and prove
+  cleanup of both that conversation and the disposable Agent. Both runs
+  completed Provisioner cleanup `DONE / PROVEN / passed`; source identity and
+  redaction passed. No further unchanged-source retry is justified before this
+  producer correction. Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- The local correction creates the attestation conversation only after the
+  profile-conflict journey succeeds, runs one capability-isolated Direct Turn,
+  binds its exact conversation/Turn IDs to generic runtime attestation, and
+  prevents this cell from falling back to `chatState.currentSessionKey` or the
+  last assistant message. Success and failure paths delete the attestation
+  conversation; the local and independent cleanup oracles now require both
+  Agent deletion and conversation deletion. Desktop check, all `573` Desktop
+  tests with one unrelated environment-dependent skip, Desktop production
+  build, `146/146` focused Foundation/static tests, Acceptance plan self-check,
+  Python compilation, and `git diff --check` pass. Agent Domain validation
+  correctly remains fail-closed because latest evidence identifies the prior
+  source. Post-fix exact-source runtime proof remains pending, so Foundation
+  and G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

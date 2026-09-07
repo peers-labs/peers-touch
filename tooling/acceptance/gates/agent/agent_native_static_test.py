@@ -1116,9 +1116,13 @@ class AgentHarnessStaticTest(unittest.TestCase):
                 self.assertIn(method, self.source)
 
     def test_active_mutation_conflict_uses_production_profile_and_recovery(self) -> None:
+        attestation_start = self.source.index(
+            "async function runFoundationDirectAttestationTurn"
+        )
         scenario_start = self.source.index(
             "async function runFoundationActiveMutationConflictScenario"
         )
+        attestation = self.source[attestation_start:scenario_start]
         scenario_end = self.source.index(
             "async function buildDirectRuntimeAttestation",
             scenario_start,
@@ -1134,6 +1138,67 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("await api.getAgent(disposable.id)", scenario)
         self.assertIn("await api.deleteAgent(disposable.id)", scenario)
         self.assertIn("await api.setSelectedAgent(priorSelection)", scenario)
+        self.assertIn("runFoundationDirectAttestationTurn({", scenario)
+        self.assertIn("api.createAgentConversation({", attestation)
+        self.assertIn("withFoundationCapabilitiesDisabled(", attestation)
+        self.assertIn("startObservedFoundationTurn({", attestation)
+        self.assertIn("thinkingMode: 'disabled'", attestation)
+        self.assertIn(
+            "await cleanupFoundationToolConversation(",
+            attestation,
+        )
+
+        direct_probe_start = self.source.index("async foundationDirectProbe")
+        active_dispatch_start = self.source.index(
+            "if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT')",
+            direct_probe_start,
+        )
+        active_dispatch_end = self.source.index(
+            "if (cell === 'BASE-APPROVAL_DENIED')",
+            active_dispatch_start,
+        )
+        active_dispatch = self.source[active_dispatch_start:active_dispatch_end]
+        self.assertIn(
+            "preparedConversationId = scenario.conversationId",
+            active_dispatch,
+        )
+        self.assertIn("preparedTurnId = scenario.turnId", active_dispatch)
+        self.assertNotIn("chatState.currentSessionKey", active_dispatch)
+
+        current_conversation = self.source[
+            self.source.index("const currentConversationId =", direct_probe_start):
+            self.source.index(
+                "const [conversationReadback, turnQueue]",
+                direct_probe_start,
+            )
+        ]
+        self.assertIn(
+            "cell === 'BASE-ACTIVE_MUTATION_CONFLICT'",
+            current_conversation,
+        )
+        self.assertIn("? preparedConversationId", current_conversation)
+        self.assertIn(
+            ": preparedConversationId ?? chatState.currentSessionKey",
+            current_conversation,
+        )
+        cleanup_start = self.source.index(
+            "} catch (error) {",
+            self.source.index("return evidenceValue({", direct_probe_start),
+        )
+        cleanup_end = self.source.index(
+            "async foundationNonAdvertisementProbe",
+            cleanup_start,
+        )
+        failure_cleanup = self.source[cleanup_start:cleanup_end]
+        self.assertIn(
+            "cell === 'BASE-ACTIVE_MUTATION_CONFLICT'",
+            failure_cleanup,
+        )
+        self.assertIn(
+            "await deleteFoundationConversation(preparedConversationId)",
+            failure_cleanup,
+        )
+        self.assertIn("activeMutationCleanup.conversationDeleted === true", self.source)
         self.assertNotIn("mock", scenario.lower())
 
     def test_approval_denied_uses_product_action_and_station_readback(self) -> None:
