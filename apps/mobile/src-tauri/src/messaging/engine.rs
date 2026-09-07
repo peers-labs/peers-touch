@@ -36,16 +36,17 @@ use messaging_core::mls::{
     MlsTransitionProcessor,
 };
 use messaging_core::outbox::{
-    CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, DeliveryReceiptDispatcher,
+    CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, DeliveryReceiptRepository,
     DirectEditIntent, DirectOutboundPreparer, DirectSendIntent, DirectSessionBootstrapper,
     MetadataInteraction, MetadataInteractionPreparer,
 };
 use messaging_core::ports::AttachmentBlob;
+use messaging_core::proto::actor::{ActorDevice, ActorDeviceRef, ActorRef};
 use messaging_core::proto::chat::{
-    chat_command, conversation_command, ActorReadCursor, AttachmentTransferState, ChatCommand,
-    ConversationCommand, ConversationKind, CryptoEndpoint, DeviceQueueItem, MessagingDevice,
-    MessagingReceiptKind, PrepareMessagingSendRequest, PrepareMessagingSendResponse,
-    SubmitMessagingReceiptRequest, TypingCommand,
+    chat_command, ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationKind,
+    CryptoEndpoint, DeviceConsumptionReceipt, DurableDeviceInboxItem,
+    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
+    SubmitConversationReadCursorRequest, SubmitConversationTypingRequest,
 };
 use messaging_core::store::MessagingRepository;
 use prost::Message;
@@ -68,6 +69,7 @@ use super::transport::{
 
 const DRAIN_BATCH_LIMIT: u32 = 100;
 pub const ATTACHMENT_STAGE_CHUNK_SIZE: usize = 1024 * 1024;
+const TYPING_PULSE_TTL_MS: i64 = 6_000;
 const COMMAND_RETRY_POLICY: CommandRetryPolicy = CommandRetryPolicy {
     initial_delay_ms: 1_000,
     maximum_delay_ms: 60_000,
@@ -182,7 +184,7 @@ struct MobileMlsItemConsumer {
 impl MlsItemConsumer for MobileMlsItemConsumer {
     fn consume_application(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
         self.application.consume(item, consumer_epoch)
@@ -190,7 +192,7 @@ impl MlsItemConsumer for MobileMlsItemConsumer {
 
     fn consume_transition(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
         self.transition.consume(item, consumer_epoch)
@@ -198,7 +200,7 @@ impl MlsItemConsumer for MobileMlsItemConsumer {
 
     fn consume_retirement(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
         self.retirement.consume(item, consumer_epoch)
@@ -206,7 +208,7 @@ impl MlsItemConsumer for MobileMlsItemConsumer {
 
     fn consume_sender_transition(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
         self.sender_transition.consume(item, consumer_epoch)
@@ -228,6 +230,7 @@ pub struct MobileMessagingEngine {
     consumer: Arc<CoreItemConsumer>,
     consumer_id: String,
     consumer_epoch: AtomicU64,
+    typing_pulse_generation: AtomicU64,
     drain_lock: Mutex<()>,
     dispatch_lock: Mutex<()>,
     send_intent_lock: Mutex<()>,
@@ -264,11 +267,24 @@ impl MobileMessagingEngine {
             *actor_identity_seed,
             INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
         )?;
+        let enrolled_device = enrollment
+            .certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "mobile messaging device certificate has no device".to_string())?;
+        if enrolled_device
+            .actor
+            .as_ref()
+            .map(|actor| actor.ptid.as_str())
+            != Some(actor_ptid.as_str())
+        {
+            return Err("mobile messaging device certificate actor mismatch".to_string());
+        }
         let scope = MessagingAccountScope {
             station_peer_id,
             station_origin,
             actor_ptid,
-            device_id: enrollment.certificate.device_id,
+            device_id: enrolled_device.device_id.clone(),
         };
         let actor_identity = Arc::new(IdentityKeyPair::from_seed(&actor_identity_seed));
         let mls_identity = Arc::new(ActorDeviceIdentity::new());
@@ -348,6 +364,9 @@ impl MobileMessagingEngine {
             consumer,
             consumer_id,
             consumer_epoch: AtomicU64::new(0),
+            typing_pulse_generation: AtomicU64::new(
+                u64::try_from(now_unix_ms()).unwrap_or_default(),
+            ),
             drain_lock: Mutex::new(()),
             dispatch_lock: Mutex::new(()),
             send_intent_lock: Mutex::new(()),
@@ -657,7 +676,7 @@ impl MobileMessagingEngine {
                 )?
                 .prepare_missing(
                     conversation_id,
-                    &plan.required_endpoints,
+                    &crypto_endpoints(&plan.required_endpoints)?,
                     created_at_unix_ms,
                     &StationKeyBundleTransport::new(
                         self.scope.station_origin.clone(),
@@ -978,7 +997,7 @@ impl MobileMessagingEngine {
     fn prepare_edit_with_plan(
         &self,
         access_token: &str,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         command_id: &str,
         message_id: &str,
         plaintext: &str,
@@ -996,7 +1015,7 @@ impl MobileMessagingEngine {
                 )?
                 .prepare_missing(
                     &plan.conversation_id,
-                    &plan.required_endpoints,
+                    &crypto_endpoints(&plan.required_endpoints)?,
                     created_at_unix_ms,
                     &StationKeyBundleTransport::new(
                         self.scope.station_origin.clone(),
@@ -1038,7 +1057,7 @@ impl MobileMessagingEngine {
 
     fn prepare_metadata_with_plan(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         command_id: &str,
         message_id: &str,
         interaction: MetadataInteraction<'_>,
@@ -1074,10 +1093,8 @@ impl MobileMessagingEngine {
             token,
             self.scope.device_id.clone(),
         )?
-        .submit_read_cursor(&SubmitMessagingReceiptRequest {
-            kind: MessagingReceiptKind::ActorRead as i32,
-            device_consumed: None,
-            actor_read: Some(ActorReadCursor {
+        .submit_read_cursor(&SubmitConversationReadCursorRequest {
+            cursor: Some(ActorReadCursor {
                 conversation_id: conversation_id.to_string(),
                 reader_ptid: self.scope.actor_ptid.clone(),
                 last_read_sequence,
@@ -1098,22 +1115,24 @@ impl MobileMessagingEngine {
         }
         self.store
             .conversation_authority_station_id(conversation_id)?;
+        let now = now_unix_ms();
+        let pulse_generation = self
+            .typing_pulse_generation
+            .fetch_add(1, Ordering::AcqRel)
+            .checked_add(1)
+            .ok_or_else(|| "mobile messaging typing pulse generation overflow".to_string())?;
         let token = self.access_token()?;
         StationCommandTransport::new(
             self.scope.station_origin.clone(),
             token,
             self.scope.device_id.clone(),
         )?
-        .submit_typing(&ConversationCommand {
-            command_id: Ulid::new().to_string(),
+        .submit_typing(&SubmitConversationTypingRequest {
             conversation_id: conversation_id.to_string(),
-            sender_ptid: self.scope.actor_ptid.clone(),
-            sender_device_id: self.scope.device_id.clone(),
-            client_ts: Some(timestamp(now_unix_ms())),
-            payload: Some(conversation_command::Payload::Typing(TypingCommand {
-                is_typing,
-            })),
-            ..Default::default()
+            sender: Some(self.actor_device_ref()),
+            pulse_generation,
+            expires_at: Some(timestamp(now.saturating_add(TYPING_PULSE_TTL_MS))),
+            is_typing,
         })
     }
 
@@ -1133,7 +1152,11 @@ impl MobileMessagingEngine {
         Ok(())
     }
 
-    pub fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    pub fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), String> {
         self.consumer.consume(item, consumer_epoch)
     }
 
@@ -1159,7 +1182,7 @@ impl MobileMessagingEngine {
                 self.scope.device_id.clone(),
             )?,
             self.consumer.clone(),
-            self.scope.device_id.clone(),
+            self.actor_device_ref(),
             self.consumer_id.clone(),
             DRAIN_BATCH_LIMIT,
         )?;
@@ -1393,7 +1416,7 @@ impl MobileMessagingEngine {
                 )?
                 .prepare_missing(
                     &draft.conversation_id,
-                    &plan.required_endpoints,
+                    &crypto_endpoints(&plan.required_endpoints)?,
                     draft.created_at_unix_ms,
                     &StationKeyBundleTransport::new(
                         self.scope.station_origin.clone(),
@@ -1439,7 +1462,7 @@ impl MobileMessagingEngine {
         Ok(command_id)
     }
 
-    pub fn enroll_pending_device(&self) -> Result<Option<MessagingDevice>, String> {
+    pub fn enroll_pending_device(&self) -> Result<Option<ActorDevice>, String> {
         let token = self.access_token()?;
         DeviceEnrollmentManager::new(
             self.store.clone(),
@@ -1497,19 +1520,25 @@ impl MobileMessagingEngine {
     }
 
     pub fn dispatch_delivery_receipt_once(&self) -> Result<bool, String> {
+        let Some(entry) = DeliveryReceiptRepository::next_delivery_receipt(self.store.as_ref())?
+        else {
+            return Ok(false);
+        };
+        let receipt = DeviceConsumptionReceipt::decode(entry.receipt_bytes.as_slice())
+            .map_err(|error| format!("decode mobile messaging consumption receipt: {error}"))?;
         let token = self.access_token()?;
-        DeliveryReceiptDispatcher::new(
-            self.store.clone(),
-            CoreCryptoEndpoint {
-                ptid: self.scope.actor_ptid.clone(),
-                device_id: self.scope.device_id.clone(),
-            },
-        )?
-        .dispatch_once(&StationDeliveryReceiptTransport::new(
+        StationDeliveryReceiptTransport::new(
             self.scope.station_origin.clone(),
             token,
             self.scope.device_id.clone(),
-        )?)
+        )?
+        .submit(&receipt)?;
+        DeliveryReceiptRepository::mark_delivery_receipt_submitted(
+            self.store.as_ref(),
+            &entry.receipt_id,
+            &entry.receipt_bytes,
+        )?;
+        Ok(true)
     }
 
     pub fn recover_stale_enrollment(&self, error: &str) -> Result<bool, String> {
@@ -1525,7 +1554,7 @@ impl MobileMessagingEngine {
         &self,
         access_token: &str,
         conversation_id: &str,
-    ) -> Result<messaging_core::proto::chat::PrepareMessagingSendResponse, String> {
+    ) -> Result<PrepareConversationCommandResponse, String> {
         if conversation_id.trim().is_empty() {
             return Err("mobile messaging send plan requires conversation ID".to_string());
         }
@@ -1537,10 +1566,10 @@ impl MobileMessagingEngine {
             access_token.to_string(),
             self.scope.device_id.clone(),
         )?
-        .prepare_send(&PrepareMessagingSendRequest {
+        .prepare_send(&PrepareConversationCommandRequest {
             conversation_id: conversation_id.to_string(),
-            sender: Some(self.proto_endpoint()),
-            authority_station_id,
+            sender: Some(self.actor_device_ref()),
+            authority_station_peer_id: authority_station_id,
         })
     }
 
@@ -1554,6 +1583,16 @@ impl MobileMessagingEngine {
     fn proto_endpoint(&self) -> CryptoEndpoint {
         CryptoEndpoint {
             ptid: self.scope.actor_ptid.clone(),
+            device_id: self.scope.device_id.clone(),
+        }
+    }
+
+    fn actor_device_ref(&self) -> ActorDeviceRef {
+        ActorDeviceRef {
+            actor: Some(ActorRef {
+                ptid: self.scope.actor_ptid.clone(),
+                ..Default::default()
+            }),
             device_id: self.scope.device_id.clone(),
         }
     }
@@ -1775,6 +1814,24 @@ fn earlier_unix_timestamp(left: Option<i64>, right: Option<i64>) -> Option<i64> 
         (Some(value), None) | (None, Some(value)) => Some(value),
         (None, None) => None,
     }
+}
+
+fn crypto_endpoints(devices: &[ActorDeviceRef]) -> Result<Vec<CryptoEndpoint>, String> {
+    devices
+        .iter()
+        .map(|device| {
+            let actor = device.actor.as_ref().ok_or_else(|| {
+                "mobile messaging canonical device endpoint has no actor".to_string()
+            })?;
+            if actor.ptid.trim().is_empty() || device.device_id.trim().is_empty() {
+                return Err("mobile messaging canonical device endpoint is incomplete".to_string());
+            }
+            Ok(CryptoEndpoint {
+                ptid: actor.ptid.clone(),
+                device_id: device.device_id.clone(),
+            })
+        })
+        .collect()
 }
 
 fn replacement_command_id(command_id: &str, delivery_plan_sha256: &[u8]) -> String {

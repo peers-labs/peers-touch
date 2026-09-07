@@ -1,17 +1,21 @@
-use crate::proto::chat::{DeviceEventDelivery, DeviceQueueItem, PreparedEndpointPayloadKind};
+use crate::proto::chat::{
+    DeviceEventDelivery, DurableDeviceInboxItem, PreparedEndpointPayloadKind,
+};
+use crate::proto::crypto_endpoint_from_actor_device_ref;
 use prost::Message;
 use sha2::{Digest, Sha256};
 
 const DELIVERY_COMMITMENT_DOMAIN: &[u8] = b"peers-touch/device-delivery-commitment";
 
 pub fn verify_device_event_delivery(
-    item: &DeviceQueueItem,
+    item: &DurableDeviceInboxItem,
     local_ptid: &str,
     local_device_id: &str,
 ) -> Result<DeviceEventDelivery, String> {
     let recipient = item
         .recipient
         .as_ref()
+        .and_then(crypto_endpoint_from_actor_device_ref)
         .ok_or_else(|| "messaging queue item has no recipient".to_string())?;
     if recipient.ptid != local_ptid || recipient.device_id != local_device_id {
         return Err("messaging queue item targets another endpoint".to_string());
@@ -27,7 +31,7 @@ pub fn verify_device_event_delivery(
         .recipient
         .as_ref()
         .ok_or_else(|| "messaging delivery has no recipient".to_string())?;
-    if delivery_recipient != recipient {
+    if delivery_recipient != &recipient {
         return Err("messaging delivery recipient binding mismatch".to_string());
     }
     let event = delivery
@@ -119,10 +123,11 @@ fn write_string(target: &mut Vec<u8>, value: &str) {
 mod tests {
     use super::*;
     use crate::proto::chat::{
-        conversation_event, ConversationEvent, CryptoEndpoint, MessageCommittedFact,
+        conversation_event, ConversationEvent, CryptoEndpoint, DeviceInboxItemState,
+        DeviceInboxPayloadType, DeviceInboxRejectCode, MessageCommittedFact,
     };
 
-    fn queue_item() -> DeviceQueueItem {
+    fn queue_item() -> DurableDeviceInboxItem {
         let recipient = CryptoEndpoint {
             ptid: "ptid:alice".to_string(),
             device_id: "alice-device".to_string(),
@@ -169,25 +174,26 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "item-1".to_string(),
-            recipient: Some(recipient),
+            recipient: Some(crate::proto::actor_device_ref_from_crypto_endpoint(
+                &recipient,
+            )),
             lane_sequence: 1,
             event_id: "event-1".to_string(),
             conversation_id: "conversation-1".to_string(),
             idempotency_key: "event:event-1".to_string(),
-            payload_type: 1,
+            payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
-            state: 1,
+            state: DeviceInboxItemState::Pending as i32,
             attempt_count: 0,
             lease: None,
             first_queued_at: None,
             next_attempt_at: None,
             expires_at: None,
-            consumed_at: None,
             acked_at: None,
-            last_error_code: String::new(),
+            last_error_code: DeviceInboxRejectCode::Unspecified as i32,
         }
     }
 
