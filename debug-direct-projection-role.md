@@ -49,4 +49,35 @@ the same kind-specific roles instead of inventing Direct ownership.
 - `messaging-platform-contract`: `20260907T162220659277Z-75ade6a5e23284b518a19e8793f7a97e`.
 - `desktop-check`: `20260907T162250297926Z-b0986d285384583575acedb4b90a8302`.
 - `chat-native-visible-static`: `20260907T162311315463Z-728ed72316862d015983e93b23cd90aa`.
-- Exact-source Windows Product Closure: pending.
+- Exact-source Windows Product Closure
+  `20260907T162910781782Z-6bab8cef6910f9f82faeae965d0eb0fc`
+  proves first-open success, repeated deterministic reopen, and one active pane.
+- Product Closure next failed at `group.create.ui`; cleanup remained
+  `DONE/PROVEN`.
+
+## Iteration: Group Create Gate
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| E | The runner clicks submit before React commits contact selection and enables the button. | Confirmed | The runner has no post-selection wait; Station received no `/conversation/group/prepare`; no Group row exists. |
+| F | Product `handleFinish` rejects actor or Federation input. | Rejected | No frontend `createGroup failed` or validation feedback was emitted. |
+| G | Group prepare reached Station and failed. | Rejected | Station request logs contain no `/conversation/group/prepare` for the failed interval. |
+| H | Authority committed a Group but the clients failed to project it. | Rejected | station-four contains only the proven Direct; station-five contains no Conversation row. |
+
+## Group Gate Fix
+- The runner now waits for Bob's contact control to expose
+  `aria-pressed="true"` and for the submit control to become enabled before
+  issuing the native submit click.
+- A bounded timeout captures the Alice DOM, screenshot, modal count, pane
+  states, and submit state without weakening the Group product assertion.
+- The focused synchronization test passes.
+- Fresh local Gate runs pass:
+  - `station-messaging-unit`:
+    `20260907T171455773732Z-45ff86e160d98743abc4293f4bab99fd`;
+  - `messaging-platform-contract`:
+    `20260907T171455773750Z-ac295bc48df5b5c147413cd6c3a6d9d9`;
+  - `desktop-check`:
+    `20260907T171455773766Z-7a236d1a2c3514b2da8b0e80290de1cd`;
+  - `chat-native-visible-static`:
+    `20260907T171455773563Z-97c990c064491a98b727cfe253fbcdcf`.
+- Exact-source Windows post-fix verification remains pending; the debug session
+  stays `[OPEN]`.

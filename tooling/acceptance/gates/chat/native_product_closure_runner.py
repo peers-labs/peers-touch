@@ -2211,16 +2211,56 @@ class NativeProductClosureGate(AcceptanceGate):
         self.click("alice", '[data-chat-subpage="chats"]')
         self.click("alice", "[data-chat-new-menu]")
         self.click("alice", "[data-chat-create-group-menu]")
-        self.clients["alice"].find_element("[data-chat-create-group]", 20)
+        client = self.clients["alice"]
+        client.find_element("[data-chat-create-group]", 20)
+        contact_selector = (
+            f'[data-chat-create-group-contact="{self.ptids["bob"]}"]'
+        )
         self.click(
             "alice",
-            f'[data-chat-create-group-contact="{self.ptids["bob"]}"]',
+            contact_selector,
         )
+        wait_until(
+            lambda: next(
+                (
+                    contact
+                    for contact in client.find_elements(contact_selector)
+                    if contact.get_attribute("aria-pressed") == "true"
+                ),
+                None,
+            ),
+            "Alice selected Bob for group creation",
+            timeout=10,
+        )
+        submit_selector = "[data-chat-create-group-submit]"
+        wait_until(
+            lambda: next(
+                (
+                    submit
+                    for submit in client.find_elements(submit_selector)
+                    if submit.is_enabled()
+                ),
+                None,
+            ),
+            "Alice enabled group creation submit",
+            timeout=10,
+        )
+        # #region debug-point E-H:group-create-committed-selection
+        _debug_report(
+            "E-H",
+            "native_product_closure_runner.py:open_group_through_ui",
+            "group contact selection committed before submit",
+            {
+                "contactPressed": True,
+                "submitEnabled": True,
+            },
+        )
+        # #endregion
         self.capture_visible_localization("group-create", ("alice",))
-        self.click("alice", "[data-chat-create-group-submit]")
+        self.click("alice", submit_selector)
 
         def active_group() -> str | None:
-            pane = self.clients["alice"].find_element(
+            pane = client.find_element(
                 "[data-chat-conversation-pane]",
                 30,
             )
@@ -2228,7 +2268,48 @@ class NativeProductClosureGate(AcceptanceGate):
             kind = pane.get_attribute("data-group-security")
             return group_id if group_id and kind == "ready" else None
 
-        group_id = wait_until(active_group, "Alice active MLS group", timeout=180)
+        try:
+            group_id = wait_until(
+                active_group,
+                "Alice active MLS group",
+                timeout=180,
+            )
+        except GateError:
+            diagnostics = client.execute_script(
+                """
+                const panes = Array.from(
+                  document.querySelectorAll('[data-chat-conversation-pane]'),
+                );
+                const submit = document.querySelector(
+                  '[data-chat-create-group-submit]',
+                );
+                return {
+                  modalCount: document.querySelectorAll(
+                    '[data-chat-create-group]',
+                  ).length,
+                  paneStates: panes.map((pane) => ({
+                    conversationId:
+                      pane.getAttribute('data-chat-conversation-pane') || '',
+                    groupSecurity:
+                      pane.getAttribute('data-group-security') || '',
+                  })),
+                  submitDisabled: submit instanceof HTMLButtonElement
+                    ? submit.disabled
+                    : null,
+                };
+                """
+            )
+            # #region debug-point E-H:group-create-timeout
+            _debug_report(
+                "E-H",
+                "native_product_closure_runner.py:open_group_through_ui",
+                "group conversation did not become active",
+                diagnostics if isinstance(diagnostics, dict) else {},
+            )
+            # #endregion
+            self.save_screenshot(client, "alice-group-create-failed")
+            self.save_dom(client, "alice-group-create-failed")
+            raise
         wait_until(
             lambda: self.clients["bob"].find_element(
                 f'[data-chat-group-ulid="{group_id}"]',
