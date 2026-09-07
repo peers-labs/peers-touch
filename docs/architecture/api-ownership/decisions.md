@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-06
+> **Created**: 2026-09-06 | **Updated**: 2026-09-07
 > **Owner**: Architecture Team
 
 ---
@@ -17,6 +17,7 @@
 | AO-D04 | Duplicate public routes and truth stores require an atomic hard cut | accepted |
 | AO-D05 | Social and Conversation reuse one domain-neutral Federation transport | accepted |
 | AO-D06 | Conversation is rebuilt as a Station DDD bounded context | accepted |
+| AO-D07 | Canonical wire contracts carry authority, trust, and replay semantics | proposed |
 
 ---
 
@@ -273,3 +274,83 @@ The refactor is broad and must be dependency-planned. All existing Conversation 
 reclassified into domain, application, infrastructure, interface, and Acceptance gates.
 The old flat services, repositories, transition UOWs, follower adapters, and handlers are
 deleted after their behavior is covered by the new bounded context.
+
+---
+
+## AO-D07: Canonical Wire Contracts Carry Authority, Trust, And Replay Semantics
+
+**Status**: proposed
+**Date**: 2026-09-07
+
+### Context
+
+CA-W5 production composition proved that six CA-W1 request families cannot express
+the already accepted DDD and Federation semantics. Creation requests lack durable
+caller identity, remote Conversation and Friend Request mutations cannot carry the
+required actor-device signature, query/result types still expose a replaced event
+model, and remote Key Exchange operations have no complete typed peer contract.
+
+Direct bundle and plain MLS KeyPackage fetches also consume one-time material. A
+network retry without a caller-owned request identity can therefore consume a
+different response.
+
+### Decision
+
+Adopt the complete contract package in
+[`proposals/20260907-ca-w5-canonical-wire-contract-amendment.md`](./proposals/20260907-ca-w5-canonical-wire-contract-amendment.md):
+
+- Direct creation carries a caller-generated signed command and elects one
+  authority from the canonical actor pair and verified Home Station profiles.
+- Group creation submits the prepared canonical `ChatCommand`; the stored authority
+  plan remains the single source for name, membership, routing, and reservations.
+- `/conversation/command` accepts either a raw local-authority command or an
+  actor-device-signed remote-authority proposal and exposes durable result readback.
+- `ConversationEvent` is the only committed Chat event across command, result,
+  query, follower, persistence, and device-delivery boundaries.
+- Friend Request send/accept/reject requests carry the exact signed
+  `FriendRequestCommand` and return durable submission state separately from
+  receiver-authority resolution.
+- Destructive Direct/MLS fetches have caller-owned request identity and exact-response
+  replay.
+- Remote Direct/MLS reads and claims use typed peer request/response capabilities;
+  DKX uses one typed payload through shared durable Federation delivery.
+
+### Rationale
+
+The current implementation already depends on these semantics. Making them explicit
+in canonical protobuf contracts removes server-generated identities, unsigned remote
+mutations, destructive retry ambiguity, and the remaining dual event truth without
+changing the product workflow or capability owner.
+
+### Alternatives Considered
+
+- Let handlers synthesize missing command IDs, signatures, or authority-plan fields:
+  rejected because retries and actor authorization would not bind the original intent.
+- Keep both Conversation event models with translators: rejected because event hashes
+  and authority truth would remain split.
+- Return final-looking Friend Request resources after local durable admission:
+  rejected because remote authority has not yet decided.
+- Carry synchronous key reads through the durable Federation outbox: rejected because
+  crypto preparation requires a bounded response.
+- Deliver DKX through a synchronous peer call: rejected because outage and restart
+  would lose durable device delivery.
+- Keep a specialized peer command mutation route beside shared Federation delivery:
+  rejected as a second remote mutation transport.
+
+### Consequences
+
+- CA-W1 canonical proto sources and all generated consumers change again before
+  production registration.
+- A command-result query is added for Conversation and Friend Request recovery.
+- Client native runtimes own command/request identity and actor-device signing; Web
+  layers remain intent and projection adapters.
+- Key Exchange gains bounded exact-response receipt persistence for destructive
+  fetches and target-admission readback for DKX dependencies.
+- The CA-W5 diff grows, but the atomic cut leaves one command/event truth and one
+  durable Federation mutation path.
+
+### Acceptance
+
+Independent architecture review reports zero P0/P1 findings and
+`APPROVE AO-D07`. Owner acceptance remains pending. CA-W5 production
+composition and final deletion remain blocked until this decision is accepted.

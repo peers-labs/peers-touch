@@ -88,29 +88,6 @@ enum EnvelopePayloadType {
   ENVELOPE_PAYLOAD_TYPE_CONVERSATION_COMMAND_RESULT = 7;
 }
 
-// --- Device Inbox Item ---
-
-// Per-device durable inbox entry. Station persists these until ACK'd.
-message DeviceInboxItem {
-  string inbox_item_id = 1;
-  string recipient_ptid = 2;
-  string recipient_device_id = 3;
-  StationEnvelope envelope = 4;
-  InboxItemStatus status = 5;
-  int32 delivery_attempts = 6;
-  google.protobuf.Timestamp first_queued_at = 7;
-  google.protobuf.Timestamp last_attempt_at = 8;
-  google.protobuf.Timestamp delivered_at = 9;
-}
-
-enum InboxItemStatus {
-  INBOX_ITEM_STATUS_UNSPECIFIED = 0;
-  INBOX_ITEM_STATUS_PENDING = 1;
-  INBOX_ITEM_STATUS_DELIVERED = 2;
-  INBOX_ITEM_STATUS_ACKED = 3;
-  INBOX_ITEM_STATUS_DEAD_LETTER = 4;
-}
-
 // --- Outbox Item ---
 
 // Per-Station durable outbox entry for cross-Station federation delivery.

@@ -1,11 +1,13 @@
 use super::group::{MlsGroupManager, MlsMemberKeyPackage, MlsPreparedTransition};
 use super::leave_intent::validate_signed_leave_intent;
+use crate::proto::actor::ActorDeviceRef;
 use crate::proto::chat::{
     chat_command, ChatCommand, CryptoEndpoint, MembershipTransitionIntent,
     MessagingMembershipAction, MessagingMembershipChangeIntent, MlsLeaveIntent,
-    PrepareMessagingMembershipTransitionResponse, PreparedEndpointPayload,
-    PreparedEndpointPayloadKind, ReservedMessagingMlsKeyPackage,
+    PrepareConversationMembershipResponse, PreparedEndpointPayload, PreparedEndpointPayloadKind,
 };
+use crate::proto::crypto_endpoint_from_actor_device_ref;
+use crate::proto::key_exchange::MlsKeyPackageReservation;
 use crate::store::{MlsTransitionRepository, MlsTransitionSendCommit};
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -48,7 +50,7 @@ impl<R: MlsTransitionRepository> MembershipTransitionPreparer<R> {
         &self,
         logical_intent_id: Option<&str>,
         input: &MembershipTransitionIntentInput,
-        plan: &PrepareMessagingMembershipTransitionResponse,
+        plan: &PrepareConversationMembershipResponse,
         created_at_unix_ms: i64,
     ) -> Result<ChatCommand, String> {
         validate_plan(logical_intent_id, plan, created_at_unix_ms)?;
@@ -82,6 +84,7 @@ impl<R: MlsTransitionRepository> MembershipTransitionPreparer<R> {
                 return Err("unsupported logical membership action".to_string());
             }
         };
+        let affected = canonical_endpoints(affected)?;
         let changes = affected
             .iter()
             .map(|endpoint| MessagingMembershipChangeIntent {
@@ -93,8 +96,8 @@ impl<R: MlsTransitionRepository> MembershipTransitionPreparer<R> {
             })
             .collect::<Vec<_>>();
         let welcome_hash = Sha256::digest(&prepared.welcome_bytes).to_vec();
-        let welcome_payloads = plan
-            .added_endpoints
+        let added_endpoints = canonical_endpoints(&plan.added_endpoints)?;
+        let welcome_payloads = added_endpoints
             .iter()
             .map(|endpoint| PreparedEndpointPayload {
                 recipient: Some(endpoint.clone()),
@@ -123,7 +126,7 @@ impl<R: MlsTransitionRepository> MembershipTransitionPreparer<R> {
                 nanos: (created_at_unix_ms.rem_euclid(1_000) * 1_000_000) as i32,
             }),
             delivery_plan_sha256: plan.authority_plan_sha256.clone(),
-            authority_station_id: plan.authority_station_id.clone(),
+            authority_station_id: plan.authority_station_peer_id.clone(),
             payload: Some(chat_command::Payload::MembershipTransition(
                 MembershipTransitionIntent {
                     transition_id: prepared.transition_id.clone(),
@@ -188,7 +191,7 @@ impl<R: MlsTransitionRepository> MembershipTransitionPreparer<R> {
 
 fn validate_leave_binding(
     input: &MembershipTransitionIntentInput,
-    plan: &PrepareMessagingMembershipTransitionResponse,
+    plan: &PrepareConversationMembershipResponse,
 ) -> Result<String, String> {
     if input.action != MessagingMembershipAction::Leave {
         if input.leave_intent.is_some() {
@@ -201,8 +204,10 @@ fn validate_leave_binding(
         .as_ref()
         .ok_or_else(|| "delegated leave requires a signed leave intent".to_string())?;
     validate_signed_leave_intent(intent)?;
-    let target_pre_endpoints = plan
-        .pre_endpoints
+    let pre_endpoints = canonical_endpoints(&plan.pre_endpoints)?;
+    let removed_endpoints = canonical_endpoints(&plan.removed_endpoints)?;
+    let post_endpoints = canonical_endpoints(&plan.post_endpoints)?;
+    let target_pre_endpoints = pre_endpoints
         .iter()
         .filter(|endpoint| endpoint.ptid == input.target_ptid)
         .collect::<Vec<_>>();
@@ -212,18 +217,16 @@ fn validate_leave_binding(
         || intent.observed_mls_epoch != plan.from_mls_epoch
         || !input.target_device_id.is_empty()
         || target_pre_endpoints.is_empty()
-        || target_pre_endpoints.len() != plan.removed_endpoints.len()
-        || plan
-            .removed_endpoints
+        || target_pre_endpoints.len() != removed_endpoints.len()
+        || removed_endpoints
             .iter()
             .any(|endpoint| endpoint.ptid != input.target_ptid)
         || target_pre_endpoints.iter().any(|expected| {
-            !plan.removed_endpoints.iter().any(|removed| {
+            !removed_endpoints.iter().any(|removed| {
                 removed.ptid == expected.ptid && removed.device_id == expected.device_id
             })
         })
-        || plan
-            .post_endpoints
+        || post_endpoints
             .iter()
             .any(|endpoint| endpoint.ptid == input.target_ptid)
     {
@@ -234,7 +237,7 @@ fn validate_leave_binding(
 
 fn validate_plan(
     logical_intent_id: Option<&str>,
-    plan: &PrepareMessagingMembershipTransitionResponse,
+    plan: &PrepareConversationMembershipResponse,
     created_at_unix_ms: i64,
 ) -> Result<(), String> {
     if logical_intent_id.is_some_and(|intent_id| intent_id.trim().is_empty())
@@ -252,7 +255,7 @@ fn validate_plan(
 }
 
 fn validated_key_packages(
-    reserved_key_packages: &[ReservedMessagingMlsKeyPackage],
+    reserved_key_packages: &[MlsKeyPackageReservation],
 ) -> Result<Vec<MlsMemberKeyPackage>, String> {
     reserved_key_packages
         .iter()
@@ -260,6 +263,7 @@ fn validated_key_packages(
             let target = reserved
                 .target
                 .as_ref()
+                .and_then(crypto_endpoint_from_actor_device_ref)
                 .ok_or_else(|| "messaging reserved KeyPackage has no target".to_string())?;
             let hash = Sha256::digest(&reserved.key_package);
             if reserved.package_id.trim().is_empty()
@@ -273,6 +277,16 @@ fn validated_key_packages(
                 device_id: target.device_id.clone(),
                 key_package: reserved.key_package.clone(),
             })
+        })
+        .collect()
+}
+
+fn canonical_endpoints(endpoints: &[ActorDeviceRef]) -> Result<Vec<CryptoEndpoint>, String> {
+    endpoints
+        .iter()
+        .map(|endpoint| {
+            crypto_endpoint_from_actor_device_ref(endpoint)
+                .ok_or_else(|| "messaging membership plan has incomplete endpoint".to_string())
         })
         .collect()
 }
@@ -305,37 +319,31 @@ mod tests {
         }
     }
 
-    fn leave_plan() -> PrepareMessagingMembershipTransitionResponse {
-        PrepareMessagingMembershipTransitionResponse {
+    fn leave_plan() -> PrepareConversationMembershipResponse {
+        PrepareConversationMembershipResponse {
             authority_plan_id: "plan-leave-bob".to_string(),
             expires_at: Some(prost_types::Timestamp {
                 seconds: 1_800_000_000,
                 nanos: 0,
             }),
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             authority_sequence: 2,
             authority_hash: vec![7; 32],
             from_membership_epoch: 1,
             from_mls_epoch: 1,
             pre_endpoints: vec![
-                CryptoEndpoint {
-                    ptid: "ptid:alice".to_string(),
-                    device_id: "alice-device".to_string(),
-                },
-                CryptoEndpoint {
-                    ptid: "ptid:bob".to_string(),
-                    device_id: "bob-device".to_string(),
-                },
+                crate::proto::actor_device_ref_from_parts("ptid:alice", "alice-device"),
+                crate::proto::actor_device_ref_from_parts("ptid:bob", "bob-device"),
             ],
-            post_endpoints: vec![CryptoEndpoint {
-                ptid: "ptid:alice".to_string(),
-                device_id: "alice-device".to_string(),
-            }],
+            post_endpoints: vec![crate::proto::actor_device_ref_from_parts(
+                "ptid:alice",
+                "alice-device",
+            )],
             added_endpoints: Vec::new(),
-            removed_endpoints: vec![CryptoEndpoint {
-                ptid: "ptid:bob".to_string(),
-                device_id: "bob-device".to_string(),
-            }],
+            removed_endpoints: vec![crate::proto::actor_device_ref_from_parts(
+                "ptid:bob",
+                "bob-device",
+            )],
             reserved_key_packages: Vec::new(),
             endpoint_manifests: Vec::new(),
             authority_plan_sha256: vec![8; 32],
@@ -408,36 +416,30 @@ mod tests {
         ];
         let reserved_key_packages = carol_packages
             .iter()
-            .map(|(device_id, key_package)| ReservedMessagingMlsKeyPackage {
-                target: Some(CryptoEndpoint {
-                    ptid: "ptid:carol".to_string(),
-                    device_id: (*device_id).to_string(),
-                }),
+            .map(|(device_id, key_package)| MlsKeyPackageReservation {
+                target: Some(crate::proto::actor_device_ref_from_parts(
+                    "ptid:carol",
+                    device_id,
+                )),
                 package_id: format!("package-{device_id}"),
                 key_package_sha256: Sha256::digest(key_package).to_vec(),
                 key_package: key_package.clone(),
             })
             .collect::<Vec<_>>();
-        let plan = PrepareMessagingMembershipTransitionResponse {
+        let plan = PrepareConversationMembershipResponse {
             authority_plan_id: "plan-add-carol".to_string(),
             expires_at: Some(prost_types::Timestamp {
                 seconds: 1_800_000_000,
                 nanos: 0,
             }),
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             authority_sequence: 2,
             authority_hash: vec![7; 32],
             from_membership_epoch: 1,
             from_mls_epoch: 1,
             pre_endpoints: vec![
-                CryptoEndpoint {
-                    ptid: "ptid:alice".to_string(),
-                    device_id: "alice-device".to_string(),
-                },
-                CryptoEndpoint {
-                    ptid: "ptid:bob".to_string(),
-                    device_id: "bob-device".to_string(),
-                },
+                crate::proto::actor_device_ref_from_parts("ptid:alice", "alice-device"),
+                crate::proto::actor_device_ref_from_parts("ptid:bob", "bob-device"),
             ],
             post_endpoints: Vec::new(),
             added_endpoints: reserved_key_packages

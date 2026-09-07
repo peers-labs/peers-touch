@@ -50,6 +50,24 @@ type EventRepository interface {
 		after valueobject.Sequence,
 		limit int,
 	) ([]domainevent.Record, error)
+	ListMessages(
+		ctx context.Context,
+		conversationID valueobject.ConversationID,
+		after valueobject.Sequence,
+		limit int,
+	) ([]domainevent.Record, error)
+	ListThreadMessages(
+		ctx context.Context,
+		conversationID valueobject.ConversationID,
+		threadRootID valueobject.MessageID,
+		after valueobject.Sequence,
+		limit int,
+	) ([]domainevent.Record, error)
+	ThreadCounts(
+		ctx context.Context,
+		conversationID valueobject.ConversationID,
+		rootIDs []valueobject.MessageID,
+	) ([]ThreadCount, error)
 }
 
 type MessageIdentity struct {
@@ -58,6 +76,13 @@ type MessageIdentity struct {
 	Author         valueobject.PTID
 	EventID        valueobject.EventID
 	Sequence       valueobject.Sequence
+}
+
+type ThreadCount struct {
+	RootMessageID valueobject.MessageID
+	ReplyCount    int64
+	LatestReplyID valueobject.MessageID
+	LatestReplyAt time.Time
 }
 
 type CommandReceiptOutcome string
