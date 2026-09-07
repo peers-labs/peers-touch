@@ -5900,8 +5900,46 @@ async function exerciseFoundationDurableReload(
     return evidence;
   }
 
-  const reloadResult: AgentTurnSnapshotReloadResult =
-    await useChatStore.getState().reloadTurnSnapshot(handoff.conversationId);
+  const reconciliationTransitions: FoundationF06Transition[] = [];
+  const unsubscribe = useAgentTurnRecoveryStore.subscribe((state, previousState) => {
+    const current = state.active[handoff.conversationId];
+    const previous = previousState.active[handoff.conversationId];
+    if (
+      !current
+      || current.actorId !== handoff.actorPtid
+      || current.turnId !== handoff.turnId
+      || current.streamId !== handoff.streamId
+      || current.streamGeneration !== handoff.streamGeneration
+      || current.phase === previous?.phase
+      || !['RECONCILING', 'CONNECTED'].includes(current.phase)
+    ) {
+      return;
+    }
+    reconciliationTransitions.push({
+      phase: current.phase,
+      sequence: current.cursor,
+      streamGeneration: current.streamGeneration,
+      observedAt: new Date(current.updatedAt).toISOString(),
+      terminal: false,
+    });
+  });
+  let reloadResult: AgentTurnSnapshotReloadResult;
+  try {
+    reloadResult =
+      await useChatStore.getState().reloadTurnSnapshot(handoff.conversationId);
+  } finally {
+    unsubscribe();
+  }
+  await reportFoundationF06RegistrationDebug(
+    'A-E',
+    'durable-reload-transitions',
+    {
+      phases: reconciliationTransitions.map((transition) => transition.phase),
+      sequences: reconciliationTransitions.map(
+        (transition) => transition.sequence,
+      ),
+    },
+  );
   const sourceDelivery = reloadResult.sourceDelivery;
   const reloadObserved =
     reloadResult.source === 'station-snapshot-reconcile'
@@ -5943,6 +5981,7 @@ async function exerciseFoundationDurableReload(
       sequence: reloadResult.sequence,
       terminal: reloadResult.terminal,
       terminalStatus: reloadResult.terminalStatus,
+      transitions: reconciliationTransitions,
       sourceDelivery: {
         transport: sourceDelivery.transport,
         actorPtidHash: await sha256Hex(sourceDelivery.ptid),
@@ -6236,7 +6275,46 @@ async function runFoundationF06Complete(
       'foundationF06CoordinatorDurableReload',
     ),
   };
-  const replayStartTransition = latestHandoff.transitions.find(
+  const durableReloadTransitions = optionalEvidenceArray(
+    evidenceRecord(
+      recoveryFailure.durableReload,
+      'foundationF06DurableReload',
+    ).transitions,
+    'foundationF06DurableReloadTransitions',
+  ).map((value) => {
+    const transition = evidenceRecord(
+      value,
+      'foundationF06DurableReloadTransition',
+    );
+    if (
+      typeof transition.phase !== 'string'
+      || !Number.isSafeInteger(transition.sequence)
+      || !Number.isSafeInteger(transition.streamGeneration)
+      || typeof transition.observedAt !== 'string'
+      || transition.terminal !== false
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationRecoveryDurableReloadTransitionInvalid',
+      );
+    }
+    return {
+      phase: transition.phase,
+      sequence: Number(transition.sequence),
+      streamGeneration: Number(transition.streamGeneration),
+      observedAt: transition.observedAt,
+      terminal: false,
+    };
+  });
+  const transitions = [...latestHandoff.transitions];
+  for (const transition of durableReloadTransitions) {
+    if (!transitions.some((candidate) =>
+      candidate.phase === transition.phase
+      && candidate.sequence === transition.sequence
+      && candidate.streamGeneration === transition.streamGeneration)) {
+      transitions.push(transition as unknown as FoundationF06Transition);
+    }
+  }
+  const replayStartTransition = transitions.find(
     (transition) =>
       transition.phase === 'REPLAYING'
       && transition.sequence >= handoff.acknowledgedCursor,
@@ -6249,10 +6327,12 @@ async function runFoundationF06Complete(
     (delivery) => delivery.sequence > replayAfterCursor,
   );
   const replaySequences = replayDeliveries.map((delivery) => delivery.sequence);
-  const stationReplayDeliveries = await foundationStationReplayReadback({
+  const replayThroughCursor =
+    replayDeliveries[replayDeliveries.length - 1]?.sequence ?? 0;
+  const stationReplayDeliveries = (await foundationStationReplayReadback({
     ...handoff,
     acknowledgedCursor: replayAfterCursor,
-  });
+  })).filter((delivery) => delivery.sequence <= replayThroughCursor);
   const replayIdentity = (delivery: FoundationF06ReplayDelivery) => ({
     eventType: delivery.eventType,
     sequence: delivery.sequence,
@@ -6265,7 +6345,7 @@ async function runFoundationF06Complete(
     rawPayload: delivery.rawPayload,
     payloadHash: delivery.payloadHash,
   });
-  const replayedEvents = latestHandoff.transitions.filter(
+  const replayedEvents = transitions.filter(
     (transition) => transition.sequence > handoff.acknowledgedCursor,
   );
   const terminalDiagnostics = evidenceRecord(
@@ -6375,9 +6455,10 @@ async function runFoundationF06Complete(
         prefixLength: handoff.prefixLength,
         preparationAttempts: handoff.preparationAttempts,
       },
-      transitions: latestHandoff.transitions,
+      transitions,
       replay: {
         afterCursor: replayAfterCursor,
+        throughCursor: replayThroughCursor,
         eventSequences: replaySequences,
         deliveries: replayDeliveries,
         stationReadbackDeliveries: stationReplayDeliveries,
@@ -10536,6 +10617,7 @@ async function evaluateF06(
   ).every(Boolean);
   const replayRequestCursor = Number(handoff.replayRequestCursor);
   const acknowledgedCursor = Number(handoff.acknowledgedCursor);
+  const replayThroughCursor = Number(replay.throughCursor);
 
   return {
     exactRuntimeAttribution:
@@ -10554,6 +10636,8 @@ async function evaluateF06(
       && Number.isSafeInteger(acknowledgedCursor)
       && acknowledgedCursor >= replayRequestCursor
       && Number(replay.afterCursor) === acknowledgedCursor
+      && Number.isSafeInteger(replayThroughCursor)
+      && replayThroughCursor > acknowledgedCursor
       && acknowledgedCursor === Number(idempotence.cursorBeforeMutation)
       && replaySequences.length > 0
       && replaySequences.every((sequence) =>
@@ -10561,6 +10645,7 @@ async function evaluateF06(
         && sequence > Number(replay.afterCursor))
       && replaySequences.every((sequence, index) =>
         index === 0 || sequence > replaySequences[index - 1])
+      && replaySequences[replaySequences.length - 1] === replayThroughCursor
       && replayDeliveries.length === replaySequences.length
       && replayPayloadHashesValid
       && replayDeliveries.every((delivery, index) =>

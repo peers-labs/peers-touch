@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `2d19ace85b4104b15a6dad8be60d16a3848b9699` proved the AS-F06 replay request cursor and post-cut acknowledged cursor are distinct, then exposed that complete request replay must be filtered to the post-cut boundary before exact Station comparison. The final split-cursor/filter correction is local and pending checkpoint deployment plus the unchanged 419-cell rerun. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `ea6987d749461e2dd4c070db692921a41e718ba1` aligned the AS-F06 request/post-cut cursor boundary, then exposed a later replay-segment versus Station-terminal-tail mismatch and lost cross-restart transition evidence in run `20260907T175903309291Z-bbb13892aeae6e86ab4686cb5db3f0b9`. The bounded-segment and durable-transition correction is local and pending checkpoint deployment plus the unchanged 419-cell rerun. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6064,6 +6064,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   without changing replay transport behavior, assertions, or raw-payload
   identity requirements. Provisioner cleanup completed
   `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260907T175903309291Z-bbb13892aeae6e86ab4686cb5db3f0b9`
+  on checkpoint `ea6987d749461e2dd4c070db692921a41e718ba1`
+  aligned both replay streams at `afterCursor=30`; the client recorded
+  `31..136`, while Station later settled through `166` after forced recovery
+  failure and durable snapshot reload. The same capture lacked persisted
+  `RECONCILING/CONNECTED` transitions even though the production reload path
+  executes both before applying the terminal snapshot. The local correction
+  now carries those actual scoped runtime transitions through the coordinator
+  and declares `throughCursor` so exact raw-payload parity covers the complete
+  client-observed replay segment; the existing terminal snapshot assertion
+  remains responsible for later Station settlement. Local checks pass focused
+  `162/162`, full `330/330` Agent Acceptance tests, Desktop check, all `583`
+  Desktop tests with one unrelated environment-dependent skip, Desktop
+  production build, Python compilation, and `git diff --check`. Provisioner
+  cleanup completed `DONE / PROVEN / passed`; Foundation/G-F remain
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
