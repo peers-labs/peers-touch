@@ -2485,7 +2485,7 @@ def evaluate_base_approval_denied(
 def evaluate_base_attachment_rejected(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:
-    scenario = "BASE-ATTACHMENT-REJECTED"
+    scenario = "BASE-ATTACHMENT_REJECTED"
     runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
     outcome = _mapping(capture, "outcome", scenario=scenario)
     details = _mapping(outcome, "details", scenario=scenario)
