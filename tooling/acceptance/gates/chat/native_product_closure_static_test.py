@@ -1308,6 +1308,41 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         ):
             self.assertIn(required, self.source)
 
+    def test_group_creation_waits_for_committed_selection_before_submit(self) -> None:
+        start = self.source.index("    def open_group_through_ui(")
+        end = self.source.index("    def transcript(", start)
+        group_journey = self.source[start:end]
+
+        contact_click = group_journey.index(
+            'self.click(\n            "alice",\n            contact_selector,'
+        )
+        selected_wait = group_journey.index(
+            '"Alice selected Bob for group creation"'
+        )
+        enabled_wait = group_journey.index(
+            '"Alice enabled group creation submit"'
+        )
+        submit_click = group_journey.index(
+            'self.click("alice", submit_selector)'
+        )
+
+        self.assertLess(contact_click, selected_wait)
+        self.assertLess(selected_wait, enabled_wait)
+        self.assertLess(enabled_wait, submit_click)
+        self.assertIn(
+            'contact.get_attribute("aria-pressed") == "true"',
+            group_journey,
+        )
+        self.assertIn("submit.is_enabled()", group_journey)
+        self.assertIn(
+            'self.save_screenshot(client, "alice-group-create-failed")',
+            group_journey,
+        )
+        self.assertIn(
+            'self.save_dom(client, "alice-group-create-failed")',
+            group_journey,
+        )
+
     def test_second_device_and_clear_cursor_are_real_runtime_paths(self) -> None:
         self.assertIn(
             '"chat-native-product-closure-e2e": ("alice", "bob", "alice2")',
