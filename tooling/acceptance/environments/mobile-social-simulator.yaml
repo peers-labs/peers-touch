@@ -1,0 +1,131 @@
+{
+  "id": "mobile-social-simulator",
+  "base_environment": "mobile-simulator",
+  "profile": {
+    "required": true,
+    "identity_match": true
+  },
+  "source_identity": {
+    "commit_required": true,
+    "workspace_digest_required": true
+  },
+  "services": {
+    "station-primary": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "station-secondary": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "relay": {
+      "kind": "relay",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "relay-check",
+      "status_action": "relay-status",
+      "attestation_producer": "relay-deployment"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "mobile-social-simulator-actors",
+      "authorization_required": true,
+      "authorization_ref": "env:MOBILE_ACCEPTANCE_RESET",
+      "target_assertion": "both Stations are approved disposable targets",
+      "initial_assertion": "Alice and Bob have distinct PTIDs on their assigned Stations"
+    }
+  ],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "sim-ios",
+      "actor": "alice",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-primary",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "sim-android",
+      "actor": "bob",
+      "runtime": "tauri-android-emulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-secondary",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "harness": {
+    "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
+    "required_actions": [
+      "station.add",
+      "access.submit",
+      "lifecycle.restart",
+      "projection.read",
+      "messaging.createDirect",
+      "messaging.createGroup",
+      "messaging.attachment.stage",
+      "messaging.attachment.open",
+      "messaging.send",
+      "messaging.interact",
+      "messaging.read",
+      "messaging.typing",
+      "messaging.reconcile",
+      "messaging.command.read",
+      "messaging.search",
+      "messaging.projection.read",
+      "social.request.send",
+      "social.request.accept",
+      "social.reconcile",
+      "social.projection.read",
+      "cleanup"
+    ],
+    "policy": "production actions only; direct Store mutation and successful-result injection are forbidden"
+  },
+  "proof_scope": {
+    "proves": [
+      "two isolated simulator clients",
+      "two source-attested Station bindings",
+      "Direct and Group Messaging production-action journeys",
+      "receiver projection, typing, receipt, interaction, search, attachment, and WebView restart readback"
+    ],
+    "does_not_prove": [
+      "physical-device behavior",
+      "authoritative Station history readback",
+      "forced event-loss recovery",
+      "native background and foreground lifecycle",
+      "tab-remount interaction timing",
+      "full MS-AG04 and MS-AG06"
+    ]
+  },
+  "cleanup": {
+    "resources": [
+      "appium-process",
+      "app-installations",
+      "ports",
+      "storage",
+      "emulator-process",
+      "simulator-boot",
+      "actor-fixture",
+      "profile-leases",
+      "deployment-leases"
+    ],
+    "deterministic": true
+  }
+}

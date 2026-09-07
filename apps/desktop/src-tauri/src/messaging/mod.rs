@@ -8,14 +8,11 @@ mod direct_session;
 mod drain;
 mod engine;
 mod group_genesis;
-mod identity;
 mod inbox;
 mod lifecycle;
 mod membership_transition;
-mod mls;
 mod mls_key_packages;
-mod mls_retirement;
-mod mls_sender;
+mod mls_leave_intent;
 mod prekeys;
 mod private_content;
 mod public_event;
@@ -33,8 +30,8 @@ pub use attachment::{
 };
 pub use attachment_transfer::{
     AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferFailure,
-    AttachmentTransferProgress, AttachmentTransferTransport, AttachmentTransferWorker,
-    PreparedAttachmentUpload, StationAttachmentTransferTransport,
+    AttachmentTransferProgress, AttachmentTransferRecord, AttachmentTransferTransport,
+    AttachmentTransferWorker, PreparedAttachmentUpload, StationAttachmentTransferTransport,
     ATTACHMENT_TRANSFER_MEMORY_OVERHEAD,
 };
 pub use command_outbox::{
@@ -57,25 +54,19 @@ pub use engine::{
     MessagingProjectionChange, MessagingProjectionNotifier, MetadataInteraction,
     PreparedGroupConversation, SubmitMessageOutcome,
 };
-pub use group_genesis::{GroupGenesisPreparer, StationGroupGenesisTransport};
-pub use identity::{FreshDeviceEnrollment, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION};
+pub use group_genesis::StationGroupGenesisTransport;
 pub use inbox::{InboxWorker, QueueAcknowledger};
 pub use lifecycle::MessagingLifecycleWorker;
-pub use membership_transition::{
-    MembershipTransitionIntentInput, MembershipTransitionPreparer,
-    StationMembershipTransitionTransport,
-};
+pub use membership_transition::StationMembershipTransitionTransport;
 pub use messaging_core::codec::private_content::{
     decode_message_private_content, encode_message_private_content,
     validate_attachment_plaintext_metadata, validate_message_private_content,
     MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
 };
-pub use mls::{MlsApplicationProcessor, MlsTransitionProcessor};
-pub use mls_key_packages::{
-    MlsKeyPackagePublisher, MlsKeyPackageTransport, StationMlsKeyPackageTransport,
-};
-pub use mls_retirement::MlsRetirementProcessor;
-pub use mls_sender::MlsSenderTransitionProcessor;
+pub use messaging_core::crypto::prekeys::PendingPreKeyBundle;
+pub use messaging_core::identity::{FreshDeviceEnrollment, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION};
+pub use mls_key_packages::StationMlsKeyPackageTransport;
+pub use mls_leave_intent::StationMlsLeaveIntentTransport;
 pub use prekeys::{PreKeyPublisher, PreKeyTransport, StationPreKeyTransport};
 pub use public_event::PublicEventProcessor;
 pub use receipt::DeliveryReceiptProcessor;
@@ -86,15 +77,14 @@ pub use recovery::{
 };
 pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextIntent};
 pub use store::{
-    ActorReadReceiveCommit, AttachmentDownloadProjection, AttachmentTransferRecord,
-    CommandOutboxEntry, CommandStatusProjection, ConversationMemberProjection,
-    ConversationMessageProjection, ConversationProjection, ConversationStateReceiveCommit,
-    DeliveryReceiptOutboxEntry, DeliveryReceiptReceiveCommit, DirectEditCommit,
-    DirectReceiveCommit, DirectSendCommit, InteractionCommandCommit, MessageProjection,
-    MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
-    MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, MlsTransitionSendCommit,
-    PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft, PendingMlsKeyPackage,
-    PendingMlsTransitionState, PendingPreKeyBundle, PendingSenderProjection,
+    ActorReadReceiveCommit, AttachmentDownloadProjection, CommandOutboxEntry,
+    CommandStatusProjection, ConversationMemberProjection, ConversationMessageProjection,
+    ConversationProjection, ConversationStateReceiveCommit, DeliveryReceiptOutboxEntry,
+    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit, DirectSendCommit,
+    InteractionCommandCommit, MessageProjection, MessagingStore, MlsReceiveCommit,
+    MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
+    MlsTransitionReceiveCommit, PendingAttachmentUpload, PendingMembershipIntent,
+    PendingMessageDraft, PendingMlsTransitionState, PendingSenderProjection,
     PublicEventReceiveCommit, ReceiveCommitResult, ThreadCountProjection,
 };
 pub use transport::{

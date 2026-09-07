@@ -128,7 +128,7 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 		if delivery.GetEvent().GetConversationCreated() == nil ||
 			delivery.PayloadKind != chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_CONVERSATION_STATE ||
 			len(delivery.SenderActorIdentityPublicKey) != 32 {
-			t.Fatalf("invalid genesis delivery: %+v", delivery)
+			t.Fatalf("invalid genesis delivery: %+v", &delivery)
 		}
 	}
 	var outbox []infrastructure.FederationOutboxModel
@@ -176,7 +176,7 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 		len(created.Members) != 2 ||
 		created.Members[0].HomeStationId == "" ||
 		created.Members[1].HomeStationId == "" {
-		t.Fatalf("follower creation projection = %+v", projection)
+		t.Fatalf("follower creation projection = %+v", &projection)
 	}
 	var grants []infrastructure.EventProjectionGrantModel
 	if err := db.Find(&grants).Error; err != nil {

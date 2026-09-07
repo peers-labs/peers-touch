@@ -5868,22 +5868,11 @@ export const api = {
   groupChatGetStats: () =>
     invokeRustProto('group_chat_get_stats', GetGroupStatsResponseSchema),
 
-  // ── Crypto (local E2E; flat Tauri args) ──
-
-  cryptoGenerateIdentity: () =>
-    invokeAppResultStub<{ fingerprint: string; public_key: string }>('crypto_generate_identity'),
-
-  cryptoGetFingerprint: () =>
-    invokeAppResultStub<{ fingerprint: string }>('crypto_get_fingerprint'),
-
   cryptoRatchetTelemetrySnapshot: () =>
     invokeAppResultStub<{
       dr_decrypts: number;
       since_unix_ms: number;
     }>('crypto_ratchet_telemetry_snapshot'),
-
-  cryptoGetKeyBundle: () =>
-    invokeAppResultStub<CryptoKeyBundlePayload>('crypto_get_key_bundle'),
 
   keyExchangeUploadBundle: (bundle: CryptoKeyBundlePayload) =>
     invokeRustDataFromStatus<CryptoKeyBundlePayload, Record<string, unknown>>(

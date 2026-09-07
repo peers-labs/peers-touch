@@ -578,22 +578,21 @@ Execution status:
   `peers_touch_applet_l3_e2e` runtime cells, including warm/cold invalid
   callback routing, WebView restart, fail-closed projections,
   DOM/AX/screenshots, runtime identity, and cleanup.
-- W2-E2 source closure: `BASE_PLAN_ACCEPTED / D-19_INFRA_ACTIVE`. The accepted
+- W2-E2 source closure: `D-19_INFRA_LANDED / E2-5_SOURCE_COMPLETE`. The accepted
   architecture at `docs/architecture/mobile/native-oauth-proof/` defines the trusted
   negative-Fixture authority, authoritative Station proof, four-client
   provider-browser lease lifecycle, and physical-app build provenance.
   The Owner accepted MOP-D01..MOP-D04 on 2026-08-29. The focused execution plan
   is `docs/architecture/mobile/execution-plans/20260829-mobile-native-oauth-proof.md`;
   the base plan and accepted pre-D-19 amendments independently returned
-  `0 P0 / 0 P1`. D-19 architecture and its independently reviewed Infra plan
-  are now accepted; E2-0 through E2-4 are complete, and W2-E2-D / E2-5 remains
-  blocked by active D-19 Infra landing plus the later reviewed Mobile
-  amendment/remediation.
+  `0 P0 / 0 P1`. D-19 Infra landed via PR #105. E2-0 through E2-5 source-side
+  closure are complete (finalizer module, registry, baseline, capability YAML,
+  gate catalog update, and 11 adversarial tests all committed to master).
 - W2-E2 Physical proof: `UNPROVEN / NOT STARTED`; approved provider accounts,
-  two physical iOS devices, two physical Android devices, D-19 Infra landing,
-  and remaining E2-5 source closure are prerequisites. All 16 scenarios are
-  source-executable, but no physical run is claimed. MS-AG03 remains
-  `UNPROVEN`.
+  two physical iOS devices, two physical Android devices are prerequisites.
+  D-19 Infra and E2-5 source closure are no longer blockers.
+  All 16 scenarios are source-executable, but no physical run is claimed.
+  MS-AG03 remains `UNPROVEN`.
 
 Gate:
 
@@ -974,6 +973,7 @@ Provisioner must make Appium, build/device identity, actor Fixture, and service
 bindings common while keeping provider credentials, browser leases, OAuth
 Fixture operations, proof roles, and finalizer access-only. No shared
 development Station may be redeployed or reset.
+
 Every workstream must also update affected architecture/platform docs and the
 nearest directory README when public paths, contracts, or conventions change.
 
@@ -1184,7 +1184,7 @@ Closure-level negative coverage:
 | W2 Access Gate and OAuth | in progress | `tmp/evidence/mobile-shell/20260827/W2/progress.md`; W2-A through W2-D and W2-E1 Simulator evidence are done; E2-0 through E2-4 source closures done; D-19 Infra landed (PR #105); E2-5 source-side closure done (finalizer module, registry, baseline, capability YAML, gate catalog, 11 adversarial tests); E2-5 atomic cutover complete; A5-11 main plan update done; E2-6 physical proof remains `UNPROVEN` — requires physical iOS/Android devices and approved provider accounts |
 | W3 Lifecycle, runtime graph, and navigation | done | `MobileLifecycleKernel`, `topologicalSort`, `MobileRuntimeDescriptor` types, `AppProviders` bootstrap/teardown; committed `050d488dc` |
 | W4 InteractionAdmission, command ledger, and draft store | done | Rust encrypted SQLite ledger (AES-256-GCM), crash recovery, four-key fairness, `DraftStore`, TypeScript `InteractionAdmission` adapter; committed `050d488dc` |
-| CA-HC Conversation Authority DDD hard cut | in progress / CA-W1 | Owner approved the formal plan on 2026-09-06. CA-W0 now classifies all 65 governed routes, declares 61 retained capabilities and four deletion-only routes, inventories target-absent stores, and enforces Conversation DDD imports. CA-W1 owns canonical proto consolidation. |
+| CA-HC Conversation Authority DDD hard cut | in progress / CA-W3 and CA-W4 source checkpoint | Owner approved the formal plan on 2026-09-06. CA-W0 classifies all 65 governed routes, declares 61 retained capabilities and four deletion-only routes, inventories target-absent stores, and enforces Conversation DDD imports. CA-W1 provides 122 unique generated canonical request/response symbols across 61 capabilities with zero missing canonical symbols. CA-W2 adds the test-only Conversation aggregate, domain events, ports, atomic GORM UOW, follower projection, authenticated forwarded-command handling, and focused parity coverage. Commit `a1c921ea77737e221d47e54371a4b02a2f77bbe6` checkpoints CA-W3 resource-owner services and CA-W4 Federation/Social source only. Production cutover, runtime convergence, and PostgreSQL proof remain `UNPROVEN`. |
 | W5 Generated gateway and Social projection convergence | blocked by CA-HC | MP-W09 Mobile/Core preparation exists and local checks passed, but current adapters still depend on the retired Station Chat facade. W5 resumes only after CA-HC installs canonical resource routes and removes the duplicate authority/facade. Live two-actor/multi-Station receiver, restart, and attachment evidence remains `UNPROVEN`. |
 | W6A Chat, Contacts, and Group product closure | blocked by CA-HC | Existing Chat and Group renderer work consumes Device Messaging Engine projections and typed commands, including attachment staging/open, but cannot close against the retired Station Chat facade. Resume only after CA-HC installs the canonical resource owners and Conversation DDD authority. Native receiver/search/recovery and attachment-outcome journeys remain `UNPROVEN`. |
 | W6B Moments product closure | done | `MomentsPage` with feed store, composer, reaction picker, inline comments; prototype-aligned `7d4289d85`; committed `050d488dc` + `7d4289d85` |
@@ -1678,9 +1678,10 @@ Closure-level negative coverage:
   rebuilds Conversation as a DDD bounded context.
 - The dependency-ordered hard-cut plan is
   `docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`.
-  It is `PLAN_APPROVED`; CA-W0 inventory and the fail-closed ownership Gate are
-  complete, and CA-W1 canonical proto consolidation is next. W5, W6A, W8, and W9-D
-  remain blocked behind the atomic hard cut. No route
+  It is `PLAN_APPROVED`; CA-W0 inventory, the fail-closed ownership Gate, and
+  CA-W1 canonical proto consolidation are complete. CA-W2 is complete in
+  test-only composition; CA-W3 and CA-W4 have source checkpoints only. W5,
+  W6A, W8, and W9-D remain blocked behind the atomic hard cut. No route
   alias, redirect, dual write, fallback read, or partial production migration is
   permitted.
 
