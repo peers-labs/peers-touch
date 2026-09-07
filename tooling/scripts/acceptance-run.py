@@ -19,6 +19,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
+AGGREGATE_SOURCE_ENV = "PT_ACCEPTANCE_AGGREGATE_SOURCE"
 RESULT_TRACEABILITY_FIELDS = (
     "sourceArtifact",
     "sourceArtifactKind",
@@ -68,6 +69,7 @@ def run_environment(environment: dict[str, str]):
         "PT_ACCEPTANCE_RUN_ID",
         "PT_ACCEPTANCE_REDACTION_VALUES",
         "PT_ACCEPTANCE_RUNTIME_CELL",
+        AGGREGATE_SOURCE_ENV,
     )
     previous = {key: os.environ.get(key) for key in keys}
     for key in keys:
@@ -235,12 +237,12 @@ def audit_runtime_artifacts(
     run_dir: Path,
     secret_values: tuple[str, ...],
 ) -> list[str]:
-    from tooling.acceptance.core.redaction import redact_artifact_bytes
+    from tooling.acceptance.core.redaction import (
+        redact_artifact_bytes,
+        redact_text_with_values,
+    )
 
     leaked_paths: list[str] = []
-    credential_values = tuple(
-        value for value in secret_values if len(value) >= 4
-    )
     for path in list(run_dir.rglob("*")):
         relative = path.relative_to(run_dir)
         if (
@@ -259,7 +261,10 @@ def audit_runtime_artifacts(
         if has_symlink:
             leaked_paths.append(relative_path)
             continue
-        if any(value in relative_path for value in credential_values):
+        if (
+            redact_text_with_values(relative_path, secret_values)
+            != relative_path
+        ):
             leaked_paths.append(relative_path)
             continue
         try:
@@ -271,6 +276,55 @@ def audit_runtime_artifacts(
         if redacted:
             leaked_paths.append(relative_path)
     return sorted(set(leaked_paths))
+
+
+def finalize_runtime_log(
+    gate_run: Any,
+    gate_id: str,
+    output_text: str,
+    secret_values: tuple[str, ...],
+) -> tuple[Any, list[str], list[str]]:
+    reject_unresolved_secret_artifacts(
+        gate_run,
+        audit_runtime_artifacts(gate_run.run_dir, secret_values),
+    )
+    redacted_output = redact_runtime_text(output_text, secret_values)
+    redacted_paths: list[str] = []
+    log_path = f"logs/{gate_id}.log"
+    log_ref = gate_run.write_bytes(
+        log_path,
+        redacted_output.encode("utf-8"),
+        media_type="text/plain",
+        role="log",
+    )
+    if redacted_output != output_text:
+        redacted_paths.append(log_path)
+    leaked_paths = audit_runtime_artifacts(
+        gate_run.run_dir,
+        secret_values,
+    )
+    reject_unresolved_secret_artifacts(gate_run, leaked_paths)
+    return (
+        log_ref,
+        sorted(set(redacted_paths)),
+        sorted(set(leaked_paths)),
+    )
+
+
+def reject_unresolved_secret_artifacts(
+    gate_run: Any,
+    leaked_paths: list[str],
+) -> list[str]:
+    from tooling.acceptance.core import EvidenceConflict
+
+    unresolved = sorted(set(leaked_paths))
+    if not unresolved:
+        return []
+    gate_run.discard()
+    raise EvidenceConflict(
+        "resolved credentials bypassed the immutable artifact writer: "
+        + ", ".join(unresolved)
+    )
 
 
 def persist_provisioner_cleanup_result(
@@ -1008,7 +1062,12 @@ def result_traceability(result: dict[str, Any]) -> dict[str, Any]:
     return trace
 
 
-def standardize_result(result: dict[str, Any], plan_path: Any) -> dict[str, Any]:
+def standardize_result(
+    result: dict[str, Any],
+    plan_path: Any,
+    *,
+    candidate_mode: bool = False,
+) -> dict[str, Any]:
     standardized = dict(result)
     gate_id = str(standardized.get("id") or "unknown")
     status = str(standardized.get("status") or "")
@@ -1052,6 +1111,12 @@ def standardize_result(result: dict[str, Any], plan_path: Any) -> dict[str, Any]
         else:
             standardized["completionStatus"] = "PARTIAL"
             standardized["proofStatus"] = "UNPROVEN"
+    if candidate_mode:
+        declared_proof = standardized.get("proofStatus")
+        if status == "passed" and declared_proof != "UNPROVEN":
+            standardized["proofStatus"] = "CANDIDATE"
+        elif declared_proof == "PROVEN":
+            standardized["proofStatus"] = "UNPROVEN"
     standardized["traceability"] = traceability
     return standardized
 
@@ -1063,7 +1128,10 @@ def finalize_gate_result(
     runtime: dict[str, Any] | None = None,
     runtime_cell: str | None = None,
     secret_values: tuple[str, ...] = (),
+    candidate_mode: bool = False,
 ) -> dict[str, Any]:
+    from tooling.acceptance.core import canonical_secret_scan
+
     redacted_result, result_leaked = redact_runtime_value(
         result,
         secret_values,
@@ -1083,39 +1151,26 @@ def finalize_gate_result(
         if leaked
     ]
     secret_scan = result.get("secretScan")
-    existing_scan_failed = (
-        isinstance(secret_scan, dict)
-        and secret_scan.get("status") != "passed"
-    )
-    existing_scanned_high_entropy = (
-        secret_scan.get("scannedHighEntropyValues")
-        if isinstance(secret_scan, dict)
-        else 0
-    )
-    if (
-        isinstance(existing_scanned_high_entropy, bool)
-        or not isinstance(existing_scanned_high_entropy, int)
-        or existing_scanned_high_entropy < 0
-    ):
-        existing_scan_failed = True
-        existing_scanned_high_entropy = 0
-    existing_scanned_credentials = (
-        secret_scan.get("scannedCredentialValues")
-        if isinstance(secret_scan, dict)
-        else 0
-    )
-    if (
-        isinstance(existing_scanned_credentials, bool)
-        or not isinstance(existing_scanned_credentials, int)
-        or existing_scanned_credentials < 0
-    ):
-        existing_scan_failed = True
-        existing_scanned_credentials = 0
-    redacted_artifacts = (
-        list(secret_scan.get("redactedArtifacts") or ())
-        if isinstance(secret_scan, dict)
-        else []
-    )
+    if secret_scan is None:
+        canonical_scan = {
+            "status": "passed",
+            "scannedHighEntropyValues": 0,
+            "scannedCredentialValues": 0,
+            "redactedArtifacts": [],
+        }
+    else:
+        canonical_scan = canonical_secret_scan(
+            secret_scan,
+            secret_values,
+        )
+    existing_scan_failed = canonical_scan["status"] != "passed"
+    existing_scanned_high_entropy = canonical_scan[
+        "scannedHighEntropyValues"
+    ]
+    existing_scanned_credentials = canonical_scan[
+        "scannedCredentialValues"
+    ]
+    redacted_artifacts = list(canonical_scan["redactedArtifacts"])
     redacted_result["secretScan"] = {
         "status": (
             "failed"
@@ -1147,7 +1202,11 @@ def finalize_gate_result(
             ),
         )
 
-    standardized = standardize_result(redacted_result, plan_path)
+    standardized = standardize_result(
+        redacted_result,
+        plan_path,
+        candidate_mode=candidate_mode,
+    )
     gate_run.finalize(result=standardized, runtime=redacted_runtime)
     gate_run.publish_latest(runtime_cell=runtime_cell)
     return standardized
@@ -1254,7 +1313,11 @@ def missing_result_traceability_count(results: list[dict[str, Any]]) -> int:
     )
 
 
-def result_traceability_state(results: list[dict[str, Any]]) -> dict[str, Any]:
+def result_traceability_state(
+    results: list[dict[str, Any]],
+    *,
+    candidate_mode: bool = False,
+) -> dict[str, Any]:
     missing = [
         {
             "acceptanceGateId": result.get("id"),
@@ -1265,20 +1328,41 @@ def result_traceability_state(results: list[dict[str, Any]]) -> dict[str, Any]:
         for result in results
         if result.get("status") != "dry-run" and result.get("traceability", {}).get("status") == "missing"
     ]
-    status = "pass" if not missing else "diagnostic incomplete"
+    status = (
+        "pass"
+        if results and not missing
+        else "diagnostic incomplete"
+    )
     return {
         "artifactKind": "acceptance-run-result-traceability-state",
         "status": status,
         "completionStatus": "DONE" if status == "pass" else "PARTIAL",
-        "proofStatus": "PROVEN" if status == "pass" else "UNPROVEN",
+        "proofStatus": (
+            "CANDIDATE" if candidate_mode else "PROVEN"
+        )
+        if status == "pass"
+        else "UNPROVEN",
         "sampleEmissionAllowed": False,
         "missingTraceabilityCount": len(missing),
         "missingTraceability": missing,
     }
 
 
-def build_run_report(plan_path: Any, results: list[dict[str, Any]]) -> dict[str, Any]:
-    results = [standardize_result(result, plan_path) for result in results]
+def build_run_report(
+    plan_path: Any,
+    results: list[dict[str, Any]],
+    *,
+    source: Mapping[str, str] | None = None,
+    candidate_mode: bool = False,
+) -> dict[str, Any]:
+    results = [
+        standardize_result(
+            result,
+            plan_path,
+            candidate_mode=candidate_mode,
+        )
+        for result in results
+    ]
     blocked = [result for result in results if result.get("status") == "blocked"]
     failed = [result for result in results if result.get("status") not in {"passed", "dry-run", "blocked"}]
     dry_run = [result for result in results if result.get("status") == "dry-run"]
@@ -1300,12 +1384,6 @@ def build_run_report(plan_path: Any, results: list[dict[str, Any]]) -> dict[str,
         and missing_traceability == 0
     )
     report_complete = bool(results) and not incomplete and not dry_run
-    report_proven = (
-        report_complete
-        and not failed
-        and not blocked
-        and not unproven
-    )
     report: dict[str, Any] = {
         "artifactKind": RUN_ARTIFACT_KIND,
         "plan": plan_path,
@@ -1328,11 +1406,23 @@ def build_run_report(plan_path: Any, results: list[dict[str, Any]]) -> dict[str,
             if blocked
             else ("DONE" if report_complete else "PARTIAL")
         ),
-        "proofStatus": "PROVEN" if report_proven else "UNPROVEN",
+        "proofStatus": (
+            ("CANDIDATE" if candidate_mode else "PROVEN")
+            if report_complete
+            and not failed
+            and not blocked
+            and not unproven
+            else "UNPROVEN"
+        ),
         "sampleEmissionAllowed": sample_emission_allowed,
-        "resultTraceabilityState": result_traceability_state(results),
+        "resultTraceabilityState": result_traceability_state(
+            results,
+            candidate_mode=candidate_mode,
+        ),
         "results": results,
     }
+    if source is not None:
+        report["source"] = dict(source)
     source_phases = aggregate_source_values(results, "sourcePhase")
     source_bom = aggregate_source_values(results, "sourceBom")
     source_spec = aggregate_source_values(results, "sourceSpec")
@@ -1393,14 +1483,19 @@ def write_run_report(output: Path, report: dict[str, Any]) -> None:
     output.with_suffix(".md").write_text(render_markdown(report), encoding="utf-8")
 
 
-def acceptance_exit_code(report: dict[str, Any]) -> int:
+def acceptance_exit_code(
+    report: dict[str, Any],
+    *,
+    candidate_mode: bool = False,
+) -> int:
     if report.get("completionStatus") == "BLOCKED":
         return 2
     if report.get("completionStatus") != "DONE":
         return 1
-    if report.get("proofStatus") != "PROVEN":
+    expected_proof = "CANDIDATE" if candidate_mode else "PROVEN"
+    if report.get("proofStatus") != expected_proof:
         return 1
-    if report.get("sampleEmissionAllowed") is not True:
+    if not candidate_mode and report.get("sampleEmissionAllowed") is not True:
         return 1
     return 0
 
@@ -1431,9 +1526,10 @@ def main() -> int:
             Path(args.plan) if args.plan else None,
             store,
         )
+        aggregate_source = source_identity(REPO_ROOT)
         aggregate_run = store.begin_run(
             "acceptance-run",
-            source=source_identity(REPO_ROOT),
+            source=aggregate_source,
         )
     except EvidenceError as error:
         print(
@@ -1483,12 +1579,18 @@ def main() -> int:
                 )
                 continue
 
-            gate_run = store.begin_run(
-                gate_id,
-                source=source_identity(REPO_ROOT),
+            gate_source = source_identity(REPO_ROOT)
+            source_drift = source_identity_drift(
+                aggregate_source,
+                gate_source,
             )
+            gate_run = store.begin_run(gate_id, source=gate_source)
             active_gate_run = gate_run
             gate_env = gate_run.subprocess_environment(os.environ.copy())
+            gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
+                aggregate_source,
+                sort_keys=True,
+            )
             if runtime_cell:
                 gate_env["PT_ACCEPTANCE_RUNTIME_CELL"] = runtime_cell
             provisioner = None
@@ -1521,8 +1623,28 @@ def main() -> int:
             cleanup_artifact: dict[str, Any] | None = None
             result: dict[str, Any] | None = None
             provisioner_id = str(gate.get("provisioner") or "")
+            if source_drift is not None:
+                output_text = (
+                    "Acceptance source drifted before Gate execution; "
+                    "the Gate was not started.\n"
+                )
+                result = {
+                    "id": gate_id,
+                    "command": command,
+                    "environment": environment,
+                    "runtimeCell": runtime_cell or None,
+                    "tier": tier,
+                    "status": "failed",
+                    "exit_code": None,
+                    "duration_seconds": 0,
+                    "completionStatus": "PARTIAL",
+                    "proofStatus": "UNPROVEN",
+                    "sampleEmissionAllowed": False,
+                    "reason": "aggregate source drift before Gate execution",
+                    "sourceDrift": source_drift,
+                }
             try:
-                if provisioner_id:
+                if result is None and provisioner_id:
                     if provisioner_id != environment:
                         raise SystemExit(
                             f"gate {gate_id!r} provisioner {provisioner_id!r} "
@@ -1672,6 +1794,10 @@ def main() -> int:
                         gate_env = gate_run.subprocess_environment(
                             os.environ.copy()
                         )
+                    gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
+                        aggregate_source,
+                        sort_keys=True,
+                    )
                     gate_env["PT_ACCEPTANCE_CURRENT_RESULTS"] = json.dumps(
                         {
                             "source": aggregate_run.source,
@@ -1925,25 +2051,30 @@ def main() -> int:
                     gate_process_cleanup_error=gate_process_cleanup_error,
                 )
 
-            output_text = redact_runtime_text(output_text, runtime_secrets)
-            log_ref = gate_run.write_bytes(
-                f"logs/{gate_id}.log",
-                output_text.encode("utf-8"),
-                media_type="text/plain",
-                role="log",
+            source_drift_after = source_identity_drift(
+                aggregate_source,
+                source_identity(REPO_ROOT),
             )
-            leaked_artifacts = audit_runtime_artifacts(
-                gate_run.run_dir,
+            if source_drift_after is not None:
+                source_drift = source_drift or source_drift_after
+                output_text += (
+                    "\nAcceptance source drifted during aggregate execution; "
+                    "the Gate cannot contribute exact-source proof.\n"
+                )
+
+            (
+                log_ref,
+                redacted_artifacts,
+                leaked_artifacts,
+            ) = finalize_runtime_log(
+                gate_run,
+                gate_id,
+                output_text,
                 runtime_secrets,
             )
-            redacted_artifacts = list(gate_run.redacted_artifacts)
-            if leaked_artifacts:
-                gate_run.discard()
-                active_gate_run = None
-                raise EvidenceConflict(
-                    "resolved credentials bypassed the immutable artifact writer: "
-                    + ", ".join(leaked_artifacts)
-                )
+            redacted_artifacts = sorted(
+                set(redacted_artifacts) | set(gate_run.redacted_artifacts)
+            )
             duration = round(time.time() - started, 3)
             if result is None:
                 status = (
@@ -1951,8 +2082,6 @@ def main() -> int:
                     if exit_code == 0 and cleanup_status != "failed"
                     else "failed"
                 )
-                if leaked_artifacts:
-                    status = "failed"
                 result = {
                     "id": gate_id,
                     "command": command,
@@ -1966,7 +2095,7 @@ def main() -> int:
                     "timedOut": timed_out,
                     "cleanupStatus": cleanup_status,
                     "secretScan": {
-                        "status": "failed" if leaked_artifacts else "passed",
+                        "status": "passed",
                         "scannedHighEntropyValues": len(
                             tuple(
                                 value
@@ -1981,7 +2110,7 @@ def main() -> int:
                                 if value
                             )
                         ),
-                        "redactedArtifacts": leaked_artifacts,
+                        "redactedArtifacts": redacted_artifacts,
                     },
                 }
                 if manifest:
@@ -2010,6 +2139,13 @@ def main() -> int:
                     result["sourcePhase"] = "Ephemeral Gate Launch Cleanup"
                     result["launchContextCleanup"] = launch_context_cleanup
 
+            if source_drift is not None:
+                result["sourceDrift"] = source_drift
+                result["status"] = "failed"
+                result["completionStatus"] = "PARTIAL"
+                result["proofStatus"] = "UNPROVEN"
+                result["sampleEmissionAllowed"] = False
+
             result = enrich_result_with_run_artifacts(result, gate_run)
             finalized_runtime = dict(manifest or {})
             if runtime_cell_manifest:
@@ -2033,7 +2169,11 @@ def main() -> int:
                 f"duration={duration}s run={gate_run.run_id}"
             )
 
-        report = build_run_report(plan_source, results)
+        report = build_run_report(
+            plan_source,
+            results,
+            source=aggregate_source,
+        )
         run_ref = aggregate_run.write_json(
             "reports/run.json",
             report,
