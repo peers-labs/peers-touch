@@ -1,0 +1,225 @@
+/**
+ * socialGateway.ts — Social domain API gateway
+ *
+ * Wraps friend relationships, session metadata, and conversation settings
+ * behind a typed gateway with JSON quarantine and command outcome adapters.
+ *
+ * Temporary JSON compatibility is quarantined inside normalizer calls;
+ * once Station endpoints migrate to proto, normalizers become pass-through.
+ */
+
+import type { MobileAuthSession } from '../../features/auth/authSession';
+import {
+  normalizeSession,
+  normalizeFriendRequest,
+} from '../../features/social/socialNormalizers';
+import type {
+  FriendChatSession,
+  FriendRequest,
+  FriendshipStatus,
+} from '../../features/social/socialTypes';
+import { SocialApiError } from '../../features/social/socialTypes';
+import { FriendshipStatus as FriendshipStatusCode } from '../../gen/proto/domain/chat/chat_pb';
+import type { ChatBackgroundId, FriendConversationSettings, UpdateFriendConversationSettingsInput } from '../../features/social/socialApiTypes';
+import { normalizeChatBackgroundId } from '../../features/social/socialApiTypes';
+import {
+  createGatewayTransport,
+  type CommandOutcome,
+} from './gatewayTypes';
+
+// ---------------------------------------------------------------------------
+// JSON quarantine normalizers
+// ---------------------------------------------------------------------------
+
+interface ListFriendRequestsRaw {
+  requests?: Partial<FriendRequest>[];
+  total?: number;
+}
+
+interface ListSessionsRaw {
+  sessions?: Partial<FriendChatSession>[];
+  total?: number;
+}
+
+interface ListBlockedUsersRaw {
+  blockedUsers?: Array<{ actorPtid?: string; actor_ptid?: string; status?: number }>;
+  blocked_users?: Array<{ actorPtid?: string; actor_ptid?: string; status?: number }>;
+  total?: number;
+}
+
+interface FriendshipStatusRaw {
+  friend?: { actorPtid?: string; actor_ptid?: string; status?: number };
+}
+
+// ---------------------------------------------------------------------------
+// Gateway output types (clean domain objects)
+// ---------------------------------------------------------------------------
+
+export interface SocialFriendRequestsResult {
+  readonly requests: FriendRequest[];
+  readonly total: number;
+}
+
+export interface SocialSessionsResult {
+  readonly sessions: FriendChatSession[];
+  readonly total: number;
+}
+
+// ---------------------------------------------------------------------------
+// Social gateway interface
+// ---------------------------------------------------------------------------
+
+export interface SocialGateway {
+  // Friend requests
+  listFriendRequests: (status?: number, limit?: number, offset?: number) => Promise<CommandOutcome<SocialFriendRequestsResult>>;
+  sendFriendRequest: (receiverPtid: string, message?: string) => Promise<CommandOutcome<{ request?: FriendRequest }>>;
+  acceptFriendRequest: (requestId: string) => Promise<CommandOutcome<{ request?: FriendRequest; session?: FriendChatSession }>>;
+  rejectFriendRequest: (requestId: string) => Promise<CommandOutcome<{ request?: FriendRequest }>>;
+
+  // Sessions
+  listSessions: (limit?: number, offset?: number) => Promise<CommandOutcome<SocialSessionsResult>>;
+  createSession: (participantPtid: string) => Promise<CommandOutcome<{ session?: FriendChatSession; created?: boolean }>>;
+
+  // Conversation settings
+  getConversationSettings: (sessionUlid: string) => Promise<CommandOutcome<FriendConversationSettings>>;
+  updateConversationSettings: (sessionUlid: string, input: UpdateFriendConversationSettingsInput) => Promise<CommandOutcome<FriendConversationSettings>>;
+
+  // Block
+  blockUser: (targetPtid: string) => Promise<CommandOutcome<Record<string, unknown>>>;
+  unblockUser: (targetPtid: string) => Promise<CommandOutcome<Record<string, unknown>>>;
+  listBlockedUsers: (limit?: number, offset?: number) => Promise<CommandOutcome<FriendshipStatus[]>>;
+  getFriendshipStatus: (targetPtid: string) => Promise<CommandOutcome<FriendshipStatus>>;
+}
+
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+
+export function createSocialGateway(session: MobileAuthSession): SocialGateway {
+  const { command } = createGatewayTransport(session);
+
+  return {
+    // --- Friend requests ---
+    listFriendRequests: async (status = 0, limit = 50, offset = 0) => {
+      const result = await command<ListFriendRequestsRaw>({
+        method: 'GET',
+        path: '/api/v1/social/friend-requests',
+        query: { status, limit, offset },
+      });
+      if (!result.ok) return result;
+      // JSON quarantine: normalize raw payloads to typed domain objects
+      const requests = (result.data.requests ?? []).map(normalizeFriendRequest);
+      return { ok: true, data: { requests, total: result.data.total ?? requests.length } };
+    },
+
+    sendFriendRequest: (receiverPtid, message = '') =>
+      command({ method: 'POST', path: '/api/v1/social/friend-request/send', body: { receiver_ptid: receiverPtid, message } }),
+
+    acceptFriendRequest: (requestId) =>
+      command({ method: 'POST', path: '/api/v1/social/friend-request/accept', body: { request_id: requestId } }),
+
+    rejectFriendRequest: (requestId) =>
+      command({ method: 'POST', path: '/api/v1/social/friend-request/reject', body: { request_id: requestId } }),
+
+    // --- Sessions ---
+    listSessions: async (limit = 50, offset = 0) => {
+      const result = await command<ListSessionsRaw>({
+        method: 'GET',
+        path: '/friend-chat/sessions',
+        query: { limit, offset },
+      });
+      if (!result.ok) return result;
+      const sessions = (result.data.sessions ?? []).map(normalizeSession);
+      return { ok: true, data: { sessions, total: result.data.total ?? sessions.length } };
+    },
+
+    createSession: (participantPtid) =>
+      command({ method: 'POST', path: '/friend-chat/session/create', body: { participant_ptid: participantPtid } }),
+
+    // --- Conversation settings ---
+    getConversationSettings: async (sessionUlid) => {
+      const result = await command<{ settings?: Record<string, unknown> }>({
+        method: 'GET',
+        path: '/friend-chat/settings',
+        query: { session_ulid: sessionUlid },
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: normalizeConversationSettings(result.data.settings ?? result.data) };
+    },
+
+    updateConversationSettings: async (sessionUlid, input) => {
+      const result = await command<{ settings?: Record<string, unknown> }>({
+        method: 'PUT',
+        path: '/friend-chat/settings',
+        body: {
+          session_ulid: sessionUlid,
+          ...(input.isMuted !== undefined ? { is_muted: input.isMuted } : {}),
+          ...(input.isPinned !== undefined ? { is_pinned: input.isPinned } : {}),
+          ...(input.alertEnabled !== undefined ? { alert_enabled: input.alertEnabled } : {}),
+          ...(input.background !== undefined ? { background: input.background } : {}),
+          ...(input.clearedAt !== undefined ? { cleared_at_unix_ms: input.clearedAt } : {}),
+        },
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: normalizeConversationSettings(result.data.settings ?? result.data) };
+    },
+
+    // --- Block ---
+    blockUser: (targetPtid) =>
+      command({ method: 'POST', path: '/friend-chat/block', body: { target_ptid: targetPtid } }),
+
+    unblockUser: (targetPtid) =>
+      command({ method: 'DELETE', path: '/friend-chat/block', body: { target_ptid: targetPtid } }),
+
+    listBlockedUsers: async (limit = 100, offset = 0) => {
+      const result = await command<ListBlockedUsersRaw>({
+        method: 'GET',
+        path: '/friend-chat/blocked',
+        query: { limit, offset },
+      });
+      if (!result.ok) return result;
+      const blockedUsers = result.data.blockedUsers ?? result.data.blocked_users ?? [];
+      const statuses = blockedUsers
+        .map((item) => normalizeFriendshipStatusFromRaw({ friend: item }))
+        .filter((item) => item.targetPtid);
+      return { ok: true, data: statuses };
+    },
+
+    getFriendshipStatus: async (targetPtid) => {
+      const result = await command<FriendshipStatusRaw>({
+        method: 'GET',
+        path: '/friend-chat/friendship/status',
+        query: { target_ptid: targetPtid },
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: normalizeFriendshipStatusFromRaw(result.data, targetPtid) };
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// JSON quarantine normalizers (private)
+// ---------------------------------------------------------------------------
+
+function normalizeConversationSettings(payload: unknown): FriendConversationSettings {
+  const record = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
+  return {
+    sessionUlid: String(record.sessionUlid ?? record.session_ulid ?? ''),
+    isMuted: Boolean(record.isMuted ?? record.is_muted),
+    isPinned: Boolean(record.isPinned ?? record.is_pinned),
+    alertEnabled: (record.alertEnabled ?? record.alert_enabled) !== false,
+    background: normalizeChatBackgroundId(record.background),
+    clearedAt: Number(record.clearedAtUnixMs ?? record.cleared_at_unix_ms ?? 0),
+  };
+}
+
+function normalizeFriendshipStatusFromRaw(
+  payload: FriendshipStatusRaw,
+  fallbackTargetPtid = '',
+): FriendshipStatus {
+  const friend = payload.friend;
+  return {
+    targetPtid: String(friend?.actor_ptid ?? friend?.actorPtid ?? fallbackTargetPtid),
+    blocked: Number(friend?.status ?? 0) === FriendshipStatusCode.BLOCKED,
+  };
+}

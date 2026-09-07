@@ -37,7 +37,7 @@ use interface::tauri_commands::{
     account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_scheduler,
     agent_turn, agents, applets, auth, capability_authority, channels, conversation, cron, crypto,
     desktop_capture, federation, frontend_log, frontend_telemetry, group_chat, host_events, i18n,
-    ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery, mls,
+    ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery,
     model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
     runtime_evidence, search, settings, skills, skills_market, social, station, system, tools, tts,
 };
@@ -390,10 +390,6 @@ fn main() {
     );
 
     let presence_supervisor = Arc::new(application::presence::PresenceSupervisor::new());
-    let actor_device_identity = Arc::new(domain::actor_device_identity::ActorDeviceIdentity::new());
-    let mls_group_manager = Arc::new(domain::mls_group::MlsGroupManager::with_actor_identity(
-        actor_device_identity.clone(),
-    ));
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
@@ -407,8 +403,6 @@ fn main() {
         .manage(capability_worker_supervisor)
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
         .manage(presence_supervisor)
-        .manage(actor_device_identity)
-        .manage(mls_group_manager)
         .setup(|app| {
             #[cfg(feature = "acceptance-webdriver")]
             if std::env::var_os("PT_ACCEPTANCE_WINDOW_SLOT").is_some() {
@@ -880,21 +874,7 @@ fn main() {
             realtime::realtime_signal_send,
             key_exchange::key_exchange_upload_bundle,
             key_exchange::key_exchange_fetch_bundle,
-            crypto::crypto_generate_identity,
-            crypto::crypto_get_identity,
-            crypto::crypto_get_fingerprint,
             crypto::crypto_ratchet_telemetry_snapshot,
-            crypto::crypto_generate_key_bundle,
-            crypto::crypto_init_session,
-            crypto::crypto_accept_session,
-            crypto::crypto_session_status,
-            crypto::crypto_mark_session_ready,
-            crypto::crypto_list_sessions,
-            crypto::crypto_list_sessions_for_peer,
-            crypto::crypto_encrypt,
-            crypto::crypto_decrypt,
-            crypto::dr_encrypt,
-            crypto::dr_decrypt,
             crypto::signaling_envelope_seal,
             crypto::signaling_envelope_open,
             messaging_recovery::messaging_recovery_generate_phrase,
@@ -967,6 +947,9 @@ fn main() {
             messaging_commands::messaging_create_direct,
             messaging_commands::messaging_create_group,
             messaging_commands::messaging_membership_transition,
+            messaging_commands::messaging_submit_leave_intent,
+            messaging_commands::messaging_list_leave_intents,
+            messaging_commands::messaging_commit_authorized_leave,
             messaging_commands::messaging_list_conversations,
             messaging_commands::messaging_command_status,
             #[cfg(feature = "acceptance-webdriver")]
@@ -989,15 +972,7 @@ fn main() {
             messaging_commands::messaging_update_member_settings,
             messaging_commands::messaging_open_attachment,
             messaging_commands::messaging_search_messages,
-            // v1 conversation commands (P2)
-            conversation::conversation_create_direct,
-            conversation::conversation_create_group,
-            conversation::conversation_submit_command,
-            conversation::conversation_submit_command_proposal,
-            conversation::conversation_get_command_proposal_result,
-            conversation::conversation_react,
-            conversation::conversation_submit_receipt,
-            conversation::conversation_list,
+            // Conversation query and settings commands
             conversation::conversation_list_events,
             conversation::conversation_get_members,
             conversation::conversation_list_messages,
@@ -1009,32 +984,9 @@ fn main() {
             conversation::keypackage_upload,
             conversation::keypackage_fetch,
             conversation::keypackage_count,
-            conversation::device_register,
             conversation::device_list,
             conversation::device_revoke,
             conversation::dkx_send,
-            // v1 MLS group commands (P3)
-            mls::mls_init_identity,
-            mls::mls_submit_leave_intent,
-            mls::mls_list_leave_intents,
-            mls::mls_generate_key_package,
-            mls::mls_group_create,
-            mls::mls_group_join,
-            mls::mls_group_encrypt,
-            mls::mls_group_decrypt,
-            mls::mls_group_process_commit,
-            mls::mls_group_add_member,
-            mls::mls_group_remove_member,
-            mls::mls_group_remove_device,
-            mls::mls_group_accept_pending,
-            mls::mls_group_discard_pending,
-            mls::mls_group_pending_status,
-            mls::mls_recipient_record_authority_event,
-            mls::mls_recipient_apply_delivery,
-            mls::mls_recipient_status,
-            mls::mls_group_public_head,
-            mls::mls_group_save,
-            mls::mls_group_load,
             application::error_resolver::resolve_error_action
         ])
         .build(tauri::generate_context!())

@@ -71,10 +71,12 @@ def _redaction_values(
     return tuple(values)
 
 
-def _redact_secret_scan(
-    value: Mapping[str, Any],
-    secret_values: tuple[str, ...],
+def canonical_secret_scan(
+    value: object,
+    secret_values: tuple[str, ...] = (),
 ) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise EvidenceManifestInvalid("secretScan must be an object")
     expected_fields = {
         "status",
         "scannedHighEntropyValues",
@@ -370,7 +372,7 @@ def write_current_artifact(
         os.environ if environment is None else environment
     )
     secret_values = _redaction_values(current_environment)
-    if any(secret in relative_path for secret in secret_values if len(secret) >= 4):
+    if redact_text_with_values(relative_path, secret_values) != relative_path:
         raise EvidenceManifestInvalid(
             "Acceptance artifact path contains a resolved credential"
         )
@@ -427,6 +429,7 @@ def latest_artifact_path(
     role: str,
     *,
     repo_root: Path,
+    runtime_cell: str | None = None,
     environment: Mapping[str, str] | None = None,
 ) -> Path:
     store = EvidenceStore.from_environment(
@@ -434,7 +437,13 @@ def latest_artifact_path(
         worktree=repo_root,
         environment=environment,
     )
-    return store.resolve(store.latest_artifact_ref(gate_id, role))
+    return store.resolve(
+        store.latest_artifact_ref(
+            gate_id,
+            role,
+            runtime_cell=runtime_cell,
+        )
+    )
 
 
 def _validate_gate_id(gate_id: str) -> str:
@@ -1035,8 +1044,14 @@ class EvidenceStore:
             raise EvidenceManifestInvalid(f"latest pointer is unavailable for {gate_id}")
         return self.read_json(ArtifactRef.from_dict(pointer["manifest"]))
 
-    def latest_artifact_ref(self, gate_id: str, role: str) -> ArtifactRef:
-        manifest = self.latest(gate_id)
+    def latest_artifact_ref(
+        self,
+        gate_id: str,
+        role: str,
+        *,
+        runtime_cell: str | None = None,
+    ) -> ArtifactRef:
+        manifest = self.latest(gate_id, runtime_cell=runtime_cell)
         artifacts = manifest.get("artifacts")
         if not isinstance(artifacts, dict) or role not in artifacts:
             raise EvidenceManifestInvalid(
@@ -1054,9 +1069,32 @@ class EvidenceStore:
         cleanup_lock = _FileLock(gate_dir / ".cleanup.lock")
         cleanup_lock.acquire(blocking=True)
         try:
-            pointer = self._latest_pointer(normalized_gate, required=False)
-            if pointer is not None and pointer.get("runId") == normalized_run:
-                raise EvidenceConflict("cleanup cannot delete the latest run")
+            publish_lock = _FileLock(gate_dir / ".publish.lock")
+            publish_lock.acquire(blocking=True)
+            try:
+                pointers = [
+                    self._latest_pointer(normalized_gate, required=False)
+                ]
+                for pointer_path in sorted(gate_dir.glob("latest.*.json")):
+                    name = pointer_path.name
+                    runtime_cell = name[len("latest.") : -len(".json")]
+                    pointers.append(
+                        self._latest_pointer(
+                            normalized_gate,
+                            required=True,
+                            runtime_cell=runtime_cell,
+                        )
+                    )
+                if any(
+                    pointer is not None
+                    and pointer.get("runId") == normalized_run
+                    for pointer in pointers
+                ):
+                    raise EvidenceConflict(
+                        "cleanup cannot delete a latest run"
+                    )
+            finally:
+                publish_lock.release()
             lock = _FileLock(run_dir / ".active.lock")
             if not lock.acquire(blocking=False):
                 raise EvidenceRunActive(f"run is active: {normalized_run}")
@@ -1261,10 +1299,9 @@ class RunHandle:
             if self.state != "ACTIVE":
                 raise EvidenceConflict("artifacts can only be written to an active run")
             normalized, target = self._target(relative_path)
-            if any(
-                secret in normalized
-                for secret in self._redaction_values
-                if len(secret) >= 4
+            if (
+                redact_text_with_values(normalized, self._redaction_values)
+                != normalized
             ):
                 raise EvidenceManifestInvalid(
                     "Acceptance artifact path contains a resolved credential"
@@ -1340,12 +1377,10 @@ class RunHandle:
             raw_result = dict(result)
             secret_scan = raw_result.pop("secretScan", None)
             redacted_secret_scan = (
-                _redact_secret_scan(secret_scan, self._redaction_values)
-                if isinstance(secret_scan, Mapping)
+                canonical_secret_scan(secret_scan, self._redaction_values)
+                if secret_scan is not None
                 else None
             )
-            if secret_scan is not None and redacted_secret_scan is None:
-                raise EvidenceManifestInvalid("secretScan must be an object")
             redacted_result = redact_value_with_values(
                 raw_result,
                 self._redaction_values,
@@ -1371,12 +1406,12 @@ class RunHandle:
                 },
                 "redaction": {"status": redaction_status},
             }
-            if redacted_secret_scan is not None:
-                manifest["result"]["secretScan"] = redacted_secret_scan
             manifest = redact_value_with_values(
                 manifest,
                 self._redaction_values,
             )
+            if redacted_secret_scan is not None:
+                manifest["result"]["secretScan"] = redacted_secret_scan
             encoded = (
                 json.dumps(manifest, indent=2, sort_keys=True, default=str) + "\n"
             ).encode("utf-8")

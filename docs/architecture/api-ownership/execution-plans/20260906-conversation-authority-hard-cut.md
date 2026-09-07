@@ -555,10 +555,10 @@ matrices. Local/static success cannot replace native receiver proof.
 | Workstream | Status | Evidence |
 |---|---|---|
 | CA-W0 Ownership inventory and Gate | done | The registry declares 61 retained capabilities and classifies all 65 current governed routes; undeclared routes are zero. Four routes without a target role are explicit deletion obligations. The AST Gate enforces route ownership, canonical proto symbols, target-absent stores, and four registry-driven Conversation DDD import layers, with focused tests covering deterministic failure. Source-bound ownership run `20260906T033402732484Z-ee421c3782b56b551a1c0e828d5a67c8` fails closed with 84 downstream target-debt diagnostics only: 4 forbidden routes, 23 owner-root mismatches, 20 missing canonical proto symbols, 20 superseded proto symbols, and 17 forbidden truth-store identifiers. Source-bound `messaging-platform-contract` run `20260906T033402732485Z-5b16e97d8f829f252e20b7b7c1492ef0`, Gate race tests, and Gate `go vet` pass. |
-| CA-W1 Proto-first canonical contracts | pending | — |
-| CA-W2 Conversation DDD bounded context | pending | — |
-| CA-W3 Resource-owner services | pending | — |
-| CA-W4 Shared Federation and Social | pending | — |
+| CA-W1 Proto-first canonical contracts | done | Canonical Actor Device, Device Inbox, Recovery, Key Exchange, generic Federation, Social Friend Request, and Conversation preparation/read/typing/receipt contracts are defined and generated for Station Go, Desktop TypeScript/Rust, Mobile TypeScript, and portable Messaging Core Rust. The catalog maps 61 capabilities to 122 unique request/response symbols with zero missing canonical symbols or registry-invalid diagnostics. Exact-index generation passed with sorted descriptor SHA-256 `18ed449617ce3a06e0dbc13eb5cb9705344d88326c36441c9cc25babc7fffe1c`; 30 generated artifacts reproduce exactly, and new TypeScript outputs are newline-stable. Exact-index focused Station packages, Messaging Core (30 unit + 2 integration tests), Mobile Rust, Desktop Rust library, Social wire/runtime boundaries, and 14 `messaging-platform-contract` tests pass. The exact-index ownership Gate fails closed only on 148 enumerated CA-W2..CA-W5 debts: 4 forbidden routes, 17 forbidden truth-store identifiers, 23 owner-root mismatches, and 104 superseded proto symbols. Full Mobile TypeScript is blocked by the pre-existing `StationIdentityResult.verifiedAt` mismatch; Desktop full checks remain blocked by unrelated Agent/OAuth/OSS source failures. No production route or store cutover is claimed. |
+| CA-W2 Conversation DDD bounded context | done | Conversation now has a test-only Station DDD composition with aggregate, entity, value-object, domain-event, typed-error, repository/UOW, application command/query, persistence, delivery, identity, Federation, and HTTP-mapping boundaries. Focused tests cover deterministic event hashes and optional-field presence, exact accepted/terminal-rejected command replay, authenticated forwarded replay and key-state admission, authority plans, exact delivery commitments, membership/MLS epochs and retirement, delegated leave, follower buffering/convergence/fork rejection, settings/read cursors, aggregate rehydration, PostgreSQL timestamp precision, schema keys, and post-commit notification. `(cd apps/station && go test -race -count=1 ./app/subserver/conversation/...)`, focused `go vet`, `./tooling/scripts/check-go-style.sh`, Desktop/Mobile generated-TypeScript compilation, and isolated proto regeneration pass. Isolated `HEAD + CA-W2-only` tree `faf1879f9f54af6cfa814d2a2d1d4844f8586602` passes the full Conversation race suite; independent command/security, persistence, aggregate, follower, timestamp, and query reviews found no remaining blocker. The ownership Gate fails closed only on the same 148 enumerated CA-W3..CA-W5 debts: 4 forbidden routes, 17 forbidden truth-store identifiers, 23 owner-root mismatches, and 104 superseded proto symbols, with no missing DDD layer or forbidden DDD import. The PostgreSQL runtime test is registered but skipped when `MESSAGING_TEST_POSTGRES_DSN` is absent. No production handler, route, store, consumer, or runtime cutover is claimed before CA-W5. |
+| CA-W3 Resource-owner services | source checkpoint only | Commit `a1c921ea77737e221d47e54371a4b02a2f77bbe6` adds Actor Identity, Conversation delivery/attachment/interaction, Recovery, and Key Exchange owner roots with focused source tests. These services are not production-cut-over; `apps/station/app/subserver/conversation/engine/` remains a temporary internal implementation module until CA-W5 deletes it. Production route/store ownership and PostgreSQL runtime behavior remain `UNPROVEN`. |
+| CA-W4 Shared Federation and Social | source checkpoint only | Commit `a1c921ea77737e221d47e54371a4b02a2f77bbe6` adds domain-neutral Federation delivery plus typed Conversation and Social adapters with focused source tests. Production registration, cross-Station convergence, failure recovery, and PostgreSQL/runtime proof remain `UNPROVEN`. |
 | CA-W5 Atomic production hard cut | pending | — |
 | CA-W6 Runtime Acceptance | pending | — |
 | CA-W7 Completion/docs/knowledge audit | pending | — |
@@ -587,8 +587,12 @@ matrices. Local/static success cannot replace native receiver proof.
 6. No compatibility shim, dual write, fallback read, mock business API, stale evidence,
    or undeclared route remains.
 
-Plan state: `PLAN_APPROVED`. CA-W0 is complete: every governed route is either
-bound to one retained capability or classified as an explicit deletion, and the
-Conversation DDD import Gate is active. The public route checkpoint is under
-Conversation composition and retains modern engine behavior. CA-W1 through CA-W5
-remain open for canonical proto, owner-root, and truth-store consolidation.
+Plan state: `PLAN_APPROVED`. CA-W0 through CA-W2 are complete: every governed
+route is classified, all retained capabilities have unique generated canonical
+request/response contracts, and the test-only Conversation DDD bounded context
+passes its focused gates. CA-W3 and CA-W4 have source checkpoints only; they do
+not establish production composition, route/store cutover, cross-Station
+runtime convergence, or PostgreSQL proof. The public route checkpoint remains
+under Conversation composition, and `conversation/engine` is temporary until
+CA-W5 atomically installs the canonical owners and deletes the old path. CA-W5
+through CA-W7 remain open.

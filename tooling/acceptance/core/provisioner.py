@@ -268,7 +268,11 @@ class EnvironmentProvisioner(ABC):
                 ),
             )
             lease.acquire()
-        except (ValueError, RemoteGitSourceLeaseUnavailable) as error:
+        except (
+            ValueError,
+            ProvisioningError,
+            RemoteGitSourceLeaseUnavailable,
+        ) as error:
             raise BlockedError(
                 reason=str(error),
                 resource=f"source-lease:{environment_name}",

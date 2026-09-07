@@ -69,7 +69,7 @@ func TestSubmitDeliveryReceiptQueuesTypedReceiptIdempotently(t *testing.T) {
 			receipt.Ptid != sender.Ptid ||
 			receipt.DeviceId != sender.DeviceId ||
 			receipt.ReceiptType != chat.ReceiptType_RECEIPT_TYPE_DELIVERED {
-			t.Fatalf("unexpected receipt: %+v", receipt)
+			t.Fatalf("unexpected receipt: %+v", &receipt)
 		}
 	}
 }

@@ -6,13 +6,17 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { TurnStatus } from "./agent_pb";
 import { file_domain_agent_agent } from "./agent_pb";
+import type { ActorRef } from "../actor/actor_pb";
+import { file_domain_actor_actor } from "../actor/actor_pb";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/agent/turn_stream.proto.
  */
 export const file_domain_agent_turn_stream: GenFile = /*@__PURE__*/
-  fileDesc("Ch5kb21haW4vYWdlbnQvdHVybl9zdHJlYW0ucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxIrwGCg9UdXJuU3RyZWFtRXZlbnQSPQoEdHlwZRgBIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TdHJlYW1FdmVudFR5cGUSDwoHdHVybl9pZBgCIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAyABKAkSEAoIYWdlbnRfaWQYBCABKAkSNwoEdGV4dBgKIAEoCzInLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRleHRQYXlsb2FkSAASPwoIdGhpbmtpbmcYCyABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UaGlua2luZ1BheWxvYWRIABJACgl0b29sX2NhbGwYDCABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ub29sQ2FsbFBheWxvYWRIABJECgt0b29sX3Jlc3VsdBgNIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRvb2xSZXN1bHRQYXlsb2FkSAASWQoWdG9vbF9hcHByb3ZhbF9yZXF1aXJlZBgOIAEoCzI3LnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRvb2xBcHByb3ZhbFJlcXVpcmVkUGF5bG9hZEgAEj8KCHByb2dyZXNzGA8gASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuUHJvZ3Jlc3NQYXlsb2FkSAASOQoFaW1hZ2UYECABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5JbWFnZVBheWxvYWRIABJWChRjb252ZXJzYXRpb25fY3JlYXRlZBgRIAEoCzI2LnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkNvbnZlcnNhdGlvbkNyZWF0ZWRQYXlsb2FkSAASOQoFZXJyb3IYEiABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FcnJvclBheWxvYWRIABI3CgRkb25lGBMgASgLMicucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRG9uZVBheWxvYWRIAEIJCgdwYXlsb2FkIhsKC1RleHRQYXlsb2FkEgwKBHRleHQYASABKAkiLQoPVGhpbmtpbmdQYXlsb2FkEgwKBHRleHQYASABKAkSDAoEZG9uZRgCIAEoCCJICg9Ub29sQ2FsbFBheWxvYWQSFAoMdG9vbF9jYWxsX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJYXJndW1lbnRzGAMgASgJIjkKEVRvb2xSZXN1bHRQYXlsb2FkEhQKDHRvb2xfY2FsbF9pZBgBIAEoCRIOCgZyZXN1bHQYAiABKAkifQobVG9vbEFwcHJvdmFsUmVxdWlyZWRQYXlsb2FkEhMKC2FwcHJvdmFsX2lkGAEgASgJEhEKCXRvb2xfbmFtZRgCIAEoCRITCgtzZXJ2ZXJfbmFtZRgDIAEoCRIRCglhcmd1bWVudHMYBCABKAkSDgoGc291cmNlGAUgASgJIiAKD1Byb2dyZXNzUGF5bG9hZBINCgVzdGFnZRgBIAEoCSIbCgxJbWFnZVBheWxvYWQSCwoDdXJsGAEgASgJIjUKGkNvbnZlcnNhdGlvbkNyZWF0ZWRQYXlsb2FkEhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCSIxCgxFcnJvclBheWxvYWQSDQoFZXJyb3IYASABKAkSEgoKZXJyb3JfdHlwZRgCIAEoCSJ8CgtEb25lUGF5bG9hZBIPCgd0YXNrX2lkGAEgASgJEj0KDHR1cm5fc3VtbWFyeRgCIAEoCzInLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TdW1tYXJ5Eh0KFWZvbGxvd191cF9zdWdnZXN0aW9ucxgDIAMoCSKtAQoLVHVyblN1bW1hcnkSDwoHdHVybl9pZBgBIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAiABKAkSEAoIYWdlbnRfaWQYAyABKAkSEgoKdXNlcl9pbnB1dBgEIAEoCRIWCg5maW5hbF9yZXNwb25zZRgFIAEoCRI2CgZzdGF0dXMYBiABKA4yJi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UdXJuU3RhdHVzKqEEChNUdXJuU3RyZWFtRXZlbnRUeXBlEiYKIlRVUk5fU1RSRUFNX0VWRU5UX1RZUEVfVU5TUEVDSUZJRUQQABIfChtUVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RFWFQQARIjCh9UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RISU5LSU5HEAISJAogVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9UT09MX0NBTEwQAxImCiJUVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfUkVTVUxUEAQSLQopVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9MT0NBTF9UT09MX1JFUVVFU1QQBRIxCi1UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfQVBQUk9WQUxfUkVRVUlSRUQQBhIxCi1UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfQVBQUk9WQUxfREVDSVNJT04QBxIjCh9UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1BST0dSRVNTEAgSIAocVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9JTUFHRRAJEi8KK1RVUk5fU1RSRUFNX0VWRU5UX1RZUEVfQ09OVkVSU0FUSU9OX0NSRUFURUQQChIgChxUVVJOX1NUUkVBTV9FVkVOVF9UWVBFX0VSUk9SEAsSHwobVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9ET05FEAxCS1pJZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9hZ2VudC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_domain_agent_agent]);
+  fileDesc("Ch5kb21haW4vYWdlbnQvdHVybl9zdHJlYW0ucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxIrUJCg9UdXJuU3RyZWFtRXZlbnQSPQoEdHlwZRgBIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TdHJlYW1FdmVudFR5cGUSDwoHdHVybl9pZBgCIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAyABKAkSEAoIYWdlbnRfaWQYBCABKAkSEAoIc2VxdWVuY2UYBSABKAQSEAoIZXZlbnRfaWQYBiABKAkSLwoLb2NjdXJyZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjcKBHRleHQYCiABKAsyJy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXh0UGF5bG9hZEgAEj8KCHRoaW5raW5nGAsgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVGhpbmtpbmdQYXlsb2FkSAASQAoJdG9vbF9jYWxsGAwgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVG9vbENhbGxQYXlsb2FkSAASRAoLdG9vbF9yZXN1bHQYDSABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ub29sUmVzdWx0UGF5bG9hZEgAElkKFnRvb2xfYXBwcm92YWxfcmVxdWlyZWQYDiABKAsyNy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ub29sQXBwcm92YWxSZXF1aXJlZFBheWxvYWRIABI/Cghwcm9ncmVzcxgPIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlByb2dyZXNzUGF5bG9hZEgAEjkKBWltYWdlGBAgASgLMigucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuSW1hZ2VQYXlsb2FkSAASVgoUY29udmVyc2F0aW9uX2NyZWF0ZWQYESABKAsyNi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Db252ZXJzYXRpb25DcmVhdGVkUGF5bG9hZEgAEjkKBWVycm9yGBIgASgLMigucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXJyb3JQYXlsb2FkSAASNwoEZG9uZRgTIAEoCzInLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkRvbmVQYXlsb2FkSAASWQoWdG9vbF9hcHByb3ZhbF9kZWNpc2lvbhgUIAEoCzI3LnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRvb2xBcHByb3ZhbERlY2lzaW9uUGF5bG9hZEgAEkEKCWNhbmNlbGxlZBgVIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkNhbmNlbGxlZFBheWxvYWRIABI8CghzbmFwc2hvdBgWIAEoCzIoLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TbmFwc2hvdEgAEkYKDGNhdGNodXBfZG9uZRgXIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkNhdGNodXBEb25lUGF5bG9hZEgAQgkKB3BheWxvYWQiWwoXU3RyZWFtVHVybkV2ZW50c1JlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEg8KB3R1cm5faWQYAiABKAkSFgoOYWZ0ZXJfc2VxdWVuY2UYAyABKAQi8AEKDFR1cm5TbmFwc2hvdBIPCgd0dXJuX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRIQCghhZ2VudF9pZBgDIAEoCRI2CgZzdGF0dXMYBCABKA4yJi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UdXJuU3RhdHVzEgwKBHRleHQYBSABKAkSFQoNbGFzdF9zZXF1ZW5jZRgGIAEoBBIXCg90ZXJtaW5hbF9yZWFzb24YByABKAkSLgoKdXBkYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiIgoQQ2FuY2VsbGVkUGF5bG9hZBIOCgZyZWFzb24YASABKAkiKwoSQ2F0Y2h1cERvbmVQYXlsb2FkEhUKDWxhc3Rfc2VxdWVuY2UYASABKAQiGwoLVGV4dFBheWxvYWQSDAoEdGV4dBgBIAEoCSItCg9UaGlua2luZ1BheWxvYWQSDAoEdGV4dBgBIAEoCRIMCgRkb25lGAIgASgIIkgKD1Rvb2xDYWxsUGF5bG9hZBIUCgx0b29sX2NhbGxfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhcmd1bWVudHMYAyABKAkiOQoRVG9vbFJlc3VsdFBheWxvYWQSFAoMdG9vbF9jYWxsX2lkGAEgASgJEg4KBnJlc3VsdBgCIAEoCSKJAgobVG9vbEFwcHJvdmFsUmVxdWlyZWRQYXlsb2FkEhMKC2FwcHJvdmFsX2lkGAEgASgJEhEKCXRvb2xfbmFtZRgCIAEoCRITCgtzZXJ2ZXJfbmFtZRgDIAEoCRIRCglhcmd1bWVudHMYBCABKAkSDgoGc291cmNlGAUgASgJEhQKDHRvb2xfY2FsbF9pZBgGIAEoCRITCgtkZWNpc2lvbl9pZBgHIAEoCRIZChFkZWNpc2lvbl9yZXZpc2lvbhgIIAEoBBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxwYXlsb2FkX2hhc2gYCiABKAkiogIKG1Rvb2xBcHByb3ZhbERlY2lzaW9uUGF5bG9hZBITCgthcHByb3ZhbF9pZBgBIAEoCRIUCgx0b29sX2NhbGxfaWQYAiABKAkSEwoLZGVjaXNpb25faWQYAyABKAkSGQoRZGVjaXNpb25fcmV2aXNpb24YBCABKAQSEAoIYXBwcm92ZWQYBSABKAgSNwoJYWN0b3JfcmVmGAYgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWYSLgoKZGVjaWRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFwoPaWRlbXBvdGVuY3lfa2V5GAggASgJEhQKDHBheWxvYWRfaGFzaBgJIAEoCSIgCg9Qcm9ncmVzc1BheWxvYWQSDQoFc3RhZ2UYASABKAkiGwoMSW1hZ2VQYXlsb2FkEgsKA3VybBgBIAEoCSI1ChpDb252ZXJzYXRpb25DcmVhdGVkUGF5bG9hZBIXCg9jb252ZXJzYXRpb25faWQYASABKAki4gEKDEVycm9yUGF5bG9hZBINCgVlcnJvchgBIAEoCRISCgplcnJvcl90eXBlGAIgASgJEhIKCmxvY2FsZV9rZXkYAyABKAkSEQoJcmV0cnlhYmxlGAQgASgIEhAKCHRlcm1pbmFsGAUgASgIEkYKB2RldGFpbHMYBiADKAsyNS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FcnJvclBheWxvYWQuRGV0YWlsc0VudHJ5Gi4KDERldGFpbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBInwKC0RvbmVQYXlsb2FkEg8KB3Rhc2tfaWQYASABKAkSPQoMdHVybl9zdW1tYXJ5GAIgASgLMicucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVHVyblN1bW1hcnkSHQoVZm9sbG93X3VwX3N1Z2dlc3Rpb25zGAMgAygJIq0BCgtUdXJuU3VtbWFyeRIPCgd0dXJuX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRIQCghhZ2VudF9pZBgDIAEoCRISCgp1c2VyX2lucHV0GAQgASgJEhYKDmZpbmFsX3Jlc3BvbnNlGAUgASgJEjYKBnN0YXR1cxgGIAEoDjImLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TdGF0dXMqlwUKE1R1cm5TdHJlYW1FdmVudFR5cGUSJgoiVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9VTlNQRUNJRklFRBAAEh8KG1RVUk5fU1RSRUFNX0VWRU5UX1RZUEVfVEVYVBABEiMKH1RVUk5fU1RSRUFNX0VWRU5UX1RZUEVfVEhJTktJTkcQAhIkCiBUVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfQ0FMTBADEiYKIlRVUk5fU1RSRUFNX0VWRU5UX1RZUEVfVE9PTF9SRVNVTFQQBBIxCi1UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfQVBQUk9WQUxfUkVRVUlSRUQQBhIxCi1UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1RPT0xfQVBQUk9WQUxfREVDSVNJT04QBxIjCh9UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1BST0dSRVNTEAgSIAocVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9JTUFHRRAJEi8KK1RVUk5fU1RSRUFNX0VWRU5UX1RZUEVfQ09OVkVSU0FUSU9OX0NSRUFURUQQChIgChxUVVJOX1NUUkVBTV9FVkVOVF9UWVBFX0VSUk9SEAsSHwobVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9ET05FEAwSJAogVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9DQU5DRUxMRUQQDRIjCh9UVVJOX1NUUkVBTV9FVkVOVF9UWVBFX1NOQVBTSE9UEA4SJwojVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9DQVRDSFVQX0RPTkUQDyIECAUQBSopVFVSTl9TVFJFQU1fRVZFTlRfVFlQRV9MT0NBTF9UT09MX1JFUVVFU1RCS1pJZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9hZ2VudC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_domain_agent_agent, file_domain_actor_actor, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.TurnStreamEvent
@@ -37,6 +41,21 @@ export type TurnStreamEvent = Message<"peers_touch.model.agent.v1.TurnStreamEven
    * @generated from field: string agent_id = 4;
    */
   agentId: string;
+
+  /**
+   * @generated from field: uint64 sequence = 5;
+   */
+  sequence: bigint;
+
+  /**
+   * @generated from field: string event_id = 6;
+   */
+  eventId: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp occurred_at = 7;
+   */
+  occurredAt?: Timestamp | undefined;
 
   /**
    * @generated from oneof peers_touch.model.agent.v1.TurnStreamEvent.payload
@@ -101,6 +120,30 @@ export type TurnStreamEvent = Message<"peers_touch.model.agent.v1.TurnStreamEven
      */
     value: DonePayload;
     case: "done";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.ToolApprovalDecisionPayload tool_approval_decision = 20;
+     */
+    value: ToolApprovalDecisionPayload;
+    case: "toolApprovalDecision";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.CancelledPayload cancelled = 21;
+     */
+    value: CancelledPayload;
+    case: "cancelled";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.TurnSnapshot snapshot = 22;
+     */
+    value: TurnSnapshot;
+    case: "snapshot";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.agent.v1.CatchupDonePayload catchup_done = 23;
+     */
+    value: CatchupDonePayload;
+    case: "catchupDone";
   } | { case: undefined; value?: undefined };
 };
 
@@ -110,6 +153,119 @@ export type TurnStreamEvent = Message<"peers_touch.model.agent.v1.TurnStreamEven
  */
 export const TurnStreamEventSchema: GenMessage<TurnStreamEvent> = /*@__PURE__*/
   messageDesc(file_domain_agent_turn_stream, 0);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.StreamTurnEventsRequest
+ */
+export type StreamTurnEventsRequest = Message<"peers_touch.model.agent.v1.StreamTurnEventsRequest"> & {
+  /**
+   * @generated from field: string conversation_id = 1;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: string turn_id = 2;
+   */
+  turnId: string;
+
+  /**
+   * @generated from field: uint64 after_sequence = 3;
+   */
+  afterSequence: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.StreamTurnEventsRequest.
+ * Use `create(StreamTurnEventsRequestSchema)` to create a new message.
+ */
+export const StreamTurnEventsRequestSchema: GenMessage<StreamTurnEventsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_turn_stream, 1);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.TurnSnapshot
+ */
+export type TurnSnapshot = Message<"peers_touch.model.agent.v1.TurnSnapshot"> & {
+  /**
+   * @generated from field: string turn_id = 1;
+   */
+  turnId: string;
+
+  /**
+   * @generated from field: string conversation_id = 2;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: string agent_id = 3;
+   */
+  agentId: string;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.TurnStatus status = 4;
+   */
+  status: TurnStatus;
+
+  /**
+   * @generated from field: string text = 5;
+   */
+  text: string;
+
+  /**
+   * @generated from field: uint64 last_sequence = 6;
+   */
+  lastSequence: bigint;
+
+  /**
+   * @generated from field: string terminal_reason = 7;
+   */
+  terminalReason: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 8;
+   */
+  updatedAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.TurnSnapshot.
+ * Use `create(TurnSnapshotSchema)` to create a new message.
+ */
+export const TurnSnapshotSchema: GenMessage<TurnSnapshot> = /*@__PURE__*/
+  messageDesc(file_domain_agent_turn_stream, 2);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.CancelledPayload
+ */
+export type CancelledPayload = Message<"peers_touch.model.agent.v1.CancelledPayload"> & {
+  /**
+   * @generated from field: string reason = 1;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.CancelledPayload.
+ * Use `create(CancelledPayloadSchema)` to create a new message.
+ */
+export const CancelledPayloadSchema: GenMessage<CancelledPayload> = /*@__PURE__*/
+  messageDesc(file_domain_agent_turn_stream, 3);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.CatchupDonePayload
+ */
+export type CatchupDonePayload = Message<"peers_touch.model.agent.v1.CatchupDonePayload"> & {
+  /**
+   * @generated from field: uint64 last_sequence = 1;
+   */
+  lastSequence: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.CatchupDonePayload.
+ * Use `create(CatchupDonePayloadSchema)` to create a new message.
+ */
+export const CatchupDonePayloadSchema: GenMessage<CatchupDonePayload> = /*@__PURE__*/
+  messageDesc(file_domain_agent_turn_stream, 4);
 
 /**
  * @generated from message peers_touch.model.agent.v1.TextPayload
@@ -126,7 +282,7 @@ export type TextPayload = Message<"peers_touch.model.agent.v1.TextPayload"> & {
  * Use `create(TextPayloadSchema)` to create a new message.
  */
 export const TextPayloadSchema: GenMessage<TextPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 1);
+  messageDesc(file_domain_agent_turn_stream, 5);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ThinkingPayload
@@ -148,7 +304,7 @@ export type ThinkingPayload = Message<"peers_touch.model.agent.v1.ThinkingPayloa
  * Use `create(ThinkingPayloadSchema)` to create a new message.
  */
 export const ThinkingPayloadSchema: GenMessage<ThinkingPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 2);
+  messageDesc(file_domain_agent_turn_stream, 6);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ToolCallPayload
@@ -175,7 +331,7 @@ export type ToolCallPayload = Message<"peers_touch.model.agent.v1.ToolCallPayloa
  * Use `create(ToolCallPayloadSchema)` to create a new message.
  */
 export const ToolCallPayloadSchema: GenMessage<ToolCallPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 3);
+  messageDesc(file_domain_agent_turn_stream, 7);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ToolResultPayload
@@ -197,7 +353,7 @@ export type ToolResultPayload = Message<"peers_touch.model.agent.v1.ToolResultPa
  * Use `create(ToolResultPayloadSchema)` to create a new message.
  */
 export const ToolResultPayloadSchema: GenMessage<ToolResultPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 4);
+  messageDesc(file_domain_agent_turn_stream, 8);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ToolApprovalRequiredPayload
@@ -227,6 +383,31 @@ export type ToolApprovalRequiredPayload = Message<"peers_touch.model.agent.v1.To
    * @generated from field: string source = 5;
    */
   source: string;
+
+  /**
+   * @generated from field: string tool_call_id = 6;
+   */
+  toolCallId: string;
+
+  /**
+   * @generated from field: string decision_id = 7;
+   */
+  decisionId: string;
+
+  /**
+   * @generated from field: uint64 decision_revision = 8;
+   */
+  decisionRevision: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 9;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string payload_hash = 10;
+   */
+  payloadHash: string;
 };
 
 /**
@@ -234,7 +415,64 @@ export type ToolApprovalRequiredPayload = Message<"peers_touch.model.agent.v1.To
  * Use `create(ToolApprovalRequiredPayloadSchema)` to create a new message.
  */
 export const ToolApprovalRequiredPayloadSchema: GenMessage<ToolApprovalRequiredPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 5);
+  messageDesc(file_domain_agent_turn_stream, 9);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ToolApprovalDecisionPayload
+ */
+export type ToolApprovalDecisionPayload = Message<"peers_touch.model.agent.v1.ToolApprovalDecisionPayload"> & {
+  /**
+   * @generated from field: string approval_id = 1;
+   */
+  approvalId: string;
+
+  /**
+   * @generated from field: string tool_call_id = 2;
+   */
+  toolCallId: string;
+
+  /**
+   * @generated from field: string decision_id = 3;
+   */
+  decisionId: string;
+
+  /**
+   * @generated from field: uint64 decision_revision = 4;
+   */
+  decisionRevision: bigint;
+
+  /**
+   * @generated from field: bool approved = 5;
+   */
+  approved: boolean;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef actor_ref = 6;
+   */
+  actorRef?: ActorRef | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp decided_at = 7;
+   */
+  decidedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string idempotency_key = 8;
+   */
+  idempotencyKey: string;
+
+  /**
+   * @generated from field: string payload_hash = 9;
+   */
+  payloadHash: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ToolApprovalDecisionPayload.
+ * Use `create(ToolApprovalDecisionPayloadSchema)` to create a new message.
+ */
+export const ToolApprovalDecisionPayloadSchema: GenMessage<ToolApprovalDecisionPayload> = /*@__PURE__*/
+  messageDesc(file_domain_agent_turn_stream, 10);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ProgressPayload
@@ -251,7 +489,7 @@ export type ProgressPayload = Message<"peers_touch.model.agent.v1.ProgressPayloa
  * Use `create(ProgressPayloadSchema)` to create a new message.
  */
 export const ProgressPayloadSchema: GenMessage<ProgressPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 6);
+  messageDesc(file_domain_agent_turn_stream, 11);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ImagePayload
@@ -268,7 +506,7 @@ export type ImagePayload = Message<"peers_touch.model.agent.v1.ImagePayload"> & 
  * Use `create(ImagePayloadSchema)` to create a new message.
  */
 export const ImagePayloadSchema: GenMessage<ImagePayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 7);
+  messageDesc(file_domain_agent_turn_stream, 12);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ConversationCreatedPayload
@@ -285,7 +523,7 @@ export type ConversationCreatedPayload = Message<"peers_touch.model.agent.v1.Con
  * Use `create(ConversationCreatedPayloadSchema)` to create a new message.
  */
 export const ConversationCreatedPayloadSchema: GenMessage<ConversationCreatedPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 8);
+  messageDesc(file_domain_agent_turn_stream, 13);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ErrorPayload
@@ -300,6 +538,26 @@ export type ErrorPayload = Message<"peers_touch.model.agent.v1.ErrorPayload"> & 
    * @generated from field: string error_type = 2;
    */
   errorType: string;
+
+  /**
+   * @generated from field: string locale_key = 3;
+   */
+  localeKey: string;
+
+  /**
+   * @generated from field: bool retryable = 4;
+   */
+  retryable: boolean;
+
+  /**
+   * @generated from field: bool terminal = 5;
+   */
+  terminal: boolean;
+
+  /**
+   * @generated from field: map<string, string> details = 6;
+   */
+  details: { [key: string]: string };
 };
 
 /**
@@ -307,7 +565,7 @@ export type ErrorPayload = Message<"peers_touch.model.agent.v1.ErrorPayload"> & 
  * Use `create(ErrorPayloadSchema)` to create a new message.
  */
 export const ErrorPayloadSchema: GenMessage<ErrorPayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 9);
+  messageDesc(file_domain_agent_turn_stream, 14);
 
 /**
  * @generated from message peers_touch.model.agent.v1.DonePayload
@@ -334,7 +592,7 @@ export type DonePayload = Message<"peers_touch.model.agent.v1.DonePayload"> & {
  * Use `create(DonePayloadSchema)` to create a new message.
  */
 export const DonePayloadSchema: GenMessage<DonePayload> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 10);
+  messageDesc(file_domain_agent_turn_stream, 15);
 
 /**
  * @generated from message peers_touch.model.agent.v1.TurnSummary
@@ -376,7 +634,7 @@ export type TurnSummary = Message<"peers_touch.model.agent.v1.TurnSummary"> & {
  * Use `create(TurnSummarySchema)` to create a new message.
  */
 export const TurnSummarySchema: GenMessage<TurnSummary> = /*@__PURE__*/
-  messageDesc(file_domain_agent_turn_stream, 11);
+  messageDesc(file_domain_agent_turn_stream, 16);
 
 /**
  * @generated from enum peers_touch.model.agent.v1.TurnStreamEventType
@@ -406,11 +664,6 @@ export enum TurnStreamEventType {
    * @generated from enum value: TURN_STREAM_EVENT_TYPE_TOOL_RESULT = 4;
    */
   TOOL_RESULT = 4,
-
-  /**
-   * @generated from enum value: TURN_STREAM_EVENT_TYPE_LOCAL_TOOL_REQUEST = 5;
-   */
-  LOCAL_TOOL_REQUEST = 5,
 
   /**
    * @generated from enum value: TURN_STREAM_EVENT_TYPE_TOOL_APPROVAL_REQUIRED = 6;
@@ -446,6 +699,21 @@ export enum TurnStreamEventType {
    * @generated from enum value: TURN_STREAM_EVENT_TYPE_DONE = 12;
    */
   DONE = 12,
+
+  /**
+   * @generated from enum value: TURN_STREAM_EVENT_TYPE_CANCELLED = 13;
+   */
+  CANCELLED = 13,
+
+  /**
+   * @generated from enum value: TURN_STREAM_EVENT_TYPE_SNAPSHOT = 14;
+   */
+  SNAPSHOT = 14,
+
+  /**
+   * @generated from enum value: TURN_STREAM_EVENT_TYPE_CATCHUP_DONE = 15;
+   */
+  CATCHUP_DONE = 15,
 }
 
 /**

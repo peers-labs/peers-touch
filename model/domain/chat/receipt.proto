@@ -50,3 +50,19 @@ message MessageDeliveryAggregate {
   bool fully_delivered = 8;
   bool read = 9;
 }
+
+message SubmitConversationReadCursorRequest {
+  ActorReadCursor cursor = 1;
+}
+
+message SubmitConversationReadCursorResponse {
+  ActorReadCursor cursor = 1;
+}
+
+message SubmitConversationDeliveryReceiptRequest {
+  DeviceConsumptionReceipt receipt = 1;
+}
+
+message SubmitConversationDeliveryReceiptResponse {
+  MessageDeliveryAggregate delivery = 1;
+}

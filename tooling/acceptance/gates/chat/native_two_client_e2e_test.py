@@ -630,12 +630,13 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 maxsplit=1,
             )[0],
         )
-        self.assertIn(
+        self.assertNotIn(
             "ACCEPTANCE_PLAN ?= tooling/acceptance/reports/",
             makefile,
         )
         self.assertIn(
-            '--output "$(ACCEPTANCE_PLAN)"',
+            'ACCEPTANCE_PLAN_OUTPUT_ARG = $(if $(ACCEPTANCE_PLAN),'
+            '--output "$(ACCEPTANCE_PLAN)",)',
             makefile,
         )
 

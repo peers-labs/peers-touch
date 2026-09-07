@@ -1,7 +1,11 @@
 use super::keys::{DeviceSigningKey, IdentityKeyPair};
-use crate::proto::chat::MessagingDeviceCertificate;
+use crate::proto::chat::{
+    EnrollMessagingDeviceRequest, EnrollMessagingDeviceResponse, MessagingDevice,
+    MessagingDeviceCertificate, MessagingDeviceStatus,
+};
 use prost::Message;
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 use ulid::Ulid;
 
 pub const MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION: u32 = 1;
@@ -16,6 +20,103 @@ pub struct FreshDeviceEnrollment {
 pub struct FreshDeviceIdentityState {
     pub enrollment: FreshDeviceEnrollment,
     pub device_signing_seed: [u8; 32],
+}
+
+pub trait DeviceEnrollmentRepository: Send + Sync {
+    fn device_enrollment(&self) -> Result<Option<FreshDeviceEnrollment>, String>;
+
+    fn install_fresh_device_identity(&self, state: &FreshDeviceIdentityState)
+        -> Result<(), String>;
+
+    fn pending_device_enrollment(&self) -> Result<Option<FreshDeviceEnrollment>, String>;
+
+    fn complete_device_enrollment(&self, device_id: &str) -> Result<(), String>;
+
+    fn reset_device_enrollment(&self) -> Result<bool, String>;
+}
+
+pub trait DeviceEnrollmentTransport: Send + Sync {
+    fn enroll(
+        &self,
+        request: &EnrollMessagingDeviceRequest,
+    ) -> Result<EnrollMessagingDeviceResponse, String>;
+}
+
+pub fn load_or_create_device_identity<R: DeviceEnrollmentRepository>(
+    repository: &R,
+    ptid: &str,
+    actor_identity_seed: [u8; 32],
+    actor_profile_version: u64,
+) -> Result<FreshDeviceEnrollment, String> {
+    match repository.device_enrollment()? {
+        Some(enrollment) => {
+            validate_enrollment_actor(
+                &enrollment,
+                ptid,
+                actor_identity_seed,
+                actor_profile_version,
+            )?;
+            Ok(enrollment)
+        }
+        None => {
+            let identity =
+                generate_fresh_device_identity(ptid, actor_identity_seed, actor_profile_version)?;
+            repository.install_fresh_device_identity(&identity)?;
+            Ok(identity.enrollment)
+        }
+    }
+}
+
+pub struct DeviceEnrollmentManager<R> {
+    repository: Arc<R>,
+    ptid: String,
+    device_id: String,
+}
+
+impl<R: DeviceEnrollmentRepository> DeviceEnrollmentManager<R> {
+    pub fn new(repository: Arc<R>, ptid: String, device_id: String) -> Result<Self, String> {
+        if ptid.trim().is_empty() || device_id.trim().is_empty() {
+            return Err("messaging device enrollment manager requires endpoint".to_string());
+        }
+        Ok(Self {
+            repository,
+            ptid,
+            device_id,
+        })
+    }
+
+    pub fn enroll_pending<T: DeviceEnrollmentTransport>(
+        &self,
+        label: String,
+        transport: &T,
+    ) -> Result<Option<MessagingDevice>, String> {
+        let Some(enrollment) = self.repository.pending_device_enrollment()? else {
+            return Ok(None);
+        };
+        let certificate = &enrollment.certificate;
+        if certificate.ptid != self.ptid || certificate.device_id != self.device_id {
+            return Err("messaging pending enrollment belongs to another endpoint".to_string());
+        }
+        let response = transport.enroll(&EnrollMessagingDeviceRequest {
+            certificate: Some(certificate.clone()),
+            label,
+            actor_cross_signature: enrollment.actor_cross_signature.to_vec(),
+        })?;
+        let device = response
+            .device
+            .ok_or_else(|| "messaging enrollment response has no device".to_string())?;
+        validate_enrollment_response(&enrollment, &device)?;
+        self.repository
+            .complete_device_enrollment(&self.device_id)?;
+        Ok(Some(device))
+    }
+
+    pub fn recover_stale(&self, error: &str) -> Result<bool, String> {
+        if !is_stale_endpoint_error(error) {
+            return Ok(false);
+        }
+        self.repository.reset_device_enrollment()
+    }
 }
 
 pub fn generate_fresh_device_identity(
@@ -81,6 +182,40 @@ pub fn validate_enrollment_actor(
             &ed25519_dalek::Signature::from_bytes(&enrollment.actor_cross_signature),
         )
         .map_err(|_| "messaging device certificate signature mismatch".to_string())
+}
+
+pub fn validate_enrollment_response(
+    enrollment: &FreshDeviceEnrollment,
+    device: &MessagingDevice,
+) -> Result<(), String> {
+    let certificate = &enrollment.certificate;
+    if MessagingDeviceStatus::try_from(device.status)
+        .map_err(|_| "messaging enrollment response status is invalid".to_string())?
+        != MessagingDeviceStatus::Active
+        || device
+            .endpoint
+            .as_ref()
+            .map(|endpoint| endpoint.ptid.as_str())
+            != Some(certificate.ptid.as_str())
+        || device
+            .endpoint
+            .as_ref()
+            .map(|endpoint| endpoint.device_id.as_str())
+            != Some(certificate.device_id.as_str())
+        || device.signing_key_id != certificate.signing_key_id
+        || device.profile_version != certificate.observed_profile_version
+        || device.actor_identity_key_fingerprint != certificate.actor_identity_key_fingerprint
+    {
+        return Err("messaging enrollment response binding mismatch".to_string());
+    }
+    Ok(())
+}
+
+pub fn is_stale_endpoint_error(error: &str) -> bool {
+    error.contains("endpoint is not active")
+        || error.contains("station returned 403")
+        || error.contains("Station returned HTTP 403")
+        || error.contains("sender_unauthorized")
 }
 
 fn build_device_certificate(

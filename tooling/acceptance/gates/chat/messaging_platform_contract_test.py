@@ -291,15 +291,20 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn("engine.dispatch_command_once(", lifecycle)
         self.assertIn("engine.resume_membership_intent_once(", lifecycle)
         self.assertIn("engine.drain_once(", lifecycle)
-        self.assertIn("pub struct PreKeyPublisher", prekeys)
-        self.assertIn("install_fresh_prekey_bundle(", prekeys)
+        self.assertIn("PreKeyPublisher", prekeys)
+        self.assertIn("messaging_core::crypto::prekeys", prekeys)
+        self.assertIn("engine.publish_prekeys(token)", lifecycle)
         self.assertTrue((messaging / "direct_session.rs").exists())
         self.assertIn(
             "direct_session_bootstraps",
             (messaging / "store.rs").read_text(encoding="utf-8"),
         )
-        self.assertIn("pub struct MlsKeyPackagePublisher", mls_key_packages)
-        self.assertIn("install_fresh_mls_key_packages(", mls_key_packages)
+        self.assertIn("MlsKeyPackageTransport", mls_key_packages)
+        self.assertIn(
+            '"/key-exchange/mls/key-package/upload"',
+            mls_key_packages,
+        )
+        self.assertIn("engine.publish_mls_key_packages(token)", lifecycle)
         self.assertIn("activate_profile_worker(", engine)
         self.assertIn("requireVerifiedActiveDevice(", key_exchange)
 

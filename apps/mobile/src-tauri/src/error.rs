@@ -37,6 +37,13 @@ impl MobileError {
         }
     }
 
+    pub fn messaging(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_MESSAGING",
+            message: message.into(),
+        }
+    }
+
     pub fn station_identity(message: impl Into<String>) -> Self {
         Self {
             code: "MOBILE_STATION_IDENTITY",
@@ -47,6 +54,41 @@ impl MobileError {
     pub fn oauth(message: impl Into<String>) -> Self {
         Self {
             code: "MOBILE_OAUTH",
+            message: message.into(),
+        }
+    }
+
+    pub fn ledger(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_COMMAND_LEDGER",
+            message: message.into(),
+        }
+    }
+
+    pub fn draft(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_DRAFT_STORE",
+            message: message.into(),
+        }
+    }
+
+    pub fn lifecycle(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_LIFECYCLE",
+            message: message.into(),
+        }
+    }
+
+    pub fn permission(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_PERMISSION",
+            message: message.into(),
+        }
+    }
+
+    pub fn network(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_NETWORK",
             message: message.into(),
         }
     }

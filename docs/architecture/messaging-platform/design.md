@@ -335,7 +335,7 @@ device lanes。网络失败不改变 authority event identity。
 endpoint manifest：
 
 ```text
-FederatedEndpointManifest
+ActorEndpointManifest
   = actor + home_station + directory_version
   + active endpoints + public material hashes
   + issued/expiry + Home Station signature
@@ -346,7 +346,8 @@ Authority plan绑定manifest及endpoint routes。Authority commit将delivery按H
 
 ```text
 local endpoints  -> local device queues
-remote endpoints -> per-Home-Station FederatedDeviceQueueBatch
+remote endpoints -> per-Home-Station FederatedDomainFrame
+                 -> CONVERSATION_DEVICE_DELIVERY payload
                  -> durable federation outbox
 ```
 
@@ -512,7 +513,7 @@ message DeviceEventDelivery {
   bytes delivery_commitment = 6;
 }
 
-message DeviceQueueItem {
+message DurableDeviceInboxItem {
   string item_id = 1;
   int64 lane_sequence = 3;
   string idempotency_key = 4;
@@ -745,7 +746,7 @@ SSE/push wake
 - Typing pulse 只接受 authenticated active conversation member，绑定
   `(conversation_id, sender endpoint, pulse generation, expires_at)`。
 - Direct 与 Group fan-out 使用独立 ephemeral delivery path；不得写
-  `DeviceQueueItem`、authority event、recovery archive 或 message projection。
+  `DurableDeviceInboxItem`、authority event、recovery archive 或 message projection。
 - Sender pulse bounded/throttled；receiver 按 sender + conversation 幂等刷新 TTL。
 - stop、session switch、disconnect 或 TTL expiry 都投影为 idle。丢失 stop pulse
   只能造成 bounded 短暂显示，不能形成 durable phantom state。

@@ -2336,6 +2336,6 @@ A5-7 environment          = SKIPPED (no runtime changes needed for source-side c
 A5-8 client contracts     = SKIPPED (no Rust/TS surface change)
 A5-9 Rust commands        = SKIPPED (no command surface change)
 A5-10 focused tests       = DONE (11 adversarial tests)
-A5-11 main plan update    = NOT STARTED
-E2-5 atomic cutover       = IN PROGRESS (source-side closure complete)
+A5-11 main plan update    = DONE
+E2-5 atomic cutover       = DONE (source-side closure complete, main plan updated)
 ```

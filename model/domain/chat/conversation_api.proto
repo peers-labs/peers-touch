@@ -4,8 +4,13 @@ package peers_touch.model.chat.v1;
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
 
+import "domain/actor/actor.proto";
+import "domain/chat/command.proto";
 import "domain/chat/conversation.proto";
 import "domain/chat/envelope.proto";
+import "domain/chat/event.proto";
+import "domain/key_exchange/key_exchange.proto";
+import "google/protobuf/timestamp.proto";
 
 // ============================================================================
 // Conversation Subserver API Messages
@@ -94,6 +99,111 @@ message SubmitConversationCommandResponse {
   CommittedConversationEvent event = 1;
 }
 
+message SubmitConversationAuthorityCommandRequest {
+  ChatCommand command = 1;
+}
+
+message SubmitConversationAuthorityCommandResponse {
+  ConversationEvent event = 1;
+  ConversationCommandRejectCode reject_code = 2;
+  PrepareConversationCommandResponse current_plan = 3;
+  bool accepted_for_forwarding = 4;
+}
+
+enum ConversationMembershipAction {
+  CONVERSATION_MEMBERSHIP_ACTION_UNSPECIFIED = 0;
+  CONVERSATION_MEMBERSHIP_ACTION_ADD_ACTOR = 1;
+  CONVERSATION_MEMBERSHIP_ACTION_REMOVE_ACTOR = 2;
+  CONVERSATION_MEMBERSHIP_ACTION_LEAVE = 3;
+  CONVERSATION_MEMBERSHIP_ACTION_CHANGE_ROLE = 4;
+  CONVERSATION_MEMBERSHIP_ACTION_ADD_DEVICE = 5;
+  CONVERSATION_MEMBERSHIP_ACTION_REMOVE_DEVICE = 6;
+}
+
+message PrepareConversationCommandRequest {
+  string conversation_id = 1;
+  peers_touch.model.actor.v1.ActorDeviceRef sender = 2;
+  string authority_station_peer_id = 3;
+}
+
+message PrepareConversationCommandResponse {
+  string conversation_id = 1;
+  ConversationKind conversation_kind = 2;
+  int64 authority_sequence = 3;
+  bytes authority_hash = 4;
+  int64 membership_epoch = 5;
+  int64 mls_epoch = 6;
+  repeated peers_touch.model.actor.v1.ActorDeviceRef required_endpoints = 7;
+  bytes delivery_plan_sha256 = 8;
+  repeated peers_touch.model.actor.v1.ActorEndpointManifest endpoint_manifests = 9;
+  string authority_station_peer_id = 10;
+}
+
+message PrepareConversationGroupRequest {
+  string conversation_id = 1;
+  string name = 2;
+  repeated peers_touch.model.actor.v1.ActorRef members = 3;
+  peers_touch.model.actor.v1.ActorDeviceRef creator = 4;
+}
+
+message PrepareConversationGroupResponse {
+  string authority_plan_id = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  string authority_station_peer_id = 3;
+  repeated peers_touch.model.actor.v1.ActorDeviceRef prospective_endpoints = 4;
+  repeated peers_touch.model.key_exchange.v1.MlsKeyPackageReservation reserved_key_packages = 5;
+  repeated peers_touch.model.actor.v1.ActorEndpointManifest endpoint_manifests = 6;
+  bytes authority_plan_sha256 = 7;
+}
+
+message PrepareConversationMembershipRequest {
+  string conversation_id = 1;
+  peers_touch.model.actor.v1.ActorDeviceRef sender = 2;
+  ConversationMembershipAction action = 3;
+  peers_touch.model.actor.v1.ActorRef target_actor = 4;
+  string target_device_id = 5;
+  MemberRole role = 6;
+}
+
+message PrepareConversationMembershipResponse {
+  string authority_plan_id = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  string authority_station_peer_id = 3;
+  int64 authority_sequence = 4;
+  bytes authority_hash = 5;
+  int64 from_membership_epoch = 6;
+  int64 from_mls_epoch = 7;
+  repeated peers_touch.model.actor.v1.ActorDeviceRef pre_endpoints = 8;
+  repeated peers_touch.model.actor.v1.ActorDeviceRef post_endpoints = 9;
+  repeated peers_touch.model.actor.v1.ActorDeviceRef added_endpoints = 10;
+  repeated peers_touch.model.actor.v1.ActorDeviceRef removed_endpoints = 11;
+  repeated peers_touch.model.key_exchange.v1.MlsKeyPackageReservation reserved_key_packages = 12;
+  repeated peers_touch.model.actor.v1.ActorEndpointManifest endpoint_manifests = 13;
+  bytes authority_plan_sha256 = 14;
+}
+
+message PrepareFederatedConversationCommandRequest {
+  PrepareConversationCommandRequest request = 1;
+  string source_home_station_peer_id = 2;
+}
+
+message PrepareFederatedConversationCommandResponse {
+  PrepareConversationCommandResponse plan = 1;
+}
+
+message SubmitConversationTypingRequest {
+  string conversation_id = 1;
+  peers_touch.model.actor.v1.ActorDeviceRef sender = 2;
+  uint64 pulse_generation = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  bool is_typing = 5;
+}
+
+message SubmitConversationTypingResponse {
+  bool accepted = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
 message SubmitConversationCommandProposalRequest {
   ConversationCommandProposal proposal = 1;
 }
@@ -139,6 +249,24 @@ message ListPendingMlsLeaveIntentsRequest {
 }
 
 message ListPendingMlsLeaveIntentsResponse {
+  repeated MlsLeaveIntent intents = 1;
+}
+
+message SubmitFederatedMlsLeaveIntentRequest {
+  MlsLeaveIntent intent = 1;
+  string source_home_station_peer_id = 2;
+}
+
+message SubmitFederatedMlsLeaveIntentResponse {
+  MlsLeaveIntent intent = 1;
+}
+
+message ListFederatedMlsLeaveIntentsRequest {
+  string conversation_id = 1;
+  string source_home_station_peer_id = 2;
+}
+
+message ListFederatedMlsLeaveIntentsResponse {
   repeated MlsLeaveIntent intents = 1;
 }
 
@@ -282,25 +410,6 @@ message GetThreadCountsResponse {
   repeated ThreadCountEntry counts = 1;
 }
 
-// --- Read Cursors & Unread ---
-
-message SetReadCursorRequest {
-  string conversation_id = 1;
-  int64 last_read_seq = 2;
-}
-
-message SetReadCursorResponse {
-  bool success = 1;
-}
-
-message GetUnreadRequest {
-  string conversation_id = 1;
-}
-
-message GetUnreadResponse {
-  int64 unread_count = 1;
-}
-
 // --- Member Settings ---
 
 message MemberSettings {
@@ -328,30 +437,4 @@ message UpdateMemberSettingsRequest {
 
 message UpdateMemberSettingsResponse {
   bool success = 1;
-}
-
-// --- Search ---
-
-message SearchMessagesRequest {
-  string conversation_id = 1;
-  string query = 2;
-  int32 limit = 3;
-}
-
-message SearchMessagesResponse {
-  repeated CommittedConversationEvent events = 1;
-  bool has_more = 2;
-}
-
-// --- Stats ---
-
-message GetConversationStatsRequest {
-  string conversation_id = 1;
-}
-
-message GetConversationStatsResponse {
-  int64 message_count = 1;
-  int32 member_count = 2;
-  int64 created_at_ms = 3;
-  int64 last_activity_at_ms = 4;
 }

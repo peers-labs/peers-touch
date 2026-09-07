@@ -92,10 +92,11 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
   accepted.
 - Plan：CA-HC hard-cut plan `PLAN_APPROVED`; the older Messaging Platform plan is
   superseded for Station authority/API ownership while its Device Messaging Engine
-  and MP-W14 follower-projection evidence remain historical input. `MP-W13`
-  corrective amendment remains separate.
+  and MP-W14 follower-projection work remain historical input, not a second
+  active plan. CA-W0 through CA-W2 are complete; CA-W3 and CA-W4 have source
+  checkpoints only. CA-W5 production cutover and CA-W6 runtime/PostgreSQL proof
+  remain `UNPROVEN`.
 - Execution：live product evidence invalidated the prior MP-W10-E/MP-W12/MP-W11
-  receiver-proof claims；`MP-W13` defines projection、interaction UI、identity/Station
-  attribution、conversation actions/background、attachments and real Native proof；
-  `MP-W14` owns follower projection、replay、canonical membership authorization and
-  the dependent Windows Chat proof。
+  receiver-proof claims. `MP-W13` and `MP-W14` below retain historical source and
+  Native evidence; CA-HC exclusively owns the Station authority cutover and its
+  completion proof.

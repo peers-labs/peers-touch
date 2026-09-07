@@ -23,6 +23,8 @@ pub mod model {
 pub(crate) use interface::contracts;
 
 pub mod infrastructure {
+    #[path = "attachment_blob.rs"]
+    pub mod attachment_blob;
     #[path = "i18n/mod.rs"]
     pub mod i18n;
     #[path = "station_client.rs"]

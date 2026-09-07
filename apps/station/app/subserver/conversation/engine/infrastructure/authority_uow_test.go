@@ -434,7 +434,7 @@ func TestAuthorityCommitAtomicallyPartitionsRemoteHomeStationDelivery(t *testing
 	}
 	if !proto.Equal(projection.ConversationEvent, event) ||
 		projection.TargetHomeStationId != "station:remote" {
-		t.Fatalf("follower projection = %+v", projection)
+		t.Fatalf("follower projection = %+v", &projection)
 	}
 	var grants []infrastructure.EventProjectionGrantModel
 	if err := db.Find(&grants).Error; err != nil {
@@ -723,7 +723,7 @@ func TestAuthorityCommitProjectsToZeroDeviceMemberHomeStation(t *testing.T) {
 		chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION ||
 		frame.TargetStationId != "station:remote" ||
 		frame.EventId != event.EventId {
-		t.Fatalf("zero-device projection frame = %+v", frame)
+		t.Fatalf("zero-device projection frame = %+v", &frame)
 	}
 	var grant infrastructure.EventProjectionGrantModel
 	if err := db.First(

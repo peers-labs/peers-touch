@@ -1095,20 +1095,16 @@ export function ChatDetailPanel() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          const [conversation, federationSelf, device] = await Promise.all([
+          const [conversation, federationSelf] = await Promise.all([
             imServiceV1.conversation.getConversation(activeUlid),
             api.federationGetSelf(),
-            api.accountGetDeviceId(),
           ]);
-          if (!currentUserPtid) throw new Error('No authenticated actor');
-          await imServiceV1.mlsGroup.requestLeaveIntent({
+          await imServiceV1.messaging.requestLeaveIntent({
             federationId: conversation.federationId,
             authorityStationPeerId: conversation.authorityStationPeerId,
             authorityEpoch: Number(conversation.authorityEpoch),
             homeStationPeerId: federationSelf.homeStationPeerId,
             conversationId: activeUlid,
-            actorPtid: currentUserPtid,
-            actorDeviceId: device.device_id,
             observedMembershipEpoch: Number(conversation.membershipEpoch),
             observedMlsEpoch: Number(conversation.mlsEpoch),
           });

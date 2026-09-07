@@ -366,11 +366,34 @@
       "when": {
         "paths": [
           "apps/mobile/src/features/group/**",
+          "apps/mobile/src/services/gateways/socialGateway.ts",
           "apps/mobile/src/pages/ChatPage.tsx",
           "apps/mobile/src/pages/ContactsPage.tsx"
         ]
       },
       "require": [
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-simulator-chat-contacts-e2e",
+        "mobile-native-social-convergence-e2e",
+        "mobile-native-chat-contacts-e2e"
+      ]
+    },
+    {
+      "id": "mobile-messaging-acceptance",
+      "features": ["mobile-chat-contacts-groups"],
+      "when": {
+        "paths": [
+          "apps/mobile/src/acceptance/**",
+          "tooling/acceptance/gates/mobile/messaging_journey.py",
+          "tooling/acceptance/gates/mobile/messaging_journey_test.py",
+          "tooling/acceptance/gates/mobile/simulator_social_e2e.py",
+          "tooling/acceptance/gates/mobile/simulator_social_e2e_test.py",
+          "tooling/acceptance/environments/mobile-social-simulator.yaml"
+        ]
+      },
+      "require": [
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-simulator-chat-contacts-e2e",
         "mobile-native-social-convergence-e2e",
         "mobile-native-chat-contacts-e2e"
       ]

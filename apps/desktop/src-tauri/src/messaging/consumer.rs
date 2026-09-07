@@ -1,26 +1,30 @@
 use super::{
     ClaimedItemConsumer, ConversationStateProcessor, DeliveryReceiptProcessor,
-    DirectMessageProcessor, EngineEndpoint, MessagingStore, MlsApplicationProcessor,
-    MlsRetirementProcessor, MlsSenderTransitionProcessor, MlsTransitionProcessor,
-    PublicEventProcessor,
+    DirectMessageProcessor, EngineEndpoint, MessagingStore, PublicEventProcessor,
 };
 use crate::domain::crypto::IdentityKeyPair;
-use crate::domain::mls_group::MlsGroupManager;
 use crate::model::chat::{
     conversation_event, DeviceEventDelivery, DeviceQueueItem, DeviceQueuePayloadType,
     PreparedEndpointPayloadKind,
+};
+use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
+use messaging_core::inbox::ClaimedItemConsumer as CoreClaimedItemConsumer;
+use messaging_core::mls::group::MlsGroupManager;
+use messaging_core::mls::{
+    MlsApplicationProcessor, MlsRetirementProcessor, MlsSenderTransitionProcessor,
+    MlsTransitionProcessor,
 };
 use prost::Message;
 use std::sync::Arc;
 
 pub struct MessagingItemConsumer {
     direct: DirectMessageProcessor,
-    mls_application: MlsApplicationProcessor,
-    mls_transition: MlsTransitionProcessor,
-    mls_retirement: MlsRetirementProcessor,
+    mls_application: MlsApplicationProcessor<MessagingStore>,
+    mls_transition: MlsTransitionProcessor<MessagingStore>,
+    mls_retirement: MlsRetirementProcessor<MessagingStore>,
     public_event: PublicEventProcessor,
     conversation_state: ConversationStateProcessor,
-    mls_sender_transition: MlsSenderTransitionProcessor,
+    mls_sender_transition: MlsSenderTransitionProcessor<MessagingStore>,
     delivery_receipt: DeliveryReceiptProcessor,
 }
 
@@ -32,6 +36,10 @@ impl MessagingItemConsumer {
         actor_identity: Option<Arc<IdentityKeyPair>>,
         clock: fn() -> i64,
     ) -> Result<Self, String> {
+        let mls_endpoint = CoreCryptoEndpoint {
+            ptid: endpoint.ptid.clone(),
+            device_id: endpoint.device_id.clone(),
+        };
         Ok(Self {
             direct: match actor_identity {
                 Some(identity) => DirectMessageProcessor::with_actor_identity(
@@ -45,19 +53,19 @@ impl MessagingItemConsumer {
             mls_application: MlsApplicationProcessor::new(
                 mls_manager.clone(),
                 store.clone(),
-                endpoint.clone(),
+                mls_endpoint.clone(),
                 clock,
             )?,
             mls_transition: MlsTransitionProcessor::new(
                 mls_manager.clone(),
                 store.clone(),
-                endpoint.clone(),
+                mls_endpoint.clone(),
                 clock,
             )?,
             mls_retirement: MlsRetirementProcessor::new(
                 mls_manager.clone(),
                 store.clone(),
-                endpoint.clone(),
+                mls_endpoint.clone(),
                 clock,
             )?,
             public_event: PublicEventProcessor::new(store.clone(), endpoint.clone(), clock)?,
@@ -69,7 +77,7 @@ impl MessagingItemConsumer {
             mls_sender_transition: MlsSenderTransitionProcessor::new(
                 mls_manager.clone(),
                 store.clone(),
-                endpoint.clone(),
+                mls_endpoint,
                 clock,
             )?,
             delivery_receipt: DeliveryReceiptProcessor::new(store, endpoint, clock)?,

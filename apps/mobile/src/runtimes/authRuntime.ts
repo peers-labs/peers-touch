@@ -58,6 +58,8 @@ interface StartOAuthInput {
   gateId: string;
 }
 
+type StartAccessAttempt = (sessionId?: string) => Promise<AccessDecision>;
+
 const PUBLIC_PHASES: readonly OAuthPublicPhase[] = [
   'idle',
   'starting',
@@ -81,6 +83,10 @@ export function useAuthRuntime(): AuthRuntimeSnapshot {
 
 export function readAuthRuntimeSnapshot(): AuthRuntimeSnapshot {
   return snapshotFromProjection(sanitizeProjection(snapshot));
+}
+
+export function readActiveAuthSession(): MobileAuthSession | null {
+  return useAuthStore.getState().session;
 }
 
 export function readAccessRuntimeProjection(): AccessRuntimePublicProjection {
@@ -118,10 +124,10 @@ export async function startAccessAttemptForActiveStation(): Promise<AccessDecisi
   state.setLoading(true);
   state.setError(null);
   try {
-    const decision = await startStationAccessAttempt(
+    const decision = await startStationAccessAttemptWithRecovery(
       station.stationPeerId,
       station.url,
-      state.session?.sessionId,
+      state.session,
     );
     applyAccessGateRuntimeResult(decision);
     return decision;
@@ -134,9 +140,47 @@ export async function startAccessAttemptForActiveStation(): Promise<AccessDecisi
   }
 }
 
+export async function startStationAccessAttemptWithRecovery(
+  stationPeerId: string,
+  stationUrl: string,
+  session?: MobileAuthSession | null,
+): Promise<AccessDecision> {
+  return startAccessAttemptWithInvalidSessionRecovery(
+    session?.sessionId,
+    (sessionId) => startStationAccessAttempt(
+      stationPeerId,
+      stationUrl,
+      sessionId,
+    ),
+    clearAuthRuntimeSession,
+  );
+}
+
 export async function clearAuthRuntimeSession(): Promise<void> {
   await useAuthStore.getState().clearSession();
   setSnapshot(snapshotFromProjection(emptyProjection()));
+}
+
+async function startAccessAttemptWithInvalidSessionRecovery(
+  sessionId: string | undefined,
+  startAttempt: StartAccessAttempt,
+  clearSession: () => Promise<void>,
+): Promise<AccessDecision> {
+  try {
+    return await startAttempt(sessionId);
+  } catch (error) {
+    if (!sessionId || !isRevokedSessionError(readableErrorMessage(error))) {
+      throw error;
+    }
+    await clearSession();
+    return startAttempt();
+  }
+}
+
+function isRevokedSessionError(message: string): boolean {
+  return /session\s+(invalid|revoked|expired)|invalid\s+session|revoked/i.test(
+    message,
+  );
 }
 
 export async function startOAuth(input: StartOAuthInput): Promise<void> {
@@ -385,10 +429,12 @@ registerOAuthAccessGrantFinalizer(async () => {
 });
 
 export const authRuntimeTestContract = {
+  isRevokedSessionError,
   oauthPhaseMessageKey,
   projectionErrorKey,
   projectionRecovery,
   sanitizeAccessDecision,
   sanitizeProjection,
   snapshotFromProjection,
+  startAccessAttemptWithInvalidSessionRecovery,
 };

@@ -429,7 +429,7 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 		carolWrapped.ToMembershipEpoch != 2 ||
 		carolWrapped.ToMlsEpoch != 2 ||
 		!bytes.Equal(carolWrapped.OpaqueMlsBytes, carolWelcome) {
-		t.Fatalf("Carol Welcome delivery = %+v %+v", carolDelivery, carolWrapped)
+		t.Fatalf("Carol Welcome delivery = %+v %+v", &carolDelivery, &carolWrapped)
 	}
 
 	removePlan, err := service.PrepareMembershipTransition(
@@ -529,7 +529,7 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 	}
 	if carolDelivery.PayloadKind != chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_RETIREMENT ||
 		carolDelivery.GetEvent().GetMembershipTransitionCommitted() == nil {
-		t.Fatalf("Carol keyless removal delivery = %+v", carolDelivery)
+		t.Fatalf("Carol keyless removal delivery = %+v", &carolDelivery)
 	}
 	var retirement chat.MlsRetirementMarker
 	if err := proto.Unmarshal(carolDelivery.EndpointPayload, &retirement); err != nil {
@@ -540,7 +540,7 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 		retirement.TransitionId != "remove-carol-transition" ||
 		retirement.RemovedEndpoint == nil ||
 		retirement.RemovedEndpoint.Ptid != "carol" {
-		t.Fatalf("Carol retirement marker = %+v", retirement)
+		t.Fatalf("Carol retirement marker = %+v", &retirement)
 	}
 
 	bobThirdDevice := planVerifiedDevice("bob", "bob-3", now)

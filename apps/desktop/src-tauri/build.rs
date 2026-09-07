@@ -67,13 +67,14 @@ fn compile_protos() {
         "domain/social/circle.proto",
         "domain/agent/skill.proto",
         "domain/agent/memory.proto",
-        "domain/key_exchange/key_exchange.proto",
         "domain/realtime/event.proto",
         "domain/federation/federation_self.proto",
         "domain/federation/federation_resolve.proto",
         "domain/federation/federation_health.proto",
         "domain/federation/federation_discovery.proto",
         "domain/federation/federation_projection_service.proto",
+        "domain/federation/delivery.proto",
+        "domain/recovery/recovery.proto",
     ]
     .iter()
     .chain(AGENT_V2_PROTO_FILES.iter())

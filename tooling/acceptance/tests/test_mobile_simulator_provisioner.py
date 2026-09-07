@@ -3,22 +3,34 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
-from tooling.acceptance.core import EnvironmentContract, ProvisioningState
+from tooling.acceptance.core import (
+    BlockedError,
+    ClientRuntime,
+    EnvironmentContract,
+    ProvisioningError,
+    ProvisioningState,
+    ServiceAttestation,
+    new_manifest,
+)
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR
 from tooling.acceptance.gates.mobile.simulator_e2e import (
+    REQUIRED_HARNESS_ACTIONS,
     SimulatorAppiumSession,
     SimulatorBuildTarget,
     SimulatorDeviceTarget,
 )
 from tooling.acceptance.provisioners import (
     MobileSimulatorProvisioner,
+    MobileSocialSimulatorProvisioner,
     get_provisioner,
 )
 from tooling.acceptance.provisioners import (
@@ -27,15 +39,44 @@ from tooling.acceptance.provisioners import (
 from tooling.acceptance.provisioners.mobile_simulator import (
     ANDROID_ABI,
     ANDROID_AVD_NAME,
+    ANDROID_MANIFEST_RELATIVE_PATH,
     EXPECTED_CLIENTS,
     EXPECTED_DRIVERS,
     IOS_DEVICE_NAME,
     IOS_RUNTIME,
     CommandResult,
     MobileSimulatorProvisioner,
+    _GeneratedAndroidManifestGuard,
+    _resolve_android_ndk_home,
+    _resolve_android_ndk_tool,
     _resolve_command,
+    _with_simulator_resources,
     load_mobile_simulator_spec,
 )
+
+
+def _write_valid_ndk(path: Path) -> Path:
+    path.mkdir(parents=True)
+    (path / "source.properties").write_text(
+        "Pkg.Desc = Android NDK\n",
+        encoding="utf-8",
+    )
+    (path / "toolchains" / "llvm" / "prebuilt" / "test-host").mkdir(
+        parents=True
+    )
+    ranlib = (
+        path
+        / "toolchains"
+        / "llvm"
+        / "prebuilt"
+        / "test-host"
+        / "bin"
+        / "llvm-ranlib"
+    )
+    ranlib.parent.mkdir()
+    ranlib.write_text("", encoding="utf-8")
+    ranlib.chmod(0o755)
+    return path.resolve()
 
 
 class FakeProcess:
@@ -185,6 +226,18 @@ class FakeCommandExecutor:
             command[:4] == ("pnpm", "--dir", "apps/mobile", "exec")
             and "android" in command
         ):
+            manifest = self.repo_root / ANDROID_MANIFEST_RELATIVE_PATH
+            content = manifest.read_text(encoding="utf-8")
+            manifest.write_text(
+                content.replace(
+                    '                <data android:path="/callback" />\n',
+                    '                <data android:path="/callback" />\n'
+                    "                \n"
+                    "                \n"
+                    "                \n",
+                ),
+                encoding="utf-8",
+            )
             apk = (
                 self.repo_root
                 / "apps"
@@ -353,6 +406,218 @@ class MobileSimulatorContractTests(unittest.TestCase):
             MobileSimulatorProvisioner,
         )
 
+    def test_social_simulator_overlay_has_typed_service_bindings(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        contract = EnvironmentContract.from_yaml(path)
+
+        self.assertEqual(payload["base_environment"], "mobile-simulator")
+        self.assertEqual(
+            set(contract.services),
+            {"station-primary", "station-secondary", "relay"},
+        )
+        self.assertEqual(
+            {
+                client.id: client.service_bindings["station"].service_id
+                for client in contract.clients
+            },
+            {
+                "sim-ios": "station-primary",
+                "sim-android": "station-secondary",
+            },
+        )
+        self.assertEqual(contract.credentials, ())
+        provisioner = get_provisioner(contract)
+        self.assertIsInstance(
+            provisioner,
+            MobileSocialSimulatorProvisioner,
+        )
+        self.assertEqual(
+            provisioner._load_overlay()["harness"]["namespace"],
+            "__PEERS_MOBILE_ACCEPTANCE__",
+        )
+
+    def test_social_simulator_preserves_base_harness_actions(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertLessEqual(
+            set(REQUIRED_HARNESS_ACTIONS),
+            set(payload["harness"]["required_actions"]),
+        )
+
+    def test_social_simulator_composes_base_runtime_without_credentials(
+        self,
+    ) -> None:
+        social_path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(social_path)
+        base_manifest = _with_simulator_resources(
+            dataclasses.replace(
+                new_manifest(
+                    environment_id="mobile-simulator",
+                    gate_id="mobile-simulator-social-convergence-e2e",
+                    requested_profile="mobile-simulator",
+                    resolved_profile="mobile-simulator",
+                    slot=0,
+                    commit="a" * 40,
+                    worktree="/tmp/worktree",
+                    workspace_digest="dirty:test",
+                ),
+                state=ProvisioningState.FIXTURE_READY,
+                clients=(
+                    ClientRuntime(
+                        actor="simulator",
+                        runtime="tauri-ios-simulator",
+                        worktree="/tmp/worktree",
+                        gateway_port=1,
+                        renderer_port=2,
+                        webdriver_port=3,
+                        profile="sim-ios",
+                        storage_root="/tmp/sim-ios",
+                    ),
+                    ClientRuntime(
+                        actor="emulator",
+                        runtime="tauri-android-emulator",
+                        worktree="/tmp/worktree",
+                        gateway_port=4,
+                        renderer_port=5,
+                        webdriver_port=6,
+                        profile="sim-android",
+                        storage_root="/tmp/sim-android",
+                    ),
+                ),
+            ),
+            {
+                "appium": {},
+                "applications": {},
+                "clients": {},
+                "harness": {},
+                "proofScope": {},
+            },
+        )
+
+        class Base:
+            def __init__(self, _contract: EnvironmentContract) -> None:
+                self.evidence_run = None
+
+            def bind_evidence_run(self, run: object) -> None:
+                self.evidence_run = run
+
+            def provision(self, _gate_id: str) -> object:
+                return base_manifest
+
+            @staticmethod
+            def cleanup() -> tuple[str, ...]:
+                return ()
+
+        def attestation(service_id: str, kind: str) -> ServiceAttestation:
+            return ServiceAttestation(
+                service_id=service_id,
+                service_kind=kind,
+                environment_id="mobile-social-simulator",
+                deployment_environment=f"deploy-{service_id}",
+                endpoint=f"https://{service_id}.example",
+                live_commit="a" * 40,
+                workspace_digest="clean",
+                protocol_digest="b" * 64,
+                artifact_ref={},
+                produced_at="2026-09-04T00:00:00+00:00",
+                producer=f"{kind}-deployment",
+                runtime_identity=f"peer-{service_id}",
+            )
+
+        provisioner = MobileSocialSimulatorProvisioner(
+            contract,
+            base_factory=Base,
+            overlay_path=social_path,
+        )
+        provisioner.bind_evidence_run(object())  # type: ignore[arg-type]
+        services = {
+            "station-primary": attestation("station-primary", "station"),
+            "station-secondary": attestation("station-secondary", "station"),
+            "relay": attestation("relay", "relay"),
+        }
+        with (
+            patch.dict(
+                "os.environ",
+                {"MOBILE_ACCEPTANCE_RESET": "1"},
+                clear=False,
+            ),
+            patch.object(
+                provisioner,
+                "_resolve_active_profile",
+                return_value=(
+                    "mobile-shell-acceptance",
+                    Path("/tmp/profile"),
+                    7,
+                    {
+                        "PT_STATION_MODE": "remote",
+                        "PT_MOBILE_STATION_PRIMARY_URL": (
+                            "https://station-primary.example"
+                        ),
+                        "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "station-primary",
+                        "PT_MOBILE_STATION_SECONDARY_URL": (
+                            "https://station-secondary.example"
+                        ),
+                        "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": (
+                            "station-secondary"
+                        ),
+                        "PT_RELAY_URL": "https://relay.example",
+                        "PT_RELAY_DEPLOY_ENV": "relay",
+                    },
+                ),
+            ),
+            patch.object(
+                provisioner,
+                "acquire_profile_lease",
+            ),
+            patch.object(
+                provisioner,
+                "acquire_remote_git_source_lease",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "verify_reset_target",
+            ),
+            patch.object(
+                provisioner,
+                "_attest_services",
+                return_value=services,
+            ),
+            patch.object(
+                provisioner,
+                "_prepare_actor_fixture",
+                return_value={"artifactKind": "acceptance-artifact-ref"},
+            ),
+        ):
+            manifest = provisioner.provision(
+                "mobile-simulator-social-convergence-e2e"
+            )
+
+        payload = manifest.to_dict()
+        self.assertEqual(
+            manifest.state,
+            ProvisioningState.FIXTURE_READY,
+        )
+        self.assertEqual(payload["environmentId"], "mobile-social-simulator")
+        self.assertEqual(payload["credentialRefs"], [])
+        self.assertEqual(
+            {
+                client["id"]: client["service_bindings"]["station"][
+                    "service_id"
+                ]
+                for client in payload["clients"]
+            },
+            {
+                "sim-ios": "station-primary",
+                "sim-android": "station-secondary",
+            },
+        )
+        self.assertIn(
+            "social.projection.read",
+            payload["mobileSimulator"]["harness"]["requiredActions"],
+        )
+
     def test_android_tools_resolve_from_sdk_when_not_on_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             sdk_root = Path(directory)
@@ -376,6 +641,139 @@ class MobileSimulatorContractTests(unittest.TestCase):
                 str(adb),
             )
 
+    def test_explicit_ndk_home_wins_over_ambiguous_sdk_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            explicit = _write_valid_ndk(root / "explicit-ndk")
+            sdk_root = root / "sdk"
+            _write_valid_ndk(sdk_root / "ndk" / "26.0.0")
+            _write_valid_ndk(sdk_root / "ndk" / "27.0.0")
+
+            resolved = _resolve_android_ndk_home(
+                {
+                    "NDK_HOME": str(explicit),
+                    "ANDROID_HOME": str(sdk_root),
+                }
+            )
+
+        self.assertEqual(resolved, str(explicit))
+
+    def test_ndk_home_is_discovered_from_single_sdk_installation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            sdk_root = Path(directory) / "sdk"
+            expected = _write_valid_ndk(
+                sdk_root / "ndk" / "27.0.11902837"
+            )
+
+            resolved = _resolve_android_ndk_home(
+                {"ANDROID_SDK_ROOT": str(sdk_root)}
+            )
+
+        self.assertEqual(resolved, str(expected))
+
+    def test_invalid_explicit_ndk_home_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            invalid = Path(directory) / "not-an-ndk"
+            invalid.mkdir()
+
+            with self.assertRaises(BlockedError) as raised:
+                _resolve_android_ndk_home({"NDK_HOME": str(invalid)})
+
+        self.assertEqual(
+            raised.exception.resource,
+            "mobile-simulator:android-ndk-home",
+        )
+
+    def test_missing_sdk_ndk_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            sdk_root = Path(directory) / "sdk"
+            sdk_root.mkdir()
+
+            with self.assertRaises(BlockedError) as raised:
+                _resolve_android_ndk_home({"ANDROID_HOME": str(sdk_root)})
+
+        self.assertEqual(
+            raised.exception.resource,
+            "mobile-simulator:android-ndk-discovery",
+        )
+
+    def test_ambiguous_sdk_ndks_require_explicit_ndk_home(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            sdk_root = Path(directory) / "sdk"
+            _write_valid_ndk(sdk_root / "ndk" / "26.0.0")
+            _write_valid_ndk(sdk_root / "ndk" / "27.0.0")
+
+            with self.assertRaises(BlockedError) as raised:
+                _resolve_android_ndk_home({"ANDROID_HOME": str(sdk_root)})
+
+        self.assertEqual(
+            raised.exception.resource,
+            "mobile-simulator:android-ndk-discovery",
+        )
+
+    def test_ndk_tool_resolution_requires_one_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ndk_home = _write_valid_ndk(Path(directory) / "ndk")
+            expected = (
+                ndk_home
+                / "toolchains"
+                / "llvm"
+                / "prebuilt"
+                / "test-host"
+                / "bin"
+                / "llvm-ranlib"
+            )
+
+            resolved = _resolve_android_ndk_tool(
+                str(ndk_home),
+                "llvm-ranlib",
+            )
+
+            self.assertEqual(resolved, str(expected))
+
+    def test_android_manifest_guard_restores_generated_whitespace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "AndroidManifest.xml"
+            baseline = (
+                "<activity>\n"
+                f"  {mobile_simulator_module.ANDROID_DEEP_LINK_MARKER}\n"
+                "  <data android:path=\"/callback\" />\n"
+                f"  {mobile_simulator_module.ANDROID_DEEP_LINK_MARKER}\n"
+                "</activity>\n"
+            ).encode()
+            manifest.write_bytes(baseline)
+            guard = _GeneratedAndroidManifestGuard(manifest)
+            manifest.write_bytes(
+                baseline.replace(
+                    b'  <data android:path="/callback" />\n',
+                    b'  <data android:path="/callback" />\n  \n  \n',
+                )
+            )
+
+            guard.restore()
+
+            self.assertEqual(manifest.read_bytes(), baseline)
+
+    def test_android_manifest_guard_rejects_semantic_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "AndroidManifest.xml"
+            baseline = (
+                "<activity>\n"
+                f"  {mobile_simulator_module.ANDROID_DEEP_LINK_MARKER}\n"
+                "  <data android:scheme=\"peers-touch\" />\n"
+                f"  {mobile_simulator_module.ANDROID_DEEP_LINK_MARKER}\n"
+                "</activity>\n"
+            ).encode()
+            manifest.write_bytes(baseline)
+            guard = _GeneratedAndroidManifestGuard(manifest)
+            changed = baseline.replace(b"peers-touch", b"other-scheme")
+            manifest.write_bytes(changed)
+
+            with self.assertRaises(ProvisioningError):
+                guard.restore()
+
+            self.assertEqual(manifest.read_bytes(), changed)
+
     def test_provisioner_does_not_own_gate_or_session_execution(self) -> None:
         self.assertFalse(
             hasattr(mobile_simulator_module, "run_simulator_gate")
@@ -393,6 +791,34 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.repo_root = self.root / "repo"
         self.repo_root.mkdir()
+        self.android_manifest = (
+            self.repo_root / ANDROID_MANIFEST_RELATIVE_PATH
+        )
+        self.android_manifest.parent.mkdir(parents=True)
+        self.android_manifest_baseline = (
+            "<activity>\n"
+            f"  {mobile_simulator_module.ANDROID_DEEP_LINK_MARKER}\n"
+            '  <data android:path="/callback" />\n'
+            f"  {mobile_simulator_module.ANDROID_DEEP_LINK_MARKER}\n"
+            "</activity>\n"
+        )
+        self.android_manifest.write_text(
+            self.android_manifest_baseline,
+            encoding="utf-8",
+        )
+        self.ndk_home = _write_valid_ndk(
+            self.root / "android-sdk" / "ndk" / "27.0.11902837"
+        )
+        self.environment = patch.dict(
+            "os.environ",
+            {
+                "ANDROID_HOME": str(self.root / "android-sdk"),
+                "ANDROID_SDK_ROOT": str(self.root / "android-sdk"),
+                "NDK_HOME": str(self.ndk_home),
+            },
+            clear=False,
+        )
+        self.environment.start()
         self.executor = FakeCommandExecutor(self.repo_root)
         self.contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "mobile-simulator.yaml"
@@ -467,6 +893,7 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         destination.write_bytes(self.driver_bytes)
 
     def tearDown(self) -> None:
+        self.environment.stop()
         self.temporary.cleanup()
 
     def test_provision_discovers_builds_deploys_and_emits_appium_manifest(
@@ -580,6 +1007,31 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
                 for environment in self.executor.environments
             )
         )
+        self.assertTrue(
+            all(
+                environment.get("NDK_HOME") == str(self.ndk_home)
+                for environment in self.executor.environments
+            )
+        )
+        self.assertTrue(
+            all(
+                environment.get("TARGET_RANLIB")
+                == str(
+                    self.ndk_home
+                    / "toolchains"
+                    / "llvm"
+                    / "prebuilt"
+                    / "test-host"
+                    / "bin"
+                    / "llvm-ranlib"
+                )
+                for environment in self.executor.environments
+            )
+        )
+        self.assertEqual(
+            self.android_manifest.read_text(encoding="utf-8"),
+            self.android_manifest_baseline,
+        )
         self.assertEqual(self.fetches, [])
 
         for platform in ("ios", "android"):
@@ -659,6 +1111,31 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         )
         self.assertIn("stop:appium", self.executor.events)
         self.assertIn("stop:emulator", self.executor.events)
+
+    def test_missing_ndk_blocks_before_runtime_resource_acquisition(
+        self,
+    ) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "NDK_HOME": "",
+                "ANDROID_HOME": "",
+                "ANDROID_SDK_ROOT": "",
+            },
+            clear=False,
+        ):
+            manifest = self.provisioner.provision(
+                "mobile-simulator-access-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
+        self.assertEqual(
+            manifest.blocked_resource,
+            "mobile-simulator:android-ndk-discovery",
+        )
+        self.assertEqual(self.executor.commands, [])
+        self.assertFalse((self.root / "runtime").exists())
+        self.assertEqual(self.provisioner.cleanup(), ())
 
     def test_missing_exact_ios_runtime_blocks_without_using_another_device(
         self,

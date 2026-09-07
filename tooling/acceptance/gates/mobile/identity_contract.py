@@ -87,6 +87,12 @@ LEGACY_MIGRATION_ALLOWLIST = {
         "ActorDID",
     },
     Path(
+        "apps/station/app/subserver/social/infrastructure/relationship_schema.go"
+    ): {
+        "actor_did",
+        "peer_did",
+    },
+    Path(
         "apps/station/app/subserver/social/infrastructure/identity_migration.go"
     ): {
         "actor_did",

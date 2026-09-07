@@ -238,6 +238,69 @@ class EvidenceStoreTests(unittest.TestCase):
             json.loads(latest_path.read_text())["manifest"]["sha256"],
         )
 
+    def test_finalize_preserves_validated_secret_scan_object(self) -> None:
+        secret = "resolved-secret-value"
+        secret_scan = {
+            "status": "passed",
+            "scannedHighEntropyValues": 1,
+            "scannedCredentialValues": 1,
+            "redactedArtifacts": ["reports/result.json"],
+        }
+        run = self.store.begin_run(
+            "secret-scan-gate",
+            source={"authorization": secret},
+        )
+        run.configure_redaction((secret,))
+
+        manifest = run.finalize(
+            result={
+                "status": "passed",
+                "secretScan": secret_scan,
+            },
+            runtime={"password": secret},
+        )
+        persisted = json.loads(
+            self.store.resolve(run.manifest_ref).read_text(encoding="utf-8")
+        )
+        run.close()
+
+        self.assertEqual(manifest["result"]["secretScan"], secret_scan)
+        self.assertEqual(persisted["result"]["secretScan"], secret_scan)
+        self.assertEqual(persisted["source"]["authorization"], REDACTED)
+        self.assertEqual(persisted["runtime"]["password"], REDACTED)
+        self.assertNotIn(secret, json.dumps(persisted))
+
+    def test_finalize_rejects_noncanonical_secret_scan_object(self) -> None:
+        invalid_scans = (
+            {
+                "status": "passed",
+                "scannedHighEntropyValues": "1",
+                "scannedCredentialValues": 1,
+                "redactedArtifacts": [],
+            },
+            {
+                "status": "passed",
+                "scannedHighEntropyValues": 1,
+                "scannedCredentialValues": 1,
+                "redactedArtifacts": [],
+                "unexpected": True,
+            },
+        )
+        for index, secret_scan in enumerate(invalid_scans):
+            with self.subTest(secret_scan=secret_scan):
+                run = self.store.begin_run(
+                    f"invalid-secret-scan-{index}",
+                    source={},
+                )
+                with self.assertRaises(EvidenceManifestInvalid):
+                    run.finalize(
+                        result={
+                            "status": "passed",
+                            "secretScan": secret_scan,
+                        }
+                    )
+                run.close()
+
     def test_subprocess_context_resolves_and_parent_collects_artifacts(self) -> None:
         run = self.store.begin_run("child-gate", source={})
         environment = run.subprocess_environment({})
@@ -294,6 +357,51 @@ class EvidenceStoreTests(unittest.TestCase):
             self.store.latest("child-gate")["artifacts"]["reports/child.json"],
             collected["reports/child.json"].to_dict(),
         )
+
+    def test_subprocess_writer_redacts_before_first_persistence(self) -> None:
+        secret = "child resolved secret"
+        run = self.store.begin_run("child-redaction-gate", source={})
+        run.configure_redaction((secret,))
+        environment = run.subprocess_environment({})
+
+        target = write_current_artifact(
+            "reports/child.json",
+            json.dumps({"detail": secret}).encode("utf-8"),
+            repo_root=self.worktree,
+            environment=environment,
+        )
+        with self.assertRaises(EvidenceManifestInvalid):
+            write_current_artifact(
+                "reports/child%20resolved%20secret.json",
+                b"safe",
+                repo_root=self.worktree,
+                environment=environment,
+            )
+
+        persisted = target.read_text(encoding="utf-8")
+        self.assertNotIn(secret, persisted)
+        self.assertIn(REDACTED, persisted)
+        run.close()
+
+    def test_lease_fence_token_is_not_treated_as_a_secret(self) -> None:
+        run = self.store.begin_run("lease-redaction-gate", source={})
+        reference = run.write_json(
+            "reports/lease.json",
+            {
+                "fenceToken": 7,
+                "resourceKey": "provider-account/github/disposable",
+                "accessToken": "resolved-secret",
+            },
+        )
+        persisted = self.store.read_json(reference)
+        run.close()
+
+        self.assertEqual(persisted["fenceToken"], 7)
+        self.assertEqual(
+            persisted["resourceKey"],
+            "provider-account/github/disposable",
+        )
+        self.assertEqual(persisted["accessToken"], REDACTED)
 
     def test_subprocess_context_is_required_and_workspace_bound(self) -> None:
         with self.assertRaises(EvidenceRootInvalid):
@@ -423,6 +531,19 @@ class EvidenceStoreTests(unittest.TestCase):
         )
         run.close()
 
+    def test_encoded_secrets_are_rejected_in_artifact_paths(self) -> None:
+        run = self.store.begin_run("redaction-path-gate", source={})
+        run.configure_redaction(("abc def",))
+
+        for relative_path in (
+            "reports/abc%20def.json",
+            "reports/YWJjIGRlZg==.json",
+        ):
+            with self.subTest(relative_path=relative_path):
+                with self.assertRaises(EvidenceManifestInvalid):
+                    run.write_bytes(relative_path, b"safe")
+        run.close()
+
     def test_finalize_preserves_valid_json_when_secret_contains_control_characters(
         self,
     ) -> None:
@@ -443,41 +564,52 @@ class EvidenceStoreTests(unittest.TestCase):
         self.assertEqual(persisted["result"]["reason"], REDACTED)
         run.close()
 
-    def test_runtime_cell_latest_pointer_is_isolated(self) -> None:
-        linux = self.store.begin_run("runtime-gate", source={})
-        linux.finalize(
-            result={
-                "status": "passed",
-                "runtimeCell": "desktop-linux-native",
-            }
-        )
-        linux.publish_latest(runtime_cell="desktop-linux-native")
-        linux.close()
+    def test_runtime_cell_latest_pointers_are_isolated_and_protected(
+        self,
+    ) -> None:
+        runs = {}
+        for runtime_cell in (
+            "desktop-linux-native",
+            "desktop-windows-native",
+        ):
+            run = self.store.begin_run("runtime-gate", source={})
+            report_ref = run.write_json(
+                f"reports/{runtime_cell}.json",
+                {"runtimeCell": runtime_cell},
+                role="report",
+            )
+            run.finalize(
+                result={
+                    "status": "passed",
+                    "runtimeCell": runtime_cell,
+                }
+            )
+            run.publish_latest(runtime_cell=runtime_cell)
+            run.close()
+            runs[runtime_cell] = (run, report_ref)
 
-        windows = self.store.begin_run("runtime-gate", source={})
-        windows.finalize(
-            result={
-                "status": "passed",
-                "runtimeCell": "desktop-windows-native",
-            }
-        )
-        windows.publish_latest(runtime_cell="desktop-windows-native")
-        windows.close()
-
-        self.assertEqual(
-            self.store.latest(
-                "runtime-gate",
-                runtime_cell="desktop-linux-native",
-            )["runId"],
-            linux.run_id,
-        )
-        self.assertEqual(
-            self.store.latest(
-                "runtime-gate",
-                runtime_cell="desktop-windows-native",
-            )["runId"],
-            windows.run_id,
-        )
+        for runtime_cell, (run, report_ref) in runs.items():
+            with self.subTest(runtime_cell=runtime_cell):
+                self.assertEqual(
+                    self.store.latest(
+                        "runtime-gate",
+                        runtime_cell=runtime_cell,
+                    )["runId"],
+                    run.run_id,
+                )
+                self.assertEqual(
+                    self.store.latest_artifact_ref(
+                        "runtime-gate",
+                        "report",
+                        runtime_cell=runtime_cell,
+                    ),
+                    report_ref,
+                )
+                with self.assertRaisesRegex(
+                    EvidenceConflict,
+                    "latest run",
+                ):
+                    self.store.delete_run("runtime-gate", run.run_id)
 
     def test_discard_removes_active_run_without_publishing(self) -> None:
         run = self.store.begin_run("discard-gate", source={})

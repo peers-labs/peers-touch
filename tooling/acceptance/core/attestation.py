@@ -170,7 +170,7 @@ def _load_env(path: Path) -> dict[str, str]:
 
 def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
     # Import lazily because the transport imports core error types.
-    from ..transports import SshTarget, SshTransport
+    from ..transports.ssh import SshTarget, SshTransport
 
     environment_path = (
         REPO_ROOT / ".local" / "deploy" / "envs" / f"{deploy_environment}.env"

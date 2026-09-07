@@ -5,91 +5,9 @@ use std::collections::HashMap;
 use super::double_ratchet::{self, DrCiphertextWire, DrSessionState, DrSkippedMessageKey};
 use super::error::CryptoError;
 use super::identity::{IdentityKeyPair, X25519KeyPair};
-use super::x3dh::{self, PreKeyBundle, X3dhReceiverInput};
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct CryptoEndpoint {
-    pub ptid: String,
-    pub device_id: String,
-}
-
-impl CryptoEndpoint {
-    pub fn new(ptid: impl Into<String>, device_id: impl Into<String>) -> Result<Self, CryptoError> {
-        let endpoint = Self {
-            ptid: ptid.into(),
-            device_id: device_id.into(),
-        };
-        endpoint.validate()?;
-        Ok(endpoint)
-    }
-
-    pub fn validate(&self) -> Result<(), CryptoError> {
-        if self.ptid.trim().is_empty() || self.device_id.trim().is_empty() {
-            return Err(CryptoError::SessionStateInvalid(
-                "crypto endpoint requires PTID and device ID".into(),
-            ));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct DirectSessionKey {
-    pub conversation_id: String,
-    pub local: CryptoEndpoint,
-    pub peer: CryptoEndpoint,
-    pub generation: u64,
-}
-
-impl DirectSessionKey {
-    pub fn new(
-        conversation_id: impl Into<String>,
-        local: CryptoEndpoint,
-        peer: CryptoEndpoint,
-        generation: u64,
-    ) -> Result<Self, CryptoError> {
-        let key = Self {
-            conversation_id: conversation_id.into(),
-            local,
-            peer,
-            generation,
-        };
-        key.validate()?;
-        Ok(key)
-    }
-
-    pub fn validate(&self) -> Result<(), CryptoError> {
-        if self.conversation_id.trim().is_empty() {
-            return Err(CryptoError::SessionStateInvalid(
-                "direct session requires a conversation ID".into(),
-            ));
-        }
-        self.local.validate()?;
-        self.peer.validate()?;
-        if self.local == self.peer {
-            return Err(CryptoError::SessionStateInvalid(
-                "direct-session endpoints must differ".into(),
-            ));
-        }
-        if self.generation == 0 {
-            return Err(CryptoError::SessionStateInvalid(
-                "direct-session generation must be positive".into(),
-            ));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone)]
-pub struct DirectSession {
-    pub session_id: String,
-    pub key: DirectSessionKey,
-    pub protocol_version: u32,
-    pub established: bool,
-    pub peer_identity_key: [u8; 32],
-    pub ratchet: DrSessionState,
-    pub updated_at_unix_ms: i64,
-}
+use super::x3dh::{PreKeyBundle, X3dhReceiverInput};
+pub use messaging_core::contracts::CryptoEndpoint;
+pub use messaging_core::crypto::session::{DirectSession, DirectSessionKey};
 
 pub struct PreparedDeviceCiphertext {
     pub session_id: String,
@@ -114,7 +32,10 @@ impl SessionManager {
     }
 
     pub fn load_session(&mut self, session: DirectSession) -> Result<(), CryptoError> {
-        session.key.validate()?;
+        session
+            .key
+            .validate()
+            .map_err(CryptoError::SessionStateInvalid)?;
         if session.session_id.trim().is_empty() {
             return Err(CryptoError::SessionStateInvalid(
                 "direct session requires a session ID".into(),
@@ -129,7 +50,7 @@ impl SessionManager {
         key: DirectSessionKey,
         keys: Vec<DrSkippedMessageKey>,
     ) -> Result<(), CryptoError> {
-        key.validate()?;
+        key.validate().map_err(CryptoError::SessionStateInvalid)?;
         self.skipped_keys.insert(key, keys);
         Ok(())
     }
@@ -146,22 +67,15 @@ impl SessionManager {
         peer_bundle: &PreKeyBundle,
         now_unix_ms: i64,
     ) -> Result<(DirectSession, super::x3dh::X3dhSenderResult), CryptoError> {
-        key.validate()?;
-        let x3dh = x3dh::x3dh_sender(our_identity, peer_bundle)?;
-        let ratchet =
-            double_ratchet::init_initiator(&session_id, &x3dh.shared_secret, peer_bundle.spk_pub);
-        Ok((
-            DirectSession {
-                session_id,
-                key,
-                protocol_version,
-                established: false,
-                peer_identity_key: peer_bundle.ik_pub,
-                ratchet,
-                updated_at_unix_ms: now_unix_ms,
-            },
-            x3dh,
-        ))
+        messaging_core::crypto::session::establish_sender_session(
+            session_id,
+            key,
+            protocol_version,
+            our_identity,
+            peer_bundle,
+            now_unix_ms,
+        )
+        .map_err(CryptoError::SessionStateInvalid)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -175,19 +89,17 @@ impl SessionManager {
         input: &X3dhReceiverInput,
         now_unix_ms: i64,
     ) -> Result<DirectSession, CryptoError> {
-        key.validate()?;
-        let shared_secret = x3dh::x3dh_receiver(our_identity, our_spk, our_opk, input)?;
-        let ratchet =
-            double_ratchet::init_responder(&session_id, &shared_secret, our_spk.private_bytes());
-        Ok(DirectSession {
+        messaging_core::crypto::session::establish_receiver_session(
             session_id,
             key,
             protocol_version,
-            established: true,
-            peer_identity_key: input.sender_ik_pub,
-            ratchet,
-            updated_at_unix_ms: now_unix_ms,
-        })
+            our_identity,
+            our_spk,
+            our_opk,
+            input,
+            now_unix_ms,
+        )
+        .map_err(CryptoError::SessionStateInvalid)
     }
 
     pub fn prepare_fan_out(
@@ -205,7 +117,10 @@ impl SessionManager {
         let mut advanced = Vec::with_capacity(sessions.len());
         let mut ciphertexts = Vec::with_capacity(sessions.len());
         for session in sessions {
-            session.key.validate()?;
+            session
+                .key
+                .validate()
+                .map_err(CryptoError::SessionStateInvalid)?;
             if !session.established {
                 return Err(CryptoError::SessionStateInvalid(format!(
                     "session {} is not ready",

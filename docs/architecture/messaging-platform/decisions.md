@@ -42,6 +42,10 @@
 | MP-D29 | Home Station 使用 authority-signed follower membership projection | accepted |
 | MP-D30 | Conversation DDD 与 Device Messaging Engine 分离 | accepted |
 
+`MP-D29` remains accepted historical design evidence under the Conversation
+owner. Its implementation and proof are governed only by the active CA-HC plan,
+not by a second Messaging Platform cutover plan.
+
 ---
 
 ## MP-D01: Device Messaging Engine 是设备协议唯一 Owner

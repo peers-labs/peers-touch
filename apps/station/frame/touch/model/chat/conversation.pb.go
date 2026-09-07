@@ -548,6 +548,12 @@ const (
 	ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_TOO_MANY_RECIPIENTS         ConversationCommandRejectCode = 17
 	ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_RATE_LIMITED                ConversationCommandRejectCode = 18
 	ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSUPPORTED_COMMAND         ConversationCommandRejectCode = 19
+	ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_STALE_DELIVERY_PLAN         ConversationCommandRejectCode = 20
+	ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_CONVERSATION_STATE          ConversationCommandRejectCode = 21
+	ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_SENDER_UNAUTHORIZED         ConversationCommandRejectCode = 22
+	ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_DELIVERY_SET                ConversationCommandRejectCode = 23
+	ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_AUTHORITY_PLAN_STALE        ConversationCommandRejectCode = 24
+	ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_AUTHORITY_PLAN_EXPIRED      ConversationCommandRejectCode = 25
 )
 
 // Enum value maps for ConversationCommandRejectCode.
@@ -573,6 +579,12 @@ var (
 		17: "CONVERSATION_COMMAND_REJECT_CODE_TOO_MANY_RECIPIENTS",
 		18: "CONVERSATION_COMMAND_REJECT_CODE_RATE_LIMITED",
 		19: "CONVERSATION_COMMAND_REJECT_CODE_UNSUPPORTED_COMMAND",
+		20: "CONVERSATION_COMMAND_REJECT_CODE_STALE_DELIVERY_PLAN",
+		21: "CONVERSATION_COMMAND_REJECT_CODE_CONVERSATION_STATE",
+		22: "CONVERSATION_COMMAND_REJECT_CODE_SENDER_UNAUTHORIZED",
+		23: "CONVERSATION_COMMAND_REJECT_CODE_DELIVERY_SET",
+		24: "CONVERSATION_COMMAND_REJECT_CODE_AUTHORITY_PLAN_STALE",
+		25: "CONVERSATION_COMMAND_REJECT_CODE_AUTHORITY_PLAN_EXPIRED",
 	}
 	ConversationCommandRejectCode_value = map[string]int32{
 		"CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED":                 0,
@@ -595,6 +607,12 @@ var (
 		"CONVERSATION_COMMAND_REJECT_CODE_TOO_MANY_RECIPIENTS":         17,
 		"CONVERSATION_COMMAND_REJECT_CODE_RATE_LIMITED":                18,
 		"CONVERSATION_COMMAND_REJECT_CODE_UNSUPPORTED_COMMAND":         19,
+		"CONVERSATION_COMMAND_REJECT_CODE_STALE_DELIVERY_PLAN":         20,
+		"CONVERSATION_COMMAND_REJECT_CODE_CONVERSATION_STATE":          21,
+		"CONVERSATION_COMMAND_REJECT_CODE_SENDER_UNAUTHORIZED":         22,
+		"CONVERSATION_COMMAND_REJECT_CODE_DELIVERY_SET":                23,
+		"CONVERSATION_COMMAND_REJECT_CODE_AUTHORITY_PLAN_STALE":        24,
+		"CONVERSATION_COMMAND_REJECT_CODE_AUTHORITY_PLAN_EXPIRED":      25,
 	}
 )
 
@@ -1931,6 +1949,8 @@ type MlsLeaveIntent struct {
 	CreatedAtUnixMs         int64                  `protobuf:"varint,13,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
 	ExpiresAtUnixMs         int64                  `protobuf:"varint,14,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
 	ActorSignature          []byte                 `protobuf:"bytes,15,opt,name=actor_signature,json=actorSignature,proto3" json:"actor_signature,omitempty"`
+	AuthoritySequence       int64                  `protobuf:"varint,16,opt,name=authority_sequence,json=authoritySequence,proto3" json:"authority_sequence,omitempty"`
+	AuthorityHash           []byte                 `protobuf:"bytes,17,opt,name=authority_hash,json=authorityHash,proto3" json:"authority_hash,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -2070,6 +2090,20 @@ func (x *MlsLeaveIntent) GetActorSignature() []byte {
 	return nil
 }
 
+func (x *MlsLeaveIntent) GetAuthoritySequence() int64 {
+	if x != nil {
+		return x.AuthoritySequence
+	}
+	return 0
+}
+
+func (x *MlsLeaveIntent) GetAuthorityHash() []byte {
+	if x != nil {
+		return x.AuthorityHash
+	}
+	return nil
+}
+
 // Exact deterministic protobuf input signed by the departing actor device.
 type MlsLeaveIntentSigningInput struct {
 	state                   protoimpl.MessageState `protogen:"open.v1"`
@@ -2087,6 +2121,8 @@ type MlsLeaveIntentSigningInput struct {
 	ObservedMlsEpoch        int64                  `protobuf:"varint,12,opt,name=observed_mls_epoch,json=observedMlsEpoch,proto3" json:"observed_mls_epoch,omitempty"`
 	CreatedAtUnixMs         int64                  `protobuf:"varint,13,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
 	ExpiresAtUnixMs         int64                  `protobuf:"varint,14,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	AuthoritySequence       int64                  `protobuf:"varint,15,opt,name=authority_sequence,json=authoritySequence,proto3" json:"authority_sequence,omitempty"`
+	AuthorityHash           []byte                 `protobuf:"bytes,16,opt,name=authority_hash,json=authorityHash,proto3" json:"authority_hash,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -2217,6 +2253,20 @@ func (x *MlsLeaveIntentSigningInput) GetExpiresAtUnixMs() int64 {
 		return x.ExpiresAtUnixMs
 	}
 	return 0
+}
+
+func (x *MlsLeaveIntentSigningInput) GetAuthoritySequence() int64 {
+	if x != nil {
+		return x.AuthoritySequence
+	}
+	return 0
+}
+
+func (x *MlsLeaveIntentSigningInput) GetAuthorityHash() []byte {
+	if x != nil {
+		return x.AuthorityHash
+	}
+	return nil
 }
 
 type MembershipTransitionChange struct {
@@ -4504,7 +4554,7 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\x13MlsDeviceCredential\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x1b\n" +
-	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\"\x8f\x05\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\"\xe5\x05\n" +
 	"\x0eMlsLeaveIntent\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1b\n" +
 	"\tintent_id\x18\x02 \x01(\tR\bintentId\x12#\n" +
@@ -4522,7 +4572,9 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\x12observed_mls_epoch\x18\f \x01(\x03R\x10observedMlsEpoch\x12+\n" +
 	"\x12created_at_unix_ms\x18\r \x01(\x03R\x0fcreatedAtUnixMs\x12+\n" +
 	"\x12expires_at_unix_ms\x18\x0e \x01(\x03R\x0fexpiresAtUnixMs\x12'\n" +
-	"\x0factor_signature\x18\x0f \x01(\fR\x0eactorSignature\"\xf2\x04\n" +
+	"\x0factor_signature\x18\x0f \x01(\fR\x0eactorSignature\x12-\n" +
+	"\x12authority_sequence\x18\x10 \x01(\x03R\x11authoritySequence\x12%\n" +
+	"\x0eauthority_hash\x18\x11 \x01(\fR\rauthorityHash\"\xc8\x05\n" +
 	"\x1aMlsLeaveIntentSigningInput\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1b\n" +
 	"\tintent_id\x18\x02 \x01(\tR\bintentId\x12#\n" +
@@ -4539,7 +4591,9 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\x19observed_membership_epoch\x18\v \x01(\x03R\x17observedMembershipEpoch\x12,\n" +
 	"\x12observed_mls_epoch\x18\f \x01(\x03R\x10observedMlsEpoch\x12+\n" +
 	"\x12created_at_unix_ms\x18\r \x01(\x03R\x0fcreatedAtUnixMs\x12+\n" +
-	"\x12expires_at_unix_ms\x18\x0e \x01(\x03R\x0fexpiresAtUnixMs\"\x93\x02\n" +
+	"\x12expires_at_unix_ms\x18\x0e \x01(\x03R\x0fexpiresAtUnixMs\x12-\n" +
+	"\x12authority_sequence\x18\x0f \x01(\x03R\x11authoritySequence\x12%\n" +
+	"\x0eauthority_hash\x18\x10 \x01(\fR\rauthorityHash\"\x93\x02\n" +
 	"\x1aMembershipTransitionChange\x12\x12\n" +
 	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12:\n" +
 	"\x1aactor_home_station_peer_id\x18\x02 \x01(\tR\x16actorHomeStationPeerId\x12M\n" +
@@ -4810,7 +4864,7 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	")CONVERSATION_COMMAND_KIND_UPDATE_SETTINGS\x10\x05\x12#\n" +
 	"\x1fCONVERSATION_COMMAND_KIND_REACT\x10\x06\x12)\n" +
 	"%CONVERSATION_COMMAND_KIND_PIN_MESSAGE\x10\a\x123\n" +
-	"/CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION\x10\b*\x95\t\n" +
+	"/CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION\x10\b*\xed\v\n" +
 	"\x1dConversationCommandRejectCode\x120\n" +
 	",CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED\x10\x00\x125\n" +
 	"1CONVERSATION_COMMAND_REJECT_CODE_INVALID_PROPOSAL\x10\x01\x12:\n" +
@@ -4832,7 +4886,13 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	"2CONVERSATION_COMMAND_REJECT_CODE_PAYLOAD_TOO_LARGE\x10\x10\x128\n" +
 	"4CONVERSATION_COMMAND_REJECT_CODE_TOO_MANY_RECIPIENTS\x10\x11\x121\n" +
 	"-CONVERSATION_COMMAND_REJECT_CODE_RATE_LIMITED\x10\x12\x128\n" +
-	"4CONVERSATION_COMMAND_REJECT_CODE_UNSUPPORTED_COMMAND\x10\x13*\xf0\x02\n" +
+	"4CONVERSATION_COMMAND_REJECT_CODE_UNSUPPORTED_COMMAND\x10\x13\x128\n" +
+	"4CONVERSATION_COMMAND_REJECT_CODE_STALE_DELIVERY_PLAN\x10\x14\x127\n" +
+	"3CONVERSATION_COMMAND_REJECT_CODE_CONVERSATION_STATE\x10\x15\x128\n" +
+	"4CONVERSATION_COMMAND_REJECT_CODE_SENDER_UNAUTHORIZED\x10\x16\x121\n" +
+	"-CONVERSATION_COMMAND_REJECT_CODE_DELIVERY_SET\x10\x17\x129\n" +
+	"5CONVERSATION_COMMAND_REJECT_CODE_AUTHORITY_PLAN_STALE\x10\x18\x12;\n" +
+	"7CONVERSATION_COMMAND_REJECT_CODE_AUTHORITY_PLAN_EXPIRED\x10\x19*\xf0\x02\n" +
 	"\"ConversationCommandSubmissionState\x125\n" +
 	"1CONVERSATION_COMMAND_SUBMISSION_STATE_UNSPECIFIED\x10\x00\x127\n" +
 	"3CONVERSATION_COMMAND_SUBMISSION_STATE_HOME_ACCEPTED\x10\x01\x123\n" +
