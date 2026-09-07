@@ -3,8 +3,9 @@ use super::{
     MessagingStore,
 };
 use crate::model::chat::{
-    ActorReadCursor, DeviceQueueItem, DeviceQueuePayloadType, MessageReceipt, ReceiptType,
+    ActorReadCursor, DeviceInboxPayloadType, DurableDeviceInboxItem, MessageReceipt, ReceiptType,
 };
+use messaging_core::proto::actor_device_ptid;
 use prost::Message;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -33,7 +34,7 @@ impl DeliveryReceiptProcessor {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -51,8 +52,8 @@ impl DeliveryReceiptProcessor {
         {
             return Ok(());
         }
-        if DeviceQueuePayloadType::try_from(item.payload_type).ok()
-            != Some(DeviceQueuePayloadType::DeviceReceipt)
+        if DeviceInboxPayloadType::try_from(item.payload_type).ok()
+            != Some(DeviceInboxPayloadType::DeviceReceipt)
         {
             return Err("messaging delivery receipt queue type is invalid".to_string());
         }
@@ -60,7 +61,9 @@ impl DeliveryReceiptProcessor {
             .recipient
             .as_ref()
             .ok_or_else(|| "messaging delivery receipt recipient is missing".to_string())?;
-        if recipient.ptid != self.endpoint.ptid || recipient.device_id != self.endpoint.device_id {
+        if actor_device_ptid(recipient)? != self.endpoint.ptid
+            || recipient.device_id != self.endpoint.device_id
+        {
             return Err("messaging delivery receipt endpoint mismatch".to_string());
         }
         if item.payload_sha256.len() != 32
@@ -119,7 +122,7 @@ impl DeliveryReceiptProcessor {
 }
 
 impl ClaimedItemConsumer for DeliveryReceiptProcessor {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -127,7 +130,7 @@ impl ClaimedItemConsumer for DeliveryReceiptProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::chat::CryptoEndpoint;
+    use messaging_core::proto::actor_device_ref;
 
     fn now() -> i64 {
         1_700_000_000_000
@@ -149,7 +152,7 @@ mod tests {
         sender_ptid: &str,
         recipient_ptid: &str,
         receipt_type: ReceiptType,
-    ) -> DeviceQueueItem {
+    ) -> DurableDeviceInboxItem {
         let receipt = MessageReceipt {
             conversation_id: "conversation-1".to_string(),
             message_id: "message-1".to_string(),
@@ -159,23 +162,20 @@ mod tests {
             ts: None,
         };
         let payload = receipt.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "receipt-item-1".to_string(),
-            recipient: Some(CryptoEndpoint {
-                ptid: recipient_ptid.to_string(),
-                device_id: "alice-device".to_string(),
-            }),
+            recipient: Some(actor_device_ref(recipient_ptid, "alice-device")),
             lane_sequence: 1,
             event_id: "message-1".to_string(),
             conversation_id: "conversation-1".to_string(),
-            payload_type: DeviceQueuePayloadType::DeviceReceipt as i32,
+            payload_type: DeviceInboxPayloadType::DeviceReceipt as i32,
             payload_sha256: Sha256::digest(&payload).to_vec(),
             opaque_payload: payload,
-            ..DeviceQueueItem::default()
+            ..DurableDeviceInboxItem::default()
         }
     }
 
-    fn actor_read_item(reader_ptid: &str, sequence: i64) -> DeviceQueueItem {
+    fn actor_read_item(reader_ptid: &str, sequence: i64) -> DurableDeviceInboxItem {
         let cursor = ActorReadCursor {
             conversation_id: "conversation-1".to_string(),
             reader_ptid: reader_ptid.to_string(),
@@ -183,19 +183,16 @@ mod tests {
             updated_at: None,
         };
         let payload = cursor.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "read-item-1".to_string(),
-            recipient: Some(CryptoEndpoint {
-                ptid: "ptid:alice".to_string(),
-                device_id: "alice-device".to_string(),
-            }),
+            recipient: Some(actor_device_ref("ptid:alice", "alice-device")),
             lane_sequence: 1,
             event_id: format!("read:{reader_ptid}:{sequence}"),
             conversation_id: "conversation-1".to_string(),
-            payload_type: DeviceQueuePayloadType::DeviceReceipt as i32,
+            payload_type: DeviceInboxPayloadType::DeviceReceipt as i32,
             payload_sha256: Sha256::digest(&payload).to_vec(),
             opaque_payload: payload,
-            ..DeviceQueueItem::default()
+            ..DurableDeviceInboxItem::default()
         }
     }
 

@@ -79,13 +79,12 @@ pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextInt
 pub use store::{
     ActorReadReceiveCommit, AttachmentDownloadProjection, CommandOutboxEntry,
     CommandStatusProjection, ConversationMemberProjection, ConversationMessageProjection,
-    ConversationProjection, ConversationStateReceiveCommit, DeliveryReceiptOutboxEntry,
-    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit, DirectSendCommit,
-    InteractionCommandCommit, MessageProjection, MessagingStore, MlsReceiveCommit,
-    MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
-    MlsTransitionReceiveCommit, PendingAttachmentUpload, PendingMembershipIntent,
-    PendingMessageDraft, PendingMlsTransitionState, PendingSenderProjection,
-    PublicEventReceiveCommit, ReceiveCommitResult, ThreadCountProjection,
+    ConversationProjection, ConversationStateReceiveCommit, DeliveryReceiptReceiveCommit,
+    DirectEditCommit, DirectReceiveCommit, DirectSendCommit, InteractionCommandCommit,
+    MessageProjection, MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
+    MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, PendingAttachmentUpload,
+    PendingMembershipIntent, PendingMessageDraft, PendingMlsTransitionState,
+    PendingSenderProjection, PublicEventReceiveCommit, ReceiveCommitResult, ThreadCountProjection,
 };
 pub use transport::{
     StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,

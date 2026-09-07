@@ -28,10 +28,10 @@ func MapSubmitCommand(
 	plan *entity.AuthorityPlan,
 	now time.Time,
 ) (command.SubmitRequest, error) {
-	if request == nil || request.Command == nil {
+	if request == nil || request.GetCommand() == nil {
 		return command.SubmitRequest{}, invalid("interface.map_submit_command", "command", "is required")
 	}
-	wire := request.Command
+	wire := request.GetCommand()
 	if wire.Sender == nil ||
 		wire.Sender.Ptid != authenticated.PTID ||
 		wire.Sender.DeviceId != authenticated.DeviceID {
@@ -44,11 +44,11 @@ func MapSubmitCommand(
 	}
 	if preparation.Kind.Validate() != nil ||
 		preparation.AuthorityStation == "" ||
-		wire.AuthorityStationId != string(preparation.AuthorityStation) {
+		wire.AuthorityStationPeerId != string(preparation.AuthorityStation) {
 		return command.SubmitRequest{}, conversationdomain.NewError(
 			conversationdomain.ErrorCodeStaleAuthorityHead,
 			"interface.map_submit_command",
-			"authority_station_id",
+			"authority_station_peer_id",
 			"does not match the prepared Conversation authority",
 		)
 	}
@@ -221,17 +221,17 @@ func MapSubmitCommand(
 
 func MapEvent(record domainevent.Record) (*chat.ConversationEvent, error) {
 	wire := &chat.ConversationEvent{
-		EventId:            string(record.ID),
-		ConversationId:     string(record.ConversationID),
-		Sequence:           int64(record.Sequence),
-		CommandId:          string(record.CommandID),
-		Actor:              endpointToProto(record.Actor),
-		PreviousHash:       optionalHashBytes(record.PreviousHash),
-		EventHash:          record.Hash.Bytes(),
-		CommittedAt:        timestamppb.New(record.CommittedAt),
-		MembershipEpoch:    int64(record.MembershipEpoch),
-		MlsEpoch:           int64(record.MLSEpoch),
-		AuthorityStationId: string(record.AuthorityStation),
+		EventId:                string(record.ID),
+		ConversationId:         string(record.ConversationID),
+		Sequence:               int64(record.Sequence),
+		CommandId:              string(record.CommandID),
+		Actor:                  endpointToProto(record.Actor),
+		PreviousHash:           optionalHashBytes(record.PreviousHash),
+		EventHash:              record.Hash.Bytes(),
+		CommittedAt:            timestamppb.New(record.CommittedAt),
+		MembershipEpoch:        int64(record.MembershipEpoch),
+		MlsEpoch:               int64(record.MLSEpoch),
+		AuthorityStationPeerId: string(record.AuthorityStation),
 	}
 	for _, commitment := range record.DeliveryCommitments {
 		wire.DeliveryCommitments = append(wire.DeliveryCommitments, commitment.Bytes())
@@ -852,11 +852,11 @@ func mapCommittedChanges(
 	mapped := make([]*chat.MessagingMembershipChangeCommitted, 0, len(changes))
 	for _, change := range changes {
 		mapped = append(mapped, &chat.MessagingMembershipChangeCommitted{
-			Action:        membershipActionToProto(change.Action),
-			Ptid:          string(change.Actor),
-			DeviceId:      string(change.Device),
-			HomeStationId: string(change.HomeStation),
-			Role:          string(change.Role),
+			Action:            membershipActionToProto(change.Action),
+			Ptid:              string(change.Actor),
+			DeviceId:          string(change.Device),
+			HomeStationPeerId: string(change.HomeStation),
+			Role:              string(change.Role),
 		})
 	}
 	return mapped
@@ -977,9 +977,9 @@ func mapConversationState(
 	members := make([]*chat.ConversationAuthorityMember, 0, len(state.ActiveMembers))
 	for _, member := range state.ActiveMembers {
 		members = append(members, &chat.ConversationAuthorityMember{
-			Ptid:          string(member.Actor),
-			Role:          string(member.Role),
-			HomeStationId: string(member.HomeStation),
+			Ptid:              string(member.Actor),
+			Role:              string(member.Role),
+			HomeStationPeerId: string(member.HomeStation),
 		})
 	}
 	endpoints := make([]*chat.CryptoEndpoint, 0, len(state.ActiveEndpoints))
@@ -993,8 +993,8 @@ func mapConversationState(
 	)
 	for _, device := range state.ActiveDevices {
 		endpointRoutes = append(endpointRoutes, &chat.ConversationAuthorityEndpoint{
-			Endpoint:      endpointToProto(device.Endpoint),
-			HomeStationId: string(device.HomeStation),
+			Endpoint:          endpointToProto(device.Endpoint),
+			HomeStationPeerId: string(device.HomeStation),
 		})
 	}
 	return &chat.ConversationAuthoritySnapshot{

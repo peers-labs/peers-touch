@@ -3,27 +3,20 @@ package social
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
+	"time"
 
-	convsub "github.com/peers-labs/peers-touch/station/app/subserver/conversation"
-	envpkg "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
-	envinf "github.com/peers-labs/peers-touch/station/app/subserver/envelope/infrastructure"
-	notifapp "github.com/peers-labs/peers-touch/station/app/subserver/notification/application"
-	notifinfra "github.com/peers-labs/peers-touch/station/app/subserver/notification/infrastructure"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
-	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	touch "github.com/peers-labs/peers-touch/station/frame/touch"
-	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
 type subServer struct {
@@ -35,15 +28,19 @@ type subServer struct {
 	jwtWrapper    server.Wrapper
 
 	// Application services
-	momentSvc        *application.MomentService
-	commentSvc       *application.CommentService
-	reactionSvc      *application.ReactionService
-	circleSvc        *application.CircleService
-	timelineSvc      *application.TimelineService
-	relationshipSvc  *application.RelationshipService
-	friendRequestSvc *application.FriendRequestService
-	statsSvc         *application.StatsService
-	moderationSvc    *application.ModerationService
+	momentSvc       *application.MomentService
+	commentSvc      *application.CommentService
+	reactionSvc     *application.ReactionService
+	circleSvc       *application.CircleService
+	timelineSvc     *application.TimelineService
+	relationshipSvc *application.RelationshipService
+	statsSvc        *application.StatsService
+	moderationSvc   *application.ModerationService
+
+	federatedFriendRequestSvc *application.FederatedFriendRequestService
+	friendRequestEffectSvc    *application.FriendRequestDirectEffectService
+	friendRequestEffectCancel context.CancelFunc
+	friendRequestEffectWait   sync.WaitGroup
 }
 
 func NewSocialSubServer(_ ...option.Option) server.Subserver {
@@ -90,23 +87,58 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.circleSvc = application.NewCircleService(repos)
 	s.timelineSvc = application.NewTimelineService(repos, s.momentSvc, resolver, groups)
 	s.relationshipSvc = application.NewRelationshipService(repos.Follows, repos.Blocks, repos.Moderation)
-	friendRequestRepo := infrastructure.NewFriendRequestRepository(rds)
-	notifRepo := notifinfra.NewGormRepo(rds)
-	notifSvc := notifapp.NewService(notifRepo)
 
-	localStationID := socialLocalAudience()
-	convRepo := convsub.NewPostgresRepository(rds)
-	envRepo := envinf.NewPostgresRepository(rds)
-	envBus := envpkg.NewSSEDeviceBus()
-	envSvc := envpkg.NewService(envRepo, envBus, socialLocalAudience)
-	envelopeBridge := convsub.NewEnvelopeBridge(envSvc)
-	convSvc := convsub.NewConversationService(convRepo, envelopeBridge, localStationID)
-
-	s.friendRequestSvc = application.NewFriendRequestService(
-		friendRequestRepo, repos.Blocks, s.relationshipSvc,
-		&notifAdapter{svc: notifSvc},
-		&convAdapter{svc: convSvc},
+	federationRuntime, err := sharedFederationRuntime()
+	if err != nil {
+		return fmt.Errorf("initialize Social Federation composition: %w", err)
+	}
+	clock := delivery.SystemClock{}
+	federatedStore, err := infrastructure.NewGORMFederatedFriendRequestStore(
+		rds,
+		clock,
 	)
+	if err != nil {
+		return fmt.Errorf("initialize Social Friend Request store: %w", err)
+	}
+	if err := federatedStore.Migrate(ctx); err != nil {
+		return fmt.Errorf("migrate Social Friend Request store: %w", err)
+	}
+	keyHydrator, err := infrastructure.NewVerifiedFriendRequestActorKeyHydrator(rds)
+	if err != nil {
+		return fmt.Errorf("initialize Social Friend Request identity: %w", err)
+	}
+	s.federatedFriendRequestSvc, err = application.NewFederatedFriendRequestService(
+		federatedStore,
+		federationRuntime.Signer(),
+		federationRuntime.LocalStationPeerID(),
+		clock,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize federated Friend Request service: %w", err)
+	}
+	s.federatedFriendRequestSvc.WithActorKeyHydrator(keyHydrator)
+	if err := federationRuntime.RegisterReceivers(func(registry *delivery.Registry) error {
+		return infrastructure.RegisterFederatedFriendRequestReceivers(
+			registry,
+			s.federatedFriendRequestSvc,
+		)
+	}); err != nil {
+		return fmt.Errorf("register Social Federation receivers: %w", err)
+	}
+	s.friendRequestEffectSvc, err = application.NewFriendRequestDirectEffectService(
+		federatedStore,
+		newConversationDirectPort(),
+		clock,
+		application.FriendRequestDirectEffectPolicy{
+			LeaseDuration: friendRequestEffectLease,
+			RetryInitial:  friendRequestEffectRetryInitial,
+			RetryMaximum:  friendRequestEffectRetryMaximum,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Friend Request Direct effect worker: %w", err)
+	}
+
 	s.statsSvc = application.NewStatsService(repos)
 	s.moderationSvc = application.NewModerationService(repos)
 
@@ -118,6 +150,19 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.federatedFriendRequestSvc == nil || s.friendRequestEffectSvc == nil {
+		s.status = server.StatusError
+		return fmt.Errorf("start Social Federation composition: services are not initialized")
+	}
+
+	effectContext, cancel := context.WithCancel(ctx)
+	s.friendRequestEffectCancel = cancel
+	s.friendRequestEffectWait.Add(1)
+	go func() {
+		defer s.friendRequestEffectWait.Done()
+		s.runFriendRequestDirectEffects(effectContext)
+	}()
+
 	s.status = server.StatusRunning
 	log.Infof(ctx, "[social] subserver started")
 	return nil
@@ -126,6 +171,12 @@ func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
 func (s *subServer) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.status = server.StatusStopping
+	if s.friendRequestEffectCancel != nil {
+		s.friendRequestEffectCancel()
+		s.friendRequestEffectCancel = nil
+	}
+	s.friendRequestEffectWait.Wait()
 	s.status = server.StatusStopped
 	log.Infof(ctx, "[social] subserver stopped")
 	return nil
@@ -136,70 +187,30 @@ func (s *subServer) Type() server.SubserverType       { return server.SubserverT
 func (s *subServer) Address() server.SubserverAddress { return server.SubserverAddress{} }
 func (s *subServer) Status() server.Status            { return s.status }
 
-// notifAdapter bridges the notification application service to the
-// NotificationProducer interface expected by FriendRequestService.
-type notifAdapter struct {
-	svc *notifapp.Service
-}
+func (s *subServer) runFriendRequestDirectEffects(ctx context.Context) {
+	ticker := time.NewTicker(friendRequestEffectPollInterval)
+	defer ticker.Stop()
 
-func (a *notifAdapter) Produce(recipientPTID, actorPTID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) error {
-	_, err := a.svc.Produce(recipientPTID, actorPTID, notifType, category, targetType, targetID, title, body, groupKey, metadata)
-	return err
-}
+	for {
+		processed, err := s.friendRequestEffectSvc.ProcessOne(
+			ctx,
+			"social-friend-request-direct",
+		)
+		if err != nil && ctx.Err() == nil {
+			log.Warnf(
+				ctx,
+				"[social] Friend Request Direct effect remains retryable: %v",
+				err,
+			)
+		}
+		if processed && err == nil {
+			continue
+		}
 
-// convAdapter bridges the conversation service to the ConversationCreator
-// interface expected by FriendRequestService.
-type convAdapter struct {
-	svc convsub.Service
-}
-
-func (a *convAdapter) CreateDirect(ctx context.Context, actorAPTID, actorBPTID string) error {
-	actors, err := actor.GetActorsByPTIDs(ctx, []string{actorAPTID, actorBPTID})
-	if err != nil {
-		return fmt.Errorf("resolve direct-conversation actors: %w", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
-	actorAPtid, actorAStation, actorBPtid, actorBStation, err := canonicalDirectParticipants(
-		actors,
-		actorAPTID,
-		actorBPTID,
-	)
-	if err != nil {
-		return err
-	}
-	_, err = a.svc.CreateDirect(
-		ctx,
-		actorAPtid,
-		actorBPtid,
-		actorAStation,
-		actorBStation,
-	)
-	return err
-}
-
-func canonicalDirectParticipants(
-	actors map[string]*db.Actor,
-	actorAPTID, actorBPTID string,
-) (string, string, string, string, error) {
-	actorA, okA := actors[actorAPTID]
-	actorB, okB := actors[actorBPTID]
-	if !okA || !okB || actorA == nil || actorB == nil {
-		return "", "", "", "", fmt.Errorf("resolve direct-conversation actors: actor record missing")
-	}
-	actorAPtid := strings.TrimSpace(actorA.PTID)
-	actorBPtid := strings.TrimSpace(actorB.PTID)
-	if actorAPtid == "" || actorBPtid == "" {
-		return "", "", "", "", fmt.Errorf("resolve direct-conversation actors: canonical PTID missing")
-	}
-	return actorAPtid, actorA.HomeStationPeerID, actorBPtid, actorB.HomeStationPeerID, nil
-}
-
-func socialLocalAudience() string {
-	identity := nativefed.LocalIdentitySnapshot()
-	if strings.TrimSpace(identity.StationPeerID.String()) != "" {
-		return identity.StationPeerID.String()
-	}
-	if strings.TrimSpace(identity.StationDomain) != "" {
-		return strings.TrimSpace(identity.StationDomain)
-	}
-	return ""
 }

@@ -7,7 +7,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from tooling.acceptance.fixtures.chat_contact_message_fault_proxy import (
-    CREATE_DIRECT_PATH,
+    CONVERSATION_DIRECT_PATH,
     _ProxyServer,
 )
 
@@ -27,7 +27,7 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
         self.bodies.append(body)
-        if self.path == CREATE_DIRECT_PATH:
+        if self.path == CONVERSATION_DIRECT_PATH:
             response = b'{"conversationId":"conv-123"}'
         else:
             response = b'{"accepted":true}'
@@ -75,7 +75,11 @@ class ContactMessageFaultProxyTest(unittest.TestCase):
             self.proxy.server_address[1],
             timeout=2,
         )
-        connection.request("POST", CREATE_DIRECT_PATH, body=b'{"peerPtid":"ptid:bob"}')
+        connection.request(
+            "POST",
+            CONVERSATION_DIRECT_PATH,
+            body=b'{"peerPtid":"ptid:bob"}',
+        )
         response = connection.getresponse()
         self.assertEqual(response.status, 500)
         response.read()
@@ -102,7 +106,7 @@ class ContactMessageFaultProxyTest(unittest.TestCase):
 
     def test_create_direct_forwards_when_disarmed(self) -> None:
         request = urllib.request.Request(
-            f"{self.proxy_url}{CREATE_DIRECT_PATH}",
+            f"{self.proxy_url}{CONVERSATION_DIRECT_PATH}",
             data=b'{"peerPtid":"ptid:bob"}',
             method="POST",
             headers={"Content-Type": "application/json"},

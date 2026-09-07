@@ -3,7 +3,10 @@ package infrastructure
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
+	"reflect"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -68,8 +71,10 @@ func TestCanonicalDirectUploadRollsBackOnConflictingOneTimeKey(t *testing.T) {
 	}
 	bundles, err := store.FetchDirectBundles(
 		ctx,
+		testDestructiveReadIdentity("direct-fetch", device),
 		device.ActorPTID,
 		[]string{device.DeviceID},
+		now.Add(2*time.Second),
 	)
 	if err != nil {
 		t.Fatalf("fetch Direct bundle: %v", err)
@@ -102,18 +107,23 @@ func TestCanonicalDirectConcurrentFetchConsumesOneTimeKeyOnce(t *testing.T) {
 	results := make(chan []domain.DirectKeyBundle, 2)
 	errorsChannel := make(chan error, 2)
 	var wait sync.WaitGroup
-	for range 2 {
+	for index := range 2 {
 		wait.Add(1)
-		go func() {
+		go func(requestIndex int) {
 			defer wait.Done()
 			value, err := store.FetchDirectBundles(
 				ctx,
+				testDestructiveReadIdentity(
+					"direct-concurrent-"+strconv.Itoa(requestIndex),
+					device,
+				),
 				device.ActorPTID,
 				[]string{device.DeviceID},
+				now.Add(time.Second),
 			)
 			results <- value
 			errorsChannel <- err
-		}()
+		}(index)
 	}
 	wait.Wait()
 	close(results)
@@ -133,6 +143,71 @@ func TestCanonicalDirectConcurrentFetchConsumesOneTimeKeyOnce(t *testing.T) {
 	}
 	if consumed != 1 {
 		t.Fatalf("concurrent Direct fetch returned one-time material %d times, want 1", consumed)
+	}
+}
+
+func TestCanonicalDirectFetchReplaysExactResponseAndRejectsHashConflict(t *testing.T) {
+	device := domain.Endpoint{
+		ActorPTID: "ptid:direct-replay",
+		DeviceID:  "device-1",
+	}
+	store := newCanonicalStoreForTest(t, device)
+	ctx := context.Background()
+	now := time.Unix(1_800_000_000, 0).UTC()
+	bundle := canonicalDirectBundle(device, 20)
+	bundle.OneTimePreKeys = []domain.DirectOneTimePreKey{
+		{KeyID: 1, PublicKey: bytes.Repeat([]byte{31}, 32)},
+		{KeyID: 2, PublicKey: bytes.Repeat([]byte{32}, 32)},
+	}
+	if err := store.UploadDirectBundle(ctx, bundle, now); err != nil {
+		t.Fatalf("upload Direct bundle: %v", err)
+	}
+
+	identity := testDestructiveReadIdentity("direct-replay-request", device)
+	first, err := store.FetchDirectBundles(
+		ctx,
+		identity,
+		device.ActorPTID,
+		[]string{device.DeviceID},
+		now.Add(time.Second),
+	)
+	if err != nil {
+		t.Fatalf("first Direct fetch: %v", err)
+	}
+	replayed, err := store.FetchDirectBundles(
+		ctx,
+		identity,
+		device.ActorPTID,
+		[]string{device.DeviceID},
+		now.Add(2*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("replay Direct fetch: %v", err)
+	}
+	if !reflect.DeepEqual(replayed, first) {
+		t.Fatalf("Direct replay changed response: first=%+v replay=%+v", first, replayed)
+	}
+	if count, err := store.CountDirectOneTimePreKeys(ctx, device); err != nil {
+		t.Fatalf("count Direct pre-keys after replay: %v", err)
+	} else if count != 1 {
+		t.Fatalf("Direct replay consumed another pre-key, count=%d", count)
+	}
+
+	conflicting := identity
+	conflicting.RequestSHA256 = sha256.Sum256([]byte("different-request-bytes"))
+	if _, err := store.FetchDirectBundles(
+		ctx,
+		conflicting,
+		device.ActorPTID,
+		[]string{device.DeviceID},
+		now.Add(3*time.Second),
+	); !domain.IsCode(err, domain.ErrorCodeConflict) {
+		t.Fatalf("Direct request ID hash conflict error = %v", err)
+	}
+	if count, err := store.CountDirectOneTimePreKeys(ctx, device); err != nil {
+		t.Fatalf("count Direct pre-keys after conflict: %v", err)
+	} else if count != 1 {
+		t.Fatalf("Direct hash conflict mutated pre-keys, count=%d", count)
 	}
 }
 
@@ -158,19 +233,24 @@ func TestCanonicalMLSConcurrentFetchConsumesPackageOnce(t *testing.T) {
 	results := make(chan *domain.MLSKeyPackage, 2)
 	errorsChannel := make(chan error, 2)
 	var wait sync.WaitGroup
-	for range 2 {
+	for index := range 2 {
 		wait.Add(1)
-		go func() {
+		go func(requestIndex int) {
 			defer wait.Done()
 			value, err := store.FetchAndConsumeMLSKeyPackage(
 				ctx,
+				testDestructiveReadIdentity(
+					"mls-concurrent-"+strconv.Itoa(requestIndex),
+					device,
+				),
 				device.ActorPTID,
 				[]string{device.DeviceID},
+				"station-local",
 				now.Add(time.Second),
 			)
 			results <- value
 			errorsChannel <- err
-		}()
+		}(index)
 	}
 	wait.Wait()
 	close(results)
@@ -203,6 +283,86 @@ func TestCanonicalMLSConcurrentFetchConsumesPackageOnce(t *testing.T) {
 	)
 	if !domain.IsCode(err, domain.ErrorCodeStaleMaterial) {
 		t.Fatalf("republish consumed MLS package error = %v", err)
+	}
+}
+
+func TestCanonicalMLSFetchReplaysExactResponseAndRejectsHashConflict(t *testing.T) {
+	device := domain.Endpoint{
+		ActorPTID: "ptid:mls-replay",
+		DeviceID:  "device-1",
+	}
+	store := newCanonicalStoreForTest(t, device)
+	ctx := context.Background()
+	now := time.Unix(1_800_000_000, 0).UTC()
+	for _, material := range [][]byte{
+		[]byte("mls-replay-package-1"),
+		[]byte("mls-replay-package-2"),
+	} {
+		if _, err := store.UploadMLSKeyPackage(
+			ctx,
+			device,
+			"station-local",
+			material,
+			now,
+		); err != nil {
+			t.Fatalf("upload MLS KeyPackage: %v", err)
+		}
+	}
+
+	identity := testDestructiveReadIdentity("mls-replay-request", device)
+	first, err := store.FetchAndConsumeMLSKeyPackage(
+		ctx,
+		identity,
+		device.ActorPTID,
+		[]string{device.DeviceID},
+		"station-local",
+		now.Add(time.Second),
+	)
+	if err != nil {
+		t.Fatalf("first MLS fetch: %v", err)
+	}
+	replayed, err := store.FetchAndConsumeMLSKeyPackage(
+		ctx,
+		identity,
+		device.ActorPTID,
+		[]string{device.DeviceID},
+		"station-local",
+		now.Add(2*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("replay MLS fetch: %v", err)
+	}
+	if replayed == nil ||
+		first == nil ||
+		replayed.PackageID != first.PackageID ||
+		replayed.Device != first.Device ||
+		replayed.HomeStation != first.HomeStation ||
+		replayed.PackageHash != first.PackageHash ||
+		!bytes.Equal(replayed.KeyPackage, first.KeyPackage) {
+		t.Fatalf("MLS replay changed response: first=%+v replay=%+v", first, replayed)
+	}
+	if count, err := store.CountMLSKeyPackages(ctx, device); err != nil {
+		t.Fatalf("count MLS packages after replay: %v", err)
+	} else if count != 1 {
+		t.Fatalf("MLS replay consumed another package, count=%d", count)
+	}
+
+	conflicting := identity
+	conflicting.RequestSHA256 = sha256.Sum256([]byte("different-request-bytes"))
+	if _, err := store.FetchAndConsumeMLSKeyPackage(
+		ctx,
+		conflicting,
+		device.ActorPTID,
+		[]string{device.DeviceID},
+		"station-local",
+		now.Add(3*time.Second),
+	); !domain.IsCode(err, domain.ErrorCodeConflict) {
+		t.Fatalf("MLS request ID hash conflict error = %v", err)
+	}
+	if count, err := store.CountMLSKeyPackages(ctx, device); err != nil {
+		t.Fatalf("count MLS packages after conflict: %v", err)
+	} else if count != 1 {
+		t.Fatalf("MLS hash conflict mutated packages, count=%d", count)
 	}
 }
 
@@ -347,6 +507,8 @@ func TestConcurrentFederatedMLSClaimReplaysReceiptAndTypesConflicts(t *testing.T
 	}
 	claim := domain.MLSKeyPackageClaim{
 		AuthenticatedAuthorityStation: "station-authority",
+		RequestID:                     "claim-request",
+		RequestSHA256:                 sha256.Sum256([]byte("claim-request-v1")),
 		AuthorityPlanID:               "same-claim",
 		AuthorityStationID:            "station-authority",
 		Target:                        device,
@@ -405,6 +567,7 @@ func TestConcurrentFederatedMLSClaimReplaysReceiptAndTypesConflicts(t *testing.T
 
 	conflicting := claim
 	conflicting.PlanExpiresAt = claim.PlanExpiresAt.Add(time.Second)
+	conflicting.RequestSHA256 = sha256.Sum256([]byte("claim-request-v2"))
 	if _, err := store.ClaimMLSKeyPackageIrreversibly(
 		ctx,
 		conflicting,
@@ -415,6 +578,8 @@ func TestConcurrentFederatedMLSClaimReplaysReceiptAndTypesConflicts(t *testing.T
 	}
 
 	different := claim
+	different.RequestID = "different-claim-request"
+	different.RequestSHA256 = sha256.Sum256([]byte("different-claim-request"))
 	different.AuthorityPlanID = "different-claim"
 	if _, err := store.ClaimMLSKeyPackageIrreversibly(
 		ctx,
@@ -519,8 +684,10 @@ func TestKeyMaterialMutationsReauthorizeInsideTransactions(t *testing.T) {
 	)
 	_, err = store.FetchDirectBundles(
 		ctx,
+		testDestructiveReadIdentity("direct-after-revoke", device),
 		device.ActorPTID,
 		[]string{device.DeviceID},
+		now.Add(2*time.Second),
 	)
 	assertUnauthorized("fetch Direct", err)
 	_, err = store.UploadMLSKeyPackage(
@@ -533,8 +700,10 @@ func TestKeyMaterialMutationsReauthorizeInsideTransactions(t *testing.T) {
 	assertUnauthorized("upload MLS", err)
 	_, err = store.FetchAndConsumeMLSKeyPackage(
 		ctx,
+		testDestructiveReadIdentity("mls-after-revoke", device),
 		device.ActorPTID,
 		[]string{device.DeviceID},
+		"station-local",
 		now.Add(2*time.Second),
 	)
 	assertUnauthorized("fetch MLS", err)
@@ -567,10 +736,14 @@ func TestKeyMaterialMutationsReauthorizeInsideTransactions(t *testing.T) {
 		ctx,
 		domain.MLSKeyPackageClaim{
 			AuthenticatedAuthorityStation: "station-authority",
-			AuthorityPlanID:               "claim-after-revoke",
-			AuthorityStationID:            "station-authority",
-			Target:                        device,
-			PlanExpiresAt:                 now.Add(time.Minute),
+			RequestID:                     "claim-after-revoke-request",
+			RequestSHA256: sha256.Sum256(
+				[]byte("claim-after-revoke-request"),
+			),
+			AuthorityPlanID:    "claim-after-revoke",
+			AuthorityStationID: "station-authority",
+			Target:             device,
+			PlanExpiresAt:      now.Add(time.Minute),
 		},
 		"station-local",
 		now,
@@ -602,7 +775,7 @@ func newCanonicalStoreForTest(
 	if err != nil {
 		t.Fatalf("create canonical store: %v", err)
 	}
-	if err := store.MigrateTestSchema(context.Background()); err != nil {
+	if err := store.Migrate(context.Background()); err != nil {
 		t.Fatalf("migrate canonical store schema: %v", err)
 	}
 	if err := db.AutoMigrate(&actoridentitypersistence.ActorDeviceModel{}); err != nil {
@@ -639,5 +812,16 @@ func canonicalDirectBundle(
 		SignedPreKeyPublic:    bytes.Repeat([]byte{20}, 32),
 		SignedPreKeySignature: bytes.Repeat([]byte{21}, 64),
 		SupportedWireVersions: []uint32{0, 1},
+	}
+}
+
+func testDestructiveReadIdentity(
+	requestID string,
+	requester domain.Endpoint,
+) domain.DestructiveReadIdentity {
+	return domain.DestructiveReadIdentity{
+		RequestID:     requestID,
+		Requester:     requester,
+		RequestSHA256: sha256.Sum256([]byte(requestID)),
 	}
 }

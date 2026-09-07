@@ -11,9 +11,10 @@
     "apps/desktop/src-tauri/src/messaging/consumer.rs",
     "apps/desktop/src-tauri/src/messaging/receipt.rs",
     "apps/desktop/src/store/socialChat.ts",
-    "apps/station/app/subserver/conversation/engine/application/receipt_service.go",
-    "apps/station/app/subserver/conversation/engine/interface/http/receipt_handler.go",
-    "apps/station/app/subserver/conversation/engine/subserver.go"
+    "apps/station/app/subserver/conversation/application/interaction/service.go",
+    "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
+    "apps/station/app/subserver/conversation/interface/http/interaction.go",
+    "apps/station/app/subserver/conversation/subserver.go"
   ],
   "truth_sources": [
     "Desktop Rust messaging receive transaction",

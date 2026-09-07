@@ -12,7 +12,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     _remote_transport,
     acceptance_station_environment,
     reset_local_client_storage,
-    reset_station_messaging_state,
+    reset_station_chat_state,
     seed_cross_station_contact,
     verify_disposable_station_runtime,
 )
@@ -328,7 +328,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         _runtime,
         run,
     ) -> None:
-        reset_station_messaging_state("chat-native-acceptance")
+        reset_station_chat_state("chat-native-acceptance")
         sql = run.call_args.kwargs["input_text"]
         self.assertIn("actor_sessions", CHAT_TABLES)
         self.assertIn("friend_chat_friend_requests", CHAT_TABLES)
@@ -363,16 +363,34 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         self.assertIn("'acceptance-alice-carol'", sql)
         self.assertIn("'acceptance-bob-carol'", sql)
 
-    def test_station_reset_clears_mp_w14_projection_state(self) -> None:
+    def test_station_reset_uses_only_canonical_chat_owner_tables(self) -> None:
         required_tables = {
-            "messaging_event_projection_targets",
-            "messaging_follower_conversations",
-            "messaging_follower_event_receipts",
-            "messaging_follower_members",
-            "messaging_follower_pending_events",
+            "actor_endpoint_directory_versions",
+            "conversation_attachment_audits",
+            "conversation_authority_plans",
+            "conversation_delivery_commitments",
+            "conversation_delivery_receipts",
+            "conversation_event_projection_grants",
+            "conversation_events",
+            "conversation_follower_heads",
+            "conversation_follower_members",
+            "conversation_follower_pending_events",
+            "conversation_follower_states",
+            "conversation_read_cursors",
+            "federation_delivery_inbox",
+            "federation_delivery_outbox",
+            "key_exchange_identity_keys",
+            "recovery_revisions",
+            "social_friend_request_commands",
+            "social_friend_request_effects",
+            "social_friend_requests",
+            "social_relationship_projections",
         }
 
         self.assertEqual(required_tables - set(CHAT_TABLES), set())
+        self.assertFalse(
+            [table for table in CHAT_TABLES if table.startswith("messaging_")]
+        )
 
 if __name__ == "__main__":
     unittest.main()

@@ -209,16 +209,20 @@ FriendRequestCommand
     created_at
     expires_at
     authorizing_device
+    federation_id
   signing_key_id
   actor_device_signature
 
 FriendRequestEvent
   event_id
   request_id
-  authority_station_id
+  authority_station_peer_id
   state: PENDING | ACCEPTED | REJECTED
   sender_actor_ref
   receiver_actor_ref
+  sender_home_station_peer_id
+  receiver_home_station_peer_id
+  federation_id
   sequence
   committed_at
   previous_hash
@@ -250,7 +254,39 @@ outbox facts needed for sender-local projection. Conversation creation is a subs
 Social-owned integration call after accepted relationship convergence; it is not part of
 the Federation transport.
 
-## 7. Gate Result
+## 7. Canonical Command And Destructive-Read Identity
+
+AO-D07 fixes the replay identity for every mutation or read that consumes
+one-time material:
+
+```text
+Direct creation
+  identity = (derived conversation_id, command_id)
+  exact payload = deterministic CreateDirectConversationRequest bytes
+
+Group creation
+  preparation identity = (conversation_id, authority_plan_id)
+  creation identity = (conversation_id, ChatCommand.command_id)
+  name, members, routes, and reservations = persisted authority plan only
+
+Conversation command
+  local authority = raw ChatCommand
+  remote authority = actor-device-signed ConversationCommandProposal
+  cross-Station transport = FederatedDomainFrame only
+  terminal result = ConversationCommandResultDelivery through Federation
+
+Destructive Key Exchange read
+  identity = (authenticated requester, request_id)
+  exact payload = deterministic request bytes containing target and Home Station
+  exact retry = persisted original response
+```
+
+Signed Home Station and Federation fields are assertions that must match Actor
+Identity and active Federation membership. They are never trusted routing
+inputs. `ConversationEvent` is the sole committed Conversation event type, and
+AO-D07-modified Station identity fields use the `*_station_peer_id` name.
+
+## 8. Gate Result
 
 The ownership Gate emits a canonical report:
 

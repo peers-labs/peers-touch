@@ -33,7 +33,6 @@ SOURCE_ROOTS = (
     "model/domain/chat",
     "apps/station/frame/touch/model/chat",
     "apps/station/app/subserver/conversation",
-    "apps/station/app/subserver/envelope",
     "apps/station/app/subserver/key_exchange",
     "apps/desktop/src/gen/proto/domain/chat",
     "apps/desktop/src-tauri/build.rs",
