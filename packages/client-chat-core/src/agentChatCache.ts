@@ -66,6 +66,7 @@ export interface CachedAgentMessage {
   readonly reasoningJson?: string;
   readonly toolCallsJson?: string;
   readonly metadataJson?: string;
+  readonly errorJson?: string;
   readonly attachments?: readonly CachedAgentAttachment[];
   readonly reconciliationSource?: 'station-list' | 'station-snapshot';
   readonly createdAt: string;
@@ -349,6 +350,7 @@ function reconcileMessage(
     content: authoritative.content,
     reasoningJson: authoritative.reasoningJson ?? fallback.reasoningJson,
     toolCallsJson: authoritative.toolCallsJson ?? fallback.toolCallsJson,
+    errorJson: authoritative.errorJson ?? fallback.errorJson,
   };
 }
 
