@@ -13,6 +13,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	actoridentitypersistence "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
+	deliveryapplication "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
+	conversationports "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
+	conversationdelivery "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
 	conversationfederation "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -87,8 +92,18 @@ func TestAuthorityCommandReceiverUsesVerifiedProjectionAndPreservesReceiptReplay
 	if err != nil {
 		t.Fatalf("receive command-ID/hash conflict: %v", err)
 	}
-	if conflict != federationdelivery.PayloadHashConflictResult() {
+	if conflict != federationdelivery.AcceptedResult() {
 		t.Fatalf("command-ID/hash conflict = %+v", conflict)
+	}
+	conflictReplay, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		proto.Clone(conflictFrame).(*federationdelivery.Frame),
+	)
+	if err != nil {
+		t.Fatalf("replay command-ID/hash conflict: %v", err)
+	}
+	if conflictReplay != federationdelivery.DuplicateResult() {
+		t.Fatalf("command-ID/hash conflict replay = %+v", conflictReplay)
 	}
 
 	if fixture.actorKeys.callCount() != 3 {
@@ -102,26 +117,50 @@ func TestAuthorityCommandReceiverUsesVerifiedProjectionAndPreservesReceiptReplay
 	}
 	assertTableCount(t, fixture.db, &authorityReceiptTestModel{}, 1)
 	assertTableCount(t, fixture.db, &federationdelivery.InboxRecord{}, 3)
-	assertTableCount(t, fixture.db, &federationdelivery.OutboxRecord{}, 1)
+	assertTableCount(t, fixture.db, &federationdelivery.OutboxRecord{}, 2)
 
-	var resultRecord federationdelivery.OutboxRecord
-	if err := fixture.db.First(&resultRecord).Error; err != nil {
+	var resultRecords []federationdelivery.OutboxRecord
+	if err := fixture.db.Find(&resultRecords).Error; err != nil {
 		t.Fatal(err)
 	}
-	var resultFrame federationdelivery.Frame
-	if err := proto.Unmarshal(resultRecord.FrameBytes, &resultFrame); err != nil {
-		t.Fatalf("decode result frame: %v", err)
+	var acceptedResults int
+	var conflictResults int
+	for _, resultRecord := range resultRecords {
+		var resultFrame federationdelivery.Frame
+		if err := proto.Unmarshal(resultRecord.FrameBytes, &resultFrame); err != nil {
+			t.Fatalf("decode result frame: %v", err)
+		}
+		var resultDelivery chatmodel.ConversationCommandResultDelivery
+		if err := proto.Unmarshal(resultFrame.GetOpaquePayload(), &resultDelivery); err != nil {
+			t.Fatalf("decode authority result delivery: %v", err)
+		}
+		if resultFrame.GetSourceStationPeerId() != testStationB ||
+			resultFrame.GetTargetStationPeerId() != testStationA ||
+			resultFrame.GetOrderingSequence() != 0 {
+			t.Fatalf("authority result frame = %+v", &resultFrame)
+		}
+		switch resultDelivery.GetState() {
+		case chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_ACCEPTED:
+			acceptedResults++
+			if resultDelivery.GetResult().GetCommittedEvent().GetGroupSeq() != 1 {
+				t.Fatalf("accepted authority result = %+v", &resultDelivery)
+			}
+		case chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_TERMINAL_REJECTED:
+			conflictResults++
+			if resultDelivery.GetResult().GetRejectCode() !=
+				chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_COMMAND_CONFLICT {
+				t.Fatalf("terminal authority result = %+v", &resultDelivery)
+			}
+		default:
+			t.Fatalf("unexpected authority result = %+v", &resultDelivery)
+		}
 	}
-	var resultDelivery chatmodel.ConversationCommandResultDelivery
-	if err := proto.Unmarshal(resultFrame.GetOpaquePayload(), &resultDelivery); err != nil {
-		t.Fatalf("decode authority result delivery: %v", err)
-	}
-	if resultFrame.GetSourceStationPeerId() != testStationB ||
-		resultFrame.GetTargetStationPeerId() != testStationA ||
-		resultDelivery.GetState() !=
-			chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_ACCEPTED ||
-		resultDelivery.GetResult().GetCommittedEvent().GetGroupSeq() != 1 {
-		t.Fatalf("authority result delivery = %+v frame=%+v", &resultDelivery, &resultFrame)
+	if acceptedResults != 1 || conflictResults != 1 {
+		t.Fatalf(
+			"authority results accepted=%d conflict=%d, want one each",
+			acceptedResults,
+			conflictResults,
+		)
 	}
 }
 
@@ -310,8 +349,8 @@ func TestDeviceDeliverySenderRejectsMissingActorWithoutPanic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := &chatmodel.DurableDeviceInboxItem{
-		Recipient: &actormodel.ActorDeviceRef{DeviceId: testDevice},
+	intent := conversationports.FederationOutboxIntent{
+		Recipient: valueobject.Endpoint{Device: testDevice},
 	}
 
 	defer func() {
@@ -322,8 +361,7 @@ func TestDeviceDeliverySenderRejectsMissingActorWithoutPanic(t *testing.T) {
 	if _, err := sender.EnqueueDeviceDelivery(
 		context.Background(),
 		&capturingOutbox{},
-		testStationB,
-		item,
+		intent,
 	); err == nil {
 		t.Fatal("missing recipient actor was accepted")
 	} else if code, ok := federationdelivery.FailureCodeOf(err); !ok ||
@@ -332,18 +370,75 @@ func TestDeviceDeliverySenderRejectsMissingActorWithoutPanic(t *testing.T) {
 	}
 }
 
+func TestDeviceDeliverySenderDoesNotPreallocateTargetLaneSequence(t *testing.T) {
+	clock := &testClock{
+		now: time.Date(2026, time.September, 6, 12, 0, 0, 0, time.UTC),
+	}
+	sender, err := conversationfederation.NewSender(
+		testStationB,
+		newTestKey(0x22).signer(),
+		clock,
+		time.Hour,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := newDeviceDeliveryIntent(t, clock.Now())
+	outbox := &capturingOutbox{}
+	if _, err := sender.EnqueueDeviceDelivery(
+		context.Background(),
+		outbox,
+		intent,
+	); err != nil {
+		t.Fatalf("enqueue target-local delivery intent: %v", err)
+	}
+	frame := outbox.single(t)
+	if frame.GetOrderingSequence() != 4 {
+		t.Fatalf(
+			"transport ordering sequence = %d, want authority event sequence 4",
+			frame.GetOrderingSequence(),
+		)
+	}
+	var wireItem chatmodel.DurableDeviceInboxItem
+	if err := proto.Unmarshal(frame.GetOpaquePayload(), &wireItem); err != nil {
+		t.Fatal(err)
+	}
+	if wireItem.GetLaneSequence() != 0 ||
+		wireItem.GetState() !=
+			chatmodel.DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_UNSPECIFIED {
+		t.Fatalf("remote delivery carried target-local queue state: %+v", &wireItem)
+	}
+
+	receiptOutbox := &capturingOutbox{}
+	if _, err := sender.EnqueueDeviceDelivery(
+		context.Background(),
+		receiptOutbox,
+		newDeviceReceiptIntent(t, clock.Now()),
+	); err != nil {
+		t.Fatalf("enqueue target-local read receipt intent: %v", err)
+	}
+	if receiptFrame := receiptOutbox.single(t); receiptFrame.GetOrderingSequence() != 0 {
+		t.Fatalf(
+			"read receipt transport ordering sequence = %d, want unordered 0",
+			receiptFrame.GetOrderingSequence(),
+		)
+	}
+}
+
 func TestDeviceDeliveryReceiverRollsBackFollowerAndInboxAsOneTransaction(
 	t *testing.T,
 ) {
 	fixture := newReceiverFixture(t, testStationA)
+	fixture.enableCanonicalDeviceInbox(t)
 	fixture.device.failAfterWrites = true
-	item := newDeviceDeliveryItem(t, fixture.clock.Now())
-	frame := fixture.deviceDeliveryFrame(t, item)
+	intent := newDeviceDeliveryIntent(t, fixture.clock.Now())
+	frame := fixture.deviceDeliveryFrame(t, intent)
 
 	if _, err := fixture.coreReceiver.Receive(context.Background(), frame); err == nil {
 		t.Fatal("device delivery failure was swallowed")
 	}
 	assertTableCount(t, fixture.db, &deviceApplyTestModel{}, 0)
+	assertTableCount(t, fixture.db, &conversationdelivery.DeviceQueueItemModel{}, 0)
 	assertTableCount(t, fixture.db, &federationdelivery.InboxRecord{}, 0)
 
 	fixture.device.failAfterWrites = false
@@ -354,8 +449,24 @@ func TestDeviceDeliveryReceiverRollsBackFollowerAndInboxAsOneTransaction(
 	if result != federationdelivery.AcceptedResult() {
 		t.Fatalf("device delivery result = %+v", result)
 	}
-	assertTableCount(t, fixture.db, &deviceApplyTestModel{}, 2)
+	assertTableCount(t, fixture.db, &deviceApplyTestModel{}, 1)
+	assertTableCount(t, fixture.db, &conversationdelivery.DeviceQueueItemModel{}, 1)
 	assertTableCount(t, fixture.db, &federationdelivery.InboxRecord{}, 1)
+	var queued conversationdelivery.DeviceQueueItemModel
+	if err := fixture.db.First(&queued).Error; err != nil {
+		t.Fatal(err)
+	}
+	var wireItem chatmodel.DurableDeviceInboxItem
+	if err := proto.Unmarshal(frame.GetOpaquePayload(), &wireItem); err != nil {
+		t.Fatal(err)
+	}
+	if wireItem.GetLaneSequence() != 0 || queued.LaneSequence != 1 {
+		t.Fatalf(
+			"source lane=%d target lane=%d, want source unset and target allocated 1",
+			wireItem.GetLaneSequence(),
+			queued.LaneSequence,
+		)
+	}
 
 	const readers = 8
 	results := make(chan federationdelivery.Result, readers)
@@ -389,7 +500,8 @@ func TestDeviceDeliveryReceiverRollsBackFollowerAndInboxAsOneTransaction(
 	if fixture.device.callCount() != 2 {
 		t.Fatalf("device apply calls = %d, want failed attempt plus one commit", fixture.device.callCount())
 	}
-	assertTableCount(t, fixture.db, &deviceApplyTestModel{}, 2)
+	assertTableCount(t, fixture.db, &deviceApplyTestModel{}, 1)
+	assertTableCount(t, fixture.db, &conversationdelivery.DeviceQueueItemModel{}, 1)
 }
 
 func TestAuthorityResultReceiverUsesTransactionBoundPort(t *testing.T) {
@@ -397,6 +509,7 @@ func TestAuthorityResultReceiverUsesTransactionBoundPort(t *testing.T) {
 	proposal := fixture.signedProposal(t, "command-result")
 	proposal.AuthorityStationPeerId = testStationB
 	proposal.HomeStationPeerId = testStationA
+	fixture.persistOutgoingProposal(t, proposal)
 	eventHash := sha256.Sum256([]byte("event-result"))
 	result := &chatmodel.ConversationCommandProposalResult{
 		CommandId: proposal.GetCommand().GetCommandId(),
@@ -428,7 +541,6 @@ func TestAuthorityResultReceiverUsesTransactionBoundPort(t *testing.T) {
 		outbox,
 		proposal,
 		result,
-		1,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -454,9 +566,154 @@ func TestAuthorityResultReceiverUsesTransactionBoundPort(t *testing.T) {
 	assertTableCount(t, fixture.db, &authorityResultTestModel{}, 1)
 }
 
+func TestAuthorityResultReceiverRejectsUnboundLegacyFrameIdentity(t *testing.T) {
+	fixture := newReceiverFixture(t, testStationA)
+	proposal := fixture.signedProposal(t, "command-result-unbound")
+	fixture.persistOutgoingProposal(t, proposal)
+	frame := fixture.authorityResultFrame(
+		t,
+		proposal,
+		acceptedCommandResult(
+			proposal,
+			testStationB,
+			fixture.clock.Now(),
+		),
+	)
+	frame.FrameId = "unbound-authority-result-frame"
+	frame.IdempotencyKey = "unbound-authority-result-idempotency"
+	frame.PayloadId = proposal.GetCommand().GetCommandId()
+	if err := federationdelivery.SignFrame(
+		context.Background(),
+		frame,
+		federationdelivery.DefaultFramePolicy(testStationA),
+		fixture.stationKeys[testStationB].signer(),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	received, err := fixture.coreReceiver.Receive(context.Background(), frame)
+	if err != nil {
+		t.Fatalf("receive unbound authority result: %v", err)
+	}
+	if received != federationdelivery.TerminalResult(federationdelivery.FrameErrorInvalidFrame) {
+		t.Fatalf("unbound authority result disposition = %+v", received)
+	}
+	fixture.assertOutgoingProposalUnresolved(t, proposal)
+	assertTableCount(t, fixture.db, &federationdelivery.InboxRecord{}, 1)
+}
+
+func TestAuthorityResultReceiverRejectsConflictBeforeBoundAcceptedResult(
+	t *testing.T,
+) {
+	fixture := newReceiverFixture(t, testStationA)
+	acceptedProposal := fixture.signedProposal(t, "command-result-reverse")
+	conflictingProposal := proto.Clone(acceptedProposal).(*chatmodel.ConversationCommandProposal)
+	conflictingProposal.GetCommand().GetSendMessage().ContentType =
+		chatmodel.MessageContentType_MESSAGE_CONTENT_TYPE_IMAGE
+	fixture.signProposal(t, conflictingProposal)
+	fixture.persistOutgoingProposal(t, acceptedProposal)
+
+	conflictFrame := fixture.authorityResultFrame(
+		t,
+		conflictingProposal,
+		commandConflictResult(conflictingProposal.GetCommand().GetCommandId()),
+	)
+	mismatched, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		conflictFrame,
+	)
+	if err != nil {
+		t.Fatalf("receive mismatched conflict result: %v", err)
+	}
+	if mismatched != federationdelivery.PayloadHashConflictResult() {
+		t.Fatalf("mismatched conflict result disposition = %+v", mismatched)
+	}
+	fixture.assertOutgoingProposalUnresolved(t, acceptedProposal)
+	assertTableCount(t, fixture.db, &federationdelivery.InboxRecord{}, 1)
+
+	acceptedResult := acceptedCommandResult(
+		acceptedProposal,
+		testStationB,
+		fixture.clock.Now(),
+	)
+	acceptedFrame := fixture.authorityResultFrame(
+		t,
+		acceptedProposal,
+		acceptedResult,
+	)
+	received, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		acceptedFrame,
+	)
+	if err != nil {
+		t.Fatalf("receive hash-bound accepted result: %v", err)
+	}
+	if received != federationdelivery.AcceptedResult() {
+		t.Fatalf("hash-bound accepted result disposition = %+v", received)
+	}
+	fixture.assertOutgoingProposalResolved(t, acceptedProposal, acceptedResult)
+	assertTableCount(t, fixture.db, &federationdelivery.InboxRecord{}, 2)
+}
+
+func TestAuthorityResultReceiverRejectsAcceptedBeforeBoundConflictResult(
+	t *testing.T,
+) {
+	fixture := newReceiverFixture(t, testStationA)
+	acceptedProposal := fixture.signedProposal(t, "command-result-hash-mismatch")
+	conflictingProposal := proto.Clone(acceptedProposal).(*chatmodel.ConversationCommandProposal)
+	conflictingProposal.GetCommand().GetSendMessage().ContentType =
+		chatmodel.MessageContentType_MESSAGE_CONTENT_TYPE_IMAGE
+	fixture.signProposal(t, conflictingProposal)
+	fixture.persistOutgoingProposal(t, conflictingProposal)
+
+	acceptedFrame := fixture.authorityResultFrame(
+		t,
+		acceptedProposal,
+		acceptedCommandResult(
+			acceptedProposal,
+			testStationB,
+			fixture.clock.Now(),
+		),
+	)
+	mismatched, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		acceptedFrame,
+	)
+	if err != nil {
+		t.Fatalf("receive mismatched accepted result: %v", err)
+	}
+	if mismatched != federationdelivery.PayloadHashConflictResult() {
+		t.Fatalf("mismatched accepted result disposition = %+v", mismatched)
+	}
+	fixture.assertOutgoingProposalUnresolved(t, conflictingProposal)
+	assertTableCount(t, fixture.db, &federationdelivery.InboxRecord{}, 1)
+
+	conflictResult := commandConflictResult(
+		conflictingProposal.GetCommand().GetCommandId(),
+	)
+	conflictFrame := fixture.authorityResultFrame(
+		t,
+		conflictingProposal,
+		conflictResult,
+	)
+	received, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		conflictFrame,
+	)
+	if err != nil {
+		t.Fatalf("receive hash-bound command conflict: %v", err)
+	}
+	if received != federationdelivery.AcceptedResult() {
+		t.Fatalf("hash-bound command conflict disposition = %+v", received)
+	}
+	fixture.assertOutgoingProposalResolved(t, conflictingProposal, conflictResult)
+	assertTableCount(t, fixture.db, &federationdelivery.InboxRecord{}, 2)
+}
+
 type receiverFixture struct {
 	db           *gorm.DB
 	clock        *testClock
+	localStation string
 	stationKeys  map[string]testKey
 	actorKeys    *recordingActorKeyProjection
 	authority    *transactionalAuthorityPort
@@ -551,6 +808,7 @@ func newReceiverFixture(t *testing.T, localStation string) *receiverFixture {
 	return &receiverFixture{
 		db:           db,
 		clock:        clock,
+		localStation: localStation,
 		stationKeys:  stationKeys,
 		actorKeys:    actorKeys,
 		authority:    authority,
@@ -558,6 +816,42 @@ func newReceiverFixture(t *testing.T, localStation string) *receiverFixture {
 		device:       devicePort,
 		coreReceiver: coreReceiver,
 	}
+}
+
+func (f *receiverFixture) enableCanonicalDeviceInbox(t *testing.T) {
+	t.Helper()
+	repository, err := conversationdelivery.NewRepository(
+		f.db,
+		deliveryapplication.QueueLimits{
+			MaxUnackedItems: 100,
+			MaxUnackedBytes: 1024 * 1024,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.AutoMigrate(&actoridentitypersistence.ActorDeviceModel{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Create(&actoridentitypersistence.ActorDeviceModel{
+		PTID:               testActor,
+		ActorAccount:       "alice@example.test",
+		ActorKind:          1,
+		DeviceID:           testDevice,
+		Label:              "Alice Device",
+		HomeStationPeerID:  f.localStation,
+		SigningKeyID:       "alice-signing-key",
+		PublicKey:          make([]byte, ed25519.PublicKeySize),
+		ProfileVersion:     1,
+		VerificationSource: 1,
+		CreatedAt:          f.clock.Now(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.device.canonical = true
 }
 
 func (f *receiverFixture) signedProposal(
@@ -652,9 +946,98 @@ func (f *receiverFixture) authorityCommandFrame(
 	return outbox.single(t)
 }
 
+func (f *receiverFixture) authorityResultFrame(
+	t *testing.T,
+	proposal *chatmodel.ConversationCommandProposal,
+	result *chatmodel.ConversationCommandProposalResult,
+) *federationdelivery.Frame {
+	t.Helper()
+	sender, err := conversationfederation.NewSender(
+		testStationB,
+		f.stationKeys[testStationB].signer(),
+		f.clock,
+		24*time.Hour,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outbox := &capturingOutbox{}
+	if _, err := sender.EnqueueAuthorityResult(
+		context.Background(),
+		outbox,
+		proposal,
+		result,
+	); err != nil {
+		t.Fatal(err)
+	}
+	return outbox.single(t)
+}
+
+func (f *receiverFixture) persistOutgoingProposal(
+	t *testing.T,
+	proposal *chatmodel.ConversationCommandProposal,
+) {
+	t.Helper()
+	if err := f.db.Create(&authorityResultTestModel{
+		ConversationID:   proposal.GetCommand().GetConversationId(),
+		CommandID:        proposal.GetCommand().GetCommandId(),
+		CommandSHA256:    append([]byte(nil), proposal.GetCommandSha256()...),
+		AuthorityStation: proposal.GetAuthorityStationPeerId(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f *receiverFixture) assertOutgoingProposalUnresolved(
+	t *testing.T,
+	proposal *chatmodel.ConversationCommandProposal,
+) {
+	t.Helper()
+	stored := f.loadOutgoingProposal(t, proposal)
+	if len(stored.ResultBytes) != 0 {
+		t.Fatalf("mismatched result resolved outgoing proposal: %+v", stored)
+	}
+}
+
+func (f *receiverFixture) assertOutgoingProposalResolved(
+	t *testing.T,
+	proposal *chatmodel.ConversationCommandProposal,
+	expected *chatmodel.ConversationCommandProposalResult,
+) {
+	t.Helper()
+	stored := f.loadOutgoingProposal(t, proposal)
+	delivery := &chatmodel.ConversationCommandResultDelivery{}
+	if err := proto.Unmarshal(stored.ResultBytes, delivery); err != nil {
+		t.Fatalf("decode stored authority result: %v", err)
+	}
+	if !proto.Equal(delivery.GetResult(), expected) {
+		t.Fatalf(
+			"stored authority result = %+v, want %+v",
+			delivery.GetResult(),
+			expected,
+		)
+	}
+}
+
+func (f *receiverFixture) loadOutgoingProposal(
+	t *testing.T,
+	proposal *chatmodel.ConversationCommandProposal,
+) authorityResultTestModel {
+	t.Helper()
+	var stored authorityResultTestModel
+	if err := f.db.Where(
+		"conversation_id = ? AND command_id = ?",
+		proposal.GetCommand().GetConversationId(),
+		proposal.GetCommand().GetCommandId(),
+	).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	return stored
+}
+
 func (f *receiverFixture) deviceDeliveryFrame(
 	t *testing.T,
-	item *chatmodel.DurableDeviceInboxItem,
+	intent conversationports.FederationOutboxIntent,
 ) *federationdelivery.Frame {
 	t.Helper()
 	sender, err := conversationfederation.NewSender(
@@ -670,8 +1053,7 @@ func (f *receiverFixture) deviceDeliveryFrame(
 	if _, err := sender.EnqueueDeviceDelivery(
 		context.Background(),
 		outbox,
-		testStationA,
-		item,
+		intent,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -925,8 +1307,11 @@ func (p *transactionalAuthorityPort) setRetryableAttempts(attempts int) {
 }
 
 type authorityResultTestModel struct {
-	CommandID   string `gorm:"column:command_id;primaryKey"`
-	ResultBytes []byte `gorm:"column:result_bytes;type:blob;not null"`
+	ConversationID   string `gorm:"column:conversation_id;primaryKey"`
+	CommandID        string `gorm:"column:command_id;primaryKey"`
+	CommandSHA256    []byte `gorm:"column:command_sha256;type:blob;not null"`
+	AuthorityStation string `gorm:"column:authority_station_peer_id;not null"`
+	ResultBytes      []byte `gorm:"column:result_bytes;type:blob"`
 }
 
 func (*authorityResultTestModel) TableName() string {
@@ -939,28 +1324,64 @@ func (*transactionalResultPort) ApplyAuthorityResult(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	result *chatmodel.ConversationCommandResultDelivery,
-	_ string,
+	originatingCommandSHA256 []byte,
+	sourceAuthorityStationPeerID string,
 ) (bool, error) {
+	if len(originatingCommandSHA256) != sha256.Size {
+		return false, errors.New("originating command hash is invalid")
+	}
 	resultBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(result)
 	if err != nil {
 		return false, err
 	}
-	create := transaction.DB().WithContext(ctx).
-		Clauses(clause.OnConflict{DoNothing: true}).
-		Create(&authorityResultTestModel{
-			CommandID:   result.GetCommandId(),
-			ResultBytes: resultBytes,
-		})
-	if create.Error != nil {
-		return false, create.Error
+	var proposal authorityResultTestModel
+	if err := transaction.DB().WithContext(ctx).
+		Where(
+			"conversation_id = ? AND command_id = ?",
+			result.GetConversationId(),
+			result.GetCommandId(),
+		).
+		First(&proposal).Error; err != nil {
+		return false, err
 	}
-	if create.RowsAffected == 1 {
+	if proposal.AuthorityStation != sourceAuthorityStationPeerID {
+		return false, errors.New("authority result source does not match persisted outgoing proposal")
+	}
+	if !bytes.Equal(proposal.CommandSHA256, originatingCommandSHA256) {
+		return false, conversationfederation.ErrAuthorityResultCommandHashMismatch
+	}
+	if len(proposal.ResultBytes) > 0 {
+		if bytes.Equal(proposal.ResultBytes, resultBytes) {
+			return true, nil
+		}
+		return false, errors.New("authority result conflict")
+	}
+	update := transaction.DB().WithContext(ctx).
+		Model(&authorityResultTestModel{}).
+		Where(
+			"conversation_id = ? AND command_id = ? AND result_bytes IS NULL",
+			result.GetConversationId(),
+			result.GetCommandId(),
+		).
+		Update("result_bytes", resultBytes)
+	if update.Error != nil {
+		return false, update.Error
+	}
+	if update.RowsAffected == 1 {
 		return false, nil
 	}
 	var existing authorityResultTestModel
 	if err := transaction.DB().WithContext(ctx).
-		First(&existing, "command_id = ?", result.GetCommandId()).Error; err != nil {
+		Where(
+			"conversation_id = ? AND command_id = ?",
+			result.GetConversationId(),
+			result.GetCommandId(),
+		).
+		First(&existing).Error; err != nil {
 		return false, err
+	}
+	if !bytes.Equal(existing.CommandSHA256, originatingCommandSHA256) {
+		return false, conversationfederation.ErrAuthorityResultCommandHashMismatch
 	}
 	if !bytes.Equal(existing.ResultBytes, resultBytes) {
 		return false, errors.New("authority result conflict")
@@ -981,28 +1402,48 @@ type transactionalDevicePort struct {
 	mu              sync.Mutex
 	calls           int
 	failAfterWrites bool
+	canonical       bool
 }
 
 func (p *transactionalDevicePort) ApplyDeviceDelivery(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
-	item *chatmodel.DurableDeviceInboxItem,
+	intent conversationports.DeviceInboxIntent,
 	_ string,
 ) (bool, error) {
 	p.mu.Lock()
 	p.calls++
 	fail := p.failAfterWrites
+	canonical := p.canonical
 	p.mu.Unlock()
 
-	for _, row := range []deviceApplyTestModel{
-		{Kind: "follower", ID: item.GetEventId()},
-		{Kind: "device-inbox", ID: item.GetItemId()},
-	} {
-		if err := transaction.DB().WithContext(ctx).
-			Clauses(clause.OnConflict{DoNothing: true}).
-			Create(&row).Error; err != nil {
-			return false, err
-		}
+	if err := transaction.DB().WithContext(ctx).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&deviceApplyTestModel{
+			Kind: "follower",
+			ID:   string(intent.EventID),
+		}).Error; err != nil {
+		return false, err
+	}
+	if !canonical {
+		return false, errors.New("canonical Device Inbox writer is not configured")
+	}
+	repository, err := conversationdelivery.NewRepository(
+		transaction.DB(),
+		deliveryapplication.QueueLimits{
+			MaxUnackedItems: 100,
+			MaxUnackedBytes: 1024 * 1024,
+		},
+	)
+	if err != nil {
+		return false, err
+	}
+	writer, err := conversationdelivery.NewWriter(repository)
+	if err != nil {
+		return false, err
+	}
+	if err := writer.Enqueue(ctx, intent); err != nil {
+		return false, err
 	}
 	if fail {
 		return false, errors.New("injected follower apply failure")
@@ -1045,10 +1486,47 @@ func (o *capturingOutbox) single(t *testing.T) *federationdelivery.Frame {
 	return proto.Clone(o.frames[0]).(*federationdelivery.Frame)
 }
 
-func newDeviceDeliveryItem(
+func acceptedCommandResult(
+	proposal *chatmodel.ConversationCommandProposal,
+	authorityStationPeerID string,
+	committedAt time.Time,
+) *chatmodel.ConversationCommandProposalResult {
+	eventHash := sha256.Sum256(
+		append(
+			[]byte("accepted-authority-result:"),
+			proposal.GetCommandSha256()...,
+		),
+	)
+	return &chatmodel.ConversationCommandProposalResult{
+		CommandId: proposal.GetCommand().GetCommandId(),
+		Accepted:  true,
+		CommittedEvent: &chatmodel.CommittedConversationEvent{
+			EventId:                  "event-" + hex.EncodeToString(eventHash[:8]),
+			ConversationId:           proposal.GetCommand().GetConversationId(),
+			GroupSeq:                 7,
+			MembershipEpoch:          3,
+			CommittedByStationPeerId: authorityStationPeerID,
+			CommittedAt:              timestamppb.New(committedAt),
+			EventHash:                eventHash[:],
+		},
+		AuthorityGroupSeq:  7,
+		AuthorityEventHash: eventHash[:],
+	}
+}
+
+func commandConflictResult(
+	commandID string,
+) *chatmodel.ConversationCommandProposalResult {
+	return &chatmodel.ConversationCommandProposalResult{
+		CommandId:  commandID,
+		RejectCode: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_COMMAND_CONFLICT,
+	}
+}
+
+func newDeviceDeliveryIntent(
 	t *testing.T,
 	now time.Time,
-) *chatmodel.DurableDeviceInboxItem {
+) conversationports.FederationOutboxIntent {
 	t.Helper()
 	eventHash := sha256.Sum256([]byte("device-event"))
 	endpointPayload := []byte("opaque-ciphertext")
@@ -1076,24 +1554,54 @@ func newDeviceDeliveryItem(
 		),
 	}
 	opaque := mustMarshal(t, eventDelivery)
-	return &chatmodel.DurableDeviceInboxItem{
-		ItemId: "item-device",
-		Recipient: &actormodel.ActorDeviceRef{
-			Actor: &actormodel.ActorRef{
-				Ptid: testActor,
-			},
-			DeviceId: testDevice,
+	return conversationports.FederationOutboxIntent{
+		IntentID:       "item-device",
+		ConversationID: valueobject.ConversationID(eventDelivery.GetEvent().GetConversationId()),
+		EventID:        valueobject.EventID(eventDelivery.GetEvent().GetEventId()),
+		EventSequence:  valueobject.Sequence(eventDelivery.GetEvent().GetSequence()),
+		Recipient: valueobject.Endpoint{
+			Actor:  testActor,
+			Device: testDevice,
 		},
-		LaneSequence:   9,
-		EventId:        eventDelivery.GetEvent().GetEventId(),
-		ConversationId: eventDelivery.GetEvent().GetConversationId(),
-		IdempotencyKey: "device-idempotency",
-		PayloadType:    chatmodel.DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_CONVERSATION_EVENT,
+		TargetStation: testStationA,
+		IdempotencyKey: valueobject.HashBytes(
+			[]byte("device-idempotency"),
+		).String(),
+		PayloadKind:   conversationports.DeviceInboxPayloadConversationEvent,
+		OpaquePayload: opaque,
+		PayloadHash:   valueobject.HashBytes(opaque),
+		CreatedAt:     now,
+	}
+}
+
+func newDeviceReceiptIntent(
+	t *testing.T,
+	now time.Time,
+) conversationports.FederationOutboxIntent {
+	t.Helper()
+	cursor := &chatmodel.ActorReadCursor{
+		ConversationId:   "conversation-device",
+		ReaderPtid:       testActor,
+		LastReadSequence: 4,
+		UpdatedAt:        timestamppb.New(now),
+	}
+	opaque := mustMarshal(t, cursor)
+	eventID := valueobject.HashBytes(opaque).String()
+	return conversationports.FederationOutboxIntent{
+		IntentID:       valueobject.HashBytes([]byte("receipt-item")).String(),
+		ConversationID: "conversation-device",
+		EventID:        valueobject.EventID(eventID),
+		EventSequence:  4,
+		Recipient: valueobject.Endpoint{
+			Actor:  "ptid:p:bob",
+			Device: "bob-device",
+		},
+		TargetStation:  testStationA,
+		IdempotencyKey: valueobject.HashBytes([]byte("receipt-idempotency")).String(),
+		PayloadKind:    conversationports.DeviceInboxPayloadDeviceReceipt,
 		OpaquePayload:  opaque,
-		PayloadSha256:  federationdelivery.PayloadSHA256(opaque),
-		State:          chatmodel.DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_PENDING,
-		FirstQueuedAt:  timestamppb.New(now),
-		ExpiresAt:      timestamppb.New(now.Add(time.Hour)),
+		PayloadHash:    valueobject.HashBytes(opaque),
+		CreatedAt:      now,
 	}
 }
 

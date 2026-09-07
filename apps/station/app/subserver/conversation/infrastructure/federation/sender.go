@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	conversationports "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	chatmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -111,26 +113,25 @@ func (s *Sender) EnqueueAuthorityResult(
 	outbox federationdelivery.OutboxWriter,
 	proposal *chatmodel.ConversationCommandProposal,
 	result *chatmodel.ConversationCommandProposalResult,
-	orderingSequence int64,
 ) (federationdelivery.EnqueueResult, error) {
 	if outbox == nil ||
 		proposal == nil ||
 		proposal.GetCommand() == nil ||
+		len(proposal.GetCommandSha256()) != sha256.Size ||
 		result == nil ||
 		result.GetCommandId() != proposal.GetCommand().GetCommandId() {
 		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
 			federationdelivery.FailureInvalidArgument,
 			"enqueue Conversation authority result",
-			fmt.Errorf("outbox, proposal, and matching result are required"),
+			fmt.Errorf("outbox, proposal command hash, and matching result are required"),
 		)
 	}
 	if proposal.GetAuthorityStationPeerId() != s.localStationPeerID ||
-		strings.TrimSpace(proposal.GetHomeStationPeerId()) == "" ||
-		orderingSequence <= 0 {
+		strings.TrimSpace(proposal.GetHomeStationPeerId()) == "" {
 		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
 			federationdelivery.FailureInvalidFrame,
 			"enqueue Conversation authority result",
-			fmt.Errorf("result route and positive ordering sequence are required"),
+			fmt.Errorf("result route is required"),
 		)
 	}
 	if err := validateAuthorityOutcome(
@@ -168,15 +169,20 @@ func (s *Sender) EnqueueAuthorityResult(
 	if err != nil {
 		return federationdelivery.EnqueueResult{}, err
 	}
+	payloadID := authorityResultPayloadID(
+		delivery,
+		payload,
+		proposal.GetCommandSha256(),
+	)
 	issuedAt := time.UnixMilli(proposal.GetCreatedAtUnixMs()).UTC()
 	frame, err := s.signedFrame(
 		ctx,
 		federationdelivery.PayloadKindConversationAuthorityResult,
 		proposal.GetHomeStationPeerId(),
-		result.GetCommandId(),
+		payloadID,
 		"",
 		conversationOrderingKey(authorityResultFrameDomain, delivery.GetConversationId()),
-		orderingSequence,
+		0,
 		payload,
 		issuedAt,
 		issuedAt.Add(s.frameLifetime),
@@ -187,48 +193,70 @@ func (s *Sender) EnqueueAuthorityResult(
 	return outbox.Enqueue(ctx, frame, s.clock.Now().UTC())
 }
 
-// EnqueueDeviceDelivery forwards one canonical device inbox item while
-// preserving its per-device lane sequence and immutable expiry.
+// EnqueueDeviceDelivery forwards a target-local Device Inbox intent. The
+// target Home Station owns lane allocation and all queue lifecycle state.
 func (s *Sender) EnqueueDeviceDelivery(
 	ctx context.Context,
 	outbox federationdelivery.OutboxWriter,
-	targetStationPeerID string,
-	item *chatmodel.DurableDeviceInboxItem,
+	federationIntent conversationports.FederationOutboxIntent,
 ) (federationdelivery.EnqueueResult, error) {
 	if outbox == nil ||
-		item == nil ||
-		item.GetRecipient() == nil ||
-		item.GetRecipient().GetActor() == nil ||
-		strings.TrimSpace(item.GetRecipient().GetActor().GetPtid()) == "" ||
-		strings.TrimSpace(item.GetRecipient().GetDeviceId()) == "" {
+		strings.TrimSpace(string(federationIntent.Recipient.Actor)) == "" ||
+		strings.TrimSpace(string(federationIntent.Recipient.Device)) == "" {
 		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
 			federationdelivery.FailureInvalidArgument,
 			"enqueue Conversation device delivery",
-			fmt.Errorf("outbox and complete PTID/device route are required"),
+			fmt.Errorf("transaction-bound outbox and complete PTID/device route are required"),
 		)
 	}
-	if strings.TrimSpace(targetStationPeerID) == "" ||
-		item.GetLaneSequence() <= 0 ||
-		item.GetFirstQueuedAt() == nil ||
-		!item.GetFirstQueuedAt().IsValid() {
+	payloadType, err := deviceInboxPayloadType(federationIntent.PayloadKind)
+	if err != nil {
+		return federationdelivery.EnqueueResult{}, err
+	}
+	item := &chatmodel.DurableDeviceInboxItem{
+		ItemId: string(federationIntent.IntentID),
+		Recipient: &actormodel.ActorDeviceRef{
+			Actor: &actormodel.ActorRef{
+				Ptid: string(federationIntent.Recipient.Actor),
+			},
+			DeviceId: string(federationIntent.Recipient.Device),
+		},
+		EventId:        string(federationIntent.EventID),
+		ConversationId: string(federationIntent.ConversationID),
+		IdempotencyKey: federationIntent.IdempotencyKey,
+		PayloadType:    payloadType,
+		OpaquePayload:  append([]byte(nil), federationIntent.OpaquePayload...),
+		PayloadSha256:  federationIntent.PayloadHash.Bytes(),
+		FirstQueuedAt:  timestamppb.New(federationIntent.CreatedAt.UTC()),
+	}
+	intent, orderingSequence, err := canonicalDeviceDelivery(
+		item,
+		s.localStationPeerID,
+	)
+	if err != nil {
 		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
 			federationdelivery.FailureInvalidFrame,
 			"enqueue Conversation device delivery",
-			fmt.Errorf("target, lane sequence, and first queued time are required"),
+			err,
+		)
+	}
+	if intent.EventSequence != federationIntent.EventSequence {
+		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
+			federationdelivery.FailureInvalidFrame,
+			"enqueue Conversation device delivery",
+			fmt.Errorf("event sequence does not match the canonical payload"),
+		)
+	}
+	targetStationPeerID := string(federationIntent.TargetStation)
+	if strings.TrimSpace(targetStationPeerID) == "" {
+		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
+			federationdelivery.FailureInvalidFrame,
+			"enqueue Conversation device delivery",
+			fmt.Errorf("target Station is required"),
 		)
 	}
 	issuedAt := item.GetFirstQueuedAt().AsTime().UTC()
 	expiresAt := issuedAt.Add(s.frameLifetime)
-	if item.GetExpiresAt() != nil {
-		if !item.GetExpiresAt().IsValid() {
-			return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
-				federationdelivery.FailureInvalidFrame,
-				"enqueue Conversation device delivery",
-				fmt.Errorf("device item expiry is invalid"),
-			)
-		}
-		expiresAt = item.GetExpiresAt().AsTime().UTC()
-	}
 	payload, err := canonicalPayloadBytes(item)
 	if err != nil {
 		return federationdelivery.EnqueueResult{}, err
@@ -240,10 +268,12 @@ func (s *Sender) EnqueueDeviceDelivery(
 		item.GetItemId(),
 		item.GetIdempotencyKey(),
 		deviceOrderingKey(
-			item.GetRecipient().GetActor().GetPtid(),
-			item.GetRecipient().GetDeviceId(),
+			string(intent.Recipient.Actor),
+			string(intent.Recipient.Device),
+			string(intent.ConversationID),
+			string(intent.PayloadKind),
 		),
-		item.GetLaneSequence(),
+		orderingSequence,
 		payload,
 		issuedAt,
 		expiresAt,
@@ -252,6 +282,24 @@ func (s *Sender) EnqueueDeviceDelivery(
 		return federationdelivery.EnqueueResult{}, err
 	}
 	return outbox.Enqueue(ctx, frame, s.clock.Now().UTC())
+}
+
+func deviceInboxPayloadType(
+	kind conversationports.DeviceInboxPayloadKind,
+) (chatmodel.DeviceInboxPayloadType, error) {
+	switch kind {
+	case conversationports.DeviceInboxPayloadConversationEvent:
+		return chatmodel.DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_CONVERSATION_EVENT, nil
+	case conversationports.DeviceInboxPayloadDeviceReceipt:
+		return chatmodel.DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_DEVICE_RECEIPT, nil
+	default:
+		return chatmodel.DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_UNSPECIFIED,
+			federationdelivery.NewError(
+				federationdelivery.FailureInvalidFrame,
+				"enqueue Conversation device delivery",
+				fmt.Errorf("payload kind is not owned by Conversation delivery"),
+			)
+	}
 }
 
 func (s *Sender) signedFrame(
@@ -269,7 +317,7 @@ func (s *Sender) signedFrame(
 	if strings.TrimSpace(targetStationPeerID) == "" ||
 		strings.TrimSpace(payloadID) == "" ||
 		strings.TrimSpace(orderingKey) == "" ||
-		orderingSequence <= 0 ||
+		orderingSequence < 0 ||
 		len(payload) == 0 ||
 		issuedAt.IsZero() ||
 		expiresAt.IsZero() {
@@ -347,6 +395,28 @@ func conversationOrderingKey(domain string, conversationID string) string {
 	return domain + ":" + conversationID
 }
 
-func deviceOrderingKey(actorPTID string, deviceID string) string {
-	return deviceDeliveryFrameDomain + ":" + actorPTID + ":" + deviceID
+func authorityResultPayloadID(
+	delivery *chatmodel.ConversationCommandResultDelivery,
+	payload []byte,
+	originatingCommandSHA256 []byte,
+) string {
+	return authorityResultFrameDomain + ":" +
+		hex.EncodeToString(originatingCommandSHA256) + ":" +
+		stableIdentifier(
+			delivery.GetCommandId(),
+			hex.EncodeToString(federationdelivery.PayloadSHA256(payload)),
+		)
+}
+
+func deviceOrderingKey(
+	actorPTID string,
+	deviceID string,
+	conversationID string,
+	payloadKind string,
+) string {
+	return deviceDeliveryFrameDomain + ":" +
+		actorPTID + ":" +
+		deviceID + ":" +
+		conversationID + ":" +
+		payloadKind
 }

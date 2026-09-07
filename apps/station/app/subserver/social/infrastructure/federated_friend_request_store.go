@@ -22,10 +22,17 @@ type FederatedFriendRequestTransaction interface {
 		ctx context.Context,
 		device *model.ActorDeviceRef,
 		claimedHomeStationPeerID string,
+		localStationPeerID string,
+		hydrator FriendRequestActorKeyHydrator,
 		signingKeyID string,
 		canonicalSigningBytes []byte,
 		signature []byte,
 	) error
+	LoadReceiverFriendRequestPolicy(
+		ctx context.Context,
+		receiverPTID string,
+		senderPTID string,
+	) (domain.ReceiverFriendRequestPolicy, error)
 	PutCommand(
 		ctx context.Context,
 		record domain.FriendRequestCommandRecord,
@@ -128,6 +135,7 @@ func NewGORMFederatedFriendRequestStore(
 // Migrate creates the test-only target Social tables without production registration.
 func (s *GORMFederatedFriendRequestStore) Migrate(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(
+		&friendshipModel{},
 		&federatedFriendRequestCommandModel{},
 		&federatedFriendRequestProjectionModel{},
 		&federatedRelationshipProjectionModel{},
@@ -448,6 +456,8 @@ func (t *federatedFriendRequestTransaction) VerifyFriendRequestCommandSignature(
 	ctx context.Context,
 	device *model.ActorDeviceRef,
 	claimedHomeStationPeerID string,
+	localStationPeerID string,
+	hydrator FriendRequestActorKeyHydrator,
 	signingKeyID string,
 	canonicalSigningBytes []byte,
 	signature []byte,
@@ -457,10 +467,69 @@ func (t *federatedFriendRequestTransaction) VerifyFriendRequestCommandSignature(
 		t.db,
 		device,
 		claimedHomeStationPeerID,
+		localStationPeerID,
+		hydrator,
 		signingKeyID,
 		canonicalSigningBytes,
 		signature,
 	)
+}
+
+func (t *federatedFriendRequestTransaction) LoadReceiverFriendRequestPolicy(
+	ctx context.Context,
+	receiverPTID string,
+	senderPTID string,
+) (domain.ReceiverFriendRequestPolicy, error) {
+	const operation = "social.load_receiver_friend_request_policy"
+	if receiverPTID == "" || senderPTID == "" || receiverPTID == senderPTID {
+		return domain.ReceiverFriendRequestPolicy{}, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			operation,
+			"actor_pair",
+			"must contain distinct receiver and sender PTIDs",
+		)
+	}
+
+	var friendshipStates []int32
+	if err := t.db.WithContext(ctx).
+		Model(&friendshipModel{}).
+		Select("status").
+		Where(
+			"(actor_ptid = ? AND peer_ptid = ?) OR (actor_ptid = ? AND peer_ptid = ?)",
+			receiverPTID,
+			senderPTID,
+			senderPTID,
+			receiverPTID,
+		).
+		Find(&friendshipStates).Error; err != nil {
+		return domain.ReceiverFriendRequestPolicy{},
+			mapFederatedFriendRequestPersistenceError(operation, err)
+	}
+
+	policy := domain.ReceiverFriendRequestPolicy{}
+	for _, state := range friendshipStates {
+		switch state {
+		case friendRequestPolicyRelationshipBlocked:
+			policy.Blocked = true
+		case friendRequestPolicyRelationshipAccepted:
+			policy.ExistingRelationship = true
+		}
+	}
+	if policy.Blocked {
+		return policy, nil
+	}
+
+	var acceptedProjectionCount int64
+	if err := t.db.WithContext(ctx).
+		Model(&federatedRelationshipProjectionModel{}).
+		Where("owner_ptid = ? AND peer_ptid = ?", receiverPTID, senderPTID).
+		Count(&acceptedProjectionCount).Error; err != nil {
+		return domain.ReceiverFriendRequestPolicy{},
+			mapFederatedFriendRequestPersistenceError(operation, err)
+	}
+	policy.ExistingRelationship =
+		policy.ExistingRelationship || acceptedProjectionCount > 0
+	return policy, nil
 }
 
 func (t *federatedFriendRequestTransaction) PutCommand(
@@ -547,6 +616,25 @@ func (t *federatedFriendRequestTransaction) ResolveCommand(
 			"social.resolve_friend_request_command",
 			"result",
 			"exact result bytes and resolution time are required",
+		)
+	}
+	var commandResult model.FriendRequestCommandResult
+	if err := proto.Unmarshal(resultBytes, &commandResult); err != nil {
+		return domain.WrapFederationError(
+			domain.FederationErrorInvalidArgument,
+			"social.resolve_friend_request_command",
+			err,
+		)
+	}
+	if err := domain.ValidateFriendRequestCommandResult(&commandResult); err != nil {
+		return err
+	}
+	if commandResult.GetCommandId() != commandID {
+		return domain.NewFederationError(
+			domain.FederationErrorIdempotencyConflict,
+			"social.resolve_friend_request_command",
+			"command_id",
+			"does not match the persisted command identity",
 		)
 	}
 	result := t.db.WithContext(ctx).
