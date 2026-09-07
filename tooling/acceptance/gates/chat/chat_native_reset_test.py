@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import os
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from tooling.acceptance.fixtures.chat_native_reset import (
     CHAT_TABLES,
+    RETIRED_CHAT_TABLES,
     FixtureActorRecord,
     _remote_transport,
     acceptance_station_environment,
@@ -290,9 +292,9 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         )
 
         sql = remote_psql.call_args.args[1]
-        follow_insert = sql.index("INSERT INTO follows")
-        request_insert = sql.index("INSERT INTO friend_chat_friend_requests")
-        self.assertLess(follow_insert, request_insert)
+        self.assertIn("INSERT INTO follows", sql)
+        self.assertNotIn("friend_chat_friend_requests", sql)
+        self.assertNotIn("social_friend_requests", sql)
         self.assertIn("LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE", sql)
         self.assertIn(
             "ON CONFLICT (follower_id, following_id) DO NOTHING",
@@ -315,6 +317,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.SshTransport.run_argv"
     )
+    @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.verify_disposable_station_runtime"
     )
@@ -331,9 +334,20 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         reset_station_chat_state("chat-native-acceptance")
         sql = run.call_args.kwargs["input_text"]
         self.assertIn("actor_sessions", CHAT_TABLES)
-        self.assertIn("friend_chat_friend_requests", CHAT_TABLES)
+        self.assertIn("friend_chat_friend_requests", RETIRED_CHAT_TABLES)
         self.assertIn("friend_chat_friendships", CHAT_TABLES)
         self.assertIn("TRUNCATE TABLE", sql)
+        self.assertIn("FROM pg_tables", sql)
+        self.assertIn("tablename = ANY", sql)
+        self.assertIn("IF existing_tables IS NOT NULL", sql)
+        self.assertNotIn(
+            f"TRUNCATE TABLE {', '.join(CHAT_TABLES)}",
+            sql,
+        )
+        self.assertIn(
+            f"DROP TABLE IF EXISTS {', '.join(RETIRED_CHAT_TABLES)} CASCADE",
+            sql,
+        )
         self.assertIn("SELECT password_hash INTO STRICT preset_hash", sql)
         self.assertIn(
             "WHERE email IN ('alice@p.t', 'bob@p.t', 'carol@p.t')",
@@ -341,11 +355,8 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         )
         self.assertIn("updated_count <> 3", sql)
         self.assertIn("mutual_follow_count <> 6", sql)
-        self.assertIn("INSERT INTO friend_chat_friend_requests", sql)
-        self.assertIn("sender_ptid", sql)
-        self.assertIn("receiver_ptid", sql)
-        self.assertNotIn("sender_did", sql)
-        self.assertNotIn("receiver_did", sql)
+        self.assertNotIn("INSERT INTO friend_chat_friend_requests", sql)
+        self.assertNotIn("INSERT INTO social_friend_requests", sql)
         for actor in ("alice", "bob", "carol"):
             self.assertIn(
                 f"SELECT id, ptid INTO STRICT {actor}_actor_id, {actor}_actor_ptid",
@@ -357,11 +368,14 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             )
         self.assertIn("native Chat preset actor PTIDs are invalid", sql)
         self.assertNotIn("_actor_id::text", sql)
-        self.assertEqual(sql.count("LEAST("), 3)
-        self.assertEqual(sql.count("GREATEST("), 3)
-        self.assertIn("'acceptance-alice-bob'", sql)
-        self.assertIn("'acceptance-alice-carol'", sql)
-        self.assertIn("'acceptance-bob-carol'", sql)
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_station_reset_requires_explicit_authorization(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CHAT_ACCEPTANCE_RESET=1 is required",
+        ):
+            reset_station_chat_state("chat-native-acceptance")
 
     def test_station_reset_uses_only_canonical_chat_owner_tables(self) -> None:
         required_tables = {
@@ -379,7 +393,9 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             "conversation_read_cursors",
             "federation_delivery_inbox",
             "federation_delivery_outbox",
+            "key_exchange_direct_fetch_receipts",
             "key_exchange_identity_keys",
+            "key_exchange_mls_fetch_receipts",
             "recovery_revisions",
             "social_friend_request_commands",
             "social_friend_request_effects",
@@ -390,6 +406,25 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         self.assertEqual(required_tables - set(CHAT_TABLES), set())
         self.assertFalse(
             [table for table in CHAT_TABLES if table.startswith("messaging_")]
+        )
+        self.assertEqual(set(CHAT_TABLES) & set(RETIRED_CHAT_TABLES), set())
+        self.assertNotIn("touch_actor", CHAT_TABLES)
+        self.assertNotIn("touch_actor", RETIRED_CHAT_TABLES)
+        self.assertEqual(
+            {
+                "conversation_command_proposals",
+                "envelope_idempotency",
+                "envelope_inbox",
+                "envelope_outbox",
+                "federated_endpoint_manifests",
+                "messaging_event_projection_targets",
+                "messaging_follower_conversations",
+                "messaging_follower_event_receipts",
+                "messaging_follower_members",
+                "messaging_follower_pending_events",
+            }
+            - set(RETIRED_CHAT_TABLES),
+            set(),
         )
 
 if __name__ == "__main__":
