@@ -9,7 +9,7 @@ use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
 use crate::infrastructure::storage::open_database;
 use crate::model::chat::{
     chat_command, AttachmentPlaintextMetadata, AttachmentTransferState, ChatCommand,
-    EncryptedObjectDescriptor, EncryptedObjectUploadSpec, MemberRole,
+    ConversationKind, EncryptedObjectDescriptor, EncryptedObjectUploadSpec, MemberRole,
 };
 pub use messaging_core::attachment::AttachmentTransferRecord;
 use messaging_core::attachment::AttachmentTransferRepository;
@@ -7411,9 +7411,11 @@ fn validate_conversation_state_receive(
 ) -> Result<(), String> {
     validate_receive_core(&conversation_state_receive_core(input))?;
     let projection = input.projection;
+    let kind = ConversationKind::try_from(projection.kind)
+        .map_err(|_| "messaging conversation-state kind is invalid".to_string())?;
     if projection.conversation_id != input.conversation_id
         || projection.authority_station_id.trim().is_empty()
-        || projection.kind == 0
+        || kind == ConversationKind::Unspecified
         || projection.owner_ptid.trim().is_empty()
         || projection.members.len() < 2
         || projection.membership_epoch < 0
@@ -7438,10 +7440,35 @@ fn validate_conversation_state_receive(
         }
         previous = Some(&member.ptid);
     }
-    if !projection.members.iter().any(|member| {
-        member.ptid == projection.owner_ptid && member.role == MemberRole::Owner as i32
-    }) {
-        return Err("messaging conversation owner role is not projected".to_string());
+    match kind {
+        ConversationKind::Direct => {
+            if projection.members.len() != 2
+                || projection.members[0].ptid != projection.owner_ptid
+                || projection
+                    .members
+                    .iter()
+                    .any(|member| member.role != MemberRole::Member as i32)
+            {
+                return Err(
+                    "messaging Direct conversation membership projection is invalid".to_string(),
+                );
+            }
+        }
+        ConversationKind::Group => {
+            if projection
+                .members
+                .iter()
+                .filter(|member| member.role == MemberRole::Owner as i32)
+                .count()
+                != 1
+                || !projection.members.iter().any(|member| {
+                    member.ptid == projection.owner_ptid && member.role == MemberRole::Owner as i32
+                })
+            {
+                return Err("messaging Group owner role is not projected".to_string());
+            }
+        }
+        ConversationKind::Unspecified => unreachable!(),
     }
     Ok(())
 }
