@@ -1252,6 +1252,8 @@ class AgentHarnessStaticTest(unittest.TestCase):
         tombstone = scenario.index("await api.ossDeleteAgentAttachment(objectRef)")
         send = scenario.index("[data-pt-agent-composer-send]")
         self.assertLess(tombstone, send)
+        self.assertIn("objectPathHash", self.source)
+        self.assertNotIn("keyHash", self.source)
         self.assertIn("CONTEXT_ATTACHMENT_REJECTED", scenario)
         self.assertIn(
             "[data-pt-agent-composer-attachment-status=\"rejected\"]",

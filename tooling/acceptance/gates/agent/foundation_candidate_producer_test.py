@@ -791,6 +791,12 @@ class FoundationCandidateProducerTest(unittest.TestCase):
             "runtimeAttestation",
         )
 
+    def test_object_path_hash_is_not_treated_as_secret(self) -> None:
+        _ensure_evidence_safe(
+            {"deletionReadback": {"objectPathHash": "0" * 64}},
+            "cleanup",
+        )
+
     def test_topic_label_is_safe_but_bare_key_is_rejected(self) -> None:
         _ensure_evidence_safe(
             {"topics": {"alpha": {"topicLabel": "alpha"}}},
