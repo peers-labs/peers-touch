@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `b5b3fe8209b74926ebaa996147680124ae7e986d` reproduced the AS-F06 replay-boundary race in run `20260907T161810060757Z-aaa9b164cc9d9a8d6d5e7fd730bc175a`. A controlled same-source diagnostic run crossed AS-F06 and exposed Browser English `BASE-CANCELLED`; instrumentation proved the replay request cursor and post-cut acknowledged cursor are distinct. The split-cursor correction passes local Desktop and independent Acceptance checks; checkpoint deployment and the unchanged 419-cell rerun remain pending. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `2d19ace85b4104b15a6dad8be60d16a3848b9699` proved the AS-F06 replay request cursor and post-cut acknowledged cursor are distinct, then exposed that complete request replay must be filtered to the post-cut boundary before exact Station comparison. The final split-cursor/filter correction is local and pending checkpoint deployment plus the unchanged 419-cell rerun. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6041,10 +6041,10 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   sent from the immutable pre-cut cursor, while the same field was later
   overwritten with the post-cut projection cursor. The local correction now
   stores both `replayRequestCursor` and `acknowledgedCursor`; replay recording
-  and independent Station readback use the former, while prefix,
-  duplicate/out-of-order, and mutation checks retain the latter. TypeScript and
-  Python oracles require
-  `afterCursor == replayRequestCursor <= acknowledgedCursor` and still require
+  uses the former, while prefix, duplicate/out-of-order, mutation checks, final
+  source filtering, and independent Station readback use the latter. TypeScript
+  and Python oracles require
+  `replayRequestCursor <= acknowledgedCursor == afterCursor` and still require
   exact raw-payload/source identity. Local verification passes Desktop check,
   all `583` Desktop tests with one unrelated environment-dependent skip,
   Desktop production build, focused `162/162` and full `330/330` Agent
@@ -6052,6 +6052,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   runs completed Provisioner cleanup `DONE / PROVEN / passed`.
   `BASE-CANCELLED` recurrence remains the next source-backed diagnostic target;
   Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Exact-source post-fix run
+  `20260907T172801175343Z-6a6fe1f36eb79e4cea37a95e5bc97c16`
+  on checkpoint `2d19ace85b4104b15a6dad8be60d16a3848b9699`
+  reproduced AS-F06 with request cursor `3`, post-cut acknowledged cursor `37`,
+  client deliveries `38..139`, and Station readback `4..139`. This is the
+  complementary failure to the prior run: recording all events after the
+  immutable request cursor is required, but parity for
+  `replayAfterAcknowledgedCursor` must filter both streams to events strictly
+  after the post-cut cursor. The final local correction performs that filtering
+  without changing replay transport behavior, assertions, or raw-payload
+  identity requirements. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

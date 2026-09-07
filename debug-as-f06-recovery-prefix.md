@@ -96,10 +96,22 @@ event exists. Instrumentation remains active for post-fix comparison.
   The same field was initialized from the request cursor and then overwritten
   after the transport cut, so its meaning depended on callback timing.
 - The correction splits immutable `replayRequestCursor` from post-cut
-  `acknowledgedCursor`. Replay recording and independent Station readback use
-  the request cursor; prefix, duplicate/out-of-order, and mutation checks
-  continue to use the post-cut cursor. Both TypeScript and Python oracles
-  require `afterCursor == replayRequestCursor <= acknowledgedCursor` and retain
-  exact raw-payload hash and source-identity equality.
+  `acknowledgedCursor`. Replay recording uses the request cursor so the source
+  capture cannot lose early replay deliveries; prefix, duplicate/out-of-order,
+  mutation checks, final source filtering, and independent Station readback use
+  the post-cut cursor.
+- Exact-source post-fix run
+  `20260907T172801175343Z-6a6fe1f36eb79e4cea37a95e5bc97c16`
+  on `2d19ace85b4104b15a6dad8be60d16a3848b9699` reproduced the opposite
+  boundary error under a larger cursor advance: request cursor `3`, post-cut
+  cursor `37`, client deliveries `38..139`, and Station readback from
+  `afterCursor=3` returning `4..139`. This proves the source capture must retain
+  all request replay while the final parity comparison must filter both sides
+  to the post-cut acknowledged boundary.
+- The final local correction requires
+  `replayRequestCursor <= acknowledgedCursor == afterCursor`, filters captured
+  source deliveries to `sequence > acknowledgedCursor`, and compares them with
+  Station's exclusive readback from the same acknowledged cursor. Exact
+  raw-payload hash and source-identity equality remain mandatory.
 - Runtime post-fix proof remains pending. Keep this session and all
   instrumentation open.

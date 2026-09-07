@@ -390,8 +390,8 @@ def valid_as_f06_capture(
         }
 
     replay_deliveries = [
-        replay_delivery("text", 3),
-        replay_delivery("snapshot", 4),
+        replay_delivery("text", 5),
+        replay_delivery("snapshot", 6),
     ]
     replay_identities = [
         {
@@ -422,15 +422,15 @@ def valid_as_f06_capture(
             "acknowledgedCursor": 4,
         },
         "transitions": [
-            {"phase": "CONNECTION_LOST", "sequence": 2},
-            {"phase": "RECONNECTING", "sequence": 2},
-            {"phase": "REPLAYING", "sequence": 2},
-            {"phase": "RECONCILING", "sequence": 4},
-            {"phase": "CONNECTED", "sequence": 4},
+            {"phase": "CONNECTION_LOST", "sequence": 4},
+            {"phase": "RECONNECTING", "sequence": 4},
+            {"phase": "REPLAYING", "sequence": 4},
+            {"phase": "RECONCILING", "sequence": 6},
+            {"phase": "CONNECTED", "sequence": 6},
         ],
         "replay": {
-            "afterCursor": 2,
-            "eventSequences": [3, 4],
+            "afterCursor": 4,
+            "eventSequences": [5, 6],
             "deliveries": replay_deliveries,
             "stationReadbackDeliveries": copy.deepcopy(replay_deliveries),
             "sourceHash": canonical_payload_hash(replay_identities),
@@ -502,7 +502,7 @@ def valid_as_f06_capture(
                 "streamId": "stream-1",
                 "streamGeneration": 7,
                 "status": "running",
-                "sequence": 4,
+                "sequence": 6,
                 "terminal": False,
                 "terminalStatus": None,
                 "sourceDelivery": {
@@ -510,7 +510,7 @@ def valid_as_f06_capture(
                     "actorPtidHash": "b" * 64,
                     "conversationId": "conversation-1",
                     "turnId": "turn-1",
-                    "sequence": 4,
+                    "sequence": 6,
                     "eventType": "snapshot",
                     "rawPayloadHash": "c" * 64,
                 },
@@ -1407,7 +1407,7 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             ),
             (
                 lambda capture: capture["handoff"].update(
-                    {"replayRequestCursor": 3}
+                    {"replayRequestCursor": 5}
                 ),
                 "replayAfterAcknowledgedCursor",
             ),
