@@ -5088,6 +5088,383 @@ async function runFoundationContextOverflowScenario(input: {
   }
 }
 
+async function runFoundationCredentialMissingScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}> {
+  const store = useAgentStore.getState();
+  const priorSelection = store.selectedAgent;
+  const priorSurface = store.getAgentSurface(priorSelection);
+  const providers = await api.listProviders();
+  let missingProvider:
+    | { id: string; name: string; modelId: string; status: string }
+    | null = null;
+  for (const provider of providers) {
+    if (
+      provider.id === input.agent.provider
+      || !provider.enabled
+      || !provider.requires_api_key
+      || provider.has_api_key
+    ) {
+      continue;
+    }
+    const detail = await api.getProvider(provider.id);
+    const model = detail.models.find((candidate) =>
+      candidate.enabled
+      && candidate.type === 'chat'
+      && candidate.context_window > 1);
+    if (model) {
+      missingProvider = {
+        id: provider.id,
+        name: provider.name,
+        modelId: model.id,
+        status: provider.credential_status,
+      };
+      break;
+    }
+  }
+  if (!missingProvider) {
+    throw new Error(
+      'agent.acceptance.foundationCredentialMissingFixtureUnavailable',
+    );
+  }
+
+  const disposable = await store.createAgent({
+    name: `foundation-credential-${input.sampleId}-${crypto.randomUUID()}`,
+    title: `Foundation credential ${input.sampleId}`,
+    description: 'Foundation missing credential fixture',
+    provider: missingProvider.id,
+    model: missingProvider.modelId,
+  });
+  const disposableAgentId = disposable.id || disposable.name;
+  let rejectedConversationId = '';
+  let scenarioError: unknown = null;
+  let cleanupError: unknown = null;
+  let facts: Record<string, unknown> | null = null;
+  const startedAt = performance.now();
+
+  try {
+    await api.setSelectedAgent(disposable.name);
+    useAgentStore.getState().setSelectedAgent(disposable.name);
+    useAgentStore.getState().setAgentSurface(disposable.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector('[data-pt-agent-composer]')
+          ?.getClientRects().length,
+      ),
+      'credential missing composer',
+      30_000,
+    );
+
+    const conversation = await api.createAgentConversation({
+      agent_id: disposableAgentId,
+      title: `Foundation credential missing ${input.sampleId}`,
+      provider_id: missingProvider.id,
+      model_name: missingProvider.modelId,
+    });
+    rejectedConversationId = conversation.conversation_id;
+    await useChatStore.getState().selectSession(rejectedConversationId);
+    await useChatStore.getState().syncMessages();
+
+    const before = await foundationExecutionSnapshot(
+      disposableAgentId,
+      rejectedConversationId,
+    );
+    const beforeReadback = await foundationConversationReadback(
+      rejectedConversationId,
+    );
+    const beforeQueue = await api.listAgentTurnQueue(rejectedConversationId);
+    let observationSequence = 0;
+    const errorEventRef: {
+      current: FoundationPreAdmissionErrorEvent | null;
+    } = { current: null };
+    const unsubscribe = eventBus.subscribe(
+      EVENT.AGENT_TURN_STREAM_EVENT,
+      (payload) => {
+        const sourceDelivery = (
+          payload as typeof payload & {
+            sourceDelivery?: AgentTurnSourceDelivery;
+          }
+        ).sourceDelivery;
+        if (payload.conversationId !== rejectedConversationId) return;
+        observationSequence += 1;
+        if (
+          payload.event !== 'error'
+          || payload.data.error_type !== 'PROVIDER_CREDENTIAL_MISSING'
+        ) return;
+        errorEventRef.current = {
+          data: evidenceValue(payload.data) as Record<string, unknown>,
+          eventType: payload.event,
+          observedAt: new Date(payload.timestampMs).toISOString(),
+          streamId: payload.streamId,
+          streamGeneration: payload.streamGeneration,
+          conversationId: payload.conversationId,
+          observationSequence,
+          timestampMs: payload.timestampMs,
+          sourceDelivery,
+        };
+      },
+    );
+    try {
+      const sent = useChatStore.getState().sendMessage(
+        `Credential missing ${input.sampleId}`,
+      );
+      if (!sent) {
+        throw new Error(
+          'agent.acceptance.foundationCredentialMissingSendRejected',
+        );
+      }
+      await waitFor(
+        () => errorEventRef.current !== null,
+        'typed credential missing rejection',
+        60_000,
+      );
+      await waitFor(
+        () => Boolean(document.querySelector(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="PROVIDER_CREDENTIAL_MISSING"]',
+        )),
+        'credential missing receiver',
+        10_000,
+      );
+    } finally {
+      unsubscribe();
+    }
+
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="PROVIDER_CREDENTIAL_MISSING"]',
+      ),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    const errorToggle = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-toggle]',
+    );
+    const errorSelector =
+      '[data-pt-agent-message-error-text="agent.errors.providerCredentialMissing"]';
+    if (!errorSurface?.querySelector(errorSelector)) {
+      errorToggle?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(errorSelector)),
+        'localized credential missing text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+    const recoveryAction = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-recovery="configure-credential"]',
+    );
+    const errorEvent =
+      errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+    if (!errorSurface || !errorText || !recoveryAction || !errorEvent) {
+      throw new Error(
+        'agent.acceptance.foundationCredentialMissingSurfaceMissing',
+      );
+    }
+    if (
+      !errorEvent.streamId
+      || errorEvent.streamGeneration <= 0
+      || errorEvent.observationSequence <= 0
+      || errorEvent.timestampMs <= 0
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationCredentialMissingRuntimeEventMissing',
+      );
+    }
+    const sourceDelivery = errorEvent.sourceDelivery;
+    const actorPtid = authenticatedFoundationActorPtid();
+    if (
+      !sourceDelivery
+      || sourceDelivery.transport !== 'station-sse'
+      || sourceDelivery.ptid !== actorPtid
+      || sourceDelivery.conversationId !== rejectedConversationId
+      || sourceDelivery.turnId !== ''
+      || sourceDelivery.sequence !== 0
+      || sourceDelivery.rawPayload.eventType !== 'error'
+      || stableJson(
+        normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+      ) !== stableJson(
+        normalizeProjectedStationPayload(errorEvent.data),
+      )
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationCredentialMissingSourceIdentityMismatch',
+      );
+    }
+
+    const receiverErrorVisible = errorText.getClientRects().length > 0;
+    const receiverErrorText = errorText.textContent?.trim() ?? '';
+    const receiverRecoveryVisible =
+      recoveryAction.getClientRects().length > 0;
+    const receiverRecoveryText = recoveryAction.textContent?.trim() ?? '';
+    recoveryAction.click();
+    await waitFor(
+      () => document.querySelector('[data-pt-agent-composer]')
+        ?.getClientRects().length === 0,
+      'credential settings recovery',
+      30_000,
+    );
+    const after = await foundationExecutionSnapshot(
+      disposableAgentId,
+      rejectedConversationId,
+    );
+    const afterReadback = await foundationConversationReadback(
+      rejectedConversationId,
+    );
+    const afterQueue = await api.listAgentTurnQueue(rejectedConversationId);
+    const providerAfter = (await api.listProviders()).find(
+      (provider) => provider.id === missingProvider?.id,
+    );
+    const beforeHash = await sha256Hex(stableJson(beforeReadback));
+    const afterHash = await sha256Hex(stableJson(afterReadback));
+    const typedOutcome = errorEvent.data;
+    const runtimeEvent: FoundationRuntimeEventObservation = {
+      eventId: await sha256Hex(stableJson({
+        streamId: errorEvent.streamId,
+        streamGeneration: errorEvent.streamGeneration,
+        conversationId: errorEvent.conversationId,
+        observationSequence: errorEvent.observationSequence,
+        eventType: errorEvent.eventType,
+        timestampMs: errorEvent.timestampMs,
+        data: typedOutcome,
+      })),
+      eventType: errorEvent.eventType,
+      sequence: errorEvent.observationSequence,
+      observedAt: errorEvent.observedAt,
+      streamGeneration: errorEvent.streamGeneration,
+      streamIdHash: await sha256Hex(errorEvent.streamId),
+      conversationIdHash: await sha256Hex(errorEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      errorType: String(typedOutcome.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    };
+    facts = {
+      outcome: typedOutcome,
+      runtimeEvent,
+      receiver: {
+        errorVisible: receiverErrorVisible,
+        errorText: receiverErrorText,
+        expectedErrorText: i18n.t(
+          'agent.errors.providerCredentialMissing',
+          { ns: 'agent' },
+        ),
+        recoveryVisible: receiverRecoveryVisible,
+        recoveryText: receiverRecoveryText,
+        expectedRecoveryText: i18n.t(
+          'agent.recovery.configureCredential',
+          { ns: 'agent' },
+        ),
+        configureProviderExecuted: true,
+      },
+      station: {
+        conversationId: rejectedConversationId,
+        providerId: missingProvider.id,
+        providerStatusBefore: missingProvider.status,
+        providerConfiguredBefore: false,
+        providerStatusAfter: providerAfter?.credential_status ?? '',
+        providerConfiguredAfter: providerAfter?.has_api_key ?? true,
+        conversationVersionBefore: beforeReadback.conversation.version,
+        conversationVersionAfter: afterReadback.conversation.version,
+        beforeHash,
+        afterHash,
+        turnDelta: after.turnCount - before.turnCount,
+        messageDelta:
+          afterReadback.messages.length - beforeReadback.messages.length,
+        queueDelta: afterQueue.entries.length - beforeQueue.entries.length,
+        providerExecutionDelta:
+          after.providerCallCount - before.providerCallCount,
+      },
+      replay: {
+        sourceHash: beforeHash,
+        replayHash: afterHash,
+        equal: beforeHash === afterHash,
+      },
+      cleanup: {
+        conversationDeleted: false,
+        disposableAgentDeleted: false,
+        priorSelection,
+        restoredSelection: '',
+      },
+    };
+  } catch (error) {
+    scenarioError = error;
+  } finally {
+    try {
+      if (rejectedConversationId) {
+        clearFoundationLocalConversationProjection(rejectedConversationId);
+        await deleteFoundationConversation(rejectedConversationId);
+      }
+      await api.deleteAgent(disposableAgentId);
+      await useAgentStore.getState().loadAgents();
+      if (priorSelection) {
+        useAgentStore.getState().setSelectedAgent(priorSelection);
+        useAgentStore.getState().setAgentSurface(priorSelection, priorSurface);
+        await api.setSelectedAgent(priorSelection);
+      }
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+      if (facts) {
+        const cleanup = evidenceRecord(
+          facts.cleanup,
+          'foundationCredentialMissingCleanup',
+        );
+        cleanup.conversationDeleted = rejectedConversationId
+          ? await api.getAgentConversation(rejectedConversationId).then(
+              () => false,
+              (error: unknown) => observedErrorCode(error).includes('AGENT_4004'),
+            )
+          : true;
+        cleanup.disposableAgentDeleted = await api.getAgent(
+          disposableAgentId,
+        ).then(
+          () => false,
+          (error: unknown) => JSON.stringify(
+            (error as { details?: unknown })?.details ?? {},
+          ).includes('AGENT_4004'),
+        );
+        cleanup.restoredSelection = useAgentStore.getState().selectedAgent;
+      }
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+
+  if (cleanupError) {
+    throw Object.assign(
+      new Error('agent.acceptance.foundationCredentialMissingCleanupFailed'),
+      { primaryError: scenarioError, cleanupError },
+    );
+  }
+  if (scenarioError) throw scenarioError;
+  if (!facts) {
+    throw new Error('agent.acceptance.foundationCredentialMissingFactsMissing');
+  }
+  const attestation = await runFoundationDirectAttestationTurn({
+    agent: input.agent,
+    capabilitySessionId: input.capabilitySessionId,
+    sampleId: input.sampleId,
+  });
+  return {
+    conversationId: attestation.conversationId,
+    turnId: attestation.turnId,
+    durationMs: performance.now() - startedAt,
+    runtimeEvent: attestation.runtimeEvent,
+    facts,
+  };
+}
+
 async function runFoundationF06Prepare(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
@@ -9911,6 +10288,8 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseCancelled(ctx);
     case 'BASE-CONTEXT_OVERFLOW':
       return evaluateBaseContextOverflow(ctx);
+    case 'BASE-CREDENTIAL_MISSING':
+      return evaluateBaseCredentialMissing(ctx);
     case 'BASE-APPROVAL_DENIED':
       return evaluateBaseApprovalDenied(ctx);
     case 'BASE-APPROVAL_EXPIRED':
@@ -10190,6 +10569,94 @@ function evaluateBaseContextOverflow(
       cleanup.draftCleared === true
       && cleanup.localProjectionCleared === true
       && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseCredentialMissing(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationCredentialMissingFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationCredentialMissingOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationCredentialMissingDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationCredentialMissingReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationCredentialMissingStation',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationCredentialMissingReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationCredentialMissingCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationCredentialMissingRuntimeEvent',
+  );
+
+  return {
+    typedProviderConfigMissing: (
+      outcome.error === 'agent.errors.providerCredentialMissing'
+      && outcome.error_type === 'PROVIDER_CREDENTIAL_MISSING'
+      && outcome.locale_key === 'agent.errors.providerCredentialMissing'
+      && outcome.retryable === true
+      && outcome.terminal === true
+      && Object.keys(details).length === 1
+      && details.provider_id === station.providerId
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'PROVIDER_CREDENTIAL_MISSING'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.streamGeneration) > 0
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === ''
+      && Number(runtimeEvent.sourceSequence) === 0
+      && runtimeEvent.sourceEventType === 'error'
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    configureProviderExecuted:
+      receiver.configureProviderExecuted === true,
+    providerConfigAbsentAtAdmission: (
+      station.providerConfiguredBefore === false
+      && station.providerConfiguredAfter === false
+    ),
+    stationStateUnchanged: (
+      station.conversationVersionAfter === station.conversationVersionBefore
+      && station.afterHash === station.beforeHash
+      && Number(station.turnDelta) === 0
+      && Number(station.messageDelta) === 0
+      && Number(station.queueDelta) === 0
+    ),
+    zeroProviderCall: Number(station.providerExecutionDelta) === 0,
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.conversationDeleted === true
+      && cleanup.disposableAgentDeleted === true
+      && cleanup.restoredSelection === cleanup.priorSelection
     ),
   };
 }
@@ -12930,6 +13397,24 @@ export function installAcceptanceHarness(): void {
         scenarioFacts = scenario.facts;
       }
 
+      if (cell === 'BASE-CREDENTIAL_MISSING') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationCredentialMissingScenario({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
       if (cell === 'BASE-APPROVAL_DENIED') {
         const scenario = await runFoundationApprovalDeniedScenario({
           agent,
@@ -14114,6 +14599,7 @@ export function installAcceptanceHarness(): void {
           || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
           || cell === 'BASE-CANCELLED'
           || cell === 'BASE-CONTEXT_OVERFLOW'
+          || cell === 'BASE-CREDENTIAL_MISSING'
         )
         && scenarioFacts
         && currentConversationId
@@ -14141,6 +14627,8 @@ export function installAcceptanceHarness(): void {
                 ? 'foundationCancelledCleanup'
               : cell === 'BASE-CONTEXT_OVERFLOW'
                 ? 'foundationContextOverflowCleanup'
+              : cell === 'BASE-CREDENTIAL_MISSING'
+                ? 'foundationCredentialMissingCleanup'
               : cell === 'BASE-APPROVAL_DENIED'
                 ? 'foundationApprovalDeniedCleanup'
                 : cell === 'BASE-APPROVAL_EXPIRED'
@@ -14291,6 +14779,28 @@ export function installAcceptanceHarness(): void {
           providerExecution: station.providerExecutionDelta,
         };
       }
+      if (cell === 'BASE-CREDENTIAL_MISSING' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationCredentialMissingStation',
+        );
+        stationReadback.entityKind = 'agent-provider-credential-pre-admission';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.providerId),
+        );
+        stationReadback.revision = Number(
+          station.conversationVersionAfter,
+        );
+        stationReadback.stateHash = String(station.afterHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          turn: station.turnDelta,
+          message: station.messageDelta,
+          queue: station.queueDelta,
+          providerExecution: station.providerExecutionDelta,
+        };
+        stationReadback.credentialStatus = station.credentialStatusAfter;
+      }
       if (
         (
           cell === 'BASE-APPROVAL_DENIED'
@@ -14406,6 +14916,7 @@ export function installAcceptanceHarness(): void {
             cell === 'BASE-ATTACHMENT_REJECTED'
             || cell === 'BASE-CANCELLED'
             || cell === 'BASE-CONTEXT_OVERFLOW'
+            || cell === 'BASE-CREDENTIAL_MISSING'
           ) && observedRuntimeEvent
             ? {
                 eventId: observedRuntimeEvent.eventId ?? '',
@@ -14421,6 +14932,7 @@ export function installAcceptanceHarness(): void {
                   (
                     cell === 'BASE-CANCELLED'
                     || cell === 'BASE-CONTEXT_OVERFLOW'
+                    || cell === 'BASE-CREDENTIAL_MISSING'
                   )
                     ? {
                       sourceTransport: observedRuntimeEvent.sourceTransport,
@@ -14552,6 +15064,25 @@ export function installAcceptanceHarness(): void {
                 return {
                   counterId: String(station.conversationId),
                   count,
+                  maximum: 0,
+                  measurements: {
+                    turnDelta: station.turnDelta,
+                    messageDelta: station.messageDelta,
+                    queueDelta: station.queueDelta,
+                    providerExecutionDelta:
+                      station.providerExecutionDelta,
+                  },
+                };
+              })()
+          : cell === 'BASE-CREDENTIAL_MISSING' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationCredentialMissingStation',
+                );
+                return {
+                  counterId: String(station.providerId),
+                  count: Number(station.providerExecutionDelta),
                   maximum: 0,
                   measurements: {
                     turnDelta: station.turnDelta,
@@ -14710,6 +15241,13 @@ export function installAcceptanceHarness(): void {
               'foundationContextOverflowCleanup',
             )
           : null;
+      const credentialMissingCleanup =
+        cell === 'BASE-CREDENTIAL_MISSING' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationCredentialMissingCleanup',
+            )
+          : null;
       const cleanup: Record<string, unknown> = {
         status: (
           activeMutationCleanup
@@ -14731,6 +15269,13 @@ export function installAcceptanceHarness(): void {
                   contextOverflowCleanup.draftCleared === true
                   && contextOverflowCleanup.localProjectionCleared === true
                   && contextOverflowCleanup.conversationDeleted === true
+                )
+            : credentialMissingCleanup
+              ? (
+                  credentialMissingCleanup.conversationDeleted === true
+                  && credentialMissingCleanup.disposableAgentDeleted === true
+                  && credentialMissingCleanup.restoredSelection
+                    === credentialMissingCleanup.priorSelection
                 )
             : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
               ? (
@@ -14821,6 +15366,8 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-CREDENTIAL_MISSING' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : {}),
       };
 
@@ -14831,6 +15378,7 @@ export function installAcceptanceHarness(): void {
         || cell === 'BASE-APPROVAL_EXPIRED'
         || cell === 'BASE-ATTACHMENT_REJECTED'
         || cell === 'BASE-CONTEXT_OVERFLOW'
+        || cell === 'BASE-CREDENTIAL_MISSING'
       ) && scenarioFacts
         ? evidenceRecord(
             scenarioFacts.receiver,
@@ -14893,6 +15441,17 @@ export function installAcceptanceHarness(): void {
           receiverSelector =
             '[data-pt-agent-message-error-text="agent.errors.contextOverflow"],'
             + '[data-pt-agent-message-error-recovery="reduce-context"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryText: receiver.recoveryText,
+          };
+        } else if (cell === 'BASE-CREDENTIAL_MISSING') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.recoveryVisible === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-text="agent.errors.providerCredentialMissing"],'
+            + '[data-pt-agent-message-error-recovery="configure-credential"]';
           receiverText = {
             errorText: receiver.errorText,
             recoveryText: receiver.recoveryText,
@@ -14966,6 +15525,15 @@ export function installAcceptanceHarness(): void {
         const replay = evidenceRecord(
           scenarioFacts.replay,
           'foundationContextOverflowReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-CREDENTIAL_MISSING' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationCredentialMissingReplay',
         );
         replayEvidence.sourceHash = replay.sourceHash;
         replayEvidence.replayHash = replay.replayHash;
@@ -15136,6 +15704,24 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationContextOverflowCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-CREDENTIAL_MISSING'
+          && preparedConversationId
+        ) {
+          try {
+            await deleteFoundationConversation(preparedConversationId);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationCredentialMissingAttestationCleanupFailed',
               ),
               {
                 primaryError: error,

@@ -233,8 +233,7 @@ func (r *RuntimeAdmissionResolver) Resolve(
 		requiresAPIKey := cp.ShowAPIKey == nil || *cp.ShowAPIKey
 		if requiresAPIKey {
 			if userMatch == nil || parseKeyVaultAPIKey(userMatch.KeyVaults) == "" {
-				return nil, errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
-					fmt.Sprintf("provider %q credential is not configured", providerID), nil)
+				return nil, errcode.NewProviderCredentialMissing(providerID)
 			}
 		}
 	}
