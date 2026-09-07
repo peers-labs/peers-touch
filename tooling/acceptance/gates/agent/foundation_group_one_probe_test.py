@@ -79,7 +79,7 @@ def attachment_runtime_role(
 
 def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, Any]:
     result = capture(probe)
-    if probe.cell == "BASE-ATTACHMENT-REJECTED":
+    if probe.cell == "BASE-ATTACHMENT_REJECTED":
         facts = valid_attachment_rejected_capture()
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_base_attachment_rejected(facts)
@@ -292,7 +292,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         probe = DirectRuntimeProbeInput(
             platform="browser",
             locale="en",
-            cell="BASE-ATTACHMENT-REJECTED",
+            cell="BASE-ATTACHMENT_REJECTED",
             sample_id="sample-001",
         )
 
@@ -304,7 +304,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         }
         with self.assertRaisesRegex(
             GroupOneProbeError,
-            "BASE-ATTACHMENT-REJECTED assertions do not match",
+            "BASE-ATTACHMENT_REJECTED assertions do not match",
         ):
             assert_group_one_capture(probe, capture_value)
 
@@ -321,7 +321,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         probe = DirectRuntimeProbeInput(
             platform="browser",
             locale="en",
-            cell="BASE-ATTACHMENT-REJECTED",
+            cell="BASE-ATTACHMENT_REJECTED",
             sample_id="sample-001",
         )
 

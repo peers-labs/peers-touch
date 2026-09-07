@@ -189,7 +189,7 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
-    "BASE-ATTACHMENT-REJECTED": frozenset(
+    "BASE-ATTACHMENT_REJECTED": frozenset(
         {
             "typedAttachmentRejected",
             "localizedRemovalVisible",
