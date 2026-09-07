@@ -258,6 +258,62 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
                     {"runId": "run-1", "expiresAtEpoch": 1_000}
                 )
 
+    def test_cleanup_releases_actors_after_lease_expiry(self) -> None:
+        scheduler = _RecordingScheduler()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "runtime"
+            actor_root = root / "actors" / "run-1" / "alice"
+            storage_root = actor_root / "storage"
+            log_path = actor_root / "desktop.log"
+            storage_root.mkdir(parents=True)
+            log_path.write_text("actor log", encoding="utf-8")
+            broker = WindowsDesktopBroker(
+                root,
+                desktop_user="administrator",
+                scheduler=scheduler,  # type: ignore[arg-type]
+                now=lambda: 2_000.0,
+            )
+            broker._write_json(
+                broker.lease_path,
+                {
+                    "artifactKind": "windows-desktop-broker-lease",
+                    "runId": "run-1",
+                    "desktopUser": "administrator",
+                    "expiresAtEpoch": 1_000,
+                    "actors": {
+                        "alice": {
+                            "taskName": "PeersTouch-Acceptance-run-1-actor-alice",
+                            "processId": 42,
+                            "webdriverPort": 4645,
+                            "gatewayPort": 3230,
+                            "storageRoot": str(storage_root),
+                            "logPath": str(log_path),
+                            "statePath": str(actor_root / "state.json"),
+                            "profile": "chat-native-alice",
+                        }
+                    },
+                },
+            )
+
+            with (
+                patch.object(broker, "_stop_process"),
+                patch.object(broker, "_process_alive", return_value=False),
+                patch.object(broker, "_port_listening", return_value=False),
+            ):
+                result = broker.cleanup({"runId": "run-1", "expired": True})
+
+            self.assertTrue(result["clean"])
+            self.assertTrue(result["expired"])
+            self.assertFalse(root.exists())
+            self.assertIn(
+                "PeersTouch-Acceptance-run-1-actor-alice",
+                scheduler.unregistered,
+            )
+            self.assertIn(
+                "PeersTouch-Acceptance-run-1-ttl-cleanup",
+                scheduler.unregistered,
+            )
+
     def test_actor_control_directory_is_scoped_by_run(self) -> None:
         scheduler = _RecordingScheduler()
         with tempfile.TemporaryDirectory() as directory:

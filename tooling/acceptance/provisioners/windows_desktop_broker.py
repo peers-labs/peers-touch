@@ -423,8 +423,13 @@ class WindowsDesktopBroker:
             "expired": int(lease["expiresAtEpoch"]) <= int(self._now()),
         }
 
-    def stop_actor(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        lease = self._require_lease(payload)
+    def stop_actor(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        allow_expired: bool = False,
+    ) -> dict[str, Any]:
+        lease = self._require_lease(payload, allow_expired=allow_expired)
         actor = _canonical_id(payload.get("actor"), "actor")
         actors = lease.get("actors")
         assert isinstance(actors, dict)
@@ -557,7 +562,8 @@ class WindowsDesktopBroker:
                             "runId": lease["runId"],
                             "actor": actor,
                             "preserveState": False,
-                        }
+                        },
+                        allow_expired=True,
                     )
                 except Exception as error:
                     failures.append(f"actor {actor}: {error}")
