@@ -216,12 +216,13 @@ func (r *Repository) Claim(
 				"would skip the unacknowledged lane head",
 			)
 		}
-		if lane.ActiveConsumerID != request.ConsumerID {
+		initializedConsumerEpoch := false
+		if lane.ActiveConsumerEpoch == 0 {
 			if err := advanceConsumerEpoch(tx, lane, request.ConsumerID); err != nil {
 				return err
 			}
+			initializedConsumerEpoch = true
 		}
-
 		result.ConsumerEpoch = lane.ActiveConsumerEpoch
 		result.LaneHead = lane.NextSequence
 		result.AckedThrough = lane.AckedThrough
@@ -275,17 +276,14 @@ func (r *Repository) Claim(
 
 			return nil
 		}
-		if reclaimsCurrentConsumerAttempt(
-			contiguous,
-			lane,
-			request.ConsumerID,
-			request.Now,
-		) {
+		// The epoch fences the concrete delivery attempt, not just a consumer ID.
+		// Reusing an epoch here would let a delayed outcome mutate this new lease.
+		if !initializedConsumerEpoch {
 			if err := advanceConsumerEpoch(tx, lane, request.ConsumerID); err != nil {
 				return err
 			}
-			result.ConsumerEpoch = lane.ActiveConsumerEpoch
 		}
+		result.ConsumerEpoch = lane.ActiveConsumerEpoch
 
 		leaseExpiresAt := request.Now.Add(request.LeaseDuration)
 		for index := range contiguous {
@@ -413,7 +411,8 @@ func (r *Repository) Acknowledge(
 				"is not the exact unacknowledged lane head",
 			)
 		}
-		if item.State != storageStateClaimed {
+		if item.State != storageStateClaimed &&
+			item.State != storageStateConsumed {
 			return application.NewError(
 				application.ErrorCodeItemNotClaimed,
 				"delivery_repository.acknowledge",
@@ -431,7 +430,9 @@ func (r *Repository) Acknowledge(
 				"does not own the item lease",
 			)
 		}
-		if item.LeaseExpiresAt == nil || !item.LeaseExpiresAt.After(request.Now) {
+		if item.LeaseExpiresAt == nil ||
+			(item.State == storageStateClaimed &&
+				!item.LeaseExpiresAt.After(request.Now)) {
 			return application.NewError(
 				application.ErrorCodeLeaseExpired,
 				"delivery_repository.acknowledge",
@@ -1019,26 +1020,6 @@ func advanceConsumerEpoch(
 	lane.ActiveConsumerEpoch++
 
 	return tx.Save(lane).Error
-}
-
-func reclaimsCurrentConsumerAttempt(
-	items []DeviceQueueItemModel,
-	lane *DeviceQueueLaneModel,
-	consumerID string,
-	now time.Time,
-) bool {
-	for index := range items {
-		item := &items[index]
-		if item.State == storageStateClaimed &&
-			item.LeaseConsumerID == consumerID &&
-			item.LeaseConsumerEpoch == lane.ActiveConsumerEpoch &&
-			item.LeaseExpiresAt != nil &&
-			!item.LeaseExpiresAt.After(now) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func replayRejectResult(

@@ -21,6 +21,7 @@ type TransactionalAdapters struct {
 	Federation             ports.FederationDirectory
 	DeviceInbox            ports.DeviceInboxWriter
 	FederationOutbox       ports.FederationOutboxWriter
+	DeliveryCommitments    ports.AuthorityDeliveryCommitmentWriter
 	ObjectGrants           ports.ObjectGrantWriter
 	KeyPackageReservations ports.KeyPackageReservations
 }
@@ -455,6 +456,7 @@ func (u *UnitOfWork) execute(
 			Federation:             adapters.Federation,
 			DeviceInbox:            adapters.DeviceInbox,
 			FederationOutbox:       adapters.FederationOutbox,
+			DeliveryCommitments:    adapters.DeliveryCommitments,
 			ObjectGrants:           adapters.ObjectGrants,
 			KeyPackageReservations: adapters.KeyPackageReservations,
 		})
