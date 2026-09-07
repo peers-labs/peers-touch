@@ -97,15 +97,127 @@ describe('Agent turn event identity projection', () => {
     };
     const event = {
       event: 'cancelled' as const,
-      data: { seq: 4, turnId: 'turn-1', conversationId: 'conversation-1' },
+      data: {
+        seq: 4,
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        reason: 'cancelled_by_user',
+        outcome_error: {
+          error: 'agent.errors.lifecycleCancelled',
+          error_type: 'LIFECYCLE_CANCELLED',
+          locale_key: 'agent.errors.lifecycleCancelled',
+          retryable: false,
+          terminal: true,
+          details: {
+            resource_kind: 'turn',
+            resource_id: 'turn-1',
+          },
+        },
+      },
     };
 
     expect(reduceStreamEvent(message, event)).toMatchObject({
       content: 'partial',
       loading: false,
       cancelled: true,
+      terminalStatus: 'cancelled',
+      error: 'agent.errors.lifecycleCancelled',
+      errorDetail: 'cancelled_by_user',
+      resolution: null,
+      typedError: {
+        error_type: 'LIFECYCLE_CANCELLED',
+        locale_key: 'agent.errors.lifecycleCancelled',
+        retryable: false,
+        terminal: true,
+        details: {
+          resource_kind: 'turn',
+          resource_id: 'turn-1',
+        },
+      },
     });
     expect(isTerminalEvent(event)).toBe(true);
+  });
+
+  it('keeps historical cancellation events without a typed payload readable', () => {
+    const result = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'cancelled',
+      data: { reason: 'cancelled_by_user' },
+    });
+
+    expect(result).toMatchObject({
+      content: 'partial',
+      loading: false,
+      cancelled: true,
+      terminalStatus: 'cancelled',
+      errorDetail: 'cancelled_by_user',
+      resolution: null,
+    });
+    expect(result.typedError).toBeUndefined();
+    expect(result.error).toBeUndefined();
+  });
+
+  it('preserves the typed cancellation outcome through terminal snapshot reconciliation', () => {
+    const cancelled = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'cancelled',
+      data: {
+        seq: 4,
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        reason: 'cancelled_by_user',
+        outcome_error: {
+          error: 'agent.errors.lifecycleCancelled',
+          error_type: 'LIFECYCLE_CANCELLED',
+          locale_key: 'agent.errors.lifecycleCancelled',
+          retryable: false,
+          terminal: true,
+          details: {
+            resource_kind: 'turn',
+            resource_id: 'turn-1',
+          },
+        },
+      },
+    });
+    const reconciled = reduceStreamEvent(cancelled, {
+      event: 'snapshot',
+      data: {
+        seq: 4,
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        status: 'cancelled',
+        terminal_reason: 'cancelled_by_user',
+      },
+    });
+
+    expect(reconciled).toMatchObject({
+      loading: false,
+      cancelled: true,
+      terminalStatus: 'cancelled',
+      error: 'agent.errors.lifecycleCancelled',
+      errorDetail: 'cancelled_by_user',
+      resolution: null,
+      typedError: {
+        error_type: 'LIFECYCLE_CANCELLED',
+        locale_key: 'agent.errors.lifecycleCancelled',
+        retryable: false,
+        terminal: true,
+        details: {
+          resource_kind: 'turn',
+          resource_id: 'turn-1',
+        },
+      },
+    });
   });
 
   it('keeps transport EOF in a non-terminal reconciling state', () => {

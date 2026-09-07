@@ -22,6 +22,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_approval_expired,
     evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
+    evaluate_base_cancelled,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -195,6 +196,9 @@ def assert_group_one_capture(
         "BASE-ACTIVE_MUTATION_CONFLICT": (
             lambda facts: evaluate_base_active_mutation_conflict(facts)
         ),
+        "BASE-CANCELLED": (
+            lambda facts: evaluate_base_cancelled(facts)
+        ),
         "AS-F02": lambda facts: evaluate_as_f02(facts),
         "AS-F03": lambda facts: evaluate_as_f03(facts),
         "AS-F04": lambda facts: evaluate_as_f04(
@@ -233,7 +237,10 @@ def assert_group_one_capture(
         raise GroupOneProbeError(
             f"{probe_input.cell} capture must contain assertions"
         )
-    if probe_input.cell == "BASE-ATTACHMENT_REJECTED":
+    if probe_input.cell in {
+        "BASE-ATTACHMENT_REJECTED",
+        "BASE-CANCELLED",
+    }:
         runtime_event = scenario_facts.get("runtimeEvent")
         runtime_role = capture.get("runtime-events")
         if not isinstance(runtime_event, Mapping) or not isinstance(
@@ -241,7 +248,7 @@ def assert_group_one_capture(
             Mapping,
         ):
             raise GroupOneProbeError(
-                "BASE-ATTACHMENT_REJECTED runtime event evidence is missing"
+                f"{probe_input.cell} runtime event evidence is missing"
             )
         expected_role = {
             "eventId": runtime_event.get("eventId"),
@@ -254,10 +261,33 @@ def assert_group_one_capture(
             "payloadHash": runtime_event.get("payloadHash"),
             "errorType": runtime_event.get("errorType"),
         }
+        if probe_input.cell == "BASE-CANCELLED":
+            expected_role.update(
+                {
+                    "sourceTransport": runtime_event.get("sourceTransport"),
+                    "sourcePtidHash": runtime_event.get("sourcePtidHash"),
+                    "sourceConversationId": runtime_event.get(
+                        "sourceConversationId"
+                    ),
+                    "sourceTurnId": runtime_event.get("sourceTurnId"),
+                    "sourceSequence": runtime_event.get("sourceSequence"),
+                    "sourceEventType": runtime_event.get("sourceEventType"),
+                }
+            )
+            runtime_attestation = capture.get("runtimeAttestation")
+            if (
+                not isinstance(runtime_attestation, Mapping)
+                or expected_role["sourcePtidHash"]
+                != runtime_attestation.get("actorIdentityHash")
+            ):
+                raise GroupOneProbeError(
+                    "BASE-CANCELLED runtime source actor does not match "
+                    "the runtime attestation"
+                )
         if dict(runtime_role) != expected_role:
             raise GroupOneProbeError(
-                "BASE-ATTACHMENT_REJECTED runtime-events role does not "
-                "match the observed rejection event"
+                f"{probe_input.cell} runtime-events role does not "
+                "match the observed terminal event"
             )
     try:
         evaluated = evaluator(scenario_facts)

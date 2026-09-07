@@ -168,6 +168,17 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-CANCELLED": frozenset(
+        {
+            "typedCancellationProjected",
+            "localizedCancellationVisible",
+            "cancelledPersisted",
+            "exactlyOneAuthoritativeTerminal",
+            "zeroLateSuccess",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
     "BASE-APPROVAL_DENIED": frozenset(
         {
             "typedDenialProjected",

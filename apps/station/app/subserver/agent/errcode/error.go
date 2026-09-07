@@ -24,6 +24,7 @@ const (
 	AgentToolApprovalDenied  Code = "TOOL_APPROVAL_DENIED"
 	AgentToolApprovalExpired Code = "TOOL_APPROVAL_EXPIRED"
 	AgentToolBudgetExhausted Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
+	AgentLifecycleCancelled  Code = "LIFECYCLE_CANCELLED"
 	AgentProviderFailed      Code = "AGENT_5001"
 	AgentCompressionFailed   Code = "AGENT_5002"
 	AgentDelegationFailed    Code = "AGENT_5003"
@@ -40,6 +41,7 @@ const (
 	AgentToolApprovalDeniedLocaleKey           = "agent.errors.toolApprovalDenied"
 	AgentToolApprovalExpiredLocaleKey          = "agent.errors.toolApprovalExpired"
 	AgentToolBudgetExhaustedLocaleKey          = "agent.errors.toolLoopBudgetExhausted"
+	AgentLifecycleCancelledLocaleKey           = "agent.errors.lifecycleCancelled"
 )
 
 const AgentActiveMutationConflict Code = "ADMISSION_ACTIVE_MUTATION_CONFLICT"
@@ -129,6 +131,20 @@ func NewToolApprovalExpiredPayload(decisionID string, expiresAt time.Time) *mode
 		Details: map[string]string{
 			"decision_id": decisionID,
 			"expires_at":  expiresAt.UTC().Format(time.RFC3339Nano),
+		},
+	}
+}
+
+func NewLifecycleCancelledPayload(resourceKind, resourceID string) *model.ErrorPayload {
+	return &model.ErrorPayload{
+		Error:     AgentLifecycleCancelledLocaleKey,
+		ErrorType: string(AgentLifecycleCancelled),
+		LocaleKey: AgentLifecycleCancelledLocaleKey,
+		Retryable: false,
+		Terminal:  true,
+		Details: map[string]string{
+			"resource_kind": resourceKind,
+			"resource_id":   resourceID,
 		},
 	}
 }

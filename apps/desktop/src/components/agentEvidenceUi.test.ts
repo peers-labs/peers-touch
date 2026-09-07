@@ -153,6 +153,10 @@ describe('Agent evidence UI projections', () => {
 
     expect(assistant).toContain('data-budget-notice');
     expect(assistant).toContain('data-pt-agent-message-error-text');
+    expect(assistant).toContain('data-pt-agent-terminal-status');
+    expect(assistant).toContain('data-pt-agent-error-resource-kind');
+    expect(assistant).toContain('data-pt-agent-error-resource-id');
+    expect(assistant).toContain('data-pt-agent-message-error-recovery');
     expect(assistant).toContain("ns: 'agent'");
     expect(sources).toContain('data-source-badges');
     expect(sources).toContain('data-source-badge');
