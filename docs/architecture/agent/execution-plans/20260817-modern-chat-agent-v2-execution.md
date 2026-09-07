@@ -5993,6 +5993,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `git diff --check` pass. Exact-source checkpoint deployment and the unchanged
   419-cell Gate rerun remain pending; Foundation/G-F remain
   `PARTIAL / UNPROVEN`.
+- Exact-source Gate run
+  `20260907T145305586439Z-59535be3e67a9df570c3167e046b6716`
+  on checkpoint `c816f1a03698ab13862f7d6ee26b9dd438b1799c`
+  reached Browser English `BASE-CONTEXT_OVERFLOW`. The production capture
+  satisfied the recovery assertion, but the independent Python oracle returned
+  the final validated `reducedDraftHash` string from its `and` chain instead of
+  a literal boolean, so the strict cross-runtime comparator correctly rejected
+  it as `evaluated=null`. The oracle now converts that validated hash to an
+  explicit boolean and its fixture requires every returned assertion value to
+  be exactly `bool`. Focused `182/182` and full `329/329` Agent Acceptance
+  tests pass after the correction. Provisioner cleanup was
+  `DONE / PROVEN / passed`; product proof remains `PARTIAL / UNPROVEN` pending
+  a new exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
