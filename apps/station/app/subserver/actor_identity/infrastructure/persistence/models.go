@@ -40,6 +40,24 @@ func (*ActorDeviceModel) TableName() string {
 	return "actor_devices"
 }
 
+type actorDeviceMetadataMigrationModel struct {
+	ID           int64   `gorm:"column:id;primaryKey"`
+	PTID         string  `gorm:"column:ptid;size:255"`
+	ActorAccount *string `gorm:"column:actor_acct;size:255"`
+	ActorKind    *int32  `gorm:"column:actor_kind"`
+}
+
+func (*actorDeviceMetadataMigrationModel) TableName() string {
+	return "actor_devices"
+}
+
+type actorMetadataMigrationRow struct {
+	PTID              string `gorm:"column:ptid"`
+	PreferredUsername string `gorm:"column:preferred_username"`
+	FederatedHandle   string `gorm:"column:federated_handle"`
+	Kind              string `gorm:"column:kind"`
+}
+
 // ActorEndpointDirectoryVersionModel fences signed routing snapshots by Actor.
 type ActorEndpointDirectoryVersionModel struct {
 	ActorPTID   string    `gorm:"column:actor_ptid;size:255;primaryKey"`
