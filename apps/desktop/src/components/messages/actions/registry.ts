@@ -97,6 +97,16 @@ function buildAssistantActions(ctx: MessageActionContext): { primary: MessageAct
 }
 
 function buildAssistantErrorActions(ctx: MessageActionContext): { primary: MessageActionDef[]; menu: MessageActionDef[] } {
+  if (ctx.message.typedError?.retryable === false) {
+    return {
+      primary: [
+        { key: 'delete', label: 'chat.message.action.delete', icon: Trash2, danger: true, onClick: ctx.onDelete },
+      ],
+      menu: [
+        { key: 'copy', label: 'chat.message.action.copy', icon: Copy, onClick: ctx.onCopy, hidden: !ctx.message.content },
+      ],
+    };
+  }
   return {
     primary: [
       { key: 'retry', label: 'chat.message.action.retry', icon: RotateCcw, onClick: ctx.onRetry },

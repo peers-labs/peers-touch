@@ -112,6 +112,29 @@ describe('Agent evidence UI projections', () => {
       });
   });
 
+  it('projects typed context overflow details onto the receiver message', () => {
+    const data = {
+      error: 'agent.errors.contextOverflow',
+      error_type: 'CONTEXT_OVERFLOW',
+      locale_key: 'agent.errors.contextOverflow',
+      retryable: false,
+      terminal: true,
+      details: {
+        limit_tokens: '128',
+        actual_tokens: '129',
+      },
+    };
+
+    expect(projectAgentTypedError(data)).toEqual(data);
+    expect(reduceStreamEvent(assistantMessage, { event: 'error', data }))
+      .toMatchObject({
+        error: 'agent.errors.contextOverflow',
+        typedError: data,
+        terminalStatus: 'failed',
+        loading: false,
+      });
+  });
+
   it('keeps a Station-rejected attachment blocked until removal', () => {
     expect(agentAttachmentDraftsBlockSend([{ status: 'rejected' }])).toBe(true);
     expect(agentAttachmentDraftsBlockSend([{ status: 'ready' }])).toBe(false);
@@ -157,11 +180,14 @@ describe('Agent evidence UI projections', () => {
     expect(assistant).toContain('data-pt-agent-error-resource-kind');
     expect(assistant).toContain('data-pt-agent-error-resource-id');
     expect(assistant).toContain('data-pt-agent-message-error-recovery');
+    expect(assistant).toContain('data-pt-agent-message-error-recovery="reduce-context"');
+    expect(assistant).toContain('agent.recovery.reduceContext');
     expect(assistant).toContain("ns: 'agent'");
     expect(sources).toContain('data-source-badges');
     expect(sources).toContain('data-source-badge');
     expect(composer).toContain('data-agent-capability-warning');
     expect(composer).toContain('data-pt-agent-attachment-input');
+    expect(composer).toContain('composerFocusNonce');
     expect(attachments).toContain('data-pt-agent-composer-attachment-status');
     expect(attachments).toContain('data-pt-agent-composer-attachment-remove');
     expect(details).toContain('data-turn-details');

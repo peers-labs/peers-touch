@@ -115,7 +115,7 @@ interface FoundationAttachmentDeletionReadback {
   readAttempt: number;
 }
 
-interface FoundationAttachmentRejectionEvent {
+interface FoundationPreAdmissionErrorEvent {
   data: Record<string, unknown>;
   eventType: string;
   observedAt: string;
@@ -124,6 +124,7 @@ interface FoundationAttachmentRejectionEvent {
   conversationId: string;
   observationSequence: number;
   timestampMs: number;
+  sourceDelivery?: AgentTurnSourceDelivery;
 }
 
 interface ObservedFoundationTurnResult {
@@ -1055,6 +1056,27 @@ async function cleanupFoundationToolConversation(
   }
 }
 
+function clearFoundationLocalConversationProjection(
+  conversationId: string,
+): void {
+  useChatStore.setState((state) => {
+    const operations = { ...state.operations };
+    operations[conversationId]?.abortController.abort();
+    delete operations[conversationId];
+    const sessionBuffers = { ...state.sessionBuffers };
+    delete sessionBuffers[conversationId];
+    const isCurrent = state.currentSessionKey === conversationId;
+    return {
+      operations,
+      sessionBuffers,
+      messages: isCurrent ? [] : state.messages,
+      isStreaming: isCurrent ? false : state.isStreaming,
+      streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
+      abortController: isCurrent ? null : state.abortController,
+    };
+  });
+}
+
 async function cancelFoundationQueuedTurns(
   conversationId: string,
   maximumCancellations = Number.POSITIVE_INFINITY,
@@ -1150,6 +1172,16 @@ function evidenceValue(value: unknown): unknown {
     );
   }
   return value;
+}
+
+function normalizeProjectedStationPayload(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalized = {
+    ...(evidenceValue(value) as Record<string, unknown>),
+  };
+  delete normalized.streamGeneration;
+  return normalized;
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -4448,7 +4480,7 @@ async function runFoundationAttachmentRejectedScenario(input: {
 
     let rejectionObservationSequence = 0;
     const rejectionEventRef: {
-      current: FoundationAttachmentRejectionEvent | null;
+      current: FoundationPreAdmissionErrorEvent | null;
     } = { current: null };
     const unsubscribe = eventBus.subscribe(
       EVENT.AGENT_TURN_STREAM_EVENT,
@@ -4534,7 +4566,7 @@ async function runFoundationAttachmentRejectedScenario(input: {
       '[data-pt-agent-composer-attachment-remove]',
     );
     const rejectionEvent =
-      rejectionEventRef.current as FoundationAttachmentRejectionEvent | null;
+      rejectionEventRef.current as FoundationPreAdmissionErrorEvent | null;
     if (!rejectedDraft || !removeAction || !errorText || !rejectionEvent) {
       throw new Error(
         'agent.acceptance.foundationAttachmentRejectionSurfaceMissing',
@@ -4681,6 +4713,368 @@ async function runFoundationAttachmentRejectedScenario(input: {
       throw Object.assign(
         new Error(
           'agent.acceptance.foundationAttachmentRejectionCleanupFailed',
+        ),
+        {
+          primaryError: error,
+          cleanupError,
+        },
+      );
+    }
+    throw error;
+  }
+}
+
+async function runFoundationContextOverflowScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}> {
+  const agentId = input.agent.id || input.agent.name;
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation context overflow ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  const overflowDraft =
+    `Context overflow ${input.sampleId}: `
+    + 'bounded-input '.repeat(32);
+  const reducedDraft = `Reduced context ${input.sampleId}`;
+  let baselineTurnId = '';
+
+  const setComposerDraft = (value: string) => {
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      '[data-pt-agent-composer-input]',
+    );
+    const setTextareaValue = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      'value',
+    )?.set;
+    if (!textarea || !setTextareaValue) {
+      throw new Error('agent.acceptance.foundationComposerInputMissing');
+    }
+    setTextareaValue.call(textarea, value);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    return textarea;
+  };
+
+  try {
+    await useChatStore.getState().selectSession(conversation.conversation_id);
+    const baseline = await withFoundationCapabilitiesDisabled(
+      input.agent,
+      input.capabilitySessionId,
+      () => runFoundationAttachmentTurn({
+        agentId,
+        conversationId: conversation.conversation_id,
+        provider: input.agent.provider || undefined,
+        model: input.agent.model || undefined,
+        capabilitySessionId: input.capabilitySessionId,
+        attachments: [],
+        content: 'Reply with ready.',
+      }),
+    );
+    baselineTurnId = baseline.turnId;
+    if (!baseline.result.ok || !baselineTurnId) {
+      throw new Error(
+        baseline.result.error
+        || 'agent.acceptance.foundationContextOverflowAttestationFailed',
+      );
+    }
+    await useChatStore.getState().selectSession('');
+    await useChatStore.getState().selectSession(conversation.conversation_id);
+    await useChatStore.getState().syncMessages();
+
+    const before = await foundationExecutionSnapshot(
+      agentId,
+      conversation.conversation_id,
+    );
+    const beforeReadback = await foundationConversationReadback(
+      conversation.conversation_id,
+    );
+    const beforeQueue = await api.listAgentTurnQueue(
+      conversation.conversation_id,
+    );
+    useChatStore.getState().fillComposer(overflowDraft);
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      '[data-pt-agent-composer-input]',
+    );
+    if (!textarea) {
+      throw new Error('agent.acceptance.foundationComposerInputMissing');
+    }
+    await waitFor(
+      () => textarea.value === overflowDraft,
+      'context overflow composer draft',
+      10_000,
+    );
+
+    let observationSequence = 0;
+    const errorEventRef: {
+      current: FoundationPreAdmissionErrorEvent | null;
+    } = { current: null };
+    const unsubscribe = eventBus.subscribe(
+      EVENT.AGENT_TURN_STREAM_EVENT,
+      (payload) => {
+        const sourceDelivery = (
+          payload as typeof payload & {
+            sourceDelivery?: AgentTurnSourceDelivery;
+          }
+        ).sourceDelivery;
+        if (payload.conversationId !== conversation.conversation_id) {
+          return;
+        }
+        observationSequence += 1;
+        if (
+          payload.event !== 'error'
+          || payload.data.error_type !== 'CONTEXT_OVERFLOW'
+        ) return;
+        errorEventRef.current = {
+          data: evidenceValue(payload.data) as Record<string, unknown>,
+          eventType: payload.event,
+          observedAt: new Date(payload.timestampMs).toISOString(),
+          streamId: payload.streamId,
+          streamGeneration: payload.streamGeneration,
+          conversationId: payload.conversationId,
+          observationSequence,
+          timestampMs: payload.timestampMs,
+          sourceDelivery,
+        };
+      },
+    );
+
+    const startedAt = performance.now();
+    try {
+      const sent = useChatStore.getState().sendMessage(
+        overflowDraft,
+        [],
+        {
+          requestedBudget: {
+            max_input_tokens: 64,
+          },
+        },
+      );
+      if (!sent) {
+        throw new Error('agent.acceptance.foundationContextOverflowSendRejected');
+      }
+      await waitFor(
+        () => errorEventRef.current !== null,
+        'typed context overflow rejection',
+        60_000,
+      );
+      await waitFor(
+        () => Boolean(document.querySelector(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="CONTEXT_OVERFLOW"]',
+        )),
+        'context overflow receiver',
+        10_000,
+      );
+    } finally {
+      unsubscribe();
+    }
+
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="CONTEXT_OVERFLOW"]',
+      ),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    const errorToggle = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-toggle]',
+    );
+    const errorSelector =
+      '[data-pt-agent-message-error-text="agent.errors.contextOverflow"]';
+    if (!errorSurface?.querySelector(errorSelector)) {
+      errorToggle?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(errorSelector)),
+        'localized context overflow text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+    const recoveryAction = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-recovery="reduce-context"]',
+    );
+    const errorEvent =
+      errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+    if (!errorSurface || !errorText || !recoveryAction || !errorEvent) {
+      throw new Error(
+        'agent.acceptance.foundationContextOverflowSurfaceMissing',
+      );
+    }
+    if (
+      !errorEvent.streamId
+      || errorEvent.streamGeneration <= 0
+      || errorEvent.observationSequence <= 0
+      || errorEvent.timestampMs <= 0
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationContextOverflowRuntimeEventMissing',
+      );
+    }
+    const sourceDelivery = errorEvent.sourceDelivery;
+    const actorPtid = authenticatedFoundationActorPtid();
+    if (
+      !sourceDelivery
+      || sourceDelivery.transport !== 'station-sse'
+      || sourceDelivery.ptid !== actorPtid
+      || sourceDelivery.conversationId !== conversation.conversation_id
+      || sourceDelivery.turnId !== ''
+      || sourceDelivery.sequence !== 0
+      || sourceDelivery.rawPayload.eventType !== 'error'
+      || stableJson(
+        normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+      ) !== stableJson(
+        normalizeProjectedStationPayload(errorEvent.data),
+      )
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationContextOverflowSourceIdentityMismatch',
+      );
+    }
+
+    const draftAfterRejection = textarea.value;
+    recoveryAction.click();
+    await waitFor(
+      () => document.activeElement === textarea,
+      'context overflow recovery focus',
+      10_000,
+    );
+    const composerFocusedAfterRecovery = document.activeElement === textarea;
+    setComposerDraft(reducedDraft);
+    await waitFor(
+      () => textarea.value === reducedDraft,
+      'context overflow reduced draft',
+      10_000,
+    );
+
+    const after = await foundationExecutionSnapshot(
+      agentId,
+      conversation.conversation_id,
+    );
+    const afterReadback = await foundationConversationReadback(
+      conversation.conversation_id,
+    );
+    const afterQueue = await api.listAgentTurnQueue(
+      conversation.conversation_id,
+    );
+    const beforeHash = await sha256Hex(stableJson(beforeReadback));
+    const afterHash = await sha256Hex(stableJson(afterReadback));
+    const typedOutcome = errorEvent.data;
+    const runtimeIdentity = {
+      streamId: errorEvent.streamId,
+      streamGeneration: errorEvent.streamGeneration,
+      conversationId: errorEvent.conversationId,
+      observationSequence: errorEvent.observationSequence,
+      eventType: errorEvent.eventType,
+      timestampMs: errorEvent.timestampMs,
+      data: typedOutcome,
+    };
+    const runtimeEvent: FoundationRuntimeEventObservation = {
+      eventId: await sha256Hex(stableJson(runtimeIdentity)),
+      eventType: errorEvent.eventType,
+      sequence: errorEvent.observationSequence,
+      observedAt: errorEvent.observedAt,
+      streamGeneration: errorEvent.streamGeneration,
+      streamIdHash: await sha256Hex(errorEvent.streamId),
+      conversationIdHash: await sha256Hex(errorEvent.conversationId),
+      payloadHash: await sha256Hex(
+        stableJson(sourceDelivery.rawPayload),
+      ),
+      errorType: String(typedOutcome.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    };
+    setComposerDraft('');
+    clearFoundationLocalConversationProjection(
+      conversation.conversation_id,
+    );
+
+    return {
+      conversationId: conversation.conversation_id,
+      turnId: baselineTurnId,
+      durationMs: performance.now() - startedAt,
+      runtimeEvent,
+      facts: {
+        outcome: typedOutcome,
+        runtimeEvent,
+        receiver: {
+          errorVisible: errorText.getClientRects().length > 0,
+          errorText: errorText.textContent?.trim() ?? '',
+          expectedErrorText: i18n.t(
+            'agent.errors.contextOverflow',
+            { ns: 'agent' },
+          ),
+          recoveryVisible: recoveryAction.getClientRects().length > 0,
+          recoveryText: recoveryAction.textContent?.trim() ?? '',
+          expectedRecoveryText: i18n.t(
+            'agent.recovery.reduceContext',
+            { ns: 'agent' },
+          ),
+          draftLengthBefore: overflowDraft.length,
+          draftLengthAfterRejection: draftAfterRejection.length,
+          draftHashBefore: await sha256Hex(overflowDraft),
+          draftHashAfterRejection: await sha256Hex(draftAfterRejection),
+          composerFocusedAfterRecovery,
+          reducedDraftLength: reducedDraft.length,
+          reducedDraftHash: await sha256Hex(reducedDraft),
+        },
+        station: {
+          conversationId: conversation.conversation_id,
+          conversationVersionBefore: beforeReadback.conversation.version,
+          conversationVersionAfter: afterReadback.conversation.version,
+          beforeHash,
+          afterHash,
+          turnDelta: after.turnCount - before.turnCount,
+          messageDelta:
+            afterReadback.messages.length - beforeReadback.messages.length,
+          queueDelta:
+            afterQueue.entries.length - beforeQueue.entries.length,
+          providerExecutionDelta:
+            after.providerCallCount - before.providerCallCount,
+        },
+        replay: {
+          sourceHash: beforeHash,
+          replayHash: afterHash,
+          equal: beforeHash === afterHash,
+        },
+        cleanup: {
+          draftCleared: textarea.value === '',
+          localProjectionCleared:
+            !useChatStore.getState().sessionBuffers[
+              conversation.conversation_id
+            ]
+            && !useChatStore.getState().operations[
+              conversation.conversation_id
+            ],
+          conversationDeleted: false,
+        },
+      },
+    };
+  } catch (error) {
+    try {
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        '[data-pt-agent-composer-input]',
+      );
+      if (textarea) setComposerDraft('');
+      clearFoundationLocalConversationProjection(
+        conversation.conversation_id,
+      );
+      await deleteFoundationConversation(conversation.conversation_id);
+    } catch (cleanupError) {
+      throw Object.assign(
+        new Error(
+          'agent.acceptance.foundationContextOverflowCleanupFailed',
         ),
         {
           primaryError: error,
@@ -9376,6 +9770,8 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseActiveMutationConflict(ctx);
     case 'BASE-CANCELLED':
       return evaluateBaseCancelled(ctx);
+    case 'BASE-CONTEXT_OVERFLOW':
+      return evaluateBaseContextOverflow(ctx);
     case 'BASE-APPROVAL_DENIED':
       return evaluateBaseApprovalDenied(ctx);
     case 'BASE-APPROVAL_EXPIRED':
@@ -9549,6 +9945,111 @@ function evaluateBaseCancelled(
     cleanupComplete: (
       Number(cleanup.cancellationRequestCount) === 1
       && Number(cleanup.terminalCleanupCount) === 1
+      && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseContextOverflow(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationContextOverflowFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationContextOverflowOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationContextOverflowDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationContextOverflowReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationContextOverflowStation',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationContextOverflowReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationContextOverflowCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationContextOverflowRuntimeEvent',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+  const limitTokens = Number(details.limit_tokens);
+  const actualTokens = Number(details.actual_tokens);
+
+  return {
+    typedContextOverflow: (
+      outcome.error === 'agent.errors.contextOverflow'
+      && outcome.error_type === 'CONTEXT_OVERFLOW'
+      && outcome.locale_key === 'agent.errors.contextOverflow'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && safeDetailKeys.length === 2
+      && safeDetailKeys[0] === 'actual_tokens'
+      && safeDetailKeys[1] === 'limit_tokens'
+      && Number.isSafeInteger(limitTokens)
+      && limitTokens > 0
+      && Number.isSafeInteger(actualTokens)
+      && actualTokens > limitTokens
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'CONTEXT_OVERFLOW'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.streamGeneration) > 0
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === ''
+      && Number(runtimeEvent.sourceSequence) === 0
+      && runtimeEvent.sourceEventType === 'error'
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    rejectedDraftPreserved: (
+      Number(receiver.draftLengthBefore) > 0
+      && receiver.draftLengthAfterRejection === receiver.draftLengthBefore
+      && receiver.draftHashAfterRejection === receiver.draftHashBefore
+    ),
+    reduceContextExecuted: (
+      receiver.composerFocusedAfterRecovery === true
+      && Number(receiver.reducedDraftLength) > 0
+      && Number(receiver.reducedDraftLength)
+        < Number(receiver.draftLengthAfterRejection)
+      && typeof receiver.reducedDraftHash === 'string'
+      && receiver.reducedDraftHash.length === 64
+    ),
+    stationStateUnchanged: (
+      station.conversationVersionAfter === station.conversationVersionBefore
+      && station.afterHash === station.beforeHash
+    ),
+    zeroPersistenceAndProvider: (
+      Number(station.turnDelta) === 0
+      && Number(station.messageDelta) === 0
+      && Number(station.queueDelta) === 0
+      && Number(station.providerExecutionDelta) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.draftCleared === true
+      && cleanup.localProjectionCleared === true
       && cleanup.conversationDeleted === true
     ),
   };
@@ -12261,6 +12762,24 @@ export function installAcceptanceHarness(): void {
         scenarioFacts = scenario.facts;
       }
 
+      if (cell === 'BASE-CONTEXT_OVERFLOW') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationContextOverflowScenario({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
       if (cell === 'BASE-APPROVAL_DENIED') {
         const scenario = await runFoundationApprovalDeniedScenario({
           agent,
@@ -13444,6 +13963,7 @@ export function installAcceptanceHarness(): void {
           || cell === 'BASE-ATTACHMENT_REJECTED'
           || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
           || cell === 'BASE-CANCELLED'
+          || cell === 'BASE-CONTEXT_OVERFLOW'
         )
         && scenarioFacts
         && currentConversationId
@@ -13469,6 +13989,8 @@ export function installAcceptanceHarness(): void {
               ? 'foundationActiveMutationConflictCleanup'
               : cell === 'BASE-CANCELLED'
                 ? 'foundationCancelledCleanup'
+              : cell === 'BASE-CONTEXT_OVERFLOW'
+                ? 'foundationContextOverflowCleanup'
               : cell === 'BASE-APPROVAL_DENIED'
                 ? 'foundationApprovalDeniedCleanup'
                 : cell === 'BASE-APPROVAL_EXPIRED'
@@ -13598,6 +14120,27 @@ export function installAcceptanceHarness(): void {
         stationReadback.stateHash = await sha256Hex(stableJson(station));
         stationReadback.typedError = scenarioFacts.outcome;
       }
+      if (cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationContextOverflowStation',
+        );
+        stationReadback.entityKind = 'agent-context-pre-admission';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.conversationId),
+        );
+        stationReadback.revision = Number(
+          station.conversationVersionAfter,
+        );
+        stationReadback.stateHash = String(station.afterHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          turn: station.turnDelta,
+          message: station.messageDelta,
+          queue: station.queueDelta,
+          providerExecution: station.providerExecutionDelta,
+        };
+      }
       if (
         (
           cell === 'BASE-APPROVAL_DENIED'
@@ -13712,6 +14255,7 @@ export function installAcceptanceHarness(): void {
           : (
             cell === 'BASE-ATTACHMENT_REJECTED'
             || cell === 'BASE-CANCELLED'
+            || cell === 'BASE-CONTEXT_OVERFLOW'
           ) && observedRuntimeEvent
             ? {
                 eventId: observedRuntimeEvent.eventId ?? '',
@@ -13723,8 +14267,12 @@ export function installAcceptanceHarness(): void {
                 conversationIdHash: observedRuntimeEvent.conversationIdHash,
                 payloadHash: observedRuntimeEvent.payloadHash,
                 errorType: observedRuntimeEvent.errorType,
-                ...(cell === 'BASE-CANCELLED'
-                  ? {
+                ...(
+                  (
+                    cell === 'BASE-CANCELLED'
+                    || cell === 'BASE-CONTEXT_OVERFLOW'
+                  )
+                    ? {
                       sourceTransport: observedRuntimeEvent.sourceTransport,
                       sourcePtidHash: observedRuntimeEvent.sourcePtidHash,
                       sourceConversationId:
@@ -13733,7 +14281,8 @@ export function installAcceptanceHarness(): void {
                       sourceSequence: observedRuntimeEvent.sourceSequence,
                       sourceEventType: observedRuntimeEvent.sourceEventType,
                     }
-                  : {}),
+                    : {}
+                ),
               }
           : cell === 'AS-F12' && scenarioFacts
             ? {
@@ -13834,6 +14383,30 @@ export function installAcceptanceHarness(): void {
                   measurements: {
                     turnDelta: station.turnDelta,
                     messageDelta: station.messageDelta,
+                    providerExecutionDelta:
+                      station.providerExecutionDelta,
+                  },
+                };
+              })()
+          : cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationContextOverflowStation',
+                );
+                const count =
+                  Number(station.turnDelta)
+                  + Number(station.messageDelta)
+                  + Number(station.queueDelta)
+                  + Number(station.providerExecutionDelta);
+                return {
+                  counterId: String(station.conversationId),
+                  count,
+                  maximum: 0,
+                  measurements: {
+                    turnDelta: station.turnDelta,
+                    messageDelta: station.messageDelta,
+                    queueDelta: station.queueDelta,
                     providerExecutionDelta:
                       station.providerExecutionDelta,
                   },
@@ -13980,6 +14553,13 @@ export function installAcceptanceHarness(): void {
               'foundationCancelledCleanup',
             )
           : null;
+      const contextOverflowCleanup =
+        cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationContextOverflowCleanup',
+            )
+          : null;
       const cleanup: Record<string, unknown> = {
         status: (
           activeMutationCleanup
@@ -13995,6 +14575,12 @@ export function installAcceptanceHarness(): void {
                   Number(cancellationCleanup.cancellationRequestCount) === 1
                   && Number(cancellationCleanup.terminalCleanupCount) === 1
                   && cancellationCleanup.conversationDeleted === true
+                )
+            : contextOverflowCleanup
+              ? (
+                  contextOverflowCleanup.draftCleared === true
+                  && contextOverflowCleanup.localProjectionCleared === true
+                  && contextOverflowCleanup.conversationDeleted === true
                 )
             : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
               ? (
@@ -14083,6 +14669,8 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CANCELLED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : {}),
       };
 
@@ -14092,6 +14680,7 @@ export function installAcceptanceHarness(): void {
         || cell === 'BASE-APPROVAL_DENIED'
         || cell === 'BASE-APPROVAL_EXPIRED'
         || cell === 'BASE-ATTACHMENT_REJECTED'
+        || cell === 'BASE-CONTEXT_OVERFLOW'
       ) && scenarioFacts
         ? evidenceRecord(
             scenarioFacts.receiver,
@@ -14146,6 +14735,17 @@ export function installAcceptanceHarness(): void {
           receiverText = {
             errorText: receiver.errorText,
             recoveryVisible: receiver.recoveryVisible,
+          };
+        } else if (cell === 'BASE-CONTEXT_OVERFLOW') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.recoveryVisible === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-text="agent.errors.contextOverflow"],'
+            + '[data-pt-agent-message-error-recovery="reduce-context"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryText: receiver.recoveryText,
           };
         } else {
           receiverVisible =
@@ -14207,6 +14807,15 @@ export function installAcceptanceHarness(): void {
         const replay = evidenceRecord(
           scenarioFacts.replay,
           'foundationAttachmentRejectedReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationContextOverflowReplay',
         );
         replayEvidence.sourceHash = replay.sourceHash;
         replayEvidence.replayHash = replay.replayHash;
@@ -14348,6 +14957,35 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationAttachmentRejectionCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-CONTEXT_OVERFLOW'
+          && preparedConversationId
+        ) {
+          try {
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+              '[data-pt-agent-composer-input]',
+            );
+            if (textarea) {
+              const setTextareaValue = Object.getOwnPropertyDescriptor(
+                window.HTMLTextAreaElement.prototype,
+                'value',
+              )?.set;
+              setTextareaValue?.call(textarea, '');
+              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            await deleteFoundationConversation(preparedConversationId);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationContextOverflowCleanupFailed',
               ),
               {
                 primaryError: error,
