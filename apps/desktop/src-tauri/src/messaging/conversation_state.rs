@@ -199,7 +199,7 @@ mod tests {
                     members: vec![
                         ConversationAuthorityMember {
                             ptid: "ptid:alice".to_string(),
-                            role: "owner".to_string(),
+                            role: "member".to_string(),
                             home_station_peer_id: "station-local".to_string(),
                         },
                         ConversationAuthorityMember {
@@ -264,7 +264,7 @@ mod tests {
                 .map(|member| (member.ptid.clone(), member.role))
                 .collect::<Vec<_>>(),
             vec![
-                ("ptid:alice".to_string(), MemberRole::Owner as i32),
+                ("ptid:alice".to_string(), MemberRole::Member as i32),
                 ("ptid:bob".to_string(), MemberRole::Member as i32),
             ]
         );

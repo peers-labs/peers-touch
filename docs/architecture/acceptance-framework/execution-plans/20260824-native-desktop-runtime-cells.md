@@ -3241,6 +3241,39 @@ The final source-bound local runs pass:
 - focused Actor Identity, Conversation, and shared Federation race suites,
   focused `go vet`, Mobile full check, Go style, and `git diff --check`.
 
-This checkpoint is locally verified but not yet committed or deployed. Windows
+The repair was committed as
+`a008a1c3282c3cbdc5c2bb36dc7c3286f92b452a` and deployed exactly to the two
+disposable Stations and sixwin. Windows Product Closure run
+`20260907T153750428899Z-90da421fea631aa9b0f51ae3b958df1f`, with binary
+SHA-256
+`3925e2d5bb831937f8668261fd9a6bb5255a2b6747686e54fbf690aab635d54f`,
+proved that Direct creation now commits through the signed endpoint-manifest
+path. Both clients later projected one Direct conversation. The run still
+failed at `conversation.search.ui` because the Desktop Device Messaging Engine
+applied the Group-only owner-role invariant to the canonical Direct creation
+event: Direct members are both `MEMBER`, while the local inbox validator
+required one `OWNER`. The synchronous drain therefore returned an error after
+the authority commit and left the UI intent in its failed state. Runtime and
+provisioner cleanup reached `DONE/PROVEN`.
+
+The local correction makes Direct and Group projection admission explicit:
+Direct requires exactly two sorted `MEMBER` participants and deterministic
+owner metadata; Group retains exactly one matching `OWNER`. Station bootstrap
+uses the same kind-specific role projection instead of inventing Direct
+ownership. The approved local matrix passes at the corrected working tree:
+
+- `station-messaging-unit`:
+  `20260907T162201940480Z-ef80f18031688cbc36e95116b914a62e`;
+- `messaging-platform-contract`:
+  `20260907T162220659277Z-75ade6a5e23284b518a19e8793f7a97e`;
+- `desktop-check`:
+  `20260907T162250297926Z-b0986d285384583575acedb4b90a8302`;
+- `chat-native-visible-static`:
+  `20260907T162311315463Z-728ed72316862d015983e93b23cd90aa`.
+
+Desktop native `cargo check --features acceptance-webdriver` and
+`git diff --check` also pass. The focused Desktop binary unit-test target is
+blocked by unrelated pre-existing Auth test-only import/type errors. Windows
 Product Closure, the remaining seven Windows Native Chat Gates, Windows
-multi-Station closure, and PostgreSQL contention remain `UNPROVEN`.
+multi-Station closure, and PostgreSQL contention remain `UNPROVEN` pending a
+new exact-source checkpoint and rerun.
