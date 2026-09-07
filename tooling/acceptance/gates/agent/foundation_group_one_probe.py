@@ -183,7 +183,7 @@ def assert_group_one_capture(
     capture: Mapping[str, Any],
 ) -> None:
     evaluators = {
-        "BASE-ATTACHMENT-REJECTED": (
+        "BASE-ATTACHMENT_REJECTED": (
             lambda facts: evaluate_base_attachment_rejected(facts)
         ),
         "BASE-APPROVAL_EXPIRED": (
@@ -233,7 +233,7 @@ def assert_group_one_capture(
         raise GroupOneProbeError(
             f"{probe_input.cell} capture must contain assertions"
         )
-    if probe_input.cell == "BASE-ATTACHMENT-REJECTED":
+    if probe_input.cell == "BASE-ATTACHMENT_REJECTED":
         runtime_event = scenario_facts.get("runtimeEvent")
         runtime_role = capture.get("runtime-events")
         if not isinstance(runtime_event, Mapping) or not isinstance(
@@ -241,7 +241,7 @@ def assert_group_one_capture(
             Mapping,
         ):
             raise GroupOneProbeError(
-                "BASE-ATTACHMENT-REJECTED runtime event evidence is missing"
+                "BASE-ATTACHMENT_REJECTED runtime event evidence is missing"
             )
         expected_role = {
             "eventId": runtime_event.get("eventId"),
@@ -256,7 +256,7 @@ def assert_group_one_capture(
         }
         if dict(runtime_role) != expected_role:
             raise GroupOneProbeError(
-                "BASE-ATTACHMENT-REJECTED runtime-events role does not "
+                "BASE-ATTACHMENT_REJECTED runtime-events role does not "
                 "match the observed rejection event"
             )
     try:
