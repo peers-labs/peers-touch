@@ -234,6 +234,12 @@ func discoverForbiddenDDDImports(
 ) []diagnostic {
 	var diagnostics []diagnostic
 	for _, rule := range rules {
+		// A configured root is part of the Gate contract; treating a missing path
+		// as an empty layer would silently disable import enforcement.
+		if rootDiagnostic := unavailableDDDLayerRootDiagnostic(root, rule); rootDiagnostic != nil {
+			diagnostics = append(diagnostics, *rootDiagnostic)
+			continue
+		}
 		files, sourceDiagnostics := collectSourceFiles(
 			root,
 			[]string{rule.Root},
@@ -294,6 +300,33 @@ func discoverForbiddenDDDImports(
 		}
 	}
 	return diagnostics
+}
+
+func unavailableDDDLayerRootDiagnostic(root string, rule dddLayerRule) *diagnostic {
+	normalizedRoot, err := normalizeRepoPath(rule.Root)
+	if err != nil {
+		return nil
+	}
+
+	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(normalizedRoot)))
+	if err == nil && info.IsDir() {
+		return nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return nil
+	}
+
+	reason := "does not exist"
+	if err == nil {
+		reason = "is not a directory"
+	}
+	return &diagnostic{
+		Code:       "missing_ddd_layer_root",
+		Message:    fmt.Sprintf("DDD layer %q root %q %s", rule.Name, normalizedRoot, reason),
+		Identifier: normalizedRoot,
+		Owner:      rule.Name,
+		Expected:   []string{normalizedRoot},
+	}
 }
 
 func importMatchesPrefix(importPath, prefix string) bool {
