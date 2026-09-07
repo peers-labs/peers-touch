@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `f4c264c5b5e96a0aee840ea72021e1c949868729` hard-cuts every producer/oracle dispatch to the immutable matrix ID `BASE-ATTACHMENT_REJECTED`; exact-source runtime then reached the scenario and proved its fake PDF was rejected by Desktop Rust before upload, so the local fixture now uploads a valid PDF and tombstones the actor-owned object before the real Send action to exercise Station rejection deterministically. Post-fix exact-source proof remains pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `ca99eab47e6d6d07b4cbc35e374c1c4cd255da16` uploads a valid PDF through the real composer and tombstones its actor-owned object before the real Send action. Exact-source runtime confirmed upload and delete, then exposed missing Browser HTTP gateway parity for `oss_list_my_files`, which blocked authenticated tombstone readback before Send. The local correction adds that existing application command to the Browser dispatch boundary; post-parity proof remains pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5855,6 +5855,27 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   diagnostics and are not reclassified as Agent product proof. Foundation/G-F
   remain `PARTIAL / UNPROVEN` pending the exact-source checkpoint, Acceptance
   binary rebuild, deployment, and unchanged Gate rerun.
+- Checkpoint `ca99eab47e6d6d07b4cbc35e374c1c4cd255da16` was rebuilt,
+  smoke-tested, and deployed exact-source to
+  `chat-native-disposable-station`. The first Gate run
+  `20260907T042006102971Z-c1553f21eb781688558bada7dffcb589`
+  stopped earlier at Browser AS-F06 replay parity; one controlled unchanged
+  rerun was justified because the candidate changed only the later attachment
+  fixture. Run
+  `20260907T043756969291Z-0b7ec3f7772fd0dc867abc34f64094d2`
+  crossed AS-F06 and reached Browser English `BASE-ATTACHMENT_REJECTED`.
+  Runtime evidence proved the valid PDF upload and `oss_delete_file` both
+  succeeded, but `oss_list_my_files` failed before Station readback because the
+  Browser HTTP gateway omitted that already-registered Tauri/application
+  command. Both Provisioner cleanups completed `DONE / PROVEN / passed`, all
+  client ports were released, and source identity and redaction passed. The
+  local fix adds only the missing Browser gateway parity plus focused routing
+  coverage. Desktop TypeScript check, all `573` Desktop tests with one
+  unrelated environment-dependent skip, the complete HTTP-gateway Rust module
+  (`6` passed, `1` intentionally ignored), `145/145` focused
+  Foundation/oracle tests, Rust formatting, and `git diff --check` pass.
+  Foundation/G-F remain `PARTIAL / UNPROVEN` pending checkpoint, exact-source
+  deployment, and the unchanged Gate rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
