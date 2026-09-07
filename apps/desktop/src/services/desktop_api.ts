@@ -6806,39 +6806,47 @@ export function streamAgentTurn(
       let capturedConversationId = input.conversation_id || '';
 
       const forwardEvent = (payload: AgentTurnStreamPayload) => {
+        const sourceData = payload.data || {};
         const data: Record<string, unknown> = {};
-        Object.entries(payload.data || {}).forEach(([key, value]) => {
+        Object.entries(sourceData).forEach(([key, value]) => {
           data[key] = value;
         });
-        if (typeof payload.data?.text === 'string') data.content = payload.data.text;
-        if (typeof payload.data?.result === 'string') data.content = payload.data.result;
-        if (typeof payload.data?.toolCallId === 'string') data.id = payload.data.toolCallId;
-        if (typeof payload.data?.toolName === 'string') data.name = payload.data.toolName;
-        if (typeof payload.data?.arguments === 'string') data.args = payload.data.arguments;
-        if (typeof payload.data?.stage === 'string') data.message = payload.data.stage;
+        if (typeof sourceData.text === 'string') data.content = sourceData.text;
+        if (typeof sourceData.result === 'string') data.content = sourceData.result;
+        if (typeof sourceData.toolCallId === 'string') data.id = sourceData.toolCallId;
+        if (typeof sourceData.toolName === 'string') data.name = sourceData.toolName;
+        if (typeof sourceData.arguments === 'string') data.args = sourceData.arguments;
+        if (typeof sourceData.stage === 'string') data.message = sourceData.stage;
 
-        const seq = typeof payload.data?.seq === 'number'
-          ? payload.data.seq
-          : typeof payload.data?.seq === 'string'
-            ? parseInt(payload.data.seq, 10)
+        const seq = typeof sourceData.seq === 'number'
+          ? sourceData.seq
+          : typeof sourceData.seq === 'string'
+            ? parseInt(sourceData.seq, 10)
             : 0;
         if (seq > 0 && seq > lastEventSeq) {
           lastEventSeq = seq;
         }
-        const eventTurnId = typeof payload.data?.turnId === 'string'
-          ? payload.data.turnId
-          : typeof payload.data?.turn_id === 'string'
-            ? payload.data.turn_id
+        const eventTurnId = typeof sourceData.turnId === 'string'
+          ? sourceData.turnId
+          : typeof sourceData.turn_id === 'string'
+            ? sourceData.turn_id
             : '';
         if (eventTurnId) capturedTurnId = eventTurnId;
-        if (payload.event === 'conversation_created' && typeof payload.data?.conversation_id === 'string') {
-          capturedConversationId = payload.data.conversation_id;
+        if (payload.event === 'conversation_created' && typeof sourceData.conversation_id === 'string') {
+          capturedConversationId = sourceData.conversation_id;
         }
 
         const event: StreamEvent = {
           event: payload.event,
           data: { ...data, streamGeneration },
           ptid: payload.ptid,
+          sourceDelivery: createAgentTurnSourceDelivery(
+            payload.event,
+            sourceData,
+            payload.ptid || sourcePtid,
+            capturedConversationId || input.conversation_id,
+            capturedTurnId,
+          ),
         };
         publishAgentTurnRuntimeEvent(
           payload.streamId,

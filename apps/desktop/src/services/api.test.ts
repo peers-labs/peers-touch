@@ -204,6 +204,168 @@ describe('Agent turn stream completion', () => {
     expect(source.turnId).toBe('')
   })
 
+  it('source-binds a Browser pre-admission error before projection metadata', async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    })
+    vi.stubGlobal('window', browserWindow)
+    ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+      'http://127.0.0.1:3030'
+    const rawData = {
+      type: 'error',
+      error: 'agent.errors.contextOverflow',
+      error_type: 'CONTEXT_OVERFLOW',
+      locale_key: 'agent.errors.contextOverflow',
+      retryable: false,
+      terminal: true,
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      details: {
+        limit_tokens: '64',
+        actual_tokens: '65',
+      },
+    }
+    mockFetch.mockResolvedValue(new Response(
+      `event: error\ndata: ${JSON.stringify(rawData)}\n\n`,
+      {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      },
+    ))
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-browser-context-overflow',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'oversized',
+      },
+      onEvent,
+      vi.fn(),
+      onError,
+      'ptid:person:owner',
+    )
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'error',
+      data: {
+        ...rawData,
+        streamGeneration: expect.any(Number),
+      },
+      sourceDelivery: {
+        transport: 'station-sse',
+        ptid: 'ptid:person:owner',
+        conversationId: 'conversation-1',
+        turnId: '',
+        sequence: 0,
+        rawPayload: {
+          eventType: 'error',
+          data: rawData,
+        },
+      },
+    }))
+  })
+
+  it('source-binds a native pre-admission error before projection metadata', async () => {
+    type NativeTurnEvent = {
+      payload: {
+        streamId: string
+        ptid: string
+        event: string
+        data: Record<string, unknown>
+      }
+    }
+    let listener: ((event: NativeTurnEvent) => void) | undefined
+    let startedStreamId = ''
+    const unlisten = vi.fn()
+    mockListen.mockImplementation(async (_event, callback) => {
+      listener = callback as (event: NativeTurnEvent) => void
+      return unlisten
+    })
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command !== 'agent_execute_turn_stream') {
+        return Promise.reject(new Error(`unexpected command: ${command}`))
+      }
+      startedStreamId = String(
+        (args as { input: { stream_id: string } }).input.stream_id,
+      )
+      return Promise.resolve({
+        ok: true,
+        data: {
+          command,
+          status: JSON.stringify({ stream_id: startedStreamId }),
+        },
+      })
+    })
+    const rawData = {
+      type: 'error',
+      error: 'agent.errors.contextOverflow',
+      error_type: 'CONTEXT_OVERFLOW',
+      locale_key: 'agent.errors.contextOverflow',
+      retryable: false,
+      terminal: true,
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      details: {
+        limit_tokens: '64',
+        actual_tokens: '65',
+      },
+    }
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-native-context-overflow',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'oversized',
+      },
+      onEvent,
+      vi.fn(),
+      onError,
+      'ptid:person:owner',
+    )
+    await vi.waitFor(() => {
+      expect(listener).toBeTypeOf('function')
+      expect(startedStreamId).not.toBe('')
+    })
+
+    listener?.({
+      payload: {
+        streamId: startedStreamId,
+        ptid: 'ptid:person:owner',
+        event: 'error',
+        data: rawData,
+      },
+    })
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'error',
+      data: {
+        ...rawData,
+        streamGeneration: expect.any(Number),
+      },
+      sourceDelivery: {
+        transport: 'station-sse',
+        ptid: 'ptid:person:owner',
+        conversationId: 'conversation-1',
+        turnId: '',
+        sequence: 0,
+        rawPayload: {
+          eventType: 'error',
+          data: rawData,
+        },
+      },
+    }))
+    expect(unlisten).toHaveBeenCalledTimes(1)
+  })
+
   it('cancels a native transport aborted while its start command is pending', async () => {
     let resolveStart: (() => void) | undefined
     let startedStreamId = ''

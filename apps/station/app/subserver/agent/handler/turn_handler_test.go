@@ -219,6 +219,49 @@ func TestWriteTurnStreamErrorPreservesTypedAttachmentPayload(t *testing.T) {
 	}
 }
 
+func TestWriteTurnStreamErrorPreservesContextOverflowPayload(t *testing.T) {
+	resp := &fakeStreamResponse{}
+	if err := writeTurnStreamErrorWithIdentity(
+		resp,
+		errcode.NewContextOverflow(128, 129),
+		"conversation-1",
+		"agent-1",
+	); err != nil {
+		t.Fatalf("write typed stream error: %v", err)
+	}
+
+	body := resp.body.String()
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(body, "\n")[1]),
+		"data: ",
+	)
+	var payload struct {
+		Error          string            `json:"error"`
+		ErrorType      string            `json:"error_type"`
+		LocaleKey      string            `json:"locale_key"`
+		Retryable      bool              `json:"retryable"`
+		Terminal       bool              `json:"terminal"`
+		Details        map[string]string `json:"details"`
+		ConversationID string            `json:"conversationId"`
+		AgentID        string            `json:"agentId"`
+	}
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode typed stream error: %v", err)
+	}
+	if payload.Error != errcode.AgentContextOverflowLocaleKey ||
+		payload.ErrorType != string(errcode.AgentContextOverflow) ||
+		payload.LocaleKey != errcode.AgentContextOverflowLocaleKey ||
+		payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 2 ||
+		payload.Details["limit_tokens"] != "128" ||
+		payload.Details["actual_tokens"] != "129" ||
+		payload.ConversationID != "conversation-1" ||
+		payload.AgentID != "agent-1" {
+		t.Fatalf("typed stream error payload = %+v", payload)
+	}
+}
+
 func TestExposeTurnStreamIdentityFlushesDurableTurnID(t *testing.T) {
 	resp := &fakeStreamResponse{}
 

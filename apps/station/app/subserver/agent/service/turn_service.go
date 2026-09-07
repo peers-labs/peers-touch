@@ -1217,7 +1217,15 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		)
 		return nil, settleAdmissionFailure(maxDelegationDepthExhaustedReason, budgetErr)
 	}
-	if err := validateInputBudgetBeforePersistence(
+	if admittedTurnID == "" {
+		if err := validateInputBudgetBeforePersistence(
+			s.compression,
+			config.RuntimeBudget,
+			userInput,
+		); err != nil {
+			return nil, err
+		}
+	} else if err := validateAdmittedInputBudget(
 		s.compression,
 		config.RuntimeBudget,
 		userInput,
@@ -2872,8 +2880,50 @@ func validateInputBudgetBeforePersistence(
 	budget *model.RuntimeBudget,
 	userInput string,
 ) error {
+	limitTokens, actualTokens, err := inputBudgetUsage(
+		compression,
+		budget,
+		userInput,
+	)
+	if err != nil {
+		return err
+	}
+	if actualTokens <= limitTokens {
+		return nil
+	}
+	return errcode.NewContextOverflow(limitTokens, actualTokens)
+}
+
+func validateAdmittedInputBudget(
+	compression *CompressionService,
+	budget *model.RuntimeBudget,
+	userInput string,
+) error {
+	limitTokens, actualTokens, err := inputBudgetUsage(
+		compression,
+		budget,
+		userInput,
+	)
+	if err != nil {
+		return err
+	}
+	if actualTokens <= limitTokens {
+		return nil
+	}
+	return runtimeBudgetExhaustedWithDetails(
+		maxInputTokensExhaustedReason,
+		fmt.Sprintf("%d", limitTokens),
+		fmt.Sprintf("%d", actualTokens),
+	)
+}
+
+func inputBudgetUsage(
+	compression *CompressionService,
+	budget *model.RuntimeBudget,
+	userInput string,
+) (uint64, uint64, error) {
 	if budget == nil || budget.GetMaxInputTokens() == 0 {
-		return errcode.New(
+		return 0, 0, errcode.New(
 			errcode.AgentInvalidSourceState,
 			http.StatusConflict,
 			"runtime input budget is unavailable",
@@ -2888,14 +2938,7 @@ func validateInputBudgetBeforePersistence(
 	if compression != nil {
 		actualTokens = compression.EstimateTokens([]domain.Message{message})
 	}
-	if uint64(actualTokens) <= budget.GetMaxInputTokens() {
-		return nil
-	}
-	return runtimeBudgetExhaustedWithDetails(
-		maxInputTokensExhaustedReason,
-		fmt.Sprintf("%d", budget.GetMaxInputTokens()),
-		fmt.Sprintf("%d", actualTokens),
-	)
+	return budget.GetMaxInputTokens(), uint64(actualTokens), nil
 }
 
 func validateProviderRequestInputBudget(

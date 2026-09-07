@@ -1,11 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { agentService } from '../services/agent-service';
+import type {
+  Agent,
+  AgentTurnStreamController,
+  AgentTurnStreamError,
+  StreamEvent,
+} from '../services/desktop_api';
 import {
   applyOperationEventIdentity,
   isMessageRetryBlocked,
+  shouldUseSessionBuffer,
   type ChatMessage,
   type ChatOperation,
   useChatStore,
 } from './chat';
+import { useAgentStore } from './agent';
 import { isTerminalEvent, reduceStreamEvent } from './streaming';
 
 function operation(): ChatOperation {
@@ -23,6 +32,35 @@ function operation(): ChatOperation {
 }
 
 describe('Agent turn event identity projection', () => {
+  it('increments the composer focus intent without mutating the draft', () => {
+    const before = useChatStore.getState().composerFocusNonce;
+
+    useChatStore.getState().requestComposerFocus();
+
+    expect(useChatStore.getState().composerFocusNonce).toBe(before + 1);
+    expect(useChatStore.getState().composerFill).toBeNull();
+
+    useChatStore.getState().consumeComposerFocus();
+
+    expect(useChatStore.getState().composerFocusNonce).toBe(0);
+  });
+
+  it('retains only local pre-admission failure buffers after navigation', () => {
+    expect(shouldUseSessionBuffer({
+      ...operation(),
+      status: 'failed',
+      runState: 'failed',
+      endedAt: 2,
+    })).toBe(true);
+    expect(shouldUseSessionBuffer({
+      ...operation(),
+      status: 'failed',
+      runState: 'failed',
+      turnId: 'turn-1',
+      endedAt: 2,
+    })).toBe(false);
+  });
+
   it('records turn, conversation, and monotonic sequence identity', () => {
     const result = applyOperationEventIdentity(
       { 'conversation-1': operation() },
@@ -439,6 +477,175 @@ describe('Agent turn event identity projection', () => {
     });
 
     expect(reduced.toolCalls).toBeUndefined();
+  });
+
+  it('discards the local pair for a pre-admission rejection', async () => {
+    const failedOperation: ChatOperation = {
+      ...operation(),
+      status: 'failed',
+      runState: 'failed',
+      assistantMessageId: 'temp-assistant',
+      endedAt: 2,
+    };
+    const messages: ChatMessage[] = [
+      {
+        id: 'persisted-user',
+        role: 'user',
+        content: 'persisted',
+        timestamp: 0,
+      },
+      {
+        id: 'temp-user',
+        role: 'user',
+        content: 'oversized input',
+        timestamp: 1,
+      },
+      {
+        id: 'temp-assistant',
+        role: 'assistant',
+        content: '',
+        error: 'agent.errors.contextOverflow',
+        timestamp: 2,
+      },
+    ];
+    useChatStore.setState({
+      currentSessionKey: failedOperation.sessionKey,
+      messages,
+      operations: {
+        [failedOperation.sessionKey]: failedOperation,
+      },
+      sessionBuffers: {
+        [failedOperation.sessionKey]: messages,
+      },
+    });
+
+    await useChatStore.getState().deleteMessage('temp-assistant');
+
+    expect(useChatStore.getState().messages.map((message) => message.id)).toEqual([
+      'persisted-user',
+    ]);
+    expect(useChatStore.getState().operations[failedOperation.sessionKey]).toBeUndefined();
+    expect(useChatStore.getState().sessionBuffers[failedOperation.sessionKey]).toBeUndefined();
+    useChatStore.getState().reset();
+  });
+
+  it('replaces a retained pre-admission rejection when the corrected send succeeds', async () => {
+    const previousAgentState = useAgentStore.getState();
+    const draftKey = 'draft:agent-1:conversation-1';
+    const otherDraftKey = 'draft:agent-1:conversation-2';
+    const streams: Array<{
+      controller: AgentTurnStreamController;
+      onEvent: (event: StreamEvent) => void;
+      onDone: () => void;
+      onError: (error: AgentTurnStreamError) => void;
+    }> = [];
+    let streamGeneration = 0;
+    const streamSpy = vi.spyOn(agentService, 'streamTurn').mockImplementation(
+      (_input, onEvent, onDone, onError) => {
+        const controller = new AbortController() as AgentTurnStreamController;
+        streamGeneration += 1;
+        Object.defineProperty(controller, 'streamGeneration', {
+          value: streamGeneration,
+          enumerable: true,
+        });
+        Object.defineProperty(controller, 'disconnectTransport', {
+          value: () => undefined,
+          enumerable: true,
+        });
+        streams.push({ controller, onEvent, onDone, onError });
+        return controller;
+      },
+    );
+    const agent: Agent = {
+      id: 'agent-1',
+      name: 'assistant',
+      title: 'Assistant',
+      description: '',
+      avatar: '',
+      backgroundColor: '',
+      systemPrompt: '',
+      soulMd: '',
+      agentsMd: '',
+      model: 'model-1',
+      provider: 'provider-1',
+      effort: '',
+      visibility: 'private',
+      isolationEnabled: false,
+      isolationMode: '',
+      isolationRetentionDays: 0,
+      workspaceMode: '',
+      allowedRoots: '',
+      tags: '',
+      pinned: false,
+      favorite: false,
+      sortOrder: 0,
+      openingMessage: '',
+      openingQuestions: '',
+      chatConfig: '{}',
+      isDefault: true,
+      version: 1,
+      createdAt: '',
+      updatedAt: '',
+    };
+
+    useChatStore.getState().reset();
+    useChatStore.setState({ currentSessionKey: draftKey });
+    useAgentStore.setState({
+      selectedAgent: agent.name,
+      agents: [agent],
+    });
+
+    try {
+      expect(useChatStore.getState().sendMessage('oversized input')).toBe(true);
+      const overflow = new Error(
+        'agent.errors.contextOverflow',
+      ) as AgentTurnStreamError;
+      overflow.typedError = {
+        error: 'agent.errors.contextOverflow',
+        error_type: 'CONTEXT_OVERFLOW',
+        locale_key: 'agent.errors.contextOverflow',
+        retryable: false,
+        terminal: true,
+        details: {
+          limit_tokens: '64',
+          actual_tokens: '65',
+        },
+      };
+      streams[0].onError(overflow);
+
+      await useChatStore.getState().selectSession(otherDraftKey);
+      await useChatStore.getState().selectSession(draftKey);
+      expect(useChatStore.getState().messages.some(
+        (message) => message.content === 'oversized input',
+      )).toBe(true);
+
+      expect(useChatStore.getState().sendMessage('reduced input')).toBe(true);
+      streams[1].onEvent({
+        event: 'done',
+        data: {
+          turnId: 'turn-2',
+          conversationId: draftKey,
+          seq: 1,
+          streamGeneration: streams[1].controller.streamGeneration,
+          status: 'completed',
+        },
+      });
+      streams[1].onDone();
+
+      const state = useChatStore.getState();
+      expect(state.messages.some(
+        (message) => message.content === 'oversized input',
+      )).toBe(false);
+      expect(state.messages.filter(
+        (message) => message.role === 'user',
+      ).map((message) => message.content)).toEqual(['reduced input']);
+      expect(state.operations[draftKey]?.status).toBe('completed');
+      expect(state.sessionBuffers[draftKey]).toBeUndefined();
+    } finally {
+      streamSpy.mockRestore();
+      useChatStore.getState().reset();
+      useAgentStore.setState(previousAgentState);
+    }
   });
 
   it('aborts active operations and clears actor-scoped chat state on reset', () => {

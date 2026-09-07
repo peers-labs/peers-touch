@@ -1242,6 +1242,37 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("if (cell === 'BASE-CANCELLED')", self.source)
         self.assertNotIn("mock", scenario.lower())
 
+    def test_context_overflow_uses_pre_admission_product_path(self) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationContextOverflowScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationF06Prepare",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("useChatStore.getState().sendMessage(", scenario)
+        self.assertIn("max_input_tokens: 64", scenario)
+        self.assertIn("payload.data.error_type !== 'CONTEXT_OVERFLOW'", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            "foundationContextOverflowSourceIdentityMismatch",
+            scenario,
+        )
+        self.assertIn(
+            'data-pt-agent-message-error-recovery="reduce-context"',
+            scenario,
+        )
+        self.assertIn("document.activeElement === textarea", scenario)
+        self.assertIn("providerExecutionDelta", scenario)
+        self.assertIn("messageDelta", scenario)
+        self.assertIn("queueDelta", scenario)
+        self.assertIn("conversationVersionAfter", scenario)
+        self.assertIn("await deleteFoundationConversation(", scenario)
+        self.assertIn("if (cell === 'BASE-CONTEXT_OVERFLOW')", self.source)
+        self.assertNotIn("mock", scenario.lower())
+
     def test_approval_denied_uses_product_action_and_station_readback(self) -> None:
         scenario_start = self.source.index(
             "async function runFoundationApprovalDeniedScenario"

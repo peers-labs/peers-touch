@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-09-04
+> **Created**: 2026-08-17 | **Updated**: 2026-09-07
 > **Owner**: Peers-Touch Agent Team
 > **Plan gate**: `OWNER_APPROVED_EXECUTION`
 > **Entry gate**: Owner accepted MCA-D19A/D19B/D19C into the main Goal G1 task on 2026-08-22
@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `841efd9a26cbbdd968bb7a2ac670495991c54049` passed both Browser locale rows for `BASE-ACTIVE_MUTATION_CONFLICT` with explicit Turn attestation and dual cleanup, then advanced to `BASE-CANCELLED`. The Station-owned typed cancellation vertical and independent Acceptance oracle now pass all local gates; exact-source deployment and the unchanged 419-cell rerun remain pending. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `244f7a61d926b6f10ad0d8be5bc6b55ea3dcd503` passed Browser English and Simplified Chinese `BASE-CANCELLED` in run `20260907T120307080667Z-8452fb7d9d650470a5dc6a1f396fb3cb`, then advanced to `BASE-CONTEXT_OVERFLOW`. The context-overflow vertical passes local Station, Desktop, and independent Acceptance checks; checkpoint deployment and the unchanged 419-cell rerun remain pending. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5965,9 +5965,34 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   coverage, Acceptance planner/gap-detector self-tests, all `318` Agent
   Acceptance Python tests plus two source/projection regressions (`320` total),
   Python compilation, and `git diff --check` pass.
-  Agent Domain proof validation correctly rejects the stale prior-checkpoint
-  evidence. Exact-source checkpoint deployment and the unchanged 419-cell
-  Gate rerun remain pending; Foundation/G-F remain `PARTIAL / UNPROVEN`.
+  Agent Domain proof validation correctly rejected stale prior-checkpoint
+  evidence. Checkpoint `244f7a61d926b6f10ad0d8be5bc6b55ea3dcd503`
+  was rebuilt, passed embedded-WebDriver smoke, and was deployed to the
+  approved disposable Station. Exact-source Gate run
+  `20260907T120307080667Z-8452fb7d9d650470a5dc6a1f396fb3cb`
+  passed Browser English and Simplified Chinese `BASE-CANCELLED` with canonical
+  Station message identity across live, reload, and replay. Provisioner
+  cleanup completed `DONE / PROVEN / passed`; the first source-backed failure
+  advanced to `BASE-CONTEXT_OVERFLOW`.
+- The local `BASE-CONTEXT_OVERFLOW` closure now emits
+  `CONTEXT_OVERFLOW / agent.errors.contextOverflow` only before Turn admission,
+  with the exact safe detail allowlist `limit_tokens,actual_tokens` and zero
+  Turn, Attempt, queue, message, conversation-version, or provider delta.
+  Admitted and provider-side input checks retain
+  `TOOL_LOOP_BUDGET_EXHAUSTED` semantics. Desktop preserves the rejected draft
+  and localized `Reduce context` recovery across navigation, consumes one-shot
+  composer focus, permits local discard without a Station mutation, and removes
+  the rejected optimistic pair when a corrected send begins. Browser and native
+  transports both retain the raw Station SSE source payload before client-only
+  `streamGeneration` projection. The direct adapter and independent Python
+  oracle require exact typed payload, Station source identity, unchanged
+  readback/hash, zero persistence/provider execution, replay equality, and
+  cleanup. Station Agent race/vet, Go style, Desktop check, all `583` Desktop
+  tests with one unrelated environment-dependent skip, Desktop production
+  build, all `329` Agent Acceptance Python tests, Python compilation, and
+  `git diff --check` pass. Exact-source checkpoint deployment and the unchanged
+  419-cell Gate rerun remain pending; Foundation/G-F remain
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

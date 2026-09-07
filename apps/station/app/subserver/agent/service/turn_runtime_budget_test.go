@@ -376,6 +376,50 @@ func TestEffectiveRuntimeBudgetNeverRaisesPolicyLimits(t *testing.T) {
 	}
 }
 
+func TestInputBudgetPreflightReturnsContextOverflow(t *testing.T) {
+	err := validateInputBudgetBeforePersistence(
+		NewCompressionService(),
+		&model.RuntimeBudget{MaxInputTokens: 1},
+		"oversized",
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentContextOverflow ||
+		bizErr.Payload == nil ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentContextOverflow) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentContextOverflowLocaleKey ||
+		bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		len(bizErr.Payload.GetDetails()) != 2 ||
+		bizErr.Payload.GetDetails()["limit_tokens"] != "1" ||
+		bizErr.Payload.GetDetails()["actual_tokens"] != "12" {
+		t.Fatalf("input budget preflight error = %T %+v", err, bizErr)
+	}
+}
+
+func TestAdmittedInputBudgetRetainsToolBudgetSemantics(t *testing.T) {
+	err := validateAdmittedInputBudget(
+		NewCompressionService(),
+		&model.RuntimeBudget{MaxInputTokens: 1},
+		"oversized",
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentToolBudgetExhausted ||
+		bizErr.Message != maxInputTokensExhaustedReason ||
+		bizErr.Payload == nil ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentToolBudgetExhausted) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentToolBudgetExhaustedLocaleKey ||
+		bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		len(bizErr.Payload.GetDetails()) != 3 ||
+		bizErr.Payload.GetDetails()["reason"] != maxInputTokensExhaustedReason ||
+		bizErr.Payload.GetDetails()["limit"] != "1" ||
+		bizErr.Payload.GetDetails()["consumed"] != "12" {
+		t.Fatalf("admitted input budget error = %T %+v", err, bizErr)
+	}
+}
+
 func TestEffectiveRuntimeBudgetRejectsExplicitZeroLimits(t *testing.T) {
 	for _, requested := range []string{
 		`{"maxAttempts":0}`,

@@ -10,6 +10,7 @@ import {
   type AgentTypedErrorPayload,
   type AgentTurnStreamError,
   type AgentTurnQueueListOutput,
+  type AgentRuntimeBudgetInput,
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
@@ -114,6 +115,7 @@ export interface ChatComposerAttachment {
 export interface AgentSendLifecycle {
   onAccepted?: () => void;
   onRejected?: (error?: AgentTypedErrorPayload) => void;
+  requestedBudget?: AgentRuntimeBudgetInput;
 }
 
 export type BudgetExhaustionKind =
@@ -642,6 +644,7 @@ interface ChatState {
   // draft WITHOUT sending, aligning with LobeHub `fillInputMessage`. ChatInput consumes
   // the pending value, writes it into its draft, focuses, and clears the request.
   composerFill: { text: string; nonce: number } | null;
+  composerFocusNonce: number;
 
   loadSessions: () => Promise<void>;
   mergeSessions: (sessions: Session[]) => void;
@@ -686,6 +689,8 @@ interface ChatState {
   setWideScreen: (wide: boolean) => void;
   fillComposer: (text: string) => void;
   consumeComposerFill: () => void;
+  requestComposerFocus: () => void;
+  consumeComposerFocus: () => void;
   toggleSessionMemory: (sessionKey?: string) => void;
   isMemoryDisabled: (sessionKey?: string) => boolean;
   loadPreferences: () => Promise<void>;
@@ -745,6 +750,7 @@ function buildAgentTurnInput(
   agentId: string,
   userInput: string,
   attachments: ChatComposerAttachment[],
+  requestedBudget?: AgentRuntimeBudgetInput,
 ) {
   const agentState = useAgentStore.getState();
   const agent = agentState.agents.find((a) => a.id === agentId);
@@ -755,6 +761,7 @@ function buildAgentTurnInput(
     user_input: userInput,
     provider: agent?.provider || undefined,
     model: agent?.model || undefined,
+    requested_budget: requestedBudget,
     attachments: attachments
       .map((item) => item.attachment)
       .filter((item): item is AgentAttachmentRefInput => Boolean(item)),
@@ -839,6 +846,49 @@ function setBuffer(
 function clearBuffer(buffers: Record<string, ChatMessage[]>, sessionKey: string): Record<string, ChatMessage[]> {
   if (!buffers[sessionKey]) return buffers;
   const next = { ...buffers };
+  delete next[sessionKey];
+  return next;
+}
+
+export function shouldUseSessionBuffer(operation?: ChatOperation): boolean {
+  return isActiveOperation(operation)
+    || isPreAdmissionFailure(operation);
+}
+
+function isPreAdmissionFailure(
+  operation?: ChatOperation,
+): operation is ChatOperation {
+  return operation?.status === 'failed' && !operation.turnId;
+}
+
+function discardPreAdmissionFailureMessages(
+  messages: ChatMessage[],
+  operation?: ChatOperation,
+  targetMessageId?: string,
+): ChatMessage[] {
+  if (!isPreAdmissionFailure(operation)) return messages;
+  const assistantIndex = messages.findIndex(
+    (message) => message.id === operation.assistantMessageId,
+  );
+  if (assistantIndex < 0) return messages;
+  const optimisticIds = new Set([operation.assistantMessageId]);
+  const precedingMessage = messages[assistantIndex - 1];
+  if (
+    precedingMessage?.role === 'user'
+    && isOptimisticMessageId(precedingMessage.id)
+  ) {
+    optimisticIds.add(precedingMessage.id);
+  }
+  if (targetMessageId && !optimisticIds.has(targetMessageId)) return messages;
+  return messages.filter((message) => !optimisticIds.has(message.id));
+}
+
+function removeOperation(
+  operations: Record<string, ChatOperation>,
+  sessionKey: string,
+): Record<string, ChatOperation> {
+  if (!operations[sessionKey]) return operations;
+  const next = { ...operations };
   delete next[sessionKey];
   return next;
 }
@@ -1025,6 +1075,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   wideScreen: false,
   composerFill: null,
+  composerFocusNonce: 0,
 
   reset: () => {
     for (const operation of Object.values(get().operations)) {
@@ -1046,6 +1097,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       draftPromotions: {},
       readinessErrorKey: null,
       composerFill: null,
+      composerFocusNonce: 0,
     });
   },
 
@@ -1102,10 +1154,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     log.info('chat', 'Selecting session', { key });
     if (key === get().currentSessionKey) return;
     const liveOp = get().operations[key];
-    // Only adopt a buffered message list while a stream is actively running for
-    // this session. A buffer with no live operation is stale (e.g. left behind
-    // after an error) and must not short-circuit loading persisted history.
-    const liveBuffer = isActiveOperation(liveOp) ? get().sessionBuffers[key] : undefined;
+    // Adopt active streams and local pre-admission rejections. Rejections have
+    // no Station message to reload, so their recovery surface remains local to
+    // the conversation until the user retries, deletes, or resolves it.
+    const liveBuffer = shouldUseSessionBuffer(liveOp)
+      ? get().sessionBuffers[key]
+      : undefined;
     set({
       currentSessionKey: key,
       messages: liveBuffer ?? [],
@@ -1459,6 +1513,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         agentId,
         content,
         attachments,
+        lifecycle?.requestedBudget,
       ),
       (event: StreamEvent) => {
         if (event.event !== 'error') notifyAccepted();
@@ -1610,10 +1665,15 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
           };
           return {
             messages: isCurrent ? state.messages.map(applyError) : state.messages,
-            // The stream has terminated; drop the live buffer so a later
-            // selectSession reloads persisted history instead of adopting a
-            // stale in-memory list.
-            sessionBuffers: clearBuffer(state.sessionBuffers, resolvedSessionKey),
+            // Pre-admission rejection has no Station message to reload, so its
+            // editable draft and recovery surface remain conversation-scoped.
+            sessionBuffers: acceptedByStation
+              ? clearBuffer(state.sessionBuffers, resolvedSessionKey)
+              : setBuffer(
+                  state.sessionBuffers,
+                  resolvedSessionKey,
+                  (messages) => messages.map(applyError),
+                ),
             isStreaming: isCurrent ? false : state.isStreaming,
             streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
             abortController: isCurrent ? null : state.abortController,
@@ -1626,7 +1686,11 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     );
 
     set((state) => {
-      const baseMessages = [...state.messages, userMsg, assistantMsg];
+      const retainedMessages = discardPreAdmissionFailureMessages(
+        state.messages,
+        state.operations[currentSessionKey],
+      );
+      const baseMessages = [...retainedMessages, userMsg, assistantMsg];
       return {
         messages: baseMessages,
         isStreaming: true,
@@ -1804,8 +1868,23 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   },
 
   deleteMessage: async (id: string) => {
-    if (id.startsWith('temp-')) return;
     const { currentSessionKey } = get();
+    if (isOptimisticMessageId(id)) {
+      set((state) => {
+        const messages = discardPreAdmissionFailureMessages(
+          state.messages,
+          state.operations[currentSessionKey],
+          id,
+        );
+        if (messages === state.messages) return state;
+        return {
+          messages,
+          operations: removeOperation(state.operations, currentSessionKey),
+          sessionBuffers: clearBuffer(state.sessionBuffers, currentSessionKey),
+        };
+      });
+      return;
+    }
     const version = await stationConversationVersion(currentSessionKey);
     await api.tombstoneAgentMessage({
       conversation_id: currentSessionKey,
@@ -1897,6 +1976,16 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   consumeComposerFill: () => {
     set({ composerFill: null });
+  },
+
+  requestComposerFocus: () => {
+    set((state) => ({
+      composerFocusNonce: state.composerFocusNonce + 1,
+    }));
+  },
+
+  consumeComposerFocus: () => {
+    set({ composerFocusNonce: 0 });
   },
 
   toggleSessionMemory: (sessionKey?: string) => {

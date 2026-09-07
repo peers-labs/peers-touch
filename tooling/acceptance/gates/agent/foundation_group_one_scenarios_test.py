@@ -12,6 +12,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
     evaluate_base_cancelled,
+    evaluate_base_context_overflow,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -1017,6 +1018,77 @@ def valid_cancelled_capture() -> dict[str, object]:
             "sourceTurnId": "turn-cancelled",
             "sourceSequence": 3,
             "sourceEventType": "cancelled",
+        },
+    }
+
+
+def valid_context_overflow_capture() -> dict[str, object]:
+    return {
+        "runtimeEvent": {
+            "eventId": "b" * 64,
+            "sequence": 1,
+            "eventType": "error",
+            "observedAt": "2026-09-07T12:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "c" * 64,
+            "conversationIdHash": "d" * 64,
+            "payloadHash": "e" * 64,
+            "errorType": "CONTEXT_OVERFLOW",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "a" * 64,
+            "sourceConversationId": "conversation-overflow",
+            "sourceTurnId": "",
+            "sourceSequence": 0,
+            "sourceEventType": "error",
+        },
+        "outcome": {
+            "error": "agent.errors.contextOverflow",
+            "error_type": "CONTEXT_OVERFLOW",
+            "locale_key": "agent.errors.contextOverflow",
+            "retryable": False,
+            "terminal": True,
+            "details": {
+                "limit_tokens": "64",
+                "actual_tokens": "128",
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "The selected context exceeds the model limit.",
+            "expectedErrorText": (
+                "The selected context exceeds the model limit."
+            ),
+            "recoveryVisible": True,
+            "recoveryText": "Reduce context",
+            "expectedRecoveryText": "Reduce context",
+            "draftLengthBefore": 256,
+            "draftLengthAfterRejection": 256,
+            "draftHashBefore": "f" * 64,
+            "draftHashAfterRejection": "f" * 64,
+            "composerFocusedAfterRecovery": True,
+            "reducedDraftLength": 32,
+            "reducedDraftHash": "1" * 64,
+        },
+        "station": {
+            "conversationId": "conversation-overflow",
+            "conversationVersionBefore": 2,
+            "conversationVersionAfter": 2,
+            "beforeHash": "2" * 64,
+            "afterHash": "2" * 64,
+            "turnDelta": 0,
+            "messageDelta": 0,
+            "queueDelta": 0,
+            "providerExecutionDelta": 0,
+        },
+        "replay": {
+            "sourceHash": "2" * 64,
+            "replayHash": "2" * 64,
+            "equal": True,
+        },
+        "cleanup": {
+            "draftCleared": True,
+            "localProjectionCleared": True,
+            "conversationDeleted": True,
         },
     }
 
@@ -2217,6 +2289,64 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "cleanupComplete",
         ):
             evaluate_base_cancelled(capture)
+
+    def test_context_overflow_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_context_overflow(
+            valid_context_overflow_capture()
+        )
+
+        self.assertEqual(len(assertions), 8)
+        self.assertTrue(all(assertions.values()))
+
+    def test_context_overflow_rejects_unsafe_details(self) -> None:
+        capture = valid_context_overflow_capture()
+        capture["outcome"]["details"]["prompt"] = "private"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedContextOverflow",
+        ):
+            evaluate_base_context_overflow(capture)
+
+    def test_context_overflow_rejects_draft_loss(self) -> None:
+        capture = valid_context_overflow_capture()
+        capture["receiver"]["draftHashAfterRejection"] = "3" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "rejectedDraftPreserved",
+        ):
+            evaluate_base_context_overflow(capture)
+
+    def test_context_overflow_rejects_provider_execution(self) -> None:
+        capture = valid_context_overflow_capture()
+        capture["station"]["providerExecutionDelta"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroPersistenceAndProvider",
+        ):
+            evaluate_base_context_overflow(capture)
+
+    def test_context_overflow_rejects_wrong_source_identity(self) -> None:
+        capture = valid_context_overflow_capture()
+        capture["runtimeEvent"]["sourceConversationId"] = "conversation-other"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedContextOverflow",
+        ):
+            evaluate_base_context_overflow(capture)
+
+    def test_context_overflow_requires_cleanup(self) -> None:
+        capture = valid_context_overflow_capture()
+        capture["cleanup"]["conversationDeleted"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_context_overflow(capture)
 
     def test_attachment_rejected_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_attachment_rejected(
