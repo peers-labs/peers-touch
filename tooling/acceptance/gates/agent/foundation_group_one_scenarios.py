@@ -53,6 +53,34 @@ def _replay_delivery_identity(
     }
 
 
+def _replay_payload_sequence(
+    payload: Mapping[str, Any],
+    *,
+    scenario: str,
+) -> int:
+    data = _mapping(payload, "data", scenario=scenario)
+    value = data.get("seq")
+    if value is None:
+        value = data.get("sequence")
+    if isinstance(value, bool):
+        raise GroupOneScenarioError(
+            f"{scenario} replay payload sequence must be a positive integer"
+        )
+    if isinstance(value, int):
+        sequence = value
+    elif isinstance(value, str) and value.isdigit():
+        sequence = int(value)
+    else:
+        raise GroupOneScenarioError(
+            f"{scenario} replay payload sequence must be a positive integer"
+        )
+    if sequence <= 0:
+        raise GroupOneScenarioError(
+            f"{scenario} replay payload sequence must be a positive integer"
+        )
+    return sequence
+
+
 def evaluate_as_f02(capture: Mapping[str, Any]) -> dict[str, bool]:
     invalid = _mapping(capture, "invalidSubmission")
     duplicate = _mapping(capture, "duplicateSubmission")
@@ -734,10 +762,7 @@ def evaluate_as_f06(
     replay_payload_hashes_valid = all(
         payload.get("eventType") == delivery.get("eventType")
         and delivery.get("eventType") not in AS_F06_CONTROL_EVENTS
-        and (
-            _mapping(payload, "data", scenario="AS-F06").get("seq")
-            or _mapping(payload, "data", scenario="AS-F06").get("sequence")
-        )
+        and _replay_payload_sequence(payload, scenario="AS-F06")
         == delivery.get("sequence")
         and _nonempty_string(
             delivery,
