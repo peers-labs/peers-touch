@@ -6098,6 +6098,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `git diff --check` pass. Provisioner cleanup completed
   `DONE / PROVEN / passed`; exact-source post-fix proof is pending, so
   Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Checkpoint `1f5cf2e31bcd8091a937d41816c42120004bb6a8` was deployed
+  exact-source to `chat-native-disposable`; Acceptance binary
+  `cd782a39cb97c72a4850db6d5c461daf0b8e8369a9c6b31a84fd6967584e0b92`
+  passed embedded-WebDriver smoke. Gate run
+  `20260907T192305700028Z-cd6ebaa86f86437938a3fe82318213ee`
+  crossed all four AS-F06 tuples, then failed first at Browser English AS-F07
+  while `chatStore.branchFromMessage` selected the first regenerated branch:
+  `agent_select_active_branch failed:expected=8:actual=8`. Retry, baseline,
+  both regenerations, edit, stale rejection, and the first branch selection had
+  completed. The equal post-failure version excludes a concurrent version
+  advance but does not identify the Store-submitted version or Station
+  rejection. Existing `[OPEN]` AS-F07 instrumentation now records the
+  pre-action active-target relation and, on failure, only the Rust error code,
+  HTTP status, Station typed code, and boolean reason categories. No product
+  behavior, tuple, timeout, or assertion changed. Desktop check and `176/176`
+  focused Foundation/static tests pass. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
