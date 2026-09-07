@@ -177,6 +177,7 @@ func (s *subServer) initialize(ctx context.Context) error {
 	}
 	capabilities, err := newActorCapabilities(
 		endpointManifests,
+		repository,
 		localStationID,
 		productionVerifiedProfileDeviceKeyHydratorFactory,
 	)
@@ -425,6 +426,55 @@ func (s *subServer) GetEndpointManifest(
 	}
 
 	return capabilities.GetEndpointManifest(ctx, sourceStationPeerID, request)
+}
+
+// ResolveActorHomeStationPeerID exposes the Actor Identity-owned Home Station
+// projection to sibling capabilities without exposing its persistence model.
+func (s *subServer) ResolveActorHomeStationPeerID(
+	ctx context.Context,
+	actorPTID string,
+) (string, error) {
+	capabilities, err := s.currentCapabilities()
+	if err != nil {
+		return "", err
+	}
+
+	return capabilities.ResolveActorHomeStationPeerID(ctx, actorPTID)
+}
+
+// ValidateEndpointManifest keeps canonical Actor routing validation behind the
+// Actor Identity capability boundary.
+func (s *subServer) ValidateEndpointManifest(
+	manifest *actormodel.ActorEndpointManifest,
+	expectedActorPTID string,
+	expectedHomeStationPeerID string,
+	now time.Time,
+) error {
+	capabilities, err := s.currentCapabilities()
+	if err != nil {
+		return err
+	}
+
+	return capabilities.ValidateEndpointManifest(
+		manifest,
+		expectedActorPTID,
+		expectedHomeStationPeerID,
+		now,
+	)
+}
+
+// AcceptVerifiedEndpointManifest persists the monotonic Actor routing fence
+// after the caller has verified the Home Station signature.
+func (s *subServer) AcceptVerifiedEndpointManifest(
+	ctx context.Context,
+	manifest *actormodel.ActorEndpointManifest,
+) error {
+	capabilities, err := s.currentCapabilities()
+	if err != nil {
+		return err
+	}
+
+	return capabilities.AcceptVerifiedEndpointManifest(ctx, manifest)
 }
 
 // ResolveVerifiedActorDeviceSigningKey resolves identity proof inside the

@@ -29,6 +29,11 @@ type EndpointManifestRepository interface {
 		issuedAt time.Time,
 		expiresAt time.Time,
 	) (*actormodel.ActorEndpointManifest, error)
+	AcceptVerifiedEndpointManifest(
+		ctx context.Context,
+		manifest *actormodel.ActorEndpointManifest,
+		acceptedAt time.Time,
+	) error
 }
 
 // EndpointManifestSigner applies the current Station identity to one manifest.
@@ -170,6 +175,37 @@ func (s *EndpointManifestService) GetEndpointManifest(
 	}, nil
 }
 
+// AcceptVerifiedEndpointManifest records the highest verified directory
+// version so an older signed routing snapshot cannot restore revoked devices.
+// The caller must verify the Home Station signature before invoking this edge.
+func (s *EndpointManifestService) AcceptVerifiedEndpointManifest(
+	ctx context.Context,
+	manifest *actormodel.ActorEndpointManifest,
+) error {
+	if s == nil || s.repository == nil || s.clock == nil || manifest == nil {
+		return domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			"actor_identity.accept_endpoint_manifest",
+			"manifest",
+			"is required",
+		)
+	}
+	if err := ValidateEndpointManifest(
+		manifest,
+		manifest.GetActor().GetPtid(),
+		manifest.GetHomeStationPeerId(),
+		s.clock().UTC(),
+	); err != nil {
+		return err
+	}
+
+	return s.repository.AcceptVerifiedEndpointManifest(
+		ctx,
+		proto.Clone(manifest).(*actormodel.ActorEndpointManifest),
+		s.clock().UTC(),
+	)
+}
+
 // SignEndpointManifest signs the canonical protobuf projection with one Station key.
 func SignEndpointManifest(
 	manifest *actormodel.ActorEndpointManifest,
@@ -216,10 +252,7 @@ func VerifyEndpointManifest(
 ) error {
 	const operation = "actor_identity.verify_endpoint_manifest"
 
-	if manifest == nil ||
-		manifest.GetActor().GetPtid() != expectedActorPTID ||
-		manifest.GetHomeStationPeerId() != expectedHomeStationPeerID ||
-		manifest.GetSigningKeyId() != expectedSigningKeyID ||
+	if manifest == nil || manifest.GetSigningKeyId() != expectedSigningKeyID ||
 		len(publicKey) != ed25519.PublicKeySize ||
 		len(manifest.GetStationSignature()) != ed25519.SignatureSize {
 		return domain.NewError(
@@ -229,17 +262,13 @@ func VerifyEndpointManifest(
 			"does not match the expected Actor and Home Station",
 		)
 	}
-	if err := validateEndpointManifestShape(operation, manifest); err != nil {
+	if err := ValidateEndpointManifest(
+		manifest,
+		expectedActorPTID,
+		expectedHomeStationPeerID,
+		now,
+	); err != nil {
 		return err
-	}
-	if manifest.GetExpiresAt().AsTime().Before(now.UTC()) ||
-		manifest.GetIssuedAt().AsTime().After(now.UTC().Add(time.Minute)) {
-		return domain.NewError(
-			domain.ErrorCodeIdentityUnavailable,
-			operation,
-			"manifest_lifetime",
-			"is expired or not yet valid",
-		)
 	}
 	signingBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
 		endpointManifestSigningInput(manifest),
@@ -253,6 +282,42 @@ func VerifyEndpointManifest(
 			operation,
 			"station_signature",
 			"is invalid",
+		)
+	}
+
+	return nil
+}
+
+// ValidateEndpointManifest checks the Actor-owned snapshot binding, canonical
+// shape, and lifetime independently from the caller's Station key resolver.
+func ValidateEndpointManifest(
+	manifest *actormodel.ActorEndpointManifest,
+	expectedActorPTID string,
+	expectedHomeStationPeerID string,
+	now time.Time,
+) error {
+	const operation = "actor_identity.validate_endpoint_manifest"
+
+	if manifest == nil ||
+		manifest.GetActor().GetPtid() != expectedActorPTID ||
+		manifest.GetHomeStationPeerId() != expectedHomeStationPeerID {
+		return domain.NewError(
+			domain.ErrorCodeInvalidProof,
+			operation,
+			"manifest_binding",
+			"does not match the expected Actor and Home Station",
+		)
+	}
+	if err := validateEndpointManifestShape(operation, manifest); err != nil {
+		return err
+	}
+	if !manifest.GetExpiresAt().AsTime().After(now.UTC()) ||
+		manifest.GetIssuedAt().AsTime().After(now.UTC().Add(time.Minute)) {
+		return domain.NewError(
+			domain.ErrorCodeIdentityUnavailable,
+			operation,
+			"manifest_lifetime",
+			"is expired or not yet valid",
 		)
 	}
 

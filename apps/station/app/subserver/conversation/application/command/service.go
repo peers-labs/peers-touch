@@ -105,6 +105,7 @@ type CreateDirectRequest struct {
 	FederationID      valueobject.FederationID
 	AuthorityEpoch    valueobject.AuthorityEpoch
 	CommandID         valueobject.CommandID
+	VerifiedRoutes    []ports.EndpointRoute
 	ExactCommandBytes []byte
 }
 
@@ -301,6 +302,24 @@ func (s *Service) CreateDirect(
 	ctx context.Context,
 	request CreateDirectRequest,
 ) (Result, error) {
+	return s.createDirect(ctx, request)
+}
+
+// EnsureDirect creates the deterministic Direct Conversation or returns the
+// existing compatible aggregate. It is reserved for durable owner effects,
+// whose idempotency is the deterministic Conversation identity rather than a
+// client command receipt.
+func (s *Service) EnsureDirect(
+	ctx context.Context,
+	request CreateDirectRequest,
+) (Result, error) {
+	return s.createDirect(ctx, request)
+}
+
+func (s *Service) createDirect(
+	ctx context.Context,
+	request CreateDirectRequest,
+) (Result, error) {
 	if request.Creator.Validate() != nil || request.Peer == "" ||
 		request.FederationID == "" || request.AuthorityEpoch == 0 ||
 		request.CommandID == "" || len(request.ExactCommandBytes) == 0 {
@@ -315,7 +334,7 @@ func (s *Service) CreateDirect(
 	var notifications []ports.CommittedDelivery
 	err = s.unitOfWork.ExecuteSerialized(
 		ctx,
-		"conversation-create:"+string(conversationID),
+		conversationGenesisLockKey(conversationID),
 		func(transaction ports.Transaction) error {
 			if err := validateTransaction(transaction); err != nil {
 				return err
@@ -323,32 +342,123 @@ func (s *Service) CreateDirect(
 			existing, loadErr := transaction.Repositories.Authority.LoadForUpdate(ctx, conversationID)
 			switch {
 			case loadErr == nil:
-				event, replayErr := replayCommittedCommand(
+				_, receiptErr := transaction.Repositories.Receipts.Get(
 					ctx,
-					transaction.Repositories,
 					conversationID,
 					request.CommandID,
-					commandHash,
 				)
-				if replayErr != nil {
-					return replayErr
+				switch {
+				case receiptErr == nil:
+					event, replayErr := replayCommittedCommand(
+						ctx,
+						transaction.Repositories,
+						conversationID,
+						request.CommandID,
+						commandHash,
+					)
+					if replayErr != nil {
+						return replayErr
+					}
+					result = Result{Conversation: existing, Event: event, Replay: true}
+
+					return nil
+				case !conversationdomain.IsCode(
+					receiptErr,
+					conversationdomain.ErrorCodeNotFound,
+				):
+					return receiptErr
 				}
-				result = Result{Conversation: existing, Event: event, Replay: true}
+				if existing.AuthorityStation != s.localStation {
+					return conversationdomain.NewError(
+						conversationdomain.ErrorCodeCommandConflict,
+						"application.create_direct",
+						"authority_station",
+						"does not match the local authority",
+					)
+				}
+				if matchErr := validateExistingDirect(existing, request); matchErr != nil {
+					return matchErr
+				}
+				result = Result{Conversation: existing, Replay: true}
+
 				return nil
 			case !conversationdomain.IsCode(loadErr, conversationdomain.ErrorCodeNotFound):
 				return loadErr
 			}
-
-			routes, routeErr := resolveActorRoutes(
+			follower, followerErr := transaction.Repositories.Followers.Get(
 				ctx,
-				transaction.Identity,
+				conversationID,
+			)
+			switch {
+			case followerErr == nil:
+				if follower.Status != repository.FollowerStatusActive ||
+					follower.Conversation.AuthorityStation == s.localStation {
+					return conversationdomain.NewError(
+						conversationdomain.ErrorCodeCommandConflict,
+						"application.create_direct",
+						"follower",
+						"is not an active remote-authority projection",
+					)
+				}
+				if matchErr := validateExistingDirect(
+					follower.Conversation,
+					request,
+				); matchErr != nil {
+					return matchErr
+				}
+				result = Result{
+					Conversation: follower.Conversation,
+					Replay:       true,
+				}
+
+				return nil
+			case !conversationdomain.IsCode(
+				followerErr,
+				conversationdomain.ErrorCodeNotFound,
+			):
+				return followerErr
+			}
+
+			routes, routeErr := canonicalActorRoutes(
+				request.VerifiedRoutes,
 				[]valueobject.PTID{request.Creator.Actor, request.Peer},
 			)
 			if routeErr != nil {
 				return routeErr
 			}
+			active, activeErr := transaction.Identity.IsActive(ctx, request.Creator)
+			if activeErr != nil {
+				return activeErr
+			}
+			if !active {
+				return unauthorized(
+					"application.create_direct",
+					"creator is not an active local endpoint",
+				)
+			}
 			if !routeSetContains(routes, request.Creator) {
-				return unauthorized("application.create_direct", "creator is not an active endpoint")
+				return unauthorized(
+					"application.create_direct",
+					"creator is absent from the verified endpoint routes",
+				)
+			}
+			for _, station := range routeStations(routes) {
+				federationActive, federationErr := transaction.Federation.IsActiveStation(
+					ctx,
+					request.FederationID,
+					station,
+				)
+				if federationErr != nil {
+					return federationErr
+				}
+				if !federationActive {
+					return conversationdomain.NewError(
+						conversationdomain.ErrorCodeFederationInactive,
+						"application.create_direct",
+						"home_station",
+						"is not an active Federation Station",
+					)
+				}
 			}
 			participants, devices, buildErr := participantsAndDevices(
 				[]valueobject.PTID{request.Creator.Actor, request.Peer},
@@ -408,6 +518,44 @@ func (s *Service) CreateDirect(
 	return result, nil
 }
 
+func validateExistingDirect(
+	snapshot aggregate.Snapshot,
+	request CreateDirectRequest,
+) error {
+	activeActors := make(map[valueobject.PTID]struct{}, len(snapshot.Members))
+	for _, member := range snapshot.Members {
+		if member.Active() {
+			activeActors[member.Actor] = struct{}{}
+		}
+	}
+	_, hasCreator := activeActors[request.Creator.Actor]
+	_, hasPeer := activeActors[request.Peer]
+	if snapshot.Kind != valueobject.ConversationKindDirect ||
+		snapshot.Status != valueobject.ConversationStatusActive ||
+		snapshot.FederationID != request.FederationID ||
+		snapshot.AuthorityStation == "" ||
+		snapshot.AuthorityEpoch != request.AuthorityEpoch ||
+		len(snapshot.Members) != 2 ||
+		len(activeActors) != 2 ||
+		!hasCreator ||
+		!hasPeer {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeCommandConflict,
+			"application.ensure_direct",
+			"conversation",
+			"does not match the requested Direct Conversation",
+		)
+	}
+
+	return nil
+}
+
+func conversationGenesisLockKey(
+	conversationID valueobject.ConversationID,
+) string {
+	return "conversation-genesis:" + string(conversationID)
+}
+
 func (s *Service) CreateGroup(
 	ctx context.Context,
 	request CreateGroupRequest,
@@ -423,7 +571,7 @@ func (s *Service) CreateGroup(
 	var rejection error
 	err := s.unitOfWork.ExecuteSerialized(
 		ctx,
-		"conversation-create:"+string(request.ConversationID),
+		conversationGenesisLockKey(request.ConversationID),
 		func(transaction ports.Transaction) error {
 			if err := validateTransaction(transaction); err != nil {
 				return err
@@ -1957,11 +2105,33 @@ func resolveActorRoutes(
 	if err != nil {
 		return nil, err
 	}
+	return canonicalActorRoutes(routes, actors)
+}
+
+func canonicalActorRoutes(
+	routes []ports.EndpointRoute,
+	actors []valueobject.PTID,
+) ([]ports.EndpointRoute, error) {
+	expectedActors := make(map[valueobject.PTID]struct{}, len(actors))
+	for _, actor := range uniqueActors(actors) {
+		expectedActors[actor] = struct{}{}
+	}
+	canonical := append([]ports.EndpointRoute(nil), routes...)
 	seen := make(map[string]struct{}, len(routes))
 	homeByActor := make(map[valueobject.PTID]valueobject.StationID, len(routes))
-	for _, route := range routes {
-		if route.Endpoint.Validate() != nil || route.HomeStation == "" {
+	for _, route := range canonical {
+		homeStation, err := valueobject.NewStationID(string(route.HomeStation))
+		if route.Endpoint.Validate() != nil ||
+			err != nil ||
+			homeStation != route.HomeStation {
 			return nil, invalid("application.resolve_actor_routes", "route", "contains an invalid endpoint route")
+		}
+		if _, expected := expectedActors[route.Endpoint.Actor]; !expected {
+			return nil, invalid(
+				"application.resolve_actor_routes",
+				"route",
+				"contains an unexpected actor",
+			)
 		}
 		if _, duplicate := seen[route.Endpoint.Key()]; duplicate {
 			return nil, invalid("application.resolve_actor_routes", "route", "contains a duplicate endpoint")
@@ -1976,10 +2146,35 @@ func resolveActorRoutes(
 		}
 		homeByActor[route.Endpoint.Actor] = route.HomeStation
 	}
-	sort.Slice(routes, func(i int, j int) bool {
-		return routes[i].Endpoint.Key() < routes[j].Endpoint.Key()
+	for actor := range expectedActors {
+		if _, resolved := homeByActor[actor]; !resolved {
+			return nil, invalid(
+				"application.resolve_actor_routes",
+				"route",
+				fmt.Sprintf("actor %s has no verified active endpoint", actor),
+			)
+		}
+	}
+	sort.Slice(canonical, func(i int, j int) bool {
+		return canonical[i].Endpoint.Key() < canonical[j].Endpoint.Key()
 	})
-	return routes, nil
+	return canonical, nil
+}
+
+func routeStations(routes []ports.EndpointRoute) []valueobject.StationID {
+	unique := make(map[valueobject.StationID]struct{}, len(routes))
+	for _, route := range routes {
+		unique[route.HomeStation] = struct{}{}
+	}
+	stations := make([]valueobject.StationID, 0, len(unique))
+	for station := range unique {
+		stations = append(stations, station)
+	}
+	sort.Slice(stations, func(left int, right int) bool {
+		return stations[left] < stations[right]
+	})
+
+	return stations
 }
 
 func addRemovalRoutes(

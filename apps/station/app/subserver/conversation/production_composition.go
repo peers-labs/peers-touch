@@ -82,6 +82,17 @@ type ProductionFederationRuntime interface {
 type ProductionActorCapabilities interface {
 	conversationfederation.EndpointManifestPort
 	conversationfederation.VerifiedActorDeviceKeyResolver
+	ResolveActorHomeStationPeerID(context.Context, string) (string, error)
+	ValidateEndpointManifest(
+		*actormodel.ActorEndpointManifest,
+		string,
+		string,
+		time.Time,
+	) error
+	AcceptVerifiedEndpointManifest(
+		context.Context,
+		*actormodel.ActorEndpointManifest,
+	) error
 }
 
 // ProductionKeyExchangeCapabilities is the Key Exchange-owned peer claim edge.
@@ -647,6 +658,49 @@ func (s *productionLazyFederationSigner) Sign(
 
 type productionLazyActorCapabilities struct {
 	shared *productionSharedDependencies
+}
+
+func (p productionLazyActorCapabilities) ResolveActorHomeStationPeerID(
+	ctx context.Context,
+	actorPTID string,
+) (string, error) {
+	actor, err := p.shared.actor.get()
+	if err != nil {
+		return "", err
+	}
+
+	return actor.ResolveActorHomeStationPeerID(ctx, actorPTID)
+}
+
+func (p productionLazyActorCapabilities) ValidateEndpointManifest(
+	manifest *actormodel.ActorEndpointManifest,
+	expectedActorPTID string,
+	expectedHomeStationPeerID string,
+	now time.Time,
+) error {
+	actor, err := p.shared.actor.get()
+	if err != nil {
+		return err
+	}
+
+	return actor.ValidateEndpointManifest(
+		manifest,
+		expectedActorPTID,
+		expectedHomeStationPeerID,
+		now,
+	)
+}
+
+func (p productionLazyActorCapabilities) AcceptVerifiedEndpointManifest(
+	ctx context.Context,
+	manifest *actormodel.ActorEndpointManifest,
+) error {
+	actor, err := p.shared.actor.get()
+	if err != nil {
+		return err
+	}
+
+	return actor.AcceptVerifiedEndpointManifest(ctx, manifest)
 }
 
 func (p productionLazyActorCapabilities) GetEndpointManifest(

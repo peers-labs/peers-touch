@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/application"
+	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -129,6 +130,7 @@ func TestActorCapabilitiesBuildSignedMonotonicEndpointManifest(t *testing.T) {
 	}
 	provider, err := newActorCapabilities(
 		manifestService,
+		mustCapabilityRepository(t, database),
 		capabilityTestLocalStation,
 		func(*gorm.DB) (verifiedProfileDeviceKeyHydrator, error) {
 			return nil, errors.New("remote hydration must not run")
@@ -216,6 +218,18 @@ func TestActorCapabilitiesBuildSignedMonotonicEndpointManifest(t *testing.T) {
 		2,
 		[]string{"alice-desktop", "alice-mobile"},
 	)
+	if err := subserver.AcceptVerifiedEndpointManifest(
+		context.Background(),
+		advanced.GetManifest(),
+	); err != nil {
+		t.Fatalf("accept current endpoint manifest: %v", err)
+	}
+	if err := subserver.AcceptVerifiedEndpointManifest(
+		context.Background(),
+		first.GetManifest(),
+	); !domain.IsCode(err, domain.ErrorCodeIdentityConflict) {
+		t.Fatalf("endpoint manifest rollback error = %v", err)
+	}
 }
 
 func TestActorCapabilitiesReturnRevokedLocalKeyForHistoricalVerification(t *testing.T) {
@@ -370,6 +384,55 @@ func TestActorCapabilitiesHydrateRemoteKeyInsideCallerTransaction(t *testing.T) 
 	}
 }
 
+func TestActorCapabilitiesResolveActorHomeStation(t *testing.T) {
+	database := openCapabilityTestDatabase(t)
+	if err := database.Exec(`
+		CREATE TABLE touch_actor (
+			ptid TEXT PRIMARY KEY,
+			home_station_peer_id TEXT NOT NULL,
+			origin TEXT NOT NULL
+		)
+	`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Exec(
+		`INSERT INTO touch_actor (ptid, home_station_peer_id, origin)
+		 VALUES (?, ?, ?)`,
+		capabilityTestRemoteActor,
+		capabilityTestRemoteStation,
+		"remote_cached",
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	repository := mustCapabilityRepository(t, database)
+	provider, err := newActorCapabilities(
+		&application.EndpointManifestService{},
+		repository,
+		capabilityTestLocalStation,
+		func(*gorm.DB) (verifiedProfileDeviceKeyHydrator, error) {
+			return nil, errors.New("remote hydration must not run")
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	homeStation, err := provider.ResolveActorHomeStationPeerID(
+		context.Background(),
+		capabilityTestRemoteActor,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if homeStation != capabilityTestRemoteStation {
+		t.Fatalf(
+			"Home Station = %q, want %q",
+			homeStation,
+			capabilityTestRemoteStation,
+		)
+	}
+}
+
 func TestActorCapabilitiesRevalidateRemoteProfileAndRejectMissingKey(t *testing.T) {
 	database := openCapabilityTestDatabase(t)
 	if err := database.Exec(`
@@ -475,6 +538,7 @@ func newKeyOnlyCapabilityProvider(
 	}
 	provider, err := newActorCapabilities(
 		&application.EndpointManifestService{},
+		mustCapabilityRepository(t, openCapabilityTestDatabase(t)),
 		localStationPeerID,
 		hydratorFactory,
 	)

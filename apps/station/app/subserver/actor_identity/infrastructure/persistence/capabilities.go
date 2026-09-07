@@ -229,6 +229,111 @@ func (r *Repository) BuildLocalEndpointManifestSnapshot(
 	return proto.Clone(manifest).(*actormodel.ActorEndpointManifest), nil
 }
 
+// AcceptVerifiedEndpointManifest fences a verified routing snapshot against
+// rollback and same-version state conflicts.
+func (r *Repository) AcceptVerifiedEndpointManifest(
+	ctx context.Context,
+	manifest *actormodel.ActorEndpointManifest,
+	acceptedAt time.Time,
+) error {
+	const operation = "actor_identity.accept_verified_endpoint_manifest"
+
+	if r == nil || r.db == nil || manifest == nil ||
+		manifest.GetActor().GetPtid() == "" ||
+		manifest.GetDirectoryVersion() == 0 ||
+		acceptedAt.IsZero() {
+		return domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"manifest",
+			"is incomplete",
+		)
+	}
+	stableState := &actormodel.ActorEndpointManifestSigningInput{
+		FormatVersion:          manifest.GetFormatVersion(),
+		Actor:                  proto.Clone(manifest.GetActor()).(*actormodel.ActorRef),
+		HomeStationPeerId:      manifest.GetHomeStationPeerId(),
+		ActiveEndpoints:        cloneManifestEntries(manifest.GetActiveEndpoints()),
+		ActorIdentityPublicKey: append([]byte(nil), manifest.GetActorIdentityPublicKey()...),
+		ActorProfileVersion:    manifest.GetActorProfileVersion(),
+	}
+	stateBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(stableState)
+	if err != nil {
+		return domain.WrapError(domain.ErrorCodeInvalidProof, operation, err)
+	}
+	stateHash := sha256.Sum256(stateBytes)
+
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		candidate := &ActorEndpointDirectoryVersionModel{
+			ActorPTID:   manifest.GetActor().GetPtid(),
+			Version:     manifest.GetDirectoryVersion(),
+			StateSHA256: append([]byte(nil), stateHash[:]...),
+			UpdatedAt:   acceptedAt.UTC(),
+		}
+		if createErr := tx.Clauses(clause.OnConflict{DoNothing: true}).
+			Create(candidate).Error; createErr != nil {
+			return createErr
+		}
+
+		var current ActorEndpointDirectoryVersionModel
+		if loadErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("actor_ptid = ?", manifest.GetActor().GetPtid()).
+			First(&current).Error; loadErr != nil {
+			return loadErr
+		}
+		switch {
+		case manifest.GetDirectoryVersion() < current.Version:
+			return domain.NewError(
+				domain.ErrorCodeIdentityConflict,
+				operation,
+				"directory_version",
+				"would roll back the accepted Actor endpoint directory",
+			)
+		case manifest.GetDirectoryVersion() == current.Version:
+			if !bytes.Equal(current.StateSHA256, stateHash[:]) {
+				return domain.NewError(
+					domain.ErrorCodeIdentityConflict,
+					operation,
+					"directory_version",
+					"was already accepted with different routing state",
+				)
+			}
+
+			return nil
+		}
+
+		result := tx.Model(&ActorEndpointDirectoryVersionModel{}).
+			Where(
+				"actor_ptid = ? AND directory_version = ?",
+				manifest.GetActor().GetPtid(),
+				current.Version,
+			).
+			Updates(map[string]interface{}{
+				"directory_version": manifest.GetDirectoryVersion(),
+				"state_sha256":      append([]byte(nil), stateHash[:]...),
+				"updated_at":        acceptedAt.UTC(),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return domain.NewError(
+				domain.ErrorCodeIdentityConflict,
+				operation,
+				"directory_version",
+				"changed concurrently",
+			)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return mapCapabilityPersistenceError(operation, err)
+	}
+
+	return nil
+}
+
 // ResolveVerifiedActorDeviceSigningKey returns an exact verified key, including
 // its revocation timestamp so callers can evaluate historical signatures.
 func (r *Repository) ResolveVerifiedActorDeviceSigningKey(

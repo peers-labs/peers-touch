@@ -72,21 +72,58 @@ func (s *subServer) handleCreateDirectConversation(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
-	if _, getErr := s.composition.QueryService.Get(
+	requiresVerifiedRoutes := false
+	existing, getErr := s.composition.QueryService.Get(
 		ctx,
 		conversationID,
 		endpoint.Actor,
-	); conversationdomain.IsCode(getErr, conversationdomain.ErrorCodeNotFound) {
+	)
+	switch {
+	case getErr == nil:
+		if !existingDirectCanReopen(
+			existing,
+			federationID,
+			endpoint.Actor,
+			peer,
+			s.localStation,
+		) {
+			return nil, mapProductionConversationError(
+				ctx,
+				conversationdomain.NewError(
+					conversationdomain.ErrorCodeCommandConflict,
+					"production_http.create_direct",
+					"conversation",
+					"does not match the requested Direct Conversation",
+				),
+			)
+		}
+		if existing.Source == query.SourceFollower {
+			return &chatmodel.CreateDirectConversationResponse{
+				Conversation: productionConversation(existing.Conversation),
+			}, nil
+		}
+	case conversationdomain.IsCode(getErr, conversationdomain.ErrorCodeNotFound):
+		requiresVerifiedRoutes = true
 		if gateErr := s.evaluateCreateDirect(ctx, request.GetPeerPtid()); gateErr != nil {
 			return nil, mapProductionConversationError(ctx, gateErr)
 		}
-	} else if getErr != nil {
+	default:
 		return nil, mapProductionConversationError(ctx, getErr)
 	}
 
 	exactBytes, err := deterministicProductionProto(request)
 	if err != nil {
 		return nil, err
+	}
+	var verifiedRoutes []ports.EndpointRoute
+	if requiresVerifiedRoutes {
+		verifiedRoutes, err = s.productionEndpointRoutes(
+			ctx,
+			[]valueobject.PTID{endpoint.Actor, peer},
+		)
+		if err != nil {
+			return nil, mapProductionConversationError(ctx, err)
+		}
 	}
 	result, err := s.composition.CommandService.CreateDirect(
 		ctx,
@@ -96,6 +133,7 @@ func (s *subServer) handleCreateDirectConversation(
 			FederationID:      federationID,
 			AuthorityEpoch:    initialConversationAuthorityEpoch,
 			CommandID:         commandID,
+			VerifiedRoutes:    verifiedRoutes,
 			ExactCommandBytes: exactBytes,
 		},
 	)
@@ -112,9 +150,12 @@ func (s *subServer) handleCreateDirectConversation(
 			),
 		)
 	}
-	event, err := conversationhttp.MapEvent(result.Event)
-	if err != nil {
-		return nil, mapProductionConversationError(ctx, err)
+	var event *chatmodel.ConversationEvent
+	if result.Event.ID != "" {
+		event, err = conversationhttp.MapEvent(result.Event)
+		if err != nil {
+			return nil, mapProductionConversationError(ctx, err)
+		}
 	}
 
 	return &chatmodel.CreateDirectConversationResponse{
@@ -1039,7 +1080,7 @@ func (s *subServer) productionGroupPlanResponse(
 ) (*chatmodel.PrepareConversationGroupResponse, error) {
 	manifests, err := s.productionEndpointManifests(
 		ctx,
-		plan,
+		productionPlanActors(plan),
 	)
 	if err != nil {
 		return nil, err
@@ -1062,7 +1103,7 @@ func (s *subServer) productionMembershipPlanResponse(
 ) (*chatmodel.PrepareConversationMembershipResponse, error) {
 	manifests, err := s.productionEndpointManifests(
 		ctx,
-		plan,
+		productionPlanActors(plan),
 	)
 	if err != nil {
 		return nil, err
@@ -1088,38 +1129,23 @@ func (s *subServer) productionMembershipPlanResponse(
 
 func (s *subServer) productionEndpointManifests(
 	ctx context.Context,
-	plan entity.AuthorityPlan,
+	actors []valueobject.PTID,
 ) ([]*actormodel.ActorEndpointManifest, error) {
-	actors := productionPlanActors(plan)
-	routes, err := (&productionIdentityDirectory{
-		db: s.composition.database,
-	}).ListActiveEndpoints(ctx, actors)
-	if err != nil {
-		return nil, err
-	}
-	homeByActor := make(map[valueobject.PTID]valueobject.StationID, len(actors))
-	for _, route := range routes {
-		if established, ok := homeByActor[route.Endpoint.Actor]; ok &&
-			established != route.HomeStation {
+	canonicalActors := uniqueProductionActors(actors)
+	manifests := make([]*actormodel.ActorEndpointManifest, 0, len(canonicalActors))
+	for _, actor := range canonicalActors {
+		homeStationValue, err := s.composition.ActorCapabilities.
+			ResolveActorHomeStationPeerID(ctx, string(actor))
+		if err != nil {
+			return nil, err
+		}
+		homeStation, err := valueobject.NewStationID(homeStationValue)
+		if err != nil || string(homeStation) != homeStationValue {
 			return nil, conversationdomain.NewError(
 				conversationdomain.ErrorCodeActorKeyUnavailable,
 				"production_http.endpoint_manifests",
 				"home_station_peer_id",
-				"active Actor endpoints disagree on Home Station",
-			)
-		}
-		homeByActor[route.Endpoint.Actor] = route.HomeStation
-	}
-
-	manifests := make([]*actormodel.ActorEndpointManifest, 0, len(actors))
-	for _, actor := range actors {
-		homeStation := homeByActor[actor]
-		if homeStation == "" {
-			return nil, conversationdomain.NewError(
-				conversationdomain.ErrorCodeActorKeyUnavailable,
-				"production_http.endpoint_manifests",
-				"actor",
-				"has no active endpoint route",
+				"is not a canonical Actor Identity route",
 			)
 		}
 		request := &actormodel.GetActorEndpointManifestRequest{
@@ -1161,18 +1187,14 @@ func (s *subServer) productionEndpointManifests(
 		if err != nil {
 			return nil, mapProductionConversationError(ctx, err)
 		}
-		if response == nil ||
-			response.GetManifest() == nil ||
-			response.GetManifest().GetFormatVersion() == 0 ||
-			response.GetManifest().GetActor().GetPtid() != string(actor) ||
-			response.GetManifest().GetHomeStationPeerId() != string(homeStation) ||
-			response.GetManifest().GetIssuedAt() == nil ||
-			response.GetManifest().GetExpiresAt() == nil ||
-			!response.GetManifest().GetExpiresAt().AsTime().
-				After(s.composition.clock.Now()) {
-			return nil, server.InternalError(
-				"Actor endpoint manifest service returned a mismatched manifest",
-			)
+		manifest := response.GetManifest()
+		if validateErr := s.composition.ActorCapabilities.ValidateEndpointManifest(
+			manifest,
+			string(actor),
+			string(homeStation),
+			s.composition.clock.Now(),
+		); validateErr != nil {
+			return nil, validateErr
 		}
 		if homeStation != s.localStation {
 			runtime, resolveErr := s.composition.FederationRuntime()
@@ -1196,10 +1218,129 @@ func (s *subServer) productionEndpointManifests(
 				return nil, verifyErr
 			}
 		}
-		manifests = append(manifests, response.GetManifest())
+		if acceptErr := s.composition.ActorCapabilities.
+			AcceptVerifiedEndpointManifest(ctx, manifest); acceptErr != nil {
+			return nil, acceptErr
+		}
+		manifests = append(
+			manifests,
+			proto.Clone(manifest).(*actormodel.ActorEndpointManifest),
+		)
 	}
 
 	return manifests, nil
+}
+
+func (s *subServer) productionEndpointRoutes(
+	ctx context.Context,
+	actors []valueobject.PTID,
+) ([]ports.EndpointRoute, error) {
+	manifests, err := s.productionEndpointManifests(ctx, actors)
+	if err != nil {
+		return nil, err
+	}
+
+	routes := make([]ports.EndpointRoute, 0)
+	for _, manifest := range manifests {
+		homeStation := valueobject.StationID(manifest.GetHomeStationPeerId())
+		for _, entry := range manifest.GetActiveEndpoints() {
+			endpoint, endpointErr := valueobject.NewEndpoint(
+				entry.GetEndpoint().GetActor().GetPtid(),
+				entry.GetEndpoint().GetDeviceId(),
+			)
+			if endpointErr != nil {
+				return nil, endpointErr
+			}
+			routes = append(routes, ports.EndpointRoute{
+				Endpoint:    endpoint,
+				HomeStation: homeStation,
+			})
+		}
+	}
+
+	return canonicalProductionEndpointRoutes(routes, actors)
+}
+
+func canonicalProductionEndpointRoutes(
+	routes []ports.EndpointRoute,
+	actors []valueobject.PTID,
+) ([]ports.EndpointRoute, error) {
+	expectedActors := uniqueProductionActors(actors)
+	expected := make(map[valueobject.PTID]struct{}, len(expectedActors))
+	for _, actor := range expectedActors {
+		expected[actor] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(routes))
+	homes := make(map[valueobject.PTID]valueobject.StationID, len(expectedActors))
+	canonical := append([]ports.EndpointRoute(nil), routes...)
+	for _, route := range canonical {
+		if route.Endpoint.Validate() != nil || route.HomeStation == "" {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeActorKeyUnavailable,
+				"production_http.endpoint_routes",
+				"route",
+				"is invalid",
+			)
+		}
+		if _, ok := expected[route.Endpoint.Actor]; !ok {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeActorKeyUnavailable,
+				"production_http.endpoint_routes",
+				"actor",
+				"is outside the requested manifest set",
+			)
+		}
+		if _, duplicate := seen[route.Endpoint.Key()]; duplicate {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeActorKeyUnavailable,
+				"production_http.endpoint_routes",
+				"route",
+				"is duplicated",
+			)
+		}
+		seen[route.Endpoint.Key()] = struct{}{}
+		if home, ok := homes[route.Endpoint.Actor]; ok && home != route.HomeStation {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeActorKeyUnavailable,
+				"production_http.endpoint_routes",
+				"home_station_peer_id",
+				"conflicts within one Actor manifest",
+			)
+		}
+		homes[route.Endpoint.Actor] = route.HomeStation
+	}
+	for _, actor := range expectedActors {
+		if homes[actor] == "" {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeActorKeyUnavailable,
+				"production_http.endpoint_routes",
+				"actor",
+				"has no verified active endpoint",
+			)
+		}
+	}
+	sort.Slice(canonical, func(left int, right int) bool {
+		return canonical[left].Endpoint.Key() < canonical[right].Endpoint.Key()
+	})
+
+	return canonical, nil
+}
+
+func uniqueProductionActors(actors []valueobject.PTID) []valueobject.PTID {
+	seen := make(map[valueobject.PTID]struct{}, len(actors))
+	canonical := make([]valueobject.PTID, 0, len(actors))
+	for _, actor := range actors {
+		if _, exists := seen[actor]; exists {
+			continue
+		}
+		seen[actor] = struct{}{}
+		canonical = append(canonical, actor)
+	}
+	sort.Slice(canonical, func(left int, right int) bool {
+		return canonical[left] < canonical[right]
+	})
+
+	return canonical
 }
 
 func productionEndpointManifestSigningInput(

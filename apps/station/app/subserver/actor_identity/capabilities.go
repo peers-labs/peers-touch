@@ -3,6 +3,7 @@ package actor_identity
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
@@ -26,25 +27,31 @@ type verifiedProfileDeviceKeyHydratorFactory func(
 	*gorm.DB,
 ) (verifiedProfileDeviceKeyHydrator, error)
 
+type actorHomeStationResolver interface {
+	ResolveActorHomeStationPeerID(context.Context, string) (string, error)
+}
+
 type actorCapabilities struct {
 	endpointManifests *application.EndpointManifestService
+	homeStations      actorHomeStationResolver
 	localStationID    string
 	hydratorFactory   verifiedProfileDeviceKeyHydratorFactory
 }
 
 func newActorCapabilities(
 	endpointManifests *application.EndpointManifestService,
+	homeStations actorHomeStationResolver,
 	localStationID string,
 	hydratorFactory verifiedProfileDeviceKeyHydratorFactory,
 ) (*actorCapabilities, error) {
 	const operation = "actor_identity.new_capability_provider"
 
-	if endpointManifests == nil {
+	if endpointManifests == nil || homeStations == nil {
 		return nil, domain.NewError(
 			domain.ErrorCodeInvalidArgument,
 			operation,
-			"endpoint_manifest_service",
-			"is required",
+			"identity_repository",
+			"endpoint manifest and Home Station resolvers are required",
 		)
 	}
 	if localStationID == "" || localStationID != strings.TrimSpace(localStationID) {
@@ -66,6 +73,7 @@ func newActorCapabilities(
 
 	return &actorCapabilities{
 		endpointManifests: endpointManifests,
+		homeStations:      homeStations,
 		localStationID:    localStationID,
 		hydratorFactory:   hydratorFactory,
 	}, nil
@@ -96,6 +104,67 @@ func (c *actorCapabilities) GetEndpointManifest(
 		sourceStationPeerID,
 		request,
 	)
+}
+
+// ResolveActorHomeStationPeerID exposes Actor Identity-owned routing without
+// assigning Actor lifecycle truth to a consuming subserver.
+func (c *actorCapabilities) ResolveActorHomeStationPeerID(
+	ctx context.Context,
+	actorPTID string,
+) (string, error) {
+	if c == nil || c.homeStations == nil {
+		return "", domain.NewError(
+			domain.ErrorCodeIdentityUnavailable,
+			"actor_identity.resolve_actor_home_station",
+			"capability_provider",
+			"is not initialized",
+		)
+	}
+
+	return c.homeStations.ResolveActorHomeStationPeerID(ctx, actorPTID)
+}
+
+// ValidateEndpointManifest keeps Actor-owned manifest shape and freshness
+// semantics behind the capability boundary.
+func (c *actorCapabilities) ValidateEndpointManifest(
+	manifest *actormodel.ActorEndpointManifest,
+	expectedActorPTID string,
+	expectedHomeStationPeerID string,
+	now time.Time,
+) error {
+	if c == nil {
+		return domain.NewError(
+			domain.ErrorCodeIdentityUnavailable,
+			"actor_identity.validate_endpoint_manifest",
+			"capability_provider",
+			"is not initialized",
+		)
+	}
+
+	return application.ValidateEndpointManifest(
+		manifest,
+		expectedActorPTID,
+		expectedHomeStationPeerID,
+		now,
+	)
+}
+
+// AcceptVerifiedEndpointManifest persists the monotonic Actor routing fence
+// after the consuming Federation boundary has verified the Station signature.
+func (c *actorCapabilities) AcceptVerifiedEndpointManifest(
+	ctx context.Context,
+	manifest *actormodel.ActorEndpointManifest,
+) error {
+	if c == nil || c.endpointManifests == nil {
+		return domain.NewError(
+			domain.ErrorCodeIdentityUnavailable,
+			"actor_identity.accept_endpoint_manifest",
+			"capability_provider",
+			"is not initialized",
+		)
+	}
+
+	return c.endpointManifests.AcceptVerifiedEndpointManifest(ctx, manifest)
 }
 
 func (c *actorCapabilities) ResolveVerifiedActorDeviceSigningKey(

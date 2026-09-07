@@ -3192,3 +3192,55 @@ The Acceptance Gap Detector keeps the delivery claim `UNPROVEN` until those
 native receiver/runtime cells execute. Windows Product Closure, Windows
 multi-Station Chat proof, and PostgreSQL contention remain `UNPROVEN`; macOS
 W8 remains deferred.
+
+### 2026-09-07 MP-D19 Direct Creation Repair
+
+The first exact-source CA-W6 Product Closure run
+`20260907T133530851900Z-830bccbed36ac0ab6ef14c7edc0fce4e` at
+`13c4db5fbceeb4a3b8aa16b7b6322eac8120f8f3` proved both Actor Device
+enrollments, Bob's exact contact result, the peer-bound Direct intent pane, and
+complete Windows cleanup. It failed before the first Conversation commit
+because station-four attempted to resolve Bob through its local
+`actor_devices` table. Both Stations therefore retained zero Conversation
+rows, events, and receipts.
+
+The local correction restores MP-D19 semantics without restoring a Messaging
+facade or remote-device shadow truth:
+
+- Actor Identity exposes the authoritative Home Station projection and owns
+  manifest shape, lifetime, and monotonic directory-version validation.
+- Conversation resolves local and remote signed manifests before entering the
+  authority transaction and derives one canonical endpoint-route snapshot.
+- Direct creation receives that verified snapshot, revalidates only the local
+  creator inside the serialized UOW, verifies every Home Station against the
+  explicit Federation, and atomically derives participants, devices, local
+  Device Inbox effects, remote Federation outbox effects, and receipts.
+- Exact committed replay remains independent of a current manifest. Existing
+  authority or follower Direct projections reopen without fabricating a new
+  committed event, including Social-effect retries after device churn.
+  Authority genesis and follower genesis share one per-conversation
+  serialization key so an unlocked pre-read cannot create dual ownership.
+- Focused regression coverage includes a remote peer absent from the authority
+  Station's `actor_devices`, inactive local creator, inactive Federation
+  membership, missing remote routes, wrong Home Station, expiry, invalid
+  Station signature, empty active endpoints, and signed directory-version
+  rollback.
+
+The final source-bound local runs pass:
+
+- `station-messaging-unit`:
+  `20260907T152620155080Z-e1634ee32f057ea713a47779f742ebdf`;
+- `messaging-platform-contract`:
+  `20260907T152641658782Z-820c1b228f33055db17571169aa36bbb`;
+- `desktop-check`:
+  `20260907T152705410838Z-6c9da0c7b111757b193dcf19ec65c60f`;
+- `chat-native-visible-static`:
+  `20260907T152750424893Z-55874925b41558664add686c43f7fe21`;
+- `station-api-ownership`:
+  `20260907T152813555922Z-528ab70b741c0ba752dd5265971439fa`;
+- focused Actor Identity, Conversation, and shared Federation race suites,
+  focused `go vet`, Mobile full check, Go style, and `git diff --check`.
+
+This checkpoint is locally verified but not yet committed or deployed. Windows
+Product Closure, the remaining seven Windows Native Chat Gates, Windows
+multi-Station closure, and PostgreSQL contention remain `UNPROVEN`.
