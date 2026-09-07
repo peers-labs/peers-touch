@@ -7057,6 +7057,26 @@ function reportFoundationF04DenialDebug(
 }
 // #endregion
 
+// #region debug-point A-E:base-cancelled-localization
+function reportFoundationCancelledLocalizationDebug(
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'base-cancelled-localization',
+      runId: 'pre-fix',
+      hypothesisId: 'A-E',
+      location: 'harness.ts:foundationCancelledReceiverSnapshot',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 // #region debug-point A-D:foundation-capability-isolation
 function reportFoundationCapabilityIsolationDebug(
   hypothesisId: string,
@@ -8301,7 +8321,7 @@ async function foundationCancelledReceiverSnapshot(
       message.role === 'assistant'
       && message.typedError?.details.resource_id === turnId);
 
-  return {
+  const snapshot = {
     messageId: messageElement.getAttribute('data-pt-agent-message-id'),
     visible: messageElement.getClientRects().length > 0,
     terminalStatus: messageElement.getAttribute(
@@ -8327,6 +8347,28 @@ async function foundationCancelledReceiverSnapshot(
     ),
     resolutionPresent: Boolean(receiverMessage?.resolution),
   };
+  await reportFoundationCancelledLocalizationDebug(description, {
+    locale: i18n.language,
+    messageFound: Boolean(messageElement),
+    messageId: snapshot.messageId,
+    messageVisible: snapshot.visible,
+    terminalStatus: snapshot.terminalStatus,
+    errorType: snapshot.errorType,
+    resourceKind: snapshot.resourceKind,
+    storeErrorKey: receiverMessage?.error ?? '',
+    typedErrorLocaleKey: receiverMessage?.typedError?.locale_key ?? '',
+    errorElementFound: Boolean(receiverError),
+    errorTogglePresent: Boolean(
+      messageElement.querySelector('[data-pt-agent-message-error-toggle]'),
+    ),
+    errorText: snapshot.errorText,
+    expectedErrorText: snapshot.expectedErrorText,
+    errorTextMatches: snapshot.errorText === snapshot.expectedErrorText,
+    errorDetail: snapshot.errorDetail,
+    recoveryVisible: snapshot.recoveryVisible,
+    resolutionPresent: snapshot.resolutionPresent,
+  });
+  return snapshot;
 }
 
 function typedActiveMutationConflict(error: unknown): Record<string, unknown> {
