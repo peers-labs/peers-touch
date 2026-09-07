@@ -2460,7 +2460,7 @@ def evaluate_base_cancelled(
             and receiver.get("resolutionPresent") is False
             and receiver_phase_matches(
                 "live",
-                f"recovered-{turn_id}",
+                str(station.get("messageId")),
                 "cancelled_by_user",
             )
             and receiver_phase_matches(
