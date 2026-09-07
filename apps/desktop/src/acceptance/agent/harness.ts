@@ -7066,7 +7066,7 @@ function reportFoundationCancelledLocalizationDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'base-cancelled-localization',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId: 'A-E',
       location: 'harness.ts:foundationCancelledReceiverSnapshot',
       msg: `[DEBUG] ${stage}`,
@@ -9496,7 +9496,7 @@ function evaluateBaseCancelled(
       && receiver.resolutionPresent === false
       && receiverPhaseMatches(
         'live',
-        `recovered-${String(station.turnId)}`,
+        String(station.messageId),
         'cancelled_by_user',
       )
       && receiverPhaseMatches(
