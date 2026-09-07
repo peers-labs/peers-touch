@@ -730,10 +730,16 @@ func resolveProductionFederationRuntime() (
 	error,
 ) {
 	instance := server.GetOptions().SubserverInstances["federation"]
-	runtime, ok := instance.(ProductionFederationRuntime)
-	if !ok || isNilProductionDependency(runtime) {
+	provider, ok := instance.(sharedfederation.RuntimeProvider)
+	if !ok || isNilProductionDependency(provider) {
 		return nil, fmt.Errorf(
 			"shared Federation runtime provider is unavailable",
+		)
+	}
+	runtime := provider.FederationDeliveryRuntime()
+	if isNilProductionDependency(runtime) {
+		return nil, fmt.Errorf(
+			"shared Federation runtime is unavailable",
 		)
 	}
 
