@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `87aa51437a2faea4803d34d08bf2bcfaed5980b1` was rebuilt, smoke-tested, and deployed exact-source. One unchanged-source retry exposed `BASE-ACTIVE_MUTATION_CONFLICT` depending on incidental prior chat state for generic direct-runtime attestation. The local producer now creates an explicit bounded conversation/Turn, binds the exact IDs into runtime evidence, forbids this cell's stale chat fallback, and requires deletion of both the attestation conversation and disposable Agent. Local checks pass; post-fix exact-source proof remains pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `841efd9a26cbbdd968bb7a2ac670495991c54049` passed both Browser locale rows for `BASE-ACTIVE_MUTATION_CONFLICT` with explicit Turn attestation and dual cleanup, then advanced to `BASE-CANCELLED`. The Station-owned typed cancellation vertical and independent Acceptance oracle now pass all local gates; exact-source deployment and the unchanged 419-cell rerun remain pending. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5926,6 +5926,48 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   correctly remains fail-closed because latest evidence identifies the prior
   source. Post-fix exact-source runtime proof remains pending, so Foundation
   and G-F remain `PARTIAL / UNPROVEN`.
+- Checkpoint `841efd9a26cbbdd968bb7a2ac670495991c54049` was rebuilt with
+  Acceptance binary SHA-256
+  `5cef8727bd3ec2c9156b630b686123e2a496179af134cf26b797f27b58dab907`
+  and passed embedded-WebDriver smoke. Initial Gate run
+  `20260907T080554005927Z-f89e6bb447b4f64e3a7c1fb62ca65276`
+  blocked during provisioning because the approved remote Station became
+  unreachable after deployment. Read-only diagnosis found the root filesystem
+  at 100% while `31.48GB` of inactive Docker build cache was fully reclaimable;
+  removing only that cache restored `31GB` free without deleting images,
+  containers, volumes, database data, or logs. The Station was then rebuilt,
+  restarted, health-checked, and source-attested at the same checkpoint.
+  Exact-source Gate run
+  `20260907T081328279276Z-0783821f1a985ba756eec42588629ed5`
+  passed both Browser locale rows for `BASE-ACTIVE_MUTATION_CONFLICT`; retained
+  post-fix diagnostics show one completed attestation Turn per row and
+  `conversationDeleted=true`. The run advanced to Browser English
+  `BASE-CANCELLED` and failed closed because that direct-runtime group is not
+  implemented. Provisioner cleanup completed `DONE / PROVEN / passed`, all six
+  client ports were released, and the Station/runtime/source commit matched.
+  The next closure is the already-specified `LIFECYCLE_CANCELLED` vertical;
+  Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- The local `BASE-CANCELLED` closure extends the canonical cancellation
+  payload with the Station-owned `LIFECYCLE_CANCELLED` outcome, persists the
+  same complete protobuf JSON in the durable TurnEvent and assistant message,
+  and preserves it through Desktop live stream, Station message reload, shared
+  cache reconciliation, and localized rendering. The production scenario
+  issues one real cancel after a text event, validates exact Station SSE
+  provenance, reads Turn/Attempt/message truth, clears the local projection
+  before Station reload and again before authoritative snapshot
+  reconciliation, rejects a lost cancellation race or any late `done`,
+  requires exact payload equality and no recovery action in all three receiver
+  phases, and deletes its conversation. The independent Python oracle and
+  direct adapter remain fail closed. Station Agent tests, Go style, Desktop
+  check and all `575`
+  Desktop tests with one unrelated environment-dependent skip, Desktop
+  production build, Mobile full check, client-chat-core tests, Agent proto
+  coverage, Acceptance planner/gap-detector self-tests, all `318` Agent
+  Acceptance Python tests plus two source/projection regressions (`320` total),
+  Python compilation, and `git diff --check` pass.
+  Agent Domain proof validation correctly rejects the stale prior-checkpoint
+  evidence. Exact-source checkpoint deployment and the unchanged 419-cell
+  Gate rerun remain pending; Foundation/G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
