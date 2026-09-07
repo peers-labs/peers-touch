@@ -1,7 +1,7 @@
 # Debug Session: base-cancelled-localization
 - **Status**: [OPEN]
 - **Issue**: Exact-source Browser `BASE-CANCELLED` reaches Station cancellation truth, but `localizedCancellationVisible` is false.
-- **Debug Server**: http://127.0.0.1:7777/event
+- **Debug Server**: http://127.0.0.1:7788/event
 - **Log File**: `.dbg/trae-debug-log-base-cancelled-localization.ndjson`
 
 ## Reproduction Steps
@@ -78,3 +78,18 @@ post-fix comparison.
 - Provisioner cleanup completed `DONE / PROVEN / passed`.
 - `BASE-CANCELLED` is source-backed closed. Foundation/G-F remain
   `PARTIAL / UNPROVEN`.
+
+## Recurrence
+
+- Exact-source diagnostic run
+  `20260907T163617263286Z-4fc7227e804a51714f2b1b842acef785`
+  on `b5b3fe8209b74926ebaa996147680124ae7e986d` crossed all AS-F06 tuples,
+  then failed first at Browser English `BASE-CANCELLED` on
+  `localizedCancellationVisible`.
+- The existing reporter still targeted port `7777`, which belongs to a
+  different worktree's collector, so this recurrence produced no local
+  phase-level debug evidence. No conclusion from the earlier successful run is
+  reused to explain the new failure.
+- The reporter now targets this worktree's isolated collector on port `7788`.
+  The next exact-source run must capture live, reload, and replay receiver facts
+  before any additional cancellation fix is considered.
