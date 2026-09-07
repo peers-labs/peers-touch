@@ -13,6 +13,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_active_mutation_conflict,
     evaluate_base_cancelled,
     evaluate_base_context_overflow,
+    evaluate_base_credential_missing,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -1092,6 +1093,78 @@ def valid_context_overflow_capture() -> dict[str, object]:
             "draftCleared": True,
             "localProjectionCleared": True,
             "conversationDeleted": True,
+        },
+    }
+
+
+def valid_credential_missing_capture() -> dict[str, object]:
+    conversation_id = "conversation-credential-missing"
+    state_hash = "a" * 64
+    return {
+        "outcome": {
+            "error": "agent.errors.providerCredentialMissing",
+            "error_type": "PROVIDER_CREDENTIAL_MISSING",
+            "locale_key": "agent.errors.providerCredentialMissing",
+            "retryable": True,
+            "terminal": True,
+            "details": {
+                "provider_id": "provider-missing",
+            },
+        },
+        "runtimeEvent": {
+            "eventId": "b" * 64,
+            "sequence": 1,
+            "eventType": "error",
+            "observedAt": "2026-09-07T12:30:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "c" * 64,
+            "conversationIdHash": hashlib.sha256(
+                conversation_id.encode("utf-8")
+            ).hexdigest(),
+            "payloadHash": "d" * 64,
+            "errorType": "PROVIDER_CREDENTIAL_MISSING",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "e" * 64,
+            "sourceConversationId": conversation_id,
+            "sourceTurnId": "",
+            "sourceSequence": 0,
+            "sourceEventType": "error",
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "Provider credentials are not configured.",
+            "expectedErrorText": "Provider credentials are not configured.",
+            "recoveryVisible": True,
+            "recoveryText": "Configure credential",
+            "expectedRecoveryText": "Configure credential",
+            "configureProviderExecuted": True,
+        },
+        "station": {
+            "conversationId": conversation_id,
+            "providerId": "provider-missing",
+            "providerStatusBefore": "not_configured",
+            "providerConfiguredBefore": False,
+            "providerStatusAfter": "not_configured",
+            "providerConfiguredAfter": False,
+            "conversationVersionBefore": 1,
+            "conversationVersionAfter": 1,
+            "beforeHash": state_hash,
+            "afterHash": state_hash,
+            "turnDelta": 0,
+            "messageDelta": 0,
+            "queueDelta": 0,
+            "providerExecutionDelta": 0,
+        },
+        "replay": {
+            "sourceHash": state_hash,
+            "replayHash": state_hash,
+            "equal": True,
+        },
+        "cleanup": {
+            "conversationDeleted": True,
+            "disposableAgentDeleted": True,
+            "priorSelection": "primary-agent",
+            "restoredSelection": "primary-agent",
         },
     }
 
@@ -2407,6 +2480,125 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "cleanupComplete",
         ):
             evaluate_base_context_overflow(capture)
+
+    def test_credential_missing_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_credential_missing(
+            valid_credential_missing_capture()
+        )
+
+        self.assertEqual(len(assertions), 8)
+        self.assertTrue(all(assertions.values()))
+
+    def test_credential_missing_rejects_unsafe_details(self) -> None:
+        for mutation in (
+            lambda capture: capture["outcome"]["details"].update(
+                {"credential": "secret"}
+            ),
+            lambda capture: capture["outcome"]["details"].update(
+                {"provider_id": "provider-other"}
+            ),
+        ):
+            with self.subTest(mutation=mutation):
+                capture = valid_credential_missing_capture()
+                mutation(capture)
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedProviderConfigMissing",
+                ):
+                    evaluate_base_credential_missing(capture)
+
+    def test_credential_missing_requires_localized_executed_action(self) -> None:
+        for key, value, expected in (
+            ("errorText", "Credential missing", "localizedRecoveryVisible"),
+            ("recoveryVisible", False, "localizedRecoveryVisible"),
+            ("recoveryText", "Configure", "localizedRecoveryVisible"),
+            (
+                "configureProviderExecuted",
+                False,
+                "configureProviderExecuted",
+            ),
+        ):
+            with self.subTest(key=key):
+                capture = valid_credential_missing_capture()
+                capture["receiver"][key] = value
+                with self.assertRaisesRegex(GroupOneScenarioError, expected):
+                    evaluate_base_credential_missing(capture)
+
+    def test_credential_missing_requires_absent_credential_at_admission(
+        self,
+    ) -> None:
+        for key, value in (
+            ("providerStatusBefore", "configured"),
+            ("providerConfiguredBefore", True),
+            ("providerStatusAfter", "configured"),
+            ("providerConfiguredAfter", True),
+        ):
+            with self.subTest(key=key):
+                capture = valid_credential_missing_capture()
+                capture["station"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "providerConfigAbsentAtAdmission",
+                ):
+                    evaluate_base_credential_missing(capture)
+
+    def test_credential_missing_rejects_station_or_provider_delta(
+        self,
+    ) -> None:
+        for key, expected in (
+            ("turnDelta", "stationStateUnchanged"),
+            ("messageDelta", "stationStateUnchanged"),
+            ("queueDelta", "stationStateUnchanged"),
+            ("providerExecutionDelta", "zeroProviderCall"),
+        ):
+            with self.subTest(key=key):
+                capture = valid_credential_missing_capture()
+                capture["station"][key] = 1
+                with self.assertRaisesRegex(GroupOneScenarioError, expected):
+                    evaluate_base_credential_missing(capture)
+
+    def test_credential_missing_rejects_source_identity_drift(self) -> None:
+        for key, value in (
+            ("sourceTransport", "local"),
+            ("sourceConversationId", "conversation-other"),
+            ("sourceTurnId", "turn-forged"),
+            ("sourceSequence", 1),
+            ("sourceEventType", "done"),
+            ("conversationIdHash", "f" * 64),
+        ):
+            with self.subTest(key=key):
+                capture = valid_credential_missing_capture()
+                capture["runtimeEvent"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedProviderConfigMissing",
+                ):
+                    evaluate_base_credential_missing(capture)
+
+    def test_credential_missing_rejects_replay_drift(self) -> None:
+        capture = valid_credential_missing_capture()
+        capture["replay"]["replayHash"] = "f" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "replayEqual",
+        ):
+            evaluate_base_credential_missing(capture)
+
+    def test_credential_missing_requires_fixture_restoration(self) -> None:
+        for key, value in (
+            ("conversationDeleted", False),
+            ("disposableAgentDeleted", False),
+            ("restoredSelection", "other-agent"),
+        ):
+            with self.subTest(key=key):
+                capture = valid_credential_missing_capture()
+                capture["cleanup"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "cleanupComplete",
+                ):
+                    evaluate_base_credential_missing(capture)
 
     def test_attachment_rejected_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_attachment_rejected(

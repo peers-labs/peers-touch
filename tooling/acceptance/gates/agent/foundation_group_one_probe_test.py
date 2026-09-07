@@ -21,6 +21,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_active_mutation_conflict,
     evaluate_base_cancelled,
     evaluate_base_context_overflow,
+    evaluate_base_credential_missing,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -37,6 +38,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_active_mutation_conflict_capture,
     valid_cancelled_capture,
     valid_context_overflow_capture,
+    valid_credential_missing_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -94,6 +96,15 @@ def typed_runtime_role(
 
 def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, Any]:
     result = capture(probe)
+    if probe.cell == "BASE-CREDENTIAL_MISSING":
+        facts = valid_credential_missing_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_credential_missing(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
+        return result
     if probe.cell == "BASE-CANCELLED":
         facts = valid_cancelled_capture()
         result["scenarioFacts"] = facts
@@ -488,6 +499,63 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneProbeError,
             "BASE-CONTEXT_OVERFLOW assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_credential_missing_routes_to_independent_oracle(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-CREDENTIAL_MISSING",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroProviderCall": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-CREDENTIAL_MISSING assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_credential_missing_rejects_runtime_role_identity_drift(
+        self,
+    ) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-CREDENTIAL_MISSING",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+        capture_value["runtime-events"]["sourceConversationId"] = (
+            "conversation-forged"
+        )
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "runtime-events role does not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_credential_missing_rejects_runtime_actor_drift(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-CREDENTIAL_MISSING",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+        capture_value["runtimeAttestation"]["actorIdentityHash"] = "f" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "runtime source actor does not match",
         ):
             assert_group_one_capture(probe, capture_value)
 
