@@ -116,6 +116,7 @@ func validateAndNormalizeRegistry(registry *ownershipRegistry, registryPath stri
 
 	capabilityIDs := make(map[string]struct{}, len(registry.Capabilities))
 	canonicalRoutes := make(map[string]string, len(registry.Capabilities))
+	canonicalProtoOwners := make(map[string]string, len(registry.Capabilities)*2)
 	truthStoreOwners := make(map[string]string)
 	for index := range registry.Capabilities {
 		item := &registry.Capabilities[index]
@@ -144,6 +145,28 @@ func validateAndNormalizeRegistry(registry *ownershipRegistry, registryPath stri
 				"capability %q exposure must be client, peer, or internal",
 				item.ID,
 			))
+		}
+		for _, contract := range []struct {
+			field  string
+			symbol string
+		}{
+			{field: "request_proto", symbol: item.RequestProto},
+			{field: "response_proto", symbol: item.ResponseProto},
+		} {
+			if contract.symbol == "" {
+				continue
+			}
+			if existing, exists := canonicalProtoOwners[contract.symbol]; exists {
+				addInvalid(fmt.Sprintf(
+					"canonical proto symbol %q is assigned to both %q and %q (%s)",
+					contract.symbol,
+					existing,
+					item.ID,
+					contract.field,
+				))
+				continue
+			}
+			canonicalProtoOwners[contract.symbol] = item.ID
 		}
 
 		normalizedRoute, err := normalizeRoute(item.CanonicalRoute)

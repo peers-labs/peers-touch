@@ -10,7 +10,10 @@ from tooling.acceptance.core import (
 from .home_station import HomeStationProvisioner
 from .local_desktop_gateway import LocalDesktopGatewayProvisioner
 from .mobile_native import MobileNativeProvisioner
-from .mobile_simulator import MobileSimulatorProvisioner
+from .mobile_simulator import (
+    MobileSimulatorProvisioner,
+    MobileSocialSimulatorProvisioner,
+)
 from .native_desktop_linux import NativeDesktopLinuxProvisioner
 from .native_desktop_windows import NativeDesktopWindowsProvisioner
 from .native_tauri_embedded_webdriver import (
@@ -23,6 +26,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     LocalDesktopGatewayProvisioner.environment_id: LocalDesktopGatewayProvisioner,
     MobileNativeProvisioner.environment_id: MobileNativeProvisioner,
     MobileSimulatorProvisioner.environment_id: MobileSimulatorProvisioner,
+    MobileSocialSimulatorProvisioner.environment_id: (
+        MobileSocialSimulatorProvisioner
+    ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
 }
 
@@ -39,6 +45,7 @@ def get_provisioner(contract: EnvironmentContract) -> EnvironmentProvisioner:
             f"no provisioner registered for environment: {contract.id}"
         )
     return provisioner_class(contract)
+
 
 def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
     lifecycle_class = _RUNTIME_CELL_LIFECYCLES.get(cell_id)
@@ -60,6 +67,7 @@ __all__ = [
     "LocalDesktopGatewayProvisioner",
     "MobileNativeProvisioner",
     "MobileSimulatorProvisioner",
+    "MobileSocialSimulatorProvisioner",
     "NativeDesktopLinuxProvisioner",
     "NativeDesktopWindowsProvisioner",
     "NativeTauriEmbeddedWebDriverProvisioner",

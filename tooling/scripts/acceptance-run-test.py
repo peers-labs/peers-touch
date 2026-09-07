@@ -23,6 +23,7 @@ from tooling.acceptance.core import (
     CredentialRef,
     EnvironmentContract,
     EvidenceConflict,
+    EvidenceManifestInvalid,
     EvidenceStore,
     EphemeralCapabilityBlocked,
     EphemeralCapabilityHandler,
@@ -31,6 +32,8 @@ from tooling.acceptance.core import (
     EphemeralHandlerCleanup,
     EphemeralLaunchCleanupFailed,
     EphemeralLaunchContextInvalid,
+    EphemeralLaunchError,
+    RuntimeCellLifecycle,
     new_report,
 )
 from tooling.acceptance.provisioners import HomeStationProvisioner
@@ -131,12 +134,100 @@ class AcceptanceRunTest(unittest.TestCase):
 
             store = EvidenceStore(artifact_root, worktree=REPO_ROOT)
             latest = store.latest("synthetic-gate")
+            aggregate = store.latest("acceptance-run")
+            aggregate_report = store.read_json(
+                ArtifactRef.from_dict(aggregate["artifacts"]["run"])
+            )
 
         self.assertEqual(exit_code, 1)
         run_gate.assert_not_called()
         self.assertEqual(latest["result"]["status"], "failed")
         self.assertEqual(latest["result"]["sourceDrift"]["expected"], expected)
         self.assertEqual(latest["result"]["sourceDrift"]["observed"], observed)
+        self.assertEqual(aggregate_report["source"], expected)
+
+    def test_main_fails_gate_when_source_drifts_during_execution(self) -> None:
+        module = load_module()
+        expected = {
+            "commit": "a" * 40,
+            "workspaceDigest": "clean",
+            "canonicalWorktreeHash": "workspace-a",
+        }
+        observed = {
+            **expected,
+            "workspaceDigest": "sha256:dirty",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_root = root / "artifacts"
+            gates_path = root / "gates.json"
+            gates_path.write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "synthetic-gate": {
+                                "command": "synthetic-command",
+                                "environment": "local",
+                                "tier": "ci-cheap",
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            plan_path = root / "plan.json"
+            plan_path.write_text(
+                json.dumps({"selected_gates": []}),
+                encoding="utf-8",
+            )
+            completed = mock.Mock(
+                returncode=0,
+                stdout="gate passed\n",
+                stderr="",
+            )
+            with mock.patch.dict(
+                os.environ,
+                {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(artifact_root)},
+                clear=False,
+            ), mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "acceptance-run.py",
+                    "--plan",
+                    str(plan_path),
+                    "--gates",
+                    str(gates_path),
+                    "--gate",
+                    "synthetic-gate",
+                ],
+            ), mock.patch(
+                "tooling.acceptance.core.source_identity",
+                side_effect=(expected, expected, observed),
+            ), mock.patch.object(
+                module.subprocess,
+                "run",
+                return_value=completed,
+            ):
+                exit_code = module.main()
+
+            store = EvidenceStore(artifact_root, worktree=REPO_ROOT)
+            latest = store.latest("synthetic-gate")
+            log = store.resolve(
+                ArtifactRef.from_dict(latest["result"]["log"])
+            ).read_text(encoding="utf-8")
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(latest["result"]["status"], "failed")
+        self.assertEqual(latest["result"]["sourceDrift"]["expected"], expected)
+        self.assertEqual(latest["result"]["sourceDrift"]["observed"], observed)
+        self.assertIn("source drifted during aggregate execution", log)
+
+    def test_core_exports_generic_runner_contracts(self) -> None:
+        self.assertTrue(
+            issubclass(EphemeralLaunchCleanupFailed, EphemeralLaunchError)
+        )
+        self.assertTrue(hasattr(RuntimeCellLifecycle, "stop"))
 
     def test_run_environment_projects_and_restores_runtime_cell(self) -> None:
         module = load_module()
@@ -1506,6 +1597,32 @@ class AcceptanceRunTest(unittest.TestCase):
             ["evidence/leaked.bin"],
         )
 
+    def test_finalize_gate_result_rejects_malformed_secret_scan(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("synthetic-gate", source={})
+
+            with self.assertRaises(EvidenceManifestInvalid):
+                module.finalize_gate_result(
+                    {
+                        "id": "synthetic-gate",
+                        "status": "passed",
+                        "secretScan": {
+                            "status": "passed",
+                            "scannedHighEntropyValues": "invalid",
+                            "scannedCredentialValues": 0,
+                            "redactedArtifacts": [],
+                        },
+                    },
+                    run,
+                    "/tmp/acceptance-plan.json",
+                )
+            run.close()
+
     def test_runtime_artifact_audit_rejects_binary_secret_without_rewrite(self) -> None:
         module = load_module()
         secret = "resolved-binary-secret"
@@ -2684,17 +2801,18 @@ class AcceptanceRunTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            redacted_paths, leaked_paths = module.redact_runtime_artifacts(
+            leaked_paths = module.audit_runtime_artifacts(
                 root,
                 (secret,),
             )
             serialized = artifact.read_text(encoding="utf-8")
 
-        self.assertEqual(redacted_paths, [])
         self.assertEqual(leaked_paths, ["roles/receiver-dom.json"])
         self.assertEqual(serialized, original)
 
-    def test_runtime_log_is_registered_after_artifact_redaction(self) -> None:
+    def test_finalize_runtime_log_discards_unregistered_secret_artifact(
+        self,
+    ) -> None:
         module = load_module()
         secret = "runtime-secret-value"
         with tempfile.TemporaryDirectory() as tmp:
@@ -2709,22 +2827,41 @@ class AcceptanceRunTest(unittest.TestCase):
                 json.dumps({"password": secret}),
                 encoding="utf-8",
             )
+            run_dir = run.run_dir
 
-            log_ref, redacted_paths, leaked_paths = module.finalize_runtime_log(
-                run,
-                "runtime-gate",
-                f"password={secret}",
-                (secret,),
-            )
-            collected = run.collect_existing_artifacts()
-            run.close()
+            with self.assertRaisesRegex(
+                EvidenceConflict,
+                "bypassed the immutable artifact writer",
+            ):
+                module.finalize_runtime_log(
+                    run,
+                    "runtime-gate",
+                    f"password={secret}",
+                    (secret,),
+                )
 
-        self.assertIn("reports/runtime.json", redacted_paths)
-        self.assertEqual(
-            leaked_paths,
-            ["logs/runtime-gate.log", "reports/runtime.json"],
-        )
-        self.assertEqual(collected["log"], log_ref)
+            self.assertFalse(run_dir.exists())
+
+    def test_unregistered_secret_artifact_discards_active_run(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("runtime-gate", source={})
+            run_dir = run.run_dir
+
+            with self.assertRaisesRegex(
+                EvidenceConflict,
+                "bypassed the immutable artifact writer",
+            ):
+                module.reject_unresolved_secret_artifacts(
+                    run,
+                    ["reports/unregistered.json"],
+                )
+
+            self.assertFalse(run_dir.exists())
 
     def test_build_run_report_deduplicates_review_commands_by_command_text(self) -> None:
         module = load_module()

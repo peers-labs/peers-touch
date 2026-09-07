@@ -1,4 +1,3 @@
-use super::identity::{generate_fresh_device_identity, FreshDeviceEnrollment};
 use super::store::MessagingStore;
 use crate::domain::crypto::backup::{
     derive_backup_key, BackupKdfParameters, ARGON2_MEMORY_COST_KIB, ARGON2_PARALLELISM,
@@ -14,6 +13,7 @@ use crate::model::chat::{
 };
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
+use messaging_core::identity::{generate_fresh_device_identity, FreshDeviceEnrollment};
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};

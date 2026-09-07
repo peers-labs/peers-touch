@@ -400,6 +400,8 @@ class RemoteGitSourceLease:
         self.host = host.strip()
         self.user = user.strip()
         self.deploy_path = deploy_path.strip()
+        self.port = port
+        self.known_hosts_file = known_hosts_file.strip()
         self.acquire_timeout = acquire_timeout
         self.persistent = persistent
         self.expires_at_epoch = expires_at_epoch

@@ -31,7 +31,16 @@ function getFirstLetter(name: string): string {
 export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sessions, friendRequests, currentUserPtid, loadGroups, selectGroup, setActiveTab, getIMConversations, trackPendingGroupCreation } = useActiveSocialChatSlice((s) => ({
+  const {
+    sessions,
+    friendRequests,
+    currentUserPtid,
+    loadGroups,
+    selectGroup,
+    setActiveTab,
+    getIMConversations,
+    trackPendingGroupCreation,
+  } = useActiveSocialChatSlice((s) => ({
     sessions: s.sessions,
     friendRequests: s.friendRequests,
     currentUserPtid: s.currentUserPtid,
