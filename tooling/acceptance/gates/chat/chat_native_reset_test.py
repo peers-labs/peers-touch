@@ -269,6 +269,20 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         _runtime,
         remote_psql,
     ) -> None:
+        actor = FixtureActorRecord(
+            ptid="ptid:v1:actor:peers:p:alice:local",
+            preferred_username="alice",
+            name="Alice",
+            summary="",
+            icon="",
+            image="",
+            url="https://station-four.example/actors/alice",
+            federated_handle="@alice@station-four.example",
+            home_station_peer_id="station-four",
+            home_station_domain="station-four.example",
+            visibility=1,
+            locator_seq=1,
+        )
         peer = FixtureActorRecord(
             ptid="ptid:v1:actor:peers:p:bob:remote",
             preferred_username="bob",
@@ -287,14 +301,20 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         seed_cross_station_contact(
             "http://10.37.94.156:18132",
             "chat-native-acceptance",
-            "ptid:v1:actor:peers:p:alice:local",
+            actor,
             peer,
         )
 
         sql = remote_psql.call_args.args[1]
         self.assertIn("INSERT INTO follows", sql)
-        self.assertNotIn("friend_chat_friend_requests", sql)
-        self.assertNotIn("social_friend_requests", sql)
+        self.assertIn("INSERT INTO federation", sql)
+        self.assertIn("INSERT INTO federation_station_membership", sql)
+        self.assertIn("INSERT INTO social_friend_requests", sql)
+        self.assertIn("INSERT INTO social_relationship_projections", sql)
+        self.assertNotIn("INSERT INTO friend_chat_friend_requests", sql)
+        self.assertIn("authority_confirmed", sql)
+        self.assertIn("canonical accepted Friend Request projection", sql)
+        self.assertIn("Chat fixture Federation membership", sql)
         self.assertIn("LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE", sql)
         self.assertIn(
             "ON CONFLICT (follower_id, following_id) DO NOTHING",
