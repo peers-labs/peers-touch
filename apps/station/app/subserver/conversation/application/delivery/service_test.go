@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 )
 
@@ -167,5 +168,21 @@ func TestServiceRejectsUnboundedPolicy(t *testing.T) {
 		fixedClock{now: time.Now()},
 	); !delivery.IsCode(err, delivery.ErrorCodeInvalidArgument) {
 		t.Fatalf("unbounded policy error = %v", err)
+	}
+}
+
+func TestPayloadTypeFromIntentIncludesAuthorityCommandResults(t *testing.T) {
+	payloadType, err := delivery.PayloadTypeFromIntent(
+		ports.DeviceInboxPayloadCommandResult,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payloadType != delivery.PayloadTypeCommandResult {
+		t.Fatalf(
+			"command result payload type = %d, want %d",
+			payloadType,
+			delivery.PayloadTypeCommandResult,
+		)
 	}
 }

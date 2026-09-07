@@ -6,7 +6,8 @@ use ed25519_dalek::Signer;
 
 use super::identity::{IdentityKeyPair, X25519KeyPair};
 use crate::contracts::CryptoEndpoint;
-use crate::proto::key_exchange::UploadKeyBundleRequest;
+use crate::proto::actor_device_ref;
+use crate::proto::key_exchange::{DirectOneTimePreKey, UploadDirectKeyBundleRequest};
 
 const INITIAL_ONE_TIME_PREKEY_COUNT: i32 = 20;
 
@@ -34,7 +35,7 @@ pub trait PreKeyRepository: Send + Sync {
 }
 
 pub trait PreKeyTransport: Send + Sync {
-    fn upload(&self, request: &UploadKeyBundleRequest) -> Result<(), String>;
+    fn upload(&self, request: &UploadDirectKeyBundleRequest) -> Result<(), String>;
 }
 
 pub struct PreKeyPublisher<R> {
@@ -94,25 +95,26 @@ fn upload_request(
     endpoint: &CryptoEndpoint,
     actor_identity: &IdentityKeyPair,
     bundle: &PendingPreKeyBundle,
-) -> Result<UploadKeyBundleRequest, String> {
+) -> Result<UploadDirectKeyBundleRequest, String> {
     let signed_prekey = X25519KeyPair::from_private_bytes(bundle.signed_prekey_private);
     let signed_prekey_public = signed_prekey.public_bytes();
     let signature = actor_identity.signing_key().sign(&signed_prekey_public);
-    let mut opk_ids = Vec::with_capacity(bundle.one_time_prekeys.len());
-    let mut opk_pubs = Vec::with_capacity(bundle.one_time_prekeys.len());
-    for (id, private_key) in &bundle.one_time_prekeys {
-        opk_ids.push(*id);
-        opk_pubs.push(B64.encode(X25519KeyPair::from_private_bytes(*private_key).public_bytes()));
-    }
-    Ok(UploadKeyBundleRequest {
-        ik_pub: B64.encode(actor_identity.verifying_key().to_bytes()),
-        spk_id: bundle.signed_prekey_id,
-        spk_pub: B64.encode(signed_prekey_public),
-        spk_sig: B64.encode(signature.to_bytes()),
-        opk_ids,
-        opk_pubs,
-        device_id: endpoint.device_id.clone(),
-        supported_versions: vec![1],
+    Ok(UploadDirectKeyBundleRequest {
+        device: Some(actor_device_ref(&endpoint.ptid, &endpoint.device_id)),
+        identity_key_public: B64.encode(actor_identity.verifying_key().to_bytes()),
+        signed_pre_key_id: bundle.signed_prekey_id,
+        signed_pre_key_public: B64.encode(signed_prekey_public),
+        signed_pre_key_signature: B64.encode(signature.to_bytes()),
+        one_time_pre_keys: bundle
+            .one_time_prekeys
+            .iter()
+            .map(|(key_id, private_key)| DirectOneTimePreKey {
+                key_id: *key_id,
+                public_key: B64
+                    .encode(X25519KeyPair::from_private_bytes(*private_key).public_bytes()),
+            })
+            .collect(),
+        supported_wire_versions: vec![1],
     })
 }
 
@@ -187,12 +189,12 @@ mod tests {
 
     #[derive(Default)]
     struct RecordingTransport {
-        requests: Mutex<Vec<UploadKeyBundleRequest>>,
+        requests: Mutex<Vec<UploadDirectKeyBundleRequest>>,
         fail_first: Mutex<bool>,
     }
 
     impl PreKeyTransport for RecordingTransport {
-        fn upload(&self, request: &UploadKeyBundleRequest) -> Result<(), String> {
+        fn upload(&self, request: &UploadDirectKeyBundleRequest) -> Result<(), String> {
             self.requests.lock().unwrap().push(request.clone());
             let mut fail = self.fail_first.lock().unwrap();
             if *fail {
@@ -226,9 +228,15 @@ mod tests {
         let requests = transport.requests.lock().unwrap();
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0], requests[1]);
-        assert_eq!(requests[0].device_id, "device-1");
         assert_eq!(
-            requests[0].opk_ids.len(),
+            requests[0]
+                .device
+                .as_ref()
+                .map(|device| device.device_id.as_str()),
+            Some("device-1")
+        );
+        assert_eq!(
+            requests[0].one_time_pre_keys.len(),
             INITIAL_ONE_TIME_PREKEY_COUNT as usize
         );
     }

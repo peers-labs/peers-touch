@@ -18,16 +18,15 @@ use messaging_core::crypto::double_ratchet::{DrSessionState, DrSkippedMessageKey
 use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyRepository};
 use messaging_core::crypto::session::{DirectSession, DirectSessionKey};
 use messaging_core::identity::{
-    DeviceEnrollmentRepository, FreshDeviceEnrollment, FreshDeviceIdentityState,
+    DeviceEnrollmentRepository, DeviceSigningKey, FreshDeviceEnrollment, FreshDeviceIdentityState,
     MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
 };
 use messaging_core::outbox::{
-    CommandOutboxEntry, DeliveryReceiptOutboxEntry, DeliveryReceiptRepository,
-    MetadataInteractionCommit, MetadataInteractionRepository, OutboxStore,
+    CommandOutboxEntry, MetadataInteractionCommit, MetadataInteractionRepository, OutboxStore,
 };
 use messaging_core::proto::chat::{
-    AttachmentPlaintextMetadata, AttachmentTransferState, EncryptedObjectDescriptor,
-    EncryptedObjectUploadSpec,
+    AttachmentPlaintextMetadata, AttachmentTransferState, DeviceConsumptionReceipt,
+    EncryptedObjectDescriptor, EncryptedObjectUploadSpec,
 };
 use messaging_core::store::{
     migrate_messaging_schema, DirectOutboundEditCommit, DirectOutboundRepository,
@@ -179,6 +178,46 @@ impl MobileMessagingStore {
     #[cfg(test)]
     fn in_memory() -> Result<Self, String> {
         Self::from_connection(Connection::open_in_memory().map_err(|error| error.to_string())?)
+    }
+
+    pub fn active_device_signing_identity(
+        &self,
+    ) -> Result<(FreshDeviceEnrollment, DeviceSigningKey), String> {
+        let enrollment = DeviceEnrollmentRepository::device_enrollment(self)?
+            .ok_or_else(|| "mobile messaging device identity is unavailable".to_string())?;
+        let certificate = &enrollment.certificate;
+        let device = certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "mobile messaging device identity has no endpoint".to_string())?;
+        let seed = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?
+            .query_row(
+                "SELECT identity.device_signing_seed
+                 FROM messaging_device_identity AS identity
+                 JOIN messaging_recovery_state AS recovery ON recovery.id = identity.id
+                 WHERE identity.id = 1 AND recovery.status = 'active'",
+                [],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| {
+                "mobile messaging active device signing identity is unavailable".to_string()
+            })?;
+        let signing_key = DeviceSigningKey::from_parts(
+            &fixed_key("device signing seed", seed)?,
+            ed25519_dalek::Signature::from_bytes(&enrollment.actor_cross_signature),
+            device.device_id.clone(),
+        );
+        if signing_key.verifying_key().as_bytes()
+            != certificate.device_signing_public_key.as_slice()
+        {
+            return Err("mobile messaging device signing key continuity mismatch".to_string());
+        }
+        Ok((enrollment, signing_key))
     }
 
     fn from_connection(connection: Connection) -> Result<Self, String> {
@@ -2041,10 +2080,9 @@ impl DeviceEnrollmentRepository for MobileMessagingStore {
             return Ok(None);
         };
         Ok(Some(FreshDeviceEnrollment {
-            certificate: messaging_core::proto::chat::MessagingDeviceCertificate {
+            certificate: messaging_core::proto::actor::ActorDeviceCertificate {
                 format_version: MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
-                ptid: row.0,
-                device_id: row.1,
+                device: Some(messaging_core::proto::actor_device_ref(row.0, row.1)),
                 actor_identity_public_key: row.2,
                 actor_identity_key_fingerprint: row.3,
                 device_signing_public_key: row.4,
@@ -2065,8 +2103,12 @@ impl DeviceEnrollmentRepository for MobileMessagingStore {
     ) -> Result<(), String> {
         let enrollment = &state.enrollment;
         let certificate = &enrollment.certificate;
-        if certificate.ptid.trim().is_empty()
-            || certificate.device_id.trim().is_empty()
+        let device = certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "fresh mobile messaging device identity has no endpoint".to_string())?;
+        let ptid = messaging_core::proto::actor_device_ptid(device)?;
+        if device.device_id.trim().is_empty()
             || certificate.signing_key_id.trim().is_empty()
             || certificate.actor_identity_public_key.len() != 32
             || certificate.actor_identity_key_fingerprint.len() != 32
@@ -2085,8 +2127,8 @@ impl DeviceEnrollmentRepository for MobileMessagingStore {
                         signing_key_id, profile_version
                      ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                     params![
-                        certificate.ptid,
-                        certificate.device_id,
+                        ptid,
+                        device.device_id,
                         state.device_signing_seed.as_slice(),
                         certificate.actor_identity_public_key,
                         certificate.actor_identity_key_fingerprint,
@@ -2311,31 +2353,37 @@ impl PreKeyRepository for MobileMessagingStore {
     }
 }
 
-impl DeliveryReceiptRepository for MobileMessagingStore {
-    fn next_delivery_receipt(&self) -> Result<Option<DeliveryReceiptOutboxEntry>, String> {
-        self.connection
+impl MobileMessagingStore {
+    pub fn next_device_consumption_receipt(
+        &self,
+    ) -> Result<Option<(String, Vec<u8>, DeviceConsumptionReceipt)>, String> {
+        let entry = self
+            .connection
             .lock()
             .map_err(|_| "mobile messaging store lock poisoned".to_string())?
             .query_row(
                 "SELECT receipt_id, receipt_bytes
                  FROM messaging_receipt_outbox
                  WHERE state = 'pending'
-                   AND receipt_id LIKE 'message-delivered:%'
+                   AND receipt_id LIKE 'device-consumed:%'
                  ORDER BY created_at_unix_ms ASC, receipt_id ASC
                  LIMIT 1",
                 [],
-                |row| {
-                    Ok(DeliveryReceiptOutboxEntry {
-                        receipt_id: row.get(0)?,
-                        receipt_bytes: row.get(1)?,
-                    })
-                },
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
             )
             .optional()
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        entry
+            .map(|(receipt_id, receipt_bytes)| {
+                let receipt = DeviceConsumptionReceipt::decode(receipt_bytes.as_slice()).map_err(
+                    |error| format!("decode mobile messaging device consumption receipt: {error}"),
+                )?;
+                Ok((receipt_id, receipt_bytes, receipt))
+            })
+            .transpose()
     }
 
-    fn mark_delivery_receipt_submitted(
+    pub fn mark_device_consumption_receipt_submitted(
         &self,
         receipt_id: &str,
         receipt_bytes: &[u8],
@@ -2353,7 +2401,9 @@ impl DeliveryReceiptRepository for MobileMessagingStore {
             )
             .map_err(|error| error.to_string())?;
         if changed != 1 {
-            return Err("mobile messaging delivery receipt transition mismatch".to_string());
+            return Err(
+                "mobile messaging device consumption receipt transition mismatch".to_string(),
+            );
         }
         Ok(())
     }
@@ -5396,8 +5446,8 @@ fn finish_direct_receive(
     event_id: &str,
     receipt_id: &str,
     receipt_bytes: &[u8],
-    delivery_receipt_id: &str,
-    delivery_receipt_bytes: &[u8],
+    _delivery_receipt_id: &str,
+    _delivery_receipt_bytes: &[u8],
     now_unix_ms: i64,
 ) -> Result<(), String> {
     finish_authority_receive(
@@ -5410,22 +5460,6 @@ fn finish_direct_receive(
         receipt_bytes,
         now_unix_ms,
     )?;
-    if delivery_receipt_id.is_empty() || delivery_receipt_bytes.is_empty() {
-        return Err("mobile messaging delivery receipt is incomplete".to_string());
-    }
-    transaction
-        .execute(
-            "INSERT INTO messaging_receipt_outbox(
-                receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, 'pending', ?4)",
-            params![
-                delivery_receipt_id,
-                event_id,
-                delivery_receipt_bytes,
-                now_unix_ms
-            ],
-        )
-        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -6347,7 +6381,7 @@ mod tests {
     };
     use messaging_core::identity::generate_fresh_device_identity;
     use messaging_core::proto::chat::{
-        AttachmentEncryptionSuite, AttachmentNonceStrategy, MessageReceipt, ReceiptType,
+        AttachmentEncryptionSuite, AttachmentNonceStrategy, DeviceConsumptionReceipt,
     };
 
     fn store() -> MobileMessagingStore {
@@ -6357,11 +6391,15 @@ mod tests {
     fn activate_device(store: &MobileMessagingStore) -> FreshDeviceEnrollment {
         let identity = generate_fresh_device_identity("ptid:alice", [42; 32], 1).unwrap();
         DeviceEnrollmentRepository::install_fresh_device_identity(store, &identity).unwrap();
-        DeviceEnrollmentRepository::complete_device_enrollment(
-            store,
-            &identity.enrollment.certificate.device_id,
-        )
-        .unwrap();
+        let device_id = identity
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .unwrap()
+            .device_id
+            .as_str();
+        DeviceEnrollmentRepository::complete_device_enrollment(store, device_id).unwrap();
         identity.enrollment
     }
 
@@ -7890,6 +7928,13 @@ mod tests {
     fn enrollment_gates_prekeys_and_receipt_dispatch_state_is_exact_byte_bound() {
         let store = store();
         let identity = generate_fresh_device_identity("ptid:alice", [42; 32], 1).unwrap();
+        let device = identity
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .unwrap()
+            .clone();
         DeviceEnrollmentRepository::install_fresh_device_identity(&store, &identity).unwrap();
         assert_eq!(
             DeviceEnrollmentRepository::pending_device_enrollment(&store)
@@ -7906,11 +7951,18 @@ mod tests {
         )
         .is_err());
 
-        DeviceEnrollmentRepository::complete_device_enrollment(
-            &store,
-            &identity.enrollment.certificate.device_id,
-        )
-        .unwrap();
+        DeviceEnrollmentRepository::complete_device_enrollment(&store, &device.device_id).unwrap();
+        let (active_enrollment, active_signing_key) =
+            store.active_device_signing_identity().unwrap();
+        assert_eq!(active_enrollment, identity.enrollment);
+        assert_eq!(active_signing_key.device_id(), device.device_id);
+        assert_eq!(
+            active_signing_key.verifying_key().as_bytes(),
+            active_enrollment
+                .certificate
+                .device_signing_public_key
+                .as_slice()
+        );
         PreKeyRepository::install_fresh_prekey_bundle(&store, 7, &[8; 32], &[(9, [10; 32])], 20)
             .unwrap();
         let bundle = PreKeyRepository::pending_prekey_bundle(&store)
@@ -7923,13 +7975,21 @@ mod tests {
             .unwrap()
             .is_none());
 
-        let receipt = MessageReceipt {
+        let receipt = DeviceConsumptionReceipt {
+            receipt_id: "device-consumed:item-1".to_string(),
             conversation_id: "conversation-1".to_string(),
-            message_id: "message-1".to_string(),
-            ptid: "ptid:alice".to_string(),
-            device_id: identity.enrollment.certificate.device_id,
-            receipt_type: ReceiptType::Delivered as i32,
-            ts: None,
+            event_id: "event-1".to_string(),
+            consumer: Some(messaging_core::proto::chat::CryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: device.device_id,
+            }),
+            event_sequence: 1,
+            lane_sequence: 1,
+            payload_sha256: vec![1; 32],
+            consumed_at: Some(prost_types::Timestamp {
+                seconds: 0,
+                nanos: 30_000_000,
+            }),
         };
         let receipt_bytes = receipt.encode_to_vec();
         store
@@ -7939,28 +7999,20 @@ mod tests {
             .execute(
                 "INSERT INTO messaging_receipt_outbox(
                     receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
-                 ) VALUES ('message-delivered:event-1', 'event-1', ?1, 'pending', 30)",
+                 ) VALUES ('device-consumed:item-1', 'event-1', ?1, 'pending', 30)",
                 params![receipt_bytes],
             )
             .unwrap();
-        let pending = DeliveryReceiptRepository::next_delivery_receipt(&store)
-            .unwrap()
+        let (receipt_id, pending_bytes, pending) =
+            store.next_device_consumption_receipt().unwrap().unwrap();
+        assert_eq!(pending, receipt);
+        assert!(store
+            .mark_device_consumption_receipt_submitted(&receipt_id, b"wrong")
+            .is_err());
+        store
+            .mark_device_consumption_receipt_submitted(&receipt_id, &pending_bytes)
             .unwrap();
-        assert!(DeliveryReceiptRepository::mark_delivery_receipt_submitted(
-            &store,
-            &pending.receipt_id,
-            b"wrong",
-        )
-        .is_err());
-        DeliveryReceiptRepository::mark_delivery_receipt_submitted(
-            &store,
-            &pending.receipt_id,
-            &pending.receipt_bytes,
-        )
-        .unwrap();
-        assert!(DeliveryReceiptRepository::next_delivery_receipt(&store)
-            .unwrap()
-            .is_none());
+        assert!(store.next_device_consumption_receipt().unwrap().is_none());
     }
 
     #[test]

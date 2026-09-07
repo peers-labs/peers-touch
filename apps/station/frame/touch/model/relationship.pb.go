@@ -1120,20 +1120,23 @@ func (x *Following) GetHomeStationDomain() string {
 }
 
 type SocialFriendRequest struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	RequestId           string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Sender              *ActorRef              `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`
-	Receiver            *ActorRef              `protobuf:"bytes,3,opt,name=receiver,proto3" json:"receiver,omitempty"`
-	Message             string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
-	State               FriendRequestState     `protobuf:"varint,5,opt,name=state,proto3,enum=peers_touch.model.social.v1.FriendRequestState" json:"state,omitempty"`
-	CreatedAt           *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	RespondedAt         *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=responded_at,json=respondedAt,proto3" json:"responded_at,omitempty"`
-	SenderDisplayName   string                 `protobuf:"bytes,8,opt,name=sender_display_name,json=senderDisplayName,proto3" json:"sender_display_name,omitempty"`
-	SenderAvatar        string                 `protobuf:"bytes,9,opt,name=sender_avatar,json=senderAvatar,proto3" json:"sender_avatar,omitempty"`
-	ReceiverDisplayName string                 `protobuf:"bytes,10,opt,name=receiver_display_name,json=receiverDisplayName,proto3" json:"receiver_display_name,omitempty"`
-	ReceiverAvatar      string                 `protobuf:"bytes,11,opt,name=receiver_avatar,json=receiverAvatar,proto3" json:"receiver_avatar,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId                 string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Sender                    *ActorRef              `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`
+	Receiver                  *ActorRef              `protobuf:"bytes,3,opt,name=receiver,proto3" json:"receiver,omitempty"`
+	Message                   string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	State                     FriendRequestState     `protobuf:"varint,5,opt,name=state,proto3,enum=peers_touch.model.social.v1.FriendRequestState" json:"state,omitempty"`
+	CreatedAt                 *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	RespondedAt               *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=responded_at,json=respondedAt,proto3" json:"responded_at,omitempty"`
+	SenderDisplayName         string                 `protobuf:"bytes,8,opt,name=sender_display_name,json=senderDisplayName,proto3" json:"sender_display_name,omitempty"`
+	SenderAvatar              string                 `protobuf:"bytes,9,opt,name=sender_avatar,json=senderAvatar,proto3" json:"sender_avatar,omitempty"`
+	ReceiverDisplayName       string                 `protobuf:"bytes,10,opt,name=receiver_display_name,json=receiverDisplayName,proto3" json:"receiver_display_name,omitempty"`
+	ReceiverAvatar            string                 `protobuf:"bytes,11,opt,name=receiver_avatar,json=receiverAvatar,proto3" json:"receiver_avatar,omitempty"`
+	FederationId              string                 `protobuf:"bytes,12,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	SenderHomeStationPeerId   string                 `protobuf:"bytes,13,opt,name=sender_home_station_peer_id,json=senderHomeStationPeerId,proto3" json:"sender_home_station_peer_id,omitempty"`
+	ReceiverHomeStationPeerId string                 `protobuf:"bytes,14,opt,name=receiver_home_station_peer_id,json=receiverHomeStationPeerId,proto3" json:"receiver_home_station_peer_id,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *SocialFriendRequest) Reset() {
@@ -1243,10 +1246,30 @@ func (x *SocialFriendRequest) GetReceiverAvatar() string {
 	return ""
 }
 
+func (x *SocialFriendRequest) GetFederationId() string {
+	if x != nil {
+		return x.FederationId
+	}
+	return ""
+}
+
+func (x *SocialFriendRequest) GetSenderHomeStationPeerId() string {
+	if x != nil {
+		return x.SenderHomeStationPeerId
+	}
+	return ""
+}
+
+func (x *SocialFriendRequest) GetReceiverHomeStationPeerId() string {
+	if x != nil {
+		return x.ReceiverHomeStationPeerId
+	}
+	return ""
+}
+
 type SendSocialFriendRequestRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Receiver      *ActorRef              `protobuf:"bytes,1,opt,name=receiver,proto3" json:"receiver,omitempty"`
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Command       *FriendRequestCommand  `protobuf:"bytes,4,opt,name=command,proto3" json:"command,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1281,18 +1304,11 @@ func (*SendSocialFriendRequestRequest) Descriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{16}
 }
 
-func (x *SendSocialFriendRequestRequest) GetReceiver() *ActorRef {
+func (x *SendSocialFriendRequestRequest) GetCommand() *FriendRequestCommand {
 	if x != nil {
-		return x.Receiver
+		return x.Command
 	}
 	return nil
-}
-
-func (x *SendSocialFriendRequestRequest) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
 }
 
 type SendSocialFriendRequestResponse struct {
@@ -1341,7 +1357,7 @@ func (x *SendSocialFriendRequestResponse) GetRequest() *SocialFriendRequest {
 
 type AcceptSocialFriendRequestRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Command       *FriendRequestCommand  `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1376,11 +1392,11 @@ func (*AcceptSocialFriendRequestRequest) Descriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *AcceptSocialFriendRequestRequest) GetRequestId() string {
+func (x *AcceptSocialFriendRequestRequest) GetCommand() *FriendRequestCommand {
 	if x != nil {
-		return x.RequestId
+		return x.Command
 	}
-	return ""
+	return nil
 }
 
 type AcceptSocialFriendRequestResponse struct {
@@ -1429,7 +1445,7 @@ func (x *AcceptSocialFriendRequestResponse) GetRequest() *SocialFriendRequest {
 
 type RejectSocialFriendRequestRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Command       *FriendRequestCommand  `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1464,11 +1480,11 @@ func (*RejectSocialFriendRequestRequest) Descriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{20}
 }
 
-func (x *RejectSocialFriendRequestRequest) GetRequestId() string {
+func (x *RejectSocialFriendRequestRequest) GetCommand() *FriendRequestCommand {
 	if x != nil {
-		return x.RequestId
+		return x.Command
 	}
-	return ""
+	return nil
 }
 
 type RejectSocialFriendRequestResponse struct {
@@ -1642,6 +1658,7 @@ type FriendRequestCommandBody struct {
 	CreatedAt                 *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	ExpiresAt                 *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	AuthorizingDevice         *ActorDeviceRef        `protobuf:"bytes,13,opt,name=authorizing_device,json=authorizingDevice,proto3" json:"authorizing_device,omitempty"`
+	FederationId              string                 `protobuf:"bytes,14,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -1765,6 +1782,13 @@ func (x *FriendRequestCommandBody) GetAuthorizingDevice() *ActorDeviceRef {
 		return x.AuthorizingDevice
 	}
 	return nil
+}
+
+func (x *FriendRequestCommandBody) GetFederationId() string {
+	if x != nil {
+		return x.FederationId
+	}
+	return ""
 }
 
 type FriendRequestCommandSigningInput struct {
@@ -1894,6 +1918,7 @@ type FriendRequestEvent struct {
 	CommittedAt               *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=committed_at,json=committedAt,proto3" json:"committed_at,omitempty"`
 	PreviousHash              []byte                 `protobuf:"bytes,12,opt,name=previous_hash,json=previousHash,proto3" json:"previous_hash,omitempty"`
 	EventHash                 []byte                 `protobuf:"bytes,13,opt,name=event_hash,json=eventHash,proto3" json:"event_hash,omitempty"`
+	FederationId              string                 `protobuf:"bytes,14,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -2017,6 +2042,13 @@ func (x *FriendRequestEvent) GetEventHash() []byte {
 		return x.EventHash
 	}
 	return nil
+}
+
+func (x *FriendRequestEvent) GetFederationId() string {
+	if x != nil {
+		return x.FederationId
+	}
+	return ""
 }
 
 type FriendRequestCommandResult struct {
@@ -2182,7 +2214,7 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\vfollowed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"followedAt\x12*\n" +
 	"\x10federated_handle\x18\x06 \x01(\tR\x10federated_handle\x120\n" +
-	"\x13home_station_domain\x18\a \x01(\tR\x13home_station_domain\"\xc1\x04\n" +
+	"\x13home_station_domain\x18\a \x01(\tR\x13home_station_domain\"\xe6\x05\n" +
 	"\x13SocialFriendRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12<\n" +
@@ -2197,20 +2229,22 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\rsender_avatar\x18\t \x01(\tR\fsenderAvatar\x122\n" +
 	"\x15receiver_display_name\x18\n" +
 	" \x01(\tR\x13receiverDisplayName\x12'\n" +
-	"\x0freceiver_avatar\x18\v \x01(\tR\x0ereceiverAvatar\"|\n" +
-	"\x1eSendSocialFriendRequestRequest\x12@\n" +
-	"\breceiver\x18\x01 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\breceiver\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"m\n" +
+	"\x0freceiver_avatar\x18\v \x01(\tR\x0ereceiverAvatar\x12#\n" +
+	"\rfederation_id\x18\f \x01(\tR\ffederationId\x12<\n" +
+	"\x1bsender_home_station_peer_id\x18\r \x01(\tR\x17senderHomeStationPeerId\x12@\n" +
+	"\x1dreceiver_home_station_peer_id\x18\x0e \x01(\tR\x19receiverHomeStationPeerId\"\xa1\x01\n" +
+	"\x1eSendSocialFriendRequestRequest\x12K\n" +
+	"\acommand\x18\x04 \x01(\v21.peers_touch.model.social.v1.FriendRequestCommandR\acommandJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\breceiverR\amessageR\rfederation_id\"m\n" +
 	"\x1fSendSocialFriendRequestResponse\x12J\n" +
-	"\arequest\x18\x01 \x01(\v20.peers_touch.model.social.v1.SocialFriendRequestR\arequest\"A\n" +
-	" AcceptSocialFriendRequestRequest\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\"o\n" +
+	"\arequest\x18\x01 \x01(\v20.peers_touch.model.social.v1.SocialFriendRequestR\arequest\"\x81\x01\n" +
+	" AcceptSocialFriendRequestRequest\x12K\n" +
+	"\acommand\x18\x02 \x01(\v21.peers_touch.model.social.v1.FriendRequestCommandR\acommandJ\x04\b\x01\x10\x02R\n" +
+	"request_id\"o\n" +
 	"!AcceptSocialFriendRequestResponse\x12J\n" +
-	"\arequest\x18\x01 \x01(\v20.peers_touch.model.social.v1.SocialFriendRequestR\arequest\"A\n" +
-	" RejectSocialFriendRequestRequest\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\"o\n" +
+	"\arequest\x18\x01 \x01(\v20.peers_touch.model.social.v1.SocialFriendRequestR\arequest\"\x81\x01\n" +
+	" RejectSocialFriendRequestRequest\x12K\n" +
+	"\acommand\x18\x02 \x01(\v21.peers_touch.model.social.v1.FriendRequestCommandR\acommandJ\x04\b\x01\x10\x02R\n" +
+	"request_id\"o\n" +
 	"!RejectSocialFriendRequestResponse\x12J\n" +
 	"\arequest\x18\x01 \x01(\v20.peers_touch.model.social.v1.SocialFriendRequestR\arequest\"\x96\x01\n" +
 	"\x1fListSocialFriendRequestsRequest\x12E\n" +
@@ -2219,7 +2253,7 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\x06offset\x18\x03 \x01(\x05R\x06offset\"\x86\x01\n" +
 	" ListSocialFriendRequestsResponse\x12L\n" +
 	"\brequests\x18\x01 \x03(\v20.peers_touch.model.social.v1.SocialFriendRequestR\brequests\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\x05R\x05total\"\x9b\x06\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"\xc0\x06\n" +
 	"\x18FriendRequestCommandBody\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x1d\n" +
 	"\n" +
@@ -2238,14 +2272,15 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"expires_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12Y\n" +
-	"\x12authorizing_device\x18\r \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x11authorizingDevice\"\x93\x01\n" +
+	"\x12authorizing_device\x18\r \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x11authorizingDevice\x12#\n" +
+	"\rfederation_id\x18\x0e \x01(\tR\ffederationId\"\x93\x01\n" +
 	" FriendRequestCommandSigningInput\x12I\n" +
 	"\x04body\x18\x01 \x01(\v25.peers_touch.model.social.v1.FriendRequestCommandBodyR\x04body\x12$\n" +
 	"\x0esigning_key_id\x18\x02 \x01(\tR\fsigningKeyId\"\xbd\x01\n" +
 	"\x14FriendRequestCommand\x12I\n" +
 	"\x04body\x18\x01 \x01(\v25.peers_touch.model.social.v1.FriendRequestCommandBodyR\x04body\x12$\n" +
 	"\x0esigning_key_id\x18\x02 \x01(\tR\fsigningKeyId\x124\n" +
-	"\x16actor_device_signature\x18\x03 \x01(\fR\x14actorDeviceSignature\"\x8e\x05\n" +
+	"\x16actor_device_signature\x18\x03 \x01(\fR\x14actorDeviceSignature\"\xb3\x05\n" +
 	"\x12FriendRequestEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1d\n" +
 	"\n" +
@@ -2263,7 +2298,8 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\fcommitted_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\vcommittedAt\x12#\n" +
 	"\rprevious_hash\x18\f \x01(\fR\fpreviousHash\x12\x1d\n" +
 	"\n" +
-	"event_hash\x18\r \x01(\fR\teventHash\"\xa1\x03\n" +
+	"event_hash\x18\r \x01(\fR\teventHash\x12#\n" +
+	"\rfederation_id\x18\x0e \x01(\tR\ffederationId\"\xa1\x03\n" +
 	"\x1aFriendRequestCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x1d\n" +
@@ -2370,33 +2406,35 @@ var file_domain_social_relationship_proto_depIdxs = []int32{
 	1,  // 10: peers_touch.model.social.v1.SocialFriendRequest.state:type_name -> peers_touch.model.social.v1.FriendRequestState
 	33, // 11: peers_touch.model.social.v1.SocialFriendRequest.created_at:type_name -> google.protobuf.Timestamp
 	33, // 12: peers_touch.model.social.v1.SocialFriendRequest.responded_at:type_name -> google.protobuf.Timestamp
-	34, // 13: peers_touch.model.social.v1.SendSocialFriendRequestRequest.receiver:type_name -> peers_touch.model.actor.v1.ActorRef
+	30, // 13: peers_touch.model.social.v1.SendSocialFriendRequestRequest.command:type_name -> peers_touch.model.social.v1.FriendRequestCommand
 	19, // 14: peers_touch.model.social.v1.SendSocialFriendRequestResponse.request:type_name -> peers_touch.model.social.v1.SocialFriendRequest
-	19, // 15: peers_touch.model.social.v1.AcceptSocialFriendRequestResponse.request:type_name -> peers_touch.model.social.v1.SocialFriendRequest
-	19, // 16: peers_touch.model.social.v1.RejectSocialFriendRequestResponse.request:type_name -> peers_touch.model.social.v1.SocialFriendRequest
-	1,  // 17: peers_touch.model.social.v1.ListSocialFriendRequestsRequest.state:type_name -> peers_touch.model.social.v1.FriendRequestState
-	19, // 18: peers_touch.model.social.v1.ListSocialFriendRequestsResponse.requests:type_name -> peers_touch.model.social.v1.SocialFriendRequest
-	0,  // 19: peers_touch.model.social.v1.FriendRequestCommandBody.action:type_name -> peers_touch.model.social.v1.FriendRequestAction
-	34, // 20: peers_touch.model.social.v1.FriendRequestCommandBody.sender:type_name -> peers_touch.model.actor.v1.ActorRef
-	34, // 21: peers_touch.model.social.v1.FriendRequestCommandBody.receiver:type_name -> peers_touch.model.actor.v1.ActorRef
-	1,  // 22: peers_touch.model.social.v1.FriendRequestCommandBody.observed_request_state:type_name -> peers_touch.model.social.v1.FriendRequestState
-	33, // 23: peers_touch.model.social.v1.FriendRequestCommandBody.created_at:type_name -> google.protobuf.Timestamp
-	33, // 24: peers_touch.model.social.v1.FriendRequestCommandBody.expires_at:type_name -> google.protobuf.Timestamp
-	35, // 25: peers_touch.model.social.v1.FriendRequestCommandBody.authorizing_device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	28, // 26: peers_touch.model.social.v1.FriendRequestCommandSigningInput.body:type_name -> peers_touch.model.social.v1.FriendRequestCommandBody
-	28, // 27: peers_touch.model.social.v1.FriendRequestCommand.body:type_name -> peers_touch.model.social.v1.FriendRequestCommandBody
-	1,  // 28: peers_touch.model.social.v1.FriendRequestEvent.state:type_name -> peers_touch.model.social.v1.FriendRequestState
-	34, // 29: peers_touch.model.social.v1.FriendRequestEvent.sender:type_name -> peers_touch.model.actor.v1.ActorRef
-	34, // 30: peers_touch.model.social.v1.FriendRequestEvent.receiver:type_name -> peers_touch.model.actor.v1.ActorRef
-	33, // 31: peers_touch.model.social.v1.FriendRequestEvent.committed_at:type_name -> google.protobuf.Timestamp
-	2,  // 32: peers_touch.model.social.v1.FriendRequestCommandResult.kind:type_name -> peers_touch.model.social.v1.FriendRequestCommandResultKind
-	31, // 33: peers_touch.model.social.v1.FriendRequestCommandResult.event:type_name -> peers_touch.model.social.v1.FriendRequestEvent
-	3,  // 34: peers_touch.model.social.v1.FriendRequestCommandResult.error_code:type_name -> peers_touch.model.social.v1.FriendRequestCommandErrorCode
-	35, // [35:35] is the sub-list for method output_type
-	35, // [35:35] is the sub-list for method input_type
-	35, // [35:35] is the sub-list for extension type_name
-	35, // [35:35] is the sub-list for extension extendee
-	0,  // [0:35] is the sub-list for field type_name
+	30, // 15: peers_touch.model.social.v1.AcceptSocialFriendRequestRequest.command:type_name -> peers_touch.model.social.v1.FriendRequestCommand
+	19, // 16: peers_touch.model.social.v1.AcceptSocialFriendRequestResponse.request:type_name -> peers_touch.model.social.v1.SocialFriendRequest
+	30, // 17: peers_touch.model.social.v1.RejectSocialFriendRequestRequest.command:type_name -> peers_touch.model.social.v1.FriendRequestCommand
+	19, // 18: peers_touch.model.social.v1.RejectSocialFriendRequestResponse.request:type_name -> peers_touch.model.social.v1.SocialFriendRequest
+	1,  // 19: peers_touch.model.social.v1.ListSocialFriendRequestsRequest.state:type_name -> peers_touch.model.social.v1.FriendRequestState
+	19, // 20: peers_touch.model.social.v1.ListSocialFriendRequestsResponse.requests:type_name -> peers_touch.model.social.v1.SocialFriendRequest
+	0,  // 21: peers_touch.model.social.v1.FriendRequestCommandBody.action:type_name -> peers_touch.model.social.v1.FriendRequestAction
+	34, // 22: peers_touch.model.social.v1.FriendRequestCommandBody.sender:type_name -> peers_touch.model.actor.v1.ActorRef
+	34, // 23: peers_touch.model.social.v1.FriendRequestCommandBody.receiver:type_name -> peers_touch.model.actor.v1.ActorRef
+	1,  // 24: peers_touch.model.social.v1.FriendRequestCommandBody.observed_request_state:type_name -> peers_touch.model.social.v1.FriendRequestState
+	33, // 25: peers_touch.model.social.v1.FriendRequestCommandBody.created_at:type_name -> google.protobuf.Timestamp
+	33, // 26: peers_touch.model.social.v1.FriendRequestCommandBody.expires_at:type_name -> google.protobuf.Timestamp
+	35, // 27: peers_touch.model.social.v1.FriendRequestCommandBody.authorizing_device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	28, // 28: peers_touch.model.social.v1.FriendRequestCommandSigningInput.body:type_name -> peers_touch.model.social.v1.FriendRequestCommandBody
+	28, // 29: peers_touch.model.social.v1.FriendRequestCommand.body:type_name -> peers_touch.model.social.v1.FriendRequestCommandBody
+	1,  // 30: peers_touch.model.social.v1.FriendRequestEvent.state:type_name -> peers_touch.model.social.v1.FriendRequestState
+	34, // 31: peers_touch.model.social.v1.FriendRequestEvent.sender:type_name -> peers_touch.model.actor.v1.ActorRef
+	34, // 32: peers_touch.model.social.v1.FriendRequestEvent.receiver:type_name -> peers_touch.model.actor.v1.ActorRef
+	33, // 33: peers_touch.model.social.v1.FriendRequestEvent.committed_at:type_name -> google.protobuf.Timestamp
+	2,  // 34: peers_touch.model.social.v1.FriendRequestCommandResult.kind:type_name -> peers_touch.model.social.v1.FriendRequestCommandResultKind
+	31, // 35: peers_touch.model.social.v1.FriendRequestCommandResult.event:type_name -> peers_touch.model.social.v1.FriendRequestEvent
+	3,  // 36: peers_touch.model.social.v1.FriendRequestCommandResult.error_code:type_name -> peers_touch.model.social.v1.FriendRequestCommandErrorCode
+	37, // [37:37] is the sub-list for method output_type
+	37, // [37:37] is the sub-list for method input_type
+	37, // [37:37] is the sub-list for extension type_name
+	37, // [37:37] is the sub-list for extension extendee
+	0,  // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_relationship_proto_init() }

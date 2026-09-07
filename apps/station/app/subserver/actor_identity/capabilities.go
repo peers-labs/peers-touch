@@ -1,0 +1,256 @@
+package actor_identity
+
+import (
+	"context"
+	"strings"
+
+	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/application"
+	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
+	actoridentityinfrastructure "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure"
+	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
+	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"google.golang.org/protobuf/proto"
+	"gorm.io/gorm"
+)
+
+type verifiedProfileDeviceKeyHydrator interface {
+	Hydrate(
+		ctx context.Context,
+		actorPTID string,
+		claimedHomeStationPeerID string,
+	) ([]*actormodel.VerifiedActorDeviceSigningKey, error)
+}
+
+type verifiedProfileDeviceKeyHydratorFactory func(
+	*gorm.DB,
+) (verifiedProfileDeviceKeyHydrator, error)
+
+type actorCapabilities struct {
+	endpointManifests *application.EndpointManifestService
+	localStationID    string
+	hydratorFactory   verifiedProfileDeviceKeyHydratorFactory
+}
+
+func newActorCapabilities(
+	endpointManifests *application.EndpointManifestService,
+	localStationID string,
+	hydratorFactory verifiedProfileDeviceKeyHydratorFactory,
+) (*actorCapabilities, error) {
+	const operation = "actor_identity.new_capability_provider"
+
+	if endpointManifests == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"endpoint_manifest_service",
+			"is required",
+		)
+	}
+	if localStationID == "" || localStationID != strings.TrimSpace(localStationID) {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"local_station_peer_id",
+			"is required and must be canonical",
+		)
+	}
+	if hydratorFactory == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"verified_profile_hydrator_factory",
+			"is required",
+		)
+	}
+
+	return &actorCapabilities{
+		endpointManifests: endpointManifests,
+		localStationID:    localStationID,
+		hydratorFactory:   hydratorFactory,
+	}, nil
+}
+
+func productionVerifiedProfileDeviceKeyHydratorFactory(
+	db *gorm.DB,
+) (verifiedProfileDeviceKeyHydrator, error) {
+	return actoridentityinfrastructure.NewVerifiedProfileDeviceKeyHydrator(db)
+}
+
+func (c *actorCapabilities) GetEndpointManifest(
+	ctx context.Context,
+	sourceStationPeerID string,
+	request *actormodel.GetActorEndpointManifestRequest,
+) (*actormodel.GetActorEndpointManifestResponse, error) {
+	if c == nil || c.endpointManifests == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeIdentityUnavailable,
+			"actor_identity.get_endpoint_manifest",
+			"capability_provider",
+			"is not initialized",
+		)
+	}
+
+	return c.endpointManifests.GetEndpointManifest(
+		ctx,
+		sourceStationPeerID,
+		request,
+	)
+}
+
+func (c *actorCapabilities) ResolveVerifiedActorDeviceSigningKey(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	actorPTID string,
+	deviceID string,
+	signingKeyID string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	const operation = "actor_identity.resolve_verified_actor_device_signing_key"
+
+	if c == nil || transaction == nil || transaction.DB() == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"transaction",
+			"is required",
+		)
+	}
+	if err := domain.ValidatePTID(operation, actorPTID); err != nil {
+		return nil, err
+	}
+	if err := domain.ValidateDeviceID(operation, deviceID); err != nil {
+		return nil, err
+	}
+	if signingKeyID == "" || signingKeyID != strings.TrimSpace(signingKeyID) {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"signing_key_id",
+			"is required and must be canonical",
+		)
+	}
+
+	repository, err := persistence.NewRepository(transaction.DB())
+	if err != nil {
+		return nil, err
+	}
+	current, found, err := repository.ResolveVerifiedActorDeviceSigningKey(
+		ctx,
+		actorPTID,
+		deviceID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if found && current.GetSigningKeyId() != signingKeyID {
+		return nil, domain.NewError(
+			domain.ErrorCodeDeviceConflict,
+			operation,
+			"signing_key_id",
+			"does not match the established Actor device",
+		)
+	}
+
+	homeStationPeerID := ""
+	if found {
+		homeStationPeerID = current.GetHomeStationPeerId()
+	} else {
+		homeStationPeerID, err = repository.ResolveActorHomeStationPeerID(
+			ctx,
+			actorPTID,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if homeStationPeerID == c.localStationID {
+		if !found {
+			return nil, nil
+		}
+		if current.GetVerificationSource() !=
+			actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION {
+			return nil, domain.NewError(
+				domain.ErrorCodeInvalidProof,
+				operation,
+				"verification_source",
+				"does not prove a local Actor device registration",
+			)
+		}
+
+		return proto.Clone(current).(*actormodel.VerifiedActorDeviceSigningKey), nil
+	}
+	if found &&
+		current.GetVerificationSource() !=
+			actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE &&
+		current.GetVerificationSource() !=
+			actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidProof,
+			operation,
+			"verification_source",
+			"does not prove a remote Actor profile or locator",
+		)
+	}
+
+	hydrator, err := c.hydratorFactory(transaction.DB())
+	if err != nil {
+		if domain.CodeOf(err) != "" {
+			return nil, err
+		}
+
+		return nil, domain.WrapError(
+			domain.ErrorCodeIdentityUnavailable,
+			operation,
+			err,
+		)
+	}
+	if hydrator == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeIdentityUnavailable,
+			operation,
+			"verified_profile_hydrator",
+			"is not configured",
+		)
+	}
+	hydrated, err := hydrator.Hydrate(ctx, actorPTID, homeStationPeerID)
+	if err != nil {
+		return nil, err
+	}
+	if err := repository.UpsertVerifiedRemoteDeviceSigningKeys(
+		ctx,
+		actorPTID,
+		homeStationPeerID,
+		hydrated,
+	); err != nil {
+		return nil, err
+	}
+
+	for _, key := range hydrated {
+		if key != nil &&
+			key.GetActorDeviceId() == deviceID &&
+			key.GetSigningKeyId() == signingKeyID {
+			persisted, persistedFound, resolveErr :=
+				repository.ResolveVerifiedActorDeviceSigningKey(
+					ctx,
+					actorPTID,
+					deviceID,
+				)
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			if !persistedFound ||
+				persisted.GetSigningKeyId() != signingKeyID {
+				return nil, domain.NewError(
+					domain.ErrorCodePersistence,
+					operation,
+					"device_signing_key",
+					"was not visible after verified profile persistence",
+				)
+			}
+
+			return proto.Clone(persisted).(*actormodel.VerifiedActorDeviceSigningKey), nil
+		}
+	}
+
+	return nil, nil
+}

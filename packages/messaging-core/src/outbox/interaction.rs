@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use prost::Message;
 
+use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
-    chat_command, ChatCommand, CryptoEndpoint, PinMessageIntent, PrepareMessagingSendResponse,
-    ReactionIntent, RetractMessageIntent,
+    chat_command, ChatCommand, CryptoEndpoint, PinMessageIntent,
+    PrepareConversationCommandResponse, ReactionIntent, RetractMessageIntent,
 };
 
 pub enum MetadataInteraction<'a> {
@@ -58,7 +59,7 @@ impl<R: MetadataInteractionRepository> MetadataInteractionPreparer<R> {
 
     pub fn prepare(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         command_id: &str,
         message_id: &str,
         interaction: MetadataInteraction<'_>,
@@ -68,7 +69,7 @@ impl<R: MetadataInteractionRepository> MetadataInteractionPreparer<R> {
             || message_id.trim().is_empty()
             || now_unix_ms <= 0
             || plan.conversation_id.trim().is_empty()
-            || plan.authority_station_id.trim().is_empty()
+            || plan.authority_station_peer_id.trim().is_empty()
             || plan.delivery_plan_sha256.len() != 32
             || plan.membership_epoch < 0
             || plan.mls_epoch < 0
@@ -81,17 +82,19 @@ impl<R: MetadataInteractionRepository> MetadataInteractionPreparer<R> {
         let mut previous_endpoint: Option<(&str, &str)> = None;
         let mut local_endpoint_count = 0;
         for endpoint in &plan.required_endpoints {
-            if endpoint.ptid.trim().is_empty() || endpoint.device_id.trim().is_empty() {
+            let endpoint_ptid = actor_device_ptid(endpoint)?;
+            if endpoint.device_id.trim().is_empty() {
                 return Err("messaging interaction plan has incomplete endpoint".to_string());
             }
-            let endpoint_key = (endpoint.ptid.as_str(), endpoint.device_id.as_str());
+            let endpoint_key = (endpoint_ptid, endpoint.device_id.as_str());
             if previous_endpoint.is_some_and(|previous| previous >= endpoint_key) {
                 return Err(
                     "messaging interaction plan endpoints are not strictly sorted".to_string(),
                 );
             }
             previous_endpoint = Some(endpoint_key);
-            if endpoint == &self.endpoint {
+            if endpoint_ptid == self.endpoint.ptid && endpoint.device_id == self.endpoint.device_id
+            {
                 local_endpoint_count += 1;
             }
         }
@@ -154,7 +157,7 @@ impl<R: MetadataInteractionRepository> MetadataInteractionPreparer<R> {
                 nanos: (now_unix_ms.rem_euclid(1_000) * 1_000_000) as i32,
             }),
             delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
-            authority_station_id: plan.authority_station_id.clone(),
+            authority_station_peer_id: plan.authority_station_peer_id.clone(),
             payload: Some(payload),
         };
         self.repository
@@ -178,6 +181,7 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+    use crate::proto::actor_device_ref;
     use crate::proto::chat::chat_command;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -231,24 +235,18 @@ mod tests {
         }
     }
 
-    fn plan() -> PrepareMessagingSendResponse {
-        PrepareMessagingSendResponse {
+    fn plan() -> PrepareConversationCommandResponse {
+        PrepareConversationCommandResponse {
             conversation_id: "conversation-1".to_string(),
             authority_sequence: 7,
             authority_hash: vec![8; 32],
             membership_epoch: 3,
             mls_epoch: 2,
             delivery_plan_sha256: vec![9; 32],
-            authority_station_id: "station-authority".to_string(),
+            authority_station_peer_id: "station-authority".to_string(),
             required_endpoints: vec![
-                CryptoEndpoint {
-                    ptid: "ptid:alice".to_string(),
-                    device_id: "alice-device".to_string(),
-                },
-                CryptoEndpoint {
-                    ptid: "ptid:bob".to_string(),
-                    device_id: "bob-device".to_string(),
-                },
+                actor_device_ref("ptid:alice", "alice-device"),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
             ..Default::default()
         }

@@ -283,12 +283,15 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn('"engineInteractionSnapshot"', runner)
         self.assertIn('"retry_wait"', runner)
         self.assertIn("receiverVisibleCount", runner)
-        self.assertIn('SUBMIT_PATH = "/conversation/command"', proxy)
+        self.assertIn(
+            'CONVERSATION_COMMAND_PATH = "/conversation/command"',
+            proxy,
+        )
         self.assertNotIn('"/messaging/', proxy)
         self.assertIn("acceptance_station_environment(station_url)", proxy)
         self.assertIn("requestSha256", proxy)
         self.assertIn("commandSha256", proxy)
-        self.assertIn("_submit_command_bytes", proxy)
+        self.assertIn("_authority_command_bytes", proxy)
         self.assertNotIn("localhost:18080", proxy)
 
     def test_native_interactions_use_window_owned_membership_and_engine(self) -> None:
@@ -409,7 +412,7 @@ class ContactMessageResilienceTest(unittest.TestCase):
 
         intent_pos = page.find("setDirectOpenIntent(intent)")
         create_direct_pos = page.find(
-            "imServiceV1.messaging.createDirect(contact.peerPtid)"
+            "imServiceV1.messaging.createDirect({"
         )
         navigation_pos = page.find("setSubPage('chats')", intent_pos)
         self.assertGreater(
@@ -422,6 +425,16 @@ class ContactMessageResilienceTest(unittest.TestCase):
         )
         self.assertGreater(navigation_pos, intent_pos)
         self.assertGreater(create_direct_pos, navigation_pos)
+        create_direct_end = page.find("}).then((conversation)", create_direct_pos)
+        self.assertGreater(create_direct_end, create_direct_pos)
+        self.assertIn(
+            "peerPtid: contact.peerPtid",
+            page[create_direct_pos:create_direct_end],
+        )
+        self.assertIn(
+            "federationId: contact.federationId",
+            page[create_direct_pos:create_direct_end],
+        )
         self.assertIn("mode: 'inline'", page)
         self.assertIn("failDirectConversationOpen", page)
 
@@ -467,18 +480,21 @@ class ContactMessageResilienceTest(unittest.TestCase):
 
     def test_engine_has_stale_enrollment_recovery(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/messaging/engine.rs")
+        enrollment = self.source(
+            "packages/messaging-core/src/identity/enrollment.rs"
+        )
         self.assertIn(
             "recover_stale_enrollment", src,
             "engine must provide recover_stale_enrollment for endpoint-not-active recovery",
         )
         self.assertIn(
             "is_stale_endpoint_error", src,
-            "engine must detect stale endpoint errors through one helper",
+            "engine must delegate stale endpoint detection to the portable owner",
         )
-        helper = src.find("fn is_stale_endpoint_error")
+        helper = enrollment.find("pub fn is_stale_endpoint_error")
         self.assertGreater(helper, 0)
-        self.assertIn("endpoint is not active", src[helper:helper + 300])
-        self.assertIn("station returned 403", src[helper:helper + 300])
+        self.assertIn("endpoint is not active", enrollment[helper:helper + 400])
+        self.assertIn("station returned 403", enrollment[helper:helper + 400])
         create_direct = src.find("fn create_direct_conversation")
         self.assertGreater(create_direct, 0)
 
@@ -718,79 +734,27 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "ChatMessageArea must restore the incoming conversation draft after saving",
         )
 
-    def test_station_member_index_repair_is_idempotent_and_correct(self) -> None:
-        src = self.source(
-            "apps/station/app/subserver/conversation/repository.go"
+    def test_station_member_schema_uses_canonical_composite_identity(self) -> None:
+        models = self.source(
+            "apps/station/app/subserver/conversation/infrastructure/persistence/models.go"
         )
         self.assertIn(
-            "func repairMemberIndex", src,
-            "repository must provide repairMemberIndex to migrate the legacy "
-            "actor_did index to ptid-based index",
-        )
-
-        self.assertIn(
-            'columns[1].ColumnName != "ptid"', src,
-            "repairMemberIndex must repair every non-PTID member index shape",
-        )
-
-        early_return = src.find("len(columns) == 0")
-        self.assertGreater(
-            early_return, 0,
-            "repairMemberIndex must return early when the index does not exist "
-            "(fresh install), avoiding unnecessary DDL",
-        )
-
-        drop_old = src.find("DROP INDEX IF EXISTS idx_member_conv_actor")
-        create_new = src.find(
-            "CREATE UNIQUE INDEX idx_member_conv_actor",
-            drop_old,
-        )
-        self.assertGreater(
-            drop_old, 0,
-            "repair must DROP the legacy index before creating the new one",
-        )
-        self.assertGreater(
-            create_new, drop_old,
-            "repair must CREATE the new unique index after dropping the old one",
+            'ConversationID string `gorm:"column:conversation_id;size:128;primaryKey"`',
+            models,
         )
         self.assertIn(
-            "(conversation_id, ptid)",
-            src[create_new:create_new + 200],
-            "new idx_member_conv_actor must be on (conversation_id, ptid)",
+            'PTID           string `gorm:"column:ptid;size:255;primaryKey;index"`',
+            models,
         )
-
-        drop_secondary = src.find(
-            "DROP INDEX IF EXISTS idx_member_actor", create_new,
-        )
-        create_secondary = src.find(
-            "CREATE INDEX idx_member_actor", drop_secondary,
-        )
-        self.assertGreater(
-            drop_secondary, create_new,
-            "repair must also DROP the legacy idx_member_actor secondary index",
-        )
-        self.assertGreater(
-            create_secondary, drop_secondary,
-            "repair must CREATE the replacement idx_member_actor on (ptid)",
+        composition = self.source(
+            "apps/station/app/subserver/conversation/production_composition.go"
         )
         self.assertIn(
-            "(ptid)", src[create_secondary:create_secondary + 100],
-            "replacement idx_member_actor must be on (ptid)",
+            "&persistence.ConversationMemberModel{}",
+            composition,
+            "production composition must migrate the canonical member model",
         )
-
-        subserver = self.source(
-            "apps/station/app/subserver/conversation/subserver.go"
-        )
-        self.assertIn(
-            "repairMemberIndex(rds)", subserver,
-            "subserver Init must call repairMemberIndex during startup",
-        )
-        init_pos = subserver.find("func (s *subServer) Init")
-        call_pos = subserver.find("repairMemberIndex(rds)", init_pos)
-        self.assertGreater(
-            call_pos, init_pos,
-            "repairMemberIndex must be called within the Init function",
-        )
+        self.assertNotIn("repairMemberIndex", composition)
 
     def test_toast_host_is_mounted_at_app_root(self) -> None:
         src = self.source("apps/desktop/src/main.tsx")

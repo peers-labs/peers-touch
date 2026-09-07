@@ -19,6 +19,49 @@ import (
 
 var errMLSStateContended = errors.New("key exchange MLS state contended")
 
+type IdentityKeyModel struct {
+	ActorPtid         string    `gorm:"column:actor_ptid;size:255;primaryKey"`
+	DeviceID          string    `gorm:"column:device_id;size:128;primaryKey"`
+	IdentityKeyPub    []byte    `gorm:"column:identity_key_pub;type:bytea"`
+	KeyFingerprint    string    `gorm:"column:key_fingerprint;size:128"`
+	PublishedAtUnixMs int64     `gorm:"column:published_at_unix_ms"`
+	SupportedVersions string    `gorm:"column:supported_versions;size:64"`
+	CreatedAt         time.Time `gorm:"column:created_at"`
+	UpdatedAt         time.Time `gorm:"column:updated_at"`
+}
+
+func (*IdentityKeyModel) TableName() string {
+	return "key_exchange_identity_keys"
+}
+
+type SignedPreKeyModel struct {
+	ID        uint      `gorm:"column:id;primaryKey"`
+	ActorPtid string    `gorm:"column:actor_ptid;size:255;index:idx_ke_spk_actor_device,priority:1"`
+	DeviceID  string    `gorm:"column:device_id;size:128;index:idx_ke_spk_actor_device,priority:2"`
+	SPKID     int32     `gorm:"column:spk_id"`
+	PublicKey []byte    `gorm:"column:public_key;type:bytea"`
+	Signature []byte    `gorm:"column:signature;type:bytea"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+func (*SignedPreKeyModel) TableName() string {
+	return "key_exchange_signed_pre_keys"
+}
+
+type OneTimePreKeyModel struct {
+	ID        uint      `gorm:"column:id;primaryKey"`
+	ActorPtid string    `gorm:"column:actor_ptid;size:255;uniqueIndex:idx_ke_opk_actor_dev_opkid,priority:1"`
+	DeviceID  string    `gorm:"column:device_id;size:128;uniqueIndex:idx_ke_opk_actor_dev_opkid,priority:2"`
+	OPKID     int32     `gorm:"column:opk_id;uniqueIndex:idx_ke_opk_actor_dev_opkid,priority:3"`
+	PublicKey []byte    `gorm:"column:public_key;type:bytea"`
+	Consumed  bool      `gorm:"column:consumed;default:false;index:idx_ke_opk_actor_dev_consumed,priority:3"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+func (*OneTimePreKeyModel) TableName() string {
+	return "key_exchange_one_time_pre_keys"
+}
+
 type MLSKeyPackageModel struct {
 	ID             uint       `gorm:"column:id;primaryKey"`
 	ActorPTID      string     `gorm:"column:ptid;size:255;index:idx_kp_ptid;uniqueIndex:uidx_mls_kp_payload"`
@@ -38,9 +81,11 @@ func (*MLSKeyPackageModel) TableName() string {
 
 type FederatedMLSKeyPackageClaimModel struct {
 	AuthorityStationID string    `gorm:"column:authority_station_id;size:255;primaryKey"`
-	AuthorityPlanID    string    `gorm:"column:authority_plan_id;size:128;primaryKey"`
-	TargetPTID         string    `gorm:"column:target_ptid;size:255;primaryKey"`
-	TargetDeviceID     string    `gorm:"column:target_device_id;size:128;primaryKey"`
+	RequestID          string    `gorm:"column:request_id;size:128;primaryKey"`
+	RequestSHA256      []byte    `gorm:"column:request_sha256;type:bytea;not null"`
+	AuthorityPlanID    string    `gorm:"column:authority_plan_id;size:128;index"`
+	TargetPTID         string    `gorm:"column:target_ptid;size:255;index:idx_federated_mls_claim_target,priority:1"`
+	TargetDeviceID     string    `gorm:"column:target_device_id;size:128;index:idx_federated_mls_claim_target,priority:2"`
 	HomeStationID      string    `gorm:"column:home_station_id;size:255;not null"`
 	PackageID          string    `gorm:"column:package_id;size:64;not null"`
 	KeyPackage         []byte    `gorm:"column:key_package;type:bytea;not null"`
@@ -69,19 +114,20 @@ func NewCanonicalStore(db *gorm.DB) (*CanonicalStore, error) {
 	return &CanonicalStore{db: db}, nil
 }
 
-// MigrateTestSchema is intentionally not called by the production subserver
-// before the CA-W5 atomic route and store cutover.
-func (s *CanonicalStore) MigrateTestSchema(ctx context.Context) error {
+// Migrate installs the canonical Direct and MLS public-material schema.
+func (s *CanonicalStore) Migrate(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(
 		&IdentityKeyModel{},
 		&SignedPreKeyModel{},
 		&OneTimePreKeyModel{},
 		&MLSKeyPackageModel{},
 		&FederatedMLSKeyPackageClaimModel{},
+		&DirectFetchReceiptModel{},
+		&MLSFetchReceiptModel{},
 	); err != nil {
 		return domain.WrapError(
 			domain.ErrorCodeInternal,
-			"key_exchange.migrate_test_schema",
+			"key_exchange.migrate",
 			err,
 		)
 	}
@@ -97,7 +143,7 @@ func (s *CanonicalStore) MigrateTestSchema(ctx context.Context) error {
 		if err := s.db.WithContext(ctx).Exec(statement).Error; err != nil {
 			return domain.WrapError(
 				domain.ErrorCodeInternal,
-				"key_exchange.migrate_test_schema",
+				"key_exchange.migrate",
 				err,
 			)
 		}
@@ -141,13 +187,20 @@ func (s *CanonicalStore) UploadDirectBundle(
 
 func (s *CanonicalStore) FetchDirectBundles(
 	ctx context.Context,
+	identity domain.DestructiveReadIdentity,
 	actorPTID string,
 	activeDeviceIDs []string,
+	fetchedAt time.Time,
 ) ([]domain.DirectKeyBundle, error) {
+	const operation = "key_exchange.store.fetch_direct_bundles"
+
+	if err := identity.Validate(operation); err != nil {
+		return nil, err
+	}
 	if len(activeDeviceIDs) == 0 {
 		return nil, domain.NewError(
 			domain.ErrorCodeNotFound,
-			"key_exchange.store.fetch_direct_bundles",
+			operation,
 			"active_device_ids",
 			"contains no active device",
 		)
@@ -155,6 +208,23 @@ func (s *CanonicalStore) FetchDirectBundles(
 
 	var bundles []domain.DirectKeyBundle
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		receipt, claimed, err := claimDirectFetchReceipt(
+			tx,
+			identity,
+			fetchedAt.UTC(),
+		)
+		if err != nil {
+			return err
+		}
+		if !claimed {
+			replayed, replayErr := decodeDirectFetchReceipt(receipt, identity)
+			if replayErr != nil {
+				return replayErr
+			}
+			bundles = replayed
+			return nil
+		}
+
 		endpoints := make([]domain.Endpoint, 0, len(activeDeviceIDs))
 		for _, deviceID := range activeDeviceIDs {
 			endpoints = append(endpoints, domain.Endpoint{
@@ -165,7 +235,7 @@ func (s *CanonicalStore) FetchDirectBundles(
 		if err := requireActiveDevicesForMutation(
 			tx,
 			endpoints,
-			"key_exchange.store.fetch_direct_bundles",
+			operation,
 		); err != nil {
 			return err
 		}
@@ -200,7 +270,7 @@ func (s *CanonicalStore) FetchDirectBundles(
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return domain.NewError(
 						domain.ErrorCodeStaleMaterial,
-						"key_exchange.store.fetch_direct_bundles",
+						operation,
 						"signed_pre_key",
 						"is missing for an identity key",
 					)
@@ -236,7 +306,7 @@ func (s *CanonicalStore) FetchDirectBundles(
 				SupportedWireVersions: decodeSupportedVersions(identity.SupportedVersions),
 			})
 		}
-		return nil
+		return completeDirectFetchReceipt(tx, receipt, bundles)
 	})
 	if err != nil {
 		return nil, err
@@ -380,15 +450,39 @@ func (s *CanonicalStore) UploadMLSKeyPackage(
 
 func (s *CanonicalStore) FetchAndConsumeMLSKeyPackage(
 	ctx context.Context,
+	identity domain.DestructiveReadIdentity,
 	actorPTID string,
 	activeDeviceIDs []string,
+	homeStationID string,
 	consumedAt time.Time,
 ) (*domain.MLSKeyPackage, error) {
+	const operation = "key_exchange.store.fetch_mls_key_package"
+
+	if err := identity.Validate(operation); err != nil {
+		return nil, err
+	}
 	if len(activeDeviceIDs) == 0 {
 		return nil, nil
 	}
 	var consumed *domain.MLSKeyPackage
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		receipt, claimed, err := claimMLSFetchReceipt(
+			tx,
+			identity,
+			consumedAt.UTC(),
+		)
+		if err != nil {
+			return err
+		}
+		if !claimed {
+			replayed, replayErr := decodeMLSFetchReceipt(receipt, identity)
+			if replayErr != nil {
+				return replayErr
+			}
+			consumed = replayed
+			return nil
+		}
+
 		endpoints := make([]domain.Endpoint, 0, len(activeDeviceIDs))
 		for _, deviceID := range activeDeviceIDs {
 			endpoints = append(endpoints, domain.Endpoint{
@@ -399,7 +493,7 @@ func (s *CanonicalStore) FetchAndConsumeMLSKeyPackage(
 		if err := requireActiveDevicesForMutation(
 			tx,
 			endpoints,
-			"key_exchange.store.fetch_mls_key_package",
+			operation,
 		); err != nil {
 			return err
 		}
@@ -413,7 +507,12 @@ func (s *CanonicalStore) FetchAndConsumeMLSKeyPackage(
 		)
 		if err != nil {
 			if domain.IsCode(err, domain.ErrorCodeNotFound) {
-				return nil
+				return completeMLSFetchReceipt(
+					tx,
+					receipt,
+					nil,
+					homeStationID,
+				)
 			}
 			return err
 		}
@@ -447,7 +546,12 @@ func (s *CanonicalStore) FetchAndConsumeMLSKeyPackage(
 			return err
 		}
 		consumed = &value
-		return nil
+		return completeMLSFetchReceipt(
+			tx,
+			receipt,
+			consumed,
+			consumed.HomeStation,
+		)
 	})
 	if err != nil {
 		return nil, err
@@ -717,12 +821,26 @@ func (s *CanonicalStore) ClaimMLSKeyPackageIrreversibly(
 	homeStationID string,
 	claimedAt time.Time,
 ) (domain.MLSKeyPackageReservation, error) {
+	const operation = "key_exchange.store.claim_mls_key_package"
+
+	if err := domain.ValidateRequestID(operation, claim.RequestID); err != nil {
+		return domain.MLSKeyPackageReservation{}, err
+	}
+	if claim.RequestSHA256 == ([sha256.Size]byte{}) {
+		return domain.MLSKeyPackageReservation{}, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"request_sha256",
+			"exact request hash is required",
+		)
+	}
+
 	var reservation domain.MLSKeyPackageReservation
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := requireActiveDevicesForMutation(
 			tx,
 			[]domain.Endpoint{claim.Target},
-			"key_exchange.store.claim_mls_key_package",
+			operation,
 		); err != nil {
 			return err
 		}
@@ -794,6 +912,8 @@ func (s *CanonicalStore) ClaimMLSKeyPackageIrreversibly(
 
 		claimRecord := FederatedMLSKeyPackageClaimModel{
 			AuthorityStationID: claim.AuthorityStationID,
+			RequestID:          claim.RequestID,
+			RequestSHA256:      append([]byte(nil), claim.RequestSHA256[:]...),
 			AuthorityPlanID:    claim.AuthorityPlanID,
 			TargetPTID:         claim.Target.ActorPTID,
 			TargetDeviceID:     claim.Target.DeviceID,
@@ -1320,12 +1440,9 @@ func findFederatedMLSClaim(
 	}
 	err := query.
 		Where(
-			"authority_station_id = ? AND authority_plan_id = ? "+
-				"AND target_ptid = ? AND target_device_id = ?",
+			"authority_station_id = ? AND request_id = ?",
 			claim.AuthorityStationID,
-			claim.AuthorityPlanID,
-			claim.Target.ActorPTID,
-			claim.Target.DeviceID,
+			claim.RequestID,
 		).
 		First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1362,7 +1479,11 @@ func replayFederatedMLSClaim(
 	homeStationID string,
 ) (domain.MLSKeyPackageReservation, error) {
 	if existing.HomeStationID != homeStationID ||
-		!existing.PlanExpiresAt.Equal(claim.PlanExpiresAt.UTC()) {
+		!existing.PlanExpiresAt.Equal(claim.PlanExpiresAt.UTC()) ||
+		existing.AuthorityPlanID != claim.AuthorityPlanID ||
+		existing.TargetPTID != claim.Target.ActorPTID ||
+		existing.TargetDeviceID != claim.Target.DeviceID ||
+		!bytes.Equal(existing.RequestSHA256, claim.RequestSHA256[:]) {
 		return domain.MLSKeyPackageReservation{}, domain.NewError(
 			domain.ErrorCodeConflict,
 			"key_exchange.store.claim_mls_key_package",
@@ -1483,6 +1604,40 @@ func parseMLSKeyPackageID(operation string, value string) (uint64, error) {
 		)
 	}
 	return parsed, nil
+}
+
+func encodeSupportedVersions(versions []uint32) string {
+	if len(versions) == 0 {
+		return "0"
+	}
+
+	parts := make([]string, 0, len(versions))
+	for _, version := range versions {
+		parts = append(parts, strconv.FormatUint(uint64(version), 10))
+	}
+
+	return strings.Join(parts, ",")
+}
+
+func decodeSupportedVersions(value string) []uint32 {
+	if strings.TrimSpace(value) == "" {
+		return []uint32{0}
+	}
+
+	parts := strings.Split(value, ",")
+	versions := make([]uint32, 0, len(parts))
+	for _, part := range parts {
+		version, err := strconv.ParseUint(strings.TrimSpace(part), 10, 32)
+		if err != nil {
+			continue
+		}
+		versions = append(versions, uint32(version))
+	}
+	if len(versions) == 0 {
+		return []uint32{0}
+	}
+
+	return versions
 }
 
 func cloneTime(value *time.Time) *time.Time {

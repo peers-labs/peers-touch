@@ -3,9 +3,10 @@ use super::leave_intent::validate_signed_leave_intent;
 use crate::proto::chat::{
     chat_command, ChatCommand, CryptoEndpoint, MembershipTransitionIntent,
     MessagingMembershipAction, MessagingMembershipChangeIntent, MlsLeaveIntent,
-    PrepareMessagingMembershipTransitionResponse, PreparedEndpointPayload,
-    PreparedEndpointPayloadKind, ReservedMessagingMlsKeyPackage,
+    PrepareConversationMembershipResponse, PreparedEndpointPayload, PreparedEndpointPayloadKind,
 };
+use crate::proto::key_exchange::MlsKeyPackageReservation;
+use crate::proto::{actor_device_ptid, chat_endpoint};
 use crate::store::{MlsTransitionRepository, MlsTransitionSendCommit};
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -48,7 +49,7 @@ impl<R: MlsTransitionRepository> MembershipTransitionPreparer<R> {
         &self,
         logical_intent_id: Option<&str>,
         input: &MembershipTransitionIntentInput,
-        plan: &PrepareMessagingMembershipTransitionResponse,
+        plan: &PrepareConversationMembershipResponse,
         created_at_unix_ms: i64,
     ) -> Result<ChatCommand, String> {
         validate_plan(logical_intent_id, plan, created_at_unix_ms)?;
@@ -84,24 +85,28 @@ impl<R: MlsTransitionRepository> MembershipTransitionPreparer<R> {
         };
         let changes = affected
             .iter()
-            .map(|endpoint| MessagingMembershipChangeIntent {
-                action: input.action as i32,
-                ptid: endpoint.ptid.clone(),
-                device_id: endpoint.device_id.clone(),
-                role: input.role.clone(),
+            .map(|endpoint| {
+                Ok(MessagingMembershipChangeIntent {
+                    action: input.action as i32,
+                    ptid: actor_device_ptid(endpoint)?.to_string(),
+                    device_id: endpoint.device_id.clone(),
+                    role: input.role.clone(),
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, String>>()?;
         let welcome_hash = Sha256::digest(&prepared.welcome_bytes).to_vec();
         let welcome_payloads = plan
             .added_endpoints
             .iter()
-            .map(|endpoint| PreparedEndpointPayload {
-                recipient: Some(endpoint.clone()),
-                kind: PreparedEndpointPayloadKind::MlsWelcome as i32,
-                opaque_payload: prepared.welcome_bytes.clone(),
-                payload_sha256: welcome_hash.clone(),
+            .map(|endpoint| {
+                Ok(PreparedEndpointPayload {
+                    recipient: Some(chat_endpoint(endpoint)?),
+                    kind: PreparedEndpointPayloadKind::MlsWelcome as i32,
+                    opaque_payload: prepared.welcome_bytes.clone(),
+                    payload_sha256: welcome_hash.clone(),
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, String>>()?;
         if (!plan.added_endpoints.is_empty() && prepared.welcome_bytes.is_empty())
             || (plan.added_endpoints.is_empty() && !prepared.welcome_bytes.is_empty())
         {
@@ -122,7 +127,7 @@ impl<R: MlsTransitionRepository> MembershipTransitionPreparer<R> {
                 nanos: (created_at_unix_ms.rem_euclid(1_000) * 1_000_000) as i32,
             }),
             delivery_plan_sha256: plan.authority_plan_sha256.clone(),
-            authority_station_id: plan.authority_station_id.clone(),
+            authority_station_peer_id: plan.authority_station_peer_id.clone(),
             payload: Some(chat_command::Payload::MembershipTransition(
                 MembershipTransitionIntent {
                     transition_id: prepared.transition_id.clone(),
@@ -187,7 +192,7 @@ impl<R: MlsTransitionRepository> MembershipTransitionPreparer<R> {
 
 fn validate_leave_binding(
     input: &MembershipTransitionIntentInput,
-    plan: &PrepareMessagingMembershipTransitionResponse,
+    plan: &PrepareConversationMembershipResponse,
 ) -> Result<String, String> {
     if input.action != MessagingMembershipAction::Leave {
         if input.leave_intent.is_some() {
@@ -203,28 +208,43 @@ fn validate_leave_binding(
     let target_pre_endpoints = plan
         .pre_endpoints
         .iter()
-        .filter(|endpoint| endpoint.ptid == input.target_ptid)
+        .map(|endpoint| Ok((actor_device_ptid(endpoint)?, endpoint)))
+        .collect::<Result<Vec<_>, String>>()?
+        .into_iter()
+        .filter_map(|(ptid, endpoint)| (ptid == input.target_ptid).then_some(endpoint))
         .collect::<Vec<_>>();
+    let removed_endpoints = plan
+        .removed_endpoints
+        .iter()
+        .map(|endpoint| Ok((actor_device_ptid(endpoint)?, endpoint.device_id.as_str())))
+        .collect::<Result<Vec<_>, String>>()?;
+    let post_endpoint_ptids = plan
+        .post_endpoints
+        .iter()
+        .map(actor_device_ptid)
+        .collect::<Result<Vec<_>, String>>()?;
     if intent.conversation_id != input.conversation_id
         || intent.actor_ptid != input.target_ptid
         || intent.observed_membership_epoch != plan.from_membership_epoch
         || intent.observed_mls_epoch != plan.from_mls_epoch
         || !input.target_device_id.is_empty()
         || target_pre_endpoints.is_empty()
-        || target_pre_endpoints.len() != plan.removed_endpoints.len()
-        || plan
-            .removed_endpoints
+        || target_pre_endpoints.len() != removed_endpoints.len()
+        || removed_endpoints
             .iter()
-            .any(|endpoint| endpoint.ptid != input.target_ptid)
+            .any(|(ptid, _)| *ptid != input.target_ptid)
         || target_pre_endpoints.iter().any(|expected| {
-            !plan.removed_endpoints.iter().any(|removed| {
-                removed.ptid == expected.ptid && removed.device_id == expected.device_id
-            })
+            let expected_ptid = actor_device_ptid(expected).ok();
+            !removed_endpoints
+                .iter()
+                .any(|(removed_ptid, removed_device_id)| {
+                    Some(*removed_ptid) == expected_ptid
+                        && *removed_device_id == expected.device_id.as_str()
+                })
         })
-        || plan
-            .post_endpoints
+        || post_endpoint_ptids
             .iter()
-            .any(|endpoint| endpoint.ptid == input.target_ptid)
+            .any(|ptid| *ptid == input.target_ptid)
     {
         return Err("delegated leave intent does not match transition plan".to_string());
     }
@@ -233,7 +253,7 @@ fn validate_leave_binding(
 
 fn validate_plan(
     logical_intent_id: Option<&str>,
-    plan: &PrepareMessagingMembershipTransitionResponse,
+    plan: &PrepareConversationMembershipResponse,
     created_at_unix_ms: i64,
 ) -> Result<(), String> {
     if logical_intent_id.is_some_and(|intent_id| intent_id.trim().is_empty())
@@ -251,7 +271,7 @@ fn validate_plan(
 }
 
 fn validated_key_packages(
-    reserved_key_packages: &[ReservedMessagingMlsKeyPackage],
+    reserved_key_packages: &[MlsKeyPackageReservation],
 ) -> Result<Vec<MlsMemberKeyPackage>, String> {
     reserved_key_packages
         .iter()
@@ -268,7 +288,7 @@ fn validated_key_packages(
                 return Err("messaging reserved KeyPackage is invalid".to_string());
             }
             Ok(MlsMemberKeyPackage {
-                ptid: target.ptid.clone(),
+                ptid: actor_device_ptid(target)?.to_string(),
                 device_id: target.device_id.clone(),
                 key_package: reserved.key_package.clone(),
             })
@@ -280,6 +300,7 @@ fn validated_key_packages(
 mod tests {
     use super::*;
     use crate::mls::test_support::TestTransitionRepository;
+    use crate::proto::actor_device_ref;
     use crate::store::{MlsTransitionRepository, MlsTransitionSendCommit};
 
     fn leave_intent(conversation_id: &str, target_ptid: &str) -> MlsLeaveIntent {
@@ -304,37 +325,25 @@ mod tests {
         }
     }
 
-    fn leave_plan() -> PrepareMessagingMembershipTransitionResponse {
-        PrepareMessagingMembershipTransitionResponse {
+    fn leave_plan() -> PrepareConversationMembershipResponse {
+        PrepareConversationMembershipResponse {
             authority_plan_id: "plan-leave-bob".to_string(),
             expires_at: Some(prost_types::Timestamp {
                 seconds: 1_800_000_000,
                 nanos: 0,
             }),
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             authority_sequence: 2,
             authority_hash: vec![7; 32],
             from_membership_epoch: 1,
             from_mls_epoch: 1,
             pre_endpoints: vec![
-                CryptoEndpoint {
-                    ptid: "ptid:alice".to_string(),
-                    device_id: "alice-device".to_string(),
-                },
-                CryptoEndpoint {
-                    ptid: "ptid:bob".to_string(),
-                    device_id: "bob-device".to_string(),
-                },
+                actor_device_ref("ptid:alice", "alice-device"),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
-            post_endpoints: vec![CryptoEndpoint {
-                ptid: "ptid:alice".to_string(),
-                device_id: "alice-device".to_string(),
-            }],
+            post_endpoints: vec![actor_device_ref("ptid:alice", "alice-device")],
             added_endpoints: Vec::new(),
-            removed_endpoints: vec![CryptoEndpoint {
-                ptid: "ptid:bob".to_string(),
-                device_id: "bob-device".to_string(),
-            }],
+            removed_endpoints: vec![actor_device_ref("ptid:bob", "bob-device")],
             reserved_key_packages: Vec::new(),
             endpoint_manifests: Vec::new(),
             authority_plan_sha256: vec![8; 32],
@@ -407,36 +416,27 @@ mod tests {
         ];
         let reserved_key_packages = carol_packages
             .iter()
-            .map(|(device_id, key_package)| ReservedMessagingMlsKeyPackage {
-                target: Some(CryptoEndpoint {
-                    ptid: "ptid:carol".to_string(),
-                    device_id: (*device_id).to_string(),
-                }),
+            .map(|(device_id, key_package)| MlsKeyPackageReservation {
+                target: Some(actor_device_ref("ptid:carol", *device_id)),
                 package_id: format!("package-{device_id}"),
                 key_package_sha256: Sha256::digest(key_package).to_vec(),
                 key_package: key_package.clone(),
             })
             .collect::<Vec<_>>();
-        let plan = PrepareMessagingMembershipTransitionResponse {
+        let plan = PrepareConversationMembershipResponse {
             authority_plan_id: "plan-add-carol".to_string(),
             expires_at: Some(prost_types::Timestamp {
                 seconds: 1_800_000_000,
                 nanos: 0,
             }),
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             authority_sequence: 2,
             authority_hash: vec![7; 32],
             from_membership_epoch: 1,
             from_mls_epoch: 1,
             pre_endpoints: vec![
-                CryptoEndpoint {
-                    ptid: "ptid:alice".to_string(),
-                    device_id: "alice-device".to_string(),
-                },
-                CryptoEndpoint {
-                    ptid: "ptid:bob".to_string(),
-                    device_id: "bob-device".to_string(),
-                },
+                actor_device_ref("ptid:alice", "alice-device"),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
             post_endpoints: Vec::new(),
             added_endpoints: reserved_key_packages

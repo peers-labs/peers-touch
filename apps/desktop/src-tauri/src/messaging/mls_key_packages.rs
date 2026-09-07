@@ -1,6 +1,7 @@
 use crate::infrastructure::station_client;
-use crate::model::chat::{UploadKeyPackageRequest, UploadKeyPackageResponse};
+use crate::model::key_exchange::{UploadMlsKeyPackageRequest, UploadMlsKeyPackageResponse};
 use messaging_core::mls::key_packages::MlsKeyPackageTransport;
+use messaging_core::proto::actor_device_ptid;
 use reqwest::Method;
 
 pub struct StationMlsKeyPackageTransport {
@@ -20,13 +21,18 @@ impl StationMlsKeyPackageTransport {
 }
 
 impl MlsKeyPackageTransport for StationMlsKeyPackageTransport {
-    fn upload(&self, request: &UploadKeyPackageRequest) -> Result<(), String> {
-        if request.device_id != self.device_id || request.data.is_empty() {
+    fn upload(&self, request: &UploadMlsKeyPackageRequest) -> Result<(), String> {
+        let device = request
+            .device
+            .as_ref()
+            .ok_or_else(|| "messaging MLS KeyPackage device is missing".to_string())?;
+        actor_device_ptid(device)?;
+        if device.device_id != self.device_id || request.key_package.is_empty() {
             return Err("messaging MLS KeyPackage endpoint binding mismatch".to_string());
         }
         station_client::request_proto_for_device::<
-            UploadKeyPackageRequest,
-            UploadKeyPackageResponse,
+            UploadMlsKeyPackageRequest,
+            UploadMlsKeyPackageResponse,
         >(
             Method::POST,
             "/key-exchange/mls/key-package/upload",

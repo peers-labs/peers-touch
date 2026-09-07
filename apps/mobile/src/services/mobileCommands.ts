@@ -1,4 +1,14 @@
+import { fromBinary } from '@bufbuild/protobuf';
 import { invoke } from '@tauri-apps/api/core';
+
+import {
+  AcceptSocialFriendRequestResponseSchema,
+  RejectSocialFriendRequestResponseSchema,
+  SendSocialFriendRequestResponseSchema,
+  type AcceptSocialFriendRequestResponse,
+  type RejectSocialFriendRequestResponse,
+  type SendSocialFriendRequestResponse,
+} from '../gen/proto/domain/social/relationship_pb';
 
 export async function setSecureStorageValue(key: string, value: string): Promise<void> {
   await invoke('secure_storage_set', { key, value });
@@ -52,10 +62,12 @@ export interface MessagingConversationProjection {
 
 export interface MessagingCreateDirectInput extends MessagingAccountInput {
   peerPtid: string;
+  federationId: string;
 }
 
 export interface MessagingCreateDirectResult {
   conversationId: string;
+  commandId: string;
   state: 'pending' | 'projected';
 }
 
@@ -63,12 +75,29 @@ export interface MessagingCreateGroupInput extends MessagingAccountInput {
   conversationId: string;
   name: string;
   memberPtids: string[];
+  federationId: string;
 }
 
 export interface MessagingCreateGroupResult {
   conversationId: string;
   commandId: string;
   state: 'pending' | 'projected' | 'failed';
+}
+
+export interface SocialFriendRequestSendInput extends MessagingAccountInput {
+  receiverPtid: string;
+  receiverHomeStationPeerId: string;
+  federationId: string;
+  message?: string;
+}
+
+export interface SocialFriendRequestDecisionInput extends MessagingAccountInput {
+  requestId: string;
+  senderPtid: string;
+  receiverPtid: string;
+  senderHomeStationPeerId: string;
+  receiverHomeStationPeerId: string;
+  federationId: string;
 }
 
 export interface MessagingAttachmentProjection {
@@ -191,6 +220,27 @@ export async function messagingActivate(
 
 export async function messagingStatus(): Promise<MessagingRuntimeStatus> {
   return invoke<MessagingRuntimeStatus>('messaging_status');
+}
+
+export async function socialFriendRequestSend(
+  input: SocialFriendRequestSendInput,
+): Promise<SendSocialFriendRequestResponse> {
+  const bytes = await invoke<number[]>('social_friend_request_send', { input });
+  return fromBinary(SendSocialFriendRequestResponseSchema, Uint8Array.from(bytes));
+}
+
+export async function socialFriendRequestAccept(
+  input: SocialFriendRequestDecisionInput,
+): Promise<AcceptSocialFriendRequestResponse> {
+  const bytes = await invoke<number[]>('social_friend_request_accept', { input });
+  return fromBinary(AcceptSocialFriendRequestResponseSchema, Uint8Array.from(bytes));
+}
+
+export async function socialFriendRequestReject(
+  input: SocialFriendRequestDecisionInput,
+): Promise<RejectSocialFriendRequestResponse> {
+  const bytes = await invoke<number[]>('social_friend_request_reject', { input });
+  return fromBinary(RejectSocialFriendRequestResponseSchema, Uint8Array.from(bytes));
 }
 
 export async function messagingCreateDirect(

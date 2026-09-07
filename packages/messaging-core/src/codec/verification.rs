@@ -1,11 +1,14 @@
-use crate::proto::chat::{DeviceEventDelivery, DeviceQueueItem, PreparedEndpointPayloadKind};
+use crate::proto::actor_device_ptid;
+use crate::proto::chat::{
+    DeviceEventDelivery, DurableDeviceInboxItem, PreparedEndpointPayloadKind,
+};
 use prost::Message;
 use sha2::{Digest, Sha256};
 
 const DELIVERY_COMMITMENT_DOMAIN: &[u8] = b"peers-touch/device-delivery-commitment";
 
 pub fn verify_device_event_delivery(
-    item: &DeviceQueueItem,
+    item: &DurableDeviceInboxItem,
     local_ptid: &str,
     local_device_id: &str,
 ) -> Result<DeviceEventDelivery, String> {
@@ -13,7 +16,8 @@ pub fn verify_device_event_delivery(
         .recipient
         .as_ref()
         .ok_or_else(|| "messaging queue item has no recipient".to_string())?;
-    if recipient.ptid != local_ptid || recipient.device_id != local_device_id {
+    let recipient_ptid = actor_device_ptid(recipient)?;
+    if recipient_ptid != local_ptid || recipient.device_id != local_device_id {
         return Err("messaging queue item targets another endpoint".to_string());
     }
     if item.payload_sha256.len() != 32
@@ -27,7 +31,9 @@ pub fn verify_device_event_delivery(
         .recipient
         .as_ref()
         .ok_or_else(|| "messaging delivery has no recipient".to_string())?;
-    if delivery_recipient != recipient {
+    if delivery_recipient.ptid != recipient_ptid
+        || delivery_recipient.device_id != recipient.device_id
+    {
         return Err("messaging delivery recipient binding mismatch".to_string());
     }
     let event = delivery
@@ -36,7 +42,7 @@ pub fn verify_device_event_delivery(
         .ok_or_else(|| "messaging delivery has no authority event".to_string())?;
     if event.event_id != item.event_id
         || event.conversation_id != item.conversation_id
-        || event.authority_station_id.trim().is_empty()
+        || event.authority_station_peer_id.trim().is_empty()
     {
         return Err("messaging delivery event binding mismatch".to_string());
     }
@@ -63,7 +69,7 @@ pub fn verify_device_event_delivery(
     let commitment = delivery_commitment(
         &event.conversation_id,
         &event.event_id,
-        &recipient.ptid,
+        recipient_ptid,
         &recipient.device_id,
         payload_kind,
         &delivery.endpoint_payload_sha256,
@@ -118,11 +124,12 @@ fn write_string(target: &mut Vec<u8>, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proto::actor_device_from_chat_endpoint;
     use crate::proto::chat::{
         conversation_event, ConversationEvent, CryptoEndpoint, MessageCommittedFact,
     };
 
-    fn queue_item() -> DeviceQueueItem {
+    fn queue_item() -> DurableDeviceInboxItem {
         let recipient = CryptoEndpoint {
             ptid: "ptid:alice".to_string(),
             device_id: "alice-device".to_string(),
@@ -144,7 +151,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 0,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MessageCommitted(
                 MessageCommittedFact::default(),
             )),
@@ -169,9 +176,9 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "item-1".to_string(),
-            recipient: Some(recipient),
+            recipient: Some(actor_device_from_chat_endpoint(&recipient)),
             lane_sequence: 1,
             event_id: "event-1".to_string(),
             conversation_id: "conversation-1".to_string(),
@@ -185,9 +192,8 @@ mod tests {
             first_queued_at: None,
             next_attempt_at: None,
             expires_at: None,
-            consumed_at: None,
             acked_at: None,
-            last_error_code: String::new(),
+            last_error_code: 0,
         }
     }
 

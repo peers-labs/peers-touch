@@ -15,14 +15,18 @@ import (
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
-	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
+	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/scope"
+	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
+
+const deliveryRuntimeRestartDelay = time.Second
 
 type subServer struct {
 	mu     sync.RWMutex
@@ -37,6 +41,10 @@ type subServer struct {
 	actorKeySvc   *domain.ActorKeyService
 	syncManager   *LedgerSyncManager
 	govClient     RemoteGovernanceClient
+
+	deliveryRuntime *federationruntime.Runtime
+	deliveryCancel  context.CancelFunc
+	deliveryWait    sync.WaitGroup
 }
 
 func NewFederationSubServer(_ ...option.Option) server.Subserver {
@@ -60,7 +68,11 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
-	peerKeys := federation.NewPeerKeyStoreGORM("")
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return err
+	}
+	peerKeys := authfed.NewPeerKeyStoreGORMWithDB(rds)
 	s.federationWrapper = server.HTTPWrapperAdapter(
 		httpadapter.RequireFederationToken(
 			FederationGovernanceSyncScope,
@@ -76,12 +88,39 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		),
 	)
 
-	rds, err := store.GetRDS(ctx)
-	if err != nil {
-		return err
-	}
 	if err := infrastructure.MigrateSchema(rds); err != nil {
 		return fmt.Errorf("migrate federation schema: %w", err)
+	}
+
+	localStationID := localStationPeerID()
+	if localStationID == "" {
+		return fmt.Errorf("initialize Federation delivery: local Station peer identity unavailable")
+	}
+	s.deliveryRuntime, err = federationruntime.NewRuntime(
+		ctx,
+		federationruntime.RuntimeConfig{
+			Database:           rds,
+			LocalStationPeerID: localStationID,
+			KeyCache:           authfed.Singleton(),
+			PeerKeys:           peerKeys,
+			Clock:              delivery.SystemClock{},
+			HTTPClient:         &http.Client{Timeout: 15 * time.Second},
+			Relay:              federationruntime.LiveRelayAccess{},
+			Dispatcher: delivery.DispatcherConfig{
+				WorkerID:      "federation:" + localStationID,
+				BatchSize:     100,
+				LeaseDuration: 30 * time.Second,
+				IdleDelay:     time.Second,
+				RetryBackoff: delivery.RetryBackoff{
+					Initial: time.Second,
+					Maximum: time.Minute,
+				},
+			},
+			PeerEndpointResolver: resolveFederationPeerEndpoint,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("initialize shared Federation delivery: %w", err)
 	}
 
 	repos := infrastructure.NewRepos(rds)
@@ -127,7 +166,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		}
 	})
 
-	fedCache := federation.Singleton()
+	fedCache := authfed.Singleton()
 	localStationFn := func() string {
 		return localStationPeerID()
 	}
@@ -173,6 +212,19 @@ func localStationURL() string {
 func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.deliveryRuntime == nil {
+		s.status = server.StatusError
+		return fmt.Errorf("start Federation delivery: runtime is not initialized")
+	}
+
+	deliveryContext, cancel := context.WithCancel(ctx)
+	s.deliveryCancel = cancel
+	s.deliveryWait.Add(1)
+	go func() {
+		defer s.deliveryWait.Done()
+		s.runDeliveryRuntime(deliveryContext)
+	}()
+
 	s.status = server.StatusRunning
 	s.syncManager.Start(ctx)
 	log.Infof(ctx, "[federation] subserver started")
@@ -182,8 +234,14 @@ func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
 func (s *subServer) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.status = server.StatusStopped
+	s.status = server.StatusStopping
+	if s.deliveryCancel != nil {
+		s.deliveryCancel()
+		s.deliveryCancel = nil
+	}
+	s.deliveryWait.Wait()
 	s.syncManager.Stop()
+	s.status = server.StatusStopped
 	log.Infof(ctx, "[federation] subserver stopped")
 	return nil
 }
@@ -193,11 +251,16 @@ func (s *subServer) Type() server.SubserverType       { return server.SubserverT
 func (s *subServer) Address() server.SubserverAddress { return server.SubserverAddress{} }
 func (s *subServer) Status() server.Status            { return s.status }
 
+// FederationDeliveryRuntime exposes the process-scoped shared transport to domain subservers.
+func (s *subServer) FederationDeliveryRuntime() *federationruntime.Runtime {
+	return s.deliveryRuntime
+}
+
 func (s *subServer) Handlers() []server.Handler {
 	jw := s.jwtWrapper
 	fw := s.federationWrapper
 
-	return []server.Handler{
+	handlers := []server.Handler{
 		server.NewTypedHandler("fed-list-federations", "/sub-federation/federations", server.GET, s.handleListFederations, jw),
 		server.NewTypedHandler("fed-create-federation", "/sub-federation/federations", server.POST, s.handleCreateFederation, jw),
 		server.NewTypedHandler("fed-list-members", "/sub-federation/federations/:federation_id/stations", server.GET, s.handleListMemberStations, jw),
@@ -209,4 +272,35 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("fed-fetch-events", "/fed/v1/ledger/events", server.POST, s.handleFetchEvents, fw),
 		server.NewTypedHandler("fed-submit-proposal", "/fed/v1/governance/submit-proposal", server.POST, s.handleSubmitProposal),
 	}
+	if s.deliveryRuntime != nil {
+		handlers = append(handlers, s.deliveryRuntime.Handlers()...)
+	}
+
+	return handlers
 }
+
+func (s *subServer) runDeliveryRuntime(ctx context.Context) {
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+
+		err := s.deliveryRuntime.Run(ctx)
+		if err == nil || ctx.Err() != nil {
+			return
+		}
+		log.Errorf(
+			ctx,
+			"[federation] shared delivery dispatcher stopped; restarting: %v",
+			err,
+		)
+		timer.Reset(deliveryRuntimeRestartDelay)
+	}
+}
+
+var _ federationruntime.RuntimeProvider = (*subServer)(nil)

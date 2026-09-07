@@ -3,6 +3,7 @@ use tauri::{AppHandle, Manager, Runtime, State};
 
 use messaging_core::contracts::ConversationMessageProjection;
 use messaging_core::outbox::{CommandDispatchProgress, MetadataInteraction};
+use prost::Message;
 
 use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_storage::SecureStorage;
@@ -173,6 +174,7 @@ pub struct MessagingCreateDirectInput {
     station_peer_id: String,
     actor_ptid: String,
     peer_ptid: String,
+    federation_id: String,
 }
 
 #[derive(Deserialize)]
@@ -183,6 +185,32 @@ pub struct MessagingCreateGroupInput {
     conversation_id: String,
     name: String,
     member_ptids: Vec<String>,
+    federation_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SocialFriendRequestSendInput {
+    station_peer_id: String,
+    actor_ptid: String,
+    receiver_ptid: String,
+    receiver_home_station_peer_id: String,
+    federation_id: String,
+    #[serde(default)]
+    message: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SocialFriendRequestDecisionInput {
+    station_peer_id: String,
+    actor_ptid: String,
+    request_id: String,
+    sender_ptid: String,
+    receiver_ptid: String,
+    sender_home_station_peer_id: String,
+    receiver_home_station_peer_id: String,
+    federation_id: String,
 }
 
 #[derive(Serialize)]
@@ -457,6 +485,79 @@ pub fn messaging_status(
 }
 
 #[tauri::command]
+pub async fn social_friend_request_send(
+    runtime: State<'_, MobileMessagingRuntime>,
+    input: SocialFriendRequestSendInput,
+) -> MobileResult<Vec<u8>> {
+    let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .send_social_friend_request(
+                &input.receiver_ptid,
+                &input.receiver_home_station_peer_id,
+                &input.federation_id,
+                &input.message,
+            )
+            .map(|response| response.encode_to_vec())
+    })
+    .await
+    .map_err(|error| {
+        MobileError::messaging(format!("join Social Friend Request send task: {error}"))
+    })?
+    .map_err(MobileError::messaging)
+}
+
+#[tauri::command]
+pub async fn social_friend_request_accept(
+    runtime: State<'_, MobileMessagingRuntime>,
+    input: SocialFriendRequestDecisionInput,
+) -> MobileResult<Vec<u8>> {
+    let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .accept_social_friend_request(
+                &input.request_id,
+                &input.sender_ptid,
+                &input.receiver_ptid,
+                &input.sender_home_station_peer_id,
+                &input.receiver_home_station_peer_id,
+                &input.federation_id,
+            )
+            .map(|response| response.encode_to_vec())
+    })
+    .await
+    .map_err(|error| {
+        MobileError::messaging(format!("join Social Friend Request accept task: {error}"))
+    })?
+    .map_err(MobileError::messaging)
+}
+
+#[tauri::command]
+pub async fn social_friend_request_reject(
+    runtime: State<'_, MobileMessagingRuntime>,
+    input: SocialFriendRequestDecisionInput,
+) -> MobileResult<Vec<u8>> {
+    let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .reject_social_friend_request(
+                &input.request_id,
+                &input.sender_ptid,
+                &input.receiver_ptid,
+                &input.sender_home_station_peer_id,
+                &input.receiver_home_station_peer_id,
+                &input.federation_id,
+            )
+            .map(|response| response.encode_to_vec())
+    })
+    .await
+    .map_err(|error| {
+        MobileError::messaging(format!("join Social Friend Request reject task: {error}"))
+    })?
+    .map_err(MobileError::messaging)
+}
+
+#[tauri::command]
 pub async fn messaging_create_direct(
     runtime: State<'_, MobileMessagingRuntime>,
     input: MessagingCreateDirectInput,
@@ -465,8 +566,9 @@ pub async fn messaging_create_direct(
     let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
     let creation_engine = engine.clone();
     let peer_ptid = input.peer_ptid;
-    let conversation_id = tauri::async_runtime::spawn_blocking(move || {
-        creation_engine.create_direct_conversation(&peer_ptid)
+    let federation_id = input.federation_id;
+    let prepared = tauri::async_runtime::spawn_blocking(move || {
+        creation_engine.create_direct_conversation(&peer_ptid, &federation_id)
     })
     .await
     .map_err(|error| {
@@ -475,10 +577,10 @@ pub async fn messaging_create_direct(
     .map_err(MobileError::messaging)?;
 
     assist_creation_reconcile(&runtime, &input.station_peer_id, &input.actor_ptid).await;
-    let projection_ready = conversation_projection_ready(&engine, &conversation_id);
+    let projection_ready = conversation_projection_ready(&engine, &prepared.conversation_id);
     Ok(MessagingCreateConversationResult {
-        conversation_id,
-        command_id: None,
+        conversation_id: prepared.conversation_id,
+        command_id: Some(prepared.command_id),
         state: direct_creation_state(projection_ready),
     })
 }
@@ -494,8 +596,14 @@ pub async fn messaging_create_group(
     let conversation_id = input.conversation_id;
     let name = input.name;
     let member_ptids = input.member_ptids;
+    let federation_id = input.federation_id;
     let prepared = tauri::async_runtime::spawn_blocking(move || {
-        creation_engine.create_group_conversation(&conversation_id, &name, &member_ptids)
+        creation_engine.create_group_conversation(
+            &conversation_id,
+            &name,
+            &member_ptids,
+            &federation_id,
+        )
     })
     .await
     .map_err(|error| {
@@ -810,9 +918,10 @@ fn validate_direct_creation_input(input: &MessagingCreateDirectInput) -> MobileR
     if !input.peer_ptid.starts_with("ptid:")
         || input.peer_ptid == input.actor_ptid
         || input.actor_ptid.trim().is_empty()
+        || input.federation_id.trim().is_empty()
     {
         return Err(MobileError::invalid_input(
-            "mobile messaging direct peer identity is invalid",
+            "mobile messaging direct identity or federation scope is invalid",
         ));
     }
     Ok(())
@@ -822,6 +931,7 @@ fn validate_group_creation_input(input: &MessagingCreateGroupInput) -> MobileRes
     if input.conversation_id.trim().is_empty()
         || input.name.trim().is_empty()
         || input.member_ptids.is_empty()
+        || input.federation_id.trim().is_empty()
         || input
             .member_ptids
             .iter()
@@ -1149,6 +1259,14 @@ mod tests {
             station_peer_id: "station-1".to_string(),
             actor_ptid: "ptid:alice".to_string(),
             peer_ptid: "ptid:alice".to_string(),
+            federation_id: "federation-1".to_string(),
+        })
+        .is_err());
+        assert!(validate_direct_creation_input(&MessagingCreateDirectInput {
+            station_peer_id: "station-1".to_string(),
+            actor_ptid: "ptid:alice".to_string(),
+            peer_ptid: "ptid:bob".to_string(),
+            federation_id: String::new(),
         })
         .is_err());
         assert!(validate_group_creation_input(&MessagingCreateGroupInput {
@@ -1157,6 +1275,7 @@ mod tests {
             conversation_id: "group-1".to_string(),
             name: "Group".to_string(),
             member_ptids: vec![String::new()],
+            federation_id: "federation-1".to_string(),
         })
         .is_err());
     }

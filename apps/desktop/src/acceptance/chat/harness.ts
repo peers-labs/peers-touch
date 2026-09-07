@@ -25,6 +25,7 @@ interface SyncFriendInput {
 
 interface CreateGroupInput {
   name: string;
+  federationId: string;
   description?: string;
   memberPtids?: string[];
   initialFederatedMembers?: GroupChatFederatedActorInput[];
@@ -302,8 +303,17 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async createDirectConversation({ peerPtid }: { peerPtid: string }) {
-      const conversation = await imServiceV1.messaging.createDirect(peerPtid);
+    async createDirectConversation({
+      peerPtid,
+      federationId,
+    }: {
+      peerPtid: string;
+      federationId: string;
+    }) {
+      const conversation = await imServiceV1.messaging.createDirect({
+        peerPtid,
+        federationId,
+      });
       await useSocialChatStore.getState().loadSessions();
       return { conversationId: conversation.conversationId };
     },
@@ -319,9 +329,20 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async createGroup({ name, description: _description, memberPtids = [], initialFederatedMembers: _initialFederatedMembers = [] }: CreateGroupInput) {
+    async createGroup({
+      name,
+      federationId,
+      description: _description,
+      memberPtids = [],
+      initialFederatedMembers: _initialFederatedMembers = [],
+    }: CreateGroupInput) {
       const conversationId = crypto.randomUUID().replace(/-/g, '').slice(0, 26);
-      const result = await imServiceV1.messaging.createGroup(conversationId, name || 'Acceptance Group', memberPtids);
+      const result = await imServiceV1.messaging.createGroup(
+        conversationId,
+        name || 'Acceptance Group',
+        memberPtids,
+        federationId,
+      );
       const groupUlid = result.conversationId || conversationId;
       const social = useSocialChatStore.getState();
       await social.loadGroups();

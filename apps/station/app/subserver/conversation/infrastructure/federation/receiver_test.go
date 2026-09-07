@@ -74,8 +74,8 @@ func TestAuthorityCommandReceiverUsesVerifiedProjectionAndPreservesReceiptReplay
 
 	fixture.actorKeys.setRevokedAt(time.Time{})
 	conflictProposal := proto.Clone(proposal).(*chatmodel.ConversationCommandProposal)
-	conflictProposal.GetCommand().GetSendMessage().ContentType =
-		chatmodel.MessageContentType_MESSAGE_CONTENT_TYPE_IMAGE
+	conflictProposal.GetCommand().GetSendMessage().ContentKind =
+		chatmodel.MessagingContentKind_MESSAGING_CONTENT_KIND_IMAGE
 	fixture.signProposal(t, conflictProposal)
 	conflictFrame := fixture.authorityCommandFrame(t, conflictProposal, 1)
 	conflictFrame.FrameId = "conflict-" + conflictFrame.FrameId
@@ -142,7 +142,7 @@ func TestAuthorityCommandReceiverUsesVerifiedProjectionAndPreservesReceiptReplay
 		switch resultDelivery.GetState() {
 		case chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_ACCEPTED:
 			acceptedResults++
-			if resultDelivery.GetResult().GetCommittedEvent().GetGroupSeq() != 1 {
+			if resultDelivery.GetResult().GetEvent().GetSequence() != 1 {
 				t.Fatalf("accepted authority result = %+v", &resultDelivery)
 			}
 		case chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_TERMINAL_REJECTED:
@@ -336,6 +336,40 @@ func TestAuthorityCommandReceiverTerminatesUnroutableMalformedProposal(t *testin
 	assertTableCount(t, fixture.db, &federationdelivery.OutboxRecord{}, 0)
 }
 
+func TestAuthorityCommandSenderRejectsMismatchedCommandAuthority(t *testing.T) {
+	clock := &testClock{
+		now: time.Date(2026, time.September, 7, 12, 0, 0, 0, time.UTC),
+	}
+	sender, err := conversationfederation.NewSender(
+		testStationA,
+		newTestKey(0x11).signer(),
+		clock,
+		time.Hour,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal := &chatmodel.ConversationCommandProposal{
+		HomeStationPeerId:      testStationA,
+		AuthorityStationPeerId: testStationB,
+		Command: &chatmodel.ChatCommand{
+			AuthorityStationPeerId: "station-c",
+		},
+	}
+
+	if _, err := sender.EnqueueAuthorityCommand(
+		context.Background(),
+		&capturingOutbox{},
+		proposal,
+		1,
+	); err == nil {
+		t.Fatal("mismatched command authority was accepted")
+	} else if code, ok := federationdelivery.FailureCodeOf(err); !ok ||
+		code != federationdelivery.FailureInvalidFrame {
+		t.Fatalf("mismatched command authority error = %v", err)
+	}
+}
+
 func TestDeviceDeliverySenderRejectsMissingActorWithoutPanic(t *testing.T) {
 	clock := &testClock{
 		now: time.Date(2026, time.September, 6, 12, 0, 0, 0, time.UTC),
@@ -514,16 +548,17 @@ func TestAuthorityResultReceiverUsesTransactionBoundPort(t *testing.T) {
 	result := &chatmodel.ConversationCommandProposalResult{
 		CommandId: proposal.GetCommand().GetCommandId(),
 		Accepted:  true,
-		CommittedEvent: &chatmodel.CommittedConversationEvent{
-			EventId:                  "event-result",
-			ConversationId:           proposal.GetCommand().GetConversationId(),
-			GroupSeq:                 7,
-			MembershipEpoch:          3,
-			CommittedByStationPeerId: testStationB,
-			CommittedAt:              timestamppb.New(fixture.clock.Now()),
-			EventHash:                eventHash[:],
+		Event: &chatmodel.ConversationEvent{
+			EventId:                "event-result",
+			ConversationId:         proposal.GetCommand().GetConversationId(),
+			Sequence:               7,
+			CommandId:              proposal.GetCommand().GetCommandId(),
+			MembershipEpoch:        3,
+			AuthorityStationPeerId: testStationB,
+			CommittedAt:            timestamppb.New(fixture.clock.Now()),
+			EventHash:              eventHash[:],
 		},
-		AuthorityGroupSeq:  7,
+		AuthoritySequence:  7,
 		AuthorityEventHash: eventHash[:],
 	}
 	sender, err := conversationfederation.NewSender(
@@ -608,8 +643,8 @@ func TestAuthorityResultReceiverRejectsConflictBeforeBoundAcceptedResult(
 	fixture := newReceiverFixture(t, testStationA)
 	acceptedProposal := fixture.signedProposal(t, "command-result-reverse")
 	conflictingProposal := proto.Clone(acceptedProposal).(*chatmodel.ConversationCommandProposal)
-	conflictingProposal.GetCommand().GetSendMessage().ContentType =
-		chatmodel.MessageContentType_MESSAGE_CONTENT_TYPE_IMAGE
+	conflictingProposal.GetCommand().GetSendMessage().ContentKind =
+		chatmodel.MessagingContentKind_MESSAGING_CONTENT_KIND_IMAGE
 	fixture.signProposal(t, conflictingProposal)
 	fixture.persistOutgoingProposal(t, acceptedProposal)
 
@@ -661,8 +696,8 @@ func TestAuthorityResultReceiverRejectsAcceptedBeforeBoundConflictResult(
 	fixture := newReceiverFixture(t, testStationA)
 	acceptedProposal := fixture.signedProposal(t, "command-result-hash-mismatch")
 	conflictingProposal := proto.Clone(acceptedProposal).(*chatmodel.ConversationCommandProposal)
-	conflictingProposal.GetCommand().GetSendMessage().ContentType =
-		chatmodel.MessageContentType_MESSAGE_CONTENT_TYPE_IMAGE
+	conflictingProposal.GetCommand().GetSendMessage().ContentKind =
+		chatmodel.MessagingContentKind_MESSAGING_CONTENT_KIND_IMAGE
 	fixture.signProposal(t, conflictingProposal)
 	fixture.persistOutgoingProposal(t, conflictingProposal)
 
@@ -860,16 +895,16 @@ func (f *receiverFixture) signedProposal(
 ) *chatmodel.ConversationCommandProposal {
 	t.Helper()
 	createdAt := f.clock.Now().Add(-time.Minute)
-	command := &chatmodel.ConversationCommand{
+	command := &chatmodel.ChatCommand{
 		CommandId:               commandID,
 		ConversationId:          "conversation-1",
-		SenderPtid:              testActor,
-		SenderDeviceId:          testDevice,
+		Sender:                  &chatmodel.CryptoEndpoint{Ptid: testActor, DeviceId: testDevice},
 		ObservedMembershipEpoch: 1,
-		ClientTs:                timestamppb.New(createdAt),
-		Payload: &chatmodel.ConversationCommand_SendMessage{
-			SendMessage: &chatmodel.SendMessageCommand{
-				ContentType: chatmodel.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+		ClientTimestamp:         timestamppb.New(createdAt),
+		AuthorityStationPeerId:  testStationB,
+		Payload: &chatmodel.ChatCommand_SendMessage{
+			SendMessage: &chatmodel.SendMessageIntent{
+				ContentKind: chatmodel.MessagingContentKind_MESSAGING_CONTENT_KIND_TEXT,
 			},
 		},
 	}
@@ -1271,16 +1306,17 @@ func (p *transactionalAuthorityPort) ApplyAuthorityCommand(
 	result := &chatmodel.ConversationCommandProposalResult{
 		CommandId: command.Proposal.GetCommand().GetCommandId(),
 		Accepted:  true,
-		CommittedEvent: &chatmodel.CommittedConversationEvent{
-			EventId:                  "event-" + command.Proposal.GetCommand().GetCommandId(),
-			ConversationId:           command.Proposal.GetCommand().GetConversationId(),
-			GroupSeq:                 1,
-			MembershipEpoch:          command.Proposal.GetCommand().GetObservedMembershipEpoch(),
-			CommittedByStationPeerId: p.localStation,
-			CommittedAt:              timestamppb.New(p.clock.Now()),
-			EventHash:                eventHash[:],
+		Event: &chatmodel.ConversationEvent{
+			EventId:                "event-" + command.Proposal.GetCommand().GetCommandId(),
+			ConversationId:         command.Proposal.GetCommand().GetConversationId(),
+			Sequence:               1,
+			CommandId:              command.Proposal.GetCommand().GetCommandId(),
+			MembershipEpoch:        command.Proposal.GetCommand().GetObservedMembershipEpoch(),
+			AuthorityStationPeerId: p.localStation,
+			CommittedAt:            timestamppb.New(p.clock.Now()),
+			EventHash:              eventHash[:],
 		},
-		AuthorityGroupSeq:  1,
+		AuthoritySequence:  1,
 		AuthorityEventHash: eventHash[:],
 	}
 	resultBytes := mustMarshalWithoutTest(result)
@@ -1500,16 +1536,17 @@ func acceptedCommandResult(
 	return &chatmodel.ConversationCommandProposalResult{
 		CommandId: proposal.GetCommand().GetCommandId(),
 		Accepted:  true,
-		CommittedEvent: &chatmodel.CommittedConversationEvent{
-			EventId:                  "event-" + hex.EncodeToString(eventHash[:8]),
-			ConversationId:           proposal.GetCommand().GetConversationId(),
-			GroupSeq:                 7,
-			MembershipEpoch:          3,
-			CommittedByStationPeerId: authorityStationPeerID,
-			CommittedAt:              timestamppb.New(committedAt),
-			EventHash:                eventHash[:],
+		Event: &chatmodel.ConversationEvent{
+			EventId:                "event-" + hex.EncodeToString(eventHash[:8]),
+			ConversationId:         proposal.GetCommand().GetConversationId(),
+			Sequence:               7,
+			CommandId:              proposal.GetCommand().GetCommandId(),
+			MembershipEpoch:        3,
+			AuthorityStationPeerId: authorityStationPeerID,
+			CommittedAt:            timestamppb.New(committedAt),
+			EventHash:              eventHash[:],
 		},
-		AuthorityGroupSeq:  7,
+		AuthoritySequence:  7,
 		AuthorityEventHash: eventHash[:],
 	}
 }
@@ -1533,12 +1570,12 @@ func newDeviceDeliveryIntent(
 	endpointPayloadHash := sha256.Sum256(endpointPayload)
 	eventDelivery := &chatmodel.DeviceEventDelivery{
 		Event: &chatmodel.ConversationEvent{
-			EventId:            "event-device",
-			ConversationId:     "conversation-device",
-			Sequence:           4,
-			EventHash:          eventHash[:],
-			CommittedAt:        timestamppb.New(now),
-			AuthorityStationId: testStationB,
+			EventId:                "event-device",
+			ConversationId:         "conversation-device",
+			Sequence:               4,
+			EventHash:              eventHash[:],
+			CommittedAt:            timestamppb.New(now),
+			AuthorityStationPeerId: testStationB,
 		},
 		Recipient: &chatmodel.CryptoEndpoint{
 			Ptid:     testActor,

@@ -35,9 +35,13 @@ func NewRepository(db *gorm.DB) (*Repository, error) {
 	return &Repository{db: db}, nil
 }
 
-// AutoMigrate creates the Actor Identity tables for test-only composition.
+// AutoMigrate creates the canonical Actor Identity tables for Station composition.
 func (r *Repository) AutoMigrate() error {
-	if err := r.db.AutoMigrate(&ActorIdentityModel{}, &ActorDeviceModel{}); err != nil {
+	if err := r.db.AutoMigrate(
+		&ActorIdentityModel{},
+		&ActorDeviceModel{},
+		&ActorEndpointDirectoryVersionModel{},
+	); err != nil {
 		return domain.WrapError(
 			domain.ErrorCodePersistence,
 			"actor_identity.migrate",

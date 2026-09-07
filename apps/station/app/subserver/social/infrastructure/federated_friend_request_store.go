@@ -79,6 +79,23 @@ type FederatedFriendRequestUnitOfWork interface {
 	) error
 }
 
+// FriendRequestProjectionStore exposes the canonical actor-local query model.
+type FriendRequestProjectionStore interface {
+	ListFriendRequestProjections(
+		ctx context.Context,
+		actorPTID string,
+		state model.FriendRequestState,
+		limit int,
+		offset int,
+	) ([]domain.FriendRequestProjection, int64, error)
+}
+
+// FederatedFriendRequestStore combines command atomicity with projection reads.
+type FederatedFriendRequestStore interface {
+	FederatedFriendRequestUnitOfWork
+	FriendRequestProjectionStore
+}
+
 // DirectConversationEffectClaim is a lease-fenced durable integration effect.
 type DirectConversationEffectClaim struct {
 	Effect         domain.DirectConversationEffect
@@ -116,7 +133,7 @@ type GORMFederatedFriendRequestStore struct {
 	clock delivery.Clock
 }
 
-// NewGORMFederatedFriendRequestStore creates the test-composable Social store.
+// NewGORMFederatedFriendRequestStore creates the Social Federation store.
 func NewGORMFederatedFriendRequestStore(
 	db *gorm.DB,
 	clock delivery.Clock,
@@ -132,7 +149,7 @@ func NewGORMFederatedFriendRequestStore(
 	return &GORMFederatedFriendRequestStore{db: db, clock: clock}, nil
 }
 
-// Migrate creates the test-only target Social tables without production registration.
+// Migrate installs the Social Friend Request authority and effect tables.
 func (s *GORMFederatedFriendRequestStore) Migrate(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(
 		&friendshipModel{},
@@ -189,6 +206,62 @@ func (s *GORMFederatedFriendRequestStore) Projection(
 ) (*domain.FriendRequestProjection, error) {
 	transaction := &federatedFriendRequestTransaction{db: s.db}
 	return transaction.LoadProjection(ctx, requestID)
+}
+
+// ListFriendRequestProjections returns the canonical actor-local request view.
+func (s *GORMFederatedFriendRequestStore) ListFriendRequestProjections(
+	ctx context.Context,
+	actorPTID string,
+	state model.FriendRequestState,
+	limit int,
+	offset int,
+) ([]domain.FriendRequestProjection, int64, error) {
+	const operation = "social.list_friend_request_projections"
+	if actorPTID == "" || actorPTID != strings.TrimSpace(actorPTID) {
+		return nil, 0, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			operation,
+			"actor_ptid",
+			"is required and must be canonical",
+		)
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	query := s.db.WithContext(ctx).
+		Model(&federatedFriendRequestProjectionModel{}).
+		Where("sender_ptid = ? OR receiver_ptid = ?", actorPTID, actorPTID)
+	if state != model.FriendRequestState_FRIEND_REQUEST_STATE_UNSPECIFIED {
+		query = query.Where("state = ?", int32(state))
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, mapFederatedFriendRequestPersistenceError(operation, err)
+	}
+
+	var persisted []federatedFriendRequestProjectionModel
+	if err := query.
+		Order("created_at DESC, request_id DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&persisted).Error; err != nil {
+		return nil, 0, mapFederatedFriendRequestPersistenceError(operation, err)
+	}
+
+	projections := make([]domain.FriendRequestProjection, 0, len(persisted))
+	for _, item := range persisted {
+		projection, err := projectionFromModel(item)
+		if err != nil {
+			return nil, 0, err
+		}
+		projections = append(projections, projection)
+	}
+	return projections, total, nil
 }
 
 // Command returns one exact command record for query adapters and tests.
@@ -790,6 +863,7 @@ func (t *federatedFriendRequestTransaction) PutDirectConversationEffect(
 	persisted := directConversationEffectModel{
 		EffectID:        effect.EffectID,
 		RequestID:       effect.RequestID,
+		FederationID:    effect.FederationID,
 		ActorAPTID:      effect.ActorAPTID,
 		ActorBPTID:      effect.ActorBPTID,
 		AcceptedEventID: effect.AcceptedEventID,
@@ -819,6 +893,7 @@ func (t *federatedFriendRequestTransaction) PutDirectConversationEffect(
 		)
 	}
 	if existing.RequestID != effect.RequestID ||
+		existing.FederationID != effect.FederationID ||
 		existing.ActorAPTID != effect.ActorAPTID ||
 		existing.ActorBPTID != effect.ActorBPTID ||
 		existing.AcceptedEventID != effect.AcceptedEventID {
@@ -914,6 +989,7 @@ func projectionModelFromDomain(
 	}
 	return federatedFriendRequestProjectionModel{
 		RequestID:                 projection.RequestID,
+		FederationID:              projection.FederationID,
 		AuthorityStationPeerID:    projection.AuthorityStationPeerID,
 		SenderPTID:                projection.Sender.GetPtid(),
 		ReceiverPTID:              projection.Receiver.GetPtid(),
@@ -962,6 +1038,7 @@ func projectionFromModel(
 	}
 	return domain.FriendRequestProjection{
 		RequestID:                 persisted.RequestID,
+		FederationID:              persisted.FederationID,
 		AuthorityStationPeerID:    persisted.AuthorityStationPeerID,
 		Sender:                    sender,
 		Receiver:                  receiver,
@@ -1010,6 +1087,7 @@ func directConversationEffectFromModel(
 	return domain.DirectConversationEffect{
 		EffectID:        persisted.EffectID,
 		RequestID:       persisted.RequestID,
+		FederationID:    persisted.FederationID,
 		ActorAPTID:      persisted.ActorAPTID,
 		ActorBPTID:      persisted.ActorBPTID,
 		AcceptedEventID: persisted.AcceptedEventID,
@@ -1105,4 +1183,5 @@ func describeCommandConflict(
 }
 
 var _ FederatedFriendRequestUnitOfWork = (*GORMFederatedFriendRequestStore)(nil)
+var _ FriendRequestProjectionStore = (*GORMFederatedFriendRequestStore)(nil)
 var _ DirectConversationEffectStore = (*GORMFederatedFriendRequestStore)(nil)

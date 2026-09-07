@@ -75,6 +75,7 @@ func (s *Sender) EnqueueAuthorityCommand(
 	}
 	if proposal.GetHomeStationPeerId() != s.localStationPeerID ||
 		strings.TrimSpace(proposal.GetAuthorityStationPeerId()) == "" ||
+		proposal.GetCommand().GetAuthorityStationPeerId() != proposal.GetAuthorityStationPeerId() ||
 		orderingSequence <= 0 {
 		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
 			federationdelivery.FailureInvalidFrame,
@@ -148,7 +149,7 @@ func (s *Sender) EnqueueAuthorityResult(
 		)
 	}
 	if result.GetAccepted() &&
-		result.GetCommittedEvent().GetCommittedByStationPeerId() != s.localStationPeerID {
+		result.GetEvent().GetAuthorityStationPeerId() != s.localStationPeerID {
 		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
 			federationdelivery.FailureInvalidFrame,
 			"enqueue Conversation authority result",

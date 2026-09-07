@@ -35,9 +35,15 @@ type DirectMaterialStore interface {
 	) error
 	FetchDirectBundles(
 		ctx context.Context,
+		identity domain.DestructiveReadIdentity,
 		actorPTID string,
 		activeDeviceIDs []string,
+		fetchedAt time.Time,
 	) ([]domain.DirectKeyBundle, error)
+	ReplayDirectBundles(
+		ctx context.Context,
+		identity domain.DestructiveReadIdentity,
+	) ([]domain.DirectKeyBundle, bool, error)
 	ReplenishDirectOneTimePreKeys(
 		ctx context.Context,
 		device domain.Endpoint,
@@ -59,10 +65,16 @@ type MLSMaterialStore interface {
 	) (domain.MLSKeyPackage, error)
 	FetchAndConsumeMLSKeyPackage(
 		ctx context.Context,
+		identity domain.DestructiveReadIdentity,
 		actorPTID string,
 		activeDeviceIDs []string,
+		homeStationID string,
 		consumedAt time.Time,
 	) (*domain.MLSKeyPackage, error)
+	ReplayMLSKeyPackage(
+		ctx context.Context,
+		identity domain.DestructiveReadIdentity,
+	) (*domain.MLSKeyPackage, bool, error)
 	CountMLSKeyPackages(
 		ctx context.Context,
 		device domain.Endpoint,
@@ -115,12 +127,14 @@ type FederationPort interface {
 	FetchDirectKeyBundles(
 		ctx context.Context,
 		targetStationID string,
+		identity domain.DestructiveReadIdentity,
 		actorPTID string,
 		targetDeviceID string,
 	) ([]domain.DirectKeyBundle, error)
 	FetchMLSKeyPackage(
 		ctx context.Context,
 		targetStationID string,
+		identity domain.DestructiveReadIdentity,
 		actorPTID string,
 	) (*domain.MLSKeyPackageReservation, error)
 	ClaimMLSKeyPackage(
@@ -237,16 +251,36 @@ func (s *CanonicalService) UploadDirectKeyBundle(
 func (s *CanonicalService) FetchDirectKeyBundles(
 	ctx context.Context,
 	authenticated domain.Endpoint,
+	identity domain.DestructiveReadIdentity,
 	actorPTID string,
 	targetDeviceID string,
 	requestedHomeStationID string,
 ) ([]domain.DirectKeyBundle, error) {
+	if err := identity.Validate(fetchDirectOperation); err != nil {
+		return nil, err
+	}
+	if identity.Requester != authenticated {
+		return nil, domain.NewError(
+			domain.ErrorCodeUnauthorized,
+			fetchDirectOperation,
+			"requester",
+			"does not match the authenticated endpoint",
+		)
+	}
 	if _, err := s.requireLocalActiveEndpoint(
 		ctx,
 		fetchDirectOperation,
 		authenticated,
 	); err != nil {
 		return nil, err
+	}
+	if replay, found, err := s.directStore.ReplayDirectBundles(
+		ctx,
+		identity,
+	); err != nil {
+		return nil, wrapStoreError(fetchDirectOperation, err)
+	} else if found {
+		return replay, nil
 	}
 	routes, homeStationID, err := s.resolveActorRoutes(
 		ctx,
@@ -259,28 +293,113 @@ func (s *CanonicalService) FetchDirectKeyBundles(
 		return nil, err
 	}
 
-	var bundles []domain.DirectKeyBundle
-	if homeStationID == s.localStation {
-		activeDeviceIDs := make([]string, 0, len(routes))
-		for _, route := range routes {
-			activeDeviceIDs = append(activeDeviceIDs, route.Endpoint.DeviceID)
-		}
-		bundles, err = s.directStore.FetchDirectBundles(
-			ctx,
-			strings.TrimSpace(actorPTID),
-			activeDeviceIDs,
+	bundles, err := s.fetchDirectKeyBundlesForRoutes(
+		ctx,
+		actorPTID,
+		targetDeviceID,
+		identity,
+		routes,
+		homeStationID,
+	)
+	if err != nil {
+		return nil, wrapDependencyError(fetchDirectOperation, err)
+	}
+	return validatedDirectKeyBundles(bundles, routes, actorPTID)
+}
+
+// FetchDirectKeyBundlesForPeer serves an authenticated Station peer without
+// inventing a local actor/device identity for that peer.
+func (s *CanonicalService) FetchDirectKeyBundlesForPeer(
+	ctx context.Context,
+	identity domain.DestructiveReadIdentity,
+	actorPTID string,
+	targetDeviceID string,
+) ([]domain.DirectKeyBundle, error) {
+	if err := identity.Validate(fetchDirectOperation); err != nil {
+		return nil, err
+	}
+	if replay, found, err := s.directStore.ReplayDirectBundles(
+		ctx,
+		identity,
+	); err != nil {
+		return nil, wrapStoreError(fetchDirectOperation, err)
+	} else if found {
+		return replay, nil
+	}
+	routes, homeStationID, err := s.resolveActorRoutes(
+		ctx,
+		fetchDirectOperation,
+		actorPTID,
+		targetDeviceID,
+		s.localStation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if homeStationID != s.localStation {
+		return nil, domain.NewError(
+			domain.ErrorCodeUnauthorized,
+			fetchDirectOperation,
+			"home_station_peer_id",
+			"does not identify this Home Station",
 		)
-	} else {
-		bundles, err = s.federation.FetchDirectKeyBundles(
+	}
+	bundles, err := s.fetchLocalDirectKeyBundles(
+		ctx,
+		identity,
+		actorPTID,
+		routes,
+	)
+	if err != nil {
+		return nil, wrapDependencyError(fetchDirectOperation, err)
+	}
+	return validatedDirectKeyBundles(bundles, routes, actorPTID)
+}
+
+func (s *CanonicalService) fetchDirectKeyBundlesForRoutes(
+	ctx context.Context,
+	actorPTID string,
+	targetDeviceID string,
+	identity domain.DestructiveReadIdentity,
+	routes []domain.DeviceRoute,
+	homeStationID string,
+) ([]domain.DirectKeyBundle, error) {
+	if homeStationID != s.localStation {
+		return s.federation.FetchDirectKeyBundles(
 			ctx,
 			homeStationID,
+			identity,
 			strings.TrimSpace(actorPTID),
 			strings.TrimSpace(targetDeviceID),
 		)
 	}
-	if err != nil {
-		return nil, wrapDependencyError(fetchDirectOperation, err)
+	return s.fetchLocalDirectKeyBundles(ctx, identity, actorPTID, routes)
+}
+
+func (s *CanonicalService) fetchLocalDirectKeyBundles(
+	ctx context.Context,
+	identity domain.DestructiveReadIdentity,
+	actorPTID string,
+	routes []domain.DeviceRoute,
+) ([]domain.DirectKeyBundle, error) {
+	activeDeviceIDs := make([]string, 0, len(routes))
+	for _, route := range routes {
+		activeDeviceIDs = append(activeDeviceIDs, route.Endpoint.DeviceID)
 	}
+	return s.directStore.FetchDirectBundles(
+		ctx,
+		identity,
+		strings.TrimSpace(actorPTID),
+		activeDeviceIDs,
+		s.now(),
+	)
+}
+
+func validatedDirectKeyBundles(
+	bundles []domain.DirectKeyBundle,
+	routes []domain.DeviceRoute,
+	actorPTID string,
+) ([]domain.DirectKeyBundle, error) {
 	if len(bundles) == 0 {
 		return nil, domain.NewError(
 			domain.ErrorCodeNotFound,
@@ -420,15 +539,35 @@ func (s *CanonicalService) UploadMLSKeyPackage(
 func (s *CanonicalService) FetchMLSKeyPackage(
 	ctx context.Context,
 	authenticated domain.Endpoint,
+	identity domain.DestructiveReadIdentity,
 	actorPTID string,
 	requestedHomeStationID string,
 ) (*domain.MLSKeyPackageReservation, error) {
+	if err := identity.Validate(fetchMLSOperation); err != nil {
+		return nil, err
+	}
+	if identity.Requester != authenticated {
+		return nil, domain.NewError(
+			domain.ErrorCodeUnauthorized,
+			fetchMLSOperation,
+			"requester",
+			"does not match the authenticated endpoint",
+		)
+	}
 	if _, err := s.requireLocalActiveEndpoint(
 		ctx,
 		fetchMLSOperation,
 		authenticated,
 	); err != nil {
 		return nil, err
+	}
+	if replay, found, err := s.mlsStore.ReplayMLSKeyPackage(
+		ctx,
+		identity,
+	); err != nil {
+		return nil, wrapStoreError(fetchMLSOperation, err)
+	} else if found {
+		return replayedMLSReservation(replay), nil
 	}
 	routes, homeStationID, err := s.resolveActorRoutes(
 		ctx,
@@ -444,6 +583,7 @@ func (s *CanonicalService) FetchMLSKeyPackage(
 		reservation, err := s.federation.FetchMLSKeyPackage(
 			ctx,
 			homeStationID,
+			identity,
 			strings.TrimSpace(actorPTID),
 		)
 		if err != nil {
@@ -464,14 +604,64 @@ func (s *CanonicalService) FetchMLSKeyPackage(
 		return &result, nil
 	}
 
+	return s.fetchLocalMLSKeyPackage(ctx, identity, actorPTID, routes)
+}
+
+// FetchMLSKeyPackageForPeer consumes one package for an authenticated Station
+// peer while requiring the target actor to be owned by this Home Station.
+func (s *CanonicalService) FetchMLSKeyPackageForPeer(
+	ctx context.Context,
+	identity domain.DestructiveReadIdentity,
+	actorPTID string,
+) (*domain.MLSKeyPackageReservation, error) {
+	if err := identity.Validate(fetchMLSOperation); err != nil {
+		return nil, err
+	}
+	if replay, found, err := s.mlsStore.ReplayMLSKeyPackage(
+		ctx,
+		identity,
+	); err != nil {
+		return nil, wrapStoreError(fetchMLSOperation, err)
+	} else if found {
+		return replayedMLSReservation(replay), nil
+	}
+	routes, homeStationID, err := s.resolveActorRoutes(
+		ctx,
+		fetchMLSOperation,
+		actorPTID,
+		"",
+		s.localStation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if homeStationID != s.localStation {
+		return nil, domain.NewError(
+			domain.ErrorCodeUnauthorized,
+			fetchMLSOperation,
+			"home_station_peer_id",
+			"does not identify this Home Station",
+		)
+	}
+	return s.fetchLocalMLSKeyPackage(ctx, identity, actorPTID, routes)
+}
+
+func (s *CanonicalService) fetchLocalMLSKeyPackage(
+	ctx context.Context,
+	identity domain.DestructiveReadIdentity,
+	actorPTID string,
+	routes []domain.DeviceRoute,
+) (*domain.MLSKeyPackageReservation, error) {
 	activeDeviceIDs := make([]string, 0, len(routes))
 	for _, route := range routes {
 		activeDeviceIDs = append(activeDeviceIDs, route.Endpoint.DeviceID)
 	}
 	keyPackage, err := s.mlsStore.FetchAndConsumeMLSKeyPackage(
 		ctx,
+		identity,
 		strings.TrimSpace(actorPTID),
 		activeDeviceIDs,
+		s.localStation,
 		s.now(),
 	)
 	if err != nil {
@@ -521,10 +711,14 @@ func (s *CanonicalService) CountMLSKeyPackages(
 
 func (s *CanonicalService) ReserveMLSKeyPackage(
 	ctx context.Context,
+	requestID string,
 	authorityPlanID string,
 	target domain.Endpoint,
 	expiresAt time.Time,
 ) (domain.MLSKeyPackageReservation, error) {
+	if err := domain.ValidateRequestID(reserveMLSOperation, requestID); err != nil {
+		return domain.MLSKeyPackageReservation{}, err
+	}
 	if err := validateAuthorityPlan(
 		reserveMLSOperation,
 		authorityPlanID,
@@ -540,6 +734,7 @@ func (s *CanonicalService) ReserveMLSKeyPackage(
 	if route.HomeStationID != s.localStation {
 		claim := domain.MLSKeyPackageClaim{
 			AuthenticatedAuthorityStation: s.localStation,
+			RequestID:                     requestID,
 			AuthorityPlanID:               strings.TrimSpace(authorityPlanID),
 			AuthorityStationID:            s.localStation,
 			Target:                        route.Endpoint,
@@ -645,6 +840,20 @@ func (s *CanonicalService) ClaimMLSKeyPackage(
 			claimMLSOperation,
 			"authority_station_peer_id",
 			"does not match the authenticated Federation peer",
+		)
+	}
+	if err := domain.ValidateRequestID(
+		claimMLSOperation,
+		claim.RequestID,
+	); err != nil {
+		return domain.MLSKeyPackageReservation{}, err
+	}
+	if claim.RequestSHA256 == ([sha256.Size]byte{}) {
+		return domain.MLSKeyPackageReservation{}, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			claimMLSOperation,
+			"request_sha256",
+			"exact request hash is required",
 		)
 	}
 	if strings.TrimSpace(claim.AuthorityStationID) == s.localStation {
@@ -1181,6 +1390,22 @@ func reservationFromPackage(
 		PlanExpiresAt:        expiresAt.UTC(),
 		IrreversiblyConsumed: consumed,
 	}
+}
+
+func replayedMLSReservation(
+	keyPackage *domain.MLSKeyPackage,
+) *domain.MLSKeyPackageReservation {
+	if keyPackage == nil {
+		return nil
+	}
+	reservation := reservationFromPackage(
+		"",
+		*keyPackage,
+		time.Time{},
+		true,
+	)
+
+	return &reservation
 }
 
 func directKeyExchangeIdempotencyKey(

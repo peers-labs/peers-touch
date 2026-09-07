@@ -375,6 +375,7 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
 mod tests {
     use super::*;
     use crate::messaging::MessagingStore;
+    use messaging_core::proto::actor_device_ptid;
     use std::fs;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -486,8 +487,9 @@ mod tests {
         } else {
             let profile_store = MessagingStore::open(&profile_id).unwrap();
             if let Some(enrollment) = profile_store.device_enrollment().unwrap() {
-                assert_eq!(enrollment.certificate.ptid, ptid);
-                assert_eq!(enrollment.certificate.device_id, device_id);
+                let enrollment_device = enrollment.certificate.device.as_ref().unwrap();
+                assert_eq!(actor_device_ptid(enrollment_device).unwrap(), ptid);
+                assert_eq!(enrollment_device.device_id, device_id);
             }
             let projection = profile_store
                 .conversation_projections()
@@ -529,25 +531,25 @@ mod tests {
                 (projection.conversation_id, projection.authority_station_id)
             }
             (None, None) => {
-                use crate::model::chat::{
-                    ListMessagingConversationsRequest, ListMessagingConversationsResponse,
-                };
+                use crate::model::chat::{ListConversationsRequest, ListConversationsResponse};
                 use reqwest::Method;
 
                 let peer_ptid = std::env::var("MESSAGING_ATTACHMENT_PEER_PTID")
                     .expect("MESSAGING_ATTACHMENT_PEER_PTID is required without a local route");
+                let federation_id = std::env::var("MESSAGING_ATTACHMENT_FEDERATION_ID")
+                    .expect("MESSAGING_ATTACHMENT_FEDERATION_ID is required without a local route");
                 let conversation_id = engine
-                    .create_direct_conversation(&session.token, &peer_ptid)
+                    .create_direct_conversation(&session.token, &peer_ptid, &federation_id)
                     .unwrap();
                 let response = crate::infrastructure::station_client::request_proto_for_device::<
-                    ListMessagingConversationsRequest,
-                    ListMessagingConversationsResponse,
+                    ListConversationsRequest,
+                    ListConversationsResponse,
                 >(
                     Method::GET,
                     "/conversation/list",
                     &session.token,
                     None,
-                    None::<&ListMessagingConversationsRequest>,
+                    None::<&ListConversationsRequest>,
                     &device_id,
                 )
                 .unwrap();
@@ -555,7 +557,7 @@ mod tests {
                     .conversations
                     .into_iter()
                     .find(|conversation| conversation.conversation_id == conversation_id)
-                    .map(|conversation| conversation.authority_station_id)
+                    .map(|conversation| conversation.authority_station_peer_id)
                     .filter(|authority| !authority.is_empty())
                     .expect("created conversation must expose its Authority Station");
                 (conversation_id, authority_station_id)

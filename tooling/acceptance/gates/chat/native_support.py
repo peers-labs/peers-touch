@@ -715,7 +715,7 @@ SELECT json_build_object(
       'messageId', message_id,
       'hashBytes', octet_length(event_hash)
     ) ORDER BY sequence)
-    FROM messaging_events
+    FROM conversation_events
     WHERE conversation_id = {conversation} AND message_id = {message}
   ), '[]'::json),
   'authorityEvents', COALESCE((
@@ -724,7 +724,7 @@ SELECT json_build_object(
       'sequence', sequence,
       'commandId', command_id
     ) ORDER BY sequence)
-    FROM messaging_events
+    FROM conversation_events
     WHERE conversation_id = {conversation}
   ), '[]'::json),
   'queue', COALESCE((
@@ -746,7 +746,7 @@ SELECT json_build_object(
       'readerPtid', reader_ptid,
       'lastReadSequence', last_read_sequence
     ) ORDER BY reader_ptid)
-    FROM messaging_read_cursors
+    FROM conversation_read_cursors
     WHERE conversation_id = {conversation}
   ), '[]'::json)
 );

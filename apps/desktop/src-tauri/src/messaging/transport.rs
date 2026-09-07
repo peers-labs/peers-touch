@@ -1,29 +1,36 @@
 use super::{CommandSubmitFailure, CommandTransport, QueueAcknowledger, QueueTransport};
 use crate::infrastructure::station_client::{self, StationClientErrorKind};
 use crate::model::chat::{
-    AcknowledgeDeviceQueueItemRequest, AcknowledgeDeviceQueueItemResponse, ChatCommand,
-    ClaimDeviceQueueRequest, ClaimDeviceQueueResponse, EnrollMessagingDeviceRequest,
-    EnrollMessagingDeviceResponse, MessageReceipt, MessagingCommandRejectCode,
-    PrepareMessagingSendRequest, PrepareMessagingSendResponse, SubmitConversationReceiptRequest,
-    SubmitConversationReceiptResponse, SubmitMessagingCommandRequest,
-    SubmitMessagingCommandResponse,
+    submit_conversation_authority_command_request, AcknowledgeDeviceInboxItemRequest,
+    AcknowledgeDeviceInboxItemResponse, ChatCommand, ClaimDeviceInboxRequest,
+    ClaimDeviceInboxResponse, ConversationCommandRejectCode, DeviceConsumptionReceipt,
+    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
+    SubmitConversationAuthorityCommandRequest, SubmitConversationAuthorityCommandResponse,
+    SubmitConversationDeliveryReceiptRequest, SubmitConversationDeliveryReceiptResponse,
+    SubmitConversationTypingRequest, SubmitConversationTypingResponse,
 };
 use messaging_core::identity::DeviceEnrollmentTransport;
-use messaging_core::outbox::DeliveryReceiptTransport;
+use messaging_core::proto::actor::{
+    ActorDeviceRef, EnrollActorDeviceRequest, EnrollActorDeviceResponse,
+};
+use messaging_core::proto::actor_device_ptid;
 use prost::Message;
 use reqwest::Method;
 
 pub struct StationQueueTransport {
     token: String,
-    device_id: String,
+    device: ActorDeviceRef,
 }
 
 impl StationQueueTransport {
-    pub fn new(token: String, device_id: String) -> Result<Self, String> {
-        if token.trim().is_empty() || device_id.trim().is_empty() {
+    pub fn new(token: String, device: ActorDeviceRef) -> Result<Self, String> {
+        if token.trim().is_empty()
+            || actor_device_ptid(&device).is_err()
+            || device.device_id.trim().is_empty()
+        {
             return Err("messaging queue transport requires token and device ID".to_string());
         }
-        Ok(Self { token, device_id })
+        Ok(Self { token, device })
     }
 }
 
@@ -52,38 +59,38 @@ impl StationDeliveryReceiptTransport {
         Ok(Self { token, device_id })
     }
 
-    pub fn submit(&self, receipt: &MessageReceipt) -> Result<(), String> {
+    pub fn submit(&self, receipt: &DeviceConsumptionReceipt) -> Result<(), String> {
+        let consumer = receipt
+            .consumer
+            .as_ref()
+            .ok_or_else(|| "messaging delivery receipt consumer is missing".to_string())?;
         if receipt.conversation_id.trim().is_empty()
-            || receipt.message_id.trim().is_empty()
-            || receipt.ptid.trim().is_empty()
-            || receipt.device_id != self.device_id
+            || receipt.event_id.trim().is_empty()
+            || receipt.receipt_id.trim().is_empty()
+            || receipt.event_sequence <= 0
+            || receipt.lane_sequence <= 0
+            || receipt.payload_sha256.len() != 32
+            || receipt.consumed_at.is_none()
+            || consumer.ptid.trim().is_empty()
+            || consumer.device_id != self.device_id
         {
             return Err("messaging delivery receipt endpoint mismatch".to_string());
         }
         station_client::request_proto_for_device::<
-            SubmitConversationReceiptRequest,
-            SubmitConversationReceiptResponse,
+            SubmitConversationDeliveryReceiptRequest,
+            SubmitConversationDeliveryReceiptResponse,
         >(
             Method::POST,
             "/conversation/delivery/receipt",
             &self.token,
             None,
-            Some(&SubmitConversationReceiptRequest {
-                conversation_id: receipt.conversation_id.clone(),
-                message_id: receipt.message_id.clone(),
-                device_id: receipt.device_id.clone(),
-                receipt_type: receipt.receipt_type,
+            Some(&SubmitConversationDeliveryReceiptRequest {
+                receipt: Some(receipt.clone()),
             }),
             &self.device_id,
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
-    }
-}
-
-impl DeliveryReceiptTransport for StationDeliveryReceiptTransport {
-    fn submit(&self, receipt: &MessageReceipt) -> Result<(), String> {
-        StationDeliveryReceiptTransport::submit(self, receipt)
     }
 }
 
@@ -97,8 +104,8 @@ impl StationCommandTransport {
 
     pub fn prepare_send(
         &self,
-        request: &PrepareMessagingSendRequest,
-    ) -> Result<PrepareMessagingSendResponse, String> {
+        request: &PrepareConversationCommandRequest,
+    ) -> Result<PrepareConversationCommandResponse, String> {
         if request
             .sender
             .as_ref()
@@ -115,6 +122,33 @@ impl StationCommandTransport {
             Some(request),
             &self.device_id,
         )
+        .map_err(|error| error.to_string())
+    }
+
+    pub fn submit_typing(&self, request: &SubmitConversationTypingRequest) -> Result<(), String> {
+        if request.conversation_id.trim().is_empty()
+            || request.pulse_generation == 0
+            || request.expires_at.is_none()
+            || request
+                .sender
+                .as_ref()
+                .map(|sender| sender.device_id.as_str())
+                != Some(self.device_id.as_str())
+        {
+            return Err("messaging typing endpoint binding mismatch".to_string());
+        }
+        station_client::request_proto_for_device::<
+            SubmitConversationTypingRequest,
+            SubmitConversationTypingResponse,
+        >(
+            Method::POST,
+            "/conversation/typing",
+            &self.token,
+            None,
+            Some(request),
+            &self.device_id,
+        )
+        .map(|_| ())
         .map_err(|error| error.to_string())
     }
 }
@@ -138,59 +172,52 @@ impl CommandTransport for StationCommandTransport {
             });
         }
         let response = station_client::request_proto_for_device::<
-            SubmitMessagingCommandRequest,
-            SubmitMessagingCommandResponse,
+            SubmitConversationAuthorityCommandRequest,
+            SubmitConversationAuthorityCommandResponse,
         >(
             Method::POST,
             "/conversation/command",
             &self.token,
             None,
-            Some(&SubmitMessagingCommandRequest {
-                command: Some(command.clone()),
+            Some(&SubmitConversationAuthorityCommandRequest {
+                submission: Some(
+                    submit_conversation_authority_command_request::Submission::Command(
+                        command.clone(),
+                    ),
+                ),
             }),
             &self.device_id,
         )
         .map_err(classify_command_transport_error)?;
         let reject_code =
-            MessagingCommandRejectCode::try_from(response.reject_code).map_err(|_| {
+            ConversationCommandRejectCode::try_from(response.reject_code).map_err(|_| {
                 CommandSubmitFailure::Terminal {
                     code: "invalid_reject_code".to_string(),
                 }
             })?;
-        if reject_code != MessagingCommandRejectCode::Unspecified {
-            if reject_code == MessagingCommandRejectCode::StaleDeliveryPlan {
+        if reject_code != ConversationCommandRejectCode::Unspecified {
+            if reject_code == ConversationCommandRejectCode::StaleDeliveryPlan {
                 return Err(CommandSubmitFailure::StaleDeliveryPlan {
-                    current_plan: response.current_send_plan.ok_or_else(|| {
+                    current_plan: response.current_plan.ok_or_else(|| {
                         CommandSubmitFailure::Terminal {
                             code: "missing_stale_plan".to_string(),
                         }
                     })?,
                 });
             }
-            if reject_code == MessagingCommandRejectCode::AuthorityPlanStale
-                || reject_code == MessagingCommandRejectCode::AuthorityPlanExpired
+            if reject_code == ConversationCommandRejectCode::AuthorityPlanStale
+                || reject_code == ConversationCommandRejectCode::AuthorityPlanExpired
             {
                 return Err(CommandSubmitFailure::StaleAuthorityPlan {
-                    expired: reject_code == MessagingCommandRejectCode::AuthorityPlanExpired,
+                    expired: reject_code == ConversationCommandRejectCode::AuthorityPlanExpired,
                 });
             }
             return Err(CommandSubmitFailure::Terminal {
-                code: match reject_code {
-                    MessagingCommandRejectCode::StaleDeliveryPlan => unreachable!(),
-                    MessagingCommandRejectCode::AuthorityPlanStale
-                    | MessagingCommandRejectCode::AuthorityPlanExpired => unreachable!(),
-                    MessagingCommandRejectCode::ConversationState => {
-                        "conversation_state".to_string()
-                    }
-                    MessagingCommandRejectCode::SenderUnauthorized => {
-                        "sender_unauthorized".to_string()
-                    }
-                    MessagingCommandRejectCode::DeliverySet => "delivery_set".to_string(),
-                    MessagingCommandRejectCode::UnsupportedCommand => {
-                        "unsupported_command".to_string()
-                    }
-                    MessagingCommandRejectCode::Unspecified => unreachable!(),
-                },
+                code: reject_code
+                    .as_str_name()
+                    .strip_prefix("CONVERSATION_COMMAND_REJECT_CODE_")
+                    .unwrap_or("UNKNOWN")
+                    .to_ascii_lowercase(),
             });
         }
         if response.accepted_for_forwarding {
@@ -251,13 +278,18 @@ impl StationDeviceTransport {
 
     pub fn enroll(
         &self,
-        request: &EnrollMessagingDeviceRequest,
-    ) -> Result<EnrollMessagingDeviceResponse, String> {
+        request: &EnrollActorDeviceRequest,
+    ) -> Result<EnrollActorDeviceResponse, String> {
         let certificate = request
             .certificate
             .as_ref()
             .ok_or_else(|| "messaging device certificate is required".to_string())?;
-        if certificate.device_id != self.device_id {
+        let device = certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "messaging device certificate endpoint is required".to_string())?;
+        actor_device_ptid(device)?;
+        if device.device_id != self.device_id {
             return Err("messaging enrollment device does not match engine endpoint".to_string());
         }
         station_client::request_proto_for_device(
@@ -275,46 +307,42 @@ impl StationDeviceTransport {
 impl DeviceEnrollmentTransport for StationDeviceTransport {
     fn enroll(
         &self,
-        request: &EnrollMessagingDeviceRequest,
-    ) -> Result<EnrollMessagingDeviceResponse, String> {
+        request: &EnrollActorDeviceRequest,
+    ) -> Result<EnrollActorDeviceResponse, String> {
         StationDeviceTransport::enroll(self, request)
     }
 }
 
 impl QueueTransport for StationQueueTransport {
-    fn claim(
-        &self,
-        mut request: ClaimDeviceQueueRequest,
-    ) -> Result<ClaimDeviceQueueResponse, String> {
-        if request.device_id != self.device_id {
+    fn claim(&self, request: ClaimDeviceInboxRequest) -> Result<ClaimDeviceInboxResponse, String> {
+        if request.device.as_ref() != Some(&self.device) {
             return Err("messaging claim device does not match engine endpoint".to_string());
         }
-        request.device_id = self.device_id.clone();
         station_client::request_proto_for_device(
             Method::POST,
             "/device/inbox/claim",
             &self.token,
             None,
             Some(&request),
-            &self.device_id,
+            &self.device.device_id,
         )
         .map_err(|error| error.to_string())
     }
 
-    fn acknowledge(&self, request: AcknowledgeDeviceQueueItemRequest) -> Result<(), String> {
-        if request.device_id != self.device_id {
+    fn acknowledge(&self, request: AcknowledgeDeviceInboxItemRequest) -> Result<(), String> {
+        if request.device.as_ref() != Some(&self.device) {
             return Err("messaging ACK device does not match engine endpoint".to_string());
         }
         station_client::request_proto_for_device::<
-            AcknowledgeDeviceQueueItemRequest,
-            AcknowledgeDeviceQueueItemResponse,
+            AcknowledgeDeviceInboxItemRequest,
+            AcknowledgeDeviceInboxItemResponse,
         >(
             Method::POST,
             "/device/inbox/ack",
             &self.token,
             None,
             Some(&request),
-            &self.device_id,
+            &self.device.device_id,
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
@@ -331,8 +359,8 @@ impl QueueAcknowledger for StationQueueTransport {
     ) -> Result<(), String> {
         QueueTransport::acknowledge(
             self,
-            AcknowledgeDeviceQueueItemRequest {
-                device_id: self.device_id.clone(),
+            AcknowledgeDeviceInboxItemRequest {
+                device: Some(self.device.clone()),
                 item_id: item_id.to_string(),
                 lane_sequence,
                 consumer_epoch,

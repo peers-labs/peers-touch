@@ -409,6 +409,7 @@ func (w dddReservationWriter) Reserve(
 			PackageID:   packageID,
 			KeyPackage:  keyPackage,
 			PackageHash: packageHash,
+			HomeStation: "station-a",
 		})
 	}
 	return reservations, nil
@@ -792,7 +793,7 @@ func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing
 		t.Fatalf("genesis event omitted the authority-bound post-state: %+v", &wireGenesis)
 	}
 	for _, route := range postState.GetActiveEndpointRoutes() {
-		if route.GetEndpoint() == nil || route.GetHomeStationId() == "" {
+		if route.GetEndpoint() == nil || route.GetHomeStationPeerId() == "" {
 			t.Fatalf("genesis endpoint route is incomplete: %+v", route)
 		}
 	}
@@ -1173,7 +1174,7 @@ func TestConversationDDDMessageIdentityAndAuthorRules(t *testing.T) {
 		wire.ObservedMlsEpoch = int64(preparation.Head.MLSEpoch)
 		wire.ClientTimestamp = timestamppb.New(fixture.clock.Now())
 		wire.DeliveryPlanSha256 = preparation.DeliveryPlanHash.Bytes()
-		wire.AuthorityStationId = string(preparation.AuthorityStation)
+		wire.AuthorityStationPeerId = string(preparation.AuthorityStation)
 		switch intent := wire.Payload.(type) {
 		case *chat.ChatCommand_SendMessage:
 			intent.SendMessage.DirectPayloads = []*chat.PreparedEndpointPayload{
@@ -1189,7 +1190,11 @@ func TestConversationDDDMessageIdentityAndAuthorRules(t *testing.T) {
 				PTID:     string(sender.Actor),
 				DeviceID: string(sender.Device),
 			},
-			&chat.SubmitConversationAuthorityCommandRequest{Command: wire},
+			&chat.SubmitConversationAuthorityCommandRequest{
+				Submission: &chat.SubmitConversationAuthorityCommandRequest_Command{
+					Command: wire,
+				},
+			},
 			preparation,
 			nil,
 			fixture.clock.Now(),
@@ -1276,7 +1281,7 @@ func TestConversationDDDDissolveUsesCanonicalCommandAndEvent(t *testing.T) {
 		ObservedMlsEpoch:        int64(preparation.Head.MLSEpoch),
 		ClientTimestamp:         timestamppb.New(fixture.clock.Now()),
 		DeliveryPlanSha256:      preparation.DeliveryPlanHash.Bytes(),
-		AuthorityStationId:      string(preparation.AuthorityStation),
+		AuthorityStationPeerId:  string(preparation.AuthorityStation),
 		Payload: &chat.ChatCommand_DissolveConversation{
 			DissolveConversation: &chat.DissolveConversationIntent{},
 		},
@@ -1286,7 +1291,11 @@ func TestConversationDDDDissolveUsesCanonicalCommandAndEvent(t *testing.T) {
 			PTID:     string(owner.Actor),
 			DeviceID: string(owner.Device),
 		},
-		&chat.SubmitConversationAuthorityCommandRequest{Command: wire},
+		&chat.SubmitConversationAuthorityCommandRequest{
+			Submission: &chat.SubmitConversationAuthorityCommandRequest_Command{
+				Command: wire,
+			},
+		},
 		preparation,
 		nil,
 		fixture.clock.Now(),
@@ -3847,7 +3856,7 @@ func TestConversationDDDFollowerMembershipPreservesSettings(t *testing.T) {
 		ObservedMembershipEpoch: int64(preparation.Head.MembershipEpoch),
 		ObservedMlsEpoch:        int64(preparation.Head.MLSEpoch),
 		DeliveryPlanSha256:      preparation.DeliveryPlanHash.Bytes(),
-		AuthorityStationId:      "station-a",
+		AuthorityStationPeerId:  "station-a",
 		ClientTimestamp:         timestamppb.New(authorityFixture.clock.Now()),
 		Payload: &chat.ChatCommand_UpdateConversation{
 			UpdateConversation: &chat.UpdateConversationIntent{
@@ -5193,7 +5202,7 @@ func dddSendCommandBytes(
 		ObservedMlsEpoch:        int64(preparation.Head.MLSEpoch),
 		ClientTimestamp:         timestamppb.New(at),
 		DeliveryPlanSha256:      preparation.DeliveryPlanHash.Bytes(),
-		AuthorityStationId:      string(preparation.AuthorityStation),
+		AuthorityStationPeerId:  string(preparation.AuthorityStation),
 		Payload: &chat.ChatCommand_SendMessage{
 			SendMessage: &chat.SendMessageIntent{
 				MessageId:   "message-" + string(commandID),
@@ -5236,7 +5245,7 @@ func dddMembershipCommandBytes(
 		ObservedMlsEpoch:        int64(plan.AuthorityHead.MLSEpoch),
 		ClientTimestamp:         timestamppb.New(at),
 		DeliveryPlanSha256:      plan.Hash.Bytes(),
-		AuthorityStationId:      "station-a",
+		AuthorityStationPeerId:  "station-a",
 		Payload: &chat.ChatCommand_MembershipTransition{
 			MembershipTransition: &chat.MembershipTransitionIntent{
 				TransitionId:        transitionID,

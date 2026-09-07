@@ -394,11 +394,13 @@ type DeliveryCommitment struct {
 }
 
 type KeyPackageReservation struct {
-	ID          string
-	Endpoint    Endpoint
-	PackageID   string
-	KeyPackage  []byte
-	PackageHash Hash
+	ID                   string
+	Endpoint             Endpoint
+	PackageID            string
+	KeyPackage           []byte
+	PackageHash          Hash
+	HomeStation          StationID
+	IrreversiblyConsumed bool
 }
 
 func (r KeyPackageReservation) Validate() error {
@@ -407,12 +409,14 @@ func (r KeyPackageReservation) Validate() error {
 		strings.TrimSpace(r.PackageID) == "" ||
 		len(r.KeyPackage) == 0 ||
 		r.PackageHash.IsZero() ||
+		strings.TrimSpace(string(r.HomeStation)) == "" ||
+		string(r.HomeStation) != strings.TrimSpace(string(r.HomeStation)) ||
 		HashBytes(r.KeyPackage) != r.PackageHash {
 		return conversationdomain.NewError(
 			conversationdomain.ErrorCodeInvalidArgument,
 			"valueobject.key_package_reservation",
 			"reservation",
-			"identity, endpoint, package ID, and package hash are required",
+			"identity, endpoint, package, hash, and Home Station are required",
 		)
 	}
 	return nil

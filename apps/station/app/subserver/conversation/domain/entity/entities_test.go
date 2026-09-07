@@ -118,6 +118,7 @@ func TestRehydrateAuthorityPlan(t *testing.T) {
 			PackageID:   "package-1",
 			KeyPackage:  []byte("package-1"),
 			PackageHash: valueobject.HashBytes([]byte("package-1")),
+			HomeStation: "station-a",
 		}},
 	}
 

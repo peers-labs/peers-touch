@@ -20,7 +20,6 @@
     ],
     "MP-W02": [
       "apps/station/app/subserver/conversation/",
-      "apps/station/app/subserver/envelope/",
       "apps/station/app/subserver/key_exchange/"
     ],
     "MP-W03": [
@@ -50,7 +49,8 @@
     ],
     "MP-W06": [
       "apps/station/app/subserver/federation/",
-      "apps/station/app/subserver/conversation/engine/infrastructure/federation/"
+      "apps/station/app/subserver/conversation/infrastructure/federation/",
+      "apps/station/frame/core/federation/"
     ],
     "MP-W07": [
       "apps/desktop/src-tauri/src/interface/tauri_commands/mls.rs",

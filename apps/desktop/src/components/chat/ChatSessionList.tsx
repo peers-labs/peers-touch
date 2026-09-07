@@ -239,6 +239,7 @@ export function ChatSessionList({
       onOpenDirect({
         kind: 'friend',
         peerPtid: c.peerPtid,
+        federationId: c.federationId || '',
         displayName: c.title,
         avatar: c.avatar,
       });
@@ -260,17 +261,23 @@ export function ChatSessionList({
         const peerId = isSender ? r.receiverPtid : r.senderPtid;
         const peerName = isSender ? r.receiverDisplayName : r.senderDisplayName;
         const peerAvatar = isSender ? r.receiverAvatar : r.senderAvatar;
-        return { peerId, peerName, peerAvatar };
+        return {
+          peerId,
+          peerName,
+          peerAvatar,
+          federationId: r.federationId,
+        };
       })
       .filter(({ peerId, peerName }) =>
         !existingPeerIds.has(peerId) && peerName.toLowerCase().includes(q),
       )
-      .map(({ peerId, peerName, peerAvatar }) => ({
+      .map(({ peerId, peerName, peerAvatar, federationId }) => ({
         id: peerId,
         kind: 'friend' as const,
         title: peerName,
         avatar: peerAvatar || '',
         peerPtid: peerId,
+        federationId,
         lastActivityMs: 0,
         unread: 0,
         visibleUnread: 0,

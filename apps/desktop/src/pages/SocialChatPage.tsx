@@ -138,10 +138,14 @@ export function SocialChatPage() {
     reportDirectOpenDebug({
       kind: 'create-direct-start',
       peerPtid: contact.peerPtid,
+      federationId: contact.federationId,
     });
     // #endregion
 
-    void imServiceV1.messaging.createDirect(contact.peerPtid).then((conversation) => {
+    void imServiceV1.messaging.createDirect({
+      peerPtid: contact.peerPtid,
+      federationId: contact.federationId,
+    }).then((conversation) => {
       if (directOpenGenerationRef.current !== requestGeneration) return;
       reportDirectOpenDebug({
         kind: 'create-direct-success',
@@ -374,6 +378,7 @@ export function SocialChatPage() {
               openDirectConversation({
                 kind: 'friend',
                 peerPtid: directOpenIntent.peerPtid,
+                federationId: directOpenIntent.federationId,
                 displayName: directOpenIntent.displayName,
                 avatar: directOpenIntent.avatar,
               });

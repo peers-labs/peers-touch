@@ -1,20 +1,11 @@
 import type {
   Conversation,
   ConversationMember,
-  CommittedConversationEvent,
 } from '../gen/proto/domain/chat/conversation_pb'
+import type { ConversationEvent } from '../gen/proto/domain/chat/event_pb'
+import type { ActorDevice } from '../gen/proto/domain/actor/actor_pb'
 
-import type {
-  StationEnvelope,
-  DeviceInboxItem,
-} from '../gen/proto/domain/chat/envelope_pb'
-
-import { DirectKeyExchangeKind } from '../gen/proto/domain/chat/envelope_pb'
-
-import type { DeviceInfoView } from '../gen/proto/domain/chat/conversation_api_pb'
-
-export { DirectKeyExchangeKind }
-export type DeviceInfo = DeviceInfoView
+export type DeviceInfo = ActorDevice
 
 // --- Conversation Service Contract (v1) ---
 
@@ -22,10 +13,10 @@ export interface ConversationServiceContract {
   getConversation(conversationId: string): Promise<Conversation>
   listConversations(): Promise<Conversation[]>
   getMembers(conversationId: string): Promise<ConversationMember[]>
-  listEvents(conversationId: string, afterSeq?: number, limit?: number): Promise<CommittedConversationEvent[]>
-  listMessages(conversationId: string, afterSeq?: number, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
-  listThreadMessages(conversationId: string, rootId: string, afterSeq?: number, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
-  syncFromStation(conversationId: string, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
+  listEvents(conversationId: string, afterSeq?: number, limit?: number): Promise<ConversationEvent[]>
+  listMessages(conversationId: string, afterSeq?: number, limit?: number): Promise<{ events: ConversationEvent[]; hasMore: boolean }>
+  listThreadMessages(conversationId: string, rootId: string, afterSeq?: number, limit?: number): Promise<{ events: ConversationEvent[]; hasMore: boolean }>
+  syncFromStation(conversationId: string, limit?: number): Promise<{ events: ConversationEvent[]; hasMore: boolean }>
 }
 
 export interface ThreadCountResult {
@@ -44,14 +35,6 @@ export interface MemberSettingsResult {
   background: string
   backgroundImage: string
   clearedAtUnixMs: number
-}
-
-// --- Envelope Service Contract (v1) ---
-
-export interface EnvelopeServiceContract {
-  submit(envelope: StationEnvelope): Promise<string>
-  ack(deviceId: string, inboxItemId: string): Promise<void>
-  resume(deviceId: string, afterCursor?: string): Promise<DeviceInboxItem[]>
 }
 
 // --- KeyPackage Service Contract (v1) ---
@@ -108,20 +91,6 @@ export interface RequestMlsLeaveIntentInput {
 
 export interface CommitAuthorizedMlsLeaveInput {
   intent: MlsLeaveIntentView
-}
-
-// --- Direct Key Exchange Service Contract (v1, P2) ---
-
-export interface DirectKeyExchangeServiceContract {
-  send(
-    recipientPtid: string,
-    recipientDeviceId: string,
-    conversationId: string,
-    sessionId: string,
-    kind: DirectKeyExchangeKind,
-    opaqueKeyMaterial: Uint8Array,
-    recipientStationPeerId?: string,
-  ): Promise<string>
 }
 
 export interface MessagingProjection {
@@ -210,12 +179,20 @@ export interface MessagingCommandStatus {
   lastErrorCode: string
 }
 
+export interface CreateDirectConversationInput {
+  peerPtid: string
+  federationId: string
+}
+
 export interface MessagingServiceContract {
-  createDirect(peerPtid: string): Promise<{ conversationId: string; state: 'projected' }>
+  createDirect(
+    input: CreateDirectConversationInput,
+  ): Promise<{ conversationId: string; state: 'projected' }>
   createGroup(
     conversationId: string,
     name: string,
     memberPtids: string[],
+    federationId: string,
   ): Promise<{
     conversationId: string
     commandId: string
@@ -300,9 +277,7 @@ export type MessagingActorMembershipIntent =
 
 export interface IMServiceV1 {
   conversation: ConversationServiceContract
-  envelope: EnvelopeServiceContract
   keyPackage: KeyPackageServiceContract
   device: DeviceServiceContract
-  dkx: DirectKeyExchangeServiceContract
   messaging: MessagingServiceContract
 }

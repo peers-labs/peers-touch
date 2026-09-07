@@ -2,16 +2,10 @@
 // @generated from file domain/chat/federation.proto (package peers_touch.model.chat.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { ChatCommand } from "./command_pb";
-import { file_domain_chat_command } from "./command_pb";
-import type { CryptoEndpoint } from "./endpoint_pb";
-import { file_domain_chat_endpoint } from "./endpoint_pb";
+import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { ConversationEvent } from "./event_pb";
 import { file_domain_chat_event } from "./event_pb";
-import type { DeviceQueuePayloadType } from "./queue_pb";
-import { file_domain_chat_queue } from "./queue_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
@@ -20,117 +14,26 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/chat/federation.proto.
  */
 export const file_domain_chat_federation: GenFile = /*@__PURE__*/
-  fileDesc("Chxkb21haW4vY2hhdC9mZWRlcmF0aW9uLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIpYCChlGZWRlcmF0ZWREZXZpY2VRdWV1ZVdyaXRlEjwKCXJlY2lwaWVudBgBIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ3J5cHRvRW5kcG9pbnQSEAoIZXZlbnRfaWQYAiABKAkSFwoPY29udmVyc2F0aW9uX2lkGAMgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgEIAEoCRJHCgxwYXlsb2FkX3R5cGUYBSABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkRldmljZVF1ZXVlUGF5bG9hZFR5cGUSFgoOb3BhcXVlX3BheWxvYWQYBiABKAwSFgoOcGF5bG9hZF9zaGEyNTYYByABKAwiswEKGUZlZGVyYXRlZERldmljZVF1ZXVlQmF0Y2gSRAoGd3JpdGVzGAEgAygLMjQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5GZWRlcmF0ZWREZXZpY2VRdWV1ZVdyaXRlElAKEmVuZHBvaW50X21hbmlmZXN0cxgCIAMoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRmVkZXJhdGVkRW5kcG9pbnRNYW5pZmVzdCJ0ChlGZWRlcmF0ZWRBdXRob3JpdHlDb21tYW5kEjcKB2NvbW1hbmQYASABKAsyJi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNoYXRDb21tYW5kEh4KFnNvdXJjZV9ob21lX3N0YXRpb25faWQYAiABKAkivQEKG01lc3NhZ2luZ0ZvbGxvd2VyUHJvamVjdGlvbhIWCg5mb3JtYXRfdmVyc2lvbhgBIAEoDRIcChRhdXRob3JpdHlfc3RhdGlvbl9pZBgCIAEoCRIeChZ0YXJnZXRfaG9tZV9zdGF0aW9uX2lkGAMgASgJEkgKEmNvbnZlcnNhdGlvbl9ldmVudBgEIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29udmVyc2F0aW9uRXZlbnQibQodTWVzc2FnaW5nRXZlbnRQcm9qZWN0aW9uR3JhbnQSEAoIZXZlbnRfaWQYASABKAkSHgoWdGFyZ2V0X2hvbWVfc3RhdGlvbl9pZBgCIAEoCRIaChJlbnRpdGxlbWVudF9yZWFzb24YAyABKAki7wEKIUdldE1lc3NhZ2luZ0ZvbGxvd2VyRXZlbnRzUmVxdWVzdBIWCg5mb3JtYXRfdmVyc2lvbhgBIAEoDRIXCg9jb252ZXJzYXRpb25faWQYAiABKAkSHAoUYXV0aG9yaXR5X3N0YXRpb25faWQYAyABKAkSHgoWdGFyZ2V0X2hvbWVfc3RhdGlvbl9pZBgEIAEoCRIWCg5hZnRlcl9zZXF1ZW5jZRgFIAEoAxIYChBhZnRlcl9ldmVudF9oYXNoGAYgASgMEhUKDXJlcXVlc3Rfbm9uY2UYByABKAwSEgoKcGFnZV9saW1pdBgIIAEoDSKJBAobTWVzc2FnaW5nRm9sbG93ZXJFdmVudHNQYWdlEhYKDmZvcm1hdF92ZXJzaW9uGAEgASgNEhwKFGF1dGhvcml0eV9zdGF0aW9uX2lkGAIgASgJEh4KFnRhcmdldF9ob21lX3N0YXRpb25faWQYAyABKAkSFwoPY29udmVyc2F0aW9uX2lkGAQgASgJEhUKDXJlcXVlc3Rfbm9uY2UYBSABKAwSSQoTY29udmVyc2F0aW9uX2V2ZW50cxgGIAMoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29udmVyc2F0aW9uRXZlbnQSWQoXZXZlbnRfcHJvamVjdGlvbl9ncmFudHMYByADKAsyOC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2luZ0V2ZW50UHJvamVjdGlvbkdyYW50EhUKDW5leHRfc2VxdWVuY2UYCCABKAMSEAoIaGFzX21vcmUYCSABKAgSMAoMZ2VuZXJhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIWCg5zaWduaW5nX2tleV9pZBgMIAEoCRIbChNhdXRob3JpdHlfc2lnbmF0dXJlGA0gASgMIsMDCidNZXNzYWdpbmdGb2xsb3dlckV2ZW50c1BhZ2VTaWduaW5nSW5wdXQSFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SHAoUYXV0aG9yaXR5X3N0YXRpb25faWQYAiABKAkSHgoWdGFyZ2V0X2hvbWVfc3RhdGlvbl9pZBgDIAEoCRIXCg9jb252ZXJzYXRpb25faWQYBCABKAkSFQoNcmVxdWVzdF9ub25jZRgFIAEoDBIWCg5hZnRlcl9zZXF1ZW5jZRgGIAEoAxIYChBhZnRlcl9ldmVudF9oYXNoGAcgASgMEhUKDWV2ZW50c19zaGEyNTYYCCABKAwSJgoeZXZlbnRfcHJvamVjdGlvbl9ncmFudHNfc2hhMjU2GAkgASgMEhUKDW5leHRfc2VxdWVuY2UYCiABKAMSEAoIaGFzX21vcmUYCyABKAgSMAoMZ2VuZXJhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIWCg5zaWduaW5nX2tleV9pZBgOIAEoCSKVAQoeRmVkZXJhdGVkRW5kcG9pbnRNYW5pZmVzdEVudHJ5EjsKCGVuZHBvaW50GAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5DcnlwdG9FbmRwb2ludBIWCg5zaWduaW5nX2tleV9pZBgCIAEoCRIeChZwdWJsaWNfbWF0ZXJpYWxfc2hhMjU2GAMgAygMIqoDCiVGZWRlcmF0ZWRFbmRwb2ludE1hbmlmZXN0U2lnbmluZ0lucHV0EhYKDmZvcm1hdF92ZXJzaW9uGAEgASgNEhMKC21hbmlmZXN0X2lkGAIgASgJEhIKCmFjdG9yX3B0aWQYAyABKAkSFwoPaG9tZV9zdGF0aW9uX2lkGAQgASgJEhkKEWRpcmVjdG9yeV92ZXJzaW9uGAUgASgEElMKEGFjdGl2ZV9lbmRwb2ludHMYBiADKAsyOS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkZlZGVyYXRlZEVuZHBvaW50TWFuaWZlc3RFbnRyeRItCglpc3N1ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhYKDnNpZ25pbmdfa2V5X2lkGAkgASgJEiEKGWFjdG9yX2lkZW50aXR5X3B1YmxpY19rZXkYCiABKAwSHQoVYWN0b3JfcHJvZmlsZV92ZXJzaW9uGAsgASgEIrkDChlGZWRlcmF0ZWRFbmRwb2ludE1hbmlmZXN0EhYKDmZvcm1hdF92ZXJzaW9uGAEgASgNEhMKC21hbmlmZXN0X2lkGAIgASgJEhIKCmFjdG9yX3B0aWQYAyABKAkSFwoPaG9tZV9zdGF0aW9uX2lkGAQgASgJEhkKEWRpcmVjdG9yeV92ZXJzaW9uGAUgASgEElMKEGFjdGl2ZV9lbmRwb2ludHMYBiADKAsyOS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkZlZGVyYXRlZEVuZHBvaW50TWFuaWZlc3RFbnRyeRItCglpc3N1ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhYKDnNpZ25pbmdfa2V5X2lkGAkgASgJEhkKEXN0YXRpb25fc2lnbmF0dXJlGAogASgMEiEKGWFjdG9yX2lkZW50aXR5X3B1YmxpY19rZXkYCyABKAwSHQoVYWN0b3JfcHJvZmlsZV92ZXJzaW9uGAwgASgEIjkKI0dldEZlZGVyYXRlZEVuZHBvaW50TWFuaWZlc3RSZXF1ZXN0EhIKCmFjdG9yX3B0aWQYASABKAkibgokR2V0RmVkZXJhdGVkRW5kcG9pbnRNYW5pZmVzdFJlc3BvbnNlEkYKCG1hbmlmZXN0GAEgASgLMjQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5GZWRlcmF0ZWRFbmRwb2ludE1hbmlmZXN0Is0BCiJDbGFpbUZlZGVyYXRlZE1sc0tleVBhY2thZ2VSZXF1ZXN0EhkKEWF1dGhvcml0eV9wbGFuX2lkGAEgASgJEhwKFGF1dGhvcml0eV9zdGF0aW9uX2lkGAIgASgJEjkKBnRhcmdldBgDIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ3J5cHRvRW5kcG9pbnQSMwoPcGxhbl9leHBpcmVzX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLdAQojQ2xhaW1GZWRlcmF0ZWRNbHNLZXlQYWNrYWdlUmVzcG9uc2USOQoGdGFyZ2V0GAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5DcnlwdG9FbmRwb2ludBISCgpwYWNrYWdlX2lkGAIgASgJEhMKC2tleV9wYWNrYWdlGAMgASgMEhoKEmtleV9wYWNrYWdlX3NoYTI1NhgEIAEoDBIXCg9ob21lX3N0YXRpb25faWQYBSABKAkSHQoVaXJyZXZlcnNpYmx5X2NvbnN1bWVkGAYgASgIIt4DCiRNZXNzYWdpbmdGZWRlcmF0aW9uRnJhbWVTaWduaW5nSW5wdXQSFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SEAoIZnJhbWVfaWQYAiABKAkSGQoRc291cmNlX3N0YXRpb25faWQYAyABKAkSGQoRdGFyZ2V0X3N0YXRpb25faWQYBCABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAUgASgJEk8KDHBheWxvYWRfdHlwZRgGIAEoDjI5LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuTWVzc2FnaW5nRmVkZXJhdGlvblBheWxvYWRUeXBlEhcKD2NvbnZlcnNhdGlvbl9pZBgHIAEoCRIQCghldmVudF9pZBgIIAEoCRIaChJhdXRob3JpdHlfc2VxdWVuY2UYCSABKAMSFgoOb3BhcXVlX3BheWxvYWQYCiABKAwSFgoOcGF5bG9hZF9zaGEyNTYYCyABKAwSLQoJaXNzdWVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIWCg5zaWduaW5nX2tleV9pZBgOIAEoCSLtAwoYTWVzc2FnaW5nRmVkZXJhdGlvbkZyYW1lEhYKDmZvcm1hdF92ZXJzaW9uGAEgASgNEhAKCGZyYW1lX2lkGAIgASgJEhkKEXNvdXJjZV9zdGF0aW9uX2lkGAMgASgJEhkKEXRhcmdldF9zdGF0aW9uX2lkGAQgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgFIAEoCRJPCgxwYXlsb2FkX3R5cGUYBiABKA4yOS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2luZ0ZlZGVyYXRpb25QYXlsb2FkVHlwZRIXCg9jb252ZXJzYXRpb25faWQYByABKAkSEAoIZXZlbnRfaWQYCCABKAkSGgoSYXV0aG9yaXR5X3NlcXVlbmNlGAkgASgDEhYKDm9wYXF1ZV9wYXlsb2FkGAogASgMEhYKDnBheWxvYWRfc2hhMjU2GAsgASgMEi0KCWlzc3VlZF9hdBgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoOc2lnbmluZ19rZXlfaWQYDiABKAkSGQoRc3RhdGlvbl9zaWduYXR1cmUYDyABKAwibAomRGVsaXZlck1lc3NhZ2luZ0ZlZGVyYXRpb25GcmFtZVJlcXVlc3QSQgoFZnJhbWUYASABKAsyMy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2luZ0ZlZGVyYXRpb25GcmFtZSJOCidEZWxpdmVyTWVzc2FnaW5nRmVkZXJhdGlvbkZyYW1lUmVzcG9uc2USEAoIYWNjZXB0ZWQYASABKAgSEQoJZHVwbGljYXRlGAIgASgIKrkCCh5NZXNzYWdpbmdGZWRlcmF0aW9uUGF5bG9hZFR5cGUSMQotTUVTU0FHSU5HX0ZFREVSQVRJT05fUEFZTE9BRF9UWVBFX1VOU1BFQ0lGSUVEEAASOAo0TUVTU0FHSU5HX0ZFREVSQVRJT05fUEFZTE9BRF9UWVBFX0RFVklDRV9RVUVVRV9CQVRDSBABEjcKM01FU1NBR0lOR19GRURFUkFUSU9OX1BBWUxPQURfVFlQRV9BVVRIT1JJVFlfQ09NTUFORBACEjYKMk1FU1NBR0lOR19GRURFUkFUSU9OX1BBWUxPQURfVFlQRV9BVVRIT1JJVFlfUkVTVUxUEAMSOQo1TUVTU0FHSU5HX0ZFREVSQVRJT05fUEFZTE9BRF9UWVBFX0ZPTExPV0VSX1BST0pFQ1RJT04QBEJHWkVnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9jaGF0O2NoYXRiBnByb3RvMw", [file_domain_chat_command, file_domain_chat_endpoint, file_domain_chat_event, file_domain_chat_queue, file_google_protobuf_timestamp]);
+  fileDesc("Chxkb21haW4vY2hhdC9mZWRlcmF0aW9uLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIsoBCh5Db252ZXJzYXRpb25Gb2xsb3dlclByb2plY3Rpb24SFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgCIAEoCRIjCht0YXJnZXRfaG9tZV9zdGF0aW9uX3BlZXJfaWQYAyABKAkSSAoSY29udmVyc2F0aW9uX2V2ZW50GAQgASgLMiwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db252ZXJzYXRpb25FdmVudCJ1CiBDb252ZXJzYXRpb25FdmVudFByb2plY3Rpb25HcmFudBIQCghldmVudF9pZBgBIAEoCRIjCht0YXJnZXRfaG9tZV9zdGF0aW9uX3BlZXJfaWQYAiABKAkSGgoSZW50aXRsZW1lbnRfcmVhc29uGAMgASgJIvwBCiRHZXRDb252ZXJzYXRpb25Gb2xsb3dlckV2ZW50c1JlcXVlc3QSFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SFwoPY29udmVyc2F0aW9uX2lkGAIgASgJEiEKGWF1dGhvcml0eV9zdGF0aW9uX3BlZXJfaWQYAyABKAkSIwobdGFyZ2V0X2hvbWVfc3RhdGlvbl9wZWVyX2lkGAQgASgJEhYKDmFmdGVyX3NlcXVlbmNlGAUgASgDEhgKEGFmdGVyX2V2ZW50X2hhc2gYBiABKAwSFQoNcmVxdWVzdF9ub25jZRgHIAEoDBISCgpwYWdlX2xpbWl0GAggASgNIpkECh5Db252ZXJzYXRpb25Gb2xsb3dlckV2ZW50c1BhZ2USFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgCIAEoCRIjCht0YXJnZXRfaG9tZV9zdGF0aW9uX3BlZXJfaWQYAyABKAkSFwoPY29udmVyc2F0aW9uX2lkGAQgASgJEhUKDXJlcXVlc3Rfbm9uY2UYBSABKAwSSQoTY29udmVyc2F0aW9uX2V2ZW50cxgGIAMoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29udmVyc2F0aW9uRXZlbnQSXAoXZXZlbnRfcHJvamVjdGlvbl9ncmFudHMYByADKAsyOy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbnZlcnNhdGlvbkV2ZW50UHJvamVjdGlvbkdyYW50EhUKDW5leHRfc2VxdWVuY2UYCCABKAMSEAoIaGFzX21vcmUYCSABKAgSMAoMZ2VuZXJhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIWCg5zaWduaW5nX2tleV9pZBgMIAEoCRIbChNhdXRob3JpdHlfc2lnbmF0dXJlGA0gASgMItADCipDb252ZXJzYXRpb25Gb2xsb3dlckV2ZW50c1BhZ2VTaWduaW5nSW5wdXQSFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgCIAEoCRIjCht0YXJnZXRfaG9tZV9zdGF0aW9uX3BlZXJfaWQYAyABKAkSFwoPY29udmVyc2F0aW9uX2lkGAQgASgJEhUKDXJlcXVlc3Rfbm9uY2UYBSABKAwSFgoOYWZ0ZXJfc2VxdWVuY2UYBiABKAMSGAoQYWZ0ZXJfZXZlbnRfaGFzaBgHIAEoDBIVCg1ldmVudHNfc2hhMjU2GAggASgMEiYKHmV2ZW50X3Byb2plY3Rpb25fZ3JhbnRzX3NoYTI1NhgJIAEoDBIVCg1uZXh0X3NlcXVlbmNlGAogASgDEhAKCGhhc19tb3JlGAsgASgIEjAKDGdlbmVyYXRlZF9hdBgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoOc2lnbmluZ19rZXlfaWQYDiABKAlCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvY2hhdDtjaGF0YgZwcm90bzM", [file_domain_chat_event, file_google_protobuf_timestamp]);
 
 /**
- * @generated from message peers_touch.model.chat.v1.FederatedDeviceQueueWrite
+ * @generated from message peers_touch.model.chat.v1.ConversationFollowerProjection
  */
-export type FederatedDeviceQueueWrite = Message<"peers_touch.model.chat.v1.FederatedDeviceQueueWrite"> & {
-  /**
-   * @generated from field: peers_touch.model.chat.v1.CryptoEndpoint recipient = 1;
-   */
-  recipient?: CryptoEndpoint | undefined;
-
-  /**
-   * @generated from field: string event_id = 2;
-   */
-  eventId: string;
-
-  /**
-   * @generated from field: string conversation_id = 3;
-   */
-  conversationId: string;
-
-  /**
-   * @generated from field: string idempotency_key = 4;
-   */
-  idempotencyKey: string;
-
-  /**
-   * @generated from field: peers_touch.model.chat.v1.DeviceQueuePayloadType payload_type = 5;
-   */
-  payloadType: DeviceQueuePayloadType;
-
-  /**
-   * @generated from field: bytes opaque_payload = 6;
-   */
-  opaquePayload: Uint8Array;
-
-  /**
-   * @generated from field: bytes payload_sha256 = 7;
-   */
-  payloadSha256: Uint8Array;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.FederatedDeviceQueueWrite.
- * Use `create(FederatedDeviceQueueWriteSchema)` to create a new message.
- */
-export const FederatedDeviceQueueWriteSchema: GenMessage<FederatedDeviceQueueWrite> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 0);
-
-/**
- * @generated from message peers_touch.model.chat.v1.FederatedDeviceQueueBatch
- */
-export type FederatedDeviceQueueBatch = Message<"peers_touch.model.chat.v1.FederatedDeviceQueueBatch"> & {
-  /**
-   * @generated from field: repeated peers_touch.model.chat.v1.FederatedDeviceQueueWrite writes = 1;
-   */
-  writes: FederatedDeviceQueueWrite[];
-
-  /**
-   * @generated from field: repeated peers_touch.model.chat.v1.FederatedEndpointManifest endpoint_manifests = 2;
-   */
-  endpointManifests: FederatedEndpointManifest[];
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.FederatedDeviceQueueBatch.
- * Use `create(FederatedDeviceQueueBatchSchema)` to create a new message.
- */
-export const FederatedDeviceQueueBatchSchema: GenMessage<FederatedDeviceQueueBatch> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 1);
-
-/**
- * @generated from message peers_touch.model.chat.v1.FederatedAuthorityCommand
- */
-export type FederatedAuthorityCommand = Message<"peers_touch.model.chat.v1.FederatedAuthorityCommand"> & {
-  /**
-   * @generated from field: peers_touch.model.chat.v1.ChatCommand command = 1;
-   */
-  command?: ChatCommand | undefined;
-
-  /**
-   * @generated from field: string source_home_station_id = 2;
-   */
-  sourceHomeStationId: string;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.FederatedAuthorityCommand.
- * Use `create(FederatedAuthorityCommandSchema)` to create a new message.
- */
-export const FederatedAuthorityCommandSchema: GenMessage<FederatedAuthorityCommand> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 2);
-
-/**
- * @generated from message peers_touch.model.chat.v1.MessagingFollowerProjection
- */
-export type MessagingFollowerProjection = Message<"peers_touch.model.chat.v1.MessagingFollowerProjection"> & {
+export type ConversationFollowerProjection = Message<"peers_touch.model.chat.v1.ConversationFollowerProjection"> & {
   /**
    * @generated from field: uint32 format_version = 1;
    */
   formatVersion: number;
 
   /**
-   * @generated from field: string authority_station_id = 2;
+   * @generated from field: string authority_station_peer_id = 2;
    */
-  authorityStationId: string;
+  authorityStationPeerId: string;
 
   /**
-   * @generated from field: string target_home_station_id = 3;
+   * @generated from field: string target_home_station_peer_id = 3;
    */
-  targetHomeStationId: string;
+  targetHomeStationPeerId: string;
 
   /**
    * @generated from field: peers_touch.model.chat.v1.ConversationEvent conversation_event = 4;
@@ -139,25 +42,25 @@ export type MessagingFollowerProjection = Message<"peers_touch.model.chat.v1.Mes
 };
 
 /**
- * Describes the message peers_touch.model.chat.v1.MessagingFollowerProjection.
- * Use `create(MessagingFollowerProjectionSchema)` to create a new message.
+ * Describes the message peers_touch.model.chat.v1.ConversationFollowerProjection.
+ * Use `create(ConversationFollowerProjectionSchema)` to create a new message.
  */
-export const MessagingFollowerProjectionSchema: GenMessage<MessagingFollowerProjection> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 3);
+export const ConversationFollowerProjectionSchema: GenMessage<ConversationFollowerProjection> = /*@__PURE__*/
+  messageDesc(file_domain_chat_federation, 0);
 
 /**
- * @generated from message peers_touch.model.chat.v1.MessagingEventProjectionGrant
+ * @generated from message peers_touch.model.chat.v1.ConversationEventProjectionGrant
  */
-export type MessagingEventProjectionGrant = Message<"peers_touch.model.chat.v1.MessagingEventProjectionGrant"> & {
+export type ConversationEventProjectionGrant = Message<"peers_touch.model.chat.v1.ConversationEventProjectionGrant"> & {
   /**
    * @generated from field: string event_id = 1;
    */
   eventId: string;
 
   /**
-   * @generated from field: string target_home_station_id = 2;
+   * @generated from field: string target_home_station_peer_id = 2;
    */
-  targetHomeStationId: string;
+  targetHomeStationPeerId: string;
 
   /**
    * @generated from field: string entitlement_reason = 3;
@@ -166,16 +69,16 @@ export type MessagingEventProjectionGrant = Message<"peers_touch.model.chat.v1.M
 };
 
 /**
- * Describes the message peers_touch.model.chat.v1.MessagingEventProjectionGrant.
- * Use `create(MessagingEventProjectionGrantSchema)` to create a new message.
+ * Describes the message peers_touch.model.chat.v1.ConversationEventProjectionGrant.
+ * Use `create(ConversationEventProjectionGrantSchema)` to create a new message.
  */
-export const MessagingEventProjectionGrantSchema: GenMessage<MessagingEventProjectionGrant> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 4);
+export const ConversationEventProjectionGrantSchema: GenMessage<ConversationEventProjectionGrant> = /*@__PURE__*/
+  messageDesc(file_domain_chat_federation, 1);
 
 /**
- * @generated from message peers_touch.model.chat.v1.GetMessagingFollowerEventsRequest
+ * @generated from message peers_touch.model.chat.v1.GetConversationFollowerEventsRequest
  */
-export type GetMessagingFollowerEventsRequest = Message<"peers_touch.model.chat.v1.GetMessagingFollowerEventsRequest"> & {
+export type GetConversationFollowerEventsRequest = Message<"peers_touch.model.chat.v1.GetConversationFollowerEventsRequest"> & {
   /**
    * @generated from field: uint32 format_version = 1;
    */
@@ -187,14 +90,14 @@ export type GetMessagingFollowerEventsRequest = Message<"peers_touch.model.chat.
   conversationId: string;
 
   /**
-   * @generated from field: string authority_station_id = 3;
+   * @generated from field: string authority_station_peer_id = 3;
    */
-  authorityStationId: string;
+  authorityStationPeerId: string;
 
   /**
-   * @generated from field: string target_home_station_id = 4;
+   * @generated from field: string target_home_station_peer_id = 4;
    */
-  targetHomeStationId: string;
+  targetHomeStationPeerId: string;
 
   /**
    * @generated from field: int64 after_sequence = 5;
@@ -218,30 +121,30 @@ export type GetMessagingFollowerEventsRequest = Message<"peers_touch.model.chat.
 };
 
 /**
- * Describes the message peers_touch.model.chat.v1.GetMessagingFollowerEventsRequest.
- * Use `create(GetMessagingFollowerEventsRequestSchema)` to create a new message.
+ * Describes the message peers_touch.model.chat.v1.GetConversationFollowerEventsRequest.
+ * Use `create(GetConversationFollowerEventsRequestSchema)` to create a new message.
  */
-export const GetMessagingFollowerEventsRequestSchema: GenMessage<GetMessagingFollowerEventsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 5);
+export const GetConversationFollowerEventsRequestSchema: GenMessage<GetConversationFollowerEventsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_chat_federation, 2);
 
 /**
- * @generated from message peers_touch.model.chat.v1.MessagingFollowerEventsPage
+ * @generated from message peers_touch.model.chat.v1.ConversationFollowerEventsPage
  */
-export type MessagingFollowerEventsPage = Message<"peers_touch.model.chat.v1.MessagingFollowerEventsPage"> & {
+export type ConversationFollowerEventsPage = Message<"peers_touch.model.chat.v1.ConversationFollowerEventsPage"> & {
   /**
    * @generated from field: uint32 format_version = 1;
    */
   formatVersion: number;
 
   /**
-   * @generated from field: string authority_station_id = 2;
+   * @generated from field: string authority_station_peer_id = 2;
    */
-  authorityStationId: string;
+  authorityStationPeerId: string;
 
   /**
-   * @generated from field: string target_home_station_id = 3;
+   * @generated from field: string target_home_station_peer_id = 3;
    */
-  targetHomeStationId: string;
+  targetHomeStationPeerId: string;
 
   /**
    * @generated from field: string conversation_id = 4;
@@ -259,9 +162,9 @@ export type MessagingFollowerEventsPage = Message<"peers_touch.model.chat.v1.Mes
   conversationEvents: ConversationEvent[];
 
   /**
-   * @generated from field: repeated peers_touch.model.chat.v1.MessagingEventProjectionGrant event_projection_grants = 7;
+   * @generated from field: repeated peers_touch.model.chat.v1.ConversationEventProjectionGrant event_projection_grants = 7;
    */
-  eventProjectionGrants: MessagingEventProjectionGrant[];
+  eventProjectionGrants: ConversationEventProjectionGrant[];
 
   /**
    * @generated from field: int64 next_sequence = 8;
@@ -295,30 +198,30 @@ export type MessagingFollowerEventsPage = Message<"peers_touch.model.chat.v1.Mes
 };
 
 /**
- * Describes the message peers_touch.model.chat.v1.MessagingFollowerEventsPage.
- * Use `create(MessagingFollowerEventsPageSchema)` to create a new message.
+ * Describes the message peers_touch.model.chat.v1.ConversationFollowerEventsPage.
+ * Use `create(ConversationFollowerEventsPageSchema)` to create a new message.
  */
-export const MessagingFollowerEventsPageSchema: GenMessage<MessagingFollowerEventsPage> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 6);
+export const ConversationFollowerEventsPageSchema: GenMessage<ConversationFollowerEventsPage> = /*@__PURE__*/
+  messageDesc(file_domain_chat_federation, 3);
 
 /**
- * @generated from message peers_touch.model.chat.v1.MessagingFollowerEventsPageSigningInput
+ * @generated from message peers_touch.model.chat.v1.ConversationFollowerEventsPageSigningInput
  */
-export type MessagingFollowerEventsPageSigningInput = Message<"peers_touch.model.chat.v1.MessagingFollowerEventsPageSigningInput"> & {
+export type ConversationFollowerEventsPageSigningInput = Message<"peers_touch.model.chat.v1.ConversationFollowerEventsPageSigningInput"> & {
   /**
    * @generated from field: uint32 format_version = 1;
    */
   formatVersion: number;
 
   /**
-   * @generated from field: string authority_station_id = 2;
+   * @generated from field: string authority_station_peer_id = 2;
    */
-  authorityStationId: string;
+  authorityStationPeerId: string;
 
   /**
-   * @generated from field: string target_home_station_id = 3;
+   * @generated from field: string target_home_station_peer_id = 3;
    */
-  targetHomeStationId: string;
+  targetHomeStationPeerId: string;
 
   /**
    * @generated from field: string conversation_id = 4;
@@ -377,534 +280,9 @@ export type MessagingFollowerEventsPageSigningInput = Message<"peers_touch.model
 };
 
 /**
- * Describes the message peers_touch.model.chat.v1.MessagingFollowerEventsPageSigningInput.
- * Use `create(MessagingFollowerEventsPageSigningInputSchema)` to create a new message.
+ * Describes the message peers_touch.model.chat.v1.ConversationFollowerEventsPageSigningInput.
+ * Use `create(ConversationFollowerEventsPageSigningInputSchema)` to create a new message.
  */
-export const MessagingFollowerEventsPageSigningInputSchema: GenMessage<MessagingFollowerEventsPageSigningInput> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 7);
-
-/**
- * @generated from message peers_touch.model.chat.v1.FederatedEndpointManifestEntry
- */
-export type FederatedEndpointManifestEntry = Message<"peers_touch.model.chat.v1.FederatedEndpointManifestEntry"> & {
-  /**
-   * @generated from field: peers_touch.model.chat.v1.CryptoEndpoint endpoint = 1;
-   */
-  endpoint?: CryptoEndpoint | undefined;
-
-  /**
-   * @generated from field: string signing_key_id = 2;
-   */
-  signingKeyId: string;
-
-  /**
-   * @generated from field: repeated bytes public_material_sha256 = 3;
-   */
-  publicMaterialSha256: Uint8Array[];
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.FederatedEndpointManifestEntry.
- * Use `create(FederatedEndpointManifestEntrySchema)` to create a new message.
- */
-export const FederatedEndpointManifestEntrySchema: GenMessage<FederatedEndpointManifestEntry> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 8);
-
-/**
- * @generated from message peers_touch.model.chat.v1.FederatedEndpointManifestSigningInput
- */
-export type FederatedEndpointManifestSigningInput = Message<"peers_touch.model.chat.v1.FederatedEndpointManifestSigningInput"> & {
-  /**
-   * @generated from field: uint32 format_version = 1;
-   */
-  formatVersion: number;
-
-  /**
-   * @generated from field: string manifest_id = 2;
-   */
-  manifestId: string;
-
-  /**
-   * @generated from field: string actor_ptid = 3;
-   */
-  actorPtid: string;
-
-  /**
-   * @generated from field: string home_station_id = 4;
-   */
-  homeStationId: string;
-
-  /**
-   * @generated from field: uint64 directory_version = 5;
-   */
-  directoryVersion: bigint;
-
-  /**
-   * @generated from field: repeated peers_touch.model.chat.v1.FederatedEndpointManifestEntry active_endpoints = 6;
-   */
-  activeEndpoints: FederatedEndpointManifestEntry[];
-
-  /**
-   * @generated from field: google.protobuf.Timestamp issued_at = 7;
-   */
-  issuedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 8;
-   */
-  expiresAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: string signing_key_id = 9;
-   */
-  signingKeyId: string;
-
-  /**
-   * @generated from field: bytes actor_identity_public_key = 10;
-   */
-  actorIdentityPublicKey: Uint8Array;
-
-  /**
-   * @generated from field: uint64 actor_profile_version = 11;
-   */
-  actorProfileVersion: bigint;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.FederatedEndpointManifestSigningInput.
- * Use `create(FederatedEndpointManifestSigningInputSchema)` to create a new message.
- */
-export const FederatedEndpointManifestSigningInputSchema: GenMessage<FederatedEndpointManifestSigningInput> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 9);
-
-/**
- * @generated from message peers_touch.model.chat.v1.FederatedEndpointManifest
- */
-export type FederatedEndpointManifest = Message<"peers_touch.model.chat.v1.FederatedEndpointManifest"> & {
-  /**
-   * @generated from field: uint32 format_version = 1;
-   */
-  formatVersion: number;
-
-  /**
-   * @generated from field: string manifest_id = 2;
-   */
-  manifestId: string;
-
-  /**
-   * @generated from field: string actor_ptid = 3;
-   */
-  actorPtid: string;
-
-  /**
-   * @generated from field: string home_station_id = 4;
-   */
-  homeStationId: string;
-
-  /**
-   * @generated from field: uint64 directory_version = 5;
-   */
-  directoryVersion: bigint;
-
-  /**
-   * @generated from field: repeated peers_touch.model.chat.v1.FederatedEndpointManifestEntry active_endpoints = 6;
-   */
-  activeEndpoints: FederatedEndpointManifestEntry[];
-
-  /**
-   * @generated from field: google.protobuf.Timestamp issued_at = 7;
-   */
-  issuedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 8;
-   */
-  expiresAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: string signing_key_id = 9;
-   */
-  signingKeyId: string;
-
-  /**
-   * @generated from field: bytes station_signature = 10;
-   */
-  stationSignature: Uint8Array;
-
-  /**
-   * @generated from field: bytes actor_identity_public_key = 11;
-   */
-  actorIdentityPublicKey: Uint8Array;
-
-  /**
-   * @generated from field: uint64 actor_profile_version = 12;
-   */
-  actorProfileVersion: bigint;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.FederatedEndpointManifest.
- * Use `create(FederatedEndpointManifestSchema)` to create a new message.
- */
-export const FederatedEndpointManifestSchema: GenMessage<FederatedEndpointManifest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 10);
-
-/**
- * @generated from message peers_touch.model.chat.v1.GetFederatedEndpointManifestRequest
- */
-export type GetFederatedEndpointManifestRequest = Message<"peers_touch.model.chat.v1.GetFederatedEndpointManifestRequest"> & {
-  /**
-   * @generated from field: string actor_ptid = 1;
-   */
-  actorPtid: string;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.GetFederatedEndpointManifestRequest.
- * Use `create(GetFederatedEndpointManifestRequestSchema)` to create a new message.
- */
-export const GetFederatedEndpointManifestRequestSchema: GenMessage<GetFederatedEndpointManifestRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 11);
-
-/**
- * @generated from message peers_touch.model.chat.v1.GetFederatedEndpointManifestResponse
- */
-export type GetFederatedEndpointManifestResponse = Message<"peers_touch.model.chat.v1.GetFederatedEndpointManifestResponse"> & {
-  /**
-   * @generated from field: peers_touch.model.chat.v1.FederatedEndpointManifest manifest = 1;
-   */
-  manifest?: FederatedEndpointManifest | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.GetFederatedEndpointManifestResponse.
- * Use `create(GetFederatedEndpointManifestResponseSchema)` to create a new message.
- */
-export const GetFederatedEndpointManifestResponseSchema: GenMessage<GetFederatedEndpointManifestResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 12);
-
-/**
- * Cross-Station MLS material cannot participate in the Authority Station's
- * database transaction. The Home Station therefore atomically claims and burns
- * one KeyPackage before returning its bytes. A failed authority plan may waste
- * the package, but the package can never be reused by another Welcome.
- *
- * @generated from message peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageRequest
- */
-export type ClaimFederatedMlsKeyPackageRequest = Message<"peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageRequest"> & {
-  /**
-   * @generated from field: string authority_plan_id = 1;
-   */
-  authorityPlanId: string;
-
-  /**
-   * @generated from field: string authority_station_id = 2;
-   */
-  authorityStationId: string;
-
-  /**
-   * @generated from field: peers_touch.model.chat.v1.CryptoEndpoint target = 3;
-   */
-  target?: CryptoEndpoint | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp plan_expires_at = 4;
-   */
-  planExpiresAt?: Timestamp | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageRequest.
- * Use `create(ClaimFederatedMlsKeyPackageRequestSchema)` to create a new message.
- */
-export const ClaimFederatedMlsKeyPackageRequestSchema: GenMessage<ClaimFederatedMlsKeyPackageRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 13);
-
-/**
- * @generated from message peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageResponse
- */
-export type ClaimFederatedMlsKeyPackageResponse = Message<"peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageResponse"> & {
-  /**
-   * @generated from field: peers_touch.model.chat.v1.CryptoEndpoint target = 1;
-   */
-  target?: CryptoEndpoint | undefined;
-
-  /**
-   * @generated from field: string package_id = 2;
-   */
-  packageId: string;
-
-  /**
-   * @generated from field: bytes key_package = 3;
-   */
-  keyPackage: Uint8Array;
-
-  /**
-   * @generated from field: bytes key_package_sha256 = 4;
-   */
-  keyPackageSha256: Uint8Array;
-
-  /**
-   * @generated from field: string home_station_id = 5;
-   */
-  homeStationId: string;
-
-  /**
-   * @generated from field: bool irreversibly_consumed = 6;
-   */
-  irreversiblyConsumed: boolean;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageResponse.
- * Use `create(ClaimFederatedMlsKeyPackageResponseSchema)` to create a new message.
- */
-export const ClaimFederatedMlsKeyPackageResponseSchema: GenMessage<ClaimFederatedMlsKeyPackageResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 14);
-
-/**
- * Canonical deterministic input for the detached Station signature.
- *
- * @generated from message peers_touch.model.chat.v1.MessagingFederationFrameSigningInput
- */
-export type MessagingFederationFrameSigningInput = Message<"peers_touch.model.chat.v1.MessagingFederationFrameSigningInput"> & {
-  /**
-   * @generated from field: uint32 format_version = 1;
-   */
-  formatVersion: number;
-
-  /**
-   * @generated from field: string frame_id = 2;
-   */
-  frameId: string;
-
-  /**
-   * @generated from field: string source_station_id = 3;
-   */
-  sourceStationId: string;
-
-  /**
-   * @generated from field: string target_station_id = 4;
-   */
-  targetStationId: string;
-
-  /**
-   * @generated from field: string idempotency_key = 5;
-   */
-  idempotencyKey: string;
-
-  /**
-   * @generated from field: peers_touch.model.chat.v1.MessagingFederationPayloadType payload_type = 6;
-   */
-  payloadType: MessagingFederationPayloadType;
-
-  /**
-   * @generated from field: string conversation_id = 7;
-   */
-  conversationId: string;
-
-  /**
-   * @generated from field: string event_id = 8;
-   */
-  eventId: string;
-
-  /**
-   * @generated from field: int64 authority_sequence = 9;
-   */
-  authoritySequence: bigint;
-
-  /**
-   * @generated from field: bytes opaque_payload = 10;
-   */
-  opaquePayload: Uint8Array;
-
-  /**
-   * @generated from field: bytes payload_sha256 = 11;
-   */
-  payloadSha256: Uint8Array;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp issued_at = 12;
-   */
-  issuedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 13;
-   */
-  expiresAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: string signing_key_id = 14;
-   */
-  signingKeyId: string;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.MessagingFederationFrameSigningInput.
- * Use `create(MessagingFederationFrameSigningInputSchema)` to create a new message.
- */
-export const MessagingFederationFrameSigningInputSchema: GenMessage<MessagingFederationFrameSigningInput> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 15);
-
-/**
- * @generated from message peers_touch.model.chat.v1.MessagingFederationFrame
- */
-export type MessagingFederationFrame = Message<"peers_touch.model.chat.v1.MessagingFederationFrame"> & {
-  /**
-   * @generated from field: uint32 format_version = 1;
-   */
-  formatVersion: number;
-
-  /**
-   * @generated from field: string frame_id = 2;
-   */
-  frameId: string;
-
-  /**
-   * @generated from field: string source_station_id = 3;
-   */
-  sourceStationId: string;
-
-  /**
-   * @generated from field: string target_station_id = 4;
-   */
-  targetStationId: string;
-
-  /**
-   * @generated from field: string idempotency_key = 5;
-   */
-  idempotencyKey: string;
-
-  /**
-   * @generated from field: peers_touch.model.chat.v1.MessagingFederationPayloadType payload_type = 6;
-   */
-  payloadType: MessagingFederationPayloadType;
-
-  /**
-   * @generated from field: string conversation_id = 7;
-   */
-  conversationId: string;
-
-  /**
-   * @generated from field: string event_id = 8;
-   */
-  eventId: string;
-
-  /**
-   * @generated from field: int64 authority_sequence = 9;
-   */
-  authoritySequence: bigint;
-
-  /**
-   * @generated from field: bytes opaque_payload = 10;
-   */
-  opaquePayload: Uint8Array;
-
-  /**
-   * @generated from field: bytes payload_sha256 = 11;
-   */
-  payloadSha256: Uint8Array;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp issued_at = 12;
-   */
-  issuedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 13;
-   */
-  expiresAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: string signing_key_id = 14;
-   */
-  signingKeyId: string;
-
-  /**
-   * @generated from field: bytes station_signature = 15;
-   */
-  stationSignature: Uint8Array;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.MessagingFederationFrame.
- * Use `create(MessagingFederationFrameSchema)` to create a new message.
- */
-export const MessagingFederationFrameSchema: GenMessage<MessagingFederationFrame> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 16);
-
-/**
- * @generated from message peers_touch.model.chat.v1.DeliverMessagingFederationFrameRequest
- */
-export type DeliverMessagingFederationFrameRequest = Message<"peers_touch.model.chat.v1.DeliverMessagingFederationFrameRequest"> & {
-  /**
-   * @generated from field: peers_touch.model.chat.v1.MessagingFederationFrame frame = 1;
-   */
-  frame?: MessagingFederationFrame | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.DeliverMessagingFederationFrameRequest.
- * Use `create(DeliverMessagingFederationFrameRequestSchema)` to create a new message.
- */
-export const DeliverMessagingFederationFrameRequestSchema: GenMessage<DeliverMessagingFederationFrameRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 17);
-
-/**
- * @generated from message peers_touch.model.chat.v1.DeliverMessagingFederationFrameResponse
- */
-export type DeliverMessagingFederationFrameResponse = Message<"peers_touch.model.chat.v1.DeliverMessagingFederationFrameResponse"> & {
-  /**
-   * @generated from field: bool accepted = 1;
-   */
-  accepted: boolean;
-
-  /**
-   * @generated from field: bool duplicate = 2;
-   */
-  duplicate: boolean;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.DeliverMessagingFederationFrameResponse.
- * Use `create(DeliverMessagingFederationFrameResponseSchema)` to create a new message.
- */
-export const DeliverMessagingFederationFrameResponseSchema: GenMessage<DeliverMessagingFederationFrameResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_federation, 18);
-
-/**
- * @generated from enum peers_touch.model.chat.v1.MessagingFederationPayloadType
- */
-export enum MessagingFederationPayloadType {
-  /**
-   * @generated from enum value: MESSAGING_FEDERATION_PAYLOAD_TYPE_UNSPECIFIED = 0;
-   */
-  UNSPECIFIED = 0,
-
-  /**
-   * @generated from enum value: MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH = 1;
-   */
-  DEVICE_QUEUE_BATCH = 1,
-
-  /**
-   * @generated from enum value: MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_COMMAND = 2;
-   */
-  AUTHORITY_COMMAND = 2,
-
-  /**
-   * @generated from enum value: MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_RESULT = 3;
-   */
-  AUTHORITY_RESULT = 3,
-
-  /**
-   * @generated from enum value: MESSAGING_FEDERATION_PAYLOAD_TYPE_FOLLOWER_PROJECTION = 4;
-   */
-  FOLLOWER_PROJECTION = 4,
-}
-
-/**
- * Describes the enum peers_touch.model.chat.v1.MessagingFederationPayloadType.
- */
-export const MessagingFederationPayloadTypeSchema: GenEnum<MessagingFederationPayloadType> = /*@__PURE__*/
-  enumDesc(file_domain_chat_federation, 0);
+export const ConversationFollowerEventsPageSigningInputSchema: GenMessage<ConversationFollowerEventsPageSigningInput> = /*@__PURE__*/
+  messageDesc(file_domain_chat_federation, 4);
 

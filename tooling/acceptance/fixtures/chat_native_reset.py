@@ -26,36 +26,46 @@ APPROVED_DISPOSABLE_STATION_PORT = 18132
 PROTECTED_CLEANUP_PORTS = frozenset({4445, 18080})
 CHAT_TABLES = (
     "actor_devices",
+    "actor_endpoint_directory_versions",
     "actor_identity_keys",
     "actor_sessions",
+    "conversation_attachment_audits",
+    "conversation_attachment_grants",
+    "conversation_attachment_objects",
+    "conversation_attachment_upload_parts",
+    "conversation_attachment_uploads",
+    "conversation_authority_plans",
+    "conversation_command_receipts",
+    "conversation_delivery_commitments",
+    "conversation_delivery_receipts",
+    "conversation_event_projection_grants",
+    "conversation_events",
+    "conversation_follower_heads",
+    "conversation_follower_members",
+    "conversation_follower_pending_events",
+    "conversation_follower_states",
+    "conversation_member_devices",
+    "conversation_member_settings",
+    "conversation_members",
+    "conversation_mls_leave_intents",
+    "conversation_read_cursors",
+    "conversations",
     "device_queue_items",
     "device_queue_lanes",
-    "federated_endpoint_manifests",
+    "federated_mls_key_package_claims",
+    "federation_delivery_inbox",
+    "federation_delivery_outbox",
     "friend_chat_friend_requests",
     "friend_chat_friendships",
-    "messaging_attachment_audit",
-    "messaging_attachment_grants",
-    "messaging_attachment_objects",
-    "messaging_attachment_upload_parts",
-    "messaging_attachment_uploads",
-    "messaging_authority_plans",
-    "messaging_command_receipts",
-    "messaging_conversation_member_devices",
-    "messaging_conversation_members",
-    "messaging_conversations",
-    "messaging_endpoint_directory_versions",
-    "messaging_event_projection_targets",
-    "messaging_events",
-    "messaging_federation_inbox",
-    "messaging_federation_outbox",
-    "messaging_follower_conversations",
-    "messaging_follower_event_receipts",
-    "messaging_follower_members",
-    "messaging_follower_pending_events",
-    "messaging_read_cursors",
-    "messaging_recovery_revisions",
+    "key_exchange_identity_keys",
+    "key_exchange_one_time_pre_keys",
+    "key_exchange_signed_pre_keys",
     "mls_key_packages",
-    "federated_mls_key_package_claims",
+    "recovery_revisions",
+    "social_friend_request_commands",
+    "social_friend_request_effects",
+    "social_friend_requests",
+    "social_relationship_projections",
 )
 
 
@@ -770,7 +780,7 @@ def reset_local_client_storage(
     return reset
 
 
-def reset_station_messaging_state(environment_name: str) -> None:
+def reset_station_chat_state(environment_name: str) -> None:
     environment = deploy_environment(environment_name)
     station_url = environment.get("PT_ACCEPTANCE_STATION_URL", "").strip()
     environment = acceptance_station_environment(
@@ -906,7 +916,7 @@ def main() -> int:
     args = parser.parse_args()
 
     reset_roots = reset_local_client_storage(args.accounts)
-    reset_station_messaging_state(args.environment)
+    reset_station_chat_state(args.environment)
     print(
         f"native Chat fixture reset: environment={args.environment} "
         f"local_storage_roots={reset_roots}"

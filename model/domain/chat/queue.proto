@@ -3,104 +3,11 @@ syntax = "proto3";
 package peers_touch.model.chat.v1;
 
 import "domain/actor/actor.proto";
-import "domain/chat/endpoint.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
 
-enum DeviceQueuePayloadType {
-  DEVICE_QUEUE_PAYLOAD_TYPE_UNSPECIFIED = 0;
-  DEVICE_QUEUE_PAYLOAD_TYPE_CONVERSATION_EVENT = 1;
-  DEVICE_QUEUE_PAYLOAD_TYPE_DIRECT_SESSION_INIT = 2;
-  DEVICE_QUEUE_PAYLOAD_TYPE_MLS_TRANSITION = 3;
-  DEVICE_QUEUE_PAYLOAD_TYPE_COMMAND_RESULT = 4;
-  DEVICE_QUEUE_PAYLOAD_TYPE_DEVICE_RECEIPT = 5;
-}
-
-enum DeviceQueueItemState {
-  DEVICE_QUEUE_ITEM_STATE_UNSPECIFIED = 0;
-  DEVICE_QUEUE_ITEM_STATE_PENDING = 1;
-  DEVICE_QUEUE_ITEM_STATE_CLAIMED = 2;
-  DEVICE_QUEUE_ITEM_STATE_RETRY_WAIT = 3;
-  DEVICE_QUEUE_ITEM_STATE_CONSUMED = 4;
-  DEVICE_QUEUE_ITEM_STATE_ACKED = 5;
-  DEVICE_QUEUE_ITEM_STATE_DEAD_LETTER = 6;
-}
-
-message DeviceQueueLease {
-  string consumer_id = 1;
-  uint64 consumer_epoch = 2;
-  google.protobuf.Timestamp expires_at = 3;
-}
-
-// A device-specific transport item. event_id preserves the shared logical
-// message identity while item_id and lane_sequence address this delivery.
-message DeviceQueueItem {
-  string item_id = 1;
-  CryptoEndpoint recipient = 2;
-  int64 lane_sequence = 3;
-  string event_id = 4;
-  string conversation_id = 5;
-  string idempotency_key = 6;
-  DeviceQueuePayloadType payload_type = 7;
-  bytes opaque_payload = 8;
-  bytes payload_sha256 = 9;
-  DeviceQueueItemState state = 10;
-  uint32 attempt_count = 11;
-  DeviceQueueLease lease = 12;
-  google.protobuf.Timestamp first_queued_at = 13;
-  google.protobuf.Timestamp next_attempt_at = 14;
-  google.protobuf.Timestamp expires_at = 15;
-  google.protobuf.Timestamp consumed_at = 16;
-  google.protobuf.Timestamp acked_at = 17;
-  string last_error_code = 18;
-}
-
-message ClaimDeviceQueueRequest {
-  string device_id = 1;
-  string consumer_id = 2;
-  uint64 expected_consumer_epoch = 3;
-  int64 after_lane_sequence = 4;
-  uint32 batch_limit = 5;
-}
-
-message ClaimDeviceQueueResponse {
-  uint64 consumer_epoch = 1;
-  repeated DeviceQueueItem items = 2;
-  int64 lane_head_sequence = 3;
-  int64 acked_through_sequence = 4;
-}
-
-message AcknowledgeDeviceQueueItemRequest {
-  string device_id = 1;
-  string item_id = 2;
-  int64 lane_sequence = 3;
-  uint64 consumer_epoch = 4;
-  bytes payload_sha256 = 5;
-}
-
-message AcknowledgeDeviceQueueItemResponse {
-  int64 acked_through_sequence = 1;
-}
-
-message RejectDeviceQueueItemRequest {
-  string device_id = 1;
-  string item_id = 2;
-  int64 lane_sequence = 3;
-  uint64 consumer_epoch = 4;
-  string error_code = 5;
-  bool retryable = 6;
-}
-
-message RejectDeviceQueueItemResponse {}
-
-message DeviceQueueWakeHint {
-  string device_id = 1;
-  int64 lane_head_sequence = 2;
-}
-
-// Canonical /device/inbox contract. The DeviceQueue messages above remain
-// available only until the CA-W5 atomic consumer cutover.
+// Canonical /device/inbox contract.
 enum DeviceInboxPayloadType {
   DEVICE_INBOX_PAYLOAD_TYPE_UNSPECIFIED = 0;
   DEVICE_INBOX_PAYLOAD_TYPE_CONVERSATION_EVENT = 1;

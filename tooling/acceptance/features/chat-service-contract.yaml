@@ -4,14 +4,20 @@
   "product_area": "chat",
   "owners": [
     "model/domain/chat/**",
+    "model/domain/actor/actor.proto",
+    "model/domain/key_exchange/key_exchange.proto",
+    "model/domain/recovery/recovery.proto",
     "apps/station/app/subserver/conversation/**",
-    "apps/station/app/subserver/envelope/**"
+    "apps/station/app/subserver/actor_identity/**",
+    "apps/station/app/subserver/key_exchange/**",
+    "apps/station/app/subserver/recovery/**",
+    "apps/station/frame/core/federation/**"
   ],
   "truth_sources": [
     "model/domain/chat/*.proto",
-    "messaging device registry",
+    "Actor Device directory",
     "conversation event log",
-    "per-device messaging queue"
+    "per-device Device Inbox"
   ],
   "visible_surfaces": [
     {"type": "api", "route": "/conversation/direct"},
@@ -25,7 +31,7 @@
     "service": [
       "chat proto sources regenerate derived contracts",
       "Station governed routes match the API capability ownership registry",
-      "conversation and envelope package tests pass",
+      "canonical Conversation and shared Federation package tests pass",
       "the messaging platform contract preserves canonical resource routes and client crypto ownership"
     ],
     "visible": [

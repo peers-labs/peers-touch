@@ -7,8 +7,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
+	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -475,4 +477,287 @@ func TestHandler_GetPost_NotFoundOnMissingID(t *testing.T) {
 	// Don't insist on a specific status — the framework wraps differently
 	// across builds. Just confirm the error materialised.
 	_ = server.NotFound // keep import alive even if shape changes
+}
+
+// ---------------------------------------------------------------------------
+// Canonical Friend Request boundary
+// ---------------------------------------------------------------------------
+
+type recordingFederatedFriendRequestAPI struct {
+	submittedCommand *model.FriendRequestCommand
+	projection       domain.FriendRequestProjection
+	listActorPTID    string
+	listState        model.FriendRequestState
+	listLimit        int32
+	listOffset       int32
+	listProjections  []domain.FriendRequestProjection
+	listTotal        int64
+	err              error
+}
+
+func (a *recordingFederatedFriendRequestAPI) SubmitFriendRequestCommand(
+	_ context.Context,
+	command *model.FriendRequestCommand,
+) (application.SubmitFriendRequestCommandResult, error) {
+	a.submittedCommand = command
+	if a.err != nil {
+		return application.SubmitFriendRequestCommandResult{}, a.err
+	}
+	return application.SubmitFriendRequestCommandResult{
+		Projection: a.projection,
+	}, nil
+}
+
+func (a *recordingFederatedFriendRequestAPI) ListFriendRequestProjections(
+	_ context.Context,
+	actorPTID string,
+	state model.FriendRequestState,
+	limit int32,
+	offset int32,
+) ([]domain.FriendRequestProjection, int64, error) {
+	a.listActorPTID = actorPTID
+	a.listState = state
+	a.listLimit = limit
+	a.listOffset = offset
+	if a.err != nil {
+		return nil, 0, a.err
+	}
+	return a.listProjections, a.listTotal, nil
+}
+
+func TestFriendRequestHandlersUseCanonicalSocialContracts(t *testing.T) {
+	subserver := &subServer{}
+
+	var send func(
+		context.Context,
+		*model.SendSocialFriendRequestRequest,
+	) (*model.SendSocialFriendRequestResponse, error) = subserver.handleSendFriendRequest
+	var accept func(
+		context.Context,
+		*model.AcceptSocialFriendRequestRequest,
+	) (*model.AcceptSocialFriendRequestResponse, error) = subserver.handleAcceptFriendRequest
+	var reject func(
+		context.Context,
+		*model.RejectSocialFriendRequestRequest,
+	) (*model.RejectSocialFriendRequestResponse, error) = subserver.handleRejectFriendRequest
+	var list func(
+		context.Context,
+		*model.ListSocialFriendRequestsRequest,
+	) (*model.ListSocialFriendRequestsResponse, error) = subserver.handleListFriendRequests
+
+	if send == nil || accept == nil || reject == nil || list == nil {
+		t.Fatal("canonical Friend Request handlers must be registered functions")
+	}
+}
+
+func TestFriendRequestMutationRequiresAuthenticatedActorAndDevice(t *testing.T) {
+	const actorPTID = "ptid:v1:actor:peers:p:alice:alice-fingerprint"
+	request := &model.SendSocialFriendRequestRequest{
+		Command: friendRequestHandlerCommand(
+			model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+			actorPTID,
+			"alice-device",
+		),
+	}
+
+	tests := []struct {
+		name string
+		ctx  context.Context
+	}{
+		{name: "actor", ctx: context.Background()},
+		{
+			name: "device",
+			ctx: coreauth.WithSubject(
+				context.Background(),
+				&coreauth.Subject{ID: actorPTID},
+			),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response, err := (&subServer{}).handleSendFriendRequest(
+				test.ctx,
+				request,
+			)
+			if err == nil {
+				t.Fatalf("missing authenticated %s returned %+v", test.name, response)
+			}
+			if status := statusOf(err); status != 0 && status != 401 {
+				t.Fatalf("missing authenticated %s status = %d", test.name, status)
+			}
+		})
+	}
+}
+
+func TestSubmitFriendRequestCommandForwardsExactSignedCommand(t *testing.T) {
+	const (
+		actorPTID = "ptid:v1:actor:peers:p:alice:alice-fingerprint"
+		deviceID  = "alice-device"
+	)
+	command := friendRequestHandlerCommand(
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		actorPTID,
+		deviceID,
+	)
+	api := &recordingFederatedFriendRequestAPI{
+		projection: friendRequestHandlerProjection(
+			model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING,
+		),
+	}
+
+	projection, err := submitFriendRequestCommand(
+		context.Background(),
+		actorPTID,
+		deviceID,
+		command,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		api,
+	)
+	if err != nil {
+		t.Fatalf("submit Friend Request command: %v", err)
+	}
+	if api.submittedCommand != command {
+		t.Fatal("handler replaced or synthesized the signed command")
+	}
+	if projection.FederationID != "federation:alice-bob" {
+		t.Fatalf("projection federation ID = %q", projection.FederationID)
+	}
+}
+
+func TestSubmitFriendRequestCommandRejectsAuthenticationMismatch(t *testing.T) {
+	const (
+		actorPTID = "ptid:v1:actor:peers:p:alice:alice-fingerprint"
+		deviceID  = "alice-device"
+	)
+	tests := []struct {
+		name                string
+		authenticatedActor  string
+		authenticatedDevice string
+		expectedAction      model.FriendRequestAction
+	}{
+		{
+			name:                "actor",
+			authenticatedActor:  "ptid:v1:actor:peers:p:mallory:mallory-fingerprint",
+			authenticatedDevice: deviceID,
+			expectedAction:      model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		},
+		{
+			name:                "device",
+			authenticatedActor:  actorPTID,
+			authenticatedDevice: "other-device",
+			expectedAction:      model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		},
+		{
+			name:                "route action",
+			authenticatedActor:  actorPTID,
+			authenticatedDevice: deviceID,
+			expectedAction:      model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			api := &recordingFederatedFriendRequestAPI{}
+			_, err := submitFriendRequestCommand(
+				context.Background(),
+				test.authenticatedActor,
+				test.authenticatedDevice,
+				friendRequestHandlerCommand(
+					model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+					actorPTID,
+					deviceID,
+				),
+				test.expectedAction,
+				api,
+			)
+			if err == nil {
+				t.Fatal("mismatched command authentication was accepted")
+			}
+			if api.submittedCommand != nil {
+				t.Fatal("mismatched command reached the application service")
+			}
+		})
+	}
+}
+
+func TestHandleListFriendRequestsMapsCanonicalProjection(t *testing.T) {
+	const actorPTID = "ptid:v1:actor:peers:p:bob:bob-fingerprint"
+	api := &recordingFederatedFriendRequestAPI{
+		listProjections: []domain.FriendRequestProjection{
+			friendRequestHandlerProjection(
+				model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING,
+			),
+		},
+		listTotal: 1,
+	}
+
+	listed, err := handleListFriendRequestsWithAPI(
+		context.Background(),
+		actorPTID,
+		&model.ListSocialFriendRequestsRequest{
+			State:  model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING,
+			Limit:  25,
+			Offset: 5,
+		},
+		api,
+	)
+	if err != nil {
+		t.Fatalf("list Friend Requests: %v", err)
+	}
+	if api.listActorPTID != actorPTID ||
+		api.listState != model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING ||
+		api.listLimit != 25 ||
+		api.listOffset != 5 ||
+		listed.GetTotal() != 1 {
+		t.Fatalf("unexpected list delegation: api=%+v response=%+v", api, listed)
+	}
+	request := listed.GetRequests()[0]
+	if request.GetRequestId() != "friend-request-1" ||
+		request.GetFederationId() != "federation:alice-bob" ||
+		request.GetSenderHomeStationPeerId() != "station-a" ||
+		request.GetReceiverHomeStationPeerId() != "station-b" {
+		t.Fatalf("canonical Friend Request mapping = %+v", request)
+	}
+}
+
+func friendRequestHandlerCommand(
+	action model.FriendRequestAction,
+	authorizingActorPTID string,
+	authorizingDeviceID string,
+) *model.FriendRequestCommand {
+	return &model.FriendRequestCommand{
+		Body: &model.FriendRequestCommandBody{
+			Action: action,
+			AuthorizingDevice: &model.ActorDeviceRef{
+				Actor: &model.ActorRef{
+					Ptid: authorizingActorPTID,
+					Kind: model.ActorKind_ACTOR_KIND_PERSON,
+				},
+				DeviceId: authorizingDeviceID,
+			},
+		},
+	}
+}
+
+func friendRequestHandlerProjection(
+	state model.FriendRequestState,
+) domain.FriendRequestProjection {
+	createdAt := time.Date(2026, time.September, 7, 12, 0, 0, 0, time.UTC)
+	return domain.FriendRequestProjection{
+		RequestID:              "friend-request-1",
+		FederationID:           "federation:alice-bob",
+		AuthorityStationPeerID: "station-b",
+		Sender: &model.ActorRef{
+			Ptid: "ptid:v1:actor:peers:p:alice:alice-fingerprint",
+			Kind: model.ActorKind_ACTOR_KIND_PERSON,
+		},
+		Receiver: &model.ActorRef{
+			Ptid: "ptid:v1:actor:peers:p:bob:bob-fingerprint",
+			Kind: model.ActorKind_ACTOR_KIND_PERSON,
+		},
+		SenderHomeStationPeerID:   "station-a",
+		ReceiverHomeStationPeerID: "station-b",
+		Message:                   "hello",
+		State:                     state,
+		CreatedAt:                 createdAt,
+	}
 }

@@ -2,11 +2,13 @@ use crate::codec::private_content::encode_message_private_content;
 use crate::contracts::CryptoEndpoint;
 use crate::crypto::double_ratchet::{self, DrCiphertextWire};
 use crate::crypto::session::DirectSession;
+use crate::proto::actor::ActorDeviceRef;
+use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
     chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationKind,
     CryptoEndpoint as ProtoCryptoEndpoint, DirectCiphertextAad, DirectDeviceCiphertext,
     DirectSessionInit, DoubleRatchetCiphertext, EditMessageIntent, MessagingContentKind,
-    PrepareMessagingSendResponse, PreparedEndpointPayload, PreparedEndpointPayloadKind,
+    PrepareConversationCommandResponse, PreparedEndpointPayload, PreparedEndpointPayloadKind,
     SendMessageIntent,
 };
 use crate::store::{
@@ -72,7 +74,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
 
     pub fn prepare_send(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &DirectSendIntent<'_>,
         bootstraps: &[DirectSessionBootstrap],
     ) -> Result<ChatCommand, String> {
@@ -118,7 +120,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
 
     pub fn prepare_edit(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &DirectEditIntent<'_>,
         bootstraps: &[DirectSessionBootstrap],
     ) -> Result<ChatCommand, String> {
@@ -160,7 +162,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
 
     fn resolve_sessions(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         conversation_id: &str,
         bootstraps: &[DirectSessionBootstrap],
     ) -> Result<
@@ -171,13 +173,17 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
         ),
         String,
     > {
-        let local = contract_endpoint(&self.endpoint)?;
-        let peers = plan
+        let local =
+            CryptoEndpoint::new(self.endpoint.ptid.clone(), self.endpoint.device_id.clone())?;
+        let required_endpoints = plan
             .required_endpoints
             .iter()
-            .filter(|endpoint| **endpoint != self.endpoint)
             .map(contract_endpoint)
             .collect::<Result<Vec<_>, _>>()?;
+        let peers = required_endpoints
+            .into_iter()
+            .filter(|endpoint| endpoint != &local)
+            .collect::<Vec<_>>();
         let peer_keys = peers
             .iter()
             .map(|peer| (peer.ptid.as_str(), peer.device_id.as_str()))
@@ -322,7 +328,7 @@ pub fn encrypt_direct_fan_out(
 }
 
 fn validate_send_context(
-    plan: &PrepareMessagingSendResponse,
+    plan: &PrepareConversationCommandResponse,
     intent: &DirectSendIntent<'_>,
     endpoint: &ProtoCryptoEndpoint,
 ) -> Result<(), String> {
@@ -332,7 +338,7 @@ fn validate_send_context(
         || intent.conversation_id.trim().is_empty()
         || intent.client_timestamp_unix_ms <= 0
         || plan.conversation_id != intent.conversation_id
-        || plan.authority_station_id.trim().is_empty()
+        || plan.authority_station_peer_id.trim().is_empty()
         || plan.delivery_plan_sha256.len() != 32
         || plan.membership_epoch < 0
         || plan.mls_epoch < 0
@@ -348,15 +354,16 @@ fn validate_send_context(
     let mut previous: Option<(&str, &str)> = None;
     let mut local_count = 0;
     for required in &plan.required_endpoints {
-        if required.ptid.trim().is_empty() || required.device_id.trim().is_empty() {
+        let required_ptid = actor_device_ptid(required)?;
+        if required.device_id.trim().is_empty() {
             return Err("messaging send plan has incomplete endpoint".to_string());
         }
-        let key = (required.ptid.as_str(), required.device_id.as_str());
+        let key = (required_ptid, required.device_id.as_str());
         if previous.is_some_and(|value| value >= key) {
             return Err("messaging send plan endpoints are not strictly sorted".to_string());
         }
         previous = Some(key);
-        if required == endpoint {
+        if required_ptid == endpoint.ptid && required.device_id == endpoint.device_id {
             local_count += 1;
         }
     }
@@ -367,7 +374,7 @@ fn validate_send_context(
 }
 
 fn validate_edit_context(
-    plan: &PrepareMessagingSendResponse,
+    plan: &PrepareConversationCommandResponse,
     intent: &DirectEditIntent<'_>,
     endpoint: &ProtoCryptoEndpoint,
 ) -> Result<(), String> {
@@ -389,7 +396,7 @@ fn validate_edit_context(
 
 fn validate_authority_head<R: DirectOutboundRepository>(
     store: &R,
-    plan: &PrepareMessagingSendResponse,
+    plan: &PrepareConversationCommandResponse,
 ) -> Result<(), String> {
     let (local_sequence, local_hash) = store.authority_head(&plan.conversation_id)?;
     if local_sequence != plan.authority_sequence || local_hash != plan.authority_hash {
@@ -455,7 +462,7 @@ fn build_session_advances(
 }
 
 fn build_send_command(
-    plan: &PrepareMessagingSendResponse,
+    plan: &PrepareConversationCommandResponse,
     intent: &DirectSendIntent<'_>,
     endpoint: &ProtoCryptoEndpoint,
     direct_payloads: Vec<PreparedEndpointPayload>,
@@ -478,7 +485,7 @@ fn build_send_command(
         observed_mls_epoch: plan.mls_epoch,
         client_timestamp: Some(timestamp(intent.client_timestamp_unix_ms)),
         delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
-        authority_station_id: plan.authority_station_id.clone(),
+        authority_station_peer_id: plan.authority_station_peer_id.clone(),
         payload: Some(chat_command::Payload::SendMessage(SendMessageIntent {
             message_id: intent.message_id.to_string(),
             content_kind: MessagingContentKind::Text as i32,
@@ -493,7 +500,7 @@ fn build_send_command(
 }
 
 fn build_edit_command(
-    plan: &PrepareMessagingSendResponse,
+    plan: &PrepareConversationCommandResponse,
     intent: &DirectEditIntent<'_>,
     endpoint: &ProtoCryptoEndpoint,
     direct_payloads: Vec<PreparedEndpointPayload>,
@@ -506,7 +513,7 @@ fn build_edit_command(
         observed_mls_epoch: plan.mls_epoch,
         client_timestamp: Some(timestamp(intent.client_timestamp_unix_ms)),
         delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
-        authority_station_id: plan.authority_station_id.clone(),
+        authority_station_peer_id: plan.authority_station_peer_id.clone(),
         payload: Some(chat_command::Payload::EditMessage(EditMessageIntent {
             message_id: intent.message_id.to_string(),
             direct_payloads,
@@ -516,9 +523,9 @@ fn build_edit_command(
     }
 }
 
-fn contract_endpoint(endpoint: &ProtoCryptoEndpoint) -> Result<CryptoEndpoint, String> {
+fn contract_endpoint(endpoint: &ActorDeviceRef) -> Result<CryptoEndpoint, String> {
     let endpoint = CryptoEndpoint {
-        ptid: endpoint.ptid.clone(),
+        ptid: actor_device_ptid(endpoint)?.to_string(),
         device_id: endpoint.device_id.clone(),
     };
     if endpoint.ptid.trim().is_empty() || endpoint.device_id.trim().is_empty() {
@@ -551,6 +558,7 @@ mod tests {
     use crate::crypto::double_ratchet::init_initiator;
     use crate::crypto::identity::X25519KeyPair;
     use crate::crypto::session::DirectSessionKey;
+    use crate::proto::actor_device_ref;
     use crate::store::DirectOutboundSession;
     use std::sync::Mutex;
 
@@ -650,7 +658,7 @@ mod tests {
             },
             persisted: Mutex::new(None),
         });
-        let plan = PrepareMessagingSendResponse {
+        let plan = PrepareConversationCommandResponse {
             conversation_id: "conversation-1".to_string(),
             conversation_kind: ConversationKind::Direct as i32,
             authority_sequence: 0,
@@ -658,18 +666,12 @@ mod tests {
             membership_epoch: 1,
             mls_epoch: 0,
             required_endpoints: vec![
-                ProtoCryptoEndpoint {
-                    ptid: local.ptid.clone(),
-                    device_id: local.device_id.clone(),
-                },
-                ProtoCryptoEndpoint {
-                    ptid: peer.ptid.clone(),
-                    device_id: peer.device_id.clone(),
-                },
+                actor_device_ref(&local.ptid, &local.device_id),
+                actor_device_ref(&peer.ptid, &peer.device_id),
             ],
             delivery_plan_sha256: vec![7; 32],
             endpoint_manifests: Vec::new(),
-            authority_station_id: "station-1".to_string(),
+            authority_station_peer_id: "station-1".to_string(),
         };
         let command = DirectOutboundPreparer::new(
             repository.clone(),

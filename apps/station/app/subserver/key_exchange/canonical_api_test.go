@@ -130,6 +130,119 @@ func TestCanonicalDirectBundleLifecycleAndBinding(t *testing.T) {
 	}
 }
 
+func TestCanonicalDirectFetchExactReplayAndRequestConflict(t *testing.T) {
+	fixture := newCanonicalFixture(t)
+	ctx := context.Background()
+	alice := endpoint("ptid:alice", "alice-1")
+	bob := endpoint("ptid:bob", "bob-1")
+	if _, err := fixture.api.UploadDirectKeyBundle(
+		ctx,
+		bob.GetActor().GetPtid(),
+		bob.GetDeviceId(),
+		directUploadRequest(bob, 20, 1, 2),
+	); err != nil {
+		t.Fatalf("upload Direct bundle: %v", err)
+	}
+	request := &kemodel.FetchDirectKeyBundlesRequest{
+		Actor:          bob.GetActor(),
+		TargetDeviceId: bob.GetDeviceId(),
+		RequestId:      "direct-api-replay",
+		Requester:      alice,
+	}
+
+	first, err := fixture.api.FetchDirectKeyBundles(
+		ctx,
+		alice.GetActor().GetPtid(),
+		alice.GetDeviceId(),
+		request,
+	)
+	if err != nil {
+		t.Fatalf("first Direct fetch: %v", err)
+	}
+	replayed, err := fixture.api.FetchDirectKeyBundles(
+		ctx,
+		alice.GetActor().GetPtid(),
+		alice.GetDeviceId(),
+		proto.Clone(request).(*kemodel.FetchDirectKeyBundlesRequest),
+	)
+	if err != nil {
+		t.Fatalf("replay Direct fetch: %v", err)
+	}
+	if !proto.Equal(first, replayed) {
+		t.Fatalf("Direct replay changed exact response: first=%+v replay=%+v", first, replayed)
+	}
+	if got := countDirect(t, fixture, bob); got != 1 {
+		t.Fatalf("Direct replay consumed another one-time pre-key, count=%d", got)
+	}
+
+	conflicting := proto.Clone(request).(*kemodel.FetchDirectKeyBundlesRequest)
+	conflicting.HomeStationPeerId = testLocalStation
+	if _, err := fixture.api.FetchDirectKeyBundles(
+		ctx,
+		alice.GetActor().GetPtid(),
+		alice.GetDeviceId(),
+		conflicting,
+	); !domain.IsCode(err, domain.ErrorCodeConflict) {
+		t.Fatalf("Direct request ID hash conflict error = %v", err)
+	}
+	if got := countDirect(t, fixture, bob); got != 1 {
+		t.Fatalf("Direct request conflict mutated one-time pre-keys, count=%d", got)
+	}
+}
+
+func TestCanonicalDestructiveFetchRejectsRequesterMismatchBeforeMutation(t *testing.T) {
+	fixture := newCanonicalFixture(t)
+	ctx := context.Background()
+	alice := endpoint("ptid:alice", "alice-1")
+	bob := endpoint("ptid:bob", "bob-1")
+	if _, err := fixture.api.UploadDirectKeyBundle(
+		ctx,
+		bob.GetActor().GetPtid(),
+		bob.GetDeviceId(),
+		directUploadRequest(bob, 20, 1),
+	); err != nil {
+		t.Fatalf("upload Direct bundle: %v", err)
+	}
+
+	_, err := fixture.api.FetchDirectKeyBundles(
+		ctx,
+		alice.GetActor().GetPtid(),
+		alice.GetDeviceId(),
+		&kemodel.FetchDirectKeyBundlesRequest{
+			Actor:          bob.GetActor(),
+			TargetDeviceId: bob.GetDeviceId(),
+			RequestId:      "direct-requester-mismatch",
+			Requester:      bob,
+		},
+	)
+	if !domain.IsCode(err, domain.ErrorCodeUnauthorized) {
+		t.Fatalf("Direct requester mismatch error = %v", err)
+	}
+	if got := countDirect(t, fixture, bob); got != 1 {
+		t.Fatalf("requester mismatch consumed a Direct pre-key, count=%d", got)
+	}
+
+	for _, requestID := range []string{"", " non-canonical "} {
+		_, err := fixture.api.FetchDirectKeyBundles(
+			ctx,
+			alice.GetActor().GetPtid(),
+			alice.GetDeviceId(),
+			&kemodel.FetchDirectKeyBundlesRequest{
+				Actor:          bob.GetActor(),
+				TargetDeviceId: bob.GetDeviceId(),
+				RequestId:      requestID,
+				Requester:      alice,
+			},
+		)
+		if !domain.IsCode(err, domain.ErrorCodeInvalidArgument) {
+			t.Fatalf("invalid request ID %q error = %v", requestID, err)
+		}
+	}
+	if got := countDirect(t, fixture, bob); got != 1 {
+		t.Fatalf("invalid request identity mutated Direct pre-keys, count=%d", got)
+	}
+}
+
 func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 	fixture := newCanonicalFixture(t)
 	ctx := context.Background()
@@ -148,7 +261,7 @@ func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 		ctx,
 		alice.GetActor().GetPtid(),
 		alice.GetDeviceId(),
-		&kemodel.FetchMlsKeyPackageRequest{Actor: bob.GetActor()},
+		mlsFetchRequest("mls-fetch-first", alice, bob.GetActor(), ""),
 	)
 	if err != nil {
 		t.Fatalf("fetch MLS KeyPackage: %v", err)
@@ -177,6 +290,7 @@ func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 	planOneExpiry := fixture.clock.Now().Add(time.Minute)
 	reservationOne, err := fixture.service.ReserveMLSKeyPackage(
 		ctx,
+		"reserve-plan-one-request",
 		"plan-one",
 		domain.Endpoint{
 			ActorPTID: bob.GetActor().GetPtid(),
@@ -189,6 +303,7 @@ func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 	}
 	reservationReplay, err := fixture.service.ReserveMLSKeyPackage(
 		ctx,
+		"reserve-plan-one-request",
 		"plan-one",
 		domain.Endpoint{
 			ActorPTID: bob.GetActor().GetPtid(),
@@ -210,7 +325,7 @@ func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 		ctx,
 		alice.GetActor().GetPtid(),
 		alice.GetDeviceId(),
-		&kemodel.FetchMlsKeyPackageRequest{Actor: bob.GetActor()},
+		mlsFetchRequest("mls-fetch-unavailable", alice, bob.GetActor(), ""),
 	)
 	if err != nil {
 		t.Fatalf("fetch while reserved: %v", err)
@@ -222,6 +337,7 @@ func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 	fixture.clock.Set(fixture.clock.Now().Add(2 * time.Minute))
 	reservationTwo, err := fixture.service.ReserveMLSKeyPackage(
 		ctx,
+		"reserve-plan-two-request",
 		"plan-two",
 		domain.Endpoint{
 			ActorPTID: bob.GetActor().GetPtid(),
@@ -253,6 +369,7 @@ func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 	uploadMLS(t, fixture, bob, releasableMaterial)
 	releasable, err := fixture.service.ReserveMLSKeyPackage(
 		ctx,
+		"reserve-release-request",
 		"plan-release",
 		domain.Endpoint{
 			ActorPTID: bob.GetActor().GetPtid(),
@@ -273,7 +390,7 @@ func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 		ctx,
 		alice.GetActor().GetPtid(),
 		alice.GetDeviceId(),
-		&kemodel.FetchMlsKeyPackageRequest{Actor: bob.GetActor()},
+		mlsFetchRequest("mls-fetch-released", alice, bob.GetActor(), ""),
 	)
 	if err != nil {
 		t.Fatalf("fetch released MLS KeyPackage: %v", err)
@@ -292,6 +409,7 @@ func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 		AuthorityPlanId:        "federated-plan",
 		AuthorityStationPeerId: "station-authority",
 		Target:                 bob,
+		RequestId:              "federated-claim-request",
 		PlanExpiresAt: timestamppb.New(
 			fixture.clock.Now().Add(time.Minute),
 		),
@@ -344,6 +462,64 @@ func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 	}
 }
 
+func TestCanonicalMLSFetchExactReplayAndRequestConflict(t *testing.T) {
+	fixture := newCanonicalFixture(t)
+	ctx := context.Background()
+	alice := endpoint("ptid:alice", "alice-1")
+	bob := endpoint("ptid:bob", "bob-1")
+	for _, material := range [][]byte{
+		[]byte("mls-api-replay-package-1"),
+		[]byte("mls-api-replay-package-2"),
+	} {
+		uploadMLS(t, fixture, bob, material)
+	}
+	request := mlsFetchRequest(
+		"mls-api-replay",
+		alice,
+		bob.GetActor(),
+		"",
+	)
+
+	first, err := fixture.api.FetchMLSKeyPackage(
+		ctx,
+		alice.GetActor().GetPtid(),
+		alice.GetDeviceId(),
+		request,
+	)
+	if err != nil {
+		t.Fatalf("first MLS fetch: %v", err)
+	}
+	replayed, err := fixture.api.FetchMLSKeyPackage(
+		ctx,
+		alice.GetActor().GetPtid(),
+		alice.GetDeviceId(),
+		proto.Clone(request).(*kemodel.FetchMlsKeyPackageRequest),
+	)
+	if err != nil {
+		t.Fatalf("replay MLS fetch: %v", err)
+	}
+	if !proto.Equal(first, replayed) {
+		t.Fatalf("MLS replay changed exact response: first=%+v replay=%+v", first, replayed)
+	}
+	if got := countMLS(t, fixture, bob); got != 1 {
+		t.Fatalf("MLS replay consumed another package, count=%d", got)
+	}
+
+	conflicting := proto.Clone(request).(*kemodel.FetchMlsKeyPackageRequest)
+	conflicting.HomeStationPeerId = testLocalStation
+	if _, err := fixture.api.FetchMLSKeyPackage(
+		ctx,
+		alice.GetActor().GetPtid(),
+		alice.GetDeviceId(),
+		conflicting,
+	); !domain.IsCode(err, domain.ErrorCodeConflict) {
+		t.Fatalf("MLS request ID hash conflict error = %v", err)
+	}
+	if got := countMLS(t, fixture, bob); got != 1 {
+		t.Fatalf("MLS request conflict mutated KeyPackages, count=%d", got)
+	}
+}
+
 func TestCanonicalMLSClaimRejectsPeerAndExpiryBeforeConsumption(t *testing.T) {
 	fixture := newCanonicalFixture(t)
 	ctx := context.Background()
@@ -354,6 +530,7 @@ func TestCanonicalMLSClaimRejectsPeerAndExpiryBeforeConsumption(t *testing.T) {
 		AuthorityPlanId:        "claim-validation",
 		AuthorityStationPeerId: "station-authority",
 		Target:                 bob,
+		RequestId:              "claim-validation-request",
 		PlanExpiresAt: timestamppb.New(
 			fixture.clock.Now().Add(time.Minute),
 		),
@@ -570,6 +747,8 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 			Actor:             carol.GetActor(),
 			TargetDeviceId:    carol.GetDeviceId(),
 			HomeStationPeerId: testRemoteStation,
+			RequestId:         "remote-direct-fetch",
+			Requester:         alice,
 		},
 	)
 	if err != nil {
@@ -591,6 +770,8 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 		&kemodel.FetchMlsKeyPackageRequest{
 			Actor:             carol.GetActor(),
 			HomeStationPeerId: testRemoteStation,
+			RequestId:         "remote-mls-fetch",
+			Requester:         alice,
 		},
 	)
 	if err != nil {
@@ -607,6 +788,7 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 	}
 	reserved, err := fixture.service.ReserveMLSKeyPackage(
 		ctx,
+		"remote-claim-request",
 		"remote-authority-plan",
 		domain.Endpoint{
 			ActorPTID: carol.GetActor().GetPtid(),
@@ -619,11 +801,13 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 	}
 	if !reserved.IrreversiblyConsumed ||
 		reserved.HomeStation != testRemoteStation ||
-		fixture.federation.MLSClaimLen() != 1 {
+		fixture.federation.MLSClaimLen() != 1 ||
+		fixture.federation.LastMLSClaim().RequestID != "remote-claim-request" {
 		t.Fatalf(
-			"remote reservation=%+v claim calls=%d",
+			"remote reservation=%+v claim calls=%d claim=%+v",
 			reserved,
 			fixture.federation.MLSClaimLen(),
+			fixture.federation.LastMLSClaim(),
 		)
 	}
 }
@@ -650,7 +834,7 @@ func newCanonicalFixture(t *testing.T) *canonicalFixture {
 	if err != nil {
 		t.Fatalf("create canonical key exchange store: %v", err)
 	}
-	if err := store.MigrateTestSchema(context.Background()); err != nil {
+	if err := store.Migrate(context.Background()); err != nil {
 		t.Fatalf("migrate canonical key exchange test schema: %v", err)
 	}
 	if err := db.AutoMigrate(&actoridentitypersistence.ActorDeviceModel{}); err != nil {
@@ -741,6 +925,20 @@ func endpoint(actorPTID string, deviceID string) *actormodel.ActorDeviceRef {
 	}
 }
 
+func mlsFetchRequest(
+	requestID string,
+	requester *actormodel.ActorDeviceRef,
+	actor *actormodel.ActorRef,
+	homeStationID string,
+) *kemodel.FetchMlsKeyPackageRequest {
+	return &kemodel.FetchMlsKeyPackageRequest{
+		Actor:             actor,
+		HomeStationPeerId: homeStationID,
+		RequestId:         requestID,
+		Requester:         requester,
+	}
+}
+
 func directUploadRequest(
 	device *actormodel.ActorDeviceRef,
 	signedPreKeyID int32,
@@ -821,6 +1019,8 @@ func fetchDirect(
 		&kemodel.FetchDirectKeyBundlesRequest{
 			Actor:          actor,
 			TargetDeviceId: targetDeviceID,
+			RequestId:      uuid.NewString(),
+			Requester:      endpoint("ptid:alice", "alice-1"),
 		},
 	)
 	if err != nil {
@@ -976,12 +1176,14 @@ type recordingFederation struct {
 	directFetchCalls int
 	mlsFetchCalls    int
 	mlsClaimCalls    int
+	lastMLSClaim     domain.MLSKeyPackageClaim
 	dkxEnvelopes     []domain.DirectKeyExchangeEnvelope
 }
 
 func (p *recordingFederation) FetchDirectKeyBundles(
 	_ context.Context,
 	_ string,
+	_ domain.DestructiveReadIdentity,
 	_ string,
 	_ string,
 ) ([]domain.DirectKeyBundle, error) {
@@ -998,6 +1200,7 @@ func (p *recordingFederation) FetchDirectKeyBundles(
 func (p *recordingFederation) FetchMLSKeyPackage(
 	_ context.Context,
 	_ string,
+	_ domain.DestructiveReadIdentity,
 	_ string,
 ) (*domain.MLSKeyPackageReservation, error) {
 	p.mu.Lock()
@@ -1018,6 +1221,7 @@ func (p *recordingFederation) ClaimMLSKeyPackage(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.mlsClaimCalls++
+	p.lastMLSClaim = claim
 	return domain.MLSKeyPackageReservation{
 		PlanID:               claim.AuthorityPlanID,
 		Target:               claim.Target,
@@ -1073,4 +1277,11 @@ func (p *recordingFederation) MLSClaimLen() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.mlsClaimCalls
+}
+
+func (p *recordingFederation) LastMLSClaim() domain.MLSKeyPackageClaim {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.lastMLSClaim
 }

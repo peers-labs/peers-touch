@@ -50,6 +50,9 @@ Accepted decisions:
 - `AO-D04`: atomic route/contract/store/consumer hard cut;
 - `AO-D05`: shared domain-neutral Federation transport;
 - `AO-D06`: Conversation DDD bounded context;
+- `AO-D07`: canonical creation identity, plan-bound group genesis, durable
+  remote command transport, one committed event truth, signed Social mutation,
+  and exact replay for destructive public-material reads;
 - `MP-D09`, `MP-D10`, revised `MP-D30`;
 - Federated Social `D-07`.
 
@@ -347,10 +350,42 @@ Responsibility:
 
 - Switch all production owners and consumers exactly once.
 
+Priority prerequisite:
+
+- `CA-W5-P0 Donor Reconciliation` is the first dependency-ready CA-W5 task.
+- Treat Draft PR `#107` and donor commit
+  `3d4e858ce0c8e28969e01a736e2b238269aedb3b` as read-only evidence from
+  `peers-social`; do not merge the branch or cherry-pick the commit.
+- Semantically compare and port only the unique Conversation query slice:
+  `application/query/service.go`, `application/query/service_test.go`,
+  `domain/repository/repository.go`,
+  `infrastructure/persistence/repositories.go`,
+  `infrastructure/persistence/repositories_query_test.go`,
+  `infrastructure/persistence/schema.go`, and
+  `interface/http/client_adapter.go`.
+- Reconcile the donor behavior against the accepted AO-D07 contract and the
+  current production composition. The canonical `peers-group-chat` contract,
+  ownership, persistence, and error semantics win every divergence.
+- Record the donor's 105-file `conversation/engine/` deletion as the final
+  CA-W5 deletion manifest. Apply deletions only after replacement production
+  composition has no live imports or behavior dependency.
+- Reject donor generated bindings, protected `agent.pb.go`, divergent AO-D07
+  documents, and overlapping Desktop/Mobile/Messaging Core implementations.
+  Regenerate bindings only from canonical Proto sources in this worktree.
+- Complete the focused Conversation query/persistence/HTTP tests and a
+  zero-duplicate semantic review before resuming the broader CA-W5 cutover.
+
 Deliverables:
 
 - Register canonical Conversation, Device, Inbox, Recovery, Key Exchange, and Federation
   routes.
+- Implement the accepted AO-D07 wire contract as one proto-first consumer cut:
+  caller-owned creation/request identities, plan-bound group genesis, one
+  local-or-signed command route, `ConversationEvent` as the sole committed
+  event, signed Social mutation, and exact destructive-read replay.
+- Require Direct creation and Social Friend Request commands to carry the explicit
+  `federation_id` used for Home Station membership validation; no implicit or default
+  Federation selection is permitted.
 - Migrate every Desktop/Mobile transport, Tauri command, Harness, fixture, fault proxy,
   capability contract, and readback query.
 - Switch persistence to the canonical Conversation authority and resource-owner stores.
@@ -559,7 +594,8 @@ matrices. Local/static success cannot replace native receiver proof.
 | CA-W2 Conversation DDD bounded context | done | Conversation now has a test-only Station DDD composition with aggregate, entity, value-object, domain-event, typed-error, repository/UOW, application command/query, persistence, delivery, identity, Federation, and HTTP-mapping boundaries. Focused tests cover deterministic event hashes and optional-field presence, exact accepted/terminal-rejected command replay, authenticated forwarded replay and key-state admission, authority plans, exact delivery commitments, membership/MLS epochs and retirement, delegated leave, follower buffering/convergence/fork rejection, settings/read cursors, aggregate rehydration, PostgreSQL timestamp precision, schema keys, and post-commit notification. `(cd apps/station && go test -race -count=1 ./app/subserver/conversation/...)`, focused `go vet`, `./tooling/scripts/check-go-style.sh`, Desktop/Mobile generated-TypeScript compilation, and isolated proto regeneration pass. Isolated `HEAD + CA-W2-only` tree `faf1879f9f54af6cfa814d2a2d1d4844f8586602` passes the full Conversation race suite; independent command/security, persistence, aggregate, follower, timestamp, and query reviews found no remaining blocker. The ownership Gate fails closed only on the same 148 enumerated CA-W3..CA-W5 debts: 4 forbidden routes, 17 forbidden truth-store identifiers, 23 owner-root mismatches, and 104 superseded proto symbols, with no missing DDD layer or forbidden DDD import. The PostgreSQL runtime test is registered but skipped when `MESSAGING_TEST_POSTGRES_DSN` is absent. No production handler, route, store, consumer, or runtime cutover is claimed before CA-W5. |
 | CA-W3 Resource-owner services | done | Actor Identity, Recovery, Key Exchange, Conversation Device Inbox, attachments, interactions, and delivery receipts now have typed owner ports and test-only composition without Station Messaging imports. Device Inbox claims advance a consumer epoch for every lease attempt; stale ACK/reject cannot mutate a reclaimed item. Attachment mutations revalidate Conversation membership and Actor Identity device state inside the owning SQL transaction, actor/message quota admission is serialized, grants commit as one exact batch, verification uses an exclusive bounded lease, and cleanup reclaims expired uploads/parts/verification blobs and unattached objects with fenced retries. The Conversation authority persists the exact per-endpoint delivery commitment set atomically with each event and derives delivery status from authority receipts, excluding originator synchronization markers without fabricating remote queue rows. The exact CA-W3 race command, focused `go vet`, `gofmt`, `git diff --check`, and Go style pass. PostgreSQL contention coverage is registered but remains `UNPROVEN` because `MESSAGING_TEST_POSTGRES_DSN` is absent. No production route/store cutover or old-path deletion is claimed before CA-W5. |
 | CA-W4 Shared Federation and Social | done | Shared Federation supplies authenticated frames, durable outbox/inbox leases, retry/dedup/hash-conflict behavior, typed Conversation and Social receivers, and same-Station loopback. Conversation command conflicts return durable authority results bound to the originating command SHA-256; remote Device Inbox lane sequence remains target-owned. Social enforces receiver-local block/existing-relationship policy, atomically persists command/projection/result-outbox state, binds results to exact outgoing command bytes, rejects retryable result frames before durable resolution, and resolves remote actor keys from PTID plus a pinned Home Station profile/locator chain rather than `ActorRef.acct`; cached remote keys are revalidated against the latest signed active-key profile. The exact CA-W4 race command, focused `go vet`, `gofmt`, `git diff --check`, Go style, and `messaging-platform-contract` run `20260906T204614333077Z-6c52a4241e67fb14b3a0663a346aa7a5` pass. Two independent post-fix reviews report zero P0/P1 findings. Live DHT/Relay two-Station convergence remains `UNPROVEN` until CA-W5 production composition and CA-W6 runtime Acceptance. |
-| CA-W5 Atomic production hard cut | pending | — |
+| CA-W5-P0 Donor reconciliation | done | `peers-social` remained a read-only donor. The unique Conversation query/persistence/HTTP behavior was reconciled semantically into `peers-group-chat`; divergent contracts, generated bindings, and overlapping Desktop/Mobile/Messaging Core code were rejected. The retired 105-file `conversation/engine/` tree is deleted, and the final source contains no duplicate engine owner. |
+| CA-W5 Atomic production hard cut | source checkpoint ready / runtime unproven | AO-D07 is implemented proto-first across Station, Desktop, Mobile, and portable Messaging Core. Canonical Conversation production composition now owns creation, commands, event truth, follower recovery, attachment control/data forwarding, and Device Inbox effects; Key Exchange owns local reservation and exact-replay irreversible remote KeyPackage claims; shared Federation owns authenticated route/relay transport. Retired Envelope, flat Conversation, engine, superseded proto, generated bindings, callers, stores, aliases, and fallbacks are deleted. `proto-build` run `20260907T095814186121Z-b39852f3e6f655416a20f3194dc3699d`, `station-api-ownership` run `20260907T095552389681Z-9035a2fbed82ec5a54b98f5b260fe383`, `station-messaging-unit` run `20260907T095534375916Z-3761b27ef989ec4449bf94b82a4a2523`, `messaging-platform-contract` run `20260907T095650555959Z-0f85322adf5c78105d9ca8f15a4a351b`, `desktop-check` run `20260907T095738644264Z-aa04882b997b2eeb5f7e9b2001600a10`, and `chat-native-visible-static` run `20260907T100757881125Z-070fde35dba471e1da0351dc8d030cb0` pass. Focused Station race/vet, Desktop 540 tests and build, Desktop Rust library check, Mobile full check, Messaging Core 104+2 tests, Go style, and diff checks pass. The Gap Detector correctly keeps product proof `UNPROVEN` until the CA-W6 native receiver gates run. Repository-wide Station tests also contain unrelated pre-existing Frame/vendor failures and live `:18080` tests; they do not establish CA-W6 runtime proof. |
 | CA-W6 Runtime Acceptance | pending | — |
 | CA-W7 Completion/docs/knowledge audit | pending | — |
 
@@ -587,15 +623,14 @@ matrices. Local/static success cannot replace native receiver proof.
 6. No compatibility shim, dual write, fallback read, mock business API, stale evidence,
    or undeclared route remains.
 
-Plan state: `PLAN_APPROVED`. CA-W0 through CA-W4 are complete at the source and
-deterministic-test boundary: governed routes are classified, retained
-capabilities have unique generated canonical contracts, Conversation has a
-test-only DDD composition, resource owners are separated, and shared
-Federation/Social fault semantics pass focused race tests. The latest
-`station-api-ownership` run
-`20260906T204513002878Z-bc117d01f6ba3e7fe9e63f99a4308e85` still fails closed
-with exactly the expected 148 CA-W5 deletion/cutover diagnostics: 4 forbidden
-routes, 17 forbidden truth-store identifiers, 23 owner-root mismatches, and 104
-superseded proto symbols. CA-W5 through CA-W7 remain open; production
-composition, native two-Station convergence, and PostgreSQL contention evidence
-remain `UNPROVEN`.
+Plan state: `PLAN_APPROVED`. CA-W0 through CA-W4 are complete, and CA-W5 has a
+locally verified source checkpoint ready for commit. AO-D07 now has one
+generated wire contract, one
+Conversation production owner, resource-owned Actor/Recovery/Key Exchange
+services, shared Federation transport, migrated Desktop/Mobile consumers, and
+zero legacy Messaging/Envelope/engine ownership diagnostics. CA-W6 and CA-W7
+remain open. The Acceptance Gap Detector keeps completion `UNPROVEN` because
+the required native receiver/runtime cells have not run against this source.
+Production two-Station convergence, Windows native receiver behavior, and
+PostgreSQL contention evidence remain `UNPROVEN`; the source checkpoint does
+not substitute for those runtime gates.

@@ -4,11 +4,9 @@ import type { JsonValue } from '@bufbuild/protobuf'
 import { RustCommandException, type RustCommandResult } from './desktop_api'
 import type {
   ConversationServiceContract,
-  EnvelopeServiceContract,
   KeyPackageServiceContract,
   DeviceServiceContract,
   DeviceInfo,
-  DirectKeyExchangeServiceContract,
   IMServiceV1,
   ThreadCountResult,
   MemberSettingsResult,
@@ -17,14 +15,15 @@ import type {
   MessagingProjection,
   MessagingServiceContract,
 } from './im-service-contract'
-import { DirectKeyExchangeKind } from './im-service-contract'
-import type { Conversation, CommittedConversationEvent } from '../gen/proto/domain/chat/conversation_pb'
+import type { Conversation } from '../gen/proto/domain/chat/conversation_pb'
 import {
-  CommittedConversationEventSchema,
   ConversationMemberSchema,
   ConversationSchema,
 } from '../gen/proto/domain/chat/conversation_pb'
-import { DeviceInboxItemSchema } from '../gen/proto/domain/chat/envelope_pb'
+import {
+  ConversationEventSchema,
+  type ConversationEvent,
+} from '../gen/proto/domain/chat/event_pb'
 
 async function cmd<TInput, TData>(command: string, input?: TInput): Promise<TData> {
   const payload = input === undefined ? undefined : { input }
@@ -98,9 +97,9 @@ const GO_EVENT_PAYLOAD_KEYS: Record<string, string> = {
   MembershipTransitionCommitted: 'membershipTransitionCommitted',
   ConversationCreated: 'conversationCreated',
   ConversationDissolved: 'conversationDissolved',
-  SettingsChanged: 'settingsChanged',
-  Reaction: 'reaction',
-  Pin: 'pin',
+  ConversationUpdated: 'conversationUpdated',
+  ReactionCommitted: 'reactionCommitted',
+  MessagePinCommitted: 'messagePinCommitted',
 }
 
 function protobufTimestampJson(value: unknown): unknown {
@@ -119,7 +118,7 @@ function normalizeGoEventTimestamps(value: unknown): unknown {
   for (const [key, item] of Object.entries(source)) {
     normalized[key] = [
       'committed_at',
-      'client_ts',
+      'client_timestamp',
       'edited_at',
       'retracted_at',
       'ts',
@@ -146,12 +145,15 @@ function normalizeGoConversationEvent(value: unknown): unknown {
   return normalized
 }
 
-export function normalizeConversationEvents(events: readonly unknown[] | undefined): CommittedConversationEvent[] {
+export function normalizeConversationEvents(events: readonly unknown[] | undefined): ConversationEvent[] {
   return (events ?? []).map((event) => {
     try {
-      return fromJson(CommittedConversationEventSchema, event as any)
+      return fromJson(ConversationEventSchema, event as JsonValue)
     } catch {
-      return fromJson(CommittedConversationEventSchema, normalizeGoConversationEvent(event) as any)
+      return fromJson(
+        ConversationEventSchema,
+        normalizeGoConversationEvent(event) as JsonValue,
+      )
     }
   })
 }
@@ -229,41 +231,6 @@ const conversationService: ConversationServiceContract = {
   },
 }
 
-const envelopeService: EnvelopeServiceContract = {
-  async submit(envelope) {
-    const payloadB64 = envelope.payloadBytes && envelope.payloadBytes.length > 0
-      ? bytesToBase64(envelope.payloadBytes)
-      : '';
-    const resp = await cmd<any, { envelope_id?: string; error?: string }>('envelope_submit', {
-      envelope: {
-        conversation_id: envelope.conversationId,
-        sender_ptid: envelope.senderPtid,
-        sender_device_id: envelope.senderDeviceId,
-        recipient_ptid: envelope.recipientPtid,
-        payload_type: envelope.payloadType,
-        payload_bytes: payloadB64,
-        idempotency_key: envelope.idempotencyKey,
-      },
-    })
-    if (!resp.envelope_id) {
-      throw new Error(resp.error || 'envelope_submit: no envelope_id returned')
-    }
-    return resp.envelope_id
-  },
-
-  async ack(deviceId, inboxItemId) {
-    await cmd('envelope_ack', { device_id: deviceId, inbox_item_id: inboxItemId })
-  },
-
-  async resume(deviceId, afterCursor) {
-    const resp = await cmd<any, { items: unknown[] }>('envelope_resume', {
-      device_id: deviceId,
-      after_cursor: afterCursor ?? '',
-    })
-    return (resp.items ?? []).map(item => fromJson(DeviceInboxItemSchema, item as any))
-  },
-}
-
 const keyPackageService: KeyPackageServiceContract = {
   async upload(deviceId, data) {
     await cmd('keypackage_upload', { device_id: deviceId, data: bytesToBase64(data) })
@@ -301,32 +268,6 @@ const deviceService: DeviceServiceContract = {
 
   async revoke(deviceId) {
     await cmd('device_revoke', { device_id: deviceId })
-  },
-}
-
-const dkxService: DirectKeyExchangeServiceContract = {
-  async send(
-    recipientPtid,
-    recipientDeviceId,
-    conversationId,
-    sessionId,
-    kind,
-    opaqueKeyMaterial,
-    recipientStationPeerId,
-  ) {
-    if (!recipientPtid || !recipientDeviceId) {
-      throw new Error('direct key exchange requires a recipient endpoint');
-    }
-    const resp = await cmd<any, { envelope_id: string }>('dkx_send', {
-      recipient_ptid: recipientPtid,
-      recipient_device_id: recipientDeviceId,
-      recipient_station_peer_id: recipientStationPeerId ?? '',
-      conversation_id: conversationId,
-      session_id: sessionId,
-      kind: kind as number,
-      opaque_key_material: bytesToBase64(opaqueKeyMaterial),
-    })
-    return resp.envelope_id
   },
 }
 
@@ -401,20 +342,28 @@ function projectMessagingMessage(message: MessagingMessageWire): MessagingProjec
 }
 
 const messagingService: MessagingServiceContract = {
-  async createDirect(peerPtid) {
+  async createDirect(input) {
     const response = await cmd<
-      { peer_ptid: string },
+      { peer_ptid: string; federation_id: string },
       { conversation_id: string; state: 'projected' }
-    >('messaging_create_direct', { peer_ptid: peerPtid })
+    >('messaging_create_direct', {
+      peer_ptid: input.peerPtid,
+      federation_id: input.federationId,
+    })
     return {
       conversationId: response.conversation_id,
       state: response.state,
     }
   },
 
-  async createGroup(conversationId, name, memberPtids) {
+  async createGroup(conversationId, name, memberPtids, federationId) {
     const response = await cmd<
-      { conversation_id: string; name: string; member_ptids: string[] },
+      {
+        conversation_id: string
+        name: string
+        member_ptids: string[]
+        federation_id: string
+      },
       {
         conversation_id: string
         command_id: string
@@ -424,6 +373,7 @@ const messagingService: MessagingServiceContract = {
       conversation_id: conversationId,
       name,
       member_ptids: memberPtids,
+      federation_id: federationId,
     })
     return {
       conversationId: response.conversation_id,
@@ -854,11 +804,7 @@ const messagingService: MessagingServiceContract = {
 
 export const imServiceV1: IMServiceV1 = {
   conversation: conversationService,
-  envelope: envelopeService,
   keyPackage: keyPackageService,
   device: deviceService,
-  dkx: dkxService,
   messaging: messagingService,
 }
-
-export { DirectKeyExchangeKind }

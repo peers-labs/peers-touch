@@ -9,15 +9,21 @@
       "required_gates": ["proto-build", "station-api-ownership", "station-messaging-unit", "messaging-platform-contract"],
       "synthetic_paths": [
         "model/domain/chat/*.proto",
+        "model/domain/actor/actor.proto",
+        "model/domain/key_exchange/key_exchange.proto",
+        "model/domain/recovery/recovery.proto",
         "apps/station/app/subserver/conversation/**",
-        "apps/station/app/subserver/envelope/**"
+        "apps/station/app/subserver/actor_identity/**",
+        "apps/station/app/subserver/key_exchange/**",
+        "apps/station/app/subserver/recovery/**",
+        "apps/station/frame/core/federation/**"
       ],
       "evidence": {
         "truth_sources": [
           "model/domain/chat/*.proto",
-          "messaging device registry",
+          "Actor Device directory",
           "conversation event log",
-          "per-device messaging queue"
+          "per-device Device Inbox"
         ],
         "surfaces": [
           "/conversation/direct",
@@ -30,7 +36,7 @@
         "proven_scope": [
           "Chat proto contracts regenerate derived code",
           "Station governed routes match the capability ownership registry",
-          "Conversation and envelope package tests pass",
+          "Canonical Conversation and shared Federation package tests pass",
           "Static contract checks preserve canonical resource routes and one client crypto lifecycle"
         ],
         "unproven_scope": [
@@ -46,14 +52,16 @@
       "features": ["chat-realtime-delivery"],
       "required_gates": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"],
       "synthetic_paths": [
-        "apps/station/app/subserver/conversation/**",
-        "apps/station/app/subserver/envelope/**",
+        "apps/station/app/subserver/conversation/application/delivery/**",
+        "apps/station/app/subserver/conversation/infrastructure/delivery/**",
+        "apps/station/app/subserver/conversation/interface/http/device_inbox.go",
+        "apps/station/frame/core/federation/**",
         "apps/desktop/src-tauri/src/messaging/**",
         "apps/desktop/src/runtimes/socialRuntime.ts"
       ],
       "evidence": {
         "truth_sources": [
-          "per-device ordered messaging queue",
+          "per-device ordered Device Inbox",
           "Desktop messaging lifecycle worker",
           "Desktop chat projection"
         ],
@@ -64,7 +72,7 @@
         ],
         "proven_by": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"],
         "proven_scope": [
-          "Station Conversation delivery and envelope packages compile and pass tests",
+          "Station Conversation delivery and shared Federation packages compile and pass tests",
           "Desktop messaging lifecycle and chat projection compile together"
         ],
         "unproven_scope": [
@@ -129,7 +137,9 @@
         "apps/desktop/src-tauri/src/messaging/direct.rs",
         "apps/desktop/src-tauri/src/messaging/receipt.rs",
         "apps/desktop/src/store/socialChat.ts",
-        "apps/station/app/subserver/conversation/engine/application/receipt_service.go"
+        "apps/station/app/subserver/conversation/application/interaction/service.go",
+        "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
+        "apps/station/app/subserver/conversation/interface/http/interaction.go"
       ],
       "evidence": {
         "truth_sources": [
@@ -215,7 +225,9 @@
       ],
       "synthetic_paths": [
         "model/domain/chat/command.proto",
-        "apps/station/app/subserver/conversation/engine/application/authority_service.go",
+        "apps/station/app/subserver/conversation/application/command/service.go",
+        "apps/station/app/subserver/conversation/application/interaction/service.go",
+        "apps/station/app/subserver/conversation/interface/http/mapper.go",
         "apps/desktop/src-tauri/src/messaging/public_event.rs",
         "apps/desktop/src/store/socialChat.ts",
         "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
@@ -224,7 +236,7 @@
         "truth_sources": [
           "Station Conversation authority events",
           "Station actor read cursor",
-          "per-device ordered messaging queue",
+          "per-device ordered Device Inbox",
           "Device Messaging Engine SQLCipher interaction projection"
         ],
         "surfaces": [
@@ -234,7 +246,7 @@
         ],
         "proven_by": ["chat-native-interactions-e2e"],
         "proven_scope": [
-          "Proto, Station, Engine and Desktop interaction contracts compile and pass their declared structural gates",
+          "Proto, Station Conversation DDD and Desktop interaction contracts compile and pass their declared structural gates",
           "Registry changes select the dedicated interaction Native Gate"
         ],
         "unproven_scope": [
@@ -257,7 +269,9 @@
         "chat-native-typing-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/conversation/engine/application/typing_service.go",
+        "apps/station/app/subserver/conversation/application/interaction/pulse_ledger.go",
+        "apps/station/app/subserver/conversation/application/interaction/service.go",
+        "apps/station/app/subserver/conversation/interface/http/interaction.go",
         "apps/desktop/src/components/chat/ChatMessageArea.tsx",
         "apps/desktop/src/store/socialChat.ts"
       ],

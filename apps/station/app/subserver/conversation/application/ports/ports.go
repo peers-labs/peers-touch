@@ -18,6 +18,7 @@ type DeviceInboxPayloadKind string
 
 const (
 	DeviceInboxPayloadConversationEvent DeviceInboxPayloadKind = "conversation_event"
+	DeviceInboxPayloadCommandResult     DeviceInboxPayloadKind = "command_result"
 	DeviceInboxPayloadDeviceReceipt     DeviceInboxPayloadKind = "device_receipt"
 )
 
