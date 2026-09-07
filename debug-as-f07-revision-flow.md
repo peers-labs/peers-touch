@@ -381,3 +381,25 @@
   `BASE-APPROVAL-EXPIRED`. AS-F07 has repeat exact-source runtime evidence;
   instrumentation remains `[OPEN]` until the Owner explicitly authorizes
   removal.
+- Exact-source run
+  `20260907T192305700028Z-cd6ebaa86f86437938a3fe82318213ee`
+  on `1f5cf2e31bcd8091a937d41816c42120004bb6a8` crossed all four
+  AS-F06 tuples and failed at Browser English AS-F07 while selecting the first
+  regenerated branch through `chatStore.branchFromMessage`. Retry, baseline,
+  both regenerations, edit, stale rejection, and the first branch selection
+  completed. The bounded failure reports `expected=8:actual=8`, excluding a
+  post-failure conversation-version advance but not proving which version the
+  Store submitted or which Station rejection occurred. Provisioner cleanup
+  completed `DONE / PROVEN / passed`.
+
+## Current Branch-Selection Hypotheses
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| V | `branchFromMessage` fetches or submits a stale expected version despite the Harness owning version 8. | Medium | Low | Pre-call server version is 8 but Station returns typed `VERSION_CONFLICT`. |
+| W | The first regenerated assistant is no longer a valid branch head. | Medium | Low | Pre-call active target differs, versions match, and Station returns `AGENT_INVALID_SOURCE_STATE`. |
+| X | Revision event persistence fails after validation, as in the prior per-Turn event collision. | Medium | Low | Versions match, target is a distinct head, and Station returns an internal persistence error. |
+
+The next instrumentation records only numeric versions, active-target
+relationships, typed transport status/code/reason, and the Station error code
+and message. It does not record actor identity, message content, credentials,
+or raw tokens.
