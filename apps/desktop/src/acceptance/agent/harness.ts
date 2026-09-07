@@ -8550,7 +8550,7 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseApprovalDenied(ctx);
     case 'BASE-APPROVAL_EXPIRED':
       return evaluateBaseApprovalExpired(ctx);
-    case 'BASE-ATTACHMENT-REJECTED':
+    case 'BASE-ATTACHMENT_REJECTED':
       return evaluateBaseAttachmentRejected(ctx);
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
@@ -11261,7 +11261,7 @@ export function installAcceptanceHarness(): void {
         scenarioFacts = scenario.facts;
       }
 
-      if (cell === 'BASE-ATTACHMENT-REJECTED') {
+      if (cell === 'BASE-ATTACHMENT_REJECTED') {
         const capabilitySessionId =
           capabilitySessions.selectedStationSession?.session_id;
         if (!capabilitySessionId) {
@@ -12411,7 +12411,7 @@ export function installAcceptanceHarness(): void {
         (
           cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
-          || cell === 'BASE-ATTACHMENT-REJECTED'
+          || cell === 'BASE-ATTACHMENT_REJECTED'
         )
         && scenarioFacts
         && currentConversationId
@@ -12566,7 +12566,7 @@ export function installAcceptanceHarness(): void {
         stationReadback.revision = Number(lineage.decisionRevision);
         stationReadback.stateHash = await sha256Hex(stableJson(station));
       }
-      if (cell === 'BASE-ATTACHMENT-REJECTED' && scenarioFacts) {
+      if (cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts) {
         const station = evidenceRecord(
           scenarioFacts.station,
           'foundationAttachmentRejectedStation',
@@ -12651,7 +12651,7 @@ export function installAcceptanceHarness(): void {
                 ).observedAt,
               ),
             }
-          : cell === 'BASE-ATTACHMENT-REJECTED' && observedRuntimeEvent
+          : cell === 'BASE-ATTACHMENT_REJECTED' && observedRuntimeEvent
             ? {
                 eventId: observedRuntimeEvent.eventId ?? '',
                 sequence: observedRuntimeEvent.sequence,
@@ -12731,7 +12731,7 @@ export function installAcceptanceHarness(): void {
               ),
               maximum: 0,
             }
-          : cell === 'BASE-ATTACHMENT-REJECTED' && scenarioFacts
+          : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
             ? (() => {
                 const station = evidenceRecord(
                   scenarioFacts.station,
@@ -12893,7 +12893,7 @@ export function installAcceptanceHarness(): void {
                     'foundationActiveMutationConflictCleanup',
                   ).priorSelection
               )
-            : cell === 'BASE-ATTACHMENT-REJECTED' && scenarioFacts
+            : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
               ? (
                   evidenceRecord(
                     scenarioFacts.cleanup,
@@ -12969,7 +12969,7 @@ export function installAcceptanceHarness(): void {
           ? { proof: scenarioFacts.cleanup }
           : cell === 'AS-F12' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
-          : cell === 'BASE-ATTACHMENT-REJECTED' && scenarioFacts
+          : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : (
             cell === 'BASE-APPROVAL_DENIED'
@@ -12985,7 +12985,7 @@ export function installAcceptanceHarness(): void {
         cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
         || cell === 'BASE-APPROVAL_DENIED'
         || cell === 'BASE-APPROVAL_EXPIRED'
-        || cell === 'BASE-ATTACHMENT-REJECTED'
+        || cell === 'BASE-ATTACHMENT_REJECTED'
       ) && scenarioFacts
         ? evidenceRecord(
             scenarioFacts.receiver,
@@ -13017,7 +13017,7 @@ export function installAcceptanceHarness(): void {
             recoveryText: receiver.recoveryText,
             errorText: receiver.errorText,
           };
-        } else if (cell === 'BASE-ATTACHMENT-REJECTED') {
+        } else if (cell === 'BASE-ATTACHMENT_REJECTED') {
           receiverVisible =
             receiver.errorVisible === true
             && receiver.removalVisible === true;
@@ -13075,7 +13075,7 @@ export function installAcceptanceHarness(): void {
         replayEvidence.replayHash = replay.acknowledgementReplayHash;
         replayEvidence.equal = replay.equal;
       }
-      if (cell === 'BASE-ATTACHMENT-REJECTED' && scenarioFacts) {
+      if (cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts) {
         const replay = evidenceRecord(
           scenarioFacts.replay,
           'foundationAttachmentRejectedReplay',
@@ -13174,7 +13174,7 @@ export function installAcceptanceHarness(): void {
           }
         }
         if (
-          cell === 'BASE-ATTACHMENT-REJECTED'
+          cell === 'BASE-ATTACHMENT_REJECTED'
           && preparedConversationId
         ) {
           try {

@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `0409ac063d22d822df0439679a183442b915d7f3` closes the typed attachment-rejection vertical and checkpoint `7f5465a0126f7bd3a9e3e445e9d617fc62aebc03` prevents AS-F07 provider prompt-cache collapse; exact-source run `20260906T205904874431Z-fe83662d3907add636c428bdee8245d4` runtime-confirmed AS-F07 cancellation/revision closure and exposed the Browser Simplified Chinese `BASE-APPROVAL-DENIED` projection gap; the local `agent-tool` closure now normalizes typed denial outcomes into the canonical localized error and gives typed terminal Station outcomes precedence over stale message-cache terminal state, with Desktop and focused Foundation verification passing; checkpoint deployment and the unchanged Gate rerun remain pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `96e89a7cb84c86f2ebb5770a2802dd7be80f8060` passed the prior Browser Simplified Chinese `BASE-APPROVAL-DENIED` receiver in exact-source run `20260907T011403128434Z-bf5f3dadf2a165be47905c315f9bc191`; the next first failure exposed a noncanonical hyphenated attachment cell ID in the Agent Acceptance harness and direct adapter. The local correction now hard-cuts every producer/oracle dispatch to the immutable matrix ID `BASE-ATTACHMENT_REJECTED`; checkpoint deployment and the unchanged Gate rerun remain pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5751,7 +5751,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `BASE-APPROVAL-EXPIRED` locale tuples passed with the existing predicates.
   The run then failed closed at
   `foundation-browser-direct / browser / direct_model /
-  BASE-ATTACHMENT-REJECTED / en / single / sample-001` because the
+  BASE-ATTACHMENT_REJECTED / en / single / sample-001` because the
   direct-runtime group is not implemented. The Gate finished
   `FAILED / PARTIAL / UNPROVEN`; Provisioner cleanup finished
   `DONE / PROVEN / passed`, all six client ports were released, and redaction
@@ -5759,7 +5759,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   rejection payload, keep the real composer draft available, invoke the real
   removal action, and prove zero Turn/provider/message side effects without
   changing the 419-cell matrix or its predicates.
-- The local `BASE-ATTACHMENT-REJECTED` vertical now preserves the Station-owned
+- The local `BASE-ATTACHMENT_REJECTED` vertical now preserves the Station-owned
   two-key typed error through SSE, Native, Desktop store, and localized
   receiver projection; retains the rejected composer draft; invokes the real
   remove action; and proves unchanged Station conversation/message/Turn and
@@ -5828,6 +5828,33 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `UNPROVEN` because authoritative latest evidence still identifies the
   pre-fix source commit. Exact-source checkpoint deployment and the unchanged
   419-cell Gate rerun remain pending.
+- Checkpoint `96e89a7cb84c86f2ebb5770a2802dd7be80f8060` was deployed
+  exact-source to `chat-native-disposable-station`. Gate run
+  `20260907T011403128434Z-bf5f3dadf2a165be47905c315f9bc191`
+  (aggregate
+  `20260907T011403008110Z-a13374034953cd28e1ef2ad7b99f2698`)
+  passed the Browser Simplified Chinese `BASE-APPROVAL_DENIED` receiver and
+  advanced to `BASE-ATTACHMENT_REJECTED`, where the direct adapter failed
+  before product execution because its implementation used the noncanonical
+  hyphenated cell ID. The runtime matrix remains unchanged; the local
+  correction hard-cuts all attachment producer/oracle dispatch to the existing
+  matrix ID. Provisioner cleanup completed `DONE / PROVEN / passed`, all six
+  client ports were released, and source identity and redaction passed.
+  Foundation/G-F remain `PARTIAL / UNPROVEN` pending checkpoint deployment and
+  the unchanged Gate rerun.
+- The canonical attachment cell-ID hard cut now has no retained
+  `BASE-ATTACHMENT-REJECTED` alias in the Agent harness, direct adapter,
+  independent oracle, or focused tests; the matrix remains unchanged at
+  `BASE-ATTACHMENT_REJECTED`. Focused Foundation tests pass `164/164`,
+  Desktop TypeScript checks pass, `acceptance-plan-self` passes, and
+  `git diff --check` passes. `acceptance-infra-validation` correctly rejects
+  stale source-bound latest evidence before the checkpoint. The broader
+  `acceptance-runtime-provisioning-self` Gate reports nine failures in
+  unchanged environment-contract, Home Station Provisioner, attestation, and
+  launch-context test surfaces; these are retained as unrelated Infra
+  diagnostics and are not reclassified as Agent product proof. Foundation/G-F
+  remain `PARTIAL / UNPROVEN` pending the exact-source checkpoint, Acceptance
+  binary rebuild, deployment, and unchanged Gate rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
