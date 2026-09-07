@@ -2,7 +2,7 @@ use super::{
     CommandRetryPolicy, ConversationMemberProjection, ConversationProjection, MessagingEngine,
 };
 use crate::infrastructure::station_client;
-use crate::model::chat::MemberRole;
+use crate::model::chat::{ConversationKind, MemberRole};
 use reqwest::Method;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
@@ -368,7 +368,7 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
         let members = member_ptids
             .into_iter()
             .map(|ptid| ConversationMemberProjection {
-                role: if ptid == owner_ptid {
+                role: if kind == ConversationKind::Group as i32 && ptid == owner_ptid {
                     MemberRole::Owner as i32
                 } else {
                     MemberRole::Member as i32
