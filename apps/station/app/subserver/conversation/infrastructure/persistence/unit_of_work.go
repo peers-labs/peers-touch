@@ -36,6 +36,11 @@ type UnitOfWork struct {
 	sealer   domainevent.Sealer
 }
 
+type boundUnitOfWork struct {
+	db          *gorm.DB
+	transaction ports.Transaction
+}
+
 func NewUnitOfWork(
 	db *gorm.DB,
 	adapters TransactionalAdapterFactory,
@@ -415,6 +420,26 @@ func (u *UnitOfWork) ExecuteSerialized(
 	return u.execute(ctx, key, fn)
 }
 
+// Bind returns a UnitOfWork view over a transaction already owned by another
+// durable boundary, such as the shared Federation inbox. The returned view
+// never starts or commits a nested transaction.
+func (u *UnitOfWork) Bind(tx *gorm.DB) (ports.UnitOfWork, error) {
+	if u == nil || tx == nil {
+		return nil, fmt.Errorf(
+			"conversation persistence: existing transaction and unit of work are required",
+		)
+	}
+	transaction, err := u.bindTransaction(tx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &boundUnitOfWork{
+		db:          tx,
+		transaction: transaction,
+	}, nil
+}
+
 func (u *UnitOfWork) execute(
 	ctx context.Context,
 	serializationKey string,
@@ -437,28 +462,93 @@ func (u *UnitOfWork) execute(
 				return fmt.Errorf("conversation persistence: acquire creation lock: %w", err)
 			}
 		}
-		adapters, err := u.adapters.Bind(tx)
+		transaction, err := u.bindTransaction(tx)
 		if err != nil {
-			return fmt.Errorf("conversation persistence: bind transactional adapters: %w", err)
+			return err
 		}
-		return fn(ports.Transaction{
-			Repositories: repository.Repositories{
-				Authority:      newAuthorityRepository(tx),
-				Events:         newEventRepository(tx, u.sealer),
-				Receipts:       newReceiptRepository(tx),
-				AuthorityPlans: newAuthorityPlanRepository(tx),
-				MemberSettings: newMemberSettingsRepository(tx),
-				ReadCursors:    newReadCursorRepository(tx),
-				LeaveIntents:   newLeaveIntentRepository(tx),
-				Followers:      newFollowerRepository(tx, u.sealer),
-			},
-			Identity:               adapters.Identity,
-			Federation:             adapters.Federation,
-			DeviceInbox:            adapters.DeviceInbox,
-			FederationOutbox:       adapters.FederationOutbox,
-			DeliveryCommitments:    adapters.DeliveryCommitments,
-			ObjectGrants:           adapters.ObjectGrants,
-			KeyPackageReservations: adapters.KeyPackageReservations,
-		})
+
+		return fn(transaction)
 	})
 }
+
+func (u *UnitOfWork) bindTransaction(tx *gorm.DB) (ports.Transaction, error) {
+	adapters, err := u.adapters.Bind(tx)
+	if err != nil {
+		return ports.Transaction{}, fmt.Errorf(
+			"conversation persistence: bind transactional adapters: %w",
+			err,
+		)
+	}
+
+	return ports.Transaction{
+		Repositories: repository.Repositories{
+			Authority:      newAuthorityRepository(tx),
+			Events:         newEventRepository(tx, u.sealer),
+			Receipts:       newReceiptRepository(tx),
+			AuthorityPlans: newAuthorityPlanRepository(tx),
+			MemberSettings: newMemberSettingsRepository(tx),
+			ReadCursors:    newReadCursorRepository(tx),
+			LeaveIntents:   newLeaveIntentRepository(tx),
+			Followers:      newFollowerRepository(tx, u.sealer),
+		},
+		Identity:               adapters.Identity,
+		Federation:             adapters.Federation,
+		DeviceInbox:            adapters.DeviceInbox,
+		FederationOutbox:       adapters.FederationOutbox,
+		DeliveryCommitments:    adapters.DeliveryCommitments,
+		ObjectGrants:           adapters.ObjectGrants,
+		KeyPackageReservations: adapters.KeyPackageReservations,
+	}, nil
+}
+
+func (u *boundUnitOfWork) Execute(
+	_ context.Context,
+	fn func(ports.Transaction) error,
+) error {
+	if fn == nil {
+		return fmt.Errorf("conversation persistence: transaction callback is required")
+	}
+
+	return fn(u.transaction)
+}
+
+func (u *boundUnitOfWork) ExecuteSerialized(
+	ctx context.Context,
+	key string,
+	fn func(ports.Transaction) error,
+) error {
+	if key == "" {
+		return fmt.Errorf("conversation persistence: serialization key is required")
+	}
+	if fn == nil {
+		return fmt.Errorf("conversation persistence: transaction callback is required")
+	}
+	if u.db.Dialector.Name() == "sqlite" {
+		lockValue, _ := sqliteTransactionLocks.LoadOrStore(key, &sync.Mutex{})
+		lock := lockValue.(*sync.Mutex)
+		lock.Lock()
+		defer lock.Unlock()
+
+		return fn(u.transaction)
+	}
+	if u.db.Dialector.Name() != "postgres" {
+		return fmt.Errorf(
+			"conversation persistence: serialized transactions are unsupported for %s",
+			u.db.Dialector.Name(),
+		)
+	}
+	hash := sha256.Sum256([]byte(key))
+	lockID := int64(binary.BigEndian.Uint64(hash[:8]))
+	if err := u.db.WithContext(ctx).
+		Exec("SELECT pg_advisory_xact_lock(?)", lockID).
+		Error; err != nil {
+		return fmt.Errorf(
+			"conversation persistence: acquire creation lock: %w",
+			err,
+		)
+	}
+
+	return fn(u.transaction)
+}
+
+var _ ports.UnitOfWork = (*boundUnitOfWork)(nil)

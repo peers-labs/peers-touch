@@ -43,6 +43,9 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::messaging::commands::messaging_submit_read_cursor,
         crate::messaging::commands::messaging_submit_typing,
         crate::messaging::commands::messaging_wake,
+        crate::messaging::commands::social_friend_request_accept,
+        crate::messaging::commands::social_friend_request_reject,
+        crate::messaging::commands::social_friend_request_send,
         // OAuth
         oauth::oauth_cancel,
         oauth::oauth_logout_purge,
@@ -122,6 +125,9 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::messaging::commands::messaging_submit_read_cursor,
         crate::messaging::commands::messaging_submit_typing,
         crate::messaging::commands::messaging_wake,
+        crate::messaging::commands::social_friend_request_accept,
+        crate::messaging::commands::social_friend_request_reject,
+        crate::messaging::commands::social_friend_request_send,
         // OAuth (acceptance)
         oauth::oauth_acceptance_callback_replay_handle,
         oauth::oauth_acceptance_negative_callback,

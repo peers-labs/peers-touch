@@ -624,9 +624,14 @@ interface SocialChatState {
   loadPeerProfile: (peerPtid: string, force?: boolean) => Promise<void>;
 
   loadFriendRequests: (status?: number, limit?: number, offset?: number) => Promise<void>;
-  sendFriendRequest: (receiverPtid: string, message?: string) => Promise<void>;
-  acceptFriendRequest: (requestId: string) => Promise<void>;
-  rejectFriendRequest: (requestId: string) => Promise<void>;
+  sendFriendRequest: (
+    receiverPtid: string,
+    receiverHomeStationPeerId: string,
+    federationId: string,
+    message?: string,
+  ) => Promise<void>;
+  acceptFriendRequest: (request: FriendRequestData) => Promise<void>;
+  rejectFriendRequest: (request: FriendRequestData) => Promise<void>;
 
   loadGroupUnreadCounts: () => Promise<void>;
   loadConversationPreviews: () => Promise<void>;
@@ -1760,9 +1765,19 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  sendFriendRequest: async (receiverPtid, message) => {
+  sendFriendRequest: async (
+    receiverPtid,
+    receiverHomeStationPeerId,
+    federationId,
+    message,
+  ) => {
     try {
-      await api.socialFriendRequestSend(receiverPtid, message);
+      await api.socialFriendRequestSend({
+        receiverPtid,
+        receiverHomeStationPeerId,
+        federationId,
+        message,
+      });
       await get().loadFriendRequests();
     } catch (error) {
       log.error('socialChat', 'sendFriendRequest failed', error);
@@ -1770,28 +1785,28 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  acceptFriendRequest: async (requestId) => {
+  acceptFriendRequest: async (request) => {
     try {
-      const data = await api.socialFriendRequestAccept(requestId);
+      const requestId = request.id;
+      const data = await api.socialFriendRequestAccept({
+        requestId,
+        senderPtid: request.senderPtid,
+        senderHomeStationPeerId: request.senderHomeStationPeerId,
+        federationId: request.federationId,
+        message: request.message,
+      });
       const acceptedRequest = normalizeFriendRequestData(data?.request);
       set((state) => ({
-        friendRequests: state.friendRequests.map((request) =>
-          request.id === requestId
+        friendRequests: state.friendRequests.map((candidate) =>
+          candidate.id === requestId
             ? {
-                ...request,
+                ...candidate,
                 status: Number(acceptedRequest?.status ?? 2),
-                respondedAt: acceptedRequest?.respondedAt ?? request.respondedAt,
+                respondedAt: acceptedRequest?.respondedAt ?? candidate.respondedAt,
               }
-            : request,
+            : candidate,
         ),
       }));
-      const sessionJson = data?.session;
-      if (sessionJson) {
-        const s = sessionJson as unknown as FriendChatSession;
-        set((state) => ({
-          sessions: [s, ...state.sessions.filter((x) => x.ulid !== s.ulid)],
-        }));
-      }
       await get().loadFriendRequests();
       await get().loadSessions();
       // Retry loadSessions after a short delay to catch the DM conversation
@@ -1803,19 +1818,26 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  rejectFriendRequest: async (requestId) => {
+  rejectFriendRequest: async (request) => {
     try {
-      const data = await api.socialFriendRequestReject(requestId);
+      const requestId = request.id;
+      const data = await api.socialFriendRequestReject({
+        requestId,
+        senderPtid: request.senderPtid,
+        senderHomeStationPeerId: request.senderHomeStationPeerId,
+        federationId: request.federationId,
+        message: request.message,
+      });
       const rejectedRequest = normalizeFriendRequestData(data?.request);
       set((state) => ({
-        friendRequests: state.friendRequests.map((request) =>
-          request.id === requestId
+        friendRequests: state.friendRequests.map((candidate) =>
+          candidate.id === requestId
             ? {
-                ...request,
+                ...candidate,
                 status: Number(rejectedRequest?.status ?? 3),
-                respondedAt: rejectedRequest?.respondedAt ?? request.respondedAt,
+                respondedAt: rejectedRequest?.respondedAt ?? candidate.respondedAt,
               }
-            : request,
+            : candidate,
         ),
       }));
       await get().loadFriendRequests();
@@ -2078,6 +2100,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           type: 'friend',
           ulid: convId,
           authorityStationId: conv.authorityStationPeerId,
+          federationId: conv.federationId,
           name: peerName,
           avatar: profile?.avatar || '',
           peerPtid,
@@ -2096,6 +2119,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           type: 'group',
           ulid: convId,
           authorityStationId: conv.authorityStationPeerId,
+          federationId: conv.federationId,
           name: conv.name || 'Group',
           avatar: groupAvatarRemoteUrl({ avatarCid: conv.avatarCid || '' }),
           memberCount,

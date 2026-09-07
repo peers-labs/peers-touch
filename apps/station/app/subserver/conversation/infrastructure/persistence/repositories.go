@@ -1011,6 +1011,38 @@ func (r *followerRepository) ListByActor(
 	return projections, nil
 }
 
+func (r *followerRepository) ListByStatus(
+	ctx context.Context,
+	status repository.FollowerStatus,
+	limit int,
+) ([]repository.FollowerProjection, error) {
+	if limit <= 0 {
+		return []repository.FollowerProjection{}, nil
+	}
+	var models []ConversationFollowerHeadModel
+	if err := r.db.WithContext(ctx).
+		Joins(
+			"JOIN conversation_follower_states ON "+
+				"conversation_follower_states.conversation_id = conversation_follower_heads.conversation_id",
+		).
+		Where("conversation_follower_states.status = ?", string(status)).
+		Order("conversation_follower_states.updated_at ASC").
+		Limit(limit).
+		Find(&models).Error; err != nil {
+		return nil, persistenceError("list follower projections by status", err)
+	}
+	projections := make([]repository.FollowerProjection, 0, len(models))
+	for _, model := range models {
+		projection, err := followerFromModel(model, status)
+		if err != nil {
+			return nil, err
+		}
+		projections = append(projections, projection)
+	}
+
+	return projections, nil
+}
+
 func (r *followerRepository) Apply(
 	ctx context.Context,
 	projection repository.FollowerProjection,

@@ -75,6 +75,7 @@ export interface CreateGroupInput {
   readonly name: string;
   readonly description?: string;
   readonly initialMemberPtids: string[];
+  readonly federationId: string;
 }
 
 export interface UpdateGroupInput {
@@ -142,6 +143,7 @@ export function createGroupGateway(session: MobileAuthSession): GroupGateway {
           type: 1,
           visibility: 2,
           initial_member_ptids: input.initialMemberPtids,
+          federation_id: input.federationId,
         },
       }),
 

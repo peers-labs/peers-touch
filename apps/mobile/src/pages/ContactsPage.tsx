@@ -152,7 +152,12 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
     if (!receiverPtid) return;
     setLocalActionError('');
     try {
-      await dispatchSendFriendRequest(receiverPtid, '');
+      await dispatchSendFriendRequest(
+        receiverPtid,
+        result.homeStationPeerId,
+        result.federationId,
+        '',
+      );
       await searchPeople(peopleQuery);
     } catch (err) {
       setLocalActionError(t('mobile.contacts.requestFailed'));

@@ -23,6 +23,30 @@ type FriendRequestActorKeyHydrator interface {
 	) ([]*model.VerifiedActorDeviceSigningKey, error)
 }
 
+// NewVerifiedFriendRequestActorKeyHydrator creates the Actor Identity-owned hydrator.
+func NewVerifiedFriendRequestActorKeyHydrator(
+	db *gorm.DB,
+) (FriendRequestActorKeyHydrator, error) {
+	if db == nil {
+		return nil, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			"social.new_friend_request_actor_key_hydrator",
+			"db",
+			"is required",
+		)
+	}
+
+	hydrator, err := actoridentityinfra.NewVerifiedProfileDeviceKeyHydrator(db)
+	if err != nil {
+		return nil, classifyFriendRequestHydratorError(
+			"social.new_friend_request_actor_key_hydrator",
+			err,
+		)
+	}
+
+	return hydrator, nil
+}
+
 // GORMFriendRequestIdentityVerifier reads the Actor Identity-owned actor_devices
 // projection. A cold remote miss delegates only to Actor Identity hydration.
 type GORMFriendRequestIdentityVerifier struct {

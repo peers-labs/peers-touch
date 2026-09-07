@@ -22,23 +22,6 @@ pub struct ConversationGetMembersInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EnvelopeSubmitInput {
-    pub envelope: Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EnvelopeAckInput {
-    pub device_id: String,
-    pub inbox_item_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EnvelopeResumeInput {
-    pub device_id: String,
-    pub after_cursor: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyPackageUploadInput {
     pub device_id: String,
     pub data: String,
@@ -125,83 +108,6 @@ pub fn conversation_get_members(
     ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "get members failed"),
-    }
-}
-
-// --- Envelope commands ---
-
-#[tauri::command]
-pub fn envelope_submit(
-    input: EnvelopeSubmitInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
-    let token = match get_token(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let body = json!({ "envelope": input.envelope });
-    match station_client::request_json_auth(
-        Method::POST,
-        "/envelope/submit",
-        &token,
-        None,
-        Some(&body),
-    ) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => station_err(e, "envelope submit failed"),
-    }
-}
-
-#[tauri::command]
-pub fn envelope_ack(
-    input: EnvelopeAckInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
-    let token = match get_token(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let body = json!({
-        "device_id": input.device_id,
-        "inbox_item_id": input.inbox_item_id,
-    });
-    match station_client::request_json_auth(
-        Method::POST,
-        "/envelope/ack",
-        &token,
-        None,
-        Some(&body),
-    ) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => station_err(e, "envelope ack failed"),
-    }
-}
-
-#[tauri::command]
-pub fn envelope_resume(
-    input: EnvelopeResumeInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
-    let token = match get_token(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let query = vec![
-        ("device_id", input.device_id),
-        ("after_cursor", input.after_cursor.unwrap_or_default()),
-    ];
-    match station_client::request_json_auth(
-        Method::GET,
-        "/envelope/resume",
-        &token,
-        Some(&query),
-        None,
-    ) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => station_err(e, "envelope resume failed"),
     }
 }
 

@@ -1,359 +1,633 @@
 package key_exchange
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
+	nethttp "net/http"
 	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
+	httpinterface "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/interface/http"
 	kemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
-	"github.com/peers-labs/peers-touch/station/frame/core/auth"
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
-	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
-	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
-	"google.golang.org/protobuf/encoding/protojson"
-	"gorm.io/gorm"
 )
 
-// Fetch uses POST /key-exchange/keys/bundle/fetch (proto body) because upload already uses POST /key-exchange/keys/bundle; the mux cannot register two POST handlers on the same path.
+const (
+	uploadDirectKeyBundlePath         = "/key-exchange/keys/bundle"
+	fetchDirectKeyBundlesPath         = "/key-exchange/keys/bundle/fetch"
+	replenishDirectOneTimePreKeysPath = "/key-exchange/keys/replenish"
+	countDirectOneTimePreKeysPath     = "/key-exchange/keys/count"
+	uploadMLSKeyPackagePath           = "/key-exchange/mls/key-package/upload"
+	fetchMLSKeyPackagePath            = "/key-exchange/mls/key-package/fetch"
+	countMLSKeyPackagesPath           = "/key-exchange/mls/key-package/count"
+	sendDirectKeyExchangePath         = "/key-exchange/dkx/send"
+)
 
+type canonicalAPI interface {
+	UploadDirectKeyBundle(
+		context.Context,
+		string,
+		string,
+		*kemodel.UploadDirectKeyBundleRequest,
+	) (*kemodel.UploadDirectKeyBundleResponse, error)
+	FetchDirectKeyBundles(
+		context.Context,
+		string,
+		string,
+		*kemodel.FetchDirectKeyBundlesRequest,
+	) (*kemodel.FetchDirectKeyBundlesResponse, error)
+	FetchDirectKeyBundlesForPeer(
+		context.Context,
+		*kemodel.FetchDirectKeyBundlesRequest,
+	) (*kemodel.FetchDirectKeyBundlesResponse, error)
+	ReplenishDirectOneTimePreKeys(
+		context.Context,
+		string,
+		string,
+		*kemodel.ReplenishDirectOneTimePreKeysRequest,
+	) (*kemodel.ReplenishDirectOneTimePreKeysResponse, error)
+	CountDirectOneTimePreKeys(
+		context.Context,
+		string,
+		string,
+		*kemodel.CountDirectOneTimePreKeysRequest,
+	) (*kemodel.CountDirectOneTimePreKeysResponse, error)
+	UploadMLSKeyPackage(
+		context.Context,
+		string,
+		string,
+		*kemodel.UploadMlsKeyPackageRequest,
+	) (*kemodel.UploadMlsKeyPackageResponse, error)
+	FetchMLSKeyPackage(
+		context.Context,
+		string,
+		string,
+		*kemodel.FetchMlsKeyPackageRequest,
+	) (*kemodel.FetchMlsKeyPackageResponse, error)
+	FetchMLSKeyPackageForPeer(
+		context.Context,
+		*kemodel.FetchMlsKeyPackageRequest,
+	) (*kemodel.FetchMlsKeyPackageResponse, error)
+	CountMLSKeyPackages(
+		context.Context,
+		string,
+		string,
+		*kemodel.CountMlsKeyPackagesRequest,
+	) (*kemodel.CountMlsKeyPackagesResponse, error)
+	ClaimMLSKeyPackage(
+		context.Context,
+		string,
+		*kemodel.ClaimMlsKeyPackageRequest,
+	) (*kemodel.ClaimMlsKeyPackageResponse, error)
+	SendDirectKeyExchange(
+		context.Context,
+		string,
+		string,
+		*kemodel.SendDirectKeyExchangeRequest,
+	) (*kemodel.SendDirectKeyExchangeResponse, error)
+}
+
+// PeerCapabilities are the Key Exchange operations delegated by
+// Federation-owned peer routes after route-specific claim validation.
+type PeerCapabilities interface {
+	FetchDirectKeyBundlesForPeer(
+		context.Context,
+		*kemodel.FetchDirectKeyBundlesRequest,
+	) (*kemodel.FetchDirectKeyBundlesResponse, error)
+	FetchMLSKeyPackageForPeer(
+		context.Context,
+		*kemodel.FetchMlsKeyPackageRequest,
+	) (*kemodel.FetchMlsKeyPackageResponse, error)
+	ClaimMLSKeyPackage(
+		context.Context,
+		string,
+		*kemodel.ClaimMlsKeyPackageRequest,
+	) (*kemodel.ClaimMlsKeyPackageResponse, error)
+}
+
+// Handlers registers only Key Exchange-owned client routes. Federation-owned
+// peer routes are registered by the Federation subserver.
 func (s *subServer) Handlers() []server.Handler {
-	logIDWrapper := serverwrapper.LogID()
-	deviceIDWrapper := serverwrapper.DeviceID()
-	return []server.Handler{
-		server.NewTypedHandler("ke-upload-bundle", "/key-exchange/keys/bundle", server.POST, s.handleUploadKeyBundle, logIDWrapper, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("ke-fetch-bundle", "/key-exchange/keys/bundle/fetch", server.POST, s.handleFetchKeyBundle, logIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("ke-federated-fetch-bundle", "/key-exchange/keys/bundle/federated-fetch", server.POST, s.handleFederatedFetchKeyBundle, logIDWrapper, s.federationFetchWrapper),
-		server.NewTypedHandler("ke-replenish", "/key-exchange/keys/replenish", server.POST, s.handleReplenishOPKs, logIDWrapper, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("ke-opk-count", "/key-exchange/keys/count", server.GET, s.handleOPKCount, logIDWrapper, deviceIDWrapper, s.jwtWrapper),
-	}
-}
-
-func (s *subServer) handleUploadKeyBundle(ctx context.Context, req *kemodel.UploadKeyBundleRequest) (*kemodel.UploadKeyBundleResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	ikPub, err := decodeBase64Field("ik_pub", req.GetIkPub())
-	if err != nil {
-		return nil, server.BadRequestWithCause("invalid ik_pub", err)
-	}
-	spkPub, err := decodeBase64Field("spk_pub", req.GetSpkPub())
-	if err != nil {
-		return nil, server.BadRequestWithCause("invalid spk_pub", err)
-	}
-	spkSig, err := decodeBase64Field("spk_sig", req.GetSpkSig())
-	if err != nil {
-		return nil, server.BadRequestWithCause("invalid spk_sig", err)
-	}
-	opkIDs := req.GetOpkIds()
-	opkPubs := req.GetOpkPubs()
-	if len(opkIDs) != len(opkPubs) {
-		return nil, server.BadRequest("opk_ids and opk_pubs must have the same length")
-	}
-	opks := make([]domain.OneTimePreKey, 0, len(opkIDs))
-	for i := range opkIDs {
-		pk, derr := decodeBase64Field("opk_pubs", opkPubs[i])
-		if derr != nil {
-			return nil, server.BadRequestWithCause("invalid opk_pubs entry", derr)
-		}
-		opks = append(opks, domain.OneTimePreKey{ID: opkIDs[i], PublicKey: pk, Consumed: false})
-	}
-	devID, err := selectAuthenticatedDeviceID(serverwrapper.GetDeviceID(ctx), req.GetDeviceId())
-	if err != nil {
-		return nil, err
-	}
-	if err := s.requireVerifiedActiveDevice(ctx, subject.ID, devID); err != nil {
-		return nil, err
-	}
-	if err := s.service.UploadKeyBundle(subject.ID, devID, ikPub, req.GetSpkId(), spkPub, spkSig, opks, req.GetSupportedVersions()); err != nil {
-		return nil, server.InternalErrorWithCause("failed to upload key bundle", err)
-	}
-	return &kemodel.UploadKeyBundleResponse{}, nil
-}
-
-func (s *subServer) handleFetchKeyBundle(ctx context.Context, req *kemodel.FetchKeyBundleRequest) (*kemodel.FetchKeyBundleResponse, error) {
-	if auth.GetSubject(ctx) == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	if req.GetPtid() == "" {
-		return nil, server.BadRequest("did is required")
-	}
-	homeStationPeerID := strings.TrimSpace(req.GetHomeStationPeerId())
-	if homeStationPeerID == "" {
-		actorRecord, resolveErr := touchactor.GetActorByPTID(ctx, req.GetPtid())
-		if resolveErr != nil {
-			return nil, server.InternalErrorWithCause("resolve actor Home Station failed", resolveErr)
-		}
-		if actorRecord != nil {
-			homeStationPeerID = strings.TrimSpace(actorRecord.HomeStationPeerID)
-		}
-	}
-	if homeStationPeerID != "" && homeStationPeerID != strings.TrimSpace(s.currentLocalStationID()) {
-		resp, err := s.fetchFederatedKeyBundle(ctx, homeStationPeerID, req)
-		if err != nil {
-			return nil, err
-		}
-		return resp, nil
-	}
-
-	return s.fetchLocalKeyBundle(ctx, req)
-}
-
-func (s *subServer) handleFederatedFetchKeyBundle(ctx context.Context, req *kemodel.FetchKeyBundleRequest) (*kemodel.FetchKeyBundleResponse, error) {
-	if req.GetPtid() == "" {
-		return nil, server.BadRequest("did is required")
-	}
-	if err := validateFederatedFetchClaims(ctx, req); err != nil {
-		return nil, err
-	}
-	return s.fetchLocalKeyBundle(ctx, req)
-}
-
-func validateFederatedFetchClaims(ctx context.Context, req *kemodel.FetchKeyBundleRequest) error {
-	claims := serverwrapper.GetVerifiedFederationClaims(ctx, nil)
-	if claims == nil {
+	if s.api == nil || s.jwtWrapper == nil {
 		return nil
 	}
-	if claims.Scope != keyExchangeFederatedFetchScopeName {
-		return server.Unauthorized("invalid federation scope")
+
+	logIDWrapper := serverwrapper.LogID()
+	deviceIDWrapper := serverwrapper.DeviceID()
+
+	return []server.Handler{
+		server.NewTypedHandler(
+			"key-exchange-direct-bundle-upload",
+			uploadDirectKeyBundlePath,
+			server.POST,
+			s.handleUploadDirectKeyBundle,
+			logIDWrapper,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"key-exchange-direct-bundle-fetch",
+			fetchDirectKeyBundlesPath,
+			server.POST,
+			s.handleFetchDirectKeyBundles,
+			logIDWrapper,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"key-exchange-direct-prekeys-replenish",
+			replenishDirectOneTimePreKeysPath,
+			server.POST,
+			s.handleReplenishDirectOneTimePreKeys,
+			logIDWrapper,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"key-exchange-direct-prekeys-count",
+			countDirectOneTimePreKeysPath,
+			server.GET,
+			s.handleCountDirectOneTimePreKeys,
+			logIDWrapper,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"key-exchange-mls-key-package-upload",
+			uploadMLSKeyPackagePath,
+			server.POST,
+			s.handleUploadMLSKeyPackage,
+			logIDWrapper,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"key-exchange-mls-key-package-fetch",
+			fetchMLSKeyPackagePath,
+			server.POST,
+			s.handleFetchMLSKeyPackage,
+			logIDWrapper,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"key-exchange-mls-key-package-count",
+			countMLSKeyPackagesPath,
+			server.GET,
+			s.handleCountMLSKeyPackages,
+			logIDWrapper,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"key-exchange-dkx-send",
+			sendDirectKeyExchangePath,
+			server.POST,
+			s.handleSendDirectKeyExchange,
+			logIDWrapper,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
 	}
-	if v, ok := claims.Get(keyExchangeClaimActor); !ok || v != req.GetPtid() {
-		return server.Forbidden("federation actor claim does not match key bundle request")
-	}
-	if v, ok := claims.Get(keyExchangeClaimDevice); ok && v != req.GetDeviceId() {
-		return server.Forbidden("federation device claim does not match key bundle request")
-	}
-	return nil
 }
 
-func (s *subServer) fetchLocalKeyBundle(
+func (s *subServer) handleUploadDirectKeyBundle(
 	ctx context.Context,
-	req *kemodel.FetchKeyBundleRequest,
-) (*kemodel.FetchKeyBundleResponse, error) {
-	filter := ""
-	if strings.TrimSpace(req.GetDeviceId()) != "" {
-		filter = strings.TrimSpace(req.GetDeviceId())
-	}
-
-	bundles, err := s.service.FetchKeyBundles(req.GetPtid(), filter)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, server.NotFound("key bundle not found or no identity for that device filter")
-		}
-		return nil, server.InternalErrorWithCause("failed to fetch key bundle", err)
-	}
-	if len(bundles) == 0 {
-		return nil, server.NotFound("key bundle not found")
-	}
-	activeDevices, err := s.deviceStore.ListActive(ctx, req.GetPtid())
-	if err != nil {
-		return nil, server.InternalErrorWithCause("resolve active devices failed", err)
-	}
-	activeDeviceIDs := make(map[string]struct{}, len(activeDevices))
-	for _, device := range activeDevices {
-		activeDeviceIDs[device.DeviceID] = struct{}{}
-	}
-
-	out := make([]*kemodel.KeyBundle, 0, len(bundles))
-	for _, b := range bundles {
-		if _, active := activeDeviceIDs[b.DeviceID]; !active {
-			continue
-		}
-		opkStrs := make([]string, 0, len(b.OneTimePreKeys))
-		opkIDs := make([]int32, 0, len(b.OneTimePreKeys))
-		for _, opk := range b.OneTimePreKeys {
-			opkStrs = append(opkStrs, base64.StdEncoding.EncodeToString(opk.PublicKey))
-			opkIDs = append(opkIDs, opk.ID)
-		}
-		out = append(out, &kemodel.KeyBundle{
-			Ptid:              b.ActorPtid,
-			DeviceId:          b.DeviceID,
-			IkPub:             base64.StdEncoding.EncodeToString(b.IdentityKeyPub),
-			SpkId:             b.SignedPreKey.ID,
-			SpkPub:            base64.StdEncoding.EncodeToString(b.SignedPreKey.PublicKey),
-			SpkSig:            base64.StdEncoding.EncodeToString(b.SignedPreKey.Signature),
-			Opks:              opkStrs,
-			OpkIds:            opkIDs,
-			PublishedAtUnixMs: b.PublishedAtUnixMs,
-			SupportedVersions: b.SupportedVersions,
-		})
-	}
-	if len(out) == 0 {
-		return nil, server.NotFound("no active device key bundle found")
-	}
-
-	return &kemodel.FetchKeyBundleResponse{Bundles: out}, nil
-}
-
-func (s *subServer) fetchFederatedKeyBundle(ctx context.Context, targetStationPeerID string, req *kemodel.FetchKeyBundleRequest) (*kemodel.FetchKeyBundleResponse, error) {
-	rc := nativefed.RelayClient()
-	if rc == nil {
-		return nil, server.InternalError("federated key bundle fetch requires Relay client")
-	}
-	base := strings.TrimRight(rc.BaseURL(), "/")
-	relayToken := strings.TrimSpace(rc.Token())
-	if base == "" || relayToken == "" {
-		return nil, server.InternalError("federated key bundle fetch requires Relay configuration")
-	}
-	token, err := s.mintFederatedFetchToken(ctx, targetStationPeerID, req.GetPtid(), req.GetDeviceId())
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to mint key bundle federation token", err)
-	}
-	forwardReq := &kemodel.FetchKeyBundleRequest{
-		Ptid:     req.GetPtid(),
-		DeviceId: req.GetDeviceId(),
-	}
-	body, err := protojson.Marshal(forwardReq)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to encode key bundle federation request", err)
-	}
-	target := fmt.Sprintf("%s/relay/forward/%s/key-exchange/keys/bundle/federated-fetch", base, url.PathEscape(targetStationPeerID))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to create key bundle federation request", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+relayToken)
-	httpReq.Header.Set(nativefed.ForwardAuthorizationHeader, "Bearer "+token)
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("federated key bundle fetch failed", err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to read federated key bundle response", err)
-	}
-	if resp.StatusCode >= 300 {
-		detail := string(raw)
-		if len(detail) > 200 {
-			detail = detail[:200]
-		}
-		return nil, server.InternalError(fmt.Sprintf("federated key bundle fetch failed status=%d body=%s", resp.StatusCode, detail))
-	}
-	var decoded kemodel.FetchKeyBundleResponse
-	if err := protojson.Unmarshal(raw, &decoded); err != nil {
-		return nil, server.InternalErrorWithCause("failed to decode federated key bundle response", err)
-	}
-	return &decoded, nil
-}
-
-func (s *subServer) mintFederatedFetchToken(ctx context.Context, targetStationPeerID, actorPTID, deviceID string) (string, error) {
-	if s.keyCache == nil {
-		return "", errors.New("federation key cache is not configured")
-	}
-	issuer := strings.TrimSpace(s.currentLocalStationID())
-	if issuer == "" {
-		issuer = keyExchangeLocalFederationAudience()
-	}
-	if issuer == "" || strings.TrimSpace(targetStationPeerID) == "" || strings.TrimSpace(actorPTID) == "" {
-		return "", errors.New("issuer, audience, and actor PTID are required")
-	}
-	return authfed.Mint(ctx, s.keyCache, authfed.MintRequest{
-		Scope:    keyExchangeFederatedFetchScopeName,
-		Issuer:   issuer,
-		Audience: strings.TrimSpace(targetStationPeerID),
-		Subject:  issuer,
-		TTL:      keyExchangeFederationTTL,
-		Custom: map[string]string{
-			keyExchangeClaimActor:  actorPTID,
-			keyExchangeClaimDevice: deviceID,
-		},
-	})
-}
-
-func (s *subServer) handleReplenishOPKs(ctx context.Context, req *kemodel.ReplenishOpksRequest) (*kemodel.ReplenishOpksResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	opkIDs := req.GetOpkIds()
-	opkPubs := req.GetOpkPubs()
-	if len(opkIDs) != len(opkPubs) {
-		return nil, server.BadRequest("opk_ids and opk_pubs must have the same length")
-	}
-	opks := make([]domain.OneTimePreKey, 0, len(opkIDs))
-	for i := range opkIDs {
-		pk, err := decodeBase64Field("opk_pubs", opkPubs[i])
-		if err != nil {
-			return nil, server.BadRequestWithCause("invalid opk_pubs entry", err)
-		}
-		opks = append(opks, domain.OneTimePreKey{ID: opkIDs[i], PublicKey: pk, Consumed: false})
-	}
-	devID, err := selectAuthenticatedDeviceID(serverwrapper.GetDeviceID(ctx), req.GetDeviceId())
+	request *kemodel.UploadDirectKeyBundleRequest,
+) (*kemodel.UploadDirectKeyBundleResponse, error) {
+	actorPTID, deviceID, api, err := s.authenticatedCanonicalAPI(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireVerifiedActiveDevice(ctx, subject.ID, devID); err != nil {
-		return nil, err
-	}
-	if err := s.service.ReplenishOPKs(subject.ID, devID, opks); err != nil {
-		return nil, server.InternalErrorWithCause("failed to replenish one-time prekeys", err)
-	}
-	return &kemodel.ReplenishOpksResponse{}, nil
+	response, err := api.UploadDirectKeyBundle(
+		ctx,
+		actorPTID,
+		deviceID,
+		request,
+	)
+
+	return response, mapCanonicalError(ctx, "upload Direct key bundle", err)
 }
 
-func (s *subServer) handleOPKCount(ctx context.Context, req *kemodel.OpkCountRequest) (*kemodel.OpkCountResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	devID, err := selectAuthenticatedDeviceID(serverwrapper.GetDeviceID(ctx), req.GetDeviceId())
-	if err != nil {
-		return nil, err
-	}
-	if err := s.requireVerifiedActiveDevice(ctx, subject.ID, devID); err != nil {
-		return nil, err
-	}
-	n, err := s.service.CountOPKs(subject.ID, devID)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to count one-time prekeys", err)
-	}
-	return &kemodel.OpkCountResponse{Count: n}, nil
-}
-
-func (s *subServer) requireVerifiedActiveDevice(
+func (s *subServer) handleFetchDirectKeyBundles(
 	ctx context.Context,
-	ptid string,
-	deviceID string,
+	request *kemodel.FetchDirectKeyBundlesRequest,
+) (*kemodel.FetchDirectKeyBundlesResponse, error) {
+	actorPTID, deviceID, api, err := s.authenticatedCanonicalAPI(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := api.FetchDirectKeyBundles(
+		ctx,
+		actorPTID,
+		deviceID,
+		request,
+	)
+
+	return response, mapCanonicalError(ctx, "fetch Direct key bundles", err)
+}
+
+func (s *subServer) handleReplenishDirectOneTimePreKeys(
+	ctx context.Context,
+	request *kemodel.ReplenishDirectOneTimePreKeysRequest,
+) (*kemodel.ReplenishDirectOneTimePreKeysResponse, error) {
+	actorPTID, deviceID, api, err := s.authenticatedCanonicalAPI(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := api.ReplenishDirectOneTimePreKeys(
+		ctx,
+		actorPTID,
+		deviceID,
+		request,
+	)
+
+	return response, mapCanonicalError(
+		ctx,
+		"replenish Direct one-time pre-keys",
+		err,
+	)
+}
+
+func (s *subServer) handleCountDirectOneTimePreKeys(
+	ctx context.Context,
+	request *kemodel.CountDirectOneTimePreKeysRequest,
+) (*kemodel.CountDirectOneTimePreKeysResponse, error) {
+	actorPTID, deviceID, api, err := s.authenticatedCanonicalAPI(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := api.CountDirectOneTimePreKeys(
+		ctx,
+		actorPTID,
+		deviceID,
+		request,
+	)
+
+	return response, mapCanonicalError(
+		ctx,
+		"count Direct one-time pre-keys",
+		err,
+	)
+}
+
+func (s *subServer) handleUploadMLSKeyPackage(
+	ctx context.Context,
+	request *kemodel.UploadMlsKeyPackageRequest,
+) (*kemodel.UploadMlsKeyPackageResponse, error) {
+	actorPTID, deviceID, api, err := s.authenticatedCanonicalAPI(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := api.UploadMLSKeyPackage(
+		ctx,
+		actorPTID,
+		deviceID,
+		request,
+	)
+
+	return response, mapCanonicalError(ctx, "upload MLS KeyPackage", err)
+}
+
+func (s *subServer) handleFetchMLSKeyPackage(
+	ctx context.Context,
+	request *kemodel.FetchMlsKeyPackageRequest,
+) (*kemodel.FetchMlsKeyPackageResponse, error) {
+	actorPTID, deviceID, api, err := s.authenticatedCanonicalAPI(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := api.FetchMLSKeyPackage(
+		ctx,
+		actorPTID,
+		deviceID,
+		request,
+	)
+
+	return response, mapCanonicalError(ctx, "fetch MLS KeyPackage", err)
+}
+
+func (s *subServer) handleCountMLSKeyPackages(
+	ctx context.Context,
+	request *kemodel.CountMlsKeyPackagesRequest,
+) (*kemodel.CountMlsKeyPackagesResponse, error) {
+	actorPTID, deviceID, api, err := s.authenticatedCanonicalAPI(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := api.CountMLSKeyPackages(
+		ctx,
+		actorPTID,
+		deviceID,
+		request,
+	)
+
+	return response, mapCanonicalError(ctx, "count MLS KeyPackages", err)
+}
+
+func (s *subServer) handleSendDirectKeyExchange(
+	ctx context.Context,
+	request *kemodel.SendDirectKeyExchangeRequest,
+) (*kemodel.SendDirectKeyExchangeResponse, error) {
+	actorPTID, deviceID, api, err := s.authenticatedCanonicalAPI(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := api.SendDirectKeyExchange(
+		ctx,
+		actorPTID,
+		deviceID,
+		request,
+	)
+
+	return response, mapCanonicalError(ctx, "send Direct key exchange", err)
+}
+
+// ReserveMLSKeyPackage exposes the Key Exchange-owned local-or-remote
+// reservation workflow to Conversation without transferring resource ownership.
+func (s *subServer) ReserveMLSKeyPackage(
+	ctx context.Context,
+	requestID string,
+	authorityPlanID string,
+	target domain.Endpoint,
+	expiresAt time.Time,
+) (domain.MLSKeyPackageReservation, error) {
+	if s.composition == nil || s.composition.service == nil {
+		return domain.MLSKeyPackageReservation{}, server.InternalError(
+			"Key Exchange subserver is not initialized",
+		)
+	}
+
+	return s.composition.service.ReserveMLSKeyPackage(
+		ctx,
+		requestID,
+		authorityPlanID,
+		target,
+		expiresAt,
+	)
+}
+
+// ClaimMLSKeyPackage exposes the Key Exchange-owned peer capability without
+// registering the Federation-owned route.
+func (s *subServer) ClaimMLSKeyPackage(
+	ctx context.Context,
+	sourceAuthorityStationID string,
+	request *kemodel.ClaimMlsKeyPackageRequest,
+) (*kemodel.ClaimMlsKeyPackageResponse, error) {
+	api, err := s.canonicalAPI()
+	if err != nil {
+		return nil, err
+	}
+	return api.ClaimMLSKeyPackage(
+		ctx,
+		sourceAuthorityStationID,
+		request,
+	)
+}
+
+// FetchDirectKeyBundlesForPeer exposes the Key Exchange-owned Direct fetch
+// capability without registering the Federation-owned route.
+func (s *subServer) FetchDirectKeyBundlesForPeer(
+	ctx context.Context,
+	request *kemodel.FetchDirectKeyBundlesRequest,
+) (*kemodel.FetchDirectKeyBundlesResponse, error) {
+	api, err := s.canonicalAPI()
+	if err != nil {
+		return nil, err
+	}
+	return api.FetchDirectKeyBundlesForPeer(ctx, request)
+}
+
+// FetchMLSKeyPackageForPeer exposes the Key Exchange-owned MLS fetch
+// capability without registering the Federation-owned route.
+func (s *subServer) FetchMLSKeyPackageForPeer(
+	ctx context.Context,
+	request *kemodel.FetchMlsKeyPackageRequest,
+) (*kemodel.FetchMlsKeyPackageResponse, error) {
+	api, err := s.canonicalAPI()
+	if err != nil {
+		return nil, err
+	}
+	return api.FetchMLSKeyPackageForPeer(ctx, request)
+}
+
+func (s *subServer) authenticatedCanonicalAPI(
+	ctx context.Context,
+) (string, string, canonicalAPI, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil || strings.TrimSpace(subject.ID) == "" {
+		return "", "", nil, server.Unauthorized(
+			"authenticated Key Exchange actor required",
+		)
+	}
+	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
+	if deviceID == "" {
+		return "", "", nil, server.Unauthorized(
+			"authenticated Key Exchange device required",
+		)
+	}
+	api, err := s.canonicalAPI()
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	return strings.TrimSpace(subject.ID), deviceID, api, nil
+}
+
+func (s *subServer) canonicalAPI() (canonicalAPI, error) {
+	if s.api == nil {
+		return nil, server.InternalError(
+			"Key Exchange subserver is not initialized",
+		)
+	}
+
+	return s.api, nil
+}
+
+// ValidateDirectFetchPeerClaims binds the Direct fetch payload to its
+// route-specific authenticated Station claims.
+func ValidateDirectFetchPeerClaims(
+	claims *authfed.VerifiedClaims,
+	request *kemodel.FetchDirectKeyBundlesRequest,
 ) error {
-	active, err := s.deviceStore.IsVerifiedActive(ctx, ptid, deviceID)
-	if err != nil {
-		return server.InternalErrorWithCause("failed to verify messaging device", err)
+	if claims == nil ||
+		request == nil ||
+		request.GetActor() == nil ||
+		request.GetRequester() == nil ||
+		request.GetRequester().GetActor() == nil ||
+		strings.TrimSpace(request.GetActor().GetPtid()) == "" ||
+		strings.TrimSpace(request.GetRequester().GetActor().GetPtid()) == "" ||
+		strings.TrimSpace(request.GetRequester().GetDeviceId()) == "" ||
+		strings.TrimSpace(request.GetRequestId()) == "" ||
+		strings.TrimSpace(request.GetHomeStationPeerId()) == "" ||
+		claims.Scope != FederationDirectKeyBundlesFetchScope ||
+		claims.Issuer == "" ||
+		claims.Subject != claims.Issuer ||
+		claims.Audience != request.GetHomeStationPeerId() ||
+		claims.Custom[keyExchangeClaimActorPTID] != request.GetActor().GetPtid() ||
+		claims.Custom[keyExchangeClaimDeviceID] != request.GetTargetDeviceId() ||
+		claims.Custom[keyExchangeClaimRequestID] != request.GetRequestId() ||
+		claims.Custom[keyExchangeClaimRequesterPTID] !=
+			request.GetRequester().GetActor().GetPtid() ||
+		claims.Custom[keyExchangeClaimRequesterDevice] !=
+			request.GetRequester().GetDeviceId() ||
+		claims.Custom[keyExchangeClaimSourceStationID] != claims.Issuer ||
+		claims.Custom[keyExchangeClaimTargetStationID] != claims.Audience {
+		return server.Forbidden(
+			"Federation claims do not match the Direct key bundle request",
+		)
 	}
-	if !active {
-		return server.Forbidden("verified active messaging device required")
-	}
+
 	return nil
 }
 
-func decodeBase64Field(field, value string) ([]byte, error) {
-	if strings.TrimSpace(value) == "" {
-		return nil, errors.New(field + " is empty")
+// ValidateMLSFetchPeerClaims binds the MLS fetch payload to its route-specific
+// authenticated Station claims.
+func ValidateMLSFetchPeerClaims(
+	claims *authfed.VerifiedClaims,
+	request *kemodel.FetchMlsKeyPackageRequest,
+) error {
+	if claims == nil ||
+		request == nil ||
+		request.GetActor() == nil ||
+		request.GetRequester() == nil ||
+		request.GetRequester().GetActor() == nil ||
+		strings.TrimSpace(request.GetActor().GetPtid()) == "" ||
+		strings.TrimSpace(request.GetRequester().GetActor().GetPtid()) == "" ||
+		strings.TrimSpace(request.GetRequester().GetDeviceId()) == "" ||
+		strings.TrimSpace(request.GetRequestId()) == "" ||
+		strings.TrimSpace(request.GetHomeStationPeerId()) == "" ||
+		claims.Scope != FederationMLSKeyPackageFetchScope ||
+		claims.Issuer == "" ||
+		claims.Subject != claims.Issuer ||
+		claims.Audience != request.GetHomeStationPeerId() ||
+		claims.Custom[keyExchangeClaimActorPTID] != request.GetActor().GetPtid() ||
+		claims.Custom[keyExchangeClaimRequestID] != request.GetRequestId() ||
+		claims.Custom[keyExchangeClaimRequesterPTID] !=
+			request.GetRequester().GetActor().GetPtid() ||
+		claims.Custom[keyExchangeClaimRequesterDevice] !=
+			request.GetRequester().GetDeviceId() ||
+		claims.Custom[keyExchangeClaimSourceStationID] != claims.Issuer ||
+		claims.Custom[keyExchangeClaimTargetStationID] != claims.Audience {
+		return server.Forbidden(
+			"Federation claims do not match the MLS KeyPackage request",
+		)
 	}
-	return base64.StdEncoding.DecodeString(value)
+
+	return nil
 }
 
-func selectAuthenticatedDeviceID(authenticatedDeviceID, requestedDeviceID string) (string, error) {
-	authenticatedDeviceID = strings.TrimSpace(authenticatedDeviceID)
-	requestedDeviceID = strings.TrimSpace(requestedDeviceID)
-	if authenticatedDeviceID == "" {
-		return "", server.BadRequest("X-Device-ID is required")
+// ValidateMLSClaimPeerClaims binds an irreversible MLS claim to the
+// authenticated authority Station and the exact route-specific claims.
+func ValidateMLSClaimPeerClaims(
+	claims *authfed.VerifiedClaims,
+	request *kemodel.ClaimMlsKeyPackageRequest,
+) error {
+	if claims == nil ||
+		request == nil ||
+		request.GetTarget() == nil ||
+		request.GetTarget().GetActor() == nil ||
+		strings.TrimSpace(request.GetAuthorityPlanId()) == "" ||
+		strings.TrimSpace(request.GetAuthorityStationPeerId()) == "" ||
+		strings.TrimSpace(request.GetTarget().GetActor().GetPtid()) == "" ||
+		strings.TrimSpace(request.GetTarget().GetDeviceId()) == "" ||
+		strings.TrimSpace(request.GetRequestId()) == "" ||
+		request.GetPlanExpiresAt() == nil ||
+		!request.GetPlanExpiresAt().IsValid() ||
+		claims.Scope != FederationMLSKeyPackageClaimScope ||
+		claims.Issuer == "" ||
+		claims.Subject != claims.Issuer ||
+		request.GetAuthorityStationPeerId() != claims.Issuer ||
+		claims.Custom[keyExchangeClaimAuthorityPlan] !=
+			request.GetAuthorityPlanId() ||
+		claims.Custom[keyExchangeClaimActorPTID] !=
+			request.GetTarget().GetActor().GetPtid() ||
+		claims.Custom[keyExchangeClaimDeviceID] !=
+			request.GetTarget().GetDeviceId() ||
+		claims.Custom[keyExchangeClaimRequestID] != request.GetRequestId() ||
+		claims.Custom[keyExchangeClaimPlanExpiresAt] !=
+			request.GetPlanExpiresAt().AsTime().UTC().Format(time.RFC3339Nano) ||
+		claims.Custom[keyExchangeClaimSourceStationID] != claims.Issuer ||
+		claims.Custom[keyExchangeClaimTargetStationID] != claims.Audience {
+		return server.Forbidden(
+			"Federation claims do not match the MLS KeyPackage claim",
+		)
 	}
-	if requestedDeviceID != "" && requestedDeviceID != authenticatedDeviceID {
-		return "", server.BadRequest("device_id does not match authenticated X-Device-ID")
-	}
-	return authenticatedDeviceID, nil
+
+	return nil
 }
+
+func mapCanonicalError(
+	ctx context.Context,
+	operation string,
+	err error,
+) error {
+	if err == nil {
+		return nil
+	}
+
+	logger.Warnf(ctx, "%s failed: %v", operation, err)
+
+	var typed *domain.Error
+	if !errors.As(err, &typed) {
+		return server.InternalErrorWithCause(
+			"Key Exchange operation failed",
+			err,
+		)
+	}
+
+	switch typed.Code {
+	case domain.ErrorCodeInvalidArgument:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusBadRequest,
+			"invalid Key Exchange request",
+			err,
+		)
+	case domain.ErrorCodeUnauthorized:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusForbidden,
+			"Key Exchange operation is not authorized",
+			err,
+		)
+	case domain.ErrorCodeNotFound:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusNotFound,
+			"Key Exchange material was not found",
+			err,
+		)
+	case domain.ErrorCodeConflict,
+		domain.ErrorCodeStaleMaterial,
+		domain.ErrorCodePlanExpired:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusConflict,
+			"Key Exchange material conflicts with current state",
+			err,
+		)
+	case domain.ErrorCodePayloadTooLarge:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusRequestEntityTooLarge,
+			"Key Exchange payload exceeds the configured limit",
+			err,
+		)
+	case domain.ErrorCodeDependency:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusServiceUnavailable,
+			"Key Exchange dependency is unavailable",
+			err,
+		)
+	default:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusInternalServerError,
+			"Key Exchange operation failed",
+			err,
+		)
+	}
+}
+
+var _ canonicalAPI = (*httpinterface.CanonicalAPI)(nil)
+var _ PeerCapabilities = (*subServer)(nil)
