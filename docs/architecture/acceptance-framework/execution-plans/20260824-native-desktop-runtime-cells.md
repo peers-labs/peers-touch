@@ -861,8 +861,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Product Closure run `20260905T114725741869Z-8894cc822a6bd05b8f187403b0c557e3` at `f04e0dfd68513ab8d249a5cfe0ed93645d189536`, binary SHA-256 `6b104889e266dda2f4b8f714b8214befb935ff4ad381cbfc9f0b39afb1150108`, proves restored Relay/DHT topology, exact Direct create/reopen, active follower membership, and typed settings authorization. It still fails at Bob's outbound Group prepare because the authority validates the remote endpoint through its local device table instead of the signed endpoint manifest. W9-D remains `PARTIAL/UNPROVEN`. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; W10-D proves Windows distinct bindings, exact Direct create/reopen, cross-Station group genesis, authority-to-follower delivery, and verified Home Station follower membership; remote reply remains open | Product Closure run `20260905T114725741869Z-8894cc822a6bd05b8f187403b0c557e3` proves Alice bound to station-four and Bob to station-five at exact source `f04e0dfd68513ab8d249a5cfe0ed93645d189536`, reopens Direct conversation `d-f4d4aaa25c831bb05fdd53cd1cdd6120`, and persists an `ACTIVE` station-five follower group at sequence 3 with both members active and no pending gap. Bob's remote `/messaging/command/prepare` reaches station-four but returns `messaging: record not found` because the federated authority path still requires a local `actor_devices` row. MLS bidirectional transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven. |
+| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Exact-source Product Closure run `20260907T162910781782Z-6bab8cef6910f9f82faeae965d0eb0fc` at `b7c310b6f29c53a9e50278f417a1bed13cce3b7b`, binary SHA-256 `6d3dc23d65372963e5c7601bdb24556ed6c109a7e81ff239749f9e3921e06070`, proves first Direct open, deterministic repeated reopen, and one active pane. It next failed at `group.create.ui` before any `/conversation/group/prepare` request because the Gate clicked submit before React committed contact selection. The Gate synchronization correction is locally proven; W9-D remains `PARTIAL/UNPROVEN` pending exact-source rerun. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings and exact Direct create/reopen; Group and remaining closure are open | Product Closure run `20260907T162910781782Z-6bab8cef6910f9f82faeae965d0eb0fc` proves Alice bound to station-four and Bob to station-five at exact source `b7c310b6f29c53a9e50278f417a1bed13cce3b7b` and proves deterministic Direct create/reopen after the Conversation authority hard cut. The run stopped before Group submission because the native Gate did not wait for committed React selection state. Current-source cross-Station Group delivery, MLS bidirectional transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -3277,3 +3277,46 @@ blocked by unrelated pre-existing Auth test-only import/type errors. Windows
 Product Closure, the remaining seven Windows Native Chat Gates, Windows
 multi-Station closure, and PostgreSQL contention remain `UNPROVEN` pending a
 new exact-source checkpoint and rerun.
+
+### 2026-09-07 Group Create Gate Synchronization
+
+The Direct projection-role correction was committed as
+`b7c310b6f29c53a9e50278f417a1bed13cce3b7b` and deployed exactly to
+station-four, station-five, and sixwin. Windows Product Closure run
+`20260907T162910781782Z-6bab8cef6910f9f82faeae965d0eb0fc`, with binary
+SHA-256
+`6d3dc23d65372963e5c7601bdb24556ed6c109a7e81ff239749f9e3921e06070`,
+proved the first Direct open, deterministic repeated reopen, one active pane,
+distinct client-to-Station bindings, and complete cleanup.
+
+The first subsequent failure was `group.create.ui`: Alice never reached an
+active MLS Group. Station and Desktop evidence isolate this as a Gate
+synchronization defect rather than a product failure:
+
+- station-four contains only the proven Direct and station-five contains no
+  Conversation row;
+- no `/conversation/group/prepare` request reached Station;
+- no frontend `createGroup failed` signal or validation feedback was emitted;
+- the Gate clicked the contact and immediately clicked submit without waiting
+  for React to commit `aria-pressed="true"` and enable the submit control.
+
+The Gate now waits for both committed UI states before the native submit click.
+It preserves the existing Group product assertions and captures bounded DOM,
+screenshot, modal, pane, and submit diagnostics on timeout. The focused
+synchronization test passes, and the approved local matrix passes in fresh
+Evidence Store runs:
+
+- `station-messaging-unit`:
+  `20260907T171455773732Z-45ff86e160d98743abc4293f4bab99fd`;
+- `messaging-platform-contract`:
+  `20260907T171455773750Z-ac295bc48df5b5c147413cd6c3a6d9d9`;
+- `desktop-check`:
+  `20260907T171455773766Z-7a236d1a2c3514b2da8b0e80290de1cd`;
+- `chat-native-visible-static`:
+  `20260907T171455773563Z-97c990c064491a98b727cfe253fbcdcf`.
+
+The Gate correction is committed in the current source checkpoint. The next
+dependency-ready action is exact-source deployment and a Product Closure-only
+Windows rerun. The remaining seven Windows Native Chat Gates, Windows
+NDR-W10-D closure, and PostgreSQL contention stay `UNPROVEN` until Product
+Closure passes.
