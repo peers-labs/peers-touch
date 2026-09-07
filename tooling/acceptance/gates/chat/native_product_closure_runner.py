@@ -94,7 +94,7 @@ def _debug_report(
     message: str,
     data: dict[str, Any],
 ) -> None:
-    env_path = REPO_ROOT / ".dbg" / "cross-station-direct-open.env"
+    env_path = REPO_ROOT / ".dbg" / "direct-projection-role.env"
     if not env_path.exists():
         return
     values = {}
