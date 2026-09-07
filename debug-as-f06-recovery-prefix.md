@@ -115,3 +115,29 @@ event exists. Instrumentation remains active for post-fix comparison.
   raw-payload hash and source-identity equality remain mandatory.
 - Runtime post-fix proof remains pending. Keep this session and all
   instrumentation open.
+
+## Replay Completion Boundary Follow-Up
+
+- Exact-source run
+  `20260907T175903309291Z-bbb13892aeae6e86ab4686cb5db3f0b9`
+  on `ea6987d749461e2dd4c070db692921a41e718ba1` reproduced a forced
+  recovery-failure sample with request cursor `3`, post-cut cursor `30`,
+  client replay deliveries `31..136`, and Station events `31..166`.
+- The client replay segment ended before the Station terminal tail because the
+  scenario deliberately exhausts reconnect, then performs authoritative
+  snapshot recovery. Comparing the client segment against an unbounded Station
+  tail therefore mixed replay parity with later snapshot-owned settlement.
+- The same run showed `RECONCILING` and `CONNECTED` were not preserved in the
+  handoff across the client restart even though
+  `reloadAgentTurnSnapshot` executes both production transitions before
+  applying the terminal snapshot.
+- The final local correction records those two actual store transitions with a
+  scoped subscriber around durable reload and carries them through the
+  coordinator. Replay parity now declares `throughCursor`, compares exact raw
+  source payloads against Station only through that observed cursor, and leaves
+  the later terminal tail to the existing source-bound snapshot equality
+  assertion.
+- Local verification passes focused `162/162`, full `330/330` Agent
+  Acceptance tests, Desktop check, all `583` Desktop tests with one unrelated
+  environment-dependent skip, Desktop production build, Python compilation,
+  and `git diff --check`. Runtime proof remains pending.
