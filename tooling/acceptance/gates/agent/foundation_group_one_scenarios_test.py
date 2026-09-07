@@ -983,7 +983,7 @@ def valid_attachment_rejected_capture() -> dict[str, object]:
             "deletionReadback": {
                 "source": "oss-owner-list",
                 "objectRefHash": "f" * 64,
-                "keyHash": "0" * 64,
+                "objectPathHash": "0" * 64,
                 "deletedAt": "2026-09-06T18:32:21Z",
                 "readAttempt": 1,
             },

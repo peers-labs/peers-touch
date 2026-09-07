@@ -21,6 +21,7 @@
 | E | The authenticated delete command fails before creating a tombstone. | Medium | Low | Rejected: Browser gateway recorded `oss_delete_file` with `resultOk=true`. |
 | F | Browser command parity omits owner-side file listing, so tombstone readback never reaches Station. | High | Low | Confirmed: Browser gateway recorded `oss_list_my_files` with `resultOk=false`, and the gateway dispatch table has no matching command branch. |
 | G | Owner-side listing succeeds but omits the deleted object. | Medium | Low | Not reached: the command failed at the Browser gateway before returning a listing. |
+| H | The evidence payload exposes a secret-bearing field name even though its value is hashed. | High | Low | Confirmed: the candidate rejected `cleanup.proof.deletionReadback.keyHash` after the complete scenario returned. |
 
 ## Log Evidence
 - Pre-fix Gate run: `20260907T020559327723Z-5246e94c2d4cef5c9e0718aecae554ae`.
@@ -56,6 +57,14 @@
   successful `oss_delete_file` followed by failed `oss_list_my_files` on both
   the primary and cleanup paths. Provisioner cleanup completed
   `DONE / PROVEN / passed`.
+- Checkpoint `504c543b8186f3033654750d5070bd6abfdda306` restored Browser
+  `oss_list_my_files` parity. Exact-source run
+  `20260907T053637546032Z-3ba1d711d87edb0c2290589af51c5f88`
+  then completed upload, delete, first-attempt owner-list tombstone readback,
+  the Station rejection path, and post-rejection tombstone readback. Candidate
+  validation rejected only the field name
+  `cleanup.proof.deletionReadback.keyHash` as secret-bearing. Provisioner
+  cleanup completed `DONE / PROVEN / passed`.
 
 ## Instrumentation Plan
 - `useAgentAttachmentDrafts.ts`: file-selection metadata, upload start,
@@ -90,4 +99,11 @@ submits a Turn and cannot observe a Station rejection.
   Desktop tests with one unrelated environment-dependent skip, the complete
   HTTP-gateway Rust module (`6` passed, `1` intentionally ignored), `145/145`
   focused Foundation/oracle tests, Rust formatting, and `git diff --check`.
-- Exact-source post-parity deployment and runtime evidence remain pending.
+- The hashed bare-object locator field is renamed from `keyHash` to
+  `objectPathHash`; its value and the independent SHA-256 assertion are
+  unchanged.
+- The dedicated evidence-safety regression and `145/145` focused
+  Foundation/oracle tests pass. A broader candidate-producer invocation
+  retains its two known unrelated `receiver-dom` fixture/profile errors.
+- Exact-source post-evidence-field deployment and runtime evidence remain
+  pending.

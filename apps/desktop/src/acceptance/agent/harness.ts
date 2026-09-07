@@ -104,7 +104,7 @@ interface FoundationRuntimeEventObservation {
 interface FoundationAttachmentDeletionReadback {
   source: 'oss-owner-list';
   objectRefHash: string;
-  keyHash: string;
+  objectPathHash: string;
   deletedAt: string;
   readAttempt: number;
 }
@@ -3806,7 +3806,7 @@ async function foundationAttachmentDeletionReadback(
         return {
           source: 'oss-owner-list',
           objectRefHash: await sha256Hex(objectRef),
-          keyHash: await sha256Hex(key),
+          objectPathHash: await sha256Hex(key),
           deletedAt,
           readAttempt: attempt,
         };
@@ -8756,7 +8756,7 @@ function evaluateBaseAttachmentRejected(
       && deletionReadback.source === 'oss-owner-list'
       && deletionReadback.objectRefHash === station.objectRefHash
       && isSha256(deletionReadback.objectRefHash)
-      && isSha256(deletionReadback.keyHash)
+      && isSha256(deletionReadback.objectPathHash)
       && typeof deletionReadback.deletedAt === 'string'
       && deletionReadback.deletedAt.length > 0
       && Number(deletionReadback.readAttempt) > 0
