@@ -1246,7 +1246,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
         self.assertIn("[data-pt-agent-attachment-input]", scenario)
         self.assertIn("new File(", scenario)
+        self.assertIn("[Uint8Array.from(FOUNDATION_PDF_BYTES)]", scenario)
+        self.assertNotIn("not a valid PDF payload", scenario)
         self.assertIn("[data-pt-agent-composer-send]", scenario)
+        tombstone = scenario.index("await api.ossDeleteAgentAttachment(objectRef)")
+        send = scenario.index("[data-pt-agent-composer-send]")
+        self.assertLess(tombstone, send)
         self.assertIn("CONTEXT_ATTACHMENT_REJECTED", scenario)
         self.assertIn(
             "[data-pt-agent-composer-attachment-status=\"rejected\"]",
