@@ -2328,6 +2328,7 @@ def evaluate_base_active_mutation_conflict(
         "cleanupComplete": (
             cleanup.get("deletedFromRoster") is True
             and cleanup.get("deletedFromStation") is True
+            and cleanup.get("conversationDeleted") is True
             and _nonempty_string(
                 cleanup,
                 "restoredSelection",
