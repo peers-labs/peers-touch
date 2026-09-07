@@ -6081,6 +6081,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   production build, Python compilation, and `git diff --check`. Provisioner
   cleanup completed `DONE / PROVEN / passed`; Foundation/G-F remain
   `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260907T183454866557Z-6266f4fffde2e03da2ff7bb3375f71e5`
+  on checkpoint `f0080b81f4fca643fea2c1eecb173a7f23141843`
+  crossed all four AS-F06 tuples with source-bound bounded replay parity and
+  captured `RECONCILING -> CONNECTED` durable reload transitions. It also
+  passed Browser English and Simplified Chinese `BASE-CANCELLED` across live,
+  reload, and replay receiver projections. Candidate emission then failed
+  closed at Browser English `BASE-CONTEXT-OVERFLOW` because the Agent-domain
+  producer's explicit safe accounting allowlist omitted the accepted
+  `actual_tokens` and `limit_tokens` detail keys. The product capture and both
+  independent oracles require those exact numeric count fields; the local
+  correction adds only those keys to `SAFE_SCHEMA_KEYS` and retains rejection
+  of actual credential fields such as `api_token`. Focused producer tests pass
+  `14/14`, full Agent Acceptance tests pass `330/330`, Python compilation and
+  `git diff --check` pass. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; exact-source post-fix proof is pending, so
+  Foundation/G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
