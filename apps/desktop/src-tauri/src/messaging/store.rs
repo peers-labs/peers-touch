@@ -29,10 +29,8 @@ use messaging_core::identity::{
     DeviceEnrollmentRepository, FreshDeviceEnrollment, FreshDeviceIdentityState,
     MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
 };
-use messaging_core::outbox::{
-    DeliveryReceiptOutboxEntry, DeliveryReceiptRepository, MetadataInteractionCommit,
-    MetadataInteractionRepository,
-};
+use messaging_core::outbox::{MetadataInteractionCommit, MetadataInteractionRepository};
+use messaging_core::proto::{actor_device_ptid, actor_device_ref};
 use messaging_core::store::{migrate_messaging_schema, MessagingSchemaBackend};
 use messaging_core::store::{
     DirectOutboundEditCommit, DirectOutboundRepository, DirectOutboundSendCommit,
@@ -54,6 +52,12 @@ pub struct CommandOutboxEntry {
     pub command_bytes: Vec<u8>,
     pub attempt_count: u32,
     pub next_attempt_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeliveryReceiptOutboxEntry {
+    pub receipt_id: String,
+    pub receipt_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +186,8 @@ pub struct ConversationStateReceiveCommit<'a> {
 
 pub struct DirectSendCommit<'a> {
     pub command_bytes: &'a [u8],
+    pub expected_authority_sequence: i64,
+    pub expected_authority_hash: &'a [u8],
     pub advanced_sessions: &'a [DirectSession],
     pub session_inits: &'a [(String, Vec<u8>)],
     pub projection: PendingSenderProjection<'a>,
@@ -327,8 +333,6 @@ pub struct DirectReceiveCommit<'a> {
     pub thread_root_message_id: Option<&'a str>,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
-    pub delivery_receipt_id: &'a str,
-    pub delivery_receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
 }
 
@@ -378,8 +382,6 @@ pub struct DirectEditCommit<'a> {
     pub edited_at_unix_ms: i64,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
-    pub delivery_receipt_id: &'a str,
-    pub delivery_receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
 }
 
@@ -981,7 +983,7 @@ impl MessagingStore {
                 "SELECT receipt_id, receipt_bytes
                  FROM messaging_receipt_outbox
                  WHERE state = 'pending'
-                   AND receipt_id LIKE 'message-delivered:%'
+                   AND receipt_id LIKE 'device-consumed:%'
                  ORDER BY created_at_unix_ms ASC, receipt_id ASC
                  LIMIT 1",
                 [],
@@ -4245,8 +4247,12 @@ impl MessagingStore {
     ) -> Result<(), String> {
         let enrollment = &state.enrollment;
         let certificate = &enrollment.certificate;
-        if certificate.ptid.trim().is_empty()
-            || certificate.device_id.trim().is_empty()
+        let device = certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "fresh messaging device identity has no endpoint".to_string())?;
+        let ptid = actor_device_ptid(device)?;
+        if device.device_id.trim().is_empty()
             || certificate.signing_key_id.trim().is_empty()
             || certificate.actor_identity_public_key.len() != 32
             || certificate.actor_identity_key_fingerprint.len() != 32
@@ -4268,8 +4274,8 @@ impl MessagingStore {
                     signing_key_id, profile_version
                  ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
-                    certificate.ptid,
-                    certificate.device_id,
+                    ptid,
+                    device.device_id,
                     state.device_signing_seed.as_slice(),
                     certificate.actor_identity_public_key,
                     certificate.actor_identity_key_fingerprint,
@@ -4349,13 +4355,6 @@ impl MessagingStore {
                     )
                     .map_err(|error| error.to_string())?;
             }
-            insert_delivery_receipt(
-                transaction,
-                input.delivery_receipt_id,
-                input.event_id,
-                input.delivery_receipt_bytes,
-                input.consumed_at_unix_ms,
-            )?;
             Ok(())
         })
     }
@@ -4444,13 +4443,6 @@ impl MessagingStore {
             if changed == 0 {
                 return Err("messaging direct edit target message not found".to_string());
             }
-            insert_delivery_receipt(
-                transaction,
-                input.delivery_receipt_id,
-                input.event_id,
-                input.delivery_receipt_bytes,
-                input.consumed_at_unix_ms,
-            )?;
             Ok(())
         })
     }
@@ -5329,10 +5321,9 @@ impl MessagingStore {
             return Ok(None);
         };
         Ok(Some(FreshDeviceEnrollment {
-            certificate: crate::model::chat::MessagingDeviceCertificate {
+            certificate: messaging_core::proto::actor::ActorDeviceCertificate {
                 format_version: MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
-                ptid: row.0,
-                device_id: row.1,
+                device: Some(actor_device_ref(row.0, row.1)),
                 actor_identity_public_key: row.2,
                 actor_identity_key_fingerprint: row.3,
                 device_signing_public_key: row.4,
@@ -6519,20 +6510,6 @@ impl PreKeyRepository for MessagingStore {
     }
 }
 
-impl DeliveryReceiptRepository for MessagingStore {
-    fn next_delivery_receipt(&self) -> Result<Option<DeliveryReceiptOutboxEntry>, String> {
-        MessagingStore::next_delivery_receipt(self)
-    }
-
-    fn mark_delivery_receipt_submitted(
-        &self,
-        receipt_id: &str,
-        receipt_bytes: &[u8],
-    ) -> Result<(), String> {
-        MessagingStore::mark_delivery_receipt_submitted(self, receipt_id, receipt_bytes)
-    }
-}
-
 impl MetadataInteractionRepository for MessagingStore {
     fn authority_head(&self, conversation_id: &str) -> Result<(i64, Vec<u8>), String> {
         MessagingStore::authority_head(self, conversation_id)
@@ -7279,31 +7256,6 @@ fn direct_receive_core<'a>(input: &'a DirectReceiveCommit<'a>) -> ReceiveCommitC
         receipt_bytes: input.receipt_bytes,
         consumed_at_unix_ms: input.consumed_at_unix_ms,
     }
-}
-
-fn insert_delivery_receipt(
-    transaction: &Transaction<'_>,
-    receipt_id: &str,
-    event_id: &str,
-    receipt_bytes: &[u8],
-    created_at_unix_ms: i64,
-) -> Result<(), String> {
-    if !receipt_id.starts_with("message-delivered:")
-        || event_id.trim().is_empty()
-        || receipt_bytes.is_empty()
-        || created_at_unix_ms <= 0
-    {
-        return Err("messaging delivery receipt is incomplete".to_string());
-    }
-    transaction
-        .execute(
-            "INSERT INTO messaging_receipt_outbox(
-                receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, 'pending', ?4)",
-            params![receipt_id, event_id, receipt_bytes, created_at_unix_ms],
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(())
 }
 
 fn public_event_receive_core<'a>(input: &'a PublicEventReceiveCommit<'a>) -> ReceiveCommitCore<'a> {
@@ -8608,9 +8560,15 @@ mod tests {
         let identity = IdentityKeyPair::from_seed(&[12; 32]);
         let fresh = generate_fresh_device_identity("ptid:alice", identity.seed_bytes(), 1).unwrap();
         store.install_fresh_device_identity(&fresh).unwrap();
-        store
-            .complete_device_enrollment(&fresh.enrollment.certificate.device_id)
-            .unwrap();
+        let device_id = fresh
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .unwrap()
+            .device_id
+            .clone();
+        store.complete_device_enrollment(&device_id).unwrap();
         MlsKeyPackageRepository::install_fresh_mls_key_packages(
             &store,
             &packages,
@@ -8876,6 +8834,8 @@ mod tests {
             crate::messaging::encode_message_private_content("sender plaintext", &[])?;
         store.persist_direct_send(&DirectSendCommit {
             command_bytes,
+            expected_authority_sequence: 0,
+            expected_authority_hash: &[],
             advanced_sessions: &[direct_session(0)],
             session_inits: &[],
             projection: PendingSenderProjection {
@@ -9381,6 +9341,8 @@ mod tests {
             crate::messaging::encode_message_private_content("must roll back", &[]).unwrap();
         let result = store.persist_direct_send(&DirectSendCommit {
             command_bytes: b"exact bytes",
+            expected_authority_sequence: 0,
+            expected_authority_hash: &[],
             advanced_sessions: &[session],
             session_inits: &[],
             projection: PendingSenderProjection {
@@ -9665,8 +9627,6 @@ mod tests {
             thread_root_message_id: None,
             receipt_id: "receipt-1",
             receipt_bytes: b"receipt",
-            delivery_receipt_id: "message-delivered:event-1:device-1",
-            delivery_receipt_bytes: b"delivery-receipt",
             consumed_at_unix_ms: 100,
         };
         assert_eq!(
@@ -9765,8 +9725,6 @@ mod tests {
                 thread_root_message_id: None,
                 receipt_id: "receipt-1",
                 receipt_bytes: b"receipt",
-                delivery_receipt_id: "message-delivered:event-1:device-1",
-                delivery_receipt_bytes: b"delivery-receipt",
                 consumed_at_unix_ms: 100,
             };
             assert!(store
@@ -9855,8 +9813,6 @@ mod tests {
             thread_root_message_id: None,
             receipt_id: "subsumed-receipt-1",
             receipt_bytes: b"receipt",
-            delivery_receipt_id: "message-delivered:event-1:device-1",
-            delivery_receipt_bytes: b"delivery-receipt",
             consumed_at_unix_ms: 100,
         };
 

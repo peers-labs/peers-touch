@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-06
+> **Created**: 2026-09-06 | **Updated**: 2026-09-07
 > **Owner**: Architecture Team
 
 ---
@@ -17,6 +17,7 @@
 | AO-D04 | Duplicate public routes and truth stores require an atomic hard cut | accepted |
 | AO-D05 | Social and Conversation reuse one domain-neutral Federation transport | accepted |
 | AO-D06 | Conversation is rebuilt as a Station DDD bounded context | accepted |
+| AO-D07 | Canonical creation, command, event, and destructive-read wire semantics | accepted |
 
 ---
 
@@ -273,3 +274,32 @@ The refactor is broad and must be dependency-planned. All existing Conversation 
 reclassified into domain, application, infrastructure, interface, and Acceptance gates.
 The old flat services, repositories, transition UOWs, follower adapters, and handlers are
 deleted after their behavior is covered by the new bounded context.
+
+---
+
+## AO-D07: Canonical Creation, Command, Event, And Destructive-Read Wire Semantics
+
+**Status**: accepted
+**Date**: 2026-09-07
+
+### Context
+
+CA-W5 production composition exposed unresolved wire semantics that cannot be
+implemented without synthesizing command identity, trusting client-supplied
+authority scope, or retaining the old event and proposal owners.
+
+### Decision
+
+The complete accepted contract, identity and replay scopes, alternatives, and
+consequences are documented in
+[`proposals/20260907-ca-w5-canonical-wire-contract-amendment.md`](./proposals/20260907-ca-w5-canonical-wire-contract-amendment.md).
+
+The Owner accepted AO-D07.1 through AO-D07.6 as one coherent v1 hard-cut
+amendment on 2026-09-07.
+
+### Consequences
+
+CA-W5 may resume proto-first mutation, production route registration, consumer
+migration, and legacy deletion. Architecture acceptance is not runtime proof;
+CA-W5 remains incomplete until its source Gates pass, and Windows NDR-W9-D /
+NDR-W10-D remain `UNPROVEN` until CA-W6.

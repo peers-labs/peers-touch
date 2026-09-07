@@ -130,11 +130,15 @@ message SocialFriendRequest {
   string sender_avatar = 9;
   string receiver_display_name = 10;
   string receiver_avatar = 11;
+  string federation_id = 12;
+  string sender_home_station_peer_id = 13;
+  string receiver_home_station_peer_id = 14;
 }
 
 message SendSocialFriendRequestRequest {
-  peers_touch.model.actor.v1.ActorRef receiver = 1;
-  string message = 2;
+  reserved 1, 2, 3;
+  reserved "receiver", "message", "federation_id";
+  FriendRequestCommand command = 4;
 }
 
 message SendSocialFriendRequestResponse {
@@ -142,7 +146,9 @@ message SendSocialFriendRequestResponse {
 }
 
 message AcceptSocialFriendRequestRequest {
-  string request_id = 1;
+  reserved 1;
+  reserved "request_id";
+  FriendRequestCommand command = 2;
 }
 
 message AcceptSocialFriendRequestResponse {
@@ -150,7 +156,9 @@ message AcceptSocialFriendRequestResponse {
 }
 
 message RejectSocialFriendRequestRequest {
-  string request_id = 1;
+  reserved 1;
+  reserved "request_id";
+  FriendRequestCommand command = 2;
 }
 
 message RejectSocialFriendRequestResponse {
@@ -182,6 +190,7 @@ message FriendRequestCommandBody {
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp expires_at = 12;
   peers_touch.model.actor.v1.ActorDeviceRef authorizing_device = 13;
+  string federation_id = 14;
 }
 
 message FriendRequestCommandSigningInput {
@@ -209,6 +218,7 @@ message FriendRequestEvent {
   google.protobuf.Timestamp committed_at = 11;
   bytes previous_hash = 12;
   bytes event_hash = 13;
+  string federation_id = 14;
 }
 
 enum FriendRequestCommandResultKind {

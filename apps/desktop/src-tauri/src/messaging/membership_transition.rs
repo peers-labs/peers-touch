@@ -1,10 +1,11 @@
 use super::EngineEndpoint;
 use crate::infrastructure::station_client;
 use crate::model::chat::{
-    CryptoEndpoint, PrepareMessagingMembershipTransitionRequest,
-    PrepareMessagingMembershipTransitionResponse,
+    ConversationMembershipAction, MemberRole, MessagingMembershipAction,
+    PrepareConversationMembershipRequest, PrepareConversationMembershipResponse,
 };
 use messaging_core::mls::membership_transition::MembershipTransitionIntentInput;
+use messaging_core::proto::{actor_device_ref, actor_ref};
 use reqwest::Method;
 
 pub struct StationMembershipTransitionTransport {
@@ -26,22 +27,25 @@ impl StationMembershipTransitionTransport {
     pub fn prepare(
         &self,
         input: &MembershipTransitionIntentInput,
-    ) -> Result<PrepareMessagingMembershipTransitionResponse, String> {
+    ) -> Result<PrepareConversationMembershipResponse, String> {
         station_client::request_proto_for_device::<
-            PrepareMessagingMembershipTransitionRequest,
-            PrepareMessagingMembershipTransitionResponse,
+            PrepareConversationMembershipRequest,
+            PrepareConversationMembershipResponse,
         >(
             Method::POST,
             "/conversation/membership/prepare",
             &self.token,
             None,
-            Some(&PrepareMessagingMembershipTransitionRequest {
+            Some(&PrepareConversationMembershipRequest {
                 conversation_id: input.conversation_id.clone(),
-                sender: Some(model_endpoint(&self.endpoint)),
-                action: input.action as i32,
-                target_ptid: input.target_ptid.clone(),
+                sender: Some(actor_device_ref(
+                    &self.endpoint.ptid,
+                    &self.endpoint.device_id,
+                )),
+                action: canonical_action(input.action) as i32,
+                target_actor: Some(actor_ref(input.target_ptid.clone())),
                 target_device_id: input.target_device_id.clone(),
-                role: input.role.clone(),
+                role: canonical_role(&input.role)? as i32,
             }),
             &self.endpoint.device_id,
         )
@@ -49,9 +53,24 @@ impl StationMembershipTransitionTransport {
     }
 }
 
-fn model_endpoint(endpoint: &EngineEndpoint) -> CryptoEndpoint {
-    CryptoEndpoint {
-        ptid: endpoint.ptid.clone(),
-        device_id: endpoint.device_id.clone(),
+fn canonical_action(action: MessagingMembershipAction) -> ConversationMembershipAction {
+    match action {
+        MessagingMembershipAction::AddActor => ConversationMembershipAction::AddActor,
+        MessagingMembershipAction::RemoveActor => ConversationMembershipAction::RemoveActor,
+        MessagingMembershipAction::Leave => ConversationMembershipAction::Leave,
+        MessagingMembershipAction::ChangeRole => ConversationMembershipAction::ChangeRole,
+        MessagingMembershipAction::AddDevice => ConversationMembershipAction::AddDevice,
+        MessagingMembershipAction::RemoveDevice => ConversationMembershipAction::RemoveDevice,
+        MessagingMembershipAction::Unspecified => ConversationMembershipAction::Unspecified,
+    }
+}
+
+fn canonical_role(role: &str) -> Result<MemberRole, String> {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "" => Ok(MemberRole::Unspecified),
+        "member" => Ok(MemberRole::Member),
+        "admin" => Ok(MemberRole::Admin),
+        "owner" => Ok(MemberRole::Owner),
+        _ => Err("messaging membership role is invalid".to_string()),
     }
 }

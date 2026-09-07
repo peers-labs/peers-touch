@@ -1,6 +1,6 @@
 use super::{EngineEndpoint, MessagingStore};
 use crate::model::chat::{
-    AttachmentPlaintextMetadata, ChatCommand, CryptoEndpoint, PrepareMessagingSendResponse,
+    AttachmentPlaintextMetadata, ChatCommand, CryptoEndpoint, PrepareConversationCommandResponse,
 };
 use messaging_core::mls::group::MlsGroupManager;
 use messaging_core::mls::outbound::{
@@ -53,7 +53,7 @@ impl SendPreparer {
 
     pub fn prepare_direct_text(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &SendTextIntent<'_>,
     ) -> Result<ChatCommand, String> {
         self.prepare_direct_text_with_bootstraps(plan, intent, &[])
@@ -61,7 +61,7 @@ impl SendPreparer {
 
     pub fn prepare_direct_text_with_bootstraps(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &SendTextIntent<'_>,
         bootstraps: &[DirectSessionBootstrap],
     ) -> Result<ChatCommand, String> {
@@ -84,7 +84,7 @@ impl SendPreparer {
 
     pub fn prepare_direct_edit_with_bootstraps(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &EditTextIntent<'_>,
         bootstraps: &[DirectSessionBootstrap],
     ) -> Result<ChatCommand, String> {
@@ -104,7 +104,7 @@ impl SendPreparer {
 
     pub fn prepare_group_text(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &SendTextIntent<'_>,
     ) -> Result<ChatCommand, String> {
         MlsOutboundPreparer::new(
@@ -129,7 +129,7 @@ impl SendPreparer {
 
     pub fn prepare_group_edit(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &EditTextIntent<'_>,
     ) -> Result<ChatCommand, String> {
         MlsOutboundPreparer::new(
@@ -160,16 +160,18 @@ fn model_endpoint(endpoint: &EngineEndpoint) -> CryptoEndpoint {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::crypto::double_ratchet::DrSessionState;
     use crate::domain::crypto::{
         CryptoEndpoint as SessionEndpoint, DirectSession, DirectSessionKey,
     };
     use crate::messaging::private_content::test_attachment_metadata;
     use crate::messaging::{decode_message_private_content, AttachmentTransferRecord};
     use crate::model::chat::{
-        chat_command, AttachmentTransferState, ConversationKind, EncryptedObjectUploadSpec,
-        PreparedEndpointPayload,
+        chat_command, AttachmentTransferState, ConversationKind, DirectCiphertextAad,
+        DirectDeviceCiphertext, EncryptedObjectUploadSpec, PreparedEndpointPayload,
     };
+    use messaging_core::crypto::double_ratchet::{self, DrCiphertextWire, DrSessionState};
+    use messaging_core::proto::{actor_device_ref, chat_endpoint};
+    use prost::Message;
 
     fn session(peer_ptid: &str, peer_device_id: &str, seed: u8) -> DirectSession {
         let session_id = format!("session-{peer_ptid}-{peer_device_id}");
@@ -322,7 +324,7 @@ mod tests {
             Arc::new(MlsGroupManager::new()),
         )
         .unwrap();
-        let mut plan = PrepareMessagingSendResponse {
+        let mut plan = PrepareConversationCommandResponse {
             conversation_id: "conversation-1".to_string(),
             conversation_kind: ConversationKind::Direct as i32,
             authority_sequence: 0,
@@ -330,22 +332,13 @@ mod tests {
             membership_epoch: 1,
             mls_epoch: 0,
             required_endpoints: vec![
-                CryptoEndpoint {
-                    ptid: "ptid:alice".to_string(),
-                    device_id: "alice-device".to_string(),
-                },
-                CryptoEndpoint {
-                    ptid: "ptid:alice".to_string(),
-                    device_id: "alice-phone".to_string(),
-                },
-                CryptoEndpoint {
-                    ptid: "ptid:bob".to_string(),
-                    device_id: "bob-device".to_string(),
-                },
+                actor_device_ref("ptid:alice", "alice-device"),
+                actor_device_ref("ptid:alice", "alice-phone"),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
             delivery_plan_sha256: vec![9; 32],
             endpoint_manifests: Vec::new(),
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
         };
         let attachment = test_attachment_metadata("attachment-1");
         let rejected = preparer
@@ -403,6 +396,10 @@ mod tests {
                 .map(|payload| payload.recipient.clone().unwrap())
                 .collect::<Vec<_>>(),
             plan.required_endpoints[1..]
+                .iter()
+                .map(chat_endpoint)
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
         );
         let bob_payload = send
             .direct_payloads
@@ -486,7 +483,7 @@ mod tests {
             Arc::new(MlsGroupManager::new()),
         )
         .unwrap();
-        let plan = PrepareMessagingSendResponse {
+        let plan = PrepareConversationCommandResponse {
             conversation_id: "conversation-1".to_string(),
             conversation_kind: ConversationKind::Direct as i32,
             authority_sequence: 0,
@@ -494,18 +491,12 @@ mod tests {
             membership_epoch: 1,
             mls_epoch: 0,
             required_endpoints: vec![
-                CryptoEndpoint {
-                    ptid: "ptid:alice".to_string(),
-                    device_id: "alice-device".to_string(),
-                },
-                CryptoEndpoint {
-                    ptid: "ptid:bob".to_string(),
-                    device_id: "bob-device".to_string(),
-                },
+                actor_device_ref("ptid:alice", "alice-device"),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
             delivery_plan_sha256: vec![9; 32],
             endpoint_manifests: Vec::new(),
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
         };
         let command = preparer
             .prepare_direct_edit_with_bootstraps(

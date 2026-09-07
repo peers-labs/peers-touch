@@ -39,3 +39,16 @@ type ActorDeviceModel struct {
 func (*ActorDeviceModel) TableName() string {
 	return "actor_devices"
 }
+
+// ActorEndpointDirectoryVersionModel fences signed routing snapshots by Actor.
+type ActorEndpointDirectoryVersionModel struct {
+	ActorPTID   string    `gorm:"column:actor_ptid;size:255;primaryKey"`
+	Version     uint64    `gorm:"column:directory_version;not null"`
+	StateSHA256 []byte    `gorm:"column:state_sha256;type:bytea;not null"`
+	UpdatedAt   time.Time `gorm:"column:updated_at;not null"`
+}
+
+// TableName binds the directory fence to the Actor Identity-owned store.
+func (*ActorEndpointDirectoryVersionModel) TableName() string {
+	return "actor_endpoint_directory_versions"
+}

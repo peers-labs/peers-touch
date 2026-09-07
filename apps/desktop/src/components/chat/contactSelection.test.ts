@@ -40,6 +40,7 @@ describe('findContactConversation', () => {
     const selection: ContactSelection = {
       kind: 'friend',
       peerPtid: 'ptid:bob',
+      federationId: 'federation-1',
       displayName: 'Bob',
     };
 
@@ -50,6 +51,7 @@ describe('findContactConversation', () => {
     const selection: ContactSelection = {
       kind: 'friend',
       peerPtid: 'ptid:alice',
+      federationId: 'federation-1',
       displayName: 'Alice',
     };
 
@@ -70,6 +72,7 @@ describe('findContactConversation', () => {
   it('links an accepted request actor to an existing direct conversation', () => {
     expect(friendContactSelection(
       'ptid:alice',
+      'federation-1',
       'Alice',
       'avatar',
       conversations,
@@ -77,6 +80,7 @@ describe('findContactConversation', () => {
       kind: 'friend',
       conversationId: 'dm-1',
       peerPtid: 'ptid:alice',
+      federationId: 'federation-1',
       displayName: 'Alice',
       avatar: 'avatar',
     });
@@ -85,12 +89,14 @@ describe('findContactConversation', () => {
   it('keeps an accepted request actor selectable before a DM exists', () => {
     expect(friendContactSelection(
       'ptid:bob',
+      'federation-1',
       'Bob',
       undefined,
       conversations,
     )).toEqual({
       kind: 'friend',
       peerPtid: 'ptid:bob',
+      federationId: 'federation-1',
       displayName: 'Bob',
       avatar: undefined,
     });
@@ -100,6 +106,7 @@ describe('findContactConversation', () => {
     const creating = beginDirectConversationOpen({
       kind: 'friend',
       peerPtid: 'ptid:bob',
+      federationId: 'federation-1',
       displayName: 'Bob',
       avatar: 'avatar',
     });
@@ -114,12 +121,14 @@ describe('findContactConversation', () => {
     expect(creating).toEqual({
       phase: 'creating',
       peerPtid: 'ptid:bob',
+      federationId: 'federation-1',
       displayName: 'Bob',
       avatar: 'avatar',
     });
     expect(failed).toMatchObject({
       phase: 'failed',
       peerPtid: 'ptid:bob',
+      federationId: 'federation-1',
       displayName: 'Bob',
       avatar: 'avatar',
       error: {

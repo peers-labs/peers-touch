@@ -24,11 +24,11 @@ import type {
   SessionRevokedReason,
 } from '../kernel/events/types';
 import {
-  SendFriendRequestResponseSchema,
-  AcceptFriendRequestResponseSchema,
-  RejectFriendRequestResponseSchema,
-  ListFriendRequestsResponseSchema,
-} from '../gen/proto/domain/chat/friend_chat_pb';
+  AcceptSocialFriendRequestResponseSchema,
+  ListSocialFriendRequestsResponseSchema,
+  RejectSocialFriendRequestResponseSchema,
+  SendSocialFriendRequestResponseSchema,
+} from '../gen/proto/domain/social/relationship_pb';
 import {
   CreateGroupResponseSchema,
   GetGroupResponseSchema,
@@ -5473,6 +5473,7 @@ export const api = {
           displayName: string;
           email?: string;
           avatar?: string;
+          homeStationPeerId: string;
         }>;
         total: number;
       }
@@ -5909,17 +5910,67 @@ export const api = {
 
   // ── Friend Request (social domain) ──
 
-  socialFriendRequestSend: (receiverPtid: string, message?: string) =>
-    invokeRustProto('social_friend_request_send', SendFriendRequestResponseSchema, { receiver_ptid: receiverPtid, message }),
+  socialFriendRequestSend: (input: {
+    receiverPtid: string;
+    receiverHomeStationPeerId: string;
+    federationId: string;
+    message?: string;
+  }) =>
+    invokeRustProto(
+      'social_friend_request_send',
+      SendSocialFriendRequestResponseSchema,
+      {
+        receiver_ptid: input.receiverPtid,
+        receiver_home_station_peer_id: input.receiverHomeStationPeerId,
+        federation_id: input.federationId,
+        message: input.message,
+      },
+    ),
 
-  socialFriendRequestAccept: (requestId: string) =>
-    invokeRustProto('social_friend_request_accept', AcceptFriendRequestResponseSchema, { request_id: requestId }),
+  socialFriendRequestAccept: (input: {
+    requestId: string;
+    senderPtid: string;
+    senderHomeStationPeerId: string;
+    federationId: string;
+    message?: string;
+  }) =>
+    invokeRustProto(
+      'social_friend_request_accept',
+      AcceptSocialFriendRequestResponseSchema,
+      {
+        request_id: input.requestId,
+        sender_ptid: input.senderPtid,
+        sender_home_station_peer_id: input.senderHomeStationPeerId,
+        federation_id: input.federationId,
+        message: input.message,
+      },
+    ),
 
-  socialFriendRequestReject: (requestId: string) =>
-    invokeRustProto('social_friend_request_reject', RejectFriendRequestResponseSchema, { request_id: requestId }),
+  socialFriendRequestReject: (input: {
+    requestId: string;
+    senderPtid: string;
+    senderHomeStationPeerId: string;
+    federationId: string;
+    message?: string;
+  }) =>
+    invokeRustProto(
+      'social_friend_request_reject',
+      RejectSocialFriendRequestResponseSchema,
+      {
+        request_id: input.requestId,
+        sender_ptid: input.senderPtid,
+        sender_home_station_peer_id: input.senderHomeStationPeerId,
+        federation_id: input.federationId,
+        message: input.message,
+      },
+    ),
 
   socialFriendRequestList: (status?: number, limit?: number, offset?: number) =>
-    invokeRustProto('social_friend_request_list', ListFriendRequestsResponseSchema, { status, limit, offset }),
+    invokeRustProto(
+      'social_friend_request_list',
+      ListSocialFriendRequestsResponseSchema,
+      { status, limit, offset },
+    ),
 
   // ── Notification ──
 
@@ -6060,7 +6111,7 @@ export interface CryptoKeyBundlePayload {
   device_id: string;
 }
 
-/** One device-published bundle from Station (`FetchKeyBundleResponse.bundles`). */
+/** One device-published bundle from Station (`FetchDirectKeyBundlesResponse.bundles`). */
 export interface KeyExchangeWireBundle {
   ptid: string;
   device_id: string;
@@ -6090,6 +6141,9 @@ export interface FriendRequestData {
   id: string;
   senderPtid: string;
   receiverPtid: string;
+  federationId: string;
+  senderHomeStationPeerId: string;
+  receiverHomeStationPeerId: string;
   status: number;
   message: string;
   createdAt: string;
