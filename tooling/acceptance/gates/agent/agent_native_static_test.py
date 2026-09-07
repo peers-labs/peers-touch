@@ -474,11 +474,11 @@ class AgentHarnessStaticTest(unittest.TestCase):
             completion[:evidence_sync],
         )
         replay_boundary = completion.index(
-            "const replayStartTransition = latestHandoff.transitions.find",
+            "const replayStartTransition = transitions.find",
             latest_handoff,
         )
         station_readback = completion.index(
-            "const stationReplayDeliveries = await foundationStationReplayReadback",
+            "foundationStationReplayReadback({",
             replay_boundary,
         )
         self.assertIn(
@@ -506,6 +506,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             completion[replay_boundary:station_readback],
         )
         self.assertIn("afterCursor: replayAfterCursor", completion[station_readback:])
+        self.assertIn("throughCursor: replayThroughCursor", completion[station_readback:])
 
     def test_revision_retry_cancels_after_durable_provider_start(self) -> None:
         scenario_start = self.source.index(

@@ -819,6 +819,11 @@ def evaluate_as_f06(
         "acknowledgedCursor",
         scenario="AS-F06",
     )
+    through_cursor = _positive_int(
+        replay,
+        "throughCursor",
+        scenario="AS-F06",
+    )
     blocker = recovery_failure.get("blocker")
     if not isinstance(blocker, str):
         raise GroupOneScenarioError("AS-F06 blocker fact is invalid")
@@ -938,9 +943,11 @@ def evaluate_as_f06(
             bool(replay_sequences)
             and after_cursor == acknowledged_cursor
             and acknowledged_cursor >= replay_request_cursor
+            and through_cursor > acknowledged_cursor
             and acknowledged_cursor == cursor_before_mutation
             and replay_sequences == sorted(set(replay_sequences))
             and replay_sequences == replay_delivery_sequences
+            and replay_sequences[-1] == through_cursor
             and all(sequence > after_cursor for sequence in replay_sequences)
             and replay_payload_hashes_valid
             and replay_source_matches
