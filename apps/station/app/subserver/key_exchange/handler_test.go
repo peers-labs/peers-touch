@@ -1,131 +1,315 @@
 package key_exchange
 
 import (
+	"bytes"
 	"context"
-	"io"
+	"crypto/sha256"
+	"errors"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
+	"time"
 
-	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/google/uuid"
+	actoridentitypersistence "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
+	deliveryapplication "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
+	deliveryinfrastructure "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
+	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	kemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
-	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
-	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
-	"google.golang.org/protobuf/encoding/protojson"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
-func TestFetchFederatedKeyBundleUsesRelayAndPeerJWT(t *testing.T) {
-	registerKeyExchangeFederationScope()
-	nativefed.ClearRelayClient()
-	defer nativefed.ClearRelayClient()
-
-	var sawRelayAuth string
-	var sawPeerAuth string
-	var sawPath string
-	var sawRequest kemodel.FetchKeyBundleRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawRelayAuth = r.Header.Get("Authorization")
-		sawPeerAuth = r.Header.Get(nativefed.ForwardAuthorizationHeader)
-		sawPath = r.URL.Path
-		if err := protojson.Unmarshal(readKeyExchangeTestBody(t, r), &sawRequest); err != nil {
-			t.Fatalf("decode request: %v", err)
+func TestHandlersExposeOnlyCanonicalClientRoutes(t *testing.T) {
+	subserver := &subServer{}
+	handlers := subserver.Handlers()
+	expected := map[string]server.Method{
+		uploadDirectKeyBundlePath:        server.POST,
+		fetchDirectKeyBundlesPath:        server.POST,
+		replenishDirectOneTimePreKeyPath: server.POST,
+		countDirectOneTimePreKeyPath:     server.GET,
+		uploadMLSKeyPackagePath:          server.POST,
+		fetchMLSKeyPackagePath:           server.POST,
+		countMLSKeyPackagesPath:          server.GET,
+		sendDirectKeyExchangePath:        server.POST,
+	}
+	if len(handlers) != len(expected) {
+		t.Fatalf("handler count = %d, want %d", len(handlers), len(expected))
+	}
+	for _, handler := range handlers {
+		method, ok := expected[handler.Path()]
+		if !ok {
+			t.Fatalf("unexpected Key Exchange route %s %s", handler.Method(), handler.Path())
 		}
-		resp, err := protojson.Marshal(&kemodel.FetchKeyBundleResponse{
-			Bundles: []*kemodel.KeyBundle{{
-				Ptid:              "bob",
-				DeviceId:          "bob-device-1",
-				IkPub:             "aWstcHVi",
-				SpkPub:            "c3BrLXB1Yg==",
-				SpkSig:            "c3BrLXNpZw==",
-				Opks:              []string{"b3Br"},
-				PublishedAtUnixMs: 123,
-				SupportedVersions: []uint32{0, 1},
-			}},
+		if handler.Method() != method {
+			t.Fatalf(
+				"route %s method = %s, want %s",
+				handler.Path(),
+				handler.Method(),
+				method,
+			)
+		}
+		delete(expected, handler.Path())
+	}
+	if len(expected) != 0 {
+		t.Fatalf("missing canonical routes: %+v", expected)
+	}
+}
+
+func TestComposeBuildsCanonicalStoresAndAdapters(t *testing.T) {
+	database, err := gorm.Open(
+		sqlite.Open(
+			"file:key-exchange-composition-"+uuid.NewString()+
+				"?mode=memory&cache=shared",
+		),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open key exchange composition database: %v", err)
+	}
+	if err := database.AutoMigrate(
+		&actoridentitypersistence.ActorDeviceModel{},
+	); err != nil {
+		t.Fatalf("migrate Actor Device owner schema: %v", err)
+	}
+	inboxRepository, err := deliveryinfrastructure.NewRepository(
+		database,
+		deliveryapplication.QueueLimits{
+			MaxUnackedItems: defaultDeviceInboxMaxUnackedItems,
+			MaxUnackedBytes: defaultDeviceInboxMaxUnackedBytes,
+		},
+	)
+	if err != nil {
+		t.Fatalf("create Device Inbox owner repository: %v", err)
+	}
+	if err := inboxRepository.AutoMigrate(); err != nil {
+		t.Fatalf("migrate Device Inbox owner schema: %v", err)
+	}
+	for _, device := range []actoridentitypersistence.ActorDeviceModel{
+		activeDevice("ptid:alice", "alice-1", "station-local"),
+		activeDevice("ptid:bob", "bob-1", "station-local"),
+	} {
+		if err := database.Create(&device).Error; err != nil {
+			t.Fatalf("seed active device: %v", err)
+		}
+	}
+	api, err := compose(
+		context.Background(),
+		database,
+		"station-local",
+		unavailableTestFederation{},
+	)
+	if err != nil {
+		t.Fatalf("compose canonical Key Exchange: %v", err)
+	}
+	if api == nil {
+		t.Fatal("canonical API was not composed")
+	}
+	for _, table := range []string{
+		"key_exchange_identity_keys",
+		"key_exchange_signed_pre_keys",
+		"key_exchange_one_time_pre_keys",
+		"mls_key_packages",
+		"federated_mls_key_package_claims",
+	} {
+		if !database.Migrator().HasTable(table) {
+			t.Fatalf("canonical table %q was not migrated", table)
+		}
+	}
+
+	response, err := api.SendDirectKeyExchange(
+		context.Background(),
+		"ptid:alice",
+		"alice-1",
+		&kemodel.SendDirectKeyExchangeRequest{
+			Recipient: &actormodel.ActorDeviceRef{
+				Actor:    &actormodel.ActorRef{Ptid: "ptid:bob"},
+				DeviceId: "bob-1",
+			},
+			RecipientHomeStationPeerId: "station-local",
+			SessionId:                   "direct-session",
+			Kind: kemodel.DirectKeyExchangePayloadKind_DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_PREKEY_BUNDLE,
+			OpaqueKeyMaterial: []byte("opaque-key-material"),
+			ConversationId:    "conversation-1",
+		},
+	)
+	if err != nil {
+		t.Fatalf("send local canonical DKX: %v", err)
+	}
+	var queued deliveryinfrastructure.DeviceQueueItemModel
+	if err := database.Where(
+		"item_id = ?",
+		response.GetEnvelopeId(),
+	).Take(&queued).Error; err != nil {
+		t.Fatalf("read canonical Device Inbox item: %v", err)
+	}
+	if queued.RecipientPTID != "ptid:bob" ||
+		queued.RecipientDeviceID != "bob-1" ||
+		!bytes.Equal(
+			queued.PayloadSHA256,
+			domainHash(queued.OpaquePayload),
+		) {
+		t.Fatalf("unexpected canonical Device Inbox item: %+v", queued)
+	}
+}
+
+func TestKeyExchangeErrorsMapToStableHTTPStatuses(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		code domain.ErrorCode
+		want int
+	}{
+		{
+			name: "invalid argument",
+			code: domain.ErrorCodeInvalidArgument,
+			want: http.StatusBadRequest,
+		},
+		{
+			name: "unauthorized",
+			code: domain.ErrorCodeUnauthorized,
+			want: http.StatusForbidden,
+		},
+		{
+			name: "not found",
+			code: domain.ErrorCodeNotFound,
+			want: http.StatusNotFound,
+		},
+		{
+			name: "conflict",
+			code: domain.ErrorCodeConflict,
+			want: http.StatusConflict,
+		},
+		{
+			name: "stale material",
+			code: domain.ErrorCodeStaleMaterial,
+			want: http.StatusConflict,
+		},
+		{
+			name: "expired plan",
+			code: domain.ErrorCodePlanExpired,
+			want: http.StatusConflict,
+		},
+		{
+			name: "payload too large",
+			code: domain.ErrorCodePayloadTooLarge,
+			want: http.StatusRequestEntityTooLarge,
+		},
+		{
+			name: "dependency",
+			code: domain.ErrorCodeDependency,
+			want: http.StatusServiceUnavailable,
+		},
+		{
+			name: "internal",
+			code: domain.ErrorCodeInternal,
+			want: http.StatusInternalServerError,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			mapped := mapKeyExchangeError(domain.NewError(
+				testCase.code,
+				"test",
+				"field",
+				"failure",
+			))
+			var handlerError *server.HandlerError
+			if !errors.As(mapped, &handlerError) {
+				t.Fatalf("mapped error type = %T, want *server.HandlerError", mapped)
+			}
+			if handlerError.Code != testCase.want {
+				t.Fatalf(
+					"HTTP status = %d, want %d",
+					handlerError.Code,
+					testCase.want,
+				)
+			}
 		})
-		if err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(resp)
-	}))
-	defer server.Close()
-	nativefed.RegisterRelayClient(keyExchangeTestRelayClient{baseURL: server.URL, token: "relay-token"})
-
-	sub := &subServer{
-		localStationID: "station-a",
-		keyCache:       authfed.NewKeyCache(authfed.NewInMemoryKeyStore(), authfed.WithRecheckTTL(0)),
 	}
-	resp, err := sub.fetchFederatedKeyBundle(context.Background(), "station-b", &kemodel.FetchKeyBundleRequest{
-		Ptid:              "bob",
-		DeviceId:          "bob-device-1",
-		HomeStationPeerId: "station-b",
+}
+
+func TestFederationCapabilityIsNarrowAndNotAnHTTPRoute(t *testing.T) {
+	subserver := NewKeyExchangeSubServerWithDependencies(Dependencies{
+		Federation: unavailableTestFederation{},
 	})
-	if err != nil {
-		t.Fatalf("fetchFederatedKeyBundle: %v", err)
+	if _, ok := subserver.(FederationCapability); !ok {
+		t.Fatal("Key Exchange subserver does not expose FederationCapability")
 	}
-	if len(resp.GetBundles()) != 1 || resp.GetBundles()[0].GetPtid() != "bob" {
-		t.Fatalf("unexpected response: %+v", resp)
-	}
-	if sawPath != "/relay/forward/station-b/key-exchange/keys/bundle/federated-fetch" {
-		t.Fatalf("unexpected relay path: %s", sawPath)
-	}
-	if sawRelayAuth != "Bearer relay-token" {
-		t.Fatalf("expected relay Authorization header, got %q", sawRelayAuth)
-	}
-	if !strings.HasPrefix(sawPeerAuth, "Bearer ") {
-		t.Fatalf("expected forwarded peer auth header, got %q", sawPeerAuth)
-	}
-	if sawRequest.GetPtid() != "bob" || sawRequest.GetDeviceId() != "bob-device-1" || sawRequest.GetHomeStationPeerId() != "" {
-		t.Fatalf("unexpected forwarded request: %+v", &sawRequest)
+	if len(subserver.Handlers()) != 8 {
+		t.Fatalf(
+			"Key Exchange exposed %d routes, want exactly eight client routes",
+			len(subserver.Handlers()),
+		)
 	}
 }
 
-func TestCurrentLocalStationIDPrefersLateRuntimeIdentityOverInitFallback(t *testing.T) {
-	livePeerID, err := peer.Decode("12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6")
-	if err != nil {
-		t.Fatalf("decode peer id: %v", err)
+func TestDefaultConstructorFailsClosedWithoutFederationPort(t *testing.T) {
+	subserver := NewKeyExchangeSubServer()
+	err := subserver.Init(context.Background())
+	if err == nil {
+		t.Fatal("default construction accepted a missing FederationPort")
 	}
-	nativefed.SetLocalStationPeerID(livePeerID)
-	defer nativefed.SetLocalStationPeerID("")
-
-	sub := &subServer{localStationID: keyExchangeFallbackLocalStation}
-	if got := sub.currentLocalStationID(); got != livePeerID.String() {
-		t.Fatalf("expected live station identity, got %q", got)
+	if subserver.Status() != server.StatusError {
+		t.Fatalf("status = %s, want %s", subserver.Status(), server.StatusError)
 	}
 }
 
-func TestSelectAuthenticatedDeviceID(t *testing.T) {
-	if _, err := selectAuthenticatedDeviceID("", "device-1"); err == nil {
-		t.Fatal("missing authenticated X-Device-ID must be rejected")
-	}
-	if _, err := selectAuthenticatedDeviceID("device-1", "device-2"); err == nil {
-		t.Fatal("mismatched request device must be rejected")
-	}
-	if got, err := selectAuthenticatedDeviceID(" device-1 ", "device-1"); err != nil || got != "device-1" {
-		t.Fatalf("authenticated device = %q, err = %v", got, err)
-	}
-	if got, err := selectAuthenticatedDeviceID("device-1", ""); err != nil || got != "device-1" {
-		t.Fatalf("header-only authenticated device = %q, err = %v", got, err)
+func activeDevice(
+	actorPTID string,
+	deviceID string,
+	homeStationID string,
+) actoridentitypersistence.ActorDeviceModel {
+	return actoridentitypersistence.ActorDeviceModel{
+		PTID:               actorPTID,
+		ActorAccount:       actorPTID + "@example.test",
+		ActorKind:          1,
+		DeviceID:           deviceID,
+		Label:              deviceID,
+		HomeStationPeerID:  homeStationID,
+		SigningKeyID:       deviceID + "-signing",
+		PublicKey:          make([]byte, 32),
+		ProfileVersion:     1,
+		VerificationSource: 1,
+		CreatedAt:          time.Unix(1_800_000_000, 0).UTC(),
 	}
 }
 
-type keyExchangeTestRelayClient struct {
-	baseURL string
-	token   string
+func domainHash(value []byte) []byte {
+	hash := sha256.Sum256(value)
+	return hash[:]
 }
 
-func (h keyExchangeTestRelayClient) BaseURL() string { return h.baseURL }
-func (h keyExchangeTestRelayClient) Token() string   { return h.token }
-func (h keyExchangeTestRelayClient) Publish(context.Context, string, []byte) error {
-	return nil
+type unavailableTestFederation struct{}
+
+func (unavailableTestFederation) FetchDirectKeyBundles(
+	context.Context,
+	string,
+	string,
+	string,
+) ([]domain.DirectKeyBundle, error) {
+	return nil, errors.New("not exercised")
 }
 
-func readKeyExchangeTestBody(t *testing.T, r *http.Request) []byte {
-	t.Helper()
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		t.Fatalf("read request body: %v", err)
-	}
-	return body
+func (unavailableTestFederation) FetchMLSKeyPackage(
+	context.Context,
+	string,
+	string,
+) (*domain.MLSKeyPackageReservation, error) {
+	return nil, errors.New("not exercised")
+}
+
+func (unavailableTestFederation) ClaimMLSKeyPackage(
+	context.Context,
+	string,
+	domain.MLSKeyPackageClaim,
+) (domain.MLSKeyPackageReservation, error) {
+	return domain.MLSKeyPackageReservation{}, errors.New("not exercised")
+}
+
+func (unavailableTestFederation) EnqueueDirectKeyExchange(
+	context.Context,
+	string,
+	domain.DirectKeyExchangeEnvelope,
+) (string, error) {
+	return "", errors.New("not exercised")
 }

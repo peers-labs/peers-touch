@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-06
+> **Created**: 2026-09-06 | **Updated**: 2026-09-07
 > **Owner**: Architecture Team
 
 ---
@@ -29,6 +29,11 @@ peer-only `/federation/*`.
 | A machine capability registry plus hard-cut Gate prevents the same class of drift | `accepted_decision` | AO-D01 through AO-D04 | accepted |
 | A shared Federation transport unblocks cross-Station Friend Request without a Social or Mobile transport silo | `accepted_decision` | AO-D05 | accepted |
 | Conversation requires a DDD bounded context before authority consolidation | `accepted_decision` | AO-D06 and current flat-package inventory | accepted |
+| CA-W1 creation requests cannot carry the exact command identity required by the DDD authority | `verified_fact` | `conversation_api.proto`; Conversation application command service | high |
+| Active Messaging architecture replaced `CommittedConversationEvent` with `ConversationEvent` | `accepted_decision` | MP-D13; `event.proto` | accepted |
+| Public Social mutations cannot carry the signed command required by receiver-authority application logic | `verified_fact` | `relationship.proto`; `FederatedFriendRequestService` | high |
+| Destructive key-material fetch lacks exact-response retry identity | `verified_fact` | Key Exchange canonical store and service | high |
+| `AO-D07` closes these wire gaps without changing capability ownership or product journeys | `proposal` | `proposals/20260907-ca-w5-canonical-wire-contract-amendment.md` | pending Owner review |
 
 ## 2. Root Cause Chain
 
@@ -142,7 +147,39 @@ The remediation is not complete until all are true:
 10. No compatibility route, redirect, dual write, fallback read, or domain-specific
    Federation transport remains.
 
-## 8. Accepted Boundary And Plan Handoff
+## 8. Proposed CA-W5 Wire Reconciliation
+
+CA-W5 has reached a design gate because the active semantic contracts cannot be
+represented by the current canonical request families. Proposed `AO-D07` defines one
+coherent correction:
+
+```text
+caller-owned exact identities
+  + signed cross-Station mutations
+  + one ConversationEvent truth
+  + exact-response destructive reads
+  + typed peer Key Exchange
+  + shared durable Federation mutation delivery
+```
+
+The proposal is documented at:
+
+```text
+proposals/20260907-ca-w5-canonical-wire-contract-amendment.md
+```
+
+Until accepted:
+
+- proto regeneration and production composition remain blocked;
+- the current uncommitted CA-W5 source tree is preserved;
+- no compatibility route or partial registration may be committed;
+- focused dependency-ready evidence remains valid but does not prove CA-W5.
+
+After acceptance, the ownership registry, canonical proto sources, generated
+bindings, Station owners, client runtimes, Acceptance contracts, and deletion scans
+must change in one CA-W5 execution closure.
+
+## 9. Accepted Boundary And Plan Handoff
 
 The Owner accepted one coherent package on 2026-09-06:
 

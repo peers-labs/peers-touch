@@ -69,9 +69,8 @@ func NewCanonicalStore(db *gorm.DB) (*CanonicalStore, error) {
 	return &CanonicalStore{db: db}, nil
 }
 
-// MigrateTestSchema is intentionally not called by the production subserver
-// before the CA-W5 atomic route and store cutover.
-func (s *CanonicalStore) MigrateTestSchema(ctx context.Context) error {
+// Migrate installs the canonical Direct and MLS public-material schemas.
+func (s *CanonicalStore) Migrate(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(
 		&IdentityKeyModel{},
 		&SignedPreKeyModel{},
@@ -81,7 +80,7 @@ func (s *CanonicalStore) MigrateTestSchema(ctx context.Context) error {
 	); err != nil {
 		return domain.WrapError(
 			domain.ErrorCodeInternal,
-			"key_exchange.migrate_test_schema",
+			"key_exchange.migrate",
 			err,
 		)
 	}
@@ -97,7 +96,7 @@ func (s *CanonicalStore) MigrateTestSchema(ctx context.Context) error {
 		if err := s.db.WithContext(ctx).Exec(statement).Error; err != nil {
 			return domain.WrapError(
 				domain.ErrorCodeInternal,
-				"key_exchange.migrate_test_schema",
+				"key_exchange.migrate",
 				err,
 			)
 		}
