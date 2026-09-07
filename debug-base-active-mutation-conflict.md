@@ -1,8 +1,9 @@
 # Debug Session: base-active-mutation-conflict
 - **Status**: [OPEN]
 - **Issue**: The exact-source Browser
-  `BASE-ACTIVE_MUTATION_CONFLICT` scenario proves the Station rejection but
-  fails the independent `localizedRecoveryVisible` receiver assertion.
+  `BASE-ACTIVE_MUTATION_CONFLICT` scenario proves the Station rejection and
+  receiver recovery, but its generic runtime attestation can depend on stale
+  conversation/Turn state left by an earlier tuple.
 - **Debug Server**: http://127.0.0.1:7780/event
 - **Log File**: `.dbg/trae-debug-log-base-active-mutation-conflict.ndjson`
 
@@ -23,9 +24,9 @@
 | E | The exact typed error is not classified by the store | Low | Low | Rejection code is correct but save state is not `conflict` |
 
 ## Instrumentation
-- Pending: record only Agent ID hashes, selected surface, save-state value,
-  selector presence/visibility, and localized-text hashes before the receiver
-  assertion.
+- Active instrumentation records only Agent ID hashes, selected surface,
+  save-state value, selector presence/visibility, and localized-text hashes
+  before the receiver assertion.
 
 ## Log Evidence
 - Exact-source run
@@ -45,3 +46,48 @@ client in Chinese, and the producer called global `i18n.t` without the `agent`
 namespace. The correction applies and verifies locale before every non-AS-F06
 direct probe, and resolves both expected strings from the Agent namespace.
 Instrumentation remains active for post-fix comparison.
+
+## Current Failure
+- Exact-source retry
+  `20260907T070147144683Z-7245b23cfd64bf4ec824427fca07bf12`
+  on `87aa51437a2faea4803d34d08bf2bcfaed5980b1` failed at Browser
+  English `BASE-ACTIVE_MUTATION_CONFLICT` with
+  `agent.acceptance.directRuntimeFactsMissing`.
+- Provisioner cleanup completed `DONE / PROVEN / passed`; source identity and
+  redaction passed.
+
+## Current Hypotheses & Verification
+| ID | Hypothesis | Likelihood | Effort | Evidence |
+|----|------------|------------|--------|----------|
+| F | The cell creates no conversation/Turn of its own, so generic attestation has no exact runtime facts | High | Low | Confirmed: the scenario creates/deletes only the disposable Agent, while attestation requires selected session, conversation readback, and Turn evidence |
+| G | A capability session is unavailable for the cell | Low | Low | Rejected: the same direct-runtime client completed prior cells and the failure names missing aggregate runtime facts, not session reconciliation |
+| H | Prior passing runs consumed incidental `chatState.currentSessionKey` and prior Turn evidence | High | Low | Confirmed by source flow: no prepared IDs are assigned for this cell, so fallback state determines the attestation target |
+
+## Current Verification Conclusion
+The failure is an Acceptance producer lifecycle defect. The cell must create a
+bounded direct-runtime attestation Turn, bind the exact conversation and Turn
+IDs into the shared attestation path, and delete the attestation conversation
+in addition to the disposable Agent. Product conflict semantics, matrix
+identity, timeouts, and independent assertions remain unchanged. The Debug
+Server and instrumentation remain active for post-fix comparison.
+
+## Local Correction
+- The producer creates one capability-isolated Direct attestation Turn after
+  the profile-conflict journey succeeds.
+- The cell binds its exact conversation and Turn IDs and cannot fall back to a
+  prior `chatState.currentSessionKey` or assistant message.
+- Both helper failure paths and the outer Gate failure path delete the
+  attestation conversation.
+- Local and independent cleanup assertions require the disposable Agent and
+  attestation conversation to be deleted.
+- Debug events now use `runId=post-fix`; the existing log was retained.
+
+## Local Verification
+- Desktop TypeScript check: passed.
+- Desktop tests: `573` passed, `1` unrelated environment-dependent skip.
+- Desktop production build: passed.
+- Foundation static and independent scenario tests: `146/146` passed.
+- Acceptance plan self-check and `git diff --check`: passed.
+- Agent Domain validation: expected fail-closed because latest runtime evidence
+  is source-bound to the prior checkpoint.
+- Exact-source post-fix runtime comparison: pending.

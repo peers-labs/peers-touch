@@ -914,6 +914,7 @@ def valid_active_mutation_conflict_capture() -> dict[str, object]:
         "cleanup": {
             "deletedFromRoster": True,
             "deletedFromStation": True,
+            "conversationDeleted": True,
             "priorSelection": "assistant",
             "restoredSelection": "assistant",
         },
@@ -2030,6 +2031,18 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneScenarioError,
             "localizedRecoveryVisible",
+        ):
+            evaluate_base_active_mutation_conflict(capture)
+
+    def test_active_mutation_conflict_requires_attestation_conversation_cleanup(
+        self,
+    ) -> None:
+        capture = valid_active_mutation_conflict_capture()
+        capture["cleanup"]["conversationDeleted"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
         ):
             evaluate_base_active_mutation_conflict(capture)
 
