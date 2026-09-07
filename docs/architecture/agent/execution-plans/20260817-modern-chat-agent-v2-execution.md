@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `96e89a7cb84c86f2ebb5770a2802dd7be80f8060` passed the prior Browser Simplified Chinese `BASE-APPROVAL-DENIED` receiver in exact-source run `20260907T011403128434Z-bf5f3dadf2a165be47905c315f9bc191`; the next first failure exposed a noncanonical hyphenated attachment cell ID in the Agent Acceptance harness and direct adapter. The local correction now hard-cuts every producer/oracle dispatch to the immutable matrix ID `BASE-ATTACHMENT_REJECTED`; checkpoint deployment and the unchanged Gate rerun remain pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `f4c264c5b5e96a0aee840ea72021e1c949868729` hard-cuts every producer/oracle dispatch to the immutable matrix ID `BASE-ATTACHMENT_REJECTED`; exact-source runtime then reached the scenario and proved its fake PDF was rejected by Desktop Rust before upload, so the local fixture now uploads a valid PDF and tombstones the actor-owned object before the real Send action to exercise Station rejection deterministically. Post-fix exact-source proof remains pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |

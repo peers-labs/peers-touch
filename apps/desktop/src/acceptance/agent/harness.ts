@@ -4265,13 +4265,13 @@ async function runFoundationAttachmentRejectedScenario(input: {
     if (!fileInput) {
       throw new Error('agent.acceptance.foundationAttachmentInputMissing');
     }
-    const invalidPdf = new File(
-      [new TextEncoder().encode('not a valid PDF payload')],
+    const stalePdf = new File(
+      [Uint8Array.from(FOUNDATION_PDF_BYTES)],
       `foundation-rejected-${input.sampleId}.pdf`,
       { type: 'application/pdf' },
     );
     const transfer = new DataTransfer();
-    transfer.items.add(invalidPdf);
+    transfer.items.add(stalePdf);
     Object.defineProperty(fileInput, 'files', {
       configurable: true,
       value: transfer.files,
@@ -4290,7 +4290,7 @@ async function runFoundationAttachmentRejectedScenario(input: {
         () => Boolean(document.querySelector(
           '[data-pt-agent-composer-attachment-status="ready"]',
         )),
-        'rejected attachment upload',
+        'attachment upload',
         30_000,
       );
     } catch (error) {
@@ -4328,6 +4328,8 @@ async function runFoundationAttachmentRejectedScenario(input: {
         'agent.acceptance.foundationAttachmentDraftIdentityMissing',
       );
     }
+    await api.ossDeleteAgentAttachment(objectRef);
+    await foundationAttachmentDeletionReadback(objectRef);
 
     const draftText =
       `Reject the invalid attachment before execution ${input.sampleId}`;
@@ -7004,7 +7006,7 @@ function reportFoundationAttachmentTimeoutDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'foundation-attachment-timeout',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationAttachmentRejectedScenario',
       msg: `[DEBUG] ${stage}`,
@@ -8663,7 +8665,7 @@ function evaluateBaseAttachmentRejected(
       && safeDetailKeys[1] === 'reason_code'
       && details.attachment_id === station.attachmentId
       && details.reason_code === station.reasonCode
-      && station.reasonCode === 'attachment_content_does_not_match_mime'
+      && station.reasonCode === 'attachment_object_is_unavailable'
       && runtimeEvent.eventType === 'error'
       && runtimeEvent.errorType === 'CONTEXT_ATTACHMENT_REJECTED'
       && Number(runtimeEvent.sequence) > 0

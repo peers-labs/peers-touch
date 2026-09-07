@@ -941,7 +941,7 @@ def valid_attachment_rejected_capture() -> dict[str, object]:
             "terminal": True,
             "details": {
                 "attachment_id": "attachment-rejected",
-                "reason_code": "attachment_content_does_not_match_mime",
+                "reason_code": "attachment_object_is_unavailable",
             },
         },
         "receiver": {
@@ -963,7 +963,7 @@ def valid_attachment_rejected_capture() -> dict[str, object]:
         "station": {
             "attachmentId": "attachment-rejected",
             "objectRefHash": "f" * 64,
-            "reasonCode": "attachment_content_does_not_match_mime",
+            "reasonCode": "attachment_object_is_unavailable",
             "conversationVersionBefore": 2,
             "conversationVersionAfter": 2,
             "beforeHash": "a" * 64,
