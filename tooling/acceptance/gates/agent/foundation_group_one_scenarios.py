@@ -2689,7 +2689,7 @@ def evaluate_base_attachment_rejected(
             and bool(
                 _sha256_string(
                     deletion_readback,
-                    "keyHash",
+                    "objectPathHash",
                     scenario=scenario,
                 )
             )
