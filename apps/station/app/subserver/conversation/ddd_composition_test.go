@@ -522,6 +522,13 @@ type dddFixture struct {
 }
 
 func newDDDComposition(t *testing.T) dddFixture {
+	return newDDDCompositionAtStation(t, "station-a")
+}
+
+func newDDDCompositionAtStation(
+	t *testing.T,
+	localStation valueobject.StationID,
+) dddFixture {
 	t.Helper()
 	db, err := gorm.Open(
 		sqlite.Open("file:conversation-ddd-"+uuid.NewString()+"?mode=memory&cache=shared"),
@@ -570,7 +577,7 @@ func newDDDComposition(t *testing.T) dddFixture {
 	notifier := &dddNotifier{}
 	commandService, err := command.NewService(
 		unitOfWork,
-		"station-a",
+		localStation,
 		clock,
 		&dddIDs{},
 		conversationhttp.ProtobufConversationStateEncoder{},
@@ -705,6 +712,7 @@ func TestConversationDDDPersistsCanonicalTimestampPrecision(t *testing.T) {
 			FederationID:      dddFederationID,
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "timestamp-create",
+			VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-a"),
 			ExactCommandBytes: []byte("timestamp-create"),
 		},
 	)
@@ -757,6 +765,7 @@ func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing
 		FederationID:      dddFederationID,
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "create-direct",
+		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
 		ExactCommandBytes: []byte("create-direct"),
 	})
 	if err != nil {
@@ -1026,6 +1035,300 @@ func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing
 	assertCount(t, fixture.db, &deliveryinfra.AuthorityDeliveryCommitmentModel{}, 4)
 }
 
+func TestConversationDDDCreateDirectUsesVerifiedRemoteRoutes(t *testing.T) {
+	fixture := newDDDComposition(t)
+	alice := dddEndpoint("ptid:manifest-alice", "alice-1")
+	bob := dddEndpoint("ptid:manifest-bob", "bob-1")
+	seedDDDDevices(t, fixture.db, dddDevice(alice, "station-a"))
+
+	created, err := fixture.commands.CreateDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           alice,
+			Peer:              bob.Actor,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "manifest-only-remote-create",
+			VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
+			ExactCommandBytes: []byte("manifest-only-remote-create"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Conversation.ID == "" || created.Event.Sequence != 1 {
+		t.Fatalf("created result = %+v", created)
+	}
+	var remoteDeviceCount int64
+	if err := fixture.db.Model(&dddActorDeviceModel{}).
+		Where("ptid = ?", string(bob.Actor)).
+		Count(&remoteDeviceCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if remoteDeviceCount != 0 {
+		t.Fatalf("remote Actor device rows = %d, want 0", remoteDeviceCount)
+	}
+	assertCount(t, fixture.db, &dddDeviceInboxModel{}, 1)
+	assertCount(t, fixture.db, &dddFederationOutboxModel{}, 1)
+	var remoteDelivery dddFederationOutboxModel
+	if err := fixture.db.First(&remoteDelivery).Error; err != nil {
+		t.Fatal(err)
+	}
+	if remoteDelivery.TargetStation != "station-b" {
+		t.Fatalf(
+			"remote delivery target = %q, want station-b",
+			remoteDelivery.TargetStation,
+		)
+	}
+	replayed, err := fixture.commands.CreateDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           alice,
+			Peer:              bob.Actor,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "manifest-only-remote-create",
+			ExactCommandBytes: []byte("manifest-only-remote-create"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayed.Replay || replayed.Event.ID != created.Event.ID {
+		t.Fatalf("manifest-independent replay = %+v", replayed)
+	}
+	conflictingReplay := command.CreateDirectRequest{
+		Creator:           alice,
+		Peer:              bob.Actor,
+		FederationID:      dddFederationID,
+		AuthorityEpoch:    dddAuthorityEpoch,
+		CommandID:         "manifest-only-remote-create",
+		ExactCommandBytes: []byte("different-create-command"),
+	}
+	if _, err := fixture.commands.CreateDirect(
+		context.Background(),
+		conflictingReplay,
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeCommandConflict) {
+		t.Fatalf("conflicting creation replay error = %v", err)
+	}
+	reopened, err := fixture.commands.CreateDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           alice,
+			Peer:              bob.Actor,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "direct-reopen-command",
+			ExactCommandBytes: []byte("direct-reopen-command"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reopened.Replay ||
+		reopened.Event.ID != "" ||
+		reopened.Conversation.ID != created.Conversation.ID {
+		t.Fatalf("authority Direct reopen = %+v", reopened)
+	}
+	if err := fixture.db.Model(&dddActorDeviceModel{}).
+		Where(
+			"ptid = ? AND device_id = ?",
+			string(alice.Actor),
+			string(alice.Device),
+		).
+		Update("active", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	ensured, err := fixture.commands.EnsureDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           alice,
+			Peer:              bob.Actor,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "relationship-effect-after-device-churn",
+			ExactCommandBytes: []byte("relationship-effect-after-device-churn"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ensured.Replay || ensured.Conversation.ID != created.Conversation.ID {
+		t.Fatalf("relationship Direct ensure = %+v", ensured)
+	}
+	if _, err := fixture.commands.EnsureDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           alice,
+			Peer:              bob.Actor,
+			FederationID:      "different-federation",
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "relationship-effect-wrong-federation",
+			ExactCommandBytes: []byte("relationship-effect-wrong-federation"),
+		},
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeCommandConflict) {
+		t.Fatalf("incompatible relationship Direct ensure error = %v", err)
+	}
+	assertCount(t, fixture.db, &persistence.ConversationModel{}, 1)
+	assertCount(t, fixture.db, &persistence.ConversationEventModel{}, 1)
+	assertCount(t, fixture.db, &persistence.ConversationCommandReceiptModel{}, 1)
+}
+
+func TestConversationDDDCreateDirectFailsClosedBeforeMutation(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		setup    func(dddFixture, valueobject.Endpoint)
+		routes   func(valueobject.Endpoint, valueobject.Endpoint) []ports.EndpointRoute
+		wantCode conversationdomain.ErrorCode
+	}{
+		{
+			name: "inactive local creator",
+			setup: func(fixture dddFixture, alice valueobject.Endpoint) {
+				if err := fixture.db.Model(&dddActorDeviceModel{}).
+					Where(
+						"ptid = ? AND device_id = ?",
+						string(alice.Actor),
+						string(alice.Device),
+					).
+					Update("active", false).Error; err != nil {
+					t.Fatal(err)
+				}
+			},
+			routes: func(
+				alice valueobject.Endpoint,
+				bob valueobject.Endpoint,
+			) []ports.EndpointRoute {
+				return dddDirectRoutes(alice, "station-a", bob, "station-b")
+			},
+			wantCode: conversationdomain.ErrorCodeUnauthorized,
+		},
+		{
+			name: "inactive remote Home Station",
+			setup: func(fixture dddFixture, _ valueobject.Endpoint) {
+				fixture.adapters.inactiveStations["station-b"] = true
+			},
+			routes: func(
+				alice valueobject.Endpoint,
+				bob valueobject.Endpoint,
+			) []ports.EndpointRoute {
+				return dddDirectRoutes(alice, "station-a", bob, "station-b")
+			},
+			wantCode: conversationdomain.ErrorCodeFederationInactive,
+		},
+		{
+			name:  "missing remote route",
+			setup: func(dddFixture, valueobject.Endpoint) {},
+			routes: func(
+				alice valueobject.Endpoint,
+				_ valueobject.Endpoint,
+			) []ports.EndpointRoute {
+				return []ports.EndpointRoute{{
+					Endpoint:    alice,
+					HomeStation: "station-a",
+				}}
+			},
+			wantCode: conversationdomain.ErrorCodeInvalidArgument,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newDDDComposition(t)
+			alice := dddEndpoint("ptid:closed-alice", "alice-1")
+			bob := dddEndpoint("ptid:closed-bob", "bob-1")
+			seedDDDDevices(t, fixture.db, dddDevice(alice, "station-a"))
+			testCase.setup(fixture, alice)
+
+			_, err := fixture.commands.CreateDirect(
+				context.Background(),
+				command.CreateDirectRequest{
+					Creator:           alice,
+					Peer:              bob.Actor,
+					FederationID:      dddFederationID,
+					AuthorityEpoch:    dddAuthorityEpoch,
+					CommandID:         "closed-create",
+					VerifiedRoutes:    testCase.routes(alice, bob),
+					ExactCommandBytes: []byte("closed-create"),
+				},
+			)
+			if !conversationdomain.IsCode(err, testCase.wantCode) {
+				t.Fatalf("CreateDirect() error = %v, want %s", err, testCase.wantCode)
+			}
+			assertCount(t, fixture.db, &persistence.ConversationModel{}, 0)
+			assertCount(t, fixture.db, &persistence.ConversationEventModel{}, 0)
+			assertCount(t, fixture.db, &persistence.ConversationCommandReceiptModel{}, 0)
+			assertCount(t, fixture.db, &dddDeviceInboxModel{}, 0)
+			assertCount(t, fixture.db, &dddFederationOutboxModel{}, 0)
+		})
+	}
+}
+
+func TestConversationDDDCreateDirectReopensFollowerProjection(t *testing.T) {
+	authority := newDDDCompositionAtStation(t, "station-a")
+	alice := dddEndpoint("ptid:follower-direct-alice", "alice-1")
+	bob := dddEndpoint("ptid:follower-direct-bob", "bob-1")
+	seedDDDDevices(t, authority.db, dddDevice(alice, "station-a"))
+	created, err := authority.commands.CreateDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           alice,
+			Peer:              bob.Actor,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "authority-direct-create",
+			VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
+			ExactCommandBytes: []byte("authority-direct-create"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	follower := newDDDCompositionAtStation(t, "station-b")
+	seedDDDDevices(t, follower.db, dddDevice(bob, "station-b"))
+	if err := follower.commands.ApplyFollowerEvent(
+		context.Background(),
+		created.Event,
+	); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := follower.commands.CreateDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           bob,
+			Peer:              alice.Actor,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "follower-direct-reopen",
+			ExactCommandBytes: []byte("follower-direct-reopen"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reopened.Replay ||
+		reopened.Event.ID != "" ||
+		reopened.Conversation.ID != created.Conversation.ID ||
+		reopened.Conversation.AuthorityStation != "station-a" {
+		t.Fatalf("follower Direct reopen = %+v", reopened)
+	}
+	assertCount(t, follower.db, &persistence.ConversationModel{}, 0)
+	assertCount(t, follower.db, &persistence.ConversationFollowerHeadModel{}, 1)
+
+	remoteInput := created.Event.Input()
+	remoteInput.AuthorityStation = "station-b"
+	remoteEvent, err := (conversationhttp.ProtobufEventSealer{}).Seal(remoteInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := authority.commands.ApplyFollowerEvent(
+		context.Background(),
+		remoteEvent,
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeCommandConflict) {
+		t.Fatalf("follower over local authority error = %v", err)
+	}
+	assertCount(t, authority.db, &persistence.ConversationModel{}, 1)
+	assertCount(t, authority.db, &persistence.ConversationFollowerHeadModel{}, 0)
+}
+
 func TestConversationDDDDirectFanoutUsesCurrentActiveActorDevices(t *testing.T) {
 	fixture := newDDDComposition(t)
 	alice := dddEndpoint("ptid:direct-devices-alice", "alice-1")
@@ -1042,6 +1345,7 @@ func TestConversationDDDDirectFanoutUsesCurrentActiveActorDevices(t *testing.T) 
 		FederationID:      dddFederationID,
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "direct-devices-create",
+		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
 		ExactCommandBytes: []byte("direct-devices-create"),
 	})
 	if err != nil {
@@ -1147,6 +1451,7 @@ func TestConversationDDDMessageIdentityAndAuthorRules(t *testing.T) {
 		FederationID:      dddFederationID,
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "message-rules-create",
+		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
 		ExactCommandBytes: []byte("message-rules-create"),
 	})
 	if err != nil {
@@ -1341,6 +1646,7 @@ func TestConversationDDDConcurrentFirstCreateReplaysExactly(t *testing.T) {
 		FederationID:      dddFederationID,
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "concurrent-create",
+		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
 		ExactCommandBytes: []byte("concurrent-create"),
 	}
 	start := make(chan struct{})
@@ -1387,6 +1693,7 @@ func TestConversationDDDCreateReplayRejectsReceiptEventDrift(t *testing.T) {
 		FederationID:      dddFederationID,
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "create-replay-drift",
+		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
 		ExactCommandBytes: []byte("create-replay-drift"),
 	}
 	created, err := fixture.commands.CreateDirect(context.Background(), request)
@@ -1424,6 +1731,7 @@ func TestConversationDDDForwardedProposalUsesAuthorityCommandPath(t *testing.T) 
 		FederationID:      dddFederationID,
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "proposal-create",
+		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
 		ExactCommandBytes: []byte("proposal-create"),
 	})
 	if err != nil {
@@ -3612,11 +3920,17 @@ func TestConversationDDDTestCompositionFollowerAndPostCommitFailure(t *testing.T
 	committed, err := fixture.commands.CreateDirect(
 		context.Background(),
 		command.CreateDirectRequest{
-			Creator:           dddEndpoint("ptid:local-a", "a-1"),
-			Peer:              "ptid:local-b",
-			FederationID:      dddFederationID,
-			AuthorityEpoch:    dddAuthorityEpoch,
-			CommandID:         "post-commit-create",
+			Creator:        dddEndpoint("ptid:local-a", "a-1"),
+			Peer:           "ptid:local-b",
+			FederationID:   dddFederationID,
+			AuthorityEpoch: dddAuthorityEpoch,
+			CommandID:      "post-commit-create",
+			VerifiedRoutes: dddDirectRoutes(
+				dddEndpoint("ptid:local-a", "a-1"),
+				"station-a",
+				dddEndpoint("ptid:local-b", "b-1"),
+				"station-a",
+			),
 			ExactCommandBytes: []byte("post-commit-create"),
 		},
 	)
@@ -3651,6 +3965,7 @@ func TestConversationDDDPostCommitFailuresDoNotRollBackCommandOrReadCursor(t *te
 			FederationID:      dddFederationID,
 			AuthorityEpoch:    dddAuthorityEpoch,
 			CommandID:         "post-commit-direct",
+			VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-a"),
 			ExactCommandBytes: []byte("post-commit-direct"),
 		},
 	)
@@ -4874,6 +5189,24 @@ func dddDevice(
 		DeviceID:    string(endpoint.Device),
 		HomeStation: station,
 		Active:      true,
+	}
+}
+
+func dddDirectRoutes(
+	first valueobject.Endpoint,
+	firstStation string,
+	second valueobject.Endpoint,
+	secondStation string,
+) []ports.EndpointRoute {
+	return []ports.EndpointRoute{
+		{
+			Endpoint:    first,
+			HomeStation: valueobject.StationID(firstStation),
+		},
+		{
+			Endpoint:    second,
+			HomeStation: valueobject.StationID(secondStation),
+		},
 	}
 }
 
