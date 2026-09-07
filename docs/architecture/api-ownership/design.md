@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-06
+> **Created**: 2026-09-06 | **Updated**: 2026-09-07
 > **Owner**: Architecture Team
 > **Module**: `apps/station/`, `model/domain/`, `tooling/acceptance/`
 
@@ -202,6 +202,36 @@ facade or second Chat subserver is permitted.
 
 Peer routes require Station authentication and an explicit typed payload capability.
 They are not client-visible aliases for business APIs.
+
+### 6.4 Proposed Canonical Wire Boundary
+
+`AO-D07` is proposed to make the accepted owner and transaction semantics
+expressible on the wire:
+
+```text
+caller-owned deterministic command/request bytes
+  -> authenticated resource-owner client route
+  -> local authority commit OR durable Home Station admission
+  -> typed peer request or shared Federation frame
+  -> resource-owner validation and mutation
+  -> canonical result/event projection
+```
+
+The proposal requires:
+
+- command identity on Direct creation and one exact `ChatCommand` for Group genesis;
+- a local-command versus signed-remote-proposal union on
+  `POST /conversation/command`;
+- `ConversationEvent` as the sole committed Chat event;
+- signed Friend Request commands and non-final Home admission states;
+- exact-response replay for destructive Direct/MLS material fetches;
+- synchronous typed peer routes for Key Exchange reads/claims and shared durable
+  Federation delivery for DKX.
+
+The full contract, failure semantics, and deletion obligations are defined in
+[`proposals/20260907-ca-w5-canonical-wire-contract-amendment.md`](./proposals/20260907-ca-w5-canonical-wire-contract-amendment.md).
+Until `AO-D07` is accepted, these relationships are proposals and CA-W5 remains
+blocked before production registration.
 
 ## 7. Capability Registration Contract
 

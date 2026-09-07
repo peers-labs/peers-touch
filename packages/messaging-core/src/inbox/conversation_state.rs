@@ -3,8 +3,8 @@ use crate::contracts::{
     ConversationProjection, ConversationStateReceiveCommit, CryptoEndpoint, ReceiveCommitResult,
 };
 use crate::proto::chat::{
-    conversation_event, ConversationStateMarker, DeviceConsumptionReceipt, DeviceQueueItem,
-    PreparedEndpointPayloadKind,
+    conversation_event, ConversationStateMarker, DeviceConsumptionReceipt,
+    DurableDeviceInboxItem, PreparedEndpointPayloadKind,
 };
 use crate::store::MessagingRepository;
 
@@ -34,7 +34,7 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -133,7 +133,7 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for ConversationStateProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }

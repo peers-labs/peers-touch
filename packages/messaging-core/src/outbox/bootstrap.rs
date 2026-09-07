@@ -9,13 +9,13 @@ use crate::crypto::identity::IdentityKeyPair;
 use crate::crypto::session::{establish_sender_session, DirectSessionKey};
 use crate::crypto::x3dh::PreKeyBundle;
 use crate::proto::chat::{CryptoEndpoint as ProtoCryptoEndpoint, DirectSessionInit};
-use crate::proto::key_exchange::KeyBundle;
+use crate::proto::key_exchange::DirectKeyBundle;
 use crate::store::DirectOutboundRepository;
 
 use super::DirectSessionBootstrap;
 
 pub trait KeyBundleTransport: Send + Sync {
-    fn fetch(&self, endpoint: &ProtoCryptoEndpoint) -> Result<KeyBundle, String>;
+    fn fetch(&self, endpoint: &ProtoCryptoEndpoint) -> Result<DirectKeyBundle, String>;
 }
 
 pub struct DirectSessionBootstrapper<R> {
@@ -98,37 +98,42 @@ impl<R: DirectOutboundRepository> DirectSessionBootstrapper<R> {
     }
 }
 
-fn decode_bundle(bundle: &KeyBundle) -> Result<PreKeyBundle, String> {
-    if bundle.spk_id <= 0 || bundle.opks.len() != bundle.opk_ids.len() {
+fn decode_bundle(bundle: &DirectKeyBundle) -> Result<PreKeyBundle, String> {
+    if bundle.signed_pre_key_id <= 0 {
         return Err("messaging key bundle IDs are invalid".to_string());
     }
-    let (opk_pub, opk_id) = match (bundle.opks.first(), bundle.opk_ids.first()) {
-        (Some(public), Some(id)) if *id > 0 => (
+    let (opk_pub, opk_id) = match bundle.one_time_pre_keys.first() {
+        Some(prekey) if prekey.key_id > 0 => (
             Some(fixed_key(
                 "one-time prekey",
-                B64.decode(public).map_err(|error| error.to_string())?,
+                B64.decode(&prekey.public_key)
+                    .map_err(|error| error.to_string())?,
             )?),
-            Some(u32::try_from(*id).map_err(|_| "invalid one-time prekey ID".to_string())?),
+            Some(
+                u32::try_from(prekey.key_id)
+                    .map_err(|_| "invalid one-time prekey ID".to_string())?,
+            ),
         ),
-        (None, None) => (None, None),
+        None => (None, None),
         _ => return Err("messaging key bundle one-time prekey is invalid".to_string()),
     };
     Ok(PreKeyBundle {
         ik_pub: fixed_key(
             "identity key",
-            B64.decode(&bundle.ik_pub)
+            B64.decode(&bundle.identity_key_public)
                 .map_err(|error| error.to_string())?,
         )?,
         spk_pub: fixed_key(
             "signed prekey",
-            B64.decode(&bundle.spk_pub)
+            B64.decode(&bundle.signed_pre_key_public)
                 .map_err(|error| error.to_string())?,
         )?,
         spk_sig: B64
-            .decode(&bundle.spk_sig)
+            .decode(&bundle.signed_pre_key_signature)
             .map_err(|error| error.to_string())?,
         opk_pub,
-        spk_id: u32::try_from(bundle.spk_id).map_err(|_| "invalid signed prekey ID".to_string())?,
+        spk_id: u32::try_from(bundle.signed_pre_key_id)
+            .map_err(|_| "invalid signed prekey ID".to_string())?,
         opk_id,
     })
 }
@@ -194,11 +199,13 @@ mod tests {
         }
     }
 
-    struct FixedTransport(KeyBundle);
+    struct FixedTransport(DirectKeyBundle);
 
     impl KeyBundleTransport for FixedTransport {
-        fn fetch(&self, endpoint: &ProtoCryptoEndpoint) -> Result<KeyBundle, String> {
-            if self.0.ptid != endpoint.ptid || self.0.device_id != endpoint.device_id {
+        fn fetch(&self, endpoint: &ProtoCryptoEndpoint) -> Result<DirectKeyBundle, String> {
+            let device = self.0.device.as_ref().ok_or_else(|| "missing device".to_string())?;
+            let actor = device.actor.as_ref().ok_or_else(|| "missing actor".to_string())?;
+            if actor.ptid != endpoint.ptid || device.device_id != endpoint.device_id {
                 return Err("endpoint mismatch".to_string());
             }
             Ok(self.0.clone())
@@ -226,17 +233,22 @@ mod tests {
                 "conversation-1",
                 std::slice::from_ref(&peer),
                 100,
-                &FixedTransport(KeyBundle {
-                    ptid: peer.ptid.clone(),
-                    device_id: peer.device_id.clone(),
-                    ik_pub: B64.encode(bob.verifying_key().to_bytes()),
-                    spk_pub: B64.encode(bob_spk.public_bytes()),
-                    spk_sig: B64.encode(bob.signing_key().sign(&bob_spk.public_bytes()).to_bytes()),
-                    opks: vec![B64.encode(bob_opk.public_bytes())],
+                &FixedTransport(DirectKeyBundle {
+                    device: Some(crate::proto::actor_device_ref_from_parts(
+                        &peer.ptid,
+                        &peer.device_id,
+                    )),
+                    identity_key_public: B64.encode(bob.verifying_key().to_bytes()),
+                    signed_pre_key_id: 7,
+                    signed_pre_key_public: B64.encode(bob_spk.public_bytes()),
+                    signed_pre_key_signature: B64
+                        .encode(bob.signing_key().sign(&bob_spk.public_bytes()).to_bytes()),
+                    one_time_pre_keys: vec![crate::proto::key_exchange::DirectOneTimePreKey {
+                        key_id: 11,
+                        public_key: B64.encode(bob_opk.public_bytes()),
+                    }],
                     published_at_unix_ms: 1,
-                    supported_versions: vec![1],
-                    spk_id: 7,
-                    opk_ids: vec![11],
+                    supported_wire_versions: vec![1],
                 }),
             )
             .unwrap();

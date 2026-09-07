@@ -1,13 +1,14 @@
 use super::group::MlsGroupManager;
 use crate::contracts::CryptoEndpoint;
-use crate::proto::chat::UploadKeyPackageRequest;
+use crate::proto::actor_device_ref_from_parts;
+use crate::proto::key_exchange::UploadMlsKeyPackageRequest;
 use crate::store::MlsKeyPackageRepository;
 use std::sync::Arc;
 
 const INITIAL_MLS_KEY_PACKAGE_COUNT: usize = 5;
 
 pub trait MlsKeyPackageTransport: Send + Sync {
-    fn upload(&self, request: &UploadKeyPackageRequest) -> Result<(), String>;
+    fn upload(&self, request: &UploadMlsKeyPackageRequest) -> Result<(), String>;
 }
 
 pub struct MlsKeyPackagePublisher<R> {
@@ -41,9 +42,12 @@ impl<R: MlsKeyPackageRepository> MlsKeyPackagePublisher<R> {
             self.generate_fresh_batch(now_unix_ms)?;
         }
         for package in self.store.pending_mls_key_packages()? {
-            transport.upload(&UploadKeyPackageRequest {
-                device_id: self.endpoint.device_id.clone(),
-                data: package.data,
+            transport.upload(&UploadMlsKeyPackageRequest {
+                device: Some(actor_device_ref_from_parts(
+                    &self.endpoint.ptid,
+                    &self.endpoint.device_id,
+                )),
+                key_package: package.data,
             })?;
             self.store
                 .complete_mls_key_package_publication(&package.package_id)?;
@@ -88,12 +92,12 @@ mod tests {
 
     #[derive(Default)]
     struct RecordingTransport {
-        requests: Mutex<Vec<UploadKeyPackageRequest>>,
+        requests: Mutex<Vec<UploadMlsKeyPackageRequest>>,
         fail_first: Mutex<bool>,
     }
 
     impl MlsKeyPackageTransport for RecordingTransport {
-        fn upload(&self, request: &UploadKeyPackageRequest) -> Result<(), String> {
+        fn upload(&self, request: &UploadMlsKeyPackageRequest) -> Result<(), String> {
             self.requests.lock().unwrap().push(request.clone());
             let mut fail = self.fail_first.lock().unwrap();
             if *fail {
@@ -212,17 +216,25 @@ mod tests {
     ) {
         let identity = IdentityKeyPair::from_seed(&seed);
         let fresh = generate_fresh_device_identity("ptid:alice", identity.seed_bytes(), 1).unwrap();
+        let device_id = fresh
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .unwrap()
+            .device_id
+            .clone();
         let manager = Arc::new(MlsGroupManager::new());
         manager
             .actor_identity()
-            .init("ptid:alice", &fresh.enrollment.certificate.device_id)
+            .init("ptid:alice", &device_id)
             .unwrap();
         let publisher = MlsKeyPackagePublisher::new(
             store,
             manager.clone(),
             CryptoEndpoint {
                 ptid: "ptid:alice".to_string(),
-                device_id: fresh.enrollment.certificate.device_id,
+                device_id,
             },
         )
         .unwrap();

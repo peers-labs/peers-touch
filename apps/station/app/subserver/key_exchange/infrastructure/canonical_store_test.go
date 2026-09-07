@@ -602,7 +602,7 @@ func newCanonicalStoreForTest(
 	if err != nil {
 		t.Fatalf("create canonical store: %v", err)
 	}
-	if err := store.MigrateTestSchema(context.Background()); err != nil {
+	if err := store.Migrate(context.Background()); err != nil {
 		t.Fatalf("migrate canonical store schema: %v", err)
 	}
 	if err := db.AutoMigrate(&actoridentitypersistence.ActorDeviceModel{}); err != nil {

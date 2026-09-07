@@ -10,10 +10,10 @@ use crate::contracts::{
 use crate::inbox::ClaimedItemConsumer;
 use crate::proto::chat::{
     conversation_event, ConversationAuthoritySnapshot, ConversationEvent,
-    CryptoEndpoint as ProtoCryptoEndpoint, DeviceConsumptionReceipt, DeviceQueueItem, MemberRole,
-    MembershipTransitionChange, MembershipTransitionCommittedFact, MessagingMembershipAction,
-    MlsQueuePayload, MlsQueuePayloadKind, MlsRetirementMarker, PreparedEndpointPayloadKind,
-    PublicEventMarker,
+    CryptoEndpoint as ProtoCryptoEndpoint, DeviceConsumptionReceipt, DurableDeviceInboxItem,
+    MemberRole, MembershipTransitionChange, MembershipTransitionCommittedFact,
+    MessagingMembershipAction, MlsQueuePayload, MlsQueuePayloadKind, MlsRetirementMarker,
+    PreparedEndpointPayloadKind, PublicEventMarker,
 };
 use crate::store::MlsInboundRepository;
 use prost::Message;
@@ -46,7 +46,7 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         persist_claim(self.store.as_ref(), item, consumer_epoch, now)?;
         if self
@@ -180,7 +180,7 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsApplicationProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -223,7 +223,7 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
         Ok(())
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         persist_claim(self.store.as_ref(), item, consumer_epoch, now)?;
         if self
@@ -364,7 +364,7 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsTransitionProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -395,7 +395,7 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         persist_claim(self.store.as_ref(), item, consumer_epoch, now)?;
         if self
@@ -479,7 +479,7 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsSenderTransitionProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -510,7 +510,7 @@ impl<R: MlsInboundRepository> MlsRetirementProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         persist_claim(self.store.as_ref(), item, consumer_epoch, now)?;
         if self
@@ -603,7 +603,7 @@ impl<R: MlsInboundRepository> MlsRetirementProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsRetirementProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -743,7 +743,7 @@ fn transition_fact(
 
 fn persist_claim<R: MlsInboundRepository>(
     store: &R,
-    item: &DeviceQueueItem,
+    item: &DurableDeviceInboxItem,
     consumer_epoch: u64,
     now: i64,
 ) -> Result<(), String> {
@@ -760,7 +760,7 @@ fn persist_claim<R: MlsInboundRepository>(
 }
 
 fn consumption_receipt(
-    item: &DeviceQueueItem,
+    item: &DurableDeviceInboxItem,
     event: &ConversationEvent,
     endpoint: &CryptoEndpoint,
     now: i64,
@@ -826,10 +826,10 @@ mod tests {
     use crate::mls::test_support::TestMlsRepository;
     use crate::proto::chat::{
         chat_command, ConversationAuthorityMember, ConversationKind, DeviceEventDelivery,
-        DeviceQueuePayloadType, MembershipTransitionCommittedFact, MessageCommittedFact,
-        MessagingContentKind, MessagingMembershipChangeCommitted,
-        PrepareMessagingGroupGenesisResponse, ReservedMessagingMlsKeyPackage,
+        DeviceInboxPayloadType, MembershipTransitionCommittedFact, MessageCommittedFact,
+        MessagingContentKind, MessagingMembershipChangeCommitted, PrepareConversationGroupResponse,
     };
+    use crate::proto::key_exchange::MlsKeyPackageReservation;
 
     fn now() -> i64 {
         100
@@ -869,7 +869,7 @@ mod tests {
         }
     }
 
-    fn queue_item(ciphertext: Vec<u8>) -> DeviceQueueItem {
+    fn queue_item(ciphertext: Vec<u8>) -> DurableDeviceInboxItem {
         let recipient = proto_endpoint(&endpoint("ptid:bob", "bob-device"));
         let payload_hash = Sha256::digest(&ciphertext).to_vec();
         let mut event = ConversationEvent {
@@ -917,9 +917,11 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "item-1".to_string(),
-            recipient: Some(recipient),
+            recipient: Some(crate::proto::actor_device_ref_from_crypto_endpoint(
+                &recipient,
+            )),
             lane_sequence: 1,
             event_id: "event-1".to_string(),
             conversation_id: "group-1".to_string(),
@@ -930,7 +932,10 @@ mod tests {
         }
     }
 
-    fn welcome_queue_item(transition_id: &str, welcome_bytes: Vec<u8>) -> DeviceQueueItem {
+    fn welcome_queue_item(
+        transition_id: &str,
+        welcome_bytes: Vec<u8>,
+    ) -> DurableDeviceInboxItem {
         let recipient = proto_endpoint(&endpoint("ptid:bob", "bob-device"));
         let welcome_hash = Sha256::digest(&welcome_bytes).to_vec();
         let mls_payload = MlsQueuePayload {
@@ -1004,9 +1009,11 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "welcome-item-1".to_string(),
-            recipient: Some(recipient),
+            recipient: Some(crate::proto::actor_device_ref_from_crypto_endpoint(
+                &recipient,
+            )),
             lane_sequence: 1,
             event_id: "welcome-event-1".to_string(),
             conversation_id: "group-welcome".to_string(),
@@ -1025,7 +1032,7 @@ mod tests {
         transition_id: &str,
         commit_bytes: Vec<u8>,
         change: MessagingMembershipChangeCommitted,
-    ) -> DeviceQueueItem {
+    ) -> DurableDeviceInboxItem {
         let recipient = proto_endpoint(&endpoint("ptid:bob", recipient_device_id));
         let commit_hash = Sha256::digest(&commit_bytes).to_vec();
         let mls_payload = MlsQueuePayload {
@@ -1093,9 +1100,11 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: item_id.to_string(),
-            recipient: Some(recipient),
+            recipient: Some(crate::proto::actor_device_ref_from_crypto_endpoint(
+                &recipient,
+            )),
             lane_sequence: 1,
             event_id: event_id.to_string(),
             conversation_id: conversation_id.to_string(),
@@ -1106,7 +1115,7 @@ mod tests {
         }
     }
 
-    fn retirement_item() -> DeviceQueueItem {
+    fn retirement_item() -> DurableDeviceInboxItem {
         let local = proto_endpoint(&endpoint("ptid:carol", "carol-device-2"));
         let marker = MlsRetirementMarker {
             conversation_id: "group-1".to_string(),
@@ -1187,7 +1196,7 @@ mod tests {
         event.event_hash = Sha256::digest(event.encode_to_vec()).to_vec();
         let delivery = DeviceEventDelivery {
             event: Some(event),
-            recipient: Some(local),
+            recipient: Some(local.clone()),
             payload_kind: PreparedEndpointPayloadKind::MlsRetirement as i32,
             endpoint_payload,
             endpoint_payload_sha256,
@@ -1195,14 +1204,14 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "item-12".to_string(),
-            recipient: delivery.recipient,
+            recipient: Some(crate::proto::actor_device_ref_from_crypto_endpoint(&local)),
             lane_sequence: 1,
             event_id: "event-12".to_string(),
             conversation_id: "group-1".to_string(),
             idempotency_key: "event:event-12".to_string(),
-            payload_type: DeviceQueuePayloadType::ConversationEvent as i32,
+            payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()
@@ -1604,19 +1613,26 @@ mod tests {
         bob.actor_identity().init("ptid:bob", "bob-device").unwrap();
         let local_endpoint = endpoint("ptid:alice", "alice-device");
         let bob_key_package = bob.generate_key_package().unwrap();
-        let plan = PrepareMessagingGroupGenesisResponse {
+        let plan = PrepareConversationGroupResponse {
             authority_plan_id: "plan-1".to_string(),
             expires_at: Some(prost_types::Timestamp {
                 seconds: 1,
                 nanos: 0,
             }),
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             prospective_endpoints: vec![
-                proto_endpoint(&local_endpoint),
-                proto_endpoint(&endpoint("ptid:bob", "bob-device")),
+                crate::proto::actor_device_ref_from_crypto_endpoint(&proto_endpoint(
+                    &local_endpoint,
+                )),
+                crate::proto::actor_device_ref_from_crypto_endpoint(&proto_endpoint(&endpoint(
+                    "ptid:bob",
+                    "bob-device",
+                ))),
             ],
-            reserved_key_packages: vec![ReservedMessagingMlsKeyPackage {
-                target: Some(proto_endpoint(&endpoint("ptid:bob", "bob-device"))),
+            reserved_key_packages: vec![MlsKeyPackageReservation {
+                target: Some(crate::proto::actor_device_ref_from_crypto_endpoint(
+                    &proto_endpoint(&endpoint("ptid:bob", "bob-device")),
+                )),
                 package_id: "package-1".to_string(),
                 key_package_sha256: Sha256::digest(&bob_key_package).to_vec(),
                 key_package: bob_key_package,
@@ -1704,14 +1720,16 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        let item = DeviceQueueItem {
+        let item = DurableDeviceInboxItem {
             item_id: "item-2".to_string(),
-            recipient: Some(proto_endpoint(&local_endpoint)),
+            recipient: Some(crate::proto::actor_device_ref_from_crypto_endpoint(
+                &proto_endpoint(&local_endpoint),
+            )),
             lane_sequence: 1,
             event_id: "event-2".to_string(),
             conversation_id: "group-1".to_string(),
             idempotency_key: "event:event-2".to_string(),
-            payload_type: DeviceQueuePayloadType::ConversationEvent as i32,
+            payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()

@@ -2,8 +2,9 @@ use super::group::MlsGroupManager;
 use crate::codec::private_content::encode_message_private_content;
 use crate::proto::chat::{
     chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationKind, CryptoEndpoint,
-    EditMessageIntent, MessagingContentKind, PrepareMessagingSendResponse, SendMessageIntent,
+    EditMessageIntent, MessagingContentKind, PrepareConversationCommandResponse, SendMessageIntent,
 };
+use crate::proto::crypto_endpoints_from_actor_device_refs;
 use crate::store::{
     MlsOutboundEditCommit, MlsOutboundRepository, MlsOutboundSendCommit, PendingSenderProjection,
 };
@@ -54,7 +55,7 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
 
     pub fn prepare_send(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &GroupSendTextIntent<'_>,
     ) -> Result<ChatCommand, String> {
         validate_send_context(plan, intent, &self.endpoint)?;
@@ -110,7 +111,7 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
 
     pub fn prepare_edit(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &GroupEditTextIntent<'_>,
     ) -> Result<ChatCommand, String> {
         validate_edit_context(plan, intent, &self.endpoint)?;
@@ -152,7 +153,7 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
 }
 
 fn validate_send_context(
-    plan: &PrepareMessagingSendResponse,
+    plan: &PrepareConversationCommandResponse,
     intent: &GroupSendTextIntent<'_>,
     endpoint: &CryptoEndpoint,
 ) -> Result<(), String> {
@@ -162,7 +163,7 @@ fn validate_send_context(
         || intent.conversation_id.trim().is_empty()
         || intent.client_timestamp_unix_ms <= 0
         || plan.conversation_id != intent.conversation_id
-        || plan.authority_station_id.trim().is_empty()
+        || plan.authority_station_peer_id.trim().is_empty()
         || plan.delivery_plan_sha256.len() != 32
         || plan.membership_epoch < 0
         || plan.mls_epoch < 0
@@ -176,12 +177,11 @@ fn validate_send_context(
         return Err("messaging private content is empty".to_string());
     }
 
+    let required_endpoints = crypto_endpoints_from_actor_device_refs(&plan.required_endpoints)
+        .ok_or_else(|| "messaging send plan has incomplete endpoint".to_string())?;
     let mut previous: Option<(&str, &str)> = None;
     let mut local_count = 0;
-    for required in &plan.required_endpoints {
-        if required.ptid.trim().is_empty() || required.device_id.trim().is_empty() {
-            return Err("messaging send plan has incomplete endpoint".to_string());
-        }
+    for required in &required_endpoints {
         let key = (required.ptid.as_str(), required.device_id.as_str());
         if previous.is_some_and(|value| value >= key) {
             return Err("messaging send plan endpoints are not strictly sorted".to_string());
@@ -191,14 +191,14 @@ fn validate_send_context(
             local_count += 1;
         }
     }
-    if local_count != 1 || plan.required_endpoints.len() < 2 {
+    if local_count != 1 || required_endpoints.len() < 2 {
         return Err("messaging send plan does not contain the sending endpoint".to_string());
     }
     Ok(())
 }
 
 fn validate_edit_context(
-    plan: &PrepareMessagingSendResponse,
+    plan: &PrepareConversationCommandResponse,
     intent: &GroupEditTextIntent<'_>,
     endpoint: &CryptoEndpoint,
 ) -> Result<(), String> {
@@ -220,7 +220,7 @@ fn validate_edit_context(
 
 fn validate_authority_head<R: MlsOutboundRepository>(
     store: &R,
-    plan: &PrepareMessagingSendResponse,
+    plan: &PrepareConversationCommandResponse,
 ) -> Result<(), String> {
     let (local_sequence, local_hash) = store.authority_head(&plan.conversation_id)?;
     if local_sequence != plan.authority_sequence || local_hash != plan.authority_hash {
@@ -230,7 +230,7 @@ fn validate_authority_head<R: MlsOutboundRepository>(
 }
 
 fn build_send_command(
-    plan: &PrepareMessagingSendResponse,
+    plan: &PrepareConversationCommandResponse,
     intent: &GroupSendTextIntent<'_>,
     endpoint: &CryptoEndpoint,
     mls_payload: &[u8],
@@ -253,7 +253,7 @@ fn build_send_command(
         observed_mls_epoch: plan.mls_epoch,
         client_timestamp: Some(timestamp(intent.client_timestamp_unix_ms)),
         delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
-        authority_station_id: plan.authority_station_id.clone(),
+        authority_station_id: plan.authority_station_peer_id.clone(),
         payload: Some(chat_command::Payload::SendMessage(SendMessageIntent {
             message_id: intent.message_id.to_string(),
             content_kind: MessagingContentKind::Text as i32,
@@ -268,7 +268,7 @@ fn build_send_command(
 }
 
 fn build_edit_command(
-    plan: &PrepareMessagingSendResponse,
+    plan: &PrepareConversationCommandResponse,
     intent: &GroupEditTextIntent<'_>,
     endpoint: &CryptoEndpoint,
     mls_payload: &[u8],
@@ -281,7 +281,7 @@ fn build_edit_command(
         observed_mls_epoch: plan.mls_epoch,
         client_timestamp: Some(timestamp(intent.client_timestamp_unix_ms)),
         delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
-        authority_station_id: plan.authority_station_id.clone(),
+        authority_station_id: plan.authority_station_peer_id.clone(),
         payload: Some(chat_command::Payload::EditMessage(EditMessageIntent {
             message_id: intent.message_id.to_string(),
             direct_payloads: Vec::new(),
@@ -418,8 +418,8 @@ mod tests {
         (alice, bob)
     }
 
-    fn plan() -> PrepareMessagingSendResponse {
-        PrepareMessagingSendResponse {
+    fn plan() -> PrepareConversationCommandResponse {
+        PrepareConversationCommandResponse {
             conversation_id: "group-1".to_string(),
             conversation_kind: ConversationKind::Group as i32,
             authority_sequence: 0,
@@ -427,18 +427,12 @@ mod tests {
             membership_epoch: 1,
             mls_epoch: 1,
             required_endpoints: vec![
-                CryptoEndpoint {
-                    ptid: "ptid:alice".to_string(),
-                    device_id: "alice-device".to_string(),
-                },
-                CryptoEndpoint {
-                    ptid: "ptid:bob".to_string(),
-                    device_id: "bob-device".to_string(),
-                },
+                crate::proto::actor_device_ref_from_parts("ptid:alice", "alice-device"),
+                crate::proto::actor_device_ref_from_parts("ptid:bob", "bob-device"),
             ],
             delivery_plan_sha256: vec![8; 32],
             endpoint_manifests: Vec::new(),
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
         }
     }
 

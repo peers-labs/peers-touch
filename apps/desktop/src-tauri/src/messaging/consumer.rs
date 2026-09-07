@@ -4,7 +4,7 @@ use super::{
 };
 use crate::domain::crypto::IdentityKeyPair;
 use crate::model::chat::{
-    conversation_event, DeviceEventDelivery, DeviceQueueItem, DeviceQueuePayloadType,
+    conversation_event, DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
     PreparedEndpointPayloadKind,
 };
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
@@ -86,13 +86,13 @@ impl MessagingItemConsumer {
 }
 
 impl ClaimedItemConsumer for MessagingItemConsumer {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
-        let payload_type = DeviceQueuePayloadType::try_from(item.payload_type)
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+        let payload_type = DeviceInboxPayloadType::try_from(item.payload_type)
             .map_err(|_| "messaging queue payload type is invalid".to_string())?;
-        if payload_type == DeviceQueuePayloadType::DeviceReceipt {
+        if payload_type == DeviceInboxPayloadType::DeviceReceipt {
             return self.delivery_receipt.consume(item, consumer_epoch);
         }
-        if payload_type != DeviceQueuePayloadType::ConversationEvent {
+        if payload_type != DeviceInboxPayloadType::ConversationEvent {
             return Err("messaging consumer received unsupported queue payload type".to_string());
         }
         let delivery = DeviceEventDelivery::decode(item.opaque_payload.as_slice())

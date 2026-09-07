@@ -650,7 +650,7 @@ func newCanonicalFixture(t *testing.T) *canonicalFixture {
 	if err != nil {
 		t.Fatalf("create canonical key exchange store: %v", err)
 	}
-	if err := store.MigrateTestSchema(context.Background()); err != nil {
+	if err := store.Migrate(context.Background()); err != nil {
 		t.Fatalf("migrate canonical key exchange test schema: %v", err)
 	}
 	if err := db.AutoMigrate(&actoridentitypersistence.ActorDeviceModel{}); err != nil {

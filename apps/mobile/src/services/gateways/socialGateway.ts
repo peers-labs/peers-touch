@@ -9,16 +9,12 @@
  */
 
 import type { MobileAuthSession } from '../../features/auth/authSession';
-import {
-  normalizeSession,
-  normalizeFriendRequest,
-} from '../../features/social/socialNormalizers';
+import { normalizeFriendRequest } from '../../features/social/socialNormalizers';
 import type {
   FriendChatSession,
   FriendRequest,
   FriendshipStatus,
 } from '../../features/social/socialTypes';
-import { SocialApiError } from '../../features/social/socialTypes';
 import { FriendshipStatus as FriendshipStatusCode } from '../../gen/proto/domain/chat/chat_pb';
 import type { ChatBackgroundId, FriendConversationSettings, UpdateFriendConversationSettingsInput } from '../../features/social/socialApiTypes';
 import { normalizeChatBackgroundId } from '../../features/social/socialApiTypes';
@@ -33,11 +29,6 @@ import {
 
 interface ListFriendRequestsRaw {
   requests?: Partial<FriendRequest>[];
-  total?: number;
-}
-
-interface ListSessionsRaw {
-  sessions?: Partial<FriendChatSession>[];
   total?: number;
 }
 
@@ -76,10 +67,6 @@ export interface SocialGateway {
   acceptFriendRequest: (requestId: string) => Promise<CommandOutcome<{ request?: FriendRequest; session?: FriendChatSession }>>;
   rejectFriendRequest: (requestId: string) => Promise<CommandOutcome<{ request?: FriendRequest }>>;
 
-  // Sessions
-  listSessions: (limit?: number, offset?: number) => Promise<CommandOutcome<SocialSessionsResult>>;
-  createSession: (participantPtid: string) => Promise<CommandOutcome<{ session?: FriendChatSession; created?: boolean }>>;
-
   // Conversation settings
   getConversationSettings: (sessionUlid: string) => Promise<CommandOutcome<FriendConversationSettings>>;
   updateConversationSettings: (sessionUlid: string, input: UpdateFriendConversationSettingsInput) => Promise<CommandOutcome<FriendConversationSettings>>;
@@ -97,6 +84,24 @@ export interface SocialGateway {
 
 export function createSocialGateway(session: MobileAuthSession): SocialGateway {
   const { command } = createGatewayTransport(session);
+
+  const getConversationSettings = async (
+    conversationId: string,
+  ): Promise<CommandOutcome<FriendConversationSettings>> => {
+    const result = await command<{ settings?: Record<string, unknown> }>({
+      method: 'GET',
+      path: '/conversation/member/settings',
+      query: { conversation_id: conversationId },
+    });
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      data: normalizeConversationSettings(
+        result.data.settings ?? result.data,
+        conversationId,
+      ),
+    };
+  };
 
   return {
     // --- Friend requests ---
@@ -121,47 +126,26 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
     rejectFriendRequest: (requestId) =>
       command({ method: 'POST', path: '/api/v1/social/friend-request/reject', body: { request_id: requestId } }),
 
-    // --- Sessions ---
-    listSessions: async (limit = 50, offset = 0) => {
-      const result = await command<ListSessionsRaw>({
-        method: 'GET',
-        path: '/friend-chat/sessions',
-        query: { limit, offset },
-      });
-      if (!result.ok) return result;
-      const sessions = (result.data.sessions ?? []).map(normalizeSession);
-      return { ok: true, data: { sessions, total: result.data.total ?? sessions.length } };
-    },
-
-    createSession: (participantPtid) =>
-      command({ method: 'POST', path: '/friend-chat/session/create', body: { participant_ptid: participantPtid } }),
-
     // --- Conversation settings ---
-    getConversationSettings: async (sessionUlid) => {
-      const result = await command<{ settings?: Record<string, unknown> }>({
-        method: 'GET',
-        path: '/friend-chat/settings',
-        query: { session_ulid: sessionUlid },
-      });
-      if (!result.ok) return result;
-      return { ok: true, data: normalizeConversationSettings(result.data.settings ?? result.data) };
-    },
+    getConversationSettings,
 
     updateConversationSettings: async (sessionUlid, input) => {
-      const result = await command<{ settings?: Record<string, unknown> }>({
+      const result = await command<Record<string, unknown>>({
         method: 'PUT',
-        path: '/friend-chat/settings',
+        path: '/conversation/member/settings',
         body: {
-          session_ulid: sessionUlid,
-          ...(input.isMuted !== undefined ? { is_muted: input.isMuted } : {}),
-          ...(input.isPinned !== undefined ? { is_pinned: input.isPinned } : {}),
-          ...(input.alertEnabled !== undefined ? { alert_enabled: input.alertEnabled } : {}),
-          ...(input.background !== undefined ? { background: input.background } : {}),
-          ...(input.clearedAt !== undefined ? { cleared_at_unix_ms: input.clearedAt } : {}),
+          conversation_id: sessionUlid,
+          settings: {
+            ...(input.isMuted !== undefined ? { muted: input.isMuted } : {}),
+            ...(input.isPinned !== undefined ? { pinned: input.isPinned } : {}),
+            ...(input.alertEnabled !== undefined ? { alert_enabled: input.alertEnabled } : {}),
+            ...(input.background !== undefined ? { background: input.background } : {}),
+            ...(input.clearedAt !== undefined ? { cleared_at_ms: input.clearedAt } : {}),
+          },
         },
       });
       if (!result.ok) return result;
-      return { ok: true, data: normalizeConversationSettings(result.data.settings ?? result.data) };
+      return getConversationSettings(sessionUlid);
     },
 
     // --- Block ---
@@ -201,15 +185,30 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
 // JSON quarantine normalizers (private)
 // ---------------------------------------------------------------------------
 
-function normalizeConversationSettings(payload: unknown): FriendConversationSettings {
+function normalizeConversationSettings(
+  payload: unknown,
+  fallbackConversationId = '',
+): FriendConversationSettings {
   const record = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
   return {
-    sessionUlid: String(record.sessionUlid ?? record.session_ulid ?? ''),
-    isMuted: Boolean(record.isMuted ?? record.is_muted),
-    isPinned: Boolean(record.isPinned ?? record.is_pinned),
+    sessionUlid: String(
+      record.conversationId
+      ?? record.conversation_id
+      ?? record.sessionUlid
+      ?? record.session_ulid
+      ?? fallbackConversationId,
+    ),
+    isMuted: Boolean(record.muted ?? record.isMuted ?? record.is_muted),
+    isPinned: Boolean(record.pinned ?? record.isPinned ?? record.is_pinned),
     alertEnabled: (record.alertEnabled ?? record.alert_enabled) !== false,
     background: normalizeChatBackgroundId(record.background),
-    clearedAt: Number(record.clearedAtUnixMs ?? record.cleared_at_unix_ms ?? 0),
+    clearedAt: Number(
+      record.clearedAtMs
+      ?? record.cleared_at_ms
+      ?? record.clearedAtUnixMs
+      ?? record.cleared_at_unix_ms
+      ?? 0,
+    ),
   };
 }
 

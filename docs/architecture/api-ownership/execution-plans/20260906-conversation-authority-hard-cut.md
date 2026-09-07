@@ -53,6 +53,13 @@ Accepted decisions:
 - `MP-D09`, `MP-D10`, revised `MP-D30`;
 - Federated Social `D-07`.
 
+Proposed amendment at the current design gate:
+
+- `AO-D07`: canonical wire contracts carry authority, trust, and replay
+  semantics;
+- `docs/architecture/api-ownership/proposals/20260907-ca-w5-canonical-wire-contract-amendment.md`;
+- `docs/architecture/api-ownership/proposals/20260907-ca-w5-canonical-wire-contract-review-prompt.md`.
+
 Product and Acceptance:
 
 - `docs/architecture/messaging-platform/product-definition.md`
@@ -368,6 +375,31 @@ new routes + new owners + all consumers + old deletion + ownership Gate = one cu
 No route redirect, compatibility handler, dual write, fallback read, or mixed production
 feature flag is permitted.
 
+Execution finding (2026-09-07):
+
+- `OWNER_ACCEPTANCE_REQUIRED`: the accepted ownership registry names canonical
+  routes and message families, but six wire contracts cannot carry the state
+  required by their accepted application semantics:
+  1. Direct creation has no caller-owned command identity.
+  2. Group creation cannot submit the prepared authority plan and exact
+     canonical genesis command.
+  3. Remote command submission cannot carry the actor-device-signed proposal.
+  4. Conversation event queries still return the replaced
+     `CommittedConversationEvent` shape instead of `ConversationEvent`.
+  5. Friend Request mutations cannot carry the signed
+     `FriendRequestCommand`.
+  6. Shared Federation has no typed payload contract for remote Direct bundle
+     fetch, remote MLS fetch, or DKX delivery.
+- Proposed `AO-D07` resolves the six gaps as one source-backed package and also
+  closes exact-response replay for destructive Direct/MLS key-material fetches.
+  The amendment and focused review prompt are linked above. Independent
+  architecture review reports zero P0/P1 findings and `APPROVE AO-D07`.
+- CA-W5 remains one atomic cut. No compatibility route or partial production
+  registration may be committed while these contracts are unresolved.
+- The current uncommitted source work is preserved, but proto mutation,
+  production composition, final deletion Gate, and the CA-W5 completion claim
+  remain blocked until Owner acceptance of `AO-D07`.
+
 ### CA-W6: Runtime Acceptance
 
 Responsibility:
@@ -559,7 +591,7 @@ matrices. Local/static success cannot replace native receiver proof.
 | CA-W2 Conversation DDD bounded context | done | Conversation now has a test-only Station DDD composition with aggregate, entity, value-object, domain-event, typed-error, repository/UOW, application command/query, persistence, delivery, identity, Federation, and HTTP-mapping boundaries. Focused tests cover deterministic event hashes and optional-field presence, exact accepted/terminal-rejected command replay, authenticated forwarded replay and key-state admission, authority plans, exact delivery commitments, membership/MLS epochs and retirement, delegated leave, follower buffering/convergence/fork rejection, settings/read cursors, aggregate rehydration, PostgreSQL timestamp precision, schema keys, and post-commit notification. `(cd apps/station && go test -race -count=1 ./app/subserver/conversation/...)`, focused `go vet`, `./tooling/scripts/check-go-style.sh`, Desktop/Mobile generated-TypeScript compilation, and isolated proto regeneration pass. Isolated `HEAD + CA-W2-only` tree `faf1879f9f54af6cfa814d2a2d1d4844f8586602` passes the full Conversation race suite; independent command/security, persistence, aggregate, follower, timestamp, and query reviews found no remaining blocker. The ownership Gate fails closed only on the same 148 enumerated CA-W3..CA-W5 debts: 4 forbidden routes, 17 forbidden truth-store identifiers, 23 owner-root mismatches, and 104 superseded proto symbols, with no missing DDD layer or forbidden DDD import. The PostgreSQL runtime test is registered but skipped when `MESSAGING_TEST_POSTGRES_DSN` is absent. No production handler, route, store, consumer, or runtime cutover is claimed before CA-W5. |
 | CA-W3 Resource-owner services | done | Actor Identity, Recovery, Key Exchange, Conversation Device Inbox, attachments, interactions, and delivery receipts now have typed owner ports and test-only composition without Station Messaging imports. Device Inbox claims advance a consumer epoch for every lease attempt; stale ACK/reject cannot mutate a reclaimed item. Attachment mutations revalidate Conversation membership and Actor Identity device state inside the owning SQL transaction, actor/message quota admission is serialized, grants commit as one exact batch, verification uses an exclusive bounded lease, and cleanup reclaims expired uploads/parts/verification blobs and unattached objects with fenced retries. The Conversation authority persists the exact per-endpoint delivery commitment set atomically with each event and derives delivery status from authority receipts, excluding originator synchronization markers without fabricating remote queue rows. The exact CA-W3 race command, focused `go vet`, `gofmt`, `git diff --check`, and Go style pass. PostgreSQL contention coverage is registered but remains `UNPROVEN` because `MESSAGING_TEST_POSTGRES_DSN` is absent. No production route/store cutover or old-path deletion is claimed before CA-W5. |
 | CA-W4 Shared Federation and Social | done | Shared Federation supplies authenticated frames, durable outbox/inbox leases, retry/dedup/hash-conflict behavior, typed Conversation and Social receivers, and same-Station loopback. Conversation command conflicts return durable authority results bound to the originating command SHA-256; remote Device Inbox lane sequence remains target-owned. Social enforces receiver-local block/existing-relationship policy, atomically persists command/projection/result-outbox state, binds results to exact outgoing command bytes, rejects retryable result frames before durable resolution, and resolves remote actor keys from PTID plus a pinned Home Station profile/locator chain rather than `ActorRef.acct`; cached remote keys are revalidated against the latest signed active-key profile. The exact CA-W4 race command, focused `go vet`, `gofmt`, `git diff --check`, Go style, and `messaging-platform-contract` run `20260906T204614333077Z-6c52a4241e67fb14b3a0663a346aa7a5` pass. Two independent post-fix reviews report zero P0/P1 findings. Live DHT/Relay two-Station convergence remains `UNPROVEN` until CA-W5 production composition and CA-W6 runtime Acceptance. |
-| CA-W5 Atomic production hard cut | pending | — |
+| CA-W5 Atomic production hard cut | blocked / AO-D07 Owner acceptance required | Worktree binding is verified at `77dd97026f7d794eb9d74c394cdc85cbb6012ec0`. Canonical proto deletion, generated binding regeneration, portable Messaging Core migration, Actor Identity/Recovery/Key Exchange owner implementation, Desktop/Mobile Rust migration, canonical Conversation query work, selected Mobile gateway migration, and retired `conversation/engine/` deletion are present in the uncommitted cutover tree. The ownership Gate improved from 148 to 88 diagnostics after deleting the duplicate engine. The proposed `AO-D07` amendment now defines one closure for the six wire gaps plus exact-response replay for destructive key-material fetches, and independent architecture review reports zero P0/P1 findings with `APPROVE AO-D07`. Production composition remains blocked pending Owner acceptance; Station build, PostgreSQL runtime proof, and full client migration remain `UNPROVEN`. |
 | CA-W6 Runtime Acceptance | pending | — |
 | CA-W7 Completion/docs/knowledge audit | pending | — |
 
@@ -587,15 +619,12 @@ matrices. Local/static success cannot replace native receiver proof.
 6. No compatibility shim, dual write, fallback read, mock business API, stale evidence,
    or undeclared route remains.
 
-Plan state: `PLAN_APPROVED`. CA-W0 through CA-W4 are complete at the source and
-deterministic-test boundary: governed routes are classified, retained
-capabilities have unique generated canonical contracts, Conversation has a
-test-only DDD composition, resource owners are separated, and shared
-Federation/Social fault semantics pass focused race tests. The latest
-`station-api-ownership` run
-`20260906T204513002878Z-bc117d01f6ba3e7fe9e63f99a4308e85` still fails closed
-with exactly the expected 148 CA-W5 deletion/cutover diagnostics: 4 forbidden
-routes, 17 forbidden truth-store identifiers, 23 owner-root mismatches, and 104
-superseded proto symbols. CA-W5 through CA-W7 remain open; production
-composition, native two-Station convergence, and PostgreSQL contention evidence
-remain `UNPROVEN`.
+Plan state: `PLAN_APPROVED`; execution is temporarily at the `AO-D07`
+`OWNER_ACCEPTANCE_REQUIRED` gate. CA-W0 through CA-W4 are complete at the source
+and deterministic-test boundary: governed routes are classified, Conversation
+has a test-only DDD composition, resource owners are separated, and shared
+Federation/Social fault semantics pass focused race tests. The current
+uncommitted CA-W5 tree removes the retired Conversation engine and reduces the
+ownership Gate from 148 to 88 diagnostics. CA-W5 through CA-W7 remain open;
+production composition, native two-Station convergence, and PostgreSQL
+contention evidence remain `UNPROVEN`.

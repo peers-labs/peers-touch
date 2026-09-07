@@ -1,8 +1,9 @@
 use super::keys::{DeviceSigningKey, IdentityKeyPair};
-use crate::proto::chat::{
-    EnrollMessagingDeviceRequest, EnrollMessagingDeviceResponse, MessagingDevice,
-    MessagingDeviceCertificate, MessagingDeviceStatus,
+use crate::proto::actor::{
+    ActorDevice, ActorDeviceCertificate, ActorDeviceStatus, EnrollActorDeviceRequest,
+    EnrollActorDeviceResponse,
 };
+use crate::proto::{actor_device_ref_from_parts, crypto_endpoint_from_actor_device_ref};
 use prost::Message;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -13,7 +14,7 @@ pub const INITIAL_ACTOR_IDENTITY_PROFILE_VERSION: u64 = 1;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FreshDeviceEnrollment {
-    pub certificate: MessagingDeviceCertificate,
+    pub certificate: ActorDeviceCertificate,
     pub actor_cross_signature: [u8; 64],
 }
 
@@ -38,8 +39,8 @@ pub trait DeviceEnrollmentRepository: Send + Sync {
 pub trait DeviceEnrollmentTransport: Send + Sync {
     fn enroll(
         &self,
-        request: &EnrollMessagingDeviceRequest,
-    ) -> Result<EnrollMessagingDeviceResponse, String>;
+        request: &EnrollActorDeviceRequest,
+    ) -> Result<EnrollActorDeviceResponse, String>;
 }
 
 pub fn load_or_create_device_identity<R: DeviceEnrollmentRepository>(
@@ -89,15 +90,20 @@ impl<R: DeviceEnrollmentRepository> DeviceEnrollmentManager<R> {
         &self,
         label: String,
         transport: &T,
-    ) -> Result<Option<MessagingDevice>, String> {
+    ) -> Result<Option<ActorDevice>, String> {
         let Some(enrollment) = self.repository.pending_device_enrollment()? else {
             return Ok(None);
         };
         let certificate = &enrollment.certificate;
-        if certificate.ptid != self.ptid || certificate.device_id != self.device_id {
+        let certificate_device = certificate
+            .device
+            .as_ref()
+            .and_then(crypto_endpoint_from_actor_device_ref)
+            .ok_or_else(|| "messaging pending enrollment has no device".to_string())?;
+        if certificate_device.ptid != self.ptid || certificate_device.device_id != self.device_id {
             return Err("messaging pending enrollment belongs to another endpoint".to_string());
         }
-        let response = transport.enroll(&EnrollMessagingDeviceRequest {
+        let response = transport.enroll(&EnrollActorDeviceRequest {
             certificate: Some(certificate.clone()),
             label,
             actor_cross_signature: enrollment.actor_cross_signature.to_vec(),
@@ -166,7 +172,12 @@ pub fn validate_enrollment_actor(
     let actor_public_key = actor_identity.verifying_key().to_bytes();
     let actor_fingerprint = Sha256::digest(actor_public_key);
     let certificate = &enrollment.certificate;
-    if certificate.ptid != expected_ptid
+    let certificate_ptid = certificate
+        .device
+        .as_ref()
+        .and_then(|device| device.actor.as_ref())
+        .map(|actor| actor.ptid.as_str());
+    if certificate_ptid != Some(expected_ptid)
         || certificate.actor_identity_public_key != actor_public_key
         || certificate.actor_identity_key_fingerprint != actor_fingerprint.as_slice()
         || certificate.observed_profile_version != expected_profile_version
@@ -186,22 +197,13 @@ pub fn validate_enrollment_actor(
 
 pub fn validate_enrollment_response(
     enrollment: &FreshDeviceEnrollment,
-    device: &MessagingDevice,
+    device: &ActorDevice,
 ) -> Result<(), String> {
     let certificate = &enrollment.certificate;
-    if MessagingDeviceStatus::try_from(device.status)
+    if ActorDeviceStatus::try_from(device.status)
         .map_err(|_| "messaging enrollment response status is invalid".to_string())?
-        != MessagingDeviceStatus::Active
-        || device
-            .endpoint
-            .as_ref()
-            .map(|endpoint| endpoint.ptid.as_str())
-            != Some(certificate.ptid.as_str())
-        || device
-            .endpoint
-            .as_ref()
-            .map(|endpoint| endpoint.device_id.as_str())
-            != Some(certificate.device_id.as_str())
+        != ActorDeviceStatus::Active
+        || device.r#ref.as_ref() != certificate.device.as_ref()
         || device.signing_key_id != certificate.signing_key_id
         || device.profile_version != certificate.observed_profile_version
         || device.actor_identity_key_fingerprint != certificate.actor_identity_key_fingerprint
@@ -224,14 +226,13 @@ fn build_device_certificate(
     actor_profile_version: u64,
     actor_identity: &IdentityKeyPair,
     device_signing_public_key: &[u8; 32],
-) -> MessagingDeviceCertificate {
+) -> ActorDeviceCertificate {
     let actor_public_key = actor_identity.verifying_key().to_bytes();
     let actor_fingerprint = Sha256::digest(actor_public_key);
     let device_fingerprint = Sha256::digest(device_signing_public_key);
-    MessagingDeviceCertificate {
+    ActorDeviceCertificate {
         format_version: MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
-        ptid: ptid.to_string(),
-        device_id: device_id.to_string(),
+        device: Some(actor_device_ref_from_parts(ptid, device_id)),
         actor_identity_public_key: actor_public_key.to_vec(),
         actor_identity_key_fingerprint: actor_fingerprint.to_vec(),
         device_signing_public_key: device_signing_public_key.to_vec(),

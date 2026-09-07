@@ -14,10 +14,11 @@ use messaging_core::inbox::{ClaimedItemConsumer, DirectMessageProcessor};
 use messaging_core::outbox::CommandOutboxEntry;
 use messaging_core::proto::chat::{
     conversation_event, ConversationEvent, CryptoEndpoint as ProtoCryptoEndpoint,
-    DeviceEventDelivery, DeviceQueueItem, DeviceQueuePayloadType, DirectDeviceCiphertext,
+    DeviceEventDelivery, DeviceInboxPayloadType, DirectDeviceCiphertext, DurableDeviceInboxItem,
     DoubleRatchetCiphertext, MessageCommittedFact, MessagingContentKind,
     PreparedEndpointPayloadKind,
 };
+use messaging_core::proto::actor::{ActorDeviceRef, ActorRef};
 use messaging_core::store::MessagingRepository;
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -325,14 +326,20 @@ fn direct_processor_decrypts_and_commits_message_via_repository() {
         sender_actor_identity_public_key: vec![9; 32],
     };
     let opaque_payload = delivery.encode_to_vec();
-    let item = DeviceQueueItem {
+    let item = DurableDeviceInboxItem {
         item_id: "item-1".to_string(),
-        recipient: Some(recipient_proto),
+        recipient: Some(ActorDeviceRef {
+            actor: Some(ActorRef {
+                ptid: recipient_proto.ptid,
+                ..Default::default()
+            }),
+            device_id: recipient_proto.device_id,
+        }),
         lane_sequence: 1,
         event_id: "evt-1".to_string(),
         conversation_id: "conv-1".to_string(),
         idempotency_key: "event:evt-1".to_string(),
-        payload_type: DeviceQueuePayloadType::ConversationEvent as i32,
+        payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
         opaque_payload: opaque_payload.clone(),
         payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
         ..Default::default()

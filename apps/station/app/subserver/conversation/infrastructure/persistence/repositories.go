@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -14,6 +15,8 @@ import (
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
+	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -408,6 +411,254 @@ func (r *eventRepository) List(
 		events = append(events, event)
 	}
 	return events, nil
+}
+
+const messageQueryBatchSize = 500
+
+func (r *eventRepository) ListMessages(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	after valueobject.Sequence,
+	limit int,
+) ([]domainevent.Record, error) {
+	models, err := r.listMessageModels(ctx, conversationID, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	return r.eventsFromModels(models)
+}
+
+func (r *eventRepository) ListThreadMessages(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	threadRootID valueobject.MessageID,
+	after valueobject.Sequence,
+	limit int,
+) ([]domainevent.Record, error) {
+	if threadRootID == "" {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"persistence.list_thread_messages",
+			"thread_root_message_id",
+			"is required",
+		)
+	}
+	if limit <= 0 {
+		return []domainevent.Record{}, nil
+	}
+
+	events := make([]domainevent.Record, 0, limit)
+	cursor := after
+	for len(events) < limit {
+		models, err := r.listMessageModels(
+			ctx,
+			conversationID,
+			cursor,
+			messageQueryBatchSize,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(models) == 0 {
+			break
+		}
+		for _, model := range models {
+			event, err := r.eventFromModel(model)
+			if err != nil {
+				return nil, err
+			}
+			rootID, err := canonicalThreadRoot(event)
+			if err != nil {
+				return nil, err
+			}
+			if rootID == threadRootID {
+				events = append(events, event)
+				if len(events) == limit {
+					return events, nil
+				}
+			}
+		}
+		nextCursor := valueobject.Sequence(models[len(models)-1].Sequence)
+		if nextCursor <= cursor {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeHashChainInvalid,
+				"persistence.list_thread_messages",
+				"sequence",
+				"message query cursor did not advance",
+			)
+		}
+		cursor = nextCursor
+		if len(models) < messageQueryBatchSize {
+			break
+		}
+	}
+	return events, nil
+}
+
+func (r *eventRepository) ThreadCounts(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	rootIDs []valueobject.MessageID,
+) ([]repository.ThreadCount, error) {
+	normalizedRoots, err := normalizeThreadRootIDs(rootIDs)
+	if err != nil {
+		return nil, err
+	}
+	counts := make([]repository.ThreadCount, len(normalizedRoots))
+	countIndex := make(map[valueobject.MessageID]int, len(normalizedRoots))
+	for index, rootID := range normalizedRoots {
+		counts[index].RootMessageID = rootID
+		countIndex[rootID] = index
+	}
+	if len(counts) == 0 {
+		return counts, nil
+	}
+
+	var cursor valueobject.Sequence
+	for {
+		models, err := r.listMessageModels(
+			ctx,
+			conversationID,
+			cursor,
+			messageQueryBatchSize,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(models) == 0 {
+			break
+		}
+		for _, model := range models {
+			event, err := r.eventFromModel(model)
+			if err != nil {
+				return nil, err
+			}
+			rootID, err := canonicalThreadRoot(event)
+			if err != nil {
+				return nil, err
+			}
+			index, requested := countIndex[rootID]
+			if !requested {
+				continue
+			}
+			counts[index].ReplyCount++
+			counts[index].LatestReplyID = event.Fact.MessageID
+			counts[index].LatestReplyAt = event.CommittedAt
+		}
+		nextCursor := valueobject.Sequence(models[len(models)-1].Sequence)
+		if nextCursor <= cursor {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeHashChainInvalid,
+				"persistence.thread_counts",
+				"sequence",
+				"message query cursor did not advance",
+			)
+		}
+		cursor = nextCursor
+		if len(models) < messageQueryBatchSize {
+			break
+		}
+	}
+	return counts, nil
+}
+
+func (r *eventRepository) listMessageModels(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	after valueobject.Sequence,
+	limit int,
+) ([]ConversationEventModel, error) {
+	if limit <= 0 {
+		return []ConversationEventModel{}, nil
+	}
+	var models []ConversationEventModel
+	if err := r.db.WithContext(ctx).
+		Where(
+			"conversation_id = ? AND sequence > ? AND event_kind = ?",
+			string(conversationID),
+			uint64(after),
+			string(domainevent.KindMessageCommitted),
+		).
+		Order("sequence ASC, event_id ASC").
+		Limit(limit).
+		Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("conversation persistence: list message events: %w", err)
+	}
+	return models, nil
+}
+
+func (r *eventRepository) eventsFromModels(
+	models []ConversationEventModel,
+) ([]domainevent.Record, error) {
+	events := make([]domainevent.Record, 0, len(models))
+	for _, model := range models {
+		event, err := r.eventFromModel(model)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, nil
+}
+
+func canonicalThreadRoot(event domainevent.Record) (valueobject.MessageID, error) {
+	if event.Fact.Kind != domainevent.KindMessageCommitted {
+		return "", conversationdomain.NewError(
+			conversationdomain.ErrorCodeHashChainInvalid,
+			"persistence.decode_message_query_index",
+			"event_kind",
+			"is not a committed message",
+		)
+	}
+	var source chat.ChatCommand
+	if err := proto.Unmarshal(event.Fact.Payload, &source); err != nil {
+		return "", conversationdomain.WrapError(
+			conversationdomain.ErrorCodeHashChainInvalid,
+			"persistence.decode_message_query_index",
+			fmt.Errorf("decode canonical source command: %w", err),
+		)
+	}
+	message := source.GetSendMessage()
+	if message == nil ||
+		valueobject.ConversationID(source.GetConversationId()) != event.ConversationID ||
+		valueobject.CommandID(source.GetCommandId()) != event.CommandID ||
+		source.GetSender() == nil ||
+		valueobject.PTID(source.GetSender().GetPtid()) != event.Actor.Actor ||
+		valueobject.DeviceID(source.GetSender().GetDeviceId()) != event.Actor.Device ||
+		valueobject.MessageID(message.GetMessageId()) != event.Fact.MessageID {
+		return "", conversationdomain.NewError(
+			conversationdomain.ErrorCodeHashChainInvalid,
+			"persistence.decode_message_query_index",
+			"message_identity",
+			"canonical source command disagrees with the domain event",
+		)
+	}
+	return valueobject.MessageID(message.GetThreadRootMessageId()), nil
+}
+
+func normalizeThreadRootIDs(
+	rootIDs []valueobject.MessageID,
+) ([]valueobject.MessageID, error) {
+	unique := make(map[valueobject.MessageID]struct{}, len(rootIDs))
+	for _, rootID := range rootIDs {
+		if rootID == "" {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeInvalidArgument,
+				"persistence.thread_counts",
+				"root_ids",
+				"cannot contain an empty message identity",
+			)
+		}
+		unique[rootID] = struct{}{}
+	}
+	normalized := make([]valueobject.MessageID, 0, len(unique))
+	for rootID := range unique {
+		normalized = append(normalized, rootID)
+	}
+	sort.Slice(normalized, func(i int, j int) bool {
+		return normalized[i] < normalized[j]
+	})
+	return normalized, nil
 }
 
 func (r *eventRepository) eventFromModel(

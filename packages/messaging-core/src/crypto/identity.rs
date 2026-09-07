@@ -95,7 +95,7 @@ impl IdentityKeyPair {
 pub struct DeviceSigningKey {
     signing_key: SigningKey,
     verifying_key: VerifyingKey,
-    /// Signature of the canonical MessagingDeviceCertificate by the actor's IK.
+    /// Signature of the canonical ActorDeviceCertificate by the actor's IK.
     cross_signature: Signature,
     device_id: String,
 }

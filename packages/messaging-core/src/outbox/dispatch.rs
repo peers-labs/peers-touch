@@ -1,4 +1,4 @@
-use crate::proto::chat::PrepareMessagingSendResponse;
+use crate::proto::chat::PrepareConversationCommandResponse;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandSubmitFailure {
@@ -6,7 +6,7 @@ pub enum CommandSubmitFailure {
         code: String,
     },
     StaleDeliveryPlan {
-        current_plan: PrepareMessagingSendResponse,
+        current_plan: PrepareConversationCommandResponse,
     },
     StaleAuthorityPlan {
         expired: bool,
@@ -88,7 +88,7 @@ pub enum CommandDispatchProgress {
     },
     StaleDeliveryPlan {
         command_id: String,
-        current_plan: PrepareMessagingSendResponse,
+        current_plan: PrepareConversationCommandResponse,
     },
     StaleAuthorityPlan {
         command_id: String,

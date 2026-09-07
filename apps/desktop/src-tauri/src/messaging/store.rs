@@ -29,9 +29,9 @@ use messaging_core::identity::{
     DeviceEnrollmentRepository, FreshDeviceEnrollment, FreshDeviceIdentityState,
     MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
 };
+pub use messaging_core::outbox::DeliveryReceiptOutboxEntry;
 use messaging_core::outbox::{
-    DeliveryReceiptOutboxEntry, DeliveryReceiptRepository, MetadataInteractionCommit,
-    MetadataInteractionRepository,
+    DeliveryReceiptRepository, MetadataInteractionCommit, MetadataInteractionRepository,
 };
 use messaging_core::store::{migrate_messaging_schema, MessagingSchemaBackend};
 use messaging_core::store::{
@@ -540,12 +540,6 @@ impl MessagingStore {
         let transaction = connection
             .transaction()
             .map_err(|error| error.to_string())?;
-        validate_expected_authority_head(
-            &transaction,
-            input.projection.conversation_id,
-            input.expected_authority_sequence,
-            input.expected_authority_hash,
-        )?;
         persist_prepared_command(&transaction, input.command_bytes, &input.projection)?;
         for session in input.advanced_sessions {
             upsert_direct_session(&transaction, session)?;
@@ -972,7 +966,7 @@ impl MessagingStore {
                 "SELECT receipt_id, receipt_bytes
                  FROM messaging_receipt_outbox
                  WHERE state = 'pending'
-                   AND receipt_id LIKE 'message-delivered:%'
+                   AND receipt_id LIKE 'device-consumed:%'
                  ORDER BY created_at_unix_ms ASC, receipt_id ASC
                  LIMIT 1",
                 [],
@@ -4144,9 +4138,12 @@ impl MessagingStore {
     ) -> Result<(), String> {
         let enrollment = &state.enrollment;
         let certificate = &enrollment.certificate;
-        if certificate.ptid.trim().is_empty()
-            || certificate.device_id.trim().is_empty()
-            || certificate.signing_key_id.trim().is_empty()
+        let (ptid, device_id) = certificate
+            .device
+            .as_ref()
+            .and_then(super::actor_device_parts)
+            .ok_or_else(|| "fresh messaging device identity has no endpoint".to_string())?;
+        if certificate.signing_key_id.trim().is_empty()
             || certificate.actor_identity_public_key.len() != 32
             || certificate.actor_identity_key_fingerprint.len() != 32
             || certificate.device_signing_public_key.len() != 32
@@ -4167,8 +4164,8 @@ impl MessagingStore {
                     signing_key_id, profile_version
                  ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
-                    certificate.ptid,
-                    certificate.device_id,
+                    ptid,
+                    device_id,
                     state.device_signing_seed.as_slice(),
                     certificate.actor_identity_public_key,
                     certificate.actor_identity_key_fingerprint,
@@ -5228,10 +5225,9 @@ impl MessagingStore {
             return Ok(None);
         };
         Ok(Some(FreshDeviceEnrollment {
-            certificate: crate::model::chat::MessagingDeviceCertificate {
+            certificate: messaging_core::proto::actor::ActorDeviceCertificate {
                 format_version: MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
-                ptid: row.0,
-                device_id: row.1,
+                device: Some(super::actor_device_ref(&row.0, &row.1)),
                 actor_identity_public_key: row.2,
                 actor_identity_key_fingerprint: row.3,
                 device_signing_public_key: row.4,
@@ -8507,8 +8503,15 @@ mod tests {
         let identity = IdentityKeyPair::from_seed(&[12; 32]);
         let fresh = generate_fresh_device_identity("ptid:alice", identity.seed_bytes(), 1).unwrap();
         store.install_fresh_device_identity(&fresh).unwrap();
+        let (_, device_id) = fresh
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .and_then(super::actor_device_parts)
+            .unwrap();
         store
-            .complete_device_enrollment(&fresh.enrollment.certificate.device_id)
+            .complete_device_enrollment(device_id)
             .unwrap();
         MlsKeyPackageRepository::install_fresh_mls_key_packages(
             &store,

@@ -10,6 +10,7 @@ import (
 
 	appmeta "github.com/peers-labs/peers-touch/station/app/subserver/app_meta"
 	appletstore "github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
+	actoridentity "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity"
 	convsub "github.com/peers-labs/peers-touch/station/app/subserver/conversation"
 	envelopesub "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
@@ -19,6 +20,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
 	officialapplets "github.com/peers-labs/peers-touch/station/app/subserver/official_applets"
 	"github.com/peers-labs/peers-touch/station/app/subserver/presence"
+	recoverysub "github.com/peers-labs/peers-touch/station/app/subserver/recovery"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard"
@@ -51,9 +53,11 @@ func main() {
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("/debug")),
 		server.WithSubServer("events", events.NewEventsSubServer),
 		server.WithSubServer("envelope", envelopesub.NewEnvelopeSubServer),
+		server.WithSubServer("actor_identity", actoridentity.NewActorIdentitySubServer),
 		server.WithSubServer("conversation", convsub.NewConversationSubServer),
 		server.WithSubServer("presence", presence.NewPresenceSubServer),
 		server.WithSubServer("key_exchange", keyexchange.NewKeyExchangeSubServer),
+		server.WithSubServer("recovery", recoverysub.NewRecoverySubServer),
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
 		server.WithSubServer("social", social.NewSocialSubServer),
 		server.WithSubServer("notification", notifsubserver.NewNotificationSubServer),
