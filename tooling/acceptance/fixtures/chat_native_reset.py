@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -55,9 +54,10 @@ CHAT_TABLES = (
     "federated_mls_key_package_claims",
     "federation_delivery_inbox",
     "federation_delivery_outbox",
-    "friend_chat_friend_requests",
     "friend_chat_friendships",
+    "key_exchange_direct_fetch_receipts",
     "key_exchange_identity_keys",
+    "key_exchange_mls_fetch_receipts",
     "key_exchange_one_time_pre_keys",
     "key_exchange_signed_pre_keys",
     "mls_key_packages",
@@ -66,6 +66,39 @@ CHAT_TABLES = (
     "social_friend_request_effects",
     "social_friend_requests",
     "social_relationship_projections",
+)
+RETIRED_CHAT_TABLES = (
+    "conversation_command_proposals",
+    "conversation_follower_applied_events",
+    "conversation_follower_buffer",
+    "conversation_follower_member_devices",
+    "conversation_follower_projection",
+    "envelope_idempotency",
+    "envelope_inbox",
+    "envelope_outbox",
+    "federated_endpoint_manifests",
+    "friend_chat_friend_requests",
+    "messaging_attachment_audit",
+    "messaging_attachment_grants",
+    "messaging_attachment_objects",
+    "messaging_attachment_upload_parts",
+    "messaging_attachment_uploads",
+    "messaging_authority_plans",
+    "messaging_command_receipts",
+    "messaging_conversation_member_devices",
+    "messaging_conversation_members",
+    "messaging_conversations",
+    "messaging_endpoint_directory_versions",
+    "messaging_event_projection_targets",
+    "messaging_events",
+    "messaging_federation_inbox",
+    "messaging_federation_outbox",
+    "messaging_follower_conversations",
+    "messaging_follower_event_receipts",
+    "messaging_follower_members",
+    "messaging_follower_pending_events",
+    "messaging_read_cursors",
+    "messaging_recovery_revisions",
 )
 
 
@@ -536,11 +569,6 @@ def seed_cross_station_contact(
 ) -> None:
     environment = acceptance_station_environment(station_url, environment_name)
     verify_disposable_station_runtime(environment)
-    pair_key = "|".join(sorted((actor_ptid, peer.ptid)))
-    request_id = (
-        "acceptance-cross-"
-        + hashlib.sha256(pair_key.encode("utf-8")).hexdigest()[:24]
-    )
     sql = f"""
 BEGIN;
 LOCK TABLE touch_actor IN SHARE ROW EXCLUSIVE MODE;
@@ -632,31 +660,6 @@ SELECT
 FROM relationship_edges
 CROSS JOIN next_follow_id
 ON CONFLICT (follower_id, following_id) DO NOTHING;
-DELETE FROM friend_chat_friend_requests
-WHERE request_id = 'acceptance-alice-bob';
-INSERT INTO friend_chat_friend_requests (
-  request_id,
-  pair_key,
-  sender_ptid,
-  receiver_ptid,
-  status,
-  message,
-  created_at,
-  updated_at
-) VALUES (
-  {_sql_literal(request_id)},
-  {_sql_literal(pair_key)},
-  {_sql_literal(actor_ptid)},
-  {_sql_literal(peer.ptid)},
-  2,
-  '',
-  clock_timestamp(),
-  clock_timestamp()
-)
-ON CONFLICT (pair_key, status) DO UPDATE SET
-  sender_ptid = EXCLUDED.sender_ptid,
-  receiver_ptid = EXCLUDED.receiver_ptid,
-  updated_at = EXCLUDED.updated_at;
 DO $acceptance$
 DECLARE
   relationship_edge_count integer;
@@ -781,6 +784,10 @@ def reset_local_client_storage(
 
 
 def reset_station_chat_state(environment_name: str) -> None:
+    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
+        raise RuntimeError(
+            "CHAT_ACCEPTANCE_RESET=1 is required for destructive Chat reset"
+        )
     environment = deploy_environment(environment_name)
     station_url = environment.get("PT_ACCEPTANCE_STATION_URL", "").strip()
     environment = acceptance_station_environment(
@@ -789,9 +796,31 @@ def reset_station_chat_state(environment_name: str) -> None:
     )
     verify_disposable_station_runtime(environment)
     container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
+    canonical_table_names = ", ".join(
+        _sql_literal(table) for table in CHAT_TABLES
+    )
+    retired_table_names = ", ".join(RETIRED_CHAT_TABLES)
     sql = f"""
 BEGIN;
-TRUNCATE TABLE {', '.join(CHAT_TABLES)} CASCADE;
+DROP TABLE IF EXISTS {retired_table_names} CASCADE;
+DO $acceptance_reset$
+DECLARE
+  existing_tables text;
+BEGIN
+  SELECT string_agg(
+    format('%I.%I', schemaname, tablename),
+    ', ' ORDER BY tablename
+  )
+  INTO existing_tables
+  FROM pg_tables
+  WHERE schemaname = current_schema()
+    AND tablename = ANY (ARRAY[{canonical_table_names}]::text[]);
+
+  IF existing_tables IS NOT NULL THEN
+    EXECUTE 'TRUNCATE TABLE ' || existing_tables || ' CASCADE';
+  END IF;
+END
+$acceptance_reset$;
 DELETE FROM touch_actor WHERE origin = 'remote_cached';
 DO $acceptance$
 DECLARE
@@ -849,50 +878,6 @@ BEGIN
   IF mutual_follow_count <> 6 THEN
     RAISE EXCEPTION 'native Chat preset mutual follows are incomplete';
   END IF;
-
-  INSERT INTO friend_chat_friend_requests (
-    request_id,
-    pair_key,
-    sender_ptid,
-    receiver_ptid,
-    status,
-    message,
-    created_at,
-    updated_at
-  ) VALUES
-    (
-      'acceptance-alice-bob',
-      LEAST(alice_actor_ptid, bob_actor_ptid) || '|' ||
-        GREATEST(alice_actor_ptid, bob_actor_ptid),
-      alice_actor_ptid,
-      bob_actor_ptid,
-      2,
-      '',
-      clock_timestamp(),
-      clock_timestamp()
-    ),
-    (
-      'acceptance-alice-carol',
-      LEAST(alice_actor_ptid, carol_actor_ptid) || '|' ||
-        GREATEST(alice_actor_ptid, carol_actor_ptid),
-      alice_actor_ptid,
-      carol_actor_ptid,
-      2,
-      '',
-      clock_timestamp(),
-      clock_timestamp()
-    ),
-    (
-      'acceptance-bob-carol',
-      LEAST(bob_actor_ptid, carol_actor_ptid) || '|' ||
-        GREATEST(bob_actor_ptid, carol_actor_ptid),
-      bob_actor_ptid,
-      carol_actor_ptid,
-      2,
-      '',
-      clock_timestamp(),
-      clock_timestamp()
-    );
 END
 $acceptance$;
 COMMIT;
