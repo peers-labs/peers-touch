@@ -4328,8 +4328,45 @@ async function runFoundationAttachmentRejectedScenario(input: {
         'agent.acceptance.foundationAttachmentDraftIdentityMissing',
       );
     }
-    await api.ossDeleteAgentAttachment(objectRef);
-    await foundationAttachmentDeletionReadback(objectRef);
+    const deletion = await api.ossDeleteAgentAttachment(objectRef);
+    await reportFoundationAttachmentTimeoutDebug('E-G', 'delete-resolved', {
+      deletedAtPresent: Boolean(deletion.deleted_at?.trim()),
+      alreadyDeleted: deletion.already_deleted,
+    });
+    try {
+      const readback = await foundationAttachmentDeletionReadback(objectRef);
+      await reportFoundationAttachmentTimeoutDebug(
+        'E-G',
+        'deletion-readback-resolved',
+        {
+          source: readback.source,
+          deletedAtPresent: Boolean(readback.deletedAt),
+          readAttempt: readback.readAttempt,
+        },
+      );
+    } catch (error) {
+      const errorRecord =
+        error && typeof error === 'object'
+          ? error as { name?: unknown; message?: unknown; code?: unknown; cause?: unknown }
+          : {};
+      const causeRecord =
+        errorRecord.cause && typeof errorRecord.cause === 'object'
+          ? errorRecord.cause as { name?: unknown; message?: unknown; code?: unknown }
+          : {};
+      await reportFoundationAttachmentTimeoutDebug(
+        'E-G',
+        'deletion-readback-failed',
+        {
+          errorName: String(errorRecord.name ?? ''),
+          errorMessage: String(errorRecord.message ?? error),
+          errorCode: String(errorRecord.code ?? ''),
+          causeName: String(causeRecord.name ?? ''),
+          causeMessage: String(causeRecord.message ?? ''),
+          causeCode: String(causeRecord.code ?? ''),
+        },
+      );
+      throw error;
+    }
 
     const draftText =
       `Reject the invalid attachment before execution ${input.sampleId}`;
@@ -4499,6 +4536,15 @@ async function runFoundationAttachmentRejectedScenario(input: {
 
     const deletionReadback =
       await foundationAttachmentDeletionReadback(objectRef);
+    await reportFoundationAttachmentTimeoutDebug(
+      'E-G',
+      'post-rejection-deletion-readback-resolved',
+      {
+        source: deletionReadback.source,
+        deletedAtPresent: Boolean(deletionReadback.deletedAt),
+        readAttempt: deletionReadback.readAttempt,
+      },
+    );
 
     const after = await foundationExecutionSnapshot(
       agentId,

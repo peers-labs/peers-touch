@@ -65,7 +65,8 @@ use crate::application::tts as app_tts;
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
 use crate::interface::tauri_commands::oss::{
-    safe_temp_filename, OssKeyInput, OssResolveUrlInput, OssUploadAttachmentBytesInput,
+    safe_temp_filename, OssKeyInput, OssListMyFilesInput, OssResolveUrlInput,
+    OssUploadAttachmentBytesInput,
 };
 use crate::model;
 use prost::Message;
@@ -2461,6 +2462,25 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(error) => return error,
             };
             to_json(app_oss::oss_resolve_url(&input.uri, &token, &actor_ptid))
+        }
+        "oss_list_my_files" => {
+            let input = match parse_args::<OssListMyFilesInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            let query = app_oss::ListMyFilesQuery {
+                bucket: input.bucket,
+                visibility: input.visibility,
+                mime: input.mime,
+                include_deleted: input.include_deleted,
+                page: input.page,
+                page_size: input.page_size,
+            };
+            to_json(app_oss::oss_list_my_files(&token, &query))
         }
         "oss_delete_file" => {
             let input = match parse_args::<OssKeyInput>(args) {
@@ -8475,6 +8495,39 @@ mod tests {
         let runtime = GatewayRuntime::headless();
 
         let result = dispatch("acceptance_current_session", json!({}), &state, &runtime);
+
+        assert_eq!(result.get("ok").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            result
+                .get("error")
+                .and_then(|error| error.get("code"))
+                .and_then(Value::as_str),
+            Some("UNAUTHORIZED")
+        );
+    }
+
+    #[test]
+    fn oss_list_my_files_routes_to_authenticated_application_boundary() {
+        let layout = temp_layout("oss-list-auth");
+        let config_dir = layout
+            .dirs
+            .get(&StorageKind::Config)
+            .cloned()
+            .unwrap_or_else(PathBuf::new);
+        let state = AppState::new(layout, I18nService::new(&config_dir));
+        let runtime = GatewayRuntime::headless();
+
+        let result = dispatch(
+            "oss_list_my_files",
+            json!({
+                "include_deleted": true,
+                "mime": "application/pdf",
+                "page": 1,
+                "page_size": 200
+            }),
+            &state,
+            &runtime,
+        );
 
         assert_eq!(result.get("ok").and_then(Value::as_bool), Some(false));
         assert_eq!(
