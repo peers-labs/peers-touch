@@ -781,6 +781,10 @@ class FoundationCandidateProducerTest(unittest.TestCase):
     def test_token_accounting_fields_are_not_treated_as_credentials(self) -> None:
         _ensure_evidence_safe(
             {
+                "details": {
+                    "actual_tokens": "128",
+                    "limit_tokens": "64",
+                },
                 "limits": {
                     "contextTokens": 128000,
                     "outputTokens": 8192,
@@ -793,6 +797,15 @@ class FoundationCandidateProducerTest(unittest.TestCase):
             },
             "runtimeAttestation",
         )
+
+        with self.assertRaisesRegex(
+            FoundationCandidateError,
+            "secret-bearing evidence field",
+        ):
+            _ensure_evidence_safe(
+                {"details": {"api_token": "must-not-be-persisted"}},
+                "runtimeAttestation",
+            )
 
     def test_object_path_hash_is_not_treated_as_secret(self) -> None:
         _ensure_evidence_safe(
