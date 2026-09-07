@@ -68,4 +68,13 @@ post-fix comparison.
 - Focused Foundation/oracle/static tests: `170/170` passed.
 - Full Agent Acceptance discovery: `321/321` passed.
 - Python compilation and `git diff --check`: passed.
-- Exact-source post-fix runtime verification remains pending.
+- Exact-source post-fix Gate:
+  `20260907T120307080667Z-8452fb7d9d650470a5dc6a1f396fb3cb`.
+- Browser English and Simplified Chinese live, reload, and replay phases all
+  retained one canonical Station message ID, exact localized text, typed
+  cancellation metadata, phase-specific error details, and no recovery action.
+- The Gate advanced to `BASE-CONTEXT_OVERFLOW`, where the direct-runtime group
+  is not implemented.
+- Provisioner cleanup completed `DONE / PROVEN / passed`.
+- `BASE-CANCELLED` is source-backed closed. Foundation/G-F remain
+  `PARTIAL / UNPROVEN`.

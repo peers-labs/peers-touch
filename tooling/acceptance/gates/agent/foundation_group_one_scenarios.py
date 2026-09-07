@@ -2702,6 +2702,176 @@ def evaluate_base_approval_denied(
     return assertions
 
 
+def evaluate_base_context_overflow(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-CONTEXT_OVERFLOW"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+    try:
+        limit_tokens = int(str(details.get("limit_tokens", "")))
+        actual_tokens = int(str(details.get("actual_tokens", "")))
+    except ValueError:
+        limit_tokens = 0
+        actual_tokens = 0
+
+    assertions = {
+        "typedContextOverflow": (
+            outcome.get("error") == "agent.errors.contextOverflow"
+            and outcome.get("error_type") == "CONTEXT_OVERFLOW"
+            and outcome.get("locale_key") == "agent.errors.contextOverflow"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details) == ["actual_tokens", "limit_tokens"]
+            and limit_tokens > 0
+            and actual_tokens > limit_tokens
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType") == "CONTEXT_OVERFLOW"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            ) > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            ) > 0
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and _sha256_string(
+                runtime_event,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            and runtime_event.get("sourceConversationId")
+            == station.get("conversationId")
+            and runtime_event.get("sourceTurnId") == ""
+            and runtime_event.get("sourceSequence") == 0
+            and runtime_event.get("sourceEventType") == "error"
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "rejectedDraftPreserved": (
+            _positive_int(
+                receiver,
+                "draftLengthBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                receiver,
+                "draftLengthAfterRejection",
+                scenario=scenario,
+            )
+            and _sha256_string(
+                receiver,
+                "draftHashBefore",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                receiver,
+                "draftHashAfterRejection",
+                scenario=scenario,
+            )
+        ),
+        "reduceContextExecuted": (
+            receiver.get("composerFocusedAfterRecovery") is True
+            and 0 < _positive_int(
+                receiver,
+                "reducedDraftLength",
+                scenario=scenario,
+            )
+            < _positive_int(
+                receiver,
+                "draftLengthAfterRejection",
+                scenario=scenario,
+            )
+            and _sha256_string(
+                receiver,
+                "reducedDraftHash",
+                scenario=scenario,
+            )
+        ),
+        "stationStateUnchanged": (
+            station.get("conversationVersionAfter")
+            == station.get("conversationVersionBefore")
+            and _sha256_string(
+                station,
+                "afterHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                station,
+                "beforeHash",
+                scenario=scenario,
+            )
+        ),
+        "zeroPersistenceAndProvider": (
+            _nonnegative_int(station, "turnDelta", scenario=scenario) == 0
+            and _nonnegative_int(station, "messageDelta", scenario=scenario)
+            == 0
+            and _nonnegative_int(station, "queueDelta", scenario=scenario)
+            == 0
+            and _nonnegative_int(
+                station,
+                "providerExecutionDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "sourceHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            )
+        ),
+        "cleanupComplete": (
+            cleanup.get("draftCleared") is True
+            and cleanup.get("localProjectionCleared") is True
+            and cleanup.get("conversationDeleted") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_attachment_rejected(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

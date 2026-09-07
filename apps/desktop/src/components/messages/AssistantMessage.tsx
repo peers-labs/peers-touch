@@ -19,6 +19,7 @@ import {
   Braces,
   Workflow,
   ExternalLink,
+  Minimize2,
 } from 'lucide-react';
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact } from '../../store/chat';
 import { extractMessageArtifacts, useChatStore } from '../../store/chat';
@@ -347,6 +348,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const retryMessage = useChatStore(s => s.retryMessage);
   const retryTurnRecovery = useChatStore(s => s.retryTurnRecovery);
   const reloadTurnSnapshot = useChatStore(s => s.reloadTurnSnapshot);
+  const requestComposerFocus = useChatStore(s => s.requestComposerFocus);
   const sendMessage = useChatStore(s => s.sendMessage);
   const translateMessage = useChatStore(s => s.translateMessage);
   const openThread = usePortalStore(s => s.openThread);
@@ -370,6 +372,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const messageModel = message.model ? availableModels.find((model) => model.id === message.model) : undefined;
   const providerName = messageModel?.provider_name || messageModel?.provider_id || activeAgent?.provider || '';
   const agentDisplayName = activeAgent?.title || activeAgent?.name;
+  const isContextOverflow =
+    message.typedError?.error_type === 'CONTEXT_OVERFLOW';
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
 
   const handleCopy = useCallback(() => {
@@ -671,6 +675,19 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
               <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ flex: 1 }}>
                 <div>{presentedError}</div>
+                {isContextOverflow && (
+                  <Button
+                    data-pt-agent-message-error-recovery="reduce-context"
+                    type="primary"
+                    size="small"
+                    danger
+                    icon={<Minimize2 size={14} />}
+                    style={{ marginTop: 8 }}
+                    onClick={requestComposerFocus}
+                  >
+                    {t('agent.recovery.reduceContext', { ns: 'agent' })}
+                  </Button>
+                )}
                 {message.resolution && (
                   <Button
                     data-pt-agent-message-error-recovery

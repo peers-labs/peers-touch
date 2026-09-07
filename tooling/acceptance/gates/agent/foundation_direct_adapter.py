@@ -179,6 +179,18 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-CONTEXT_OVERFLOW": frozenset(
+        {
+            "typedContextOverflow",
+            "localizedRecoveryVisible",
+            "rejectedDraftPreserved",
+            "reduceContextExecuted",
+            "stationStateUnchanged",
+            "zeroPersistenceAndProvider",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
     "BASE-APPROVAL_DENIED": frozenset(
         {
             "typedDenialProjected",
