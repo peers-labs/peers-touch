@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `ca99eab47e6d6d07b4cbc35e374c1c4cd255da16` uploads a valid PDF through the real composer and tombstones its actor-owned object before the real Send action. Exact-source runtime confirmed upload and delete, then exposed missing Browser HTTP gateway parity for `oss_list_my_files`, which blocked authenticated tombstone readback before Send. The local correction adds that existing application command to the Browser dispatch boundary; post-parity proof remains pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `504c543b8186f3033654750d5070bd6abfdda306` restored Browser HTTP gateway parity for `oss_list_my_files`. Exact-source runtime then completed valid upload, authenticated tombstone readback, real Send rejection, and post-rejection readback; candidate validation rejected only the secret-bearing evidence field name `keyHash`. The local correction renames it to `objectPathHash` without changing the SHA-256 value or assertion strength. Post-fix proof remains pending, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -5876,6 +5876,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Foundation/oracle tests, Rust formatting, and `git diff --check` pass.
   Foundation/G-F remain `PARTIAL / UNPROVEN` pending checkpoint, exact-source
   deployment, and the unchanged Gate rerun.
+- Checkpoint `504c543b8186f3033654750d5070bd6abfdda306` was rebuilt,
+  smoke-tested, and deployed exact-source. Gate run
+  `20260907T053637546032Z-3ba1d711d87edb0c2290589af51c5f88`
+  completed the Browser English attachment scenario through valid upload,
+  authenticated tombstone readback, Station rejection, and post-rejection
+  tombstone readback. Candidate evidence validation then failed closed because
+  `cleanup.proof.deletionReadback.keyHash` is a secret-bearing field name.
+  The local correction renames that hashed field to `objectPathHash` across the
+  producer, local evaluator, independent oracle, and focused fixtures without
+  changing its value or weakening cleanup proof. Provisioner cleanup completed
+  `DONE / PROVEN / passed`. The dedicated evidence-safety regression and
+  `145/145` focused Foundation/oracle tests pass; the broader candidate
+  producer invocation retains its two known unrelated `receiver-dom`
+  fixture/profile errors. Foundation/G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
