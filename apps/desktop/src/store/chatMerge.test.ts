@@ -158,18 +158,35 @@ describe('mergeServerMessages', () => {
   });
 
   it('carries a recovered cancelled terminal fact to a persisted message with the same turn', () => {
+    const typedError = {
+      error: 'agent.errors.lifecycleCancelled',
+      error_type: 'LIFECYCLE_CANCELLED',
+      locale_key: 'agent.errors.lifecycleCancelled',
+      retryable: false,
+      terminal: true,
+      details: {
+        resource_kind: 'turn',
+        resource_id: 'turn-1',
+      },
+    };
     const current = [
       msg('recovered-turn-1', 'assistant', 'partial answer', {
         turnId: 'turn-1',
         loading: false,
         cancelled: true,
         terminalStatus: 'cancelled',
+        error: typedError.locale_key,
+        typedError,
       }),
     ];
     const server = [
       msg('assistant-1', 'assistant', 'persisted partial answer', {
         turnId: 'turn-1',
-        loading: true,
+        loading: false,
+        cancelled: true,
+        terminalStatus: 'cancelled',
+        error: typedError.locale_key,
+        typedError,
       }),
     ];
 
@@ -182,6 +199,8 @@ describe('mergeServerMessages', () => {
       loading: false,
       cancelled: true,
       terminalStatus: 'cancelled',
+      error: 'agent.errors.lifecycleCancelled',
+      typedError,
     });
   });
 
