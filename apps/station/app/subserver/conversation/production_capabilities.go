@@ -14,6 +14,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
@@ -1620,6 +1621,37 @@ func (s *subServer) EnsureAcceptedRelationshipDirectConversation(
 	if err != nil {
 		return "", err
 	}
+	conversationID, err := valueobject.DirectConversationID(actorA, actorB)
+	if err != nil {
+		return "", err
+	}
+	existing, getErr := s.composition.QueryService.Get(
+		ctx,
+		conversationID,
+		actorA,
+	)
+	switch {
+	case getErr == nil:
+		if !existingDirectCanReopen(
+			existing,
+			federation,
+			actorA,
+			actorB,
+			s.localStation,
+		) {
+			return "", conversationdomain.NewError(
+				conversationdomain.ErrorCodeCommandConflict,
+				"production_capabilities.ensure_accepted_relationship_direct",
+				"conversation",
+				"does not match the accepted relationship",
+			)
+		}
+
+		return string(conversationID), nil
+	case !conversationdomain.IsCode(getErr, conversationdomain.ErrorCodeNotFound):
+		return "", getErr
+	}
+
 	var creator valueobject.Endpoint
 	err = s.composition.UnitOfWork.Execute(
 		ctx,
@@ -1660,7 +1692,14 @@ func (s *subServer) EnsureAcceptedRelationshipDirectConversation(
 	if err != nil {
 		return "", err
 	}
-	result, err := s.composition.CommandService.CreateDirect(
+	verifiedRoutes, err := s.productionEndpointRoutes(
+		ctx,
+		[]valueobject.PTID{actorA, actorB},
+	)
+	if err != nil {
+		return "", err
+	}
+	result, err := s.composition.CommandService.EnsureDirect(
 		ctx,
 		command.CreateDirectRequest{
 			Creator:           creator,
@@ -1668,6 +1707,7 @@ func (s *subServer) EnsureAcceptedRelationshipDirectConversation(
 			FederationID:      federation,
 			AuthorityEpoch:    initialConversationAuthorityEpoch,
 			CommandID:         valueobject.CommandID(requestID),
+			VerifiedRoutes:    verifiedRoutes,
 			ExactCommandBytes: exactBytes,
 		},
 	)
@@ -1679,6 +1719,45 @@ func (s *subServer) EnsureAcceptedRelationshipDirectConversation(
 	}
 
 	return string(result.Conversation.ID), nil
+}
+
+func existingDirectCanReopen(
+	view query.ConversationView,
+	federationID valueobject.FederationID,
+	actorA valueobject.PTID,
+	actorB valueobject.PTID,
+	localStation valueobject.StationID,
+) bool {
+	snapshot := view.Conversation
+	if snapshot.Kind != valueobject.ConversationKindDirect ||
+		snapshot.Status != valueobject.ConversationStatusActive ||
+		snapshot.FederationID != federationID {
+		return false
+	}
+	activeMembers := make(map[valueobject.PTID]struct{}, len(snapshot.Members))
+	for _, member := range snapshot.Members {
+		if member.Active() {
+			activeMembers[member.Actor] = struct{}{}
+		}
+	}
+	if len(activeMembers) != 2 {
+		return false
+	}
+	_, hasActorA := activeMembers[actorA]
+	_, hasActorB := activeMembers[actorB]
+
+	if !hasActorA || !hasActorB {
+		return false
+	}
+	switch view.Source {
+	case query.SourceAuthority:
+		return snapshot.AuthorityStation == localStation
+	case query.SourceFollower:
+		return snapshot.AuthorityStation != localStation &&
+			view.FollowerStatus == repository.FollowerStatusActive
+	default:
+		return false
+	}
 }
 
 var (

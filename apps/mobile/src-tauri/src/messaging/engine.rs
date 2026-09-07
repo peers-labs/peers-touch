@@ -44,7 +44,7 @@ use messaging_core::ports::AttachmentBlob;
 use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
     chat_command, ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationKind,
-    CryptoEndpoint, DurableDeviceInboxItem, PrepareConversationCommandRequest,
+    ConversationStatus, CryptoEndpoint, DurableDeviceInboxItem, PrepareConversationCommandRequest,
     PrepareConversationCommandResponse, SubmitConversationReadCursorRequest,
     SubmitConversationTypingRequest,
 };
@@ -582,18 +582,25 @@ impl MobileMessagingEngine {
             self.proto_endpoint(),
         )?
         .create_direct(peer_ptid, federation_id, command_id)?;
-        let conversation_id = response
-            .conversation
-            .map(|conversation| conversation.conversation_id)
-            .filter(|conversation_id| !conversation_id.trim().is_empty())
-            .ok_or_else(|| {
-                "mobile messaging Station returned no direct conversation".to_string()
-            })?;
-        let event = response.event.ok_or_else(|| {
-            "mobile messaging Station returned no direct creation event".to_string()
+        let conversation = response.conversation.ok_or_else(|| {
+            "mobile messaging Station returned no direct conversation".to_string()
         })?;
-        if event.command_id != command_id || event.conversation_id != conversation_id {
-            return Err("mobile messaging direct creation response binding mismatch".to_string());
+        if conversation.conversation_id.trim().is_empty()
+            || conversation.kind != ConversationKind::Direct as i32
+            || conversation.status != ConversationStatus::Active as i32
+            || conversation.federation_id != federation_id
+            || conversation.authority_station_peer_id.trim().is_empty()
+        {
+            return Err("mobile messaging direct conversation response is invalid".to_string());
+        }
+        let conversation_id = conversation.conversation_id;
+        // Reopening an existing deterministic Direct does not commit a new event.
+        if let Some(event) = response.event {
+            if event.command_id != command_id || event.conversation_id != conversation_id {
+                return Err(
+                    "mobile messaging direct creation response binding mismatch".to_string()
+                );
+            }
         }
         Ok(PreparedDirectConversation {
             conversation_id,
