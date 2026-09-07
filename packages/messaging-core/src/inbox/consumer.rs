@@ -3,7 +3,7 @@ use crate::inbox::{
     DirectMessageProcessor, PublicEventProcessor,
 };
 use crate::proto::chat::{
-    conversation_event, DeviceEventDelivery, DeviceQueueItem, DeviceQueuePayloadType,
+    conversation_event, DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
     PreparedEndpointPayloadKind,
 };
 use crate::store::MessagingRepository;
@@ -13,16 +13,22 @@ use std::sync::Arc;
 pub trait MlsItemConsumer: Send + Sync {
     fn consume_application(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String>;
-    fn consume_transition(&self, item: &DeviceQueueItem, consumer_epoch: u64)
-        -> Result<(), String>;
-    fn consume_retirement(&self, item: &DeviceQueueItem, consumer_epoch: u64)
-        -> Result<(), String>;
+    fn consume_transition(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), String>;
+    fn consume_retirement(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), String>;
     fn consume_sender_transition(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String>;
 }
@@ -56,13 +62,13 @@ impl<R: MessagingRepository, M: MlsItemConsumer> MessagingItemConsumer<R, M> {
 impl<R: MessagingRepository, M: MlsItemConsumer> ClaimedItemConsumer
     for MessagingItemConsumer<R, M>
 {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
-        let payload_type = DeviceQueuePayloadType::try_from(item.payload_type)
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+        let payload_type = DeviceInboxPayloadType::try_from(item.payload_type)
             .map_err(|_| "messaging queue payload type is invalid".to_string())?;
-        if payload_type == DeviceQueuePayloadType::DeviceReceipt {
+        if payload_type == DeviceInboxPayloadType::DeviceReceipt {
             return self.delivery_receipt.consume(item, consumer_epoch);
         }
-        if payload_type != DeviceQueuePayloadType::ConversationEvent {
+        if payload_type != DeviceInboxPayloadType::ConversationEvent {
             return Err("messaging consumer received unsupported queue payload type".to_string());
         }
         let delivery = DeviceEventDelivery::decode(item.opaque_payload.as_slice())

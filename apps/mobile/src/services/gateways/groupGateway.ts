@@ -21,14 +21,8 @@ import {
 // Raw JSON shapes from Station (quarantined inside this module)
 // ---------------------------------------------------------------------------
 
-interface ListGroupsRaw {
-  groups?: Group[];
-  total?: number;
-}
-
-interface ListGroupMembersRaw {
-  members?: GroupMember[];
-  total?: number;
+interface ListConversationMembersRaw {
+  members?: Array<Record<string, unknown>>;
 }
 
 interface GroupSettingsRaw {
@@ -104,13 +98,11 @@ export interface UpdateGroupSettingsInput {
 
 export interface GroupGateway {
   // Group lifecycle
-  createGroup: (input: CreateGroupInput) => Promise<CommandOutcome<{ group?: Group }>>;
   updateGroup: (groupUlid: string, input: UpdateGroupInput) => Promise<CommandOutcome<{ group?: Group }>>;
-  listGroups: (limit?: number, offset?: number) => Promise<CommandOutcome<GroupListResult>>;
   dissolveGroup: (groupUlid: string) => Promise<CommandOutcome<Record<string, unknown>>>;
 
   // Members
-  listMembers: (groupUlid: string, limit?: number, offset?: number) => Promise<CommandOutcome<GroupMembersResult>>;
+  listMembers: (groupUlid: string) => Promise<CommandOutcome<GroupMembersResult>>;
   inviteMembers: (groupUlid: string, inviteePtids: string[]) => Promise<CommandOutcome<Record<string, unknown>>>;
   leaveGroup: (groupUlid: string) => Promise<CommandOutcome<Record<string, unknown>>>;
   removeMember: (groupUlid: string, actorPtid: string) => Promise<CommandOutcome<Record<string, unknown>>>;
@@ -132,19 +124,6 @@ export function createGroupGateway(session: MobileAuthSession): GroupGateway {
 
   return {
     // --- Group lifecycle ---
-    createGroup: (input) =>
-      command({
-        method: 'POST',
-        path: '/group-chat/create',
-        body: {
-          name: input.name,
-          description: input.description ?? '',
-          type: 1,
-          visibility: 2,
-          initial_member_ptids: input.initialMemberPtids,
-        },
-      }),
-
     updateGroup: (groupUlid, input) =>
       command({
         method: 'PUT',
@@ -157,30 +136,20 @@ export function createGroupGateway(session: MobileAuthSession): GroupGateway {
         },
       }),
 
-    listGroups: async (limit = 50, offset = 0) => {
-      const result = await command<ListGroupsRaw>({
-        method: 'GET',
-        path: '/group-chat/list',
-        query: { limit, offset },
-      });
-      if (!result.ok) return result;
-      const groups = result.data.groups ?? [];
-      return { ok: true, data: { groups, total: result.data.total ?? groups.length } };
-    },
-
     dissolveGroup: (groupUlid) =>
       command({ method: 'POST', path: '/group-chat/dissolve', body: { group_ulid: groupUlid } }),
 
     // --- Members ---
-    listMembers: async (groupUlid, limit = 100, offset = 0) => {
-      const result = await command<ListGroupMembersRaw>({
+    listMembers: async (groupUlid) => {
+      const result = await command<ListConversationMembersRaw>({
         method: 'GET',
-        path: '/group-chat/members',
-        query: { group_ulid: groupUlid, limit, offset },
+        path: '/conversation/members',
+        query: { conversation_id: groupUlid },
       });
       if (!result.ok) return result;
-      const members = result.data.members ?? [];
-      return { ok: true, data: { members, total: result.data.total ?? members.length } };
+      const members = (result.data.members ?? []).map((member) =>
+        conversationMemberToGroupMember(member, groupUlid));
+      return { ok: true, data: { members, total: members.length } };
     },
 
     inviteMembers: (groupUlid, inviteePtids) =>
@@ -206,34 +175,42 @@ export function createGroupGateway(session: MobileAuthSession): GroupGateway {
       }),
 
     updateMyNickname: (groupUlid, nickname) =>
-      command({ method: 'PUT', path: '/group-chat/member/nickname', body: { group_ulid: groupUlid, nickname } }),
+      command({
+        method: 'PUT',
+        path: '/conversation/member/settings',
+        body: {
+          conversation_id: groupUlid,
+          settings: { nickname },
+        },
+      }),
 
     transferOwnership: (groupUlid, nextOwnerPtid) =>
       command({ method: 'POST', path: '/group-chat/ownership/transfer', body: { group_ulid: groupUlid, next_owner_ptid: nextOwnerPtid } }),
 
     // --- Settings ---
     getMySettings: async (groupUlid) => {
-      const result = await command<GroupSettingsRaw>({
+      const result = await command<{ settings?: GroupSettingsRaw }>({
         method: 'GET',
-        path: '/group-chat/my-settings',
-        query: { group_ulid: groupUlid },
+        path: '/conversation/member/settings',
+        query: { conversation_id: groupUlid },
       });
       if (!result.ok) return result;
-      return { ok: true, data: normalizeGroupSettings(result.data) };
+      return { ok: true, data: normalizeGroupSettings(result.data.settings ?? result.data) };
     },
 
     updateMySettings: (groupUlid, input) =>
       command({
         method: 'PUT',
-        path: '/group-chat/my-settings',
+        path: '/conversation/member/settings',
         body: {
-          group_ulid: groupUlid,
-          ...(input.isMuted !== undefined ? { is_muted: input.isMuted } : {}),
-          ...(input.isPinned !== undefined ? { is_pinned: input.isPinned } : {}),
-          ...(input.showMemberNickname !== undefined ? { show_member_nickname: input.showMemberNickname } : {}),
-          ...(input.alertEnabled !== undefined ? { alert_enabled: input.alertEnabled } : {}),
-          ...(input.background !== undefined ? { background: input.background } : {}),
-          ...(input.clearedAt !== undefined ? { cleared_at_unix_ms: input.clearedAt } : {}),
+          conversation_id: groupUlid,
+          settings: {
+            ...(input.isMuted !== undefined ? { muted: input.isMuted } : {}),
+            ...(input.isPinned !== undefined ? { pinned: input.isPinned } : {}),
+            ...(input.alertEnabled !== undefined ? { alert_enabled: input.alertEnabled } : {}),
+            ...(input.background !== undefined ? { background: input.background } : {}),
+            ...(input.clearedAt !== undefined ? { cleared_at_ms: input.clearedAt } : {}),
+          },
         },
       }),
   };
@@ -246,12 +223,49 @@ export function createGroupGateway(session: MobileAuthSession): GroupGateway {
 function normalizeGroupSettings(payload: unknown): GroupSettings {
   const record = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
   return {
-    isMuted: Boolean(record.isMuted ?? record.is_muted),
-    isPinned: Boolean(record.isPinned ?? record.is_pinned),
-    myNickname: String(record.myNickname ?? record.my_nickname ?? ''),
+    isMuted: Boolean(record.muted ?? record.isMuted ?? record.is_muted),
+    isPinned: Boolean(record.pinned ?? record.isPinned ?? record.is_pinned),
+    myNickname: String(record.nickname ?? record.myNickname ?? record.my_nickname ?? ''),
     showMemberNickname: Boolean(record.showMemberNickname ?? record.show_member_nickname),
     alertEnabled: (record.alertEnabled ?? record.alert_enabled) !== false,
     background: normalizeChatBackgroundId(record.background),
-    clearedAt: Number(record.clearedAtUnixMs ?? record.cleared_at_unix_ms ?? 0),
+    clearedAt: Number(
+      record.clearedAtMs
+      ?? record.cleared_at_ms
+      ?? record.clearedAtUnixMs
+      ?? record.cleared_at_unix_ms
+      ?? 0,
+    ),
   };
+}
+
+function conversationMemberToGroupMember(
+  payload: Record<string, unknown>,
+  fallbackConversationId: string,
+): GroupMember {
+  return {
+    ...payload,
+    groupUlid: String(
+      payload.conversationId
+      ?? payload.conversation_id
+      ?? fallbackConversationId,
+    ),
+    ptid: String(payload.ptid ?? ''),
+    role: Number(payload.role ?? 0),
+    nickname: String(payload.nickname ?? ''),
+    muted: Boolean(payload.muted),
+    mutedUntil: payload.mutedUntil ?? payload.muted_until,
+    joinedAt: payload.joinedAt ?? payload.joined_at,
+    invitedBy: String(payload.invitedByPtid ?? payload.invited_by_ptid ?? ''),
+    actorHomeStationPeerId: String(
+      payload.actorHomeStationPeerId
+      ?? payload.actor_home_station_peer_id
+      ?? '',
+    ),
+    actorHomeStationDomain: String(
+      payload.actorHomeStationDomain
+      ?? payload.actor_home_station_domain
+      ?? '',
+    ),
+  } as GroupMember;
 }

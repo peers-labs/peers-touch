@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-06
+> **Created**: 2026-09-06 | **Updated**: 2026-09-07
 > **Owner**: Architecture Team
 
 ---
@@ -250,7 +250,37 @@ outbox facts needed for sender-local projection. Conversation creation is a subs
 Social-owned integration call after accepted relationship convergence; it is not part of
 the Federation transport.
 
-## 7. Gate Result
+## 7. Proposed Wire Contract Reconciliation
+
+`AO-D07` resolves the remaining mismatch between the accepted semantic contracts
+and the CA-W1 request/response families.
+
+| Boundary | Canonical identity | Canonical result | Transport |
+|---|---|---|---|
+| Direct creation | deterministic Direct ID + caller `command_id` + command hash | `ConversationEvent` | `/conversation/direct` |
+| Group genesis | plan ID/hash + caller `ChatCommand` ID/hash | `ConversationEvent` | `/conversation/group` |
+| Conversation command | conversation ID + command ID/hash | durable submission + `ConversationEvent` | `/conversation/command`; shared Federation frame when remote |
+| Friend Request mutation | authority Station + command ID/hash | durable submission + `FriendRequestCommandResult` | `/api/v1/social/*`; shared Federation frame when remote |
+| Direct bundle fetch | requester endpoint + request ID/hash | exact stored bundle response | typed peer request/response |
+| MLS fetch | requester endpoint + request ID/hash | exact stored consumed package | typed peer request/response |
+| MLS authority claim | source authority + plan ID + target + hash | exact stored reservation | typed peer request/response |
+| DKX | caller `delivery_id` + payload hash | target durable admission | shared Federation frame |
+
+All Conversation response, query, follower, persistence, and delivery surfaces use
+`ConversationEvent`. The older `CommittedConversationEvent` family is a deletion
+target, not a compatibility input.
+
+The exact proposed messages, route disposition, replay rules, and failure semantics
+are defined in:
+
+```text
+proposals/20260907-ca-w5-canonical-wire-contract-amendment.md
+```
+
+The machine ownership registry must not be updated to the proposal until Owner
+acceptance.
+
+## 8. Gate Result
 
 The ownership Gate emits a canonical report:
 

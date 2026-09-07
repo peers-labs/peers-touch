@@ -26,6 +26,11 @@ type ConversationView struct {
 	FollowerStatus repository.FollowerStatus
 }
 
+type MessagePage struct {
+	Events  []domainevent.Record
+	HasMore bool
+}
+
 type PublicHead struct {
 	ConversationID   valueobject.ConversationID
 	Source           Source
@@ -167,6 +172,120 @@ func (s *Service) Events(
 	return events, err
 }
 
+func (s *Service) ListMessages(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	actor valueobject.PTID,
+	after valueobject.Sequence,
+	limit int,
+) (MessagePage, error) {
+	if err := validatePageLimit("application.query_list_messages", limit); err != nil {
+		return MessagePage{}, err
+	}
+	var events []domainevent.Record
+	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
+		if err := authorizeConversationRead(
+			ctx,
+			transaction.Repositories,
+			conversationID,
+			actor,
+			"application.query_list_messages",
+		); err != nil {
+			return err
+		}
+		var err error
+		events, err = transaction.Repositories.Events.ListMessages(
+			ctx,
+			conversationID,
+			after,
+			limit+1,
+		)
+		return err
+	})
+	if err != nil {
+		return MessagePage{}, err
+	}
+	return newMessagePage(events, limit), nil
+}
+
+func (s *Service) ListThreadMessages(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	actor valueobject.PTID,
+	threadRootID valueobject.MessageID,
+	after valueobject.Sequence,
+	limit int,
+) (MessagePage, error) {
+	if threadRootID == "" {
+		return MessagePage{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"application.query_list_thread_messages",
+			"thread_root_message_id",
+			"is required",
+		)
+	}
+	if err := validatePageLimit("application.query_list_thread_messages", limit); err != nil {
+		return MessagePage{}, err
+	}
+	var events []domainevent.Record
+	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
+		if err := authorizeConversationRead(
+			ctx,
+			transaction.Repositories,
+			conversationID,
+			actor,
+			"application.query_list_thread_messages",
+		); err != nil {
+			return err
+		}
+		var err error
+		events, err = transaction.Repositories.Events.ListThreadMessages(
+			ctx,
+			conversationID,
+			threadRootID,
+			after,
+			limit+1,
+		)
+		return err
+	})
+	if err != nil {
+		return MessagePage{}, err
+	}
+	return newMessagePage(events, limit), nil
+}
+
+func (s *Service) ThreadCounts(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	actor valueobject.PTID,
+	rootIDs []valueobject.MessageID,
+) ([]repository.ThreadCount, error) {
+	normalizedRoots, err := normalizeThreadRoots(rootIDs)
+	if err != nil {
+		return nil, err
+	}
+	var counts []repository.ThreadCount
+	err = s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
+		if err := authorizeConversationRead(
+			ctx,
+			transaction.Repositories,
+			conversationID,
+			actor,
+			"application.query_thread_counts",
+		); err != nil {
+			return err
+		}
+		var err error
+		counts, err = transaction.Repositories.Events.ThreadCounts(
+			ctx,
+			conversationID,
+			normalizedRoots,
+		)
+		return err
+	})
+	return counts, err
+}
+
 func (s *Service) PublicHead(
 	ctx context.Context,
 	conversationID valueobject.ConversationID,
@@ -228,6 +347,44 @@ func (s *Service) ReadCursor(
 	return cursor, err
 }
 
+func (s *Service) PendingLeaveIntents(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	actor valueobject.PTID,
+	limit int,
+) ([]repository.LeaveIntent, error) {
+	if limit <= 0 || limit > 100 {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"application.query_pending_leave_intents",
+			"limit",
+			"must be between 1 and 100",
+		)
+	}
+	var intents []repository.LeaveIntent
+	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
+		if err := authorizeConversationRead(
+			ctx,
+			transaction.Repositories,
+			conversationID,
+			actor,
+			"application.query_pending_leave_intents",
+		); err != nil {
+			return err
+		}
+		var err error
+		intents, err = transaction.Repositories.LeaveIntents.ListPending(
+			ctx,
+			conversationID,
+			actor,
+			limit,
+		)
+		return err
+	})
+
+	return intents, err
+}
+
 func loadConversationView(
 	ctx context.Context,
 	repositories repository.Repositories,
@@ -271,6 +428,77 @@ func snapshotHasActiveMember(snapshot aggregate.Snapshot, actor valueobject.PTID
 		}
 	}
 	return false
+}
+
+func newMessagePage(events []domainevent.Record, limit int) MessagePage {
+	page := MessagePage{Events: events}
+	if len(page.Events) > limit {
+		page.Events = page.Events[:limit]
+		page.HasMore = true
+	}
+	return page
+}
+
+func authorizeConversationRead(
+	ctx context.Context,
+	repositories repository.Repositories,
+	conversationID valueobject.ConversationID,
+	actor valueobject.PTID,
+	operation string,
+) error {
+	view, err := loadConversationView(ctx, repositories, conversationID)
+	if err != nil {
+		return err
+	}
+	if !snapshotHasActiveMember(view.Conversation, actor) {
+		return unauthorized(operation)
+	}
+	return nil
+}
+
+func validatePageLimit(operation string, limit int) error {
+	if limit > 0 && limit <= 500 {
+		return nil
+	}
+	return conversationdomain.NewError(
+		conversationdomain.ErrorCodeInvalidArgument,
+		operation,
+		"limit",
+		"must be between 1 and 500",
+	)
+}
+
+func normalizeThreadRoots(
+	rootIDs []valueobject.MessageID,
+) ([]valueobject.MessageID, error) {
+	if len(rootIDs) > 500 {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"application.query_thread_counts",
+			"root_ids",
+			"must contain at most 500 entries",
+		)
+	}
+	unique := make(map[valueobject.MessageID]struct{}, len(rootIDs))
+	for _, rootID := range rootIDs {
+		if rootID == "" {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeInvalidArgument,
+				"application.query_thread_counts",
+				"root_ids",
+				"cannot contain an empty message identity",
+			)
+		}
+		unique[rootID] = struct{}{}
+	}
+	normalized := make([]valueobject.MessageID, 0, len(unique))
+	for rootID := range unique {
+		normalized = append(normalized, rootID)
+	}
+	sort.Slice(normalized, func(i int, j int) bool {
+		return normalized[i] < normalized[j]
+	})
+	return normalized, nil
 }
 
 func unauthorized(operation string) error {
