@@ -54,9 +54,23 @@ pub mod social {
 }
 
 pub fn actor_ref(ptid: impl Into<String>) -> actor::ActorRef {
+    let ptid = ptid.into();
     actor::ActorRef {
-        ptid: ptid.into(),
+        kind: actor_kind_from_ptid(&ptid) as i32,
+        ptid,
         ..Default::default()
+    }
+}
+
+fn actor_kind_from_ptid(ptid: &str) -> actor::ActorKind {
+    match ptid.split(':').nth(4) {
+        Some("p") => actor::ActorKind::Person,
+        Some("g") => actor::ActorKind::Group,
+        Some("o") => actor::ActorKind::Organization,
+        Some("s") => actor::ActorKind::Service,
+        Some("a") => actor::ActorKind::Application,
+        Some("n") => actor::ActorKind::Node,
+        _ => actor::ActorKind::Unspecified,
     }
 }
 
@@ -91,4 +105,30 @@ pub fn chat_endpoint(device: &actor::ActorDeviceRef) -> Result<chat::CryptoEndpo
 
 pub fn actor_device_from_chat_endpoint(endpoint: &chat::CryptoEndpoint) -> actor::ActorDeviceRef {
     actor_device_ref(endpoint.ptid.clone(), endpoint.device_id.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{actor, actor_ref};
+
+    #[test]
+    fn actor_ref_derives_kind_from_canonical_ptid() {
+        let cases = [
+            ("p", actor::ActorKind::Person),
+            ("g", actor::ActorKind::Group),
+            ("o", actor::ActorKind::Organization),
+            ("s", actor::ActorKind::Service),
+            ("a", actor::ActorKind::Application),
+            ("n", actor::ActorKind::Node),
+        ];
+
+        for (kind, expected) in cases {
+            let ptid = format!("ptid:v1:actor:peers:{kind}:alice:fingerprint");
+            assert_eq!(actor_ref(ptid).kind, expected as i32);
+        }
+        assert_eq!(
+            actor_ref("ptid:invalid").kind,
+            actor::ActorKind::Unspecified as i32
+        );
+    }
 }
