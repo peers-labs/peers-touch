@@ -200,6 +200,7 @@ interface FoundationF06Handoff {
   streamGeneration: number;
   actorPtid: string;
   actorPtidHash: string;
+  replayRequestCursor: number;
   acknowledgedCursor: number;
   conversationRevision: number;
   prefixHash: string;
@@ -356,6 +357,7 @@ function readFoundationF06Handoffs(): Record<string, FoundationF06Handoff> {
         || !Number.isSafeInteger(value.streamGeneration)
         || typeof value.actorPtid !== 'string'
         || typeof value.actorPtidHash !== 'string'
+        || !Number.isSafeInteger(value.replayRequestCursor)
         || !Number.isSafeInteger(value.acknowledgedCursor)
         || !Number.isSafeInteger(value.conversationRevision)
         || typeof value.prefixHash !== 'string'
@@ -642,7 +644,7 @@ function installFoundationF06Observation(): void {
         && sourceDelivery.rawPayload.eventType !== 'catchup_done'
         && sourceDelivery.rawPayload.eventType !== 'snapshot'
         && Number.isSafeInteger(sourceDelivery.sequence)
-        && sourceDelivery.sequence > current.acknowledgedCursor
+        && sourceDelivery.sequence > current.replayRequestCursor
       ) {
         const rawPayload = evidenceValue(
           sourceDelivery.rawPayload,
@@ -5271,6 +5273,7 @@ async function prepareFoundationF06Conversation(
         streamGeneration: active.streamGeneration,
         actorPtid: actorId,
         actorPtidHash: 'pending',
+        replayRequestCursor: requestedCursor,
         acknowledgedCursor: requestedCursor,
         conversationRevision: conversation.version,
         prefixHash: 'pending',
@@ -6241,9 +6244,7 @@ async function runFoundationF06Complete(
   if (!replayStartTransition) {
     throw new Error('agent.acceptance.foundationRecoveryReplayBoundaryMissing');
   }
-  // Runtime phase observation may already include the first replayed event.
-  // Compare readback from the frozen cursor used by the original replay request.
-  const replayAfterCursor = handoff.acknowledgedCursor;
+  const replayAfterCursor = latestHandoff.replayRequestCursor;
   const stationReplayDeliveries = await foundationStationReplayReadback({
     ...handoff,
     acknowledgedCursor: replayAfterCursor,
@@ -6363,6 +6364,7 @@ async function runFoundationF06Complete(
         streamId: handoff.streamId,
         streamGeneration: handoff.streamGeneration,
         actorPtidHash: handoff.actorPtidHash,
+        replayRequestCursor: handoff.replayRequestCursor,
         acknowledgedCursor: handoff.acknowledgedCursor,
         conversationRevision: handoff.conversationRevision,
         prefixHash: handoff.prefixHash,
@@ -7458,7 +7460,7 @@ function reportFoundationCancelledLocalizationDebug(
   stage: string,
   data: Record<string, unknown> = {},
 ): Promise<void> {
-  return fetch('http://127.0.0.1:7777/event', {
+  return fetch('http://127.0.0.1:7788/event', {
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'base-cancelled-localization',
@@ -10528,6 +10530,8 @@ async function evaluateF06(
       );
     }))
   ).every(Boolean);
+  const replayRequestCursor = Number(handoff.replayRequestCursor);
+  const acknowledgedCursor = Number(handoff.acknowledgedCursor);
 
   return {
     exactRuntimeAttribution:
@@ -10541,7 +10545,11 @@ async function evaluateF06(
       && phasePositions.every((position, index) =>
         index === 0 || position > phasePositions[index - 1]),
     replayAfterAcknowledgedCursor:
-      Number(replay.afterCursor) > 0
+      Number.isSafeInteger(replayRequestCursor)
+      && replayRequestCursor > 0
+      && Number.isSafeInteger(acknowledgedCursor)
+      && acknowledgedCursor >= replayRequestCursor
+      && Number(replay.afterCursor) === replayRequestCursor
       && replaySequences.length > 0
       && replaySequences.every((sequence) =>
         Number.isSafeInteger(sequence)

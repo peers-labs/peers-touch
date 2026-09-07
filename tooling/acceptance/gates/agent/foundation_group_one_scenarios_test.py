@@ -418,6 +418,8 @@ def valid_as_f06_capture(
             "streamId": "stream-1",
             "streamGeneration": 7,
             "actorPtidHash": "b" * 64,
+            "replayRequestCursor": 2,
+            "acknowledgedCursor": 4,
         },
         "transitions": [
             {"phase": "CONNECTION_LOST", "sequence": 2},
@@ -1400,6 +1402,18 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             (
                 lambda capture: capture["replay"].update(
                     {"eventSequences": [2, 3]}
+                ),
+                "replayAfterAcknowledgedCursor",
+            ),
+            (
+                lambda capture: capture["handoff"].update(
+                    {"replayRequestCursor": 3}
+                ),
+                "replayAfterAcknowledgedCursor",
+            ),
+            (
+                lambda capture: capture["handoff"].update(
+                    {"acknowledgedCursor": 1}
                 ),
                 "replayAfterAcknowledgedCursor",
             ),

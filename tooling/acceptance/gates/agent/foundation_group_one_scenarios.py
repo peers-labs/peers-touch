@@ -809,6 +809,16 @@ def evaluate_as_f06(
         for delivery in replay_deliveries
     )
     after_cursor = _positive_int(replay, "afterCursor", scenario="AS-F06")
+    replay_request_cursor = _positive_int(
+        handoff,
+        "replayRequestCursor",
+        scenario="AS-F06",
+    )
+    acknowledged_cursor = _positive_int(
+        handoff,
+        "acknowledgedCursor",
+        scenario="AS-F06",
+    )
     blocker = recovery_failure.get("blocker")
     if not isinstance(blocker, str):
         raise GroupOneScenarioError("AS-F06 blocker fact is invalid")
@@ -926,6 +936,8 @@ def evaluate_as_f06(
         ),
         "replayAfterAcknowledgedCursor": (
             bool(replay_sequences)
+            and after_cursor == replay_request_cursor
+            and acknowledged_cursor >= replay_request_cursor
             and replay_sequences == sorted(set(replay_sequences))
             and replay_sequences == replay_delivery_sequences
             and all(sequence > after_cursor for sequence in replay_sequences)

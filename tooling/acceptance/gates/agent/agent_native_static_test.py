@@ -299,8 +299,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
             self.source[requested_cursor:boundary_publish],
         )
         self.assertIn(
+            "replayRequestCursor: requestedCursor",
+            self.source[requested_cursor:boundary_publish],
+        )
+        self.assertIn(
             "replayDeliveries: []",
             self.source[requested_cursor:boundary_publish],
+        )
+        self.assertIn(
+            "sourceDelivery.sequence > current.replayRequestCursor",
+            self.source,
         )
         self.assertNotIn(
             "controller.disconnectTransport()",
@@ -478,7 +486,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             completion[replay_boundary:station_readback],
         )
         self.assertIn(
-            "const replayAfterCursor = handoff.acknowledgedCursor",
+            "const replayAfterCursor = latestHandoff.replayRequestCursor",
             completion[replay_boundary:station_readback],
         )
         self.assertIn(
@@ -487,6 +495,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertNotIn(
             "const replayAfterCursor = replayStartTransition.sequence",
+            completion[replay_boundary:station_readback],
+        )
+        self.assertNotIn(
+            "const replayAfterCursor = handoff.acknowledgedCursor",
             completion[replay_boundary:station_readback],
         )
         self.assertIn("afterCursor: replayAfterCursor", completion[station_readback:])
