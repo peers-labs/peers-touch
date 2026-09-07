@@ -23,6 +23,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
     evaluate_base_cancelled,
+    evaluate_base_context_overflow,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -199,6 +200,9 @@ def assert_group_one_capture(
         "BASE-CANCELLED": (
             lambda facts: evaluate_base_cancelled(facts)
         ),
+        "BASE-CONTEXT_OVERFLOW": (
+            lambda facts: evaluate_base_context_overflow(facts)
+        ),
         "AS-F02": lambda facts: evaluate_as_f02(facts),
         "AS-F03": lambda facts: evaluate_as_f03(facts),
         "AS-F04": lambda facts: evaluate_as_f04(
@@ -240,6 +244,7 @@ def assert_group_one_capture(
     if probe_input.cell in {
         "BASE-ATTACHMENT_REJECTED",
         "BASE-CANCELLED",
+        "BASE-CONTEXT_OVERFLOW",
     }:
         runtime_event = scenario_facts.get("runtimeEvent")
         runtime_role = capture.get("runtime-events")
@@ -261,7 +266,10 @@ def assert_group_one_capture(
             "payloadHash": runtime_event.get("payloadHash"),
             "errorType": runtime_event.get("errorType"),
         }
-        if probe_input.cell == "BASE-CANCELLED":
+        if probe_input.cell in {
+            "BASE-CANCELLED",
+            "BASE-CONTEXT_OVERFLOW",
+        }:
             expected_role.update(
                 {
                     "sourceTransport": runtime_event.get("sourceTransport"),
@@ -281,7 +289,7 @@ def assert_group_one_capture(
                 != runtime_attestation.get("actorIdentityHash")
             ):
                 raise GroupOneProbeError(
-                    "BASE-CANCELLED runtime source actor does not match "
+                    f"{probe_input.cell} runtime source actor does not match "
                     "the runtime attestation"
                 )
         if dict(runtime_role) != expected_role:
