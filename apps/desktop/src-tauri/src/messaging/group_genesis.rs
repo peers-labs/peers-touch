@@ -1,8 +1,7 @@
 use super::EngineEndpoint;
 use crate::infrastructure::station_client;
-use crate::model::chat::{
-    CryptoEndpoint, PrepareMessagingGroupGenesisRequest, PrepareMessagingGroupGenesisResponse,
-};
+use crate::model::chat::{PrepareConversationGroupRequest, PrepareConversationGroupResponse};
+use messaging_core::proto::{actor_device_ref, actor_ref};
 use reqwest::Method;
 
 pub struct StationGroupGenesisTransport {
@@ -26,30 +25,38 @@ impl StationGroupGenesisTransport {
         conversation_id: &str,
         name: &str,
         member_ptids: &[String],
-    ) -> Result<PrepareMessagingGroupGenesisResponse, String> {
+        federation_id: &str,
+    ) -> Result<PrepareConversationGroupResponse, String> {
+        if conversation_id.trim().is_empty()
+            || name.trim().is_empty()
+            || member_ptids.is_empty()
+            || federation_id.trim().is_empty()
+        {
+            return Err("messaging group genesis input is incomplete".to_string());
+        }
         station_client::request_proto_for_device::<
-            PrepareMessagingGroupGenesisRequest,
-            PrepareMessagingGroupGenesisResponse,
+            PrepareConversationGroupRequest,
+            PrepareConversationGroupResponse,
         >(
             Method::POST,
             "/conversation/group/prepare",
             &self.token,
             None,
-            Some(&PrepareMessagingGroupGenesisRequest {
+            Some(&PrepareConversationGroupRequest {
                 conversation_id: conversation_id.to_string(),
                 name: name.to_string(),
-                member_ptids: member_ptids.to_vec(),
-                creator: Some(model_endpoint(&self.endpoint)),
+                members: member_ptids
+                    .iter()
+                    .map(|ptid| actor_ref(ptid.clone()))
+                    .collect(),
+                creator: Some(actor_device_ref(
+                    &self.endpoint.ptid,
+                    &self.endpoint.device_id,
+                )),
+                federation_id: federation_id.to_string(),
             }),
             &self.endpoint.device_id,
         )
         .map_err(|error| error.to_string())
-    }
-}
-
-fn model_endpoint(endpoint: &EngineEndpoint) -> CryptoEndpoint {
-    CryptoEndpoint {
-        ptid: endpoint.ptid.clone(),
-        device_id: endpoint.device_id.clone(),
     }
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
@@ -78,6 +79,24 @@ func NewService(
 		postCommit:      postCommit,
 		eventSealer:     eventSealer,
 	}, nil
+}
+
+// BindUnitOfWork returns the same application service over an already-bound
+// transaction view. This lets the shared Federation inbox own the outer
+// transaction while Conversation retains all command invariants.
+func (s *Service) BindUnitOfWork(unitOfWork ports.UnitOfWork) (*Service, error) {
+	if s == nil || unitOfWork == nil {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"application.bind_command_service",
+			"unit_of_work",
+			"is required",
+		)
+	}
+	bound := *s
+	bound.unitOfWork = unitOfWork
+
+	return &bound, nil
 }
 
 type CreateDirectRequest struct {
@@ -2502,6 +2521,8 @@ func authorityPlanHash(
 			[]byte(reservation.Endpoint.Device),
 			[]byte(reservation.PackageID),
 			reservation.PackageHash[:],
+			[]byte(reservation.HomeStation),
+			[]byte(strconv.FormatBool(reservation.IrreversiblyConsumed)),
 		)
 	}
 	return valueobject.HashBytes(valueobject.CanonicalTuple(fields...))

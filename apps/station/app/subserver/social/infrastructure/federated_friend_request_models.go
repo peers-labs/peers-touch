@@ -25,6 +25,7 @@ func (*federatedFriendRequestCommandModel) TableName() string {
 
 type federatedFriendRequestProjectionModel struct {
 	RequestID                 string     `gorm:"column:request_id;size:255;primaryKey"`
+	FederationID              string     `gorm:"column:federation_id;size:255;not null;index"`
 	AuthorityStationPeerID    string     `gorm:"column:authority_station_peer_id;size:255;not null;index"`
 	SenderPTID                string     `gorm:"column:sender_ptid;size:255;not null;index"`
 	ReceiverPTID              string     `gorm:"column:receiver_ptid;size:255;not null;index"`
@@ -70,6 +71,7 @@ const (
 type directConversationEffectModel struct {
 	EffectID        string                        `gorm:"column:effect_id;size:255;primaryKey"`
 	RequestID       string                        `gorm:"column:request_id;size:255;not null;uniqueIndex"`
+	FederationID    string                        `gorm:"column:federation_id;size:255;not null;index"`
 	ActorAPTID      string                        `gorm:"column:actor_a_ptid;size:255;not null"`
 	ActorBPTID      string                        `gorm:"column:actor_b_ptid;size:255;not null"`
 	AcceptedEventID string                        `gorm:"column:accepted_event_id;size:255;not null"`

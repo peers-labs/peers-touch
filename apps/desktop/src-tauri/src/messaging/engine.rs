@@ -16,15 +16,17 @@ use super::{
 use crate::domain::crypto::IdentityKeyPair;
 use crate::infrastructure::attachment_blob::FilesystemAttachmentBlob;
 use crate::model::chat::{
-    ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationCommand, ConversationKind,
-    CreateMessagingDirectConversationRequest, CreateMessagingDirectConversationResponse,
-    CryptoEndpoint, MessagingDevice, MessagingMembershipAction, MessagingReceiptKind,
-    MlsLeaveIntent, PrepareMessagingSendRequest, PrepareMessagingSendResponse,
-    SubmitMessagingReceiptRequest, SubmitMessagingReceiptResponse, TypingCommand,
+    ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationKind,
+    CreateDirectConversationRequest, CreateDirectConversationResponse, CryptoEndpoint,
+    DeviceConsumptionReceipt, MessagingMembershipAction, MlsLeaveIntent,
+    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
+    SubmitConversationReadCursorRequest, SubmitConversationReadCursorResponse,
+    SubmitConversationTypingRequest,
 };
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
 use messaging_core::identity::{
-    load_or_create_device_identity, DeviceEnrollmentManager, FreshDeviceEnrollment,
+    is_stale_endpoint_error, load_or_create_device_identity, DeviceEnrollmentManager,
+    FreshDeviceEnrollment,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -38,7 +40,10 @@ use messaging_core::mls::membership_transition::{
 };
 use messaging_core::mls::startup::restore_persisted_mls_state;
 pub use messaging_core::outbox::MetadataInteraction;
-use messaging_core::outbox::{DeliveryReceiptDispatcher, MetadataInteractionPreparer};
+use messaging_core::outbox::MetadataInteractionPreparer;
+use messaging_core::proto::actor::ActorDevice;
+use messaging_core::proto::actor_device_ref;
+use prost::Message;
 use reqwest::Method;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -182,9 +187,14 @@ impl MessagingEngine {
             actor_identity_seed,
             actor_profile_version,
         )?;
+        let device = enrollment
+            .certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "messaging device certificate has no endpoint".to_string())?;
         let endpoint = EngineEndpoint {
             ptid,
-            device_id: enrollment.certificate.device_id,
+            device_id: device.device_id.clone(),
         };
         Self::from_store_with_identity(
             profile_id,
@@ -641,12 +651,14 @@ impl MessagingEngine {
             .map_err(|_| "messaging drain lock poisoned".to_string())?;
         let (cursor, _) = self.store.lane_checkpoint()?;
         let consumer_epoch = self.runtime_consumer_epoch.load(Ordering::Acquire);
-        let transport =
-            StationQueueTransport::new(token.to_string(), self.endpoint.device_id.clone())?;
+        let transport = StationQueueTransport::new(
+            token.to_string(),
+            actor_device_ref(&self.endpoint.ptid, &self.endpoint.device_id),
+        )?;
         let mut drain = QueueDrain::new(
             transport,
             self.consumer.clone(),
-            self.endpoint.device_id.clone(),
+            actor_device_ref(&self.endpoint.ptid, &self.endpoint.device_id),
             self.consumer_id.clone(),
             batch_limit,
         )?;
@@ -674,17 +686,23 @@ impl MessagingEngine {
     }
 
     pub fn dispatch_delivery_receipt_once(&self, token: &str) -> Result<bool, String> {
-        DeliveryReceiptDispatcher::new(
-            self.store.clone(),
-            CoreCryptoEndpoint {
-                ptid: self.endpoint.ptid.clone(),
-                device_id: self.endpoint.device_id.clone(),
-            },
-        )?
-        .dispatch_once(&StationDeliveryReceiptTransport::new(
-            token.to_string(),
-            self.endpoint.device_id.clone(),
-        )?)
+        let Some(entry) = self.store.next_delivery_receipt()? else {
+            return Ok(false);
+        };
+        let receipt = DeviceConsumptionReceipt::decode(entry.receipt_bytes.as_slice())
+            .map_err(|error| format!("decode messaging device consumption receipt: {error}"))?;
+        let consumer = receipt
+            .consumer
+            .as_ref()
+            .ok_or_else(|| "messaging delivery receipt has no consumer".to_string())?;
+        if consumer.ptid != self.endpoint.ptid || consumer.device_id != self.endpoint.device_id {
+            return Err("messaging delivery receipt endpoint mismatch".to_string());
+        }
+        StationDeliveryReceiptTransport::new(token.to_string(), self.endpoint.device_id.clone())?
+            .submit(&receipt)?;
+        self.store
+            .mark_delivery_receipt_submitted(&entry.receipt_id, &entry.receipt_bytes)?;
+        Ok(true)
     }
 
     pub fn set_projection_notifier(
@@ -731,7 +749,7 @@ impl MessagingEngine {
         &self,
         token: &str,
         conversation_id: &str,
-    ) -> Result<PrepareMessagingSendResponse, String> {
+    ) -> Result<PrepareConversationCommandResponse, String> {
         if conversation_id.trim().is_empty() {
             return Err("messaging send plan requires conversation ID".to_string());
         }
@@ -739,19 +757,19 @@ impl MessagingEngine {
             .store
             .conversation_authority_station_id(conversation_id)?;
         StationCommandTransport::new(token.to_string(), self.endpoint.device_id.clone())?
-            .prepare_send(&PrepareMessagingSendRequest {
+            .prepare_send(&PrepareConversationCommandRequest {
                 conversation_id: conversation_id.to_string(),
-                sender: Some(CryptoEndpoint {
-                    ptid: self.endpoint.ptid.clone(),
-                    device_id: self.endpoint.device_id.clone(),
-                }),
-                authority_station_id,
+                sender: Some(actor_device_ref(
+                    &self.endpoint.ptid,
+                    &self.endpoint.device_id,
+                )),
+                authority_station_peer_id: authority_station_id,
             })
     }
 
     pub fn prepare_direct_text(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &SendTextIntent<'_>,
     ) -> Result<ChatCommand, String> {
         SendPreparer::new(
@@ -764,7 +782,7 @@ impl MessagingEngine {
 
     pub fn prepare_direct_text_with_bootstraps(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &SendTextIntent<'_>,
         bootstraps: &[super::DirectSessionBootstrap],
     ) -> Result<ChatCommand, String> {
@@ -778,7 +796,7 @@ impl MessagingEngine {
 
     pub fn prepare_group_text(
         &self,
-        plan: &PrepareMessagingSendResponse,
+        plan: &PrepareConversationCommandResponse,
         intent: &SendTextIntent<'_>,
     ) -> Result<ChatCommand, String> {
         SendPreparer::new(
@@ -1076,18 +1094,24 @@ impl MessagingEngine {
         &self,
         token: &str,
         peer_ptid: &str,
+        federation_id: &str,
     ) -> Result<String, String> {
-        if peer_ptid.trim().is_empty() || peer_ptid == self.endpoint.ptid {
+        if peer_ptid.trim().is_empty()
+            || federation_id.trim().is_empty()
+            || peer_ptid == self.endpoint.ptid
+        {
             return Err("messaging direct peer identity is invalid".to_string());
         }
-        let result = self.try_create_direct_conversation(token, peer_ptid);
+        let command_id = Ulid::new().to_string();
+        let result =
+            self.try_create_direct_conversation(token, peer_ptid, federation_id, &command_id);
         match result {
             Ok(id) => Ok(id),
             Err(error) if is_stale_endpoint_error(&error) => {
                 tracing::warn!(error = %error, "createDirect: device not active, attempting re-enrollment");
                 let _ = self.recover_stale_enrollment(&error);
                 self.enroll_pending_device(token, "Desktop".to_string())?;
-                self.try_create_direct_conversation(token, peer_ptid)
+                self.try_create_direct_conversation(token, peer_ptid, federation_id, &command_id)
             }
             Err(error) => Err(error),
         }
@@ -1097,21 +1121,25 @@ impl MessagingEngine {
         &self,
         token: &str,
         peer_ptid: &str,
+        federation_id: &str,
+        command_id: &str,
     ) -> Result<String, String> {
         let response = crate::infrastructure::station_client::request_proto_for_device::<
-            CreateMessagingDirectConversationRequest,
-            CreateMessagingDirectConversationResponse,
+            CreateDirectConversationRequest,
+            CreateDirectConversationResponse,
         >(
             Method::POST,
             "/conversation/direct",
             token,
             None,
-            Some(&CreateMessagingDirectConversationRequest {
+            Some(&CreateDirectConversationRequest {
                 peer_ptid: peer_ptid.to_string(),
-                creator: Some(CryptoEndpoint {
-                    ptid: self.endpoint.ptid.clone(),
-                    device_id: self.endpoint.device_id.clone(),
-                }),
+                federation_id: federation_id.to_string(),
+                creator: Some(actor_device_ref(
+                    &self.endpoint.ptid,
+                    &self.endpoint.device_id,
+                )),
+                command_id: command_id.to_string(),
             }),
             &self.endpoint.device_id,
         )
@@ -1234,32 +1262,21 @@ impl MessagingEngine {
             return Err("messaging typing conversation ID is required".to_string());
         }
         let now = now_unix_ms();
-        crate::infrastructure::station_client::request_proto_for_device::<
-            ConversationCommand,
-            SubmitMessagingReceiptResponse,
-        >(
-            Method::POST,
-            "/conversation/typing",
-            token,
-            None,
-            Some(&ConversationCommand {
-                command_id: Ulid::new().to_string(),
+        StationCommandTransport::new(token.to_string(), self.endpoint.device_id.clone())?
+            .submit_typing(&SubmitConversationTypingRequest {
                 conversation_id: conversation_id.to_string(),
-                sender_ptid: self.endpoint.ptid.clone(),
-                sender_device_id: self.endpoint.device_id.clone(),
-                client_ts: Some(prost_types::Timestamp {
-                    seconds: now.div_euclid(1_000),
-                    nanos: (now.rem_euclid(1_000) * 1_000_000) as i32,
-                }),
-                payload: Some(crate::model::chat::conversation_command::Payload::Typing(
-                    TypingCommand { is_typing },
+                sender: Some(actor_device_ref(
+                    &self.endpoint.ptid,
+                    &self.endpoint.device_id,
                 )),
-                ..Default::default()
-            }),
-            &self.endpoint.device_id,
-        )
-        .map_err(|error| error.to_string())?;
-        Ok(())
+                pulse_generation: u64::try_from(now)
+                    .map_err(|_| "messaging typing generation is invalid".to_string())?,
+                expires_at: Some(prost_types::Timestamp {
+                    seconds: now.saturating_add(5_000).div_euclid(1_000),
+                    nanos: (now.saturating_add(5_000).rem_euclid(1_000) * 1_000_000) as i32,
+                }),
+                is_typing,
+            })
     }
 
     pub fn submit_read_cursor(
@@ -1277,17 +1294,15 @@ impl MessagingEngine {
         }
         let now = now_unix_ms();
         crate::infrastructure::station_client::request_proto_for_device::<
-            SubmitMessagingReceiptRequest,
-            SubmitMessagingReceiptResponse,
+            SubmitConversationReadCursorRequest,
+            SubmitConversationReadCursorResponse,
         >(
             Method::POST,
             "/conversation/read-cursor",
             token,
             None,
-            Some(&SubmitMessagingReceiptRequest {
-                kind: MessagingReceiptKind::ActorRead as i32,
-                device_consumed: None,
-                actor_read: Some(ActorReadCursor {
+            Some(&SubmitConversationReadCursorRequest {
+                cursor: Some(ActorReadCursor {
                     conversation_id: conversation_id.to_string(),
                     reader_ptid: self.endpoint.ptid.clone(),
                     last_read_sequence,
@@ -1358,10 +1373,11 @@ impl MessagingEngine {
         conversation_id: &str,
         name: &str,
         member_ptids: &[String],
+        federation_id: &str,
     ) -> Result<PreparedGroupConversation, String> {
         let transport =
             StationGroupGenesisTransport::new(token.to_string(), self.endpoint.clone())?;
-        let plan = transport.prepare(conversation_id, name, member_ptids)?;
+        let plan = transport.prepare(conversation_id, name, member_ptids, federation_id)?;
         let command = GroupGenesisPreparer::new(
             self.store.clone(),
             self.mls_manager.clone(),
@@ -1515,7 +1531,7 @@ impl MessagingEngine {
         &self,
         token: &str,
         label: String,
-    ) -> Result<Option<MessagingDevice>, String> {
+    ) -> Result<Option<ActorDevice>, String> {
         DeviceEnrollmentManager::new(
             self.store.clone(),
             self.endpoint.ptid.clone(),
@@ -2234,6 +2250,7 @@ pub(crate) fn now_unix_ms() -> i64 {
 mod tests {
     use super::*;
     use messaging_core::mls::group::MlsMemberKeyPackage;
+    use messaging_core::proto::actor_device_ptid;
     use std::collections::VecDeque;
     use std::sync::mpsc;
     use std::thread;
@@ -2550,8 +2567,9 @@ mod tests {
         let device_id = first.endpoint().device_id.clone();
         assert!(!device_id.is_empty());
         let pending = store.pending_device_enrollment().unwrap().unwrap();
-        assert_eq!(pending.certificate.ptid, "ptid:alice");
-        assert_eq!(pending.certificate.device_id, device_id);
+        let pending_device = pending.certificate.device.as_ref().unwrap();
+        assert_eq!(actor_device_ptid(pending_device).unwrap(), "ptid:alice");
+        assert_eq!(pending_device.device_id, device_id);
         assert_eq!(pending.certificate.observed_profile_version, 3);
         drop(first);
 

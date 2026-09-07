@@ -255,7 +255,7 @@ func (r *Receiver) receiveAuthorityCommand(
 		), nil
 	}
 	if outcome.Result.GetAccepted() &&
-		outcome.Result.GetCommittedEvent().GetCommittedByStationPeerId() !=
+		outcome.Result.GetEvent().GetAuthorityStationPeerId() !=
 			r.localStationPeerID {
 		return federationdelivery.Result{}, federationdelivery.NewError(
 			federationdelivery.FailureDomainDispatch,
@@ -436,8 +436,10 @@ func validateAuthorityProposalShape(
 		proposal.GetActorPtid() == "" ||
 		proposal.GetActorDeviceId() == "" ||
 		proposal.GetActorSigningKeyId() == "" ||
+		proposal.GetCommand().GetSender() == nil ||
 		proposal.GetCommand().GetCommandId() == "" ||
 		proposal.GetCommand().GetConversationId() == "" ||
+		proposal.GetCommand().GetAuthorityStationPeerId() == "" ||
 		len(proposal.GetCommandSha256()) != sha256.Size ||
 		len(proposal.GetActorSignature()) != ed25519.SignatureSize {
 		return 0, &commandRejection{
@@ -447,6 +449,7 @@ func validateAuthorityProposalShape(
 	if frame.GetSourceStationPeerId() != proposal.GetHomeStationPeerId() ||
 		frame.GetTargetStationPeerId() != proposal.GetAuthorityStationPeerId() ||
 		proposal.GetAuthorityStationPeerId() != localStationPeerID ||
+		proposal.GetCommand().GetAuthorityStationPeerId() != proposal.GetAuthorityStationPeerId() ||
 		frame.GetPayloadId() != proposal.GetCommand().GetCommandId() {
 		return 0, &commandRejection{
 			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_FIELD_BINDING_MISMATCH,
@@ -480,8 +483,8 @@ func validateAuthorityProposalShape(
 			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_COMMAND_HASH_MISMATCH,
 		}
 	}
-	if proposal.GetCommand().GetSenderPtid() != proposal.GetActorPtid() ||
-		proposal.GetCommand().GetSenderDeviceId() != proposal.GetActorDeviceId() {
+	if proposal.GetCommand().GetSender().GetPtid() != proposal.GetActorPtid() ||
+		proposal.GetCommand().GetSender().GetDeviceId() != proposal.GetActorDeviceId() {
 		return 0, &commandRejection{
 			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_FIELD_BINDING_MISMATCH,
 		}
@@ -594,13 +597,14 @@ func validateAuthorityOutcome(
 	result := outcome.Result
 	switch {
 	case result.GetAccepted():
-		event := result.GetCommittedEvent()
+		event := result.GetEvent()
 		if result.GetRetryable() ||
 			result.GetRejectCode() != chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED ||
 			event == nil ||
 			event.GetConversationId() != proposal.GetCommand().GetConversationId() ||
-			event.GetGroupSeq() <= 0 ||
-			result.GetAuthorityGroupSeq() != event.GetGroupSeq() ||
+			event.GetCommandId() != proposal.GetCommand().GetCommandId() ||
+			event.GetSequence() <= 0 ||
+			result.GetAuthoritySequence() != event.GetSequence() ||
 			!bytes.Equal(result.GetAuthorityEventHash(), event.GetEventHash()) {
 			return federationdelivery.NewError(
 				federationdelivery.FailureDomainDispatch,
@@ -609,7 +613,7 @@ func validateAuthorityOutcome(
 			)
 		}
 	case result.GetRetryable():
-		if result.GetCommittedEvent() != nil ||
+		if result.GetEvent() != nil ||
 			result.GetRejectCode() == chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED {
 			return federationdelivery.NewError(
 				federationdelivery.FailureDomainDispatch,
@@ -618,7 +622,7 @@ func validateAuthorityOutcome(
 			)
 		}
 	default:
-		if result.GetCommittedEvent() != nil ||
+		if result.GetEvent() != nil ||
 			result.GetRejectCode() == chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED {
 			return federationdelivery.NewError(
 				federationdelivery.FailureDomainDispatch,
@@ -661,20 +665,21 @@ func validateAuthorityResult(
 	result := delivery.GetResult()
 	switch delivery.GetState() {
 	case chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_ACCEPTED:
-		event := result.GetCommittedEvent()
+		event := result.GetEvent()
 		if !result.GetAccepted() ||
 			result.GetRetryable() ||
 			event == nil ||
 			event.GetConversationId() != delivery.GetConversationId() ||
-			event.GetCommittedByStationPeerId() != frame.GetSourceStationPeerId() ||
-			event.GetGroupSeq() != result.GetAuthorityGroupSeq() ||
+			event.GetCommandId() != delivery.GetCommandId() ||
+			event.GetAuthorityStationPeerId() != frame.GetSourceStationPeerId() ||
+			event.GetSequence() != result.GetAuthoritySequence() ||
 			!bytes.Equal(event.GetEventHash(), result.GetAuthorityEventHash()) {
 			return nil, fmt.Errorf("accepted authority result is inconsistent")
 		}
 	case chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_TERMINAL_REJECTED:
 		if result.GetAccepted() ||
 			result.GetRetryable() ||
-			result.GetCommittedEvent() != nil ||
+			result.GetEvent() != nil ||
 			result.GetRejectCode() == chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED {
 			return nil, fmt.Errorf("terminal authority result is inconsistent")
 		}
@@ -777,7 +782,7 @@ func canonicalDeviceDelivery(
 			eventDelivery.GetEvent().GetEventId() != item.GetEventId() ||
 			eventDelivery.GetEvent().GetConversationId() != item.GetConversationId() ||
 			eventDelivery.GetEvent().GetSequence() <= 0 ||
-			eventDelivery.GetEvent().GetAuthorityStationId() != sourceStationPeerID {
+			eventDelivery.GetEvent().GetAuthorityStationPeerId() != sourceStationPeerID {
 			return conversationports.DeviceInboxIntent{}, 0,
 				fmt.Errorf("Conversation event delivery is not bound to its device item")
 		}
@@ -904,27 +909,27 @@ func hasUnknownFields(message protoreflect.Message) bool {
 }
 
 func authorityCommandKind(
-	command *chatmodel.ConversationCommand,
+	command *chatmodel.ChatCommand,
 ) chatmodel.ConversationCommandKind {
 	if command == nil {
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED
 	}
 	switch command.GetPayload().(type) {
-	case *chatmodel.ConversationCommand_SendMessage:
+	case *chatmodel.ChatCommand_SendMessage:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_SEND_MESSAGE
-	case *chatmodel.ConversationCommand_EditMessage:
+	case *chatmodel.ChatCommand_EditMessage:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_EDIT_MESSAGE
-	case *chatmodel.ConversationCommand_RetractMessage:
+	case *chatmodel.ChatCommand_RetractMessage:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_RETRACT_MESSAGE
-	case *chatmodel.ConversationCommand_Dissolve:
+	case *chatmodel.ChatCommand_DissolveConversation:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_DISSOLVE
-	case *chatmodel.ConversationCommand_UpdateSettings:
+	case *chatmodel.ChatCommand_UpdateConversation:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UPDATE_SETTINGS
-	case *chatmodel.ConversationCommand_React:
+	case *chatmodel.ChatCommand_Reaction:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_REACT
-	case *chatmodel.ConversationCommand_PinMessage:
+	case *chatmodel.ChatCommand_PinMessage:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_PIN_MESSAGE
-	case *chatmodel.ConversationCommand_MembershipTransition:
+	case *chatmodel.ChatCommand_MembershipTransition:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION
 	default:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED

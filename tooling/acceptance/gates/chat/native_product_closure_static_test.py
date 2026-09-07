@@ -2016,7 +2016,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.http_gateway.index('"messaging_create_group" => {'):
             self.http_gateway.index('"messaging_membership_transition" => {')
         ]
-        self.assertIn('.get("conversation_id")', browser_group_create)
+        self.assertIn(
+            "parse_args::<",
+            browser_group_create,
+        )
+        self.assertIn(
+            "MessagingCreateGroupInput",
+            browser_group_create,
+        )
+        self.assertIn(
+            "messaging_create_group_with_engine(",
+            browser_group_create,
+        )
         self.assertNotIn("ulid::Ulid::new()", browser_group_create)
 
     def test_conversation_pane_stays_inside_the_native_viewport(self) -> None:

@@ -5,8 +5,11 @@
   "owners": [
     "model/domain/chat/command.proto",
     "model/domain/chat/event.proto",
-    "apps/station/app/subserver/conversation/engine/application/authority_service.go",
-    "apps/station/app/subserver/conversation/engine/application/receipt_service.go",
+    "apps/station/app/subserver/conversation/application/command/service.go",
+    "apps/station/app/subserver/conversation/application/interaction/service.go",
+    "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
+    "apps/station/app/subserver/conversation/interface/http/interaction.go",
+    "apps/station/app/subserver/conversation/interface/http/mapper.go",
     "apps/desktop/src-tauri/src/messaging/engine.rs",
     "apps/desktop/src-tauri/src/messaging/direct.rs",
     "apps/desktop/src-tauri/src/messaging/mls.rs",
@@ -19,7 +22,7 @@
   "truth_sources": [
     "Station Conversation authority events",
     "Station actor read cursor",
-    "per-device ordered messaging queue",
+    "per-device ordered Device Inbox",
     "Device Messaging Engine SQLCipher interaction projection"
   ],
   "visible_surfaces": [

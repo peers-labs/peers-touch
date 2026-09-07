@@ -1,6 +1,9 @@
 use crate::infrastructure::station_client;
-use crate::model::chat::CryptoEndpoint;
-use crate::model::key_exchange::{FetchKeyBundleRequest, FetchKeyBundleResponse, KeyBundle};
+use crate::model::key_exchange::{
+    DirectKeyBundle, FetchDirectKeyBundlesRequest, FetchDirectKeyBundlesResponse,
+};
+use messaging_core::proto::actor::ActorDeviceRef;
+use messaging_core::proto::{actor_device_ptid, actor_ref};
 use reqwest::Method;
 
 pub use messaging_core::outbox::{DirectSessionBootstrapper, KeyBundleTransport};
@@ -20,22 +23,34 @@ impl StationKeyBundleTransport {
 }
 
 impl KeyBundleTransport for StationKeyBundleTransport {
-    fn fetch(&self, endpoint: &CryptoEndpoint) -> Result<KeyBundle, String> {
-        if endpoint.ptid.trim().is_empty() || endpoint.device_id.trim().is_empty() {
+    fn fetch(
+        &self,
+        request_id: &str,
+        requester: &ActorDeviceRef,
+        endpoint: &ActorDeviceRef,
+    ) -> Result<DirectKeyBundle, String> {
+        let endpoint_ptid = actor_device_ptid(endpoint)?;
+        if endpoint.device_id.trim().is_empty()
+            || request_id.trim().is_empty()
+            || requester.device_id != self.device_id
+            || actor_device_ptid(requester).is_err()
+        {
             return Err("messaging key bundle endpoint is incomplete".to_string());
         }
         let response = station_client::request_proto_for_device::<
-            FetchKeyBundleRequest,
-            FetchKeyBundleResponse,
+            FetchDirectKeyBundlesRequest,
+            FetchDirectKeyBundlesResponse,
         >(
             Method::POST,
             "/key-exchange/keys/bundle/fetch",
             &self.token,
             None,
-            Some(&FetchKeyBundleRequest {
-                ptid: endpoint.ptid.clone(),
-                device_id: endpoint.device_id.clone(),
+            Some(&FetchDirectKeyBundlesRequest {
+                actor: Some(actor_ref(endpoint_ptid)),
+                target_device_id: endpoint.device_id.clone(),
                 home_station_peer_id: String::new(),
+                request_id: request_id.to_string(),
+                requester: Some(requester.clone()),
             }),
             &self.device_id,
         )
@@ -48,7 +63,7 @@ impl KeyBundleTransport for StationKeyBundleTransport {
             .into_iter()
             .next()
             .ok_or_else(|| "messaging endpoint key bundle is unavailable".to_string())?;
-        if bundle.ptid != endpoint.ptid || bundle.device_id != endpoint.device_id {
+        if bundle.device.as_ref() != Some(endpoint) {
             return Err("messaging endpoint key bundle binding mismatch".to_string());
         }
         Ok(bundle)
