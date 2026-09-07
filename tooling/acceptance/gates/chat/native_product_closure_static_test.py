@@ -2126,6 +2126,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "data-chat-search-result-peer-ptid={conversation.peerPtid || ''}",
             self.chat_search_dropdown,
         )
+        self.assertIn("const profile = peerProfiles[peerId];", self.chat_session_list)
+        self.assertIn("|| profile?.display_name", self.chat_session_list)
+        self.assertIn("|| profile?.username", self.chat_session_list)
+        self.assertIn("|| peerId;", self.chat_session_list)
         self.assertIn(
             'data-chat-search-result-peer-ptid="{peer_ptid}"',
             self.source,

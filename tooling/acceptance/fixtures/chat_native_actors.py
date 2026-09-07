@@ -296,13 +296,13 @@ def prepare_bound_friendships(
     seed_cross_station_contact(
         alice_station_url,
         alice_environment,
-        alice.ptid,
+        alice_record,
         bob_record,
     )
     seed_cross_station_contact(
         bob_station_url,
         bob_environment,
-        bob.ptid,
+        bob_record,
         alice_record,
     )
 

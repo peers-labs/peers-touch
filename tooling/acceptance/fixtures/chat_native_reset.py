@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shlex
 import shutil
+import subprocess
 import threading
 import time
 import urllib.parse
@@ -23,6 +25,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SAFE_RUNTIME_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 APPROVED_DISPOSABLE_STATION_PORT = 18132
 PROTECTED_CLEANUP_PORTS = frozenset({4445, 18080})
+SOCIAL_RELATIONSHIP_PROTO = "domain/social/relationship.proto"
+SOCIAL_PROTO_ROOT = REPO_ROOT / "model"
+FIXTURE_FRIENDSHIP_CREATED_AT_UNIX = 1788739200
 CHAT_TABLES = (
     "actor_devices",
     "actor_endpoint_directory_versions",
@@ -116,6 +121,17 @@ class FixtureActorRecord:
     home_station_domain: str
     visibility: int
     locator_seq: int
+
+
+@dataclass(frozen=True)
+class FixtureAcceptedFriendship:
+    federation_id: str
+    request_id: str
+    sender: FixtureActorRecord
+    receiver: FixtureActorRecord
+    accepted_event_id: str
+    accepted_event_hash: bytes
+    accepted_event_bytes: bytes
 
 
 def load_environment_file(path: Path) -> dict[str, str]:
@@ -375,6 +391,177 @@ def _sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def _sql_bytes(value: bytes) -> str:
+    return f"decode('{value.hex()}', 'hex')"
+
+
+def _textproto_string(value: str) -> str:
+    return json.dumps(value)
+
+
+def _textproto_bytes(value: bytes) -> str:
+    return '"' + "".join(f"\\x{byte:02x}" for byte in value) + '"'
+
+
+def _actor_ref_text(actor: FixtureActorRecord) -> str:
+    account = actor.federated_handle.removeprefix("@")
+    return "\n".join(
+        (
+            f"ptid: {_textproto_string(actor.ptid)}",
+            f"acct: {_textproto_string(account)}",
+            "kind: ACTOR_KIND_PERSON",
+        )
+    )
+
+
+def _encode_social_proto(message_name: str, text: str) -> bytes:
+    protoc = shutil.which("protoc")
+    if protoc is None:
+        raise RuntimeError(
+            "canonical Social fixture generation requires protoc"
+        )
+    result = subprocess.run(
+        [
+            protoc,
+            "--proto_path=.",
+            f"--encode={message_name}",
+            SOCIAL_RELATIONSHIP_PROTO,
+        ],
+        cwd=SOCIAL_PROTO_ROOT,
+        input=text.encode("utf-8"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=15,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(
+            "canonical Social fixture protobuf encoding failed"
+            + (f": {detail}" if detail else "")
+        )
+    return result.stdout
+
+
+def _friend_request_event_text(
+    *,
+    event_id: str,
+    request_id: str,
+    command_id: str,
+    authority_station_peer_id: str,
+    state: str,
+    sender: FixtureActorRecord,
+    receiver: FixtureActorRecord,
+    sequence: int,
+    committed_at_unix: int,
+    federation_id: str,
+    previous_hash: bytes = b"",
+    event_hash: bytes = b"",
+) -> str:
+    fields = [
+        f"event_id: {_textproto_string(event_id)}",
+        f"request_id: {_textproto_string(request_id)}",
+        f"command_id: {_textproto_string(command_id)}",
+        (
+            "authority_station_peer_id: "
+            f"{_textproto_string(authority_station_peer_id)}"
+        ),
+        f"state: {state}",
+        "sender {\n" + _actor_ref_text(sender) + "\n}",
+        "receiver {\n" + _actor_ref_text(receiver) + "\n}",
+        (
+            "sender_home_station_peer_id: "
+            f"{_textproto_string(sender.home_station_peer_id)}"
+        ),
+        (
+            "receiver_home_station_peer_id: "
+            f"{_textproto_string(receiver.home_station_peer_id)}"
+        ),
+        f"sequence: {sequence}",
+        f"committed_at {{ seconds: {committed_at_unix} }}",
+    ]
+    if previous_hash:
+        fields.append(f"previous_hash: {_textproto_bytes(previous_hash)}")
+    if event_hash:
+        fields.append(f"event_hash: {_textproto_bytes(event_hash)}")
+    fields.append(f"federation_id: {_textproto_string(federation_id)}")
+    return "\n".join(fields) + "\n"
+
+
+def _accepted_friendship(
+    actor: FixtureActorRecord,
+    peer: FixtureActorRecord,
+) -> FixtureAcceptedFriendship:
+    sender, receiver = sorted((actor, peer), key=lambda item: item.ptid)
+    identity = hashlib.sha256(
+        (sender.ptid + "\x00" + receiver.ptid).encode("utf-8")
+    ).hexdigest()
+    federation_id = f"fed_chat_{identity[:20]}"
+    request_id = f"acceptance-cross-{identity[:24]}"
+    pending_event_id = f"friend-request-event:{request_id}:1"
+    accepted_event_id = f"friend-request-event:{request_id}:2"
+
+    pending_without_hash = _encode_social_proto(
+        "peers_touch.model.social.v1.FriendRequestEvent",
+        _friend_request_event_text(
+            event_id=pending_event_id,
+            request_id=request_id,
+            command_id=f"acceptance-cross-send-{identity[:24]}",
+            authority_station_peer_id=receiver.home_station_peer_id,
+            state="FRIEND_REQUEST_STATE_PENDING",
+            sender=sender,
+            receiver=receiver,
+            sequence=1,
+            committed_at_unix=FIXTURE_FRIENDSHIP_CREATED_AT_UNIX,
+            federation_id=federation_id,
+        ),
+    )
+    pending_hash = hashlib.sha256(pending_without_hash).digest()
+    accepted_without_hash = _encode_social_proto(
+        "peers_touch.model.social.v1.FriendRequestEvent",
+        _friend_request_event_text(
+            event_id=accepted_event_id,
+            request_id=request_id,
+            command_id=f"acceptance-cross-accept-{identity[:24]}",
+            authority_station_peer_id=receiver.home_station_peer_id,
+            state="FRIEND_REQUEST_STATE_ACCEPTED",
+            sender=sender,
+            receiver=receiver,
+            sequence=2,
+            committed_at_unix=FIXTURE_FRIENDSHIP_CREATED_AT_UNIX + 1,
+            federation_id=federation_id,
+            previous_hash=pending_hash,
+        ),
+    )
+    accepted_hash = hashlib.sha256(accepted_without_hash).digest()
+    accepted_event = _encode_social_proto(
+        "peers_touch.model.social.v1.FriendRequestEvent",
+        _friend_request_event_text(
+            event_id=accepted_event_id,
+            request_id=request_id,
+            command_id=f"acceptance-cross-accept-{identity[:24]}",
+            authority_station_peer_id=receiver.home_station_peer_id,
+            state="FRIEND_REQUEST_STATE_ACCEPTED",
+            sender=sender,
+            receiver=receiver,
+            sequence=2,
+            committed_at_unix=FIXTURE_FRIENDSHIP_CREATED_AT_UNIX + 1,
+            federation_id=federation_id,
+            previous_hash=pending_hash,
+            event_hash=accepted_hash,
+        ),
+    )
+    return FixtureAcceptedFriendship(
+        federation_id=federation_id,
+        request_id=request_id,
+        sender=sender,
+        receiver=receiver,
+        accepted_event_id=accepted_event_id,
+        accepted_event_hash=accepted_hash,
+        accepted_event_bytes=accepted_event,
+    )
+
+
 def _remote_psql(environment: dict[str, str], sql: str) -> str:
     container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
     remote = (
@@ -564,13 +751,98 @@ WHERE email = {_sql_literal(account_email)}
 def seed_cross_station_contact(
     station_url: str,
     environment_name: str,
-    actor_ptid: str,
+    actor: FixtureActorRecord,
     peer: FixtureActorRecord,
 ) -> None:
     environment = acceptance_station_environment(station_url, environment_name)
     verify_disposable_station_runtime(environment)
+    friendship = _accepted_friendship(actor, peer)
+    sender_ref = _encode_social_proto(
+        "peers_touch.model.actor.v1.ActorRef",
+        _actor_ref_text(friendship.sender),
+    )
+    receiver_ref = _encode_social_proto(
+        "peers_touch.model.actor.v1.ActorRef",
+        _actor_ref_text(friendship.receiver),
+    )
+    local_scheme = urllib.parse.urlparse(station_url).scheme
+    station_urls = {
+        actor.home_station_peer_id: station_url.rstrip("/"),
+        peer.home_station_peer_id: (
+            f"{local_scheme}://{peer.home_station_domain}"
+        ),
+    }
+    memberships = ",\n".join(
+        f"""(
+    {_sql_literal(friendship.federation_id)},
+    {_sql_literal(member.home_station_peer_id)},
+    {_sql_literal(member.home_station_domain)},
+    {_sql_literal(station_urls[member.home_station_peer_id])},
+    {_sql_literal(
+        "founder"
+        if member.home_station_peer_id
+        == friendship.sender.home_station_peer_id
+        else "member_station"
+    )},
+    'active',
+    to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
+    ''
+  )"""
+        for member in (friendship.sender, friendship.receiver)
+    )
     sql = f"""
 BEGIN;
+INSERT INTO federation (
+  federation_id,
+  name,
+  description,
+  status,
+  policy_type,
+  sequencer_station_peer_id,
+  genesis_hash,
+  head_hash,
+  head_seq,
+  created_by_actor_ptid,
+  created_by_station_peer_id,
+  created_at,
+  updated_at
+) VALUES (
+  {_sql_literal(friendship.federation_id)},
+  'chat-native-acceptance',
+  '',
+  'active',
+  'single_admin',
+  {_sql_literal(friendship.sender.home_station_peer_id)},
+  {_sql_bytes(bytes(32))},
+  {_sql_bytes(bytes(32))},
+  0,
+  {_sql_literal(friendship.sender.ptid)},
+  {_sql_literal(friendship.sender.home_station_peer_id)},
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX})
+)
+ON CONFLICT (federation_id) DO UPDATE SET
+  status = EXCLUDED.status,
+  sequencer_station_peer_id = EXCLUDED.sequencer_station_peer_id,
+  created_by_actor_ptid = EXCLUDED.created_by_actor_ptid,
+  created_by_station_peer_id = EXCLUDED.created_by_station_peer_id,
+  updated_at = EXCLUDED.updated_at;
+INSERT INTO federation_station_membership (
+  federation_id,
+  station_peer_id,
+  station_name,
+  station_url,
+  role,
+  status,
+  joined_at,
+  approved_by_event_id
+) VALUES
+  {memberships}
+ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
+  station_name = EXCLUDED.station_name,
+  station_url = EXCLUDED.station_url,
+  role = EXCLUDED.role,
+  status = EXCLUDED.status;
 LOCK TABLE touch_actor IN SHARE ROW EXCLUSIVE MODE;
 LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE;
 DELETE FROM touch_actor
@@ -633,7 +905,7 @@ WITH actor_pair AS (
   FROM touch_actor AS actor
   JOIN touch_actor AS peer
     ON peer.ptid = {_sql_literal(peer.ptid)}
-  WHERE actor.ptid = {_sql_literal(actor_ptid)}
+  WHERE actor.ptid = {_sql_literal(actor.ptid)}
 ),
 next_follow_id AS (
   SELECT coalesce(max(id), 0) AS max_id
@@ -660,24 +932,121 @@ SELECT
 FROM relationship_edges
 CROSS JOIN next_follow_id
 ON CONFLICT (follower_id, following_id) DO NOTHING;
+INSERT INTO social_friend_requests (
+  request_id,
+  federation_id,
+  authority_station_peer_id,
+  sender_ptid,
+  receiver_ptid,
+  sender_actor_ref_bytes,
+  receiver_actor_ref_bytes,
+  sender_home_station_peer_id,
+  receiver_home_station_peer_id,
+  message,
+  state,
+  sequence,
+  last_event_hash,
+  last_event_bytes,
+  authority_confirmed,
+  created_at,
+  responded_at
+) VALUES (
+  {_sql_literal(friendship.request_id)},
+  {_sql_literal(friendship.federation_id)},
+  {_sql_literal(friendship.receiver.home_station_peer_id)},
+  {_sql_literal(friendship.sender.ptid)},
+  {_sql_literal(friendship.receiver.ptid)},
+  {_sql_bytes(sender_ref)},
+  {_sql_bytes(receiver_ref)},
+  {_sql_literal(friendship.sender.home_station_peer_id)},
+  {_sql_literal(friendship.receiver.home_station_peer_id)},
+  '',
+  2,
+  2,
+  {_sql_bytes(friendship.accepted_event_hash)},
+  {_sql_bytes(friendship.accepted_event_bytes)},
+  TRUE,
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX + 1})
+)
+ON CONFLICT (request_id) DO UPDATE SET
+  federation_id = EXCLUDED.federation_id,
+  authority_station_peer_id = EXCLUDED.authority_station_peer_id,
+  sender_ptid = EXCLUDED.sender_ptid,
+  receiver_ptid = EXCLUDED.receiver_ptid,
+  sender_actor_ref_bytes = EXCLUDED.sender_actor_ref_bytes,
+  receiver_actor_ref_bytes = EXCLUDED.receiver_actor_ref_bytes,
+  sender_home_station_peer_id = EXCLUDED.sender_home_station_peer_id,
+  receiver_home_station_peer_id = EXCLUDED.receiver_home_station_peer_id,
+  state = EXCLUDED.state,
+  sequence = EXCLUDED.sequence,
+  last_event_hash = EXCLUDED.last_event_hash,
+  last_event_bytes = EXCLUDED.last_event_bytes,
+  authority_confirmed = EXCLUDED.authority_confirmed,
+  created_at = EXCLUDED.created_at,
+  responded_at = EXCLUDED.responded_at;
+INSERT INTO social_relationship_projections (
+  owner_ptid,
+  peer_ptid,
+  request_id,
+  accepted_event_id,
+  accepted_event_hash,
+  accepted_at
+) VALUES (
+  {_sql_literal(actor.ptid)},
+  {_sql_literal(peer.ptid)},
+  {_sql_literal(friendship.request_id)},
+  {_sql_literal(friendship.accepted_event_id)},
+  {_sql_bytes(friendship.accepted_event_hash)},
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX + 1})
+)
+ON CONFLICT (owner_ptid, peer_ptid) DO UPDATE SET
+  request_id = EXCLUDED.request_id,
+  accepted_event_id = EXCLUDED.accepted_event_id,
+  accepted_event_hash = EXCLUDED.accepted_event_hash,
+  accepted_at = EXCLUDED.accepted_at;
 DO $acceptance$
 DECLARE
   relationship_edge_count integer;
+  accepted_request_count integer;
+  federation_membership_count integer;
 BEGIN
   SELECT count(*) INTO relationship_edge_count
   FROM follows
   WHERE (follower_id, following_id) IN (
     (
-      (SELECT id FROM touch_actor WHERE ptid = {_sql_literal(actor_ptid)}),
+      (SELECT id FROM touch_actor WHERE ptid = {_sql_literal(actor.ptid)}),
       (SELECT id FROM touch_actor WHERE ptid = {_sql_literal(peer.ptid)})
     ),
     (
       (SELECT id FROM touch_actor WHERE ptid = {_sql_literal(peer.ptid)}),
-      (SELECT id FROM touch_actor WHERE ptid = {_sql_literal(actor_ptid)})
+      (SELECT id FROM touch_actor WHERE ptid = {_sql_literal(actor.ptid)})
     )
   );
   IF relationship_edge_count <> 2 THEN
     RAISE EXCEPTION 'cross-Station accepted relationship is incomplete';
+  END IF;
+
+  SELECT count(*) INTO accepted_request_count
+  FROM social_friend_requests
+  WHERE request_id = {_sql_literal(friendship.request_id)}
+    AND state = 2
+    AND sequence = 2
+    AND authority_confirmed = TRUE;
+  IF accepted_request_count <> 1 THEN
+    RAISE EXCEPTION 'canonical accepted Friend Request projection is incomplete';
+  END IF;
+
+  SELECT count(*) INTO federation_membership_count
+  FROM federation_station_membership
+  WHERE federation_id = {_sql_literal(friendship.federation_id)}
+    AND station_peer_id IN (
+      {_sql_literal(friendship.sender.home_station_peer_id)},
+      {_sql_literal(friendship.receiver.home_station_peer_id)}
+    )
+    AND status = 'active';
+  IF federation_membership_count <> 2 THEN
+    RAISE EXCEPTION 'Chat fixture Federation membership is incomplete';
   END IF;
 END
 $acceptance$;

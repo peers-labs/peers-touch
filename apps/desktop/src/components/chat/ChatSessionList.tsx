@@ -259,8 +259,14 @@ export function ChatSessionList({
       .map((r) => {
         const isSender = r.senderPtid === myId;
         const peerId = isSender ? r.receiverPtid : r.senderPtid;
-        const peerName = isSender ? r.receiverDisplayName : r.senderDisplayName;
-        const peerAvatar = isSender ? r.receiverAvatar : r.senderAvatar;
+        const requestPeerName = isSender ? r.receiverDisplayName : r.senderDisplayName;
+        const requestPeerAvatar = isSender ? r.receiverAvatar : r.senderAvatar;
+        const profile = peerProfiles[peerId];
+        const peerName = requestPeerName
+          || profile?.display_name
+          || profile?.username
+          || peerId;
+        const peerAvatar = requestPeerAvatar || profile?.avatar || '';
         return {
           peerId,
           peerName,
