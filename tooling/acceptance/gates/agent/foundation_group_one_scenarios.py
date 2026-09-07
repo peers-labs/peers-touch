@@ -2812,10 +2812,12 @@ def evaluate_base_context_overflow(
                 "draftLengthAfterRejection",
                 scenario=scenario,
             )
-            and _sha256_string(
-                receiver,
-                "reducedDraftHash",
-                scenario=scenario,
+            and bool(
+                _sha256_string(
+                    receiver,
+                    "reducedDraftHash",
+                    scenario=scenario,
+                )
             )
         ),
         "stationStateUnchanged": (

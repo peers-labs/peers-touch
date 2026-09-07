@@ -2297,6 +2297,7 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
 
         self.assertEqual(len(assertions), 8)
         self.assertTrue(all(assertions.values()))
+        self.assertTrue(all(type(value) is bool for value in assertions.values()))
 
     def test_context_overflow_rejects_unsafe_details(self) -> None:
         capture = valid_context_overflow_capture()
