@@ -50,7 +50,6 @@ import type {
 } from '../services/im-service-contract';
 import { useCryptoStore } from './cryptoStore';
 import { log } from '../utils/logger';
-import { getDecryptCache, setDecryptCache } from './decryptCache';
 import {
   readDesktopDomainValueSync,
   writeDesktopDomainValueSync,
@@ -88,8 +87,6 @@ import {
 } from './socialNormalizers';
 import { currentAuthenticatedActorPtid } from './session';
 import { resolveActorIdentity } from './socialProfileProjection';
-
-const GROUP_DECRYPT_FAILED_PLACEHOLDER = '[Message cannot be decrypted]';
 
 function hasAuthenticatedActor(): boolean {
   return Boolean(currentAuthenticatedActorPtid());
@@ -327,18 +324,6 @@ export function decodeEncryptedChatPayloadBytes(bytes: Uint8Array): ChatEncrypte
     return null;
   }
   return null;
-}
-
-function applyDecodedChatPayload<T extends FriendChatMessage | GroupMessage>(
-  message: T,
-  payload: ChatEncryptedMessagePayload,
-): T {
-  return {
-    ...message,
-    content: payload.text,
-    type: payload.messageType || message.type,
-    attachments: payload.attachments,
-  } as T;
 }
 
 export interface UnifiedConversation {
@@ -830,16 +815,6 @@ function socialMessageExplicitThreadRootUlid(msg: SocialMessage): string {
   return (msg as SocialMessage & { threadRootUlid?: string }).threadRootUlid || '';
 }
 
-function cacheDecryptedGroupMessage(message: GroupMessage, decoded: GroupMessage): void {
-  if (!message.ulid) return;
-  setDecryptCache(message.ulid, {
-    content: decoded.content,
-    type: decoded.type || message.type,
-    attachments: decoded.attachments as unknown[],
-    cachedAt: Date.now(),
-  });
-}
-
 export function socialThreadKey(kind: 'friend' | 'group', ulid: string, rootUlid: string): string {
   return `${kind}:${ulid}:${rootUlid}`;
 }
@@ -878,58 +853,6 @@ function saveConversationLocalState(ptid: string | null, state: Record<string, C
   } catch (error) {
     log.warn('socialChat', 'save conversation local state failed', error);
   }
-}
-
-function groupEncryptedPayloadB64(message: GroupMessage): string {
-  const encryptedPayload = (message as { encryptedPayload?: Uint8Array | string }).encryptedPayload;
-  if (typeof encryptedPayload === 'string') return encryptedPayload;
-  if (encryptedPayload && encryptedPayload.byteLength > 0) return bytesToB64(encryptedPayload);
-  return '';
-}
-
-async function decodeGroupMessage(
-  groupUlid: string,
-  message: GroupMessage,
-  logLabel: string,
-): Promise<GroupMessage> {
-  const payloadB64 = groupEncryptedPayloadB64(message);
-  if (message.recalled) {
-    return message;
-  }
-  if (!payloadB64) {
-    return { ...message, content: GROUP_DECRYPT_FAILED_PLACEHOLDER } as GroupMessage;
-  }
-  const cached = getDecryptCache(message.ulid);
-  if (cached) {
-    return { ...message, content: cached.content, type: cached.type || message.type, attachments: cached.attachments } as GroupMessage;
-  }
-  try {
-    const cipherBytes = Uint8Array.from(atob(payloadB64), c => c.charCodeAt(0));
-    const plaintext = await imServiceV1.mlsGroup.decrypt(groupUlid, cipherBytes);
-    await imServiceV1.mlsGroup.save(groupUlid);
-    const payload = decodeEncryptedChatPayloadBytes(plaintext);
-    if (!payload) {
-      throw new Error('MLS plaintext is not a valid encrypted chat payload');
-    }
-    const result = applyDecodedChatPayload(message, payload);
-    cacheDecryptedGroupMessage(message, result);
-    return result;
-  } catch (error) {
-    log.warn('socialChat', logLabel, error);
-    return { ...message, content: GROUP_DECRYPT_FAILED_PLACEHOLDER } as GroupMessage;
-  }
-}
-
-export async function decodeGroupMessages(
-  groupUlid: string,
-  messages: GroupMessage[],
-  logLabel: string,
-): Promise<GroupMessage[]> {
-  const decoded: GroupMessage[] = [];
-  for (const message of messages) {
-    decoded.push(await decodeGroupMessage(groupUlid, message, logLabel));
-  }
-  return decoded;
 }
 
 const initialSocialState: Pick<
@@ -2034,22 +1957,16 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   deleteGroupContact: async (groupUlid) => {
     try {
-      const state = get();
-      const actorPtid = state.currentUserPtid ?? '';
-      if (!actorPtid) throw new Error('No authenticated actor');
-      const [conversation, federationSelf, device] = await Promise.all([
+      const [conversation, federationSelf] = await Promise.all([
         imServiceV1.conversation.getConversation(groupUlid),
         api.federationGetSelf(),
-        api.accountGetDeviceId(),
       ]);
-      await imServiceV1.mlsGroup.requestLeaveIntent({
+      await imServiceV1.messaging.requestLeaveIntent({
         federationId: conversation.federationId,
         authorityStationPeerId: conversation.authorityStationPeerId,
         authorityEpoch: Number(conversation.authorityEpoch),
         homeStationPeerId: federationSelf.homeStationPeerId,
         conversationId: groupUlid,
-        actorPtid,
-        actorDeviceId: device.device_id,
         observedMembershipEpoch: Number(conversation.membershipEpoch),
         observedMlsEpoch: Number(conversation.mlsEpoch),
       });
@@ -2121,12 +2038,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   getIMConversations: () => {
     const state = get();
     const actorPtid = state.currentUserPtid || '';
-    const actorUsername = state.currentUserProfile?.username?.trim().toLowerCase() || '';
-    const isOwnPtid = (ptid: string): boolean => {
-      if (ptid === actorPtid) return true;
-      if (actorUsername && ptid.includes(`:p:${actorUsername}:`)) return true;
-      return false;
-    };
+    const isOwnPtid = (ptid: string): boolean => ptid === actorPtid;
     const out: DesktopIMConversationProjection[] = [];
 
     for (const conv of state.conversations) {

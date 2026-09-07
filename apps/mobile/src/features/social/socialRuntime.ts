@@ -4,12 +4,15 @@ import {
   type SocialHostEvent,
   type SocialHostEventKind,
 } from '@peers-touch/client-chat-core';
-import type { GroupE2eeRuntimeController } from '../group/groupE2eeRuntime';
 import type { GroupState } from '../group/groupStore';
-import { isSenderKeyDistributionMessage } from './socialProjection';
+import {
+  MOBILE_MESSAGING_RUNTIME_ERROR_EVENT,
+  wakeActiveMessagingSession,
+} from '../../runtimes/messagingRuntime';
 import type { SocialState } from './socialStore';
+import { useSocialStore } from './socialStore';
 import { startRealtimeStream } from './socialRealtime';
-import type { FriendChatMessage } from './socialTypes';
+import { readableErrorMessage } from './socialTypes';
 import type { GroupMembershipKind } from './socialWire';
 
 const RECONCILE_INTERVAL_MS = 30000;
@@ -38,11 +41,84 @@ export function dispatchSocialRuntimeExternalEvent(event: SocialRuntimeExternalE
   activeRuntime?.dispatchExternalEvent(event);
 }
 
+export interface SocialRuntimePublicProjection {
+  active: boolean;
+  activeSessionUlid: string | null;
+  friendRequests: Array<{
+    requestId: string;
+    senderPtid: string;
+    receiverPtid: string;
+    status: number;
+  }>;
+  typingPeers: Record<string, Record<string, {
+    typing: boolean;
+    lastUpdate: number;
+  }>>;
+  peerOnline: Record<string, boolean>;
+  lastReconcileAt: number | null;
+}
+
+export function readSocialRuntimeProjection(): SocialRuntimePublicProjection {
+  const state = useSocialStore.getState();
+  return {
+    active: activeRuntime !== null,
+    activeSessionUlid: state.activeSessionUlid,
+    friendRequests: state.friendRequests.map((request) => ({
+      requestId: request.requestId || request.id || '',
+      senderPtid: request.senderPtid,
+      receiverPtid: request.receiverPtid,
+      status: request.status,
+    })),
+    typingPeers: Object.fromEntries(
+      Object.entries(state.typingPeers).map(([conversationId, peers]) => [
+        conversationId,
+        Object.fromEntries(
+          Object.entries(peers).map(([ptid, entry]) => [
+            ptid,
+            {
+              typing: entry.typing,
+              lastUpdate: entry.lastUpdate,
+            },
+          ]),
+        ),
+      ]),
+    ),
+    peerOnline: { ...state.peerOnline },
+    lastReconcileAt: state.lastReconcileAt,
+  };
+}
+
+export async function sendSocialFriendRequest(
+  receiverPtid: string,
+  message?: string,
+): Promise<SocialRuntimePublicProjection> {
+  requireActiveSocialRuntime();
+  await useSocialStore.getState().sendFriendRequest(receiverPtid, message);
+  return readSocialRuntimeProjection();
+}
+
+export async function acceptSocialFriendRequest(
+  requestId: string,
+): Promise<SocialRuntimePublicProjection> {
+  requireActiveSocialRuntime();
+  await useSocialStore.getState().acceptFriendRequest(requestId);
+  return readSocialRuntimeProjection();
+}
+
+export async function reconcileSocialRuntime(): Promise<SocialRuntimePublicProjection> {
+  requireActiveSocialRuntime();
+  await useSocialStore.getState().reconcile();
+  return readSocialRuntimeProjection();
+}
+
+function requireActiveSocialRuntime(): void {
+  if (!activeRuntime) throw new Error('mobile.social.runtimeUnavailable');
+}
+
 export function startSocialRuntime(
   session: MobileAuthSession,
   store: SocialState,
   groupStore?: GroupState,
-  groupE2eeRuntime?: GroupE2eeRuntimeController,
 ): SocialRuntimeController {
   let cancelled = false;
   let externalReconcileTimer: number | null = null;
@@ -61,26 +137,14 @@ export function startSocialRuntime(
     if (!cancelled) void postPresence(session, '/presence/heartbeat', 'heartbeat');
   }, PRESENCE_HEARTBEAT_INTERVAL_MS);
   const realtimeHandlers: Parameters<typeof startRealtimeStream>[2] = {
-    onMessage: (sessionUlid, message) => {
-      if (isSenderKeyDistributionMessage(message)) {
-        void routeSkdmControlMessage(store, groupE2eeRuntime, message);
-        return;
-      }
-      void store.ingestRealtimeMessage(sessionUlid, message);
-    },
-    onGroupMessage: (groupUlid, message) => {
-      if (!groupStore) return;
-      void groupStore.ingestRealtimeMessage(groupUlid, message).then(() => groupE2eeRuntime?.repairEncryptedMessages());
-    },
-    onReceipt: store.applyMessageReceipt,
-    onMutation: (sessionUlid, messageUlid, kind, payload) => {
-      store.applyMessageMutation(sessionUlid, messageUlid, kind, payload);
-      groupStore?.applyMessageMutation(sessionUlid, messageUlid, kind, payload);
-    },
+    onMessage: wakeMessaging,
+    onGroupMessage: wakeMessaging,
+    onReceipt: wakeMessaging,
+    onMutation: wakeMessaging,
     onTyping: store.applyTypingState,
     onPresence: store.setPeerOnline,
     onGroupMembership: (groupUlid, actorPtid, kind) => {
-      void routeGroupMembershipChange(groupStore, groupE2eeRuntime, groupUlid, actorPtid, kind);
+      void routeGroupMembershipChange(groupStore, groupUlid, actorPtid, kind);
     },
     onSettingsChanged: (conversationKind, containerUlid) => {
       if (conversationKind === 'friend') {
@@ -90,11 +154,12 @@ export function startSocialRuntime(
       }
     },
     onResync: () => {
+      wakeMessaging();
       void store.reconcile();
       void groupStore?.reconcile();
     },
   };
-  void superviseRealtimeStream(session, abortController.signal, store, groupStore, groupE2eeRuntime, realtimeHandlers);
+  void superviseRealtimeStream(session, abortController.signal, store, groupStore, realtimeHandlers);
 
   const runtimeRef: ActiveSocialRuntime = {
     sessionKey: store.sessionKey,
@@ -103,7 +168,7 @@ export function startSocialRuntime(
 
       if (event.sessionUlid) void store.loadMessages(event.sessionUlid);
       if (socialHostEventTargetsNotifications(event)) void store.refreshNotifications();
-      void reconcileActiveThreads(store, groupStore, groupE2eeRuntime);
+      void reconcileActiveThreads(store, groupStore);
 
       if (externalReconcileTimer) return;
       externalReconcileTimer = window.setTimeout(() => {
@@ -149,7 +214,6 @@ async function superviseRealtimeStream(
   signal: AbortSignal,
   store: SocialState,
   groupStore: GroupState | undefined,
-  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
   handlers: Parameters<typeof startRealtimeStream>[2],
 ) {
   let reconnectDelay = REALTIME_RECONNECT_BASE_MS;
@@ -162,7 +226,7 @@ async function superviseRealtimeStream(
 	}
 
     if (signal.aborted) return;
-    await reconcileActiveThreads(store, groupStore, groupE2eeRuntime);
+    await reconcileActiveThreads(store, groupStore);
     await delay(reconnectDelay, signal);
     reconnectDelay = Math.min(reconnectDelay * 2, REALTIME_RECONNECT_MAX_MS);
   }
@@ -171,11 +235,10 @@ async function superviseRealtimeStream(
 async function reconcileActiveThreads(
   store: SocialState,
   groupStore: GroupState | undefined,
-  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
 ) {
   await Promise.allSettled([
     store.reconcileActiveSessionMessages(),
-    groupStore?.reconcileActiveGroupMessages().then(() => groupE2eeRuntime?.repairEncryptedMessages()),
+    groupStore?.reconcileActiveGroupMessages(),
   ]);
 }
 
@@ -194,21 +257,10 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-async function routeSkdmControlMessage(
-  store: SocialState,
-  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
-  message: FriendChatMessage,
-) {
-  if (!groupE2eeRuntime || message.senderPtid === store.currentUserPtid) return;
-  const skdmBytes = skdmPayloadBytes(message);
-  await groupE2eeRuntime.consumeSkdmControlMessage(message.senderPtid, skdmBytes);
-}
-
 async function routeGroupMembershipChange(
   groupStore: GroupState | undefined,
-  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
   groupUlid: string,
-  actorPtid: string,
+  _actorPtid: string,
   kind: GroupMembershipKind,
 ) {
   try {
@@ -217,27 +269,18 @@ async function routeGroupMembershipChange(
       await groupStore.selectGroup(null);
     }
     if (kind !== 'DISSOLVED' && groupStore?.activeGroupUlid === groupUlid) await groupStore.loadMembers(groupUlid);
-    if (kind === 'REMOVED' || kind === 'LEFT' || kind === 'TRANSFERRED') {
-      await groupE2eeRuntime?.rotateAfterMembershipChange(groupUlid, actorPtid);
-    }
   } catch {
-    // Group store and E2EE runtime persist their own domain errors.
+    // Group store persists its domain error.
   }
 }
 
-function skdmPayloadBytes(message: FriendChatMessage): Uint8Array {
-  if (message.encryptedPayload?.byteLength) return message.encryptedPayload;
-  if (message.content.trim()) return base64ToBytes(message.content.trim());
-  return new Uint8Array();
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  try {
-    const binary = window.atob(value);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-    return bytes;
-  } catch {
-    return new Uint8Array();
-  }
+function wakeMessaging(): void {
+  void wakeActiveMessagingSession().catch((error) => {
+    window.dispatchEvent(new CustomEvent(MOBILE_MESSAGING_RUNTIME_ERROR_EVENT, {
+      detail: {
+        operation: 'social-realtime-wake',
+        message: readableErrorMessage(error),
+      },
+    }));
+  });
 }

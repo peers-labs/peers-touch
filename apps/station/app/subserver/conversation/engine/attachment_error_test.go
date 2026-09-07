@@ -81,7 +81,7 @@ func TestAttachmentErrorsUseCanonicalProtobufBody(t *testing.T) {
 				t.Fatal(err)
 			}
 			if payload.Code != test.code || payload.RetryAfter != nil {
-				t.Fatalf("unexpected attachment error payload: %+v", payload)
+				t.Fatalf("unexpected attachment error payload: %+v", &payload)
 			}
 			if test.retryable && payload.Code !=
 				chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_QUOTA_EXCEEDED {
@@ -113,7 +113,7 @@ func TestAttachmentRetryLaterCarriesCanonicalDelay(t *testing.T) {
 		payload.RetryAfter == nil ||
 		payload.RetryAfter.Seconds != 1 ||
 		payload.RetryAfter.Nanos != 500_000_000 {
-		t.Fatalf("unexpected retry-later payload: %+v", payload)
+		t.Fatalf("unexpected retry-later payload: %+v", &payload)
 	}
 }
 
@@ -136,6 +136,6 @@ func TestUnknownAttachmentFailureMapsToRetryLater(t *testing.T) {
 		payload.RetryAfter == nil ||
 		payload.RetryAfter.Seconds != 1 ||
 		payload.RetryAfter.Nanos != 0 {
-		t.Fatalf("unexpected retry-later payload: %+v", payload)
+		t.Fatalf("unexpected retry-later payload: %+v", &payload)
 	}
 }

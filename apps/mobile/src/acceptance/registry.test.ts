@@ -18,12 +18,23 @@ import {
   sanitizeNegativeOAuthProjection,
   sanitizeOAuthPurgeOutput,
 } from './negativeOAuth';
-import { sanitizeMobileProjection } from './projection';
+import {
+  sanitizeMessagingProjection,
+  sanitizeMobileProjection,
+} from './projection';
 import { createMobileAcceptanceHarness } from './registry';
+import { useAuthStore } from '../features/auth/authStore';
 
 describe('Mobile Acceptance Harness', () => {
   beforeEach(() => {
     invokeMock.mockReset();
+    useAuthStore.setState({
+      session: null,
+      accessDecision: null,
+      loading: false,
+      error: null,
+      restored: false,
+    });
   });
 
   it('registers exactly the environment contract action names', () => {
@@ -34,6 +45,16 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('build.identity');
     expect(actionNames).toContain('oauth.replayHandle');
     expect(actionNames).toContain('oauth.negativeCallback');
+    expect(actionNames).toContain('messaging.createDirect');
+    expect(actionNames).toContain('messaging.createGroup');
+    expect(actionNames).toContain('messaging.attachment.stage');
+    expect(actionNames).toContain('messaging.send');
+    expect(actionNames).toContain('messaging.interact');
+    expect(actionNames).toContain('messaging.projection.read');
+    expect(actionNames).toContain('social.request.send');
+    expect(actionNames).toContain('social.request.accept');
+    expect(actionNames).toContain('social.reconcile');
+    expect(actionNames).toContain('social.projection.read');
   });
 
   it('rejects duplicate action registration', () => {
@@ -135,6 +156,99 @@ describe('Mobile Acceptance Harness', () => {
     expect(source).not.toMatch(/\bzustand\b/);
   });
 
+  it('routes Messaging actions through the active account-scoped native API', async () => {
+    useAuthStore.setState({
+      session: {
+        stationPeerId: 'station-peer',
+        stationUrl: 'https://station.example',
+        sessionId: 'session-1',
+        accessToken: 'test-token',
+        actorRef: { ptid: 'ptid:alice' },
+        authenticatedAt: 1,
+      },
+    });
+    invokeMock.mockResolvedValue({
+      conversationId: 'conversation-1',
+      state: 'projected',
+    });
+
+    const result = await createMobileAcceptanceHarness()[
+      'messaging.createDirect'
+    ]({ peerPtid: 'ptid:bob' });
+
+    expect(result).toEqual({
+      conversationId: 'conversation-1',
+      state: 'projected',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('messaging_create_direct', {
+      input: {
+        stationPeerId: 'station-peer',
+        actorPtid: 'ptid:alice',
+        peerPtid: 'ptid:bob',
+      },
+    });
+  });
+
+  it('sanitizes messaging projections without local storage references', () => {
+    const projection = sanitizeMessagingProjection({
+      runtime: {
+        active: true,
+        profileId: 'profile-1',
+        stationPeerId: 'station-peer',
+        stationOrigin: 'https://station.example',
+        actorPtid: 'ptid:alice',
+        deviceId: 'device-1',
+        deviceEnrolled: true,
+        laneSequence: 8,
+        consumerEpoch: 2,
+        conversationCount: 1,
+        activationGeneration: 3,
+        workerPhase: 'running',
+      },
+      conversations: [{
+        conversationId: 'conversation-1',
+        authorityStationId: 'station-peer',
+        kind: 1,
+        name: '',
+        ownerPtid: 'ptid:alice',
+        memberPtids: ['ptid:alice', 'ptid:bob'],
+        membershipEpoch: 1,
+        mlsEpoch: 0,
+        active: true,
+        updatedAtUnixMs: 10,
+      }],
+      messages: {
+        'conversation-1': [{
+          messageId: 'message-1',
+          senderPtid: 'ptid:alice',
+          senderDeviceId: 'device-1',
+          plaintext: 'acceptance-message',
+          attachments: [{
+            attachmentId: 'attachment-1',
+            filename: 'proof.txt',
+            mimeType: 'text/plain',
+            plaintextSize: 4,
+            objectId: 'object-1',
+            storageRef: 'private-storage-ref',
+            ciphertextSize: 20,
+            availabilityState: 'local',
+          }],
+          state: 'delivered',
+          timestampUnixMs: 10,
+          retracted: false,
+          reactions: [],
+          readByPtids: ['ptid:bob'],
+        }],
+      },
+    });
+
+    expect(projection.runtime).not.toHaveProperty('stationOrigin');
+    expect(projection.messages['conversation-1'][0]).not.toHaveProperty('senderDeviceId');
+    expect(projection.messages['conversation-1'][0].attachments[0]).not.toHaveProperty('storageRef');
+    expect(projection.messages['conversation-1'][0].attachments[0]).not.toHaveProperty('objectId');
+    expect(projection.messages['conversation-1'][0].plaintext).toBe('acceptance-message');
+  });
+
   it('starts access through the production auth runtime before OAuth', () => {
     const actionsSource = readFileSync(
       new URL('./actions.ts', import.meta.url),
@@ -144,13 +258,24 @@ describe('Mobile Acceptance Harness', () => {
       new URL('../runtimes/authRuntime.ts', import.meta.url),
       'utf8',
     );
+    const appSource = readFileSync(
+      new URL('../App.tsx', import.meta.url),
+      'utf8',
+    );
 
     expect(actionsSource).toMatch(
       /input\.kind === 'start'[\s\S]*startAccessAttemptForActiveStation\(\)/,
     );
     expect(runtimeSource).toMatch(
-      /startAccessAttemptForActiveStation[\s\S]*startStationAccessAttempt\([\s\S]*applyAccessGateRuntimeResult\(decision\)/,
+      /startAccessAttemptForActiveStation[\s\S]*startStationAccessAttemptWithRecovery\([\s\S]*applyAccessGateRuntimeResult\(decision\)/,
     );
+    expect(runtimeSource).toMatch(
+      /startAccessAttemptWithInvalidSessionRecovery[\s\S]*isRevokedSessionError[\s\S]*clearSession\(\)/,
+    );
+    expect(appSource).toMatch(
+      /startAccessGateChainFor[\s\S]*startStationAccessAttemptWithRecovery\(/,
+    );
+    expect(appSource).not.toMatch(/function isRevokedSessionError/);
   });
 
   it('projects negative OAuth results without callback or credential material', () => {

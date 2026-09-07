@@ -1,4 +1,5 @@
 pub mod actor_bucket;
+pub mod attachment_blob;
 pub mod auth_identity;
 pub mod avatar_cache;
 pub mod event_stream;
