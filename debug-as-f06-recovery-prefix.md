@@ -60,3 +60,20 @@ but its sequence had not yet been acknowledged by the recovery owner. The
 minimal correction waits when no text event is at or below the acknowledged
 cursor; it retains the fail-closed empty-prefix check once an acknowledged text
 event exists. Instrumentation remains active for post-fix comparison.
+
+## Replay Cursor Comparison Follow-Up
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| I | The observed `REPLAYING` transition cursor is always the cursor sent in the original replay request. | Rejected | Exact-source run `20260907T153830485835Z-c4bbc331c8137f7b8c111e8cb3eb00cb` recorded `afterCursor=22` while the client retained source-bound replay delivery `22`; the separate Station readback from `22` therefore began at `23`. |
+| J | The frozen post-cut handoff cursor remains the authoritative original replay boundary. | Confirmed | The recovery request is created from `handoff.acknowledgedCursor`; replay recording admits only source deliveries greater than that same frozen cursor. |
+| K | Wire sequence values may be numeric strings even though normalized delivery identity is numeric. | Confirmed contract risk | `createAgentTurnSourceDelivery` accepts numeric and string `seq` values; the Python oracle previously compared the raw value to the normalized integer without conversion. |
+
+- The correction keeps the required `REPLAYING` phase observation, but uses
+  `handoff.acknowledgedCursor` for the independent Station replay and reported
+  `afterCursor`.
+- The independent oracle converts only a valid positive integer or digit string
+  before comparing sequence identity; exact raw-payload hashes remain required.
+- Focused `183/183` and full `330/330` Agent Acceptance tests plus Desktop check
+  and `git diff --check` pass.
+- Runtime proof remains pending. Keep this session and its instrumentation open.
