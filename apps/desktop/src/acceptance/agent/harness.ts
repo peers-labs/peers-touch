@@ -8250,17 +8250,67 @@ async function runFoundationF07Scenario(input: {
       'version',
     ) ?? 0,
   );
+  await reportFoundationF07Debug('V-X', 'selected-branch-started', {
+    expectedVersion: selectedExpectedVersion,
+    activeBranchIsOriginal:
+      originalBranchConversation.active_branch_message_id
+      === sourceAssistant.messageId,
+    activeBranchIsTarget:
+      originalBranchConversation.active_branch_message_id
+      === firstRegenerateMessage.messageId,
+  });
   try {
     await useChatStore.getState().branchFromMessage(
       String(firstRegenerateMessage.messageId),
     );
   } catch (error) {
-    const actualVersion = await api.getAgentConversation(
+    const failedConversation = await api.getAgentConversation(
       conversation.conversation_id,
-    ).then(
-      (currentConversation) => currentConversation.version,
-      () => 0,
-    );
+    ).catch(() => null);
+    const actualVersion = failedConversation?.version ?? 0;
+    const codedError = error as {
+      code?: unknown;
+      details?: {
+        body?: unknown;
+        reason?: unknown;
+        status?: unknown;
+      };
+    };
+    const responseBody = typeof codedError.details?.body === 'string'
+      ? codedError.details.body
+      : '';
+    let stationErrorText = '';
+    try {
+      const stationError = responseBody
+        ? evidenceRecord(
+            JSON.parse(responseBody),
+            'foundationF07BranchSelectionErrorBody',
+          )
+        : {};
+      stationErrorText = String(
+        stationError.error ?? stationError.message ?? '',
+      );
+    } catch {
+      stationErrorText = '';
+    }
+    await reportFoundationF07Debug('V-X', 'selected-branch-failed', {
+      expectedVersion: selectedExpectedVersion,
+      actualVersion,
+      activeBranchIsOriginal:
+        failedConversation?.active_branch_message_id
+        === sourceAssistant.messageId,
+      activeBranchIsTarget:
+        failedConversation?.active_branch_message_id
+        === firstRegenerateMessage.messageId,
+      errorCode: typeof codedError.code === 'string' ? codedError.code : '',
+      httpStatus: Number(codedError.details?.status ?? 0),
+      stationErrorCode:
+        stationErrorText.match(/\b(?:AGENT|TOOL)_[A-Z0-9_]+\b/)?.[0] ?? '',
+      versionConflict: stationErrorText.includes('conversation version changed'),
+      invalidBranchHead: stationErrorText.includes('not a branch head'),
+      messageNotFound: stationErrorText.includes('message not found'),
+      duplicateEventSequence: stationErrorText.includes('idx_turn_events_turn_seq'),
+    });
     throw new Error([
       'agent.acceptance.foundationBranchSelectionFailed',
       'F07Selected',
