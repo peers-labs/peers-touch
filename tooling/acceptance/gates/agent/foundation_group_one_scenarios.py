@@ -2536,7 +2536,7 @@ def evaluate_base_attachment_rejected(
             and sorted(details) == ["attachment_id", "reason_code"]
             and details.get("attachment_id") == attachment_id
             and details.get("reason_code") == reason_code
-            and reason_code == "attachment_content_does_not_match_mime"
+            and reason_code == "attachment_object_is_unavailable"
             and runtime_event.get("eventType") == "error"
             and runtime_event.get("errorType")
             == "CONTEXT_ATTACHMENT_REJECTED"
