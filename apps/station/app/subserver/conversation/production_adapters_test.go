@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	actoridentityapp "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/application"
 	actoridentitypersistence "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
 	attachmentapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
@@ -19,11 +20,13 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
+	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	domainservice "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/service"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	attachmentinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/attachment"
 	deliveryinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
+	conversationhttp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface/http"
 	federationdomain "github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	federationinfra "github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
 	keyexchangedomain "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
@@ -228,6 +231,193 @@ func TestProductionIdentityAndFederationAdaptersUseOwnerTruth(t *testing.T) {
 	)
 	if !conversationdomain.IsCode(err, conversationdomain.ErrorCodeProposalSignature) {
 		t.Fatalf("invalid signature error = %v", err)
+	}
+}
+
+func TestAcceptedRemoteManifestSuppliesConversationDeliveryIdentity(t *testing.T) {
+	fixture := newProductionAdapterFixture(t)
+	if err := fixture.db.Where(
+		"ptid = ?",
+		string(fixture.bob.Actor),
+	).Delete(&actoridentitypersistence.ActorIdentityModel{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.Model(&actoridentitypersistence.ActorDeviceModel{}).
+		Where(
+			"ptid = ? AND device_id = ?",
+			string(fixture.bob.Actor),
+			string(fixture.bob.Device),
+		).
+		Updates(map[string]interface{}{
+			"home_station_peer_id": "station-b",
+			"verification_source": int32(
+				actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+			),
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	identityRepository, err := actoridentitypersistence.NewRepository(fixture.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := identityRepository.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	bobIdentityKey := fixture.bobPrivate.Public().(ed25519.PublicKey)
+	deviceKeyHash := valueobject.HashBytes(bobIdentityKey)
+	manifest := &actormodel.ActorEndpointManifest{
+		FormatVersion: actoridentityapp.EndpointManifestFormatVersion,
+		ManifestId:    "remote-bob-manifest",
+		Actor: &actormodel.ActorRef{
+			Ptid: string(fixture.bob.Actor),
+			Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+		},
+		HomeStationPeerId: "station-b",
+		DirectoryVersion:  1,
+		ActiveEndpoints: []*actormodel.ActorEndpointManifestEntry{{
+			Endpoint: &actormodel.ActorDeviceRef{
+				Actor: &actormodel.ActorRef{
+					Ptid: string(fixture.bob.Actor),
+					Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+				},
+				DeviceId: string(fixture.bob.Device),
+			},
+			SigningKeyId: "bob-signing-key",
+			PublicMaterialSha256: [][]byte{
+				deviceKeyHash.Bytes(),
+			},
+		}},
+		IssuedAt:               timestamppb.New(productionAdapterTestTime),
+		ExpiresAt:              timestamppb.New(productionAdapterTestTime.Add(time.Minute)),
+		ActorIdentityPublicKey: append([]byte(nil), bobIdentityKey...),
+		ActorProfileVersion:    1,
+	}
+	stationPrivateKey := ed25519.NewKeyFromSeed(
+		bytes.Repeat([]byte{0x44}, ed25519.SeedSize),
+	)
+	if err := actoridentityapp.SignEndpointManifest(
+		manifest,
+		"station-b-signing-key",
+		stationPrivateKey,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := actoridentityapp.VerifyEndpointManifest(
+		manifest,
+		string(fixture.bob.Actor),
+		"station-b",
+		"station-b-signing-key",
+		stationPrivateKey.Public().(ed25519.PublicKey),
+		productionAdapterTestTime,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := identityRepository.AcceptVerifiedEndpointManifest(
+		context.Background(),
+		manifest,
+		productionAdapterTestTime,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := identityRepository.AcceptVerifiedEndpointManifest(
+		context.Background(),
+		manifest,
+		productionAdapterTestTime,
+	); err != nil {
+		t.Fatalf("replay verified endpoint manifest: %v", err)
+	}
+
+	adapters, err := fixture.factory.Bind(fixture.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	senderIdentityKey, err := adapters.Identity.ActorIdentityPublicKey(
+		context.Background(),
+		fixture.bob.Actor,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delivery, err := valueobject.NewPreparedDelivery(
+		fixture.alice,
+		"station-a",
+		valueobject.DeliveryKindDirectCiphertext,
+		[]byte("remote-bob-ciphertext"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitments, err := domainservice.BuildDeliveryCommitments(
+		"conversation-remote-bob",
+		"event-remote-bob",
+		[]valueobject.PreparedDelivery{delivery},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&chatmodel.ChatCommand{
+			CommandId:      "command-remote-bob",
+			ConversationId: "conversation-remote-bob",
+			Sender: &chatmodel.CryptoEndpoint{
+				Ptid:     string(fixture.bob.Actor),
+				DeviceId: string(fixture.bob.Device),
+			},
+			Payload: &chatmodel.ChatCommand_SendMessage{
+				SendMessage: &chatmodel.SendMessageIntent{
+					MessageId:   "message-remote-bob",
+					ContentKind: chatmodel.MessagingContentKind_MESSAGING_CONTENT_KIND_TEXT,
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := (conversationhttp.ProtobufEventSealer{}).Seal(
+		domainevent.RecordInput{
+			ID:               "event-remote-bob",
+			ConversationID:   "conversation-remote-bob",
+			Sequence:         2,
+			CommandID:        "command-remote-bob",
+			Actor:            fixture.bob,
+			PreviousHash:     valueobject.HashBytes([]byte("previous-event")),
+			CommittedAt:      productionAdapterTestTime,
+			MembershipEpoch:  1,
+			MLSEpoch:         1,
+			AuthorityStation: "station-a",
+			DeliveryCommitments: []valueobject.Hash{
+				commitments[0].Hash,
+			},
+			Fact: domainevent.NewCommandCommittedFact(
+				domainevent.KindMessageCommitted,
+				"message-remote-bob",
+				commandBytes,
+			),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := (conversationhttp.ProtobufDeviceEventEncoder{}).
+		EncodeDeviceEvent(
+			event,
+			delivery,
+			commitments[0].Hash,
+			senderIdentityKey,
+		)
+	if err != nil {
+		t.Fatalf("seal remote-sender delivery: %v", err)
+	}
+	var projected chatmodel.DeviceEventDelivery
+	if err := proto.Unmarshal(encoded, &projected); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(
+		projected.GetSenderActorIdentityPublicKey(),
+		bobIdentityKey,
+	) {
+		t.Fatal("sealed delivery lost the verified remote Actor identity key")
 	}
 }
 
