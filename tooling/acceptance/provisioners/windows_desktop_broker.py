@@ -793,10 +793,13 @@ try {
     def _adapter_worker_script() -> str:
         return r"""
 import base64
+import hashlib
 import json
 import pathlib
+import struct
 import sys
 import time
+import zlib
 
 request = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
 response_path = pathlib.Path(request["responsePath"])
@@ -879,6 +882,25 @@ try:
         result = {"x": x, "y": y}
     elif operation == "mouse_button_down":
         result = {"down": adapter.mouse_button_down()}
+    elif operation == "probe_screenshot":
+        shot = response_path.with_suffix(".bmp")
+        adapter.capture_screenshot(shot)
+        content = shot.read_bytes()
+        if len(content) < 26 or content[:2] != b"BM":
+            raise ValueError("Native screenshot is not a valid BMP payload")
+        width, height = struct.unpack_from("<ii", content, 18)
+        if width <= 0 or height <= 0:
+            raise ValueError("Native screenshot geometry is invalid")
+        result = {
+            "captured": True,
+            "byteLength": len(content),
+            "content": base64.b64encode(
+                zlib.compress(content)
+            ).decode("ascii"),
+            "contentEncoding": "zlib",
+            "sha256": hashlib.sha256(content).hexdigest(),
+        }
+        shot.unlink(missing_ok=True)
     elif operation == "capture_screenshot":
         shot = response_path.with_suffix(".bmp")
         adapter.capture_screenshot(shot)
