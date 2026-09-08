@@ -59,7 +59,6 @@ const (
 type ProductionRealtime interface {
 	ports.PostCommitPublisher
 	interactionapp.TypingPublisher
-	interactionapp.DeliveryPublisher
 }
 
 // ProductionFederationRuntime is the narrow shared-runtime surface needed by
@@ -356,26 +355,35 @@ func NewProductionComposition(
 		return nil, fmt.Errorf("compose Conversation attachment handler: %w", err)
 	}
 
-	receiptRecorder, err := deliveryinfra.NewReceiptRecorder(config.Database)
-	if err != nil {
-		return nil, fmt.Errorf("compose Conversation delivery receipt recorder: %w", err)
-	}
 	pulseLedger, err := interactionapp.NewMemoryTypingPulseLedger(
 		config.TypingPulseCapacity,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("compose Conversation typing pulse ledger: %w", err)
 	}
+	receiptForwarder := &productionDeliveryReceiptForwarder{
+		database:     config.Database,
+		sender:       adapterFactory.federationSender,
+		clock:        config.Clock,
+		localStation: config.LocalStationID,
+	}
+	receiptCommitter := &productionDeliveryReceiptCommitter{
+		database:     config.Database,
+		adapters:     adapterFactory,
+		localStation: config.LocalStationID,
+		clock:        config.Clock,
+	}
 	interactionService, err := interactionapp.NewService(
 		queryService,
 		productionInteractionDeviceDirectory{identity: identityDirectory},
 		commandService,
-		receiptRecorder,
-		config.Realtime,
+		receiptCommitter,
+		receiptForwarder,
 		config.Realtime,
 		pulseLedger,
 		config.Clock,
 		config.InteractionPolicy,
+		config.LocalStationID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("compose Conversation interaction service: %w", err)
@@ -500,25 +508,6 @@ func (d productionInteractionDeviceDirectory) IsActive(
 	endpoint valueobject.Endpoint,
 ) (bool, error) {
 	return d.identity.IsActive(ctx, endpoint)
-}
-
-func (d productionInteractionDeviceDirectory) ListActiveEndpoints(
-	ctx context.Context,
-	actors []valueobject.PTID,
-) ([]interactionapp.EndpointRoute, error) {
-	routes, err := d.identity.ListActiveEndpoints(ctx, actors)
-	if err != nil {
-		return nil, err
-	}
-	mapped := make([]interactionapp.EndpointRoute, 0, len(routes))
-	for _, route := range routes {
-		mapped = append(mapped, interactionapp.EndpointRoute{
-			Endpoint:    route.Endpoint,
-			HomeStation: route.HomeStation,
-		})
-	}
-
-	return mapped, nil
 }
 
 type productionSharedDependencies struct {
