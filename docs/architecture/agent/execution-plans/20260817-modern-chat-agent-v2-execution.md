@@ -252,7 +252,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `3a19f481598a3d38700c48d558c17ec8a80d864e` failed first at Browser English `BASE-CANCELLED` because the business scenario sampled the intermediate synthetic recovery message before the production terminal reconciliation step. The local correction now mirrors `chatRuntime` by reconciling before the visible snapshot; exact-source verification is pending. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `4fc4ab8c87a8bfc658364f912cc3202ce7ad3f29` crossed Browser AS-F10 and failed first at Browser English `BASE-CANCELLED`. Canonical message identity is now correct, but the production terminal reconciliation path drops the live `data.reason` alias. The local correction centralizes terminal-reason normalization across stream projection, runtime recovery, and the business scenario; exact-source verification is pending. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6288,6 +6288,30 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `34/34` focused store tests, `200/200` focused Agent/Foundation tests, and
   `git diff --check` pass. Inner and Provisioner cleanup both passed;
   Foundation/G-F remain `PARTIAL / UNPROVEN` pending a new exact-source run.
+- Exact-source checkpoint
+  `4fc4ab8c87a8bfc658364f912cc3202ce7ad3f29` deployed to
+  `chat-native-disposable` and used Acceptance binary
+  `4383a1eaa2a6d47efc71cdef09fd34b1c124970c9abf7e438d7a1045f57ddda1`.
+  Gate run
+  `20260908T080109406269Z-3123801450ec5d8c2894658ea7a4afed`
+  crossed Browser AS-F10 with current-source rejection and zero-execution
+  facts, then failed first at Browser English `BASE-CANCELLED` on
+  `localizedCancellationVisible`; outer run
+  `20260908T080057747843Z-8a34f69e3626c6d2ebc2a3838b84a6f3`
+  completed `FAILED / PARTIAL / UNPROVEN`. Live, reload, and replay now use
+  one canonical Station message ID, but live and reload had empty
+  `errorDetail` while replay restored `cancelled_by_user`. The live
+  `cancelled` event exposes this reason as `data.reason`; both
+  `chatRuntime.terminalFromEvent` and the copied Harness reconciliation
+  omitted that alias, so canonical synchronization replaced the transient
+  projection without carrying the reason forward. The local correction
+  centralizes all accepted terminal-reason aliases in the streaming projection
+  layer and uses the same helper in production recovery and the business
+  scenario. Desktop TypeScript, `51/51` focused recovery/reducer tests,
+  `75/75` Harness structural tests, `352/352` Agent Acceptance tests, and
+  `git diff --check` pass. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`
+  pending checkpoint, exact-source deployment, and rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

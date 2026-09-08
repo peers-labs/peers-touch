@@ -15,6 +15,17 @@ function s(v: unknown): string {
 
 export const BUDGET_ERROR_TYPE = 'TOOL_LOOP_BUDGET_EXHAUSTED';
 
+export function terminalReasonFromStreamData(
+  data: Record<string, unknown>,
+): string {
+  return s(
+    data.terminal_reason
+    || data.terminalReason
+    || data.reason
+    || data.error,
+  );
+}
+
 export function projectAgentTypedError(
   data: Record<string, unknown>,
 ): ChatMessage['typedError'] {
@@ -165,7 +176,7 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
         ...msg,
         error: typedError?.locale_key ?? msg.error,
         typedError: typedError ?? msg.typedError,
-        errorDetail: s(d.reason || d.error) || msg.errorDetail,
+        errorDetail: terminalReasonFromStreamData(d) || msg.errorDetail,
         resolution: null,
         cancelled: true,
         terminalStatus: 'cancelled',
@@ -220,7 +231,7 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
 
     case 'snapshot': {
       const status = s(d.status).toLowerCase();
-      const terminalReason = s(d.terminal_reason || d.terminalReason);
+      const terminalReason = terminalReasonFromStreamData(d);
       const budgetNotice = projectBudgetNotice(d);
       const hasSnapshotText = typeof d.text === 'string';
       const cancelledError = (
