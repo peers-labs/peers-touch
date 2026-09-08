@@ -5282,6 +5282,10 @@ async function runFoundationDuplicateConflictScenario(input: {
       rejectedOutcomeRef.current,
       'foundationDuplicateConflictOutcome',
     );
+    const rejectedDetails = evidenceRecord(
+      rejectedOutcome.details,
+      'foundationDuplicateConflictDetails',
+    );
     const sourceDelivery = errorEvent.sourceDelivery;
     const actorPtid = authenticatedFoundationActorPtid();
     if (
@@ -5392,6 +5396,7 @@ async function runFoundationDuplicateConflictScenario(input: {
       station: {
         conversationId,
         originalTurnId,
+        existingCommandId: rejectedDetails.existing_command_id,
         idempotencyKeyHash: await sha256Hex(idempotencyKey),
         conversationVersionBefore: beforeReadback.conversation.version,
         conversationVersionAfter: afterReadback.conversation.version,
