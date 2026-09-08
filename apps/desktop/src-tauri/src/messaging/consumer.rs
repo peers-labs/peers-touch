@@ -1,6 +1,7 @@
 use super::{
-    ClaimedItemConsumer, ConversationStateProcessor, DeliveryReceiptProcessor,
-    DirectMessageProcessor, EngineEndpoint, MessagingStore, PublicEventProcessor,
+    ClaimedItemConsumer, CommandResultProcessor, ConversationStateProcessor,
+    DeliveryReceiptProcessor, DirectMessageProcessor, EngineEndpoint, MessagingStore,
+    PublicEventProcessor,
 };
 use crate::domain::crypto::IdentityKeyPair;
 use crate::model::chat::{
@@ -27,6 +28,7 @@ pub struct MessagingItemConsumer {
     public_event: PublicEventProcessor,
     conversation_state: ConversationStateProcessor,
     mls_sender_transition: MlsSenderTransitionProcessor<MessagingStore>,
+    command_result: CommandResultProcessor,
     delivery_receipt: DeliveryReceiptProcessor,
 }
 
@@ -82,6 +84,12 @@ impl MessagingItemConsumer {
                 mls_endpoint,
                 clock,
             )?,
+            command_result: CommandResultProcessor::new(
+                store.clone(),
+                mls_manager,
+                endpoint.clone(),
+                clock,
+            )?,
             delivery_receipt: DeliveryReceiptProcessor::new(store, endpoint, clock)?,
         })
     }
@@ -93,6 +101,9 @@ impl ClaimedItemConsumer for MessagingItemConsumer {
             .map_err(|_| "messaging queue payload type is invalid".to_string())?;
         if payload_type == DeviceInboxPayloadType::DeviceReceipt {
             return self.delivery_receipt.consume(item, consumer_epoch);
+        }
+        if payload_type == DeviceInboxPayloadType::CommandResult {
+            return self.command_result.consume(item, consumer_epoch);
         }
         if payload_type != DeviceInboxPayloadType::ConversationEvent {
             return Err("messaging consumer received unsupported queue payload type".to_string());
