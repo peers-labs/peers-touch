@@ -293,6 +293,16 @@ class MessagingPlatformContractTest(unittest.TestCase):
         desktop_transport = (
             ROOT / "apps/desktop/src-tauri/src/messaging/transport.rs"
         ).read_text(encoding="utf-8")
+        desktop_consumer = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/consumer.rs"
+        ).read_text(encoding="utf-8")
+        desktop_command_result = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/command_result.rs"
+        ).read_text(encoding="utf-8")
+        production_federation = (
+            ROOT
+            / "apps/station/app/subserver/conversation/production_federation.go"
+        ).read_text(encoding="utf-8")
 
         self.assertGreaterEqual(
             len(re.findall(r"VerifiedRoutes:\s+verifiedRoutes", production_http)),
@@ -374,6 +384,46 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn(
             "ordinary_commands_use_authority_command_route",
             desktop_transport,
+        )
+        self.assertIn(
+            "with_remote_command_identity",
+            desktop_transport,
+        )
+        self.assertIn(
+            "Submission::Proposal",
+            desktop_transport,
+        )
+        self.assertIn(
+            '"/conversation/public-head"',
+            desktop_transport,
+        )
+        self.assertIn(
+            "remote_command_proposal_is_device_signed_and_exactly_repeatable",
+            desktop_transport,
+        )
+        self.assertIn(
+            "DeviceInboxPayloadType::CommandResult",
+            desktop_consumer,
+        )
+        self.assertIn(
+            "commit_command_result",
+            desktop_command_result,
+        )
+        self.assertIn(
+            "discard_pending_transition",
+            desktop_command_result,
+        )
+        self.assertIn(
+            "existingConversationProposalReplay",
+            production_federation,
+        )
+        self.assertIn(
+            "validateNewConversationProposal",
+            production_federation,
+        )
+        self.assertIn(
+            "validateConversationProposalFollowerHead",
+            production_federation,
         )
         self.assertIn(
             "group_creation_request_preserves_exact_command_bytes",
