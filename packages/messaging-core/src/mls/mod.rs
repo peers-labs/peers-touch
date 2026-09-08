@@ -80,6 +80,7 @@ mod test_support {
                 MlsConversationProjection {
                     conversation_id: conversation_id.to_string(),
                     authority_station_id: "station-local".to_string(),
+                    federation_id: "federation-1".to_string(),
                     kind: crate::proto::chat::ConversationKind::Group as i32,
                     name: String::new(),
                     owner_ptid: "ptid:alice".to_string(),
