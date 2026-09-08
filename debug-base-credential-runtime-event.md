@@ -48,3 +48,22 @@ matrix tuple, timeout, or cleanup behavior changes.
 - Post-fix instrumentation now reports the actual outgoing `runtimeEvent` with
   `runId=post-fix`, so the next exact-source run can compare the same return
   boundary against the pre-fix J evidence without changing scenario behavior.
+
+## Post-Fix Runtime Evidence
+
+- Exact-source run
+  `20260908T043330745234Z-38d98efe6f7911850fc19b1213f56064` on
+  `3718bc254b364b13c6578fa3598403db361f66be` captured one `post-fix`
+  return-boundary event.
+- The scenario and returned event are both
+  `error / PROVIDER_CREDENTIAL_MISSING`, retain an empty source Turn and source
+  sequence `0`, and match on event ID, source conversation, and payload hash.
+- The prior runtime-event ownership mismatch is fixed. The Gate advanced to
+  candidate evidence sanitization and then rejected the non-secret schema field
+  `station-readback.credentialStatus`; cleanup completed
+  `DONE / PROVEN / passed`.
+- The candidate producer now allowlists only the exact
+  `credentialStatus` schema field while retaining recursive value scanning.
+  Focused producer and Foundation suites pass `15/15` and `132/132`.
+- The session remains `[OPEN]` until the sanitizer correction is exercised by
+  another exact-source Gate run.
