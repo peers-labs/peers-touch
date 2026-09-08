@@ -1,6 +1,7 @@
 package errcode
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -35,8 +36,10 @@ const (
 	AgentSecurityViolation         Code = "AGENT_4003"
 	AgentInternal                  Code = "AGENT_5000"
 
-	AgentCanvasSingleAgentNotReady Code = "AGENT_CANVAS_SINGLE_AGENT_NOT_READY"
+	AgentAdmissionDuplicateConflict Code = "ADMISSION_DUPLICATE_CONFLICT"
+	AgentCanvasSingleAgentNotReady  Code = "AGENT_CANVAS_SINGLE_AGENT_NOT_READY"
 
+	AgentAdmissionDuplicateConflictLocaleKey   = "agent.errors.duplicateConflict"
 	AgentCanvasSingleAgentNotReadyLocaleKey    = "agent.errors.canvasSingleAgentNotReady"
 	AgentCanvasSingleAgentNotReadyRequiredGate = "agent-v2-kernel-foundation-e2e"
 	AgentAttachmentRejectedLocaleKey           = "agent.errors.attachmentRejected"
@@ -185,6 +188,26 @@ func NewProviderCredentialMissing(providerID string) *BizError {
 			Terminal:  true,
 			Details: map[string]string{
 				"provider_id": providerID,
+			},
+		},
+	}
+}
+
+func NewAdmissionDuplicateConflict(idempotencyKey, existingCommandID string) *BizError {
+	idempotencyKeyHash := sha256.Sum256([]byte(idempotencyKey))
+	return &BizError{
+		Code:       AgentIdempotencyConflict,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentAdmissionDuplicateConflictLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentAdmissionDuplicateConflictLocaleKey,
+			ErrorType: string(AgentAdmissionDuplicateConflict),
+			LocaleKey: AgentAdmissionDuplicateConflictLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"idempotency_key_hash": fmt.Sprintf("%x", idempotencyKeyHash),
+				"existing_command_id":  existingCommandID,
 			},
 		},
 	}

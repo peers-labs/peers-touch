@@ -14,6 +14,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_cancelled,
     evaluate_base_context_overflow,
     evaluate_base_credential_missing,
+    evaluate_base_duplicate_conflict,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -1165,6 +1166,85 @@ def valid_credential_missing_capture() -> dict[str, object]:
             "disposableAgentDeleted": True,
             "priorSelection": "primary-agent",
             "restoredSelection": "primary-agent",
+        },
+    }
+
+
+def valid_duplicate_conflict_capture() -> dict[str, object]:
+    conversation_id = "conversation-duplicate-conflict"
+    original_turn_id = "turn-original"
+    state_hash = "a" * 64
+    idempotency_key_hash = "b" * 64
+    message_ids = ["message-user", "message-assistant"]
+    return {
+        "outcome": {
+            "error": "agent.errors.duplicateConflict",
+            "error_type": "ADMISSION_DUPLICATE_CONFLICT",
+            "locale_key": "agent.errors.duplicateConflict",
+            "retryable": False,
+            "terminal": True,
+            "details": {
+                "idempotency_key_hash": idempotency_key_hash,
+                "existing_command_id": original_turn_id,
+            },
+        },
+        "runtimeEvent": {
+            "eventId": "c" * 64,
+            "sequence": 1,
+            "eventType": "error",
+            "observedAt": "2026-09-08T05:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "d" * 64,
+            "conversationIdHash": hashlib.sha256(
+                conversation_id.encode("utf-8")
+            ).hexdigest(),
+            "payloadHash": "e" * 64,
+            "errorType": "ADMISSION_DUPLICATE_CONFLICT",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "f" * 64,
+            "sourceConversationId": conversation_id,
+            "sourceTurnId": "",
+            "sourceSequence": 0,
+            "sourceEventType": "error",
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "This request conflicts with an existing request.",
+            "expectedErrorText": (
+                "This request conflicts with an existing request."
+            ),
+            "recoveryVisible": True,
+            "recoveryText": "Open original",
+            "expectedRecoveryText": "Open original",
+            "openOriginalExecuted": True,
+            "openedTurnId": original_turn_id,
+        },
+        "station": {
+            "conversationId": conversation_id,
+            "originalTurnId": original_turn_id,
+            "existingCommandId": original_turn_id,
+            "idempotencyKeyHash": idempotency_key_hash,
+            "conversationVersionBefore": 2,
+            "conversationVersionAfter": 2,
+            "beforeHash": state_hash,
+            "afterHash": state_hash,
+            "originalMessageIdsBefore": message_ids,
+            "originalMessageIdsAfter": list(message_ids),
+            "turnDelta": 0,
+            "messageDelta": 0,
+            "queueDelta": 0,
+            "providerExecutionDelta": 0,
+        },
+        "replay": {
+            "sourceHash": state_hash,
+            "replayHash": state_hash,
+            "equal": True,
+        },
+        "cleanup": {
+            "conversationDeleted": True,
+            "localProjectionCleared": True,
+            "operationCleared": True,
+            "portalClosed": True,
         },
     }
 
@@ -2480,6 +2560,77 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "cleanupComplete",
         ):
             evaluate_base_context_overflow(capture)
+
+    def test_duplicate_conflict_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_duplicate_conflict(
+            valid_duplicate_conflict_capture()
+        )
+
+        self.assertEqual(len(assertions), 8)
+        self.assertTrue(all(assertions.values()))
+        self.assertTrue(all(type(value) is bool for value in assertions.values()))
+
+    def test_duplicate_conflict_rejects_typed_contract_drift(self) -> None:
+        for key, value in (
+            ("error_type", "IDEMPOTENCY_CONFLICT"),
+            ("locale_key", "agent.errors.generic"),
+            ("retryable", True),
+        ):
+            with self.subTest(key=key):
+                capture = valid_duplicate_conflict_capture()
+                capture["outcome"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedDuplicateConflictProjected",
+                ):
+                    evaluate_base_duplicate_conflict(capture)
+
+    def test_duplicate_conflict_rejects_identity_or_row_drift(self) -> None:
+        mutations = (
+            lambda capture: capture["outcome"]["details"].update(
+                {"existing_command_id": "turn-other"}
+            ),
+            lambda capture: capture["station"].update(
+                {"originalMessageIdsAfter": ["message-other"]}
+            ),
+            lambda capture: capture["station"].update({"turnDelta": 1}),
+            lambda capture: capture["station"].update(
+                {"providerExecutionDelta": 1}
+            ),
+            lambda capture: capture["runtimeEvent"].update(
+                {"sourceConversationId": "conversation-other"}
+            ),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                capture = valid_duplicate_conflict_capture()
+                mutation(capture)
+                with self.assertRaises(GroupOneScenarioError):
+                    evaluate_base_duplicate_conflict(capture)
+
+    def test_duplicate_conflict_requires_open_original_recovery(self) -> None:
+        for key, value, expected in (
+            ("errorText", "Conflict", "localizedRecoveryVisible"),
+            ("recoveryVisible", False, "localizedRecoveryVisible"),
+            ("recoveryText", "Open", "localizedRecoveryVisible"),
+            ("openOriginalExecuted", False, "openOriginalExecuted"),
+            ("openedTurnId", "turn-other", "openOriginalExecuted"),
+        ):
+            with self.subTest(key=key):
+                capture = valid_duplicate_conflict_capture()
+                capture["receiver"][key] = value
+                with self.assertRaisesRegex(GroupOneScenarioError, expected):
+                    evaluate_base_duplicate_conflict(capture)
+
+    def test_duplicate_conflict_requires_cleanup(self) -> None:
+        capture = valid_duplicate_conflict_capture()
+        capture["cleanup"]["portalClosed"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_duplicate_conflict(capture)
 
     def test_credential_missing_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_credential_missing(

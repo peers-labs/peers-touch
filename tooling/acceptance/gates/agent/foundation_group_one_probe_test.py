@@ -22,6 +22,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_cancelled,
     evaluate_base_context_overflow,
     evaluate_base_credential_missing,
+    evaluate_base_duplicate_conflict,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -39,6 +40,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_cancelled_capture,
     valid_context_overflow_capture,
     valid_credential_missing_capture,
+    valid_duplicate_conflict_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -96,6 +98,15 @@ def typed_runtime_role(
 
 def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, Any]:
     result = capture(probe)
+    if probe.cell == "BASE-DUPLICATE_CONFLICT":
+        facts = valid_duplicate_conflict_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_duplicate_conflict(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
+        return result
     if probe.cell == "BASE-CREDENTIAL_MISSING":
         facts = valid_credential_missing_capture()
         result["scenarioFacts"] = facts
@@ -499,6 +510,47 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneProbeError,
             "BASE-CONTEXT_OVERFLOW assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_duplicate_conflict_routes_to_independent_oracle(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-DUPLICATE_CONFLICT",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroNewRows": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-DUPLICATE_CONFLICT assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_duplicate_conflict_rejects_runtime_role_identity_drift(
+        self,
+    ) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-DUPLICATE_CONFLICT",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+        capture_value["runtime-events"]["sourceConversationId"] = (
+            "conversation-forged"
+        )
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "runtime-events role does not match",
         ):
             assert_group_one_capture(probe, capture_value)
 
