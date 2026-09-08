@@ -133,7 +133,7 @@ type KeyPackageReservations interface {
 	Reserve(
 		ctx context.Context,
 		planID valueobject.PlanID,
-		endpoints []valueobject.Endpoint,
+		routes []EndpointRoute,
 		expiresAt time.Time,
 	) ([]valueobject.KeyPackageReservation, error)
 	Consume(
