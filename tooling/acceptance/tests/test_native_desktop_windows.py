@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import ast
 import base64
+import hashlib
 import json
 import struct
 import subprocess
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -18,8 +20,8 @@ from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.provisioners.native_desktop_windows import (
     NativeDesktopWindowsProvisioner,
     WindowsCellProfile,
-    _bmp_geometry,
     _json_output,
+    _screenshot_probe_geometry,
 )
 from tooling.acceptance.transports.ssh import RemotePlatform
 
@@ -115,15 +117,53 @@ class WindowsCellProfileTest(unittest.TestCase):
 
 
 class WindowsProvisionerContractTest(unittest.TestCase):
-    def test_bmp_geometry_uses_interactive_adapter_capture(self) -> None:
-        content = bytearray(26)
+    def test_screenshot_probe_geometry_uses_validated_metadata(self) -> None:
+        content = bytearray(128)
         content[:2] = b"BM"
         struct.pack_into("<ii", content, 18, 1696, 912)
-
         self.assertEqual(
-            _bmp_geometry(base64.b64encode(content).decode("ascii")),
+            _screenshot_probe_geometry(
+                {
+                    "captured": True,
+                    "byteLength": len(content),
+                    "content": base64.b64encode(
+                        zlib.compress(content)
+                    ).decode("ascii"),
+                    "contentEncoding": "zlib",
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                }
+            ),
             (1696, 912),
         )
+
+    def test_screenshot_probe_geometry_rejects_incomplete_metadata(self) -> None:
+        with self.assertRaisesRegex(ProvisioningError, "metadata"):
+            _screenshot_probe_geometry(
+                {
+                    "captured": True,
+                    "byteLength": 54,
+                    "sha256": "a" * 64,
+                    "width": 1696,
+                    "height": 912,
+                }
+            )
+
+    def test_screenshot_probe_geometry_rejects_digest_mismatch(self) -> None:
+        content = bytearray(128)
+        content[:2] = b"BM"
+        struct.pack_into("<ii", content, 18, 1696, 912)
+        with self.assertRaisesRegex(ProvisioningError, "payload"):
+            _screenshot_probe_geometry(
+                {
+                    "captured": True,
+                    "byteLength": len(content),
+                    "content": base64.b64encode(
+                        zlib.compress(content)
+                    ).decode("ascii"),
+                    "contentEncoding": "zlib",
+                    "sha256": "a" * 64,
+                }
+            )
 
     def test_win32_adapter_uses_topmost_process_window(self) -> None:
         source = WINDOWS_DRIVER_PATH.read_text(encoding="utf-8")
@@ -220,6 +260,14 @@ class WindowsProvisionerContractTest(unittest.TestCase):
             source.index("    def _manifest(")
         ]
 
+        self.assertIn(
+            'screenshot = self.execute_adapter("probe_screenshot", {})',
+            probe,
+        )
+        self.assertNotIn(
+            'screenshot = self.execute_adapter("capture_screenshot", {})',
+            probe,
+        )
         self.assertIn(
             'control = self.execute_adapter(\n'
             '                "activate_process",',

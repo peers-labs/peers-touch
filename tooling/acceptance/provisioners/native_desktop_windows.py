@@ -13,6 +13,7 @@ import struct
 import subprocess
 import tempfile
 import time
+import zlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
@@ -109,19 +110,42 @@ def _digest(value: str, name: str) -> str:
     return matched.group(1)
 
 
-def _bmp_geometry(encoded: object) -> tuple[int, int]:
-    try:
-        content = base64.b64decode(str(encoded), validate=True)
-        if len(content) < 26 or content[:2] != b"BM":
-            raise ValueError("not a BMP payload")
-        width, height = struct.unpack_from("<ii", content, 18)
-    except (ValueError, struct.error) as error:
+def _screenshot_probe_geometry(value: object) -> tuple[int, int]:
+    if not isinstance(value, dict) or value.get("captured") is not True:
         raise ProvisioningError(
-            "Windows adapter screenshot is not a valid BMP payload"
+            "Windows adapter screenshot probe did not capture the desktop"
+        )
+    byte_length = value.get("byteLength")
+    if (
+        value.get("contentEncoding") != "zlib"
+        or isinstance(byte_length, bool)
+        or not isinstance(byte_length, int)
+        or byte_length <= 54
+    ):
+        raise ProvisioningError(
+            "Windows adapter screenshot probe metadata is invalid"
+        )
+    expected_digest = _digest(
+        str(value.get("sha256") or ""),
+        "Windows adapter screenshot",
+    )
+    try:
+        compressed = base64.b64decode(str(value.get("content") or ""), validate=True)
+        content = zlib.decompress(compressed)
+        if (
+            len(content) != byte_length
+            or hashlib.sha256(content).hexdigest() != expected_digest
+            or content[:2] != b"BM"
+        ):
+            raise ValueError("screenshot payload identity does not match")
+        width, height = struct.unpack_from("<ii", content, 18)
+    except (ValueError, struct.error, zlib.error) as error:
+        raise ProvisioningError(
+            "Windows adapter screenshot probe payload is invalid"
         ) from error
     if width <= 0 or height <= 0:
         raise ProvisioningError(
-            "Windows adapter screenshot geometry is invalid"
+            "Windows adapter screenshot probe geometry is invalid"
         )
     return width, height
 
@@ -1423,8 +1447,8 @@ class NativeDesktopWindowsProvisioner:
 
     def _probe_adapter(self, process_id: int) -> dict[str, Any]:
         control: dict[str, Any] = {}
-        screenshot = self.execute_adapter("capture_screenshot", {})
-        width, height = _bmp_geometry(screenshot.get("content"))
+        screenshot = self.execute_adapter("probe_screenshot", {})
+        width, height = _screenshot_probe_geometry(screenshot)
         center = [width / 2, height / 2]
         stack = self.execute_adapter(
             "window_stack_at_point",
