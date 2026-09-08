@@ -1260,7 +1260,19 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("waitForFoundationDiagnosticReplay(", scenario)
         self.assertIn("AgentTurnStatus.CANCELLED", scenario)
         self.assertIn("foundationStationReplayReadback({", scenario)
-        self.assertIn("applyRecoveredTurnEvent(", scenario)
+        live_projection = scenario.index("applyRecoveredTurnEvent(")
+        live_reconciliation = scenario.index(
+            "await useChatStore.getState().reconcileRecoveredTurn(",
+            live_projection,
+        )
+        live_receiver = scenario.index(
+            "const liveReceiver = await foundationCancelledReceiverSnapshot(",
+            live_reconciliation,
+        )
+        self.assertLess(live_projection, live_reconciliation)
+        self.assertLess(live_reconciliation, live_receiver)
+        self.assertIn("terminalEvent.data.terminal_reason", scenario)
+        self.assertIn("terminalEvent.data.error", scenario)
         self.assertGreaterEqual(scenario.count("messages: []"), 2)
         self.assertIn("reconcileRecoveredTurn(", scenario)
         self.assertIn("Foundation live cancellation receiver", scenario)

@@ -8322,7 +8322,7 @@ function reportFoundationCancelledLocalizationDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'base-cancelled-localization',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:foundationCancelledReceiverSnapshot',
       msg: `[DEBUG] ${stage}`,
@@ -9849,6 +9849,18 @@ async function runFoundationCancelledScenario(input: {
             {
               event: terminalEvent.event,
               data: terminalEvent.data,
+            },
+          );
+          await useChatStore.getState().reconcileRecoveredTurn(
+            conversation.conversation_id,
+            turnId,
+            {
+              status: 'cancelled',
+              reason: String(
+                terminalEvent.data.terminal_reason
+                ?? terminalEvent.data.error
+                ?? '',
+              ).trim() || undefined,
             },
           );
           const liveReceiver = await foundationCancelledReceiverSnapshot(
