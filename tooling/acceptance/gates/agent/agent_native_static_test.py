@@ -1356,6 +1356,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn("recoveryAction.click()", scenario)
         self.assertIn("openedView.turnId === originalTurnId", scenario)
+        self.assertIn(
+            "existingCommandId: rejectedDetails.existing_command_id",
+            scenario,
+        )
         for delta in (
             "turnDelta",
             "messageDelta",

@@ -190,3 +190,22 @@ post-fix comparison.
 
 The next exact-source run must compare the retained `post-fix` receiver logs.
 Product matrix tuples, assertions, timeouts, and cleanup remain unchanged.
+
+## Exact-Source Closure
+
+- Checkpoint `032bb05473906cb39aa9524131970f2aa2dab1ee` deployed to
+  `chat-native-disposable` and used Acceptance binary
+  `ac8f5cc4e3ed24485d461e44f9aeb35402680f65ba7902df700d2ee1005ae0a6`;
+  embedded-WebDriver smoke passed.
+- Gate run
+  `20260908T085631432448Z-cba84508b9ffeadfbe84947c59ebe7c0`
+  passed Browser `BASE-CANCELLED` in English and Simplified Chinese.
+- Both locales retained one canonical Station message ID; live and replay
+  carried `errorDetail=cancelled_by_user`; reload retained the durable typed
+  cancellation and expected localized text. No recovery or resolution action
+  was exposed.
+- The Gate advanced through `BASE-CREDENTIAL_MISSING` and failed later at
+  Browser English `BASE-DUPLICATE_CONFLICT / originalCommandPreserved`.
+  Provisioner cleanup completed `DONE / PROVEN / passed`.
+- The cancellation correction is source-backed closed. The debug session
+  remains `[OPEN]` until the user authorizes cleanup.
