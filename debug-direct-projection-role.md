@@ -81,3 +81,59 @@ the same kind-specific roles instead of inventing Direct ownership.
     `20260907T171455773563Z-97c990c064491a98b727cfe253fbcdcf`.
 - Exact-source Windows post-fix verification remains pending; the debug session
   stays `[OPEN]`.
+
+## Iteration: Group Federation Projection
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| I | The selected Direct peer loses its Federation ID in the Desktop local Conversation projection, so Group creation returns from the pre-command guard. | Confirmed | Windows run `20260907T172733115184Z-0c931661f30e78bb940a7a75796c0cd1` delivered native click events after committed selection, but emitted no Group command. Station's Direct row retains `fed_chat_7341c15a026c42dd6d56`; the Desktop projection contract and SQLite schema contain no Federation field. |
+| J | Contact selection is lost before `handleFinish`. | Rejected | Timeout DOM preserves Bob with `aria-pressed="true"` and the submit control enabled. |
+| K | The authenticated actor disappears before submission. | Rejected | The same DOM still renders Alice's authenticated Chat surface and runtime logs continue successful auth validation. |
+| L | Native input does not deliver the submit click. | Rejected | The native click helper observed the enabled target and completed its `mousedown`, `mouseup`, and `click` acknowledgements before the timeout. |
+
+The next fix belongs to the Desktop Device Messaging Engine projection:
+preserve canonical `federation_id` from Conversation authority events and
+Station bootstrap through local persistence, recovery, Rust/TypeScript
+projection, and `socialChat`. The modal must continue to reject missing or
+ambiguous Federation context.
+
+## Federation Projection Fix
+- Exact-source Windows run
+  `20260907T172733115184Z-0c931661f30e78bb940a7a75796c0cd1`
+  at `8c26787fbf024a2bf948827295f94e847417df36`, binary SHA-256
+  `54c28b1f3566124f4cd650ca8558c2273c0c2ee01e0c792a30d691e1d3fd2df2`,
+  proves committed Group selection and enabled-submit state before the native
+  click.
+- The submit click produced no `/conversation/group/prepare`, left the modal
+  open, and retained the enabled submit control. Station's Direct row retains
+  Federation `fed_chat_7341c15a026c42dd6d56`.
+- Desktop's local Conversation projection had no `federation_id` column or
+  Rust/TypeScript field. `CreateGroupModal` therefore rejected the selected
+  contact in its pre-command Federation guard.
+- The correction carries the authority-owned Federation ID through the shared
+  schema migration, creation/MLS projections, recovery, Desktop Rust JSON,
+  TypeScript service contract, `socialChat`, Mobile persistence/commands, and
+  Mobile lifecycle repair from canonical `/conversation/list` protobuf data.
+  Existing v2 recovery archives without the field remain decodable; Desktop and
+  Mobile repair empty legacy values from Station without inventing scope.
+- Local verification passes:
+  - Messaging Core: `106+2`;
+  - Desktop tests: `540` passed, one explicitly skipped;
+  - messaging platform contract: `19`;
+  - Desktop TypeScript check;
+  - Desktop production build;
+  - Desktop Rust `cargo check --features acceptance-webdriver`;
+  - Mobile Rust: `69` tests;
+  - full `pnpm mobile:check`;
+  - legacy recovery archive compatibility and pre-column SQLite migration;
+  - `station-messaging-unit`:
+    `20260908T012913836503Z-0950132dc5eb697bbbbfa3b9024bacc5`;
+  - `messaging-platform-contract`:
+    `20260908T012928729229Z-3fbe961ea4cc6aa0a2ccdc6b78643a99`;
+  - `desktop-check`:
+    `20260908T012952353971Z-4fde3c43ff57faf818e946e6a790f4c1`;
+  - `chat-native-visible-static`:
+    `20260908T013008012282Z-5044574d070da418cd2e02a6f843fdbc`;
+  - `mobile-contract-static`:
+    `20260908T013026599038Z-b494469b036bebe0b789cb7439da32d2`.
+- Exact-source Windows verification of this projection correction is pending;
+  the debug session stays `[OPEN]`.

@@ -110,6 +110,7 @@ export function sanitizeMessagingProjection(input: {
     conversations: input.conversations.map((conversation) => ({
       conversationId: conversation.conversationId,
       authorityStationId: conversation.authorityStationId,
+      federationId: conversation.federationId,
       kind: conversation.kind,
       name: conversation.name,
       ownerPtid: conversation.ownerPtid,

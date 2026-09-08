@@ -73,6 +73,13 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
             Some(conversation_event::Payload::ConversationCreated(created)) => created,
             _ => return Err("messaging conversation-state event is unsupported".to_string()),
         };
+        let post_state = created
+            .post_state
+            .as_ref()
+            .filter(|state| !state.federation_id.trim().is_empty())
+            .ok_or_else(|| {
+                "messaging conversation-state Federation projection is missing".to_string()
+            })?;
         if !created
             .members
             .iter()
@@ -88,6 +95,7 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
         let projection = ConversationProjection {
             conversation_id: event.conversation_id.clone(),
             authority_station_id: event.authority_station_peer_id.clone(),
+            federation_id: post_state.federation_id.clone(),
             kind: created.kind,
             name: created.name.clone(),
             owner_ptid: created.owner_ptid.clone(),
