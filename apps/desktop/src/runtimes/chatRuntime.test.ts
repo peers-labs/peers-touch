@@ -525,6 +525,42 @@ describe('chatRuntime Agent turn recovery', () => {
     );
   });
 
+  it('preserves the live cancellation reason during terminal reconciliation', async () => {
+    mocks.readValue.mockResolvedValueOnce({ 'conversation-1': activeTurn() });
+    await chatRuntime.bootstrap('ptid:person:alice');
+
+    mocks.replayOnEvents[0]({
+      event: 'catchup_done',
+      data: {
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        seq: 4,
+      },
+    });
+    mocks.replayOnEvents[0]({
+      event: 'cancelled',
+      data: {
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        seq: 5,
+        reason: 'cancelled_by_user',
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
+      expect(mocks.replayControllers[0].signal.aborted).toBe(true);
+    });
+    expect(mocks.reconcileRecoveredTurn).toHaveBeenCalledWith(
+      'conversation-1',
+      'turn-1',
+      {
+        status: 'cancelled',
+        reason: 'cancelled_by_user',
+      },
+    );
+  });
+
   it('rejects a late stream event from a different authenticated actor', async () => {
     mocks.readValue.mockResolvedValueOnce({});
     await chatRuntime.bootstrap('ptid:person:alice');

@@ -1271,8 +1271,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertLess(live_projection, live_reconciliation)
         self.assertLess(live_reconciliation, live_receiver)
-        self.assertIn("terminalEvent.data.terminal_reason", scenario)
-        self.assertIn("terminalEvent.data.error", scenario)
+        self.assertIn(
+            "terminalReasonFromStreamData(terminalEvent.data)",
+            scenario,
+        )
+        self.assertIn(
+            "terminalReasonFromStreamData(\n"
+            "            authoritativeSnapshot.data,\n"
+            "          )",
+            scenario,
+        )
         self.assertGreaterEqual(scenario.count("messages: []"), 2)
         self.assertIn("reconcileRecoveredTurn(", scenario)
         self.assertIn("Foundation live cancellation receiver", scenario)

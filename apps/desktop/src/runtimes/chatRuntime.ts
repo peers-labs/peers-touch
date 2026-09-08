@@ -17,6 +17,7 @@ import {
   type RecoveredTurnTerminal,
   useChatStore,
 } from '../store/chat';
+import { terminalReasonFromStreamData } from '../store/streaming/handler';
 import { log } from '../utils/logger';
 
 const RECOVERY_STORAGE_KEY = 'agent-turn-recovery';
@@ -229,11 +230,7 @@ function terminalFromEvent(event: StreamEvent): RecoveredTurnTerminal | null {
       : undefined;
   return {
     status,
-    reason: String(
-      event.data.terminal_reason
-      || event.data.error
-      || '',
-    ).trim() || undefined,
+    reason: terminalReasonFromStreamData(event.data).trim() || undefined,
     ...(snapshotContent !== undefined ? { content: snapshotContent } : {}),
   };
 }
