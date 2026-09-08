@@ -554,6 +554,22 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         ):
             assert_group_one_capture(probe, capture_value)
 
+    def test_duplicate_conflict_rejects_runtime_actor_drift(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-DUPLICATE_CONFLICT",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+        capture_value["runtimeAttestation"]["actorIdentityHash"] = "0" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "runtime source actor does not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
     def test_credential_missing_routes_to_independent_oracle(self) -> None:
         probe = DirectRuntimeProbeInput(
             platform="browser",
