@@ -229,3 +229,32 @@ ambiguous Federation context.
     `20260908T043433761115Z-7a2529c303868bb510bbd7875d883735`.
 - Exact-source Windows verification of this route correction is pending; the
   debug session stays `[OPEN]`.
+
+## Iteration: Group Genesis Sender Delivery
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| T | The Desktop route correction reaches canonical Group creation. | Confirmed | Exact-source run `20260908T044521277951Z-0fc6d8073736d98fc571117a45f01feb` records `POST /conversation/group` after successful preparation. |
+| U | Genesis delivery mapping wrongly requires an MLS Welcome for the creator. | Confirmed | The focused pre-fix mapper regression returns `welcome_payloads: does not cover every added endpoint`; the genesis plan contains both Alice and Bob in `AddedEndpoints`, while the client correctly emits a Welcome only for Bob. |
+| V | The Group committed and only projection failed. | Rejected | `/conversation/group` returns 400 before commit and Alice continues to list one Direct and zero Group conversations. |
+
+- Runtime source: `1824138a83d25dba08a2e2a823c1778b3cf34a90`.
+- Windows binary SHA-256:
+  `82d73b98ffe9b67b4bdad9534f67f27271d98fe6ae258a83d690f26df119f19b`.
+- First failed step: `group.create.ui`; cleanup is `DONE/PROVEN`.
+- The mapper correction keeps removed-sender retirement first, then emits the
+  sender public marker before mapping other added endpoints to MLS Welcomes.
+- Verification passes:
+  - focused mapper regression;
+  - Conversation HTTP race suite;
+  - `station-messaging-unit`
+    `20260908T052618517119Z-b203407dfe9b05dddad0cfdbb2064d79`;
+  - `messaging-platform-contract`
+    `20260908T052623369202Z-85f4abb691348b450fca24be6175af29`;
+  - `desktop-check`
+    `20260908T052632311323Z-5db7cb388d6e8b8a1337e3192a2edd97`;
+  - `chat-native-visible-static`
+    `20260908T052640959588Z-3cec8093c01a13cdcf05b27cfd062b57`;
+  - `station-api-ownership`
+    `20260908T052652251946Z-cadf5f3daa35394f3e41015d0fd4b10e`.
+- Exact-source Windows verification of this mapper correction is pending; the
+  debug session stays `[OPEN]`.
