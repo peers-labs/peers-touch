@@ -5459,7 +5459,7 @@ async function runFoundationCredentialMissingScenario(input: {
   const scenarioRuntimeEvent = evidenceRecord(
     facts.runtimeEvent,
     'foundationCredentialMissingRuntimeEvent',
-  );
+  ) as unknown as FoundationRuntimeEventObservation;
   await reportFoundationCredentialRuntimeEventDebug({
     scenarioEventType: scenarioRuntimeEvent.eventType,
     scenarioErrorType: scenarioRuntimeEvent.errorType,
@@ -5481,7 +5481,7 @@ async function runFoundationCredentialMissingScenario(input: {
     conversationId: attestation.conversationId,
     turnId: attestation.turnId,
     durationMs: performance.now() - startedAt,
-    runtimeEvent: attestation.runtimeEvent,
+    runtimeEvent: scenarioRuntimeEvent,
     facts,
   };
 }
