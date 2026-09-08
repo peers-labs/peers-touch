@@ -152,5 +152,41 @@ post-fix comparison.
   changes no product runtime, assertion, tuple, timeout, or cleanup behavior.
   Instrumentation remains active with `runId=post-fix`.
 
-The next run records only the F-I observation boundary. Product behavior,
-matrix tuples, assertions, timeouts, and cleanup remain unchanged.
+## Terminal Reason Normalization Recurrence
+
+- Exact-source checkpoint
+  `4fc4ab8c87a8bfc658364f912cc3202ce7ad3f29` used Station
+  `chat-native-disposable` and Acceptance binary
+  `4383a1eaa2a6d47efc71cdef09fd34b1c124970c9abf7e438d7a1045f57ddda1`;
+  embedded-WebDriver smoke passed.
+- Gate run
+  `20260908T080109406269Z-3123801450ec5d8c2894658ea7a4afed`
+  passed Browser AS-F10 and failed first at Browser English
+  `BASE-CANCELLED` on `localizedCancellationVisible`. Outer run
+  `20260908T080057747843Z-8a34f69e3626c6d2ebc2a3838b84a6f3`
+  completed `FAILED / PARTIAL / UNPROVEN`; Provisioner cleanup completed
+  `DONE / PROVEN / passed`.
+- Runtime lines 1-5 prove that live, reload, and replay now use the same
+  canonical Station message ID and preserve typed cancellation, localized
+  text, visibility, and no recovery action. The remaining mismatch is:
+  - live: `errorDetail=""`
+  - reload: `errorDetail=""`
+  - replay: `errorDetail=cancelled_by_user`
+- Hypothesis G is rejected because the replay operation is present and owns the
+  expected Turn. Hypothesis I is confirmed for the live reconciliation path:
+  the live `cancelled` event carries its terminal detail under `data.reason`,
+  while `chatRuntime.terminalFromEvent` and the copied Harness reconciliation
+  accepted only `terminal_reason` or `error`. Canonical Station message sync
+  intentionally has no live-only detail, so reconciliation erased the
+  previously projected reason.
+- Local correction centralizes `terminal_reason`, `terminalReason`, `reason`,
+  and `error` normalization in the streaming projection layer. Production
+  recovery and the business Acceptance scenario now consume the same helper.
+  A runtime regression requires a live `cancelled` event with
+  `reason=cancelled_by_user` to pass that reason into terminal reconciliation.
+- Local verification: Desktop TypeScript passed; focused recovery/reducer
+  tests passed `51/51`; Harness structural tests passed `75/75`; full Agent
+  Acceptance tests passed `352/352`; `git diff --check` passed.
+
+The next exact-source run must compare the retained `post-fix` receiver logs.
+Product matrix tuples, assertions, timeouts, and cleanup remain unchanged.
