@@ -807,6 +807,21 @@ class FoundationCandidateProducerTest(unittest.TestCase):
                 "runtimeAttestation",
             )
 
+    def test_credential_status_is_safe_but_its_value_is_still_scanned(self) -> None:
+        _ensure_evidence_safe(
+            {"credentialStatus": "not_configured"},
+            "station-readback",
+        )
+
+        with self.assertRaisesRegex(
+            FoundationCandidateError,
+            "secret-bearing evidence value",
+        ):
+            _ensure_evidence_safe(
+                {"credentialStatus": "api_key=must-not-be-persisted"},
+                "station-readback",
+            )
+
     def test_object_path_hash_is_not_treated_as_secret(self) -> None:
         _ensure_evidence_safe(
             {"deletionReadback": {"objectPathHash": "0" * 64}},

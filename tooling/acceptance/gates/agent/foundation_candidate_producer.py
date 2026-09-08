@@ -83,6 +83,7 @@ SAFE_SCHEMA_KEYS = {
     "cache_tokens",
     "contextTokens",
     "context_tokens",
+    "credentialStatus",
     "fencingToken",
     "hasTokenAccounting",
     "inputTokens",
