@@ -3,6 +3,7 @@ package conversation
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -34,7 +35,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const productionCommandProposalScope = "conversation-command-proposal"
+const (
+	productionCommandProposalScope       = "conversation-command-proposal"
+	productionCommandProposalVersion     = uint32(1)
+	productionMaxCommandProposalLifetime = 5 * time.Minute
+	productionMaxProposalClockSkew       = 30 * time.Second
+)
 
 var productionProposalLocks sync.Map
 var productionDeliveryReceiptLocks [256]sync.Mutex
@@ -1138,27 +1144,15 @@ func (s *subServer) forwardConversationProposal(
 	if err != nil {
 		return err
 	}
-	identity := &productionIdentityDirectory{db: s.composition.database}
-	verification, err := identity.VerifyDeviceSignature(
-		ctx,
-		valueobject.Endpoint{
-			Actor:  valueobject.PTID(authenticated.PTID),
-			Device: valueobject.DeviceID(authenticated.DeviceID),
-		},
-		proposal.GetActorSigningKeyId(),
-		signingBytes,
-		proposal.GetActorSignature(),
+	conversationID, err := valueobject.NewConversationID(
+		proposal.GetCommand().GetConversationId(),
 	)
 	if err != nil {
 		return err
 	}
-	if verification.KeyRevoked {
-		return conversationdomain.NewError(
-			conversationdomain.ErrorCodeActorKeyRevoked,
-			"production_federation.forward_proposal",
-			"actor_signing_key",
-			"is revoked",
-		)
+	actor, err := valueobject.NewPTID(authenticated.PTID)
+	if err != nil {
+		return err
 	}
 
 	lockValue, _ := productionProposalLocks.LoadOrStore(
@@ -1184,6 +1178,62 @@ func (s *subServer) forwardConversationProposal(
 					err,
 				)
 			}
+		}
+		exactReplay, err := existingConversationProposalReplay(
+			ctx,
+			tx,
+			string(s.localStation),
+			proposal,
+			s.composition.clock.Now().UTC(),
+		)
+		if err != nil {
+			return err
+		}
+		if exactReplay {
+			return nil
+		}
+		if err := validateNewConversationProposal(
+			proposal,
+			s.composition.clock.Now().UTC(),
+		); err != nil {
+			return err
+		}
+		identity := &productionIdentityDirectory{db: tx}
+		verification, err := identity.VerifyDeviceSignature(
+			ctx,
+			valueobject.Endpoint{
+				Actor:  actor,
+				Device: valueobject.DeviceID(authenticated.DeviceID),
+			},
+			proposal.GetActorSigningKeyId(),
+			signingBytes,
+			proposal.GetActorSignature(),
+		)
+		if err != nil {
+			return err
+		}
+		if verification.KeyRevoked {
+			return conversationdomain.NewError(
+				conversationdomain.ErrorCodeActorKeyRevoked,
+				"production_federation.forward_proposal",
+				"actor_signing_key",
+				"is revoked",
+			)
+		}
+		boundUnitOfWork, err := s.composition.UnitOfWork.Bind(tx)
+		if err != nil {
+			return err
+		}
+		boundQuery, err := query.NewService(boundUnitOfWork)
+		if err != nil {
+			return err
+		}
+		head, err := boundQuery.PublicHead(ctx, conversationID, actor)
+		if err != nil {
+			return err
+		}
+		if err := validateConversationProposalFollowerHead(proposal, head); err != nil {
+			return err
 		}
 		orderingKey := "conversation-authority-command:" +
 			proposal.GetCommand().GetConversationId()
@@ -1218,6 +1268,166 @@ func (s *subServer) forwardConversationProposal(
 
 		return err
 	})
+}
+
+func existingConversationProposalReplay(
+	ctx context.Context,
+	database *gorm.DB,
+	localStationPeerID string,
+	proposal *chatmodel.ConversationCommandProposal,
+	now time.Time,
+) (bool, error) {
+	var records []federationdelivery.OutboxRecord
+	if err := database.WithContext(ctx).
+		Where(
+			"source_station_peer_id = ? AND payload_kind = ? AND payload_id = ?",
+			localStationPeerID,
+			int32(federationdelivery.PayloadKindConversationAuthorityCommand),
+			proposal.GetCommand().GetCommandId(),
+		).
+		Limit(2).
+		Find(&records).Error; err != nil {
+		return false, fmt.Errorf("load existing Conversation proposal: %w", err)
+	}
+	if len(records) == 0 {
+		return false, nil
+	}
+	if len(records) != 1 {
+		return false, conversationdomain.NewError(
+			conversationdomain.ErrorCodeCommandConflict,
+			"production_federation.forward_proposal",
+			"command_id",
+			"identifies multiple outgoing authority commands",
+		)
+	}
+	var frame federationdelivery.Frame
+	if err := proto.Unmarshal(records[0].FrameBytes, &frame); err != nil {
+		return false, fmt.Errorf("decode existing Conversation proposal frame: %w", err)
+	}
+	proposalBytes, err := deterministicProductionProto(proposal)
+	if err != nil {
+		return false, err
+	}
+	if frame.GetSourceStationPeerId() != localStationPeerID ||
+		frame.GetTargetStationPeerId() != proposal.GetAuthorityStationPeerId() ||
+		frame.GetPayloadKind() != federationdelivery.PayloadKindConversationAuthorityCommand ||
+		frame.GetPayloadId() != proposal.GetCommand().GetCommandId() ||
+		!bytes.Equal(frame.GetOpaquePayload(), proposalBytes) {
+		return false, conversationdomain.NewError(
+			conversationdomain.ErrorCodeCommandConflict,
+			"production_federation.forward_proposal",
+			"command_id",
+			"already identifies different proposal bytes",
+		)
+	}
+	switch records[0].State {
+	case federationdelivery.OutboxStatePending,
+		federationdelivery.OutboxStateLeased,
+		federationdelivery.OutboxStateRetryWait:
+		if !records[0].ExpiresAt.After(now) {
+			return false, conversationdomain.NewError(
+				conversationdomain.ErrorCodeProposalExpired,
+				"production_federation.forward_proposal",
+				"command_id",
+				"identifies an expired authority command",
+			)
+		}
+		return true, nil
+	case federationdelivery.OutboxStateDelivered:
+		return true, nil
+	case federationdelivery.OutboxStateExpired:
+		return false, conversationdomain.NewError(
+			conversationdomain.ErrorCodeProposalExpired,
+			"production_federation.forward_proposal",
+			"command_id",
+			"identifies an expired authority command",
+		)
+	default:
+		return false, conversationdomain.NewError(
+			conversationdomain.ErrorCodeProposalInvalid,
+			"production_federation.forward_proposal",
+			"command_id",
+			"identifies a terminal authority command",
+		)
+	}
+
+}
+
+func validateNewConversationProposal(
+	proposal *chatmodel.ConversationCommandProposal,
+	now time.Time,
+) error {
+	if proposal == nil ||
+		proposal.GetVersion() != productionCommandProposalVersion ||
+		proposal.GetCommand() == nil ||
+		proposal.GetFederationId() == "" ||
+		proposal.GetAuthorityStationPeerId() == "" ||
+		proposal.GetHomeStationPeerId() == "" ||
+		proposal.GetActorPtid() == "" ||
+		proposal.GetActorDeviceId() == "" ||
+		proposal.GetActorSigningKeyId() == "" ||
+		proposal.GetCommand().GetCommandId() == "" ||
+		proposal.GetCommand().GetConversationId() == "" ||
+		proposal.GetCommand().GetAuthorityStationPeerId() !=
+			proposal.GetAuthorityStationPeerId() ||
+		len(proposal.GetCommandSha256()) != sha256.Size ||
+		len(proposal.GetActorSignature()) != ed25519.SignatureSize ||
+		productionWireCommandKind(proposal.GetCommand()) ==
+			chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeProposalInvalid,
+			"production_federation.forward_proposal",
+			"proposal",
+			"is incomplete or unsupported",
+		)
+	}
+	createdAt := time.UnixMilli(proposal.GetCreatedAtUnixMs()).UTC()
+	expiresAt := time.UnixMilli(proposal.GetExpiresAtUnixMs()).UTC()
+	if proposal.GetCreatedAtUnixMs() <= 0 ||
+		proposal.GetExpiresAtUnixMs() <= proposal.GetCreatedAtUnixMs() ||
+		expiresAt.Sub(createdAt) > productionMaxCommandProposalLifetime ||
+		createdAt.After(now.Add(productionMaxProposalClockSkew)) {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeProposalInvalid,
+			"production_federation.forward_proposal",
+			"proposal_time",
+			"is invalid",
+		)
+	}
+	if !expiresAt.After(now) {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeProposalExpired,
+			"production_federation.forward_proposal",
+			"proposal_time",
+			"has expired",
+		)
+	}
+
+	return nil
+}
+
+func validateConversationProposalFollowerHead(
+	proposal *chatmodel.ConversationCommandProposal,
+	head query.PublicHead,
+) error {
+	if proposal == nil ||
+		proposal.GetCommand() == nil ||
+		head.Source != query.SourceFollower ||
+		head.FollowerStatus != repository.FollowerStatusActive ||
+		head.Status != valueobject.ConversationStatusActive ||
+		string(head.ConversationID) != proposal.GetCommand().GetConversationId() ||
+		string(head.FederationID) != proposal.GetFederationId() ||
+		string(head.AuthorityStation) != proposal.GetAuthorityStationPeerId() ||
+		int64(head.AuthorityEpoch) != proposal.GetAuthorityEpoch() {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeProposalBinding,
+			"production_federation.forward_proposal",
+			"follower_head",
+			"does not match the active durable follower projection",
+		)
+	}
+
+	return nil
 }
 
 func productionAdvisoryLockID(key string) int64 {

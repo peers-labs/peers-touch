@@ -861,8 +861,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; contact resilience, Group genesis, and Alice-to-Bob Group delivery `DONE/PROVEN`; W9-D Product Closure remains partial | Exact-source Product Closure run `20260908T095837802631Z-15c4c028e3e73cdfb50b88abc1af3ce6` at `fbb4fb6b03a3bd65937f775414e4e4420b147df2` proves Direct open/reopen, canonical Group authority commit, both genesis projections, and Alice's sequence-2 Group message delivery to Bob. The first failure remains `transcript.thread.ui` while Alice waits for Bob's reply. Bob's local receipt is rejected on station-five and no Bob authority-command frame reaches station-four. W9-D remains `PARTIAL/UNPROVEN` pending the Conversation-owned receipt return correction and Bob outbound runtime readback. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, authority Group commit, and one-way cross-Station Group delivery | The next correction adds the missing typed `DeviceConsumptionReceipt` return through shared durable Federation while preserving `/conversation/delivery/receipt` and authority-owned receipt truth. Bidirectional Group transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven. |
+| NDR-W9 Windows cell | W9-A/B/C done; contact resilience, Group genesis, Alice-to-Bob Group delivery, and follower receipt return `DONE/PROVEN`; W9-D Product Closure remains partial | Exact-source Product Closure run `20260908T141700178703Z-805b1dd1bba78e3a4ba40f54c7004c6f` at `af5bb3b5699f7c5dce2b7aabd992dc97e8101f29` proves Direct open/reopen, canonical Group genesis, both genesis projections, Alice's sequence-2 Group message delivery to Bob, and durable follower receipt return. The first failure remains `transcript.thread.ui` while Alice waits for Bob's reply. PostgreSQL proves station-five created no authority-command Federation frame and station-four received no Bob command. The D-17 Desktop/Home correction passes the four local Chat Gates but remains `PARTIAL/UNPROVEN` pending exact-source deployment and Product Closure-only rerun. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, authority Group commit, one-way cross-Station Group delivery, and follower receipt return | The next checkpoint restores actor-device-signed D-17 remote ordinary commands through the Home Station and consumes the returned command-result Device Inbox item. Bidirectional Group transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -3817,3 +3817,73 @@ separate runtime assertion to inspect in the next Product Closure rerun.
 NDR-W9-D and Windows NDR-W10-D remain `PARTIAL/UNPROVEN` pending a local
 checkpoint commit, exact-source deployment to station-four, station-five, and
 sixwin, and a Product Closure-only rerun.
+
+### 2026-09-08 D-17 Remote Ordinary Command Restoration
+
+Exact-source Product Closure run
+`20260908T141700178703Z-805b1dd1bba78e3a4ba40f54c7004c6f`
+at `af5bb3b5699f7c5dce2b7aabd992dc97e8101f29`, aggregate
+`20260908T141700065759Z-30dc11b8077b16c4cfcb0303887969b7`,
+Windows cell `20260908t141743996690z-c977333e1f36eb29`, and binary SHA-256
+`df1ecb7445d4a7e05e9ab14bdd8b84010788596cea764d7df0b71ed8398de5d9`
+prove the follower receipt correction. The run reaches Bob's reply in Group
+`c1fff411-8a86-4460-9bb8-c7a26aa1e1ab`; cleanup is `DONE/PROVEN`.
+
+The first failure is `transcript.thread.ui` while Alice waits for
+`w13-bob-9393`. Bob's Desktop successfully prepares and submits the command to
+station-five, but the Device Messaging transport sends the raw `ChatCommand`
+to the remote Home Station. station-five returns a typed HTTP 200 rejection,
+persists no payload-kind 2 authority-command frame, and station-four therefore
+has no Bob command receipt or sequence-3 event. The Conversation hard cut
+deleted the earlier D-17 Desktop proposal path without reconnecting equivalent
+actor-device signing to the current command outbox.
+
+The local correction restores the accepted D-17 path without adding a public
+route or second truth:
+
+- local-authority commands remain raw canonical `ChatCommand` submissions;
+- remote-authority commands read the canonical follower public head, bind the
+  enrolled device signing key, and submit a deterministic
+  `ConversationCommandProposal` through `/conversation/command`;
+- ambiguous network, response-decode, and session-revocation outcomes remain
+  retryable so they cannot discard a command that the Home Station may already
+  have accepted;
+- the Home Station resolves exact existing proposal bytes before allocating a
+  new Federation ordering sequence, rejects command-ID byte conflicts and
+  terminal/expired outbox replays, and validates every new proposal against its
+  active durable follower projection;
+- Desktop consumes `COMMAND_RESULT` items atomically with the local command
+  transition, consumption marker, lane cursor, and claimed-item state;
+- accepted authority results repair local command/outbox/attempt state and the
+  pending message status without replacing the separately delivered authority
+  event projection;
+- terminal membership results remove both durable and in-memory pending MLS
+  transitions.
+
+Focused verification passes:
+
+- exact-range Acceptance plan
+  `20260908T160405061458Z-a503a8596e5f48536b8710f501f64023`;
+- Desktop Rust production
+  `cargo check --features acceptance-webdriver`;
+- complete Conversation race suite
+  `go test -race ./app/subserver/conversation/...`;
+- focused Home replay/follower-head tests;
+- `station-messaging-unit`
+  `20260908T162840250134Z-0b8134cddb77b02332de643862176c0f`;
+- `messaging-platform-contract`
+  `20260908T162845450220Z-4886636fb5e731a8c4ac30b87ed95ae6`;
+- `desktop-check`
+  `20260908T162848449697Z-a31545a74910c6f0c85245f809d637a1`;
+- `chat-native-visible-static`
+  `20260908T162856861553Z-3f6a7a76b4899857f54726d2b8049e6d`;
+- `station-api-ownership`
+  `20260908T160923016126Z-d046644b9523c60d94920de7a1834330`;
+- local aggregate
+  `20260908T162840127741Z-61da456f1bdd0c6896f197a978a846e7`.
+
+The focused Desktop binary test target remains blocked before execution by
+pre-existing Auth test-only unresolved imports and type inference errors;
+production Rust compilation passes. NDR-W9-D and Windows NDR-W10-D remain
+`PARTIAL/UNPROVEN` pending a local checkpoint commit, exact-source deployment,
+and Product Closure-only rerun.

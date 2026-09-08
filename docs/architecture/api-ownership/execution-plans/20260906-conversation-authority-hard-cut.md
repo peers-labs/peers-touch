@@ -596,7 +596,7 @@ matrices. Local/static success cannot replace native receiver proof.
 | CA-W4 Shared Federation and Social | done | Shared Federation supplies authenticated frames, durable outbox/inbox leases, retry/dedup/hash-conflict behavior, typed Conversation and Social receivers, and same-Station loopback. Conversation command conflicts return durable authority results bound to the originating command SHA-256; remote Device Inbox lane sequence remains target-owned. Social enforces receiver-local block/existing-relationship policy, atomically persists command/projection/result-outbox state, binds results to exact outgoing command bytes, rejects retryable result frames before durable resolution, and resolves remote actor keys from PTID plus a pinned Home Station profile/locator chain rather than `ActorRef.acct`; cached remote keys are revalidated against the latest signed active-key profile. The exact CA-W4 race command, focused `go vet`, `gofmt`, `git diff --check`, Go style, and `messaging-platform-contract` run `20260906T204614333077Z-6c52a4241e67fb14b3a0663a346aa7a5` pass. Two independent post-fix reviews report zero P0/P1 findings. Live DHT/Relay two-Station convergence remains `UNPROVEN` until CA-W5 production composition and CA-W6 runtime Acceptance. |
 | CA-W5-P0 Donor reconciliation | done | `peers-social` remained a read-only donor. The unique Conversation query/persistence/HTTP behavior was reconciled semantically into `peers-group-chat`; divergent contracts, generated bindings, and overlapping Desktop/Mobile/Messaging Core code were rejected. The retired 105-file `conversation/engine/` tree is deleted, and the final source contains no duplicate engine owner. |
 | CA-W5 Atomic production hard cut | source checkpoint ready / runtime unproven | AO-D07 is implemented proto-first across Station, Desktop, Mobile, and portable Messaging Core. Canonical Conversation production composition now owns creation, commands, event truth, follower recovery, attachment control/data forwarding, and Device Inbox effects; Key Exchange owns local reservation and exact-replay irreversible remote KeyPackage claims; shared Federation owns authenticated route/relay transport. Retired Envelope, flat Conversation, engine, superseded proto, generated bindings, callers, stores, aliases, and fallbacks are deleted. `proto-build` run `20260907T095814186121Z-b39852f3e6f655416a20f3194dc3699d`, `station-api-ownership` run `20260907T095552389681Z-9035a2fbed82ec5a54b98f5b260fe383`, `station-messaging-unit` run `20260907T095534375916Z-3761b27ef989ec4449bf94b82a4a2523`, `messaging-platform-contract` run `20260907T095650555959Z-0f85322adf5c78105d9ca8f15a4a351b`, `desktop-check` run `20260907T095738644264Z-aa04882b997b2eeb5f7e9b2001600a10`, and `chat-native-visible-static` run `20260907T100757881125Z-070fde35dba471e1da0351dc8d030cb0` pass. Focused Station race/vet, Desktop 540 tests and build, Desktop Rust library check, Mobile full check, Messaging Core 104+2 tests, Go style, and diff checks pass. The Gap Detector correctly keeps product proof `UNPROVEN` until the CA-W6 native receiver gates run. Repository-wide Station tests also contain unrelated pre-existing Frame/vendor failures and live `:18080` tests; they do not establish CA-W6 runtime proof. |
-| CA-W6 Runtime Acceptance | in progress / one-way Group delivery runtime-proven; follower receipt correction locally verified | Windows Product Closure run `20260908T095837802631Z-15c4c028e3e73cdfb50b88abc1af3ce6` at exact source `fbb4fb6b03a3bd65937f775414e4e4420b147df2` proved distinct Station binding, Direct create/reopen, canonical Group genesis, and Alice's sequence-2 Group message delivery to Bob. The typed follower receipt return, authority source binding, atomic authority receipt plus sender Device Inbox/Federation effects, remote originator routes, replay/conflict, same-event multi-device routing, and delayed receipt frame admission now pass local tests and Gates. Runtime cleanup is `DONE/PROVEN`; complete Product Closure, runtime receipt closure, Bob outbound authority readback, and PostgreSQL contention remain `UNPROVEN` pending exact-source deployment and rerun. |
+| CA-W6 Runtime Acceptance | in progress / follower receipt runtime-proven; D-17 Bob outbound correction locally verified | Windows Product Closure run `20260908T141700178703Z-805b1dd1bba78e3a4ba40f54c7004c6f` at exact source `af5bb3b5699f7c5dce2b7aabd992dc97e8101f29` proved distinct Station binding, Direct create/reopen, canonical Group genesis, Alice's sequence-2 Group message delivery to Bob, and durable follower receipt return. PostgreSQL then proved station-five created no authority-command Federation frame for Bob because Desktop submitted a raw remote `ChatCommand`. The D-17 proposal, Home exact-replay/follower-head validation, and Desktop command-result consumer now pass local tests and the four approved Chat Gates. Runtime cleanup is `DONE/PROVEN`; complete Product Closure, Bob outbound authority readback, and PostgreSQL contention remain `UNPROVEN` pending exact-source deployment and rerun. |
 | CA-W7 Completion/docs/knowledge audit | pending | — |
 
 ## 14. Risks And Escalation
@@ -924,3 +924,54 @@ CA-W6 remains `PARTIAL/UNPROVEN` pending checkpoint commit, exact-source
 deployment, and Product Closure-only rerun. Bob command submission remains an
 independent runtime assertion because Desktop command dispatch precedes
 outgoing receipt dispatch and is not short-circuited by its failure.
+
+The exact-source rerun
+`20260908T141700178703Z-805b1dd1bba78e3a4ba40f54c7004c6f`
+at `af5bb3b5699f7c5dce2b7aabd992dc97e8101f29`, Windows binary SHA-256
+`df1ecb7445d4a7e05e9ab14bdd8b84010788596cea764d7df0b71ed8398de5d9`,
+proves that follower receipt return no longer blocks Bob's send. It fails at
+`transcript.thread.ui` while Alice waits for `w13-bob-9393`. station-five
+accepts Bob's prepare request but persists no payload-kind 2
+authority-command frame, while station-four retains only the Group genesis and
+Alice's sequence-2 message.
+
+The root cause is a CA-W5 cutover regression: the current Desktop command
+transport submits every ordinary command as a raw local-authority command, so a
+remote actor never enters the accepted D-17 actor-device-signed proposal path.
+The local correction now:
+
+- selects raw command submission only when Home Station is the authority;
+- builds the remote proposal from the canonical follower public head and the
+  enrolled device signing key;
+- keeps network, response-decode, and session-revocation ambiguity retryable;
+- makes Home proposal enqueue exact-replay-safe before Federation sequence
+  allocation and rejects changed bytes plus terminal or expired replay rows;
+- validates new proposals against the active durable follower projection;
+- consumes addressed `COMMAND_RESULT` items with exact command, endpoint,
+  authority event, payload hash, lane, and consumer-epoch bindings;
+- repairs local command/outbox/attempt and pending-message state from accepted
+  authority truth without replacing the separately delivered event projection;
+- commits terminal command state and queue consumption atomically and removes
+  both durable and in-memory pending MLS transitions.
+
+The source-bound local aggregate
+`20260908T162840127741Z-61da456f1bdd0c6896f197a978a846e7`
+passes `station-messaging-unit`
+`20260908T162840250134Z-0b8134cddb77b02332de643862176c0f`,
+`messaging-platform-contract`
+`20260908T162845450220Z-4886636fb5e731a8c4ac30b87ed95ae6`,
+`desktop-check`
+`20260908T162848449697Z-a31545a74910c6f0c85245f809d637a1`,
+and `chat-native-visible-static`
+`20260908T162856861553Z-3f6a7a76b4899857f54726d2b8049e6d`.
+`station-api-ownership`
+`20260908T160923016126Z-d046644b9523c60d94920de7a1834330`
+also passes.
+Exact-range Acceptance plan
+`20260908T160405061458Z-a503a8596e5f48536b8710f501f64023`
+selects the expected Chat ownership closure; dependent native Gates remain
+deferred until Product Closure passes.
+The full Conversation race suite and Desktop Rust production check also pass.
+The Desktop binary test target remains blocked by pre-existing Auth test-only
+compile errors. CA-W6 remains `PARTIAL/UNPROVEN` until this checkpoint is
+committed, deployed exactly, and Product Closure is rerun.
