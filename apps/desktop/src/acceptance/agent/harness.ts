@@ -13097,52 +13097,117 @@ export function installAcceptanceHarness(): void {
     },
 
     async ensureProvider({ providerId, apiKey, modelId, baseUrl }: { providerId: string; apiKey: string; modelId: string; baseUrl?: string }) {
-      const providerStore = useProviderStore.getState();
-      await providerStore.loadProviders();
-      const existing = providerStore.providers.find((p) => p.id === providerId);
-      const existingDetail = existing ? await api.getProvider(providerId) : null;
-      const effectiveBaseUrl = baseUrl || existingDetail?.base_url || '';
-      if (!existing) {
-        await providerStore.createProvider({ id: providerId, name: providerId, base_url: effectiveBaseUrl, api_key: apiKey });
-      } else {
-        const version = existingDetail?.version ?? 0;
-        await api.updateProvider(providerId, { api_key: apiKey, base_url: effectiveBaseUrl, enabled: true, version });
-      }
-      const availableModels = await api.listAvailableModels();
-      const providerModel = availableModels.models.find(
-        (model) => model.provider_id === providerId && model.id === modelId && model.enabled,
-      );
-      if (!providerModel) {
-        throw new Error('agent.acceptance.providerModelUnavailable');
-      }
-      const agentStore = useAgentStore.getState();
-      await agentStore.loadAgents();
-      const refreshedAgentStore = useAgentStore.getState();
-      const selected = refreshedAgentStore.selectedAgent;
-      const agent = refreshedAgentStore.agents.find((a) => a.name === selected)
-        || refreshedAgentStore.agents[0];
-      if (agent) {
-        const agentId = agent.id || agent.name;
-        if (agent.provider !== providerId || agent.model !== modelId) {
-          await agentStore.updateAgentProfile(agentId, {
-            provider: providerId,
-            model: modelId,
-          });
-          await agentStore.loadAgents();
-        }
-        const readiness = await api.getAgentCapabilityReadiness({
-          agent_id: agentId,
+      // #region debug-point F-I:ensure-provider-stage
+      const reportEnsureProviderStage = (
+        stage: string,
+        data: Record<string, unknown> = {},
+      ): void => {
+        void fetch('http://127.0.0.1:7778/event', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: 'foundation-identity-boot',
+            runId: 'pre-fix',
+            hypothesisId: 'F-I',
+            location: 'apps/desktop/src/acceptance/agent/harness.ts:ensureProvider',
+            msg: `[DEBUG] ${stage}`,
+            data,
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+      };
+      // #endregion
+
+      let stage = 'load-providers';
+      reportEnsureProviderStage('started', { stage });
+      try {
+        const providerStore = useProviderStore.getState();
+        await providerStore.loadProviders();
+        const existing = providerStore.providers.find((p) => p.id === providerId);
+        reportEnsureProviderStage('providers-loaded', {
+          providerCount: providerStore.providers.length,
+          providerExists: existing !== undefined,
         });
-        const modelCapabilities = readiness.model_capabilities;
-        if (
-          !readiness.runtime_snapshot_id
-          || !modelCapabilities?.snapshot_id
-          || modelCapabilities.snapshot_id !== readiness.runtime_snapshot_id
-        ) {
-          throw new Error('agent.acceptance.providerReadinessBlocked');
+
+        stage = 'load-provider-detail';
+        const existingDetail = existing ? await api.getProvider(providerId) : null;
+        reportEnsureProviderStage('provider-detail-loaded', {
+          providerExists: existing !== undefined,
+          detailPresent: existingDetail !== null,
+        });
+
+        stage = 'persist-provider';
+        const effectiveBaseUrl = baseUrl || existingDetail?.base_url || '';
+        if (!existing) {
+          await providerStore.createProvider({ id: providerId, name: providerId, base_url: effectiveBaseUrl, api_key: apiKey });
+        } else {
+          const version = existingDetail?.version ?? 0;
+          await api.updateProvider(providerId, { api_key: apiKey, base_url: effectiveBaseUrl, enabled: true, version });
         }
+        reportEnsureProviderStage('provider-persisted');
+
+        stage = 'list-models';
+        const availableModels = await api.listAvailableModels();
+        const providerModel = availableModels.models.find(
+          (model) => model.provider_id === providerId && model.id === modelId && model.enabled,
+        );
+        reportEnsureProviderStage('models-loaded', {
+          modelCount: availableModels.models.length,
+          requestedModelAvailable: providerModel !== undefined,
+        });
+        if (!providerModel) {
+          throw new Error('agent.acceptance.providerModelUnavailable');
+        }
+
+        stage = 'load-agents';
+        const agentStore = useAgentStore.getState();
+        await agentStore.loadAgents();
+        const refreshedAgentStore = useAgentStore.getState();
+        const selected = refreshedAgentStore.selectedAgent;
+        const agent = refreshedAgentStore.agents.find((a) => a.name === selected)
+          || refreshedAgentStore.agents[0];
+        reportEnsureProviderStage('agents-loaded', {
+          agentCount: refreshedAgentStore.agents.length,
+          selectedAgentPresent: agent !== undefined,
+        });
+        if (agent) {
+          const agentId = agent.id || agent.name;
+          if (agent.provider !== providerId || agent.model !== modelId) {
+            stage = 'update-agent-profile';
+            await agentStore.updateAgentProfile(agentId, {
+              provider: providerId,
+              model: modelId,
+            });
+            await agentStore.loadAgents();
+            reportEnsureProviderStage('agent-profile-updated');
+          }
+
+          stage = 'load-readiness';
+          const readiness = await api.getAgentCapabilityReadiness({
+            agent_id: agentId,
+          });
+          const modelCapabilities = readiness.model_capabilities;
+          reportEnsureProviderStage('readiness-loaded', {
+            runtimeSnapshotPresent: Boolean(readiness.runtime_snapshot_id),
+            modelSnapshotPresent: Boolean(modelCapabilities?.snapshot_id),
+            snapshotsMatch:
+              modelCapabilities?.snapshot_id === readiness.runtime_snapshot_id,
+          });
+          if (
+            !readiness.runtime_snapshot_id
+            || !modelCapabilities?.snapshot_id
+            || modelCapabilities.snapshot_id !== readiness.runtime_snapshot_id
+          ) {
+            throw new Error('agent.acceptance.providerReadinessBlocked');
+          }
+        }
+        return { configured: true, providerId, modelId, agentName: agent?.name };
+      } catch (error) {
+        reportEnsureProviderStage('failed', {
+          stage,
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+        throw error;
       }
-      return { configured: true, providerId, modelId, agentName: agent?.name };
     },
 
     async sendMessage({ content }: SendMessageInput) {
