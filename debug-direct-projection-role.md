@@ -137,3 +137,56 @@ ambiguous Federation context.
     `20260908T013026599038Z-b494469b036bebe0b789cb7439da32d2`.
 - Exact-source Windows verification of this projection correction is pending;
   the debug session stays `[OPEN]`.
+
+## Iteration: Group Signed Endpoint Routes
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| M | Group submission reaches Station after Federation projection repair. | Confirmed | Exact-source Windows run `20260908T013805491929Z-5d8f7a0c6d64aec300b72900a1ecd09c` calls `POST /conversation/group/prepare`; Desktop records `station returned 400`. |
+| N | Group preparation incorrectly requires remote Bob in the authority Station's local Actor Device table. | Confirmed | Station request `131caa21-a783-43e4-a7ef-161743ad84b1` returns 400 after the local identity query resolves only Alice. `PrepareGroup` called `resolveActorRoutes`, and KeyPackage reservation called `activeRoute`, both backed only by local `actor_devices`. |
+| O | The existing MP-D19 signed endpoint-manifest path can supply canonical Alice/Bob routes without a Bob shadow row. | Confirmed locally | `TestConversationDDDGroupGenesisUsesVerifiedRemoteRoutes` creates the Group with Bob routed to station-five and asserts zero local Bob device rows. |
+
+- Runtime source: `4ff3f78fb4c6a437aa6b1ed645dabab57ca9b57e`.
+- Windows binary SHA-256:
+  `b144db724cc552c9c1c3fb7676670524e605a83629f737ae42c50c32ef3d0b54`.
+- Source/runtime identity, Direct create/reopen, native input, and cleanup pass.
+- First failed step: `group.create.ui`, caused by Station HTTP 400 during
+  `POST /conversation/group/prepare`.
+- The local correction:
+  - resolves one signed endpoint-manifest snapshot before Group preparation;
+  - passes server-derived canonical routes into the application service;
+  - binds KeyPackage reservation to verified Home Station routes;
+  - returns the same manifest snapshot used by the authority plan;
+  - binds the complete signed manifest set and stable directory state into the
+    persisted authority plan;
+  - revalidates fresh signed routes and stable directory state before Group
+    commit;
+  - resolves exact receipt replay before plan loading or remote manifest
+    lookup;
+  - derives Group name and members only from the persisted plan;
+  - keeps client-provided routing data non-authoritative.
+- Verification passes:
+  - full Conversation and Key Exchange tests;
+  - Conversation and Key Exchange race tests;
+  - focused Conversation and Key Exchange `go vet`;
+  - Go style, formatting, and diff checks;
+  - local aggregate
+    `20260908T032102443647Z-880042c6a33915570b610c7a94d90718`;
+  - `station-messaging-unit`
+    `20260908T032102660098Z-e50d904fe0d9cf71f21637d628504b76`;
+  - `messaging-platform-contract`
+    `20260908T032105462748Z-fe0e66b26c2c04814cfbff0d47eeb9a1`;
+  - `desktop-check`
+    `20260908T032108283088Z-58efca7e594a079767761275bff4ee83`;
+  - `chat-native-visible-static`
+    `20260908T032117217481Z-8905e613c33b030e18e8075e6daf24ca`;
+  - conditional `station-api-ownership`
+    `20260908T031556440970Z-1defc692da62374b13b9c5e23f453da2`;
+  - independent final seam review: no P0/P1 findings.
+- Exact-range plan:
+  `20260908T031725199224Z-b69de6f2a0fd623271448cdfd5f91dd2`.
+- Gap Detector
+  `20260908T032208866291Z-5c6df6dd6c62ef049d94c8a0f8ef78ac`
+  remains `UNPROVEN` for the pending native Gate and the unrelated
+  Acceptance provisioning self-suite.
+- Exact-source Windows verification remains pending; the debug session stays
+  `[OPEN]`.

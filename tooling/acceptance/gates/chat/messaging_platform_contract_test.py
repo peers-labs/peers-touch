@@ -275,6 +275,80 @@ class MessagingPlatformContractTest(unittest.TestCase):
             mobile_acceptance_projection,
         )
 
+    def test_group_genesis_uses_server_verified_endpoint_routes(self) -> None:
+        production_http = (
+            ROOT / "apps/station/app/subserver/conversation/production_http.go"
+        ).read_text(encoding="utf-8")
+        command_service = (
+            ROOT
+            / "apps/station/app/subserver/conversation/application/command/service.go"
+        ).read_text(encoding="utf-8")
+        reservation_adapter = (
+            ROOT / "apps/station/app/subserver/conversation/production_adapters.go"
+        ).read_text(encoding="utf-8")
+        key_exchange = (
+            ROOT
+            / "apps/station/app/subserver/key_exchange/application/canonical_service.go"
+        ).read_text(encoding="utf-8")
+
+        self.assertGreaterEqual(
+            len(re.findall(r"VerifiedRoutes:\s+verifiedRoutes", production_http)),
+            3,
+        )
+        self.assertGreaterEqual(
+            len(re.findall(r"VerifiedRoutes\s+\[\]ports\.EndpointRoute", command_service)),
+            2,
+        )
+        self.assertIn(
+            "canonicalActorRoutes(request.VerifiedRoutes, actors)",
+            command_service,
+        )
+        self.assertIn(
+            "routes []ports.EndpointRoute",
+            reservation_adapter,
+        )
+        self.assertNotIn(
+            "r.identity.activeRoute(ctx, endpoint)",
+            reservation_adapter,
+        )
+        self.assertIn(
+            "ReserveMLSKeyPackageForVerifiedRoute",
+            key_exchange,
+        )
+        self.assertIn(
+            "productionEndpointManifestSetHashes",
+            production_http,
+        )
+        self.assertIn(
+            "ReplayGroupCreation",
+            production_http,
+        )
+        self.assertLess(
+            production_http.index("ReplayGroupCreation"),
+            production_http.index("s.loadAuthorityPlan"),
+        )
+        self.assertIn(
+            "EndpointManifestSetHash",
+            command_service,
+        )
+        self.assertIn(
+            "EndpointManifestStateHash",
+            command_service,
+        )
+        create_group_request = re.search(
+            r"type CreateGroupRequest struct \{(?P<body>.*?)\n\}",
+            command_service,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(create_group_request)
+        create_group_request_body = create_group_request.group("body")
+        self.assertNotRegex(create_group_request_body, r"\bName\s+")
+        self.assertNotRegex(create_group_request_body, r"\bMembers\s+")
+        self.assertIn(
+            "actors := productionPlanActors(plan)",
+            production_http,
+        )
+
     def test_sending_endpoint_uses_ordered_public_event_marker(self) -> None:
         command = (CHAT_PROTO / "command.proto").read_text(encoding="utf-8")
         event = (CHAT_PROTO / "event.proto").read_text(encoding="utf-8")

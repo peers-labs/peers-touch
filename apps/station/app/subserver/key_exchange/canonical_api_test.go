@@ -810,6 +810,32 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 			fixture.federation.LastMLSClaim(),
 		)
 	}
+
+	manifestOnlyTarget := domain.Endpoint{
+		ActorPTID: "ptid:manifest-only",
+		DeviceID:  "manifest-device",
+	}
+	manifestOnly, err := fixture.service.ReserveMLSKeyPackageForVerifiedRoute(
+		ctx,
+		"manifest-route-claim",
+		"manifest-route-plan",
+		manifestOnlyTarget,
+		testRemoteStation,
+		fixture.clock.Now().Add(time.Minute),
+	)
+	if err != nil {
+		t.Fatalf("reserve from verified remote route: %v", err)
+	}
+	if manifestOnly.Target != manifestOnlyTarget ||
+		manifestOnly.HomeStation != testRemoteStation ||
+		!manifestOnly.IrreversiblyConsumed ||
+		fixture.federation.MLSClaimLen() != 2 {
+		t.Fatalf(
+			"verified-route reservation=%+v claim calls=%d",
+			manifestOnly,
+			fixture.federation.MLSClaimLen(),
+		)
+	}
 }
 
 func newCanonicalFixture(t *testing.T) *canonicalFixture {

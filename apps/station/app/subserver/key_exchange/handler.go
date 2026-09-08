@@ -372,6 +372,32 @@ func (s *subServer) ReserveMLSKeyPackage(
 	)
 }
 
+// ReserveMLSKeyPackageForVerifiedRoute consumes a route already verified from
+// Actor Identity's signed endpoint manifest by an internal Station caller.
+func (s *subServer) ReserveMLSKeyPackageForVerifiedRoute(
+	ctx context.Context,
+	requestID string,
+	authorityPlanID string,
+	target domain.Endpoint,
+	homeStationID string,
+	expiresAt time.Time,
+) (domain.MLSKeyPackageReservation, error) {
+	if s.composition == nil || s.composition.service == nil {
+		return domain.MLSKeyPackageReservation{}, server.InternalError(
+			"Key Exchange subserver is not initialized",
+		)
+	}
+
+	return s.composition.service.ReserveMLSKeyPackageForVerifiedRoute(
+		ctx,
+		requestID,
+		authorityPlanID,
+		target,
+		homeStationID,
+		expiresAt,
+	)
+}
+
 // ClaimMLSKeyPackage exposes the Key Exchange-owned peer capability without
 // registering the Federation-owned route.
 func (s *subServer) ClaimMLSKeyPackage(

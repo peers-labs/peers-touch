@@ -271,23 +271,25 @@ const (
 )
 
 type AuthorityPlan struct {
-	ID                     valueobject.PlanID
-	ConversationID         valueobject.ConversationID
-	FederationID           valueobject.FederationID
-	AuthorityEpoch         valueobject.AuthorityEpoch
-	PreparedName           string
-	Requester              valueobject.Endpoint
-	AuthorityHead          valueobject.AuthorityHead
-	Changes                []MembershipChange
-	PreEndpoints           []valueobject.Endpoint
-	PostEndpoints          []valueobject.Endpoint
-	AddedEndpoints         []valueobject.Endpoint
-	RemovedEndpoints       []valueobject.Endpoint
-	Hash                   valueobject.Hash
-	State                  AuthorityPlanState
-	ExpiresAt              time.Time
-	TerminalAt             *time.Time
-	KeyPackageReservations []valueobject.KeyPackageReservation
+	ID                        valueobject.PlanID
+	ConversationID            valueobject.ConversationID
+	FederationID              valueobject.FederationID
+	AuthorityEpoch            valueobject.AuthorityEpoch
+	PreparedName              string
+	Requester                 valueobject.Endpoint
+	AuthorityHead             valueobject.AuthorityHead
+	Changes                   []MembershipChange
+	PreEndpoints              []valueobject.Endpoint
+	PostEndpoints             []valueobject.Endpoint
+	AddedEndpoints            []valueobject.Endpoint
+	RemovedEndpoints          []valueobject.Endpoint
+	EndpointManifestSetHash   valueobject.Hash
+	EndpointManifestStateHash valueobject.Hash
+	Hash                      valueobject.Hash
+	State                     AuthorityPlanState
+	ExpiresAt                 time.Time
+	TerminalAt                *time.Time
+	KeyPackageReservations    []valueobject.KeyPackageReservation
 }
 
 func NewAuthorityPlan(plan AuthorityPlan) (*AuthorityPlan, error) {
@@ -299,6 +301,15 @@ func NewAuthorityPlan(plan AuthorityPlan) (*AuthorityPlan, error) {
 			"entity.new_authority_plan",
 			"plan",
 			"identity, requester, hash, and expiry are required",
+		)
+	}
+	if plan.EndpointManifestSetHash.IsZero() !=
+		plan.EndpointManifestStateHash.IsZero() {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"entity.new_authority_plan",
+			"endpoint_manifest",
+			"binding and stable state hashes must be present together",
 		)
 	}
 	if plan.State == "" {
@@ -336,6 +347,15 @@ func RehydrateAuthorityPlan(plan AuthorityPlan) (*AuthorityPlan, error) {
 			"entity.rehydrate_authority_plan",
 			"plan",
 			"persisted plan is incomplete",
+		)
+	}
+	if plan.EndpointManifestSetHash.IsZero() !=
+		plan.EndpointManifestStateHash.IsZero() {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeAuthorityPlanStale,
+			"entity.rehydrate_authority_plan",
+			"endpoint_manifest",
+			"binding and stable state hashes disagree",
 		)
 	}
 	plan.Changes = append([]MembershipChange(nil), plan.Changes...)

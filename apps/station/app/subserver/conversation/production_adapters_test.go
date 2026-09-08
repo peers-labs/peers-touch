@@ -68,6 +68,7 @@ type productionAdapterKeyExchangeCall struct {
 	requestID       string
 	authorityPlanID string
 	target          keyexchangedomain.Endpoint
+	homeStationID   string
 	expiresAt       time.Time
 }
 
@@ -75,17 +76,19 @@ type productionAdapterTestKeyExchange struct {
 	calls []productionAdapterKeyExchangeCall
 }
 
-func (s *productionAdapterTestKeyExchange) ReserveMLSKeyPackage(
+func (s *productionAdapterTestKeyExchange) ReserveMLSKeyPackageForVerifiedRoute(
 	_ context.Context,
 	requestID string,
 	authorityPlanID string,
 	target keyexchangedomain.Endpoint,
+	homeStationID string,
 	expiresAt time.Time,
 ) (keyexchangedomain.MLSKeyPackageReservation, error) {
 	s.calls = append(s.calls, productionAdapterKeyExchangeCall{
 		requestID:       requestID,
 		authorityPlanID: authorityPlanID,
 		target:          target,
+		homeStationID:   homeStationID,
 		expiresAt:       expiresAt,
 	})
 	keyPackage := []byte("remote-canonical-mls-key-package")
@@ -96,7 +99,7 @@ func (s *productionAdapterTestKeyExchange) ReserveMLSKeyPackage(
 		PackageID:            "remote-package",
 		KeyPackage:           keyPackage,
 		PackageHash:          keyexchangedomain.HashMLSKeyPackage(keyPackage),
-		HomeStation:          "station-b",
+		HomeStation:          homeStationID,
 		PlanExpiresAt:        expiresAt,
 		IrreversiblyConsumed: true,
 	}, nil
@@ -328,7 +331,10 @@ func TestProductionAdaptersRollbackWithConversationTransaction(t *testing.T) {
 		reservations, reserveErr := adapters.KeyPackageReservations.Reserve(
 			ctx,
 			"plan-rollback",
-			[]valueobject.Endpoint{fixture.bob},
+			[]ports.EndpointRoute{{
+				Endpoint:    fixture.bob,
+				HomeStation: "station-a",
+			}},
 			productionAdapterTestTime.Add(time.Minute),
 		)
 		if reserveErr != nil {
@@ -418,7 +424,10 @@ func TestProductionKeyPackageReservationsUseCanonicalLifecycle(t *testing.T) {
 			reservations, err := adapters.KeyPackageReservations.Reserve(
 				context.Background(),
 				valueobject.PlanID("plan-"+testCase.name),
-				[]valueobject.Endpoint{fixture.bob},
+				[]ports.EndpointRoute{{
+					Endpoint:    fixture.bob,
+					HomeStation: "station-a",
+				}},
 				productionAdapterTestTime.Add(time.Minute),
 			)
 			if err != nil {
@@ -460,15 +469,6 @@ func TestProductionKeyPackageReservationsUseKeyExchangeForRemoteEndpoint(
 	t *testing.T,
 ) {
 	fixture := newProductionAdapterFixture(t)
-	if err := fixture.db.Model(&actoridentitypersistence.ActorDeviceModel{}).
-		Where(
-			"ptid = ? AND device_id = ?",
-			string(fixture.bob.Actor),
-			string(fixture.bob.Device),
-		).
-		Update("home_station_peer_id", "station-b").Error; err != nil {
-		t.Fatal(err)
-	}
 	adapters, err := fixture.factory.Bind(fixture.db)
 	if err != nil {
 		t.Fatal(err)
@@ -477,7 +477,10 @@ func TestProductionKeyPackageReservationsUseKeyExchangeForRemoteEndpoint(
 	reservations, err := adapters.KeyPackageReservations.Reserve(
 		context.Background(),
 		"remote-plan",
-		[]valueobject.Endpoint{fixture.bob},
+		[]ports.EndpointRoute{{
+			Endpoint:    fixture.bob,
+			HomeStation: "station-b",
+		}},
 		expiresAt,
 	)
 	if err != nil {
@@ -503,6 +506,7 @@ func TestProductionKeyPackageReservationsUseKeyExchangeForRemoteEndpoint(
 			ActorPTID: string(fixture.bob.Actor),
 			DeviceID:  string(fixture.bob.Device),
 		}) ||
+		call.homeStationID != "station-b" ||
 		!call.expiresAt.Equal(expiresAt) {
 		t.Fatalf("remote Key Exchange reservation call = %+v", call)
 	}

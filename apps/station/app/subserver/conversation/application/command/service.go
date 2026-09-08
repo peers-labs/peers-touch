@@ -111,9 +111,9 @@ type CreateDirectRequest struct {
 
 type CreateGroupRequest struct {
 	ConversationID    valueobject.ConversationID
-	Name              string
 	Owner             valueobject.Endpoint
-	Members           []valueobject.PTID
+	VerifiedRoutes    []ports.EndpointRoute
+	ManifestStateHash valueobject.Hash
 	CommandID         valueobject.CommandID
 	AuthorityPlanID   valueobject.PlanID
 	AuthorityPlanHash valueobject.Hash
@@ -178,20 +178,26 @@ type PrepareMembershipRequest struct {
 }
 
 type PrepareGroupRequest struct {
-	ConversationID valueobject.ConversationID
-	FederationID   valueobject.FederationID
-	AuthorityEpoch valueobject.AuthorityEpoch
-	Name           string
-	Owner          valueobject.Endpoint
-	Members        []valueobject.PTID
-	TTL            time.Duration
+	ConversationID    valueobject.ConversationID
+	FederationID      valueobject.FederationID
+	AuthorityEpoch    valueobject.AuthorityEpoch
+	Name              string
+	Owner             valueobject.Endpoint
+	Members           []valueobject.PTID
+	VerifiedRoutes    []ports.EndpointRoute
+	ManifestSetHash   valueobject.Hash
+	ManifestStateHash valueobject.Hash
+	TTL               time.Duration
 }
 
 func (s *Service) PrepareGroup(
 	ctx context.Context,
 	request PrepareGroupRequest,
 ) (entity.AuthorityPlan, error) {
-	if request.ConversationID == "" || request.Owner.Validate() != nil {
+	if request.ConversationID == "" ||
+		request.Owner.Validate() != nil ||
+		request.ManifestSetHash.IsZero() ||
+		request.ManifestStateHash.IsZero() {
 		return entity.AuthorityPlan{}, invalid(
 			"application.prepare_group",
 			"request",
@@ -228,28 +234,56 @@ func (s *Service) PrepareGroup(
 		} else if !conversationdomain.IsCode(err, conversationdomain.ErrorCodeNotFound) {
 			return err
 		}
-		routes, err := resolveActorRoutes(ctx, transaction.Identity, actors)
+		routes, err := canonicalActorRoutes(request.VerifiedRoutes, actors)
 		if err != nil {
 			return err
 		}
-		if !routeSetContains(routes, request.Owner) {
+		ownerActive, err := transaction.Identity.IsActive(ctx, request.Owner)
+		if err != nil {
+			return err
+		}
+		if !ownerActive {
 			return unauthorized("application.prepare_group", "owner device is not active")
+		}
+		if !routeSetContains(routes, request.Owner) {
+			return unauthorized(
+				"application.prepare_group",
+				"owner is absent from the verified endpoint routes",
+			)
+		}
+		for _, station := range routeStations(routes) {
+			federationActive, federationErr := transaction.Federation.IsActiveStation(
+				ctx,
+				request.FederationID,
+				station,
+			)
+			if federationErr != nil {
+				return federationErr
+			}
+			if !federationActive {
+				return conversationdomain.NewError(
+					conversationdomain.ErrorCodeFederationInactive,
+					"application.prepare_group",
+					"home_station",
+					"is not an active Federation Station",
+				)
+			}
 		}
 		postEndpoints := endpointsFromRoutes(routes)
 		changes := genesisMembershipChanges(actors, request.Owner.Actor, routes)
 		now := s.clock.Now()
 		expiresAt := now.Add(ttl)
 		planID := s.idGenerator.NewPlanID()
-		reservationEndpoints := make([]valueobject.Endpoint, 0, len(postEndpoints)-1)
-		for _, endpoint := range postEndpoints {
-			if endpoint != request.Owner {
-				reservationEndpoints = append(reservationEndpoints, endpoint)
+		reservationRoutes := make([]ports.EndpointRoute, 0, len(routes)-1)
+		for _, route := range routes {
+			if route.Endpoint != request.Owner {
+				reservationRoutes = append(reservationRoutes, route)
 			}
 		}
 		reservations, err := transaction.KeyPackageReservations.Reserve(
 			ctx,
 			planID,
-			reservationEndpoints,
+			reservationRoutes,
 			expiresAt,
 		)
 		if err != nil {
@@ -270,21 +304,25 @@ func (s *Service) PrepareGroup(
 			changes,
 			reservations,
 			expiresAt,
+			request.ManifestSetHash,
+			request.ManifestStateHash,
 		)
 		plan, err := entity.NewAuthorityPlan(entity.AuthorityPlan{
-			ID:                     planID,
-			ConversationID:         request.ConversationID,
-			FederationID:           request.FederationID,
-			AuthorityEpoch:         request.AuthorityEpoch,
-			PreparedName:           request.Name,
-			Requester:              request.Owner,
-			AuthorityHead:          valueobject.AuthorityHead{},
-			Changes:                changes,
-			PostEndpoints:          postEndpoints,
-			AddedEndpoints:         postEndpoints,
-			Hash:                   planHash,
-			ExpiresAt:              expiresAt,
-			KeyPackageReservations: reservations,
+			ID:                        planID,
+			ConversationID:            request.ConversationID,
+			FederationID:              request.FederationID,
+			AuthorityEpoch:            request.AuthorityEpoch,
+			PreparedName:              request.Name,
+			Requester:                 request.Owner,
+			AuthorityHead:             valueobject.AuthorityHead{},
+			Changes:                   changes,
+			PostEndpoints:             postEndpoints,
+			AddedEndpoints:            postEndpoints,
+			EndpointManifestSetHash:   request.ManifestSetHash,
+			EndpointManifestStateHash: request.ManifestStateHash,
+			Hash:                      planHash,
+			ExpiresAt:                 expiresAt,
+			KeyPackageReservations:    reservations,
 		})
 		if err != nil {
 			return err
@@ -556,13 +594,57 @@ func conversationGenesisLockKey(
 	return "conversation-genesis:" + string(conversationID)
 }
 
+// ReplayGroupCreation resolves an existing exact command receipt without
+// requiring a fresh remote endpoint-manifest lookup.
+func (s *Service) ReplayGroupCreation(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	commandID valueobject.CommandID,
+	exactCommandBytes []byte,
+) (Result, bool, error) {
+	if conversationID == "" || commandID == "" || len(exactCommandBytes) == 0 {
+		return Result{}, false, invalid(
+			"application.replay_group_creation",
+			"request",
+			"conversation, command, and exact bytes are required",
+		)
+	}
+	commandHash := valueobject.HashBytes(exactCommandBytes)
+	var result Result
+	var replayed bool
+	err := s.unitOfWork.ExecuteSerialized(
+		ctx,
+		conversationGenesisLockKey(conversationID),
+		func(transaction ports.Transaction) error {
+			if err := validateTransaction(transaction); err != nil {
+				return err
+			}
+			var replayErr error
+			result, replayed, replayErr = resolveGroupCreationReceipt(
+				ctx,
+				transaction.Repositories,
+				conversationID,
+				commandID,
+				commandHash,
+			)
+			return replayErr
+		},
+	)
+	if err != nil {
+		return Result{}, replayed, err
+	}
+	return result, replayed, nil
+}
+
 func (s *Service) CreateGroup(
 	ctx context.Context,
 	request CreateGroupRequest,
 ) (Result, error) {
 	if request.ConversationID == "" || request.Owner.Validate() != nil ||
 		request.CommandID == "" || request.AuthorityPlanID == "" ||
-		request.AuthorityPlanHash.IsZero() || len(request.ExactCommandBytes) == 0 {
+		request.AuthorityPlanHash.IsZero() ||
+		request.ManifestStateHash.IsZero() ||
+		len(request.ExactCommandBytes) == 0 {
 		return Result{}, invalid("application.create_group", "request", "complete group input is required")
 	}
 	commandHash := valueobject.HashBytes(request.ExactCommandBytes)
@@ -576,63 +658,19 @@ func (s *Service) CreateGroup(
 			if err := validateTransaction(transaction); err != nil {
 				return err
 			}
-			receipt, receiptErr := transaction.Repositories.Receipts.Get(
+			replayedResult, replayed, replayErr := resolveGroupCreationReceipt(
 				ctx,
+				transaction.Repositories,
 				request.ConversationID,
 				request.CommandID,
+				commandHash,
 			)
-			switch {
-			case receiptErr == nil:
-				if !bytes.Equal(receipt.CommandHash[:], commandHash[:]) {
-					return conversationdomain.NewError(
-						conversationdomain.ErrorCodeCommandConflict,
-						"application.create_group",
-						"command_id",
-						"was resolved with different exact bytes",
-					)
-				}
-				switch receipt.Outcome {
-				case repository.CommandReceiptOutcomeAccepted:
-					existing, loadErr := transaction.Repositories.Authority.LoadForUpdate(
-						ctx,
-						request.ConversationID,
-					)
-					if loadErr != nil {
-						return loadErr
-					}
-					event, eventErr := transaction.Repositories.Events.GetByID(
-						ctx,
-						receipt.EventID,
-					)
-					if eventErr != nil {
-						return eventErr
-					}
-					if receiptErr := validateCreationReceiptEvent(
-						receipt,
-						event,
-					); receiptErr != nil {
-						return receiptErr
-					}
-					result = Result{Conversation: existing, Event: event, Replay: true}
-					return nil
-				case repository.CommandReceiptOutcomeRejected:
-					rejection = conversationdomain.NewError(
-						receipt.RejectionCode,
-						"application.create_group",
-						"command_id",
-						"was terminally rejected",
-					)
-					return nil
-				default:
-					return conversationdomain.NewError(
-						conversationdomain.ErrorCodeHashChainInvalid,
-						"application.create_group",
-						"receipt",
-						"contains an unknown command outcome",
-					)
-				}
-			case !conversationdomain.IsCode(receiptErr, conversationdomain.ErrorCodeNotFound):
-				return receiptErr
+			if replayErr != nil {
+				return replayErr
+			}
+			if replayed {
+				result = replayedResult
+				return nil
 			}
 			persistRejection := func(candidate error, at time.Time) error {
 				code := conversationdomain.CodeOf(candidate)
@@ -718,7 +756,6 @@ func (s *Service) CreateGroup(
 				)
 			}
 			if plan.ConversationID != request.ConversationID ||
-				plan.PreparedName != request.Name ||
 				!bytes.Equal(plan.Hash[:], request.AuthorityPlanHash[:]) {
 				if supersedeErr := supersedePlan(ctx, transaction, &plan, now); supersedeErr != nil {
 					return supersedeErr
@@ -748,19 +785,83 @@ func (s *Service) CreateGroup(
 				)
 				return persistRejection(rejection, now)
 			}
-			routes, routeErr := resolveActorRoutes(
-				ctx,
-				transaction.Identity,
-				uniqueActors(append(append([]valueobject.PTID(nil), request.Members...), request.Owner.Actor)),
+			verifiedPlanHash := authorityPlanHash(
+				plan.ID,
+				plan.ConversationID,
+				plan.FederationID,
+				plan.AuthorityEpoch,
+				plan.Requester,
+				plan.PreparedName,
+				aggregate.MembershipPreview{
+					PreEndpoints:     plan.PreEndpoints,
+					PostEndpoints:    plan.PostEndpoints,
+					AddedEndpoints:   plan.AddedEndpoints,
+					RemovedEndpoints: plan.RemovedEndpoints,
+				},
+				plan.Changes,
+				plan.KeyPackageReservations,
+				plan.ExpiresAt,
+				plan.EndpointManifestSetHash,
+				plan.EndpointManifestStateHash,
 			)
+			if verifiedPlanHash != plan.Hash {
+				if supersedeErr := supersedePlan(ctx, transaction, &plan, now); supersedeErr != nil {
+					return supersedeErr
+				}
+				rejection = conversationdomain.NewError(
+					conversationdomain.ErrorCodeAuthorityPlanStale,
+					"application.create_group",
+					"endpoint_manifest",
+					"does not match the prepared authority plan",
+				)
+				return persistRejection(rejection, now)
+			}
+			if request.ManifestStateHash != plan.EndpointManifestStateHash {
+				if supersedeErr := supersedePlan(ctx, transaction, &plan, now); supersedeErr != nil {
+					return supersedeErr
+				}
+				rejection = conversationdomain.NewError(
+					conversationdomain.ErrorCodeAuthorityPlanStale,
+					"application.create_group",
+					"endpoint_manifest",
+					"active directory state changed after preparation",
+				)
+				return persistRejection(rejection, now)
+			}
+			actors := genesisActors(plan.Changes)
+			routes, routeErr := canonicalActorRoutes(request.VerifiedRoutes, actors)
 			if routeErr != nil {
 				return routeErr
 			}
+			ownerActive, activeErr := transaction.Identity.IsActive(ctx, request.Owner)
+			if activeErr != nil {
+				return activeErr
+			}
+			if !ownerActive {
+				return unauthorized(
+					"application.create_group",
+					"owner device is not active",
+				)
+			}
+			for _, station := range routeStations(routes) {
+				federationActive, federationErr := transaction.Federation.IsActiveStation(
+					ctx,
+					plan.FederationID,
+					station,
+				)
+				if federationErr != nil {
+					return federationErr
+				}
+				if !federationActive {
+					return conversationdomain.NewError(
+						conversationdomain.ErrorCodeFederationInactive,
+						"application.create_group",
+						"home_station",
+						"is not an active Federation Station",
+					)
+				}
+			}
 			if !routeSetContains(routes, request.Owner) ||
-				!sameActorSets(
-					genesisActors(plan.Changes),
-					append(append([]valueobject.PTID(nil), request.Members...), request.Owner.Actor),
-				) ||
 				!membershipChangesMatchRoutes(plan.Changes, aggregate.Snapshot{}, routes) ||
 				!valueobject.EqualEndpointSets(plan.PostEndpoints, endpointsFromRoutes(routes)) {
 				if supersedeErr := supersedePlan(ctx, transaction, &plan, now); supersedeErr != nil {
@@ -779,7 +880,7 @@ func (s *Service) CreateGroup(
 				return persistRejection(routeErr, now)
 			}
 			participants, devices, buildErr := participantsAndDevices(
-				uniqueActors(append(append([]valueobject.PTID(nil), request.Members...), request.Owner.Actor)),
+				actors,
 				request.Owner.Actor,
 				routes,
 				1,
@@ -796,7 +897,7 @@ func (s *Service) CreateGroup(
 				Owner:            request.Owner.Actor,
 				Participants:     participants,
 				Devices:          devices,
-				Settings:         valueobject.ConversationSettings{Name: request.Name},
+				Settings:         valueobject.ConversationSettings{Name: plan.PreparedName},
 				CommandID:        request.CommandID,
 				Creator:          request.Owner,
 				Deliveries:       deliveries,
@@ -844,6 +945,66 @@ func (s *Service) CreateGroup(
 	}
 	result.PostCommitError = s.notify(ctx, notifications)
 	return result, nil
+}
+
+func resolveGroupCreationReceipt(
+	ctx context.Context,
+	repositories repository.Repositories,
+	conversationID valueobject.ConversationID,
+	commandID valueobject.CommandID,
+	commandHash valueobject.Hash,
+) (Result, bool, error) {
+	receipt, err := repositories.Receipts.Get(ctx, conversationID, commandID)
+	if conversationdomain.IsCode(err, conversationdomain.ErrorCodeNotFound) {
+		return Result{}, false, nil
+	}
+	if err != nil {
+		return Result{}, false, err
+	}
+	if !bytes.Equal(receipt.CommandHash[:], commandHash[:]) {
+		return Result{}, true, conversationdomain.NewError(
+			conversationdomain.ErrorCodeCommandConflict,
+			"application.create_group",
+			"command_id",
+			"was resolved with different exact bytes",
+		)
+	}
+	switch receipt.Outcome {
+	case repository.CommandReceiptOutcomeAccepted:
+		existing, loadErr := repositories.Authority.LoadForUpdate(
+			ctx,
+			conversationID,
+		)
+		if loadErr != nil {
+			return Result{}, true, loadErr
+		}
+		event, eventErr := repositories.Events.GetByID(ctx, receipt.EventID)
+		if eventErr != nil {
+			return Result{}, true, eventErr
+		}
+		if receiptErr := validateCreationReceiptEvent(receipt, event); receiptErr != nil {
+			return Result{}, true, receiptErr
+		}
+		return Result{
+			Conversation: existing,
+			Event:        event,
+			Replay:       true,
+		}, true, nil
+	case repository.CommandReceiptOutcomeRejected:
+		return Result{}, true, conversationdomain.NewError(
+			receipt.RejectionCode,
+			"application.create_group",
+			"command_id",
+			"was terminally rejected",
+		)
+	default:
+		return Result{}, true, conversationdomain.NewError(
+			conversationdomain.ErrorCodeHashChainInvalid,
+			"application.create_group",
+			"receipt",
+			"contains an unknown command outcome",
+		)
+	}
 }
 
 func (s *Service) PrepareCommand(
@@ -951,7 +1112,7 @@ func (s *Service) PrepareMembership(
 		reservations, err := transaction.KeyPackageReservations.Reserve(
 			ctx,
 			planID,
-			preview.AddedEndpoints,
+			filterRoutesByEndpoints(routes, preview.AddedEndpoints),
 			expiresAt,
 		)
 		if err != nil {
@@ -2666,6 +2827,26 @@ func filterEndpointsByRoutes(
 	return valueobject.SortEndpoints(result)
 }
 
+func filterRoutesByEndpoints(
+	routes []ports.EndpointRoute,
+	endpoints []valueobject.Endpoint,
+) []ports.EndpointRoute {
+	expected := make(map[string]struct{}, len(endpoints))
+	for _, endpoint := range endpoints {
+		expected[endpoint.Key()] = struct{}{}
+	}
+	result := make([]ports.EndpointRoute, 0, len(endpoints))
+	for _, route := range routes {
+		if _, exists := expected[route.Endpoint.Key()]; exists {
+			result = append(result, route)
+		}
+	}
+	sort.Slice(result, func(left int, right int) bool {
+		return result[left].Endpoint.Key() < result[right].Endpoint.Key()
+	})
+	return result
+}
+
 func authorityPlanHash(
 	planID valueobject.PlanID,
 	conversationID valueobject.ConversationID,
@@ -2677,6 +2858,7 @@ func authorityPlanHash(
 	changes []entity.MembershipChange,
 	reservations []valueobject.KeyPackageReservation,
 	expiresAt time.Time,
+	manifestHashes ...valueobject.Hash,
 ) valueobject.Hash {
 	fields := [][]byte{
 		[]byte("peers-touch/conversation-authority-plan"),
@@ -2692,6 +2874,9 @@ func authorityPlanHash(
 		[]byte(fmt.Sprintf("%d", preview.Head.MembershipEpoch)),
 		[]byte(fmt.Sprintf("%d", preview.Head.MLSEpoch)),
 		[]byte(fmt.Sprintf("%d", expiresAt.UTC().UnixNano())),
+	}
+	for _, manifestHash := range manifestHashes {
+		fields = append(fields, manifestHash.Bytes())
 	}
 	for _, change := range changes {
 		fields = append(fields,

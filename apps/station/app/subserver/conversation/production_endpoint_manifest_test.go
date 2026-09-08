@@ -323,6 +323,51 @@ func TestProductionEndpointRoutesUseSignedRemoteManifest(t *testing.T) {
 			t.Fatal("signed endpoint manifest rollback was accepted")
 		}
 	})
+
+	t.Run("manifest binding changes with directory version", func(t *testing.T) {
+		preparedHash, preparedStateHash, err := productionEndpointManifestSetHashes(
+			[]*actormodel.ActorEndpointManifest{localManifest, validRemoteManifest},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reorderedHash, reorderedStateHash, err := productionEndpointManifestSetHashes(
+			[]*actormodel.ActorEndpointManifest{validRemoteManifest, localManifest},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reorderedHash != preparedHash || reorderedStateHash != preparedStateHash {
+			t.Fatal("manifest set hash depends on response ordering")
+		}
+
+		advanced := proto.Clone(validRemoteManifest).(*actormodel.ActorEndpointManifest)
+		advanced.DirectoryVersion++
+		signProductionManifest(t, advanced, remotePrivateKey)
+		advancedHash, advancedStateHash, err := productionEndpointManifestSetHashes(
+			[]*actormodel.ActorEndpointManifest{localManifest, advanced},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if advancedHash == preparedHash || advancedStateHash == preparedStateHash {
+			t.Fatal("manifest directory version was not bound to the plan hash")
+		}
+
+		reissued := proto.Clone(validRemoteManifest).(*actormodel.ActorEndpointManifest)
+		reissued.IssuedAt = timestamppb.New(productionManifestTestTime.Add(time.Second))
+		reissued.ExpiresAt = timestamppb.New(productionManifestTestTime.Add(2 * time.Minute))
+		signProductionManifest(t, reissued, remotePrivateKey)
+		reissuedHash, reissuedStateHash, err := productionEndpointManifestSetHashes(
+			[]*actormodel.ActorEndpointManifest{localManifest, reissued},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reissuedHash == preparedHash || reissuedStateHash != preparedStateHash {
+			t.Fatal("manifest binding and stable directory state were not separated")
+		}
+	})
 }
 
 func TestAcceptedRelationshipDirectMatchesExactActivePair(t *testing.T) {

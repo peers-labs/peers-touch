@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -33,7 +34,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var dddTestTime = time.Date(2026, time.September, 6, 12, 0, 0, 0, time.UTC)
+var (
+	dddTestTime        = time.Date(2026, time.September, 6, 12, 0, 0, 0, time.UTC)
+	dddManifestSetHash = valueobject.HashBytes([]byte("ddd-manifest-set"))
+)
 
 const (
 	dddFederationID   valueobject.FederationID   = "federation-test"
@@ -370,11 +374,16 @@ type dddReservationWriter struct {
 func (w dddReservationWriter) Reserve(
 	ctx context.Context,
 	planID valueobject.PlanID,
-	endpoints []valueobject.Endpoint,
+	routes []ports.EndpointRoute,
 	expiresAt time.Time,
 ) ([]valueobject.KeyPackageReservation, error) {
-	reservations := make([]valueobject.KeyPackageReservation, 0, len(endpoints))
-	for _, endpoint := range valueobject.SortEndpoints(endpoints) {
+	sorted := append([]ports.EndpointRoute(nil), routes...)
+	sort.Slice(sorted, func(left int, right int) bool {
+		return sorted[left].Endpoint.Key() < sorted[right].Endpoint.Key()
+	})
+	reservations := make([]valueobject.KeyPackageReservation, 0, len(sorted))
+	for _, route := range sorted {
+		endpoint := route.Endpoint
 		id := valueobject.HashBytes(valueobject.CanonicalTuple(
 			[]byte("reservation"),
 			[]byte(planID),
@@ -409,7 +418,7 @@ func (w dddReservationWriter) Reserve(
 			PackageID:   packageID,
 			KeyPackage:  keyPackage,
 			PackageHash: packageHash,
-			HomeStation: "station-a",
+			HomeStation: route.HomeStation,
 		})
 	}
 	return reservations, nil
@@ -2411,6 +2420,93 @@ func TestConversationDDDForeignRequesterCannotTerminalizeAuthorityPlan(t *testin
 	}
 }
 
+func TestConversationDDDGroupGenesisUsesVerifiedRemoteRoutes(t *testing.T) {
+	fixture := newDDDComposition(t)
+	owner := dddEndpoint("ptid:verified-routes-owner", "owner-1")
+	member := dddEndpoint("ptid:verified-routes-member", "member-1")
+	seedDDDDevices(t, fixture.db, dddDevice(owner, "station-a"))
+	routes := dddDirectRoutes(owner, "station-a", member, "station-b")
+	groupID := valueobject.ConversationID("verified-routes-group")
+
+	plan, err := fixture.commands.PrepareGroup(
+		context.Background(),
+		command.PrepareGroupRequest{
+			ConversationID:    groupID,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			Name:              "Verified Routes",
+			Owner:             owner,
+			Members:           []valueobject.PTID{member.Actor},
+			VerifiedRoutes:    routes,
+			ManifestStateHash: dddManifestSetHash,
+			ManifestSetHash:   dddManifestSetHash,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.PostEndpoints) != 2 ||
+		!valueobject.EqualEndpointSets(
+			plan.PostEndpoints,
+			[]valueobject.Endpoint{owner, member},
+		) {
+		t.Fatalf("prepared endpoints = %+v", plan.PostEndpoints)
+	}
+
+	result, err := fixture.commands.CreateGroup(
+		context.Background(),
+		command.CreateGroupRequest{
+			ConversationID:    groupID,
+			Owner:             owner,
+			VerifiedRoutes:    routes,
+			ManifestStateHash: dddManifestSetHash,
+			CommandID:         "verified-routes-create",
+			AuthorityPlanID:   plan.ID,
+			AuthorityPlanHash: plan.Hash,
+			Deliveries: []valueobject.PreparedDelivery{
+				dddDelivery(t, owner, "station-a", valueobject.DeliveryKindPublicEvent, "owner"),
+				dddDelivery(t, member, "station-b", valueobject.DeliveryKindMLSWelcome, "member"),
+			},
+			ExactCommandBytes: []byte("verified-routes-create"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var memberHome valueobject.StationID
+	for _, participant := range result.Conversation.Members {
+		if participant.Actor == member.Actor {
+			memberHome = participant.HomeStation
+		}
+	}
+	if memberHome != "station-b" {
+		t.Fatalf("remote member Home Station = %q", memberHome)
+	}
+	replayed, replayedOK, err := fixture.commands.ReplayGroupCreation(
+		context.Background(),
+		groupID,
+		"verified-routes-create",
+		[]byte("verified-routes-create"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayedOK || !replayed.Replay ||
+		replayed.Conversation.ID != result.Conversation.ID ||
+		replayed.Event.ID != result.Event.ID {
+		t.Fatalf("exact Group creation replay = %+v, replayed=%t", replayed, replayedOK)
+	}
+	var shadowDevices int64
+	if err := fixture.db.Model(&dddActorDeviceModel{}).
+		Where("ptid = ?", string(member.Actor)).
+		Count(&shadowDevices).Error; err != nil {
+		t.Fatal(err)
+	}
+	if shadowDevices != 0 {
+		t.Fatalf("remote Actor Identity shadow rows = %d", shadowDevices)
+	}
+}
+
 func TestConversationDDDAuthorityPlanTTLIsBounded(t *testing.T) {
 	fixture := newDDDComposition(t)
 	owner := dddEndpoint("ptid:ttl-owner", "owner-1")
@@ -2423,13 +2519,16 @@ func TestConversationDDDAuthorityPlanTTLIsBounded(t *testing.T) {
 	if _, err := fixture.commands.PrepareGroup(
 		context.Background(),
 		command.PrepareGroupRequest{
-			ConversationID: "ttl-group",
-			FederationID:   dddFederationID,
-			AuthorityEpoch: dddAuthorityEpoch,
-			Name:           "TTL Group",
-			Owner:          owner,
-			Members:        []valueobject.PTID{member.Actor},
-			TTL:            5*time.Minute + time.Nanosecond,
+			ConversationID:    "ttl-group",
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			Name:              "TTL Group",
+			Owner:             owner,
+			Members:           []valueobject.PTID{member.Actor},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+			ManifestStateHash: dddManifestSetHash,
+			ManifestSetHash:   dddManifestSetHash,
+			TTL:               5*time.Minute + time.Nanosecond,
 		},
 	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeInvalidArgument) {
 		t.Fatalf("unbounded group plan TTL error = %v", err)
@@ -2468,12 +2567,15 @@ func TestConversationDDDExpiredPlansPersistTerminalStateAndReleaseReservations(t
 		plan, err := fixture.commands.PrepareGroup(
 			context.Background(),
 			command.PrepareGroupRequest{
-				ConversationID: "expired-genesis-group",
-				FederationID:   dddFederationID,
-				AuthorityEpoch: dddAuthorityEpoch,
-				Name:           "Expired Genesis",
-				Owner:          owner,
-				Members:        []valueobject.PTID{member.Actor},
+				ConversationID:    "expired-genesis-group",
+				FederationID:      dddFederationID,
+				AuthorityEpoch:    dddAuthorityEpoch,
+				Name:              "Expired Genesis",
+				Owner:             owner,
+				Members:           []valueobject.PTID{member.Actor},
+				VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+				ManifestStateHash: dddManifestSetHash,
+				ManifestSetHash:   dddManifestSetHash,
 			},
 		)
 		if err != nil {
@@ -2482,9 +2584,9 @@ func TestConversationDDDExpiredPlansPersistTerminalStateAndReleaseReservations(t
 		fixture.clock.now = plan.ExpiresAt
 		request := command.CreateGroupRequest{
 			ConversationID:    plan.ConversationID,
-			Name:              plan.PreparedName,
 			Owner:             owner,
-			Members:           []valueobject.PTID{member.Actor},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+			ManifestStateHash: dddManifestSetHash,
 			CommandID:         "expired-genesis-create",
 			AuthorityPlanID:   plan.ID,
 			AuthorityPlanHash: plan.Hash,
@@ -2583,12 +2685,15 @@ func TestConversationDDDPrepareMembershipRemovesRevokedDeviceLeaf(t *testing.T) 
 	genesisPlan, err := fixture.commands.PrepareGroup(
 		context.Background(),
 		command.PrepareGroupRequest{
-			ConversationID: groupID,
-			FederationID:   dddFederationID,
-			AuthorityEpoch: dddAuthorityEpoch,
-			Name:           "Revoked Leaf",
-			Owner:          owner,
-			Members:        []valueobject.PTID{member.Actor},
+			ConversationID:    groupID,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			Name:              "Revoked Leaf",
+			Owner:             owner,
+			Members:           []valueobject.PTID{member.Actor},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+			ManifestStateHash: dddManifestSetHash,
+			ManifestSetHash:   dddManifestSetHash,
 		},
 	)
 	if err != nil {
@@ -2609,9 +2714,9 @@ func TestConversationDDDPrepareMembershipRemovesRevokedDeviceLeaf(t *testing.T) 
 		context.Background(),
 		command.CreateGroupRequest{
 			ConversationID:    groupID,
-			Name:              "Revoked Leaf",
 			Owner:             owner,
-			Members:           []valueobject.PTID{member.Actor},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+			ManifestStateHash: dddManifestSetHash,
 			CommandID:         "revoked-leaf-create",
 			AuthorityPlanID:   genesisPlan.ID,
 			AuthorityPlanHash: genesisPlan.Hash,
@@ -2774,12 +2879,15 @@ func TestConversationDDDActorRemovalIncludesRevokedSecondaryLeaf(t *testing.T) {
 			genesisPlan, err := fixture.commands.PrepareGroup(
 				context.Background(),
 				command.PrepareGroupRequest{
-					ConversationID: groupID,
-					FederationID:   dddFederationID,
-					AuthorityEpoch: dddAuthorityEpoch,
-					Name:           "Revoked Actor",
-					Owner:          owner,
-					Members:        []valueobject.PTID{member.Actor},
+					ConversationID:    groupID,
+					FederationID:      dddFederationID,
+					AuthorityEpoch:    dddAuthorityEpoch,
+					Name:              "Revoked Actor",
+					Owner:             owner,
+					Members:           []valueobject.PTID{member.Actor},
+					VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+					ManifestStateHash: dddManifestSetHash,
+					ManifestSetHash:   dddManifestSetHash,
 				},
 			)
 			if err != nil {
@@ -2800,9 +2908,9 @@ func TestConversationDDDActorRemovalIncludesRevokedSecondaryLeaf(t *testing.T) {
 				context.Background(),
 				command.CreateGroupRequest{
 					ConversationID:    groupID,
-					Name:              "Revoked Actor",
 					Owner:             owner,
-					Members:           []valueobject.PTID{member.Actor},
+					VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+					ManifestStateHash: dddManifestSetHash,
 					CommandID:         valueobject.CommandID("revoked-actor-create-" + suffix),
 					AuthorityPlanID:   genesisPlan.ID,
 					AuthorityPlanHash: genesisPlan.Hash,
@@ -2908,12 +3016,15 @@ func TestConversationDDDStaleGroupGenesisPlanIsTerminal(t *testing.T) {
 	plan, err := fixture.commands.PrepareGroup(
 		context.Background(),
 		command.PrepareGroupRequest{
-			ConversationID: groupID,
-			FederationID:   dddFederationID,
-			AuthorityEpoch: dddAuthorityEpoch,
-			Name:           "Stale Genesis",
-			Owner:          owner,
-			Members:        []valueobject.PTID{member.Actor},
+			ConversationID:    groupID,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			Name:              "Stale Genesis",
+			Owner:             owner,
+			Members:           []valueobject.PTID{member.Actor},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+			ManifestStateHash: dddManifestSetHash,
+			ManifestSetHash:   dddManifestSetHash,
 		},
 	)
 	if err != nil {
@@ -2923,9 +3034,9 @@ func TestConversationDDDStaleGroupGenesisPlanIsTerminal(t *testing.T) {
 		context.Background(),
 		command.CreateGroupRequest{
 			ConversationID:    groupID,
-			Name:              "Tampered Genesis Name",
 			Owner:             owner,
-			Members:           []valueobject.PTID{member.Actor},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+			ManifestStateHash: valueobject.HashBytes([]byte("changed-manifest-state")),
 			CommandID:         "stale-genesis-create",
 			AuthorityPlanID:   plan.ID,
 			AuthorityPlanHash: plan.Hash,
@@ -2968,12 +3079,15 @@ func TestConversationDDDLosingGroupPlanReleasesReservations(t *testing.T) {
 		plan, err := fixture.commands.PrepareGroup(
 			context.Background(),
 			command.PrepareGroupRequest{
-				ConversationID: groupID,
-				FederationID:   dddFederationID,
-				AuthorityEpoch: dddAuthorityEpoch,
-				Name:           "Plan Race",
-				Owner:          owner,
-				Members:        []valueobject.PTID{member.Actor},
+				ConversationID:    groupID,
+				FederationID:      dddFederationID,
+				AuthorityEpoch:    dddAuthorityEpoch,
+				Name:              "Plan Race",
+				Owner:             owner,
+				Members:           []valueobject.PTID{member.Actor},
+				VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+				ManifestStateHash: dddManifestSetHash,
+				ManifestSetHash:   dddManifestSetHash,
 			},
 		)
 		if err != nil {
@@ -2987,9 +3101,9 @@ func TestConversationDDDLosingGroupPlanReleasesReservations(t *testing.T) {
 		context.Background(),
 		command.CreateGroupRequest{
 			ConversationID:    groupID,
-			Name:              "Plan Race",
 			Owner:             owner,
-			Members:           []valueobject.PTID{member.Actor},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+			ManifestStateHash: dddManifestSetHash,
 			CommandID:         "plan-race-winner",
 			AuthorityPlanID:   winner.ID,
 			AuthorityPlanHash: winner.Hash,
@@ -3006,9 +3120,9 @@ func TestConversationDDDLosingGroupPlanReleasesReservations(t *testing.T) {
 		context.Background(),
 		command.CreateGroupRequest{
 			ConversationID:    groupID,
-			Name:              "Plan Race",
 			Owner:             owner,
-			Members:           []valueobject.PTID{member.Actor},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+			ManifestStateHash: dddManifestSetHash,
 			CommandID:         "plan-race-loser",
 			AuthorityPlanID:   loser.ID,
 			AuthorityPlanHash: loser.Hash,
@@ -3118,21 +3232,24 @@ func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *te
 	ctx := context.Background()
 	groupID := valueobject.ConversationID("group-1")
 	plan, err := fixture.commands.PrepareGroup(ctx, command.PrepareGroupRequest{
-		ConversationID: groupID,
-		FederationID:   dddFederationID,
-		AuthorityEpoch: dddAuthorityEpoch,
-		Name:           "Project",
-		Owner:          owner,
-		Members:        []valueobject.PTID{member.Actor},
+		ConversationID:    groupID,
+		FederationID:      dddFederationID,
+		AuthorityEpoch:    dddAuthorityEpoch,
+		Name:              "Project",
+		Owner:             owner,
+		Members:           []valueobject.PTID{member.Actor},
+		VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+		ManifestStateHash: dddManifestSetHash,
+		ManifestSetHash:   dddManifestSetHash,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	created, err := fixture.commands.CreateGroup(ctx, command.CreateGroupRequest{
 		ConversationID:    groupID,
-		Name:              "Project",
 		Owner:             owner,
-		Members:           []valueobject.PTID{member.Actor},
+		VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+		ManifestStateHash: dddManifestSetHash,
 		CommandID:         "group-create",
 		AuthorityPlanID:   plan.ID,
 		AuthorityPlanHash: plan.Hash,
@@ -5210,6 +5327,22 @@ func dddDirectRoutes(
 	}
 }
 
+func dddActiveRoutes(
+	t *testing.T,
+	db *gorm.DB,
+	actors ...valueobject.PTID,
+) []ports.EndpointRoute {
+	t.Helper()
+	routes, err := (dddIdentityDirectory{db: db}).ListActiveEndpoints(
+		context.Background(),
+		actors,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return routes
+}
+
 func dddMemberDevice(
 	t *testing.T,
 	endpoint valueobject.Endpoint,
@@ -5412,12 +5545,15 @@ func createDDDGroup(
 	plan, err := fixture.commands.PrepareGroup(
 		context.Background(),
 		command.PrepareGroupRequest{
-			ConversationID: groupID,
-			FederationID:   dddFederationID,
-			AuthorityEpoch: dddAuthorityEpoch,
-			Name:           "Test Group",
-			Owner:          owner,
-			Members:        []valueobject.PTID{member.Actor},
+			ConversationID:    groupID,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			Name:              "Test Group",
+			Owner:             owner,
+			Members:           []valueobject.PTID{member.Actor},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+			ManifestStateHash: dddManifestSetHash,
+			ManifestSetHash:   dddManifestSetHash,
 		},
 	)
 	if err != nil {
@@ -5427,9 +5563,9 @@ func createDDDGroup(
 		context.Background(),
 		command.CreateGroupRequest{
 			ConversationID:    groupID,
-			Name:              "Test Group",
 			Owner:             owner,
-			Members:           []valueobject.PTID{member.Actor},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
+			ManifestStateHash: dddManifestSetHash,
 			CommandID:         "create-" + valueobject.CommandID(groupID),
 			AuthorityPlanID:   plan.ID,
 			AuthorityPlanHash: plan.Hash,
