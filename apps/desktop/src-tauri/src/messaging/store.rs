@@ -241,6 +241,7 @@ pub struct MlsSenderTransitionReceiveCommit<'a> {
     pub session_state: &'a [u8],
     pub membership_epoch: i64,
     pub mls_epoch: i64,
+    pub genesis_projection: Option<&'a ConversationProjection>,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
@@ -4895,52 +4896,106 @@ impl MessagingStore {
                     ],
                 )
                 .map_err(|error| error.to_string())?;
+            if let Some(projection) = input.genesis_projection {
+                transaction
+                    .execute(
+                        "INSERT INTO messaging_conversations(
+                            conversation_id, authority_station_id, federation_id,
+                            kind, name, owner_ptid,
+                            membership_epoch, mls_epoch, active, updated_at_unix_ms
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9)
+                         ON CONFLICT(conversation_id) DO UPDATE SET
+                            authority_station_id=excluded.authority_station_id,
+                            federation_id=excluded.federation_id,
+                            kind=excluded.kind,
+                            name=excluded.name,
+                            owner_ptid=excluded.owner_ptid,
+                            membership_epoch=excluded.membership_epoch,
+                            mls_epoch=excluded.mls_epoch,
+                            active=1,
+                            updated_at_unix_ms=excluded.updated_at_unix_ms",
+                        params![
+                            projection.conversation_id,
+                            projection.authority_station_id,
+                            projection.federation_id,
+                            projection.kind,
+                            projection.name,
+                            projection.owner_ptid,
+                            projection.membership_epoch,
+                            projection.mls_epoch,
+                            input.consumed_at_unix_ms
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                transaction
+                    .execute(
+                        "DELETE FROM messaging_conversation_members
+                         WHERE conversation_id = ?1",
+                        params![input.conversation_id],
+                    )
+                    .map_err(|error| error.to_string())?;
+                for member in &projection.members {
+                    transaction
+                        .execute(
+                            "INSERT INTO messaging_conversation_members(
+                                conversation_id, ptid, role, active
+                             ) VALUES (?1, ?2, ?3, 1)",
+                            params![input.conversation_id, member.ptid, member.role],
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+            } else {
+                let changed = transaction
+                    .execute(
+                        "UPDATE messaging_conversations
+                         SET membership_epoch = ?2, mls_epoch = ?3, updated_at_unix_ms = ?4
+                         WHERE conversation_id = ?1",
+                        params![
+                            input.conversation_id,
+                            input.membership_epoch,
+                            input.mls_epoch,
+                            input.consumed_at_unix_ms
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                if changed != 1 {
+                    return Err("messaging MLS conversation projection is unavailable".to_string());
+                }
+            }
+            for table in [
+                "messaging_local_commands",
+                "messaging_command_outbox",
+                "messaging_command_attempts",
+            ] {
+                let changed = transaction
+                    .execute(
+                        &format!("UPDATE {table} SET state = 'committed' WHERE command_id = ?1"),
+                        params![input.command_id],
+                    )
+                    .map_err(|error| error.to_string())?;
+                if changed != 1 {
+                    return Err("messaging MLS sender command transition mismatch".to_string());
+                }
+            }
             transaction
                 .execute(
-                    "UPDATE messaging_conversations
-                     SET membership_epoch = ?2, mls_epoch = ?3, updated_at_unix_ms = ?4
-                     WHERE conversation_id = ?1",
-                    params![
-                        input.conversation_id,
-                        input.membership_epoch,
-                        input.mls_epoch,
-                        input.consumed_at_unix_ms
-                    ],
+                    "DELETE FROM messaging_mls_pending_transitions
+                     WHERE conversation_id = ?1 AND transition_id = ?2 AND command_id = ?3",
+                    params![input.conversation_id, input.transition_id, input.command_id],
                 )
-                .map_err(|error| error.to_string())?;
-            transaction
-                .execute(
-                    "UPDATE messaging_local_commands SET state = 'committed'
-                     WHERE command_id = ?1",
-                    params![input.command_id],
-                )
-                .map_err(|error| error.to_string())?;
-            transaction
-                .execute(
-                    "UPDATE messaging_command_outbox SET state = 'committed'
-                     WHERE command_id = ?1",
-                    params![input.command_id],
-                )
-                .map_err(|error| error.to_string())?;
-            transaction
-                .execute(
-                    "UPDATE messaging_command_attempts SET state = 'committed'
-                     WHERE command_id = ?1",
-                    params![input.command_id],
-                )
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| error.to_string())
+                .and_then(|deleted| {
+                    if deleted == 1 {
+                        Ok(())
+                    } else {
+                        Err("messaging MLS pending transition was not consumed".to_string())
+                    }
+                })?;
             transaction
                 .execute(
                     "UPDATE messaging_membership_intents SET state = 'committed'
                      WHERE command_id = ?1 AND state = 'prepared'",
                     params![input.command_id],
-                )
-                .map_err(|error| error.to_string())?;
-            transaction
-                .execute(
-                    "DELETE FROM messaging_mls_pending_transitions
-                     WHERE conversation_id = ?1",
-                    params![input.conversation_id],
                 )
                 .map_err(|error| error.to_string())?;
             Ok(())
@@ -7056,6 +7111,9 @@ impl MlsInboundRepository for MessagingStore {
         &self,
         commit: &CoreMlsSenderTransitionReceiveCommit<'_>,
     ) -> Result<CoreReceiveCommitResult, String> {
+        let projection = commit
+            .genesis_projection
+            .map(desktop_conversation_projection);
         map_receive_result(MessagingStore::commit_mls_sender_transition(
             self,
             &MlsSenderTransitionReceiveCommit {
@@ -7073,6 +7131,7 @@ impl MlsInboundRepository for MessagingStore {
                 session_state: commit.session_state,
                 membership_epoch: commit.membership_epoch,
                 mls_epoch: commit.mls_epoch,
+                genesis_projection: projection.as_ref(),
                 receipt_id: commit.receipt_id,
                 receipt_bytes: commit.receipt_bytes,
                 consumed_at_unix_ms: commit.consumed_at_unix_ms,
@@ -7344,7 +7403,7 @@ fn mls_sender_transition_receive_core<'a>(
         event_hash: input.event_hash,
         previous_event_hash: input.previous_event_hash,
         event_sequence: input.event_sequence,
-        allow_join_checkpoint: false,
+        allow_join_checkpoint: input.genesis_projection.is_some(),
         projection: None,
         receipt_id: input.receipt_id,
         receipt_bytes: input.receipt_bytes,
@@ -7443,10 +7502,16 @@ fn validate_conversation_state_receive(
     input: &ConversationStateReceiveCommit<'_>,
 ) -> Result<(), String> {
     validate_receive_core(&conversation_state_receive_core(input))?;
-    let projection = input.projection;
+    validate_conversation_projection(input.projection, input.conversation_id)
+}
+
+fn validate_conversation_projection(
+    projection: &ConversationProjection,
+    conversation_id: &str,
+) -> Result<(), String> {
     let kind = ConversationKind::try_from(projection.kind)
         .map_err(|_| "messaging conversation-state kind is invalid".to_string())?;
-    if projection.conversation_id != input.conversation_id
+    if projection.conversation_id != conversation_id
         || projection.authority_station_id.trim().is_empty()
         || projection.federation_id.trim().is_empty()
         || kind == ConversationKind::Unspecified
@@ -7526,6 +7591,17 @@ fn validate_mls_sender_transition_receive(
         || input.mls_epoch <= 0
     {
         return Err("messaging MLS sender transition input is incomplete".to_string());
+    }
+    if let Some(projection) = input.genesis_projection {
+        validate_conversation_projection(projection, input.conversation_id)?;
+        if projection.kind != ConversationKind::Group as i32
+            || projection.membership_epoch != input.membership_epoch
+            || projection.mls_epoch != input.mls_epoch
+            || input.event_sequence != 1
+            || !input.previous_event_hash.is_empty()
+        {
+            return Err("messaging MLS sender genesis projection mismatch".to_string());
+        }
     }
     Ok(())
 }
@@ -8806,6 +8882,102 @@ mod tests {
         assert_eq!(pending.transition_id, "transition-1");
         assert_eq!(pending.command_id, "command-1");
         assert_eq!(pending.state, b"pending-state");
+    }
+
+    #[test]
+    fn mls_sender_genesis_atomically_commits_projection_session_and_marker() {
+        let store = MessagingStore::in_memory().unwrap();
+        MlsTransitionRepository::persist_mls_transition(
+            &store,
+            &MlsTransitionSendCommit {
+                logical_intent_id: None,
+                command_id: "genesis-command",
+                conversation_id: "group-genesis",
+                transition_id: "genesis-transition",
+                delivery_plan_sha256: &[7; 32],
+                command_bytes: b"genesis-command-bytes",
+                pending_transition_state: b"pending-genesis-state",
+                created_at_unix_ms: 100,
+            },
+        )
+        .unwrap();
+        store
+            .persist_claimed_item(
+                "genesis-item",
+                "genesis-event",
+                "group-genesis",
+                1,
+                1,
+                &[8; 32],
+                b"genesis-delivery",
+                101,
+            )
+            .unwrap();
+        let projection = ConversationProjection {
+            conversation_id: "group-genesis".to_string(),
+            authority_station_id: "station-authority".to_string(),
+            federation_id: "federation-1".to_string(),
+            kind: ConversationKind::Group as i32,
+            name: "Genesis group".to_string(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![
+                ConversationMemberProjection {
+                    ptid: "ptid:alice".to_string(),
+                    role: MemberRole::Owner as i32,
+                },
+                ConversationMemberProjection {
+                    ptid: "ptid:bob".to_string(),
+                    role: MemberRole::Member as i32,
+                },
+            ],
+            membership_epoch: 1,
+            mls_epoch: 1,
+            active: true,
+            updated_at_unix_ms: 101,
+        };
+        let commit = MlsSenderTransitionReceiveCommit {
+            item_id: "genesis-item",
+            event_id: "genesis-event",
+            conversation_id: "group-genesis",
+            command_id: "genesis-command",
+            transition_id: "genesis-transition",
+            event_sequence: 1,
+            lane_sequence: 1,
+            consumer_epoch: 1,
+            payload_sha256: &[8; 32],
+            event_hash: &[9; 32],
+            previous_event_hash: &[],
+            session_state: b"committed-genesis-state",
+            membership_epoch: 1,
+            mls_epoch: 1,
+            genesis_projection: Some(&projection),
+            receipt_id: "genesis-receipt",
+            receipt_bytes: b"genesis-receipt-bytes",
+            consumed_at_unix_ms: 101,
+        };
+
+        assert_eq!(
+            store.commit_mls_sender_transition(&commit).unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        assert_eq!(
+            store.commit_mls_sender_transition(&commit).unwrap(),
+            ReceiveCommitResult::AlreadyCommitted
+        );
+        assert_eq!(
+            store.load_mls_session_state("group-genesis").unwrap(),
+            Some(b"committed-genesis-state".to_vec())
+        );
+        assert!(store
+            .pending_mls_transition("group-genesis")
+            .unwrap()
+            .is_none());
+        assert_eq!(store.conversation_projections().unwrap(), vec![projection]);
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 1));
+        assert!(store
+            .consumption_marker_matches("genesis-item", &[8; 32])
+            .unwrap());
+        assert!(store.next_command(101).unwrap().is_none());
     }
 
     #[test]
