@@ -716,6 +716,52 @@ func (s *CanonicalService) ReserveMLSKeyPackage(
 	target domain.Endpoint,
 	expiresAt time.Time,
 ) (domain.MLSKeyPackageReservation, error) {
+	route, err := s.resolveActiveDevice(ctx, reserveMLSOperation, target)
+	if err != nil {
+		return domain.MLSKeyPackageReservation{}, err
+	}
+	return s.reserveMLSKeyPackageForRoute(
+		ctx,
+		requestID,
+		authorityPlanID,
+		target,
+		route.HomeStationID,
+		expiresAt,
+		false,
+	)
+}
+
+// ReserveMLSKeyPackageForVerifiedRoute accepts only a server-verified Actor
+// route. Conversation resolves that route from a signed endpoint manifest;
+// Key Exchange remains the sole owner of local reservation and remote claim.
+func (s *CanonicalService) ReserveMLSKeyPackageForVerifiedRoute(
+	ctx context.Context,
+	requestID string,
+	authorityPlanID string,
+	target domain.Endpoint,
+	homeStationID string,
+	expiresAt time.Time,
+) (domain.MLSKeyPackageReservation, error) {
+	return s.reserveMLSKeyPackageForRoute(
+		ctx,
+		requestID,
+		authorityPlanID,
+		target,
+		homeStationID,
+		expiresAt,
+		true,
+	)
+}
+
+func (s *CanonicalService) reserveMLSKeyPackageForRoute(
+	ctx context.Context,
+	requestID string,
+	authorityPlanID string,
+	target domain.Endpoint,
+	homeStationID string,
+	expiresAt time.Time,
+	verifyLocal bool,
+) (domain.MLSKeyPackageReservation, error) {
 	if err := domain.ValidateRequestID(reserveMLSOperation, requestID); err != nil {
 		return domain.MLSKeyPackageReservation{}, err
 	}
@@ -727,22 +773,41 @@ func (s *CanonicalService) ReserveMLSKeyPackage(
 	); err != nil {
 		return domain.MLSKeyPackageReservation{}, err
 	}
-	route, err := s.resolveActiveDevice(ctx, reserveMLSOperation, target)
-	if err != nil {
-		return domain.MLSKeyPackageReservation{}, err
+	homeStationID = strings.TrimSpace(homeStationID)
+	if homeStationID == "" {
+		return domain.MLSKeyPackageReservation{}, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			reserveMLSOperation,
+			"home_station_id",
+			"is required",
+		)
 	}
-	if route.HomeStationID != s.localStation {
+	if verifyLocal && homeStationID == s.localStation {
+		route, err := s.resolveActiveDevice(ctx, reserveMLSOperation, target)
+		if err != nil {
+			return domain.MLSKeyPackageReservation{}, err
+		}
+		if route.HomeStationID != homeStationID {
+			return domain.MLSKeyPackageReservation{}, domain.NewError(
+				domain.ErrorCodeConflict,
+				reserveMLSOperation,
+				"home_station_id",
+				"does not match the active local device route",
+			)
+		}
+	}
+	if homeStationID != s.localStation {
 		claim := domain.MLSKeyPackageClaim{
 			AuthenticatedAuthorityStation: s.localStation,
 			RequestID:                     requestID,
 			AuthorityPlanID:               strings.TrimSpace(authorityPlanID),
 			AuthorityStationID:            s.localStation,
-			Target:                        route.Endpoint,
+			Target:                        target,
 			PlanExpiresAt:                 expiresAt.UTC(),
 		}
 		reservation, err := s.federation.ClaimMLSKeyPackage(
 			ctx,
-			route.HomeStationID,
+			homeStationID,
 			claim,
 		)
 		if err != nil {
@@ -753,7 +818,7 @@ func (s *CanonicalService) ReserveMLSKeyPackage(
 			reserveMLSOperation,
 			reservation,
 			claim,
-			route.HomeStationID,
+			homeStationID,
 		); err != nil {
 			return domain.MLSKeyPackageReservation{}, err
 		}
@@ -762,7 +827,7 @@ func (s *CanonicalService) ReserveMLSKeyPackage(
 	reservation, err := s.mlsStore.ReserveMLSKeyPackage(
 		ctx,
 		strings.TrimSpace(authorityPlanID),
-		route.Endpoint,
+		target,
 		s.localStation,
 		s.now(),
 		expiresAt.UTC(),
