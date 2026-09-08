@@ -7938,6 +7938,25 @@ function reportFoundationCancelledLocalizationDebug(
 }
 // #endregion
 
+// #region debug-point J-M:base-credential-runtime-event
+function reportFoundationCredentialRuntimeEventDebug(
+  data: Record<string, unknown>,
+): Promise<void> {
+  return fetch('http://127.0.0.1:7789/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'base-credential-runtime-event',
+      runId: 'pre-fix',
+      hypothesisId: 'J-M',
+      location: 'harness.ts:runFoundationCredentialMissingScenario.return',
+      msg: '[DEBUG] credential and returned runtime events compared',
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 // #region debug-point A-D:foundation-capability-isolation
 function reportFoundationCapabilityIsolationDebug(
   hypothesisId: string,
@@ -10058,6 +10077,27 @@ async function runFoundationActiveMutationConflictScenario(input: {
     agent: input.agent,
     capabilitySessionId: input.capabilitySessionId,
     sampleId: input.sampleId,
+  });
+  const scenarioRuntimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationCredentialMissingRuntimeEvent',
+  );
+  await reportFoundationCredentialRuntimeEventDebug({
+    scenarioEventType: scenarioRuntimeEvent.eventType,
+    scenarioErrorType: scenarioRuntimeEvent.errorType,
+    scenarioSourceTurnEmpty: scenarioRuntimeEvent.sourceTurnId === '',
+    scenarioSourceSequence: scenarioRuntimeEvent.sourceSequence,
+    returnedEventType: attestation.runtimeEvent.eventType,
+    returnedErrorType: attestation.runtimeEvent.errorType ?? null,
+    returnedSourceTurnEmpty: attestation.runtimeEvent.sourceTurnId === '',
+    returnedSourceSequence: attestation.runtimeEvent.sourceSequence ?? null,
+    eventIdsMatch:
+      scenarioRuntimeEvent.eventId === attestation.runtimeEvent.eventId,
+    sourceConversationMatches:
+      scenarioRuntimeEvent.sourceConversationId
+        === attestation.runtimeEvent.sourceConversationId,
+    payloadHashesMatch:
+      scenarioRuntimeEvent.payloadHash === attestation.runtimeEvent.payloadHash,
   });
   return {
     conversationId: attestation.conversationId,
