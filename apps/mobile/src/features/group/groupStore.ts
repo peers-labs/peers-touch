@@ -180,6 +180,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         const group = groupFromMessaging({
           conversationId: created.conversationId,
           authorityStationId: state.authSession?.stationPeerId ?? '',
+          federationId: input.federationId,
           kind: 2,
           name: input.name,
           ownerPtid: actorPtid,

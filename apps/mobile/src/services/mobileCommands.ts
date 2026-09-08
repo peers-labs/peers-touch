@@ -50,6 +50,7 @@ export interface MessagingRuntimeStatus {
 export interface MessagingConversationProjection {
   conversationId: string;
   authorityStationId: string;
+  federationId: string;
   kind: number;
   name: string;
   ownerPtid: string;

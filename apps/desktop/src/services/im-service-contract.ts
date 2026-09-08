@@ -161,6 +161,7 @@ export type MessagingQueuedSendOutcome = MessagingSendOutcome & {
 export interface MessagingConversationProjection {
   conversationId: string
   authorityStationId: string
+  federationId: string
   kind: 1 | 2
   name: string
   ownerPtid: string

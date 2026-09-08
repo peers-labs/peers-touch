@@ -71,6 +71,13 @@ impl ConversationStateProcessor {
             Some(conversation_event::Payload::ConversationCreated(created)) => created,
             _ => return Err("messaging conversation-state event is unsupported".to_string()),
         };
+        let post_state = created
+            .post_state
+            .as_ref()
+            .filter(|state| !state.federation_id.trim().is_empty())
+            .ok_or_else(|| {
+                "messaging conversation-state Federation projection is missing".to_string()
+            })?;
         if !created
             .members
             .iter()
@@ -92,6 +99,7 @@ impl ConversationStateProcessor {
         let projection = ConversationProjection {
             conversation_id: event.conversation_id.clone(),
             authority_station_id: event.authority_station_peer_id.clone(),
+            federation_id: post_state.federation_id.clone(),
             kind: created.kind,
             name: created.name.clone(),
             owner_ptid: created.owner_ptid.clone(),
@@ -152,8 +160,8 @@ mod tests {
     use super::super::verification::delivery_commitment;
     use super::*;
     use crate::model::chat::{
-        ConversationAuthorityMember, ConversationCreatedFact, ConversationEvent, ConversationKind,
-        DeviceEventDelivery, DeviceInboxPayloadType,
+        ConversationAuthorityMember, ConversationAuthoritySnapshot, ConversationCreatedFact,
+        ConversationEvent, ConversationKind, DeviceEventDelivery, DeviceInboxPayloadType,
     };
     use messaging_core::proto::actor_device_ref;
     use sha2::{Digest, Sha256};
@@ -208,7 +216,26 @@ mod tests {
                             home_station_peer_id: "station-remote".to_string(),
                         },
                     ],
-                    post_state: None,
+                    post_state: Some(ConversationAuthoritySnapshot {
+                        kind: ConversationKind::Direct as i32,
+                        name: String::new(),
+                        owner_ptid: "ptid:alice".to_string(),
+                        active_members: vec![
+                            ConversationAuthorityMember {
+                                ptid: "ptid:alice".to_string(),
+                                role: "member".to_string(),
+                                home_station_peer_id: "station-local".to_string(),
+                            },
+                            ConversationAuthorityMember {
+                                ptid: "ptid:bob".to_string(),
+                                role: "member".to_string(),
+                                home_station_peer_id: "station-remote".to_string(),
+                            },
+                        ],
+                        federation_id: "federation-1".to_string(),
+                        membership_epoch: 1,
+                        ..Default::default()
+                    }),
                 },
             )),
         };
@@ -257,6 +284,7 @@ mod tests {
         processor.consume(&item, 1).unwrap();
         let projections = store.conversation_projections().unwrap();
         assert_eq!(projections.len(), 1);
+        assert_eq!(projections[0].federation_id, "federation-1");
         assert_eq!(
             projections[0]
                 .members

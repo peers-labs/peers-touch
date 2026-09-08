@@ -1093,6 +1093,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         conversation_id: conversation.conversationId,
         kind: conversation.kind,
         authority_station_peer_id: conversation.authorityStationId,
+        federation_id: conversation.federationId,
         membership_epoch: conversation.membershipEpoch,
         mls_epoch: conversation.mlsEpoch,
         status: conversation.active ? 1 : 0,

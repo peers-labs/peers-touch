@@ -265,13 +265,14 @@ describe('Messaging leave intent boundary', () => {
 })
 
 describe('Messaging conversation projection', () => {
-  it('retains the authority Station identity from the Rust projection', async () => {
+  it('retains authority and Federation identity from the Rust projection', async () => {
     invokeMock.mockResolvedValueOnce({
       ok: true,
       data: {
         conversations: [{
           conversation_id: 'conversation-1',
           authority_station_id: 'station-authority',
+          federation_id: 'federation-1',
           kind: 2,
           name: 'Group',
           owner_ptid: 'ptid:test:alice',
@@ -301,6 +302,7 @@ describe('Messaging conversation projection', () => {
     await expect(imServiceV1.messaging.listConversations()).resolves.toEqual([{
       conversationId: 'conversation-1',
       authorityStationId: 'station-authority',
+      federationId: 'federation-1',
       kind: 2,
       name: 'Group',
       ownerPtid: 'ptid:test:alice',

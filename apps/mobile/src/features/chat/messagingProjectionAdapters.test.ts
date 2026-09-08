@@ -10,6 +10,7 @@ import {
 const directConversation = {
   conversationId: 'direct-1',
   authorityStationId: 'station-one',
+  federationId: 'federation-1',
   kind: 1,
   name: '',
   ownerPtid: 'ptid:alice',

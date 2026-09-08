@@ -227,6 +227,54 @@ impl MobileMessagingStore {
         })
     }
 
+    pub(crate) fn reconcile_conversation_authority_scope(
+        &self,
+        conversation_id: &str,
+        authority_station_id: &str,
+        federation_id: &str,
+    ) -> Result<bool, String> {
+        if conversation_id.trim().is_empty()
+            || authority_station_id.trim().is_empty()
+            || federation_id.trim().is_empty()
+        {
+            return Err("mobile messaging conversation authority scope is incomplete".to_string());
+        }
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
+        let existing = connection
+            .query_row(
+                "SELECT authority_station_id, federation_id
+                 FROM messaging_conversations
+                 WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let Some((stored_authority, stored_federation)) = existing else {
+            return Ok(false);
+        };
+        if (!stored_authority.is_empty() && stored_authority != authority_station_id)
+            || (!stored_federation.is_empty() && stored_federation != federation_id)
+        {
+            return Err(
+                "mobile messaging conversation authority scope conflicts with Station".to_string(),
+            );
+        }
+        let changed = connection
+            .execute(
+                "UPDATE messaging_conversations
+                 SET authority_station_id = ?2, federation_id = ?3
+                 WHERE conversation_id = ?1
+                   AND (authority_station_id = '' OR federation_id = '')",
+                params![conversation_id, authority_station_id, federation_id],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(changed == 1)
+    }
+
     fn with_transaction<T>(
         &self,
         operation: impl FnOnce(&Transaction<'_>) -> Result<T, String>,
@@ -2598,11 +2646,13 @@ impl MessagingRepository for MobileMessagingStore {
             transaction
                 .execute(
                     "INSERT INTO messaging_conversations(
-                        conversation_id, authority_station_id, kind, name, owner_ptid,
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                      ON CONFLICT(conversation_id) DO UPDATE SET
                         authority_station_id=excluded.authority_station_id,
+                        federation_id=excluded.federation_id,
                         kind=excluded.kind, name=excluded.name,
                         owner_ptid=excluded.owner_ptid,
                         membership_epoch=excluded.membership_epoch,
@@ -2611,6 +2661,7 @@ impl MessagingRepository for MobileMessagingStore {
                     params![
                         projection.conversation_id,
                         projection.authority_station_id,
+                        projection.federation_id,
                         projection.kind,
                         projection.name,
                         projection.owner_ptid,
@@ -2678,7 +2729,8 @@ impl MessagingRepository for MobileMessagingStore {
             .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
         let mut statement = connection
             .prepare(
-                "SELECT conversation_id, authority_station_id, kind, name, owner_ptid,
+                "SELECT conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                  FROM messaging_conversations ORDER BY updated_at_unix_ms DESC",
             )
@@ -2688,13 +2740,14 @@ impl MessagingRepository for MobileMessagingStore {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i32>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i32>(3)?,
                     row.get::<_, String>(4)?,
-                    row.get::<_, i64>(5)?,
+                    row.get::<_, String>(5)?,
                     row.get::<_, i64>(6)?,
-                    row.get::<_, bool>(7)?,
-                    row.get::<_, i64>(8)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, bool>(8)?,
+                    row.get::<_, i64>(9)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -2716,14 +2769,15 @@ impl MessagingRepository for MobileMessagingStore {
                 Ok(ConversationProjection {
                     conversation_id: row.0,
                     authority_station_id: row.1,
-                    kind: row.2,
-                    name: row.3,
-                    owner_ptid: row.4,
+                    federation_id: row.2,
+                    kind: row.3,
+                    name: row.4,
+                    owner_ptid: row.5,
                     member_ptids,
-                    membership_epoch: row.5,
-                    mls_epoch: row.6,
-                    active: row.7,
-                    updated_at_unix_ms: row.8,
+                    membership_epoch: row.6,
+                    mls_epoch: row.7,
+                    active: row.8,
+                    updated_at_unix_ms: row.9,
                 })
             })
             .collect()
@@ -5319,6 +5373,7 @@ fn validate_mls_projection(
 ) -> Result<(), String> {
     if projection.conversation_id != conversation_id
         || projection.authority_station_id.trim().is_empty()
+        || projection.federation_id.trim().is_empty()
         || projection.owner_ptid.trim().is_empty()
         || projection.membership_epoch != membership_epoch
         || projection.mls_epoch != mls_epoch
@@ -5339,11 +5394,13 @@ fn persist_mls_conversation(
     transaction
         .execute(
             "INSERT INTO messaging_conversations(
-                conversation_id, authority_station_id, kind, name, owner_ptid,
+                conversation_id, authority_station_id, federation_id,
+                kind, name, owner_ptid,
                 membership_epoch, mls_epoch, active, updated_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(conversation_id) DO UPDATE SET
                 authority_station_id=excluded.authority_station_id,
+                federation_id=excluded.federation_id,
                 kind=excluded.kind,
                 name=excluded.name,
                 owner_ptid=excluded.owner_ptid,
@@ -5354,6 +5411,7 @@ fn persist_mls_conversation(
             params![
                 projection.conversation_id,
                 projection.authority_station_id,
+                projection.federation_id,
                 projection.kind,
                 projection.name,
                 projection.owner_ptid,
@@ -6607,6 +6665,7 @@ mod tests {
         let projection = ConversationProjection {
             conversation_id: "conversation-1".into(),
             authority_station_id: "station-1".into(),
+            federation_id: "federation-1".into(),
             kind: 2,
             name: "Group".into(),
             owner_ptid: "ptid:alice".into(),
@@ -6642,6 +6701,10 @@ mod tests {
         assert!(MessagingRepository::consumption_marker_matches(&store, "item-1", &hash).unwrap());
         assert_eq!(store.lane_checkpoint().unwrap(), (1, 1));
         assert_eq!(
+            store.conversation_projections().unwrap()[0].federation_id,
+            "federation-1"
+        );
+        assert_eq!(
             store.conversation_projections().unwrap()[0].member_ptids,
             vec!["ptid:alice", "ptid:bob"]
         );
@@ -6666,6 +6729,7 @@ mod tests {
         let projection = ConversationProjection {
             conversation_id: "conversation-1".into(),
             authority_station_id: "station-1".into(),
+            federation_id: "federation-1".into(),
             kind: 1,
             name: String::new(),
             owner_ptid: "ptid:alice".into(),
@@ -7054,6 +7118,7 @@ mod tests {
         let projection = ConversationProjection {
             conversation_id: "conversation-1".into(),
             authority_station_id: "station-1".into(),
+            federation_id: "federation-1".into(),
             kind: 1,
             name: String::new(),
             owner_ptid: "ptid:alice".into(),
@@ -7561,6 +7626,7 @@ mod tests {
         let joined = MlsConversationProjection {
             conversation_id: "group-1".into(),
             authority_station_id: "station-1".into(),
+            federation_id: "federation-1".into(),
             kind: 2,
             name: "Group".into(),
             owner_ptid: "ptid:alice".into(),
@@ -7742,6 +7808,7 @@ mod tests {
         let conversation = ConversationProjection {
             conversation_id: "group-1".into(),
             authority_station_id: "station-1".into(),
+            federation_id: "federation-1".into(),
             kind: 2,
             name: "Group".into(),
             owner_ptid: "ptid:alice".into(),
@@ -8242,10 +8309,12 @@ mod tests {
             connection
                 .execute(
                     "INSERT INTO messaging_conversations(
-                        conversation_id, authority_station_id, kind, name, owner_ptid,
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                      ) VALUES (
-                        'conversation-1', 'station-authority', 1, '', 'ptid:alice',
+                        'conversation-1', 'station-authority', 'federation-1',
+                        1, '', 'ptid:alice',
                         1, 0, 1, 10
                      )",
                     [],
@@ -8342,7 +8411,22 @@ mod tests {
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
-                "CREATE TABLE messaging_read_cursors (
+                "CREATE TABLE messaging_conversations (
+                    conversation_id TEXT PRIMARY KEY,
+                    authority_station_id TEXT NOT NULL,
+                    kind INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    owner_ptid TEXT NOT NULL,
+                    membership_epoch INTEGER NOT NULL,
+                    mls_epoch INTEGER NOT NULL,
+                    active INTEGER NOT NULL,
+                    updated_at_unix_ms INTEGER NOT NULL
+                 );
+                 INSERT INTO messaging_conversations VALUES (
+                    'conversation-legacy', 'station-authority', 1, '', 'ptid:alice',
+                    1, 0, 1, 10
+                 );
+                 CREATE TABLE messaging_read_cursors (
                     conversation_id TEXT NOT NULL,
                     actor_ptid TEXT NOT NULL,
                     last_read_sequence INTEGER NOT NULL,
@@ -8374,7 +8458,25 @@ mod tests {
             )
             .unwrap();
         let store = MobileMessagingStore::from_connection(connection).unwrap();
+        assert!(store
+            .reconcile_conversation_authority_scope(
+                "conversation-legacy",
+                "station-authority",
+                "federation-1",
+            )
+            .unwrap());
         let connection = store.connection.lock().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT federation_id FROM messaging_conversations
+                     WHERE conversation_id = 'conversation-legacy'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "federation-1"
+        );
         assert_eq!(
             connection
                 .query_row(

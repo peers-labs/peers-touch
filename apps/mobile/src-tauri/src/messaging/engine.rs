@@ -43,10 +43,10 @@ use messaging_core::outbox::{
 use messaging_core::ports::AttachmentBlob;
 use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
-    chat_command, ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationKind,
-    ConversationStatus, CryptoEndpoint, DurableDeviceInboxItem, PrepareConversationCommandRequest,
-    PrepareConversationCommandResponse, SubmitConversationReadCursorRequest,
-    SubmitConversationTypingRequest,
+    chat_command, ActorReadCursor, AttachmentTransferState, ChatCommand, Conversation,
+    ConversationKind, ConversationStatus, CryptoEndpoint, DurableDeviceInboxItem,
+    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
+    SubmitConversationReadCursorRequest, SubmitConversationTypingRequest,
 };
 use messaging_core::proto::social::{
     AcceptSocialFriendRequestRequest, AcceptSocialFriendRequestResponse, FriendRequestAction,
@@ -407,6 +407,44 @@ impl MobileMessagingEngine {
         self.store.conversation_projections()
     }
 
+    pub fn hydrate_conversation_authority_scopes(&self) -> Result<usize, String> {
+        let incomplete_conversation_ids = self
+            .store
+            .conversation_projections()?
+            .into_iter()
+            .filter(|conversation| {
+                conversation.active && conversation.federation_id.trim().is_empty()
+            })
+            .map(|conversation| conversation.conversation_id)
+            .collect::<Vec<_>>();
+        if incomplete_conversation_ids.is_empty() {
+            return Ok(0);
+        }
+        let response = StationConversationTransport::new(
+            self.scope.station_origin.clone(),
+            self.access_token()?,
+            self.scope.device_id.clone(),
+            self.proto_endpoint(),
+        )?
+        .list_conversations()?;
+        let mut repaired = 0;
+        for conversation in response.conversations {
+            if !incomplete_conversation_ids.contains(&conversation.conversation_id) {
+                continue;
+            }
+            let (authority_station_id, federation_id) =
+                conversation_authority_scope(&conversation)?;
+            if self.store.reconcile_conversation_authority_scope(
+                &conversation.conversation_id,
+                authority_station_id,
+                federation_id,
+            )? {
+                repaired += 1;
+            }
+        }
+        Ok(repaired)
+    }
+
     pub fn send_social_friend_request(
         &self,
         receiver_ptid: &str,
@@ -593,6 +631,11 @@ impl MobileMessagingEngine {
         {
             return Err("mobile messaging direct conversation response is invalid".to_string());
         }
+        self.store.reconcile_conversation_authority_scope(
+            &conversation.conversation_id,
+            &conversation.authority_station_peer_id,
+            &conversation.federation_id,
+        )?;
         let conversation_id = conversation.conversation_id;
         // Reopening an existing deterministic Direct does not commit a new event.
         if let Some(event) = response.event {
@@ -2115,6 +2158,21 @@ fn build_signed_friend_request_command(
     })
 }
 
+fn conversation_authority_scope(conversation: &Conversation) -> Result<(&str, &str), String> {
+    if conversation.conversation_id.trim().is_empty()
+        || conversation.authority_station_peer_id.trim().is_empty()
+        || conversation.federation_id.trim().is_empty()
+    {
+        return Err(
+            "mobile messaging Station returned an incomplete Conversation projection".to_string(),
+        );
+    }
+    Ok((
+        conversation.authority_station_peer_id.as_str(),
+        conversation.federation_id.as_str(),
+    ))
+}
+
 fn human_actor_ref(ptid: &str) -> ActorRef {
     ActorRef {
         ptid: ptid.to_string(),
@@ -2271,6 +2329,22 @@ mod tests {
             Some("ptid:bob")
         );
         assert!(body.message.is_empty());
+    }
+
+    #[test]
+    fn dissolved_conversation_scope_remains_repairable() {
+        let conversation = Conversation {
+            conversation_id: "conversation-1".to_string(),
+            authority_station_peer_id: "station-authority".to_string(),
+            federation_id: "federation-1".to_string(),
+            status: ConversationStatus::Dissolved as i32,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            conversation_authority_scope(&conversation).unwrap(),
+            ("station-authority", "federation-1")
+        );
     }
 
     #[test]

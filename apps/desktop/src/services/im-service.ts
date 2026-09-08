@@ -165,6 +165,7 @@ function conversationFromProjection(
     conversationId: projection.conversationId,
     kind: projection.kind,
     authorityStationPeerId: projection.authorityStationId,
+    federationId: projection.federationId,
     membershipEpoch: projection.membershipEpoch,
     mlsEpoch: projection.mlsEpoch,
     status: projection.active
@@ -513,6 +514,7 @@ const messagingService: MessagingServiceContract = {
         conversations: Array<{
           conversation_id: string
           authority_station_id: string
+          federation_id: string
           kind: number
           name: string
           owner_ptid: string
@@ -528,6 +530,7 @@ const messagingService: MessagingServiceContract = {
     const conversations = response.conversations.map(conversation => ({
       conversationId: conversation.conversation_id,
       authorityStationId: conversation.authority_station_id,
+      federationId: conversation.federation_id,
       kind: conversation.kind as 1 | 2,
       name: conversation.name,
       ownerPtid: conversation.owner_ptid,

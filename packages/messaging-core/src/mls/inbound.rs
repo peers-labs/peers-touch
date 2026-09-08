@@ -615,6 +615,7 @@ pub fn validate_authority_snapshot(
     let snapshot =
         snapshot.ok_or_else(|| "messaging MLS transition has no authority snapshot".to_string())?;
     if snapshot.kind != crate::proto::chat::ConversationKind::Group as i32
+        || snapshot.federation_id.trim().is_empty()
         || snapshot.owner_ptid.trim().is_empty()
         || snapshot.membership_epoch != event.membership_epoch
         || snapshot.mls_epoch != event.mls_epoch
@@ -669,6 +670,7 @@ pub fn authority_snapshot_projection(
     Ok(MlsConversationProjection {
         conversation_id: event.conversation_id.clone(),
         authority_station_id: event.authority_station_peer_id.clone(),
+        federation_id: snapshot.federation_id.clone(),
         kind: snapshot.kind,
         name: snapshot.name.clone(),
         owner_ptid: snapshot.owner_ptid.clone(),
@@ -864,6 +866,7 @@ mod tests {
                 proto_endpoint(&endpoint("ptid:alice", "alice-device")),
                 proto_endpoint(&endpoint("ptid:bob", "bob-device")),
             ],
+            federation_id: "federation-1".to_string(),
             membership_epoch,
             mls_epoch,
             ..Default::default()
@@ -1168,6 +1171,7 @@ mod tests {
                             proto_endpoint(&endpoint("ptid:alice", "alice-device")),
                             proto_endpoint(&endpoint("ptid:carol", "carol-device-1")),
                         ],
+                        federation_id: "federation-1".to_string(),
                         membership_epoch: 7,
                         mls_epoch: 7,
                         ..Default::default()
@@ -1227,6 +1231,7 @@ mod tests {
 
         let projection = authority_snapshot_projection(&event, &snapshot, 100).unwrap();
 
+        assert_eq!(projection.federation_id, "federation-1");
         assert_eq!(
             projection
                 .members

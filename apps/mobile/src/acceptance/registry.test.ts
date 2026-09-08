@@ -211,6 +211,7 @@ describe('Mobile Acceptance Harness', () => {
       conversations: [{
         conversationId: 'conversation-1',
         authorityStationId: 'station-peer',
+        federationId: 'federation-1',
         kind: 1,
         name: '',
         ownerPtid: 'ptid:alice',

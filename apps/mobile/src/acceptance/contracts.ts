@@ -531,6 +531,7 @@ export interface PublicMessagingProjection {
   conversations: Array<{
     conversationId: string;
     authorityStationId: string;
+    federationId: string;
     kind: number;
     name: string;
     ownerPtid: string;

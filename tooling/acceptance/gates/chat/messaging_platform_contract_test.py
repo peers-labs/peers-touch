@@ -135,6 +135,146 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn("bytes sender_actor_identity_public_key = 7;", event)
         self.assertNotIn("DeviceEncryptedPayload", event)
 
+    def test_client_conversation_projection_preserves_federation_identity(self) -> None:
+        schema = (
+            ROOT / "packages/messaging-core/src/store/schema.rs"
+        ).read_text(encoding="utf-8")
+        core_contract = (
+            ROOT / "packages/messaging-core/src/contracts/mod.rs"
+        ).read_text(encoding="utf-8")
+        core_event_projection = (
+            ROOT / "packages/messaging-core/src/inbox/conversation_state.rs"
+        ).read_text(encoding="utf-8")
+        core_mls_projection = (
+            ROOT / "packages/messaging-core/src/mls/inbound.rs"
+        ).read_text(encoding="utf-8")
+        desktop_store = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/store.rs"
+        ).read_text(encoding="utf-8")
+        desktop_event_projection = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/conversation_state.rs"
+        ).read_text(encoding="utf-8")
+        desktop_lifecycle = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/lifecycle.rs"
+        ).read_text(encoding="utf-8")
+        desktop_engine = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/engine.rs"
+        ).read_text(encoding="utf-8")
+        desktop_recovery = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/recovery.rs"
+        ).read_text(encoding="utf-8")
+        desktop_json = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
+        ).read_text(encoding="utf-8")
+        desktop_contract = (
+            ROOT / "apps/desktop/src/services/im-service-contract.ts"
+        ).read_text(encoding="utf-8")
+        desktop_service = (
+            ROOT / "apps/desktop/src/services/im-service.ts"
+        ).read_text(encoding="utf-8")
+        social_store = (
+            ROOT / "apps/desktop/src/store/socialChat.ts"
+        ).read_text(encoding="utf-8")
+        mobile_store = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/adapter.rs"
+        ).read_text(encoding="utf-8")
+        mobile_engine = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/engine.rs"
+        ).read_text(encoding="utf-8")
+        mobile_lifecycle = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/lifecycle.rs"
+        ).read_text(encoding="utf-8")
+        mobile_transport = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/transport.rs"
+        ).read_text(encoding="utf-8")
+        mobile_commands = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/commands.rs"
+        ).read_text(encoding="utf-8")
+        mobile_contract = (
+            ROOT / "apps/mobile/src/services/mobileCommands.ts"
+        ).read_text(encoding="utf-8")
+        mobile_acceptance_projection = (
+            ROOT / "apps/mobile/src/acceptance/projection.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("federation_id TEXT NOT NULL", schema)
+        self.assertIn('column: "federation_id"', schema)
+        self.assertIn("pub federation_id: String", core_contract)
+        self.assertIn(
+            "federation_id: post_state.federation_id.clone()",
+            core_event_projection,
+        )
+        self.assertIn(
+            "federation_id: snapshot.federation_id.clone()",
+            core_mls_projection,
+        )
+        self.assertIn("pub federation_id: String", desktop_store)
+        self.assertIn(
+            "federation_id: post_state.federation_id.clone()",
+            desktop_event_projection,
+        )
+        self.assertIn(
+            "projection.federation_id.trim().is_empty()",
+            desktop_lifecycle,
+        )
+        self.assertNotIn(
+            "if !self.store.conversation_projections()?.is_empty()",
+            desktop_engine,
+        )
+        self.assertIn("pub federation_id: String", desktop_recovery)
+        self.assertIn('"federation_id": conversation.federation_id', desktop_json)
+        self.assertIn("federationId: string", desktop_contract)
+        self.assertIn(
+            "federationId: conversation.federation_id",
+            desktop_service,
+        )
+        self.assertIn(
+            "federation_id: conversation.federationId",
+            social_store,
+        )
+        self.assertIn(
+            "federation_id=excluded.federation_id",
+            mobile_store,
+        )
+        self.assertIn(
+            "pub(crate) fn reconcile_conversation_authority_scope",
+            mobile_store,
+        )
+        self.assertIn(
+            "hydrate_conversation_authority_scopes",
+            mobile_engine,
+        )
+        self.assertIn(
+            "dissolved_conversation_scope_remains_repairable",
+            mobile_engine,
+        )
+        self.assertIn(
+            "engine.hydrate_conversation_authority_scopes()?",
+            mobile_lifecycle,
+        )
+        self.assertIn(
+            ".list_conversations()?",
+            mobile_engine,
+        )
+        self.assertIn(
+            "pub fn list_conversations",
+            mobile_transport,
+        )
+        self.assertIn(
+            "conversation.federation_id == federation_id",
+            mobile_commands,
+        )
+        self.assertIn(
+            "federation_id: conversation.federation_id",
+            mobile_commands,
+        )
+        self.assertIn("federationId: string", mobile_contract)
+        self.assertIn(
+            "federationId: conversation.federationId",
+            mobile_acceptance_projection,
+        )
+
     def test_sending_endpoint_uses_ordered_public_event_marker(self) -> None:
         command = (CHAT_PROTO / "command.proto").read_text(encoding="utf-8")
         event = (CHAT_PROTO / "event.proto").read_text(encoding="utf-8")

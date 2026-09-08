@@ -416,6 +416,7 @@ mod tests {
             conversations: vec![RecoveryConversationProjection {
                 conversation_id: "conversation-1".to_string(),
                 authority_station_id: "station-local".to_string(),
+                federation_id: "federation-1".to_string(),
                 kind: 1,
                 name: String::new(),
                 owner_ptid: "ptid:alice".to_string(),
@@ -470,6 +471,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn legacy_archive_without_federation_identity_remains_decodable() {
+        let mut value = serde_json::to_value(archive()).unwrap();
+        value["conversations"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("federation_id");
+        let legacy: MessagingRecoveryArchive = serde_json::from_value(value).unwrap();
+        assert!(legacy.conversations[0].federation_id.is_empty());
+        assert!(validate_archive(&legacy).is_ok());
     }
 
     #[test]
