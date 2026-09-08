@@ -358,6 +358,26 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
         self.assertLess(error_boundary, source_binding)
         self.assertLess(source_binding, adapter_import)
 
+    def test_screenshot_probe_compresses_bitmap_control_payload(self) -> None:
+        worker = WindowsDesktopBroker._adapter_worker_script()
+        probe = worker[
+            worker.index('elif operation == "probe_screenshot":'):
+            worker.index('elif operation == "capture_screenshot":')
+        ]
+
+        self.assertIn('"captured": True', probe)
+        self.assertIn('"byteLength": len(content)', probe)
+        self.assertIn(
+            "base64.b64encode(\n                zlib.compress(content)",
+            probe,
+        )
+        self.assertIn('"contentEncoding": "zlib"', probe)
+        self.assertIn(
+            '"sha256": hashlib.sha256(content).hexdigest()',
+            probe,
+        )
+        self.assertNotIn("base64.b64encode(content)", probe)
+
     def test_activation_observes_focus_in_the_same_worker(self) -> None:
         worker = WindowsDesktopBroker._adapter_worker_script()
         activation = worker.index("adapter.activate_process(process_id)")
