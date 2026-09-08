@@ -45,6 +45,46 @@ describe('Agent turn event identity projection', () => {
     expect(useChatStore.getState().composerFocusNonce).toBe(0);
   });
 
+  it('forwards an explicit client idempotency key to the turn command', () => {
+    const previousAgentState = useAgentStore.getState();
+    const streamSpy = vi.spyOn(agentService, 'streamTurn').mockImplementation(
+      () => {
+        const controller = new AbortController() as AgentTurnStreamController;
+        Object.defineProperty(controller, 'streamGeneration', {
+          value: 1,
+          enumerable: true,
+        });
+        return controller;
+      },
+    );
+    useChatStore.getState().reset();
+    useChatStore.setState({ currentSessionKey: 'conversation-1' });
+    useAgentStore.setState({
+      selectedAgent: 'assistant',
+      agents: [{
+        id: 'agent-1',
+        name: 'assistant',
+        provider: 'provider-1',
+        model: 'model-1',
+      } as Agent],
+    });
+
+    try {
+      expect(useChatStore.getState().sendMessage(
+        'conflicting input',
+        [],
+        { clientIdempotencyKey: 'request-1' },
+      )).toBe(true);
+      expect(streamSpy).toHaveBeenCalledTimes(1);
+      expect(streamSpy.mock.calls[0]?.[0].client_idempotency_key)
+        .toBe('request-1');
+    } finally {
+      streamSpy.mockRestore();
+      useChatStore.getState().reset();
+      useAgentStore.setState(previousAgentState);
+    }
+  });
+
   it('retains only local pre-admission failure buffers after navigation', () => {
     expect(shouldUseSessionBuffer({
       ...operation(),

@@ -116,6 +116,7 @@ export interface AgentSendLifecycle {
   onAccepted?: () => void;
   onRejected?: (error?: AgentTypedErrorPayload) => void;
   requestedBudget?: AgentRuntimeBudgetInput;
+  clientIdempotencyKey?: string;
 }
 
 export type BudgetExhaustionKind =
@@ -144,9 +145,14 @@ export interface RecoveredTurnTerminal {
 }
 
 export interface ErrorResolutionAction {
-  type: 'reauthCli' | 'openProviderSettings' | 'checkConnection';
+  type:
+    | 'reauthCli'
+    | 'openProviderSettings'
+    | 'checkConnection'
+    | 'openOriginal';
   cliId?: string;
   providerId?: string;
+  existingCommandId?: string;
   label: string;
 }
 
@@ -751,11 +757,12 @@ function buildAgentTurnInput(
   userInput: string,
   attachments: ChatComposerAttachment[],
   requestedBudget?: AgentRuntimeBudgetInput,
+  clientIdempotencyKey?: string,
 ) {
   const agentState = useAgentStore.getState();
   const agent = agentState.agents.find((a) => a.id === agentId);
   return {
-    client_idempotency_key: tempId(),
+    client_idempotency_key: clientIdempotencyKey || tempId(),
     conversation_id: conversationId,
     agent_id: agentId,
     user_input: userInput,
@@ -1514,6 +1521,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         content,
         attachments,
         lifecycle?.requestedBudget,
+        lifecycle?.clientIdempotencyKey,
       ),
       (event: StreamEvent) => {
         if (event.event !== 'error') notifyAccepted();

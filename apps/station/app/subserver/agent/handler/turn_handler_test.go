@@ -3,8 +3,10 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -215,6 +217,52 @@ func TestWriteTurnStreamErrorPreservesTypedAttachmentPayload(t *testing.T) {
 		len(payload.Details) != 2 ||
 		payload.Details["attachment_id"] != "attachment-1" ||
 		payload.Details["reason_code"] != "attachment_content_does_not_match_mime" {
+		t.Fatalf("typed stream error payload = %+v", payload)
+	}
+}
+
+func TestWriteTurnStreamErrorPreservesAdmissionDuplicatePayload(t *testing.T) {
+	resp := &fakeStreamResponse{}
+	if err := writeTurnStreamErrorWithIdentity(
+		resp,
+		errcode.NewAdmissionDuplicateConflict("request-1", "turn-1"),
+		"conversation-1",
+		"agent-1",
+	); err != nil {
+		t.Fatalf("write typed stream error: %v", err)
+	}
+
+	body := resp.body.String()
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(body, "\n")[1]),
+		"data: ",
+	)
+	var payload struct {
+		Error          string            `json:"error"`
+		ErrorType      string            `json:"error_type"`
+		LocaleKey      string            `json:"locale_key"`
+		Retryable      bool              `json:"retryable"`
+		Terminal       bool              `json:"terminal"`
+		Details        map[string]string `json:"details"`
+		ConversationID string            `json:"conversationId"`
+		AgentID        string            `json:"agentId"`
+	}
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode typed stream error: %v", err)
+	}
+	if payload.Error != errcode.AgentAdmissionDuplicateConflictLocaleKey ||
+		payload.ErrorType != string(errcode.AgentAdmissionDuplicateConflict) ||
+		payload.LocaleKey != errcode.AgentAdmissionDuplicateConflictLocaleKey ||
+		payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 2 ||
+		payload.Details["idempotency_key_hash"] != fmt.Sprintf(
+			"%x",
+			sha256.Sum256([]byte("request-1")),
+		) ||
+		payload.Details["existing_command_id"] != "turn-1" ||
+		payload.ConversationID != "conversation-1" ||
+		payload.AgentID != "agent-1" {
 		t.Fatalf("typed stream error payload = %+v", payload)
 	}
 }
