@@ -41,11 +41,12 @@ type ProductionTransactionalAdapterFactoryConfig struct {
 }
 
 type productionKeyPackageReservationService interface {
-	ReserveMLSKeyPackage(
+	ReserveMLSKeyPackageForVerifiedRoute(
 		context.Context,
 		string,
 		string,
 		keyexchangedomain.Endpoint,
+		string,
 		time.Time,
 	) (keyexchangedomain.MLSKeyPackageReservation, error)
 }
@@ -182,7 +183,6 @@ func (f *ProductionTransactionalAdapterFactory) Bind(
 		KeyPackageReservations: &productionKeyPackageReservations{
 			db:           tx,
 			store:        keyPackageStore,
-			identity:     identity,
 			clock:        f.clock,
 			localStation: f.localStation,
 			keyExchange:  f.keyExchange,
@@ -517,7 +517,6 @@ func (w *productionFederationOutboxWriter) Enqueue(
 type productionKeyPackageReservations struct {
 	db           *gorm.DB
 	store        *keyexchangeinfra.CanonicalStore
-	identity     *productionIdentityDirectory
 	clock        federationdelivery.Clock
 	localStation valueobject.StationID
 	keyExchange  productionKeyPackageReservationService
@@ -526,10 +525,10 @@ type productionKeyPackageReservations struct {
 func (r *productionKeyPackageReservations) Reserve(
 	ctx context.Context,
 	planID valueobject.PlanID,
-	endpoints []valueobject.Endpoint,
+	routes []ports.EndpointRoute,
 	expiresAt time.Time,
 ) ([]valueobject.KeyPackageReservation, error) {
-	if r == nil || r.db == nil || r.store == nil || r.identity == nil || r.clock == nil ||
+	if r == nil || r.db == nil || r.store == nil || r.clock == nil ||
 		r.localStation == "" || r.keyExchange == nil ||
 		strings.TrimSpace(string(planID)) == "" ||
 		expiresAt.IsZero() {
@@ -540,7 +539,7 @@ func (r *productionKeyPackageReservations) Reserve(
 			"is incomplete",
 		)
 	}
-	if len(endpoints) == 0 {
+	if len(routes) == 0 {
 		return []valueobject.KeyPackageReservation{}, nil
 	}
 
@@ -554,27 +553,30 @@ func (r *productionKeyPackageReservations) Reserve(
 		)
 	}
 
-	sorted := valueobject.SortEndpoints(endpoints)
+	sorted := append([]ports.EndpointRoute(nil), routes...)
+	sort.Slice(sorted, func(left int, right int) bool {
+		return sorted[left].Endpoint.Key() < sorted[right].Endpoint.Key()
+	})
 	reservations := make([]valueobject.KeyPackageReservation, 0, len(sorted))
 	var previous valueobject.Endpoint
-	for index, endpoint := range sorted {
-		if endpoint.Validate() != nil || (index > 0 && endpoint == previous) {
+	for index, route := range sorted {
+		endpoint := route.Endpoint
+		if endpoint.Validate() != nil ||
+			route.HomeStation == "" ||
+			(index > 0 && endpoint == previous) {
 			return nil, conversationdomain.NewError(
 				conversationdomain.ErrorCodeInvalidArgument,
 				"production_key_packages.reserve",
-				"endpoints",
-				"contains an invalid or duplicate endpoint",
+				"routes",
+				"contains an invalid or duplicate endpoint route",
 			)
-		}
-		route, err := r.identity.activeRoute(ctx, endpoint)
-		if err != nil {
-			return nil, err
 		}
 		target := keyexchangedomain.Endpoint{
 			ActorPTID: string(endpoint.Actor),
 			DeviceID:  string(endpoint.Device),
 		}
 		var canonical keyexchangedomain.MLSKeyPackageReservation
+		var err error
 		if route.HomeStation == r.localStation {
 			canonical, err = r.store.ReserveMLSKeyPackage(
 				ctx,
@@ -585,7 +587,7 @@ func (r *productionKeyPackageReservations) Reserve(
 				expiresAt.UTC(),
 			)
 		} else {
-			canonical, err = r.keyExchange.ReserveMLSKeyPackage(
+			canonical, err = r.keyExchange.ReserveMLSKeyPackageForVerifiedRoute(
 				ctx,
 				productionKeyPackageClaimRequestID(
 					r.localStation,
@@ -594,6 +596,7 @@ func (r *productionKeyPackageReservations) Reserve(
 				),
 				string(planID),
 				target,
+				string(route.HomeStation),
 				expiresAt.UTC(),
 			)
 		}

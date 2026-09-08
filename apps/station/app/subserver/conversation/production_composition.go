@@ -98,11 +98,12 @@ type ProductionActorCapabilities interface {
 // ProductionKeyExchangeCapabilities is the Key Exchange-owned peer claim edge.
 type ProductionKeyExchangeCapabilities interface {
 	conversationfederation.MLSKeyPackageClaimPort
-	ReserveMLSKeyPackage(
+	ReserveMLSKeyPackageForVerifiedRoute(
 		context.Context,
 		string,
 		string,
 		keyexchangedomain.Endpoint,
+		string,
 		time.Time,
 	) (keyexchangedomain.MLSKeyPackageReservation, error)
 }
@@ -741,11 +742,12 @@ type productionLazyKeyExchangeCapabilities struct {
 	shared *productionSharedDependencies
 }
 
-func (p productionLazyKeyExchangeCapabilities) ReserveMLSKeyPackage(
+func (p productionLazyKeyExchangeCapabilities) ReserveMLSKeyPackageForVerifiedRoute(
 	ctx context.Context,
 	requestID string,
 	authorityPlanID string,
 	target keyexchangedomain.Endpoint,
+	homeStationID string,
 	expiresAt time.Time,
 ) (keyexchangedomain.MLSKeyPackageReservation, error) {
 	keyExchange, err := p.shared.keyExchange.get()
@@ -753,11 +755,12 @@ func (p productionLazyKeyExchangeCapabilities) ReserveMLSKeyPackage(
 		return keyexchangedomain.MLSKeyPackageReservation{}, err
 	}
 
-	return keyExchange.ReserveMLSKeyPackage(
+	return keyExchange.ReserveMLSKeyPackageForVerifiedRoute(
 		ctx,
 		requestID,
 		authorityPlanID,
 		target,
+		homeStationID,
 		expiresAt,
 	)
 }
