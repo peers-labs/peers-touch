@@ -3147,6 +3147,238 @@ def evaluate_base_credential_missing(
     return assertions
 
 
+def evaluate_base_duplicate_conflict(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-DUPLICATE_CONFLICT"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+
+    conversation_id = _nonempty_string(
+        station,
+        "conversationId",
+        scenario=scenario,
+    )
+    original_turn_id = _nonempty_string(
+        station,
+        "originalTurnId",
+        scenario=scenario,
+    )
+    idempotency_key_hash = _sha256_string(
+        station,
+        "idempotencyKeyHash",
+        scenario=scenario,
+    )
+    before_hash = _sha256_string(
+        station,
+        "beforeHash",
+        scenario=scenario,
+    )
+    after_hash = _sha256_string(
+        station,
+        "afterHash",
+        scenario=scenario,
+    )
+    source_hash = _sha256_string(
+        replay,
+        "sourceHash",
+        scenario=scenario,
+    )
+    replay_hash = _sha256_string(
+        replay,
+        "replayHash",
+        scenario=scenario,
+    )
+    message_ids_before = _string_list(
+        station,
+        "originalMessageIdsBefore",
+        scenario=scenario,
+    )
+    message_ids_after = _string_list(
+        station,
+        "originalMessageIdsAfter",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedDuplicateConflictProjected": (
+            outcome.get("error") == "agent.errors.duplicateConflict"
+            and outcome.get("error_type") == "ADMISSION_DUPLICATE_CONFLICT"
+            and outcome.get("locale_key") == "agent.errors.duplicateConflict"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details)
+            == ["existing_command_id", "idempotency_key_hash"]
+            and details.get("idempotency_key_hash") == idempotency_key_hash
+            and details.get("existing_command_id") == original_turn_id
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType")
+            == "ADMISSION_DUPLICATE_CONFLICT"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            )
+            > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            )
+            > 0
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "eventId",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "streamIdHash",
+                    scenario=scenario,
+                )
+            )
+            and _sha256_string(
+                runtime_event,
+                "conversationIdHash",
+                scenario=scenario,
+            )
+            == hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "payloadHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "observedAt",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "sourcePtidHash",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceConversationId") == conversation_id
+            and _optional_string(
+                runtime_event,
+                "sourceTurnId",
+                scenario=scenario,
+            )
+            == ""
+            and _nonnegative_int(
+                runtime_event,
+                "sourceSequence",
+                scenario=scenario,
+            )
+            == 0
+            and runtime_event.get("sourceEventType") == "error"
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "openOriginalExecuted": (
+            receiver.get("openOriginalExecuted") is True
+            and receiver.get("openedTurnId") == original_turn_id
+        ),
+        "originalCommandPreserved": (
+            station.get("existingCommandId") == original_turn_id
+            and _positive_int(
+                station,
+                "conversationVersionBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                station,
+                "conversationVersionAfter",
+                scenario=scenario,
+            )
+            and before_hash == after_hash
+            and message_ids_before == message_ids_after
+            and bool(message_ids_before)
+        ),
+        "zeroNewRows": (
+            _nonnegative_int(
+                station,
+                "turnDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "messageDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "queueDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "zeroProviderCall": (
+            _nonnegative_int(
+                station,
+                "providerExecutionDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and source_hash == replay_hash == before_hash == after_hash
+        ),
+        "cleanupComplete": (
+            cleanup.get("conversationDeleted") is True
+            and cleanup.get("localProjectionCleared") is True
+            and cleanup.get("operationCleared") is True
+            and cleanup.get("portalClosed") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_attachment_rejected(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

@@ -25,6 +25,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_cancelled,
     evaluate_base_context_overflow,
     evaluate_base_credential_missing,
+    evaluate_base_duplicate_conflict,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -207,6 +208,9 @@ def assert_group_one_capture(
         "BASE-CREDENTIAL_MISSING": (
             lambda facts: evaluate_base_credential_missing(facts)
         ),
+        "BASE-DUPLICATE_CONFLICT": (
+            lambda facts: evaluate_base_duplicate_conflict(facts)
+        ),
         "AS-F02": lambda facts: evaluate_as_f02(facts),
         "AS-F03": lambda facts: evaluate_as_f03(facts),
         "AS-F04": lambda facts: evaluate_as_f04(
@@ -250,6 +254,7 @@ def assert_group_one_capture(
         "BASE-CANCELLED",
         "BASE-CONTEXT_OVERFLOW",
         "BASE-CREDENTIAL_MISSING",
+        "BASE-DUPLICATE_CONFLICT",
     }:
         runtime_event = scenario_facts.get("runtimeEvent")
         runtime_role = capture.get("runtime-events")
@@ -275,6 +280,7 @@ def assert_group_one_capture(
             "BASE-CANCELLED",
             "BASE-CONTEXT_OVERFLOW",
             "BASE-CREDENTIAL_MISSING",
+            "BASE-DUPLICATE_CONFLICT",
         }:
             expected_role.update(
                 {

@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -58,6 +60,42 @@ func TestActiveMutationConflictPreservesTypedPayloadDetails(t *testing.T) {
 		"resource_id":       "agent-1",
 		"expected_revision": "4",
 		"actual_revision":   "5",
+	}
+	if !reflect.DeepEqual(details, expectedDetails) {
+		t.Fatalf("details = %+v, want %+v", details, expectedDetails)
+	}
+}
+
+func TestAdmissionDuplicateConflictPreservesTypedPayloadDetails(t *testing.T) {
+	mapped := toHandlerError(
+		errcode.NewAdmissionDuplicateConflict("request-1", "turn-1"),
+	)
+	var handlerErr *server.HandlerError
+	if !errors.As(mapped, &handlerErr) {
+		t.Fatalf("expected HandlerError, got %T: %v", mapped, mapped)
+	}
+	expectedHeaders := map[string]string{
+		"X-Peers-Error-Code":       string(errcode.AgentAdmissionDuplicateConflict),
+		"X-Peers-Error-Locale-Key": errcode.AgentAdmissionDuplicateConflictLocaleKey,
+		"X-Peers-Error-Retryable":  "false",
+		"X-Peers-Error-Terminal":   "true",
+	}
+	for key, value := range expectedHeaders {
+		if handlerErr.Headers[key] != value {
+			t.Fatalf("%s=%q, want %q", key, handlerErr.Headers[key], value)
+		}
+	}
+
+	var details map[string]string
+	if err := json.Unmarshal([]byte(handlerErr.Headers[errorDetailsHeader]), &details); err != nil {
+		t.Fatalf("decode %s: %v", errorDetailsHeader, err)
+	}
+	expectedDetails := map[string]string{
+		"idempotency_key_hash": fmt.Sprintf(
+			"%x",
+			sha256.Sum256([]byte("request-1")),
+		),
+		"existing_command_id": "turn-1",
 	}
 	if !reflect.DeepEqual(details, expectedDetails) {
 		t.Fatalf("details = %+v, want %+v", details, expectedDetails)

@@ -29,6 +29,7 @@ import { toolRuntime } from '../../runtimes/toolRuntime';
 import { useAgentStore } from '../../store/agent';
 import { useAgentTurnRecoveryStore } from '../../store/agentTurnRecovery';
 import { useChatStore } from '../../store/chat';
+import { usePortalStore } from '../../store/portal';
 import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
 import {
@@ -5086,6 +5087,378 @@ async function runFoundationContextOverflowScenario(input: {
     }
     throw error;
   }
+}
+
+async function runFoundationDuplicateConflictScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}> {
+  const agentId = input.agent.id || input.agent.name;
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation duplicate conflict ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  const conversationId = conversation.conversation_id;
+  const idempotencyKey = crypto.randomUUID();
+  const originalContent = `Original request ${input.sampleId}`;
+  const conflictingContent = `Conflicting request ${input.sampleId}`;
+  let originalTurnId = '';
+  let scenarioError: unknown = null;
+  let cleanupError: unknown = null;
+  let facts: Record<string, unknown> | null = null;
+  const startedAt = performance.now();
+
+  try {
+    await useChatStore.getState().selectSession(conversationId);
+    const originalResult = await withFoundationCapabilitiesDisabled(
+      input.agent,
+      input.capabilitySessionId,
+      async () => {
+        const original = startObservedFoundationTurn({
+          conversationId,
+          agentId,
+          content: originalContent,
+          idempotencyKey,
+          provider: input.agent.provider || undefined,
+          model: input.agent.model || undefined,
+          effort: 'low',
+          thinkingMode: 'disabled',
+          clientCapabilitySessionId: input.capabilitySessionId,
+        });
+        return original.result;
+      },
+    );
+    originalTurnId = observedTurnId(originalResult.events);
+    if (!originalResult.ok || !originalTurnId) {
+      throw new Error(
+        originalResult.error
+        || 'agent.acceptance.foundationDuplicateOriginalTurnFailed',
+      );
+    }
+
+    await useChatStore.getState().syncMessages();
+    await waitFor(
+      () => useChatStore.getState().messages.some(
+        (message) => (
+          message.role === 'assistant'
+          && message.turnId === originalTurnId
+          && message.loading !== true
+        ),
+      ),
+      'duplicate conflict original message',
+      30_000,
+    );
+
+    const [beforeExecution, beforeReadback, beforeQueue] = await Promise.all([
+      foundationExecutionSnapshot(agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const beforeHash = await sha256Hex(stableJson(beforeReadback));
+    const originalMessageIds = beforeReadback.messages
+      .map((message) => message.messageId)
+      .sort();
+
+    const rejectedOutcomeRef: {
+      current: Record<string, unknown> | null;
+    } = { current: null };
+    let observationSequence = 0;
+    const errorEventRef: {
+      current: FoundationPreAdmissionErrorEvent | null;
+    } = { current: null };
+    const unsubscribe = eventBus.subscribe(
+      EVENT.AGENT_TURN_STREAM_EVENT,
+      (payload) => {
+        const sourceDelivery = (
+          payload as typeof payload & {
+            sourceDelivery?: AgentTurnSourceDelivery;
+          }
+        ).sourceDelivery;
+        if (payload.conversationId !== conversationId) return;
+        observationSequence += 1;
+        if (
+          payload.event !== 'error'
+          || payload.data.error_type !== 'ADMISSION_DUPLICATE_CONFLICT'
+        ) return;
+        errorEventRef.current = {
+          data: evidenceValue(payload.data) as Record<string, unknown>,
+          eventType: payload.event,
+          observedAt: new Date(payload.timestampMs).toISOString(),
+          streamId: payload.streamId,
+          streamGeneration: payload.streamGeneration,
+          conversationId: payload.conversationId,
+          observationSequence,
+          timestampMs: payload.timestampMs,
+          sourceDelivery,
+        };
+      },
+    );
+    try {
+      const sent = useChatStore.getState().sendMessage(
+        conflictingContent,
+        [],
+        {
+          clientIdempotencyKey: idempotencyKey,
+          onRejected: (error) => {
+            if (error) {
+              rejectedOutcomeRef.current =
+                evidenceValue(error) as Record<string, unknown>;
+            }
+          },
+        },
+      );
+      if (!sent) {
+        throw new Error(
+          'agent.acceptance.foundationDuplicateConflictSendRejected',
+        );
+      }
+      await waitFor(
+        () => (
+          errorEventRef.current !== null
+          && rejectedOutcomeRef.current !== null
+        ),
+        'typed duplicate conflict rejection',
+        60_000,
+      );
+      await waitFor(
+        () => Boolean(document.querySelector(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="ADMISSION_DUPLICATE_CONFLICT"]',
+        )),
+        'duplicate conflict receiver',
+        10_000,
+      );
+    } finally {
+      unsubscribe();
+    }
+
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="ADMISSION_DUPLICATE_CONFLICT"]',
+      ),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    const errorToggle = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-toggle]',
+    );
+    const errorSelector =
+      '[data-pt-agent-message-error-text="agent.errors.duplicateConflict"]';
+    if (!errorSurface?.querySelector(errorSelector)) {
+      errorToggle?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(errorSelector)),
+        'localized duplicate conflict text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+    const recoveryAction = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-recovery="open-original"]',
+    );
+    const errorEvent =
+      errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+    if (
+      !errorSurface
+      || !errorText
+      || !recoveryAction
+      || !errorEvent
+      || !rejectedOutcomeRef.current
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationDuplicateConflictSurfaceMissing',
+      );
+    }
+    const rejectedOutcome = evidenceRecord(
+      rejectedOutcomeRef.current,
+      'foundationDuplicateConflictOutcome',
+    );
+    const sourceDelivery = errorEvent.sourceDelivery;
+    const actorPtid = authenticatedFoundationActorPtid();
+    if (
+      !sourceDelivery
+      || sourceDelivery.transport !== 'station-sse'
+      || sourceDelivery.ptid !== actorPtid
+      || sourceDelivery.conversationId !== conversationId
+      || sourceDelivery.turnId !== ''
+      || sourceDelivery.sequence !== 0
+      || sourceDelivery.rawPayload.eventType !== 'error'
+      || stableJson(
+        normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+      ) !== stableJson(
+        normalizeProjectedStationPayload(errorEvent.data),
+      )
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationDuplicateConflictSourceIdentityMismatch',
+      );
+    }
+
+    const receiverErrorVisible = errorText.getClientRects().length > 0;
+    const receiverErrorText = errorText.textContent?.trim() ?? '';
+    const receiverRecoveryVisible =
+      recoveryAction.getClientRects().length > 0;
+    const receiverRecoveryText = recoveryAction.textContent?.trim() ?? '';
+    recoveryAction.click();
+    await waitFor(
+      () => {
+        const view = usePortalStore.getState().activeView;
+        return view?.type === 'turnDetails' && view.turnId === originalTurnId;
+      },
+      'duplicate conflict original turn details',
+      30_000,
+    );
+    await waitFor(
+      () => Boolean(document.querySelector(
+        `[data-agent-turn-details="${originalTurnId}"]`
+        + ' [data-turn-details-state="ready"]',
+      )),
+      'duplicate conflict original turn readback',
+      30_000,
+    );
+    const openedView = usePortalStore.getState().activeView;
+
+    const [afterExecution, afterReadback, afterQueue] = await Promise.all([
+      foundationExecutionSnapshot(agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const afterHash = await sha256Hex(stableJson(afterReadback));
+    const afterMessageIds = afterReadback.messages
+      .map((message) => message.messageId)
+      .sort();
+    const runtimeEvent: FoundationRuntimeEventObservation = {
+      eventId: await sha256Hex(stableJson({
+        streamId: errorEvent.streamId,
+        streamGeneration: errorEvent.streamGeneration,
+        conversationId: errorEvent.conversationId,
+        observationSequence: errorEvent.observationSequence,
+        eventType: errorEvent.eventType,
+        timestampMs: errorEvent.timestampMs,
+        data: errorEvent.data,
+      })),
+      eventType: errorEvent.eventType,
+      sequence: errorEvent.observationSequence,
+      observedAt: errorEvent.observedAt,
+      streamGeneration: errorEvent.streamGeneration,
+      streamIdHash: await sha256Hex(errorEvent.streamId),
+      conversationIdHash: await sha256Hex(errorEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      errorType: String(errorEvent.data.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    };
+
+    usePortalStore.getState().close();
+    clearFoundationLocalConversationProjection(conversationId);
+    const clearedState = useChatStore.getState();
+    const portalState = usePortalStore.getState();
+    facts = {
+      outcome: rejectedOutcome,
+      runtimeEvent,
+      receiver: {
+        errorVisible: receiverErrorVisible,
+        errorText: receiverErrorText,
+        expectedErrorText: i18n.t(
+          'agent.errors.duplicateConflict',
+          { ns: 'agent' },
+        ),
+        recoveryVisible: receiverRecoveryVisible,
+        recoveryText: receiverRecoveryText,
+        expectedRecoveryText: i18n.t(
+          'agent.recovery.openOriginal',
+          { ns: 'agent' },
+        ),
+        openOriginalExecuted: (
+          openedView?.type === 'turnDetails'
+          && openedView.turnId === originalTurnId
+        ),
+        openedTurnId:
+          openedView?.type === 'turnDetails' ? openedView.turnId : '',
+      },
+      station: {
+        conversationId,
+        originalTurnId,
+        idempotencyKeyHash: await sha256Hex(idempotencyKey),
+        conversationVersionBefore: beforeReadback.conversation.version,
+        conversationVersionAfter: afterReadback.conversation.version,
+        beforeHash,
+        afterHash,
+        originalMessageIdsBefore: originalMessageIds,
+        originalMessageIdsAfter: afterMessageIds,
+        turnDelta: afterExecution.turnCount - beforeExecution.turnCount,
+        messageDelta:
+          afterReadback.messages.length - beforeReadback.messages.length,
+        queueDelta: afterQueue.entries.length - beforeQueue.entries.length,
+        providerExecutionDelta:
+          afterExecution.providerCallCount - beforeExecution.providerCallCount,
+      },
+      replay: {
+        sourceHash: beforeHash,
+        replayHash: afterHash,
+        equal: beforeHash === afterHash,
+      },
+      cleanup: {
+        conversationDeleted: false,
+        localProjectionCleared: (
+          clearedState.messages.length === 0
+          && clearedState.sessionBuffers[conversationId] === undefined
+        ),
+        operationCleared:
+          clearedState.operations[conversationId] === undefined,
+        portalClosed:
+          portalState.activeView === null && portalState.expanded === false,
+      },
+    };
+  } catch (error) {
+    scenarioError = error;
+  } finally {
+    if (scenarioError) {
+      try {
+        usePortalStore.getState().close();
+        clearFoundationLocalConversationProjection(conversationId);
+        await cleanupFoundationToolConversation(
+          conversationId,
+          originalTurnId,
+        );
+      } catch (error) {
+        cleanupError = error;
+      }
+    }
+  }
+
+  if (cleanupError) {
+    throw Object.assign(
+      new Error('agent.acceptance.foundationDuplicateConflictCleanupFailed'),
+      { primaryError: scenarioError, cleanupError },
+    );
+  }
+  if (scenarioError) throw scenarioError;
+  if (!facts) {
+    throw new Error('agent.acceptance.foundationDuplicateConflictFactsMissing');
+  }
+  return {
+    conversationId,
+    turnId: originalTurnId,
+    durationMs: performance.now() - startedAt,
+    runtimeEvent: evidenceRecord(
+      facts.runtimeEvent,
+      'foundationDuplicateConflictRuntimeEvent',
+    ) as unknown as FoundationRuntimeEventObservation,
+    facts,
+  };
 }
 
 async function runFoundationCredentialMissingScenario(input: {
@@ -10370,6 +10743,8 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseCancelled(ctx);
     case 'BASE-CONTEXT_OVERFLOW':
       return evaluateBaseContextOverflow(ctx);
+    case 'BASE-DUPLICATE_CONFLICT':
+      return evaluateBaseDuplicateConflict(ctx);
     case 'BASE-CREDENTIAL_MISSING':
       return evaluateBaseCredentialMissing(ctx);
     case 'BASE-APPROVAL_DENIED':
@@ -10651,6 +11026,117 @@ function evaluateBaseContextOverflow(
       cleanup.draftCleared === true
       && cleanup.localProjectionCleared === true
       && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseDuplicateConflict(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationDuplicateConflictFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationDuplicateConflictOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationDuplicateConflictDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationDuplicateConflictReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationDuplicateConflictStation',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationDuplicateConflictReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationDuplicateConflictCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationDuplicateConflictRuntimeEvent',
+  );
+  const detailKeys = Object.keys(details).sort();
+  const originalMessageIdsBefore = evidenceArray(
+    station.originalMessageIdsBefore,
+    'foundationDuplicateConflictMessageIdsBefore',
+  );
+  const originalMessageIdsAfter = evidenceArray(
+    station.originalMessageIdsAfter,
+    'foundationDuplicateConflictMessageIdsAfter',
+  );
+  const idempotencyKeyHash = String(station.idempotencyKeyHash ?? '');
+  const originalTurnId = String(station.originalTurnId ?? '');
+
+  return {
+    typedDuplicateConflictProjected: (
+      outcome.error === 'agent.errors.duplicateConflict'
+      && outcome.error_type === 'ADMISSION_DUPLICATE_CONFLICT'
+      && outcome.locale_key === 'agent.errors.duplicateConflict'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && detailKeys.length === 2
+      && detailKeys[0] === 'existing_command_id'
+      && detailKeys[1] === 'idempotency_key_hash'
+      && details.idempotency_key_hash === idempotencyKeyHash
+      && details.existing_command_id === originalTurnId
+      && /^[0-9a-f]{64}$/.test(idempotencyKeyHash)
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'ADMISSION_DUPLICATE_CONFLICT'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.streamGeneration) > 0
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === ''
+      && Number(runtimeEvent.sourceSequence) === 0
+      && runtimeEvent.sourceEventType === 'error'
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    openOriginalExecuted: (
+      receiver.openOriginalExecuted === true
+      && receiver.openedTurnId === originalTurnId
+    ),
+    originalCommandPreserved: (
+      station.existingCommandId === originalTurnId
+      && station.conversationVersionAfter
+        === station.conversationVersionBefore
+      && station.afterHash === station.beforeHash
+      && stableJson(originalMessageIdsAfter)
+        === stableJson(originalMessageIdsBefore)
+    ),
+    zeroNewRows: (
+      Number(station.turnDelta) === 0
+      && Number(station.messageDelta) === 0
+      && Number(station.queueDelta) === 0
+    ),
+    zeroProviderCall:
+      Number(station.providerExecutionDelta) === 0,
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && replay.sourceHash === station.beforeHash
+      && replay.replayHash === station.afterHash
+    ),
+    cleanupComplete: (
+      cleanup.conversationDeleted === true
+      && cleanup.localProjectionCleared === true
+      && cleanup.operationCleared === true
+      && cleanup.portalClosed === true
     ),
   };
 }
@@ -13425,6 +13911,24 @@ export function installAcceptanceHarness(): void {
         | null = null;
 
       try {
+      if (cell === 'BASE-DUPLICATE_CONFLICT') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationDuplicateConflictScenario({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
       if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT') {
         const capabilitySessionId =
           capabilitySessions.selectedStationSession?.session_id;
@@ -14681,6 +15185,7 @@ export function installAcceptanceHarness(): void {
           || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
           || cell === 'BASE-CANCELLED'
           || cell === 'BASE-CONTEXT_OVERFLOW'
+          || cell === 'BASE-DUPLICATE_CONFLICT'
           || cell === 'BASE-CREDENTIAL_MISSING'
         )
         && scenarioFacts
@@ -14709,6 +15214,8 @@ export function installAcceptanceHarness(): void {
                 ? 'foundationCancelledCleanup'
               : cell === 'BASE-CONTEXT_OVERFLOW'
                 ? 'foundationContextOverflowCleanup'
+              : cell === 'BASE-DUPLICATE_CONFLICT'
+                ? 'foundationDuplicateConflictCleanup'
               : cell === 'BASE-CREDENTIAL_MISSING'
                 ? 'foundationCredentialMissingCleanup'
               : cell === 'BASE-APPROVAL_DENIED'
@@ -14861,6 +15368,27 @@ export function installAcceptanceHarness(): void {
           providerExecution: station.providerExecutionDelta,
         };
       }
+      if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationDuplicateConflictStation',
+        );
+        stationReadback.entityKind = 'agent-turn-idempotency-conflict';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.originalTurnId),
+        );
+        stationReadback.revision = Number(
+          station.conversationVersionAfter,
+        );
+        stationReadback.stateHash = String(station.afterHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          turn: station.turnDelta,
+          message: station.messageDelta,
+          queue: station.queueDelta,
+          providerExecution: station.providerExecutionDelta,
+        };
+      }
       if (cell === 'BASE-CREDENTIAL_MISSING' && scenarioFacts) {
         const station = evidenceRecord(
           scenarioFacts.station,
@@ -14998,6 +15526,7 @@ export function installAcceptanceHarness(): void {
             cell === 'BASE-ATTACHMENT_REJECTED'
             || cell === 'BASE-CANCELLED'
             || cell === 'BASE-CONTEXT_OVERFLOW'
+            || cell === 'BASE-DUPLICATE_CONFLICT'
             || cell === 'BASE-CREDENTIAL_MISSING'
           ) && observedRuntimeEvent
             ? {
@@ -15014,6 +15543,7 @@ export function installAcceptanceHarness(): void {
                   (
                     cell === 'BASE-CANCELLED'
                     || cell === 'BASE-CONTEXT_OVERFLOW'
+                    || cell === 'BASE-DUPLICATE_CONFLICT'
                     || cell === 'BASE-CREDENTIAL_MISSING'
                   )
                     ? {
@@ -15145,6 +15675,30 @@ export function installAcceptanceHarness(): void {
                   + Number(station.providerExecutionDelta);
                 return {
                   counterId: String(station.conversationId),
+                  count,
+                  maximum: 0,
+                  measurements: {
+                    turnDelta: station.turnDelta,
+                    messageDelta: station.messageDelta,
+                    queueDelta: station.queueDelta,
+                    providerExecutionDelta:
+                      station.providerExecutionDelta,
+                  },
+                };
+              })()
+          : cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationDuplicateConflictStation',
+                );
+                const count =
+                  Number(station.turnDelta)
+                  + Number(station.messageDelta)
+                  + Number(station.queueDelta)
+                  + Number(station.providerExecutionDelta);
+                return {
+                  counterId: String(station.originalTurnId),
                   count,
                   maximum: 0,
                   measurements: {
@@ -15323,6 +15877,13 @@ export function installAcceptanceHarness(): void {
               'foundationContextOverflowCleanup',
             )
           : null;
+      const duplicateConflictCleanup =
+        cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationDuplicateConflictCleanup',
+            )
+          : null;
       const credentialMissingCleanup =
         cell === 'BASE-CREDENTIAL_MISSING' && scenarioFacts
           ? evidenceRecord(
@@ -15351,6 +15912,13 @@ export function installAcceptanceHarness(): void {
                   contextOverflowCleanup.draftCleared === true
                   && contextOverflowCleanup.localProjectionCleared === true
                   && contextOverflowCleanup.conversationDeleted === true
+                )
+            : duplicateConflictCleanup
+              ? (
+                  duplicateConflictCleanup.conversationDeleted === true
+                  && duplicateConflictCleanup.localProjectionCleared === true
+                  && duplicateConflictCleanup.operationCleared === true
+                  && duplicateConflictCleanup.portalClosed === true
                 )
             : credentialMissingCleanup
               ? (
@@ -15448,6 +16016,8 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CREDENTIAL_MISSING' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : {}),
@@ -15460,6 +16030,7 @@ export function installAcceptanceHarness(): void {
         || cell === 'BASE-APPROVAL_EXPIRED'
         || cell === 'BASE-ATTACHMENT_REJECTED'
         || cell === 'BASE-CONTEXT_OVERFLOW'
+        || cell === 'BASE-DUPLICATE_CONFLICT'
         || cell === 'BASE-CREDENTIAL_MISSING'
       ) && scenarioFacts
         ? evidenceRecord(
@@ -15523,6 +16094,18 @@ export function installAcceptanceHarness(): void {
           receiverSelector =
             '[data-pt-agent-message-error-text="agent.errors.contextOverflow"],'
             + '[data-pt-agent-message-error-recovery="reduce-context"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryText: receiver.recoveryText,
+          };
+        } else if (cell === 'BASE-DUPLICATE_CONFLICT') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.recoveryVisible === true
+            && receiver.openOriginalExecuted === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-text="agent.errors.duplicateConflict"],'
+            + '[data-pt-agent-message-error-recovery="open-original"]';
           receiverText = {
             errorText: receiver.errorText,
             recoveryText: receiver.recoveryText,
@@ -15607,6 +16190,15 @@ export function installAcceptanceHarness(): void {
         const replay = evidenceRecord(
           scenarioFacts.replay,
           'foundationContextOverflowReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationDuplicateConflictReplay',
         );
         replayEvidence.sourceHash = replay.sourceHash;
         replayEvidence.replayHash = replay.replayHash;
@@ -15804,6 +16396,81 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationCredentialMissingAttestationCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-DUPLICATE_CONFLICT'
+          && preparedConversationId
+        ) {
+          try {
+            usePortalStore.getState().close();
+            clearFoundationLocalConversationProjection(
+              preparedConversationId,
+            );
+            await cleanupFoundationToolConversation(
+              preparedConversationId,
+              preparedTurnId ?? '',
+            );
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationDuplicateConflictCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-DUPLICATE_CONFLICT'
+          && preparedConversationId
+        ) {
+          try {
+            usePortalStore.getState().close();
+            clearFoundationLocalConversationProjection(
+              preparedConversationId,
+            );
+            await cleanupFoundationToolConversation(
+              preparedConversationId,
+              preparedTurnId ?? '',
+            );
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationDuplicateConflictCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-DUPLICATE_CONFLICT'
+          && preparedConversationId
+        ) {
+          try {
+            usePortalStore.getState().close();
+            clearFoundationLocalConversationProjection(
+              preparedConversationId,
+            );
+            await cleanupFoundationToolConversation(
+              preparedConversationId,
+              preparedTurnId ?? '',
+            );
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationDuplicateConflictCleanupFailed',
               ),
               {
                 primaryError: error,

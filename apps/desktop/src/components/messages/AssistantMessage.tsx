@@ -379,6 +379,11 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const resolutionLabel = message.resolution?.label.startsWith('agent.')
     ? t(message.resolution.label, { ns: 'agent' })
     : message.resolution?.label;
+  const resolutionTarget = message.resolution?.type === 'openProviderSettings'
+    ? 'configure-credential'
+    : message.resolution?.type === 'openOriginal'
+      ? 'open-original'
+      : 'true';
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
 
   const handleCopy = useCallback(() => {
@@ -418,6 +423,21 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const handleOpenTurnDetails = useCallback(() => {
     if (message.turnId) openTurnDetails(message.id, message.turnId);
   }, [message.id, message.turnId, openTurnDetails]);
+
+  const handleOpenOriginal = useCallback((turnId: string) => {
+    const originalMessage = useChatStore.getState().messages.find(
+      (candidate) => (
+        candidate.role === 'assistant'
+        && candidate.turnId === turnId
+        && candidate.id !== message.id
+      ),
+    );
+    if (!originalMessage) {
+      toast.error(t('chat.message.turnDetails.loadFailed'));
+      return;
+    }
+    openTurnDetails(originalMessage.id, turnId);
+  }, [message.id, openTurnDetails, t]);
 
   const handleDelAndRegenerate = useCallback(() => {
     deleteAndRegenerateMessage(message.id);
@@ -695,18 +715,16 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                 )}
                 {message.resolution && (
                   <Button
-                    data-pt-agent-message-error-recovery={
-                      message.resolution.type === 'openProviderSettings'
-                        ? 'configure-credential'
-                        : 'true'
-                    }
+                    data-pt-agent-message-error-recovery={resolutionTarget}
                     type="primary"
                     size="small"
-                    danger
+                    danger={message.resolution.type !== 'openOriginal'}
                     icon={
                       message.resolution.type === 'openProviderSettings'
                         ? <Settings size={14} />
-                        : undefined
+                        : message.resolution.type === 'openOriginal'
+                          ? <ExternalLink size={14} />
+                          : undefined
                     }
                     style={{ marginTop: 8 }}
                     onClick={async () => {
@@ -717,6 +735,12 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                             id: 'providers',
                           });
                           toast.success(t('chat.message.resolution.settingsOpened'));
+                          return;
+                        }
+                        if (message.resolution!.type === 'openOriginal') {
+                          handleOpenOriginal(
+                            message.resolution!.existingCommandId ?? '',
+                          );
                           return;
                         }
                         const result = await api.resolveErrorAction(message.resolution!);

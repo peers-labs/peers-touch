@@ -191,6 +191,18 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-DUPLICATE_CONFLICT": frozenset(
+        {
+            "typedDuplicateConflictProjected",
+            "localizedRecoveryVisible",
+            "openOriginalExecuted",
+            "originalCommandPreserved",
+            "zeroNewRows",
+            "zeroProviderCall",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
     "BASE-CREDENTIAL_MISSING": frozenset(
         {
             "typedProviderConfigMissing",

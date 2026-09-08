@@ -578,11 +578,9 @@ func findAdmissionReplay(
 	).First(&turn).Error
 	if turnErr == nil {
 		if turn.AdmissionPayloadHash != payloadHash {
-			return nil, errcode.New(
-				errcode.AgentIdempotencyConflict,
-				http.StatusConflict,
-				"turn idempotency payload conflict",
-				nil,
+			return nil, errcode.NewAdmissionDuplicateConflict(
+				idempotencyKey,
+				turn.ID,
 			)
 		}
 		return &model.TurnAdmission{
@@ -604,11 +602,9 @@ func findAdmissionReplay(
 	).First(&entry).Error
 	if queueErr == nil {
 		if entry.AdmissionPayloadHash != payloadHash {
-			return nil, errcode.New(
-				errcode.AgentIdempotencyConflict,
-				http.StatusConflict,
-				"queued turn idempotency payload conflict",
-				nil,
+			return nil, errcode.NewAdmissionDuplicateConflict(
+				idempotencyKey,
+				entry.ID,
 			)
 		}
 		var position int64

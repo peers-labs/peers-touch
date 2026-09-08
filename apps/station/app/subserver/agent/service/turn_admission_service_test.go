@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"testing"
@@ -271,21 +272,34 @@ func TestTurnAdmissionIdempotencyAndCapacity(t *testing.T) {
 	db := openTurnAdmissionDB(t, "turn_admission_capacity")
 	seedAdmissionConversation(t, db)
 	svc := newTurnAdmissionServiceWithDB(db)
-	if _, err := svc.Admit(
+	first, err := svc.Admit(
 		context.Background(),
 		"ptid:actor-1",
 		admissionRequest("active", "active"),
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("admit active: %v", err)
 	}
+	_, err = svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("active", "different"),
+	)
+	requireAdmissionDuplicateConflict(t, err, "active", first.GetTurnId())
+
+	var firstQueued *model.TurnAdmission
 	for index := uint32(0); index < turnQueueCapacity; index++ {
 		key := fmt.Sprintf("queued-%d", index)
-		if _, err := svc.Admit(
+		admission, err := svc.Admit(
 			context.Background(),
 			"ptid:actor-1",
 			admissionRequest(key, key),
-		); err != nil {
+		)
+		if err != nil {
 			t.Fatalf("queue %d: %v", index, err)
+		}
+		if index == 0 {
+			firstQueued = admission
 		}
 	}
 
@@ -299,13 +313,20 @@ func TestTurnAdmissionIdempotencyAndCapacity(t *testing.T) {
 		replayed.GetQueueEntry().GetQueuePosition() != 1 {
 		t.Fatalf("same-payload replay failed: admission=%+v err=%v", replayed, err)
 	}
-	if _, err := svc.Admit(
+	if firstQueued == nil || firstQueued.GetQueueEntry() == nil {
+		t.Fatal("first queued admission is missing")
+	}
+	_, err = svc.Admit(
 		context.Background(),
 		"ptid:actor-1",
 		admissionRequest("queued-0", "different"),
-	); !hasAdmissionCode(err, errcode.AgentIdempotencyConflict) {
-		t.Fatalf("different-payload replay did not conflict: %v", err)
-	}
+	)
+	requireAdmissionDuplicateConflict(
+		t,
+		err,
+		"queued-0",
+		firstQueued.GetQueueEntry().GetQueueEntryId(),
+	)
 	if _, err := svc.Admit(
 		context.Background(),
 		"ptid:actor-1",
@@ -462,4 +483,33 @@ func TestTurnAdmissionCancelsQueuedEntryWhenAttachmentExpiresBeforeDequeue(t *te
 func hasAdmissionCode(err error, code errcode.Code) bool {
 	var biz *errcode.BizError
 	return errors.As(err, &biz) && biz.Code == code
+}
+
+func requireAdmissionDuplicateConflict(
+	t *testing.T,
+	err error,
+	idempotencyKey string,
+	existingCommandID string,
+) {
+	t.Helper()
+	var biz *errcode.BizError
+	if !errors.As(err, &biz) {
+		t.Fatalf("expected duplicate conflict, got %v", err)
+	}
+	idempotencyKeyHash := fmt.Sprintf(
+		"%x",
+		sha256.Sum256([]byte(idempotencyKey)),
+	)
+	if biz.Code != errcode.AgentIdempotencyConflict ||
+		biz.Payload == nil ||
+		biz.Payload.GetError() != errcode.AgentAdmissionDuplicateConflictLocaleKey ||
+		biz.Payload.GetErrorType() != string(errcode.AgentAdmissionDuplicateConflict) ||
+		biz.Payload.GetLocaleKey() != errcode.AgentAdmissionDuplicateConflictLocaleKey ||
+		biz.Payload.GetRetryable() ||
+		!biz.Payload.GetTerminal() ||
+		len(biz.Payload.GetDetails()) != 2 ||
+		biz.Payload.GetDetails()["idempotency_key_hash"] != idempotencyKeyHash ||
+		biz.Payload.GetDetails()["existing_command_id"] != existingCommandID {
+		t.Fatalf("unexpected duplicate conflict: %+v", biz)
+	}
 }

@@ -105,6 +105,54 @@ describe('agentTurnStreamErrorFromData', () => {
       label: 'agent.recovery.configureCredential',
     })
   })
+
+  it('adds the original turn recovery for duplicate admission conflicts', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.duplicateConflict',
+      error_type: 'ADMISSION_DUPLICATE_CONFLICT',
+      locale_key: 'agent.errors.duplicateConflict',
+      retryable: false,
+      terminal: true,
+      details: {
+        idempotency_key_hash: 'a'.repeat(64),
+        existing_command_id: 'turn-original',
+      },
+    })
+
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.duplicateConflict',
+      error_type: 'ADMISSION_DUPLICATE_CONFLICT',
+      locale_key: 'agent.errors.duplicateConflict',
+      retryable: false,
+      terminal: true,
+      details: {
+        idempotency_key_hash: 'a'.repeat(64),
+        existing_command_id: 'turn-original',
+      },
+    })
+    expect(error.resolution).toEqual({
+      type: 'openOriginal',
+      existingCommandId: 'turn-original',
+      label: 'agent.recovery.openOriginal',
+    })
+  })
+
+  it('does not expose original recovery without an authoritative command id', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.duplicateConflict',
+      error_type: 'ADMISSION_DUPLICATE_CONFLICT',
+      locale_key: 'agent.errors.duplicateConflict',
+      retryable: false,
+      terminal: true,
+      details: {
+        idempotency_key_hash: 'a'.repeat(64),
+      },
+    })
+
+    expect(error.resolution).toBeUndefined()
+  })
 })
 
 describe('api.health', () => {

@@ -1307,6 +1307,66 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("if (cell === 'BASE-CONTEXT_OVERFLOW')", self.source)
         self.assertNotIn("mock", scenario.lower())
 
+    def test_duplicate_conflict_uses_typed_open_original_recovery_path(
+        self,
+    ) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationDuplicateConflictScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationCredentialMissingScenario",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+        desktop_api = DESKTOP_API.read_text(encoding="utf-8")
+        assistant_message = DESKTOP_ASSISTANT_MESSAGE.read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("clientIdempotencyKey: idempotencyKey", scenario)
+        self.assertIn("ADMISSION_DUPLICATE_CONFLICT", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            "foundationDuplicateConflictSourceIdentityMismatch",
+            scenario,
+        )
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="open-original"]',
+            scenario,
+        )
+        self.assertIn("recoveryAction.click()", scenario)
+        self.assertIn("openedView.turnId === originalTurnId", scenario)
+        for delta in (
+            "turnDelta",
+            "messageDelta",
+            "queueDelta",
+            "providerExecutionDelta",
+        ):
+            with self.subTest(delta=delta):
+                self.assertIn(delta, scenario)
+        self.assertIn(
+            "case 'BASE-DUPLICATE_CONFLICT':",
+            self.source,
+        )
+        self.assertIn(
+            "return evaluateBaseDuplicateConflict(ctx)",
+            self.source,
+        )
+        self.assertIn(
+            "typedError?.error_type === 'ADMISSION_DUPLICATE_CONFLICT'",
+            desktop_api,
+        )
+        self.assertIn(
+            "label: 'agent.recovery.openOriginal'",
+            desktop_api,
+        )
+        self.assertIn(
+            "message.resolution.type === 'openOriginal'",
+            assistant_message,
+        )
+        self.assertIn("handleOpenOriginal", assistant_message)
+        self.assertNotIn("mock", scenario.lower())
+
     def test_credential_missing_uses_typed_pre_admission_recovery_path(
         self,
     ) -> None:

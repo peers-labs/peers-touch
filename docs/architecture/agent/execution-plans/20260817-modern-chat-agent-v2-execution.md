@@ -6241,6 +6241,31 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   scanning its value; focused producer and Foundation suites pass `15/15` and
   `132/132`. Cleanup completed `DONE / PROVEN / passed`; Foundation/G-F remain
   `PARTIAL / UNPROVEN` pending checkpoint and exact-source rerun.
+- Exact-source sanitizer checkpoint
+  `dc64b1b5700af3db11fb62cfcfd32e619c5623c0` passed both Browser
+  `BASE-CREDENTIAL_MISSING` locale cells. Each post-fix observation returned
+  the same Station SSE `error / PROVIDER_CREDENTIAL_MISSING` event as the
+  scenario, including matching event ID, source conversation, payload hash,
+  empty source Turn, and source sequence `0`; the candidate producer accepted
+  the safe `credentialStatus` evidence. Gate run
+  `20260908T050418581109Z-dba19af4954e4f5a6df08b3b35fb8b5e`
+  advanced to the next source-backed gap:
+  Browser English `BASE-DUPLICATE_CONFLICT` is not implemented by the
+  direct-runtime group. Cleanup completed `DONE / PROVEN / passed`;
+  Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- The `BASE-DUPLICATE_CONFLICT` local vertical now maps Station's existing
+  `IDEMPOTENCY_CONFLICT` domain result to the typed
+  `ADMISSION_DUPLICATE_CONFLICT / agent.errors.duplicateConflict` stream
+  payload with only `idempotency_key_hash` and `existing_command_id`.
+  Desktop preserves the typed payload, renders the localized `Open original`
+  recovery, and opens the existing authoritative Turn Details panel without
+  mutating the original command. The Foundation harness and independent Python
+  oracle require matching source-delivery identity, unchanged original IDs and
+  readback hash, zero new Turn/message/queue rows, zero provider call, replay
+  equality, and complete cleanup. Local verification passes Station
+  service/handler tests, Desktop check plus `71/71` focused tests, `218/218`
+  focused Foundation tests, and `git diff --check`; exact-source runtime proof
+  remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
