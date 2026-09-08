@@ -6721,12 +6721,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     .get("authority_station_peer_id")
                     .and_then(|v| v.as_str())
                     .unwrap_or_default();
-                if conv_id.is_empty() || authority.is_empty() {
+                let federation_id = conv
+                    .get("federation_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                if conv_id.is_empty() || authority.is_empty() || federation_id.is_empty() {
                     continue;
                 }
                 projections.push(crate::messaging::ConversationProjection {
                     conversation_id: conv_id.to_string(),
                     authority_station_id: authority.to_string(),
+                    federation_id: federation_id.to_string(),
                     kind: kind_i32,
                     name: conv
                         .get("name")

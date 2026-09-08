@@ -51,6 +51,7 @@ pub enum ConversationKind {
 pub struct ConversationProjection {
     pub conversation_id: ConversationId,
     pub authority_station_id: String,
+    pub federation_id: String,
     pub kind: i32,
     pub name: String,
     pub owner_ptid: Ptid,
@@ -212,6 +213,7 @@ pub struct MlsConversationMemberProjection {
 pub struct MlsConversationProjection {
     pub conversation_id: String,
     pub authority_station_id: String,
+    pub federation_id: String,
     pub kind: i32,
     pub name: String,
     pub owner_ptid: String,

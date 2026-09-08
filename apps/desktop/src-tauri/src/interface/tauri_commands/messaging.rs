@@ -301,6 +301,7 @@ pub(crate) fn conversation_projection_json(
     Ok(json!({
         "conversation_id": conversation.conversation_id,
         "authority_station_id": conversation.authority_station_id,
+        "federation_id": conversation.federation_id,
         "kind": conversation.kind,
         "name": conversation.name,
         "owner_ptid": conversation.owner_ptid,

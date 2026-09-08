@@ -22,7 +22,8 @@ use messaging_core::proto::chat::{
     ClaimDeviceInboxRequest, ClaimDeviceInboxResponse, CompleteAttachmentUploadRequest,
     CompleteAttachmentUploadResponse, ConversationCommandRejectCode,
     CreateDirectConversationRequest, CreateDirectConversationResponse, CryptoEndpoint,
-    DeviceConsumptionReceipt, EncryptedObjectDescriptor, PrepareConversationCommandRequest,
+    DeviceConsumptionReceipt, EncryptedObjectDescriptor, ListConversationsRequest,
+    ListConversationsResponse, PrepareConversationCommandRequest,
     PrepareConversationCommandResponse, PrepareConversationGroupRequest,
     PrepareConversationGroupResponse, PutAttachmentChunkRequest, PutAttachmentChunkResponse,
     SubmitConversationAuthorityCommandRequest, SubmitConversationAuthorityCommandResponse,
@@ -843,6 +844,17 @@ impl StationConversationTransport {
         })
     }
 
+    pub fn list_conversations(&self) -> Result<ListConversationsResponse, String> {
+        get_proto(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            "/conversation/list",
+            &ListConversationsRequest {},
+        )
+        .map_err(|error| error.to_string())
+    }
+
     pub fn create_direct(
         &self,
         peer_ptid: &str,
@@ -1163,6 +1175,40 @@ impl CommandTransport for StationCommandTransport {
         }
         Ok(())
     }
+}
+
+fn get_proto<Request, Response>(
+    station_origin: &str,
+    access_token: &str,
+    device_id: &str,
+    path: &str,
+    request: &Request,
+) -> Result<Response, StationTransportError>
+where
+    Request: Message,
+    Response: Message + Default,
+{
+    let client = reqwest::blocking::Client::builder()
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .map_err(|_| StationTransportError::Network)?;
+    let response = client
+        .get(format!("{}{path}", station_origin.trim_end_matches('/')))
+        .bearer_auth(access_token)
+        .header("X-Device-ID", device_id)
+        .header("Content-Type", "application/protobuf")
+        .header("Accept", "application/protobuf")
+        .body(request.encode_to_vec())
+        .send()
+        .map_err(|_| StationTransportError::Network)?;
+    let status = response.status();
+    let bytes = response
+        .bytes()
+        .map_err(|_| StationTransportError::Decode)?;
+    if !status.is_success() {
+        return Err(StationTransportError::HttpStatus(status.as_u16()));
+    }
+    Response::decode(bytes.as_ref()).map_err(|_| StationTransportError::Decode)
 }
 
 fn post_proto<Request, Response>(
