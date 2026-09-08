@@ -113,10 +113,16 @@ func (r *ReceiptRecorder) Record(
 		if err != nil {
 			return err
 		}
+		originatorRoutes, err := loadOriginatorRoutes(tx, event)
+		if err != nil {
+			return err
+		}
 		recorded = interaction.DeliveryRecordResult{
-			Aggregate:  aggregate,
-			Originator: event.Actor.Actor,
-			Replay:     replay,
+			Aggregate:        aggregate,
+			MessageID:        event.Fact.MessageID,
+			Originator:       event.Actor.Actor,
+			OriginatorRoutes: originatorRoutes,
+			Replay:           replay,
 		}
 
 		return nil
@@ -126,6 +132,59 @@ func (r *ReceiptRecorder) Record(
 	}
 
 	return recorded, nil
+}
+
+// RecordFollowerConsumption validates and persists the exact target-local
+// Device Inbox tuple before its Home Station forwards the receipt.
+func (r *ReceiptRecorder) RecordFollowerConsumption(
+	ctx context.Context,
+	authorityStation valueobject.StationID,
+	receipt interaction.DeliveryReceipt,
+) (bool, error) {
+	if authorityStation == "" || receipt.SourceStation != "" {
+		return false, interaction.NewError(
+			interaction.ErrorCodeInvalidArgument,
+			"delivery_receipt_recorder.record_follower",
+			"authority_station",
+			"authority Station is required and source Station must be server-derived",
+		)
+	}
+	itemID, err := validateReceipt(receipt)
+	if err != nil {
+		return false, err
+	}
+	receipt.ConsumedAt = receipt.ConsumedAt.UTC().Truncate(persistenceTimestampPrecision)
+
+	var replay bool
+	err = r.transaction(ctx, func(tx *gorm.DB) error {
+		item, found, err := lockReceiptItemIfPresent(tx, itemID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return receiptIntegrityError(
+				"item_id",
+				"does not identify a target-local Device Inbox item",
+			)
+		}
+		if err := validateReceiptItem(item, receipt); err != nil {
+			return err
+		}
+		if err := validateFollowerReceiptDelivery(
+			item,
+			authorityStation,
+		); err != nil {
+			return err
+		}
+		replay, err = persistExactReceipt(tx, item, receipt)
+
+		return err
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return replay, nil
 }
 
 const persistenceTimestampPrecision = 1000
@@ -576,6 +635,37 @@ func validateReceiptDelivery(
 	return nil
 }
 
+func validateFollowerReceiptDelivery(
+	item *DeviceQueueItemModel,
+	authorityStation valueobject.StationID,
+) error {
+	var delivery chat.DeviceEventDelivery
+	if err := proto.Unmarshal(item.OpaquePayload, &delivery); err != nil {
+		return receiptIntegrityError(
+			"item",
+			"does not contain a canonical Conversation event delivery",
+		)
+	}
+	event := delivery.GetEvent()
+	recipient := delivery.GetRecipient()
+	if event == nil ||
+		recipient == nil ||
+		event.GetAuthorityStationPeerId() != string(authorityStation) ||
+		event.GetConversationId() != item.ConversationID ||
+		event.GetEventId() != item.EventID ||
+		event.GetSequence() != int64(item.EventSequence) ||
+		recipient.GetPtid() != item.RecipientPTID ||
+		recipient.GetDeviceId() != item.RecipientDeviceID ||
+		len(delivery.GetDeliveryCommitment()) != 32 {
+		return receiptIntegrityError(
+			"item",
+			"is not bound to the expected follower authority delivery",
+		)
+	}
+
+	return nil
+}
+
 func deliveryKindFromProto(
 	kind chat.PreparedEndpointPayloadKind,
 ) (valueobject.DeliveryKind, error) {
@@ -992,6 +1082,96 @@ func loadDeliveryAggregate(
 			consumedCount+revokedCount == required,
 		Read: readCount > 0,
 	}, nil
+}
+
+func loadOriginatorRoutes(
+	tx *gorm.DB,
+	event domainevent.Record,
+) ([]interaction.EndpointRoute, error) {
+	var commitments []AuthorityDeliveryCommitmentModel
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"event_id = ? AND recipient_ptid = ? AND required_recipient = ?",
+			string(event.ID),
+			string(event.Actor.Actor),
+			false,
+		).
+		Order("recipient_device_id ASC").
+		Find(&commitments).Error; err != nil {
+		return nil, err
+	}
+	if len(commitments) == 0 {
+		return nil, receiptIntegrityError(
+			"originator_deliveries",
+			"does not contain an originator synchronization route",
+		)
+	}
+	var devices []persistence.ConversationMemberDeviceModel
+	if err := tx.Where(
+		"conversation_id = ? AND ptid = ? AND active = ?",
+		string(event.ConversationID),
+		string(event.Actor.Actor),
+		true,
+	).Find(&devices).Error; err != nil {
+		return nil, err
+	}
+	activeRoutes := make(map[string]valueobject.StationID, len(devices))
+	for _, device := range devices {
+		endpoint := valueobject.Endpoint{
+			Actor:  valueobject.PTID(device.PTID),
+			Device: valueobject.DeviceID(device.DeviceID),
+		}
+		if endpoint.Validate() != nil || device.HomeStation == "" {
+			return nil, receiptIntegrityError(
+				"originator_devices",
+				"contains an invalid active endpoint route",
+			)
+		}
+		activeRoutes[endpoint.Key()] = valueobject.StationID(device.HomeStation)
+	}
+	routes := make([]interaction.EndpointRoute, 0, len(commitments))
+	seen := make(map[string]struct{}, len(commitments))
+	for index := range commitments {
+		commitment := &commitments[index]
+		if err := validateAuthorityCommitmentModel(commitment, event); err != nil {
+			return nil, err
+		}
+		route := interaction.EndpointRoute{
+			Endpoint: valueobject.Endpoint{
+				Actor:  valueobject.PTID(commitment.RecipientPTID),
+				Device: valueobject.DeviceID(commitment.RecipientDeviceID),
+			},
+			HomeStation: valueobject.StationID(commitment.HomeStation),
+		}
+		if route.Endpoint.Validate() != nil ||
+			route.Endpoint.Actor != event.Actor.Actor ||
+			route.HomeStation == "" {
+			return nil, receiptIntegrityError(
+				"originator_deliveries",
+				"contains an invalid originator route",
+			)
+		}
+		activeHomeStation, active := activeRoutes[route.Endpoint.Key()]
+		if !active {
+			continue
+		}
+		if activeHomeStation != route.HomeStation {
+			return nil, receiptIntegrityError(
+				"originator_devices",
+				"does not match the committed Home Station route",
+			)
+		}
+		if _, duplicate := seen[route.Endpoint.Key()]; duplicate {
+			return nil, receiptIntegrityError(
+				"originator_deliveries",
+				"contains a duplicate endpoint route",
+			)
+		}
+		seen[route.Endpoint.Key()] = struct{}{}
+		routes = append(routes, route)
+	}
+
+	return routes, nil
 }
 
 func receiptIntegrityError(field string, message string) error {
