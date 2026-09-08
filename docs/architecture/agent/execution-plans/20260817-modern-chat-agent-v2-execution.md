@@ -252,7 +252,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `032bb05473906cb39aa9524131970f2aa2dab1ee` passed Browser AS-F10, `BASE-CANCELLED` in both locales, and `BASE-CREDENTIAL_MISSING`, then failed first at Browser English `BASE-DUPLICATE_CONFLICT / originalCommandPreserved`. All product-preservation assertions passed except the Harness omitted the already-validated `existing_command_id` from Station facts; the local projection correction is pending exact-source verification. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `f504456cf8f4b94f60ecd5c0e1f3a09d9a0ded53` contains the duplicate-conflict evidence projection correction, but its exact-source run failed earlier at Browser English `BASE-CANCELLED` while waiting for the live receiver after terminal reconciliation. Sanitized post-reconcile store/operation instrumentation is pending exact-source reproduction; the duplicate-conflict correction remains unverified. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6331,6 +6331,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `git diff --check` pass. Provisioner cleanup completed
   `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`
   pending checkpoint, exact-source deployment, and rerun.
+- Exact-source checkpoint
+  `f504456cf8f4b94f60ecd5c0e1f3a09d9a0ded53` deployed to
+  `chat-native-disposable` after adding the duplicate-conflict
+  `existingCommandId` projection. Gate run
+  `20260908T094631671783Z-58809a50c3800962a4233d9aa7bf90dc`
+  failed earlier at Browser English `BASE-CANCELLED`: terminal reconciliation
+  returned, but the scenario timed out before a visible live cancellation
+  receiver appeared. Outer run
+  `20260908T094631559941Z-aa5dc8342be1ac6dc7051bf0592f9fc8`
+  completed `FAILED / PARTIAL / UNPROVEN`; source identity and Provisioner
+  cleanup passed. The duplicate-conflict correction was not reached and remains
+  unverified. A sanitized diagnostic now records current-session identity,
+  operation ownership/status, current/buffered Turn-message counts, hashed
+  message identity, terminal status, typed error, reason, and loading state
+  immediately after reconciliation. Desktop TypeScript, `200/200` focused
+  Harness/oracle tests, and `git diff --check` pass. No tuple, assertion,
+  timeout, or product behavior changed.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

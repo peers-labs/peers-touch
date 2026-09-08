@@ -9867,6 +9867,41 @@ async function runFoundationCancelledScenario(input: {
                 || undefined,
             },
           );
+          // #region debug-point J-M:post-cancellation-reconcile
+          const postReconcileState = useChatStore.getState();
+          const postReconcileOperation =
+            postReconcileState.operations[conversation.conversation_id];
+          const currentTurnMessages = postReconcileState.messages.filter(
+            (message) => message.role === 'assistant' && message.turnId === turnId,
+          );
+          const bufferedTurnMessages = (
+            postReconcileState.sessionBuffers[conversation.conversation_id] ?? []
+          ).filter(
+            (message) => message.role === 'assistant' && message.turnId === turnId,
+          );
+          await reportFoundationCancelledLocalizationDebug(
+            'J-M',
+            'Foundation post-cancellation reconcile',
+            {
+              currentSessionMatches:
+                postReconcileState.currentSessionKey === conversation.conversation_id,
+              operationPresent: Boolean(postReconcileOperation),
+              operationTurnMatches: postReconcileOperation?.turnId === turnId,
+              operationStatus: postReconcileOperation?.status ?? null,
+              currentTurnMessageCount: currentTurnMessages.length,
+              bufferedTurnMessageCount: bufferedTurnMessages.length,
+              currentTurnMessages: await Promise.all(
+                currentTurnMessages.map(async (message) => ({
+                  messageIdHash: await sha256Hex(message.id),
+                  terminalStatus: message.terminalStatus ?? null,
+                  errorType: message.typedError?.error_type ?? null,
+                  errorDetail: message.errorDetail ?? '',
+                  loading: message.loading === true,
+                })),
+              ),
+            },
+          );
+          // #endregion
           const liveReceiver = await foundationCancelledReceiverSnapshot(
             turnId,
             'Foundation live cancellation receiver',
