@@ -175,8 +175,8 @@ func (s *EndpointManifestService) GetEndpointManifest(
 	}, nil
 }
 
-// AcceptVerifiedEndpointManifest records the highest verified directory
-// version so an older signed routing snapshot cannot restore revoked devices.
+// AcceptVerifiedEndpointManifest records the verified Actor identity
+// continuity key and highest directory version as one persistence operation.
 // The caller must verify the Home Station signature before invoking this edge.
 func (s *EndpointManifestService) AcceptVerifiedEndpointManifest(
 	ctx context.Context,

@@ -463,8 +463,8 @@ func (s *subServer) ValidateEndpointManifest(
 	)
 }
 
-// AcceptVerifiedEndpointManifest persists the monotonic Actor routing fence
-// after the caller has verified the Home Station signature.
+// AcceptVerifiedEndpointManifest persists the verified Actor identity
+// continuity key and routing fence after Station signature verification.
 func (s *subServer) AcceptVerifiedEndpointManifest(
 	ctx context.Context,
 	manifest *actormodel.ActorEndpointManifest,

@@ -861,8 +861,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; contact resilience, Group genesis, Alice-to-Bob Group delivery, and follower receipt return `DONE/PROVEN`; W9-D Product Closure remains partial | Exact-source Product Closure run `20260908T141700178703Z-805b1dd1bba78e3a4ba40f54c7004c6f` at `af5bb3b5699f7c5dce2b7aabd992dc97e8101f29` proves Direct open/reopen, canonical Group genesis, both genesis projections, Alice's sequence-2 Group message delivery to Bob, and durable follower receipt return. The first failure remains `transcript.thread.ui` while Alice waits for Bob's reply. PostgreSQL proves station-five created no authority-command Federation frame and station-four received no Bob command. The D-17 Desktop/Home correction passes the four local Chat Gates but remains `PARTIAL/UNPROVEN` pending exact-source deployment and Product Closure-only rerun. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, authority Group commit, one-way cross-Station Group delivery, and follower receipt return | The next checkpoint restores actor-device-signed D-17 remote ordinary commands through the Home Station and consumes the returned command-result Device Inbox item. Bidirectional Group transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven. |
+| NDR-W9 Windows cell | W9-A/B/C done; contact resilience, Group genesis, Alice-to-Bob Group delivery, follower receipt return, and D-17 Home enqueue `DONE/PROVEN`; W9-D Product Closure remains partial | Exact-source Product Closure run `20260908T163630929783Z-0d1461f4675bba5041949ca8934c5510` at `24a795726d8371ea06d1f53dfbaec3543c7578cd` proves Direct open/reopen, canonical Group genesis, Alice's sequence-2 Group message delivery to Bob, durable follower receipt return, and station-five payload-kind `2` command enqueue. The first failure remains `transcript.thread.ui` while Alice waits for Bob's reply. PostgreSQL proves command `01M2108FGAE1R8DS2VXFKRJ1G3` retried ten times and expired because station-four returned retryable domain rejection without committing sequence 3. The owner-layer cause is the missing verified remote Actor identity public-key persistence needed by Conversation delivery sealing. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, authority Group commit, one-way cross-Station Group delivery, follower receipt return, and durable remote-command enqueue | The next checkpoint makes Actor Identity persist the verified remote Actor identity public key from the signed endpoint manifest before Conversation seals remote-sender deliveries. Bidirectional Group transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -3887,3 +3887,88 @@ pre-existing Auth test-only unresolved imports and type inference errors;
 production Rust compilation passes. NDR-W9-D and Windows NDR-W10-D remain
 `PARTIAL/UNPROVEN` pending a local checkpoint commit, exact-source deployment,
 and Product Closure-only rerun.
+
+### 2026-09-09 Verified Remote Actor Identity-Key Persistence Boundary
+
+The committed D-17 correction at
+`24a795726d8371ea06d1f53dfbaec3543c7578cd` was deployed exactly to
+station-four, station-five, and sixwin. Product Closure run
+`20260908T163630929783Z-0d1461f4675bba5041949ca8934c5510`,
+aggregate `20260908T163630823708Z-9e1bf206bf014bdce567f569d6048951`,
+Windows cell `20260908t163713792019z-31b44cbadca0a230`, and binary SHA-256
+`b48586fd55b0a0a8ff2eda4272f45965a21a966cfbfa3c8259fe2f2f36ff9f61`
+prove that the D-17 proposal now leaves Bob's Desktop and is durably enqueued
+by station-five.
+
+The first failure remains `transcript.thread.ui`: Alice times out waiting for
+Bob's visible reply `w13-bob-27180`. PostgreSQL establishes the exact boundary:
+
+- station-five created payload-kind `2` authority-command frame
+  `conversation-frame:d5628d7f17067462b0cb77b912b95c0839de2a9030e311d1b4bd1f05195362a1`
+  for command `01M2108FGAE1R8DS2VXFKRJ1G3`;
+- the frame reached station-four ten times but received a retryable domain
+  rejection on every attempt, then expired at its signed five-minute limit;
+- station-four committed no matching Federation inbox row, command receipt, or
+  sequence-3 Conversation event;
+- station-four fetched Bob's signed remote Actor profile and endpoint manifest,
+  and the proposal signing key exactly matches Bob's verified profile key;
+- the accepted endpoint manifest persisted Bob's routing fence but not the
+  manifest's verified Actor identity public key, leaving
+  `actor_identity_keys` empty for Bob;
+- Conversation therefore cannot seal Bob-authored device deliveries and
+  returns `CONVERSATION_ACTOR_KEY_UNAVAILABLE`, which correctly keeps the
+  Federation frame retryable but cannot converge without the missing
+  Actor Identity projection.
+
+The owner-layer correction belongs to Actor Identity:
+`AcceptVerifiedEndpointManifest` must atomically establish or advance the
+verified remote Actor identity continuity key together with its monotonic
+directory fence. Exact replay with the same key is allowed; stale profile
+versions and any key conflict fail closed. Conversation must continue reading
+the key through its narrow identity interface and must not persist a second
+copy or accept proposal-supplied key material.
+
+The Product Closure run is `PARTIAL/UNPROVEN`; cleanup is `DONE/PROVEN`.
+The remaining seven Windows Native Chat Gates, Windows NDR-W10-D closure,
+PostgreSQL contention, Gap Detector, and completion audit remain deferred.
+
+The Actor Identity correction now persists the verified manifest's Ed25519
+Actor identity public key, derived fingerprint, and monotonic profile version
+in the same transaction as the endpoint-directory fence. Exact manifest replay
+is idempotent. A stale profile version, changed identity key, or conflicting
+directory snapshot rejects the complete transaction without leaving a partial
+identity projection. Conversation continues to read the key through
+`IdentityDirectory.ActorIdentityPublicKey`; a focused production-adapter seam
+test proves the accepted remote manifest supplies the sender key used to seal
+`DeviceEventDelivery`.
+
+Focused verification passes:
+
+- Actor Identity and Conversation `go test -race`;
+- focused Actor Identity/Conversation `go vet`;
+- Go style, formatting, and diff checks;
+- `station-messaging-unit`
+  `20260908T174540828944Z-9f957d22406b76afebd98e1b1c363246`;
+- `messaging-platform-contract`
+  `20260908T174543625672Z-352dbd2adeb54a073207af097b0ef1da`;
+- `desktop-check`
+  `20260908T174549720557Z-8bb7112e7a3e88a8a6c2d25cfa42483a`;
+- `chat-native-visible-static`
+  `20260908T174558257150Z-6030d7c0dd280c600416de1e6e8ebecf`;
+- local aggregate
+  `20260908T174540700796Z-0955f1301c2d2776f14dff2f6afb00cf`.
+
+An earlier aggregate was invalidated by intentional source changes during its
+execution and is excluded from evidence. NDR-W9-D and Windows NDR-W10-D remain
+`PARTIAL/UNPROVEN` pending a local checkpoint commit, exact-source deployment,
+and another Product Closure-only rerun.
+
+The final exact-range aggregate
+`20260908T175007415039Z-47f0bb3265dbf33d04c30b46f648f209`
+passes `station-messaging-unit`, `messaging-platform-contract`,
+`desktop-check`, `acceptance-plan-self`, and
+`acceptance-infra-validation`. Its
+`acceptance-runtime-provisioning-self` Gate remains `PARTIAL/UNPROVEN` only on
+the pre-existing Agent V2 missing-helper failures and launch-context timeouts.
+Gap Detector therefore keeps the overall claim `UNPROVEN`; no static or unit
+result is promoted to Windows Product Closure proof.
