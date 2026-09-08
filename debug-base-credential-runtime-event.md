@@ -67,3 +67,10 @@ matrix tuple, timeout, or cleanup behavior changes.
   Focused producer and Foundation suites pass `15/15` and `132/132`.
 - The session remains `[OPEN]` until the sanitizer correction is exercised by
   another exact-source Gate run.
+- Exact-source run
+  `20260908T050418581109Z-dba19af4954e4f5a6df08b3b35fb8b5e` exercised the
+  sanitizer correction successfully across both locale cells and advanced to
+  `BASE-DUPLICATE_CONFLICT`. Cleanup completed `DONE / PROVEN / passed`.
+- The credential runtime-event defect and its sanitizer follow-up are
+  source-backed closed. This debug session remains `[OPEN]` until the user
+  authorizes cleanup of its retained instrumentation and artifacts.
