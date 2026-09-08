@@ -93,3 +93,32 @@ post-fix comparison.
 - The reporter now targets this worktree's isolated collector on port `7788`.
   The next exact-source run must capture live, reload, and replay receiver facts
   before any additional cancellation fix is considered.
+
+## Durable Reason Recurrence
+
+- Exact-source Gate run
+  `20260907T212136188205Z-f78e3ec5c47b32c4a7db07fcbb163269`
+  on checkpoint `5e48bcbe84536f707e40eb1ca4099d0427c2b139`
+  again failed first at Browser English `BASE-CANCELLED` on
+  `localizedCancellationVisible`.
+- The three receiver snapshots used the same canonical Station message ID and
+  retained the cancelled terminal status, typed error, localized text, and
+  absence of recovery:
+  - live: `errorDetail=cancelled_by_user`
+  - reload: `errorDetail=""`
+  - replay: `errorDetail=""`
+- This is not a locale, selector, message-identity, or visibility failure. The
+  remaining defect is the loss of the Station-owned cancellation reason across
+  durable reload and authoritative replay projection.
+
+## Durable Reason Hypotheses
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| F | The authoritative Station snapshot omits `terminal_reason`. | High | Low | The captured snapshot is cancelled but both reason aliases are empty before Desktop reconciliation. |
+| G | `reconcileRecoveredTurn` returns before projection because the operation is absent or owns another turn. | Medium | Low | Pre-reconcile operation is absent or `operation.turnId !== turnId`, and the post-reconcile message remains unchanged. |
+| H | Cached Station message projection does not recover the persisted cancellation reason. | Confirmed | Low | Reload receives the canonical typed payload and cancelled status while `errorDetail` is empty before replay. |
+| I | Snapshot projection applies the reason, then message merge or terminal settlement overwrites it. | Medium | Low | Snapshot reason is present and the operation matches, but the post-reconcile message loses `errorDetail`. |
+
+The next run records only the F-I observation boundary. Product behavior,
+matrix tuples, assertions, timeouts, and cleanup remain unchanged.

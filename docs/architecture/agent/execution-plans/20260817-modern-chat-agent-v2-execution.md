@@ -6159,6 +6159,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `git diff --check` pass. Provisioner cleanup completed
   `DONE / PROVEN / passed`; exact-source post-fix proof remains pending, so
   Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Checkpoint `5e48bcbe84536f707e40eb1ca4099d0427c2b139` was deployed
+  exact-source to `chat-native-disposable`; Acceptance binary
+  `61c0c58ac2c4de7de56f72d864ccf203105825d120af86a3cec192c5019c0b35`
+  passed embedded-WebDriver smoke. Gate run
+  `20260907T212136188205Z-f78e3ec5c47b32c4a7db07fcbb163269`
+  failed first at Browser English `BASE-CANCELLED` before the new credential
+  scenario executed. The live, reload, and replay receiver projections retained
+  the same canonical Station message identity, cancelled terminal status,
+  `LIFECYCLE_CANCELLED` typed error, exact localized text, and no recovery
+  action; only `errorDetail` diverged:
+  `cancelled_by_user`, empty, empty. The cached Station message projection is
+  confirmed not to recover the persisted reason. The remaining pre-fix
+  instrumentation records whether the authoritative snapshot contains
+  `terminal_reason`, whether the operation guard matches, and whether
+  reconciliation applies then loses the reason. No product behavior, matrix
+  tuple, assertion, timeout, or cleanup contract has changed. Provisioner
+  cleanup completed `DONE / PROVEN / passed`; Foundation/G-F remain
+  `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

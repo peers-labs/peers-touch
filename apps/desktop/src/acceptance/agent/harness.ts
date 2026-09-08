@@ -7919,6 +7919,7 @@ function reportFoundationF04DenialDebug(
 
 // #region debug-point A-E:base-cancelled-localization
 function reportFoundationCancelledLocalizationDebug(
+  hypothesisId: string,
   stage: string,
   data: Record<string, unknown> = {},
 ): Promise<void> {
@@ -7926,8 +7927,8 @@ function reportFoundationCancelledLocalizationDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'base-cancelled-localization',
-      runId: 'post-fix',
-      hypothesisId: 'A-E',
+      runId: 'pre-fix',
+      hypothesisId,
       location: 'harness.ts:foundationCancelledReceiverSnapshot',
       msg: `[DEBUG] ${stage}`,
       data,
@@ -9257,7 +9258,7 @@ async function foundationCancelledReceiverSnapshot(
     ),
     resolutionPresent: Boolean(receiverMessage?.resolution),
   };
-  await reportFoundationCancelledLocalizationDebug(description, {
+  await reportFoundationCancelledLocalizationDebug('A-E', description, {
     locale: i18n.language,
     messageFound: Boolean(messageElement),
     messageId: snapshot.messageId,
@@ -9550,19 +9551,59 @@ async function runFoundationCancelledScenario(input: {
               [conversation.conversation_id]: [],
             },
           }));
+          const snapshotTerminalReason = String(
+            authoritativeSnapshot.data.terminal_reason
+            ?? authoritativeSnapshot.data.terminalReason
+            ?? '',
+          );
+          const replayOperation =
+            useChatStore.getState().operations[conversation.conversation_id];
+          await reportFoundationCancelledLocalizationDebug(
+            'F-I',
+            'Foundation replay reconcile boundary',
+            {
+              snapshotStatus: String(
+                authoritativeSnapshot.data.status ?? '',
+              ).toLowerCase(),
+              snapshotTerminalReason,
+              snapshotTerminalReasonPresent: snapshotTerminalReason.length > 0,
+              operationPresent: Boolean(replayOperation),
+              operationTurnMatches: replayOperation?.turnId === turnId,
+              operationStatus: replayOperation?.status ?? null,
+            },
+          );
           await useChatStore.getState().reconcileRecoveredTurn(
             conversation.conversation_id,
             turnId,
             {
               status: 'cancelled',
-              reason: String(
-                authoritativeSnapshot.data.terminal_reason
-                ?? authoritativeSnapshot.data.terminalReason
-                ?? '',
-              ),
+              reason: snapshotTerminalReason,
               ...(typeof authoritativeSnapshot.data.text === 'string'
                 ? { content: authoritativeSnapshot.data.text }
                 : {}),
+            },
+          );
+          const replayReconciledState = useChatStore.getState();
+          const replayReconciledMessage = [...replayReconciledState.messages]
+            .reverse()
+            .find((message) => (
+              message.role === 'assistant'
+              && message.turnId === turnId
+            ));
+          await reportFoundationCancelledLocalizationDebug(
+            'F-I',
+            'Foundation replay reconcile result',
+            {
+              operationPresent: Boolean(
+                replayReconciledState.operations[conversation.conversation_id],
+              ),
+              operationTurnMatches:
+                replayReconciledState.operations[conversation.conversation_id]
+                  ?.turnId === turnId,
+              messagePresent: Boolean(replayReconciledMessage),
+              messageTerminalStatus:
+                replayReconciledMessage?.terminalStatus ?? null,
+              messageErrorDetail: replayReconciledMessage?.errorDetail ?? '',
             },
           );
           const replayedReceiver = await foundationCancelledReceiverSnapshot(
