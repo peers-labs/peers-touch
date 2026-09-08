@@ -290,6 +290,9 @@ class MessagingPlatformContractTest(unittest.TestCase):
             ROOT
             / "apps/station/app/subserver/key_exchange/application/canonical_service.go"
         ).read_text(encoding="utf-8")
+        desktop_transport = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/transport.rs"
+        ).read_text(encoding="utf-8")
 
         self.assertGreaterEqual(
             len(re.findall(r"VerifiedRoutes:\s+verifiedRoutes", production_http)),
@@ -347,6 +350,34 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn(
             "actors := productionPlanActors(plan)",
             production_http,
+        )
+        self.assertIn(
+            'const GROUP_CREATION_PATH: &str = "/conversation/group";',
+            desktop_transport,
+        )
+        self.assertIn(
+            'const AUTHORITY_COMMAND_PATH: &str = "/conversation/command";',
+            desktop_transport,
+        )
+        self.assertIn(
+            "CreateGroupConversationRequest",
+            desktop_transport,
+        )
+        self.assertIn(
+            "command_submission_route(&command)",
+            desktop_transport,
+        )
+        self.assertIn(
+            "prepared_epoch_zero_group_genesis_uses_group_creation_route",
+            desktop_transport,
+        )
+        self.assertIn(
+            "ordinary_commands_use_authority_command_route",
+            desktop_transport,
+        )
+        self.assertIn(
+            "group_creation_request_preserves_exact_command_bytes",
+            desktop_transport,
         )
 
     def test_sending_endpoint_uses_ordered_public_event_marker(self) -> None:
