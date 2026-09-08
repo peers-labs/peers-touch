@@ -190,3 +190,42 @@ ambiguous Federation context.
   Acceptance provisioning self-suite.
 - Exact-source Windows verification remains pending; the debug session stays
   `[OPEN]`.
+
+## Iteration: Group Genesis Command Route
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| P | The signed endpoint-route correction allows Group preparation to complete. | Confirmed | Exact-source Windows run `20260908T033256775430Z-34b2f520c4d47ab9351c6a41bb592255` records `POST /conversation/group/prepare` with HTTP 200. |
+| Q | Desktop Rust submits the prepared Group genesis command through the ordinary command route. | Confirmed | The next Station request is `POST /conversation/command` with HTTP 200; the response carries a typed rejection rather than a committed Group event. |
+| R | Group authority committed and only the Desktop projection failed. | Rejected | PostgreSQL has no Group Conversation row or Group command receipt; the authority plan remains `prepared`. |
+| S | The canonical Group creation route is unavailable or ambiguous. | Rejected | The accepted capability registry, AO-D07, generated proto, and Station handler all bind `CreateGroupConversationRequest` to `POST /conversation/group`. |
+
+- Runtime source: `018491a013277a1bea1d5ba50d7fd3a3aaa75203`.
+- Windows binary SHA-256:
+  `9db85704bdbdec5432df9798e056c9c1fdd27d89fc2c1aa8426e28a82a2f4092`.
+- First failed step: `group.create.ui`; cleanup is `DONE/PROVEN`.
+- The local correction:
+  - identifies only prepared epoch-zero Group genesis commands;
+  - submits those commands as `CreateGroupConversationRequest` to
+    `/conversation/group`;
+  - leaves all ordinary commands and established membership transitions on
+    `/conversation/command`;
+  - rejects non-canonical durable command bytes;
+  - verifies the returned Group Conversation and committed event against the
+    submitted command.
+- Current-source verification:
+  - Desktop Rust `cargo check --features acceptance-webdriver`: pass;
+  - focused Rust route/byte/response tests are present but the binary test
+    target remains blocked before execution by unrelated pre-existing Auth
+    test-only compile failures;
+  - `station-messaging-unit`:
+    `20260908T042714357902Z-41049387fc52c3b2069a50a526823961`;
+  - `messaging-platform-contract`:
+    `20260908T042729704170Z-b4257c7aa7feab8cbe4756c06fb40bba`;
+  - `desktop-check`:
+    `20260908T042825752431Z-c33f841bdfa01c864ae452a23e9380a2`;
+  - `chat-native-visible-static`:
+    `20260908T043359375556Z-e0344ecc986d45b8d6e14ad93e08a96b`;
+  - `station-api-ownership`:
+    `20260908T043433761115Z-7a2529c303868bb510bbd7875d883735`.
+- Exact-source Windows verification of this route correction is pending; the
+  debug session stays `[OPEN]`.

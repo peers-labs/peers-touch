@@ -1,9 +1,10 @@
 use super::{CommandSubmitFailure, CommandTransport, QueueAcknowledger, QueueTransport};
 use crate::infrastructure::station_client::{self, StationClientErrorKind};
 use crate::model::chat::{
-    submit_conversation_authority_command_request, AcknowledgeDeviceInboxItemRequest,
+    chat_command, submit_conversation_authority_command_request, AcknowledgeDeviceInboxItemRequest,
     AcknowledgeDeviceInboxItemResponse, ChatCommand, ClaimDeviceInboxRequest,
-    ClaimDeviceInboxResponse, ConversationCommandRejectCode, DeviceConsumptionReceipt,
+    ClaimDeviceInboxResponse, ConversationCommandRejectCode, ConversationKind,
+    CreateGroupConversationRequest, CreateGroupConversationResponse, DeviceConsumptionReceipt,
     PrepareConversationCommandRequest, PrepareConversationCommandResponse,
     SubmitConversationAuthorityCommandRequest, SubmitConversationAuthorityCommandResponse,
     SubmitConversationDeliveryReceiptRequest, SubmitConversationDeliveryReceiptResponse,
@@ -16,6 +17,24 @@ use messaging_core::proto::actor::{
 use messaging_core::proto::actor_device_ptid;
 use prost::Message;
 use reqwest::Method;
+
+const GROUP_CREATION_PATH: &str = "/conversation/group";
+const AUTHORITY_COMMAND_PATH: &str = "/conversation/command";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommandSubmissionRoute {
+    GroupCreation,
+    AuthorityCommand,
+}
+
+impl CommandSubmissionRoute {
+    fn path(self) -> &'static str {
+        match self {
+            Self::GroupCreation => GROUP_CREATION_PATH,
+            Self::AuthorityCommand => AUTHORITY_COMMAND_PATH,
+        }
+    }
+}
 
 pub struct StationQueueTransport {
     token: String,
@@ -151,32 +170,32 @@ impl StationCommandTransport {
         .map(|_| ())
         .map_err(|error| error.to_string())
     }
-}
 
-impl CommandTransport for StationCommandTransport {
-    fn submit(&self, exact_command_bytes: &[u8]) -> Result<(), CommandSubmitFailure> {
-        let command = ChatCommand::decode(exact_command_bytes).map_err(|_| {
-            CommandSubmitFailure::Terminal {
-                code: "invalid_command".to_string(),
-            }
-        })?;
-        let sender = command
-            .sender
-            .as_ref()
-            .ok_or_else(|| CommandSubmitFailure::Terminal {
-                code: "missing_sender".to_string(),
-            })?;
-        if sender.device_id != self.device_id {
-            return Err(CommandSubmitFailure::Terminal {
-                code: "endpoint_mismatch".to_string(),
-            });
-        }
+    fn submit_group_creation(&self, command: &ChatCommand) -> Result<(), CommandSubmitFailure> {
+        let response = station_client::request_proto_for_device::<
+            CreateGroupConversationRequest,
+            CreateGroupConversationResponse,
+        >(
+            Method::POST,
+            CommandSubmissionRoute::GroupCreation.path(),
+            &self.token,
+            None,
+            Some(&CreateGroupConversationRequest {
+                command: Some(command.clone()),
+            }),
+            &self.device_id,
+        )
+        .map_err(classify_command_transport_error)?;
+        validate_group_creation_response(command, response)
+    }
+
+    fn submit_authority_command(&self, command: &ChatCommand) -> Result<(), CommandSubmitFailure> {
         let response = station_client::request_proto_for_device::<
             SubmitConversationAuthorityCommandRequest,
             SubmitConversationAuthorityCommandResponse,
         >(
             Method::POST,
-            "/conversation/command",
+            CommandSubmissionRoute::AuthorityCommand.path(),
             &self.token,
             None,
             Some(&SubmitConversationAuthorityCommandRequest {
@@ -223,21 +242,94 @@ impl CommandTransport for StationCommandTransport {
         if response.accepted_for_forwarding {
             return Ok(());
         }
-        let event = response
-            .event
-            .ok_or_else(|| CommandSubmitFailure::Terminal {
-                code: "missing_event".to_string(),
-            })?;
-        if event.command_id != command.command_id
-            || event.conversation_id != command.conversation_id
-            || event.actor != command.sender
-        {
+        validate_committed_event(command, response.event)
+    }
+}
+
+impl CommandTransport for StationCommandTransport {
+    fn submit(&self, exact_command_bytes: &[u8]) -> Result<(), CommandSubmitFailure> {
+        let command = ChatCommand::decode(exact_command_bytes).map_err(|_| {
+            CommandSubmitFailure::Terminal {
+                code: "invalid_command".to_string(),
+            }
+        })?;
+        if command.encode_to_vec() != exact_command_bytes {
             return Err(CommandSubmitFailure::Terminal {
-                code: "response_binding".to_string(),
+                code: "non_canonical_command".to_string(),
             });
         }
-        Ok(())
+        let sender = command
+            .sender
+            .as_ref()
+            .ok_or_else(|| CommandSubmitFailure::Terminal {
+                code: "missing_sender".to_string(),
+            })?;
+        if sender.device_id != self.device_id {
+            return Err(CommandSubmitFailure::Terminal {
+                code: "endpoint_mismatch".to_string(),
+            });
+        }
+        match command_submission_route(&command) {
+            CommandSubmissionRoute::GroupCreation => self.submit_group_creation(&command),
+            CommandSubmissionRoute::AuthorityCommand => self.submit_authority_command(&command),
+        }
     }
+}
+
+fn command_submission_route(command: &ChatCommand) -> CommandSubmissionRoute {
+    let Some(chat_command::Payload::MembershipTransition(transition)) = command.payload.as_ref()
+    else {
+        return CommandSubmissionRoute::AuthorityCommand;
+    };
+    if command.observed_membership_epoch == 0
+        && command.observed_mls_epoch == 0
+        && transition.from_membership_epoch == 0
+        && transition.from_mls_epoch == 0
+        && transition.to_mls_epoch == 1
+        && !transition.authority_plan_id.trim().is_empty()
+        && !transition.authority_plan_sha256.is_empty()
+    {
+        CommandSubmissionRoute::GroupCreation
+    } else {
+        CommandSubmissionRoute::AuthorityCommand
+    }
+}
+
+fn validate_committed_event(
+    command: &ChatCommand,
+    event: Option<crate::model::chat::ConversationEvent>,
+) -> Result<(), CommandSubmitFailure> {
+    let event = event.ok_or_else(|| CommandSubmitFailure::Terminal {
+        code: "missing_event".to_string(),
+    })?;
+    if event.command_id != command.command_id
+        || event.conversation_id != command.conversation_id
+        || event.actor != command.sender
+    {
+        return Err(CommandSubmitFailure::Terminal {
+            code: "response_binding".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_group_creation_response(
+    command: &ChatCommand,
+    response: CreateGroupConversationResponse,
+) -> Result<(), CommandSubmitFailure> {
+    let conversation = response
+        .conversation
+        .ok_or_else(|| CommandSubmitFailure::Terminal {
+            code: "missing_conversation".to_string(),
+        })?;
+    if conversation.conversation_id != command.conversation_id
+        || conversation.kind != ConversationKind::Group as i32
+    {
+        return Err(CommandSubmitFailure::Terminal {
+            code: "response_binding".to_string(),
+        });
+    }
+    validate_committed_event(command, response.event)
 }
 
 fn classify_command_transport_error(
@@ -367,5 +459,152 @@ impl QueueAcknowledger for StationQueueTransport {
                 payload_sha256: payload_sha256.to_vec(),
             },
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::chat::{
+        chat_command, Conversation, ConversationEvent, CryptoEndpoint, MembershipTransitionIntent,
+        SendMessageIntent,
+    };
+
+    fn command(payload: chat_command::Payload) -> ChatCommand {
+        ChatCommand {
+            command_id: "command-1".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            sender: Some(CryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            }),
+            observed_membership_epoch: 0,
+            observed_mls_epoch: 0,
+            client_timestamp: Some(prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            }),
+            delivery_plan_sha256: vec![7; 32],
+            authority_station_peer_id: "station-four".to_string(),
+            payload: Some(payload),
+        }
+    }
+
+    fn prepared_group_genesis_command() -> ChatCommand {
+        command(chat_command::Payload::MembershipTransition(
+            MembershipTransitionIntent {
+                transition_id: "transition-1".to_string(),
+                from_membership_epoch: 0,
+                from_mls_epoch: 0,
+                to_mls_epoch: 1,
+                changes: Vec::new(),
+                mls_commit: vec![1],
+                mls_commit_sha256: vec![2; 32],
+                welcome_payloads: Vec::new(),
+                leave_intent_id: String::new(),
+                authority_plan_id: "plan-1".to_string(),
+                authority_plan_sha256: vec![7; 32],
+            },
+        ))
+    }
+
+    #[test]
+    fn prepared_epoch_zero_group_genesis_uses_group_creation_route() {
+        let command = prepared_group_genesis_command();
+
+        assert_eq!(
+            command_submission_route(&command),
+            CommandSubmissionRoute::GroupCreation
+        );
+        assert_eq!(
+            command_submission_route(&command).path(),
+            "/conversation/group"
+        );
+    }
+
+    #[test]
+    fn ordinary_commands_use_authority_command_route() {
+        let command = command(chat_command::Payload::SendMessage(SendMessageIntent {
+            message_id: "message-1".to_string(),
+            ..Default::default()
+        }));
+
+        assert_eq!(
+            command_submission_route(&command),
+            CommandSubmissionRoute::AuthorityCommand
+        );
+        assert_eq!(
+            command_submission_route(&command).path(),
+            "/conversation/command"
+        );
+    }
+
+    #[test]
+    fn established_membership_transitions_use_authority_command_route() {
+        let mut command = prepared_group_genesis_command();
+        command.observed_membership_epoch = 1;
+        command.observed_mls_epoch = 1;
+        let transition = match command.payload.as_mut() {
+            Some(chat_command::Payload::MembershipTransition(transition)) => transition,
+            _ => panic!("expected membership transition"),
+        };
+        transition.from_membership_epoch = 1;
+        transition.from_mls_epoch = 1;
+        transition.to_mls_epoch = 2;
+
+        assert_eq!(
+            command_submission_route(&command),
+            CommandSubmissionRoute::AuthorityCommand
+        );
+    }
+
+    #[test]
+    fn group_creation_request_preserves_exact_command_bytes() {
+        let command = prepared_group_genesis_command();
+        let exact_command_bytes = command.encode_to_vec();
+        let request = CreateGroupConversationRequest {
+            command: Some(command),
+        };
+
+        assert_eq!(
+            request.command.expect("group command").encode_to_vec(),
+            exact_command_bytes
+        );
+    }
+
+    #[test]
+    fn group_creation_response_requires_bound_group_and_event() {
+        let command = prepared_group_genesis_command();
+        let response = CreateGroupConversationResponse {
+            conversation: Some(Conversation {
+                conversation_id: command.conversation_id.clone(),
+                kind: ConversationKind::Group as i32,
+                ..Default::default()
+            }),
+            event: Some(ConversationEvent {
+                command_id: command.command_id.clone(),
+                conversation_id: command.conversation_id.clone(),
+                actor: command.sender.clone(),
+                ..Default::default()
+            }),
+        };
+
+        assert_eq!(
+            validate_group_creation_response(&command, response.clone()),
+            Ok(())
+        );
+
+        let mut wrong_kind = response;
+        wrong_kind
+            .conversation
+            .as_mut()
+            .expect("group conversation")
+            .kind = ConversationKind::Direct as i32;
+        assert_eq!(
+            validate_group_creation_response(&command, wrong_kind),
+            Err(CommandSubmitFailure::Terminal {
+                code: "response_binding".to_string(),
+            })
+        );
     }
 }
