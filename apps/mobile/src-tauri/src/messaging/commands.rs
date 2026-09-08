@@ -218,6 +218,7 @@ pub struct SocialFriendRequestDecisionInput {
 pub struct MessagingConversationProjection {
     conversation_id: String,
     authority_station_id: String,
+    federation_id: String,
     kind: i32,
     name: String,
     owner_ptid: String,
@@ -567,8 +568,9 @@ pub async fn messaging_create_direct(
     let creation_engine = engine.clone();
     let peer_ptid = input.peer_ptid;
     let federation_id = input.federation_id;
+    let creation_federation_id = federation_id.clone();
     let prepared = tauri::async_runtime::spawn_blocking(move || {
-        creation_engine.create_direct_conversation(&peer_ptid, &federation_id)
+        creation_engine.create_direct_conversation(&peer_ptid, &creation_federation_id)
     })
     .await
     .map_err(|error| {
@@ -577,7 +579,8 @@ pub async fn messaging_create_direct(
     .map_err(MobileError::messaging)?;
 
     assist_creation_reconcile(&runtime, &input.station_peer_id, &input.actor_ptid).await;
-    let projection_ready = conversation_projection_ready(&engine, &prepared.conversation_id);
+    let projection_ready =
+        conversation_projection_ready(&engine, &prepared.conversation_id, &federation_id);
     Ok(MessagingCreateConversationResult {
         conversation_id: prepared.conversation_id,
         command_id: Some(prepared.command_id),
@@ -597,12 +600,13 @@ pub async fn messaging_create_group(
     let name = input.name;
     let member_ptids = input.member_ptids;
     let federation_id = input.federation_id;
+    let creation_federation_id = federation_id.clone();
     let prepared = tauri::async_runtime::spawn_blocking(move || {
         creation_engine.create_group_conversation(
             &conversation_id,
             &name,
             &member_ptids,
-            &federation_id,
+            &creation_federation_id,
         )
     })
     .await
@@ -622,7 +626,8 @@ pub async fn messaging_create_group(
         .command_status(&prepared.command_id)
         .map_err(MobileError::messaging)?
         .unwrap_or(initial_status);
-    let projection_ready = conversation_projection_ready(&engine, &prepared.conversation_id);
+    let projection_ready =
+        conversation_projection_ready(&engine, &prepared.conversation_id, &federation_id);
     Ok(MessagingCreateConversationResult {
         conversation_id: prepared.conversation_id,
         command_id: Some(prepared.command_id),
@@ -643,6 +648,7 @@ pub fn messaging_list_conversations(
                 .map(|conversation| MessagingConversationProjection {
                     conversation_id: conversation.conversation_id,
                     authority_station_id: conversation.authority_station_id,
+                    federation_id: conversation.federation_id,
                     kind: conversation.kind,
                     name: conversation.name,
                     owner_ptid: conversation.owner_ptid,
@@ -974,11 +980,13 @@ async fn assist_creation_reconcile(
 fn conversation_projection_ready(
     engine: &super::engine::MobileMessagingEngine,
     conversation_id: &str,
+    federation_id: &str,
 ) -> bool {
     match engine.conversations() {
-        Ok(conversations) => conversations
-            .iter()
-            .any(|conversation| conversation.conversation_id == conversation_id),
+        Ok(conversations) => conversations.iter().any(|conversation| {
+            conversation.conversation_id == conversation_id
+                && conversation.federation_id == federation_id
+        }),
         Err(error) => {
             log::warn!(
                 "mobile messaging conversation projection read failed after durable state: {error}"

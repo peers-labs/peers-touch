@@ -158,6 +158,7 @@ pub struct ConversationMemberProjection {
 pub struct ConversationProjection {
     pub conversation_id: String,
     pub authority_station_id: String,
+    pub federation_id: String,
     pub kind: i32,
     pub name: String,
     pub owner_ptid: String,
@@ -2473,7 +2474,8 @@ impl MessagingStore {
         let connection = self.connection()?;
         let mut statement = connection
             .prepare(
-                "SELECT conversation_id, authority_station_id, kind, name, owner_ptid,
+                "SELECT conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                  FROM messaging_conversations
                  WHERE active = 1
@@ -2485,13 +2487,14 @@ impl MessagingStore {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i32>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i32>(3)?,
                     row.get::<_, String>(4)?,
-                    row.get::<_, i64>(5)?,
+                    row.get::<_, String>(5)?,
                     row.get::<_, i64>(6)?,
-                    row.get::<_, bool>(7)?,
-                    row.get::<_, i64>(8)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, bool>(8)?,
+                    row.get::<_, i64>(9)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -2502,6 +2505,7 @@ impl MessagingStore {
                 |(
                     conversation_id,
                     authority_station_id,
+                    federation_id,
                     kind,
                     name,
                     owner_ptid,
@@ -2530,6 +2534,7 @@ impl MessagingStore {
                     Ok(ConversationProjection {
                         conversation_id,
                         authority_station_id,
+                        federation_id,
                         kind,
                         name,
                         owner_ptid,
@@ -2573,17 +2578,24 @@ impl MessagingStore {
         &self,
         projection: &super::ConversationProjection,
     ) -> Result<bool, String> {
+        if projection.federation_id.trim().is_empty() {
+            return Err("messaging conversation Federation projection is required".to_string());
+        }
         let changed = self
             .connection()?
             .execute(
                 "INSERT INTO messaging_conversations(
-                    conversation_id, authority_station_id, kind, name, owner_ptid,
+                    conversation_id, authority_station_id, federation_id,
+                    kind, name, owner_ptid,
                     membership_epoch, mls_epoch, active, updated_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)
-                 ON CONFLICT(conversation_id) DO NOTHING",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9)
+                 ON CONFLICT(conversation_id) DO UPDATE SET
+                    federation_id=excluded.federation_id
+                 WHERE messaging_conversations.federation_id = ''",
                 params![
                     projection.conversation_id,
                     projection.authority_station_id,
+                    projection.federation_id,
                     projection.kind,
                     projection.name,
                     projection.owner_ptid,
@@ -2622,9 +2634,13 @@ impl MessagingStore {
         self.connection()?
             .execute(
                 "INSERT INTO messaging_conversations(
-                    conversation_id, authority_station_id, kind, name, owner_ptid,
+                    conversation_id, authority_station_id, federation_id,
+                    kind, name, owner_ptid,
                     membership_epoch, mls_epoch, active, updated_at_unix_ms
-                 ) VALUES (?1, 'station-local', 2, 'test group', 'ptid:alice', ?2, ?3, 1, 1)",
+                 ) VALUES (
+                    ?1, 'station-local', 'federation-test',
+                    2, 'test group', 'ptid:alice', ?2, ?3, 1, 1
+                 )",
                 params![conversation_id, membership_epoch, mls_epoch],
             )
             .map_err(|error| error.to_string())?;
@@ -3881,7 +3897,8 @@ impl MessagingStore {
         let connection = self.connection()?;
         let mut conversation_statement = connection
             .prepare(
-                "SELECT conversation_id, authority_station_id, kind, name, owner_ptid,
+                "SELECT conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                  FROM messaging_conversations
                  WHERE authority_station_id <> ''
@@ -3893,13 +3910,14 @@ impl MessagingStore {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i32>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i32>(3)?,
                     row.get::<_, String>(4)?,
-                    row.get::<_, i64>(5)?,
+                    row.get::<_, String>(5)?,
                     row.get::<_, i64>(6)?,
-                    row.get::<_, bool>(7)?,
-                    row.get::<_, i64>(8)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, bool>(8)?,
+                    row.get::<_, i64>(9)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -3929,15 +3947,16 @@ impl MessagingStore {
             conversations.push(RecoveryConversationProjection {
                 conversation_id: row.0,
                 authority_station_id: row.1,
-                kind: row.2,
-                name: row.3,
-                owner_ptid: row.4,
+                federation_id: row.2,
+                kind: row.3,
+                name: row.4,
+                owner_ptid: row.5,
                 member_ptids,
                 member_roles,
-                membership_epoch: row.5,
-                mls_epoch: row.6,
-                active: row.7,
-                updated_at_unix_ms: row.8,
+                membership_epoch: row.6,
+                mls_epoch: row.7,
+                active: row.8,
+                updated_at_unix_ms: row.9,
             });
         }
         let mut message_statement = connection
@@ -4103,13 +4122,15 @@ impl MessagingStore {
             transaction
                 .execute(
                     "INSERT INTO messaging_conversations(
-                        conversation_id, authority_station_id, kind, name, owner_ptid,
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms,
                         recovery_ready
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1)",
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1)",
                     params![
                         conversation.conversation_id,
                         conversation.authority_station_id,
+                        conversation.federation_id,
                         conversation.kind,
                         conversation.name,
                         conversation.owner_ptid,
@@ -4781,11 +4802,13 @@ impl MessagingStore {
             transaction
                 .execute(
                     "INSERT INTO messaging_conversations(
-                        conversation_id, authority_station_id, kind, name, owner_ptid,
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                      ON CONFLICT(conversation_id) DO UPDATE SET
                         authority_station_id=excluded.authority_station_id,
+                        federation_id=excluded.federation_id,
                         kind=excluded.kind,
                         name=excluded.name,
                         owner_ptid=excluded.owner_ptid,
@@ -4796,6 +4819,7 @@ impl MessagingStore {
                     params![
                         input.projection.conversation_id,
                         input.projection.authority_station_id,
+                        input.projection.federation_id,
                         input.projection.kind,
                         input.projection.name,
                         input.projection.owner_ptid,
@@ -5004,6 +5028,7 @@ impl MessagingStore {
             }
             if let Some(projection) = input.join_projection {
                 if projection.conversation_id != input.conversation_id
+                    || projection.federation_id.trim().is_empty()
                     || projection.membership_epoch != input.to_membership_epoch
                     || projection.mls_epoch != input.to_mls_epoch
                     || !projection.active
@@ -5014,12 +5039,14 @@ impl MessagingStore {
                 transaction
                     .execute(
                         "INSERT INTO messaging_conversations(
-                            conversation_id, authority_station_id, kind, name, owner_ptid,
+                            conversation_id, authority_station_id, federation_id,
+                            kind, name, owner_ptid,
                             membership_epoch, mls_epoch, active, updated_at_unix_ms,
                             recovery_ready
-                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, 0)
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, 0)
                          ON CONFLICT(conversation_id) DO UPDATE SET
                             authority_station_id=excluded.authority_station_id,
+                            federation_id=excluded.federation_id,
                             kind=excluded.kind,
                             name=excluded.name,
                             owner_ptid=excluded.owner_ptid,
@@ -5031,6 +5058,7 @@ impl MessagingStore {
                         params![
                             projection.conversation_id,
                             projection.authority_station_id,
+                            projection.federation_id,
                             projection.kind,
                             projection.name,
                             projection.owner_ptid,
@@ -5121,6 +5149,7 @@ impl MessagingStore {
             || input.mls_epoch <= 0
             || input.projection.conversation_id != input.conversation_id
             || input.projection.authority_station_id.trim().is_empty()
+            || input.projection.federation_id.trim().is_empty()
             || input.projection.membership_epoch != input.membership_epoch
             || input.projection.mls_epoch != input.mls_epoch
             || input.projection.members.is_empty()
@@ -5176,11 +5205,13 @@ impl MessagingStore {
             transaction
                 .execute(
                     "INSERT INTO messaging_conversations(
-                        conversation_id, authority_station_id, kind, name, owner_ptid,
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                      ON CONFLICT(conversation_id) DO UPDATE SET
                         authority_station_id=excluded.authority_station_id,
+                        federation_id=excluded.federation_id,
                         kind=excluded.kind,
                         name=excluded.name,
                         owner_ptid=excluded.owner_ptid,
@@ -5191,6 +5222,7 @@ impl MessagingStore {
                     params![
                         input.projection.conversation_id,
                         input.projection.authority_station_id,
+                        input.projection.federation_id,
                         input.projection.kind,
                         input.projection.name,
                         input.projection.owner_ptid,
@@ -7085,6 +7117,7 @@ fn desktop_conversation_projection(
     ConversationProjection {
         conversation_id: projection.conversation_id.clone(),
         authority_station_id: projection.authority_station_id.clone(),
+        federation_id: projection.federation_id.clone(),
         kind: projection.kind,
         name: projection.name.clone(),
         owner_ptid: projection.owner_ptid.clone(),
@@ -7415,6 +7448,7 @@ fn validate_conversation_state_receive(
         .map_err(|_| "messaging conversation-state kind is invalid".to_string())?;
     if projection.conversation_id != input.conversation_id
         || projection.authority_station_id.trim().is_empty()
+        || projection.federation_id.trim().is_empty()
         || kind == ConversationKind::Unspecified
         || projection.owner_ptid.trim().is_empty()
         || projection.members.len() < 2
@@ -8625,6 +8659,7 @@ mod tests {
         let projection = ConversationProjection {
             conversation_id: "group-role-projection".to_string(),
             authority_station_id: "station-local".to_string(),
+            federation_id: "federation-1".to_string(),
             kind: 2,
             name: "Role group".to_string(),
             owner_ptid: "ptid:alice".to_string(),
@@ -8647,9 +8682,57 @@ mod tests {
         assert!(store
             .bootstrap_conversation_projection(&projection)
             .unwrap());
+        let persisted = &store.conversation_projections().unwrap()[0];
+        assert_eq!(persisted.federation_id, projection.federation_id);
+        assert_eq!(persisted.members, projection.members);
+    }
+
+    #[test]
+    fn conversation_projection_bootstrap_backfills_missing_federation_identity() {
+        let store = MessagingStore::in_memory().unwrap();
+        let projection = ConversationProjection {
+            conversation_id: "direct-federation-backfill".to_string(),
+            authority_station_id: "station-local".to_string(),
+            federation_id: "federation-1".to_string(),
+            kind: ConversationKind::Direct as i32,
+            name: String::new(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![
+                ConversationMemberProjection {
+                    ptid: "ptid:alice".to_string(),
+                    role: MemberRole::Member as i32,
+                },
+                ConversationMemberProjection {
+                    ptid: "ptid:bob".to_string(),
+                    role: MemberRole::Member as i32,
+                },
+            ],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            active: true,
+            updated_at_unix_ms: 100,
+        };
+
+        assert!(store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap());
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE messaging_conversations
+                 SET federation_id = ''
+                 WHERE conversation_id = ?1",
+                params![projection.conversation_id],
+            )
+            .unwrap();
+
+        assert!(store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap());
         assert_eq!(
-            store.conversation_projections().unwrap()[0].members,
-            projection.members
+            store.conversation_projections().unwrap()[0].federation_id,
+            projection.federation_id
         );
     }
 
@@ -8910,6 +8993,7 @@ mod tests {
             conversations: vec![RecoveryConversationProjection {
                 conversation_id: "restored-conversation".to_string(),
                 authority_station_id: "station-local".to_string(),
+                federation_id: "federation-1".to_string(),
                 kind: 1,
                 name: String::new(),
                 owner_ptid: "ptid:alice".to_string(),
@@ -9507,9 +9591,13 @@ mod tests {
             connection
                 .execute(
                     "INSERT INTO messaging_conversations(
-                        conversation_id, authority_station_id, kind, name, owner_ptid,
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
-                     ) VALUES (?1, ?2, 1, '', 'ptid:alice', 1, 0, 1, 100)",
+                     ) VALUES (
+                        ?1, ?2, 'federation-1',
+                        1, '', 'ptid:alice', 1, 0, 1, 100
+                     )",
                     params![conversation_id, authority_station_id],
                 )
                 .unwrap();
@@ -9544,6 +9632,7 @@ mod tests {
             archive.conversations[0].conversation_id,
             "canonical-conversation"
         );
+        assert_eq!(archive.conversations[0].federation_id, "federation-1");
         assert_eq!(archive.messages.len(), 1);
         assert_eq!(archive.messages[0].message_id, "canonical-message");
     }

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS messaging_recovery_state (
 CREATE TABLE IF NOT EXISTS messaging_conversations (
     conversation_id TEXT PRIMARY KEY,
     authority_station_id TEXT NOT NULL,
+    federation_id TEXT NOT NULL,
     kind INTEGER NOT NULL,
     name TEXT NOT NULL,
     owner_ptid TEXT NOT NULL,
@@ -385,6 +386,11 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
     RequiredColumn {
         table: "messaging_conversations",
         column: "authority_station_id",
+        definition: "TEXT NOT NULL DEFAULT ''",
+    },
+    RequiredColumn {
+        table: "messaging_conversations",
+        column: "federation_id",
         definition: "TEXT NOT NULL DEFAULT ''",
     },
     RequiredColumn {
