@@ -596,7 +596,7 @@ matrices. Local/static success cannot replace native receiver proof.
 | CA-W4 Shared Federation and Social | done | Shared Federation supplies authenticated frames, durable outbox/inbox leases, retry/dedup/hash-conflict behavior, typed Conversation and Social receivers, and same-Station loopback. Conversation command conflicts return durable authority results bound to the originating command SHA-256; remote Device Inbox lane sequence remains target-owned. Social enforces receiver-local block/existing-relationship policy, atomically persists command/projection/result-outbox state, binds results to exact outgoing command bytes, rejects retryable result frames before durable resolution, and resolves remote actor keys from PTID plus a pinned Home Station profile/locator chain rather than `ActorRef.acct`; cached remote keys are revalidated against the latest signed active-key profile. The exact CA-W4 race command, focused `go vet`, `gofmt`, `git diff --check`, Go style, and `messaging-platform-contract` run `20260906T204614333077Z-6c52a4241e67fb14b3a0663a346aa7a5` pass. Two independent post-fix reviews report zero P0/P1 findings. Live DHT/Relay two-Station convergence remains `UNPROVEN` until CA-W5 production composition and CA-W6 runtime Acceptance. |
 | CA-W5-P0 Donor reconciliation | done | `peers-social` remained a read-only donor. The unique Conversation query/persistence/HTTP behavior was reconciled semantically into `peers-group-chat`; divergent contracts, generated bindings, and overlapping Desktop/Mobile/Messaging Core code were rejected. The retired 105-file `conversation/engine/` tree is deleted, and the final source contains no duplicate engine owner. |
 | CA-W5 Atomic production hard cut | source checkpoint ready / runtime unproven | AO-D07 is implemented proto-first across Station, Desktop, Mobile, and portable Messaging Core. Canonical Conversation production composition now owns creation, commands, event truth, follower recovery, attachment control/data forwarding, and Device Inbox effects; Key Exchange owns local reservation and exact-replay irreversible remote KeyPackage claims; shared Federation owns authenticated route/relay transport. Retired Envelope, flat Conversation, engine, superseded proto, generated bindings, callers, stores, aliases, and fallbacks are deleted. `proto-build` run `20260907T095814186121Z-b39852f3e6f655416a20f3194dc3699d`, `station-api-ownership` run `20260907T095552389681Z-9035a2fbed82ec5a54b98f5b260fe383`, `station-messaging-unit` run `20260907T095534375916Z-3761b27ef989ec4449bf94b82a4a2523`, `messaging-platform-contract` run `20260907T095650555959Z-0f85322adf5c78105d9ca8f15a4a351b`, `desktop-check` run `20260907T095738644264Z-aa04882b997b2eeb5f7e9b2001600a10`, and `chat-native-visible-static` run `20260907T100757881125Z-070fde35dba471e1da0351dc8d030cb0` pass. Focused Station race/vet, Desktop 540 tests and build, Desktop Rust library check, Mobile full check, Messaging Core 104+2 tests, Go style, and diff checks pass. The Gap Detector correctly keeps product proof `UNPROVEN` until the CA-W6 native receiver gates run. Repository-wide Station tests also contain unrelated pre-existing Frame/vendor failures and live `:18080` tests; they do not establish CA-W6 runtime proof. |
-| CA-W6 Runtime Acceptance | in progress / Direct create-reopen and canonical Group authority commit runtime-proven; genesis client consumption locally verified | Windows Product Closure run `20260908T053425400659Z-254d5079f8451a6c7bf7e9b08c3daab7` proved distinct Station binding, Direct create/reopen, signed-route Group preparation, and successful canonical `/conversation/group` commit. The local correction now consumes the same sequence-1 `ConversationCreatedFact` through Alice's sender `PUBLIC_EVENT` and Bob's `MLS_WELCOME`, verifies the authority snapshot against the exact OpenMLS leaf set, and atomically persists Group projection plus MLS state in Desktop/Mobile. Portable tests, platform checks, four approved local Gates, Mobile contract static, and Station ownership pass. Runtime cleanup is `DONE/PROVEN`; complete Product Closure, cross-Station receipt closure, and PostgreSQL contention remain `UNPROVEN` pending exact-source rerun. |
+| CA-W6 Runtime Acceptance | in progress / Direct create-reopen, canonical Group authority commit, and Group-genesis client consumption runtime-proven | Windows Product Closure run `20260908T074818880888Z-3d7030abcb60e950e59e442cf9d38d7b` at exact source `d84b1abcfa7bbe7ca0d990344c43f9e4a26f13f9` proved distinct Station binding, Direct create/reopen, canonical Group commit, and both Alice sender `PUBLIC_EVENT` and Bob recipient `MLS_WELCOME` projections. The first failure advances to `transcript.thread.ui`: ordinary command preparation re-resolves remote Bob through station-four's local-only Actor Device table instead of fresh MP-D19 signed endpoint manifests. Runtime cleanup is `DONE/PROVEN`; complete Product Closure, cross-Station receipt closure, and PostgreSQL contention remain `UNPROVEN` pending the Conversation owner correction and exact-source rerun. |
 | CA-W7 Completion/docs/knowledge audit | pending | — |
 
 ## 14. Risks And Escalation
@@ -626,19 +626,19 @@ matrices. Local/static success cannot replace native receiver proof.
 Plan state: `PLAN_APPROVED`. CA-W0 through CA-W5 have a committed source
 checkpoint. The CA-W6 MP-D19 and Desktop Direct projection-role corrections are
 committed and exact-source Windows evidence now proves deterministic Direct
-create/reopen and the canonical Group authority commit. The current
-`group.create.ui` failure is isolated to the Desktop Device Messaging Engine:
-it does not accept or delegate the committed Group-created sender
-`PUBLIC_EVENT` into the canonical Conversation state projection. AO-D07 has one
-generated wire contract, one Conversation production owner, resource-owned
-Actor/Recovery/Key Exchange services, shared Federation transport, migrated
-Desktop/Mobile consumers, and zero legacy Messaging/Envelope/engine ownership
-diagnostics. CA-W6 runtime proof and CA-W7 remain open. The Acceptance Gap
-Detector keeps completion `UNPROVEN` because the required native
-receiver/runtime cells have not passed against the corrected source. Production
-two-Station convergence, complete Windows native receiver behavior, and
-PostgreSQL contention evidence remain `UNPROVEN`; the source checkpoint does
-not substitute for those runtime gates.
+create/reopen, the canonical Group authority commit, and both Group-genesis
+client projections. The current `transcript.thread.ui` failure is isolated to
+ordinary Conversation command preparation: the authority re-reads every member
+through its local Actor Device table instead of using fresh MP-D19 signed
+endpoint routes. AO-D07 has one generated wire contract, one Conversation
+production owner, resource-owned Actor/Recovery/Key Exchange services, shared
+Federation transport, migrated Desktop/Mobile consumers, and zero legacy
+Messaging/Envelope/engine ownership diagnostics. CA-W6 runtime proof and CA-W7
+remain open. The Acceptance Gap Detector keeps completion `UNPROVEN` because
+the required native receiver/runtime cells have not passed against the
+corrected source. Production two-Station convergence, complete Windows native
+receiver behavior, and PostgreSQL contention evidence remain `UNPROVEN`; the
+source checkpoint does not substitute for those runtime gates.
 
 CA-W6 rerun
 `20260908T013805491929Z-5d8f7a0c6d64aec300b72900a1ecd09c`
@@ -761,3 +761,76 @@ compile failures, while production compilation passes. CA-W6 remains
 `PARTIAL/UNPROVEN`; the next action is local commit, exact-source deployment,
 and Product Closure-only rerun. Bob's authority-local receipt rejection remains
 separate and unresolved until the rerun reaches that later boundary.
+
+CA-W6 rerun
+`20260908T074818880888Z-3d7030abcb60e950e59e442cf9d38d7b`
+at exact source `d84b1abcfa7bbe7ca0d990344c43f9e4a26f13f9`,
+Windows binary SHA-256
+`a1b26bc35ab9a867c4804f49beec15cbc4574f919ccb92e22bc12dc271f4057a`,
+proves the complete Group-genesis client correction. Alice and Bob both
+project the committed Group with ready MLS state, so `group.create.ui` passes.
+The first failure advances to `transcript.thread.ui`: Alice's first Group
+message remains a retryable local draft with
+`messaging_send_outcome:not_queued:draft`.
+
+station-four returns HTTP 400 during ordinary command preparation. Its locked
+Conversation aggregate contains both active members and their correct Home
+Stations, while its Actor Device table correctly contains only local Alice.
+`PrepareCommand` and ordinary command submission nevertheless re-resolve the
+complete member set through that local-only table, discarding the accepted
+MP-D19 signed route source and making remote Bob appear absent.
+
+The owner-layer correction is to resolve fresh signed endpoint manifests before
+ordinary prepare/submit, pass canonical verified routes into the Conversation
+application service, and revalidate the exact active actor set against the
+locked aggregate. Local callers retain Actor Identity device authorization;
+federated callers bind the sender endpoint and aggregate member Home Station to
+the authenticated source Station. The same verified snapshot must drive
+delivery-plan validation and typed stale-plan recovery. No wire change, remote
+Actor shadow row, fallback, or Messaging facade is permitted.
+
+The run's aggregate is
+`20260908T074818777617Z-26a15dea2864b482b8b953c6dc1480f5`;
+its Windows cell is
+`20260908t074856709879z-2bbd5496ad908ba4`. Native runtime, source, binary,
+focus, input, screenshot, distinct Station binding, and cleanup evidence pass.
+Product Closure, station-five receipt closure, dependent Windows Gates, and
+PostgreSQL contention remain `PARTIAL/UNPROVEN`.
+
+The local Conversation correction now carries fresh signed endpoint routes
+through ordinary command preparation and submission. It resolves the current
+authority actor set before manifest lookup, then validates the exact actor and
+Home Station set again under the aggregate lock. Local senders retain
+identity-owned active-device authorization. Federated senders bind to the
+authenticated source Home Station and active Federation membership without
+requiring a remote Actor row in the authority Station's local device
+directory. One verified route snapshot drives required endpoints, delivery
+binding, submit validation, and stale-plan response construction.
+
+Focused tests cover the original remote-member-without-shadow-row failure,
+valid and invalid federated sender Home Station binding, inactive local sender,
+and missing, duplicate, extra, or Home-Station-drifted route snapshots. Full
+Conversation tests, the complete race suite, focused `go vet`, Go style,
+formatting, diff checks, and independent no-P0/P1 seam review pass. The local
+Chat Gates pass as:
+
+- `station-messaging-unit`
+  `20260908T091503099805Z-e1d8eee5933fb55f354fc918f1e20720`;
+- `messaging-platform-contract`
+  `20260908T091503099800Z-d4e451d77a221db6d4fa71bf34b08550`;
+- `desktop-check`
+  `20260908T091503099826Z-0bd166c2e358268379cac7a134cbb282`;
+- `chat-native-visible-static`
+  `20260908T091503099784Z-c43a202d98b5367637c3a4dee447480f`;
+- `station-api-ownership`
+  `20260908T091547372258Z-8496e2900a1a6143827ccd0c3b451d23`.
+
+CA-W6 remains `PARTIAL/UNPROVEN` until this correction is committed, deployed
+exactly to station-four, station-five, and sixwin, and Product Closure is
+rerun. Exact-range Acceptance plan
+`20260908T091939464338Z-58716024fc475e2b749e6389ed882355`
+matches all 12 changed paths, and local aggregate
+`20260908T092006472536Z-e2486e313e0f415be0402be559347726`
+passes the four approved Chat Gates plus `station-api-ownership`. Gap Detector
+keeps native/runtime and Acceptance-self scope `UNPROVEN`; these local results
+do not prove Product Closure.
