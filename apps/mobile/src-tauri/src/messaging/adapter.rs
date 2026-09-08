@@ -4892,6 +4892,19 @@ impl MlsInboundRepository for MobileMessagingStore {
         {
             return Err("mobile messaging MLS sender transition is incomplete".to_string());
         }
+        if let Some(projection) = commit.genesis_projection {
+            if !projection.active {
+                return Err(
+                    "mobile messaging MLS sender genesis projection must be active".to_string(),
+                );
+            }
+            validate_mls_projection(
+                projection,
+                commit.conversation_id,
+                commit.membership_epoch,
+                commit.mls_epoch,
+            )?;
+        }
         self.with_transaction(|transaction| {
             let result = MobileMessagingStore::commit_claimed_item(
                 transaction,
@@ -4912,7 +4925,7 @@ impl MlsInboundRepository for MobileMessagingStore {
                 commit.event_sequence,
                 commit.event_hash,
                 commit.previous_event_hash,
-                false,
+                commit.genesis_projection.is_some(),
             )?;
             let pending = transaction
                 .query_row(
@@ -4943,23 +4956,27 @@ impl MlsInboundRepository for MobileMessagingStore {
                 commit.mls_epoch,
                 commit.consumed_at_unix_ms,
             )?;
-            let conversation_changed = transaction
-                .execute(
-                    "UPDATE messaging_conversations
-                     SET membership_epoch = ?2, mls_epoch = ?3, updated_at_unix_ms = ?4
-                     WHERE conversation_id = ?1",
-                    params![
-                        commit.conversation_id,
-                        commit.membership_epoch,
-                        commit.mls_epoch,
-                        commit.consumed_at_unix_ms
-                    ],
-                )
-                .map_err(|error| error.to_string())?;
-            if conversation_changed != 1 {
-                return Err(
-                    "mobile messaging MLS conversation projection is unavailable".to_string(),
-                );
+            if let Some(projection) = commit.genesis_projection {
+                persist_mls_conversation(transaction, projection, commit.consumed_at_unix_ms)?;
+            } else {
+                let conversation_changed = transaction
+                    .execute(
+                        "UPDATE messaging_conversations
+                         SET membership_epoch = ?2, mls_epoch = ?3, updated_at_unix_ms = ?4
+                         WHERE conversation_id = ?1",
+                        params![
+                            commit.conversation_id,
+                            commit.membership_epoch,
+                            commit.mls_epoch,
+                            commit.consumed_at_unix_ms
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                if conversation_changed != 1 {
+                    return Err(
+                        "mobile messaging MLS conversation projection is unavailable".to_string(),
+                    );
+                }
             }
             for table in [
                 "messaging_local_commands",
@@ -6439,7 +6456,8 @@ mod tests {
     };
     use messaging_core::identity::generate_fresh_device_identity;
     use messaging_core::proto::chat::{
-        AttachmentEncryptionSuite, AttachmentNonceStrategy, DeviceConsumptionReceipt,
+        AttachmentEncryptionSuite, AttachmentNonceStrategy, ConversationKind,
+        DeviceConsumptionReceipt, MemberRole,
     };
 
     fn store() -> MobileMessagingStore {
@@ -7882,6 +7900,7 @@ mod tests {
                     session_state: b"committed-session",
                     membership_epoch: 2,
                     mls_epoch: 2,
+                    genesis_projection: None,
                     receipt_id: "receipt-transition",
                     receipt_bytes: b"receipt",
                     consumed_at_unix_ms: 52,
@@ -7898,6 +7917,127 @@ mod tests {
         assert_eq!(
             MlsInboundRepository::load_mls_session_state(&store, "group-1").unwrap(),
             Some(b"committed-session".to_vec())
+        );
+    }
+
+    #[test]
+    fn mls_sender_genesis_atomically_commits_projection_session_and_marker() {
+        let store = store();
+        MlsTransitionRepository::persist_mls_transition(
+            &store,
+            &MlsTransitionSendCommit {
+                logical_intent_id: None,
+                command_id: "genesis-command",
+                conversation_id: "group-genesis",
+                transition_id: "genesis-transition",
+                delivery_plan_sha256: &[7; 32],
+                command_bytes: b"genesis-command-bytes",
+                pending_transition_state: b"pending-genesis-state",
+                created_at_unix_ms: 100,
+            },
+        )
+        .unwrap();
+        MlsInboundRepository::persist_claimed_item(
+            &store,
+            "genesis-item",
+            "genesis-event",
+            "group-genesis",
+            1,
+            1,
+            &[8; 32],
+            b"genesis-delivery",
+            101,
+        )
+        .unwrap();
+        let projection = MlsConversationProjection {
+            conversation_id: "group-genesis".to_string(),
+            authority_station_id: "station-authority".to_string(),
+            federation_id: "federation-1".to_string(),
+            kind: ConversationKind::Group as i32,
+            name: "Genesis group".to_string(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![
+                MlsConversationMemberProjection {
+                    ptid: "ptid:alice".to_string(),
+                    role: MemberRole::Owner as i32,
+                },
+                MlsConversationMemberProjection {
+                    ptid: "ptid:bob".to_string(),
+                    role: MemberRole::Member as i32,
+                },
+            ],
+            membership_epoch: 1,
+            mls_epoch: 1,
+            active: true,
+            updated_at_unix_ms: 101,
+        };
+        let commit = MlsSenderTransitionReceiveCommit {
+            item_id: "genesis-item",
+            event_id: "genesis-event",
+            conversation_id: "group-genesis",
+            command_id: "genesis-command",
+            transition_id: "genesis-transition",
+            event_sequence: 1,
+            lane_sequence: 1,
+            consumer_epoch: 1,
+            payload_sha256: &[8; 32],
+            event_hash: &[9; 32],
+            previous_event_hash: &[],
+            session_state: b"committed-genesis-state",
+            membership_epoch: 1,
+            mls_epoch: 1,
+            genesis_projection: Some(&projection),
+            receipt_id: "genesis-receipt",
+            receipt_bytes: b"genesis-receipt-bytes",
+            consumed_at_unix_ms: 101,
+        };
+
+        assert_eq!(
+            MlsInboundRepository::commit_mls_sender_transition(&store, &commit).unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        assert_eq!(
+            MlsInboundRepository::commit_mls_sender_transition(&store, &commit).unwrap(),
+            ReceiveCommitResult::AlreadyCommitted
+        );
+        assert_eq!(
+            MlsInboundRepository::load_mls_session_state(&store, "group-genesis").unwrap(),
+            Some(b"committed-genesis-state".to_vec())
+        );
+        assert!(
+            MlsInboundRepository::pending_mls_transition(&store, "group-genesis")
+                .unwrap()
+                .is_none()
+        );
+        let conversations = MessagingRepository::conversation_projections(&store).unwrap();
+        assert_eq!(conversations.len(), 1);
+        assert_eq!(conversations[0].conversation_id, "group-genesis");
+        assert_eq!(conversations[0].federation_id, "federation-1");
+        assert_eq!(
+            MessagingRepository::lane_checkpoint(&store).unwrap(),
+            (1, 1)
+        );
+        let roles = store
+            .connection
+            .lock()
+            .unwrap()
+            .prepare(
+                "SELECT ptid, role FROM messaging_conversation_members
+                 WHERE conversation_id = ?1 ORDER BY ptid",
+            )
+            .unwrap()
+            .query_map(params!["group-genesis"], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            roles,
+            vec![
+                ("ptid:alice".to_string(), MemberRole::Owner as i32),
+                ("ptid:bob".to_string(), MemberRole::Member as i32),
+            ]
         );
     }
 

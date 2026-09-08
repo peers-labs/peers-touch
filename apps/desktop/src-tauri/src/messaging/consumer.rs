@@ -4,11 +4,13 @@ use super::{
 };
 use crate::domain::crypto::IdentityKeyPair;
 use crate::model::chat::{
-    conversation_event, DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
+    DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
     PreparedEndpointPayloadKind,
 };
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
-use messaging_core::inbox::ClaimedItemConsumer as CoreClaimedItemConsumer;
+use messaging_core::inbox::{
+    is_mls_sender_public_event, ClaimedItemConsumer as CoreClaimedItemConsumer,
+};
 use messaging_core::mls::group::MlsGroupManager;
 use messaging_core::mls::{
     MlsApplicationProcessor, MlsRetirementProcessor, MlsSenderTransitionProcessor,
@@ -113,15 +115,10 @@ impl ClaimedItemConsumer for MessagingItemConsumer {
                 self.mls_retirement.consume(item, consumer_epoch)
             }
             PreparedEndpointPayloadKind::PublicEvent => {
-                match delivery
-                    .event
-                    .as_ref()
-                    .and_then(|event| event.payload.as_ref())
-                {
-                    Some(conversation_event::Payload::MembershipTransitionCommitted(_)) => {
-                        self.mls_sender_transition.consume(item, consumer_epoch)
-                    }
-                    _ => self.public_event.consume(item, consumer_epoch),
+                if is_mls_sender_public_event(&delivery) {
+                    self.mls_sender_transition.consume(item, consumer_epoch)
+                } else {
+                    self.public_event.consume(item, consumer_epoch)
                 }
             }
             PreparedEndpointPayloadKind::ConversationState => {

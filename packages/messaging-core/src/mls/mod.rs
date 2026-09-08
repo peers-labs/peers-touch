@@ -390,9 +390,16 @@ mod test_support {
                     commit.session_state.to_vec(),
                 );
                 state.pending_transitions.remove(commit.conversation_id);
-                if let Some(projection) = state.conversations.get_mut(commit.conversation_id) {
+                if let Some(projection) = commit.genesis_projection {
+                    state
+                        .conversations
+                        .insert(commit.conversation_id.to_string(), projection.clone());
+                } else if let Some(projection) = state.conversations.get_mut(commit.conversation_id)
+                {
                     projection.membership_epoch = commit.membership_epoch;
                     projection.mls_epoch = commit.mls_epoch;
+                } else {
+                    return Err("test MLS conversation projection is unavailable".to_string());
                 }
                 Self::update_authority_head(
                     &mut state,

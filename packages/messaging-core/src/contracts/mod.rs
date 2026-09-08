@@ -309,6 +309,7 @@ pub struct MlsSenderTransitionReceiveCommit<'a> {
     pub session_state: &'a [u8],
     pub membership_epoch: i64,
     pub mls_epoch: i64,
+    pub genesis_projection: Option<&'a MlsConversationProjection>,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,

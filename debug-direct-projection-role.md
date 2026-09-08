@@ -258,3 +258,53 @@ ambiguous Federation context.
     `20260908T052652251946Z-cadf5f3daa35394f3e41015d0fd4b10e`.
 - Exact-source Windows verification of this mapper correction is pending; the
   debug session stays `[OPEN]`.
+
+## Iteration: Group Genesis Public Event
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| W | The mapper correction allows canonical Group creation to commit. | Confirmed | Exact-source run `20260908T053425400659Z-254d5079f8451a6c7bf7e9b08c3daab7` records successful `/conversation/group/prepare` and `/conversation/group` requests at source `0261490b07a8c278fbc8fdfa3f4c3775ddfaebd5`. |
+| X | Alice's local Group remains absent because authority creation still fails. | Rejected | The authority Group commits; the first client error is `messaging public-event payload type is unsupported`. |
+| Y | The creator's committed public marker is not accepted by the Device Messaging Engine public-event projection path. | Confirmed | Alice's runtime log records the unsupported payload during the immediate drain assist and every later lifecycle drain while the local list remains one Direct and zero Group conversations. |
+
+- Windows binary SHA-256:
+  `8c9ff3cca2cc02eff7a869cc06b9deb92e4ba4a2db173ccd046943afac32179b`.
+- First failed step: `group.create.ui`, with
+  `timed out waiting for Alice active MLS group`.
+- Cleanup is `DONE/PROVEN`.
+- The first dependency-ready correction is in the owning
+  Desktop/Messaging Core public-event projection path.
+- station-five's authority-local delivery commitment rejection for Bob's
+  consumption receipt is recorded as a secondary boundary and does not replace
+  the earlier Alice projection failure.
+- The debug session stays `[OPEN]`.
+
+## Group Genesis Client Consumption Fix
+
+- Portable dispatch now routes `PUBLIC_EVENT + ConversationCreatedFact` to the
+  MLS sender processor.
+- The sender processor validates the creator marker, exact pending transition,
+  canonical Group creation snapshot, and accepted OpenMLS endpoint set.
+- Genesis `MLS_WELCOME` processing accepts the same creation fact only when its
+  zero-to-one epochs, snapshot, recipient, payload commitment, and exact
+  OpenMLS leaves match.
+- Desktop and Mobile commit Group projection, member roles, MLS state,
+  authority head, lane cursor, consumption marker, receipt, sender command,
+  and pending-transition removal atomically.
+- Local verification:
+  - Messaging Core `107/107`;
+  - Mobile messaging adapter `23/23`;
+  - Desktop Rust production check and `pnpm mobile:check`;
+  - `station-messaging-unit`
+    `20260908T072215775592Z-46a8b065433b8339394218452ac84b25`;
+  - `messaging-platform-contract`
+    `20260908T072227303408Z-2aab2223b11cc5235715ea91cca5f39e`;
+  - `desktop-check`
+    `20260908T072300032308Z-bc2185c1bb191c6c9d5026d6da99278e`;
+  - `chat-native-visible-static`
+    `20260908T072343200814Z-8b5f20ed55b295c11643f1a16ff05e2a`;
+  - `mobile-contract-static`
+    `20260908T071348358555Z-938144a9c225a336cf59fcab73a40a19`;
+  - `station-api-ownership`
+    `20260908T071331641490Z-5b73d412392c16df2b7a0e9b3abbedb5`.
+- Exact-source Windows verification remains pending; the debug session stays
+  `[OPEN]`.
