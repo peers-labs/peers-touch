@@ -45,3 +45,6 @@ matrix tuple, timeout, or cleanup behavior changes.
 - Root fix: the scenario now returns its observed credential rejection as the
   `runtimeEvent`; the successful attestation remains responsible for the
   readback conversation and Turn identifiers.
+- Post-fix instrumentation now reports the actual outgoing `runtimeEvent` with
+  `runId=post-fix`, so the next exact-source run can compare the same return
+  boundary against the pre-fix J evidence without changing scenario behavior.

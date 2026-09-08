@@ -5460,28 +5460,29 @@ async function runFoundationCredentialMissingScenario(input: {
     facts.runtimeEvent,
     'foundationCredentialMissingRuntimeEvent',
   ) as unknown as FoundationRuntimeEventObservation;
+  const returnedRuntimeEvent = scenarioRuntimeEvent;
   await reportFoundationCredentialRuntimeEventDebug({
     scenarioEventType: scenarioRuntimeEvent.eventType,
     scenarioErrorType: scenarioRuntimeEvent.errorType,
     scenarioSourceTurnEmpty: scenarioRuntimeEvent.sourceTurnId === '',
     scenarioSourceSequence: scenarioRuntimeEvent.sourceSequence,
-    returnedEventType: attestation.runtimeEvent.eventType,
-    returnedErrorType: attestation.runtimeEvent.errorType ?? null,
-    returnedSourceTurnEmpty: attestation.runtimeEvent.sourceTurnId === '',
-    returnedSourceSequence: attestation.runtimeEvent.sourceSequence ?? null,
+    returnedEventType: returnedRuntimeEvent.eventType,
+    returnedErrorType: returnedRuntimeEvent.errorType ?? null,
+    returnedSourceTurnEmpty: returnedRuntimeEvent.sourceTurnId === '',
+    returnedSourceSequence: returnedRuntimeEvent.sourceSequence ?? null,
     eventIdsMatch:
-      scenarioRuntimeEvent.eventId === attestation.runtimeEvent.eventId,
+      scenarioRuntimeEvent.eventId === returnedRuntimeEvent.eventId,
     sourceConversationMatches:
       scenarioRuntimeEvent.sourceConversationId
-        === attestation.runtimeEvent.sourceConversationId,
+        === returnedRuntimeEvent.sourceConversationId,
     payloadHashesMatch:
-      scenarioRuntimeEvent.payloadHash === attestation.runtimeEvent.payloadHash,
+      scenarioRuntimeEvent.payloadHash === returnedRuntimeEvent.payloadHash,
   });
   return {
     conversationId: attestation.conversationId,
     turnId: attestation.turnId,
     durationMs: performance.now() - startedAt,
-    runtimeEvent: scenarioRuntimeEvent,
+    runtimeEvent: returnedRuntimeEvent,
     facts,
   };
 }
@@ -7967,7 +7968,7 @@ function reportFoundationCredentialRuntimeEventDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'base-credential-runtime-event',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId: 'J-M',
       location: 'harness.ts:runFoundationCredentialMissingScenario.return',
       msg: '[DEBUG] credential and returned runtime events compared',
