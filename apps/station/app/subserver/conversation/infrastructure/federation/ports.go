@@ -18,6 +18,15 @@ var ErrAuthorityResultCommandHashMismatch = errors.New(
 	"authority result command hash does not match persisted outgoing proposal",
 )
 
+var (
+	ErrDeliveryReceiptRejected = errors.New(
+		"delivery receipt was rejected by Conversation authority",
+	)
+	ErrDeliveryReceiptConflict = errors.New(
+		"delivery receipt conflicts with Conversation authority state",
+	)
+)
+
 // VerifiedActorDeviceKeyResolver reads identity-owned signing-key projections.
 // Implementations must not infer trust from Conversation membership or the
 // presence of an unverified actor_devices row.
@@ -95,6 +104,17 @@ type DeviceDeliveryPort interface {
 		transaction federationdelivery.Transaction,
 		intent conversationports.DeviceInboxIntent,
 		sourceAuthorityStationPeerID string,
+	) (bool, error)
+}
+
+// DeliveryReceiptPort applies a receipt at the Conversation authority. The
+// source Home Station is supplied only from the authenticated Federation frame.
+type DeliveryReceiptPort interface {
+	ApplyDeliveryReceipt(
+		ctx context.Context,
+		transaction federationdelivery.Transaction,
+		receipt *chatmodel.DeviceConsumptionReceipt,
+		sourceHomeStationPeerID string,
 	) (bool, error)
 }
 
