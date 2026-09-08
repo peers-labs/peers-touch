@@ -120,5 +120,37 @@ post-fix comparison.
 | H | Cached Station message projection does not recover the persisted cancellation reason. | Confirmed | Low | Reload receives the canonical typed payload and cancelled status while `errorDetail` is empty before replay. |
 | I | Snapshot projection applies the reason, then message merge or terminal settlement overwrites it. | Medium | Low | Snapshot reason is present and the operation matches, but the post-reconcile message loses `errorDetail`. |
 
+## Canonical Live Identity Recurrence
+
+- Exact-source checkpoint
+  `3a19f481598a3d38700c48d558c17ec8a80d864e` used Station
+  `chat-native-disposable` and Acceptance binary
+  `47b292e16b17e392b8d41d7a19fbfdddf25b3f43503d919ef9d7b04bc13722d9`;
+  embedded-WebDriver smoke passed.
+- Gate run
+  `20260908T064006111625Z-540667c6c92d0b09724b3153dcdb37e8`
+  failed first at Browser English `BASE-CANCELLED` on
+  `localizedCancellationVisible`. Outer run
+  `20260908T063953866706Z-cf56f38dddfb187663829e3a48a827cf`
+  completed `FAILED / PARTIAL / UNPROVEN`; inner and Provisioner cleanup both
+  passed with all client ports and storage released.
+- Runtime lines 1-5 reject localization, typed-error, visibility, and durable
+  reason regressions. Live, reload, and replay all show the expected localized
+  cancellation and replay retains `cancelled_by_user`.
+- The only mismatch is live message identity:
+  `recovered-turn_13a553436f19a81fac1f26b5` versus canonical Station message
+  `msg_2ebd0eb86a557920afef90e9` on reload and replay.
+- Root cause: the business Acceptance scenario manually called
+  `applyRecoveredTurnEvent` and sampled the intermediate projection without
+  executing the production runtime's terminal `reconcileRecoveredTurn` step.
+  With no Chat operation or canonical message loaded, the projection correctly
+  used its temporary recovery identity, making the canonical live assertion
+  timing-dependent.
+- Local correction: after applying the source-bound terminal event, the
+  scenario now executes `reconcileRecoveredTurn` with the same terminal status
+  and reason derivation as `chatRuntime`, then samples the receiver. This
+  changes no product runtime, assertion, tuple, timeout, or cleanup behavior.
+  Instrumentation remains active with `runId=post-fix`.
+
 The next run records only the F-I observation boundary. Product behavior,
 matrix tuples, assertions, timeouts, and cleanup remain unchanged.
