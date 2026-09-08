@@ -5,7 +5,7 @@ pub mod drain;
 pub mod public_event;
 pub mod receipt;
 
-pub use consumer::{MessagingItemConsumer, MlsItemConsumer};
+pub use consumer::{is_mls_sender_public_event, MessagingItemConsumer, MlsItemConsumer};
 pub use conversation_state::ConversationStateProcessor;
 pub use direct::DirectMessageProcessor;
 pub use drain::{
