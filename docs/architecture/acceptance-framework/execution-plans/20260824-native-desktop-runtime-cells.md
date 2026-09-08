@@ -3369,3 +3369,60 @@ covers all 34 changed paths. Gap Detector remains `UNPROVEN` because native
 Windows/Mobile receiver Gates are not yet source-bound to this dirty checkpoint.
 The projection correction is committed in the current source checkpoint. The next
 action is exact-source deployment, then a Product Closure-only rerun.
+
+The exact-source rerun
+`20260908T013805491929Z-5d8f7a0c6d64aec300b72900a1ecd09c`
+used commit `4ff3f78fb4c6a437aa6b1ed645dabab57ca9b57e` and Windows
+binary SHA-256
+`b144db724cc552c9c1c3fb7676670524e605a83629f737ae42c50c32ef3d0b54`.
+It proved both Station bindings, Direct create/reopen, and that Group submission
+now reaches `POST /conversation/group/prepare`. Station returned HTTP 400
+because Group preparation and KeyPackage reservation re-read remote Bob from
+the local-only Actor Device table instead of consuming the already verified
+MP-D19 signed endpoint routes. Cleanup is `DONE/PROVEN`.
+
+The owner-layer correction now resolves one signed endpoint-manifest snapshot
+before Group preparation, passes canonical server-derived routes into the
+application service, binds KeyPackage reservation to those routes, returns the
+same manifests to the client, and revalidates fresh signed routes before Group
+commit. The persisted authority plan binds both the complete signed manifest
+set and a stable directory-state hash that excludes only issuance and expiry
+timestamps. Exact command-receipt replay runs before plan loading or remote
+manifest resolution. `CreateGroupRequest` no longer accepts duplicate name or
+member inputs; Group identity, name, membership, routes, and reservations are
+derived from the persisted plan. The client still submits no trusted routing
+data.
+
+The final local checkpoint passes full Conversation and Key Exchange tests,
+their race-enabled suites, focused `go vet`, Go style, formatting, and diff
+checks. The source-bound local aggregate
+`20260908T032102443647Z-880042c6a33915570b610c7a94d90718`
+records these approved Chat Gates as passed:
+
+- `station-messaging-unit`:
+  `20260908T032102660098Z-e50d904fe0d9cf71f21637d628504b76`;
+- `messaging-platform-contract`:
+  `20260908T032105462748Z-fe0e66b26c2c04814cfbff0d47eeb9a1`;
+- `desktop-check`:
+  `20260908T032108283088Z-58efca7e594a079767761275bff4ee83`;
+- `chat-native-visible-static`:
+  `20260908T032117217481Z-8905e613c33b030e18e8075e6daf24ca`.
+
+Conditional `station-api-ownership` run
+`20260908T031556440970Z-1defc692da62374b13b9c5e23f453da2`,
+`acceptance-plan-self`
+`20260908T032126813248Z-e4ca70534fb193ca3afbb2552967daed`,
+and `acceptance-infra-validation`
+`20260908T032127507729Z-f8965fbf9a4804f9f0b4af91fd50a29a`
+also pass. Independent final seam review found no P0/P1 issue.
+
+Exact-range plan
+`20260908T031725199224Z-b69de6f2a0fd623271448cdfd5f91dd2`
+and Gap Detector
+`20260908T032208866291Z-5c6df6dd6c62ef049d94c8a0f8ef78ac`
+keep product proof `UNPROVEN`: Product Closure and the dependent Windows Gates
+have not run against this source. The unrelated
+`acceptance-runtime-provisioning-self` baseline also remains failed on
+Agent-specific stale expectations and launch-context/port-4445 failures. The
+next action remains checkpoint commit, exact-source deployment, and a
+Product Closure-only rerun.

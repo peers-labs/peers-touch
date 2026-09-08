@@ -193,23 +193,46 @@ func (s *subServer) handlePrepareGroup(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
+	actors := uniqueProductionActors(
+		append(append([]valueobject.PTID(nil), members...), owner.Actor),
+	)
+	manifests, err := s.productionEndpointManifests(ctx, actors)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	verifiedRoutes, err := productionEndpointRoutesFromManifests(
+		manifests,
+		actors,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	manifestSetHash, manifestStateHash, err := productionEndpointManifestSetHashes(
+		manifests,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
 	plan, err := s.composition.CommandService.PrepareGroup(
 		ctx,
 		command.PrepareGroupRequest{
-			ConversationID: conversationID,
-			FederationID:   federationID,
-			AuthorityEpoch: initialConversationAuthorityEpoch,
-			Name:           request.GetName(),
-			Owner:          owner,
-			Members:        members,
-			TTL:            defaultAuthorityPlanTTL,
+			ConversationID:    conversationID,
+			FederationID:      federationID,
+			AuthorityEpoch:    initialConversationAuthorityEpoch,
+			Name:              request.GetName(),
+			Owner:             owner,
+			Members:           members,
+			VerifiedRoutes:    verifiedRoutes,
+			ManifestSetHash:   manifestSetHash,
+			ManifestStateHash: manifestStateHash,
+			TTL:               defaultAuthorityPlanTTL,
 		},
 	)
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
 
-	return s.productionGroupPlanResponse(ctx, plan)
+	return s.productionGroupPlanResponse(plan, manifests), nil
 }
 
 func (s *subServer) handleCreateGroupConversation(
@@ -236,6 +259,33 @@ func (s *subServer) handleCreateGroupConversation(
 		return nil, server.BadRequest(
 			"Conversation group creation requires a membership transition",
 		)
+	}
+	exactBytes, err := deterministicProductionProto(wireCommand)
+	if err != nil {
+		return nil, err
+	}
+	conversationID, err := valueobject.NewConversationID(
+		wireCommand.GetConversationId(),
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	commandID, err := valueobject.NewCommandID(wireCommand.GetCommandId())
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	replayedResult, replayed, err := s.composition.CommandService.ReplayGroupCreation(
+		ctx,
+		conversationID,
+		commandID,
+		exactBytes,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	if replayed {
+		response, replayErr := productionGroupCreationResponse(replayedResult)
+		return response, mapProductionConversationError(ctx, replayErr)
 	}
 	plan, err := s.loadAuthorityPlan(
 		ctx,
@@ -264,18 +314,29 @@ func (s *subServer) handleCreateGroupConversation(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
-	exactBytes, err := deterministicProductionProto(wireCommand)
+	actors := productionPlanActors(plan)
+	manifests, err := s.productionEndpointManifests(
+		ctx,
+		actors,
+	)
 	if err != nil {
-		return nil, err
+		return nil, mapProductionConversationError(ctx, err)
 	}
-	members := productionGenesisMembers(plan)
+	verifiedRoutes, err := productionEndpointRoutesFromManifests(manifests, actors)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	_, manifestStateHash, err := productionEndpointManifestSetHashes(manifests)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
 	result, err := s.composition.CommandService.CreateGroup(
 		ctx,
 		command.CreateGroupRequest{
 			ConversationID:    mapped.Command.ConversationID,
-			Name:              plan.PreparedName,
 			Owner:             owner,
-			Members:           members,
+			VerifiedRoutes:    verifiedRoutes,
+			ManifestStateHash: manifestStateHash,
 			CommandID:         mapped.Command.ID,
 			AuthorityPlanID:   plan.ID,
 			AuthorityPlanHash: plan.Hash,
@@ -296,11 +357,17 @@ func (s *subServer) handleCreateGroupConversation(
 			),
 		)
 	}
+	response, err := productionGroupCreationResponse(result)
+	return response, mapProductionConversationError(ctx, err)
+}
+
+func productionGroupCreationResponse(
+	result command.Result,
+) (*chatmodel.CreateGroupConversationResponse, error) {
 	event, err := conversationhttp.MapEvent(result.Event)
 	if err != nil {
-		return nil, mapProductionConversationError(ctx, err)
+		return nil, err
 	}
-
 	return &chatmodel.CreateGroupConversationResponse{
 		Conversation: productionConversation(result.Conversation),
 		Event:        event,
@@ -1075,17 +1142,9 @@ func productionCommandPreparation(
 }
 
 func (s *subServer) productionGroupPlanResponse(
-	ctx context.Context,
 	plan entity.AuthorityPlan,
-) (*chatmodel.PrepareConversationGroupResponse, error) {
-	manifests, err := s.productionEndpointManifests(
-		ctx,
-		productionPlanActors(plan),
-	)
-	if err != nil {
-		return nil, err
-	}
-
+	manifests []*actormodel.ActorEndpointManifest,
+) *chatmodel.PrepareConversationGroupResponse {
 	return &chatmodel.PrepareConversationGroupResponse{
 		AuthorityPlanId:        string(plan.ID),
 		ExpiresAt:              timestamppb.New(plan.ExpiresAt.UTC()),
@@ -1094,7 +1153,7 @@ func (s *subServer) productionGroupPlanResponse(
 		ReservedKeyPackages:    productionPlanKeyPackageReservations(plan),
 		EndpointManifests:      manifests,
 		AuthorityPlanSha256:    plan.Hash.Bytes(),
-	}, nil
+	}
 }
 
 func (s *subServer) productionMembershipPlanResponse(
@@ -1239,7 +1298,56 @@ func (s *subServer) productionEndpointRoutes(
 	if err != nil {
 		return nil, err
 	}
+	return productionEndpointRoutesFromManifests(manifests, actors)
+}
 
+func productionEndpointManifestSetHashes(
+	manifests []*actormodel.ActorEndpointManifest,
+) (valueobject.Hash, valueobject.Hash, error) {
+	if len(manifests) == 0 {
+		return valueobject.Hash{}, valueobject.Hash{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeActorKeyUnavailable,
+			"production_http.endpoint_manifest_set_hash",
+			"manifests",
+			"is empty",
+		)
+	}
+	canonical := append([]*actormodel.ActorEndpointManifest(nil), manifests...)
+	sort.Slice(canonical, func(left int, right int) bool {
+		return canonical[left].GetActor().GetPtid() <
+			canonical[right].GetActor().GetPtid()
+	})
+	bindingFields := [][]byte{
+		[]byte("peers-touch/conversation-endpoint-manifest-set"),
+	}
+	stateFields := [][]byte{
+		[]byte("peers-touch/conversation-endpoint-manifest-state"),
+	}
+	for _, manifest := range canonical {
+		signingInput := productionEndpointManifestSigningInput(manifest)
+		signingBytes, err := deterministicProductionProto(signingInput)
+		if err != nil {
+			return valueobject.Hash{}, valueobject.Hash{}, err
+		}
+		bindingFields = append(bindingFields, signingBytes)
+		stateInput := proto.Clone(signingInput).(*actormodel.ActorEndpointManifestSigningInput)
+		stateInput.IssuedAt = nil
+		stateInput.ExpiresAt = nil
+		stateBytes, err := deterministicProductionProto(stateInput)
+		if err != nil {
+			return valueobject.Hash{}, valueobject.Hash{}, err
+		}
+		stateFields = append(stateFields, stateBytes)
+	}
+	return valueobject.HashBytes(valueobject.CanonicalTuple(bindingFields...)),
+		valueobject.HashBytes(valueobject.CanonicalTuple(stateFields...)),
+		nil
+}
+
+func productionEndpointRoutesFromManifests(
+	manifests []*actormodel.ActorEndpointManifest,
+	actors []valueobject.PTID,
+) ([]ports.EndpointRoute, error) {
 	routes := make([]ports.EndpointRoute, 0)
 	for _, manifest := range manifests {
 		homeStation := valueobject.StationID(manifest.GetHomeStationPeerId())
