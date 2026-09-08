@@ -14,10 +14,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Expected Signal |
 |----|------------|------------|--------|-----------------|
-| J | The scenario returns the post-cleanup attestation event instead of the credential rejection event. | High | Low | Returned event is `done` or belongs to the attestation conversation while facts contain the pre-admission `error`. |
-| K | Candidate role serialization mutates a correct credential event. | Medium | Low | Scenario return and facts match before serialization, but the Python role comparison differs. |
-| L | The Python oracle expects fields not emitted by the TypeScript scenario contract. | Low | Low | Scenario return and facts match, while the expected role contains a structurally different field set. |
-| M | Source-delivery identity or payload hashing diverges before role assembly. | Low | Low | Both events are credential errors but their source identity or payload hash differs. |
+| J | The scenario returns the post-cleanup attestation event instead of the credential rejection event. | Confirmed | Low | Runtime evidence showed scenario `error / PROVIDER_CREDENTIAL_MISSING` versus returned `done` from another conversation. |
+| K | Candidate role serialization mutates a correct credential event. | Rejected | Low | The mismatch already exists before candidate serialization. |
+| L | The Python oracle expects fields not emitted by the TypeScript scenario contract. | Rejected | Low | The oracle expectation matches `facts.runtimeEvent`; the top-level return was wrong. |
+| M | Source-delivery identity or payload hashing diverges before role assembly. | Rejected | Low | Event ID, conversation identity, and payload hash differ because the returned event is the attestation event. |
 
 The first change is instrumentation only. No scenario result, Gate assertion,
 matrix tuple, timeout, or cleanup behavior changes.
@@ -35,3 +35,13 @@ matrix tuple, timeout, or cleanup behavior changes.
   against J-M. Cleanup completed `DONE / PROVEN / passed`.
 - The probe has been relocated to
   `runFoundationCredentialMissingScenario` without changing scenario output.
+- Exact-source run
+  `20260908T033604748910Z-e1de9eda72f09ed1e723b09771320057`
+  captured:
+  - scenario event: `error / PROVIDER_CREDENTIAL_MISSING`,
+    empty source Turn, source sequence `0`;
+  - returned event: `done`, non-empty source Turn, different conversation,
+    event ID, and payload hash.
+- Root fix: the scenario now returns its observed credential rejection as the
+  `runtimeEvent`; the successful attestation remains responsible for the
+  readback conversation and Turn identifiers.
