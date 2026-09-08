@@ -117,7 +117,7 @@ func (s *subServer) handleCreateDirectConversation(
 	}
 	var verifiedRoutes []ports.EndpointRoute
 	if requiresVerifiedRoutes {
-		verifiedRoutes, err = s.productionEndpointRoutes(
+		verifiedRoutes, err = s.composition.productionEndpointRoutes(
 			ctx,
 			[]valueobject.PTID{endpoint.Actor, peer},
 		)
@@ -196,7 +196,7 @@ func (s *subServer) handlePrepareGroup(
 	actors := uniqueProductionActors(
 		append(append([]valueobject.PTID(nil), members...), owner.Actor),
 	)
-	manifests, err := s.productionEndpointManifests(ctx, actors)
+	manifests, err := s.composition.productionEndpointManifests(ctx, actors)
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
@@ -315,7 +315,7 @@ func (s *subServer) handleCreateGroupConversation(
 		return nil, mapProductionConversationError(ctx, err)
 	}
 	actors := productionPlanActors(plan)
-	manifests, err := s.productionEndpointManifests(
+	manifests, err := s.composition.productionEndpointManifests(
 		ctx,
 		actors,
 	)
@@ -401,10 +401,23 @@ func (s *subServer) handlePrepareCommand(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
+	verifiedRoutes, err := s.composition.productionCommandRoutes(
+		ctx,
+		s.composition.CommandService,
+		conversationID,
+		sender.Actor,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
 	preparation, err := s.composition.CommandService.PrepareCommand(
 		ctx,
-		conversationID,
-		sender,
+		command.PrepareCommandRequest{
+			ConversationID:    conversationID,
+			Sender:            sender,
+			SenderHomeStation: s.localStation,
+			VerifiedRoutes:    verifiedRoutes,
+		},
 	)
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
@@ -480,13 +493,29 @@ func (s *subServer) handleSubmitAuthorityCommand(
 			"Conversation command or signed proposal is required",
 		)
 	}
-	preparation, err := s.localCommandPreparation(ctx, authenticated, wireCommand)
+	preparation, verifiedRoutes, err := s.localCommandPreparation(
+		ctx,
+		authenticated,
+		wireCommand,
+	)
 	if err != nil {
-		return productionCommandRejection(ctx, s, wireCommand, err), nil
+		return productionCommandRejection(
+			ctx,
+			s,
+			wireCommand,
+			verifiedRoutes,
+			err,
+		), nil
 	}
 	plan, err := s.commandAuthorityPlan(ctx, wireCommand)
 	if err != nil {
-		return productionCommandRejection(ctx, s, wireCommand, err), nil
+		return productionCommandRejection(
+			ctx,
+			s,
+			wireCommand,
+			verifiedRoutes,
+			err,
+		), nil
 	}
 	mapped, err := conversationhttp.MapSubmitCommand(
 		authenticated,
@@ -496,11 +525,26 @@ func (s *subServer) handleSubmitAuthorityCommand(
 		s.composition.clock.Now(),
 	)
 	if err != nil {
-		return productionCommandRejection(ctx, s, wireCommand, err), nil
+		return productionCommandRejection(
+			ctx,
+			s,
+			wireCommand,
+			verifiedRoutes,
+			err,
+		), nil
+	}
+	if mapped.Membership == nil {
+		mapped.VerifiedRoutes = verifiedRoutes
 	}
 	result, err := s.composition.CommandService.Submit(ctx, mapped)
 	if err != nil {
-		return productionCommandRejection(ctx, s, wireCommand, err), nil
+		return productionCommandRejection(
+			ctx,
+			s,
+			wireCommand,
+			verifiedRoutes,
+			err,
+		), nil
 	}
 	if result.PostCommitError != nil {
 		return nil, mapProductionConversationError(
@@ -1010,11 +1054,11 @@ func (s *subServer) localCommandPreparation(
 	ctx context.Context,
 	authenticated conversationhttp.AuthenticatedActor,
 	wireCommand *chatmodel.ChatCommand,
-) (aggregate.CommandPreparation, error) {
+) (aggregate.CommandPreparation, []ports.EndpointRoute, error) {
 	if wireCommand.GetSender() == nil ||
 		wireCommand.GetSender().GetPtid() != authenticated.PTID ||
 		wireCommand.GetSender().GetDeviceId() != authenticated.DeviceID {
-		return aggregate.CommandPreparation{}, conversationdomain.NewError(
+		return aggregate.CommandPreparation{}, nil, conversationdomain.NewError(
 			conversationdomain.ErrorCodeUnauthorized,
 			"production_http.prepare_local_command",
 			"sender",
@@ -1022,7 +1066,7 @@ func (s *subServer) localCommandPreparation(
 		)
 	}
 	if wireCommand.GetAuthorityStationPeerId() != string(s.localStation) {
-		return aggregate.CommandPreparation{}, conversationdomain.NewError(
+		return aggregate.CommandPreparation{}, nil, conversationdomain.NewError(
 			conversationdomain.ErrorCodeStaleAuthorityHead,
 			"production_http.prepare_local_command",
 			"authority_station_peer_id",
@@ -1033,17 +1077,34 @@ func (s *subServer) localCommandPreparation(
 		wireCommand.GetConversationId(),
 	)
 	if err != nil {
-		return aggregate.CommandPreparation{}, err
+		return aggregate.CommandPreparation{}, nil, err
 	}
 	sender, err := valueobject.NewEndpoint(
 		authenticated.PTID,
 		authenticated.DeviceID,
 	)
 	if err != nil {
-		return aggregate.CommandPreparation{}, err
+		return aggregate.CommandPreparation{}, nil, err
 	}
-
-	return s.composition.CommandService.PrepareCommand(ctx, conversationID, sender)
+	verifiedRoutes, err := s.composition.productionCommandRoutes(
+		ctx,
+		s.composition.CommandService,
+		conversationID,
+		sender.Actor,
+	)
+	if err != nil {
+		return aggregate.CommandPreparation{}, nil, err
+	}
+	preparation, err := s.composition.CommandService.PrepareCommand(
+		ctx,
+		command.PrepareCommandRequest{
+			ConversationID:    conversationID,
+			Sender:            sender,
+			SenderHomeStation: s.localStation,
+			VerifiedRoutes:    verifiedRoutes,
+		},
+	)
+	return preparation, verifiedRoutes, err
 }
 
 func (s *subServer) commandAuthorityPlan(
@@ -1089,6 +1150,7 @@ func productionCommandRejection(
 	ctx context.Context,
 	s *subServer,
 	wireCommand *chatmodel.ChatCommand,
+	verifiedRoutes []ports.EndpointRoute,
 	err error,
 ) *chatmodel.SubmitConversationAuthorityCommandResponse {
 	response := &chatmodel.SubmitConversationAuthorityCommandResponse{
@@ -1110,8 +1172,12 @@ func productionCommandRejection(
 		if idErr == nil && senderErr == nil {
 			if current, prepareErr := s.composition.CommandService.PrepareCommand(
 				ctx,
-				conversationID,
-				sender,
+				command.PrepareCommandRequest{
+					ConversationID:    conversationID,
+					Sender:            sender,
+					SenderHomeStation: s.localStation,
+					VerifiedRoutes:    verifiedRoutes,
+				},
 			); prepareErr == nil {
 				response.CurrentPlan = productionCommandPreparation(
 					conversationID,
@@ -1160,7 +1226,7 @@ func (s *subServer) productionMembershipPlanResponse(
 	ctx context.Context,
 	plan entity.AuthorityPlan,
 ) (*chatmodel.PrepareConversationMembershipResponse, error) {
-	manifests, err := s.productionEndpointManifests(
+	manifests, err := s.composition.productionEndpointManifests(
 		ctx,
 		productionPlanActors(plan),
 	)
@@ -1186,14 +1252,14 @@ func (s *subServer) productionMembershipPlanResponse(
 	}, nil
 }
 
-func (s *subServer) productionEndpointManifests(
+func (c *ProductionComposition) productionEndpointManifests(
 	ctx context.Context,
 	actors []valueobject.PTID,
 ) ([]*actormodel.ActorEndpointManifest, error) {
 	canonicalActors := uniqueProductionActors(actors)
 	manifests := make([]*actormodel.ActorEndpointManifest, 0, len(canonicalActors))
 	for _, actor := range canonicalActors {
-		homeStationValue, err := s.composition.ActorCapabilities.
+		homeStationValue, err := c.ActorCapabilities.
 			ResolveActorHomeStationPeerID(ctx, string(actor))
 		if err != nil {
 			return nil, err
@@ -1214,14 +1280,14 @@ func (s *subServer) productionEndpointManifests(
 			},
 		}
 		response := &actormodel.GetActorEndpointManifestResponse{}
-		if homeStation == s.localStation {
-			response, err = s.composition.ActorCapabilities.GetEndpointManifest(
+		if homeStation == c.localStation {
+			response, err = c.ActorCapabilities.GetEndpointManifest(
 				ctx,
-				string(s.localStation),
+				string(c.localStation),
 				request,
 			)
 		} else {
-			runtime, resolveErr := s.composition.FederationRuntime()
+			runtime, resolveErr := c.FederationRuntime()
 			if resolveErr != nil {
 				return nil, resolveErr
 			}
@@ -1229,11 +1295,11 @@ func (s *subServer) productionEndpointManifests(
 				TargetStationPeerID: string(homeStation),
 				Route: sharedfederation.
 					PeerRouteActorEndpointManifest,
-				Subject: string(s.localStation),
+				Subject: string(c.localStation),
 				Claims: map[string]string{
 					sharedfederation.ClaimActorPTID: string(actor),
 					sharedfederation.ClaimSourceStationPeerID: string(
-						s.localStation,
+						c.localStation,
 					),
 					sharedfederation.ClaimTargetStationPeerID: string(
 						homeStation,
@@ -1247,16 +1313,16 @@ func (s *subServer) productionEndpointManifests(
 			return nil, mapProductionConversationError(ctx, err)
 		}
 		manifest := response.GetManifest()
-		if validateErr := s.composition.ActorCapabilities.ValidateEndpointManifest(
+		if validateErr := c.ActorCapabilities.ValidateEndpointManifest(
 			manifest,
 			string(actor),
 			string(homeStation),
-			s.composition.clock.Now(),
+			c.clock.Now(),
 		); validateErr != nil {
 			return nil, validateErr
 		}
-		if homeStation != s.localStation {
-			runtime, resolveErr := s.composition.FederationRuntime()
+		if homeStation != c.localStation {
+			runtime, resolveErr := c.FederationRuntime()
 			if resolveErr != nil {
 				return nil, resolveErr
 			}
@@ -1277,7 +1343,7 @@ func (s *subServer) productionEndpointManifests(
 				return nil, verifyErr
 			}
 		}
-		if acceptErr := s.composition.ActorCapabilities.
+		if acceptErr := c.ActorCapabilities.
 			AcceptVerifiedEndpointManifest(ctx, manifest); acceptErr != nil {
 			return nil, acceptErr
 		}
@@ -1290,15 +1356,43 @@ func (s *subServer) productionEndpointManifests(
 	return manifests, nil
 }
 
-func (s *subServer) productionEndpointRoutes(
+func (c *ProductionComposition) productionEndpointRoutes(
 	ctx context.Context,
 	actors []valueobject.PTID,
 ) ([]ports.EndpointRoute, error) {
-	manifests, err := s.productionEndpointManifests(ctx, actors)
+	manifests, err := c.productionEndpointManifests(ctx, actors)
 	if err != nil {
 		return nil, err
 	}
 	return productionEndpointRoutesFromManifests(manifests, actors)
+}
+
+func (c *ProductionComposition) productionCommandRoutes(
+	ctx context.Context,
+	service *command.Service,
+	conversationID valueobject.ConversationID,
+	sender valueobject.PTID,
+) ([]ports.EndpointRoute, error) {
+	if service == nil {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"production_http.command_routes",
+			"command_service",
+			"is required",
+		)
+	}
+	actors, err := service.CommandRouteActors(ctx, conversationID, sender)
+	if err != nil {
+		return nil, err
+	}
+	return c.productionEndpointRoutes(ctx, actors)
+}
+
+func (s *subServer) productionEndpointRoutes(
+	ctx context.Context,
+	actors []valueobject.PTID,
+) ([]ports.EndpointRoute, error) {
+	return s.composition.productionEndpointRoutes(ctx, actors)
 }
 
 func productionEndpointManifestSetHashes(

@@ -454,7 +454,8 @@ func newProductionManifestTestServer(
 			FederationRuntime: func() (ProductionFederationRuntime, error) {
 				return runtime, nil
 			},
-			clock: productionManifestTestClock{now: productionManifestTestTime},
+			localStation: productionManifestTestLocalStation,
+			clock:        productionManifestTestClock{now: productionManifestTestTime},
 		},
 	}
 }
