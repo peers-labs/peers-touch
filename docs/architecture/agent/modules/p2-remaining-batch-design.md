@@ -40,15 +40,18 @@
 
 ## M3: Image Generation
 
-**v1 Scope**: Register `generate_image` as a built-in tool. When AI calls it, Station uses provider to generate, returns URL. Frontend renders image in message.
-
-**Decision**: This requires provider-side DALL-E integration which is a Station service concern beyond P2 scope. For P2, we ensure the **rendering** infrastructure handles image URLs in assistant messages (already done via M1 markdown with `enableImageGallery: true`). Tool registration deferred to P3.
+**Decision**: Image generation is not a Peers-Touch capability. Generic
+rendering of image URLs remains supported, but no generation tool, provider
+integration, configuration surface, or future Peers phase is planned.
 
 ---
 
 ## M4: Video Generation  
 
-**Decision**: Same rationale as M3. Provider-side video gen integration deferred to P3. Markdown rendering already handles video embeds.
+**Decision**: Video generation is not a Peers-Touch capability, matching M3.
+Generic rendering of externally supplied video remains supported. Any future
+video-generation product must be implemented as a separate project with its
+own product contract.
 
 ---
 
@@ -57,7 +60,7 @@
 | Module | Action | Files Changed |
 |--------|--------|---------------|
 | M2 | Add ReadAloud action | types.ts, registry.ts, AssistantMessage.tsx, locales |
-| M3 | Mark as P2-complete (rendering ready, tool deferred to P3) | tracker only |
-| M4 | Mark as P2-complete (rendering ready, tool deferred to P3) | tracker only |
+| M3 | Keep generic image rendering; reject Peers image generation | tracker only |
+| M4 | Keep generic video rendering; reject Peers video generation | tracker only |
 | M6 | Add Export action | types.ts, registry.ts, AssistantMessage.tsx, locales |
 | M7 | Already integrated | tracker only |
