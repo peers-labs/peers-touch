@@ -62,7 +62,9 @@ Required:
 Non-scope:
 
 - Image generation.
-- Video and server-side audio generation.
+- Video generation, which is permanently unsupported in Peers-Touch and belongs
+  to a separate project if ever pursued; server-side audio generation remains
+  deferred.
 - Mobile UI.
 - Commercial Community/marketplace/subscription behavior.
 - Any successor independent Custom HTTP Plugin product; retirement of the
@@ -250,7 +252,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `ea6987d749461e2dd4c070db692921a41e718ba1` aligned the AS-F06 request/post-cut cursor boundary, then exposed a later replay-segment versus Station-terminal-tail mismatch and lost cross-restart transition evidence in run `20260907T175903309291Z-bbb13892aeae6e86ab4686cb5db3f0b9`. The bounded-segment and durable-transition correction is local and pending checkpoint deployment plus the unchanged 419-cell rerun. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `850f2cf4bc79861a10fac4d3807af575ed41ef4c` passed `BASE-CANCELLED` in both locales and advanced the first failure to Browser English `BASE-CREDENTIAL_MISSING`, where the runtime-events role does not match the observed pre-admission rejection. Instrumentation checkpoint `d748286d81a025443be74d8b70d37b38ea992f9e` is pending exact-source deployment and reproduction. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6176,6 +6178,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   reconciliation applies then loses the reason. No product behavior, matrix
   tuple, assertion, timeout, or cleanup contract has changed. Provisioner
   cleanup completed `DONE / PROVEN / passed`; Foundation/G-F remain
+  `PARTIAL / UNPROVEN`.
+- Instrumentation checkpoint
+  `850f2cf4bc79861a10fac4d3807af575ed41ef4c` was deployed exact-source.
+  After explicit approved-profile, restart, and disposable authorizations,
+  run `20260908T015247020995Z-4aa11d3693dab48fb75cc27f020960aa`
+  passed `BASE-CANCELLED` in English and Simplified Chinese. Runtime evidence
+  rejected snapshot omission, operation-guard rejection, and post-reconcile
+  overwrite: both snapshots carried `cancelled_by_user`, both operations
+  matched, and both replay projections retained the reason. Durable message
+  reload still omits `errorDetail`, but did not block this run. The first
+  source-backed failure advanced to Browser English
+  `BASE-CREDENTIAL_MISSING`: its `runtime-events` role does not match the
+  observed terminal event. Static inspection shows the scenario facts retain
+  the pre-admission credential rejection while the top-level scenario result
+  returns the later cleanup-attestation Turn event. Checkpoint
+  `d748286d81a025443be74d8b70d37b38ea992f9e` adds J-M instrumentation at that
+  return boundary; exact-source deployment and reproduction are pending.
+  Cleanup completed `DONE / PROVEN / passed`; Foundation/G-F remain
   `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission

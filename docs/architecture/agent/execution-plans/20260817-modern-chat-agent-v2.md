@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v0.1
-> **Created**: 2026-08-17 | **Updated**: 2026-08-18
+> **Created**: 2026-08-17 | **Updated**: 2026-09-08
 > **Owner**: Peers-Touch Agent Team
 > **Plan type**: PRODUCT → DESIGN → PLAN → EXECUTE（Owner approval 已收到）
 > **Predecessor**: `20260816-lobehub-parity-full-landing.md`
@@ -61,7 +61,7 @@ Peers-Touch 的 Station 单一真源、Tauri capability kernel 和跨设备边�
 | ID | 决策 | 状态 | 影响 |
 |---|---|---|---|
 | V2-D01 | G1 Image Generation 长期不支持 | accepted | 从候选移入 unsupported；不得保留空入口或完成度债务 |
-| V2-D02 | G2 Video Generation 当前 V2 deferred | accepted | 当前产品 claim 不含视频生成；后续如重新立项必须重新经过 PRODUCT gate |
+| V2-D02 | G2 Video Generation 与 G1 相同，在 Peers-Touch 中长期 unsupported | accepted | Peers-Touch 不保留视频生成入口或未来阶段债务；如需该能力，由其它项目独立立项并建立自己的产品合同 |
 | V2-D03 | P3 Home 深度进入 V2 required scope | accepted | Home 从静态 landing 升级为可执行 Agent 入口 |
 | V2-D04 | Tool + MCP + Connector 进入 V2 required scope | accepted | 目标是统一能力平面与真实 Chat 执行闭环，不是重复 CRUD |
 | V2-D05 | 独立 Custom Plugin 产品不做 | accepted | X2 继续合并进 Tool/MCP/Connector，不保存独立 endpoint 凭据体系 |
@@ -134,7 +134,7 @@ confirmation 和独立 PRODUCT review 均已通过。
 | Evaluation Lab benchmark/dataset/case/run | adapt | 保留用户可见产品；Station 持有数据集、run、case result 和状态真源，Desktop 只投影与发命令 |
 | Custom HTTP plugins with local secrets | reject | 合并 Connector/MCP，凭证不进入 localStorage/chat trace |
 | Image generation | reject | 长期 unsupported，不进入产品 claim |
-| Video generation | defer | Owner 已确认当前 V2 不做；不计入当前 readiness claim |
+| Video generation | reject | Owner 已确认与 Image Generation 相同，不属于 Peers-Touch；未来只能由其它项目独立立项 |
 | Server-side TTS / audio generation | defer | Owner 已确认当前 V2 不做；不影响文本 Chat Agent readiness，G3a 本机朗读维持现状 |
 
 ## 6. 关键用户旅程
@@ -201,12 +201,12 @@ confirmation 和独立 PRODUCT review 均已通过。
 ### Explicitly Unsupported
 
 - G1 Image Generation；
+- G2 Video Generation；
 - 独立 Custom Plugins；
 - LobeHub Cloud Gateway、商业 Community/Store、托管订阅体系。
 
 ### Deferred
 
-- G2 Video Generation；
 - G3b server-side TTS 与其他音频生成能力；
 - Mobile UI；
 - Multi-Agent Canvas/Groups/Collaboration；
@@ -245,7 +245,7 @@ Deliverables:
 
 - 修订 `modern-chat-agent/product-definition.md` capability profile；
 - 修订 benchmark disposition、journeys、state model、acceptance matrix；
-- G1 标为 unsupported；G2/G3b 标为 deferred；
+- G1/G2 标为 unsupported；G3b 标为 deferred；
 - E1 已进入 required；Home scope 获得 Owner 决策；
 - Home、Tool、Evaluation states 的 executable prototype 已获 Owner confirmation。
 
@@ -479,11 +479,11 @@ Station readback 和 resource cleanup 必须单独产出 source-bound evidence�
 | MCP 进程/secret 泄漏 | 本地安全和资源残留 | Rust owner、redaction、bounded lifecycle、leak canary |
 | Connector 使用个人连接 | 验收污染 | 显式 approved fixture ID；禁止任意 connected fallback |
 | Prototype 与生产漂移 | UI 返工 | Phase 0 confirmed prototype + replica gate |
-| V2 scope 扩成完整 LobeHub | 无法收口 | G1/X2/商业生态明确 unsupported；G2/G3b 明确 deferred |
+| V2 scope 扩成完整 LobeHub | 无法收口 | G1/G2/X2/商业生态明确 unsupported；G3b 明确 deferred |
 
 ## 13. 进入实施前必须满足
 
-- [x] V2-Q01 音视频决策：当前 V2 不做；G2/G3b deferred，G3a 保持现状；
+- [x] V2-Q01 音视频决策：G2 与 G1 相同，在 Peers-Touch 中长期 unsupported；G3b deferred，G3a 保持现状；
 - [x] V2-Q02 E1 决策：用户可见 Evaluation Lab 进入 V2 required scope；
 - [x] V2-Q03 Home 深度与平台声明确认；
 - [x] Modern Chat Agent 产品文档矛盾消除；

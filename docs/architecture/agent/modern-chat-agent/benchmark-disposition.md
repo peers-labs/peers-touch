@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-17
+> **Created**: 2026-07-30 | **Updated**: 2026-09-08
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -61,6 +61,7 @@ Disposition meanings:
 | Expose raw private chain-of-thought as a trust promise | Provider policy and safety do not guarantee it |
 | Infer runtime/model capability from product names | Capability must be resolved and disclosed before execution |
 | Use local optimistic state as proof of durable completion | Product acceptance requires Station readback and runtime evidence |
+| Add image or video generation to Peers-Touch Agent | These are not Peers-Touch product capabilities; a future video product must be a separate project with its own product contract |
 
 ## 4. Coverage Judgment
 
@@ -74,7 +75,7 @@ The benchmark pass covers the required first-profile concerns:
 - Optional external Agent and artifact behavior.
 
 Home Command Center, unified capability governance, and Evaluation Lab are V2
-required scope. Image generation is unsupported. Video and server-side audio
-generation, Mobile UI, commercial marketplace/community behavior, and
-multi-Agent collaboration remain explicitly deferred rather than silently
-omitted.
+required scope. Image and video generation are unsupported in Peers-Touch.
+Server-side audio generation, Mobile UI, commercial marketplace/community
+behavior, and multi-Agent collaboration remain explicitly deferred rather than
+silently omitted.
