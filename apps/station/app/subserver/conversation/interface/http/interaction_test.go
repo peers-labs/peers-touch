@@ -30,6 +30,7 @@ type interactionApplicationStub struct {
 	typing     interaction.TypingPulse
 	readCursor interaction.ReadCursorRequest
 	receipt    interaction.DeliveryReceipt
+	forwarded  bool
 }
 
 func (s *interactionApplicationStub) SubmitTyping(
@@ -65,6 +66,9 @@ func (s *interactionApplicationStub) SubmitDeliveryReceipt(
 	receipt interaction.DeliveryReceipt,
 ) (interaction.DeliveryRecordResult, error) {
 	s.receipt = receipt
+	if s.forwarded {
+		return interaction.DeliveryRecordResult{Forwarded: true}, nil
+	}
 
 	return interaction.DeliveryRecordResult{
 		Aggregate: interaction.DeliveryAggregate{
@@ -187,6 +191,32 @@ func TestInteractionHandlerMapsCanonicalDeliveryReceipt(t *testing.T) {
 		response.GetDelivery().GetRequiredDeviceCount() != 2 ||
 		!response.GetDelivery().GetDelivered() {
 		t.Fatalf("receipt response=%+v mapped=%+v", response, stub.receipt)
+	}
+	stub.forwarded = true
+	forwarded, err := handler.SubmitDeliveryReceipt(
+		context.Background(),
+		conversationhttp.AuthenticatedActor{
+			PTID:     "ptid:bob",
+			DeviceID: "bob-1",
+		},
+		&chat.SubmitConversationDeliveryReceiptRequest{
+			Receipt: &chat.DeviceConsumptionReceipt{
+				ReceiptId:      "device-consumed:item-3",
+				ConversationId: "conversation-1",
+				EventId:        "event-3",
+				Consumer: &chat.CryptoEndpoint{
+					Ptid:     "ptid:bob",
+					DeviceId: "bob-1",
+				},
+				EventSequence: 3,
+				LaneSequence:  9,
+				PayloadSha256: payloadHash.Bytes(),
+				ConsumedAt:    timestamppb.New(interactionHandlerTestTime),
+			},
+		},
+	)
+	if err != nil || forwarded.GetDelivery() != nil {
+		t.Fatalf("forwarded receipt response=%+v error=%v", forwarded, err)
 	}
 
 	_, err = handler.SubmitDeliveryReceipt(

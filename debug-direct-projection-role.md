@@ -377,3 +377,60 @@ ambiguous Federation context.
   Acceptance-self gates; no local result is treated as Product Closure proof.
 - Exact-source Windows Product Closure remains pending; the debug session stays
   `[OPEN]`.
+
+## Iteration: Follower Delivery Receipt Return
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| AD | The MP-D19 signed-route correction lets Alice commit and deliver the first Group message to Bob. | Confirmed | Exact-source Product Closure run `20260908T095837802631Z-15c4c028e3e73cdfb50b88abc1af3ce6` records station-four authority sequence 2 and Bob's matching station-five device consumption. |
+| AE | Bob's reply reaches station-four but fails during sender projection. | Rejected | station-four has no Bob command receipt or post-sequence-2 event, and station-five has no outgoing Conversation authority-command frame. |
+| AF | station-five incorrectly applies an authority-local receipt commitment lookup to Bob's remotely sourced queue item. | Confirmed | Repeated `/conversation/delivery/receipt` submissions fail with `delivery_receipt_recorder.record: consumer: does not identify an expected authority delivery endpoint`. |
+| AG | The accepted Conversation/Federation architecture already defines the missing ownership path. | Confirmed by source | The public route remains `/conversation/delivery/receipt`; Conversation Delivery owns endpoint receipts; `DeliveryReceipt.SourceStation` and authority remote-receipt validation already exist; shared Federation owns durable cross-Station transport. |
+
+- Source:
+  `fbb4fb6b03a3bd65937f775414e4e4420b147df2`.
+- Acceptance aggregate:
+  `20260908T095837681852Z-2d30fd9817f778dab0df62adbefd12f4`.
+- Windows cell:
+  `20260908t095915889424z-7c0e3ce0ff8427d2`.
+- Windows binary SHA-256:
+  `e02c47fe5299cbdb13a28a2823c2659179e145d2726501b159284a274eab9647`.
+- Passed steps: `alice.launch`, `bob.launch`, `conversation.search.ui`,
+  `group.create.ui`, and Alice-to-Bob Group message delivery.
+- First failed step: `transcript.thread.ui`, with Alice timing out on
+  `w13-bob-60680`.
+- Cleanup is `DONE/PROVEN`.
+- The next correction must durably forward the exact Bob consumption receipt
+  from station-five to station-four, derive `SourceStation` from the
+  authenticated frame, preserve exact replay/conflict semantics, and let the
+  authority emit the existing `DEVICE_RECEIPT` aggregate to Alice.
+- No `/messaging/*` route, client-supplied authority route, fallback, duplicate
+  receipt store, or authority-local remote Actor row is permitted.
+- The debug session stays `[OPEN]`.
+
+## Follower Delivery Receipt Fix
+
+- Added one typed shared-Federation payload for the existing
+  `DeviceConsumptionReceipt`; `/conversation/delivery/receipt` remains the only
+  client route.
+- A follower validates and records the exact local consumed queue tuple, then
+  returns success only after the exact frame is in the durable Federation
+  outbox.
+- The authority derives the source Home Station from the authenticated frame,
+  pins it to the active Conversation member and follower authority, and reuses
+  the authority commitment/receipt ledger.
+- Receipt persistence and sender-facing local Device Inbox or remote Federation
+  delivery effects commit atomically.
+- Originator routes come from the immutable authority delivery commitments, so
+  a remote sender needs no authority-local Actor device row.
+- Exact replay is duplicate-safe; changed bytes conflict; same-event
+  multi-device receipts do not collide; replay repairs missing durable fan-out;
+  frame lifetime starts at Station admission rather than client consumption.
+- The realtime-only receipt publication path was removed.
+- Desktop lifecycle inspection proves outgoing receipt failure does not
+  short-circuit draft preparation or command dispatch; Bob's missing command
+  remains a separate runtime assertion for the next Product Closure run.
+- Local Gate aggregate:
+  `20260908T124713594514Z-380dca42bae140052b4e9df2105b3f13`.
+- Exact-source Windows Product Closure remains pending; the debug session stays
+  `[OPEN]`.

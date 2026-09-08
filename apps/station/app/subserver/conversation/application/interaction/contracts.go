@@ -66,9 +66,12 @@ type DeliveryAggregate struct {
 
 // DeliveryRecordResult contains the idempotent receipt result and original event author.
 type DeliveryRecordResult struct {
-	Aggregate  DeliveryAggregate
-	Originator valueobject.PTID
-	Replay     bool
+	Aggregate        DeliveryAggregate
+	MessageID        valueobject.MessageID
+	Originator       valueobject.PTID
+	OriginatorRoutes []EndpointRoute
+	Replay           bool
+	Forwarded        bool
 }
 
 // ConversationReader is implemented by the CA-W2 query service.
@@ -83,10 +86,6 @@ type ConversationReader interface {
 // DeviceDirectory exposes actor-owned device eligibility and routing.
 type DeviceDirectory interface {
 	IsActive(ctx context.Context, endpoint valueobject.Endpoint) (bool, error)
-	ListActiveEndpoints(
-		ctx context.Context,
-		actors []valueobject.PTID,
-	) ([]EndpointRoute, error)
 }
 
 // EndpointRoute identifies an active actor-owned endpoint and its Home Station.
@@ -113,6 +112,25 @@ type DeliveryReceiptRecorder interface {
 	) (DeliveryRecordResult, error)
 }
 
+// DeliveryReceiptCommitter records the authority receipt and all originator
+// Device Inbox/Federation effects atomically.
+type DeliveryReceiptCommitter interface {
+	CommitDeliveryReceipt(
+		ctx context.Context,
+		receipt DeliveryReceipt,
+	) (DeliveryRecordResult, error)
+}
+
+// DeliveryReceiptForwarder durably routes a follower-local receipt to the
+// Conversation authority. It returns true for an exact replay.
+type DeliveryReceiptForwarder interface {
+	ForwardDeliveryReceipt(
+		ctx context.Context,
+		authority valueobject.StationID,
+		receipt DeliveryReceipt,
+	) (bool, error)
+}
+
 // TypingPublisher emits only process-local realtime events.
 type TypingPublisher interface {
 	PublishTyping(
@@ -130,16 +148,6 @@ type TypingPulseLedger interface {
 		now time.Time,
 		minimumInterval time.Duration,
 	) (TypingResult, error)
-}
-
-// DeliveryPublisher durably enqueues one aggregate projection using the supplied idempotency key.
-type DeliveryPublisher interface {
-	PublishDeliveryAggregate(
-		ctx context.Context,
-		recipient valueobject.Endpoint,
-		aggregate DeliveryAggregate,
-		idempotencyKey string,
-	) error
 }
 
 // Clock supplies deterministic server time.

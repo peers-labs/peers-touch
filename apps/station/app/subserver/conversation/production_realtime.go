@@ -172,89 +172,6 @@ func (a *ProductionRealtimeAdapter) PublishTyping(
 	return nil
 }
 
-// PublishDeliveryAggregate durably publishes the complete typed delivery
-// projection to one originator device. The idempotency key is carried as the
-// stable notification identity so duplicate receipt submissions remain safe.
-func (a *ProductionRealtimeAdapter) PublishDeliveryAggregate(
-	ctx context.Context,
-	recipient valueobject.Endpoint,
-	aggregate interactionapp.DeliveryAggregate,
-	idempotencyKey string,
-) error {
-	if ctx == nil {
-		return fmt.Errorf(
-			"conversation production realtime: publish delivery aggregate: context is required",
-		)
-	}
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf(
-			"conversation production realtime: publish delivery aggregate: %w",
-			err,
-		)
-	}
-	if err := validateProductionDeliveryAggregate(
-		recipient,
-		aggregate,
-		idempotencyKey,
-	); err != nil {
-		return err
-	}
-
-	payload, err := marshalProductionRealtimePayload(
-		&chatmodel.MessageDeliveryAggregate{
-			ConversationId:      string(aggregate.ConversationID),
-			EventId:             string(aggregate.EventID),
-			EventSequence:       int64(aggregate.EventSequence),
-			RequiredDeviceCount: aggregate.RequiredDeviceCount,
-			ConsumedDeviceCount: aggregate.ConsumedDeviceCount,
-			RevokedDeviceCount:  aggregate.RevokedDeviceCount,
-			Delivered:           aggregate.Delivered,
-			FullyDelivered:      aggregate.FullyDelivered,
-			Read:                aggregate.Read,
-		},
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"conversation production realtime: encode delivery aggregate event=%s: %w",
-			aggregate.EventID,
-			err,
-		)
-	}
-
-	bus, err := a.bus()
-	if err != nil {
-		return err
-	}
-	if _, err := bus.PublishToDevice(
-		string(recipient.Actor),
-		string(recipient.Device),
-		&realtime.StreamEvent{
-			Kind: &realtime.StreamEvent_EnvelopeDelivered{
-				EnvelopeDelivered: &realtime.EnvelopeDelivered{
-					InboxItemId:    idempotencyKey,
-					EnvelopeId:     string(aggregate.EventID),
-					ConversationId: string(aggregate.ConversationID),
-					PayloadType: int32(
-						chatmodel.DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_DEVICE_RECEIPT,
-					),
-					PayloadBytes:      payload,
-					RecipientDeviceId: string(recipient.Device),
-				},
-			},
-		},
-	); err != nil {
-		return fmt.Errorf(
-			"conversation production realtime: publish delivery aggregate actor=%s device=%s event=%s: %w",
-			recipient.Actor,
-			recipient.Device,
-			aggregate.EventID,
-			err,
-		)
-	}
-
-	return nil
-}
-
 func (a *ProductionRealtimeAdapter) bus() (events.EventBus, error) {
 	if a == nil || a.resolveBus == nil {
 		return nil, fmt.Errorf(
@@ -280,39 +197,6 @@ func productionRealtimeEndpoint(endpoint valueobject.Endpoint) *actormodel.Actor
 
 func marshalProductionRealtimePayload(message proto.Message) ([]byte, error) {
 	return proto.MarshalOptions{Deterministic: true}.Marshal(message)
-}
-
-func validateProductionDeliveryAggregate(
-	recipient valueobject.Endpoint,
-	aggregate interactionapp.DeliveryAggregate,
-	idempotencyKey string,
-) error {
-	if recipient.Validate() != nil ||
-		aggregate.ConversationID == "" ||
-		aggregate.EventID == "" ||
-		aggregate.EventSequence == 0 ||
-		strings.TrimSpace(idempotencyKey) == "" ||
-		idempotencyKey != strings.TrimSpace(idempotencyKey) {
-		return fmt.Errorf(
-			"conversation production realtime: publish delivery aggregate: recipient, aggregate identity, and idempotency key are required",
-		)
-	}
-	if aggregate.ConsumedDeviceCount > aggregate.RequiredDeviceCount ||
-		aggregate.RevokedDeviceCount > aggregate.RequiredDeviceCount ||
-		aggregate.ConsumedDeviceCount+aggregate.RevokedDeviceCount >
-			aggregate.RequiredDeviceCount ||
-		aggregate.Delivered != (aggregate.ConsumedDeviceCount > 0) ||
-		aggregate.FullyDelivered !=
-			(aggregate.RequiredDeviceCount > 0 &&
-				aggregate.ConsumedDeviceCount+aggregate.RevokedDeviceCount ==
-					aggregate.RequiredDeviceCount) ||
-		(aggregate.Read && !aggregate.Delivered) {
-		return fmt.Errorf(
-			"conversation production realtime: publish delivery aggregate: aggregate state is inconsistent",
-		)
-	}
-
-	return nil
 }
 
 type productionRealtimePublication struct {

@@ -32,6 +32,7 @@ const (
 	FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_COMMAND  FederatedDomainPayloadKind = 4
 	FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_EVENT    FederatedDomainPayloadKind = 5
 	FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT   FederatedDomainPayloadKind = 6
+	FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT  FederatedDomainPayloadKind = 7
 )
 
 // Enum value maps for FederatedDomainPayloadKind.
@@ -44,6 +45,7 @@ var (
 		4: "FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_COMMAND",
 		5: "FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_EVENT",
 		6: "FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT",
+		7: "FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT",
 	}
 	FederatedDomainPayloadKind_value = map[string]int32{
 		"FEDERATED_DOMAIN_PAYLOAD_KIND_UNSPECIFIED":                    0,
@@ -53,6 +55,7 @@ var (
 		"FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_COMMAND":  4,
 		"FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_EVENT":    5,
 		"FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT":   6,
+		"FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT":  7,
 	}
 )
 
@@ -656,7 +659,7 @@ const file_domain_federation_delivery_proto_rawDesc = "" +
 	"#DeliverFederatedDomainFrameResponse\x12b\n" +
 	"\vdisposition\x18\x01 \x01(\x0e2@.peers_touch.model.federation.v1.FederatedDomainFrameDispositionR\vdisposition\x12]\n" +
 	"\n" +
-	"error_code\x18\x02 \x01(\x0e2>.peers_touch.model.federation.v1.FederatedDomainFrameErrorCodeR\terrorCode*\xce\x03\n" +
+	"error_code\x18\x02 \x01(\x0e2>.peers_touch.model.federation.v1.FederatedDomainFrameErrorCodeR\terrorCode*\x8f\x04\n" +
 	"\x1aFederatedDomainPayloadKind\x12-\n" +
 	")FEDERATED_DOMAIN_PAYLOAD_KIND_UNSPECIFIED\x10\x00\x12>\n" +
 	":FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DEVICE_DELIVERY\x10\x01\x12@\n" +
@@ -664,7 +667,8 @@ const file_domain_federation_delivery_proto_rawDesc = "" +
 	";FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_AUTHORITY_RESULT\x10\x03\x12?\n" +
 	";FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_COMMAND\x10\x04\x12=\n" +
 	"9FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_EVENT\x10\x05\x12>\n" +
-	":FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT\x10\x06*\xed\x02\n" +
+	":FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT\x10\x06\x12?\n" +
+	";FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT\x10\a*\xed\x02\n" +
 	"\x1fFederatedDomainFrameDisposition\x122\n" +
 	".FEDERATED_DOMAIN_FRAME_DISPOSITION_UNSPECIFIED\x10\x00\x12/\n" +
 	"+FEDERATED_DOMAIN_FRAME_DISPOSITION_ACCEPTED\x10\x01\x120\n" +

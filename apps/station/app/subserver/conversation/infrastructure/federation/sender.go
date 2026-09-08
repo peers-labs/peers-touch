@@ -21,6 +21,7 @@ const (
 	authorityCommandFrameDomain = "conversation-authority-command"
 	authorityResultFrameDomain  = "conversation-authority-result"
 	deviceDeliveryFrameDomain   = "conversation-device-delivery"
+	deliveryReceiptFrameDomain  = "conversation-delivery-receipt"
 )
 
 // Sender converts canonical Conversation protobufs into immutable, signed
@@ -194,6 +195,68 @@ func (s *Sender) EnqueueAuthorityResult(
 	return outbox.Enqueue(ctx, frame, s.clock.Now().UTC())
 }
 
+// EnqueueDeliveryReceipt durably returns one exact device-consumption receipt
+// from its Home Station to the Conversation authority.
+func (s *Sender) EnqueueDeliveryReceipt(
+	ctx context.Context,
+	outbox federationdelivery.OutboxWriter,
+	authorityStationPeerID string,
+	receipt *chatmodel.DeviceConsumptionReceipt,
+) (federationdelivery.EnqueueResult, error) {
+	if outbox == nil ||
+		receipt == nil ||
+		receipt.GetConsumer() == nil ||
+		receipt.GetReceiptId() == "" ||
+		receipt.GetConversationId() == "" ||
+		receipt.GetEventId() == "" ||
+		receipt.GetConsumer().GetPtid() == "" ||
+		receipt.GetConsumer().GetDeviceId() == "" ||
+		receipt.GetEventSequence() <= 0 ||
+		receipt.GetLaneSequence() <= 0 ||
+		len(receipt.GetPayloadSha256()) != sha256.Size ||
+		receipt.GetConsumedAt() == nil ||
+		!receipt.GetConsumedAt().IsValid() {
+		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
+			federationdelivery.FailureInvalidArgument,
+			"enqueue Conversation delivery receipt",
+			fmt.Errorf("outbox and complete device-consumption receipt are required"),
+		)
+	}
+	if strings.TrimSpace(authorityStationPeerID) == "" ||
+		authorityStationPeerID == s.localStationPeerID {
+		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
+			federationdelivery.FailureInvalidFrame,
+			"enqueue Conversation delivery receipt",
+			fmt.Errorf("remote authority Station is required"),
+		)
+	}
+	payload, err := canonicalPayloadBytes(receipt)
+	if err != nil {
+		return federationdelivery.EnqueueResult{}, err
+	}
+	issuedAt := s.clock.Now().UTC()
+	frame, err := s.signedFrame(
+		ctx,
+		federationdelivery.PayloadKindConversationDeliveryReceipt,
+		authorityStationPeerID,
+		receipt.GetReceiptId(),
+		deliveryReceiptFrameDomain+":"+receipt.GetReceiptId(),
+		conversationOrderingKey(
+			deliveryReceiptFrameDomain,
+			receipt.GetConversationId(),
+		),
+		0,
+		payload,
+		issuedAt,
+		issuedAt.Add(s.frameLifetime),
+	)
+	if err != nil {
+		return federationdelivery.EnqueueResult{}, err
+	}
+
+	return outbox.Enqueue(ctx, frame, s.clock.Now().UTC())
+}
+
 // EnqueueDeviceDelivery forwards a target-local Device Inbox intent. The
 // target Home Station owns lane allocation and all queue lifecycle state.
 func (s *Sender) EnqueueDeviceDelivery(
@@ -233,6 +296,7 @@ func (s *Sender) EnqueueDeviceDelivery(
 	intent, orderingSequence, err := canonicalDeviceDelivery(
 		item,
 		s.localStationPeerID,
+		federationIntent.EventSequence,
 	)
 	if err != nil {
 		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
@@ -273,6 +337,7 @@ func (s *Sender) EnqueueDeviceDelivery(
 			string(intent.Recipient.Device),
 			string(intent.ConversationID),
 			string(intent.PayloadKind),
+			intent.IntentID,
 		),
 		orderingSequence,
 		payload,
@@ -414,10 +479,16 @@ func deviceOrderingKey(
 	deviceID string,
 	conversationID string,
 	payloadKind string,
+	payloadID string,
 ) string {
-	return deviceDeliveryFrameDomain + ":" +
+	key := deviceDeliveryFrameDomain + ":" +
 		actorPTID + ":" +
 		deviceID + ":" +
 		conversationID + ":" +
 		payloadKind
+	if payloadKind == string(conversationports.DeviceInboxPayloadDeviceReceipt) {
+		key += ":" + payloadID
+	}
+
+	return key
 }

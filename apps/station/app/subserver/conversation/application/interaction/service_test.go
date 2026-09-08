@@ -3,7 +3,6 @@ package interaction_test
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -39,7 +38,9 @@ func (c *testClock) Advance(delta time.Duration) {
 }
 
 type testConversationReader struct {
-	snapshot aggregate.Snapshot
+	snapshot       aggregate.Snapshot
+	source         query.Source
+	followerStatus repository.FollowerStatus
 }
 
 func (r testConversationReader) Get(
@@ -49,9 +50,14 @@ func (r testConversationReader) Get(
 ) (query.ConversationView, error) {
 	for _, member := range r.snapshot.Members {
 		if member.Actor == actor && member.Active() {
+			source := r.source
+			if source == "" {
+				source = query.SourceAuthority
+			}
 			return query.ConversationView{
-				Conversation: r.snapshot,
-				Source:       query.SourceAuthority,
+				Conversation:   r.snapshot,
+				Source:         source,
+				FollowerStatus: r.followerStatus,
 			}, nil
 		}
 	}
@@ -66,7 +72,6 @@ func (r testConversationReader) Get(
 
 type testDeviceDirectory struct {
 	active map[valueobject.Endpoint]bool
-	routes map[valueobject.PTID][]interaction.EndpointRoute
 }
 
 func (d *testDeviceDirectory) IsActive(
@@ -74,18 +79,6 @@ func (d *testDeviceDirectory) IsActive(
 	endpoint valueobject.Endpoint,
 ) (bool, error) {
 	return d.active[endpoint], nil
-}
-
-func (d *testDeviceDirectory) ListActiveEndpoints(
-	_ context.Context,
-	actors []valueobject.PTID,
-) ([]interaction.EndpointRoute, error) {
-	var routes []interaction.EndpointRoute
-	for _, actor := range actors {
-		routes = append(routes, d.routes[actor]...)
-	}
-
-	return routes, nil
 }
 
 type testReadCursorAdvancer struct {
@@ -141,6 +134,13 @@ func (r *testReceiptRecorder) Record(
 	_ context.Context,
 	receipt interaction.DeliveryReceipt,
 ) (interaction.DeliveryRecordResult, error) {
+	return r.CommitDeliveryReceipt(context.Background(), receipt)
+}
+
+func (r *testReceiptRecorder) CommitDeliveryReceipt(
+	_ context.Context,
+	receipt interaction.DeliveryReceipt,
+) (interaction.DeliveryRecordResult, error) {
 	if r.receipt != nil {
 		if *r.receipt != receipt {
 			return interaction.DeliveryRecordResult{}, interaction.NewError(
@@ -159,6 +159,35 @@ func (r *testReceiptRecorder) Record(
 	return deliveryRecordResult(false), nil
 }
 
+type testDeliveryReceiptForwarder struct {
+	authority valueobject.StationID
+	receipt   *interaction.DeliveryReceipt
+}
+
+func (f *testDeliveryReceiptForwarder) ForwardDeliveryReceipt(
+	_ context.Context,
+	authority valueobject.StationID,
+	receipt interaction.DeliveryReceipt,
+) (bool, error) {
+	if f.receipt != nil {
+		if f.authority != authority || *f.receipt != receipt {
+			return false, interaction.NewError(
+				interaction.ErrorCodeIdempotencyConflict,
+				"test.delivery_receipt_forwarder",
+				"receipt_id",
+				"already identifies different receipt bytes",
+			)
+		}
+
+		return true, nil
+	}
+	cloned := receipt
+	f.authority = authority
+	f.receipt = &cloned
+
+	return false, nil
+}
+
 func deliveryRecordResult(replay bool) interaction.DeliveryRecordResult {
 	return interaction.DeliveryRecordResult{
 		Aggregate: interaction.DeliveryAggregate{
@@ -173,24 +202,6 @@ func deliveryRecordResult(replay bool) interaction.DeliveryRecordResult {
 		Originator: "ptid:alice",
 		Replay:     replay,
 	}
-}
-
-type testDeliveryPublisher struct {
-	byKey map[string]valueobject.Endpoint
-}
-
-func (p *testDeliveryPublisher) PublishDeliveryAggregate(
-	_ context.Context,
-	recipient valueobject.Endpoint,
-	_ interaction.DeliveryAggregate,
-	idempotencyKey string,
-) error {
-	if existing, ok := p.byKey[idempotencyKey]; ok && existing != recipient {
-		return errors.New("test delivery publisher: idempotency collision")
-	}
-	p.byKey[idempotencyKey] = recipient
-
-	return nil
 }
 
 func TestServiceTypingIsMembershipBoundedEphemeralAndIdempotent(t *testing.T) {
@@ -268,8 +279,8 @@ func TestServiceDelegatesReadCursorToCAW2Port(t *testing.T) {
 	}
 }
 
-func TestServiceDeliveryReceiptValidatesAndPublishesIdempotently(t *testing.T) {
-	service, _, devices, _, _, delivery := newInteractionFixture(t)
+func TestServiceDeliveryReceiptValidatesAndCommitsIdempotently(t *testing.T) {
+	service, _, _, _, _, _ := newInteractionFixture(t)
 	receipt := interaction.DeliveryReceipt{
 		ReceiptID:      "device-consumed:item-3",
 		ConversationID: "conversation-1",
@@ -294,19 +305,6 @@ func TestServiceDeliveryReceiptValidatesAndPublishesIdempotently(t *testing.T) {
 			break
 		}
 	}
-	if len(delivery.byKey) != 2 {
-		t.Fatalf("delivery fan-out keys = %v", delivery.byKey)
-	}
-	for _, route := range devices.routes["ptid:alice"] {
-		found := false
-		for _, endpoint := range delivery.byKey {
-			found = found || endpoint == route.Endpoint
-		}
-		if !found {
-			t.Fatalf("originator endpoint %v did not receive aggregate", route.Endpoint)
-		}
-	}
-
 	tampered := receipt
 	tampered.PayloadHash = valueobject.HashBytes([]byte("tampered"))
 	if _, err := service.SubmitDeliveryReceipt(
@@ -327,15 +325,74 @@ func TestServiceDeliveryReceiptValidatesAndPublishesIdempotently(t *testing.T) {
 	}
 }
 
+func TestServiceForwardsFollowerDeliveryReceiptIdempotently(t *testing.T) {
+	aliceOne := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-1"}
+	aliceTwo := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-2"}
+	bob := valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-1"}
+	snapshot := interactionConversationSnapshot(aliceOne, aliceTwo, bob)
+	snapshot.AuthorityStation = "station:authority"
+	snapshot.Members[0].HomeStation = "station:authority"
+	snapshot.Devices[0].HomeStation = "station:authority"
+	snapshot.Devices[1].HomeStation = "station:authority"
+	service, _, _, _, _, forwarder := newInteractionFixture(
+		t,
+		testConversationReader{
+			snapshot:       snapshot,
+			source:         query.SourceFollower,
+			followerStatus: repository.FollowerStatusActive,
+		},
+	)
+	receipt := interaction.DeliveryReceipt{
+		ReceiptID:      "device-consumed:item-3",
+		ConversationID: "conversation-1",
+		EventID:        "event-3",
+		Consumer:       bob,
+		EventSequence:  3,
+		LaneSequence:   9,
+		PayloadHash:    valueobject.HashBytes([]byte("opaque-payload")),
+		ConsumedAt:     interactionTestTime,
+	}
+	for expectedReplay := false; ; expectedReplay = true {
+		result, err := service.SubmitDeliveryReceipt(context.Background(), receipt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.Forwarded || result.Replay != expectedReplay {
+			t.Fatalf("forwarded receipt result = %+v", result)
+		}
+		if expectedReplay {
+			break
+		}
+	}
+	if forwarder.authority != "station:authority" ||
+		forwarder.receipt == nil ||
+		*forwarder.receipt != receipt {
+		t.Fatalf(
+			"forwarder authority=%s receipt=%+v",
+			forwarder.authority,
+			forwarder.receipt,
+		)
+	}
+	conflicting := receipt
+	conflicting.LaneSequence++
+	if _, err := service.SubmitDeliveryReceipt(
+		context.Background(),
+		conflicting,
+	); !interaction.IsCode(err, interaction.ErrorCodeIdempotencyConflict) {
+		t.Fatalf("forwarded receipt conflict error = %v", err)
+	}
+}
+
 func newInteractionFixture(
 	t *testing.T,
+	readers ...testConversationReader,
 ) (
 	*interaction.Service,
 	*testClock,
 	*testDeviceDirectory,
 	*testTypingPublisher,
 	*testReadCursorAdvancer,
-	*testDeliveryPublisher,
+	*testDeliveryReceiptForwarder,
 ) {
 	t.Helper()
 	aliceOne := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-1"}
@@ -344,23 +401,20 @@ func newInteractionFixture(
 	reader := testConversationReader{
 		snapshot: interactionConversationSnapshot(aliceOne, aliceTwo, bob),
 	}
+	if len(readers) > 0 {
+		reader = readers[0]
+	}
 	devices := &testDeviceDirectory{
 		active: map[valueobject.Endpoint]bool{
 			aliceOne: true,
 			aliceTwo: true,
 			bob:      true,
 		},
-		routes: map[valueobject.PTID][]interaction.EndpointRoute{
-			"ptid:alice": {
-				{Endpoint: aliceOne, HomeStation: "station:local"},
-				{Endpoint: aliceTwo, HomeStation: "station:local"},
-			},
-		},
 	}
 	readCursors := &testReadCursorAdvancer{}
 	receipts := &testReceiptRecorder{}
+	forwarder := &testDeliveryReceiptForwarder{}
 	typing := &testTypingPublisher{}
-	delivery := &testDeliveryPublisher{byKey: make(map[string]valueobject.Endpoint)}
 	ledger, err := interaction.NewMemoryTypingPulseLedger(100)
 	if err != nil {
 		t.Fatal(err)
@@ -371,8 +425,8 @@ func newInteractionFixture(
 		devices,
 		readCursors,
 		receipts,
+		forwarder,
 		typing,
-		delivery,
 		ledger,
 		clock,
 		interaction.Policy{
@@ -380,12 +434,13 @@ func newInteractionFixture(
 			MaximumTypingTTL:       10 * time.Second,
 			MaximumFutureClockSkew: time.Minute,
 		},
+		"station:local",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return service, clock, devices, typing, readCursors, delivery
+	return service, clock, devices, typing, readCursors, forwarder
 }
 
 func interactionConversationSnapshot(

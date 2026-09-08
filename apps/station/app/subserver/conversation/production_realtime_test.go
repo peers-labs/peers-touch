@@ -142,100 +142,6 @@ func TestProductionRealtimePublishTypingUsesEphemeralActorFanout(t *testing.T) {
 	}
 }
 
-func TestProductionRealtimePublishDeliveryAggregateUsesTypedDurableProjection(
-	t *testing.T,
-) {
-	ctx := context.Background()
-	bus := events.NewEventBus()
-	defer bus.Close()
-
-	target := valueobject.Endpoint{
-		Actor:  "ptid:alice",
-		Device: "alice-device",
-	}
-	targetSubscription, cancelTarget, err := bus.Subscribe(
-		ctx,
-		string(target.Actor),
-		string(target.Device),
-		"",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cancelTarget()
-	siblingSubscription, cancelSibling, err := bus.Subscribe(
-		ctx,
-		string(target.Actor),
-		"alice-phone",
-		"",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cancelSibling()
-
-	adapter := newProductionRealtimeAdapter(func() events.EventBus {
-		return bus
-	})
-	aggregate := interactionapp.DeliveryAggregate{
-		ConversationID:      "conversation-1",
-		EventID:             "event-1",
-		EventSequence:       7,
-		RequiredDeviceCount: 2,
-		ConsumedDeviceCount: 1,
-		Delivered:           true,
-	}
-	const idempotencyKey = "delivery-receipt-event-1-alice-device"
-	if err := adapter.PublishDeliveryAggregate(
-		ctx,
-		target,
-		aggregate,
-		idempotencyKey,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	event := receiveProductionRealtimeEvent(t, targetSubscription.Events)
-	delivered := event.GetEnvelopeDelivered()
-	if delivered == nil {
-		t.Fatalf("event kind = %T, want EnvelopeDelivered", event.GetKind())
-	}
-	if delivered.GetInboxItemId() != idempotencyKey ||
-		delivered.GetEnvelopeId() != string(aggregate.EventID) ||
-		delivered.GetConversationId() != string(aggregate.ConversationID) ||
-		delivered.GetPayloadType() != int32(
-			chatmodel.DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_DEVICE_RECEIPT,
-		) ||
-		delivered.GetRecipientDeviceId() != string(target.Device) {
-		t.Fatalf("delivery aggregate envelope = %+v", delivered)
-	}
-
-	var payload chatmodel.MessageDeliveryAggregate
-	if err := proto.Unmarshal(delivered.GetPayloadBytes(), &payload); err != nil {
-		t.Fatalf("decode MessageDeliveryAggregate: %v", err)
-	}
-	expected := &chatmodel.MessageDeliveryAggregate{
-		ConversationId:      string(aggregate.ConversationID),
-		EventId:             string(aggregate.EventID),
-		EventSequence:       int64(aggregate.EventSequence),
-		RequiredDeviceCount: aggregate.RequiredDeviceCount,
-		ConsumedDeviceCount: aggregate.ConsumedDeviceCount,
-		RevokedDeviceCount:  aggregate.RevokedDeviceCount,
-		Delivered:           aggregate.Delivered,
-		FullyDelivered:      aggregate.FullyDelivered,
-		Read:                aggregate.Read,
-	}
-	if !proto.Equal(&payload, expected) {
-		t.Fatalf("delivery aggregate = %+v, want %+v", &payload, expected)
-	}
-	assertNoProductionRealtimeEvent(t, siblingSubscription.Events)
-
-	stats := bus.Stats()
-	if stats.BufferedEvents != 1 {
-		t.Fatalf("buffered events = %d, want one durable projection", stats.BufferedEvents)
-	}
-}
-
 func TestProductionRealtimeFailsClosedWithoutEventBus(t *testing.T) {
 	adapter := newProductionRealtimeAdapter(func() events.EventBus {
 		return nil
@@ -245,16 +151,6 @@ func TestProductionRealtimeFailsClosedWithoutEventBus(t *testing.T) {
 		Actor:  "ptid:alice",
 		Device: "alice-device",
 	}
-	aggregate := interactionapp.DeliveryAggregate{
-		ConversationID:      "conversation-1",
-		EventID:             "event-1",
-		EventSequence:       1,
-		RequiredDeviceCount: 1,
-		ConsumedDeviceCount: 1,
-		Delivered:           true,
-		FullyDelivered:      true,
-	}
-
 	tests := []struct {
 		name string
 		run  func() error
@@ -278,17 +174,6 @@ func TestProductionRealtimeFailsClosedWithoutEventBus(t *testing.T) {
 					ExpiresAt:      time.Now().UTC().Add(time.Second),
 					IsTyping:       true,
 				})
-			},
-		},
-		{
-			name: "delivery aggregate",
-			run: func() error {
-				return adapter.PublishDeliveryAggregate(
-					ctx,
-					endpoint,
-					aggregate,
-					"delivery-aggregate-1",
-				)
 			},
 		},
 	}

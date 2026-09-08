@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
+	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
@@ -21,11 +23,13 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	deliveryinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
 	conversationfederation "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/federation"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/persistence"
 	conversationhttp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface/http"
 	federationinfra "github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	chatmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -33,8 +37,9 @@ import (
 const productionCommandProposalScope = "conversation-command-proposal"
 
 var productionProposalLocks sync.Map
+var productionDeliveryReceiptLocks [256]sync.Mutex
 
-// RegisterFederationReceivers binds the three Conversation payload receivers
+// RegisterFederationReceivers binds the four Conversation payload receivers
 // exactly once before the shared Federation runtime is sealed.
 func (c *ProductionComposition) RegisterFederationReceivers(ctx context.Context) error {
 	if ctx == nil {
@@ -58,6 +63,7 @@ func (c *ProductionComposition) RegisterFederationReceivers(ctx context.Context)
 			AuthorityCommands:  &productionAuthorityCommandPort{composition: c},
 			AuthorityResults:   &productionAuthorityResultPort{composition: c},
 			DeviceDeliveries:   &productionDeviceDeliveryPort{composition: c},
+			DeliveryReceipts:   &productionDeliveryReceiptPort{composition: c},
 			Sender:             c.federationSender,
 			Clock:              c.clock,
 		},
@@ -451,6 +457,48 @@ func (p *productionDeviceDeliveryPort) ApplyDeviceDelivery(
 	if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
 		return false, existingErr
 	}
+	if intent.PayloadKind == ports.DeviceInboxPayloadDeviceReceipt {
+		boundUnitOfWork, err := p.composition.UnitOfWork.Bind(transaction.DB())
+		if err != nil {
+			return false, err
+		}
+		boundQuery, err := query.NewService(boundUnitOfWork)
+		if err != nil {
+			return false, err
+		}
+		view, err := boundQuery.Get(
+			ctx,
+			intent.ConversationID,
+			intent.Recipient.Actor,
+		)
+		if err != nil {
+			return false, err
+		}
+		if err := validateFollowerDeviceDeliverySource(
+			view,
+			p.composition.localStation,
+			valueobject.StationID(sourceAuthorityStationPeerID),
+		); err != nil {
+			return false, err
+		}
+		active, err := (productionFederationMembershipProjection{}).IsActiveStation(
+			ctx,
+			transaction,
+			string(view.Conversation.FederationID),
+			sourceAuthorityStationPeerID,
+		)
+		if err != nil {
+			return false, err
+		}
+		if !active {
+			return false, conversationdomain.NewError(
+				conversationdomain.ErrorCodeUnauthorized,
+				"production_federation.apply_device_delivery",
+				"authority_station_peer_id",
+				"is not active in the Conversation federation",
+			)
+		}
+	}
 	if intent.PayloadKind == ports.DeviceInboxPayloadConversationEvent {
 		var delivery chatmodel.DeviceEventDelivery
 		if err := proto.Unmarshal(intent.OpaquePayload, &delivery); err != nil {
@@ -493,6 +541,539 @@ func (p *productionDeviceDeliveryPort) ApplyDeviceDelivery(
 	}
 
 	return existingErr == nil, nil
+}
+
+func validateFollowerDeviceDeliverySource(
+	view query.ConversationView,
+	localStation valueobject.StationID,
+	sourceAuthority valueobject.StationID,
+) error {
+	if view.Source != query.SourceFollower ||
+		view.FollowerStatus != repository.FollowerStatusActive ||
+		view.Conversation.AuthorityStation == "" ||
+		view.Conversation.AuthorityStation == localStation ||
+		view.Conversation.AuthorityStation != sourceAuthority {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeUnauthorized,
+			"production_federation.apply_device_delivery",
+			"authority_station_peer_id",
+			"does not match the active follower Conversation authority",
+		)
+	}
+
+	return nil
+}
+
+type productionDeliveryReceiptForwarder struct {
+	database     *gorm.DB
+	sender       *conversationfederation.Sender
+	clock        federationdelivery.Clock
+	localStation valueobject.StationID
+}
+
+type productionDeliveryReceiptCommitter struct {
+	database     *gorm.DB
+	adapters     *ProductionTransactionalAdapterFactory
+	localStation valueobject.StationID
+	clock        federationdelivery.Clock
+}
+
+func (c *productionDeliveryReceiptCommitter) CommitDeliveryReceipt(
+	ctx context.Context,
+	receipt interactionapp.DeliveryReceipt,
+) (interactionapp.DeliveryRecordResult, error) {
+	if c == nil || c.database == nil || c.adapters == nil ||
+		c.localStation == "" || c.clock == nil {
+		return interactionapp.DeliveryRecordResult{}, fmt.Errorf(
+			"commit Conversation delivery receipt: dependencies are incomplete",
+		)
+	}
+	var recorded interactionapp.DeliveryRecordResult
+	err := c.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		recorder, err := deliveryinfra.NewReceiptRecorder(tx)
+		if err != nil {
+			return err
+		}
+		recorded, err = recorder.Record(ctx, receipt)
+		if err != nil {
+			return err
+		}
+		if recorded.MessageID == "" ||
+			recorded.Originator == receipt.Consumer.Actor {
+			return nil
+		}
+		adapters, err := c.adapters.Bind(tx)
+		if err != nil {
+			return err
+		}
+		return enqueueDeliveryReceiptProjections(
+			ctx,
+			tx,
+			adapters,
+			c.localStation,
+			c.clock.Now().UTC(),
+			receipt,
+			recorded,
+		)
+	})
+	if err != nil {
+		if interactionapp.CodeOf(err) != "" {
+			return interactionapp.DeliveryRecordResult{}, err
+		}
+		return interactionapp.DeliveryRecordResult{}, interactionapp.WrapError(
+			interactionapp.ErrorCodePersistence,
+			"production_federation.commit_delivery_receipt",
+			err,
+		)
+	}
+
+	return recorded, nil
+}
+
+func enqueueDeliveryReceiptProjections(
+	ctx context.Context,
+	tx *gorm.DB,
+	adapters persistence.TransactionalAdapters,
+	localStation valueobject.StationID,
+	projectionAt time.Time,
+	receipt interactionapp.DeliveryReceipt,
+	recorded interactionapp.DeliveryRecordResult,
+) error {
+	if tx == nil || projectionAt.IsZero() {
+		return fmt.Errorf(
+			"commit Conversation delivery receipt: transaction and projection time are required",
+		)
+	}
+	payload, err := deterministicProductionProto(
+		&chatmodel.MessageReceipt{
+			ConversationId: string(receipt.ConversationID),
+			MessageId:      string(recorded.MessageID),
+			Ptid:           string(receipt.Consumer.Actor),
+			DeviceId:       string(receipt.Consumer.Device),
+			ReceiptType:    chatmodel.ReceiptType_RECEIPT_TYPE_DELIVERED,
+			Ts:             timestamppb.New(receipt.ConsumedAt.UTC()),
+		},
+	)
+	if err != nil {
+		return err
+	}
+	payloadHash := valueobject.HashBytes(payload)
+	for _, route := range recorded.OriginatorRoutes {
+		if route.Endpoint.Validate() != nil ||
+			route.Endpoint.Actor != recorded.Originator ||
+			route.HomeStation == "" {
+			return fmt.Errorf(
+				"commit Conversation delivery receipt: invalid originator route",
+			)
+		}
+		if route.Endpoint == receipt.Consumer {
+			continue
+		}
+		intentID := valueobject.HashBytes(valueobject.CanonicalTuple(
+			[]byte("conversation-delivery-receipt"),
+			[]byte(receipt.ReceiptID),
+			[]byte(route.Endpoint.Actor),
+			[]byte(route.Endpoint.Device),
+		)).String()
+		intent := ports.DeviceInboxIntent{
+			IntentID:       intentID,
+			ConversationID: receipt.ConversationID,
+			EventID:        valueobject.EventID(recorded.MessageID),
+			EventSequence:  recorded.Aggregate.EventSequence,
+			Recipient:      route.Endpoint,
+			IdempotencyKey: intentID,
+			PayloadKind:    ports.DeviceInboxPayloadDeviceReceipt,
+			OpaquePayload:  payload,
+			PayloadHash:    payloadHash,
+			CreatedAt:      projectionAt,
+		}
+		if route.HomeStation == localStation {
+			if err := adapters.DeviceInbox.Enqueue(ctx, intent); err != nil {
+				return err
+			}
+			continue
+		}
+		existing, err := existingFederatedReceiptProjection(
+			ctx,
+			tx,
+			localStation,
+			route.HomeStation,
+			intent,
+		)
+		if err != nil {
+			return err
+		}
+		if existing {
+			continue
+		}
+		if err := adapters.FederationOutbox.Enqueue(
+			ctx,
+			ports.FederationOutboxIntent{
+				IntentID:       intent.IntentID,
+				ConversationID: intent.ConversationID,
+				EventID:        intent.EventID,
+				EventSequence:  intent.EventSequence,
+				Recipient:      intent.Recipient,
+				TargetStation:  route.HomeStation,
+				IdempotencyKey: intent.IdempotencyKey,
+				PayloadKind:    intent.PayloadKind,
+				OpaquePayload:  intent.OpaquePayload,
+				PayloadHash:    intent.PayloadHash,
+				CreatedAt:      intent.CreatedAt,
+			},
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func existingFederatedReceiptProjection(
+	ctx context.Context,
+	tx *gorm.DB,
+	localStation valueobject.StationID,
+	targetStation valueobject.StationID,
+	intent ports.DeviceInboxIntent,
+) (bool, error) {
+	var existing federationdelivery.OutboxRecord
+	err := tx.WithContext(ctx).Where(
+		"source_station_peer_id = ? AND idempotency_key = ?",
+		string(localStation),
+		intent.IdempotencyKey,
+	).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var frame federationdelivery.Frame
+	if err := proto.Unmarshal(existing.FrameBytes, &frame); err != nil {
+		return false, err
+	}
+	var item chatmodel.DurableDeviceInboxItem
+	if err := proto.Unmarshal(frame.GetOpaquePayload(), &item); err != nil {
+		return false, err
+	}
+	if frame.GetPayloadKind() !=
+		federationdelivery.PayloadKindConversationDeviceDelivery ||
+		frame.GetTargetStationPeerId() != string(targetStation) ||
+		frame.GetOrderingSequence() != int64(intent.EventSequence) ||
+		item.GetItemId() != intent.IntentID ||
+		item.GetIdempotencyKey() != intent.IdempotencyKey ||
+		item.GetConversationId() != string(intent.ConversationID) ||
+		item.GetEventId() != string(intent.EventID) ||
+		item.GetRecipient().GetActor().GetPtid() != string(intent.Recipient.Actor) ||
+		item.GetRecipient().GetDeviceId() != string(intent.Recipient.Device) ||
+		item.GetPayloadType() !=
+			chatmodel.DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_DEVICE_RECEIPT ||
+		!bytes.Equal(item.GetOpaquePayload(), intent.OpaquePayload) ||
+		!bytes.Equal(item.GetPayloadSha256(), intent.PayloadHash.Bytes()) {
+		return false, interactionapp.NewError(
+			interactionapp.ErrorCodeIdempotencyConflict,
+			"production_federation.commit_delivery_receipt",
+			"idempotency_key",
+			"already identifies different receipt projection bytes",
+		)
+	}
+
+	return true, nil
+}
+
+func (f *productionDeliveryReceiptForwarder) ForwardDeliveryReceipt(
+	ctx context.Context,
+	authority valueobject.StationID,
+	receipt interactionapp.DeliveryReceipt,
+) (bool, error) {
+	if f == nil || f.database == nil || f.sender == nil || f.clock == nil ||
+		f.localStation == "" {
+		return false, fmt.Errorf(
+			"forward Conversation delivery receipt: dependencies are incomplete",
+		)
+	}
+	wire, err := productionDeliveryReceiptToWire(receipt)
+	if err != nil {
+		return false, err
+	}
+	payload, err := deterministicProductionProto(wire)
+	if err != nil {
+		return false, err
+	}
+	lockDigest := sha256.Sum256([]byte(receipt.ReceiptID))
+	lock := &productionDeliveryReceiptLocks[lockDigest[0]]
+	lock.Lock()
+	defer lock.Unlock()
+
+	var replay bool
+	err = f.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "postgres" {
+			lockID := productionAdvisoryLockID(
+				"conversation-delivery-receipt:" + receipt.ReceiptID,
+			)
+			if err := tx.Exec(
+				"SELECT pg_advisory_xact_lock(?)",
+				lockID,
+			).Error; err != nil {
+				return fmt.Errorf(
+					"lock Conversation delivery receipt: %w",
+					err,
+				)
+			}
+		}
+		recorder, err := deliveryinfra.NewReceiptRecorder(tx)
+		if err != nil {
+			return err
+		}
+		if _, err := recorder.RecordFollowerConsumption(
+			ctx,
+			authority,
+			receipt,
+		); err != nil {
+			return err
+		}
+		var existing federationdelivery.OutboxRecord
+		existingErr := tx.Where(
+			"source_station_peer_id = ? AND payload_kind = ? AND payload_id = ?",
+			string(f.localStation),
+			int32(federationdelivery.PayloadKindConversationDeliveryReceipt),
+			receipt.ReceiptID,
+		).First(&existing).Error
+		if existingErr == nil {
+			var frame federationdelivery.Frame
+			if err := proto.Unmarshal(existing.FrameBytes, &frame); err != nil {
+				return err
+			}
+			if frame.GetPayloadKind() !=
+				federationdelivery.PayloadKindConversationDeliveryReceipt ||
+				frame.GetTargetStationPeerId() != string(authority) ||
+				frame.GetPayloadId() != receipt.ReceiptID ||
+				!bytes.Equal(frame.GetOpaquePayload(), payload) {
+				return interactionapp.NewError(
+					interactionapp.ErrorCodeIdempotencyConflict,
+					"production_federation.forward_delivery_receipt",
+					"receipt_id",
+					"already identifies different receipt bytes",
+				)
+			}
+			replay = true
+
+			return nil
+		}
+		if !errors.Is(existingErr, gorm.ErrRecordNotFound) {
+			return existingErr
+		}
+		outbox, err := federationdelivery.NewGORMRepository(tx, f.clock)
+		if err != nil {
+			return err
+		}
+		result, err := f.sender.EnqueueDeliveryReceipt(
+			ctx,
+			outbox,
+			string(authority),
+			wire,
+		)
+		if err != nil {
+			return err
+		}
+		replay = result.Duplicate
+
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, federationdelivery.ErrPayloadHashConflict) {
+			return false, interactionapp.NewError(
+				interactionapp.ErrorCodeIdempotencyConflict,
+				"production_federation.forward_delivery_receipt",
+				"receipt_id",
+				"already identifies different receipt bytes",
+			)
+		}
+		return false, fmt.Errorf(
+			"forward Conversation delivery receipt to authority %s: %w",
+			authority,
+			err,
+		)
+	}
+
+	return replay, nil
+}
+
+type productionDeliveryReceiptPort struct {
+	composition *ProductionComposition
+}
+
+func (p *productionDeliveryReceiptPort) ApplyDeliveryReceipt(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	wire *chatmodel.DeviceConsumptionReceipt,
+	sourceHomeStationPeerID string,
+) (bool, error) {
+	if p == nil || p.composition == nil ||
+		transaction == nil || transaction.DB() == nil {
+		return false, fmt.Errorf(
+			"apply Conversation delivery receipt: dependencies are incomplete",
+		)
+	}
+	receipt, err := productionDeliveryReceiptFromWire(
+		wire,
+		sourceHomeStationPeerID,
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"%w: %v",
+			conversationfederation.ErrDeliveryReceiptRejected,
+			err,
+		)
+	}
+	boundUnitOfWork, err := p.composition.UnitOfWork.Bind(transaction.DB())
+	if err != nil {
+		return false, err
+	}
+	boundQuery, err := query.NewService(boundUnitOfWork)
+	if err != nil {
+		return false, err
+	}
+	view, err := boundQuery.Get(
+		ctx,
+		receipt.ConversationID,
+		receipt.Consumer.Actor,
+	)
+	if err != nil ||
+		view.Source != query.SourceAuthority ||
+		view.Conversation.AuthorityStation != p.composition.localStation {
+		return false, fmt.Errorf(
+			"%w: receipt does not target the local Conversation authority",
+			conversationfederation.ErrDeliveryReceiptRejected,
+		)
+	}
+	active, err := (productionFederationMembershipProjection{}).IsActiveStation(
+		ctx,
+		transaction,
+		string(view.Conversation.FederationID),
+		sourceHomeStationPeerID,
+	)
+	if err != nil {
+		return false, err
+	}
+	if !active {
+		return false, fmt.Errorf(
+			"%w: receipt source Station is not active in the Conversation federation",
+			conversationfederation.ErrDeliveryReceiptRejected,
+		)
+	}
+	boundCommitter := &productionDeliveryReceiptCommitter{
+		database:     transaction.DB(),
+		adapters:     p.composition.transactionalAdapters,
+		localStation: p.composition.localStation,
+		clock:        p.composition.clock,
+	}
+	boundService, err := p.composition.InteractionService.BindAuthorityPorts(
+		boundQuery,
+		productionInteractionDeviceDirectory{
+			identity: &productionIdentityDirectory{db: transaction.DB()},
+		},
+		boundCommitter,
+	)
+	if err != nil {
+		return false, err
+	}
+	result, err := boundService.SubmitDeliveryReceipt(
+		ctx,
+		receipt,
+	)
+	if err == nil {
+		return result.Replay, nil
+	}
+	switch interactionapp.CodeOf(err) {
+	case interactionapp.ErrorCodeIdempotencyConflict:
+		return false, fmt.Errorf(
+			"%w: %v",
+			conversationfederation.ErrDeliveryReceiptConflict,
+			err,
+		)
+	case interactionapp.ErrorCodeInvalidArgument,
+		interactionapp.ErrorCodeUnauthorized,
+		interactionapp.ErrorCodeIntegrityFailed:
+		return false, fmt.Errorf(
+			"%w: %v",
+			conversationfederation.ErrDeliveryReceiptRejected,
+			err,
+		)
+	default:
+		return false, err
+	}
+}
+
+func productionDeliveryReceiptToWire(
+	receipt interactionapp.DeliveryReceipt,
+) (*chatmodel.DeviceConsumptionReceipt, error) {
+	if receipt.Consumer.Validate() != nil || receipt.ConsumedAt.IsZero() {
+		return nil, fmt.Errorf(
+			"encode Conversation delivery receipt: receipt is incomplete",
+		)
+	}
+
+	return &chatmodel.DeviceConsumptionReceipt{
+		ReceiptId:      receipt.ReceiptID,
+		ConversationId: string(receipt.ConversationID),
+		EventId:        string(receipt.EventID),
+		Consumer: &chatmodel.CryptoEndpoint{
+			Ptid:     string(receipt.Consumer.Actor),
+			DeviceId: string(receipt.Consumer.Device),
+		},
+		EventSequence: int64(receipt.EventSequence),
+		LaneSequence:  receipt.LaneSequence,
+		PayloadSha256: receipt.PayloadHash.Bytes(),
+		ConsumedAt:    timestamppb.New(receipt.ConsumedAt.UTC()),
+	}, nil
+}
+
+func productionDeliveryReceiptFromWire(
+	wire *chatmodel.DeviceConsumptionReceipt,
+	sourceHomeStationPeerID string,
+) (interactionapp.DeliveryReceipt, error) {
+	if wire == nil || wire.GetConsumer() == nil ||
+		wire.GetConsumedAt() == nil || !wire.GetConsumedAt().IsValid() {
+		return interactionapp.DeliveryReceipt{}, fmt.Errorf(
+			"decode Conversation delivery receipt: receipt is incomplete",
+		)
+	}
+	conversationID, err := valueobject.NewConversationID(wire.GetConversationId())
+	if err != nil {
+		return interactionapp.DeliveryReceipt{}, err
+	}
+	eventID, err := valueobject.NewEventID(wire.GetEventId())
+	if err != nil {
+		return interactionapp.DeliveryReceipt{}, err
+	}
+	consumer, err := valueobject.NewEndpoint(
+		wire.GetConsumer().GetPtid(),
+		wire.GetConsumer().GetDeviceId(),
+	)
+	if err != nil {
+		return interactionapp.DeliveryReceipt{}, err
+	}
+	sourceStation, err := valueobject.NewStationID(sourceHomeStationPeerID)
+	if err != nil {
+		return interactionapp.DeliveryReceipt{}, err
+	}
+	payloadHash, err := valueobject.NewHash(wire.GetPayloadSha256())
+	if err != nil {
+		return interactionapp.DeliveryReceipt{}, err
+	}
+
+	return interactionapp.DeliveryReceipt{
+		ReceiptID:      wire.GetReceiptId(),
+		ConversationID: conversationID,
+		EventID:        eventID,
+		Consumer:       consumer,
+		SourceStation:  sourceStation,
+		EventSequence:  valueobject.Sequence(wire.GetEventSequence()),
+		LaneSequence:   wire.GetLaneSequence(),
+		PayloadHash:    payloadHash,
+		ConsumedAt:     wire.GetConsumedAt().AsTime(),
+	}, nil
 }
 
 func (s *subServer) forwardConversationProposal(
