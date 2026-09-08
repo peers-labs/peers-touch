@@ -19,6 +19,10 @@
 | C | Browser renderer or WebDriver is dead while recovery polling continues. | Low | Low | Rejected for the latest failure: all 119 Harness snapshots succeeded and no command exception was retained. |
 | D | Concurrent startup commands queue behind a Browser gateway worker/lock convoy before launch-context dispatch. | High | Medium | Supported: a live process sample found seven gateway workers waiting on mutexes while one sampled `context_action_dispatch`; exact per-command queue/dispatch timing is pending. |
 | E | Browser command parity is incomplete, so the eventual launch-context response is a typed command rejection rather than `{ enabled: false }`. | High | Low | Confirmed in source: the Tauri command exists but the HTTP gateway dispatch has no matching command; runtime recorded `RustCommandException` after HTTP 200. |
+| F | Native provider-list loading never settles during `ensureProvider`. | Medium | Low | Pending stage instrumentation. |
+| G | Native provider detail lookup or provider persistence never settles. | Medium | Low | Pending stage instrumentation. |
+| H | Native available-model lookup never settles. | Medium | Low | Pending stage instrumentation. |
+| I | Native Agent load/profile update/readiness lookup never settles. | Medium | Low | Pending stage instrumentation. |
 
 ## Log Evidence
 - Exact-source run `20260904T110406527755Z-0a3cb161b052d5ff5c86e5176456b73c` timed out at `identity login precondition`.
@@ -53,6 +57,16 @@
   inside `context_action_dispatch` / global-context persistence. This supports
   a startup command convoy, but does not yet identify the exact command order
   or lock owner.
+- Exact-source diagnostic run
+  `20260908T124702409374Z-e93f2a523848b18a09aa1e90197bf01a`
+  on `66e2f48aa7e3603da786c7cfdef6083b3c438c0e` failed while the
+  Native client executed `ensureProvider`. The WebDriver call timed out after
+  60 seconds while the Native process, Driver, Gateway, renderer, and
+  WebDriver port all remained live. Cleanup then timed out on
+  `restoreFoundationCapabilityIsolation` through the same Native harness
+  channel. Outer Provisioner cleanup passed and all client ports were
+  released. This rejects process death and local port loss, but does not yet
+  identify which awaited provider-setup stage stopped settling.
 
 ## Instrumentation
 - `A`: identity phase and lifecycle transitions during the login precondition.
@@ -67,6 +81,11 @@
   - Browser runtime restart generation plus storage/profile preservation.
   - The next checkpoint adds gateway enqueue, worker-start, dispatch-complete,
     and safe result-code timing for each startup command.
+- The Native `ensureProvider` probe now records completion boundaries for
+  provider list, provider detail, provider persistence, model list, Agent
+  load/profile update, and capability readiness. It records only counts,
+  booleans, stage names, and error types; credentials and endpoint values are
+  excluded.
 
 ## Verification Conclusion
 The earlier dead-WebDriver defect was fixed and is not the latest failure.
