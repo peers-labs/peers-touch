@@ -112,6 +112,11 @@ func TestAuthorityCommandReceiverUsesVerifiedProjectionAndPreservesReceiptReplay
 	if fixture.authority.callCount() != 3 {
 		t.Fatalf("authority applications = %d, want 3", fixture.authority.callCount())
 	}
+	for _, source := range fixture.authority.sourceHomeStations() {
+		if source != testStationA {
+			t.Fatalf("verified authority source = %q, want %q", source, testStationA)
+		}
+	}
 	if fixture.db.Migrator().HasTable("actor_devices") {
 		t.Fatal("Conversation adapter created or depended on a local actor_devices table")
 	}
@@ -1247,6 +1252,7 @@ type transactionalAuthorityPort struct {
 	clock             *testClock
 	calls             int
 	retryableAttempts int
+	sources           []string
 }
 
 func (p *transactionalAuthorityPort) ApplyAuthorityCommand(
@@ -1256,6 +1262,7 @@ func (p *transactionalAuthorityPort) ApplyAuthorityCommand(
 ) (conversationfederation.AuthorityCommandOutcome, error) {
 	p.mu.Lock()
 	p.calls++
+	p.sources = append(p.sources, command.SourceHomeStation)
 	if p.retryableAttempts > 0 {
 		p.retryableAttempts--
 		p.mu.Unlock()
@@ -1334,6 +1341,12 @@ func (p *transactionalAuthorityPort) callCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.calls
+}
+
+func (p *transactionalAuthorityPort) sourceHomeStations() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.sources...)
 }
 
 func (p *transactionalAuthorityPort) setRetryableAttempts(attempts int) {

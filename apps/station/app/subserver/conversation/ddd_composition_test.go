@@ -895,8 +895,7 @@ func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing
 
 	preparation, err := fixture.commands.PrepareCommand(
 		context.Background(),
-		created.Conversation.ID,
-		alice,
+		dddPrepareCommandRequest(t, fixture, created.Conversation.ID, alice),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -929,6 +928,7 @@ func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing
 			Deliveries:              deliveries,
 			CommittedAt:             sendAt,
 		},
+		VerifiedRoutes:    dddActiveRoutes(t, fixture.db, alice.Actor, bob.Actor),
 		ExactCommandBytes: sendBytes,
 	}
 	divergent := request
@@ -1000,8 +1000,7 @@ func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing
 
 	rollbackPreparation, err := fixture.commands.PrepareCommand(
 		context.Background(),
-		created.Conversation.ID,
-		alice,
+		dddPrepareCommandRequest(t, fixture, created.Conversation.ID, alice),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1366,8 +1365,7 @@ func TestConversationDDDDirectFanoutUsesCurrentActiveActorDevices(t *testing.T) 
 	)
 	preparation, err := fixture.commands.PrepareCommand(
 		context.Background(),
-		created.Conversation.ID,
-		aliceSecond,
+		dddPrepareCommandRequest(t, fixture, created.Conversation.ID, aliceSecond),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1424,6 +1422,7 @@ func TestConversationDDDDirectFanoutUsesCurrentActiveActorDevices(t *testing.T) 
 			Deliveries:              deliveries,
 			CommittedAt:             at,
 		},
+		VerifiedRoutes:    dddActiveRoutes(t, fixture.db, alice.Actor, bob.Actor),
 		ExactCommandBytes: commandBytes,
 	})
 	if err != nil {
@@ -1446,13 +1445,205 @@ func TestConversationDDDDirectFanoutUsesCurrentActiveActorDevices(t *testing.T) 
 	}
 }
 
+func TestConversationDDDCommandRoutesUseVerifiedRemoteActorWithoutShadowRow(t *testing.T) {
+	fixture := newDDDComposition(t)
+	alice := dddEndpoint("ptid:verified-command-alice", "alice-1")
+	bob := dddEndpoint("ptid:verified-command-bob", "bob-1")
+	routes := dddDirectRoutes(alice, "station-a", bob, "station-b")
+	seedDDDDevices(t, fixture.db, dddDevice(alice, "station-a"))
+
+	created, err := fixture.commands.CreateDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           alice,
+			Peer:              bob.Actor,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "verified-command-create",
+			VerifiedRoutes:    routes,
+			ExactCommandBytes: []byte("verified-command-create"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var remoteShadowRows int64
+	if err := fixture.db.Model(&dddActorDeviceModel{}).
+		Where("ptid = ?", string(bob.Actor)).
+		Count(&remoteShadowRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if remoteShadowRows != 0 {
+		t.Fatalf("remote Actor shadow rows = %d, want 0", remoteShadowRows)
+	}
+
+	preparation, err := fixture.commands.PrepareCommand(
+		context.Background(),
+		command.PrepareCommandRequest{
+			ConversationID:    created.Conversation.ID,
+			Sender:            alice,
+			SenderHomeStation: "station-a",
+			VerifiedRoutes:    routes,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !valueobject.EqualEndpointSets(
+		preparation.RequiredEndpoints,
+		[]valueobject.Endpoint{alice, bob},
+	) {
+		t.Fatalf("required endpoints = %+v", preparation.RequiredEndpoints)
+	}
+
+	at := fixture.clock.Now()
+	commandBytes := dddSendCommandBytes(
+		t,
+		created.Conversation.ID,
+		"verified-command-send",
+		alice,
+		preparation,
+		at,
+	)
+	result, err := fixture.commands.Submit(
+		context.Background(),
+		command.SubmitRequest{
+			Command: aggregate.Command{
+				ID:                      "verified-command-send",
+				ConversationID:          created.Conversation.ID,
+				AuthorityStation:        "station-a",
+				Sender:                  alice,
+				ObservedMembershipEpoch: preparation.Head.MembershipEpoch,
+				ObservedMLSEpoch:        preparation.Head.MLSEpoch,
+				DeliveryPlanHash:        preparation.DeliveryPlanHash,
+				Kind:                    domainevent.KindMessageCommitted,
+				MessageID:               "message-verified-command-send",
+				Payload:                 commandBytes,
+				Deliveries: []valueobject.PreparedDelivery{
+					dddDelivery(
+						t,
+						alice,
+						"station-a",
+						valueobject.DeliveryKindPublicEvent,
+						"alice-marker",
+					),
+					dddDelivery(
+						t,
+						bob,
+						"station-b",
+						valueobject.DeliveryKindDirectCiphertext,
+						"bob-ciphertext",
+					),
+				},
+				CommittedAt: at,
+			},
+			VerifiedRoutes:    routes,
+			ExactCommandBytes: commandBytes,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Event.Sequence != 2 {
+		t.Fatalf("committed sequence = %d, want 2", result.Event.Sequence)
+	}
+
+	if _, err := fixture.commands.PrepareCommand(
+		context.Background(),
+		command.PrepareCommandRequest{
+			ConversationID:    created.Conversation.ID,
+			Sender:            bob,
+			SenderHomeStation: "station-b",
+			VerifiedRoutes:    routes,
+		},
+	); err != nil {
+		t.Fatalf("verified remote sender preparation failed: %v", err)
+	}
+	if _, err := fixture.commands.PrepareCommand(
+		context.Background(),
+		command.PrepareCommandRequest{
+			ConversationID:    created.Conversation.ID,
+			Sender:            bob,
+			SenderHomeStation: "station-c",
+			VerifiedRoutes:    routes,
+		},
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeProposalBinding) {
+		t.Fatalf("wrong remote Home Station error = %v", err)
+	}
+	staleRoutes := dddDirectRoutes(alice, "station-a", bob, "station-c")
+	if _, err := fixture.commands.PrepareCommand(
+		context.Background(),
+		command.PrepareCommandRequest{
+			ConversationID:    created.Conversation.ID,
+			Sender:            alice,
+			SenderHomeStation: "station-a",
+			VerifiedRoutes:    staleRoutes,
+		},
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeStaleAuthorityHead) {
+		t.Fatalf("stale member Home Station error = %v", err)
+	}
+	for _, testCase := range []struct {
+		name   string
+		routes []ports.EndpointRoute
+	}{
+		{name: "missing remote actor", routes: routes[:1]},
+		{
+			name:   "duplicate endpoint",
+			routes: append(append([]ports.EndpointRoute(nil), routes...), routes[1]),
+		},
+		{
+			name: "extra actor",
+			routes: append(
+				append([]ports.EndpointRoute(nil), routes...),
+				ports.EndpointRoute{
+					Endpoint:    dddEndpoint("ptid:verified-command-charlie", "charlie-1"),
+					HomeStation: "station-c",
+				},
+			),
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if _, err := fixture.commands.PrepareCommand(
+				context.Background(),
+				command.PrepareCommandRequest{
+					ConversationID:    created.Conversation.ID,
+					Sender:            alice,
+					SenderHomeStation: "station-a",
+					VerifiedRoutes:    testCase.routes,
+				},
+			); !conversationdomain.IsCode(
+				err,
+				conversationdomain.ErrorCodeStaleAuthorityHead,
+			) {
+				t.Fatalf("invalid route snapshot error = %v", err)
+			}
+		})
+	}
+	if err := fixture.db.Model(&dddActorDeviceModel{}).
+		Where("ptid = ? AND device_id = ?", string(alice.Actor), string(alice.Device)).
+		Update("active", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.commands.PrepareCommand(
+		context.Background(),
+		command.PrepareCommandRequest{
+			ConversationID:    created.Conversation.ID,
+			Sender:            alice,
+			SenderHomeStation: "station-a",
+			VerifiedRoutes:    routes,
+		},
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
+		t.Fatalf("inactive local sender error = %v", err)
+	}
+}
+
 func TestConversationDDDMessageIdentityAndAuthorRules(t *testing.T) {
 	fixture := newDDDComposition(t)
 	alice := dddEndpoint("ptid:message-alice", "alice-1")
 	bob := dddEndpoint("ptid:message-bob", "bob-1")
 	seedDDDDevices(t, fixture.db,
 		dddDevice(alice, "station-a"),
-		dddDevice(bob, "station-b"),
+		dddDevice(bob, "station-a"),
 	)
 	created, err := fixture.commands.CreateDirect(context.Background(), command.CreateDirectRequest{
 		Creator:           alice,
@@ -1460,7 +1651,7 @@ func TestConversationDDDMessageIdentityAndAuthorRules(t *testing.T) {
 		FederationID:      dddFederationID,
 		AuthorityEpoch:    dddAuthorityEpoch,
 		CommandID:         "message-rules-create",
-		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
+		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-a"),
 		ExactCommandBytes: []byte("message-rules-create"),
 	})
 	if err != nil {
@@ -1475,8 +1666,7 @@ func TestConversationDDDMessageIdentityAndAuthorRules(t *testing.T) {
 		t.Helper()
 		preparation, err := fixture.commands.PrepareCommand(
 			context.Background(),
-			created.Conversation.ID,
-			sender,
+			dddPrepareCommandRequest(t, fixture, created.Conversation.ID, sender),
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -1516,6 +1706,7 @@ func TestConversationDDDMessageIdentityAndAuthorRules(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		mapped.VerifiedRoutes = dddActiveRoutes(t, fixture.db, alice.Actor, bob.Actor)
 		return mapped
 	}
 
@@ -1581,8 +1772,7 @@ func TestConversationDDDDissolveUsesCanonicalCommandAndEvent(t *testing.T) {
 
 	preparation, err := fixture.commands.PrepareCommand(
 		context.Background(),
-		groupID,
-		owner,
+		dddPrepareCommandRequest(t, fixture, groupID, owner),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1617,6 +1807,7 @@ func TestConversationDDDDissolveUsesCanonicalCommandAndEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	request.VerifiedRoutes = dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor)
 	result, err := fixture.commands.Submit(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -1634,8 +1825,7 @@ func TestConversationDDDDissolveUsesCanonicalCommandAndEvent(t *testing.T) {
 	}
 	if _, err := fixture.commands.PrepareCommand(
 		context.Background(),
-		groupID,
-		owner,
+		dddPrepareCommandRequest(t, fixture, groupID, owner),
 	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeInactive) {
 		t.Fatalf("dissolved conversation remained writable: %v", err)
 	}
@@ -1748,8 +1938,7 @@ func TestConversationDDDForwardedProposalUsesAuthorityCommandPath(t *testing.T) 
 	}
 	preparation, err := fixture.commands.PrepareCommand(
 		context.Background(),
-		created.Conversation.ID,
-		bob,
+		dddPrepareCommandRequest(t, fixture, created.Conversation.ID, bob),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1782,6 +1971,7 @@ func TestConversationDDDForwardedProposalUsesAuthorityCommandPath(t *testing.T) 
 				},
 				CommittedAt: at,
 			},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, alice.Actor, bob.Actor),
 			ExactCommandBytes: commandBytes,
 		}
 	}
@@ -2010,8 +2200,7 @@ func TestConversationDDDForwardedProposalUsesAuthorityCommandPath(t *testing.T) 
 	}
 	preparation, err = fixture.commands.PrepareCommand(
 		context.Background(),
-		created.Conversation.ID,
-		bob,
+		dddPrepareCommandRequest(t, fixture, created.Conversation.ID, bob),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2056,8 +2245,7 @@ func TestConversationDDDForwardedProposalUsesAuthorityCommandPath(t *testing.T) 
 	}
 	preparation, err = fixture.commands.PrepareCommand(
 		context.Background(),
-		created.Conversation.ID,
-		bob,
+		dddPrepareCommandRequest(t, fixture, created.Conversation.ID, bob),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2159,8 +2347,7 @@ func TestConversationDDDRetryableReadOnlyDoesNotConsumeCommandID(t *testing.T) {
 	createDDDGroup(t, fixture, groupID, owner, member)
 	preparation, err := fixture.commands.PrepareCommand(
 		context.Background(),
-		groupID,
-		owner,
+		dddPrepareCommandRequest(t, fixture, groupID, owner),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2192,6 +2379,7 @@ func TestConversationDDDRetryableReadOnlyDoesNotConsumeCommandID(t *testing.T) {
 			},
 			CommittedAt: at,
 		},
+		VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
 		ExactCommandBytes: commandBytes,
 	}
 	if err := fixture.db.Model(&persistence.ConversationModel{}).
@@ -2800,8 +2988,7 @@ func TestConversationDDDPrepareMembershipRemovesRevokedDeviceLeaf(t *testing.T) 
 
 	preparation, err := fixture.commands.PrepareCommand(
 		context.Background(),
-		groupID,
-		owner,
+		dddPrepareCommandRequest(t, fixture, groupID, owner),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2835,6 +3022,7 @@ func TestConversationDDDPrepareMembershipRemovesRevokedDeviceLeaf(t *testing.T) 
 				},
 				CommittedAt: sendAt,
 			},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, owner.Actor, member.Actor),
 			ExactCommandBytes: sendBytes,
 		},
 	); err != nil {
@@ -4091,8 +4279,7 @@ func TestConversationDDDPostCommitFailuresDoNotRollBackCommandOrReadCursor(t *te
 	}
 	preparation, err := fixture.commands.PrepareCommand(
 		context.Background(),
-		created.Conversation.ID,
-		alice,
+		dddPrepareCommandRequest(t, fixture, created.Conversation.ID, alice),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -4127,6 +4314,7 @@ func TestConversationDDDPostCommitFailuresDoNotRollBackCommandOrReadCursor(t *te
 				},
 				CommittedAt: at,
 			},
+			VerifiedRoutes:    dddActiveRoutes(t, fixture.db, alice.Actor, bob.Actor),
 			ExactCommandBytes: commandBytes,
 		},
 	)
@@ -4269,8 +4457,7 @@ func TestConversationDDDFollowerMembershipPreservesSettings(t *testing.T) {
 
 	preparation, err := authorityFixture.commands.PrepareCommand(
 		context.Background(),
-		groupID,
-		owner,
+		dddPrepareCommandRequest(t, authorityFixture, groupID, owner),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -4338,6 +4525,7 @@ func TestConversationDDDFollowerMembershipPreservesSettings(t *testing.T) {
 				Visibility:            &visibility,
 				DisappearTimerSeconds: &timer,
 			},
+			VerifiedRoutes:    dddActiveRoutes(t, authorityFixture.db, owner.Actor, member.Actor),
 			ExactCommandBytes: commandBytes,
 		},
 	)
@@ -5341,6 +5529,40 @@ func dddActiveRoutes(
 		t.Fatal(err)
 	}
 	return routes
+}
+
+func dddPrepareCommandRequest(
+	t *testing.T,
+	fixture dddFixture,
+	conversationID valueobject.ConversationID,
+	sender valueobject.Endpoint,
+) command.PrepareCommandRequest {
+	t.Helper()
+	actors, err := fixture.commands.CommandRouteActors(
+		context.Background(),
+		conversationID,
+		sender.Actor,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := dddActiveRoutes(t, fixture.db, actors...)
+	var senderHomeStation valueobject.StationID
+	for _, route := range routes {
+		if route.Endpoint == sender {
+			senderHomeStation = route.HomeStation
+			break
+		}
+	}
+	if senderHomeStation == "" {
+		t.Fatalf("sender %s is absent from command routes", sender.Key())
+	}
+	return command.PrepareCommandRequest{
+		ConversationID:    conversationID,
+		Sender:            sender,
+		SenderHomeStation: senderHomeStation,
+		VerifiedRoutes:    routes,
+	}
 }
 
 func dddMemberDevice(
