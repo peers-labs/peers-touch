@@ -229,8 +229,8 @@ func (r *Repository) BuildLocalEndpointManifestSnapshot(
 	return proto.Clone(manifest).(*actormodel.ActorEndpointManifest), nil
 }
 
-// AcceptVerifiedEndpointManifest fences a verified routing snapshot against
-// rollback and same-version state conflicts.
+// AcceptVerifiedEndpointManifest persists the verified Actor identity
+// continuity key and fences its routing snapshot in one transaction.
 func (r *Repository) AcceptVerifiedEndpointManifest(
 	ctx context.Context,
 	manifest *actormodel.ActorEndpointManifest,
@@ -264,6 +264,13 @@ func (r *Repository) AcceptVerifiedEndpointManifest(
 	stateHash := sha256.Sum256(stateBytes)
 
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if identityErr := acceptVerifiedManifestIdentity(
+			tx,
+			manifest,
+			acceptedAt.UTC(),
+		); identityErr != nil {
+			return identityErr
+		}
 		candidate := &ActorEndpointDirectoryVersionModel{
 			ActorPTID:   manifest.GetActor().GetPtid(),
 			Version:     manifest.GetDirectoryVersion(),
@@ -775,6 +782,101 @@ func addCanonicalHomeStation(
 			operation,
 			"home_station_peer_id",
 			"has conflicting Actor Identity projections",
+		)
+	}
+
+	return nil
+}
+
+func acceptVerifiedManifestIdentity(
+	tx *gorm.DB,
+	manifest *actormodel.ActorEndpointManifest,
+	acceptedAt time.Time,
+) error {
+	const operation = "actor_identity.accept_verified_endpoint_manifest"
+
+	if tx == nil ||
+		manifest == nil ||
+		manifest.GetActor() == nil ||
+		acceptedAt.IsZero() {
+		return domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"actor_identity",
+			"is incomplete",
+		)
+	}
+	ptid := manifest.GetActor().GetPtid()
+	if err := domain.ValidatePTID(operation, ptid); err != nil {
+		return err
+	}
+	if err := domain.ValidateProfileVersion(
+		operation,
+		manifest.GetActorProfileVersion(),
+	); err != nil {
+		return err
+	}
+	publicKey := manifest.GetActorIdentityPublicKey()
+	if len(publicKey) != ed25519.PublicKeySize {
+		return domain.NewError(
+			domain.ErrorCodeInvalidProof,
+			operation,
+			"actor_identity_public_key",
+			"is not an Ed25519 public key",
+		)
+	}
+	fingerprint := sha256.Sum256(publicKey)
+	candidate := ActorIdentityModel{
+		PTID:           ptid,
+		PublicKey:      append([]byte(nil), publicKey...),
+		Fingerprint:    append([]byte(nil), fingerprint[:]...),
+		ProfileVersion: int64(manifest.GetActorProfileVersion()),
+		CreatedAt:      acceptedAt,
+		UpdatedAt:      acceptedAt,
+	}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&candidate).Error; err != nil {
+		return err
+	}
+
+	var current ActorIdentityModel
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("ptid = ?", ptid).
+		First(&current).Error; err != nil {
+		return err
+	}
+	if err := (domain.ActorIdentity{
+		PTID:           current.PTID,
+		PublicKey:      append([]byte(nil), current.PublicKey...),
+		Fingerprint:    append([]byte(nil), current.Fingerprint...),
+		ProfileVersion: uint64(current.ProfileVersion),
+	}).ValidateEnrollment(domain.Enrollment{
+		PTID:                     ptid,
+		ActorIdentityPublicKey:   append([]byte(nil), publicKey...),
+		ActorIdentityFingerprint: append([]byte(nil), fingerprint[:]...),
+		ProfileVersion:           manifest.GetActorProfileVersion(),
+	}); err != nil {
+		return err
+	}
+	if manifest.GetActorProfileVersion() == uint64(current.ProfileVersion) {
+		return nil
+	}
+
+	result := tx.Model(&ActorIdentityModel{}).
+		Where("ptid = ? AND profile_version = ?", ptid, current.ProfileVersion).
+		Updates(map[string]interface{}{
+			"profile_version": int64(manifest.GetActorProfileVersion()),
+			"updated_at":      acceptedAt,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return domain.NewError(
+			domain.ErrorCodeIdentityConflict,
+			operation,
+			"actor_profile_version",
+			"changed concurrently",
 		)
 	}
 
