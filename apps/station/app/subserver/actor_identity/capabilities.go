@@ -149,8 +149,8 @@ func (c *actorCapabilities) ValidateEndpointManifest(
 	)
 }
 
-// AcceptVerifiedEndpointManifest persists the monotonic Actor routing fence
-// after the consuming Federation boundary has verified the Station signature.
+// AcceptVerifiedEndpointManifest persists the verified Actor identity
+// continuity key and routing fence after Station signature verification.
 func (c *actorCapabilities) AcceptVerifiedEndpointManifest(
 	ctx context.Context,
 	manifest *actormodel.ActorEndpointManifest,
