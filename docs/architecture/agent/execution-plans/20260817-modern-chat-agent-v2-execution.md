@@ -252,7 +252,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `a1f9d8c82edc013a02cf96f35982180299cd3e35` contains the duplicate-conflict evidence projection correction and sanitized cancellation post-reconcile instrumentation. Its exact-source run failed earlier at Browser English AS-F06 while switching from Agent chat to Settings, before cancellation or duplicate-conflict verification. Retained session `as-f06-page-switch` is instrumenting publication, consumption, router, and composer-visibility boundaries. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `66e2f48aa7e3603da786c7cfdef6083b3c438c0e` crossed both observed Browser AS-F06 page switches, rejecting the navigation hypotheses, then exposed a masked primary failure plus Native capability-isolation cleanup timeout. A same-source diagnostic run localized the Native failure to the `ensureProvider` harness call while process and ports remained healthy. Stage-only provider setup instrumentation is pending exact-source execution. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6367,6 +6367,40 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   distinguishes missing navigation subscription, failed router transition,
   hidden-page visibility, and a later navigation reversal before any behavior
   or timeout change. Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Exact-source instrumentation checkpoint
+  `66e2f48aa7e3603da786c7cfdef6083b3c438c0e` used Acceptance binary
+  SHA-256
+  `09b38a6443b39f6c8638d93d42a06d69d3f460bb9ed32b2d5b3f86a47bd7a143`;
+  embedded-WebDriver smoke passed and the approved Station reported the same
+  commit. Gate run
+  `20260908T122047739669Z-f8530c1cb8be2d816b367e98712170c6`
+  (aggregate
+  `20260908T122047632021Z-d1d981b36df6e47f3c0da59998fcde73`)
+  crossed both observed Browser AS-F06 page-switch boundaries. Each request
+  was consumed, changed the hash to `#/settings`, hid the keep-alive Agent
+  frame, and made the composer non-visible in approximately 300 ms. The prior
+  page-switch timeout therefore did not reproduce and no navigation behavior
+  change is justified. The run later failed with a primary
+  `FoundationCandidateError`; cleanup then failed to restore Native capability
+  isolation and masked the primary error text. Outer Provisioner cleanup
+  completed `DONE / PROVEN / passed`, all six client ports were released, and
+  the Station remained healthy on the exact commit.
+- Targeted unchanged-source diagnostic run
+  `20260908T124702409374Z-e93f2a523848b18a09aa1e90197bf01a`
+  (aggregate
+  `20260908T124702291514Z-e36f00488fc4d4c18a7de679d1ff87d6`)
+  failed earlier while Native executed `ensureProvider`. Retained runtime
+  evidence shows a 60-second WebDriver timeout while the process, Driver,
+  Gateway, renderer, and WebDriver port all remained healthy. Cleanup then
+  timed out on `restoreFoundationCapabilityIsolation` through the same Native
+  harness channel; outer Provisioner cleanup still passed and released all
+  ports. The next checkpoint records only stage completion across provider
+  list, detail, persistence, model list, Agent load/profile update, and
+  readiness so the first unresolved await can be identified without exposing
+  credentials or changing behavior. Desktop TypeScript check, all `588`
+  Desktop tests with one unrelated environment-dependent skip, Desktop
+  production build, `75/75` Agent native static tests, and
+  `git diff --check` pass. Foundation/G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
