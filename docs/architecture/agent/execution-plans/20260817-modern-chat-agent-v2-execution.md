@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-09-07
+> **Created**: 2026-08-17 | **Updated**: 2026-09-08
 > **Owner**: Peers-Touch Agent Team
 > **Plan gate**: `OWNER_APPROVED_EXECUTION`
 > **Entry gate**: Owner accepted MCA-D19A/D19B/D19C into the main Goal G1 task on 2026-08-22
@@ -252,7 +252,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `f504456cf8f4b94f60ecd5c0e1f3a09d9a0ded53` contains the duplicate-conflict evidence projection correction, but its exact-source run failed earlier at Browser English `BASE-CANCELLED` while waiting for the live receiver after terminal reconciliation. Sanitized post-reconcile store/operation instrumentation is pending exact-source reproduction; the duplicate-conflict correction remains unverified. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `a1f9d8c82edc013a02cf96f35982180299cd3e35` contains the duplicate-conflict evidence projection correction and sanitized cancellation post-reconcile instrumentation. Its exact-source run failed earlier at Browser English AS-F06 while switching from Agent chat to Settings, before cancellation or duplicate-conflict verification. Retained session `as-f06-page-switch` is instrumenting publication, consumption, router, and composer-visibility boundaries. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6348,6 +6348,25 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   immediately after reconciliation. Desktop TypeScript, `200/200` focused
   Harness/oracle tests, and `git diff --check` pass. No tuple, assertion,
   timeout, or product behavior changed.
+- Exact-source checkpoint
+  `a1f9d8c82edc013a02cf96f35982180299cd3e35` deployed to
+  `chat-native-disposable` with the cancellation post-reconcile
+  instrumentation. Gate run
+  `20260908T102314913721Z-f9e3337ef779cc2f52b5c6a7908d26b6`
+  (aggregate
+  `20260908T102314798142Z-01f8d18393b8190e8db49d316f11edd4`)
+  failed first at
+  `foundation-browser-direct / browser / direct_model / AS-F06 / en /
+  single / sample-001` while `foundationF06FinalizePreparation` waited for
+  the Agent composer to become hidden after publishing a Settings navigation
+  request. The run never reached cancellation or duplicate conflict, so their
+  pending instrumentation and correction remain runtime-unverified. Local
+  source, Station live source, and runtime source all matched
+  `a1f9d8c82edc013a02cf96f35982180299cd3e35`; Provisioner cleanup completed
+  `DONE / PROVEN / passed`. Retained session `as-f06-page-switch` now
+  distinguishes missing navigation subscription, failed router transition,
+  hidden-page visibility, and a later navigation reversal before any behavior
+  or timeout change. Foundation/G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
