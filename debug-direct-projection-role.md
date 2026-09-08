@@ -308,3 +308,72 @@ ambiguous Federation context.
     `20260908T071331641490Z-5b73d412392c16df2b7a0e9b3abbedb5`.
 - Exact-source Windows verification remains pending; the debug session stays
   `[OPEN]`.
+
+## Iteration: Ordinary Command Signed Routes
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| Z | The Group-genesis client correction projects ready MLS state for both Alice and Bob. | Confirmed | Exact-source Product Closure run `20260908T074818880888Z-3d7030abcb60e950e59e442cf9d38d7b` passes `group.create.ui` at source `d84b1abcfa7bbe7ca0d990344c43f9e4a26f13f9`. |
+| AA | Alice's first Group message fails because the Conversation aggregate or epochs are invalid. | Rejected | station-four PostgreSQL contains the active Group, sequence 1, membership epoch 1, MLS epoch 1, and active Alice/Bob members with their correct Home Stations. |
+| AB | Ordinary command preparation drops remote Bob by consulting authority-local Actor Device truth. | Confirmed | station-four contains only Alice in `actor_devices`; `PrepareCommand` calls `resolveActorRoutes` through the local identity directory for every active member, then returns HTTP 400. Submission repeats the same lookup. |
+| AC | The accepted MP-D19 endpoint-manifest path can provide the complete command route snapshot without a remote shadow row. | Confirmed by existing owner path | Group prepare/create already resolve signed manifests outside the UOW, pass canonical `VerifiedRoutes`, and revalidate the locked actor set. |
+
+- Acceptance aggregate:
+  `20260908T074818777617Z-26a15dea2864b482b8b953c6dc1480f5`.
+- Windows cell:
+  `20260908t074856709879z-2bbd5496ad908ba4`.
+- Windows binary SHA-256:
+  `a1b26bc35ab9a867c4804f49beec15cbc4574f919ccb92e22bc12dc271f4057a`.
+- Passed steps: `alice.launch`, `bob.launch`, `conversation.search.ui`, and
+  `group.create.ui`.
+- First failed step: `transcript.thread.ui`, with Alice timing out on visible
+  message `w13-root-60670` and reporting
+  `messaging_send_outcome:not_queued:draft`.
+- Cleanup is `DONE/PROVEN`.
+- The correction belongs to Station Conversation. It must resolve fresh signed
+  manifests before ordinary prepare/submit, pass verified routes into the
+  application service, validate the exact locked actor set, preserve local
+  `IsActive` authorization, and bind federated senders to the authenticated
+  Home Station.
+- The client and protobuf contracts remain unchanged. Remote Actor shadow rows,
+  fallback reads, and a Station Messaging facade remain forbidden.
+- station-five's authority-local receipt commitment rejection remains a
+  secondary boundary.
+- The debug session stays `[OPEN]`.
+
+## Ordinary Command Signed-Route Fix
+
+- Production resolves the authority actor set before manifest lookup and passes
+  fresh signed endpoint routes into ordinary prepare and submit.
+- The application service revalidates the exact actor and Home Station set
+  under the locked aggregate.
+- Local senders still require an active local Actor Identity device.
+- Federated senders must match the authenticated source Home Station and active
+  Federation membership; no authority-local remote device row is required.
+- The same verified snapshot binds required endpoints, deliveries, submission,
+  and stale-plan response construction.
+- Focused regression proves the original Alice-local/Bob-remote shape with zero
+  Bob rows in authority-local `actor_devices`, plus wrong Home Station,
+  inactive local sender, and route-set drift rejection.
+- Full Conversation tests, race tests, `go vet`, Go style, formatting, and diff
+  checks pass. Independent seam review reports no P0/P1 finding.
+- Local Chat Gates:
+  - `station-messaging-unit`
+    `20260908T091503099805Z-e1d8eee5933fb55f354fc918f1e20720`;
+  - `messaging-platform-contract`
+    `20260908T091503099800Z-d4e451d77a221db6d4fa71bf34b08550`;
+  - `desktop-check`
+    `20260908T091503099826Z-0bd166c2e358268379cac7a134cbb282`;
+  - `chat-native-visible-static`
+    `20260908T091503099784Z-c43a202d98b5367637c3a4dee447480f`;
+  - `station-api-ownership`
+    `20260908T091547372258Z-8496e2900a1a6143827ccd0c3b451d23`.
+- Exact-range plan
+  `20260908T091939464338Z-58716024fc475e2b749e6389ed882355`
+  covers all 12 changed paths. Local aggregate
+  `20260908T092006472536Z-e2486e313e0f415be0402be559347726`
+  passes the four approved Chat Gates plus `station-api-ownership`.
+- Gap Detector remains `UNPROVEN` for deferred native/runtime and
+  Acceptance-self gates; no local result is treated as Product Closure proof.
+- Exact-source Windows Product Closure remains pending; the debug session stays
+  `[OPEN]`.

@@ -185,7 +185,36 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 	if err != nil {
 		return productionAuthorityRejection(wireCommand, err), nil
 	}
-	preparation, err := boundService.PrepareCommand(ctx, conversationID, sender)
+	sourceHomeStation, err := valueobject.NewStationID(verified.SourceHomeStation)
+	if err != nil || string(sourceHomeStation) != proposal.GetHomeStationPeerId() {
+		return productionAuthorityRejection(
+			wireCommand,
+			conversationdomain.NewError(
+				conversationdomain.ErrorCodeProposalBinding,
+				"production_federation.apply_authority_command",
+				"home_station",
+				"does not match the authenticated Federation source",
+			),
+		), nil
+	}
+	verifiedRoutes, err := p.composition.productionCommandRoutes(
+		ctx,
+		boundService,
+		conversationID,
+		sender.Actor,
+	)
+	if err != nil {
+		return productionAuthorityRejection(wireCommand, err), nil
+	}
+	preparation, err := boundService.PrepareCommand(
+		ctx,
+		command.PrepareCommandRequest{
+			ConversationID:    conversationID,
+			Sender:            sender,
+			SenderHomeStation: sourceHomeStation,
+			VerifiedRoutes:    verifiedRoutes,
+		},
+	)
 	if err != nil {
 		return productionAuthorityRejection(wireCommand, err), nil
 	}
@@ -211,6 +240,9 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 	if err != nil {
 		return productionAuthorityRejection(wireCommand, err), nil
 	}
+	if mapped.Membership == nil {
+		mapped.VerifiedRoutes = verifiedRoutes
+	}
 	commandHash, err := valueobject.NewHash(proposal.GetCommandSha256())
 	if err != nil {
 		return productionAuthorityRejection(wireCommand, err), nil
@@ -222,7 +254,7 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 			FederationID:     valueobject.FederationID(proposal.GetFederationId()),
 			AuthorityStation: valueobject.StationID(proposal.GetAuthorityStationPeerId()),
 			AuthorityEpoch:   valueobject.AuthorityEpoch(proposal.GetAuthorityEpoch()),
-			HomeStation:      valueobject.StationID(proposal.GetHomeStationPeerId()),
+			HomeStation:      sourceHomeStation,
 			Actor:            sender,
 			SigningKeyID:     proposal.GetActorSigningKeyId(),
 			CommandHash:      commandHash,
@@ -231,7 +263,7 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 			ExpiresAt:        time.UnixMilli(proposal.GetExpiresAtUnixMs()).UTC(),
 			Claims: command.ForwardedCommandClaims{
 				Scope:          productionCommandProposalScope,
-				Issuer:         valueobject.StationID(proposal.GetHomeStationPeerId()),
+				Issuer:         sourceHomeStation,
 				Audience:       valueobject.StationID(proposal.GetAuthorityStationPeerId()),
 				Subject:        valueobject.PTID(proposal.GetActorPtid()),
 				FederationID:   valueobject.FederationID(proposal.GetFederationId()),

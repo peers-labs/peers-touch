@@ -46,6 +46,7 @@ type FederationMembershipProjection interface {
 // projection into the Conversation authority transaction.
 type VerifiedAuthorityCommand struct {
 	Proposal              *chatmodel.ConversationCommandProposal
+	SourceHomeStation     string
 	CanonicalCommandBytes []byte
 	CanonicalSigningBytes []byte
 	VerifiedSigningKey    *actormodel.VerifiedActorDeviceSigningKey

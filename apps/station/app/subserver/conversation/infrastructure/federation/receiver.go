@@ -231,6 +231,7 @@ func (r *Receiver) receiveAuthorityCommand(
 		transaction,
 		VerifiedAuthorityCommand{
 			Proposal:              proto.Clone(proposal).(*chatmodel.ConversationCommandProposal),
+			SourceHomeStation:     frame.GetSourceStationPeerId(),
 			CanonicalCommandBytes: commandBytes,
 			CanonicalSigningBytes: signingBytes,
 			VerifiedSigningKey:    proto.Clone(key).(*actormodel.VerifiedActorDeviceSigningKey),

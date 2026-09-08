@@ -861,7 +861,7 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Exact-source Product Closure run `20260908T053425400659Z-254d5079f8451a6c7bf7e9b08c3daab7` at `0261490b07a8c278fbc8fdfa3f4c3775ddfaebd5` proves Direct open/reopen and canonical Group authority commit, then fails because the creator `PUBLIC_EVENT` and invitee `MLS_WELCOME` consumers only accepted post-genesis transition facts. The portable-core correction now consumes the sequence-1 `ConversationCreatedFact`, verifies the authority snapshot against the exact OpenMLS leaf set, and commits Group projection, MLS state, authority head, queue marker, receipt, and sender command atomically in Desktop/Mobile stores. Full portable tests, platform checks, and the four approved local Gates pass; W9-D remains `PARTIAL/UNPROVEN` pending commit, exact-source deployment, and Product Closure rerun. |
+| NDR-W9 Windows cell | W9-A/B/C done; contact resilience and Group-genesis client consumption `DONE/PROVEN`; W9-D Product Closure remains partial | Exact-source Product Closure run `20260908T074818880888Z-3d7030abcb60e950e59e442cf9d38d7b` at `d84b1abcfa7bbe7ca0d990344c43f9e4a26f13f9` proves Direct open/reopen, canonical Group authority commit, and both Alice sender `PUBLIC_EVENT` and Bob recipient `MLS_WELCOME` Group projections. The first failure advances to `transcript.thread.ui`: station-four rejects ordinary command preparation because it re-resolves remote Bob through authority-local `actor_devices` instead of the accepted MP-D19 signed endpoint manifests. W9-D remains `PARTIAL/UNPROVEN` pending the Conversation owner correction, local Gates, exact-source deployment, and Product Closure rerun. |
 | NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, and authority Group commit; genesis client consumption is locally verified | The current correction covers both Alice's sender marker and Bob's genesis Welcome without changing Station routes, wire kinds, or authority ownership. Bob's station-five receipt rejection remains a separately recorded cross-Station boundary and is not claimed fixed. MLS bidirectional transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven. |
 
 ### 2026-08-24 Execution Reconciliation
@@ -3602,3 +3602,107 @@ the unrelated pre-existing Auth test-only missing symbols and type-inference
 error; production compilation passes. NDR-W9-D and Windows NDR-W10-D remain
 `PARTIAL/UNPROVEN` until this checkpoint is committed, deployed exactly to
 station-four, station-five, and sixwin, and Product Closure is rerun.
+
+### 2026-09-08 Group Genesis Runtime Proof And Ordinary Command Route Boundary
+
+The committed Group-genesis client correction at
+`d84b1abcfa7bbe7ca0d990344c43f9e4a26f13f9` was deployed exactly to
+station-four, station-five, and sixwin. An initial provisioner run
+`20260908T073834625118Z-6b723d782d499ca465c5fe6234c86d18`
+timed out while copying the 132 MiB Git bundle to sixwin before the Product
+Gate launched. The transferred bundle was complete, and a guarded 15 KiB
+incremental bundle advanced sixwin from
+`0261490b07a8c278fbc8fdfa3f4c3775ddfaebd5` to the exact target under the
+remote source lease. The first run is therefore an environment
+`PARTIAL/UNPROVEN`, with cleanup `DONE/PROVEN`.
+
+The authoritative Product Closure rerun is
+`20260908T074818880888Z-3d7030abcb60e950e59e442cf9d38d7b`,
+with aggregate
+`20260908T074818777617Z-26a15dea2864b482b8b953c6dc1480f5`
+and Windows cell
+`20260908t074856709879z-2bbd5496ad908ba4`. It used exact source
+`d84b1abcfa7bbe7ca0d990344c43f9e4a26f13f9` and binary SHA-256
+`a1b26bc35ab9a867c4804f49beec15cbc4574f919ccb92e22bc12dc271f4057a`.
+Windows 10 Enterprise build 19045, x86_64, WebView2 `152.0.4191.66`,
+1920x1080 rendering, native input/focus/point ownership, screenshots, distinct
+Alice-to-station-four and Bob-to-station-five bindings, Direct create/reopen,
+and `group.create.ui` all pass. This proves both Alice's sender
+`PUBLIC_EVENT` and Bob's `MLS_WELCOME` Group-genesis consumption.
+
+The first Product Closure failure advances to `transcript.thread.ui`: Alice
+times out waiting for visible message `w13-root-60670`, while Desktop records
+`messaging_send_outcome:not_queued:draft`. station-four returns HTTP 400 during
+ordinary command preparation. The locked Conversation aggregate is healthy
+and contains active Alice and Bob members with their correct Home Stations,
+but `PrepareCommand` discards that cross-Station route truth and resolves every
+member again through station-four's local-only `actor_devices`, where Bob does
+not exist. Ordinary command submission repeats the same local-only route
+resolution.
+
+The dependency-ready correction remains inside the Station Conversation owner:
+resolve fresh MP-D19 signed endpoint manifests before preparation/submission,
+pass canonical `VerifiedRoutes` into the application service, revalidate the
+exact active actor set against the locked aggregate, retain Actor Identity
+`IsActive` authorization for a local sender, and bind a federated sender to its
+authenticated Home Station. The client and protobuf contracts remain
+unchanged; no remote Actor shadow row, fallback read, or Messaging facade is
+permitted. station-five's authority-local delivery-receipt rejection remains a
+secondary later boundary.
+
+NDR-W9-D and Windows NDR-W10-D remain `PARTIAL/UNPROVEN`. The next action is
+the focused Conversation correction, Station tests and the four approved local
+Chat Gates, a local checkpoint commit without push, exact-source deployment,
+and another Product Closure-only rerun.
+
+### 2026-09-08 Ordinary Command Signed-Route Correction
+
+The Conversation owner now resolves the current authority actor set before
+ordinary command preparation/submission, fetches fresh MP-D19 signed endpoint
+manifests outside the command UOW where the caller permits it, and passes the
+canonical server-derived routes into the application service. Under the locked
+aggregate, the application service rejects missing, duplicate, extra, or
+Home-Station-drifted route snapshots before mutation. The exact same verified
+snapshot drives required endpoints, delivery binding, submission validation,
+and typed stale-plan response construction.
+
+Local senders still require an active Actor Identity device at the local
+Station. Federated prepare and durable submit bind the sender endpoint to the
+authenticated source Home Station and active Federation membership without
+requiring an authority-local remote Actor device row. The protobuf and client
+contracts, membership plan path, Group genesis path, and Conversation ownership
+remain unchanged.
+
+Focused regression proves Alice can prepare and commit with Bob present in the
+Conversation and signed route set but absent from authority-local
+`actor_devices`. It also proves a valid remote sender route, wrong authenticated
+Home Station rejection, local inactive-device rejection, and fail-closed
+missing/duplicate/extra/Home-Station-drifted snapshots. The Conversation
+package, focused Federation receiver checks, complete race suite, focused
+`go vet`, Go style, formatting, and diff checks pass. Independent seam review
+reported no P0/P1 issue.
+
+The approved local Chat Gates pass:
+
+- `station-messaging-unit`:
+  `20260908T091503099805Z-e1d8eee5933fb55f354fc918f1e20720`;
+- `messaging-platform-contract`:
+  `20260908T091503099800Z-d4e451d77a221db6d4fa71bf34b08550`;
+- `desktop-check`:
+  `20260908T091503099826Z-0bd166c2e358268379cac7a134cbb282`;
+- `chat-native-visible-static`:
+  `20260908T091503099784Z-c43a202d98b5367637c3a4dee447480f`.
+
+Conditional `station-api-ownership`
+`20260908T091547372258Z-8496e2900a1a6143827ccd0c3b451d23`
+also passes. NDR-W9-D and Windows NDR-W10-D remain
+`PARTIAL/UNPROVEN` pending a local checkpoint commit, exact-source deployment
+to station-four, station-five, and sixwin, and a Product Closure-only rerun.
+Exact-range Acceptance plan
+`20260908T091939464338Z-58716024fc475e2b749e6389ed882355`
+matches all 12 changed paths. Local aggregate
+`20260908T092006472536Z-e2486e313e0f415be0402be559347726`
+passes the four approved Chat Gates plus `station-api-ownership`. Gap Detector
+remains `UNPROVEN` for the intentionally deferred native/runtime and
+Acceptance-self gates; no local evidence is promoted to Windows Product
+Closure proof.
