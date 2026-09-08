@@ -658,6 +658,12 @@ func mapMembershipDeliveries(
 				valueobject.DeliveryKindMLSRetirement,
 				payload,
 			))
+		case endpoint == sender:
+			delivery, err := publicDelivery(command, endpoint)
+			if err != nil {
+				return nil, err
+			}
+			deliveries = append(deliveries, delivery)
 		case containsEndpoint(added, endpoint):
 			welcome := welcomeByEndpoint[endpoint.Key()]
 			if welcome == nil {
@@ -689,12 +695,6 @@ func mapMembershipDeliveries(
 				payload,
 			))
 			delete(welcomeByEndpoint, endpoint.Key())
-		case endpoint == sender:
-			delivery, err := publicDelivery(command, endpoint)
-			if err != nil {
-				return nil, err
-			}
-			deliveries = append(deliveries, delivery)
 		case containsEndpoint(post, endpoint):
 			payload, err := wrapMlsTransitionPayload(
 				chat.MlsQueuePayloadKind_MLS_QUEUE_PAYLOAD_KIND_COMMIT,
