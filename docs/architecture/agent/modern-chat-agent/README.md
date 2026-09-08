@@ -102,10 +102,11 @@ activity snapshots as `MCA-D19D` on 2026-08-25. The tracked execution source is
 ## 5. Review Status
 
 V2 owner scope decisions are closed: Home and Evaluation are required; image
-generation is unsupported; video and server-side audio generation are deferred;
-Desktop is the complete delivery target, Browser preserves Station-backed
-outcomes, and Mobile UI is deferred while contract compatibility remains
-required.
+and video generation are unsupported in Peers-Touch, and any future video
+capability belongs to a separate project; server-side audio generation is
+deferred. Desktop is the complete delivery target, Browser preserves
+Station-backed outcomes, and Mobile UI is deferred while contract compatibility
+remains required.
 
 PRODUCT is accepted. Independent DESIGN review passed on 2026-08-17 after
 D14-D18, C11-C15, A15-A20, concurrency fencing, deletion/retention, and Gate
