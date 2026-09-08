@@ -434,3 +434,38 @@ ambiguous Federation context.
   `20260908T124713594514Z-380dca42bae140052b4e9df2105b3f13`.
 - Exact-source Windows Product Closure remains pending; the debug session stays
   `[OPEN]`.
+
+## Iteration: D-17 Remote Ordinary Command Submission
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| AH | The follower receipt correction lets Bob proceed to ordinary command dispatch. | Confirmed | Exact-source Product Closure run `20260908T141700178703Z-805b1dd1bba78e3a4ba40f54c7004c6f` reaches Bob's Group reply after the receipt path completes. |
+| AI | Bob's command reaches station-four and fails during authority execution. | Rejected | station-four has no Bob command receipt or sequence-3 event. |
+| AJ | station-five durably forwards Bob's command through shared Federation. | Rejected | station-five has no payload-kind 2 authority-command outbox row. |
+| AK | Desktop lost the actor-device-signed D-17 path during the Conversation hard cut. | Confirmed | The active `StationCommandTransport` submits raw `ChatCommand` bytes regardless of whether the active Station is the authority. |
+
+- Source:
+  `af5bb3b5699f7c5dce2b7aabd992dc97e8101f29`.
+- Acceptance aggregate:
+  `20260908T141700065759Z-30dc11b8077b16c4cfcb0303887969b7`.
+- Windows cell:
+  `20260908t141743996690z-c977333e1f36eb29`.
+- Windows binary SHA-256:
+  `df1ecb7445d4a7e05e9ab14bdd8b84010788596cea764d7df0b71ed8398de5d9`.
+- Group:
+  `c1fff411-8a86-4460-9bb8-c7a26aa1e1ab`.
+- First failed step: `transcript.thread.ui`, with Alice timing out on
+  `w13-bob-9393`.
+- Cleanup is `DONE/PROVEN`.
+- The local correction restores deterministic signed proposals for remote
+  authority commands, Home exact replay before Federation sequence allocation,
+  active follower-head admission, and Desktop `COMMAND_RESULT` consumption.
+- Ambiguous transport outcomes remain retryable; accepted authority results
+  repair local command state; terminal membership results clear durable and
+  in-memory pending MLS state; expired or terminal Home outbox rows cannot be
+  reported as newly accepted.
+- Local aggregate
+  `20260908T162840127741Z-61da456f1bdd0c6896f197a978a846e7`
+  passes the four approved Chat Gates.
+- Exact-source Windows Product Closure remains pending; the debug session stays
+  `[OPEN]`.

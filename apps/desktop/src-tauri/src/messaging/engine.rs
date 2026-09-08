@@ -15,6 +15,7 @@ use super::{
 };
 use crate::domain::crypto::IdentityKeyPair;
 use crate::infrastructure::attachment_blob::FilesystemAttachmentBlob;
+use crate::infrastructure::station_client;
 use crate::model::chat::{
     ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationKind,
     CreateDirectConversationRequest, CreateDirectConversationResponse, CryptoEndpoint,
@@ -726,9 +727,20 @@ impl MessagingEngine {
             .dispatch_lock
             .lock()
             .map_err(|_| "messaging command dispatch lock poisoned".to_string())?;
+        let home_station_peer_id = station_client::active_station_peer_id()
+            .ok_or_else(|| "messaging command Home Station identity is unavailable".to_string())?;
+        let (signing_key_id, signing_key) = self.device_signing_identity()?.ok_or_else(|| {
+            "messaging command device signing identity is unavailable".to_string()
+        })?;
         let progress = CommandOutboxWorker::new(
             self.store.clone(),
-            StationCommandTransport::new(token.to_string(), self.endpoint.device_id.clone())?,
+            StationCommandTransport::new(token.to_string(), self.endpoint.device_id.clone())?
+                .with_remote_command_identity(
+                    self.endpoint.ptid.clone(),
+                    home_station_peer_id,
+                    signing_key_id,
+                    signing_key,
+                )?,
             retry_policy,
         )?
         .dispatch_once(now_unix_ms)?;
