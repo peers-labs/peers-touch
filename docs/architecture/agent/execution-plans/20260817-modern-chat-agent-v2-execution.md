@@ -6212,6 +6212,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `DONE / PROVEN / passed`. The observer is now relocated to
   `runFoundationCredentialMissingScenario` without changing product behavior,
   tuple coverage, assertions, timeout, or cleanup semantics.
+- Exact-source run
+  `20260908T033604748910Z-e1de9eda72f09ed1e723b09771320057`
+  reached Browser English `BASE-CREDENTIAL_MISSING` and confirmed J:
+  `scenarioFacts.runtimeEvent` is the Station SSE
+  `error / PROVIDER_CREDENTIAL_MISSING` event with empty source Turn and source
+  sequence `0`, while the top-level scenario result returned an unrelated
+  successful `done` attestation event from another conversation. K/L/M are
+  rejected before candidate serialization. The root fix now returns the
+  scenario rejection event as `runtimeEvent` while preserving attestation
+  conversation/Turn IDs for Station readback. Cleanup completed
+  `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`
+  pending an exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
