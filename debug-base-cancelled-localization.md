@@ -209,3 +209,30 @@ Product matrix tuples, assertions, timeouts, and cleanup remain unchanged.
   Provisioner cleanup completed `DONE / PROVEN / passed`.
 - The cancellation correction is source-backed closed. The debug session
   remains `[OPEN]` until the user authorizes cleanup.
+
+## Receiver Timeout Recurrence
+
+- Exact-source checkpoint
+  `f504456cf8f4b94f60ecd5c0e1f3a09d9a0ded53` failed first at Browser
+  English `BASE-CANCELLED` before the receiver reporter ran:
+  `timed out waiting for: Foundation live cancellation receiver`.
+- Gate run:
+  `20260908T094631671783Z-58809a50c3800962a4233d9aa7bf90dc`;
+  outer run:
+  `20260908T094631559941Z-aa5dc8342be1ac6dc7051bf0592f9fc8`.
+- Source identity and cleanup passed. This checkpoint changed only
+  duplicate-conflict evidence projection, so no cancellation conclusion is
+  inferred from source adjacency.
+
+## Receiver Timeout Hypotheses
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| J | `reconcileRecoveredTurn` returns early because the current operation no longer owns the Turn. | Medium | Low | Post-reconcile operation is absent/mismatched and the message retains only the transient state. |
+| K | Authoritative sync has not produced the canonical assistant message, so merge removes or fails to promote the recovered message. | High | Low | Zero assistant messages for the Turn immediately after reconciliation. |
+| L | Store state is correct but the DOM never renders the canonical cancellation selector. | Medium | Low | One cancelled store message exists while no matching visible DOM element appears. |
+| M | Reconciliation settles the operation and clears the buffer before transferring the canonical message into current messages. | Medium | Low | Operation is settled, buffer absent, and current messages lack the Turn. |
+
+The next checkpoint records the sanitized operation, buffer, current-session,
+and per-Turn message projection immediately after reconciliation and before
+waiting for DOM visibility.
