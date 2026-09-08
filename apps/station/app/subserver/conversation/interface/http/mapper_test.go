@@ -426,6 +426,55 @@ func TestMapMembershipCommandUsesCanonicalEndpointPayloads(t *testing.T) {
 		}
 	}
 
+	t.Run("genesis sender receives public marker without welcome", func(t *testing.T) {
+		genesisPlan := plan
+		genesisPlan.AuthorityHead = valueobject.AuthorityHead{}
+		genesisPlan.PreEndpoints = nil
+		genesisPlan.PostEndpoints = []valueobject.Endpoint{owner, added}
+		genesisPlan.AddedEndpoints = []valueobject.Endpoint{owner, added}
+
+		genesis := proto.Clone(wire).(*chat.ChatCommand)
+		genesis.ObservedMembershipEpoch = 0
+		genesis.ObservedMlsEpoch = 0
+		genesis.GetMembershipTransition().FromMembershipEpoch = 0
+		genesis.GetMembershipTransition().FromMlsEpoch = 0
+		genesis.GetMembershipTransition().ToMlsEpoch = 1
+
+		mapped, err := conversationhttp.MapSubmitCommand(
+			conversationhttp.AuthenticatedActor{
+				PTID:     string(owner.Actor),
+				DeviceID: string(owner.Device),
+			},
+			localCommandRequest(genesis),
+			aggregate.CommandPreparation{
+				Kind:             valueobject.ConversationKindGroup,
+				AuthorityStation: "station-a",
+			},
+			&genesisPlan,
+			now,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(mapped.Command.Deliveries) != 2 {
+			t.Fatalf("genesis deliveries = %+v", mapped.Command.Deliveries)
+		}
+		for _, delivery := range mapped.Command.Deliveries {
+			switch delivery.Recipient {
+			case owner:
+				if delivery.Kind != valueobject.DeliveryKindPublicEvent {
+					t.Fatalf("genesis sender delivery = %+v", delivery)
+				}
+			case added:
+				if delivery.Kind != valueobject.DeliveryKindMLSWelcome {
+					t.Fatalf("genesis added endpoint delivery = %+v", delivery)
+				}
+			default:
+				t.Fatalf("unexpected genesis delivery = %+v", delivery)
+			}
+		}
+	})
+
 	t.Run("removed sender receives retirement instead of public marker", func(t *testing.T) {
 		selfRemovalPlan := plan
 		selfRemovalPlan.Changes = []entity.MembershipChange{{
