@@ -252,7 +252,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `4fc4ab8c87a8bfc658364f912cc3202ce7ad3f29` crossed Browser AS-F10 and failed first at Browser English `BASE-CANCELLED`. Canonical message identity is now correct, but the production terminal reconciliation path drops the live `data.reason` alias. The local correction centralizes terminal-reason normalization across stream projection, runtime recovery, and the business scenario; exact-source verification is pending. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `032bb05473906cb39aa9524131970f2aa2dab1ee` passed Browser AS-F10, `BASE-CANCELLED` in both locales, and `BASE-CREDENTIAL_MISSING`, then failed first at Browser English `BASE-DUPLICATE_CONFLICT / originalCommandPreserved`. All product-preservation assertions passed except the Harness omitted the already-validated `existing_command_id` from Station facts; the local projection correction is pending exact-source verification. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6309,6 +6309,25 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   layer and uses the same helper in production recovery and the business
   scenario. Desktop TypeScript, `51/51` focused recovery/reducer tests,
   `75/75` Harness structural tests, `352/352` Agent Acceptance tests, and
+  `git diff --check` pass. Provisioner cleanup completed
+  `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`
+  pending checkpoint, exact-source deployment, and rerun.
+- Exact-source checkpoint
+  `032bb05473906cb39aa9524131970f2aa2dab1ee` deployed to
+  `chat-native-disposable` and used Acceptance binary
+  `ac8f5cc4e3ed24485d461e44f9aeb35402680f65ba7902df700d2ee1005ae0a6`;
+  embedded-WebDriver smoke passed. Gate run
+  `20260908T085631432448Z-cba84508b9ffeadfbe84947c59ebe7c0`
+  passed Browser AS-F10, both Browser `BASE-CANCELLED` locale cells with
+  canonical IDs and live/replay `cancelled_by_user`, and both credential
+  cells. It failed first at Browser English `BASE-DUPLICATE_CONFLICT` only on
+  `originalCommandPreserved`. The other independent assertions prove typed
+  `existing_command_id`, `openOriginal` target identity, equal before/after
+  full readback and replay hashes, and zero Turn/message/queue/provider deltas.
+  Source inspection confirms the Harness omitted `existingCommandId` from the
+  `station` facts while both oracles require it. The local correction projects
+  that already-validated typed detail without changing product behavior or
+  assertions. Desktop TypeScript, `200/200` focused Harness/oracle tests, and
   `git diff --check` pass. Provisioner cleanup completed
   `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`
   pending checkpoint, exact-source deployment, and rerun.
