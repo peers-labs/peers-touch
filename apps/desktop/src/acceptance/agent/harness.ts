@@ -5456,6 +5456,27 @@ async function runFoundationCredentialMissingScenario(input: {
     capabilitySessionId: input.capabilitySessionId,
     sampleId: input.sampleId,
   });
+  const scenarioRuntimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationCredentialMissingRuntimeEvent',
+  );
+  await reportFoundationCredentialRuntimeEventDebug({
+    scenarioEventType: scenarioRuntimeEvent.eventType,
+    scenarioErrorType: scenarioRuntimeEvent.errorType,
+    scenarioSourceTurnEmpty: scenarioRuntimeEvent.sourceTurnId === '',
+    scenarioSourceSequence: scenarioRuntimeEvent.sourceSequence,
+    returnedEventType: attestation.runtimeEvent.eventType,
+    returnedErrorType: attestation.runtimeEvent.errorType ?? null,
+    returnedSourceTurnEmpty: attestation.runtimeEvent.sourceTurnId === '',
+    returnedSourceSequence: attestation.runtimeEvent.sourceSequence ?? null,
+    eventIdsMatch:
+      scenarioRuntimeEvent.eventId === attestation.runtimeEvent.eventId,
+    sourceConversationMatches:
+      scenarioRuntimeEvent.sourceConversationId
+        === attestation.runtimeEvent.sourceConversationId,
+    payloadHashesMatch:
+      scenarioRuntimeEvent.payloadHash === attestation.runtimeEvent.payloadHash,
+  });
   return {
     conversationId: attestation.conversationId,
     turnId: attestation.turnId,
@@ -10077,27 +10098,6 @@ async function runFoundationActiveMutationConflictScenario(input: {
     agent: input.agent,
     capabilitySessionId: input.capabilitySessionId,
     sampleId: input.sampleId,
-  });
-  const scenarioRuntimeEvent = evidenceRecord(
-    facts.runtimeEvent,
-    'foundationCredentialMissingRuntimeEvent',
-  );
-  await reportFoundationCredentialRuntimeEventDebug({
-    scenarioEventType: scenarioRuntimeEvent.eventType,
-    scenarioErrorType: scenarioRuntimeEvent.errorType,
-    scenarioSourceTurnEmpty: scenarioRuntimeEvent.sourceTurnId === '',
-    scenarioSourceSequence: scenarioRuntimeEvent.sourceSequence,
-    returnedEventType: attestation.runtimeEvent.eventType,
-    returnedErrorType: attestation.runtimeEvent.errorType ?? null,
-    returnedSourceTurnEmpty: attestation.runtimeEvent.sourceTurnId === '',
-    returnedSourceSequence: attestation.runtimeEvent.sourceSequence ?? null,
-    eventIdsMatch:
-      scenarioRuntimeEvent.eventId === attestation.runtimeEvent.eventId,
-    sourceConversationMatches:
-      scenarioRuntimeEvent.sourceConversationId
-        === attestation.runtimeEvent.sourceConversationId,
-    payloadHashesMatch:
-      scenarioRuntimeEvent.payloadHash === attestation.runtimeEvent.payloadHash,
   });
   return {
     conversationId: attestation.conversationId,
