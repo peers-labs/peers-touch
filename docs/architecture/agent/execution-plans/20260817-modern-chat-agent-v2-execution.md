@@ -6197,6 +6197,21 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   return boundary; exact-source deployment and reproduction are pending.
   Cleanup completed `DONE / PROVEN / passed`; Foundation/G-F remain
   `PARTIAL / UNPROVEN`.
+- Owner scope checkpoint
+  `26e4fe6bfb1832f35763c132206639b47510ed01` records G2 Video Generation as
+  permanently unsupported in Peers-Touch, matching G1; any future video
+  product requires a separate project and product contract. Station deployed
+  that exact source and Acceptance binary
+  `e8775bcbd91fea1a40691dca3d55e420e4a36435120efd59b493c50ca1d1955c`
+  passed embedded-WebDriver smoke. Gate run
+  `20260908T030131873316Z-d81b20246d0084c261ce2a5a23b2de02`
+  then failed before the target at `BASE-ACTIVE_MUTATION_CONFLICT` because the
+  J-M instrumentation block was attached to the wrong repeated attestation
+  return boundary and requested credential-only facts from the active-mutation
+  scenario. This run is `PARTIAL / UNPROVEN`; cleanup completed
+  `DONE / PROVEN / passed`. The observer is now relocated to
+  `runFoundationCredentialMissingScenario` without changing product behavior,
+  tuple coverage, assertions, timeout, or cleanup semantics.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
