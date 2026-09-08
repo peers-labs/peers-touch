@@ -21,12 +21,14 @@ describe('social chat conversation projection', () => {
           conversationId: 'direct-conversation',
           kind: ConversationKind.DIRECT,
           authorityStationPeerId: 'station-four',
+          federationId: 'federation-chat',
           status: ConversationStatus.ACTIVE,
         }),
         create(ConversationSchema, {
           conversationId: 'group-conversation',
           kind: ConversationKind.GROUP,
           authorityStationPeerId: 'station-four',
+          federationId: 'federation-chat',
           status: ConversationStatus.ACTIVE,
           name: 'Group',
         }),
@@ -62,10 +64,12 @@ describe('social chat conversation projection', () => {
       expect.objectContaining({
         id: 'direct-conversation',
         authorityStationId: 'station-four',
+        federationId: 'federation-chat',
       }),
       expect.objectContaining({
         id: 'group-conversation',
         authorityStationId: 'station-four',
+        federationId: 'federation-chat',
       }),
     ]));
   });

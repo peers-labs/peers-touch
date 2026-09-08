@@ -42,6 +42,8 @@ pub struct RecoveryMessageProjection {
 pub struct RecoveryConversationProjection {
     pub conversation_id: String,
     pub authority_station_id: String,
+    #[serde(default)]
+    pub federation_id: String,
     pub kind: i32,
     pub name: String,
     pub owner_ptid: String,
@@ -556,6 +558,7 @@ mod tests {
             conversations: vec![RecoveryConversationProjection {
                 conversation_id: "conversation-1".to_string(),
                 authority_station_id: "station-local".to_string(),
+                federation_id: "federation-1".to_string(),
                 kind: 1,
                 name: String::new(),
                 owner_ptid: "ptid:alice".to_string(),
@@ -616,6 +619,10 @@ mod tests {
             .unwrap();
 
         assert!(projection.member_roles.is_empty());
+        assert!(projection.federation_id.is_empty());
+        let mut legacy = archive();
+        legacy.conversations = vec![projection];
+        assert!(validate_archive(&legacy).is_ok());
     }
 
     #[test]

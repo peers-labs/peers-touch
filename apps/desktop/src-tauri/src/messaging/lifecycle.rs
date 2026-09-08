@@ -282,7 +282,12 @@ fn ensure_cycle_active(
 }
 
 fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Result<(), String> {
-    if !engine.store().conversation_projections()?.is_empty() {
+    let current_projections = engine.store().conversation_projections()?;
+    if !current_projections.is_empty()
+        && current_projections
+            .iter()
+            .all(|projection| !projection.federation_id.trim().is_empty())
+    {
         return Ok(());
     }
     let resp = station_client::request_json_auth_with_device_id(
@@ -319,6 +324,17 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
             .and_then(|v| v.as_str())
             .unwrap_or("local")
             .to_string();
+        let federation_id = conv
+            .get("federation_id")
+            .or_else(|| conv.get("federationId"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if federation_id.is_empty() {
+            return Err(format!(
+                "conversation {conversation_id} has no Federation projection"
+            ));
+        }
         let kind = match conv
             .get("kind")
             .and_then(|v| v.as_str())
@@ -379,6 +395,7 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
         projections.push(ConversationProjection {
             conversation_id: conversation_id.to_string(),
             authority_station_id,
+            federation_id,
             kind,
             name,
             owner_ptid,
