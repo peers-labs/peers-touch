@@ -6423,6 +6423,15 @@ export function agentTurnStreamErrorFromData(
       providerId: typedError.details.provider_id,
       label: 'agent.recovery.configureCredential',
     };
+  } else if (
+    typedError?.error_type === 'ADMISSION_DUPLICATE_CONFLICT'
+    && typedError.details.existing_command_id
+  ) {
+    error.resolution = {
+      type: 'openOriginal',
+      existingCommandId: typedError.details.existing_command_id,
+      label: 'agent.recovery.openOriginal',
+    };
   }
   if (typeof data.detail === 'string') error.errorDetail = data.detail;
   if (typeof data.providerId === 'string') {

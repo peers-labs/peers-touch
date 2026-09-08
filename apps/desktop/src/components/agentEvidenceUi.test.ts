@@ -181,6 +181,8 @@ describe('Agent evidence UI projections', () => {
     expect(assistant).toContain('data-pt-agent-error-resource-id');
     expect(assistant).toContain('data-pt-agent-message-error-recovery');
     expect(assistant).toContain('data-pt-agent-message-error-recovery="reduce-context"');
+    expect(assistant).toContain("'open-original'");
+    expect(assistant).toContain('handleOpenOriginal');
     expect(assistant).toContain('agent.recovery.reduceContext');
     expect(assistant).toContain("ns: 'agent'");
     expect(sources).toContain('data-source-badges');
