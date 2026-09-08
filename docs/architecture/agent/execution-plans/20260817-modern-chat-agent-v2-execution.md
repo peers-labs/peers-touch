@@ -252,7 +252,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `850f2cf4bc79861a10fac4d3807af575ed41ef4c` passed `BASE-CANCELLED` in both locales and advanced the first failure to Browser English `BASE-CREDENTIAL_MISSING`, where the runtime-events role does not match the observed pre-admission rejection. Instrumentation checkpoint `d748286d81a025443be74d8b70d37b38ea992f9e` is pending exact-source deployment and reproduction. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `3a19f481598a3d38700c48d558c17ec8a80d864e` failed first at Browser English `BASE-CANCELLED` because the business scenario sampled the intermediate synthetic recovery message before the production terminal reconciliation step. The local correction now mirrors `chatRuntime` by reconciling before the visible snapshot; exact-source verification is pending. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6266,6 +6266,28 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   service/handler tests, Desktop check plus `71/71` focused tests, `218/218`
   focused Foundation tests, and `git diff --check`; exact-source runtime proof
   remains pending.
+- Exact-source checkpoint
+  `3a19f481598a3d38700c48d558c17ec8a80d864e` deployed to
+  `chat-native-disposable` and used Acceptance binary
+  `47b292e16b17e392b8d41d7a19fbfdddf25b3f43503d919ef9d7b04bc13722d9`;
+  embedded-WebDriver smoke passed. Gate run
+  `20260908T064006111625Z-540667c6c92d0b09724b3153dcdb37e8`
+  failed first at Browser English `BASE-CANCELLED` on
+  `localizedCancellationVisible`; outer run
+  `20260908T063953866706Z-cf56f38dddfb187663829e3a48a827cf`
+  completed `FAILED / PARTIAL / UNPROVEN`. Runtime evidence shows typed
+  cancellation, localized text, visibility, durable `cancelled_by_user`, and
+  replay reconciliation are correct. The live observation alone used
+  `recovered-<turnId>` while reload and replay used the canonical Station
+  message ID. The business Acceptance scenario called
+  `applyRecoveredTurnEvent` but omitted the production runtime's immediate
+  terminal `reconcileRecoveredTurn` step before sampling the visible state.
+  The local correction now executes that production sequence before the live
+  snapshot and adds an ordering regression. No product runtime, tuple,
+  assertion, timeout, or cleanup semantics changed. Desktop TypeScript,
+  `34/34` focused store tests, `200/200` focused Agent/Foundation tests, and
+  `git diff --check` pass. Inner and Provisioner cleanup both passed;
+  Foundation/G-F remain `PARTIAL / UNPROVEN` pending a new exact-source run.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
