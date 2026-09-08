@@ -13,10 +13,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Expected Signal | Evidence |
 |----|------------|------------|--------|-----------------|----------|
-| A | The `NAVIGATION_REQUESTED` subscriber is absent when finalization publishes the Settings request. | Medium | Low | Publication is reported, but no matching consumer-entry report follows. | Pending |
-| B | The subscriber consumes the request, but the router page does not transition to `settings`. | Medium | Low | Consumer-entry is present while the post-dispatch page remains `agent`. | Pending |
-| C | The router reaches `settings`, but the keep-alive Agent page leaves the composer visibly mounted. | High | Low | Router reports `settings` while composer count and visible count remain non-zero. | Pending |
-| D | A later lifecycle or navigation action returns the router to `agent` before the wait observes the Settings surface. | Medium | Medium | Reports show `settings` followed by a second transition to `agent` during the same finalization trace. | Pending |
+| A | The `NAVIGATION_REQUESTED` subscriber is absent when finalization publishes the Settings request. | Medium | Low | Publication is reported, but no matching consumer-entry report follows. | Rejected in both observed Browser sequences. |
+| B | The subscriber consumes the request, but the router page does not transition to `settings`. | Medium | Low | Consumer-entry is present while the post-dispatch page remains `agent`. | Rejected in both observed Browser sequences. |
+| C | The router reaches `settings`, but the keep-alive Agent page leaves the composer visibly mounted. | High | Low | Router reports `settings` while composer count and visible count remain non-zero. | Rejected in both observed Browser sequences. |
+| D | A later lifecycle or navigation action returns the router to `agent` before the wait observes the Settings surface. | Medium | Medium | Reports show `settings` followed by a second transition to `agent` during the same finalization trace. | Rejected in both observed Browser sequences. |
 
 ## Instrumentation
 - `harness.ts:finalizeFoundationF06Preparation` reports the safe structural
@@ -48,7 +48,19 @@
   - Desktop production build: PASS.
   - Agent native static tests: PASS, `75/75`.
   - `git diff --check`: PASS.
+- Exact-source Gate run
+  `20260908T122047739669Z-f8530c1cb8be2d816b367e98712170c6`
+  on `66e2f48aa7e3603da786c7cfdef6083b3c438c0e` crossed both
+  observed Browser page-switch boundaries. In each sequence the subscriber
+  consumed the request, the hash changed from `#/agent` to `#/settings`, and
+  the keep-alive Agent frame changed from `display: contents` to
+  `display: none`; the composer became hidden in approximately 300 ms. The run
+  later failed with a separate primary `FoundationCandidateError` and Native
+  capability-isolation cleanup failure.
 
 ## Verification Conclusion
-Pending current-source instrumentation and exact-source reproduction. No
-navigation behavior, timeout, Gate tuple, or assertion has been changed.
+The prior Settings-navigation timeout did not reproduce. Hypotheses A-D are
+rejected for both observed Browser sequences, so no navigation behavior,
+timeout, Gate tuple, or assertion change is justified. The debug session
+remains open until the full Gate confirms the boundary under the final source
+snapshot.
