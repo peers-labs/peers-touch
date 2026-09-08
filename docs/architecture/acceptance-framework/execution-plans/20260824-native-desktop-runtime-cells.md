@@ -861,8 +861,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Exact-source Product Closure run `20260908T033256775430Z-34b2f520c4d47ab9351c6a41bb592255` at `018491a013277a1bea1d5ba50d7fd3a3aaa75203`, binary SHA-256 `9db85704bdbdec5432df9798e056c9c1fdd27d89fc2c1aa8426e28a82a2f4092`, proves first Direct open/reopen, committed Group contact selection, successful Group preparation, and complete cleanup. It fails at `group.create.ui` because Desktop Rust posts the prepared epoch-zero Group genesis command to `/conversation/command` instead of canonical `/conversation/group`; no Group row or command receipt is created. The route correction is locally proven; W9-D remains `PARTIAL/UNPROVEN` pending exact-source rerun. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings and exact Direct create/reopen; Group and remaining closure are open | Product Closure run `20260908T033256775430Z-34b2f520c4d47ab9351c6a41bb592255` proves Alice bound to station-four and Bob to station-five at exact source `018491a013277a1bea1d5ba50d7fd3a3aaa75203`. Group preparation resolves Bob through the signed station-five route, but Desktop sends the genesis command to the ordinary command route, leaving the authority plan prepared and no Group row committed. Current-source cross-Station Group delivery, MLS bidirectional transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven. |
+| NDR-W9 Windows cell | W9-A/B/C done; contact resilience `DONE/PROVEN`; W9-D Product Closure remains partial | Contact resilience run `20260904T145100838344Z-f1e1da7b20a68224fb59b14216e58c21` proves the exact Bob-bound intent pane, inline failure, enabled retry, Win32 input, screenshot, and cleanup. Exact-source Product Closure run `20260908T044521277951Z-0fc6d8073736d98fc571117a45f01feb` at `1824138a83d25dba08a2e2a823c1778b3cf34a90`, binary SHA-256 `82d73b98ffe9b67b4bdad9534f67f27271d98fe6ae258a83d690f26df119f19b`, proves first Direct open/reopen, committed Group selection, successful signed-route preparation, canonical `/conversation/group` dispatch, and complete cleanup. It fails at `group.create.ui` because the Station delivery mapper requires an MLS Welcome for the genesis sender before applying the sender public-marker rule. The mapper-order correction is locally proven; W9-D remains `PARTIAL/UNPROVEN` pending exact-source rerun. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings and exact Direct create/reopen; Group and remaining closure are open | Product Closure run `20260908T044521277951Z-0fc6d8073736d98fc571117a45f01feb` proves Alice bound to station-four and Bob to station-five at exact source `1824138a83d25dba08a2e2a823c1778b3cf34a90`. Group preparation resolves Bob through the signed station-five route and Desktop submits to canonical `/conversation/group`; the Station rejects genesis before commit because Alice is both sender and an added endpoint but has no self-Welcome. Current-source cross-Station Group delivery, MLS bidirectional transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -3480,3 +3480,47 @@ timed out in an orphaned Vitest process before assertions; the clean rerun above
 passes. NDR-W9-D and Windows NDR-W10-D remain `PARTIAL/UNPROVEN`. The next
 dependency-ready action is a local checkpoint commit, exact-source deployment
 to station-four, station-five, and sixwin, then a Product Closure-only rerun.
+
+### 2026-09-08 Group Genesis Sender Delivery Correction
+
+The first exact-source run after the Desktop route correction is
+`20260908T044521277951Z-0fc6d8073736d98fc571117a45f01feb`.
+It used commit `1824138a83d25dba08a2e2a823c1778b3cf34a90` and Windows
+binary SHA-256
+`82d73b98ffe9b67b4bdad9534f67f27271d98fe6ae258a83d690f26df119f19b`.
+The runtime trace proves both canonical Group requests:
+
+- `POST /conversation/group/prepare` returns 200;
+- `POST /conversation/group` is reached and returns 400.
+
+The Group remains absent and the Gate times out at `group.create.ui`; cleanup is
+`DONE/PROVEN`. The 400 is reproduced locally by a focused mapper regression:
+Group genesis records every post-genesis endpoint as added, while the
+membership delivery mapper checked `AddedEndpoints` before `endpoint ==
+sender`. It therefore required an MLS Welcome for Alice even though the creator
+must receive the public event marker and only other newly added endpoints
+receive Welcomes.
+
+The local correction preserves removed-sender retirement precedence, then
+handles the sender public marker before the added-endpoint Welcome branch.
+Established membership additions and removals retain their existing delivery
+semantics. Verification passes:
+
+- focused pre-fix regression failed with `welcome_payloads: does not cover every
+  added endpoint`, then passed after the ordering correction;
+- `go test -race -count=1
+  ./app/subserver/conversation/interface/http`: pass;
+- `station-messaging-unit`:
+  `20260908T052618517119Z-b203407dfe9b05dddad0cfdbb2064d79`;
+- `messaging-platform-contract`:
+  `20260908T052623369202Z-85f4abb691348b450fca24be6175af29`;
+- `desktop-check`:
+  `20260908T052632311323Z-5db7cb388d6e8b8a1337e3192a2edd97`;
+- `chat-native-visible-static`:
+  `20260908T052640959588Z-3cec8093c01a13cdcf05b27cfd062b57`;
+- `station-api-ownership`:
+  `20260908T052652251946Z-cadf5f3daa35394f3e41015d0fd4b10e`.
+
+NDR-W9-D and Windows NDR-W10-D remain `PARTIAL/UNPROVEN`. The next
+dependency-ready action is a local checkpoint commit, exact-source Station and
+sixwin deployment, and another Product Closure-only rerun.
