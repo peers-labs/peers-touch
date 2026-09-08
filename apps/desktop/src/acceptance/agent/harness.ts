@@ -1,6 +1,6 @@
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { bootstrapRuntime, installRuntime } from '../../kernel/runtime';
-import { EVENT, eventBus } from '../../kernel/events';
+import { EVENT, eventBus, eventDebugBuffer } from '../../kernel/events';
 import i18n, { changeLanguage } from '../../i18n';
 import {
   installAuthenticatedCriticalRuntimes,
@@ -6411,12 +6411,39 @@ async function finalizeFoundationF06Preparation(
   foundationF06FaultBoundaries.delete(scenarioKey);
   writeFoundationF06Handoff(handoff);
 
+  void reportFoundationF06PageSwitchDebug(
+    'A-D',
+    'before-navigation-publish',
+    foundationF06PageSwitchSnapshot(),
+  );
   eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'settings' });
-  await waitFor(
-    () => document.querySelector('[data-pt-agent-composer]')?.getClientRects()
-      .length === 0,
-    'Foundation AS-F06 page switch',
-    30_000,
+  void reportFoundationF06PageSwitchDebug(
+    'A-D',
+    'after-navigation-publish',
+    foundationF06PageSwitchSnapshot(),
+  );
+  try {
+    await waitFor(
+      () => document.querySelector('[data-pt-agent-composer]')?.getClientRects()
+        .length === 0,
+      'Foundation AS-F06 page switch',
+      30_000,
+    );
+  } catch (error) {
+    await reportFoundationF06PageSwitchDebug(
+      'A-D',
+      'page-switch-timeout',
+      {
+        ...foundationF06PageSwitchSnapshot(),
+        errorType: error instanceof Error ? error.name : typeof error,
+      },
+    );
+    throw error;
+  }
+  void reportFoundationF06PageSwitchDebug(
+    'B-C',
+    'page-switch-complete',
+    foundationF06PageSwitchSnapshot(),
   );
   return handoff;
 }
@@ -8476,6 +8503,57 @@ function reportFoundationF06RegistrationDebug(
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:AS-F06',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:as-f06-page-switch
+function foundationF06PageSwitchSnapshot(): Record<string, unknown> {
+  const composer =
+    document.querySelector<HTMLElement>('[data-pt-agent-composer]');
+  const navigationRequests = eventDebugBuffer.list().filter((record) => {
+    if (record.type !== EVENT.NAVIGATION_REQUESTED) return false;
+    const payload = record.payload;
+    return Boolean(
+      payload
+      && typeof payload === 'object'
+      && 'resource' in payload
+      && payload.resource === 'settings',
+    );
+  });
+  return {
+    hash: window.location.hash,
+    settingsNavigationRequestCount: navigationRequests.length,
+    composerPresent: composer !== null,
+    composerVisible: Boolean(composer?.getClientRects().length),
+    composerPage:
+      composer?.closest<HTMLElement>('[data-page]')?.dataset.page ?? '',
+    pageFrames: Array.from(
+      document.querySelectorAll<HTMLElement>('[data-page]'),
+    ).map((frame) => ({
+      page: frame.dataset.page ?? '',
+      display: frame.style.display,
+      visible: frame.getClientRects().length > 0,
+    })),
+  };
+}
+
+function reportFoundationF06PageSwitchDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7791/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'as-f06-page-switch',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:finalizeFoundationF06Preparation',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
