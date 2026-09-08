@@ -29,6 +29,7 @@ import { toolRuntime } from '../../runtimes/toolRuntime';
 import { useAgentStore } from '../../store/agent';
 import { useAgentTurnRecoveryStore } from '../../store/agentTurnRecovery';
 import { useChatStore } from '../../store/chat';
+import { terminalReasonFromStreamData } from '../../store/streaming/handler';
 import { usePortalStore } from '../../store/portal';
 import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
@@ -9856,11 +9857,9 @@ async function runFoundationCancelledScenario(input: {
             turnId,
             {
               status: 'cancelled',
-              reason: String(
-                terminalEvent.data.terminal_reason
-                ?? terminalEvent.data.error
-                ?? '',
-              ).trim() || undefined,
+              reason:
+                terminalReasonFromStreamData(terminalEvent.data).trim()
+                || undefined,
             },
           );
           const liveReceiver = await foundationCancelledReceiverSnapshot(
@@ -9977,10 +9976,8 @@ async function runFoundationCancelledScenario(input: {
               [conversation.conversation_id]: [],
             },
           }));
-          const snapshotTerminalReason = String(
-            authoritativeSnapshot.data.terminal_reason
-            ?? authoritativeSnapshot.data.terminalReason
-            ?? '',
+          const snapshotTerminalReason = terminalReasonFromStreamData(
+            authoritativeSnapshot.data,
           );
           const replayOperation =
             useChatStore.getState().operations[conversation.conversation_id];
