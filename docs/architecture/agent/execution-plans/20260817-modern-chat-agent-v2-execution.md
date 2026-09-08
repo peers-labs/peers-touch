@@ -6224,6 +6224,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   conversation/Turn IDs for Station readback. Cleanup completed
   `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`
   pending an exact-source rerun.
+- Post-fix return-boundary checkpoint
+  `3718bc254b364b13c6578fa3598403db361f66be` was deployed exact-source and
+  paired with Acceptance binary
+  `18eee51256fae6163c62aea2fcfc9496846d088f6bff9ac8275f1a86c68489aa`;
+  embedded-WebDriver smoke passed. Gate run
+  `20260908T043330745234Z-38d98efe6f7911850fc19b1213f56064` confirmed the
+  returned runtime event is the same Station SSE
+  `error / PROVIDER_CREDENTIAL_MISSING` observation as the scenario event,
+  including matching event ID, source conversation, payload hash, empty source
+  Turn, and source sequence `0`. The prior runtime-event role defect is closed.
+  The next source-backed failure is candidate evidence sanitization rejecting
+  the non-secret `station-readback.credentialStatus` enum field because its
+  exact schema name was absent from the Foundation producer allowlist. The
+  local correction allowlists only that field and continues recursively
+  scanning its value; focused producer and Foundation suites pass `15/15` and
+  `132/132`. Cleanup completed `DONE / PROVEN / passed`; Foundation/G-F remain
+  `PARTIAL / UNPROVEN` pending checkpoint and exact-source rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
