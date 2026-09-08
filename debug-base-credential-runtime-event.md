@@ -21,3 +21,17 @@
 
 The first change is instrumentation only. No scenario result, Gate assertion,
 matrix tuple, timeout, or cleanup behavior changes.
+
+## Execution Notes
+
+- Run `20260908T030131873316Z-d81b20246d0084c261ce2a5a23b2de02`
+  failed before `BASE-CREDENTIAL_MISSING` at
+  `BASE-ACTIVE_MUTATION_CONFLICT`.
+- Root cause: the instrumentation block was attached to the wrong repeated
+  `runFoundationDirectAttestationTurn` return boundary. That scenario has no
+  credential `facts.runtimeEvent`, so the probe raised
+  `agent.acceptance.foundationCredentialMissingRuntimeEventMissing`.
+- This is an instrumentation placement defect, not product evidence for or
+  against J-M. Cleanup completed `DONE / PROVEN / passed`.
+- The probe has been relocated to
+  `runFoundationCredentialMissingScenario` without changing scenario output.
