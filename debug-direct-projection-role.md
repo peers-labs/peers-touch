@@ -469,3 +469,56 @@ ambiguous Federation context.
   passes the four approved Chat Gates.
 - Exact-source Windows Product Closure remains pending; the debug session stays
   `[OPEN]`.
+
+## Iteration: Verified Remote Actor Identity-Key Persistence
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| AL | The restored D-17 path creates a durable Bob authority-command frame on station-five. | Confirmed | Exact-source Product Closure run `20260908T163630929783Z-0d1461f4675bba5041949ca8934c5510` created payload-kind `2` frame `conversation-frame:d5628d7f17067462b0cb77b912b95c0839de2a9030e311d1b4bd1f05195362a1` for command `01M2108FGAE1R8DS2VXFKRJ1G3`. |
+| AM | The frame does not reach station-four. | Rejected | station-four received ten `POST /federation/delivery` attempts and returned protobuf HTTP 200 responses. |
+| AN | The authority accepts or terminally rejects Bob's command. | Rejected | The frame remained retryable for ten attempts and expired; station-four has no matching inbox row, command receipt, or sequence-3 event. |
+| AO | Bob's proposal uses a stale or unknown device signing key. | Rejected | The proposal binds device `01M20ZHP8FP9M5EBVRF6CHRH1N` and signing key `c744895f1da52a044a6800e31e4de868257f82caebbe45f70e19c548fc814f52`; Bob's signed remote profile exposes the exact same active key. |
+| AP | Actor Identity fails to persist the verified remote Actor identity public key required by Conversation delivery sealing. | Confirmed | station-four repeatedly fetched Bob's verified profile and endpoint manifest and persisted the endpoint-directory fence, but `actor_identity_keys` remained empty. `persistTransition` requires `ActorIdentityPublicKey` for the remote sender and returns retryable `CONVERSATION_ACTOR_KEY_UNAVAILABLE`. |
+
+- Source:
+  `24a795726d8371ea06d1f53dfbaec3543c7578cd`.
+- Acceptance aggregate:
+  `20260908T163630823708Z-9e1bf206bf014bdce567f569d6048951`.
+- Product Closure:
+  `20260908T163630929783Z-0d1461f4675bba5041949ca8934c5510`.
+- Windows cell:
+  `20260908t163713792019z-31b44cbadca0a230`.
+- Windows binary SHA-256:
+  `b48586fd55b0a0a8ff2eda4272f45965a21a966cfbfa3c8259fe2f2f36ff9f61`.
+- Group:
+  `027b3fbc-f245-4180-9468-c25403eb6615`.
+- Passed steps: `alice.launch`, `bob.launch`, `conversation.search.ui`, and
+  `group.create.ui`.
+- First failed step: `transcript.thread.ui`, with Alice timing out on
+  `w13-bob-27180`.
+- station-four authority remains at sequence 2. station-five's exact command
+  frame retried ten times and expired at its signed five-minute boundary.
+- Cleanup is `DONE/PROVEN`.
+- The correction belongs to Actor Identity. Acceptance of a verified signed
+  endpoint manifest must atomically establish or advance the remote Actor
+  identity continuity key and the endpoint-directory fence. Conversation
+  continues to consume this projection through its narrow identity port.
+- Exact replay with unchanged key material is allowed. Stale profile versions
+  and changed Actor identity keys fail closed. No proposal-supplied key,
+  Conversation-owned key copy, compatibility fallback, or new wire contract is
+  permitted.
+- The Actor Identity correction is locally implemented. Manifest acceptance
+  now persists the identity continuity key and endpoint-directory fence in one
+  transaction. Focused Actor Identity/Conversation tests, race tests, vet, Go
+  style, formatting, and the approved local Chat aggregate
+  `20260908T174540700796Z-0955f1301c2d2776f14dff2f6afb00cf`
+  pass. A separate production-adapter regression proves Conversation delivery
+  sealing reads the accepted remote identity key.
+- An earlier local aggregate was invalidated by intentional source changes
+  during execution and is excluded from proof.
+- Final exact-range aggregate
+  `20260908T175007415039Z-47f0bb3265dbf33d04c30b46f648f209`
+  passes all selected Chat/structure Gates except the unrelated pre-existing
+  `acceptance-runtime-provisioning-self` Agent V2 and launch-context baseline.
+  Gap Detector keeps the product claim `UNPROVEN`.
+- The debug session stays `[OPEN]`.
