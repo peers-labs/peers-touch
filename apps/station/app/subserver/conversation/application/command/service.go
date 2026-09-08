@@ -126,6 +126,7 @@ type SubmitRequest struct {
 	Membership        *aggregate.MembershipTransition
 	Settings          *valueobject.SettingsPatch
 	Dissolve          bool
+	VerifiedRoutes    []ports.EndpointRoute
 	AuthorityPlanID   valueobject.PlanID
 	AuthorityPlanHash valueobject.Hash
 	ExactCommandBytes []byte
@@ -175,6 +176,13 @@ type PrepareMembershipRequest struct {
 	Requester      valueobject.Endpoint
 	Changes        []entity.MembershipChange
 	TTL            time.Duration
+}
+
+type PrepareCommandRequest struct {
+	ConversationID    valueobject.ConversationID
+	Sender            valueobject.Endpoint
+	SenderHomeStation valueobject.StationID
+	VerifiedRoutes    []ports.EndpointRoute
 }
 
 type PrepareGroupRequest struct {
@@ -1007,17 +1015,24 @@ func resolveGroupCreationReceipt(
 	}
 }
 
-func (s *Service) PrepareCommand(
+func (s *Service) CommandRouteActors(
 	ctx context.Context,
 	conversationID valueobject.ConversationID,
-	sender valueobject.Endpoint,
-) (aggregate.CommandPreparation, error) {
-	var preparation aggregate.CommandPreparation
+	sender valueobject.PTID,
+) ([]valueobject.PTID, error) {
+	if conversationID == "" || sender == "" {
+		return nil, invalid(
+			"application.command_route_actors",
+			"request",
+			"conversation and sender are required",
+		)
+	}
+	var actors []valueobject.PTID
 	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
 		if err := validateTransaction(transaction); err != nil {
 			return err
 		}
-		snapshot, err := transaction.Repositories.Authority.LoadForUpdate(ctx, conversationID)
+		snapshot, err := transaction.Repositories.Authority.Get(ctx, conversationID)
 		if err != nil {
 			return err
 		}
@@ -1025,19 +1040,71 @@ func (s *Service) PrepareCommand(
 		if err != nil {
 			return err
 		}
-		active, err := transaction.Identity.IsActive(ctx, sender)
+		if snapshot.AuthorityStation != s.localStation {
+			return conversationdomain.NewError(
+				conversationdomain.ErrorCodeStaleAuthorityHead,
+				"application.command_route_actors",
+				"authority_station",
+				"does not identify the local Conversation authority",
+			)
+		}
+		if !conversation.IsActiveMember(sender) {
+			return unauthorized(
+				"application.command_route_actors",
+				"sender is not an active Conversation member",
+			)
+		}
+		actors = conversation.ActiveMemberActors()
+		return nil
+	})
+	return actors, err
+}
+
+func (s *Service) PrepareCommand(
+	ctx context.Context,
+	request PrepareCommandRequest,
+) (aggregate.CommandPreparation, error) {
+	if request.ConversationID == "" ||
+		request.Sender.Validate() != nil ||
+		request.SenderHomeStation == "" {
+		return aggregate.CommandPreparation{}, invalid(
+			"application.prepare_command",
+			"request",
+			"conversation, sender, and sender Home Station are required",
+		)
+	}
+	var preparation aggregate.CommandPreparation
+	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
+		if err := validateTransaction(transaction); err != nil {
+			return err
+		}
+		snapshot, err := transaction.Repositories.Authority.LoadForUpdate(
+			ctx,
+			request.ConversationID,
+		)
 		if err != nil {
 			return err
 		}
-		if !active {
-			return unauthorized("application.prepare_command", "sender device is not active")
-		}
-		routes, err := resolveActorRoutes(ctx, transaction.Identity, conversation.ActiveMemberActors())
+		conversation, err := aggregate.Rehydrate(snapshot)
 		if err != nil {
+			return err
+		}
+		routes, err := commandRouteSnapshot(conversation, request.VerifiedRoutes)
+		if err != nil {
+			return err
+		}
+		if err := s.authorizeCommandSender(
+			ctx,
+			transaction,
+			conversation,
+			request.Sender,
+			request.SenderHomeStation,
+			routes,
+		); err != nil {
 			return err
 		}
 		required := eligibleConversationEndpoints(conversation, routes)
-		preparation, err = conversation.PrepareCommand(sender, required)
+		preparation, err = conversation.PrepareCommand(request.Sender, required)
 		return err
 	})
 	return preparation, err
@@ -1269,17 +1336,6 @@ func (s *Service) submit(
 			}
 			return nil
 		}
-		active, err := transaction.Identity.IsActive(ctx, request.Command.Sender)
-		if err != nil {
-			return err
-		}
-		if !active {
-			inactiveErr := unauthorized("application.submit", "sender device is not active")
-			if forwarded != nil {
-				return inactiveErr
-			}
-			return persistRejection(inactiveErr)
-		}
 		if forwarded != nil {
 			if forwardedPreflightErr != nil {
 				return forwardedPreflightErr
@@ -1303,25 +1359,73 @@ func (s *Service) submit(
 					"is not an active Federation Station",
 				)
 			}
-			routes, err := resolveActorRoutes(
-				ctx,
-				transaction.Identity,
-				[]valueobject.PTID{request.Command.Sender.Actor},
+		}
+		var commandRoutes []ports.EndpointRoute
+		switch {
+		case request.Membership == nil:
+			commandRoutes, err = commandRouteSnapshot(
+				conversation,
+				request.VerifiedRoutes,
 			)
 			if err != nil {
 				return err
 			}
-			if !routeSetContainsAtStation(
-				routes,
+			senderHomeStation := s.localStation
+			if forwarded != nil {
+				senderHomeStation = forwarded.HomeStation
+			}
+			if err := s.authorizeCommandSender(
+				ctx,
+				transaction,
+				conversation,
 				request.Command.Sender,
-				forwarded.HomeStation,
-			) {
-				return conversationdomain.NewError(
-					conversationdomain.ErrorCodeProposalBinding,
-					"application.submit_forwarded",
-					"home_station",
-					"sender endpoint does not belong to the authenticated Home Station",
+				senderHomeStation,
+				commandRoutes,
+			); err != nil {
+				if forwarded != nil {
+					return err
+				}
+				return persistRejection(err)
+			}
+		default:
+			active, activeErr := transaction.Identity.IsActive(
+				ctx,
+				request.Command.Sender,
+			)
+			if activeErr != nil {
+				return activeErr
+			}
+			if !active {
+				inactiveErr := unauthorized(
+					"application.submit",
+					"sender device is not active",
 				)
+				if forwarded != nil {
+					return inactiveErr
+				}
+				return persistRejection(inactiveErr)
+			}
+			if forwarded != nil {
+				routes, routeErr := resolveActorRoutes(
+					ctx,
+					transaction.Identity,
+					[]valueobject.PTID{request.Command.Sender.Actor},
+				)
+				if routeErr != nil {
+					return routeErr
+				}
+				if !routeSetContainsAtStation(
+					routes,
+					request.Command.Sender,
+					forwarded.HomeStation,
+				) {
+					return conversationdomain.NewError(
+						conversationdomain.ErrorCodeProposalBinding,
+						"application.submit_forwarded",
+						"home_station",
+						"sender endpoint does not belong to the authenticated Home Station",
+					)
+				}
 			}
 		}
 		var transition aggregate.Transition
@@ -1347,20 +1451,18 @@ func (s *Service) submit(
 			); err != nil {
 				return persistRejection(err)
 			}
-			routes, routeErr := resolveActorRoutes(
-				ctx,
-				transaction.Identity,
-				conversation.ActiveMemberActors(),
-			)
-			if routeErr != nil {
-				return routeErr
-			}
 			command := request.Command
 			command.EventSealer = s.eventSealer
-			command.RequiredEndpoints = eligibleConversationEndpoints(conversation, routes)
-			command.Deliveries, routeErr = bindDeliveryRoutes(command.Deliveries, routes)
-			if routeErr != nil {
-				return persistRejection(routeErr)
+			command.RequiredEndpoints = eligibleConversationEndpoints(
+				conversation,
+				commandRoutes,
+			)
+			command.Deliveries, err = bindDeliveryRoutes(
+				command.Deliveries,
+				commandRoutes,
+			)
+			if err != nil {
+				return persistRejection(err)
 			}
 			switch {
 			case request.Settings != nil:
@@ -2320,6 +2422,104 @@ func canonicalActorRoutes(
 		return canonical[i].Endpoint.Key() < canonical[j].Endpoint.Key()
 	})
 	return canonical, nil
+}
+
+func commandRouteSnapshot(
+	conversation *aggregate.Conversation,
+	verifiedRoutes []ports.EndpointRoute,
+) ([]ports.EndpointRoute, error) {
+	if conversation == nil {
+		return nil, invalid(
+			"application.command_route_snapshot",
+			"conversation",
+			"is required",
+		)
+	}
+	routes, err := canonicalActorRoutes(
+		verifiedRoutes,
+		conversation.ActiveMemberActors(),
+	)
+	if err != nil {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeStaleAuthorityHead,
+			"application.command_route_snapshot",
+			"routes",
+			fmt.Sprintf("do not match the locked Conversation actor set: %v", err),
+		)
+	}
+	homeByActor := make(
+		map[valueobject.PTID]valueobject.StationID,
+		len(conversation.ActiveMemberActors()),
+	)
+	for _, route := range routes {
+		homeByActor[route.Endpoint.Actor] = route.HomeStation
+	}
+	for _, member := range conversation.Members() {
+		if !member.Active() {
+			continue
+		}
+		if homeByActor[member.Actor] != member.HomeStation {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeStaleAuthorityHead,
+				"application.command_route_snapshot",
+				"home_station",
+				fmt.Sprintf(
+					"actor %s route no longer matches the Conversation member",
+					member.Actor,
+				),
+			)
+		}
+	}
+	return routes, nil
+}
+
+func (s *Service) authorizeCommandSender(
+	ctx context.Context,
+	transaction ports.Transaction,
+	conversation *aggregate.Conversation,
+	sender valueobject.Endpoint,
+	senderHomeStation valueobject.StationID,
+	routes []ports.EndpointRoute,
+) error {
+	if senderHomeStation == "" ||
+		!routeSetContainsAtStation(routes, sender, senderHomeStation) {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeProposalBinding,
+			"application.authorize_command_sender",
+			"home_station",
+			"sender endpoint does not belong to the authenticated Home Station",
+		)
+	}
+	if senderHomeStation == s.localStation {
+		active, err := transaction.Identity.IsActive(ctx, sender)
+		if err != nil {
+			return err
+		}
+		if !active {
+			return unauthorized(
+				"application.authorize_command_sender",
+				"sender device is not active",
+			)
+		}
+		return nil
+	}
+	active, err := transaction.Federation.IsActiveStation(
+		ctx,
+		conversation.FederationID(),
+		senderHomeStation,
+	)
+	if err != nil {
+		return err
+	}
+	if !active {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeFederationInactive,
+			"application.authorize_command_sender",
+			"home_station",
+			"is not an active Federation Station",
+		)
+	}
+	return nil
 }
 
 func routeStations(routes []ports.EndpointRoute) []valueobject.StationID {

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
@@ -114,10 +115,27 @@ func (s *subServer) handleFederatedCommandPrepare(
 	if err != nil {
 		return mapProductionConversationError(ctx, err)
 	}
+	sourceHomeStation, err := valueobject.NewStationID(claims.Issuer)
+	if err != nil {
+		return mapProductionConversationError(ctx, err)
+	}
+	verifiedRoutes, err := s.composition.productionCommandRoutes(
+		ctx,
+		s.composition.CommandService,
+		conversationID,
+		sender.Actor,
+	)
+	if err != nil {
+		return mapProductionConversationError(ctx, err)
+	}
 	preparation, err := s.composition.CommandService.PrepareCommand(
 		ctx,
-		conversationID,
-		sender,
+		command.PrepareCommandRequest{
+			ConversationID:    conversationID,
+			Sender:            sender,
+			SenderHomeStation: sourceHomeStation,
+			VerifiedRoutes:    verifiedRoutes,
+		},
 	)
 	if err != nil {
 		return mapProductionConversationError(ctx, err)
