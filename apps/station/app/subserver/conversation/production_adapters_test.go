@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,8 +14,12 @@ import (
 	actoridentitypersistence "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
 	attachmentapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
+	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	domainservice "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/service"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	attachmentinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/attachment"
@@ -26,6 +32,7 @@ import (
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	chatmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -221,6 +228,420 @@ func TestProductionIdentityAndFederationAdaptersUseOwnerTruth(t *testing.T) {
 	)
 	if !conversationdomain.IsCode(err, conversationdomain.ErrorCodeProposalSignature) {
 		t.Fatalf("invalid signature error = %v", err)
+	}
+}
+
+func TestProductionDeliveryReceiptForwarderUsesSharedDurableFederation(
+	t *testing.T,
+) {
+	fixture := newProductionAdapterFixture(t)
+	forwarder := &productionDeliveryReceiptForwarder{
+		database:     fixture.db,
+		sender:       fixture.factory.federationSender,
+		clock:        productionAdapterTestClock{now: productionAdapterTestTime},
+		localStation: "station-a",
+	}
+	receipt := interactionapp.DeliveryReceipt{
+		ReceiptID:      "device-consumed:item-1",
+		ConversationID: "conversation-1",
+		EventID:        "event-1",
+		Consumer:       fixture.alice,
+		EventSequence:  1,
+		LaneSequence:   7,
+		PayloadHash:    valueobject.HashBytes([]byte("queue-payload")),
+		ConsumedAt:     productionAdapterTestTime.Add(-48 * time.Hour),
+	}
+	receipt = seedProductionFollowerReceiptItem(
+		t,
+		fixture.db,
+		receipt,
+		"station-b",
+	)
+	replay, err := forwarder.ForwardDeliveryReceipt(
+		context.Background(),
+		"station-b",
+		receipt,
+	)
+	if err != nil || replay {
+		t.Fatalf("forward delivery receipt: replay=%v error=%v", replay, err)
+	}
+	replay, err = forwarder.ForwardDeliveryReceipt(
+		context.Background(),
+		"station-b",
+		receipt,
+	)
+	if err != nil || !replay {
+		t.Fatalf("replay delivery receipt: replay=%v error=%v", replay, err)
+	}
+
+	var record federationdelivery.OutboxRecord
+	if err := fixture.db.Where(
+		"payload_kind = ? AND payload_id = ?",
+		int32(federationdelivery.PayloadKindConversationDeliveryReceipt),
+		receipt.ReceiptID,
+	).First(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	var frame federationdelivery.Frame
+	if err := proto.Unmarshal(record.FrameBytes, &frame); err != nil {
+		t.Fatal(err)
+	}
+	var encoded chatmodel.DeviceConsumptionReceipt
+	if err := proto.Unmarshal(frame.GetOpaquePayload(), &encoded); err != nil {
+		t.Fatal(err)
+	}
+	if frame.GetSourceStationPeerId() != "station-a" ||
+		frame.GetTargetStationPeerId() != "station-b" ||
+		!frame.GetIssuedAt().AsTime().Equal(productionAdapterTestTime) ||
+		encoded.GetReceiptId() != receipt.ReceiptID ||
+		encoded.GetConsumer().GetPtid() != string(receipt.Consumer.Actor) ||
+		encoded.GetConsumer().GetDeviceId() != string(receipt.Consumer.Device) {
+		t.Fatalf("delivery receipt frame=%+v payload=%+v", &frame, &encoded)
+	}
+
+	conflicting := receipt
+	conflicting.LaneSequence++
+	if _, err := forwarder.ForwardDeliveryReceipt(
+		context.Background(),
+		"station-b",
+		conflicting,
+	); !interactionapp.IsCode(err, interactionapp.ErrorCodeIdempotencyConflict) {
+		t.Fatalf("delivery receipt conflict error = %v", err)
+	}
+	unbound := receipt
+	unbound.ReceiptID = "device-consumed:missing-item"
+	if _, err := forwarder.ForwardDeliveryReceipt(
+		context.Background(),
+		"station-b",
+		unbound,
+	); !interactionapp.IsCode(err, interactionapp.ErrorCodeIntegrityFailed) {
+		t.Fatalf("unbound delivery receipt error = %v", err)
+	}
+
+	concurrent := receipt
+	concurrent.ReceiptID = "device-consumed:item-concurrent"
+	concurrent.LaneSequence = receipt.LaneSequence + 1
+	concurrent = seedProductionFollowerReceiptItem(
+		t,
+		fixture.db,
+		concurrent,
+		"station-b",
+	)
+	const workers = 8
+	var wait sync.WaitGroup
+	results := make(chan bool, workers)
+	errs := make(chan error, workers)
+	for range workers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			replay, err := forwarder.ForwardDeliveryReceipt(
+				context.Background(),
+				"station-b",
+				concurrent,
+			)
+			results <- replay
+			errs <- err
+		}()
+	}
+	wait.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent receipt replay: %v", err)
+		}
+	}
+	var created int
+	for replay := range results {
+		if !replay {
+			created++
+		}
+	}
+	if created != 1 {
+		t.Fatalf("concurrent receipt creators = %d, want 1", created)
+	}
+}
+
+func seedProductionFollowerReceiptItem(
+	t *testing.T,
+	database *gorm.DB,
+	receipt interactionapp.DeliveryReceipt,
+	authority valueobject.StationID,
+) interactionapp.DeliveryReceipt {
+	t.Helper()
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&chatmodel.DeviceEventDelivery{
+			Event: &chatmodel.ConversationEvent{
+				EventId:                string(receipt.EventID),
+				ConversationId:         string(receipt.ConversationID),
+				Sequence:               int64(receipt.EventSequence),
+				Actor:                  &chatmodel.CryptoEndpoint{Ptid: "ptid:sender", DeviceId: "sender-device"},
+				AuthorityStationPeerId: string(authority),
+				CommittedAt:            timestamppb.New(productionAdapterTestTime.Add(-time.Hour)),
+			},
+			Recipient: &chatmodel.CryptoEndpoint{
+				Ptid:     string(receipt.Consumer.Actor),
+				DeviceId: string(receipt.Consumer.Device),
+			},
+			DeliveryCommitment: bytes.Repeat([]byte{0x66}, 32),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt.PayloadHash = valueobject.HashBytes(payload)
+	ackedAt := productionAdapterTestTime
+	if err := database.Create(&deliveryinfra.DeviceQueueItemModel{
+		ItemID:            strings.TrimPrefix(receipt.ReceiptID, "device-consumed:"),
+		RecipientPTID:     string(receipt.Consumer.Actor),
+		RecipientDeviceID: string(receipt.Consumer.Device),
+		LaneSequence:      receipt.LaneSequence,
+		IdempotencyKey:    receipt.ReceiptID,
+		EventID:           string(receipt.EventID),
+		EventSequence:     uint64(receipt.EventSequence),
+		ConversationID:    string(receipt.ConversationID),
+		PayloadType:       int32(chatmodel.DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_CONVERSATION_EVENT),
+		OpaquePayload:     payload,
+		PayloadSHA256:     receipt.PayloadHash.Bytes(),
+		State:             int32(chatmodel.DeviceInboxItemState_DEVICE_INBOX_ITEM_STATE_ACKED),
+		FirstQueuedAt:     productionAdapterTestTime.Add(-time.Hour),
+		NextAttemptAt:     productionAdapterTestTime.Add(-time.Hour),
+		AckedAt:           &ackedAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	return receipt
+}
+
+func TestFollowerDeviceReceiptRequiresPinnedAuthoritySource(t *testing.T) {
+	view := query.ConversationView{
+		Conversation: aggregate.Snapshot{
+			AuthorityStation: "station-b",
+		},
+		Source:         query.SourceFollower,
+		FollowerStatus: repository.FollowerStatusActive,
+	}
+	if err := validateFollowerDeviceDeliverySource(
+		view,
+		"station-a",
+		"station-b",
+	); err != nil {
+		t.Fatalf("valid follower authority source: %v", err)
+	}
+	for _, source := range []valueobject.StationID{"station-a", "station-c"} {
+		if err := validateFollowerDeviceDeliverySource(
+			view,
+			"station-a",
+			source,
+		); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
+			t.Fatalf("source %s error = %v", source, err)
+		}
+	}
+	view.FollowerStatus = repository.FollowerStatusReadOnly
+	if err := validateFollowerDeviceDeliverySource(
+		view,
+		"station-a",
+		"station-b",
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
+		t.Fatalf("read-only follower source error = %v", err)
+	}
+}
+
+func TestProductionDeliveryReceiptProjectionUsesTransactionBoundRoutes(
+	t *testing.T,
+) {
+	fixture := newProductionAdapterFixture(t)
+	remoteOriginator := valueobject.Endpoint{
+		Actor:  fixture.alice.Actor,
+		Device: "alice-remote-device",
+	}
+	receipt := interactionapp.DeliveryReceipt{
+		ReceiptID:      "device-consumed:item-2",
+		ConversationID: "conversation-1",
+		EventID:        "event-2",
+		Consumer:       fixture.bob,
+		EventSequence:  2,
+		LaneSequence:   8,
+		PayloadHash:    valueobject.HashBytes([]byte("queue-payload-2")),
+		ConsumedAt:     productionAdapterTestTime,
+	}
+	recorded := interactionapp.DeliveryRecordResult{
+		Aggregate: interactionapp.DeliveryAggregate{
+			ConversationID:      receipt.ConversationID,
+			EventID:             receipt.EventID,
+			EventSequence:       receipt.EventSequence,
+			RequiredDeviceCount: 1,
+			ConsumedDeviceCount: 1,
+			Delivered:           true,
+			FullyDelivered:      true,
+		},
+		MessageID:  "message-2",
+		Originator: fixture.alice.Actor,
+		OriginatorRoutes: []interactionapp.EndpointRoute{
+			{Endpoint: fixture.alice, HomeStation: "station-a"},
+			{Endpoint: remoteOriginator, HomeStation: "station-b"},
+		},
+	}
+	if err := fixture.db.Transaction(func(tx *gorm.DB) error {
+		adapters, err := fixture.factory.Bind(tx)
+		if err != nil {
+			return err
+		}
+
+		return enqueueDeliveryReceiptProjections(
+			context.Background(),
+			tx,
+			adapters,
+			"station-a",
+			productionAdapterTestTime,
+			receipt,
+			recorded,
+		)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var localItem deliveryinfra.DeviceQueueItemModel
+	if err := fixture.db.Where(
+		"recipient_ptid = ? AND recipient_device_id = ? AND event_id = ?",
+		string(fixture.alice.Actor),
+		string(fixture.alice.Device),
+		string(recorded.MessageID),
+	).First(&localItem).Error; err != nil {
+		t.Fatal(err)
+	}
+	var localReceipt chatmodel.MessageReceipt
+	if err := proto.Unmarshal(localItem.OpaquePayload, &localReceipt); err != nil {
+		t.Fatal(err)
+	}
+	if localReceipt.GetMessageId() != string(recorded.MessageID) ||
+		localReceipt.GetPtid() != string(receipt.Consumer.Actor) ||
+		localReceipt.GetDeviceId() != string(receipt.Consumer.Device) {
+		t.Fatalf("local delivery receipt = %+v", &localReceipt)
+	}
+
+	var remoteFrame federationdelivery.OutboxRecord
+	if err := fixture.db.Where(
+		"payload_kind = ? AND target_station_peer_id = ?",
+		int32(federationdelivery.PayloadKindConversationDeviceDelivery),
+		"station-b",
+	).First(&remoteFrame).Error; err != nil {
+		t.Fatal(err)
+	}
+	var frame federationdelivery.Frame
+	if err := proto.Unmarshal(remoteFrame.FrameBytes, &frame); err != nil {
+		t.Fatal(err)
+	}
+	var item chatmodel.DurableDeviceInboxItem
+	if err := proto.Unmarshal(frame.GetOpaquePayload(), &item); err != nil {
+		t.Fatal(err)
+	}
+	if item.GetRecipient().GetActor().GetPtid() != string(remoteOriginator.Actor) ||
+		item.GetRecipient().GetDeviceId() != string(remoteOriginator.Device) ||
+		item.GetEventId() != string(recorded.MessageID) ||
+		frame.GetOrderingSequence() != int64(receipt.EventSequence) {
+		t.Fatalf("remote delivery receipt frame=%+v item=%+v", &frame, &item)
+	}
+	if err := fixture.db.Transaction(func(tx *gorm.DB) error {
+		adapters, err := fixture.factory.Bind(tx)
+		if err != nil {
+			return err
+		}
+
+		return enqueueDeliveryReceiptProjections(
+			context.Background(),
+			tx,
+			adapters,
+			"station-a",
+			productionAdapterTestTime.Add(time.Hour),
+			receipt,
+			recorded,
+		)
+	}); err != nil {
+		t.Fatalf("repair exact receipt projection replay: %v", err)
+	}
+	secondReceipt := receipt
+	secondReceipt.ReceiptID = "device-consumed:item-2b"
+	secondReceipt.Consumer = valueobject.Endpoint{
+		Actor:  receipt.Consumer.Actor,
+		Device: "bob-device-2",
+	}
+	if err := fixture.db.Transaction(func(tx *gorm.DB) error {
+		adapters, err := fixture.factory.Bind(tx)
+		if err != nil {
+			return err
+		}
+
+		return enqueueDeliveryReceiptProjections(
+			context.Background(),
+			tx,
+			adapters,
+			"station-a",
+			productionAdapterTestTime,
+			secondReceipt,
+			recorded,
+		)
+	}); err != nil {
+		t.Fatalf("enqueue second same-sequence receipt: %v", err)
+	}
+	var remoteCount int64
+	if err := fixture.db.Model(&federationdelivery.OutboxRecord{}).
+		Where(
+			"payload_kind = ? AND target_station_peer_id = ? AND ordering_sequence = ?",
+			int32(federationdelivery.PayloadKindConversationDeviceDelivery),
+			"station-b",
+			int64(receipt.EventSequence),
+		).
+		Count(&remoteCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if remoteCount != 2 {
+		t.Fatalf("same-sequence remote delivery receipts = %d, want 2", remoteCount)
+	}
+
+	failedReceipt := receipt
+	failedReceipt.ReceiptID = "device-consumed:item-3"
+	failedReceipt.EventID = "event-3"
+	failedReceipt.EventSequence = 3
+	failedResult := recorded
+	failedResult.Aggregate.EventID = failedReceipt.EventID
+	failedResult.Aggregate.EventSequence = failedReceipt.EventSequence
+	failedResult.MessageID = "message-3"
+	failedResult.OriginatorRoutes = []interactionapp.EndpointRoute{
+		{Endpoint: fixture.alice, HomeStation: "station-a"},
+		{
+			Endpoint:    valueobject.Endpoint{Actor: fixture.alice.Actor},
+			HomeStation: "station-b",
+		},
+	}
+	err := fixture.db.Transaction(func(tx *gorm.DB) error {
+		adapters, err := fixture.factory.Bind(tx)
+		if err != nil {
+			return err
+		}
+
+		return enqueueDeliveryReceiptProjections(
+			context.Background(),
+			tx,
+			adapters,
+			"station-a",
+			productionAdapterTestTime,
+			failedReceipt,
+			failedResult,
+		)
+	})
+	if err == nil {
+		t.Fatal("invalid remote originator route was accepted")
+	}
+	var rolledBack int64
+	if err := fixture.db.Model(&deliveryinfra.DeviceQueueItemModel{}).
+		Where("event_id = ?", string(failedResult.MessageID)).
+		Count(&rolledBack).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rolledBack != 0 {
+		t.Fatalf("failed receipt projection retained %d local queue rows", rolledBack)
 	}
 }
 

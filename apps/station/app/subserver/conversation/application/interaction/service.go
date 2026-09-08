@@ -4,8 +4,10 @@ import (
 	"context"
 	"strings"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 )
 
@@ -14,33 +16,36 @@ type Service struct {
 	conversations ConversationReader
 	devices       DeviceDirectory
 	readCursors   ReadCursorAdvancer
-	receipts      DeliveryReceiptRecorder
+	receipts      DeliveryReceiptCommitter
+	forwarder     DeliveryReceiptForwarder
 	typing        TypingPublisher
-	delivery      DeliveryPublisher
 	pulses        TypingPulseLedger
 	clock         Clock
 	policy        Policy
+	localStation  valueobject.StationID
 }
 
 func NewService(
 	conversations ConversationReader,
 	devices DeviceDirectory,
 	readCursors ReadCursorAdvancer,
-	receipts DeliveryReceiptRecorder,
+	receipts DeliveryReceiptCommitter,
+	forwarder DeliveryReceiptForwarder,
 	typing TypingPublisher,
-	delivery DeliveryPublisher,
 	pulses TypingPulseLedger,
 	clock Clock,
 	policy Policy,
+	localStation valueobject.StationID,
 ) (*Service, error) {
 	if conversations == nil || devices == nil || readCursors == nil ||
-		receipts == nil || typing == nil || delivery == nil ||
-		pulses == nil || clock == nil {
+		receipts == nil || forwarder == nil || typing == nil ||
+		pulses == nil || clock == nil ||
+		localStation == "" {
 		return nil, NewError(
 			ErrorCodeInvalidArgument,
 			"interaction.new_service",
 			"dependencies",
-			"Conversation reader, device directory, read cursor, receipt, typing, delivery, pulse ledger, and clock ports are required",
+			"Conversation reader, device directory, read cursor, receipt committer, receipt forwarder, typing, pulse ledger, clock, and local Station are required",
 		)
 	}
 	if policy.MinimumPulseInterval <= 0 ||
@@ -60,12 +65,37 @@ func NewService(
 		devices:       devices,
 		readCursors:   readCursors,
 		receipts:      receipts,
+		forwarder:     forwarder,
 		typing:        typing,
-		delivery:      delivery,
 		pulses:        pulses,
 		clock:         clock,
 		policy:        policy,
+		localStation:  localStation,
 	}, nil
+}
+
+// BindAuthorityPorts replaces only the authority persistence views used while
+// applying an authenticated Federation receipt inside the shared inbox
+// transaction.
+func (s *Service) BindAuthorityPorts(
+	conversations ConversationReader,
+	devices DeviceDirectory,
+	receipts DeliveryReceiptCommitter,
+) (*Service, error) {
+	if s == nil || conversations == nil || devices == nil || receipts == nil {
+		return nil, NewError(
+			ErrorCodeInvalidArgument,
+			"interaction.bind_authority_ports",
+			"dependencies",
+			"service, Conversation reader, device directory, and receipt recorder are required",
+		)
+	}
+	bound := *s
+	bound.conversations = conversations
+	bound.devices = devices
+	bound.receipts = receipts
+
+	return &bound, nil
 }
 
 func (s *Service) SubmitTyping(
@@ -95,10 +125,11 @@ func (s *Service) SubmitTyping(
 		)
 	}
 	pulse.ExpiresAt = expiresAt
-	conversation, err := s.authorizeMemberEndpoint(
+	_, conversation, err := s.authorizeMemberEndpoint(
 		ctx,
 		pulse.ConversationID,
 		pulse.Sender,
+		"",
 		"interaction.submit_typing",
 	)
 	if err != nil {
@@ -185,10 +216,11 @@ func (s *Service) SubmitDeliveryReceipt(
 			"is beyond the accepted clock skew",
 		)
 	}
-	conversation, err := s.authorizeMemberEndpoint(
+	view, conversation, err := s.authorizeMemberEndpoint(
 		ctx,
 		receipt.ConversationID,
 		receipt.Consumer,
+		receipt.SourceStation,
 		"interaction.submit_delivery_receipt",
 	)
 	if err != nil {
@@ -202,7 +234,53 @@ func (s *Service) SubmitDeliveryReceipt(
 			"exceeds the current Conversation authority head",
 		)
 	}
-	result, err := s.receipts.Record(ctx, receipt)
+	switch view.Source {
+	case query.SourceFollower:
+		if receipt.SourceStation != "" ||
+			view.FollowerStatus != repository.FollowerStatusActive ||
+			view.Conversation.AuthorityStation == s.localStation {
+			return DeliveryRecordResult{}, NewError(
+				ErrorCodeIntegrityFailed,
+				"interaction.submit_delivery_receipt",
+				"authority",
+				"follower receipt route is inconsistent",
+			)
+		}
+		replay, err := s.forwarder.ForwardDeliveryReceipt(
+			ctx,
+			view.Conversation.AuthorityStation,
+			receipt,
+		)
+		if err != nil {
+			if CodeOf(err) != "" {
+				return DeliveryRecordResult{}, err
+			}
+			return DeliveryRecordResult{}, WrapError(
+				ErrorCodePersistence,
+				"interaction.submit_delivery_receipt.forward",
+				err,
+			)
+		}
+
+		return DeliveryRecordResult{Replay: replay, Forwarded: true}, nil
+	case query.SourceAuthority:
+		if view.Conversation.AuthorityStation != s.localStation {
+			return DeliveryRecordResult{}, NewError(
+				ErrorCodeIntegrityFailed,
+				"interaction.submit_delivery_receipt",
+				"authority",
+				"does not identify the local Station",
+			)
+		}
+	default:
+		return DeliveryRecordResult{}, NewError(
+			ErrorCodeIntegrityFailed,
+			"interaction.submit_delivery_receipt",
+			"source",
+			"is not a canonical Conversation projection",
+		)
+	}
+	result, err := s.receipts.CommitDeliveryReceipt(ctx, receipt)
 	if err != nil {
 		return DeliveryRecordResult{}, err
 	}
@@ -217,77 +295,6 @@ func (s *Service) SubmitDeliveryReceipt(
 			"is missing from the committed event",
 		)
 	}
-	routes, err := s.devices.ListActiveEndpoints(
-		ctx,
-		[]valueobject.PTID{result.Originator},
-	)
-	if err != nil {
-		return DeliveryRecordResult{}, WrapError(
-			ErrorCodePersistence,
-			"interaction.submit_delivery_receipt.resolve_originator",
-			err,
-		)
-	}
-	seen := make(map[string]struct{}, len(routes))
-	for _, route := range routes {
-		if route.Endpoint.Validate() != nil ||
-			route.Endpoint.Actor != result.Originator ||
-			route.HomeStation == "" {
-			return DeliveryRecordResult{}, NewError(
-				ErrorCodeIntegrityFailed,
-				"interaction.submit_delivery_receipt.resolve_originator",
-				"route",
-				"does not belong to the receipt originator",
-			)
-		}
-		if _, duplicate := seen[route.Endpoint.Key()]; duplicate {
-			return DeliveryRecordResult{}, NewError(
-				ErrorCodeIntegrityFailed,
-				"interaction.submit_delivery_receipt.resolve_originator",
-				"route",
-				"contains a duplicate endpoint",
-			)
-		}
-		seen[route.Endpoint.Key()] = struct{}{}
-		active, err := s.devices.IsActive(ctx, route.Endpoint)
-		if err != nil {
-			return DeliveryRecordResult{}, WrapError(
-				ErrorCodePersistence,
-				"interaction.submit_delivery_receipt.authorize_originator_device",
-				err,
-			)
-		}
-		if !active {
-			return DeliveryRecordResult{}, NewError(
-				ErrorCodeIntegrityFailed,
-				"interaction.submit_delivery_receipt.resolve_originator",
-				"route",
-				"contains an inactive endpoint",
-			)
-		}
-		if route.Endpoint == receipt.Consumer {
-			continue
-		}
-		idempotencyKey := valueobject.HashBytes(valueobject.CanonicalTuple(
-			[]byte("conversation-delivery-receipt"),
-			[]byte(receipt.ReceiptID),
-			[]byte(route.Endpoint.Actor),
-			[]byte(route.Endpoint.Device),
-		)).String()
-		if err := s.delivery.PublishDeliveryAggregate(
-			ctx,
-			route.Endpoint,
-			result.Aggregate,
-			idempotencyKey,
-		); err != nil {
-			return DeliveryRecordResult{}, WrapError(
-				ErrorCodePersistence,
-				"interaction.submit_delivery_receipt.publish",
-				err,
-			)
-		}
-	}
-
 	return result, nil
 }
 
@@ -295,12 +302,13 @@ func (s *Service) authorizeMemberEndpoint(
 	ctx context.Context,
 	conversationID valueobject.ConversationID,
 	endpoint valueobject.Endpoint,
+	sourceStation valueobject.StationID,
 	operation string,
-) (*aggregate.Conversation, error) {
+) (query.ConversationView, *aggregate.Conversation, error) {
 	view, err := s.conversations.Get(ctx, conversationID, endpoint.Actor)
 	if err != nil {
 		if conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
-			return nil, NewError(
+			return query.ConversationView{}, nil, NewError(
 				ErrorCodeUnauthorized,
 				operation,
 				"membership",
@@ -308,27 +316,41 @@ func (s *Service) authorizeMemberEndpoint(
 			)
 		}
 
-		return nil, err
+		return query.ConversationView{}, nil, err
 	}
 	conversation, err := aggregate.Rehydrate(view.Conversation)
 	if err != nil {
-		return nil, err
+		return query.ConversationView{}, nil, err
 	}
 	if !conversation.Status().Writable() ||
 		!containsEndpoint(conversation.ActiveEndpoints(), endpoint) {
-		return nil, NewError(
+		return query.ConversationView{}, nil, NewError(
 			ErrorCodeUnauthorized,
 			operation,
 			"membership",
 			"endpoint is not active in the Conversation",
 		)
 	}
+	if sourceStation != "" {
+		if view.Source != query.SourceAuthority ||
+			!memberBelongsToStation(conversation, endpoint.Actor, sourceStation) {
+			return query.ConversationView{}, nil, NewError(
+				ErrorCodeUnauthorized,
+				operation,
+				"source_station",
+				"does not own the authenticated remote endpoint",
+			)
+		}
+
+		return view, conversation, nil
+	}
 	active, err := s.devices.IsActive(ctx, endpoint)
 	if err != nil {
-		return nil, WrapError(ErrorCodePersistence, operation+".authorize_device", err)
+		return query.ConversationView{}, nil,
+			WrapError(ErrorCodePersistence, operation+".authorize_device", err)
 	}
 	if !active {
-		return nil, NewError(
+		return query.ConversationView{}, nil, NewError(
 			ErrorCodeUnauthorized,
 			operation,
 			"device",
@@ -336,7 +358,7 @@ func (s *Service) authorizeMemberEndpoint(
 		)
 	}
 
-	return conversation, nil
+	return view, conversation, nil
 }
 
 func validateDeliveryAggregate(
@@ -377,6 +399,20 @@ func validReceiptID(value string) bool {
 func containsEndpoint(endpoints []valueobject.Endpoint, expected valueobject.Endpoint) bool {
 	for _, endpoint := range endpoints {
 		if endpoint == expected {
+			return true
+		}
+	}
+
+	return false
+}
+
+func memberBelongsToStation(
+	conversation *aggregate.Conversation,
+	actor valueobject.PTID,
+	station valueobject.StationID,
+) bool {
+	for _, member := range conversation.Members() {
+		if member.Actor == actor && member.Active() && member.HomeStation == station {
 			return true
 		}
 	}
