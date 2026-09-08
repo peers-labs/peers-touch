@@ -388,7 +388,9 @@ either drop accepted product behavior or preserve destructive local authority.
 All commands require actor ownership, client idempotency key, expected
 conversation version, and an immutable source identifier. Identical replay
 returns the original result; key reuse with another payload returns
-`IDEMPOTENCY_CONFLICT`.
+`IDEMPOTENCY_CONFLICT`. `SubmitTurn` projects that domain conflict as the
+user-facing `ADMISSION_DUPLICATE_CONFLICT` typed error with a hashed
+idempotency key and the existing command ID.
 
 `TombstoneMessage` records actor/time/reason, excludes the message from normal
 projection/context, and preserves retained Turn/Trace/usage/feedback/tool/audit
