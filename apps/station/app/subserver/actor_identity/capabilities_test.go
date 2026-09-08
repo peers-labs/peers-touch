@@ -17,6 +17,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -229,6 +231,201 @@ func TestActorCapabilitiesBuildSignedMonotonicEndpointManifest(t *testing.T) {
 		first.GetManifest(),
 	); !domain.IsCode(err, domain.ErrorCodeIdentityConflict) {
 		t.Fatalf("endpoint manifest rollback error = %v", err)
+	}
+}
+
+func TestActorCapabilitiesAcceptVerifiedEndpointManifestPersistsIdentityAtomically(
+	t *testing.T,
+) {
+	database := openCapabilityTestDatabase(t)
+	repository := mustCapabilityRepository(t, database)
+	manifestService, err := application.NewEndpointManifestService(
+		repository,
+		application.EndpointManifestSignerFunc(func(
+			context.Context,
+			*actormodel.ActorEndpointManifest,
+		) error {
+			return nil
+		}),
+		capabilityTestLocalStation,
+		func() time.Time { return capabilityTestTime },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := newActorCapabilities(
+		manifestService,
+		repository,
+		capabilityTestLocalStation,
+		func(*gorm.DB) (verifiedProfileDeviceKeyHydrator, error) {
+			return nil, errors.New("remote hydration must not run")
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	actorIdentityPublicKey := deterministicPublicKey(0x81)
+	first := verifiedRemoteEndpointManifest(
+		capabilityTestRemoteActor,
+		"remote-device",
+		actorIdentityPublicKey,
+		1,
+		4,
+	)
+	if err := provider.AcceptVerifiedEndpointManifest(
+		context.Background(),
+		first,
+	); err != nil {
+		t.Fatalf("accept first remote endpoint manifest: %v", err)
+	}
+	assertAcceptedManifestIdentity(
+		t,
+		database,
+		capabilityTestRemoteActor,
+		actorIdentityPublicKey,
+		4,
+		1,
+	)
+	if err := provider.AcceptVerifiedEndpointManifest(
+		context.Background(),
+		first,
+	); err != nil {
+		t.Fatalf("replay remote endpoint manifest: %v", err)
+	}
+
+	stale := verifiedRemoteEndpointManifest(
+		capabilityTestRemoteActor,
+		"remote-device",
+		actorIdentityPublicKey,
+		2,
+		3,
+	)
+	if err := provider.AcceptVerifiedEndpointManifest(
+		context.Background(),
+		stale,
+	); !domain.IsCode(err, domain.ErrorCodeStaleProfileVersion) {
+		t.Fatalf("stale profile version error = %v", err)
+	}
+	assertAcceptedManifestIdentity(
+		t,
+		database,
+		capabilityTestRemoteActor,
+		actorIdentityPublicKey,
+		4,
+		1,
+	)
+
+	conflictingKey := verifiedRemoteEndpointManifest(
+		capabilityTestRemoteActor,
+		"remote-device",
+		deterministicPublicKey(0x82),
+		2,
+		5,
+	)
+	if err := provider.AcceptVerifiedEndpointManifest(
+		context.Background(),
+		conflictingKey,
+	); !domain.IsCode(err, domain.ErrorCodeIdentityConflict) {
+		t.Fatalf("identity-key conflict error = %v", err)
+	}
+	assertAcceptedManifestIdentity(
+		t,
+		database,
+		capabilityTestRemoteActor,
+		actorIdentityPublicKey,
+		4,
+		1,
+	)
+
+	advanced := verifiedRemoteEndpointManifest(
+		capabilityTestRemoteActor,
+		"remote-device",
+		actorIdentityPublicKey,
+		2,
+		5,
+	)
+	if err := provider.AcceptVerifiedEndpointManifest(
+		context.Background(),
+		advanced,
+	); err != nil {
+		t.Fatalf("advance remote endpoint manifest: %v", err)
+	}
+	assertAcceptedManifestIdentity(
+		t,
+		database,
+		capabilityTestRemoteActor,
+		actorIdentityPublicKey,
+		5,
+		2,
+	)
+}
+
+func TestActorCapabilitiesRejectManifestAtomicallyWithIdentityProjection(
+	t *testing.T,
+) {
+	database := openCapabilityTestDatabase(t)
+	repository := mustCapabilityRepository(t, database)
+	manifestService, err := application.NewEndpointManifestService(
+		repository,
+		application.EndpointManifestSignerFunc(func(
+			context.Context,
+			*actormodel.ActorEndpointManifest,
+		) error {
+			return nil
+		}),
+		capabilityTestLocalStation,
+		func() time.Time { return capabilityTestTime },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := newActorCapabilities(
+		manifestService,
+		repository,
+		capabilityTestLocalStation,
+		func(*gorm.DB) (verifiedProfileDeviceKeyHydrator, error) {
+			return nil, errors.New("remote hydration must not run")
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actorPTID := "ptid:v1:actor:peers:p:remote-rollback:identity"
+	if err := database.Create(&persistence.ActorEndpointDirectoryVersionModel{
+		ActorPTID:   actorPTID,
+		Version:     1,
+		StateSHA256: bytes.Repeat([]byte{0x91}, sha256.Size),
+		UpdatedAt:   capabilityTestTime.Add(-time.Minute),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := verifiedRemoteEndpointManifest(
+		actorPTID,
+		"remote-device",
+		deterministicPublicKey(0x83),
+		1,
+		1,
+	)
+	if err := provider.AcceptVerifiedEndpointManifest(
+		context.Background(),
+		manifest,
+	); !domain.IsCode(err, domain.ErrorCodeIdentityConflict) {
+		t.Fatalf("directory conflict error = %v", err)
+	}
+
+	var identityCount int64
+	if err := database.Model(&persistence.ActorIdentityModel{}).
+		Where("ptid = ?", actorPTID).
+		Count(&identityCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if identityCount != 0 {
+		t.Fatalf(
+			"rejected manifest persisted %d Actor identity rows",
+			identityCount,
+		)
 	}
 }
 
@@ -599,6 +796,80 @@ func assertEndpointManifest(
 			len(entry.GetPublicMaterialSha256()[0]) != sha256.Size {
 			t.Fatalf("endpoint[%d] has invalid material hashes: %+v", index, entry)
 		}
+	}
+}
+
+func verifiedRemoteEndpointManifest(
+	actorPTID string,
+	deviceID string,
+	actorIdentityPublicKey ed25519.PublicKey,
+	directoryVersion uint64,
+	profileVersion uint64,
+) *actormodel.ActorEndpointManifest {
+	devicePublicKey := deterministicPublicKey(0x91)
+	materialHash := sha256.Sum256(devicePublicKey)
+	actor := &actormodel.ActorRef{
+		Ptid: actorPTID,
+		Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+	}
+
+	return &actormodel.ActorEndpointManifest{
+		FormatVersion:     application.EndpointManifestFormatVersion,
+		ManifestId:        fmt.Sprintf("remote-manifest-%d", directoryVersion),
+		Actor:             actor,
+		HomeStationPeerId: capabilityTestRemoteStation,
+		DirectoryVersion:  directoryVersion,
+		ActiveEndpoints: []*actormodel.ActorEndpointManifestEntry{{
+			Endpoint: &actormodel.ActorDeviceRef{
+				Actor:    proto.Clone(actor).(*actormodel.ActorRef),
+				DeviceId: deviceID,
+			},
+			SigningKeyId: signingKeyID(devicePublicKey),
+			PublicMaterialSha256: [][]byte{
+				append([]byte(nil), materialHash[:]...),
+			},
+		}},
+		IssuedAt:               timestamppb.New(capabilityTestTime.Add(-time.Minute)),
+		ExpiresAt:              timestamppb.New(capabilityTestTime.Add(time.Minute)),
+		SigningKeyId:           "remote-station-signing-key",
+		StationSignature:       bytes.Repeat([]byte{0x92}, ed25519.SignatureSize),
+		ActorIdentityPublicKey: append([]byte(nil), actorIdentityPublicKey...),
+		ActorProfileVersion:    profileVersion,
+	}
+}
+
+func assertAcceptedManifestIdentity(
+	t *testing.T,
+	database *gorm.DB,
+	actorPTID string,
+	actorIdentityPublicKey ed25519.PublicKey,
+	wantProfileVersion int64,
+	wantDirectoryVersion uint64,
+) {
+	t.Helper()
+
+	var identity persistence.ActorIdentityModel
+	if err := database.Where("ptid = ?", actorPTID).First(&identity).Error; err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := sha256.Sum256(actorIdentityPublicKey)
+	if !bytes.Equal(identity.PublicKey, actorIdentityPublicKey) ||
+		!bytes.Equal(identity.Fingerprint, fingerprint[:]) ||
+		identity.ProfileVersion != wantProfileVersion {
+		t.Fatalf("unexpected accepted Actor identity: %+v", identity)
+	}
+
+	var directory persistence.ActorEndpointDirectoryVersionModel
+	if err := database.Where("actor_ptid = ?", actorPTID).
+		First(&directory).Error; err != nil {
+		t.Fatal(err)
+	}
+	if directory.Version != wantDirectoryVersion {
+		t.Fatalf(
+			"directory version = %d, want %d",
+			directory.Version,
+			wantDirectoryVersion,
+		)
 	}
 }
 
