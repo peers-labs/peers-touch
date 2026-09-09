@@ -1,17 +1,17 @@
 // Permission Bridge — W7 native permission request abstraction.
 //
-// Provides a unified interface for requesting and checking platform
-// permissions (camera, microphone, storage, notifications). Each
-// platform implements the actual permission check through its native
-// APIs; this module provides the common types and Tauri command layer.
+// The Rust capability kernel owns the Web-facing contract. The native plugin
+// performs only OS permission checks and prompts, returning a closed status
+// enum that is mapped here before crossing the Tauri command boundary.
 
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, Runtime};
+use tauri_plugin_peers_platform_permissions::{
+    PermissionResponse as NativePermissionResponse, PermissionStatus as NativePermissionStatus,
+    PlatformPermissions,
+};
 
 use crate::error::{MobileError, MobileResult};
-
-// ---------------------------------------------------------------------------
-// Permission types
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -22,22 +22,28 @@ pub enum PermissionKind {
     Notifications,
 }
 
+impl PermissionKind {
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Camera => "camera",
+            Self::Microphone => "microphone",
+            Self::Storage => "storage",
+            Self::Notifications => "notifications",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionStatus {
-    /// Permission has not been requested yet.
     NotDetermined,
-    /// Permission was granted.
     Granted,
-    /// Permission was denied by the user.
     Denied,
-    /// Permission is restricted by system policy (parental controls, MDM).
     Restricted,
-    /// Permission check is not supported on this platform.
     Unsupported,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionCheckResult {
     pub kind: PermissionKind,
@@ -45,7 +51,7 @@ pub struct PermissionCheckResult {
     pub can_request: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionRequestResult {
     pub kind: PermissionKind,
@@ -53,32 +59,30 @@ pub struct PermissionRequestResult {
     pub was_already_granted: bool,
 }
 
-// ---------------------------------------------------------------------------
-// Platform-agnostic permission operations
-// ---------------------------------------------------------------------------
+pub async fn check_permission<R: Runtime>(
+    app: &AppHandle<R>,
+    kind: PermissionKind,
+) -> MobileResult<PermissionCheckResult> {
+    let permissions = app
+        .try_state::<PlatformPermissions<R>>()
+        .ok_or_else(|| MobileError::permission("native permission plugin is not registered"))?;
+    let response = permissions.check(kind.wire_name()).await.map_err(|error| {
+        MobileError::permission(format!(
+            "failed to check {} permission: {error}",
+            kind.wire_name()
+        ))
+    })?;
 
-/// Check the current status of a permission without prompting.
-///
-/// On unsupported platforms, returns `PermissionStatus::Unsupported`.
-pub fn check_permission(kind: PermissionKind) -> MobileResult<PermissionCheckResult> {
-    let status = platform_check_permission(kind);
-    let can_request = matches!(status, PermissionStatus::NotDetermined);
-
-    Ok(PermissionCheckResult {
-        kind,
-        status,
-        can_request,
-    })
+    Ok(map_check_result(kind, response))
 }
 
-/// Request a permission from the user.
-///
-/// If already granted, returns immediately with `was_already_granted: true`.
-/// On unsupported platforms, returns `PermissionStatus::Unsupported`.
-pub fn request_permission(kind: PermissionKind) -> MobileResult<PermissionRequestResult> {
-    let current = platform_check_permission(kind);
+pub async fn request_permission<R: Runtime>(
+    app: &AppHandle<R>,
+    kind: PermissionKind,
+) -> MobileResult<PermissionRequestResult> {
+    let current = check_permission(app, kind).await?;
 
-    if current == PermissionStatus::Granted {
+    if current.status == PermissionStatus::Granted {
         return Ok(PermissionRequestResult {
             kind,
             status: PermissionStatus::Granted,
@@ -86,95 +90,123 @@ pub fn request_permission(kind: PermissionKind) -> MobileResult<PermissionReques
         });
     }
 
-    if current == PermissionStatus::Unsupported {
+    if current.status == PermissionStatus::Unsupported {
         return Err(MobileError::permission(format!(
-            "permission {:?} is not supported on this platform",
-            kind
+            "{} permission is not supported on this platform",
+            kind.wire_name()
         )));
     }
 
-    // Trigger the native permission prompt
-    let result_status = platform_request_permission(kind);
+    let permissions = app
+        .try_state::<PlatformPermissions<R>>()
+        .ok_or_else(|| MobileError::permission("native permission plugin is not registered"))?;
+    let response = permissions
+        .request(kind.wire_name())
+        .await
+        .map_err(|error| {
+            MobileError::permission(format!(
+                "failed to request {} permission: {error}",
+                kind.wire_name()
+            ))
+        })?;
 
     Ok(PermissionRequestResult {
         kind,
-        status: result_status,
+        status: response.status.into(),
         was_already_granted: false,
     })
 }
 
-/// Check all permissions and return their statuses.
-pub fn check_all_permissions() -> MobileResult<Vec<PermissionCheckResult>> {
-    let kinds = [
+pub async fn check_all_permissions<R: Runtime>(
+    app: &AppHandle<R>,
+) -> MobileResult<Vec<PermissionCheckResult>> {
+    let mut results = Vec::with_capacity(4);
+    for kind in [
         PermissionKind::Camera,
         PermissionKind::Microphone,
         PermissionKind::Storage,
         PermissionKind::Notifications,
-    ];
-
-    kinds.iter().map(|kind| check_permission(*kind)).collect()
+    ] {
+        results.push(check_permission(app, kind).await?);
+    }
+    Ok(results)
 }
 
-// ---------------------------------------------------------------------------
-// Platform-specific implementations
-// ---------------------------------------------------------------------------
+fn map_check_result(
+    kind: PermissionKind,
+    response: NativePermissionResponse,
+) -> PermissionCheckResult {
+    PermissionCheckResult {
+        kind,
+        status: response.status.into(),
+        can_request: response.can_request,
+    }
+}
 
-#[cfg(target_os = "ios")]
-fn platform_check_permission(kind: PermissionKind) -> PermissionStatus {
-    // iOS permission checks are done through AVFoundation / UserNotifications
-    // frameworks. For now, return NotDetermined as the base implementation;
-    // actual native bridging will be added when the iOS plugin surface is ready.
-    match kind {
-        PermissionKind::Camera | PermissionKind::Microphone | PermissionKind::Notifications => {
-            PermissionStatus::NotDetermined
+impl From<NativePermissionStatus> for PermissionStatus {
+    fn from(status: NativePermissionStatus) -> Self {
+        match status {
+            NativePermissionStatus::NotDetermined => Self::NotDetermined,
+            NativePermissionStatus::Granted => Self::Granted,
+            NativePermissionStatus::Denied => Self::Denied,
+            NativePermissionStatus::Restricted => Self::Restricted,
+            NativePermissionStatus::Unsupported => Self::Unsupported,
         }
-        // iOS does not have a separate storage permission for photos library
-        // access — it uses PHPhotoLibrary which has its own authorization.
-        PermissionKind::Storage => PermissionStatus::NotDetermined,
     }
 }
 
-#[cfg(target_os = "ios")]
-fn platform_request_permission(kind: PermissionKind) -> PermissionStatus {
-    // iOS permission requests are async and require native bridging.
-    // Return NotDetermined as a placeholder; the actual implementation
-    // will use the Tauri plugin system for native iOS calls.
-    match kind {
-        PermissionKind::Camera
-        | PermissionKind::Microphone
-        | PermissionKind::Storage
-        | PermissionKind::Notifications => PermissionStatus::NotDetermined,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_permission_status_mapping_is_closed_and_preserves_requestability() {
+        let cases = [
+            (
+                NativePermissionStatus::NotDetermined,
+                PermissionStatus::NotDetermined,
+                true,
+            ),
+            (
+                NativePermissionStatus::Granted,
+                PermissionStatus::Granted,
+                false,
+            ),
+            (
+                NativePermissionStatus::Denied,
+                PermissionStatus::Denied,
+                true,
+            ),
+            (
+                NativePermissionStatus::Restricted,
+                PermissionStatus::Restricted,
+                false,
+            ),
+            (
+                NativePermissionStatus::Unsupported,
+                PermissionStatus::Unsupported,
+                false,
+            ),
+        ];
+
+        for (native_status, expected_status, can_request) in cases {
+            let result = map_check_result(
+                PermissionKind::Camera,
+                NativePermissionResponse {
+                    status: native_status,
+                    can_request,
+                },
+            );
+            assert_eq!(result.status, expected_status);
+            assert_eq!(result.can_request, can_request);
+        }
     }
-}
 
-#[cfg(target_os = "android")]
-fn platform_check_permission(kind: PermissionKind) -> PermissionStatus {
-    // Android permission checks go through the Android permission system.
-    // Placeholder implementation — actual bridging via JNI or Tauri plugin.
-    match kind {
-        PermissionKind::Camera
-        | PermissionKind::Microphone
-        | PermissionKind::Storage
-        | PermissionKind::Notifications => PermissionStatus::NotDetermined,
+    #[test]
+    fn permission_kind_wire_names_match_native_contract() {
+        assert_eq!(PermissionKind::Camera.wire_name(), "camera");
+        assert_eq!(PermissionKind::Microphone.wire_name(), "microphone");
+        assert_eq!(PermissionKind::Storage.wire_name(), "storage");
+        assert_eq!(PermissionKind::Notifications.wire_name(), "notifications");
     }
-}
-
-#[cfg(target_os = "android")]
-fn platform_request_permission(kind: PermissionKind) -> PermissionStatus {
-    match kind {
-        PermissionKind::Camera
-        | PermissionKind::Microphone
-        | PermissionKind::Storage
-        | PermissionKind::Notifications => PermissionStatus::NotDetermined,
-    }
-}
-
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-fn platform_check_permission(_kind: PermissionKind) -> PermissionStatus {
-    PermissionStatus::Unsupported
-}
-
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-fn platform_request_permission(_kind: PermissionKind) -> PermissionStatus {
-    PermissionStatus::Unsupported
 }

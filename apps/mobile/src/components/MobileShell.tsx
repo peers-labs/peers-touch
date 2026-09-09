@@ -1,15 +1,23 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Badge } from 'antd';
 import { Image, MessageCircle, User, Users } from 'lucide-react';
 
 import { useLifecyclePhase } from '../app/lifecycle';
 import { useMobileI18n } from '../app/mobileI18n';
-import { primaryTabDescriptors } from '../app/navigation';
 import {
+  activeMobileDetailRoute,
+  navigationLocationKey,
+  primaryTabDescriptors,
+  restoreFocusTarget,
   saveScrollPosition,
+  saveFocusTarget,
   restoreScrollPosition,
   clearAllScrollPositions,
-} from '../app/navigation/scrollRestoration';
+  useMobileNavigationStore,
+  type MobileChatDetailRoute,
+  type MobileDetailRoute,
+  type MobilePrimaryRouteId,
+} from '../app/navigation';
 import { ChatPage } from '../pages/ChatPage';
 import { ContactsPage } from '../pages/ContactsPage';
 import { MomentsPage } from '../pages/MomentsPage';
@@ -18,7 +26,6 @@ import { useAuthStore } from '../features/auth/authStore';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { projectConversations, projectPendingInboundRequests } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
-import { useSocialRuntime } from '../features/social/useSocialRuntime';
 import type { StoredStationRegistry } from '../features/station/stationRegistry';
 import {
   visibleChatUnread,
@@ -44,10 +51,23 @@ function routeIdToTabId(routeId: string): TabId | null {
   return null;
 }
 
-function renderPage(tabId: TabId, props: MobileShellProps, authSession: MobileAuthSession | null, onOpenChat: () => void) {
+function renderPage(
+  tabId: TabId,
+  props: MobileShellProps,
+  authSession: MobileAuthSession | null,
+  activeChatDetail: MobileChatDetailRoute | null,
+  onOpenChat: (route: MobileChatDetailRoute) => void,
+  onBack: () => void,
+) {
   switch (tabId) {
     case 'chat':
-      return <ChatPage />;
+      return (
+        <ChatPage
+          activeDetail={activeChatDetail}
+          onBack={onBack}
+          onOpenConversation={onOpenChat}
+        />
+      );
     case 'moments':
       return <MomentsPage />;
     case 'contacts':
@@ -81,19 +101,23 @@ export function MobileShell(props: MobileShellProps) {
   const { t } = useMobileI18n();
   const lifecyclePhase = useLifecyclePhase();
   const authSession = useAuthStore((state) => state.session);
-  const [activeTab, setActiveTab] = useState<TabId>('chat');
+  const primaryRouteId = useMobileNavigationStore(
+    (state) => state.primaryRouteId,
+  );
+  const detailStack = useMobileNavigationStore((state) => state.detailStack);
+  const navigatePrimary = useMobileNavigationStore(
+    (state) => state.navigatePrimary,
+  );
+  const pushDetail = useMobileNavigationStore((state) => state.pushDetail);
+  const popDetail = useMobileNavigationStore((state) => state.popDetail);
   const contentRef = useRef<HTMLDivElement>(null);
-  const previousTabRef = useRef<TabId>(activeTab);
-  useSocialRuntime(authSession);
 
-  const activeSessionUlid = useSocialStore((state) => state.activeSessionUlid);
   const sessions = useSocialStore((state) => state.sessions);
   const messages = useSocialStore((state) => state.messages);
   const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
   const peerOnline = useSocialStore((state) => state.peerOnline);
   const friendRequests = useSocialStore((state) => state.friendRequests);
   const friendConversationSettings = useSocialStore((state) => state.conversationSettings);
-  const activeGroupUlid = useGroupStore((state) => state.activeGroupUlid);
   const groups = useGroupStore((state) => state.groups);
   const groupMessages = useGroupStore((state) => state.messages);
   const groupUnreadCounts = useGroupStore((state) => state.unreadCounts);
@@ -127,33 +151,74 @@ export function MobileShell(props: MobileShellProps) {
   );
   const contactBadge = inboundRequests.length;
 
-  const switchTab = useCallback((tabId: TabId) => {
-    // Save scroll position of the tab we're leaving
-    const previousRouteId = `tab:${previousTabRef.current}`;
-    saveScrollPosition(previousRouteId, contentRef.current);
+  const activeDetail = activeMobileDetailRoute({ detailStack });
+  const activeChatDetail = activeDetail?.routeId === 'detail:chat-conversation'
+    || activeDetail?.routeId === 'detail:group-conversation'
+    ? activeDetail
+    : null;
+  const activeTab = routeIdToTabId(primaryRouteId) ?? 'chat';
+  const renderedTab = activeChatDetail ? 'chat' : activeTab;
 
-    setActiveTab(tabId);
-    previousTabRef.current = tabId;
+  const saveCurrentLocation = useCallback(() => {
+    const state = useMobileNavigationStore.getState();
+    const detail = activeMobileDetailRoute(state);
+    const locationKey = navigationLocationKey(
+      detail ?? state.primaryRouteId,
+    );
+    saveScrollPosition(locationKey, contentRef.current);
+    saveFocusTarget(locationKey);
+  }, []);
 
-    // Restore scroll position of the tab we're entering (deferred to next frame)
+  const restoreLocation = useCallback((
+    route: MobilePrimaryRouteId | MobileDetailRoute,
+  ) => {
     requestAnimationFrame(() => {
-      const nextRouteId = `tab:${tabId}`;
-      restoreScrollPosition(nextRouteId, contentRef.current);
+      const locationKey = navigationLocationKey(route);
+      restoreScrollPosition(locationKey, contentRef.current);
+      restoreFocusTarget(locationKey, contentRef.current);
     });
   }, []);
 
-  // Clear scroll positions when lifecycle transitions away from ACTIVE
-  // (e.g. during teardown or suspend)
-  if (lifecyclePhase !== 'ACTIVE' && lifecyclePhase !== 'RESUMING') {
-    clearAllScrollPositions();
-  }
+  const switchTab = useCallback((tabId: TabId) => {
+    const routeId = `tab:${tabId}` as MobilePrimaryRouteId;
+    saveCurrentLocation();
+    navigatePrimary(routeId);
+    restoreLocation(routeId);
+  }, [navigatePrimary, restoreLocation, saveCurrentLocation]);
 
-  const hideTabbar = activeTab === 'chat' && Boolean(activeSessionUlid || activeGroupUlid);
+  const openChatDetail = useCallback((route: MobileChatDetailRoute) => {
+    saveCurrentLocation();
+    pushDetail(route);
+    restoreLocation(route);
+  }, [pushDetail, restoreLocation, saveCurrentLocation]);
+
+  const closeDetail = useCallback(() => {
+    saveCurrentLocation();
+    popDetail();
+    const state = useMobileNavigationStore.getState();
+    const nextRoute = activeMobileDetailRoute(state) ?? state.primaryRouteId;
+    restoreLocation(nextRoute);
+  }, [popDetail, restoreLocation, saveCurrentLocation]);
+
+  useEffect(() => {
+    if (lifecyclePhase !== 'ACTIVE' && lifecyclePhase !== 'RESUMING') {
+      clearAllScrollPositions();
+    }
+  }, [lifecyclePhase]);
+
+  const hideTabbar = activeDetail !== null;
 
   return (
     <div className={`mobile-shell ${hideTabbar ? 'tabbar-hidden' : ''}`}>
       <div className="mobile-content" ref={contentRef}>
-        {renderPage(activeTab, props, authSession, () => switchTab('chat'))}
+        {renderPage(
+          renderedTab,
+          props,
+          authSession,
+          activeChatDetail,
+          openChatDetail,
+          closeDetail,
+        )}
       </div>
 
       {!hideTabbar ? <nav className="mobile-tabbar">

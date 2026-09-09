@@ -27,6 +27,7 @@ from tooling.acceptance.gates.mobile.simulator_e2e import (
     SimulatorDeviceTarget,
     SimulatorGateBlocked,
     UrllibAppiumTransport,
+    W3C_ELEMENT_KEY,
     _redacted_markup,
     _validate_cleanup_result,
     _validate_fail_closed_projection,
@@ -628,6 +629,28 @@ class SimulatorSeamContractTests(unittest.TestCase):
         self.assertIn("mobileSimulator", manifest)
         self.assertNotIn("mobileNative", manifest)
 
+    def test_primary_result_uses_canonical_evidence_contract(self) -> None:
+        gate = SimulatorCallbackRoutingGate()
+
+        passed = gate._result_base("PASS")
+        self.assertEqual(
+            passed["artifactKind"],
+            "acceptance-gate-evidence-report",
+        )
+        self.assertEqual(passed["gateId"], GATE_ID)
+        self.assertEqual(passed["gate"], GATE_ID)
+        self.assertEqual(passed["phase"], "W2-E1 Simulator evidence")
+        self.assertEqual(passed["bom"], ["W2-E1"])
+        self.assertEqual(passed["spec"], ["MS-D14"])
+        self.assertEqual(passed["observedScope"], [PROVEN_SCOPE])
+        self.assertTrue(passed["sampleEmissionAllowed"])
+        self.assertNotIn("provenScope", passed)
+        self.assertNotIn("sourcePhase", passed)
+
+        failed = gate._result_base("FAIL")
+        self.assertEqual(failed["observedScope"], [])
+        self.assertFalse(failed["sampleEmissionAllowed"])
+
     def test_runtime_identity_requires_verified_toolchain_and_hashes(
         self,
     ) -> None:
@@ -682,6 +705,78 @@ class SimulatorSeamContractTests(unittest.TestCase):
 
 
 class SimulatorAppiumCapabilityTests(unittest.TestCase):
+    def test_public_w3c_element_and_orientation_operations(self) -> None:
+        class ElementTransport(FakeAppiumTransport):
+            def request(
+                self,
+                method: str,
+                path: str,
+                payload: Mapping[str, Any] | None = None,
+            ) -> Any:
+                result = super().request(method, path, payload)
+                if method == "POST" and path.endswith("/element"):
+                    return {W3C_ELEMENT_KEY: "field/1"}
+                return result
+
+        transport = ElementTransport("ios-session")
+        session = SimulatorAppiumSession(
+            transport,
+            client_id="sim-ios",
+            platform="ios",
+            automation_name="XCUITest",
+            device=SimulatorDeviceTarget(
+                platform="ios",
+                identifier="ios-simulator-udid",
+                role="simulator",
+            ),
+            build=SimulatorBuildTarget(
+                platform="ios",
+                artifact=Path("/tmp/mobile.app"),
+                application_id="com.peers.touch.mobile",
+            ),
+            callback_scheme="peers-touch",
+            ports={"wda-local": 8101, "mjpeg": 9101, "webview": 9511},
+        )
+
+        session.start()
+        element_ref = session.find_element(
+            "class name",
+            "XCUIElementTypeTextField",
+        )
+        session.click_element(element_ref)
+        session.set_orientation("landscape")
+
+        self.assertEqual(element_ref, "field/1")
+        self.assertIn(
+            (
+                "POST",
+                "/session/ios-session/element",
+                {
+                    "using": "class name",
+                    "value": "XCUIElementTypeTextField",
+                },
+            ),
+            transport.requests,
+        )
+        self.assertIn(
+            (
+                "POST",
+                "/session/ios-session/element/field%2F1/click",
+                {},
+            ),
+            transport.requests,
+        )
+        self.assertIn(
+            (
+                "POST",
+                "/session/ios-session/orientation",
+                {"orientation": "LANDSCAPE"},
+            ),
+            transport.requests,
+        )
+        with self.assertRaisesRegex(DriverError, "PORTRAIT or LANDSCAPE"):
+            session.set_orientation("upside-down")
+
     def test_polling_rejects_non_finite_timeouts(self) -> None:
         transport = FakeAppiumTransport("ios-session")
         gate = SimulatorCallbackRoutingGate(
@@ -1060,11 +1155,15 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
         )
         result = gate._run_journeys(artifacts, runtime_manifest())
 
-        self.assertEqual(result["provenScope"], ["simulator-callback-routing"])
+        self.assertEqual(
+            result["observedScope"],
+            ["simulator-callback-routing"],
+        )
         self.assertEqual(
             result["unprovenScope"],
             ["physical provider OAuth/MS-AG03 remains UNPROVEN"],
         )
+        self.assertTrue(result["sampleEmissionAllowed"])
         self.assertFalse(result["physicalDeviceClaimed"])
         self.assertFalse(result["successfulCallbackInjected"])
         self.assertFalse(result["stationMocksUsed"])

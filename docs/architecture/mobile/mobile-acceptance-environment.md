@@ -56,7 +56,49 @@ Properties:
   physical-device browser return behavior, interaction performance on real
   hardware.
 
-### 3.2 Physical Device Tier
+### 3.2 iOS Layout Simulator Tier
+
+W9-B uses the narrower
+`tooling/acceptance/environments/mobile-ios-layout-simulator.yaml` contract.
+It extends the base simulator build and Appium pins but provisions only:
+
+- iOS 17.4 `iPhone SE (3rd generation)` as the compact viewport;
+- iOS 17.4 `iPhone 15 Pro Max` as the large viewport;
+- isolated Appium ports and storage for each cell.
+
+The Gate captures portrait/landscape, keyboard open/closed, English/Chinese,
+native accessibility-tree, WebView DOM, screenshot, source-identity, and
+cleanup evidence. The environment has no Station, actor Fixture, provider
+credential, Android runtime, or physical-device lease. A pass therefore proves
+only the declared unauthenticated iOS Simulator launch surface.
+
+### 3.3 Station Lifecycle Simulator Tier
+
+`tooling/acceptance/environments/mobile-station-lifecycle-simulator.yaml`
+extends the base simulator build and driver pins with two source-attested,
+disposable Stations. It does not require Relay or provider credentials.
+Client-to-Station relationships are declared as typed bindings, and the
+Provisioner retains Fixture and Appium authority while the Gate consumes only
+the bound lifecycle operations.
+
+The first `create_bound_session` call carries only the closed Mobile launch
+options object. The parent Runtime Binding resolves every required service role
+from the immutable Runtime Manifest, observes each Station identity through the
+running client, persists one binding proof per role for the same launch
+generation, and restores the primary role before returning. Later Station
+changes use `select_binding(client_id, binding_role)` without allocating a new
+launch generation or exposing a Station endpoint to the Gate.
+Fixture account lookup, access-attempt creation, and credential submission also
+remain in the parent handler; the child Gate receives only sanitized decision,
+session, lifecycle, and proof projections.
+
+This tier proves the simulator portions of valid-session restore,
+same-device-type takeover and revocation recovery, Station switching, logout,
+generation fencing, and old-scope absence. Destructive actor reset still
+requires `MOBILE_ACCEPTANCE_RESET=1` after both targets pass disposable-target
+verification.
+
+### 3.4 Physical Device Tier
 
 Covers real iOS and Android devices. Defined in
 `tooling/acceptance/environments/mobile-native.yaml`.
@@ -65,12 +107,21 @@ Properties:
 
 - Profile and identity match required.
 - Physical device leases with fenced broker, heartbeat, and quarantine policy.
-- Provider credentials (GitHub and Google disposable accounts) required.
-- Two-actor model: Alice and Bob on separate devices and Stations.
+- Resources are selected by `mobile-native.yaml.scenarios`; each scenario
+  receives only the clients, services, credentials, Fixtures, and ephemeral
+  capabilities it declares.
+- The access scenario requires GitHub and Google disposable accounts, four
+  clients, two Stations, Relay, provider-browser leases, and the actor reset
+  Fixture.
+- The lifecycle and platform scenarios require one physical iOS client, one
+  physical Android client, and the parent-owned Appium capability. They do not
+  require OAuth credentials, provider-browser leases, Stations, Relay, or
+  destructive actor reset.
 - Build attestation with platform-specific signing evidence.
-- Proves: everything the simulator tier proves, plus real provider OAuth,
-  physical Keychain/AndroidKeyStore, interaction performance on pinned hardware,
-  browser return behavior, cross-device convergence.
+- Each Gate proves only its declared scenario. The physical tier collectively
+  covers simulator behavior plus real provider OAuth, physical
+  Keychain/AndroidKeyStore, interaction performance on pinned hardware, browser
+  return behavior, and cross-device convergence.
 
 ## 4. Gate-To-Environment Mapping
 
@@ -141,8 +192,12 @@ cross-device convergence) requires two independent automation sessions:
 
 - **Simulator tier**: two iOS Simulators or one iOS Simulator + one Android
   Emulator, each with its own Appium server on a different port.
-- **Physical tier**: two physical devices (as defined in `mobile-native.yaml`),
-  each with its own Appium server, device lease, and actor identity.
+- **Physical access tier**: four physical clients (Alice and Bob on iOS and
+  Android, as defined in `mobile-native.yaml`), each with its own Appium
+  session, device lease, and actor identity.
+- **Physical lifecycle/platform tier**: one iOS and one Android physical client,
+  each with an isolated Appium session and broker-backed device lease; no actor
+  or Station identity is provisioned.
 
 Each session is isolated: separate `udid`, separate Appium port set
 (`wda-local`/`system`, `mjpeg`, `webview`), separate storage root, separate
@@ -154,12 +209,25 @@ different PTID-scoped accounts.
 | File | Tier | Content |
 |---|---|---|
 | `tooling/acceptance/environments/mobile-simulator.yaml` | Simulator | Build commands, Appium config, client definitions, harness contract, cleanup order |
+| `tooling/acceptance/environments/mobile-ios-layout-simulator.yaml` | iOS Simulator layout matrix | Compact/large iOS cells, layout Harness requirements, exact W9-B proof and non-proof scope |
+| `tooling/acceptance/environments/mobile-station-lifecycle-simulator.yaml` | Station-bound simulator lifecycle | Base simulator resources plus two typed Station services, same-actor takeover Fixture, lifecycle Harness actions, and reverse cleanup |
 | `tooling/acceptance/environments/mobile-social-simulator.yaml` | Simulator, partial social evidence | Reuses the simulator build/runtime base and adds two remote Station bindings, disposable actors, Messaging Harness actions, and explicit unproven scope |
 | `tooling/acceptance/environments/mobile-native.yaml` | Physical | Service dependencies, fixtures, credentials, device leases, provider accounts, browser profiles |
 
 These YAML files are the authoritative machine-readable definitions consumed by
 the provisioner and gate runners. This document defines the contract they
 implement; the YAML files define the concrete configuration.
+
+The shared `mobile-simulator` environment also runs
+`mobile-simulator-runtime-lifecycle-e2e`. That Gate exercises the production
+Mobile lifecycle kernel through typed Harness actions on both simulator
+platforms. It does not provision Station, actor, Relay, provider, or physical
+device resources, so its result cannot prove session revalidation, Station
+switching, revocation, or physical OS lifecycle delivery.
+
+`mobile-simulator-station-lifecycle-e2e` adds only the two Station services and
+same-actor Fixture required by AS-04 and AS-10. Relay remains outside this
+environment because no federated Social delivery assertion is exercised.
 
 ## 9. References
 

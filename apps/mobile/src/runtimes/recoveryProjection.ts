@@ -162,7 +162,7 @@ export interface RecoveryProjectionController {
   /** Report Station identity mismatch. */
   reportSessionMismatch(expected: string, actual: string): void;
 
-  /** Clear session mismatch (user re-authenticated). */
+  /** Clear session mismatch after the owning trust flow verifies the Station. */
   clearSessionMismatch(): void;
 
   /** Report stale domains from event overflow. */
@@ -177,8 +177,8 @@ export interface RecoveryProjectionController {
   /** Report device-local operating mode. */
   reportDeviceLocalFlag(reason: DeviceLocalFlagState['reason']): void;
 
-  /** Clear device-local flag (connection restored). */
-  clearDeviceLocalFlag(): void;
+  /** Clear the current device-local flag after its owning source confirms recovery. */
+  clearDeviceLocalFlag(reason?: DeviceLocalFlagState['reason']): void;
 
   /** Report full ingress state for composite checks. */
   reportIngressState(ingressState: IngressState): void;
@@ -201,6 +201,19 @@ const SEVERITY_ORDER: Record<RecoveryState['kind'], number> = {
   'draft-restore-pending': 6,
   'deferred-capability': 7,
 };
+
+const SHELL_RECOVERY_LAUNCH_STATES = new Set<LifecycleKernelState['launchState']>([
+  'shell',
+  'resume',
+]);
+
+const DEFERRED_RUNTIME_STATUSES = new Set<RuntimeBootstrapStatus>([
+  'pending',
+  'bootstrapping',
+  'failed',
+  'suspended',
+  'resuming',
+]);
 
 function compareSeverity(a: RecoveryState, b: RecoveryState): number {
   return SEVERITY_ORDER[a.kind] - SEVERITY_ORDER[b.kind];
@@ -365,9 +378,20 @@ export function createRecoveryProjection(): RecoveryProjectionController {
     reportDeferredCapabilities(kernelState: LifecycleKernelState): void {
       if (torn) return;
 
+      if (!SHELL_RECOVERY_LAUNCH_STATES.has(kernelState.launchState)) {
+        if (deferredCapability) {
+          deferredCapability = null;
+          rebuild();
+        }
+        return;
+      }
+
       const unavailable: DeferredRuntimeEntry[] = [];
       kernelState.runtimes.forEach((entry, runtimeId) => {
-        if (entry.status === 'failed' || entry.status === 'pending' || entry.status === 'bootstrapping') {
+        if (
+          runtimeId !== 'recovery-projection'
+          && DEFERRED_RUNTIME_STATUSES.has(entry.status)
+        ) {
           unavailable.push({
             runtimeId,
             title: entry.descriptor.title,
@@ -395,8 +419,11 @@ export function createRecoveryProjection(): RecoveryProjectionController {
       rebuild();
     },
 
-    clearDeviceLocalFlag(): void {
-      if (!deviceLocalFlag) return;
+    clearDeviceLocalFlag(reason?: DeviceLocalFlagState['reason']): void {
+      if (
+        !deviceLocalFlag
+        || (reason !== undefined && deviceLocalFlag.reason !== reason)
+      ) return;
       deviceLocalFlag = null;
       rebuild();
     },

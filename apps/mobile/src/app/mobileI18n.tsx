@@ -61,6 +61,10 @@ export function MobileI18nProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
+
   return <MobileI18nContext.Provider value={value}>{children}</MobileI18nContext.Provider>;
 }
 

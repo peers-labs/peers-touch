@@ -271,7 +271,10 @@
     },
     {
       "id": "mobile-access-gate-oauth-runtime",
-      "features": ["mobile-access-gate-oauth"],
+      "features": [
+        "mobile-access-gate-oauth",
+        "mobile-session-lifecycle"
+      ],
       "when": {
         "paths": [
           "apps/mobile/src/acceptance/**",
@@ -289,12 +292,17 @@
       "require": [
         "mobile-contract-static",
         "mobile-simulator-access-e2e",
+        "mobile-simulator-station-lifecycle-e2e",
         "mobile-native-access-e2e"
       ]
     },
     {
       "id": "mobile-simulator-access-runtime",
-      "features": ["mobile-access-gate-oauth"],
+      "features": [
+        "mobile-access-gate-oauth",
+        "mobile-session-lifecycle",
+        "mobile-native-accessibility-performance"
+      ],
       "when": {
         "paths": [
           "tooling/acceptance/environments/mobile-simulator.yaml",
@@ -304,7 +312,41 @@
       },
       "require": [
         "mobile-contract-static",
-        "mobile-simulator-access-e2e"
+        "mobile-simulator-access-e2e",
+        "mobile-simulator-station-lifecycle-e2e",
+        "mobile-ios-simulator-layout-accessibility-e2e"
+      ]
+    },
+    {
+      "id": "mobile-station-lifecycle-simulator-runtime",
+      "features": ["mobile-session-lifecycle"],
+      "when": {
+        "paths": [
+          "tooling/acceptance/environments/mobile-station-lifecycle-simulator.yaml",
+          "tooling/acceptance/gates/mobile/simulator_runtime_binding.py",
+          "tooling/acceptance/gates/mobile/simulator_runtime_binding_test.py",
+          "tooling/acceptance/gates/mobile/simulator_station_lifecycle_e2e.py",
+          "tooling/acceptance/gates/mobile/simulator_station_lifecycle_e2e_test.py",
+          "tooling/acceptance/provisioners/__init__.py"
+        ]
+      },
+      "require": [
+        "mobile-simulator-station-lifecycle-e2e"
+      ]
+    },
+    {
+      "id": "mobile-ios-layout-runtime",
+      "features": ["mobile-native-accessibility-performance"],
+      "when": {
+        "paths": [
+          "tooling/acceptance/environments/mobile-ios-layout-simulator.yaml",
+          "tooling/acceptance/gates/mobile/simulator_layout_accessibility_e2e.py",
+          "tooling/acceptance/gates/mobile/simulator_layout_accessibility_e2e_test.py",
+          "tooling/acceptance/provisioners/__init__.py"
+        ]
+      },
+      "require": [
+        "mobile-ios-simulator-layout-accessibility-e2e"
       ]
     },
     {
@@ -320,8 +362,48 @@
       },
       "require": [
         "mobile-contract-static",
+        "mobile-simulator-runtime-lifecycle-e2e",
+        "mobile-simulator-station-lifecycle-e2e",
         "mobile-native-lifecycle-e2e",
         "mobile-native-recovery-ui-e2e"
+      ]
+    },
+    {
+      "id": "mobile-recovery-surfaces",
+      "features": ["mobile-recovery-degraded-states"],
+      "when": {
+        "paths": [
+          "apps/mobile/src/components/recovery/**",
+          "apps/mobile/src/runtimes/recoveryProjection.ts"
+        ]
+      },
+      "require": [
+        "mobile-contract-static",
+        "mobile-native-recovery-ui-e2e"
+      ]
+    },
+    {
+      "id": "mobile-native-lifecycle-platform",
+      "features": [
+        "mobile-session-lifecycle",
+        "mobile-native-accessibility-performance"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/runtimes/nativeLifecycleBridge.ts",
+          "apps/mobile/src/runtimes/mobileNativeEventBridge.ts",
+          "apps/mobile/src-tauri/src/platform/background_bridge.rs",
+          "apps/mobile/src-tauri/src/platform/lifecycle_bridge.rs",
+          "apps/mobile/src-tauri/src/platform/network_bridge.rs",
+          "apps/mobile/src-tauri/src/platform/permission_bridge.rs"
+        ]
+      },
+      "require": [
+        "mobile-contract-static",
+        "mobile-simulator-runtime-lifecycle-e2e",
+        "mobile-native-lifecycle-e2e",
+        "mobile-native-platform-e2e",
+        "mobile-hard-cut-static"
       ]
     },
     {
@@ -429,7 +511,11 @@
           "packages/locales/**"
         ]
       },
-      "require": ["mobile-native-platform-e2e", "mobile-hard-cut-static"]
+      "require": [
+        "mobile-ios-simulator-layout-accessibility-e2e",
+        "mobile-native-platform-e2e",
+        "mobile-hard-cut-static"
+      ]
     },
     {
       "id": "acceptance-framework",

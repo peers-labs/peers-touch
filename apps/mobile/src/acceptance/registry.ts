@@ -34,6 +34,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'station.select',
+    mobileAcceptanceActions['station.select'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'access.submit',
     mobileAcceptanceActions['access.submit'],
     registry,
@@ -64,8 +69,53 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'lifecycle.snapshot',
+    mobileAcceptanceActions['lifecycle.snapshot'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'lifecycle.suspend',
+    mobileAcceptanceActions['lifecycle.suspend'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'lifecycle.resume',
+    mobileAcceptanceActions['lifecycle.resume'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'lifecycle.restart',
     mobileAcceptanceActions['lifecycle.restart'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'lifecycle.scope.read',
+    mobileAcceptanceActions['lifecycle.scope.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'platform.permission.check',
+    mobileAcceptanceActions['platform.permission.check'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'platform.permission.request',
+    mobileAcceptanceActions['platform.permission.request'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'platform.permission.checkAll',
+    mobileAcceptanceActions['platform.permission.checkAll'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'platform.network.read',
+    mobileAcceptanceActions['platform.network.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'session.logout',
+    mobileAcceptanceActions['session.logout'],
     registry,
   );
   registerMobileAcceptanceAction(

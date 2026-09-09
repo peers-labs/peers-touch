@@ -9,3 +9,4 @@ export { SessionMismatchOverlay } from './SessionMismatchOverlay';
 export { OverflowReconcileBar } from './OverflowReconcileBar';
 export { DeferredCapabilityNotice } from './DeferredCapabilityNotice';
 export { DeviceLocalBar } from './DeviceLocalBar';
+export { WriteRevocationNotice } from './WriteRevocationNotice';

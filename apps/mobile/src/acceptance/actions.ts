@@ -1,10 +1,14 @@
 import {
+  isAccessGranted,
   submitStationInviteCodeGate,
   submitStationLoginGate,
+  type AccessDecision,
 } from '../features/auth/authSession';
+import { getMobileLifecycleKernel } from '../app/lifecycle';
 import { verifyStationIdentity } from '../features/station/stationConnection';
 import {
   activeStationEntry,
+  activateStationEntry,
   addStationEntry,
   emptyStationRegistry,
   loadStationRegistry,
@@ -15,7 +19,7 @@ import {
 import {
   applyAccessGateRuntimeResult,
   cancelOAuth,
-  clearAuthRuntimeSession,
+  logoutAuthRuntimeSession,
   readActiveAuthSession,
   readAccessRuntimeProjection,
   readAuthRuntimeSnapshot,
@@ -23,6 +27,16 @@ import {
   startAccessAttemptForActiveStation,
   startOAuth,
 } from '../runtimes/authRuntime';
+import {
+  readMobileRuntimeScopeProjection,
+} from '../runtimes/runtimeRegistry';
+import {
+  checkAllPermissions,
+  checkPermission,
+  fetchNetworkState,
+  requestPermission,
+  type PermissionKind,
+} from '../runtimes/nativeLifecycleBridge';
 import { reconcileActiveMessagingSession } from '../runtimes/messagingRuntime';
 import {
   acceptSocialFriendRequest,
@@ -71,11 +85,19 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const verified = await verifyStationIdentity(requestedUrl);
     const current = await loadStationRegistry();
     const next = addVerifiedStation(current, verified);
-    if (
-      current.activeStationPeerId
-      && current.activeStationPeerId !== verified.stationPeerId
-    ) {
-      await cancelAndClearCurrentAuthScope();
+    if (current.activeStationPeerId !== verified.stationPeerId) {
+      const sessionRevocation = await getMobileLifecycleKernel().transitionScope(
+        'station-replace',
+        async () => {
+          const logout = await cancelAndClearCurrentAuthScope();
+          await persistStationRegistry(next);
+          return logout;
+        },
+      );
+      return {
+        ...stationMutationOutput(next, verified),
+        sessionRevocation,
+      };
     }
 
     await persistStationRegistry(next);
@@ -101,9 +123,44 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       currentStationPeerId,
     );
     const next = addVerifiedStation(withoutReplacedStation, verified);
-    await cancelAndClearCurrentAuthScope();
-    await persistStationRegistry(next);
-    return stationMutationOutput(next, verified);
+    const sessionRevocation = await getMobileLifecycleKernel().transitionScope(
+      'station-replace',
+      async () => {
+        const logout = await cancelAndClearCurrentAuthScope();
+        await persistStationRegistry(next);
+        return logout;
+      },
+    );
+    return {
+      ...stationMutationOutput(next, verified),
+      sessionRevocation,
+    };
+  },
+
+  'station.select': async (input) => {
+    const stationPeerId = requireString(
+      input?.stationPeerId,
+      'station.select.stationPeerId',
+    );
+    const current = await loadStationRegistry();
+    if (!current.entries.some((entry) => entry.stationPeerId === stationPeerId)) {
+      throw new Error('acceptance.mobile.stationNotFound');
+    }
+    const next = activateStationEntry(current, stationPeerId);
+    const sessionRevocation = current.activeStationPeerId !== next.activeStationPeerId
+      ? await getMobileLifecycleKernel().transitionScope(
+        'station-replace',
+        async () => {
+          const logout = await logoutAuthRuntimeSession();
+          await persistStationRegistry(next);
+          return logout;
+        },
+      )
+      : { remoteRevocation: 'not-required' as const };
+    return {
+      ...sanitizeStationRegistry(next),
+      sessionRevocation,
+    };
   },
 
   'access.submit': async (input) => {
@@ -111,7 +168,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const station = requireActiveStation(await loadStationRegistry());
 
     if (input.kind === 'start') {
+      beginAccessGateLaunch();
       const decision = await startAccessAttemptForActiveStation();
+      completeAccessGateLaunch(decision);
       return {
         decision: requirePublicDecision(decision),
         session: readAccessRuntimeProjection().session,
@@ -132,6 +191,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
         password: requireString(input.password, 'access.submit.password'),
       });
       applyAccessGateRuntimeResult(result.decision, result.session);
+      completeAccessGateLaunch(result.decision);
       return {
         decision: requirePublicDecision(result.decision),
         session: {
@@ -196,10 +256,68 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     submitNegativeOAuthCallback(input)
   ),
 
+  'lifecycle.snapshot': async () => (
+    getMobileLifecycleKernel().getSnapshot()
+  ),
+
+  'lifecycle.suspend': async () => ({
+    snapshot: await getMobileLifecycleKernel().suspend('acceptance-suspend'),
+  }),
+
+  'lifecycle.resume': async () => ({
+    snapshot: await getMobileLifecycleKernel().resume('acceptance-resume'),
+  }),
+
   'lifecycle.restart': async () => {
+    await getMobileLifecycleKernel().restartRuntimeGraph('acceptance-restart');
     return {
       requested: true,
       scope: 'webview',
+    };
+  },
+
+  'lifecycle.scope.read': async () => {
+    const stationRegistry = await loadStationRegistry();
+    const lifecycle = getMobileLifecycleKernel().getSnapshot();
+    const runtime = readMobileRuntimeScopeProjection();
+    return {
+      generation: lifecycle.generation,
+      phase: lifecycle.phase,
+      launchState: lifecycle.launchState,
+      activeStationPeerId: stationRegistry.activeStationPeerId,
+      activeActorPtid: runtime.activeActorPtid,
+      runtimeStationPeerId: runtime.activeStationPeerId,
+      social: runtime.social,
+      group: runtime.group,
+      navigation: runtime.navigation,
+    };
+  },
+
+  'platform.permission.check': async (input) => (
+    checkPermission(requirePermissionKind(input?.kind))
+  ),
+
+  'platform.permission.request': async (input) => (
+    requestPermission(requirePermissionKind(input?.kind))
+  ),
+
+  'platform.permission.checkAll': async () => checkAllPermissions(),
+
+  'platform.network.read': async () => fetchNetworkState(),
+
+  'session.logout': async () => {
+    const logout = await getMobileLifecycleKernel().transitionScope(
+      'logout',
+      logoutAuthRuntimeSession,
+    );
+    beginAccessGateLaunch();
+    const decision = await startAccessAttemptForActiveStation();
+    completeAccessGateLaunch(decision);
+    return {
+      logout,
+      decision: requirePublicDecision(decision),
+      lifecycle: getMobileLifecycleKernel().getSnapshot(),
+      runtime: readMobileRuntimeScopeProjection(),
     };
   },
 
@@ -451,13 +569,23 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   'social.projection.read': async () => readSocialRuntimeProjection(),
 
   cleanup: async () => {
-    const station = requireActiveStation(await loadStationRegistry());
-    const oauthPurge = await purgeNativeOAuth({
-      stationOrigin: station.url,
-      stationPeerId: station.stationPeerId,
-    });
-    await clearAuthRuntimeSession();
-    await persistStationRegistry(emptyStationRegistry());
+    const station = activeStationEntry(await loadStationRegistry());
+    let oauthPurge: Awaited<ReturnType<typeof purgeNativeOAuth>> | null = null;
+    await getMobileLifecycleKernel().transitionScope(
+      'logout',
+      async () => {
+        oauthPurge = await purgeNativeOAuth(station
+          ? {
+            stationOrigin: station.url,
+            stationPeerId: station.stationPeerId,
+          }
+          : undefined);
+        await logoutAuthRuntimeSession();
+        await persistStationRegistry(emptyStationRegistry());
+      },
+      { restart: false },
+    );
+    if (!oauthPurge) throw new Error('acceptance.mobile.oauthPurgeMissing');
     return {
       oauthPurge,
       webSessionProjectionCleared: true,
@@ -539,6 +667,18 @@ function requireSha256(value: unknown, field: string): string {
   return digest;
 }
 
+function requirePermissionKind(value: unknown): PermissionKind {
+  if (
+    value === 'camera'
+    || value === 'microphone'
+    || value === 'storage'
+    || value === 'notifications'
+  ) {
+    return value;
+  }
+  throw new Error('acceptance.mobile.invalidInput:platform.permission.kind');
+}
+
 function decodeBoundedBase64(value: unknown, field: string): Uint8Array<ArrayBuffer> {
   const encoded = requireString(value, field);
   if (encoded.length > 1_398_104) {
@@ -581,7 +721,29 @@ function requirePublicDecision(
   return sanitized;
 }
 
-async function cancelAndClearCurrentAuthScope(): Promise<void> {
-  await cancelOAuth();
-  await clearAuthRuntimeSession();
+async function cancelAndClearCurrentAuthScope() {
+  return logoutAuthRuntimeSession();
+}
+
+function beginAccessGateLaunch(): void {
+  const kernel = getMobileLifecycleKernel();
+  if (kernel.getSnapshot().launchState === 'station-selection') {
+    kernel.transitionLaunchState('station-handshake');
+  }
+}
+
+function completeAccessGateLaunch(
+  decision: AccessDecision,
+): void {
+  const kernel = getMobileLifecycleKernel();
+  if (isAccessGranted(decision)) {
+    if (kernel.getSnapshot().launchState !== 'runtime-critical') {
+      kernel.transitionLaunchState('runtime-critical');
+    }
+    kernel.transitionLaunchState('shell');
+    return;
+  }
+  if (kernel.getSnapshot().launchState === 'station-handshake') {
+    kernel.transitionLaunchState('access-gate-chain');
+  }
 }

@@ -503,6 +503,7 @@
   "mobile.recovery.deviceLocal.reason.no-network": "No network connection. You can view cached data but cannot send messages.",
   "mobile.recovery.deviceLocal.reason.station-unreachable": "Your Station is unreachable. Check your connection or switch Stations.",
   "mobile.recovery.deviceLocal.reason.session-expired": "Your session has expired. Please log in again.",
+  "mobile.recovery.actionFailed": "Recovery could not be completed. Check the connection and try again.",
   "mobile.recovery.writeRevocation.title": "Sending Paused",
   "mobile.recovery.writeRevocation.body": "Message sending is paused while the connection is being restored.",
   "mobile.chat.commandPending": "Sending...",

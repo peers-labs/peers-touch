@@ -28,6 +28,34 @@ export type LifecyclePhase =
   | 'RESUMING'
   | 'TEARDOWN';
 
+export type MobileLaunchState =
+  | 'app-boot'
+  | 'station-selection'
+  | 'station-handshake'
+  | 'access-gate-chain'
+  | 'runtime-critical'
+  | 'shell'
+  | 'station-change'
+  | 'logout'
+  | 'background'
+  | 'resume';
+
+export type LifecycleTransitionReason =
+  | 'app-start'
+  | 'app-unmount'
+  | 'app-background'
+  | 'app-resume'
+  | 'native-resume'
+  | 'visibility-change'
+  | 'window-focus'
+  | 'station-replace'
+  | 'actor-replace'
+  | 'logout'
+  | 'revocation'
+  | 'acceptance-restart'
+  | 'acceptance-suspend'
+  | 'acceptance-resume';
+
 // --- Runtime Descriptor Status ---
 
 export type RuntimeBootstrapStatus =
@@ -121,15 +149,49 @@ export interface RuntimeEntry {
 
 export interface LifecycleKernelState {
   readonly phase: LifecyclePhase;
+  readonly launchState: MobileLaunchState;
+  readonly generation: number;
   readonly runtimes: ReadonlyMap<string, RuntimeEntry>;
   readonly bootOrder: readonly string[];
   readonly error: string | null;
+}
+
+export interface RuntimeLifecycleSnapshot {
+  readonly id: string;
+  readonly status: RuntimeBootstrapStatus;
+  readonly errorKey: string | null;
+}
+
+/**
+ * Serializable, read-only lifecycle state. It deliberately excludes runtime
+ * descriptors and callbacks so diagnostics cannot mutate lifecycle owners.
+ */
+export interface LifecycleKernelSnapshot {
+  readonly phase: LifecyclePhase;
+  readonly launchState: MobileLaunchState;
+  readonly generation: number;
+  readonly bootOrder: readonly string[];
+  readonly runtimes: readonly RuntimeLifecycleSnapshot[];
+  readonly errorKey: string | null;
+}
+
+export interface LifecycleRuntimeGraphDependencies {
+  readonly createDescriptors: () => readonly MobileRuntimeDescriptor[];
+  readonly readGeneration: () => Promise<number>;
+  readonly advanceGeneration: () => Promise<number>;
+  readonly resolveLaunchState: () => Promise<MobileLaunchState>;
+  readonly fenceProjections: (
+    generation: number,
+    reason: LifecycleTransitionReason,
+  ) => void;
 }
 
 // --- Lifecycle Events (for subscribers) ---
 
 export type LifecycleEvent =
   | { kind: 'phase-changed'; phase: LifecyclePhase; previousPhase: LifecyclePhase }
+  | { kind: 'launch-state-changed'; launchState: MobileLaunchState; previousLaunchState: MobileLaunchState }
+  | { kind: 'generation-advanced'; generation: number; reason: LifecycleTransitionReason }
   | { kind: 'runtime-status-changed'; runtimeId: string; status: RuntimeBootstrapStatus }
   | { kind: 'bootstrap-complete'; results: readonly RuntimeOperationResult[] }
   | { kind: 'teardown-complete'; result: AggregateTeardownResult }

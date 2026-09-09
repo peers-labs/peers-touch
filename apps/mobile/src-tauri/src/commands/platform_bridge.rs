@@ -1,11 +1,13 @@
 // W7 Tauri commands for lifecycle bridge, permission, and network.
 
 use serde::Deserialize;
-use tauri::command;
+use tauri::{command, AppHandle, Runtime};
 
 use crate::error::MobileResult;
+use crate::platform::background_bridge;
 use crate::platform::lifecycle_bridge::{
-    self, LifecycleBridgeResult, NativeLifecycleEvent, ResumeReconciliationReport,
+    self, LifecycleBridgeResult, NativeLifecycleEvent, NativeLifecycleSignal,
+    ResumeReconciliationReport,
 };
 use crate::platform::network_bridge::{self, NetworkState, NetworkType};
 use crate::platform::permission_bridge::{
@@ -29,6 +31,14 @@ pub fn lifecycle_advance_generation() -> u64 {
 #[command]
 pub fn lifecycle_process_event(input: NativeLifecycleEvent) -> MobileResult<LifecycleBridgeResult> {
     lifecycle_bridge::process_lifecycle_event(&input)
+}
+
+#[command]
+pub fn lifecycle_ingest_native_signal<R: Runtime>(
+    app: AppHandle<R>,
+    input: NativeLifecycleSignal,
+) -> MobileResult<LifecycleBridgeResult> {
+    background_bridge::ingest_native_lifecycle_signal(&app, input)
 }
 
 #[command]
@@ -57,18 +67,26 @@ pub struct ReconciliationReportInput {
 // ---------------------------------------------------------------------------
 
 #[command]
-pub fn permission_check(kind: PermissionKind) -> MobileResult<PermissionCheckResult> {
-    permission_bridge::check_permission(kind)
+pub async fn permission_check<R: Runtime>(
+    app: AppHandle<R>,
+    kind: PermissionKind,
+) -> MobileResult<PermissionCheckResult> {
+    permission_bridge::check_permission(&app, kind).await
 }
 
 #[command]
-pub fn permission_request(kind: PermissionKind) -> MobileResult<PermissionRequestResult> {
-    permission_bridge::request_permission(kind)
+pub async fn permission_request<R: Runtime>(
+    app: AppHandle<R>,
+    kind: PermissionKind,
+) -> MobileResult<PermissionRequestResult> {
+    permission_bridge::request_permission(&app, kind).await
 }
 
 #[command]
-pub fn permission_check_all() -> MobileResult<Vec<PermissionCheckResult>> {
-    permission_bridge::check_all_permissions()
+pub async fn permission_check_all<R: Runtime>(
+    app: AppHandle<R>,
+) -> MobileResult<Vec<PermissionCheckResult>> {
+    permission_bridge::check_all_permissions(&app).await
 }
 
 // ---------------------------------------------------------------------------

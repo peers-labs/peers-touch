@@ -2,7 +2,15 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 
 import { MobileI18nProvider } from './mobileI18n';
 import { getMobileLifecycleKernel } from './lifecycle/MobileLifecycleKernel';
-import { createMobileRuntimeDescriptors } from '../runtimes/runtimeRegistry';
+import {
+  createMobileRuntimeDescriptors,
+  fenceMobileRuntimeProjections,
+  resolveMobileLaunchState,
+} from '../runtimes/runtimeRegistry';
+import {
+  advanceLifecycleGeneration,
+  fetchLifecycleGeneration,
+} from '../runtimes/nativeLifecycleBridge';
 import { PlatformContext } from '../services/platform/PlatformContext';
 import { createTauriMobilePlatform } from '../services/platform/mobilePlatform';
 
@@ -13,8 +21,8 @@ interface AppProvidersProps {
 /**
  * Root providers for the mobile app.
  *
- * Initializes the platform adapter, registers runtime descriptors with the
- * lifecycle kernel, and bootstraps runtimes on mount. Teardown runs on unmount.
+ * Initializes the platform adapter and requests graph lifecycle operations
+ * through the MobileLifecycleKernel owner.
  *
  * The native event bridge installation that was previously here is now owned
  * by the native-event-bridge MobileRuntimeDescriptor and bootstrapped by the kernel.
@@ -24,17 +32,17 @@ export function AppProviders({ children }: AppProvidersProps) {
 
   useEffect(() => {
     const kernel = getMobileLifecycleKernel();
-
-    // Only register + bootstrap if the kernel is in COLD state
-    // (prevents double-bootstrap in StrictMode dev re-mounts)
-    if (kernel.getPhase() !== 'COLD') return;
-
-    const descriptors = createMobileRuntimeDescriptors();
-    kernel.register(descriptors);
-    void kernel.bootstrap();
+    kernel.configureRuntimeGraph({
+      createDescriptors: createMobileRuntimeDescriptors,
+      readGeneration: fetchLifecycleGeneration,
+      advanceGeneration: advanceLifecycleGeneration,
+      resolveLaunchState: resolveMobileLaunchState,
+      fenceProjections: fenceMobileRuntimeProjections,
+    });
+    void kernel.startRuntimeGraph();
 
     return () => {
-      void kernel.teardown();
+      void kernel.stopRuntimeGraph();
     };
   }, []);
 

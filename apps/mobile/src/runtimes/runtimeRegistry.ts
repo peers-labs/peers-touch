@@ -9,7 +9,36 @@
  * with live MobileRuntimeDescriptor implementations that own their lifecycle.
  */
 
-import type { MobileRuntimeDescriptor, RuntimeOperationResult } from '../app/lifecycle/types';
+import type {
+  MobileLaunchState,
+  MobileRuntimeDescriptor,
+  RuntimeOperationResult,
+} from '../app/lifecycle/types';
+import {
+  clearAllScrollPositions,
+  resetMobileNavigation,
+  useMobileNavigationStore,
+} from '../app/navigation';
+import {
+  isAccessGranted,
+  type MobileAuthSession,
+} from '../features/auth/authSession';
+import { useAuthStore } from '../features/auth/authStore';
+import {
+  activeStationEntry,
+  loadStationRegistry,
+} from '../features/station/stationRegistry';
+import { startGroupRuntime, type GroupRuntimeController } from '../features/group/groupRuntime';
+import { useGroupStore } from '../features/group/groupStore';
+import {
+  startSocialRuntime,
+  type SocialRuntimeController,
+} from '../features/social/socialRuntime';
+import { useSocialStore } from '../features/social/socialStore';
+import {
+  fenceAuthRuntimeProjection,
+  restoreAndRevalidateAuthRuntime,
+} from './authRuntime';
 import { installMobileNativeEventBridge } from './mobileNativeEventBridge';
 import { createMessagingRuntimeDescriptor } from './messagingRuntime';
 import {
@@ -28,9 +57,7 @@ function createAuthRuntimeDescriptor(): MobileRuntimeDescriptor {
     dependsOn: ['secure-storage'],
 
     async bootstrap(): Promise<void> {
-      // Auth runtime initializes through the auth store's restoreSession.
-      // Actual session restore is triggered by the kernel orchestrator after
-      // all dependencies (secure-storage) are ready.
+      await restoreAndRevalidateAuthRuntime();
     },
 
     async suspend(): Promise<void> {
@@ -38,7 +65,7 @@ function createAuthRuntimeDescriptor(): MobileRuntimeDescriptor {
     },
 
     async resume(): Promise<void> {
-      // Session validity is checked when the shell re-activates.
+      await restoreAndRevalidateAuthRuntime();
     },
 
     async teardown(): Promise<RuntimeOperationResult> {
@@ -136,6 +163,31 @@ function createNativeEventBridgeDescriptor(): MobileRuntimeDescriptor {
 // --- Social Runtime Descriptor ---
 
 function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
+  let controller: SocialRuntimeController | null = null;
+  let unsubscribe: (() => void) | null = null;
+  let suspended = false;
+  let transition: Promise<void> = Promise.resolve();
+
+  const synchronize = async (session: MobileAuthSession | null) => {
+    const previousController = controller;
+    previousController?.teardown();
+    await previousController?.drain();
+    controller = null;
+    useSocialStore.getState().bindSession(session);
+    if (!session || suspended) return;
+    controller = startSocialRuntime(
+      session,
+      useSocialStore.getState(),
+      useGroupStore.getState(),
+    );
+  };
+
+  const enqueueSession = (session: MobileAuthSession | null) => {
+    transition = transition
+      .then(async () => synchronize(session))
+      .catch((error) => reportRuntimeDescriptorError('social', error));
+  };
+
   return {
     id: 'social',
     title: 'Social Runtime',
@@ -144,26 +196,45 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
     dependsOn: ['auth', 'native-event-bridge', 'messaging'],
 
     async bootstrap(): Promise<void> {
-      // Social runtime bootstraps through useSocialRuntime hook
-      // which starts when the shell mounts with a valid session.
-      // The descriptor declares the dependency order;
-      // actual stream start is session-gated.
+      suspended = false;
+      unsubscribe = useAuthStore.subscribe((state, previous) => {
+        const session = admittedRuntimeSession(state);
+        const previousSession = admittedRuntimeSession(previous);
+        if (runtimeSessionKey(session) === runtimeSessionKey(previousSession)) return;
+        enqueueSession(session);
+      });
+      await synchronize(admittedRuntimeSession(useAuthStore.getState()));
     },
 
     async suspend(): Promise<void> {
-      // Social streams and timers are paused during suspend.
-      // The hook teardown handles this.
+      suspended = true;
+      await transition;
+      const activeController = controller;
+      activeController?.teardown();
+      await activeController?.drain();
+      controller = null;
     },
 
     async resume(): Promise<void> {
-      // Reconciliation is triggered on resume via the native event bridge.
+      suspended = false;
+      await synchronize(admittedRuntimeSession(useAuthStore.getState()));
     },
 
     async teardown(): Promise<RuntimeOperationResult> {
+      const start = performance.now();
+      unsubscribe?.();
+      unsubscribe = null;
+      suspended = true;
+      await transition;
+      const activeController = controller;
+      activeController?.teardown();
+      await activeController?.drain();
+      controller = null;
+      useSocialStore.getState().bindSession(null);
       return {
         runtimeId: 'social',
         success: true,
-        durationMs: 0,
+        durationMs: performance.now() - start,
       };
     },
   };
@@ -172,6 +243,27 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
 // --- Group Runtime Descriptor ---
 
 function createGroupRuntimeDescriptor(): MobileRuntimeDescriptor {
+  let controller: GroupRuntimeController | null = null;
+  let unsubscribe: (() => void) | null = null;
+  let suspended = false;
+  let transition: Promise<void> = Promise.resolve();
+
+  const synchronize = async (session: MobileAuthSession | null) => {
+    const previousController = controller;
+    previousController?.teardown();
+    await previousController?.drain();
+    controller = null;
+    useGroupStore.getState().bindSession(session);
+    if (!session || suspended) return;
+    controller = startGroupRuntime(session, useGroupStore.getState);
+  };
+
+  const enqueueSession = (session: MobileAuthSession | null) => {
+    transition = transition
+      .then(async () => synchronize(session))
+      .catch((error) => reportRuntimeDescriptorError('group', error));
+  };
+
   return {
     id: 'group',
     title: 'Group Runtime',
@@ -180,22 +272,45 @@ function createGroupRuntimeDescriptor(): MobileRuntimeDescriptor {
     dependsOn: ['auth', 'social'],
 
     async bootstrap(): Promise<void> {
-      // Group runtime starts alongside social runtime.
+      suspended = false;
+      unsubscribe = useAuthStore.subscribe((state, previous) => {
+        const session = admittedRuntimeSession(state);
+        const previousSession = admittedRuntimeSession(previous);
+        if (runtimeSessionKey(session) === runtimeSessionKey(previousSession)) return;
+        enqueueSession(session);
+      });
+      await synchronize(admittedRuntimeSession(useAuthStore.getState()));
     },
 
     async suspend(): Promise<void> {
-      // Group streams are paused with social runtime.
+      suspended = true;
+      await transition;
+      const activeController = controller;
+      activeController?.teardown();
+      await activeController?.drain();
+      controller = null;
     },
 
     async resume(): Promise<void> {
-      // Group reconciliation triggers through the social runtime resume.
+      suspended = false;
+      await synchronize(admittedRuntimeSession(useAuthStore.getState()));
     },
 
     async teardown(): Promise<RuntimeOperationResult> {
+      const start = performance.now();
+      unsubscribe?.();
+      unsubscribe = null;
+      suspended = true;
+      await transition;
+      const activeController = controller;
+      activeController?.teardown();
+      await activeController?.drain();
+      controller = null;
+      useGroupStore.getState().bindSession(null);
       return {
         runtimeId: 'group',
         success: true,
-        durationMs: 0,
+        durationMs: performance.now() - start,
       };
     },
   };
@@ -438,4 +553,85 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
     createAvatarAssetRuntimeDescriptor(),
     createRecoveryProjectionDescriptor(),
   ];
+}
+
+export function fenceMobileRuntimeProjections(): void {
+  fenceAuthRuntimeProjection();
+  resetMobileNavigation();
+  useSocialStore.getState().bindSession(null);
+  useGroupStore.getState().bindSession(null);
+  destroyRecoveryProjection();
+  clearAllScrollPositions();
+}
+
+export async function resolveMobileLaunchState(): Promise<MobileLaunchState> {
+  const station = activeStationEntry(await loadStationRegistry());
+  if (!station) return 'station-selection';
+
+  const auth = useAuthStore.getState();
+  if (
+    auth.session?.stationPeerId === station.stationPeerId
+    && isAccessGranted(auth.accessDecision)
+  ) {
+    return 'shell';
+  }
+  return auth.accessDecision ? 'access-gate-chain' : 'station-selection';
+}
+
+export function readMobileRuntimeScopeProjection() {
+  const auth = admittedRuntimeSession(useAuthStore.getState());
+  const social = useSocialStore.getState();
+  const group = useGroupStore.getState();
+  const navigation = useMobileNavigationStore.getState();
+
+  return {
+    activeStationPeerId: auth?.stationPeerId ?? null,
+    activeActorPtid: auth?.actorRef.ptid ?? null,
+    social: {
+      stationPeerId: social.authSession?.stationPeerId ?? null,
+      actorPtid: social.currentUserPtid,
+      sessionCount: social.sessions.length,
+      requestCount: social.friendRequests.length,
+      messageThreadCount: Object.keys(social.messages).length,
+    },
+    group: {
+      stationPeerId: group.authSession?.stationPeerId ?? null,
+      actorPtid: group.authSession?.actorRef.ptid ?? null,
+      groupCount: group.groups.length,
+      messageThreadCount: Object.keys(group.messages).length,
+    },
+    navigation: {
+      primaryRouteId: navigation.primaryRouteId,
+      detailKeys: navigation.detailStack.map((route) => (
+        route.routeId === 'detail:chat-conversation'
+          ? `${route.routeId}:${route.sessionUlid}`
+          : route.routeId === 'detail:group-conversation'
+            ? `${route.routeId}:${route.groupUlid}`
+            : `${route.routeId}:${route.actorPtid}`
+      )),
+    },
+  };
+}
+
+function runtimeSessionKey(session: MobileAuthSession | null): string {
+  return session
+    ? `${session.stationPeerId}\u001f${session.actorRef.ptid}\u001f${session.accessToken}`
+    : '';
+}
+
+function admittedRuntimeSession(
+  state: ReturnType<typeof useAuthStore.getState>,
+): MobileAuthSession | null {
+  return isAccessGranted(state.accessDecision) ? state.session : null;
+}
+
+function reportRuntimeDescriptorError(runtimeId: string, error: unknown): void {
+  window.dispatchEvent(
+    new CustomEvent('mobile-runtime-descriptor:error', {
+      detail: {
+        runtimeId,
+        message: error instanceof Error ? error.message : String(error),
+      },
+    }),
+  );
 }

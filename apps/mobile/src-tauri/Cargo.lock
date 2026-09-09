@@ -3848,6 +3848,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-deep-link",
  "tauri-plugin-opener",
+ "tauri-plugin-peers-platform-permissions",
  "tauri-plugin-peers-secure-storage",
  "ulid",
  "x25519-dalek",
@@ -5821,6 +5822,15 @@ dependencies = [
  "url",
  "windows",
  "zbus",
+]
+
+[[package]]
+name = "tauri-plugin-peers-platform-permissions"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]

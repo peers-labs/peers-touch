@@ -12,6 +12,7 @@ import { Button, Checkbox, Empty, Input, List, Modal, Spin, Tag, Typography } fr
 import { AlertCircle, Ban, Check, ChevronRight, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
+import type { MobileChatDetailRoute } from '../app/navigation';
 import { MobileAvatar } from '../components/MobileAvatar';
 import { MobileNotice } from '../components/MobileNotice';
 import { useGroupStore } from '../features/group/groupStore';
@@ -32,7 +33,7 @@ const { Text } = Typography;
 const CONTACT_WINDOW_SIZE = 100;
 
 interface ContactsPageProps {
-  onOpenChat?: () => void;
+  readonly onOpenChat: (route: MobileChatDetailRoute) => void;
 }
 
 export function ContactsPage({ onOpenChat }: ContactsPageProps) {
@@ -169,17 +170,23 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
     try { await dispatchRejectFriendRequest(requestId); } catch { setLocalActionError(t('mobile.contacts.requestFailed')); }
   };
 
-  const openContactChat = async (contact: SocialConversation) => {
-    await selectGroup(null);
-    await selectSession(contact.session.ulid);
+  const openContactChat = (contact: SocialConversation) => {
+    onOpenChat({
+      routeId: 'detail:chat-conversation',
+      sessionUlid: contact.session.ulid,
+    });
     setSelectedContact(null);
-    onOpenChat?.();
+    void selectGroup(null);
+    void selectSession(contact.session.ulid);
   };
 
-  const openGroupChat = async (group: GroupConversation) => {
-    await selectSession(null);
-    await selectGroup(group.group.ulid);
-    onOpenChat?.();
+  const openGroupChat = (group: GroupConversation) => {
+    onOpenChat({
+      routeId: 'detail:group-conversation',
+      groupUlid: group.group.ulid,
+    });
+    void selectSession(null);
+    void selectGroup(group.group.ulid);
   };
 
   const confirmBlockSelectedContact = () => {
@@ -216,9 +223,12 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
       });
       closeCreateGroup();
       if (groupUlid) {
-        await selectSession(null);
-        await selectGroup(groupUlid);
-        onOpenChat?.();
+        onOpenChat({
+          routeId: 'detail:group-conversation',
+          groupUlid,
+        });
+        void selectSession(null);
+        void selectGroup(groupUlid);
       }
     } catch {
       setLocalActionError(t('mobile.group.operationCreateFailed'));

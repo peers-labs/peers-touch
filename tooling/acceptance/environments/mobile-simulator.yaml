@@ -166,6 +166,9 @@
     "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
     "build_flag": "VITE_ACCEPTANCE_HARNESS=1",
     "required_actions": [
+      "lifecycle.snapshot",
+      "lifecycle.suspend",
+      "lifecycle.resume",
       "lifecycle.restart",
       "native.deliverDeepLink",
       "projection.read",
@@ -177,13 +180,14 @@
     "proves": [
       "simulator and emulator launch",
       "native callback routing",
-      "restart behavior",
+      "runtime-graph suspend, resume, restart, and monotonic generation behavior",
       "fail-closed behavior"
     ],
     "does_not_prove": [
       "physical-device MS-AG03",
       "provider authorization success",
-      "Station or Relay behavior"
+      "Station or Relay behavior",
+      "physical OS background and foreground delivery"
     ]
   },
   "cleanup": {

@@ -27,6 +27,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { useMobileI18n } from '../app/mobileI18n';
+import type { MobileChatDetailRoute } from '../app/navigation';
 import { MobileAvatar } from '../components/MobileAvatar';
 import { MobileNotice } from '../components/MobileNotice';
 import type { MobileAuthSession } from '../features/auth/authSession';
@@ -148,12 +149,28 @@ class ChatMountGuard extends Component<{ children: ReactNode }, { hasError: bool
   }
 }
 
-export function ChatPage() {
-  return <ChatMountGuard><ChatPageInner /></ChatMountGuard>;
+interface ChatPageProps {
+  readonly activeDetail: MobileChatDetailRoute | null;
+  readonly onOpenConversation: (route: MobileChatDetailRoute) => void;
+  readonly onBack: () => void;
 }
 
-function ChatPageInner() {
+export function ChatPage(props: ChatPageProps) {
+  return <ChatMountGuard><ChatPageInner {...props} /></ChatMountGuard>;
+}
+
+function ChatPageInner({
+  activeDetail,
+  onOpenConversation,
+  onBack,
+}: ChatPageProps) {
   const { t } = useMobileI18n();
+  const activeSessionUlid = activeDetail?.routeId === 'detail:chat-conversation'
+    ? activeDetail.sessionUlid
+    : null;
+  const activeGroupUlid = activeDetail?.routeId === 'detail:group-conversation'
+    ? activeDetail.groupUlid
+    : null;
 
   // --- Local UI state (no business logic) ---
   const [draft, setDraft] = useState('');
@@ -176,7 +193,6 @@ function ChatPageInner() {
 
   // --- Narrow store selectors (batched via useShallow to prevent torn-read cascades) ---
   const {
-    activeGroupUlid,
     selectGroup,
     clearError: clearGroupError,
     updateMySettings: updateGroupSettings,
@@ -184,7 +200,6 @@ function ChatPageInner() {
     groupLoading,
     groupError,
   } = useGroupStore(useShallow((s) => ({
-    activeGroupUlid: s.activeGroupUlid,
     selectGroup: s.selectGroup,
     clearError: s.clearError,
     updateMySettings: s.updateMySettings,
@@ -193,7 +208,6 @@ function ChatPageInner() {
     groupError: s.error,
   })));
   const {
-    activeSessionUlid,
     currentUserPtid,
     loading,
     error,
@@ -208,7 +222,6 @@ function ChatPageInner() {
     loadPeerProfile,
     loadFriendshipStatus,
   } = useSocialStore(useShallow((s) => ({
-    activeSessionUlid: s.activeSessionUlid,
     currentUserPtid: s.currentUserPtid,
     loading: s.loading,
     error: s.error,
@@ -532,13 +545,23 @@ function ChatPageInner() {
     }
   };
 
-  const openConversation = async (conversation: MobileConversation) => {
+  const openConversation = (conversation: MobileConversation) => {
     if (conversation.kind === 'friend') {
-      await selectGroup(null);
-      await selectSession(conversation.conversation.session.ulid);
+      const sessionUlid = conversation.conversation.session.ulid;
+      onOpenConversation({
+        routeId: 'detail:chat-conversation',
+        sessionUlid,
+      });
+      void selectGroup(null);
+      void selectSession(sessionUlid);
     } else {
-      await selectSession(null);
-      await selectGroup(conversation.conversation.group.ulid);
+      const groupUlid = conversation.conversation.group.ulid;
+      onOpenConversation({
+        routeId: 'detail:group-conversation',
+        groupUlid,
+      });
+      void selectSession(null);
+      void selectGroup(groupUlid);
     }
   };
 
@@ -595,7 +618,7 @@ function ChatPageInner() {
     return (
       <div className="page-container chat-thread-page" style={MOBILE_THREAD_VISUAL_VARS}>
         <header className={`page-header chat-thread-header ${threadSearchOpen ? 'searching' : ''}`}>
-          <button className="header-action" type="button" onClick={() => { void selectSession(null); void selectGroup(null); }} aria-label={t('common.action.back')}>
+          <button className="header-action" type="button" onClick={() => { onBack(); void selectSession(null); void selectGroup(null); }} aria-label={t('common.action.back')}>
             <ArrowLeft size={20} />
           </button>
           {threadSearchOpen ? (

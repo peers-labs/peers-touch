@@ -12,6 +12,7 @@
 		130D1218EE8FFC93A0334ADE /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A5BECDF3FD4E40CA94A186BB /* libapp.a */; };
 		3D85ED81D184602FA9353961 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A7DC514F4BCF0258D54EE039 /* MetalKit.framework */; };
 		6725AE1970D6F7F53AC9A077 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CE234B18D084EF92890D4E37 /* Assets.xcassets */; };
+		6C7F4D3B2A19081716151413 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 7D8E5F4C3B2A190817161514 /* InfoPlist.strings */; };
 		743FAC398981C6B515779589 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3AB9134448CE6FBFD60A512 /* Security.framework */; };
 		8EA98B7D624881BFDB6991ED /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 6ED31A5330DFBD1C78DD98DD /* assets */; };
 		8F781DDD9BE9DCF7715C8955 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E65F528A9E12625A00FDD20B /* CoreGraphics.framework */; };
@@ -45,6 +46,7 @@
 		669DE333B61000FC259EF0C9 /* browser.rs */ = {isa = PBXFileReference; path = browser.rs; sourceTree = "<group>"; };
 		6A68997998F475E8E416DE2F /* error.rs */ = {isa = PBXFileReference; path = error.rs; sourceTree = "<group>"; };
 		6ED31A5330DFBD1C78DD98DD /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+		718293A4B5C6D7E8F9012345 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		78ADA28E79F7F8BAFCF1E256 /* ledger.rs */ = {isa = PBXFileReference; path = ledger.rs; sourceTree = "<group>"; };
 		796FF0B61F80B9A0966519A9 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		8812B4A526D63A6D3F5F7FE3 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
@@ -85,6 +87,7 @@
 		ED5CBDD96180964D2B0D8658 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		EE8B009CF540C29ED3D8142D /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
 		FD5CE4FAFCCFB425B5FA52C2 /* deep_link.rs */ = {isa = PBXFileReference; path = deep_link.rs; sourceTree = "<group>"; };
+		FEEDCBA98765432100112233 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -299,6 +302,7 @@
 		F0A9CE6F08E7C5188D9D3386 /* peers-touch-mobile_iOS */ = {
 			isa = PBXGroup;
 			children = (
+				7D8E5F4C3B2A190817161514 /* InfoPlist.strings */,
 				B7D32EC622950496A52F1C5E /* Info.plist */,
 				942974224E23162B2BB1BF54 /* peers-touch-mobile_iOS.entitlements */,
 			);
@@ -363,6 +367,7 @@
 			knownRegions = (
 				Base,
 				en,
+				"zh-Hans",
 			);
 			mainGroup = C9842A1179E88290B40D801E;
 			minimizedProjectReferenceProxies = 1;
@@ -382,12 +387,25 @@
 			buildActionMask = 2147483647;
 			files = (
 				6725AE1970D6F7F53AC9A077 /* Assets.xcassets in Resources */,
+				6C7F4D3B2A19081716151413 /* InfoPlist.strings in Resources */,
 				E6CFD4A3ED38E260E8E4C3DF /* LaunchScreen.storyboard in Resources */,
 				8EA98B7D624881BFDB6991ED /* assets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		7D8E5F4C3B2A190817161514 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				718293A4B5C6D7E8F9012345 /* en */,
+				FEEDCBA98765432100112233 /* zh-Hans */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		679C836F47579197CB2E3560 /* Build Rust Code */ = {

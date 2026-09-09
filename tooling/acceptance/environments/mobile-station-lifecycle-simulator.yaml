@@ -1,0 +1,121 @@
+{
+  "id": "mobile-station-lifecycle-simulator",
+  "base_environment": "mobile-simulator",
+  "profile": {
+    "required": true,
+    "identity_match": true
+  },
+  "source_identity": {
+    "commit_required": true,
+    "workspace_digest_required": true
+  },
+  "services": {
+    "station-primary": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "station-secondary": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "mobile-station-lifecycle-alice",
+      "authorization_required": true,
+      "authorization_ref": "env:MOBILE_ACCEPTANCE_RESET",
+      "target_assertion": "both Stations are approved disposable targets",
+      "initial_assertion": "Alice exists on both Stations and no other actor is reset"
+    }
+  ],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "sim-ios",
+      "actor": "alice",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": [
+        "station-primary",
+        "station-secondary"
+      ],
+      "service_bindings": {
+        "station-primary": {
+          "service_id": "station-primary",
+          "required_kind": "station"
+        },
+        "station-secondary": {
+          "service_id": "station-secondary",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "sim-android",
+      "actor": "alice",
+      "runtime": "tauri-android-emulator",
+      "required_service_roles": [
+        "station-primary"
+      ],
+      "service_bindings": {
+        "station-primary": {
+          "service_id": "station-primary",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "harness": {
+    "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
+    "required_actions": [
+      "lifecycle.snapshot",
+      "lifecycle.suspend",
+      "lifecycle.resume",
+      "lifecycle.restart",
+      "native.deliverDeepLink",
+      "projection.read",
+      "cleanup",
+      "station.add",
+      "station.select",
+      "access.submit",
+      "lifecycle.scope.read",
+      "session.logout"
+    ],
+    "policy": "production actions only; Station endpoints and Appium authority remain parent-owned"
+  },
+  "proof_scope": {
+    "proves": [
+      "AS-04 simulator valid-session restore and same-account revocation",
+      "AS-10 simulator Station switching, generation fencing, old-scope absence, and logout"
+    ],
+    "does_not_prove": [
+      "physical-device lifecycle behavior",
+      "physical Keychain or Keystore deletion failure",
+      "W4 command and draft recovery",
+      "W5 event-ingress projection convergence",
+      "physical MS-AG05"
+    ]
+  },
+  "cleanup": {
+    "resources": [
+      "appium-sessions",
+      "appium-process",
+      "app-installations",
+      "ports",
+      "storage",
+      "emulator-process",
+      "simulator-boot",
+      "actor-fixture",
+      "profile-leases",
+      "deployment-leases"
+    ],
+    "deterministic": true
+  }
+}

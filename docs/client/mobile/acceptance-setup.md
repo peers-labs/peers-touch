@@ -63,6 +63,11 @@ xcrun simctl list devices available
 xcrun simctl boot "iPhone 15 Pro"
 ```
 
+W9-B layout and accessibility evidence uses the dedicated
+`mobile-ios-layout-simulator` environment. It requires iOS 17.4 with both
+`iPhone SE (3rd generation)` and `iPhone 15 Pro Max`; its Provisioner owns
+boot, install, Appium sessions, uninstall, shutdown, and storage cleanup.
+
 ### 3.2 Build for Simulator
 
 The acceptance build requires the Harness flag:
@@ -194,8 +199,21 @@ pnpm --dir apps/mobile run check:mobile-shell-contracts
 ### 7.2 Simulator E2E Gates
 
 ```bash
-# Run the simulator acceptance suite
+# Run the callback and restart simulator suite
 python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-access-e2e
+
+# Run W9-B on compact and large iOS Simulator cells
+python3 tooling/scripts/acceptance-run.py \
+  --gate mobile-ios-simulator-layout-accessibility-e2e
+
+# Run the W3 runtime-graph lifecycle cell on iOS Simulator and Android Emulator
+python3 tooling/scripts/acceptance-run.py \
+  --gate mobile-simulator-runtime-lifecycle-e2e
+
+# Run the W3 Station/session lifecycle cell after explicit disposable reset approval
+MOBILE_ACCEPTANCE_RESET=1 \
+python3 tooling/scripts/acceptance-run.py \
+  --gate mobile-simulator-station-lifecycle-e2e
 
 # Run supplemental two-actor/two-Station Messaging evidence
 MOBILE_ACCEPTANCE_RESET=1 \
@@ -209,6 +227,25 @@ python3 tooling/scripts/acceptance-run.py \
 The runner reads `tooling/acceptance/environments/mobile-simulator.yaml`,
 provisions Appium, builds and installs the app, runs the gate scenarios from
 `tooling/acceptance/gates/mobile/simulator_e2e.py`, and collects evidence.
+The W9-B Gate reads
+`tooling/acceptance/environments/mobile-ios-layout-simulator.yaml`, reuses the
+base iOS build/Appium contract, and records source-bound screenshots, native
+accessibility trees, WebView DOM audits, keyboard avoidance, English/Chinese
+locale state, portrait/landscape bounds, and deterministic cleanup for both
+declared device cells. It does not prove Android, physical displays,
+VoiceOver/TalkBack, authenticated Shell surfaces, or physical performance.
+The W3 lifecycle Gate uses the shared `mobile-simulator` environment and drives
+the production lifecycle kernel through typed Harness actions on both simulator
+platforms. It proves runtime-graph start, suspend, resume, restart, monotonic
+generation, visible-app survival, and deterministic session cleanup. It does
+not prove Station session revalidation, Station or actor switching, revocation,
+physical background/foreground delivery, or secure-storage failure behavior.
+The Station-bound W3 Gate uses
+`mobile-station-lifecycle-simulator`, two source-attested disposable Stations,
+and the same actor on both simulator clients. It requires explicit reset
+authorization and proves only the AS-04/AS-10 simulator cell; Relay, provider
+credentials, physical background/foreground, and secure-delete failure remain
+outside that Gate.
 The supplemental Social Gates use `mobile-social-simulator`, require an
 approved remote two-Station profile, and remain partial evidence; they do not
 replace physical-device Gates.

@@ -503,6 +503,7 @@
   "mobile.recovery.deviceLocal.reason.no-network": "无网络连接。可以查看缓存数据但无法发送消息。",
   "mobile.recovery.deviceLocal.reason.station-unreachable": "Station 不可达。请检查连接或切换 Station。",
   "mobile.recovery.deviceLocal.reason.session-expired": "会话已过期。请重新登录。",
+  "mobile.recovery.actionFailed": "恢复操作未能完成，请检查连接后重试。",
   "mobile.recovery.writeRevocation.title": "发送已暂停",
   "mobile.recovery.writeRevocation.body": "正在恢复连接，消息发送暂停中。",
   "mobile.chat.commandPending": "发送中...",
