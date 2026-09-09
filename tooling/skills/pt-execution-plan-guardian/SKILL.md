@@ -48,6 +48,11 @@ For architecture-level or cross-layer work:
 - `DESIGN_AMENDMENT_REQUIRED` — execution reveals undefined semantics.
 - `PRODUCT_AMENDMENT_REQUIRED` — execution reveals undefined journeys/states.
 
+A hard stop fences the affected action and its dependents. It stops the entire
+execution horizon only when the missing decision invalidates shared assumptions
+for every remaining action. Otherwise park that branch and continue independent
+ready work.
+
 **Self-amend and continue (no user confirmation needed):**
 - `EXECUTION_BLOCKED_BY_PLAN` — when architecture IS accepted (design doc defines it, proto contracts exist) but no workstream tracks it. The agent adds the workstream entry to the plan, then proceeds.
 - `PLAN_AMENDMENT_REQUIRED` — when the architecture remains valid and the amendment is mechanical (inventory update, dependency reorder, new deliverable for already-designed capability). The agent updates the plan inline and continues execution.
@@ -190,6 +195,9 @@ the user only says "继续" / "continue" without repeating the details:
    final fix.
 4. **No silent scope or design changes.** Surface deviations instead of hiding
    them.
+5. **Keep the queue live.** A blocked action is parked, not promoted to a
+   Goal-level blocker, while any other source-defined action or admissible
+   root-cause remediation remains dependency-ready.
 
 ## Workflow
 
@@ -288,8 +296,8 @@ independent units and check whether they can run concurrently:
 - Execute only dependency-ready task IDs.
 - Fix root causes at the architecture-assigned layer. Do not patch: no
   compatibility shims, silent fallbacks, error-swallowing, or special-case hacks
-  to force a pass. If a real fix is blocked, stop and surface it instead of
-  papering over it.
+  to force a pass. If one action is blocked, surface and park that action,
+  recompute the complete in-scope ready frontier, and continue other legal work.
 - If implementation reveals missing retry, replay, ordering, cancellation,
   overload, auth, lifecycle, or data-plane semantics, stop with
   `DESIGN_AMENDMENT_REQUIRED`.
@@ -307,7 +315,44 @@ independent units and check whether they can run concurrently:
 - Synchronize the plan status table and Context Anchor after every meaningful
   step, evidence, blocker, scope, worktree, branch, or stage change.
 
-### 4.1 Context Synchronization Checkpoints
+### 4.1 Blocker-Aware Execution Queue
+
+Tracked execution maintains four projected states: `Ready Queue`, `In
+Progress`, `Parked Queue`, and `Done`. The formal plan remains the source of
+truth.
+
+When execution discovers a blocker:
+
+1. Record the exact failed action, evidence, owner, and blocking edge.
+2. Classify it:
+   - `RECOVERABLE_IMPLEMENTATION`: diagnose and enqueue the root-cause fix plus
+     regression evidence;
+   - `MECHANICAL_PLAN_GAP`: update the plan under Amendment Escalation Rules,
+     then enqueue the new task;
+   - `SOFT_EXTERNAL`: park it and continue independent ready work;
+   - `HARD_GOVERNANCE`: park it pending product/architecture decision,
+     destructive or version authorization, cross-owner authority, stage review,
+     or unavailable external resources.
+3. Recompute the dependency-ready frontier across the full approved in-scope
+   graph, including work exposed by the newly completed or parked action.
+4. Continue until the Ready Queue is empty.
+
+Do not set `active_work.blocked=true` or mark the whole Goal `blocked` on the
+first blocked action. Goal-level blocked requires a fixed-point exhaustion
+audit proving:
+
+- every omitted in-scope mechanical task was added to the plan;
+- no legal diagnosis, root-cause fix, verification, documentation, or other
+  independent action can make progress;
+- every remaining Parked Queue item is behind a hard governance or unavailable
+  external-resource boundary;
+- the same blocking condition satisfies the repeated-blocker lifecycle
+  threshold.
+
+This queue discipline does not authorize architecture invention, version bumps,
+destructive operations, cross-worktree writes, or weaker evidence.
+
+### 4.2 Context Synchronization Checkpoints
 
 Invoke `pt-context-anchor`:
 
@@ -386,8 +431,13 @@ Never:
   verifying the inherited binding.
 - Execute an architecture migration from `design.md` alone.
 - Author missing architecture decisions while coding.
-- Continue after `DESIGN_AMENDMENT_REQUIRED` or `PRODUCT_AMENDMENT_REQUIRED`
-  (these are hard stops — user/architect must resolve them).
+- Continue the affected action or its dependents after
+  `DESIGN_AMENDMENT_REQUIRED` or `PRODUCT_AMENDMENT_REQUIRED`; park that branch
+  until the user/architect resolves it while unrelated ready branches continue.
+- Mark an entire Goal blocked because one action is blocked while other
+  dependency-ready or admissible remediation work exists.
+- Leave a source-defined root-cause fix or mechanical plan amendment unqueued
+  merely because it was discovered after execution started.
 - Self-amend the plan in ways that change architecture boundaries, ownership,
   contracts, or acceptance gates (that's design, not plan bookkeeping).
 - Say "Phase 3 completed" without specifying which plan owns Phase 3.
