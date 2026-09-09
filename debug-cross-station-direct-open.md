@@ -53,6 +53,10 @@
 | AI | The foreground file dialog belongs to a process other than the Tauri actor. | Medium | Low | Inconclusive for Tauri ownership; the synthetic run intentionally used separate opener and inspector processes. |
 | AJ | The file dialog is actor-owned but has no Win32 owner handle, so `dialog_count` remains zero. | Medium | Low | Rejected for the common-dialog shape by debug line 2: `foregroundOwnerHwnd` is nonzero. |
 | AK | Polling `focused_control` through a new scheduled worker steals foreground focus before observation. | High | Low | Confirmed by debug line 1 versus line 2: the standalone worker observes its own foreground `ConsoleWindowClass` and no focused HWND, while explicitly activating the dialog in the same worker immediately resolves the expected `Edit`. |
+| AL | Product Closure's 30-second login harness budget expires while a valid cold-login bootstrap is still progressing. | High | Low | Confirmed by run `20260909T124044141301Z-b80a2a22db8ae6bb1580976c5bac1c53`: authentication succeeded, the lifecycle reached ready, critical and deferred runtime bootstrap completed, and final Chat hydration was still progressing near the 30-second boundary. |
+| AM | Alice's Station authentication or token validation failed. | Low | Low | Rejected: `auth_login`, repeated `auth_validate_token`, profile sync, and authenticated actor projection all succeeded. |
+| AN | WebDriver or the native Alice process died during login. | Low | Low | Rejected: the native log continued through post-login projections, runtime-log audit was clean, and cleanup stopped the live client normally. |
+| AO | The Desktop remained stuck before critical or deferred runtime completion. | Medium | Low | Rejected: `runtime:critical:end`, `runtime:idle:end`, and `deferred projections installed` all completed before Selenium canceled the async script. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:
@@ -625,4 +629,33 @@ Post-fix collection is prepared: the instrumentation uses
 `runId=post-fix`, the NDJSON file is empty, and both the local Debug Server and
 the sixwin reverse-tunnel health checks pass. The session remains `[OPEN]`.
 The next comparison must deploy the committed exact source and run Product
+Closure only.
+
+Exact-source post-fix run
+`20260909T124044141301Z-b80a2a22db8ae6bb1580976c5bac1c53`
+at commit `4429cf61a144012abe5ade3334feef66ac4aa59c`, runtime-cell
+run `20260909t124133022679z-f79c01038e91f6f2`, and binary SHA-256
+`1669d684208597040c5826dc9d8e82c01eb1881e3afb89e3dc75dc4d968089c2`
+did not reach the chooser. It failed first at `alice.launch` when Selenium's
+30-second async-script budget expired.
+
+The native log proves the operation was valid and progressing:
+
+- `auth_login` completed successfully in 2572 ms;
+- token validation, profile sync, and the authenticated identity edge passed;
+- `runtime:critical:end`, `runtime:idle:end`, and
+  `deferred projections installed` completed;
+- the harness began its final Chat hydration near the timeout boundary;
+- WebDriver and the client process remained alive until cleanup.
+
+This confirms AL and rejects AM-AO. The Product Closure runner now uses the
+named 60-second `NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS` bound for the cold-login
+harness while preserving every identity, runtime, and Chat hydration
+assertion. Final-source local verification passes the 93-test focused cohort,
+Python compilation, diff checks, the four approved local Chat Gates,
+`acceptance-plan-self`, and direct `acceptance-infra-validation`.
+
+The failed run remains `PARTIAL/UNPROVEN`; cleanup is `DONE/PROVEN`. The NDJSON
+file remains empty because the run never reached the chooser. The next
+comparison must commit without push, deploy the exact source, and rerun Product
 Closure only.
