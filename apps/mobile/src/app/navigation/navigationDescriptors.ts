@@ -43,7 +43,7 @@ export const primaryTabDescriptors: readonly NavigationDescriptor[] = [
     labelKey: 'mobile.tab.chat',
     layout: 'primary',
     ownerRuntimeId: 'social',
-    keepAlive: true,
+    keepAlive: false,
   },
   {
     routeId: 'tab:moments',
@@ -57,7 +57,7 @@ export const primaryTabDescriptors: readonly NavigationDescriptor[] = [
     labelKey: 'mobile.tab.contacts',
     layout: 'primary',
     ownerRuntimeId: 'social',
-    keepAlive: true,
+    keepAlive: false,
   },
   {
     routeId: 'tab:settings',

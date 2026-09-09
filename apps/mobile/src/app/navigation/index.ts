@@ -20,3 +20,15 @@ export {
   saveFocusTarget,
   restoreFocusTarget,
 } from './scrollRestoration';
+
+export {
+  activeMobileDetailRoute,
+  navigationLocationKey,
+  resetMobileNavigation,
+  useMobileNavigationStore,
+} from './navigationStore';
+export type {
+  MobileChatDetailRoute,
+  MobileDetailRoute,
+  MobilePrimaryRouteId,
+} from './navigationStore';

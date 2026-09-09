@@ -30,6 +30,7 @@ sha2 = "0.10"
 tauri = { version = "2.0.1", features = ["devtools"] }
 tauri-plugin-deep-link = "=2.4.9"
 tauri-plugin-opener = "=2.5.4"
+tauri-plugin-peers-platform-permissions = { path = "plugins/platform-permissions" }
 ulid = "1"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 zeroize = { version = "1", features = ["derive"] }

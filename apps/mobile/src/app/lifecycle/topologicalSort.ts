@@ -14,6 +14,11 @@ export interface TopologicalSortResult {
   readonly hasCycle: boolean;
   /** IDs involved in the cycle, if any. Empty when no cycle. */
   readonly cycleParticipants: readonly string[];
+  /** Hard dependencies that are absent from the installed graph. */
+  readonly missingDependencies: readonly {
+    readonly runtimeId: string;
+    readonly dependencyId: string;
+  }[];
 }
 
 type VisitState = 'unvisited' | 'visiting' | 'visited';
@@ -22,19 +27,38 @@ type VisitState = 'unvisited' | 'visiting' | 'visited';
  * Produce a topological ordering of runtimes based on their `dependsOn` edges.
  *
  * Uses Kahn-style DFS with three-color marking for cycle detection.
- * Unknown dependency IDs (referencing a runtime not in the input set) are
- * silently skipped — this allows optional runtimes.
+ * Missing hard dependency IDs fail graph installation and are returned
+ * separately from cycle diagnostics.
  */
 export function topologicalSortRuntimes(
   descriptors: readonly MobileRuntimeDescriptor[],
 ): TopologicalSortResult {
   const idSet = new Set(descriptors.map((d) => d.id));
   const adjacency = new Map<string, readonly string[]>();
+  const missingDependencies: Array<{
+    runtimeId: string;
+    dependencyId: string;
+  }> = [];
 
   for (const descriptor of descriptors) {
-    // Filter to only known runtime IDs to tolerate optional dependencies
-    const validDeps = descriptor.dependsOn.filter((dep) => idSet.has(dep));
-    adjacency.set(descriptor.id, validDeps);
+    for (const dependencyId of descriptor.dependsOn) {
+      if (!idSet.has(dependencyId)) {
+        missingDependencies.push({
+          runtimeId: descriptor.id,
+          dependencyId,
+        });
+      }
+    }
+    adjacency.set(descriptor.id, descriptor.dependsOn);
+  }
+
+  if (missingDependencies.length > 0) {
+    return {
+      order: [],
+      hasCycle: false,
+      cycleParticipants: [],
+      missingDependencies,
+    };
   }
 
   const state = new Map<string, VisitState>();
@@ -52,6 +76,7 @@ export function topologicalSortRuntimes(
           order: [],
           hasCycle: true,
           cycleParticipants: [...new Set(cycleParticipants)],
+          missingDependencies: [],
         };
       }
     }
@@ -61,6 +86,7 @@ export function topologicalSortRuntimes(
     order,
     hasCycle: false,
     cycleParticipants: [],
+    missingDependencies: [],
   };
 }
 

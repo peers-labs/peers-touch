@@ -419,6 +419,35 @@ export async function clearAuthSession(): Promise<void> {
   await removeSecureStorageValue(LEGACY_AUTH_SESSION_KEY);
 }
 
+export async function revokeStationSession(
+  session: MobileAuthSession,
+): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 5_000);
+  try {
+    const response = await fetch(
+      `${session.stationUrl.replace(/\/+$/, '')}/actor/logout`,
+      {
+        body: JSON.stringify({ session_id: session.sessionId }),
+        cache: 'no-store',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+        signal: controller.signal,
+      },
+    );
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
+
 export async function loadRememberedLoginAccounts(stationPeerId?: string): Promise<RememberedLoginAccount[]> {
   await removeSecureStorageValue(LEGACY_AUTH_ACCOUNT_HISTORY_KEY);
   const scope = stationPeerId?.trim();

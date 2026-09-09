@@ -38,13 +38,9 @@ ALLOWED_GATE_TIERS = {
     "release",
 }
 
-ALLOWED_GATE_ENVIRONMENTS = {
+BUILTIN_GATE_ENVIRONMENTS = {
     "local",
     "fedp5",
-    "home-station",
-    "local-desktop-gateway",
-    "mobile-native",
-    "native-tauri-embedded-webdriver",
 }
 
 
@@ -130,7 +126,15 @@ def flatten_feature_gates(features: list[dict[str, Any]], feature_ids: list[str]
 def validate_gate_catalog(
     gate_defs: dict[str, Any],
     required_gate_ids: set[str],
+    *,
+    acceptance_root: Path | None = None,
 ) -> None:
+    environment_root = (
+        acceptance_root or REPO_ROOT / "tooling" / "acceptance"
+    ) / "environments"
+    allowed_environments = BUILTIN_GATE_ENVIRONMENTS | {
+        path.stem for path in environment_root.glob("*.yaml") if path.is_file()
+    }
     require(gate_defs, "gates.yaml has no gates")
     missing_gate_ids = sorted(required_gate_ids - gate_defs.keys())
     require(
@@ -142,7 +146,7 @@ def validate_gate_catalog(
         validate_gate_launch(gate_id, gate)
         environment = gate.get("environment", "local")
         tier = gate.get("tier")
-        require(environment in ALLOWED_GATE_ENVIRONMENTS, f"{gate_id}: invalid environment {environment!r}")
+        require(environment in allowed_environments, f"{gate_id}: invalid environment {environment!r}")
         require(tier in ALLOWED_GATE_TIERS, f"{gate_id}: invalid or missing tier {tier!r}")
         if environment != "local":
             require(
@@ -500,7 +504,11 @@ def validate_domain_contract_closure(
         )
 
     require(not failures, "\n".join(failures))
-    validate_gate_catalog(gate_defs, required_gates)
+    validate_gate_catalog(
+        gate_defs,
+        required_gates,
+        acceptance_root=acceptance_root,
+    )
     return required_gates
 
 

@@ -1,0 +1,3 @@
+"NSCameraUsageDescription" = "Peers needs camera access when you choose to capture media.";
+"NSMicrophoneUsageDescription" = "Peers needs microphone access when you choose to record audio.";
+"NSPhotoLibraryUsageDescription" = "Peers needs photo library access when you choose media to share.";
