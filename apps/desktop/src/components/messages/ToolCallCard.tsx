@@ -204,7 +204,7 @@ export function ToolCallItem({
               e.stopPropagation();
               usePortalStore.getState().openToolDetail(messageId, tool.id);
             }}
-            title="Open in panel"
+            title={t('chat.message.toolCall.openPanel')}
           >
             ⋯
           </span>
