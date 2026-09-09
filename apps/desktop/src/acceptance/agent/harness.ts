@@ -4085,6 +4085,48 @@ async function runFoundationF05Scenario(input: {
       .filter((attachment): attachment is AgentAttachmentRefInput => Boolean(attachment))
       .map((attachment) =>
         attachmentEvidence(attachment, segmentById.get(attachment.attachment_id)));
+    await waitFor(
+      () => Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-pt-agent-message-attachment][role="button"]',
+        ),
+      ).some((element) =>
+        element.dataset.ptAgentMessageAttachment === pdf.attachment_id),
+      'downloadable attachment action',
+      10_000,
+    );
+    const historyAttachment = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message-attachment][role="button"]',
+      ),
+    ).find((element) =>
+      element.dataset.ptAgentMessageAttachment === pdf.attachment_id);
+    if (!historyAttachment) {
+      throw new Error('agent.acceptance.foundationAttachmentActionMissing');
+    }
+    const originalWindowOpen = window.open;
+    let openedAttachmentUrl = '';
+    window.open = ((url?: string | URL) => {
+      openedAttachmentUrl = String(url ?? '');
+      return null;
+    }) as typeof window.open;
+    try {
+      historyAttachment.click();
+    } finally {
+      window.open = originalWindowOpen;
+    }
+    const historyAction = {
+      attachmentId: pdf.attachment_id,
+      visible: historyAttachment.getClientRects().length > 0,
+      keyboardReachable: historyAttachment.tabIndex === 0,
+      accessibleNamePresent: Boolean(
+        historyAttachment.getAttribute('aria-label')?.trim(),
+      ),
+      openInvoked: openedAttachmentUrl.length > 0,
+      openedUrlHash: openedAttachmentUrl
+        ? await sha256Hex(openedAttachmentUrl)
+        : '',
+    };
 
     const rejectedCase = async (
       kind: 'oversized' | 'unsupported' | 'unauthorized',
@@ -4222,6 +4264,7 @@ async function runFoundationF05Scenario(input: {
           expectedChecksum: pdf.checksum,
           actualChecksum,
         },
+        receiverInteraction: historyAction,
         cleanup: {
           objects: cleanupResults,
         },
@@ -12037,6 +12080,10 @@ function evaluateF05(
     facts.authorizedDownload,
     'foundationF05AuthorizedDownload',
   );
+  const receiverInteraction = evidenceRecord(
+    facts.receiverInteraction,
+    'foundationF05ReceiverInteraction',
+  );
 
   return {
     validPngHandled: handled(validFiles.png, 'image/png'),
@@ -12087,6 +12134,15 @@ function evaluateF05(
       download.authorized === true
       && download.downloaded === true
       && download.expectedChecksum === download.actualChecksum,
+    historyAttachmentActionVisible:
+      typeof receiverInteraction.attachmentId === 'string'
+      && receiverInteraction.attachmentId.length > 0
+      && receiverInteraction.visible === true
+      && receiverInteraction.keyboardReachable === true
+      && receiverInteraction.accessibleNamePresent === true
+      && receiverInteraction.openInvoked === true
+      && typeof receiverInteraction.openedUrlHash === 'string'
+      && receiverInteraction.openedUrlHash.length > 0,
   };
 }
 

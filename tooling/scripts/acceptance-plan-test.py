@@ -229,6 +229,16 @@ class BehaviorRuleTests(unittest.TestCase):
                     self.selected_ids(path),
                 )
 
+    def test_shared_agent_native_runner_selects_implemented_journeys(self) -> None:
+        for path in (
+            "tooling/acceptance/gates/agent/native_agent_runner.py",
+            "tooling/acceptance/provisioners/home_station.py",
+        ):
+            with self.subTest(path=path):
+                selected = self.selected_ids(path)
+                self.assertIn("agent-stream-resilience-e2e", selected)
+                self.assertIn("agent-attachment-e2e", selected)
+
 
 class GateLaunchContractTests(unittest.TestCase):
     def test_plan_preserves_context_argv_and_capabilities(self) -> None:

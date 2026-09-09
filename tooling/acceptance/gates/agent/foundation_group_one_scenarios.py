@@ -478,6 +478,11 @@ def evaluate_as_f05(capture: Mapping[str, Any]) -> dict[str, bool]:
     unauthorized = _mapping(rejections, "unauthorized", scenario="AS-F05")
     references = _list(capture, "references", scenario="AS-F05")
     download = _mapping(capture, "authorizedDownload", scenario="AS-F05")
+    receiver_interaction = _mapping(
+        capture,
+        "receiverInteraction",
+        scenario="AS-F05",
+    )
 
     def valid_handled_file(
         fact: Mapping[str, Any],
@@ -656,6 +661,20 @@ def evaluate_as_f05(capture: Mapping[str, Any]) -> dict[str, bool]:
                 download,
                 "actualChecksum",
                 scenario="AS-F05",
+            )
+        ),
+        "historyAttachmentActionVisible": (
+            receiver_interaction.get("attachmentId") in expected_attachment_ids
+            and receiver_interaction.get("visible") is True
+            and receiver_interaction.get("keyboardReachable") is True
+            and receiver_interaction.get("accessibleNamePresent") is True
+            and receiver_interaction.get("openInvoked") is True
+            and bool(
+                _nonempty_string(
+                    receiver_interaction,
+                    "openedUrlHash",
+                    scenario="AS-F05",
+                )
             )
         ),
     }

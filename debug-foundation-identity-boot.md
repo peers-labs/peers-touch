@@ -19,10 +19,10 @@
 | C | Browser renderer or WebDriver is dead while recovery polling continues. | Low | Low | Rejected for the latest failure: all 119 Harness snapshots succeeded and no command exception was retained. |
 | D | Concurrent startup commands queue behind a Browser gateway worker/lock convoy before launch-context dispatch. | High | Medium | Supported: a live process sample found seven gateway workers waiting on mutexes while one sampled `context_action_dispatch`; exact per-command queue/dispatch timing is pending. |
 | E | Browser command parity is incomplete, so the eventual launch-context response is a typed command rejection rather than `{ enabled: false }`. | High | Low | Confirmed in source: the Tauri command exists but the HTTP gateway dispatch has no matching command; runtime recorded `RustCommandException` after HTTP 200. |
-| F | Native provider-list loading never settles during `ensureProvider`. | Medium | Low | Pending stage instrumentation. |
-| G | Native provider detail lookup or provider persistence never settles. | Medium | Low | Pending stage instrumentation. |
-| H | Native available-model lookup never settles. | Medium | Low | Pending stage instrumentation. |
-| I | Native Agent load/profile update/readiness lookup never settles. | Medium | Low | Pending stage instrumentation. |
+| F | Native provider-list loading never settles during `ensureProvider`. | Medium | Low | Not reproduced in either initial setup sequence on `2f42b6eee`; intermittent cause remains inconclusive. |
+| G | Native provider detail lookup or provider persistence never settles. | Medium | Low | Both sequences reached provider persistence; intermittent cause remains inconclusive. |
+| H | Native available-model lookup never settles. | Medium | Low | Both sequences found the requested model; intermittent cause remains inconclusive. |
+| I | Native Agent load/profile update/readiness lookup never settles. | Medium | Low | Both sequences reached matching readiness snapshots; intermittent cause remains inconclusive. |
 
 ## Log Evidence
 - Exact-source run `20260904T110406527755Z-0a3cb161b052d5ff5c86e5176456b73c` timed out at `identity login precondition`.
@@ -67,6 +67,19 @@
   channel. Outer Provisioner cleanup passed and all client ports were
   released. This rejects process death and local port loss, but does not yet
   identify which awaited provider-setup stage stopped settling.
+- On checkpoint `2f42b6eeea8e339b607c23e38b738caa8c91e368`,
+  Gate `20260908T135908515691Z-03999d7db95ed840bdf6a9ece5883400`
+  produced two complete initial `ensureProvider` stage sequences in the
+  retained identity log. Start/end timestamps are
+  `1788876169463/1788876172252` and `1788876187248/1788876189485`:
+  2.789 seconds and 2.237 seconds, not under two seconds. Both end in
+  `readiness-loaded` with all three snapshot checks true.
+- The same interrupted run later failed at Browser AS-F06 capability-session
+  establishment. At `1788876673451` the retained harness failure event reports
+  `processState=exited`, with Gateway, renderer, and WebDriver ports closed.
+  This later failure cannot prove a new product defect or a provider-stage
+  regression. The run's child cleanup result and outer Provisioner cleanup
+  passed, but the Foundation product proof remains unproven.
 
 ## Instrumentation
 - `A`: identity phase and lifecycle transitions during the login precondition.
@@ -95,3 +108,9 @@ Hypothesis E is also confirmed as a separate Browser parity defect. The
 remaining root-cause question is D: which startup command owns the gateway
 worker/lock convoy. No behavior fix is authorized until per-command gateway
 timing identifies that owner.
+
+Resume correction: the preceding A/E/D conclusion describes the historical
+Browser investigation, not the latest Native provider-stage observation.
+The Native timeout did not reproduce in the two retained setup sequences;
+F-I remain inconclusive for the intermittent incident. Do not turn those
+successes, or the interrupted Browser failure, into a product-fix claim.
