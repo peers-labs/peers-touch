@@ -225,6 +225,18 @@ class DomainContractClosureTests(unittest.TestCase):
     }
 
     def setUp(self) -> None:
+        isolated_environment = {
+            key: value
+            for key, value in MODULE.os.environ.items()
+            if key != "PT_ACCEPTANCE_CURRENT_RESULTS"
+        }
+        environment_patch = mock.patch.dict(
+            MODULE.os.environ,
+            isolated_environment,
+            clear=True,
+        )
+        environment_patch.start()
+        self.addCleanup(environment_patch.stop)
         source_patch = mock.patch.object(
             MODULE,
             "source_identity",
@@ -338,6 +350,48 @@ class DomainContractClosureTests(unittest.TestCase):
             "latest Acceptance run source does not match current source",
         ):
             MODULE.latest_passed_gates(store, "", True)
+
+    def test_current_results_supersede_stale_latest_source_identity(self) -> None:
+        store = self.latest_store(
+            json.dumps(
+                {
+                    "source": {
+                        **self.SOURCE,
+                        "commit": "stale-head",
+                    },
+                    "results": [
+                        {
+                            "id": "stale-gate",
+                            "status": "passed",
+                            "completionStatus": "DONE",
+                            "proofStatus": "PROVEN",
+                        }
+                    ],
+                }
+            )
+        )
+        current_results = json.dumps(
+            {
+                "source": self.SOURCE,
+                "results": [
+                    {
+                        "id": "current-gate",
+                        "status": "passed",
+                        "completionStatus": "DONE",
+                        "proofStatus": "PROVEN",
+                    }
+                ],
+            }
+        )
+
+        with mock.patch.dict(
+            MODULE.os.environ,
+            {"PT_ACCEPTANCE_CURRENT_RESULTS": current_results},
+        ):
+            self.assertEqual(
+                MODULE.latest_passed_gates(store, "", True),
+                {"current-gate"},
+            )
 
     def test_current_results_admit_only_unique_proven_gate_results(self) -> None:
         store = self.latest_store(

@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-02
-covered_docs_hash: 1ef0db9597856f1b52fd9704f7a8353ed7700c5f2eeab0dd4383d091c0cb6af9
+last_verified_at: 2026-09-09
+covered_docs_hash: 4562ef906ae900935be9bd77b562d29a73caeed8cafbc21ad4a3620178fbe379
 
 covered_docs:
   - AGENTS.md
@@ -108,3 +108,15 @@ identity without module/package shadowing, and rejection of required-finalizer
 `PROVEN` manifests whose finalization record, identity digests, finalizer ID, or
 published tuple does not match the protected binding. Dedicated planner,
 validator, registry, and coverage regressions own these checks.
+
+## 2026-09-09 Review
+
+Runtime Provisioning WS2/WS3 and Ephemeral Launch Context EGLC-W1/W3/W4 were
+reopened for current-source self-validation repair. Strict SSH host
+verification, git-tracked source identity, generated-report exclusion, and
+cross-process monotonic deadline translation strengthen existing review
+requirements without changing review workflow or requiring a new review
+fixture. Final aggregate closure also requires source identity in the run report
+and allows only an exact current-source result envelope to supersede stale
+historical evidence; stale latest evidence still fails closed without that
+envelope.

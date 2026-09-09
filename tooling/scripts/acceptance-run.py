@@ -1472,6 +1472,7 @@ def build_run_report(
     results: list[dict[str, Any]],
     *,
     candidate_mode: bool = False,
+    source: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     results = [
         standardize_result(
@@ -1506,6 +1507,7 @@ def build_run_report(
         "artifactKind": RUN_ARTIFACT_KIND,
         "plan": plan_path,
         "sourceArtifact": plan_path,
+        "source": dict(source) if source is not None else {},
         "summary": {
             "total": len(results),
             "passed": len([result for result in results if result.get("status") == "passed"]),
@@ -2353,6 +2355,7 @@ def main() -> int:
             plan_source,
             results,
             candidate_mode=candidate_mode,
+            source=aggregate_source,
         )
         run_ref = aggregate_run.write_json(
             "reports/run.json",

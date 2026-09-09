@@ -447,6 +447,7 @@ class EphemeralGateLaunchContext:
         self._channel_error: Optional[EphemeralLaunchError] = None
         self._quiesce_error: Optional[EphemeralLaunchCleanupFailed] = None
         self._cleanup_result: Optional[EphemeralCleanupResult] = None
+        self._child_monotonic_offset = 0.0
 
     @property
     def state(self) -> EphemeralLaunchContextState:
@@ -764,6 +765,25 @@ class EphemeralGateLaunchContext:
                     "ephemeral launch identity handshake failed",
                     operation="handshake",
                 )
+            child_monotonic = handshake.get("childMonotonic")
+            child_process_id = handshake.get("childProcessId")
+            if child_monotonic is not None or child_process_id is not None:
+                if (
+                    not _is_positive_finite_timeout(child_monotonic)
+                    or not isinstance(child_process_id, int)
+                    or child_process_id <= 0
+                ):
+                    raise EphemeralLaunchHandshakeFailed(
+                        "ephemeral launch monotonic clock handshake failed",
+                        operation="handshake",
+                    )
+                # Python 3.9 on macOS uses process-local monotonic origins.
+                # Translate child absolute deadlines into the parent clock
+                # domain before applying the existing no-extension clamp.
+                if child_process_id != os.getpid():
+                    self._child_monotonic_offset = (
+                        time.monotonic() - float(child_monotonic)
+                    )
             _send_frame(
                 endpoint,
                 {"type": "handshake", "status": "OK"},
@@ -907,8 +927,11 @@ class EphemeralGateLaunchContext:
                 operation="invoke",
             )
         now = time.monotonic()
+        translated_deadline = (
+            float(requested_deadline) + self._child_monotonic_offset
+        )
         deadline_monotonic = min(
-            float(requested_deadline),
+            translated_deadline,
             now + min(float(timeout_seconds), self._request_timeout_seconds),
         )
         if deadline_monotonic <= now:
@@ -1326,7 +1349,12 @@ class EphemeralGateClient:
         return "<EphemeralGateClient ephemeral>"
 
     def _handshake(self) -> None:
-        request: dict[str, object] = {"type": "handshake", **self._identity}
+        request: dict[str, object] = {
+            "type": "handshake",
+            **self._identity,
+            "childMonotonic": time.monotonic(),
+            "childProcessId": os.getpid(),
+        }
         try:
             deadline = time.monotonic() + DEFAULT_REQUEST_TIMEOUT_SECONDS
             _send_frame(self._endpoint, request, self._max_frame_bytes)

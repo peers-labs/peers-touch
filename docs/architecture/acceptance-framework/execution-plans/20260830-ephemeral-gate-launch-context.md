@@ -1,8 +1,8 @@
 # Ephemeral Gate Launch Context — Execution Plan
 
-> **Status**: complete
+> **Status**: complete — current-source EGLC-W1/W3/W4 maintenance verified
 > **Version**: v1.0
-> **Created**: 2026-08-30 | **Updated**: 2026-08-30
+> **Created**: 2026-08-30 | **Updated**: 2026-09-09
 > **Owner**: Acceptance Infrastructure
 > **Branch**: `merge-desktop-prototype`
 > **Parent Design**: [../design.md](../design.md)
@@ -424,13 +424,41 @@ cleanup ownership.
 
 | Workstream | Status | Evidence |
 |---|---|---|
-| EGLC-W1 Core contract | remediated; replacement review pending | 54 launch-context tests PASS, including absolute wire-deadline preservation, typed handler timeout, post-eviction replay rejection, bounded request-ID admission, expired-on-arrival encoding, normal/non-zero descendant extinction, aggregate secret scanning, and fenced-failure handler closure |
+| EGLC-W1 Core contract | done | Child/parent monotonic clock domains are negotiated during the anonymous-channel handshake; same-process absolute deadlines remain byte-for-byte unchanged |
 | EGLC-W2 Catalog/planner/validator | done | 14 planner + 12 validator tests PASS |
-| EGLC-W3 Runner lifecycle | remediated; replacement review pending | 56 runner tests PASS; quarantined quiesce failure still closes remaining handlers after resource teardown |
-| EGLC-W4 Infra self-validation | done | historical closure-time aggregate Infra run PASS and exact-scope Gap Detector PROVEN |
+| EGLC-W3 Runner lifecycle | done | Bootstrap descriptor closure, Python script argv, and blocked-error exit propagation pass without timeout inflation |
+| EGLC-W4 Infra self-validation | done | 59 launch-context tests, the 149-test combined suite, and source-bound aggregate Infra Gates pass |
 | Mobile W2-E2-D handoff | blocked downstream | D-18 prerequisite is closed and W2-E2B is complete; Mobile main plan now blocks E2-5 on proposed D-19 architecture/Infra landing and remaining Mobile remediation |
 
-### 13.1 Review Reopen — 2026-08-30
+### 13.1 Current-Source Maintenance Reopen — 2026-09-09
+
+Checkpoint `c0d169b6f3bb035de66fb31c566b982a0ae95f6b` reproduced three
+domain-neutral process failures:
+
+- bootstrap descriptor closure before a Gate grandchild;
+- Python script argv execution through the context launcher;
+- preservation of the parent blocked exit code after a non-zero child exit.
+
+All three terminated as `EphemeralLaunchTimeout`. The maintenance slice retained
+the existing timeout ceilings, descendant/descriptor assertions, and business
+Gate behavior.
+
+Root cause: Python 3.9 on macOS uses process-local monotonic origins. The child
+therefore authenticated a correct absolute deadline in its own clock domain,
+but a long-lived parent could read it as already expired. The anonymous
+handshake now carries the child process ID and monotonic sample; the parent
+translates only cross-process deadlines before applying the existing
+no-extension clamp. Same-process wire-deadline equality remains unchanged.
+
+The repaired source passes all 59 launch-context tests and the 149-test combined
+provisioning/launch-context suite. Aggregate verification also binds
+`reports/run.json` to the exact source and permits the current source-matched
+result envelope to supersede stale historical evidence without weakening the
+fail-closed stale-evidence path. `acceptance-runtime-provisioning-self` and
+`acceptance-infra-validation` pass together on the final clean checkpoint. This
+is synthetic framework proof only; no Mobile or Agent product proof is implied.
+
+### 13.2 Review Reopen — 2026-08-30
 
 Two independent implementation reviewers found the following blocking gaps:
 
@@ -449,7 +477,7 @@ These findings invalidate prior W1/W3 completion and all W4 evidence produced
 before their correction. They do not change D-18 ownership or transport
 boundaries.
 
-### 13.2 Historical Closure Evidence — 2026-08-30
+### 13.3 Historical Closure Evidence — 2026-08-30
 
 - Closure reviewer A: PASS with no remaining P0/P1.
 - Post-fix closure reviewer B: PASS.
@@ -469,7 +497,7 @@ that unrelated later working-tree changes satisfy current review-freshness
 digests; current consumers must rerun the applicable source tests and review
 gates for their own change range.
 
-### 13.3 Checkpoint Review Reopen — 2026-09-01
+### 13.4 Checkpoint Review Reopen — 2026-09-01
 
 The first `G0-MOBILE-BASELINE` source checkpoint commit was invalidated by two
 independent commit reviews. They identified three current-scope P1 defects:
