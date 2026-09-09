@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-09
-covered_docs_hash: 4562ef906ae900935be9bd77b562d29a73caeed8cafbc21ad4a3620178fbe379
+covered_docs_hash: 6fe7c73c15e86420d2ac6feb793711d7114f955ab8dfafc035526ca37c3c1bea
 
 covered_docs:
   - AGENTS.md
@@ -120,3 +120,10 @@ fixture. Final aggregate closure also requires source identity in the run report
 and allows only an exact current-source result envelope to supersede stale
 historical evidence; stale latest evidence still fails closed without that
 envelope.
+
+The C08 fresh-process correction makes the existing dependency direction
+explicit: Core attestation validates an injected remote source identity, while
+concrete Provisioners own strict-known-host SSH acquisition. A dedicated
+fresh-process regression and operational pitfall now guard the boundary. This
+strengthens structural review without changing the review workflow or requiring
+a new golden review fixture.

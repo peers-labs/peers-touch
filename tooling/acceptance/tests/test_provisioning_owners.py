@@ -107,7 +107,9 @@ class StationAttestationOwnerTests(unittest.TestCase):
                     time.sleep(0.05)
 
     def test_remote_attestation_excludes_only_deployment_bare_repo(self) -> None:
-        from tooling.acceptance.core.attestation import _remote_source_identity
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            resolve_remote_source_identity,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -144,13 +146,13 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 stderr="",
             )
             with patch(
-                "tooling.acceptance.core.attestation.REPO_ROOT",
+                "tooling.acceptance.provisioners.remote_source_identity.REPO_ROOT",
                 root,
             ), patch(
                 "tooling.acceptance.transports.ssh.subprocess.run",
                 return_value=completed,
             ) as run:
-                identity = _remote_source_identity("station-three")
+                identity = resolve_remote_source_identity("station-three")
 
         self.assertEqual(
             identity,
@@ -174,7 +176,9 @@ class StationAttestationOwnerTests(unittest.TestCase):
         self.assertFalse(run.call_args.kwargs["check"])
 
     def test_remote_attestation_rejects_invalid_known_hosts_contract(self) -> None:
-        from tooling.acceptance.core.attestation import _remote_source_identity
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            resolve_remote_source_identity,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -200,13 +204,13 @@ class StationAttestationOwnerTests(unittest.TestCase):
             )
 
             with patch(
-                "tooling.acceptance.core.attestation.REPO_ROOT",
+                "tooling.acceptance.provisioners.remote_source_identity.REPO_ROOT",
                 root,
             ), self.assertRaisesRegex(
                 BlockedError,
                 "SSH contract is invalid",
             ):
-                _remote_source_identity("station-three")
+                resolve_remote_source_identity("station-three")
 
     def test_workspace_digest_binds_file_content(self) -> None:
         # The IDE git wrapper writes .git/ai asynchronously; use native Git so
@@ -405,6 +409,28 @@ class StationAttestationOwnerTests(unittest.TestCase):
             )
             run.close()
 
+    def test_remote_attestation_requires_injected_source_identity_owner(
+        self,
+    ) -> None:
+        with patch(
+            "tooling.acceptance.core.attestation.read_service_version",
+            return_value={"build_commit": "abcdef123456"},
+        ):
+            with self.assertRaisesRegex(
+                BlockedError,
+                "missing its deployment source identity provider",
+            ):
+                produce_station_attestation(
+                    environment_id="test",
+                    run_id="run-1",
+                    service_id="station",
+                    station_url="http://station.example",
+                    profile_env={
+                        "PT_STATION_MODE": "remote",
+                        "PT_STATION_DEPLOY_ENV": "station-three",
+                    },
+                )
+
     def test_dirty_station_deployment_blocks(self) -> None:
         with patch(
             "tooling.acceptance.core.attestation.read_service_version",
@@ -424,6 +450,29 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
 
 class ActorFixtureOwnerTests(unittest.TestCase):
+    def test_reset_module_imports_in_fresh_process(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "from tooling.acceptance.fixtures.chat_native_reset "
+                    "import main"
+                ),
+            ],
+            cwd=Path(__file__).resolve().parents[3],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stderr or completed.stdout,
+        )
+
     @patch("tooling.acceptance.fixtures.chat_native_reset._remote_transport")
     def test_reset_target_remote_command_uses_remaining_budget(
         self,

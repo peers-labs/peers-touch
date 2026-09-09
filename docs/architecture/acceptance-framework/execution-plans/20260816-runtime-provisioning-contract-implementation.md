@@ -421,3 +421,37 @@ Closure evidence passes five focused provisioning/attestation regressions, the
 validator suites, `acceptance-runtime-provisioning-self`, and
 `acceptance-infra-validation` on one clean current-source checkpoint. No remote
 Station access or product Gate execution occurred.
+
+### 9.2 Fresh-Process Attestation Boundary Correction — 2026-09-09
+
+Exact-source C08 run
+`20260909T055708232887Z-6df7154a9628552defe39def315d74bf` exposed a WS3
+dependency inversion before Fixture mutation:
+
+```text
+fixtures.chat_native_reset
+  -> transports.ssh
+  -> core.__init__
+  -> core.provisioner
+  -> core.attestation
+  -> transports.ssh
+```
+
+Core attestation now accepts an explicit remote source-identity provider.
+Strict-known-host SSH acquisition lives in
+`provisioners/remote_source_identity.py`, and every concrete Provisioner
+injects that owner. The old Core-to-transport implementation is deleted.
+
+Closure requires:
+
+- the reset entry point imports in a fresh Python process;
+- remote identity tests preserve strict known-host verification and tracked
+  proto digest semantics;
+- provisioning owner/runtime, runner, validator, boundary, planner, gap,
+  coverage, quality, and skill checks pass;
+- `acceptance-runtime-provisioning-self` and
+  `acceptance-infra-validation` pass again on the committed clean checkpoint.
+
+This correction proves only generic Acceptance Infra. C08 remains product
+`UNPROVEN` until `agent-attachment-e2e` executes after the clean checkpoint is
+deployed through `make station`.
