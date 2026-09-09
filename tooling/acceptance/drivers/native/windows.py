@@ -345,6 +345,19 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             if self._window_process_id(hwnd) == process_id
         ]
 
+    def _file_chooser_window(
+        self,
+        process_id: int,
+    ) -> ctypes.wintypes.HWND | None:
+        return next(
+            (
+                hwnd
+                for hwnd in self._find_windows_by_pid(process_id)
+                if self._window_class_name(hwnd) == "#32770"
+            ),
+            None,
+        )
+
     @staticmethod
     def _process_name(process_id: int) -> str:
         """Return the executable name for *process_id*, or empty string."""
@@ -383,6 +396,16 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             return
         if self._is_window_minimized(hwnd):
             _user32.ShowWindow(hwnd, _SW_RESTORE)
+        self._activate_window(hwnd, process_id)
+
+    def _activate_window(
+        self,
+        hwnd: ctypes.wintypes.HWND,
+        process_id: int,
+    ) -> None:
+        foreground = _user32.GetForegroundWindow()
+        if foreground == hwnd:
+            return
         current_thread = _kernel32.GetCurrentThreadId()
         target_thread = _user32.GetWindowThreadProcessId(hwnd, None)
         foreground_thread = (
@@ -421,9 +444,10 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
                     False,
                 )
         foreground = _user32.GetForegroundWindow()
-        if not foreground or self._window_process_id(foreground) != process_id:
+        if foreground != hwnd:
             raise DriverError(
-                f"Win32 Native activation failed for process {process_id}"
+                "Win32 Native activation failed for process "
+                f"{process_id} window {hwnd!r}"
             )
 
     def post_mouse(
@@ -498,10 +522,27 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
         process_id: int,
     ) -> NativeControlSnapshot:
         process_id = _validated_process_id(process_id)
-        self.activate_process(process_id)
+        deadline = time.monotonic() + _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS
+        dialog_hwnd = self._file_chooser_window(process_id)
+        while not dialog_hwnd:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise DriverError(
+                    "Win32 Native file chooser window is not visible "
+                    f"for process {process_id}"
+                )
+            time.sleep(
+                min(
+                    _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS
+                    / _FILE_CHOOSER_FOCUS_STEPS,
+                    remaining,
+                )
+            )
+            dialog_hwnd = self._file_chooser_window(process_id)
+
+        self._activate_window(dialog_hwnd, process_id)
         self.reveal_file_chooser_location()
 
-        deadline = time.monotonic() + _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS
         last_control = self.focused_control(process_id)
         for _ in range(_FILE_CHOOSER_FOCUS_STEPS):
             if last_control.kind == "text-field":
@@ -547,7 +588,7 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             dialog_count = sum(
                 1
                 for hwnd in windows
-                if _user32.GetWindow(hwnd, _GW_OWNER) != 0
+                if self._window_class_name(hwnd) == "#32770"
             )
             actor_frontmost = foreground_pid == process_id
             actor_focused = focused_pid == process_id or actor_frontmost
@@ -572,7 +613,7 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
                 if kind == "application" and dialog_count > 0:
                     kind = "application-dialog"
 
-            # #region debug-point AF-AJ:file-dialog-focus
+            # #region debug-point AI-AJ:file-dialog-focus
             try:
                 foreground_thread_id = (
                     _user32.GetWindowThreadProcessId(foreground_hwnd, None)
@@ -654,8 +695,8 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
                 if dialog_visible:
                     event = {
                         "sessionId": "cross-station-direct-open",
-                        "runId": "post-fix",
-                        "hypothesisId": "AF-AJ",
+                        "runId": "post-fix-dialog",
+                        "hypothesisId": "AI-AJ",
                         "location": "windows.py:focused_control",
                         "msg": "[DEBUG] Win32 file-dialog focus hierarchy",
                         "data": {
