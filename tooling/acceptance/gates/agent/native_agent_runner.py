@@ -959,7 +959,7 @@ def run_journey(journey_name: str) -> int:
 
         attachment_journey = journey_name == "attachment"
         report = {
-            "artifactKind": "agent-native-journey-report",
+            "artifactKind": "acceptance-gate-evidence-report",
             "gateId": gate_id,
             "journey": journey_name,
             "status": status,
