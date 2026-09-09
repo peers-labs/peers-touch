@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v0.1
-> **Created**: 2026-08-17 | **Updated**: 2026-09-08
+> **Created**: 2026-08-17 | **Updated**: 2026-09-09
 > **Owner**: Peers-Touch Agent Team
 > **Plan type**: PRODUCT → DESIGN → PLAN → EXECUTE（Owner approval 已收到）
 > **Predecessor**: `20260816-lobehub-parity-full-landing.md`
@@ -21,22 +21,22 @@
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
-| Current workstream | F2 Runtime, Stream, Capability, And Portability |
-| Current step | Q4 C06 source closure complete；按本次 Goal 边界停在 Q5/Q6 之前 |
-| Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；2/14 workstreams evidence-complete |
-| Last completed | Q4 C06已闭合Station-owned immutable capability/budget snapshot、fresh source-version revalidation、unsupported/stale/budget零provider/tool执行与C06旧推断路径 |
-| Current action | Q4 source closure与独立完成度审计已闭合；按本次Goal边界停止，不进入Q5/Q6 |
-| Next action | 后续独立执行Q5 C10 platform-neutral client capability session；本次Goal不启动 |
-| Autonomous execution window | 无需 Owner 交互持续执行 F2 source closure；F2 验证通过后并行执行 F3 Context/Resource 与 F4 Tool/Observability；二者通过后执行 G-F preflight，仅在 runtime/artifact 前置条件齐备时运行 Foundation Native Gate |
-| Overnight execution queue | `Q1` 补齐 F2 old-path checker 对 C06/C10 的覆盖并冻结完整 consumer/deletion inventory；`Q2` 闭合 C03 Station-only runtime resolution 与 P12/CLI non-advertisement；`Q3` 闭合 C05 persisted monotonic events、SSE replay/snapshot/cancel、App/Browser parity并删除 Browser one-shot fallback；`Q4` 闭合 C06 admission capability/budget snapshot 与 zero-provider-call reject；`Q5` 闭合 C10 platform-neutral client capability session及Desktop/Browser/Mobile adapters；`Q6` 运行F2全套checks与zero-old-path proof；`Q7A` F2后实现F3 typed ContextLedger与opaque authorized resource refs；`Q7B` F2后并行实现F4 Station Tool decision authority、toolRuntime、fenced Rust ingress、usage/feedback/diagnostic replay并删除重复approval authority；`Q8` reconcile F3/F4并运行全套checks；`Q9` 运行G-F preflight，前置条件齐备时执行Foundation Native Gate；`Q10` 仅在C01-C10全部current-source `PROVEN`后进入W1 |
-| Parallel policy | F2内部Q1-Q6保持依赖顺序，独立只读审计/测试可并行；Q7A/Q7B是首个允许并行的实现lane；G-F是join barrier；W1必须等待G-F `PROVEN` |
-| Overnight stop conditions | 遇到`PRODUCT_AMENDMENT_REQUIRED`或`DESIGN_AMENDMENT_REQUIRED`停止对应lane；机械inventory/plan drift允许自修计划后继续；Native环境/凭据/artifact root不可用时记录`BLOCKED/UNPROVEN`并继续独立lane；禁止伪造证据、降级Gate、fallback/dual-write或静默扩域 |
-| Overnight non-scope | 不commit/push/PR，不版本升级，不做package/release build，不移除Canvas guard，不advertise P12/CLI，不在G-F前激活W1，不清理/删除无关`.dbg`、`test-results`与Acceptance reports |
+| Current workstream | Exact-source checkpoint, C08 product proof, and G-F Foundation proof |
+| Current step | Local checkpoint complete；remote C08/G-F preflight blocked by `ACCEPTANCE_INFRA_REQUIRED` before Station access |
+| Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
+| Last completed | F2 Q5/C10 production Chat session binding、strict Desktop/Browser platform selection、Q6 aggregate checks与C03/C05/C06/C10 zero-old-path proof |
+| Current action | Hand off the generic remote-attestation and provisioning self-validation defects to Acceptance Infra ownership |
+| Next action | After Acceptance Infra passes on the same checkpoint, verify `chat-native-disposable`, deploy exact source, prove C08, then run G-F |
+| Autonomous execution window | Read-only source and Acceptance dependency audits may run in parallel；the integrator remains the sole writer；checkpoint, deploy, C08, and G-F execute serially；stop before downstream workstreams |
+| Overnight slice result | Lane A dry-run safety、F2 Q5/Q6与F3/C08 source/Gate wiring已闭合；W2/W4/W5/W7/W8b只完成read-only frontier inventory；未启动runtime product Gate |
+| Parallel policy | Source and Acceptance prerequisite audits are read-only；all source edits, commits, Expected HEAD refreshes, deployment, Fixture reset, and product Gates have one owner and run serially |
+| Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
+| Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | Q4无阻塞；Desktop/Rust全量检查仍受当前worktree既有跨模块合同缺口阻断；Foundation Native Gate保持`UNPROVEN` |
+| Blockers | `ACCEPTANCE_INFRA_REQUIRED`: remote source attestation currently uses `StrictHostKeyChecking=no` while its self-test requires strict host verification；the provisioning self-Gate also retains source-digest、local Desktop Gateway Fixture、and launch-context failures。No Station access occurred；C08/G-F and all downstream work remain `UNPROVEN` |
 | Decisions required | none |
-| Evidence | Q4：catalog/DB显式capability facts生成稳定source-version；完整snapshot与effective budget在provider前一次性持久化，幂等重入必须完全匹配且禁止覆盖；主调用、retry、compression summary、resumed continuation与审批后的Station Tool handler统一校验pinned provenance及完整provider-request input budget，summary失败不再继续主调用。Provider adapter要求Turn authority三元组完整，并在attempt reservation后再次核验provider/source version。旧`FlushMemories`、重复`runKnowledgeSalvage` provider/tool executor及无调用方的unguarded follow-up provider helper已删除；delegation depth与restricted toolset固化到ToolBatch，worker从persisted TurnAttempt恢复actor/runtime/budget并创建真实child conversation，child继续使用lower-only budget与授权工具交集。unsupported thinking/streaming/tools、stale provider/model source、invalid/explicit-zero/delegation/wall/input/tool/step/attempt budget均在对应provider网络或tool handler前fail-closed；无authoritative pricing source时显式cost budget在provider前拒绝，provider超额output在任何后续Tool/continuation前终止。`go test ./app/subserver/agent/... -count=1 -timeout 120s`与focused race tests PASS；C06 checker `unresolvedCount=0`、`unregisteredMatches=0`；C06 detector test PASS；Go style与diff check PASS；Desktop provider projection focused tests 3 PASS；最终独立源码审计无in-scope P0/P1。Rust target格式PASS，但crate test受当前worktree既有Auth/Chat/CapabilityWorker/OSS合同缺口阻断；Desktop全量typecheck与非C06 capability tests同样受既有未闭合API/Acceptance合同阻断。Q5/Q6与产品Gate均未执行，保持`UNPROVEN` |
-| Last updated | 2026-09-03 |
+| Evidence | F2：Station focused checks PASS；Desktop typecheck与588 Vitest PASS（1个环境用例skip）；Rust `agent_turn` 23 PASS；Mobile Agent contract 15 PASS；C03/C05/C06/C10 scanner为0 unresolved/0 unregistered。C08：Station attachment/context checks PASS；275个scenario/oracle/contract/native-static/old-path/provisioner tests PASS；C04/C08 scanner为0 unresolved/0 unregistered；Acceptance planner映射包含`agent-attachment-e2e`。Registered `acceptance-plan-self`、`desktop-check`与`station-agent-unit` PASS；`acceptance-infra-validation`因current dirty source对应latest evidence过期而FAIL，`acceptance-runtime-provisioning-self`因8个既有非C08用例FAIL。所有environment product Gates NOT RUN，Foundation/G-F与C08 product proof保持`UNPROVEN` |
+| Last updated | 2026-09-09 |
 
 ---
 
@@ -420,7 +420,8 @@ Gate:
 | Phase 1 Architecture Contract | complete | 2026-08-17 | D14-D18/C11-C15/A15-A20 reconciliation 与独立 DESIGN review 通过 |
 | Execution W0 Contract/Evidence/Gates | complete | 2026-08-18 | Proto-first contracts、external candidate/proof chain、matrix、D11、locale 与七 Gate contracts 完成；产品 Gate 仍 `UNPROVEN` |
 | Execution F1 Agent/Conversation Authority | complete | 2026-08-18 | C01/C02 source closure、D11 guard、Desktop full check 与 old-path deletion evidence PASS |
-| Execution F2 Runtime/Stream/Capability/Portability | in progress | — | Q4 C06 source closure complete；Q5/Q6未进入 |
+| Execution F2 Runtime/Stream/Capability/Portability | complete | 2026-09-09 | Q4 C06与Q5/C10 source closure完成；Station、Desktop、Rust、Mobile与C03/C05/C06/C10 zero-old-path checks通过；product proof仍由G-F负责 |
+| Execution F3 Context/Resource Intelligence | source complete / product proof unproven | — | C04 core与C08 production source、stable Gate、Home Station provisioning和old-path inventory闭合；`agent-attachment-e2e`未运行 |
 | Phase 2 Home | pending execution dependencies | — | confirmed prototype 仅证明产品意图；生产能力 `UNPROVEN` |
 | Phase 3 Capability Plane | pending | — | 现有 foundations 不等于 product closure |
 | Phase 4 MCP | pending | — | 需要真实 disposable MCP |

@@ -1137,7 +1137,9 @@
           "apps/desktop/src/services/identityPipeline.ts",
           "apps/desktop/src/store/chat.ts",
           "apps/desktop/src/store/chatOperationEvent.test.ts",
-          "apps/desktop/src/store/session.ts"
+          "apps/desktop/src/store/session.ts",
+          "tooling/acceptance/gates/agent/native_agent_runner.py",
+          "tooling/acceptance/provisioners/home_station.py"
         ]
       },
       "require": [
@@ -1160,7 +1162,9 @@
           "apps/station/app/subserver/oss/service/file_service.go",
           "apps/desktop/src/services/agentAttachments.ts",
           "apps/desktop/src/components/composer/*Attachment*",
-          "apps/desktop/src/components/composer/useAgentAttachmentDrafts.ts"
+          "apps/desktop/src/components/composer/useAgentAttachmentDrafts.ts",
+          "tooling/acceptance/gates/agent/native_agent_runner.py",
+          "tooling/acceptance/provisioners/home_station.py"
         ]
       },
       "require": [

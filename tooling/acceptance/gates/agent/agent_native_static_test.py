@@ -53,6 +53,9 @@ TCP_FAULT_PROXY = (
     / "agent"
     / "tcp_fault_proxy.py"
 )
+HOME_STATION_PROVISIONER = (
+    ROOT / "tooling" / "acceptance" / "provisioners" / "home_station.py"
+)
 DESKTOP_HTTP_GATEWAY = (
     ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "http_gateway" / "mod.rs"
 )
@@ -66,6 +69,7 @@ DESKTOP_ASSISTANT_MESSAGE = (
     / "messages"
     / "AssistantMessage.tsx"
 )
+DESKTOP_CHAT_INPUT = ROOT / "apps" / "desktop" / "src" / "components" / "ChatInput.tsx"
 DESKTOP_APP_RUNTIME = (
     ROOT / "apps" / "desktop" / "src" / "services" / "appRuntime.ts"
 )
@@ -142,6 +146,9 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
     def test_runner_cleans_up_process_and_driver(self) -> None:
         self.assertIn("driver.quit()", self.source)
         self.assertIn("os.killpg", self.source)
+        self.assertIn("shutil.rmtree(self.run_root", self.source)
+        self.assertNotIn("shutil.rmtree(self.storage_root", self.source)
+        self.assertIn("self.desktop_log_bytes", self.source)
         self.assertIn("portsReleased", self.source)
         self.assertIn("storageReleased", self.source)
 
@@ -164,6 +171,40 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertIn('"stream-resilience": "agent-stream-resilience-e2e"', self.source)
         self.assertIn("parser.add_argument(", self.source)
         self.assertIn("runner.run_stream_resilience()", self.source)
+
+    def test_runner_dispatches_attachment_through_foundation_oracle(self) -> None:
+        self.assertIn('"attachment": "agent-attachment-e2e"', self.source)
+        self.assertIn("runner.run_attachment()", self.source)
+        self.assertIn('("AS-F05", "attachment_admission")', self.source)
+        self.assertIn(
+            '("BASE-ATTACHMENT_REJECTED", "attachment_rejection_surface")',
+            self.source,
+        )
+        self.assertIn("assert_group_one_capture(", self.source)
+        self.assertIn('"attachment-evidence"', self.source)
+
+    def test_runner_uses_canonical_station_service_and_profile_credentials(
+        self,
+    ) -> None:
+        self.assertIn("require_runtime_service(", self.source)
+        self.assertNotIn('self.runtime_manifest.get("station")', self.source)
+        self.assertIn('"CHAT_NATIVE_DEMO_PASSWORD"', self.source)
+        self.assertIn('"PT_AGENT_PROVIDER_API_KEY"', self.source)
+
+    def test_home_station_provisions_supported_agent_journeys(self) -> None:
+        source = HOME_STATION_PROVISIONER.read_text(encoding="utf-8")
+        for gate_id in (
+            "agent-attachment-e2e",
+            "agent-stream-resilience-e2e",
+        ):
+            with self.subTest(gate_id=gate_id):
+                self.assertIn(f'"{gate_id}": ("alice",)', source)
+                self.assertIn(f'"{gate_id}",', source)
+        self.assertIn("def _agent_native_manifest(", source)
+        self.assertIn(
+            'credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD"',
+            source,
+        )
 
     def test_runner_injects_transport_fault(self) -> None:
         proxy_source = TCP_FAULT_PROXY.read_text(encoding="utf-8")
@@ -1560,11 +1601,20 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn("startObservedFoundationTurn", self.source)
         self.assertIn("foundationDiagnosticReplay", self.source)
+        self.assertIn("historyAttachment.click()", self.source)
+        self.assertIn("receiverInteraction: historyAction", self.source)
+        self.assertIn("openedUrlHash", self.source)
         self.assertNotIn("mockFoundationAttachment", self.source)
         gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
         self.assertIn('"oss_upload_agent_attachment_bytes"', gateway)
         self.assertIn('"oss_resolve_url"', gateway)
         self.assertIn('"oss_delete_file"', gateway)
+
+    def test_agent_file_picker_uses_the_portable_attachment_mime_contract(self) -> None:
+        chat_input = DESKTOP_CHAT_INPUT.read_text(encoding="utf-8")
+        self.assertIn("AGENT_ATTACHMENT_ACCEPT", chat_input)
+        self.assertIn("accept={AGENT_ATTACHMENT_ACCEPT}", chat_input)
+        self.assertNotIn('accept="image/*"', chat_input)
 
     def test_attachment_rejection_uses_real_composer_and_remove_action(self) -> None:
         agent_turn = DESKTOP_AGENT_TURN.read_text(encoding="utf-8")
