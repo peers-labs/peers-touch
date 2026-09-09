@@ -50,8 +50,8 @@
 | AF | `GetGUIThreadInfo` fails or returns no focused HWND for the foreground file-dialog thread. | Medium | Low | Rejected by `.dbg/trae-debug-log-cross-station-direct-open.ndjson` line 2: `guiThreadInfoOk=true`, with nonzero active, focus, and caret HWNDs. |
 | AG | `GetGUIThreadInfo` succeeds, but the focused HWND is a non-`Edit` shell control. | High | Low | Rejected by debug line 2: the focused HWND class is exactly `Edit`. |
 | AH | The editable location control exists deeper in the dialog child tree instead of being the direct focused HWND. | High | Low | Rejected by debug line 2: `guiFocusHwnd` is the `Edit`; its ancestors are `ComboBox`, `ComboBoxEx32`, `msctls_progress32`, `Address Band Root`, and the `#32770` dialog. |
-| AI | The foreground file dialog belongs to a process other than the Tauri actor. | Medium | Low | Inconclusive for Tauri ownership; the synthetic run intentionally used separate opener and inspector processes. |
-| AJ | The file dialog is actor-owned but has no Win32 owner handle, so `dialog_count` remains zero. | Medium | Low | Rejected for the common-dialog shape by debug line 2: `foregroundOwnerHwnd` is nonzero. |
+| AI | The foreground file dialog belongs to a process other than the Tauri actor. | Medium | Low | Rejected by exact-source run `20260909T134440112983Z-0e5b64bed281266f6ab66e5dff2bfb51`: actor-window enumeration for requested PID 9824 contains the top-level `#32770` chooser. |
+| AJ | The file dialog is actor-owned but has no Win32 owner handle, so `dialog_count` remains zero. | Medium | Low | Confirmed by exact-source debug lines 1-6: the actor-owned `#32770` chooser is present with `owner=0`, while the owner-handle heuristic reports `dialogCount=0`. |
 | AK | Polling `focused_control` through a new scheduled worker steals foreground focus before observation. | High | Low | Confirmed by debug line 1 versus line 2: the standalone worker observes its own foreground `ConsoleWindowClass` and no focused HWND, while explicitly activating the dialog in the same worker immediately resolves the expected `Edit`. |
 | AL | Product Closure's 30-second login harness budget expires while a valid cold-login bootstrap is still progressing. | High | Low | Confirmed by run `20260909T124044141301Z-b80a2a22db8ae6bb1580976c5bac1c53`: authentication succeeded, the lifecycle reached ready, critical and deferred runtime bootstrap completed, and final Chat hydration was still progressing near the 30-second boundary. |
 | AM | Alice's Station authentication or token validation failed. | Low | Low | Rejected: `auth_login`, repeated `auth_validate_token`, profile sync, and authenticated actor projection all succeeded. |
@@ -659,3 +659,40 @@ The failed run remains `PARTIAL/UNPROVEN`; cleanup is `DONE/PROVEN`. The NDJSON
 file remains empty because the run never reached the chooser. The next
 comparison must commit without push, deploy the exact source, and rerun Product
 Closure only.
+
+Exact-source Product Closure run
+`20260909T134440112983Z-0e5b64bed281266f6ab66e5dff2bfb51`
+at commit `609c3eeeef953bd0d1679435fc9e67c50c5ed360`, runtime-cell
+run `20260909t134532834443z-7d55104d739751d7`, and binary SHA-256
+`442f291821e9db905466b152cfa3773a764901abd0597741c7ac0ad6c0e301f3`
+proves the cold-login budget correction and again advances through Direct,
+Group, bidirectional transcript/thread, toolbar geometry, reaction, identity,
+and Station attribution.
+
+The first failure returns to `settings.background.ui`. Six post-fix debug
+events establish the exact Win32 boundary:
+
+- the actor-owned top-level chooser is present with class `#32770`;
+- that chooser has no owner handle, so the owner-handle heuristic returns
+  `dialogCount=0`;
+- the first worker observes its own foreground `ConsoleWindowClass`;
+- exact process activation then chooses the Tauri main window, not the chooser;
+- focus remains in the WebView `Chrome_WidgetWin_1`, so `Ctrl+L` never reaches
+  the common dialog.
+
+The correction now identifies the chooser by its canonical top-level
+`#32770` class, activates that exact HWND in the same worker, sends `Ctrl+L`,
+and observes the focused control before the worker exits. Dialog counting uses
+the same class-based truth rather than owner handles. Focused verification
+passes 94 tests with one intentional skip plus Python compilation and diff
+checks. The final dirty-range local aggregate
+`20260909T145654292312Z-d638f0bf31534abdceeff993542a8143`
+passes the four approved Chat Gates and `acceptance-plan-self`; direct
+`acceptance-infra-validation`
+`20260909T145755730617Z-be4504f326fdf37aeda73d28e030c631`
+is structurally valid.
+
+The run remains `PARTIAL/UNPROVEN`; cleanup is `DONE/PROVEN`. Instrumentation
+is retained under the next `post-fix-dialog` comparison run. The next action is
+to checkpoint without push, deploy exact source, and rerun Product Closure
+only.
