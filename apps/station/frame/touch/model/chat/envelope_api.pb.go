@@ -250,8 +250,8 @@ func (x *ResumeEnvelopesRequest) GetAfterCursor() string {
 }
 
 type ResumeEnvelopesResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Items         []*DeviceInboxItem     `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Items         []*DurableDeviceInboxItem `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -286,7 +286,7 @@ func (*ResumeEnvelopesResponse) Descriptor() ([]byte, []int) {
 	return file_domain_chat_envelope_api_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ResumeEnvelopesResponse) GetItems() []*DeviceInboxItem {
+func (x *ResumeEnvelopesResponse) GetItems() []*DurableDeviceInboxItem {
 	if x != nil {
 		return x.Items
 	}
@@ -377,7 +377,7 @@ var File_domain_chat_envelope_api_proto protoreflect.FileDescriptor
 
 const file_domain_chat_envelope_api_proto_rawDesc = "" +
 	"\n" +
-	"\x1edomain/chat/envelope_api.proto\x12\x19peers_touch.model.chat.v1\x1a\x1adomain/chat/envelope.proto\"_\n" +
+	"\x1edomain/chat/envelope_api.proto\x12\x19peers_touch.model.chat.v1\x1a\x1adomain/chat/envelope.proto\x1a\x17domain/chat/queue.proto\"_\n" +
 	"\x15SubmitEnvelopeRequest\x12F\n" +
 	"\benvelope\x18\x01 \x01(\v2*.peers_touch.model.chat.v1.StationEnvelopeR\benvelope\"9\n" +
 	"\x16SubmitEnvelopeResponse\x12\x1f\n" +
@@ -389,9 +389,9 @@ const file_domain_chat_envelope_api_proto_rawDesc = "" +
 	"\x13AckEnvelopeResponse\"X\n" +
 	"\x16ResumeEnvelopesRequest\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12!\n" +
-	"\fafter_cursor\x18\x02 \x01(\tR\vafterCursor\"[\n" +
-	"\x17ResumeEnvelopesResponse\x12@\n" +
-	"\x05items\x18\x01 \x03(\v2*.peers_touch.model.chat.v1.DeviceInboxItemR\x05items\"j\n" +
+	"\fafter_cursor\x18\x02 \x01(\tR\vafterCursor\"b\n" +
+	"\x17ResumeEnvelopesResponse\x12G\n" +
+	"\x05items\x18\x01 \x03(\v21.peers_touch.model.chat.v1.DurableDeviceInboxItemR\x05items\"j\n" +
 	" FederationDeliverEnvelopeRequest\x12F\n" +
 	"\benvelope\x18\x01 \x01(\v2*.peers_touch.model.chat.v1.StationEnvelopeR\benvelope\"#\n" +
 	"!FederationDeliverEnvelopeResponseBGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
@@ -419,11 +419,11 @@ var file_domain_chat_envelope_api_proto_goTypes = []any{
 	(*FederationDeliverEnvelopeRequest)(nil),  // 6: peers_touch.model.chat.v1.FederationDeliverEnvelopeRequest
 	(*FederationDeliverEnvelopeResponse)(nil), // 7: peers_touch.model.chat.v1.FederationDeliverEnvelopeResponse
 	(*StationEnvelope)(nil),                   // 8: peers_touch.model.chat.v1.StationEnvelope
-	(*DeviceInboxItem)(nil),                   // 9: peers_touch.model.chat.v1.DeviceInboxItem
+	(*DurableDeviceInboxItem)(nil),            // 9: peers_touch.model.chat.v1.DurableDeviceInboxItem
 }
 var file_domain_chat_envelope_api_proto_depIdxs = []int32{
 	8, // 0: peers_touch.model.chat.v1.SubmitEnvelopeRequest.envelope:type_name -> peers_touch.model.chat.v1.StationEnvelope
-	9, // 1: peers_touch.model.chat.v1.ResumeEnvelopesResponse.items:type_name -> peers_touch.model.chat.v1.DeviceInboxItem
+	9, // 1: peers_touch.model.chat.v1.ResumeEnvelopesResponse.items:type_name -> peers_touch.model.chat.v1.DurableDeviceInboxItem
 	8, // 2: peers_touch.model.chat.v1.FederationDeliverEnvelopeRequest.envelope:type_name -> peers_touch.model.chat.v1.StationEnvelope
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
@@ -438,6 +438,7 @@ func file_domain_chat_envelope_api_proto_init() {
 		return
 	}
 	file_domain_chat_envelope_proto_init()
+	file_domain_chat_queue_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

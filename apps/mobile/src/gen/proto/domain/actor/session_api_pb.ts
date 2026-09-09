@@ -62,4 +62,3 @@ export type VerifySessionResponse = Message<"peers.actor.VerifySessionResponse">
  */
 export const VerifySessionResponseSchema: GenMessage<VerifySessionResponse> = /*@__PURE__*/
   messageDesc(file_domain_actor_session_api, 1);
-

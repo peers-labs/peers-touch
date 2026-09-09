@@ -10,14 +10,28 @@ from tooling.acceptance.core import (
 from .home_station import HomeStationProvisioner
 from .local_desktop_gateway import LocalDesktopGatewayProvisioner
 from .mobile_native import MobileNativeProvisioner
-from .mobile_simulator import MobileSimulatorProvisioner
+from .mobile_simulator import (
+    MobileIOSLayoutSimulatorProvisioner,
+    MobileSimulatorProvisioner,
+    MobileSocialSimulatorProvisioner,
+    MobileStationLifecycleSimulatorProvisioner,
+)
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     HomeStationProvisioner.environment_id: HomeStationProvisioner,
     LocalDesktopGatewayProvisioner.environment_id: LocalDesktopGatewayProvisioner,
     MobileNativeProvisioner.environment_id: MobileNativeProvisioner,
+    MobileIOSLayoutSimulatorProvisioner.environment_id: (
+        MobileIOSLayoutSimulatorProvisioner
+    ),
     MobileSimulatorProvisioner.environment_id: MobileSimulatorProvisioner,
+    MobileSocialSimulatorProvisioner.environment_id: (
+        MobileSocialSimulatorProvisioner
+    ),
+    MobileStationLifecycleSimulatorProvisioner.environment_id: (
+        MobileStationLifecycleSimulatorProvisioner
+    ),
 }
 
 
@@ -39,8 +53,11 @@ def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
 __all__ = [
     "HomeStationProvisioner",
     "LocalDesktopGatewayProvisioner",
+    "MobileIOSLayoutSimulatorProvisioner",
     "MobileNativeProvisioner",
     "MobileSimulatorProvisioner",
+    "MobileSocialSimulatorProvisioner",
+    "MobileStationLifecycleSimulatorProvisioner",
     "get_provisioner",
     "get_runtime_cell_lifecycle",
 ]

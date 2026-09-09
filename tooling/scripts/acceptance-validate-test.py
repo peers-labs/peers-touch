@@ -59,6 +59,41 @@ class GateLaunchContractTests(unittest.TestCase):
             {"legacy-gate", "context-gate"},
         )
 
+    def test_discovers_registered_environment_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            acceptance_root = Path(temp_dir)
+            environment_dir = acceptance_root / "environments"
+            environment_dir.mkdir()
+            (environment_dir / "synthetic-runtime.yaml").write_text(
+                '{"id":"synthetic-runtime"}\n',
+                encoding="utf-8",
+            )
+
+            MODULE.validate_gate_catalog(
+                {
+                    "environment-gate": {
+                        "command": "true",
+                        "environment": "synthetic-runtime",
+                        "tier": "env-evidence",
+                    }
+                },
+                {"environment-gate"},
+                acceptance_root=acceptance_root,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "invalid environment"):
+                MODULE.validate_gate_catalog(
+                    {
+                        "unknown-environment-gate": {
+                            "command": "true",
+                            "environment": "not-registered",
+                            "tier": "env-evidence",
+                        }
+                    },
+                    {"unknown-environment-gate"},
+                    acceptance_root=acceptance_root,
+                )
+
     def test_rejects_invalid_launch_forms(self) -> None:
         cases = [
             (

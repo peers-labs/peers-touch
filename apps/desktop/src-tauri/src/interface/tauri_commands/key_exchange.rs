@@ -8,6 +8,7 @@ use crate::application::session_resolver;
 use crate::contracts::{KeyExchangeFetchInput, KeyExchangeUploadInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
+use crate::messaging::{actor_device_parts, actor_device_ref, actor_ref};
 use crate::model::key_exchange as kemodel;
 use crate::state::AppState;
 use reqwest::Method;
@@ -65,19 +66,31 @@ pub fn key_exchange_upload_bundle(
         }
     };
     station_client::set_device_id(device_id.clone());
-    let req = kemodel::UploadKeyBundleRequest {
-        ik_pub: input.ik_pub,
-        spk_id: input.spk_id,
-        spk_pub: input.spk_pub,
-        spk_sig: input.spk_sig,
-        opk_ids: input.opk_ids,
-        opk_pubs: input.opk_pubs,
-        device_id,
-        supported_versions: vec![1],
+    if input.opk_ids.len() != input.opk_pubs.len() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "one-time prekey IDs and public keys must have equal lengths",
+            None,
+        );
+    }
+    let one_time_pre_keys = input
+        .opk_ids
+        .into_iter()
+        .zip(input.opk_pubs)
+        .map(|(key_id, public_key)| kemodel::DirectOneTimePreKey { key_id, public_key })
+        .collect();
+    let req = kemodel::UploadDirectKeyBundleRequest {
+        device: Some(actor_device_ref(&actor_ptid, &device_id)),
+        identity_key_public: input.ik_pub,
+        signed_pre_key_id: input.spk_id,
+        signed_pre_key_public: input.spk_pub,
+        signed_pre_key_signature: input.spk_sig,
+        one_time_pre_keys,
+        supported_wire_versions: vec![1],
     };
     match station_client::request_proto::<
-        kemodel::UploadKeyBundleRequest,
-        kemodel::UploadKeyBundleResponse,
+        kemodel::UploadDirectKeyBundleRequest,
+        kemodel::UploadDirectKeyBundleResponse,
     >(
         Method::POST,
         "/key-exchange/keys/bundle",
@@ -103,14 +116,14 @@ pub fn key_exchange_fetch_bundle(
     if input.ptid.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "ptid is required", None);
     }
-    let req = kemodel::FetchKeyBundleRequest {
-        ptid: input.ptid,
-        device_id: input.device_id.unwrap_or_default(),
+    let req = kemodel::FetchDirectKeyBundlesRequest {
+        actor: Some(actor_ref(&input.ptid)),
+        target_device_id: input.device_id.unwrap_or_default(),
         home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
     };
     let r = match station_client::request_proto::<
-        kemodel::FetchKeyBundleRequest,
-        kemodel::FetchKeyBundleResponse,
+        kemodel::FetchDirectKeyBundlesRequest,
+        kemodel::FetchDirectKeyBundlesResponse,
     >(
         Method::POST,
         "/key-exchange/keys/bundle/fetch",
@@ -121,25 +134,29 @@ pub fn key_exchange_fetch_bundle(
         Ok(v) => v,
         Err(e) => return e.into_app_result("Station request failed"),
     };
-    let bundles_json: Vec<Value> = r
-        .bundles
-        .iter()
-        .map(|b| {
-            json!({
-                "ptid": b.ptid,
-                "device_id": b.device_id,
-                "ik_pub": b.ik_pub,
-                "fingerprint": wire::identity_fingerprint_hex(&b.ik_pub),
-                "spk_id": b.spk_id,
-                "spk_pub": b.spk_pub,
-                "spk_sig": b.spk_sig,
-                "opks": b.opks,
-                "opk_ids": b.opk_ids,
-                "published_at_unix_ms": b.published_at_unix_ms,
-                "supported_versions": b.supported_versions,
-            })
-        })
-        .collect();
+    let mut bundles_json = Vec::with_capacity(r.bundles.len());
+    for bundle in &r.bundles {
+        let Some((ptid, device_id)) = bundle.device.as_ref().and_then(actor_device_parts) else {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Station returned a key bundle without a canonical device reference",
+                None,
+            );
+        };
+        bundles_json.push(json!({
+            "ptid": ptid,
+            "device_id": device_id,
+            "ik_pub": bundle.identity_key_public,
+            "fingerprint": wire::identity_fingerprint_hex(&bundle.identity_key_public),
+            "spk_id": bundle.signed_pre_key_id,
+            "spk_pub": bundle.signed_pre_key_public,
+            "spk_sig": bundle.signed_pre_key_signature,
+            "opks": bundle.one_time_pre_keys.iter().map(|key| &key.public_key).collect::<Vec<_>>(),
+            "opk_ids": bundle.one_time_pre_keys.iter().map(|key| key.key_id).collect::<Vec<_>>(),
+            "published_at_unix_ms": bundle.published_at_unix_ms,
+            "supported_versions": bundle.supported_wire_versions,
+        }));
+    }
     to_stub(
         "key_exchange_fetch_bundle",
         json!({ "bundles": bundles_json }),

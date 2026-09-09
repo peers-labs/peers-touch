@@ -19,6 +19,8 @@ _SAFE_EXACT_KEYS = frozenset(
     {
         "cache_tokens",
         "context_tokens",
+        "error_key",
+        "fence_token",
         "fencing_token",
         "has_token_accounting",
         "idempotency_key_hash",
@@ -31,6 +33,7 @@ _SAFE_EXACT_KEYS = frozenset(
         "public_key",
         "public_keys",
         "reasoning_tokens",
+        "resource_key",
         "runtime_tuple_key",
         "scenario_key",
         "secret_leak_count",
@@ -155,7 +158,8 @@ _SENSITIVE_COMMAND_FLAG = re.compile(
 )
 _SENSITIVE_LINE_ASSIGNMENT = re.compile(
     rf"(?im)(?P<prefix>^\s*(?:{_SENSITIVE_FIELD_PATTERN})\s+)"
-    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\r\n]+)"
+    rf"(?P<value>{_REDACTED_VALUE_PATTERN}|"
+    r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\r\n]+)"
 )
 _AUTHORIZATION_HEADER = re.compile(
     r"(?im)(\b(?:proxy[-_\s]?authorization|authorization)\s*[:=]\s*)[^\r\n]+"

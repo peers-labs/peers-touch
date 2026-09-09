@@ -2,18 +2,22 @@ package conversation
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
+	enginedomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/engine/domain"
 )
 
-// ConversationGroupRoleAdapter adapts the conversation Repository to satisfy
-// social_gate.GroupRoleQuerier by looking up member records from the store.
+// ConversationGroupRoleAdapter resolves policy state from the Conversation
+// authority used by canonical command routes.
 type ConversationGroupRoleAdapter struct {
-	repo Repository
+	authority conversationAuthorityReader
 }
 
-// NewConversationGroupRoleAdapter creates a role querier backed by the given repository.
-func NewConversationGroupRoleAdapter(repo Repository) *ConversationGroupRoleAdapter {
-	return &ConversationGroupRoleAdapter{repo: repo}
+// NewConversationGroupRoleAdapter creates a role querier backed by the canonical
+// Conversation authority.
+func NewConversationGroupRoleAdapter(authority conversationAuthorityReader) *ConversationGroupRoleAdapter {
+	return &ConversationGroupRoleAdapter{authority: authority}
 }
 
 // GetMemberStatus returns the role, status, and mute state for a member within
@@ -23,16 +27,31 @@ func NewConversationGroupRoleAdapter(repo Repository) *ConversationGroupRoleAdap
 // If the member is not found, returns (0, 0, false, nil) — caller interprets
 // a zero status as "not a member".
 func (a *ConversationGroupRoleAdapter) GetMemberStatus(ctx context.Context, conversationID, ptid string) (role int32, status int32, muted bool, err error) {
-	member, err := a.repo.GetMember(ctx, conversationID, ptid)
-	if err != nil {
-		return 0, 0, false, fmt.Errorf("gate: get member failed: %w", err)
-	}
-	if member == nil {
-		// Not found: not a member
+	if a.authority == nil {
 		return 0, 0, false, nil
 	}
+	authorityMember, err := a.authority.GetMember(ctx, conversationID, ptid)
+	if errors.Is(err, enginedomain.ErrNotFound) {
+		return 0, 0, false, nil
+	}
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("gate: get authority member failed: %w", err)
+	}
+	if authorityMember == nil || !authorityMember.Active {
+		return 0, 0, false, nil
+	}
+	return authorityMemberRole(authorityMember.Role), statusActive, false, nil
+}
 
-	return int32(member.Role), int32(member.MemberStatus), member.Muted, nil
+func authorityMemberRole(role string) int32 {
+	switch role {
+	case "owner":
+		return roleOwner
+	case "admin":
+		return roleAdmin
+	default:
+		return roleMember
+	}
 }
 
 // Compile-time interface conformance check.

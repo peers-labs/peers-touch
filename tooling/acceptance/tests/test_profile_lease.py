@@ -12,6 +12,7 @@ from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.lease import (
     ProfileLease,
     ProfileLeaseUnavailable,
+    RemoteGitSourceLease,
     RemoteGitSourceLeaseUnavailable,
     _remote_git_source_lease_script,
 )
@@ -131,6 +132,52 @@ class ProfileLeaseTests(unittest.TestCase):
 
 
 class RemoteGitSourceLeaseTests(unittest.TestCase):
+    def test_ssh_transport_imports_first_in_fresh_process(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "from tooling.acceptance.transports.ssh "
+                    "import SshTarget, SshTransport;"
+                    "from tooling.acceptance.core.attestation "
+                    "import source_workspace_digest;"
+                    "from tooling.acceptance.core.lease "
+                    "import RemoteGitSourceLease"
+                ),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_remote_lease_uses_strict_shared_ssh_transport(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            known_hosts = Path(directory) / "known_hosts"
+            known_hosts.write_text(
+                "station.example ssh-ed25519 test-key\n",
+                encoding="utf-8",
+            )
+            lease = RemoteGitSourceLease(
+                "station-three",
+                "gate-owner",
+                host="station.example",
+                user="acceptance",
+                deploy_path="station-three",
+                port=2222,
+                known_hosts_file=str(known_hosts),
+            )
+
+        command = lease._command()
+        self.assertIn("StrictHostKeyChecking=yes", command)
+        self.assertNotIn("StrictHostKeyChecking=no", command)
+        self.assertIn(f"UserKnownHostsFile={known_hosts}", command)
+        self.assertIn("2222", command)
+
     def _start_lease(
         self,
         home: str,
@@ -247,6 +294,8 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
                         "PT_DEPLOY_HOST=station.example",
                         "PT_DEPLOY_USER=acceptance",
                         "PT_DEPLOY_PATH=station-three",
+                        "PT_DEPLOY_SSH_PORT=2222",
+                        "PT_DEPLOY_KNOWN_HOSTS_FILE=/tmp/known-hosts",
                     )
                 )
                 + "\n",
@@ -276,8 +325,8 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
             host="station.example",
             user="acceptance",
             deploy_path="station-three",
-            port=22,
-            known_hosts_file="",
+            port=2222,
+            known_hosts_file="/tmp/known-hosts",
         )
         lease.acquire.assert_called_once_with()
         lease.release.assert_called_once_with()
