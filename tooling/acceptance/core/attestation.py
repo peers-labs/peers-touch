@@ -10,6 +10,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from tooling.acceptance.transports.ssh import SshTarget, SshTransport
+
 from ._paths import REPO_ROOT
 from .errors import BlockedError, ProvisioningError
 from .evidence_store import (
@@ -17,6 +19,11 @@ from .evidence_store import (
     write_current_artifact,
 )
 from .provisioning import ServiceAttestation, utc_now
+
+
+_GENERATED_COVERAGE_REPORT = (
+    "docs/architecture/acceptance-framework/coverage-report.md"
+)
 
 
 def commits_match(actual: str, expected: str) -> bool:
@@ -28,10 +35,29 @@ def commits_match(actual: str, expected: str) -> bool:
 
 
 def source_proto_digest(root: Path) -> str:
+    tracked = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--",
+            "model/domain",
+            "apps/desktop/src/gen/proto",
+            "apps/station",
+        ],
+        cwd=root,
+        capture_output=True,
+        check=True,
+    ).stdout.split(b"\0")
     paths = [
-        *(root / "model" / "domain").rglob("*.proto"),
-        *(root / "apps" / "desktop" / "src" / "gen" / "proto").rglob("*.ts"),
-        *(root / "apps" / "station").rglob("*.pb.go"),
+        root / raw_path.decode()
+        for raw_path in tracked
+        if raw_path
+        and (
+            raw_path.endswith(b".proto")
+            or raw_path.endswith(b".ts")
+            or raw_path.endswith(b".pb.go")
+        )
     ]
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix()):
@@ -45,13 +71,30 @@ def source_proto_digest(root: Path) -> str:
 
 def source_workspace_digest(root: Path) -> str:
     diff = subprocess.run(
-        ["git", "diff", "--binary", "HEAD"],
+        [
+            "git",
+            "diff",
+            "--binary",
+            "HEAD",
+            "--",
+            ".",
+            f":(exclude){_GENERATED_COVERAGE_REPORT}",
+        ],
         cwd=root,
         capture_output=True,
         check=True,
     ).stdout
     untracked = subprocess.run(
-        ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+        [
+            "git",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            ".",
+            f":(exclude){_GENERATED_COVERAGE_REPORT}",
+        ],
         cwd=root,
         capture_output=True,
         check=True,
@@ -156,13 +199,33 @@ def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
             ),
             resource=f"station-deployment:{deploy_environment}",
         )
+    known_hosts_file = environment.get("PT_DEPLOY_KNOWN_HOSTS_FILE", "")
+    try:
+        if not known_hosts_file:
+            raise ProvisioningError(
+                "SSH known-hosts file is required for remote attestation"
+            )
+        target = SshTarget(
+            host=host,
+            user=user,
+            port=int(environment.get("PT_DEPLOY_SSH_PORT", "22")),
+            known_hosts_file=known_hosts_file,
+        )
+        transport = SshTransport(target, connect_timeout=10)
+    except (ProvisioningError, ValueError) as error:
+        raise BlockedError(
+            reason=f"SSH contract is invalid: {error}",
+            resource=f"station-deployment:{deploy_environment}",
+        ) from error
 
     digest_script = (
-        "import hashlib,pathlib;"
+        "import hashlib,pathlib,subprocess;"
         "r=pathlib.Path('.').resolve();"
-        "p=list((r/'model/domain').rglob('*.proto'))+"
-        "list((r/'apps/desktop/src/gen/proto').rglob('*.ts'))+"
-        "list((r/'apps/station').rglob('*.pb.go'));"
+        "raw=subprocess.check_output(['git','ls-files','-z','--',"
+        "'model/domain','apps/desktop/src/gen/proto','apps/station'],cwd=r);"
+        "p=[r/x.decode() for x in raw.split(b'\\0') if x and "
+        "(x.endswith(b'.proto') or x.endswith(b'.ts') or "
+        "x.endswith(b'.pb.go'))];"
         "h=hashlib.sha256();"
         "[(h.update(x.relative_to(r).as_posix().encode()),h.update(b'\\0'),"
         "h.update(x.read_bytes()),h.update(b'\\0')) for x in "
@@ -177,21 +240,8 @@ def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
         "if test -z \"$status\"; then echo clean; else echo dirty; fi && "
         f"python3 -c {shlex.quote(digest_script)}"
     )
-    completed = subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{user}@{host}",
-            remote_command,
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
+    completed = transport.run_argv(
+        ["bash", "-lc", remote_command],
         timeout=30,
         check=False,
     )
