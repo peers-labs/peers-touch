@@ -4092,3 +4092,57 @@ dependency-ready action is the authorized local checkpoint commit without
 push, exact-source deployment to station-four, station-five, and sixwin, and a
 Product Closure-only post-fix run. The remaining seven Windows Native Chat
 Gates and PostgreSQL contention remain deferred until Product Closure passes.
+
+### 2026-09-09 Product Closure Cold-Login Budget Boundary
+
+The exact same-worker chooser checkpoint was deployed to station-four,
+station-five, and sixwin. Product Closure run
+`20260909T124044141301Z-b80a2a22db8ae6bb1580976c5bac1c53`,
+aggregate `20260909T124044019679Z-35f92433bfb3fac6db920c66440ef731`,
+Windows cell `20260909t124133022679z-f79c01038e91f6f2`, and binary
+SHA-256
+`1669d684208597040c5826dc9d8e82c01eb1881e3afb89e3dc75dc4d968089c2`
+prove exact source, both Station bindings, Windows 10/WebView2/Win32 runtime
+identity, and 1920x1080 display readiness.
+
+The run did not reach the file chooser. Its first failure is `alice.launch`:
+Selenium canceled `chat.loginWithPassword` at the runner's 30-second
+async-script limit. Native logs reject an authentication or process failure:
+
+- `auth_login` passed in 2572 ms;
+- repeated token validation, profile sync, and the authenticated identity edge
+  passed;
+- `runtime:critical:end`, `runtime:idle:end`, and
+  `deferred projections installed` completed;
+- the final Chat hydration was still progressing near the 30-second boundary;
+- the native process and WebDriver stayed alive until cleanup.
+
+The owner-layer correction retains every accepted login, identity, runtime,
+and Chat hydration assertion and gives the cold-login harness a named bounded
+60-second budget. It does not alter Desktop product behavior or weaken a
+product assertion.
+
+Final-source local verification passes:
+
+- focused Win32 driver, broker, runtime-binding, and Product Closure static
+  cohort: 93 tests passed, 1 skipped;
+- targeted Python compilation and `git diff --check`;
+- `station-messaging-unit`
+  `20260909T131654815475Z-dadc8692b5695c3b05087d58779eabd5`;
+- `messaging-platform-contract`
+  `20260909T131659139056Z-0275f51e9ff068fb75380be18eda579a`;
+- `desktop-check`
+  `20260909T131702008944Z-61e42f65348139f89c35d198bd1d515c`;
+- `chat-native-visible-static`
+  `20260909T131711937607Z-6f096b450b2df1ab7a991e30587181e9`;
+- `acceptance-plan-self`
+  `20260909T131723215569Z-01e8e1749857f957273fa309891134ee`;
+- direct `acceptance-infra-validation`
+  `20260909T131748002214Z-921bfa0951f126275eef56f0de7fb5a5`
+  is `STRUCTURALLY_VALID`.
+
+The Product Closure run remains `PARTIAL/UNPROVEN`; cleanup is `DONE/PROVEN`.
+No chooser post-fix event exists because the run stopped at `alice.launch`.
+The next dependency-ready action is a local checkpoint commit without push,
+exact-source deployment, and another Product Closure-only run. The remaining
+seven Windows Native Chat Gates and PostgreSQL contention remain deferred.
