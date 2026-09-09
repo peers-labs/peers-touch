@@ -1104,9 +1104,35 @@ and zero local-path leakage.
   tests, 151 Provisioner/runtime tests, 65 Acceptance runner tests, planner,
   validator, responsibility-boundary, gap-detector, coverage, and quality
   suites, Desktop check, Station Agent tests, and `git diff --check`.
-- C08 remains `FAILED / UNPROVEN`; G-F was not run. The correction still
-  requires a clean checkpoint, exact-source deployment, and a new C08 run
-  before any proof claim.
+- Checkpoint `88d15ea799c515ddc63b8aa26168a4b723c4e435` passed all five
+  selected current-source local Gates, reused and smoked the unchanged
+  Acceptance binary, and deployed exact-source through `make station`.
+- The first C08 attempt
+  `20260909T083909615020Z-ee8fc8bfe9b5fb742baa7f1c51095eb5`
+  was `BLOCKED / UNPROVEN` before product execution because the shared host
+  root filesystem was full and PostgreSQL could not extend a relation during
+  Fixture reset. A whole-disk audit identified `/var/lib/docker` as the
+  dominant owner. A label-scoped prune removed only unreferenced
+  `pt-shuxian-peers-group-chat / station` image generations, reclaimed
+  2.298 GB, and restored healthy PostgreSQL and Station containers without
+  touching volumes, running images, unrelated projects, or shared build cache.
+- The changed-environment retry under outer run
+  `20260909T084218992135Z-60ea2e4fa110399d7a72b210567b96fb`
+  reached the product runner, but the generic outer Evidence Store rejected
+  `logs/desktop.log` as bypassing immutable redaction and discarded the child
+  run. A retained already-redacted Agent log reproduces the defect: applying
+  `redact_artifact_bytes` a second time still mutates Rust-like
+  `api_key: [REDACTED]` and `token: [REDACTED]` fragments even though the
+  exact resolved provider credential is absent. The outer audit treats any
+  second-pass mutation as a resolved-credential leak.
+- This is `ACCEPTANCE_INFRA_REQUIRED`: redaction idempotence and the generic
+  runtime-artifact audit are owned by Acceptance Infra and affect every Domain.
+  The separate AF-001 correction now makes the canonical `[REDACTED]`
+  sentinel atomic for generic assignment and command-flag redaction. Focused
+  redaction, Evidence Store, runner, planner, validator, responsibility
+  boundary, gap-detector, coverage, and quality tests pass. C08 remains
+  `FAILED / UNPROVEN`; G-F was not run. Product proof resumes only after the
+  clean Infra checkpoint and current-source self-validation.
 
 ### F4 — Tool Policy And Observability Baseline
 

@@ -324,6 +324,17 @@ class TextRedactionTests(unittest.TestCase):
 
         self.assertEqual(redact_text(once), once)
 
+    def test_redaction_is_idempotent_for_typed_source_fragments(self) -> None:
+        text = (
+            "fn openai_headers(api_key: &str) -> HeaderMap {\n"
+            "pub fn get_hidden_models(token: &str, provider_id: &str) {}\n"
+            "client --api-key provider-secret-value --verbose"
+        )
+        once = redact_text(text)
+
+        self.assertEqual(redact_text(once), once)
+        self.assertNotIn("]]", once)
+
     def test_redacts_unquoted_secret_with_punctuation(self) -> None:
         redacted = redact_text("password=alpha,beta;gamma next=safe")
 
@@ -376,6 +387,21 @@ class ArtifactRedactionTests(unittest.TestCase):
 
         self.assertTrue(changed)
         self.assertEqual(decoded, {REDACTED: REDACTED})
+
+    def test_plain_text_artifact_redaction_is_idempotent(self) -> None:
+        secret = "provider-secret-value"
+        payload = (
+            "fn openai_headers(api_key: &str) -> HeaderMap {\n"
+            f"authorization=Bearer {secret}\n"
+        ).encode()
+
+        once, first_changed = redact_artifact_bytes(payload, (secret,))
+        twice, second_changed = redact_artifact_bytes(once, (secret,))
+
+        self.assertTrue(first_changed)
+        self.assertFalse(second_changed)
+        self.assertEqual(twice, once)
+        self.assertNotIn(secret.encode(), once)
 
     def test_preserves_binary_artifact_without_explicit_secret(self) -> None:
         payload = b"\x00\xff\x80"

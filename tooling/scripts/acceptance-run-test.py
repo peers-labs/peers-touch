@@ -33,6 +33,7 @@ from tooling.acceptance.core import (
     EphemeralLaunchContextInvalid,
     new_report,
 )
+from tooling.acceptance.core.redaction import redact_artifact_bytes
 from tooling.acceptance.provisioners import HomeStationProvisioner
 
 
@@ -1525,6 +1526,24 @@ class AcceptanceRunTest(unittest.TestCase):
             preserved_bytes,
             b"\x00prefix-" + secret.encode() + b"-suffix",
         )
+
+    def test_runtime_artifact_audit_accepts_idempotently_redacted_log(self) -> None:
+        module = load_module()
+        secret = "resolved-provider-secret"
+        raw_log = (
+            "fn openai_headers(api_key: &str) -> HeaderMap {\n"
+            f"authorization=Bearer {secret}\n"
+        ).encode()
+        redacted_log, changed = redact_artifact_bytes(raw_log, (secret,))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            (run_dir / "desktop.log").write_bytes(redacted_log)
+            leaked = module.audit_runtime_artifacts(run_dir, (secret,))
+
+        self.assertTrue(changed)
+        self.assertEqual(leaked, [])
+        self.assertNotIn(secret.encode(), redacted_log)
 
     def test_runtime_artifact_audit_rejects_secret_path_without_removal(self) -> None:
         module = load_module()
