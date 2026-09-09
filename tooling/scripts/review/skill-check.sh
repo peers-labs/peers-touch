@@ -16,6 +16,12 @@ gap_procedures="tooling/skills/pt-acceptance-gap-detector/PROCEDURES.md"
 gap_detector="tooling/scripts/acceptance-gap-detect.py"
 plan_skill="tooling/skills/pt-plan-and-document/SKILL.md"
 english_workflow_skill="tooling/skills/pt-ew/SKILL.md"
+execution_guardian_skill="tooling/skills/pt-execution-plan-guardian/SKILL.md"
+context_anchor_skill="tooling/skills/pt-context-anchor/SKILL.md"
+god_view_skill="tooling/skills/pt-god-view/SKILL.md"
+goal_orchestrator_skill="tooling/skills/pt-trae-goal-orchestrator/SKILL.md"
+goal_template="tooling/skills/pt-trae-goal-orchestrator/GOAL_TEMPLATE.md"
+goal_review_rubric="tooling/skills/pt-trae-goal-orchestrator/REVIEW_RUBRIC.md"
 
 failures=0
 
@@ -39,6 +45,12 @@ require_file "$gap_procedures"
 require_file "$gap_detector"
 require_file "$plan_skill"
 require_file "$english_workflow_skill"
+require_file "$execution_guardian_skill"
+require_file "$context_anchor_skill"
+require_file "$god_view_skill"
+require_file "$goal_orchestrator_skill"
+require_file "$goal_template"
+require_file "$goal_review_rubric"
 
 required_sections=(
   "Review Philosophy"
@@ -159,6 +171,72 @@ fi
 if grep -Fq "User can deactivate by switching to Chinese" "$english_workflow_skill"; then
   fail "$english_workflow_skill must require explicit English-mode deactivation"
 fi
+
+for marker in \
+  "Mandatory Concurrency Decision" \
+  "exclusive write sets are disjoint" \
+  "Reserve every write path before spawning." \
+  "SUBAGENT_REGISTRY_STALE" \
+  "SUBAGENT_RUNTIME_UNAVAILABLE"; do
+  if ! grep -Fq "$marker" "$execution_guardian_skill"; then
+    fail "$execution_guardian_skill missing parallel execution marker: $marker"
+  fi
+done
+
+for marker in \
+  "Completed since previous anchor" \
+  "Ready queue" \
+  "Execution mode / lanes" \
+  "Conflict controls" \
+  "Critical path / ETA"; do
+  if ! grep -Fq "$marker" "$context_anchor_skill"; then
+    fail "$context_anchor_skill missing progress projection field: $marker"
+  fi
+done
+
+for marker in \
+  "Existing-Agent Reconciliation" \
+  "SUBAGENT_REGISTRY_STALE" \
+  "SUBAGENT_RUNTIME_UNAVAILABLE" \
+  "GOAL_REPLACEMENT_REQUIRED"; do
+  if ! grep -Fq "$marker" "$goal_orchestrator_skill"; then
+    fail "$goal_orchestrator_skill missing agent reconciliation marker: $marker"
+  fi
+done
+
+for marker in \
+  "Concurrency Decision" \
+  "Exclusive write-set owners" \
+  "Shared runtime resources" \
+  "Integration order and rollback boundary" \
+  "Existing-agent reconciliation" \
+  "Context Anchor, when tracked: include completed delta, ready queue, execution" \
+  "conflict controls" \
+  "Critical path"; do
+  if ! grep -Fq "$marker" "$goal_template"; then
+    fail "$goal_template missing parallel tracking marker: $marker"
+  fi
+done
+
+for marker in \
+  "Concurrency decision" \
+  "Agent reconciliation" \
+  "stale entries cannot create a blanket spawn ban"; do
+  if ! grep -Fq "$marker" "$goal_review_rubric"; then
+    fail "$goal_review_rubric missing parallel review marker: $marker"
+  fi
+done
+
+if ! grep -Fq "merely to print the Anchor" "$god_view_skill"; then
+  fail "$god_view_skill must not let resume-time Anchor projection pause execution"
+fi
+
+if rg -q \
+  'Four stale legacy agent entries.*do not spawn|do not spawn subagents while they remain visible' \
+  tooling/skills AGENTS.md; then
+  fail "canonical workflow contains a blanket stale-agent spawn prohibition"
+fi
+
 if ! grep -Fq "^(tooling/skills/|" "$review_runner"; then
   fail "$review_runner must run skill-check for every canonical project skill change"
 fi
