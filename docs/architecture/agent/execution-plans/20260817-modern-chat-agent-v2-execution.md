@@ -1193,6 +1193,21 @@ and zero local-path leakage.
   or cleanup behavior has changed. G-F remains `PARTIAL / UNPROVEN` pending
   source-bound reproduction and an owner-layer correction justified by that
   evidence.
+- Exact-source controlled run
+  `20260909T133755333609Z-65d759fb2ca566804c1947eb43ecb4c9`
+  on `0f585c450abd13e3f1a02134041e17f7f1278e16` used offline
+  resolution for the already-cached ChromeDriver. Both Browser AS-F06 restart
+  generations completed with live runtime ports and fault transport; the
+  prior renderer timeout did not reproduce, so no Browser behavior change is
+  justified.
+- That run advanced through three AS-F06 tuples and failed during the final
+  Native preparation with
+  `agent.acceptance.foundationRecoveryTurnAlreadyTerminal`. Inline cleanup
+  then failed while cancelling/draining the partial conversation, while outer
+  Provisioner cleanup remained `DONE / PROVEN / passed`. Debug session
+  `foundation-f06-terminal-race` now instruments the terminal-versus-fault
+  boundary and cleanup stages without changing behavior. G-F remains
+  `PARTIAL / UNPROVEN`.
 
 ### F4 — Tool Policy And Observability Baseline
 
