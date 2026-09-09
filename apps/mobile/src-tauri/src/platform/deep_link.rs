@@ -54,13 +54,11 @@ fn dispatch_oauth_callback<R: Runtime>(app: &AppHandle<R>, url: tauri::Url) {
 
 /// Handle non-OAuth deep links.
 ///
-/// Advances lifecycle generation (the deep link may have woken the app)
-/// and emits the URL to the TS layer for routing.
+/// Emits a wakeup in the current generation and routes the URL to the TS layer.
+/// The native foreground callback remains the sole owner of resume generation.
 fn dispatch_general_deep_link<R: Runtime>(app: &AppHandle<R>, url: tauri::Url) {
-    // Advance generation — deep link activation may wake the app from background
-    background_bridge::handle_native_resume(app, NativeLifecycleSource::DeepLinkActivation);
+    background_bridge::handle_native_wakeup(app, NativeLifecycleSource::DeepLinkActivation);
 
-    // Emit the deep link URL to the TS layer
     if let Err(error) = native_events::emit_deep_link(app, url.to_string()) {
         let _ = native_events::emit_native_event_error(
             app,

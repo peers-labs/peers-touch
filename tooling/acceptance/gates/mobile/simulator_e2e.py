@@ -71,6 +71,7 @@ MAX_MOBILE_SCREENSHOT_BASE64_BYTES = (
 MAX_MOBILE_SCREENSHOT_RESPONSE_BYTES = (
     MAX_MOBILE_SCREENSHOT_BASE64_BYTES + 4096
 )
+W3C_ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf"
 PHYSICAL_PROVIDER_SCOPE = "physical provider OAuth/MS-AG03 remains UNPROVEN"
 SECURE_STORAGE_ABSENCE_FIELDS = (
     "activeAttemptIndexAbsent",
@@ -550,6 +551,40 @@ class SimulatorAppiumSession:
 
     def refresh_webview(self) -> None:
         self._request("POST", self._path("/refresh"), {})
+
+    def find_element(self, using: str, value: str) -> str:
+        result = self._request(
+            "POST",
+            self._path("/element"),
+            {"using": using, "value": value},
+        )
+        if not isinstance(result, dict):
+            raise DriverError("Appium element response is invalid")
+        element_ref = result.get(W3C_ELEMENT_KEY) or result.get("ELEMENT")
+        if not isinstance(element_ref, str) or not element_ref:
+            raise DriverError("Appium element response has no element reference")
+        return element_ref
+
+    def click_element(self, element_ref: str) -> None:
+        if not element_ref:
+            raise DriverError("Appium element reference is required")
+        self._request(
+            "POST",
+            self._path(
+                f"/element/{urllib.parse.quote(element_ref, safe='')}/click"
+            ),
+            {},
+        )
+
+    def set_orientation(self, orientation: str) -> None:
+        normalized = orientation.upper()
+        if normalized not in {"PORTRAIT", "LANDSCAPE"}:
+            raise DriverError("Appium orientation must be PORTRAIT or LANDSCAPE")
+        self._request(
+            "POST",
+            self._path("/orientation"),
+            {"orientation": normalized},
+        )
 
     def deep_link_for_failure_case(self, url: str, failure_case: str) -> None:
         if failure_case not in {"invalid", "mismatch", "replay"}:
@@ -1111,7 +1146,7 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
                 proof_status=proof_status,
                 runtime={
                     "environment": ENVIRONMENT_ID,
-                    "runtimeCell": GATE_ID,
+                    "runtimeCell": self.gate_id,
                     "clients": sorted(
                         {
                             event["clientId"]
@@ -1809,19 +1844,21 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
 
     def _result_base(self, status: str) -> dict[str, Any]:
         return {
-            "artifactKind": "mobile-simulator-callback-routing-result",
+            "artifactKind": "acceptance-gate-evidence-report",
+            "gateId": self.gate_id,
             "gate": self.gate_id,
             "environment": ENVIRONMENT_ID,
             "runtimeCell": GATE_ID,
             "status": status,
-            "sourcePhase": "W2-E1 Simulator evidence",
-            "sourceBom": ["W2-E1"],
-            "sourceSpec": ["MS-D14"],
-            "provenScope": [PROVEN_SCOPE] if status == "PASS" else [],
+            "phase": "W2-E1 Simulator evidence",
+            "bom": ["W2-E1"],
+            "spec": ["MS-D14"],
+            "observedScope": [PROVEN_SCOPE] if status == "PASS" else [],
             "unprovenScope": [PHYSICAL_PROVIDER_SCOPE],
             "physicalDeviceClaimed": False,
             "successfulCallbackInjected": False,
             "stationMocksUsed": False,
+            "sampleEmissionAllowed": status == "PASS",
         }
 
 

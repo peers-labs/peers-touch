@@ -267,6 +267,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   reconcile: async () => {
+    const scope = get().authSession;
     const { refreshFriendRequests, refreshSessions, refreshBlockedUsers, refreshConversationSettings, refreshNotifications } = get();
     const coldStart = get().sessions.length === 0 && get().friendRequests.length === 0 && get().notifications.length === 0;
     set({ loading: coldStart, error: null });
@@ -274,8 +275,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       await Promise.all([refreshFriendRequests(), refreshSessions(), refreshBlockedUsers(), refreshNotifications()]);
       await refreshConversationSettings();
       await get().reconcileActiveSessionMessages();
+      if (get().authSession !== scope) return;
       set({ lastReconcileAt: Date.now(), loading: false });
     } catch (error) {
+      if (get().authSession !== scope) return;
       set({ error: normalizeError(error), loading: false });
     }
   },
@@ -287,13 +290,16 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   refreshFriendRequests: async () => {
+    const scope = get().authSession;
     const gw = requireSocialGateway(get());
     const result = unwrapOutcome(await gw.listFriendRequests());
+    if (get().authSession !== scope) return;
     set({ friendRequests: result.requests.map(normalizeFriendRequest) });
   },
 
   refreshSessions: async () => {
     const state = get();
+    const scope = state.authSession;
     const account = messagingAccount(state);
     const currentUserPtid = state.currentUserPtid;
     if (!currentUserPtid) return;
@@ -338,6 +344,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         unreadCountA: state.activeSessionUlid === conversation.conversationId ? 0 : unread,
       };
     });
+    if (get().authSession !== scope) return;
     set((current) => ({
       messages: { ...current.messages, ...messages },
       sessions,
@@ -345,8 +352,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   refreshBlockedUsers: async () => {
+    const scope = get().authSession;
     const gw = requireSocialGateway(get());
     const blockedUsers = unwrapOutcome(await gw.listBlockedUsers());
+    if (get().authSession !== scope) return;
     set((state) => {
       const nextStatus = { ...state.friendshipStatus };
       blockedUsers.forEach((item) => {
@@ -412,12 +421,14 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   refreshConversationSettings: async () => {
+    const scope = get().authSession;
     const gw = requireSocialGateway(get());
     const sessions = get().sessions;
     const entries = await Promise.allSettled(sessions.map(async (session) => {
       const settings = unwrapOutcome(await gw.getConversationSettings(session.ulid));
       return [session.ulid, settings] as const;
     }));
+    if (get().authSession !== scope) return;
     set((state) => {
       const next = { ...state.conversationSettings };
       entries.forEach((entry) => {
@@ -440,6 +451,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   refreshNotifications: async () => {
+    const scope = get().authSession;
     const notifGw = requireNotificationGateway(get());
     const [notificationResult, unreadResult] = await Promise.all([
       notifGw.listNotifications(),
@@ -447,6 +459,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     ]);
     const notificationData = unwrapOutcome(notificationResult);
     const unreadCounts = unwrapOutcome(unreadResult);
+    if (get().authSession !== scope) return;
     set({
       notifications: notificationData.notifications.map(normalizeNotification),
       notificationNextCursor: notificationData.nextCursor,

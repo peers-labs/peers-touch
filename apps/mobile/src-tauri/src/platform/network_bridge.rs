@@ -5,8 +5,7 @@
 // events from network changes flow through the lifecycle generation
 // system to prevent stale reconciliation.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +23,7 @@ pub enum NetworkType {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkState {
     pub connected: bool,
@@ -32,47 +31,99 @@ pub struct NetworkState {
     pub updated_at_ms: u64,
 }
 
-static IS_CONNECTED: AtomicBool = AtomicBool::new(true);
-static NETWORK_STATE: Mutex<Option<NetworkState>> = Mutex::new(None);
+const UNOBSERVED_NETWORK_STATE: NetworkState = NetworkState {
+    connected: true,
+    network_type: NetworkType::Unknown,
+    updated_at_ms: 0,
+};
+
+static NETWORK_STATE: Mutex<NetworkState> = Mutex::new(UNOBSERVED_NETWORK_STATE);
 
 /// Update the network state from a native connectivity change event.
 pub fn update_network_state(connected: bool, network_type: NetworkType) {
-    IS_CONNECTED.store(connected, Ordering::Release);
-    let state = NetworkState {
+    let network_type = match (connected, network_type) {
+        (false, _) => NetworkType::None,
+        (true, NetworkType::None) => NetworkType::Unknown,
+        (true, observed) => observed,
+    };
+    let mut state = lock_network_state();
+    *state = NetworkState {
         connected,
         network_type,
-        updated_at_ms: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64,
+        updated_at_ms: current_time_ms(),
     };
-    if let Ok(mut guard) = NETWORK_STATE.lock() {
-        *guard = Some(state);
-    }
 }
 
 /// Check if the device currently has network connectivity.
 pub fn is_connected() -> bool {
-    IS_CONNECTED.load(Ordering::Acquire)
+    get_network_state().connected
 }
 
 /// Get the full network state snapshot.
 pub fn get_network_state() -> NetworkState {
-    NETWORK_STATE
-        .lock()
-        .ok()
-        .and_then(|guard| guard.clone())
-        .unwrap_or(NetworkState {
-            connected: true,
-            network_type: NetworkType::Unknown,
-            updated_at_ms: 0,
-        })
+    *lock_network_state()
 }
 
 /// Reset network state to defaults (for testing / teardown).
 pub fn reset_network_state() {
-    IS_CONNECTED.store(true, Ordering::Release);
-    if let Ok(mut guard) = NETWORK_STATE.lock() {
-        *guard = None;
+    *lock_network_state() = UNOBSERVED_NETWORK_STATE;
+}
+
+fn lock_network_state() -> MutexGuard<'static, NetworkState> {
+    match NETWORK_STATE.lock() {
+        Ok(state) => state,
+        Err(poisoned) => {
+            log::error!("network_bridge: recovering poisoned network state lock");
+            poisoned.into_inner()
+        }
+    }
+}
+
+fn current_time_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn unobserved_network_remains_unknown_without_fabricating_offline_state() {
+        let _test_guard = TEST_LOCK.lock().expect("test lock");
+        reset_network_state();
+
+        assert_eq!(get_network_state(), UNOBSERVED_NETWORK_STATE);
+        assert!(is_connected());
+    }
+
+    #[test]
+    fn disconnected_readback_cannot_retain_a_connected_transport() {
+        let _test_guard = TEST_LOCK.lock().expect("test lock");
+        reset_network_state();
+        update_network_state(false, NetworkType::Wifi);
+
+        let state = get_network_state();
+        assert!(!state.connected);
+        assert_eq!(state.network_type, NetworkType::None);
+        assert!(!is_connected());
+    }
+
+    #[test]
+    fn connected_readback_uses_the_same_snapshot_as_connectivity_check() {
+        let _test_guard = TEST_LOCK.lock().expect("test lock");
+        reset_network_state();
+        update_network_state(true, NetworkType::Wifi);
+
+        let state = get_network_state();
+        assert!(state.connected);
+        assert_eq!(state.network_type, NetworkType::Wifi);
+        assert!(state.updated_at_ms > 0);
+        assert_eq!(is_connected(), state.connected);
     }
 }

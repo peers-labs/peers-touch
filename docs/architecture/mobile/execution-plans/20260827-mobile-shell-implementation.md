@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-09-06
+> **Created**: 2026-08-27 | **Updated**: 2026-09-09
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -234,7 +234,7 @@ Stable Acceptance IDs:
 |---|---|---|---|
 | `mobile-station-access` | `mobile-station-trust` | MS-PA01, MS-PA16, MS-PA25 | `mobile-contract-static`, `mobile-identity-contract`, `mobile-native-access-e2e` |
 | `mobile-station-access` | `mobile-access-gate-oauth` | MS-PA02, MS-PA03, MS-PA17, MS-PA25 | `mobile-contract-static`, `mobile-native-access-e2e` |
-| `mobile-runtime-lifecycle` | `mobile-session-lifecycle` | MS-PA04, MS-PA05, MS-PA13, MS-PA14 | `mobile-contract-static`, `mobile-native-lifecycle-e2e` |
+| `mobile-runtime-lifecycle` | `mobile-session-lifecycle` | MS-PA04, MS-PA05, MS-PA13, MS-PA14 | `mobile-contract-static`, `mobile-simulator-runtime-lifecycle-e2e`, `mobile-simulator-station-lifecycle-e2e`, `mobile-native-lifecycle-e2e` |
 | `mobile-command-recovery` | `mobile-command-draft-recovery` | MS-PA07, MS-PA08, MS-PA23, MS-PA26 | `mobile-contract-static`, `mobile-native-recovery-e2e` |
 | `mobile-command-recovery` | `mobile-recovery-degraded-states` | MS-PA14, MS-PA22, MS-PA23, MS-PA25, MS-PA26, MS-PA27 | `mobile-native-recovery-e2e`, `mobile-native-recovery-ui-e2e` |
 | `mobile-social-product` | `mobile-chat-contacts-groups` | MS-PA06, MS-PA09, MS-PA10, MS-PA18, MS-PA19 | `mobile-native-social-convergence-e2e`, `mobile-native-chat-contacts-e2e` |
@@ -866,10 +866,43 @@ Deliverables:
   perform reconciliation and command convergence.
 - Add platform-specific accessibility and permission evidence.
 
+Dependency-ready execution slices:
+
+- **W7-A Native permission adapters**: replace placeholder permission results
+  with one Tauri mobile plugin whose Android and iOS implementations check and
+  request camera, microphone, photo-library/media, and notification
+  permissions. Keep the Rust capability kernel as the Web-facing API owner and
+  add the required Android manifest and iOS usage-description declarations.
+- **W7-B Native lifecycle callbacks**: deliver real foreground and background
+  callbacks through the native plugin boundary into the generation-fenced Rust
+  lifecycle bridge. Native code emits typed wakeup/suspend signals only;
+  lifecycle and reconciliation ownership remains in Rust and the Mobile
+  runtime.
+- **W7-C Scenario-owned native provisioning**: compose `mobile-native`
+  resources from each Gate scenario. Lifecycle and platform scenarios must not
+  require OAuth credentials, provider/browser leases, Relay, destructive actor
+  reset, or four access clients unless their own runtime manifest declares
+  those resources.
+- **W7-D Native lifecycle/platform Gate branches**: implement the existing
+  `mobile-native-lifecycle-e2e` and `mobile-native-platform-e2e` catalog
+  scenarios with scenario-specific Phase/BOM/Spec traceability, fail-closed
+  physical-resource preflight, source-bound evidence, and reverse cleanup.
+
+Parked design boundary:
+
+- WorkManager/BGTaskScheduler task identifiers, cadence, constraints,
+  cancellation, expiration, and completion policy remain
+  `DESIGN_AMENDMENT_REQUIRED`. W7-B may wire ordinary OS foreground/background
+  callbacks without inventing scheduled-work semantics.
+
 Dependencies:
 
 - W2, W3, W4, and W5 must expose stable auth, lifecycle, reliability, and
   shared-event ports before W7 may close.
+- W7-A, W7-B, W7-C, and W7-D source work may proceed against the already
+  accepted native-port, lifecycle, Provisioner, and Gate contracts. Their
+  completion does not close W7 or prove physical runtime cells while W4/W5 and
+  physical evidence remain open.
 
 Gate:
 
@@ -931,7 +964,7 @@ evidence.
 | W0 | `make acceptance-validate DOMAIN=mobile`; `make acceptance-coverage-report`; `make acceptance-plan ACCEPTANCE_RANGE=origin/master...HEAD`; `python3 tooling/scripts/acceptance-run.py --gate mobile-contract-static` | Acceptance plan/validation roles plus `W0/coverage-gap-matrix.md` | Full Domain trace resolves; native rows remain UNPROVEN |
 | W1 | `./model/build.sh`; `./tooling/scripts/proto-gen-mobile.sh`; `(cd apps/station && go test ./...)`; `(cd apps/desktop && pnpm run check && pnpm run test)`; `pnpm mobile:check`; `python3 tooling/scripts/acceptance-run.py --gate mobile-identity-contract` | `W1/` generated-contract, scan, and switch evidence | All consumers compile PTID-only; no session/Station behavior claim beyond tested cells |
 | W2 | `(cd apps/station && go test ./app/subserver/oauth/... ./frame/touch/accessgate/...)`; `pnpm mobile:check`; `python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-access-e2e`; `python3 tooling/scripts/acceptance-run.py --gate mobile-native-access-e2e` | Simulator evidence plus physical Acceptance Gate run and `W2/` attempt/readback evidence | W2-E1 simulator cells pass without claiming provider success; AS-02/AS-03 pass on both physical platforms before MS-AG03 is proven; other business domains not claimed |
-| W3 | `pnpm --dir apps/mobile run check:lifecycle-runtime`; `python3 tooling/scripts/acceptance-run.py --gate mobile-native-lifecycle-e2e` | `W3/` transition, generation, resource, focus, and navigation evidence | Lifecycle/navigation state graph passes; draft durability remains W4 |
+| W3 | `pnpm --dir apps/mobile run check:lifecycle-runtime`; `python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-runtime-lifecycle-e2e`; `python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-station-lifecycle-e2e`; `python3 tooling/scripts/acceptance-run.py --gate mobile-native-lifecycle-e2e` | `W3/` transition, generation, resource, focus, navigation, Station/session, and old-scope evidence plus External Evidence Store simulator/native runs | Local lifecycle/navigation and Station-bound simulator cells pass; physical background/foreground and secure-delete failure remain separate proof obligations; draft durability remains W4 |
 | W4 | `(cd apps/mobile/src-tauri && cargo test --offline)`; `pnpm --dir apps/mobile run check:command-runtime`; `python3 tooling/scripts/acceptance-run.py --gate mobile-native-recovery-e2e` | `W4/` ledger/draft/fault-matrix evidence | Ordering, fairness, restart, capacity, readback, and draft scope pass; domain UI remains W6A-W6D |
 | CA-HC | Commands and Gates in `docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md` §12 | `tmp/evidence/api-ownership/<run-id>/CA-W0..CA-W7/` | CA-W0..CA-W7 and CA-AS01..CA-AS08 pass; Conversation DDD and sole Chat ownership are proven without compatibility paths |
 | W5 | `pnpm --dir apps/mobile run check:social-wire`; `pnpm --dir apps/mobile run check:social-runtime-boundaries`; `pnpm mobile:check`; `python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-social-convergence-e2e`; `python3 tooling/scripts/acceptance-run.py --gate mobile-native-social-convergence-e2e` | `W5/` ingress/cursor/readback and zero-duplicate-stream evidence | Supplemental simulator evidence may prove only the declared partial MS-AG06 cell; full projection freshness remains owned by the physical Gate |
@@ -951,8 +984,8 @@ phases.
 | Phase | Gates | Environment | Prerequisite |
 |---|---|---|---|
 | W9-A Static | MS-AG01 | CI/local | Proto gen clean |
-| W9-B Layout/A11y | MS-AG08, MS-AG11 | iOS simulator | Usable app on simulator |
-| W9-C Lifecycle | MS-AG02, MS-AG05 | iOS simulator + Station | Station with identity endpoint |
+| W9-B Layout/A11y | `mobile-ios-simulator-layout-accessibility-e2e`; MS-AG08 and simulator portion of MS-AG11 | `mobile-ios-layout-simulator`: iOS 17.4 iPhone SE (3rd generation) + iPhone 15 Pro Max | Usable embedded app on both pinned simulators |
+| W9-C Lifecycle | `mobile-simulator-runtime-lifecycle-e2e` for the local runtime graph; `mobile-simulator-station-lifecycle-e2e` for Station/session transitions; `mobile-native-lifecycle-e2e` for remaining physical proof; MS-AG02 and MS-AG05 | iOS Simulator + Android Emulator for local lifecycle; both simulator clients plus two disposable Stations for Station/session lifecycle; physical devices for OS lifecycle | Usable embedded app; source-attested Station identity/session resources; physical proof remains separate |
 | W9-D Social | `mobile-simulator-social-convergence-e2e` and `mobile-simulator-chat-contacts-e2e`; MS-AG06 partial and MS-AG04 partial only | 2 simulators + 2 dedicated Stations + Relay + 2 disposable accounts; source-bound receiver projections and deterministic cleanup | W9-C, CA-HC, MP-W09 Phase 4, and W5 cutover pass |
 | W9-E Stress | MS-AG09, MS-AG10 | simulator + Station | W9-D passes |
 | W9-F Physical | MS-AG03, MS-AG04 full, MS-AG06 full, MS-AG07 | `mobile-native-access-e2e` + `mobile-native-recovery-e2e` + `mobile-native-social-convergence-e2e` + physical platform Gates; physical iOS + Android devices | W9-E passes |
@@ -1182,17 +1215,266 @@ Closure-level negative coverage:
 | W0 Mobile Acceptance Domain onboarding and baseline | done | `tmp/evidence/mobile-shell/20260827/W0/coverage-gap-matrix.md`; D-13 hard cut; structural validation and static Gate PASS; native proof remains UNPROVEN |
 | W1 Unified ActorRef identity and Station trust | done | `tmp/evidence/mobile-shell/20260827/W1/progress.md`; PTID-only Proto/API cutover, signed Station verification, atomic schema migrations, scoped Station tests, Desktop/Mobile checks, and identity Gate PASS; MS-AG02 native runtime proof remains explicitly UNPROVEN until the integrated native runtime cell |
 | W2 Access Gate and OAuth | in progress | `tmp/evidence/mobile-shell/20260827/W2/progress.md`; W2-A through W2-D and W2-E1 Simulator evidence are done; E2-0 through E2-4 source closures done; D-19 Infra landed (PR #105); E2-5 source-side closure done (finalizer module, registry, baseline, capability YAML, gate catalog, 11 adversarial tests); E2-5 atomic cutover complete; A5-11 main plan update done; E2-6 physical proof remains `UNPROVEN` — requires physical iOS/Android devices and approved provider accounts |
-| W3 Lifecycle, runtime graph, and navigation | done | `MobileLifecycleKernel`, `topologicalSort`, `MobileRuntimeDescriptor` types, `AppProviders` bootstrap/teardown; committed `050d488dc` |
-| W4 InteractionAdmission, command ledger, and draft store | done | Rust encrypted SQLite ledger (AES-256-GCM), crash recovery, four-key fairness, `DraftStore`, TypeScript `InteractionAdmission` adapter; committed `050d488dc` |
-| CA-HC Conversation Authority DDD hard cut | blocked / AO-D07 Owner acceptance required | Owner approved the formal plan on 2026-09-06. CA-W0 classifies all 65 governed routes, declares 61 retained capabilities and four deletion-only routes, inventories target-absent stores, and enforces Conversation DDD imports. CA-W1 provides generated owner-named request/response symbols; CA-W2 through CA-W4 close the DDD, resource-owner, Federation, and Social source foundations. CA-W5 execution exposed six contract gaps between those symbols and the accepted application semantics. Proposed `AO-D07` now defines caller-owned Direct/Group identity, signed remote Conversation and Friend Request mutation, one `ConversationEvent` truth, typed peer Key Exchange contracts, durable DKX, and exact-response replay for destructive key-material fetches. Independent architecture review reports zero P0/P1 findings with `APPROVE AO-D07`. The uncommitted cutover tree has removed the retired Conversation engine and reduced the ownership Gate from 148 to 88 diagnostics, but production composition is blocked pending Owner acceptance; Station build, PostgreSQL contention, and live two-Station behavior remain `UNPROVEN`. No compatibility path or partial production cutover will be committed. |
+| W3 Lifecycle, runtime graph, and navigation | in progress / local simulator proof current | The kernel owns the runtime graph, launch-state transitions, generation-fenced Station/logout transitions, and descriptor-backed primary plus Chat/Group detail routes. The authoritative latest External Evidence Store run for `mobile-simulator-runtime-lifecycle-e2e`, produced after the final plan amendment, is the source-current iOS/Android `PASS/DONE/PROVEN` proof. The Station-bound AS-04/AS-10 source path includes typed two-Station bindings, parent-owned Fixture/Appium authority, restore, same-device takeover, ten switches, logout, D-17/D-18 proof closure, and reverse cleanup, but its destructive run remains `BLOCKED/UNPROVEN` until `MOBILE_ACCEPTANCE_RESET=1` is explicitly authorized. Physical lifecycle evidence and remaining contact/moment/setting detail routes remain open. |
+| W4 InteractionAdmission, command ledger, and draft store | reopened / implementation gap | The committed ledger/draft skeletons do not yet satisfy the accepted Station/PTID scope, 512-record/16 MiB/256 KiB limits, four-active-ordering-key fairness, lifecycle initialization/teardown, recovery projection wiring, or executable native proof. Chat and W5 event-ingress behavior remain excluded. |
+| CA-HC Conversation Authority DDD hard cut | external dependency in progress / CA-W6 runtime proof | AO-D07 is accepted. The canonical `peers-group-chat` worktree is at `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` after the Actor Identity owner-layer correction and focused source/static Gates; that commit remains unpushed. Exact-source two-Station Product Closure, PostgreSQL contention, and complete native receiver proof remain `UNPROVEN`. `peers-social` must not implement CA-HC, copy generated bindings, or reintroduce the retired Chat facade; it resumes dependent Mobile work only after the canonical branch is integrated and source identity is verified. |
 | W5 Generated gateway and Social projection convergence | blocked by CA-HC | MP-W09 Mobile/Core preparation exists and local checks passed, but current adapters still depend on the retired Station Chat facade. W5 resumes only after CA-HC installs canonical resource routes and removes the duplicate authority/facade. Live two-actor/multi-Station receiver, restart, and attachment evidence remains `UNPROVEN`. |
 | W6A Chat, Contacts, and Group product closure | blocked by CA-HC | Existing Chat and Group renderer work consumes Device Messaging Engine projections and typed commands, including attachment staging/open, but cannot close against the retired Station Chat facade. Resume only after CA-HC installs the canonical resource owners and Conversation DDD authority. Native receiver/search/recovery and attachment-outcome journeys remain `UNPROVEN`. |
-| W6B Moments product closure | done | `MomentsPage` with feed store, composer, reaction picker, inline comments; prototype-aligned `7d4289d85`; committed `050d488dc` + `7d4289d85` |
-| W6C Profile and Settings product closure | done | `SettingsPage` with profile header card, stats row, grouped settings, sign-out; prototype-aligned `7d4289d85`; committed `050d488dc` + `7d4289d85` |
-| W6D Recovery and degraded-state closure | done | `recoveryProjection` central aggregation for 8 recovery state types, 8 recovery overlay components; prototype-to-production mapping confirmed `7d4289d85`; committed `050d488dc` + `7d4289d85` |
-| W7 Native lifecycle and platform closure | done | Rust `lifecycle_bridge` monotonic generation counter, `background_bridge` resume coordination, `permission_bridge`, `network_bridge`, 10 Tauri commands; committed `050d488dc` |
+| W6B Moments product closure | source done / product proof waits on W5 | `MomentsPage` with feed store, composer, reaction picker, inline comments; prototype-aligned `7d4289d85`; committed `050d488dc` + `7d4289d85`. The dependency graph still requires W5 before native product closure, so this row does not claim current source-bound receiver proof. |
+| W6C Profile and Settings product closure | source done / product proof waits on W5 | `SettingsPage` with profile header card, stats row, grouped settings, sign-out; prototype-aligned `7d4289d85`; committed `050d488dc` + `7d4289d85`. The dependency graph still requires W5 before native product closure. |
+| W6D Recovery and degraded-state closure | partial source closure / W4, W5, and native proof remain | The app-level `RecoveryOverlayHost` now mounts once, while each visible recovery surface remains `on-visit + none`; Station mismatch and device-local actions delegate to lifecycle/auth owners, deferred runtime state is shell-scoped, raw Station peer IDs stay hidden, and write revocation is visible. W4 draft/ledger action wiring and W5 overflow/reconcile inputs remain frozen, and `mobile-native-recovery-ui-e2e` still has no production-triggered physical scenario, so W6D is not closed. |
+| W7 Native lifecycle and platform closure | source complete / physical proof unproven | W7-A adds one Android/iOS Tauri permission plugin for camera, microphone, media/photo-library, and notifications. W7-B routes native foreground/background callbacks through Rust-owned generation and replay fencing into the Mobile runtime. W7-C gives access, lifecycle, and platform Gates separate resource manifests while preserving broker-backed physical-device leases, heartbeat, typed ArtifactRefs, D-18 parent authority, and reverse cleanup. W7-D implements the physical lifecycle and platform branches with Appium-owned OS backgrounding and platform-specific permission handling. Focused TypeScript, Rust, plugin, and Python suites, `pnpm mobile:check`, Acceptance plan self-check, Mobile structural validation, and source-current W9-B iOS Simulator evidence pass. Physical W7 runs remain `BLOCKED/UNPROVEN` at unavailable Appium/device resources. WorkManager/BGTaskScheduler scheduling policy and W4/W5-dependent convergence remain open, so source completion does not close W7. |
 | W8 Atomic old-path deletion | reopened / pending CA-HC | The prior claim proved removal of earlier Chat routes, browser crypto, Sender Keys, and selected Desktop owners, but missed the live duplicate Chat authority. W8 now requires CA-HC completion, sole Conversation ownership, Conversation DDD zero-debt proof, and the semantic ownership Gate. |
 | W9 Native Acceptance and readiness audit | in progress | `tmp/evidence/mobile-shell/W9/readiness-audit.md`; W9-C simulator lifecycle evidence PASS at `ad546dac2`; MP-W09 Mobile source cutover and deterministic local gates pass. W9-D source closure now includes account-scoped Messaging/Social Harness actions, closed recursive parent Appium response validation, a transport-neutral Direct/Group journey, two supplemental simulator Gates, and the typed two-client/two-Station `mobile-social-simulator` Provisioner. Current local evidence passes: Messaging Core 104 unit plus 2 integration tests, Mobile Rust 66/66, Mobile Vitest 54/54, Desktop library 24/24, focused Desktop service/source-contract tests 35/35 with one environment-gated test skipped, Mobile TypeScript and production build, Social wire/runtime boundaries, hard-cut scanner regressions 6/6, Mobile Acceptance 107/107, Acceptance runner 66/66, Evidence Store 39/39, runtime-cell/launch-context 114/114 when run without parallel load, Infra-boundary 8/8, validator 20/20, quality-evidence 14/14, plan self-check, and external-Evidence-Store `make acceptance-plan` generation. Local Android tooling is available: Appium UiAutomator2 4.2.9, ADB 37.0.0, and the required `peers_touch_applet_l3_e2e` AVD are installed; runtime invocation must export the discovered SDK root because the active shell does not define `ANDROID_HOME` or `ANDROID_SDK_ROOT`. Reset authorization was granted on 2026-09-04, and both supplemental W9-D Gates then failed closed before resource acquisition with `profile:mobile-social-simulator-services`: the active `one` profile defines neither required Mobile Station binding, `mobile-shell-acceptance` does not exist, and only one deployment environment is currently marked disposable. Protected `:18080` Station profiles cannot substitute for a second disposable target. Their manifests remain source-bound `BLOCKED/UNPROVEN`, report cleanup `passed`, and retain the canonical `secretScan` object. Generated Proto EOF whitespace, unrelated Agent/Home Station business-injection and registry drift, a preoccupied legacy test port, review-rule digest drift, and Desktop binary baseline errors remain outside this local slice. Physical Social runner/proof contracts and authoritative Station history, forced event-loss, native lifecycle, tab-remount timing, and physical iOS/Android receiver evidence remain incomplete, so W9-D runtime and W9-F stay open. |
+
+### 2026-09-08 Mobile-Only Execution Focus
+
+`peers-social` is restricted to the Mobile Shell plan. It must not modify
+CA-HC Proto, Station Conversation/Key Exchange, Desktop Messaging, portable
+Messaging Core, or generated Chat bindings while `peers-group-chat` owns the
+hard cut.
+
+The dependency-ready independent closure queue is:
+
+1. **Completed 2026-09-08** — Refresh Mobile-owned static and local regression evidence: Mobile
+   TypeScript, Vitest, Rust, production build, lifecycle/runtime, command
+   runtime, and Mobile contract scans. A CA-owned Proto or hard-cut failure is
+   recorded as an external blocker and does not authorize a local repair.
+2. **Completed 2026-09-09** — Close the stale partial W9-B iOS Simulator layout/accessibility audit across
+   every independently reachable surface. Recheck safe area, keyboard
+   avoidance, localization, accessible names, text clipping, cold start, and
+   deterministic cleanup against the current source.
+3. **Dependency-ready subset completed 2026-09-09** — Implement the currently registered-but-unimplemented native Acceptance
+   scenarios for W3 lifecycle and W4 non-Chat command/draft recovery:
+   - close the owner-layer lifecycle, session-fencing, ledger, draft, and
+     recovery-projection gaps identified by the 2026-09-09 audit;
+   - add Station-bound iOS Simulator and Android Emulator supplemental Gates
+     for the independently provable W3/W4 cells;
+   - retain `mobile-native-lifecycle-e2e`,
+     `mobile-native-recovery-e2e`, and
+     `mobile-native-recovery-ui-e2e` as physical full-proof owners without
+     fallback or proof-strength downgrade.
+   The Station-bound W3 source and non-destructive preflight, W6D app-level
+   recovery host/action ownership, and W7 local lifecycle bridge reliability
+   are now implemented. The remaining W6D/W7 native runner cells must exercise lifecycle,
+   trust, local reliability, permissions, network, background/resume,
+   accessibility, localization, performance, and cleanup without consuming W5
+   projections. They cannot be implemented as passing Gates while the native
+   permission adapters remain placeholders and no production-triggered
+   recovery fault path exists; direct projection injection is forbidden.
+   Event-ingress overflow/reconcile cells remain frozen with W5, and partial
+   evidence must not close W6D or W7.
+4. Verify the physical iOS and Android devices, approved OAuth provider
+   accounts, Mobile profiles, and exact source identity required by W2-E2-6.
+   When available, execute `mobile-native-access-e2e` and preserve source-bound
+   evidence plus cleanup. Missing devices or accounts keep W2-E2-6
+   `BLOCKED/UNPROVEN`.
+5. Index all independently produced evidence and update only the covered
+   Mobile assertions. Do not promote partial cells into W9 readiness.
+
+The suspended queue is CA-HC, W5, W6A, W6B/W6C product closure, the
+event-ingress portions and final closure of W6D/W7, W8, W9-D, W9-E, W9-F as a
+whole, and final Mobile readiness. After canonical CA-HC integration, verify
+source identity and resume those items in dependency order.
+
+### 2026-09-08 Independent Local/Static Baseline
+
+- `pnpm mobile:check`: `PASS`, including Social wire/runtime boundary checks,
+  TypeScript, production build, Rust check, and iOS project discovery.
+- `pnpm exec vitest run` under `apps/mobile`: `PASS`, 61 tests.
+- `cargo test --offline` under `apps/mobile/src-tauri`: `PASS`, 67 tests.
+- `pnpm run check:mobile-shell-contracts`: `PASS`.
+- `python3 -m pytest scripts/check_mobile_shell_contracts_test.py -q`: `PASS`,
+  6 tests.
+- Rust emitted existing unused/dead-code warnings, but no compile or test
+  failure. This evidence does not cover native runtime behavior.
+- The protected CA-generated working-tree changes and `agent.pb.go` remained
+  untouched.
+
+### 2026-09-09 W9-B Stable Simulator Closure
+
+- Added the stable
+  `mobile-ios-simulator-layout-accessibility-e2e` Gate and its complete
+  Feature → Capability → Domain → Registry → Gate Catalog → Mobile plan trace.
+- Added the `mobile-ios-layout-simulator` environment with iOS 17.4
+  iPhone SE (3rd generation) and iPhone 15 Pro Max cells. The Provisioner
+  builds one embedded app, allocates isolated Appium ports/storage, installs it
+  on both simulators, and owns reverse cleanup.
+- Corrected the launch-surface helper copy to wrap instead of ellipsize and
+  bound `document.documentElement.lang` to the active Mobile locale.
+- Three source-bound Gate runs passed during implementation:
+  `20260909T031013168485Z-2e1b8c60ba0ba02e2c386f835c3c689a` and
+  `20260909T031503314122Z-41a107502aac45451aa64f5dc96b927b`, then
+  `20260909T032846644671Z-757060997229be583caa73cc91a44418`.
+- The authoritative current-source proof is the external Evidence Store latest
+  for this Gate. Any later tracked-file edit changes the workspace digest and
+  requires a fresh run before another source-current claim.
+- The runs proved compact/large English portrait, keyboard-open portrait,
+  Chinese portrait, Chinese landscape, native accessible names/bounds,
+  WebView clipping/viewport checks, and deterministic Appium/Provisioner
+  cleanup. `make acceptance-validate DOMAIN=mobile` and the standalone
+  `make acceptance-infra-validate` then passed structural validation.
+- The exact dirty-worktree Gap Detector remains `UNPROVEN`: its 56-path input
+  includes protected CA-generated files plus pending W3/W4 and physical-native
+  surfaces, so it correctly requires Gates outside W9-B. The four-Gate W9-B
+  execution bundle was also `PARTIAL` because
+  `acceptance-runtime-provisioning-self` retains unrelated Agent V2/Home
+  Station and launch-context failures. Neither result broadens or invalidates
+  the source-bound W9-B Gate claim.
+- This closes W9-B only for the unauthenticated iOS Simulator launch surface.
+  Authenticated Shell surfaces, Android, physical displays,
+  VoiceOver/TalkBack, and physical-device performance remain `UNPROVEN`.
+
+### 2026-09-09 W3/W4 Evidence Audit And Plan Amendment
+
+- The existing `mobile-native-lifecycle-e2e`,
+  `mobile-native-recovery-e2e`, and `mobile-native-recovery-ui-e2e` catalog
+  entries all dispatch into `native_e2e.py`, which currently rejects every
+  scenario except `access`.
+- The physical `mobile-native` environment also requires OAuth provider
+  credentials, four physical-device leases, two Stations, and Relay before any
+  non-access scenario can start. Those OAuth-specific resources are not valid
+  prerequisites for the independent simulator portions of W3/W4.
+- W3 source closure is reopened because session revalidation,
+  generation-fenced Station/logout transitions, and descriptor-owned
+  launch/navigation state remain incomplete.
+- W4 source closure is reopened because the ledger/draft implementations do not
+  yet satisfy the accepted Station/PTID partition, 512 unresolved-record and
+  16 MiB partition limits, 256 KiB payload limit, or four active
+  `ordering_key` fairness contract. Recovery projection wiring and user action
+  ownership are also incomplete.
+- Add dedicated Station-bound simulator injection and supplemental lifecycle
+  plus local command/draft recovery Gates. These Gates may prove only their
+  declared simulator/local cells. Station exactly-once readback, W5 event
+  overflow/reconcile, Chat/Group behavior, physical background/resume,
+  Keychain/Keystore deletion failures, VoiceOver/TalkBack, and physical
+  performance remain `UNPROVEN`.
+- The first dependency-free W3 slice uses
+  `mobile-simulator-runtime-lifecycle-e2e` on the existing iOS Simulator and
+  Android Emulator environment. It proves only runtime-graph ordering,
+  suspend/resume/restart, monotonic generation, visible-app survival, and
+  cleanup. A later Station-bound simulator cell remains required for session
+  restore/revocation, Station/actor switching, and old-scope absence.
+- The W3 owner-layer implementation now places runtime registration and
+  transitions in `MobileLifecycleKernel`, restores and revalidates auth through
+  the auth runtime descriptor, fences projections before Station/logout
+  mutation, and moves primary plus Chat/Group detail visibility into the
+  descriptor-backed Mobile navigation store. The Social/Group selection fields
+  remain projection/readback context only.
+- The first environment execution exposed a Gate composition defect before
+  client acquisition: `simulator_lifecycle_e2e.py` called shared manifest
+  validators as instance methods. Run
+  `20260909T065403749839Z-02432b19b04d8a72c3ca62c7b7cbc1d0` therefore remained
+  `FAIL/PARTIAL/UNPROVEN`, while Provisioner cleanup was
+  `PASS/DONE/PROVEN`. The shared-validator fix and full-entry regression then
+  produced implementation run
+  `20260909T065949060369Z-9cd66c70fb98c5c9d0c4954507291137` as
+  `PASS/DONE/PROVEN` on both simulator cells. Because subsequent W3
+  owner/document edits changed the workspace digest, authoritative
+  current-source proof remains the External Evidence Store latest produced by
+  the final rerun after those edits.
+
+### 2026-09-09 Station-Bound W3 And Independent W6D/W7 Closure
+
+- The Station-bound W3 implementation now uses the typed
+  `mobile-station-lifecycle-simulator` environment with two independently
+  attested disposable Stations. The parent Provisioner owns Fixture
+  credentials, Appium sessions, service selection, runtime binding proof, and
+  cleanup; the Gate child receives only bounded operations and sanitized
+  projections.
+- Every simulator launch uses topology-free `create_bound_session(client_id,
+  launch_options)` and returns exact proof closure for each required
+  `(clientId, launchGeneration, bindingRole)` tuple. Product Station switches
+  use `select_binding` and preserve the launch generation while advancing the
+  Mobile lifecycle generation.
+- The W3 Gate covers valid-session restore, same-device-type takeover and
+  revocation, ten Station switches, logout, monotonic generation, and old-scope
+  absence. Non-destructive preflight verifies both source-bound Station
+  attestations and then stops at the explicit `MOBILE_ACCEPTANCE_RESET=1`
+  authorization boundary. The authoritative current-source result is the
+  External Evidence Store latest produced after this amendment.
+- The dependency-ready W6D slice mounts one app-level recovery OverlayHost.
+  Blocking Station mismatch and device-local actions delegate to the existing
+  lifecycle/auth owners, action failures remain visible, raw peer IDs are not
+  rendered, deferred capability notices are limited to Shell/resume state, and
+  the component-tree registry records `on-visit + none` child lifetimes.
+- W6D does not claim W4 or W5 closure. Draft/ledger actions require the pending
+  W4 schema and owner work; overflow/reconcile requires W5 event ingress.
+  `mobile-native-recovery-ui-e2e` remains a physical full-proof Gate and must
+  not be replaced by direct RecoveryProjection injection.
+- The dependency-ready W7 slice hardens local Rust/TypeScript lifecycle
+  bridging: generation is exact and monotonic, future/stale/non-consecutive
+  duplicate events are rejected, event and reconciliation payloads are
+  validated, listener/invoke/emit failures are typed or surfaced, and network
+  readback uses one coherent snapshot without interpreting an unobserved state
+  as confirmed offline.
+- `check:native-platforms` and `check:recovery-ui` are stable local source
+  checks. They do not prove native permission behavior, scheduled wakeups,
+  physical background/resume, VoiceOver/TalkBack, performance, or cleanup.
+  The iOS/Android permission adapters and non-access branches in
+  `native_e2e.py` remain explicit implementation/design gaps, so W7 and W6D
+  remain partial.
+- Acceptance Registry rules now map recovery surfaces and the native lifecycle
+  bridge to their Mobile Features and existing full-proof Gates. No weaker
+  simulator Gate was added because the current Harness cannot trigger those
+  states through production owners without direct projection injection.
+- `mobile-simulator-access-e2e` now emits its primary result through the
+  canonical `acceptance-gate-evidence-report` contract with Gate, Phase, BOM,
+  Spec, observed scope, unproven scope, and sample-emission fields. This lets
+  the outer runner retain the existing W2-E1 simulator proof instead of
+  downgrading a passed child journey to `PARTIAL/UNPROVEN`; it does not broaden
+  the simulator proof into provider or physical-device scope.
+
+### 2026-09-09 W7 Adaptive Queue Admission
+
+- A source audit found four omitted but architecture-defined W7 closures:
+  W7-A native permission adapters, W7-B native foreground/background callback
+  delivery, W7-C scenario-owned physical provisioning, and W7-D lifecycle plus
+  platform Gate branches.
+- These are mechanical plan additions under the accepted Web -> Rust -> native
+  plugin boundary and D-07/D-08/D-17/D-18 Acceptance contracts. They do not
+  introduce a new product journey, persistence owner, topology, schema version,
+  or proof tier.
+- Non-access physical Gates must provision only their declared resources.
+  OAuth credentials, provider/browser leases, Relay, destructive actor reset,
+  and four-client allocation remain access-specific unless another scenario's
+  accepted runtime manifest explicitly requires them.
+- WorkManager/BGTaskScheduler scheduling semantics remain parked behind
+  `DESIGN_AMENDMENT_REQUIRED`; ordinary foreground/background callback delivery
+  is independently dependency-ready.
+- Physical iOS/Android Gate execution remains `UNPROVEN` until the declared
+  devices and platform resources are available. Local/static source checks may
+  prove implementation structure only.
+- W7-A through W7-D source closure is now implemented. The native plugin owns
+  Android/iOS permission calls and foreground/background callbacks; Rust owns
+  lifecycle generation and replay fencing; TypeScript serializes canonical
+  transitions; the physical Provisioner selects resources before credential
+  resolution and retains broker-backed device leases, heartbeat, D-18 Appium
+  authority, and reverse cleanup. XCUITest uses alert acceptance while
+  UiAutomator2 uses its documented permission-grant capability.
+- The source closure passes focused Mobile TypeScript, Rust, plugin, and
+  Acceptance Python suites, `pnpm mobile:check`, Acceptance plan self-check,
+  Mobile structural validation, and the current-source iOS W9-B simulator
+  Gate. After exporting the installed Homebrew Android SDK and NDK roots, the
+  authoritative latest cross-platform runtime lifecycle Gate produced after
+  this amendment also passes; cleanup leaves both simulator platforms stopped.
+  Physical
+  lifecycle/platform runs correctly exclude OAuth credentials and destructive
+  Fixture setup, then stop at the declared Appium/device resource boundary;
+  they remain `BLOCKED/UNPROVEN` with cleanup evidence.
+- Final source-audit checks pass on the same workspace digest:
+  `pnpm mobile:check`, 100 Mobile Vitest tests, 84 Mobile Rust tests including
+  doctests, two permission-plugin Rust tests, 135 focused Mobile Acceptance
+  tests, Rust formatting, scoped diff checks, Acceptance plan self-check,
+  Acceptance Infra validation, Mobile structural validation,
+  `mobile-contract-static`, and `mobile-hard-cut-static`. The authoritative
+  full-range Acceptance plan is the latest External Evidence Store artifact
+  produced after this amendment.
+- The authoritative latest Acceptance Gap Detector result produced after this
+  amendment remains `UNPROVEN` as required: it accepts current-source simulator
+  evidence and retains every unrun physical, destructive,
+  CA-HC/W5-dependent, and unrelated-owner Gate as an explicit gap. This is not
+  a W7 source defect and does not authorize weaker substitute evidence.
 
 ### W9-D Authorized Runtime Preflight Evidence
 
