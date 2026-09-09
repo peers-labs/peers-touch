@@ -13,4 +13,4 @@ pub use drain::{
     QueueDrain, QueueTransport,
 };
 pub use public_event::PublicEventProcessor;
-pub use receipt::DeliveryReceiptProcessor;
+pub use receipt::{decode_device_receipt_payload, DeliveryReceiptProcessor, DeviceReceiptPayload};
