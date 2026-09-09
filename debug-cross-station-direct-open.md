@@ -1,7 +1,8 @@
 # Debug Session: cross-station-direct-open
 - **Status**: [OPEN]
 - **Issue**: The Windows native Chat Gate selects the exact station-five Bob search result, but Alice's direct conversation does not open.
-- **Debug Server**: `http://10.4.43.34:7779/event`
+- **Debug Server**: `http://127.0.0.1:7777/event` on sixwin through the
+  run-scoped SSH reverse tunnel
 - **Log File**: `.dbg/trae-debug-log-cross-station-direct-open.ndjson`
 
 ## Reproduction Steps
@@ -546,3 +547,23 @@ still never observed `control.kind == "text-field"` after `Ctrl+L`. Cleanup
 released every process, port, storage root, endpoint, tunnel, source workspace,
 and GUI lease. Hypotheses AF-AJ now own a read-only Win32 hierarchy probe before
 another behavioral change.
+
+Exact-source Windows run
+`20260909T080220651074Z-23b30e5e185125597ab19cad4fabb8d5` at commit
+`01e6ddb38efd3ba3354e52553aa921821f697795`, runtime-cell run
+`20260909t080246895854z-e36124c139e467f9`, and binary SHA-256
+`218843ccc9f5087080691b707efa0487f7095bb3a91efdd2181dd1111907ac78`
+proves the canonical read-cursor correction: `reaction.ui` passes with exact
+authority readback and matching Alice/Bob projections. Direct create/reopen,
+Group creation, bidirectional transcript/thread, toolbar geometry, identity,
+and Station attribution also pass.
+
+The first failure returns to the existing Win32 chooser boundary at
+`settings.background.ui`. Desktop logs prove `pick_image_file` opened the
+native image picker. The Gate observed the chooser transition, sent `Ctrl+L`,
+then timed out at `native_product_closure_runner.py:731` because
+`focused_control` never reported `kind == "text-field"`. Cleanup is
+`DONE/PROVEN`. The previous hardcoded debug endpoint was unreachable from
+sixwin, so it produced no AF-AJ evidence. The collector now runs locally with a
+verified sixwin reverse tunnel at `127.0.0.1:7777`; the existing read-only
+hierarchy probe uses `runId=pre-fix` for the next exact-source comparison.

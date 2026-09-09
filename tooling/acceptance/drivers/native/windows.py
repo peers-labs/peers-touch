@@ -624,7 +624,7 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
                 if dialog_visible:
                     event = {
                         "sessionId": "cross-station-direct-open",
-                        "runId": "native-file-chooser-hwnd-probe",
+                        "runId": "pre-fix",
                         "hypothesisId": "AF-AJ",
                         "location": "windows.py:focused_control",
                         "msg": "[DEBUG] Win32 file-dialog focus hierarchy",
@@ -655,7 +655,7 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
                         },
                     }
                     request = urllib.request.Request(
-                        "http://10.4.43.34:7779/event",
+                        "http://127.0.0.1:7777/event",
                         data=json.dumps(event).encode("utf-8"),
                         headers={"Content-Type": "application/json"},
                         method="POST",
