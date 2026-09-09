@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import tempfile
 import time
 import unittest
@@ -465,6 +466,119 @@ class CapabilityIsolationCleanupClient:
                 "restorationVerified": self.verified,
             },
         }
+
+
+class FoundationScenarioRunnerDryRunTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.profile = {
+            "PT_AGENT_PROVIDER_ID": "test-provider",
+            "PT_AGENT_PROVIDER_API_KEY": "test-only-credential",
+            "PT_AGENT_DEFAULT_MODEL_ID": "test-model",
+            "PT_AGENT_PROVIDER_BASE_URL": "https://provider.example/v1",
+        }
+        self.manifest = {
+            "services": {"station": {"endpoint": "https://station.example"}},
+            "clients": [
+                {
+                    "runtime": runtime,
+                    "worktree": str(foundation_scenario_runner.REPO_ROOT),
+                    "gateway_port": 3230 + index,
+                    "renderer_port": 3410 + index,
+                    "webdriver_port": 4445 + index,
+                    "storage_root": f"/tmp/foundation-dry-run/{runtime}",
+                    "profile": f"dry-run-{runtime}",
+                }
+                for index, runtime in enumerate(("native-tauri", "browser"))
+            ],
+        }
+        patches = (
+            patch.object(
+                foundation_scenario_runner,
+                "_load_runtime_manifest",
+                return_value=self.manifest,
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_load_profile_env",
+                return_value=self.profile,
+            ),
+            patch.object(
+                foundation_scenario_runner.EvidenceStore,
+                "from_environment",
+                side_effect=AssertionError("dry-run allocated evidence"),
+            ),
+            patch.object(
+                foundation_scenario_runner.FoundationRuntimePair,
+                "from_manifest",
+                side_effect=AssertionError("dry-run allocated clients"),
+            ),
+            patch("socket.socket", side_effect=AssertionError("dry-run opened socket")),
+            patch(
+                "subprocess.Popen",
+                side_effect=AssertionError("dry-run launched process"),
+            ),
+            patch.dict(
+                "os.environ",
+                {"PT_FOUNDATION_STARTUP_TIMEOUT": "900"},
+            ),
+        )
+        for patcher in patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_valid_configuration_returns_no_candidate_and_acquires_no_resources(
+        self,
+    ) -> None:
+        self.assertIsNone(foundation_scenario_runner.run_scenario(dry_run=True))
+
+    def test_missing_provider_configuration_fails_before_resource_acquisition(
+        self,
+    ) -> None:
+        self.profile.pop("PT_AGENT_PROVIDER_API_KEY")
+        with self.assertRaisesRegex(
+            foundation_scenario_runner.ScenarioRunnerError,
+            "PT_AGENT_PROVIDER_API_KEY",
+        ):
+            foundation_scenario_runner.run_scenario(dry_run=True)
+
+    def test_incomplete_client_configuration_is_not_accepted(self) -> None:
+        self.manifest["clients"].pop()
+        with self.assertRaisesRegex(
+            foundation_scenario_runner.ScenarioRunnerError,
+            "Native and Browser",
+        ):
+            foundation_scenario_runner.run_scenario(dry_run=True)
+
+    def test_duplicate_client_runtime_is_not_accepted(self) -> None:
+        self.manifest["clients"][1]["runtime"] = "native-tauri"
+        with self.assertRaisesRegex(
+            foundation_scenario_runner.ScenarioRunnerError,
+            "Native and Browser",
+        ):
+            foundation_scenario_runner.run_scenario(dry_run=True)
+
+    def test_invalid_startup_timeout_fails_before_resource_acquisition(self) -> None:
+        for timeout in ("0", "-1", "nan", "inf", "not-a-number"):
+            with (
+                self.subTest(timeout=timeout),
+                patch.dict("os.environ", {"PT_FOUNDATION_STARTUP_TIMEOUT": timeout}),
+                self.assertRaisesRegex(
+                    foundation_scenario_runner.ScenarioRunnerError,
+                    "positive and finite",
+                ),
+            ):
+                foundation_scenario_runner.run_scenario(dry_run=True)
+
+    def test_cli_does_not_print_a_candidate_path_on_dry_run(self) -> None:
+        output = io.StringIO()
+        with (
+            patch("sys.argv", ["foundation_scenario_runner.py", "--dry-run"]),
+            patch("sys.stdout", output),
+        ):
+            self.assertEqual(foundation_scenario_runner.main(), 0)
+        self.assertIn("no scenarios executed", output.getvalue())
+        self.assertNotIn("test-only-credential", output.getvalue())
+        self.assertNotIn("None", output.getvalue())
 
 
 class FoundationScenarioRunnerProfileTest(unittest.TestCase):

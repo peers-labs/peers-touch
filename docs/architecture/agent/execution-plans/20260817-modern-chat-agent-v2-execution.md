@@ -242,8 +242,8 @@ Parallel policy:
 |---|---|---|
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
-| F2 Runtime/Stream/Capability/Portability | in progress: Q4 C06 source closure complete; Q5/Q6 not entered | F1 |
-| F3 Context/Resource Intelligence | core complete / C08 unproven | F2 |
+| F2 Runtime/Stream/Capability/Portability | implementation checks complete: Q4 C06 and Q5/Q6 C10 source closures pass; product proof remains pending G-F | F1 |
+| F3 Context/Resource Intelligence | C04 core and C08 source/Gate wiring complete; `agent-attachment-e2e` not run / C08 product proof unproven | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
@@ -252,10 +252,88 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `66e2f48aa7e3603da786c7cfdef6083b3c438c0e` crossed both observed Browser AS-F06 page switches, rejecting the navigation hypotheses, then exposed a masked primary failure plus Native capability-isolation cleanup timeout. A same-source diagnostic run localized the Native failure to the `ensureProvider` harness call while process and ports remained healthy. Stage-only provider setup instrumentation is pending exact-source execution. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | blocked before remote preflight by `ACCEPTANCE_INFRA_REQUIRED`: current remote source attestation uses `StrictHostKeyChecking=no`, which its own provisioning self-test rejects. No Station access occurred. Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
+
+### 5.3 Bounded Diagnostic Execution
+
+This is an execution-method amendment within G-F, not approval to change its
+419-cell matrix, thresholds, required evidence, or downstream entry conditions.
+The current workstream total remains 16.
+
+- Reconcile completed artifacts and retained logs before launching a runtime.
+  Process/port liveness is not proof that a scenario is advancing.
+- Reuse an unchanged Acceptance binary. Rebuild only when Desktop Rust, UI,
+  Harness, or driver build inputs change. Documentation and Python runner
+  edits alone do not require a Desktop rebuild. Final proof still requires
+  matching clean source identities across the full proof set.
+- Use local contract regressions and a narrowly bounded reproduction of the
+  known failure before another full Gate. Diagnostic results never count as
+  missing matrix cells or authorize downstream workstream entry.
+- `foundation_scenario_runner.py --dry-run` now exits after configuration
+  validation. The G-F correction and regression prove it does not allocate an
+  Evidence Store run, client, proxy, fixture, or candidate manifest. This
+  validates inputs only; it does not establish live readiness.
+- Record primary failure and cleanup failure separately. The existing
+  cleanup wrapper can mask the primary exception; do not guess the lost
+  failure or launch another full run merely to recover its text.
+- Each diagnostic attempt must state its hypothesis, expected distinguishing
+  observation, unchanged product assertions, and stopping condition. A repeat
+  requires new evidence or a relevant source/environment change.
+- The current source has no focused scenario CLI. Do not invent a filtered
+  full-Gate command or call the ignored dry-run option as a shortcut. A new
+  diagnostic entrypoint needs explicit scope and must never emit a candidate
+  or publish proof.
+
+Source reconciliation on 2026-09-08:
+
+- Gate `20260908T135908515691Z-03999d7db95ed840bdf6a9ece5883400`
+  binds clean checkpoint `2f42b6eeea8e339b607c23e38b738caa8c91e368`.
+  The retained provider stage log reaches matching readiness snapshots for
+  both clients. The later Browser AS-F06 capability-session failure records
+  `processState=exited` and all three client ports closed during the
+  interrupted run. It does not establish a deterministic provider or
+  navigation defect.
+- Its child run
+  `20260908T135928534133Z-5256082e8ac119e5b9731e0c91c229c1`
+  records clean runtime cleanup; outer Provisioner cleanup also passed.
+  Cleanup success does not make the interrupted product run proven.
+- Existing binary SHA-256
+  `3a7b979de1ee3d28cde6de49040a7d152a2b5eaf1014607e7625a068283c7529`
+  passed `make acceptance-driver-smoke` on resume, including native
+  `tauri://localhost`, DOM, Tauri API, and Harness presence. WebDriver and
+  allocated Gateway ports were released. Smoke is not Foundation proof.
+- Local dry-run correction: six new regression methods failed on the original
+  ignored flag and passed after the early configuration-only return. The
+  complete runner suite passed 46 tests; runtime/client and candidate suites
+  passed 32 tests; Agent native static checks passed 75 tests. A CLI dry-run
+  against the retained manifest exited with no scenarios or candidate.
+  `git diff --check` passed. These Python/docs changes are uncommitted and do
+  not claim exact-source product proof.
+
+Checkpoint preflight on 2026-09-09:
+
+- The F2/F3 source slice passed Desktop check and 588 Vitest tests, Station
+  Agent packages, 23 Rust `agent_turn` tests, 15 Mobile contract tests, 275
+  Agent Acceptance tests, planner mapping, and the C03/C04/C05/C06/C08/C10
+  zero-old-path checks before the local checkpoint.
+- Registered `acceptance-plan-self`, `desktop-check`, and
+  `station-agent-unit` Gates passed.
+- `acceptance-infra-validation` and
+  `acceptance-runtime-provisioning-self` failed before any remote access. The
+  latter retains eight generic failures, including a remote attestation command
+  that uses `StrictHostKeyChecking=no` while its contract requires strict host
+  verification, plus source-digest, local Desktop Gateway Fixture, and
+  launch-context test failures.
+- This is `ACCEPTANCE_INFRA_REQUIRED`, not a business C08/G-F failure. The Goal
+  forbids repairing generic Acceptance Infra, so no Station deploy, reset,
+  native Gate, or 419-cell run was started.
+
+The separate
+[Home-first sequencing proposal](./20260908-agent-delivery-recovery.md)
+requires Owner approval. Until approved, section 5's DAG remains authoritative.
 
 ## 6. Responsibility Workstreams
 
@@ -832,6 +910,28 @@ P12 and stateless CLI non-advertisement on Desktop and Browser.
   old-path unittest likewise fails only on other F1/F2 closures. None of those
   failures constitute Q4 product evidence.
 
+**Q5/Q6 / MCA-C10 source-closure evidence (2026-09-09)**:
+
+- The typed `ClientCapabilitySession`, lease, advertisement, receipt, and
+  opaque resource-ref contracts were already present across Proto, Station,
+  Desktop Rust, Desktop Web, and Mobile contract tests. Source reconciliation
+  found two remaining Desktop production seams: normal Chat turns omitted the
+  Station-selected `client_capability_session_id`, and the runtime selector
+  accepted a sole active session from the wrong platform.
+- `agentCapabilityRuntime` now selects only an unexpired session for the
+  current Desktop or Browser shell. The normal Chat turn builder now forwards
+  the selected session from the Station readiness projection. No client
+  platform hint, Desktop fallback, P12 advertisement, stateless CLI
+  advertisement, or shared local-path contract was added.
+- Q6 local checks pass: selected Station Agent tests; Desktop typecheck and
+  588 Vitest tests with one unrelated environment-only skip; 23 filtered Rust
+  `agent_turn` tests; 15 Mobile Agent contract tests; and the
+  `C03,C05,C06,C10` old-path scan with `unresolvedCount=0` and
+  `unregisteredMatches=0`.
+- This closes F2 implementation evidence only. The complete 419-cell
+  Foundation Gate was not run, so G-F and product/runtime proof remain
+  `PARTIAL / UNPROVEN`.
+
 ### F3 — Context And Resource Intelligence
 
 **Depends on**: F2.
@@ -864,6 +964,48 @@ tooling/scripts/review/agent-v2-old-paths.sh --closure C04,C08
 Evidence before product Gate: fixed source-quality cases, exact source IDs,
 opaque ref authorization, unsupported/oversized early reject, restart readback,
 and zero local-path leakage.
+
+**C08 source-closure evidence (2026-09-09)**:
+
+- The production path already carries opaque `AgentAttachmentRef` values
+  through actor-private OSS upload, Station owner/scope/expiry/checksum/MIME/
+  count/byte/model admission, persisted message metadata, ContextLedger
+  attribution, explicit model omission, download readback, and object cleanup.
+- The previously registered `agent-attachment-e2e` command was not executable:
+  `native_agent_runner.py` did not accept `--journey attachment`, consumed the
+  removed singular `station` manifest field, and the concrete Home Station
+  provisioner did not allocate the Agent attachment runtime. The Gate now uses
+  canonical `services.station`, approved profile credentials, an isolated
+  attachment client, the existing production `AS-F05` and
+  `BASE-ATTACHMENT_REJECTED` Harness journeys, and independent Python oracles.
+  AS-F05 now exercises the real history attachment action and records only a
+  hash of the opened target; the BASE journey proves composer input, chip,
+  localized rejection, preserved draft, and removal behavior. The active Agent
+  picker now uses the shared PNG/PDF MIME contract instead of its prior
+  image-only filter. The Gate requires receiver, Station, runtime-event,
+  measurement, side-effect, replay, attestation, and cleanup evidence before
+  publishing success. Runtime cleanup buffers the Desktop log for Evidence
+  Store publication and removes the complete run root, including the generated
+  credential-bearing profile.
+- The Feature/Capability contract now names
+  `ExecuteTurnRequest.attachments`, persisted `AgentMessage.attachments`,
+  actor-private OSS objects, and ContextLedger attribution. Registry coverage
+  selects the attachment Gate for the shared Agent runner/provisioner.
+- The C08 deletion inventory now explicitly rejects Social Chat's
+  `ChatAttachmentInput` and local-path attachment identity from Agent-owned
+  portable paths while retaining the separate encrypted Social Chat contract.
+  The `C04,C08` scan reports `unresolvedCount=0` and
+  `unregisteredMatches=0`.
+- Focused Station attachment/context tests pass; 275 Agent scenario/oracle/
+  contract/native-static/old-path/provisioner tests pass; Acceptance planner
+  self-check and mapping regressions pass. `agent-attachment-e2e` was not run
+  because this Goal forbids provisioning and remote execution. Current-source
+  C08 product proof therefore remains `UNPROVEN`. The broader
+  `acceptance-runtime-provisioning-self` aggregate still fails on eight
+  pre-existing non-C08 cases: one local Desktop Gateway fixture contract,
+  Station source/SSH expectation drift, and three launch-context timeout
+  cases. Those failures do not pass silently and prevent an Acceptance Infra
+  readiness claim.
 
 ### F4 — Tool Policy And Observability Baseline
 
@@ -1525,7 +1667,8 @@ blocked until W8a.
 authority and D19 governed ToolCall authority after W1/W3/W6. Earlier
 source-matched runs through AS-F03 are diagnostic evidence only. This unchanged
 419-cell Gate is the only checkpoint allowed to report Foundation `PROVEN`.
-**Status**: blocked on W8a. The following runs are diagnostic history, not
+**Status**: entry condition satisfied by completed W8a; G-F is in progress and
+remains `PARTIAL / UNPROVEN`. The following runs are diagnostic history, not
 Foundation Gate passes. Commits through `cb8652436` repaired the profile-owned
 provider/model fixture, durable Station runtime authority, portable
 attestation normalization, AS-F01 source-backed evidence roles, conversation

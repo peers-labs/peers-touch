@@ -243,6 +243,32 @@ class ProvisionerBlockingTests(unittest.TestCase):
         ):
             provisioner._export_profile_credential_refs({})
 
+    def test_agent_attachment_client_has_separate_runtime_identity(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        profile_env = {
+            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
+            "PT_DESKTOP_APP_WEB_PORT": "13511",
+        }
+        with patch.dict(
+            "os.environ",
+            {"PT_AGENT_ATTACHMENT_WEBDRIVER_PORT": "14450"},
+            clear=True,
+        ):
+            client = provisioner._agent_attachment_client(
+                "run-attachment",
+                1,
+                profile_env,
+            )
+
+        self.assertEqual(client.actor, "alice")
+        self.assertEqual(client.profile, "one")
+        self.assertEqual(client.gateway_port, 13331)
+        self.assertEqual(client.renderer_port, 13511)
+        self.assertEqual(client.webdriver_port, 14450)
+        self.assertIn("pt-agent-attachment-run-attachment", client.storage_root)
+
     def test_unreachable_station_returns_blocked_manifest(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"

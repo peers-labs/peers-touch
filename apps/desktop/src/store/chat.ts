@@ -14,6 +14,7 @@ import {
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
+import { useAgentCapabilityStore } from './agentCapabilities';
 import { useAgentTopicStore } from './agentTopics';
 import { currentAuthenticatedActorPtid } from './session';
 import {
@@ -761,6 +762,10 @@ function buildAgentTurnInput(
 ) {
   const agentState = useAgentStore.getState();
   const agent = agentState.agents.find((a) => a.id === agentId);
+  const clientCapabilitySessionId = useAgentCapabilityStore
+    .getState()
+    .readinessByAgentId[agentId]
+    ?.selectedClientSessionId;
   return {
     client_idempotency_key: clientIdempotencyKey || tempId(),
     conversation_id: conversationId,
@@ -769,6 +774,7 @@ function buildAgentTurnInput(
     provider: agent?.provider || undefined,
     model: agent?.model || undefined,
     requested_budget: requestedBudget,
+    client_capability_session_id: clientCapabilitySessionId,
     attachments: attachments
       .map((item) => item.attachment)
       .filter((item): item is AgentAttachmentRefInput => Boolean(item)),

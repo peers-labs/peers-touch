@@ -10,7 +10,9 @@
     "apps/station/app/subserver/oss/service/file_service.go",
     "apps/desktop/src/services/agentAttachments.ts",
     "apps/desktop/src/components/composer/useAgentAttachmentDrafts.ts",
-    "apps/desktop/src/components/composer/AttachmentStage.tsx"
+    "apps/desktop/src/components/composer/AttachmentStage.tsx",
+    "tooling/acceptance/gates/agent/native_agent_runner.py",
+    "tooling/acceptance/provisioners/home_station.py"
   ],
   "truth_sources": [
     "Station ExecuteTurnRequest.attachments and persisted AgentMessage.attachments",
@@ -18,7 +20,7 @@
     "Actor-private OSS object metadata and bytes"
   ],
   "visible_surfaces": [
-    {"type": "api", "route": "/agent/chat/send (with attachment_refs)"},
+    {"type": "api", "route": "/agent/turn/execute (with attachments)"},
     {"type": "api", "route": "/agent/workspace/oss/upload"},
     {"type": "api", "route": "/agent/workspace/oss/download"}
   ],

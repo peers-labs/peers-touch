@@ -25,6 +25,8 @@ from tooling.acceptance.fixtures.chat_native_actors import produce_actor_manifes
 
 
 GATE_ROLES = {
+    "agent-attachment-e2e": ("alice",),
+    "agent-stream-resilience-e2e": ("alice",),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
@@ -34,6 +36,12 @@ GATE_ROLES = {
 }
 
 AGENT_V2_FOUNDATION_GATE = "agent-v2-kernel-foundation-e2e"
+AGENT_NATIVE_GATES = frozenset(
+    {
+        "agent-attachment-e2e",
+        "agent-stream-resilience-e2e",
+    }
+)
 AGENT_V2_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 AGENT_V2_CREDENTIAL_REFS = (
     "profile:CHAT_NATIVE_DEMO_PASSWORD",
@@ -214,6 +222,119 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         self._assert_client_ports_available(client, resource_prefix="browser-")
         return client
 
+    def _agent_native_client(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+        *,
+        journey: str,
+        worktree_variable: str,
+        gateway_port_variable: str,
+        renderer_port_variable: str,
+        webdriver_port_variable: str,
+    ) -> ClientRuntime:
+        worktree = Path(
+            os.environ.get(worktree_variable, str(REPO_ROOT))
+        ).expanduser().resolve()
+        client = ClientRuntime(
+            actor="alice",
+            runtime="native-tauri",
+            worktree=str(worktree),
+            gateway_port=int(
+                os.environ.get(
+                    gateway_port_variable,
+                    profile_env.get(
+                        "PT_DESKTOP_APP_GATEWAY_PORT",
+                        str(3030 + slot * 100),
+                    ),
+                )
+            ),
+            renderer_port=int(
+                os.environ.get(
+                    renderer_port_variable,
+                    profile_env.get(
+                        "PT_DESKTOP_APP_WEB_PORT",
+                        str(3210 + slot * 100),
+                    ),
+                )
+            ),
+            webdriver_port=int(
+                os.environ.get(
+                    webdriver_port_variable,
+                    str(4445 + slot * 10),
+                )
+            ),
+            profile=AGENT_V2_PROFILE,
+            storage_root=f"/tmp/pt-agent-{journey}-{run_id}/storage",
+        )
+        self._assert_client_ports_available(client)
+        return client
+
+    def _agent_stream_client(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> ClientRuntime:
+        return self._agent_native_client(
+            run_id,
+            slot,
+            profile_env,
+            journey="stream",
+            worktree_variable="PT_AGENT_STREAM_WORKTREE",
+            gateway_port_variable="PT_AGENT_STREAM_GATEWAY_PORT",
+            renderer_port_variable="PT_AGENT_STREAM_RENDERER_PORT",
+            webdriver_port_variable="PT_AGENT_STREAM_WEBDRIVER_PORT",
+        )
+
+    def _agent_attachment_client(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> ClientRuntime:
+        return self._agent_native_client(
+            run_id,
+            slot,
+            profile_env,
+            journey="attachment",
+            worktree_variable="PT_AGENT_ATTACHMENT_WORKTREE",
+            gateway_port_variable="PT_AGENT_ATTACHMENT_GATEWAY_PORT",
+            renderer_port_variable="PT_AGENT_ATTACHMENT_RENDERER_PORT",
+            webdriver_port_variable="PT_AGENT_ATTACHMENT_WEBDRIVER_PORT",
+        )
+
+    def _export_profile_credential_refs(
+        self,
+        profile_env: dict[str, str],
+    ) -> tuple[str, ...]:
+        resolved = {
+            reference.removeprefix("profile:"): profile_env.get(
+                reference.removeprefix("profile:"),
+                "",
+            )
+            for reference in AGENT_V2_CREDENTIAL_REFS
+        }
+        missing = sorted(name for name, value in resolved.items() if not value)
+        if missing:
+            raise BlockedError(
+                reason=(
+                    "One profile is missing required credential: "
+                    + ", ".join(missing)
+                ),
+                resource=f"credential-ref:profile:{missing[0]}",
+            )
+        self._remember_resolved_credentials(
+            AGENT_V2_CREDENTIAL_REFS,
+            {
+                "PT_AGENT_PROVIDER_API_KEY": resolved[
+                    "PT_AGENT_PROVIDER_API_KEY"
+                ],
+            },
+        )
+        return AGENT_V2_CREDENTIAL_REFS
+
     @staticmethod
     def _assert_client_ports_available(
         client: ClientRuntime,
@@ -264,14 +385,9 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             )
         provider_api_key = profile_env.get("PT_AGENT_PROVIDER_API_KEY", "")
         if provider_api_key:
-            values = {
-                f"prepared-{index}": value
-                for index, value in enumerate(self.resolved_credential_values)
-            }
-            values["PT_AGENT_PROVIDER_API_KEY"] = provider_api_key
             self._remember_resolved_credentials(
                 AGENT_V2_CREDENTIAL_REFS,
-                values,
+                {"PT_AGENT_PROVIDER_API_KEY": provider_api_key},
             )
         _, _, actor_ref = produce_actor_manifest(
             environment_id=self.environment_id,
@@ -301,8 +417,73 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             cleanup_resources=self.contract.cleanup.resources,
         )
 
+    def _agent_native_manifest(
+        self,
+        manifest: RuntimeManifest,
+        *,
+        gate_id: str,
+        station_url: str,
+        deployment_environment: str,
+        profile_env: dict[str, str],
+    ) -> RuntimeManifest:
+        if profile_env.get("CHAT_ACCEPTANCE_RESET") != "1":
+            raise BlockedError(
+                reason=(
+                    f"{gate_id} actor Fixture reset requires "
+                    "CHAT_ACCEPTANCE_RESET=1 in the approved profile"
+                ),
+                resource="fixture-reset:authorization",
+            )
+        missing_configuration = sorted(
+            name
+            for name in (
+                "PT_AGENT_PROVIDER_ID",
+                "PT_AGENT_PROVIDER_BASE_URL",
+            )
+            if not profile_env.get(name, "")
+        )
+        if missing_configuration:
+            raise BlockedError(
+                reason=(
+                    f"{gate_id} requires profile values: "
+                    + ", ".join(missing_configuration)
+                ),
+                resource=f"profile:{missing_configuration[0]}",
+            )
+        credential_refs = self._export_profile_credential_refs(profile_env)
+        roles = GATE_ROLES[gate_id]
+        _, _, actor_ref = produce_actor_manifest(
+            environment_id=self.environment_id,
+            run_id=manifest.run_id,
+            station_url=station_url,
+            deployment_environment=deployment_environment,
+            roles=roles,
+            credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
+            reset_authorized=True,
+        )
+        client = (
+            self._agent_attachment_client(
+                manifest.run_id,
+                manifest.profile_slot,
+                profile_env,
+            )
+            if gate_id == "agent-attachment-e2e"
+            else self._agent_stream_client(
+                manifest.run_id,
+                manifest.profile_slot,
+                profile_env,
+            )
+        )
+        return dataclasses.replace(
+            manifest,
+            actor_manifest_ref=actor_ref,
+            credential_refs=credential_refs,
+            clients=(client,),
+            cleanup_resources=self.contract.cleanup.resources,
+        )
+
     @staticmethod
-    def _validate_agent_v2_profile(
+    def _validate_agent_profile(
         gate_id: str,
         profile_name: str,
         profile_env: dict[str, str],
@@ -337,8 +518,11 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 profile_name=profile_name,
                 slot=slot,
             )
-            if gate_id == AGENT_V2_FOUNDATION_GATE:
-                self._validate_agent_v2_profile(
+            if (
+                gate_id == AGENT_V2_FOUNDATION_GATE
+                or gate_id in AGENT_NATIVE_GATES
+            ):
+                self._validate_agent_profile(
                     gate_id,
                     profile_name,
                     profile_env,
@@ -474,6 +658,16 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     station_url=station_url,
                     deployment_environment=deployment_environment,
                     slot=slot,
+                    profile_env=profile_env,
+                )
+                self._manifest = manifest
+                return self._ready(manifest)
+            if gate_id in AGENT_NATIVE_GATES:
+                manifest = self._agent_native_manifest(
+                    manifest,
+                    gate_id=gate_id,
+                    station_url=station_url,
+                    deployment_environment=deployment_environment,
                     profile_env=profile_env,
                 )
                 self._manifest = manifest

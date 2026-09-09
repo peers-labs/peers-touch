@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -66,6 +67,7 @@ from tooling.acceptance.gates.agent.foundation_non_advertisement_adapter import 
     NonAdvertisementProbeInput,
 )
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
+    FoundationClientSpec,
     FoundationRuntimeClient,
     FoundationRuntimePair,
 )
@@ -1461,20 +1463,45 @@ def _restore_capability_isolation_for_cleanup(
     return errors
 
 
-def run_scenario(*, dry_run: bool = False) -> Path:
+def run_scenario(*, dry_run: bool = False) -> Path | None:
     """Execute Phase 1: produce the Foundation candidate manifest.
 
-    Returns the absolute path to the candidate manifest JSON.
+    Returns the candidate path, or None for configuration-only validation.
     """
     # --- Load provisioned environment ---
     runtime_manifest = _load_runtime_manifest()
     profile_env = _load_profile_env(runtime_manifest)
     client_manifest = _build_client_manifest(runtime_manifest)
-    startup_timeout = float(
-        os.environ.get("PT_FOUNDATION_STARTUP_TIMEOUT", "900")
-    )
+    raw_startup_timeout = os.environ.get("PT_FOUNDATION_STARTUP_TIMEOUT", "900")
+    try:
+        startup_timeout = float(raw_startup_timeout)
+    except ValueError as error:
+        raise ScenarioRunnerError(
+            "PT_FOUNDATION_STARTUP_TIMEOUT must be positive and finite"
+        ) from error
+    if not math.isfinite(startup_timeout) or startup_timeout <= 0:
+        raise ScenarioRunnerError(
+            "PT_FOUNDATION_STARTUP_TIMEOUT must be positive and finite"
+        )
     station_profile = _extract_station_profile(runtime_manifest)
     machine = _extract_machine_id(runtime_manifest)
+
+    if dry_run:
+        # RuntimePair construction binds proxy sockets, even before start().
+        clients = client_manifest["clients"]
+        if (
+            len(clients) != 2
+            or any(not isinstance(client, Mapping) for client in clients)
+            or {client.get("runtime") for client in clients}
+            != {"native-tauri", "browser"}
+        ):
+            raise ScenarioRunnerError(
+                "Foundation runtime manifest requires Native and Browser clients"
+            )
+        for client in clients:
+            FoundationClientSpec.from_mapping(client)
+        _agent_provider_config(profile_env)
+        return None
 
     # --- Provision Evidence Store run ---
     store = EvidenceStore.from_environment(
@@ -1620,6 +1647,13 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    if args.dry_run:
+        sys.stdout.write(
+            "Foundation configuration valid; no scenarios executed; "
+            "no candidate manifest produced.\n"
+        )
+        return 0
 
     # Output the candidate manifest path to stdout for downstream consumption.
     # The acceptance-run.py framework and agent_v2_gate.py validator read this

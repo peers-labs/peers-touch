@@ -358,6 +358,14 @@ def valid_as_f05_capture() -> dict[str, object]:
             "expectedChecksum": "sha256:pdf",
             "actualChecksum": "sha256:pdf",
         },
+        "receiverInteraction": {
+            "attachmentId": "att-pdf",
+            "visible": True,
+            "keyboardReachable": True,
+            "accessibleNamePresent": True,
+            "openInvoked": True,
+            "openedUrlHash": "a" * 64,
+        },
     }
 
 
@@ -1887,7 +1895,7 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
     def test_as_f05_accepts_complete_attachment_facts(self) -> None:
         assertions = evaluate_as_f05(valid_as_f05_capture())
 
-        self.assertEqual(len(assertions), 10)
+        self.assertEqual(len(assertions), 11)
         self.assertTrue(all(assertions.values()))
 
     def test_as_f05_accepts_explicit_model_omission(self) -> None:
@@ -1959,6 +1967,18 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneScenarioError,
             "failedUploadRemovalPreservedSiblings",
+        ):
+            evaluate_as_f05(capture)
+
+    def test_as_f05_requires_the_history_attachment_action(self) -> None:
+        capture = valid_as_f05_capture()
+        receiver = capture["receiverInteraction"]
+        assert isinstance(receiver, dict)
+        receiver["openInvoked"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "historyAttachmentActionVisible",
         ):
             evaluate_as_f05(capture)
 
