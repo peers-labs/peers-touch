@@ -190,6 +190,11 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertIn("ArtifactSession", self.source)
         self.assertNotIn("REPORTS_DIR", self.source)
         self.assertIn("agent-native-journey.json", self.source)
+        self.assertIn(
+            '"artifactKind": "acceptance-gate-evidence-report"',
+            self.source,
+        )
+        self.assertNotIn('"artifactKind": "agent-native-journey-report"', self.source)
         self.assertIn("startedAt", self.source)
         self.assertIn("completedAt", self.source)
 

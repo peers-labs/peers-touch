@@ -1131,8 +1131,24 @@ and zero local-path leakage.
   sentinel atomic for generic assignment and command-flag redaction. Focused
   redaction, Evidence Store, runner, planner, validator, responsibility
   boundary, gap-detector, coverage, and quality tests pass. C08 remains
-  `FAILED / UNPROVEN`; G-F was not run. Product proof resumes only after the
-  clean Infra checkpoint and current-source self-validation.
+  `FAILED / UNPROVEN`; G-F was not run. Checkpoint
+  `9484face540c5232328680b41d43c2c1e234ab11` and its current-source
+  `acceptance-runtime-provisioning-self` plus `acceptance-infra-validation`
+  Gates pass, closing that generic blocker.
+- The exact-source C08 rerun
+  `20260909T091017537157Z-1e186dcee24723de5ddc75c4de71aa76`
+  passed all eight native journey steps and 19 product assertions, including
+  Station binding, login, attachment admission, rejection surface, and
+  resource cleanup. The outer aggregate remained `PARTIAL / UNPROVEN` because
+  the business runner emitted its primary report as
+  `agent-native-journey-report`; the generic runner requires
+  `acceptance-gate-evidence-report` for environment-Gate traceability.
+- The business correction changes only the primary report artifact kind and
+  adds a regression. It does not change C08 assertions, evidence roles,
+  cleanup, timeout, or product behavior. Focused native-runner tests, all 365
+  Agent Gate tests, 66 Acceptance runner tests, planner self-check, and
+  `git diff --check` pass. A clean checkpoint and exact-source C08 rerun remain
+  required before advancing to G-F.
 
 ### F4 — Tool Policy And Observability Baseline
 
