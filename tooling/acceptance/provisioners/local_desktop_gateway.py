@@ -27,6 +27,9 @@ from tooling.acceptance.core.provisioning import (
     ServiceAttestation,
     utc_now,
 )
+from tooling.acceptance.provisioners.remote_source_identity import (
+    resolve_remote_source_identity,
+)
 
 
 class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
@@ -194,6 +197,7 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                 service_id="station",
                 station_url=station_url,
                 profile_env=profile_env,
+                remote_source_identity_provider=resolve_remote_source_identity,
             )
             if not commits_match(attestation.live_commit, manifest.source_commit):
                 raise BlockedError(
