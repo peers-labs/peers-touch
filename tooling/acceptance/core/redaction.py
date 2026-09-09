@@ -124,6 +124,7 @@ _SENSITIVE_FIELD_PATTERN = "|".join(
     _field_pattern(name)
     for name in sorted(_SENSITIVE_ASSIGNMENT_FIELDS, key=len, reverse=True)
 )
+_REDACTED_VALUE_PATTERN = re.escape(REDACTED)
 _URL_QUERY_FIELD_PATTERN = "|".join(
     _field_pattern(name)
     for name in sorted(
@@ -144,11 +145,13 @@ _URL_QUERY_FIELD_PATTERN = "|".join(
 _SENSITIVE_ASSIGNMENT = re.compile(
     rf"(?i)(?P<prefix>(?<![\w])[\"']?(?:{_SENSITIVE_FIELD_PATTERN})"
     rf"[\"']?\s*[:=]\s*)"
-    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
+    rf"(?P<value>{_REDACTED_VALUE_PATTERN}|"
+    r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
 )
 _SENSITIVE_COMMAND_FLAG = re.compile(
     rf"(?i)(?P<prefix>(?<![\w])--?(?:{_SENSITIVE_FIELD_PATTERN})\s+)"
-    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
+    rf"(?P<value>{_REDACTED_VALUE_PATTERN}|"
+    r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
 )
 _SENSITIVE_LINE_ASSIGNMENT = re.compile(
     rf"(?im)(?P<prefix>^\s*(?:{_SENSITIVE_FIELD_PATTERN})\s+)"
