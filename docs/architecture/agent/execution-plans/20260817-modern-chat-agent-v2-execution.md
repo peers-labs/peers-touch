@@ -1149,6 +1149,26 @@ and zero local-path leakage.
   Agent Gate tests, 66 Acceptance runner tests, planner self-check, and
   `git diff --check` pass. A clean checkpoint and exact-source C08 rerun remain
   required before advancing to G-F.
+- Checkpoint `9bdaaa8d35177b0c01abf381bb936f13e16dfbac` passed all five
+  selected local Gates and was deployed exact-source. C08 run
+  `20260909T091942082203Z-5ecd651bb57a293a45c0032d5b46861d`
+  is `DONE / PROVEN`: all eight native steps, 19 assertions, source
+  traceability, secret scan, and cleanup passed.
+- The first unchanged G-F run
+  `20260909T092206777723Z-b50ac4f18635f12f4b7e91213e3ce332`
+  failed closed before AS-F06 because the invocation omitted its documented
+  `PT_AGENT_V2_ALLOW_STATION_RESTART=1` authorization. Cleanup passed.
+- The authorized G-F run
+  `20260909T093249009857Z-8249ea00d31ec1c6803823fd36fa7cf3`
+  advanced to Browser AS-F04 and failed when the Browser gateway reported
+  `Failed to export agent turn diagnostics`. Station recorded HTTP 200 for the
+  matching diagnostics export, so the unresolved failure lies after Station
+  handling in the Browser gateway request/decode path. Cleanup passed.
+- Runtime debug session `foundation-diagnostics-export` adds source-bound,
+  credential-safe instrumentation around that Rust request boundary. It
+  records only hashed turn identity, duration, encoded response size/counts,
+  and the underlying typed error. No business behavior or Gate assertion is
+  changed.
 
 ### F4 — Tool Policy And Observability Baseline
 
