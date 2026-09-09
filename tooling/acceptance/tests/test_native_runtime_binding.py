@@ -113,9 +113,17 @@ class SyntheticRemoteNativeLifecycle:
             return {
                 "content": base64.b64encode(b"clipboard").decode("ascii"),
             }
-        if operation in {"activate_process", "focused_control"}:
+        if operation in {
+            "activate_process",
+            "focused_control",
+            "reveal_file_chooser_location_to_process",
+        }:
             return {
-                "kind": "window",
+                "kind": (
+                    "text-field"
+                    if operation == "reveal_file_chooser_location_to_process"
+                    else "window"
+                ),
                 "actualFrontmostPid": payload["processId"],
                 "frontmost": True,
             }
@@ -210,9 +218,13 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             interval_seconds=0.2,
             private_source=True,
         )
-        binding.native_adapter.reveal_file_chooser_location_to_process(712)
+        revealed_control = (
+            binding.native_adapter.reveal_file_chooser_location_to_process(712)
+        )
         activated_control = binding.native_adapter.activate_and_focused_control(712)
         control = binding.native_adapter.focused_control(712)
+        self.assertIsNotNone(revealed_control)
+        self.assertEqual(revealed_control.kind, "text-field")
         self.assertTrue(activated_control.frontmost)
         self.assertTrue(control.frontmost)
         self.assertEqual(control.actual_frontmost_pid, 712)
