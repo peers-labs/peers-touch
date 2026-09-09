@@ -243,7 +243,7 @@ Parallel policy:
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
 | F2 Runtime/Stream/Capability/Portability | implementation checks complete: Q4 C06 and Q5/Q6 C10 source closures pass; product proof remains pending G-F | F1 |
-| F3 Context/Resource Intelligence | C04 core and C08 source/Gate wiring complete; `agent-attachment-e2e` not run / C08 product proof unproven | F2 |
+| F3 Context/Resource Intelligence | C04 core and C08 product source complete; native TauriDriver/argv ownership correction implemented and locally verified; clean-source `agent-attachment-e2e` rerun pending, so C08 product proof remains unproven | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
@@ -1009,6 +1009,35 @@ and zero local-path leakage.
   C08 product proof therefore remains `UNPROVEN`. AF-001 subsequently closed
   the eight generic Acceptance Infra failures and two aggregate source-binding
   defects on a clean source checkpoint without running this product Gate.
+
+**C08 runtime-ownership correction (2026-09-09)**:
+
+- Exact-source run
+  `20260909T062547913758Z-78d962855a4238f7c57c2d2d1c28754d` at
+  `b98fd10dcfe13a0e4500a29fa4a2888859e387e7` reached
+  `FIXTURE_READY` but timed out before WebDriver startup. The Gate-owned
+  `make desktop` path spent the complete 300-second Gate budget compiling the
+  `e2e-testing` dev runtime, so no C08 product assertion or role evidence ran.
+- That rejected pre-Core launch path created its own process session. The
+  legacy `command` launcher killed only the Gate process at timeout; the
+  Desktop build tree, renderer port, and credential-bearing run storage
+  survived until explicitly released. Cleanup metadata therefore overstated
+  the actual resource state.
+- The Owner approved an atomic correction: consume the dedicated
+  `acceptance-webdriver` binary through the canonical `TauriDriver`, place its
+  log under the Provisioner-owned run root, migrate the three implemented
+  native Agent journeys to the bounded `argv` launcher, delete the Gate-owned
+  `make desktop`/raw Selenium/process path, and add lifecycle regressions.
+- The correction must retain the existing 300-second C08 Gate timeout and all
+  product assertions. It may not add a fallback launcher, warm-build retry,
+  timeout inflation, or weaker cleanup/evidence semantics.
+- The implementation passes 364 Agent Gate tests, 65 Acceptance runner tests,
+  38 Provisioner/attestation tests, 21 process-launch lifecycle tests, Desktop
+  check, Station Agent tests, Agent structural validation, and the complete
+  Acceptance Infra aggregate. The dedicated `acceptance-webdriver` binary
+  builds and its embedded-WebDriver smoke passes with all owned ports released.
+  C08 remains `UNPROVEN` until the committed clean checkpoint runs
+  `agent-attachment-e2e`.
 
 ### F4 — Tool Policy And Observability Baseline
 

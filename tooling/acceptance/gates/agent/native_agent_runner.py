@@ -12,9 +12,7 @@ import argparse
 import json
 import os
 import shutil
-import signal
 import socket
-import subprocess
 import sys
 import threading
 import time
@@ -27,9 +25,6 @@ import urllib.request
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options as ChromeOptions
-
 from tooling.acceptance.core import (
     ArtifactRef,
     ArtifactSession,
@@ -41,6 +36,7 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.core.harness import call_async_harness
 from tooling.acceptance.core.provisioner import load_env_file
+from tooling.acceptance.drivers.tauri import TauriDriver
 from tooling.acceptance.gates.agent.foundation_direct_adapter import (
     DirectRuntimeProbeInput,
 )
@@ -58,7 +54,6 @@ GATE_BY_JOURNEY = {
 APPROVED_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 WAIT_TICK = threading.Event()
 DEFAULT_TIMEOUT = float(os.environ.get("PT_AGENT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
-STARTUP_TIMEOUT = float(os.environ.get("PT_AGENT_NATIVE_STARTUP_TIMEOUT_SECONDS", "900"))
 
 
 class JourneyError(RuntimeError):
@@ -225,8 +220,7 @@ class AgentNativeJourney:
         self.runtime_profile = self.run_root / f"{APPROVED_PROFILE}.env"
         self.desktop_log = self.run_root / "desktop.log"
         self.proxy = TcpFaultProxy.from_url(self.station_url)
-        self.process: subprocess.Popen[str] | None = None
-        self.log_handle: Any = None
+        self.tauri_driver: TauriDriver | None = None
         self.desktop_log_bytes = b""
         self.driver: Any = None
         self.steps: list[dict[str, Any]] = []
@@ -296,46 +290,30 @@ class AgentNativeJourney:
     def start(self) -> None:
         self.proxy.start()
         self._write_runtime_profile()
-        self.log_handle = self.desktop_log.open("w", encoding="utf-8")
-        environment = os.environ.copy()
-        environment.update(
-            {
-                "WORKTREE_ID": REPO_ROOT.name,
-                "PT_DEV_PROFILE": APPROVED_PROFILE,
-                "PT_DEV_PROFILE_FILE": str(self.runtime_profile),
-                "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
-                "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
-                "PEERS_STORAGE_ROOT": str(self.storage_root),
-                "PT_STATION_MODE": "remote",
-                "PT_STATION_URL": self.proxy.url,
-                "PEERS_STATION_URL": self.proxy.url,
-                "PT_DESKTOP_E2E": "true",
-                "TAURI_WEBDRIVER_PORT": str(self.webdriver_port),
-                "RESTART": "1",
-                "CARGO_BUILD_JOBS": "1",
-            }
+        environment = {
+            **self.profile_env,
+            "PT_DEV_PROFILE": APPROVED_PROFILE,
+            "PT_DEV_PROFILE_FILE": str(self.runtime_profile),
+            "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
+            "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
+            "PT_STATION_MODE": "remote",
+            "PT_STATION_URL": self.proxy.url,
+            "PEERS_STATION_URL": self.proxy.url,
+            "PT_STATION_HEALTH_URL": f"{self.proxy.url}/app-meta/version",
+            "PT_DESKTOP_E2E": "true",
+        }
+        self.tauri_driver = TauriDriver(
+            port=self.webdriver_port,
+            gateway_port=self.gateway_port,
+            profile=self.profile_env.get(
+                "PT_PROFILE",
+                f"{APPROVED_PROFILE}-app",
+            ),
+            storage_root=str(self.storage_root),
+            environment=environment,
+            log_path=self.desktop_log,
         )
-        self.process = subprocess.Popen(
-            ["make", "desktop"],
-            cwd=REPO_ROOT,
-            env=environment,
-            stdout=self.log_handle,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-
-        def webdriver_ready() -> bool:
-            if self.process is not None and self.process.poll() is not None:
-                raise JourneyError(
-                    f"Desktop exited with code {self.process.returncode}"
-                )
-            return port_open(self.webdriver_port)
-
-        wait_until(webdriver_ready, "embedded WebDriver", STARTUP_TIMEOUT)
-        self.driver = webdriver.Remote(
-            command_executor=f"http://127.0.0.1:{self.webdriver_port}",
-            options=ChromeOptions(),
-        )
+        self.driver = self.tauri_driver.start()
         self.driver.set_script_timeout(DEFAULT_TIMEOUT)
         wait_until(
             lambda: bool(
@@ -884,26 +862,14 @@ class AgentNativeJourney:
     def cleanup(self) -> dict[str, Any]:
         failures: list[str] = []
         self.best_effort_logout()
-        if self.driver is not None:
+        if self.tauri_driver is not None:
             try:
-                self.driver.quit()
+                self.tauri_driver.stop()
             except Exception as error:  # noqa: BLE001
-                failures.append(f"webdriver: {error}")
-            self.driver = None
-        if self.process is not None and self.process.poll() is None:
-            try:
-                os.killpg(self.process.pid, signal.SIGTERM)
-                self.process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                os.killpg(self.process.pid, signal.SIGKILL)
-                self.process.wait(timeout=5)
-            except Exception as error:  # noqa: BLE001
-                failures.append(f"desktop-process: {error}")
+                failures.append(f"tauri-driver: {error}")
+            self.tauri_driver = None
+        self.driver = None
         self.proxy.close()
-        if self.log_handle is not None:
-            self.log_handle.flush()
-            self.log_handle.close()
-            self.log_handle = None
         if self.desktop_log.is_file():
             try:
                 self.desktop_log_bytes = self.desktop_log.read_bytes()

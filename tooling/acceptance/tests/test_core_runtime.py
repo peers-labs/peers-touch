@@ -406,6 +406,36 @@ class BaseDriverAbstractInterfaceTests(unittest.TestCase):
 
 
 class TauriDriverAttachTests(unittest.TestCase):
+    def test_launch_writes_to_caller_owned_log_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "runtime" / "desktop.log"
+            driver = TauriDriver(
+                app_binary="/tmp/synthetic-acceptance-binary",
+                port=4555,
+                gateway_port=4556,
+                storage_root=str(Path(directory) / "storage"),
+                log_path=log_path,
+            )
+            process = MagicMock()
+            process.poll.return_value = None
+
+            with patch(
+                "tooling.acceptance.drivers.tauri.subprocess.Popen",
+                return_value=process,
+            ) as popen, patch(
+                "tooling.acceptance.drivers.tauri.time.sleep",
+            ):
+                driver._launch_app()
+
+            self.assertEqual(driver.log_path, log_path)
+            self.assertEqual(
+                Path(popen.call_args.kwargs["stdout"].name),
+                log_path,
+            )
+            process.poll.return_value = 0
+            driver.stop()
+            self.assertTrue(log_path.is_file())
+
     def test_connect_attaches_without_launching_or_owning_a_process(self):
         driver = TauriDriver(
             app_binary="/tmp/not-launched",

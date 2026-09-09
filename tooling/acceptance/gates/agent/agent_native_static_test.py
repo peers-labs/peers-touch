@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import ast
+import json
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[4]
 RUNNER = ROOT / "tooling" / "acceptance" / "gates" / "agent" / "native_agent_runner.py"
+GATE_CATALOG = ROOT / "tooling" / "acceptance" / "gates.yaml"
 HARNESS = ROOT / "apps" / "desktop" / "src" / "acceptance" / "agent" / "harness.ts"
 CAPABILITY_SUPERVISOR = (
     ROOT
@@ -124,10 +126,15 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertTrue(RUNNER.is_file(), f"{RUNNER} must exist")
 
     def test_runner_uses_canonical_tauri_driver(self) -> None:
-        self.assertIn("make", self.source)
-        self.assertIn("desktop", self.source)
+        self.assertIn(
+            "from tooling.acceptance.drivers.tauri import TauriDriver",
+            self.source,
+        )
+        self.assertIn("self.tauri_driver = TauriDriver(", self.source)
+        self.assertNotIn('["make", "desktop"]', self.source)
+        self.assertNotIn("subprocess.Popen", self.source)
         self.assertIn("PT_DESKTOP_E2E", self.source)
-        self.assertIn("webdriver", self.source.lower())
+        self.assertIn("log_path=self.desktop_log", self.source)
 
     def test_runner_does_not_invent_env_vars(self) -> None:
         forbidden = ["AGENT_E2E_STATION_URL", "AGENT_E2E_EMAIL", "AGENT_E2E_PASSWORD"]
@@ -144,13 +151,40 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertIn("PT_DESKTOP_E2E", self.source)
 
     def test_runner_cleans_up_process_and_driver(self) -> None:
-        self.assertIn("driver.quit()", self.source)
-        self.assertIn("os.killpg", self.source)
+        self.assertIn("self.tauri_driver.stop()", self.source)
+        self.assertNotIn("os.killpg", self.source)
         self.assertIn("shutil.rmtree(self.run_root", self.source)
         self.assertNotIn("shutil.rmtree(self.storage_root", self.source)
         self.assertIn("self.desktop_log_bytes", self.source)
         self.assertIn("portsReleased", self.source)
         self.assertIn("storageReleased", self.source)
+
+    def test_implemented_native_journeys_use_bounded_argv_launch(self) -> None:
+        gates = json.loads(
+            GATE_CATALOG.read_text(encoding="utf-8"),
+        )["gates"]
+        expected = {
+            "agent-native-turn-e2e": [
+                "python3",
+                "tooling/acceptance/gates/agent/native_agent_runner.py",
+            ],
+            "agent-stream-resilience-e2e": [
+                "python3",
+                "tooling/acceptance/gates/agent/native_agent_runner.py",
+                "--journey",
+                "stream-resilience",
+            ],
+            "agent-attachment-e2e": [
+                "python3",
+                "tooling/acceptance/gates/agent/native_agent_runner.py",
+                "--journey",
+                "attachment",
+            ],
+        }
+        for gate_id, argv in expected.items():
+            with self.subTest(gate_id=gate_id):
+                self.assertEqual(gates[gate_id]["argv"], argv)
+                self.assertNotIn("command", gates[gate_id])
 
     def test_runner_emits_evidence_report(self) -> None:
         self.assertIn("ArtifactSession", self.source)
@@ -241,9 +275,10 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
     def test_no_fixed_sleep_in_runner(self) -> None:
         self.assertNotIn("time.sleep(", self.source)
 
-    def test_runner_uses_selenium(self) -> None:
-        self.assertIn("selenium", self.source)
-        self.assertIn("webdriver.Remote", self.source)
+    def test_runner_delegates_selenium_ownership_to_tauri_driver(self) -> None:
+        self.assertNotIn("from selenium", self.source)
+        self.assertNotIn("webdriver.Remote", self.source)
+        self.assertIn("TauriDriver", self.source)
 
 
 class AgentHarnessStaticTest(unittest.TestCase):

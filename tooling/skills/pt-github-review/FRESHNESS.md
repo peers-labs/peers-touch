@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-09
-covered_docs_hash: 6fe7c73c15e86420d2ac6feb793711d7114f955ab8dfafc035526ca37c3c1bea
+covered_docs_hash: fac9ebadad12925bc7b203c3d07ee87d9734b3f35971dd2649608d0ff7e6f57e
 
 covered_docs:
   - AGENTS.md
@@ -127,3 +127,10 @@ concrete Provisioners own strict-known-host SSH acquisition. A dedicated
 fresh-process regression and operational pitfall now guard the boundary. This
 strengthens structural review without changing the review workflow or requiring
 a new golden review fixture.
+
+The native Driver follow-up makes caller-owned run storage explicit for
+runtime logs. Review must verify that business Gates consume `TauriDriver`
+through bounded `argv` launch, retain the catalog timeout, and remove the old
+Gate-owned `make desktop` process path rather than adding a fallback. Existing
+Driver and launch-context regressions cover the generic lifecycle contract; no
+new review workflow or golden fixture is required.
